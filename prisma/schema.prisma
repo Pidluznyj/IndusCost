@@ -2828,3 +2828,182 @@ model ProjectCostAmortizationAllocation {
   @@index([projectId])
   @@index([targetItemId])
 }
+
+// —— Financeiro: fornecedores consolidados e classificação gerencial AP ——
+// Camada aditiva; NomusAccountsPayable permanece fonte read-only dos títulos.
+
+enum FinancialSupplierSource {
+  AUTO_SYNC
+  MANUAL
+  IMPORT
+  NOMUS_BOOTSTRAP
+}
+
+enum FinancialSupplierStatus {
+  ACTIVE
+  NEEDS_REVIEW
+  MERGED
+  INACTIVE
+}
+
+enum FinancialCostCenterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CostCenterAllocationSource {
+  AUTO_RULE
+  MANUAL
+  BATCH
+}
+
+/// Fornecedor consolidado para classificação gerencial de AP (não substitui personName/personCnpj no Nomus).
+model FinancialSupplier {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName        String
+  legalName          String?
+  tradeName          String?
+  document           String?
+  normalizedDocument String?
+  normalizedName     String?
+  source             FinancialSupplierSource @default(NOMUS_BOOTSTRAP)
+  status             FinancialSupplierStatus @default(ACTIVE)
+  confidence         Decimal?                @db.Decimal(5, 2)
+  firstSeenAt        DateTime?               @db.Timestamptz(6)
+  lastSeenAt         DateTime?               @db.Timestamptz(6)
+  titlesCount        Int                     @default(0)
+  totalAmountSeen    Decimal                 @default(0) @db.Decimal(20, 2)
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  aliases       FinancialSupplierAlias[]
+  costCenterRules SupplierCostCenterRule[]
+  allocations   AccountsPayableCostCenterAllocation[]
+
+  @@index([normalizedDocument])
+  @@index([normalizedName])
+  @@index([status])
+  @@index([displayName])
+}
+
+/// Fragmentos de identidade Nomus vinculados ao fornecedor consolidado.
+model FinancialSupplierAlias {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId         String                  @db.Uuid
+  source             FinancialSupplierSource @default(AUTO_SYNC)
+  externalSupplierId Int?
+  originalName       String?
+  originalDocument   String?
+  normalizedName     String?
+  normalizedDocument String?
+  firstSeenAt        DateTime?               @db.Timestamptz(6)
+  lastSeenAt         DateTime?               @db.Timestamptz(6)
+  titlesCount        Int                     @default(0)
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  supplier FinancialSupplier @relation(fields: [supplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([supplierId])
+  @@index([externalSupplierId])
+  @@index([normalizedDocument])
+  @@index([normalizedName])
+}
+
+/// Centro de custo financeiro — separado de CostCenter (Compras).
+model FinancialCostCenter {
+  id                String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String                    @unique
+  name              String
+  description       String?
+  parentId          String?                   @db.Uuid
+  responsibleUserId String?
+  responsibleName   String?
+  status            FinancialCostCenterStatus @default(ACTIVE)
+  color             String?
+  icon              String?
+  createdAt         DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  parent          FinancialCostCenter?                  @relation("FinancialCostCenterTree", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  children        FinancialCostCenter[]                 @relation("FinancialCostCenterTree")
+  costCenterRules SupplierCostCenterRule[]
+  allocations     AccountsPayableCostCenterAllocation[]
+
+  @@index([status])
+  @@index([parentId])
+}
+
+/// Regra fornecedor → centro de custo (classificação automática futura).
+model SupplierCostCenterRule {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId      String   @db.Uuid
+  costCenterId    String   @db.Uuid
+  percentage      Decimal  @default(100) @db.Decimal(5, 2)
+  priority        Int      @default(100)
+  autoApply       Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  company         String?
+  notes           String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  supplier    FinancialSupplier                     @relation(fields: [supplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  costCenter  FinancialCostCenter                   @relation(fields: [costCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  allocations AccountsPayableCostCenterAllocation[]
+
+  @@index([supplierId, isActive])
+  @@index([costCenterId])
+  @@index([company])
+  @@index([priority])
+}
+
+/// Alocação gerencial de centro de custo por título AP (accountsPayableId = NomusAccountsPayable.externalId).
+model AccountsPayableCostCenterAllocation {
+  id                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountsPayableId Int
+  supplierId        String?                    @db.Uuid
+  costCenterId      String                     @db.Uuid
+  amount            Decimal?                   @db.Decimal(20, 2)
+  percentage        Decimal                    @default(100) @db.Decimal(5, 2)
+  source            CostCenterAllocationSource
+  confidence        Decimal?                   @db.Decimal(5, 2)
+  lockedManual      Boolean                    @default(false)
+  ruleId            String?                    @db.Uuid
+  notes             String?
+  createdByUserId   String?
+  createdByName     String?
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  supplier   FinancialSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  costCenter FinancialCostCenter     @relation(fields: [costCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  rule       SupplierCostCenterRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([accountsPayableId, costCenterId])
+  @@index([accountsPayableId])
+  @@index([supplierId])
+  @@index([costCenterId])
+  @@index([source])
+  @@index([lockedManual])
+}
+
+/// Auditoria de mutações em fornecedores, centros de custo, regras e alocações.
+model FinancialCostCenterAuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String
+  entityId   String
+  action     String
+  beforeJson Json?
+  afterJson  Json?
+  userId     String?
+  userName   String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+}
