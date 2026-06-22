@@ -19,6 +19,7 @@ export type FinanceModuleTabId =
   | "accounts-payable"
   | "billing"
   | "sales-orders"
+  | "cost-centers"
   | "executive-report";
 
 export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
@@ -27,6 +28,7 @@ export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
   "accounts-payable": "Contas a Pagar",
   billing: "Faturamento",
   "sales-orders": "Pedidos de Venda",
+  "cost-centers": "Centros de Custo",
   "executive-report": "Relatório Presidencial",
 };
 
@@ -36,6 +38,7 @@ export const FINANCE_MODULE_TAB_ENDPOINTS: Record<FinanceModuleTabId, string> = 
   "accounts-payable": "/api/finance/accounts-payable/dashboard",
   billing: "/api/finance/billing/dashboard",
   "sales-orders": "/api/finance/sales-orders/dashboard",
+  "cost-centers": "/api/finance/cost-centers/dashboard",
   "executive-report": "/api/finance/executive-report",
 };
 

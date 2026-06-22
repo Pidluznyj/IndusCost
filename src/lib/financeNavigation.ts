@@ -8,6 +8,7 @@ export const FINANCE_SECTION_IDS = [
   "accounts-payable",
   "billing",
   "sales-orders",
+  "cost-centers",
   "executive-report",
 ] as const;
 
@@ -19,6 +20,7 @@ export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   "accounts-payable": "/finance/accounts-payable",
   billing: "/finance/billing",
   "sales-orders": "/finance/sales-orders",
+  "cost-centers": "/finance/cost-centers",
   "executive-report": "/finance/executive-report",
 };
 
@@ -55,6 +57,11 @@ export const FINANCE_SECTIONS: FinanceSectionDef[] = [
     id: "sales-orders",
     label: "Pedidos de Venda",
     path: FINANCE_SECTION_PATHS["sales-orders"],
+  },
+  {
+    id: "cost-centers",
+    label: "Centros de Custo",
+    path: FINANCE_SECTION_PATHS["cost-centers"],
   },
   {
     id: "executive-report",
