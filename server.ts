@@ -134,6 +134,7 @@ import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsP
 import { registerFinanceSuppliersRoutes } from "./src/lib/financeSuppliersRoutes.js";
 import { registerFinanceCostCentersRoutes } from "./src/lib/financeCostCentersRoutes.js";
 import { registerFinanceSupplierCostCenterRulesRoutes } from "./src/lib/financeSupplierCostCenterRulesRoutes.js";
+import { registerFinanceAccountsPayableCostCenterAllocationRoutes } from "./src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
@@ -13219,6 +13220,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerFinanceSupplierCostCenterRulesRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceAccountsPayableCostCenterAllocationRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
