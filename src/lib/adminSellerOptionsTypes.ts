@@ -1,7 +1,12 @@
 export type AdminSellerOptionConfidence = "HIGH" | "MEDIUM";
 
 export type AdminSellerOption = {
+  /** ID canônico (menor Nomus ID) para persistência no usuário. */
   externalSellerId: number | null;
+  /** Todos os IDs Nomus da identidade consolidada. */
+  externalSellerIds: number[];
+  /** Chave de filtro CRM (nome normalizado exato). */
+  sellerIdentityKey: string;
   responsible: string | null;
   displayName: string;
   normalizedName: string;
@@ -11,14 +16,20 @@ export type AdminSellerOption = {
   proposalsValue: number;
   source: "sales_orders";
   confidence: AdminSellerOptionConfidence;
-  /** Linhas MEDIUM (sem ID) mescladas nesta opção HIGH com o mesmo nome normalizado. */
+  /** Fragmentos SQL (seller_key) fundidos nesta opção. */
+  mergedFragmentCount: number;
+  /** Linhas sem ID Nomus mescladas na mesma identidade. */
   hasMergedNameFallback?: boolean;
   mergedFallbackRowsCount?: number;
+  needsReview?: boolean;
 };
 
 export function buildAdminSellerOptionKey(
-  option: Pick<AdminSellerOption, "externalSellerId" | "normalizedName">
+  option: Pick<AdminSellerOption, "sellerIdentityKey" | "externalSellerId" | "normalizedName">
 ): string {
+  if (option.sellerIdentityKey?.trim()) {
+    return `n:${option.sellerIdentityKey.trim()}`;
+  }
   if (option.externalSellerId != null) {
     return `id:${option.externalSellerId}`;
   }

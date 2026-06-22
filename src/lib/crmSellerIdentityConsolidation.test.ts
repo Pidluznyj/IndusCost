@@ -27,6 +27,50 @@ describe("crmSellerIdentityConsolidation", () => {
     assert.equal(options[0]!.mergedFragmentCount, 2);
   });
 
+  it("mesmo nome com três IDs Nomus (GISLENE) vira uma opção única", () => {
+    const options = consolidateSellerRowFragments([
+      { external_seller_id: 464, responsible: "GISLENE LIMA", orders_count: 100 },
+      { external_seller_id: 646, responsible: "GISLENE LIMA", orders_count: 80 },
+      { external_seller_id: 645, responsible: "GISLENE LIMA", orders_count: 20 },
+    ]);
+    assert.equal(options.length, 1);
+    assert.equal(options[0]!.displayName, "GISLENE LIMA");
+    assert.equal(options[0]!.ordersCount, 200);
+    assert.deepEqual(options[0]!.externalSellerIds, [464, 645, 646]);
+    assert.equal(options[0]!.mergedFragmentCount, 3);
+    assert.equal(
+      consolidatedIdentityMatchesUser(options[0]!, {
+        externalSellerId: 464,
+        sellerResponsibleName: null,
+      }),
+      true
+    );
+    assert.equal(
+      consolidatedIdentityMatchesUser(options[0]!, {
+        externalSellerId: 645,
+        sellerResponsibleName: null,
+      }),
+      true
+    );
+  });
+
+  it("cadastro de usuário usa consolidação no admin seller options", () => {
+    const admin = readFileSync(join(process.cwd(), "src/lib/adminSellerOptions.ts"), "utf8");
+    const picker = readFileSync(
+      join(process.cwd(), "src/components/admin/SellerNomusPicker.tsx"),
+      "utf8"
+    );
+    assert.match(admin, /consolidateAdminSellerMetricsRows/);
+    assert.match(picker, /formatAdminSellerOptionSublabel/);
+    assert.match(picker, /Consolida/);
+    assert.doesNotMatch(picker, /GISLENE|464|646|645/);
+  });
+
+  it("sessão enriquece sellerIdentityKey para vínculo só por ID", () => {
+    const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    assert.match(server, /enrichAppAuthSellerCommercialLink/);
+  });
+
   it("mesmo nome com dois IDs vira uma opção única quando o nome normalizado é exatamente igual", () => {
     const options = consolidateSellerRowFragments([
       { external_seller_id: 1399, responsible: "Rodrigo Da Silva Ramos", orders_count: 10 },

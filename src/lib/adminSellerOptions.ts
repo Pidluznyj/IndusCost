@@ -1,12 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
+import {
+  buildRawSellerKeyFromRow,
+  consolidateSellerRowFragments,
+  normalizeSellerIdentityName,
+} from "@/src/lib/crmSellerIdentityConsolidation.js";
 
 export type { AdminSellerOption, AdminSellerOptionConfidence } from "@/src/lib/adminSellerOptionsTypes";
 export { buildAdminSellerOptionKey } from "@/src/lib/adminSellerOptionsTypes";
 
 export function normalizeSellerNameForGrouping(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toUpperCase();
+  return normalizeSellerIdentityName(value).toUpperCase();
 }
 
 export function formatSellerDisplayName(responsible: string | null, externalSellerId: number | null): string {
@@ -60,28 +65,142 @@ function rowToSellerOption(row: {
   proposals_count: number;
   proposals_value: unknown;
 }): AdminSellerOption | null {
-  const externalSellerId = row.external_seller_id;
-  const responsible = row.responsible?.trim() || null;
-  if (externalSellerId == null && !responsible) return null;
+  const options = consolidateAdminSellerMetricsRows([row]);
+  return options[0] ?? null;
+}
 
-  const displayName = formatSellerDisplayName(responsible, externalSellerId);
-  if (!displayName) return null;
+export type AdminSellerMetricsRow = {
+  external_seller_id: number | null;
+  responsible: string | null;
+  orders_count: number;
+  orders_value: unknown;
+  proposals_count: number;
+  proposals_value: unknown;
+};
 
-  const normalizedName = normalizeSellerNameForGrouping(displayName);
-  if (!normalizedName) return null;
+/** Consolida linhas SQL (uma por seller_key) em opções únicas para o cadastro de usuário. */
+export function consolidateAdminSellerMetricsRows(
+  rows: AdminSellerMetricsRow[]
+): AdminSellerOption[] {
+  const metricsBySourceKey = new Map<
+    string,
+    {
+      ordersCount: number;
+      ordersValue: number;
+      proposalsCount: number;
+      proposalsValue: number;
+    }
+  >();
 
-  return {
-    externalSellerId,
-    responsible,
-    displayName,
-    normalizedName,
-    ordersCount: row.orders_count ?? 0,
-    ordersValue: toMoneyNumber(row.orders_value),
-    proposalsCount: row.proposals_count ?? 0,
-    proposalsValue: toMoneyNumber(row.proposals_value),
-    source: "sales_orders",
-    confidence: externalSellerId != null ? "HIGH" : "MEDIUM",
-  };
+  for (const row of rows) {
+    const sourceSellerKey = buildRawSellerKeyFromRow(row.external_seller_id, row.responsible);
+    const current = metricsBySourceKey.get(sourceSellerKey) ?? {
+      ordersCount: 0,
+      ordersValue: 0,
+      proposalsCount: 0,
+      proposalsValue: 0,
+    };
+    current.ordersCount += row.orders_count ?? 0;
+    current.ordersValue += toMoneyNumber(row.orders_value);
+    current.proposalsCount += row.proposals_count ?? 0;
+    current.proposalsValue += toMoneyNumber(row.proposals_value);
+    metricsBySourceKey.set(sourceSellerKey, current);
+  }
+
+  const consolidated = consolidateSellerRowFragments(
+    rows.map((row) => ({
+      external_seller_id: row.external_seller_id,
+      responsible: row.responsible,
+      orders_count: row.orders_count ?? 0,
+    }))
+  );
+
+  const options: AdminSellerOption[] = [];
+  for (const group of consolidated) {
+    let ordersValue = 0;
+    let proposalsCount = 0;
+    let proposalsValue = 0;
+    let mergedFallbackRowsCount = 0;
+
+    for (const sourceKey of group.sourceSellerKeys) {
+      const metrics = metricsBySourceKey.get(sourceKey);
+      if (!metrics) continue;
+      ordersValue += metrics.ordersValue;
+      proposalsCount += metrics.proposalsCount;
+      proposalsValue += metrics.proposalsValue;
+      if (sourceKey.startsWith("r:") && group.externalSellerIds.length > 0) {
+        mergedFallbackRowsCount += 1;
+      }
+    }
+
+    const canonicalId =
+      group.externalSellerIds.length > 0 ? group.externalSellerIds[0]! : null;
+    const confidence =
+      group.externalSellerIds.length > 0 || group.hasOrdersWithoutNomusId
+        ? group.externalSellerIds.length > 0
+          ? "HIGH"
+          : "MEDIUM"
+        : "MEDIUM";
+
+    options.push({
+      externalSellerId: canonicalId,
+      externalSellerIds: group.externalSellerIds,
+      sellerIdentityKey: group.sellerIdentityKey,
+      responsible: group.responsible,
+      displayName: group.displayName,
+      normalizedName: group.normalizedName,
+      ordersCount: group.ordersCount,
+      ordersValue,
+      proposalsCount,
+      proposalsValue,
+      source: "sales_orders",
+      confidence: confidence as AdminSellerOption["confidence"],
+      mergedFragmentCount: group.mergedFragmentCount,
+      hasMergedNameFallback: group.hasOrdersWithoutNomusId && group.externalSellerIds.length > 0,
+      mergedFallbackRowsCount:
+        mergedFallbackRowsCount > 0 ? mergedFallbackRowsCount : undefined,
+      needsReview: group.needsReview,
+    });
+  }
+
+  return options;
+}
+
+export function formatAdminSellerOptionSublabel(option: AdminSellerOption): string {
+  const idPart =
+    option.externalSellerIds.length > 1
+      ? `IDs Nomus ${option.externalSellerIds.join(", ")}`
+      : option.externalSellerId != null
+        ? `ID Nomus ${option.externalSellerId}`
+        : "Sem ID — fallback por nome";
+  const confidenceLabel =
+    option.confidence === "HIGH" ? "Alta confiança" : "Média confiança (sem ID Nomus)";
+  const counts = formatAdminSellerOptionCounts(option);
+  const mergeNote =
+    option.mergedFragmentCount > 1
+      ? ` · Consolida ${option.mergedFragmentCount} registros Nomus`
+      : "";
+  return `${idPart} · ${confidenceLabel} · ${counts}${mergeNote}`;
+}
+
+export function formatAdminSellerOptionCounts(option: AdminSellerOption): string {
+  const orderVal = formatCompactBrlAdmin(option.ordersValue);
+  const base = orderVal
+    ? `${option.ordersCount} ped. · ${orderVal}`
+    : `${option.ordersCount} ped.`;
+  const propPart =
+    option.proposalsCount > 0 ? ` · ${option.proposalsCount} prop. negociação` : "";
+  return `${base}${propPart}`;
+}
+
+function formatCompactBrlAdmin(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 /**
@@ -224,11 +343,6 @@ export async function fetchAdminSellerOptionsFromDb(): Promise<AdminSellerOption
     LEFT JOIN proposals_by_seller p ON p.seller_key = k.seller_key
   `);
 
-  const rawSellers: AdminSellerOption[] = [];
-  for (const row of rows) {
-    const option = rowToSellerOption(row);
-    if (option) rawSellers.push(option);
-  }
-
-  return sortAdminSellerOptions(mergeSellerOptionsByNormalizedName(rawSellers));
+  const rawSellers = consolidateAdminSellerMetricsRows(rows);
+  return sortAdminSellerOptions(rawSellers);
 }

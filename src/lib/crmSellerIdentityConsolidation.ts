@@ -2,8 +2,11 @@
  * Consolidação de identidade comercial (vendedor/responsável) para CRM.
  * Base: SalesOrder. Agrupa fragmentos com mesmo nome normalizado exato.
  */
+import { Prisma } from "@prisma/client";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import { formatSellerDisplayName } from "@/src/lib/adminSellerOptions.js";
+import { prisma } from "@/src/lib/prisma.js";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
 
 export type SellerRowFragment = {
   externalSellerId: number | null;
@@ -199,4 +202,40 @@ export function formatConsolidatedSellerAuditLabel(option: ConsolidatedSellerOpt
       : "sem ID Nomus";
   const fragments = `fragmentos: ${option.sourceSellerKeys.join(", ")}`;
   return `${option.displayName} — ${ids}; ${fragments}; pedidos: ${option.ordersCount}`;
+}
+
+/** Nome mais frequente no SalesOrder para um ID Nomus (read-only). */
+export async function lookupSellerResponsibleNameForExternalId(
+  externalSellerId: number
+): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ responsible: string | null }[]>(Prisma.sql`
+    SELECT MODE() WITHIN GROUP (ORDER BY NULLIF(TRIM(so."responsible"), '')) AS responsible
+    FROM "SalesOrder" so
+    WHERE so."externalSellerId" = ${externalSellerId}
+      AND so.status::text NOT IN ('CANCELLED', 'ERROR')
+      AND NULLIF(TRIM(so."responsible"), '') IS NOT NULL
+  `);
+  const name = rows[0]?.responsible?.trim();
+  return name || null;
+}
+
+/**
+ * Enriquece sessão do usuário vendedor: resolve sellerIdentityKey para consolidação CRM.
+ * Não altera dados no banco — apenas contexto de autenticação.
+ */
+export async function enrichAppAuthSellerCommercialLink(
+  auth: AppAuthContext
+): Promise<AppAuthContext> {
+  if (auth.sellerIdentityKey?.trim()) return auth;
+
+  let responsible = auth.sellerResponsibleName?.trim() || null;
+  if (!responsible && auth.externalSellerId != null) {
+    responsible = await lookupSellerResponsibleNameForExternalId(auth.externalSellerId);
+  }
+  if (!responsible) return auth;
+
+  return {
+    ...auth,
+    sellerIdentityKey: normalizeSellerIdentityName(responsible),
+  };
 }

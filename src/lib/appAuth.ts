@@ -38,6 +38,8 @@ export type SafeAppUser = {
 
 export type AppAuthContext = SafeAppUser & {
   sessionId: string;
+  /** Chave de identidade consolidada (sessão) — filtra todos os IDs Nomus com mesmo nome. */
+  sellerIdentityKey?: string | null;
 };
 
 export function normalizeEmail(email: string): string {

@@ -9,6 +9,10 @@ import {
   buildAdminSellerOptionKey,
   type AdminSellerOption,
 } from "@/src/lib/adminSellerOptionsTypes";
+import {
+  formatAdminSellerOptionCounts,
+  formatAdminSellerOptionSublabel,
+} from "@/src/lib/adminSellerOptions";
 
 export type SellerNomusPickerValue = {
   externalSellerId: string;
@@ -25,44 +29,26 @@ type SellerNomusPickerProps = {
 
 const CLEAR_VALUE = "";
 
-function valueToSelectKey(value: SellerNomusPickerValue, sellers: AdminSellerOption[]): string {
-  if (!value.externalSellerId.trim() && !value.sellerResponsibleName.trim()) {
-    return CLEAR_VALUE;
-  }
+function sellerMatchesUserValue(seller: AdminSellerOption, value: SellerNomusPickerValue): boolean {
   const id = value.externalSellerId.trim()
     ? Number.parseInt(value.externalSellerId.trim(), 10)
     : null;
   if (id != null && Number.isFinite(id)) {
-    const match = sellers.find((s) => s.externalSellerId === id);
-    if (match) return buildAdminSellerOptionKey(match);
+    if (seller.externalSellerIds.includes(id) || seller.externalSellerId === id) return true;
   }
   const normalized = value.sellerResponsibleName.trim().replace(/\s+/g, " ").toUpperCase();
-  if (normalized) {
-    const match = sellers.find((s) => s.normalizedName === normalized);
-    if (match) return buildAdminSellerOptionKey(match);
+  if (normalized && seller.normalizedName === normalized) return true;
+  if (normalized && seller.sellerIdentityKey === normalized.toLowerCase()) return true;
+  return false;
+}
+
+function valueToSelectKey(value: SellerNomusPickerValue, sellers: AdminSellerOption[]): string {
+  if (!value.externalSellerId.trim() && !value.sellerResponsibleName.trim()) {
+    return CLEAR_VALUE;
   }
+  const match = sellers.find((s) => sellerMatchesUserValue(s, value));
+  if (match) return buildAdminSellerOptionKey(match);
   return `custom:${value.externalSellerId}:${value.sellerResponsibleName}`;
-}
-
-function formatCompactBrl(value: number): string | null {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatCounts(option: AdminSellerOption): string {
-  const base = `${option.ordersCount} ped.`;
-  const orderVal = formatCompactBrl(option.ordersValue);
-  const propPart =
-    option.proposalsCount > 0
-      ? ` · ${option.proposalsCount} prop. negociação`
-      : "";
-  if (!orderVal) return `${base}${propPart}`;
-  return `${base}${orderVal ? ` · ${orderVal}` : ""}${propPart}`;
 }
 
 export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
@@ -82,19 +68,16 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
     ];
     for (const seller of sellers) {
       const key = buildAdminSellerOptionKey(seller);
-      const idLabel =
-        seller.externalSellerId != null ? `ID Nomus ${seller.externalSellerId}` : "Sem ID — fallback por nome";
-      const confidenceLabel =
-        seller.confidence === "HIGH" ? "Alta confiança" : "Média confiança (sem ID Nomus)";
       rows.push({
         value: key,
         label: seller.displayName,
-        sublabel: `${idLabel} · ${confidenceLabel} · ${formatCounts(seller)}`,
+        sublabel: formatAdminSellerOptionSublabel(seller),
         searchTerms: [
           seller.displayName,
           seller.normalizedName,
+          seller.sellerIdentityKey,
           seller.responsible ?? "",
-          seller.externalSellerId != null ? String(seller.externalSellerId) : "",
+          ...seller.externalSellerIds.map(String),
         ].join(" "),
       });
     }
@@ -116,9 +99,11 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
     }
     const seller = sellers.find((s) => buildAdminSellerOptionKey(s) === key);
     if (!seller) return;
+    const canonicalId =
+      seller.externalSellerIds[0] ?? seller.externalSellerId ?? null;
     onChange({
-      externalSellerId: seller.externalSellerId != null ? String(seller.externalSellerId) : "",
-      sellerResponsibleName: seller.responsible ?? "",
+      externalSellerId: canonicalId != null ? String(canonicalId) : "",
+      sellerResponsibleName: seller.responsible ?? seller.displayName,
     });
   };
 
@@ -144,13 +129,17 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
         listMaxHeight={320}
       />
       <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Este vínculo define quais pedidos aparecem em Minha Gestão Comercial. Sempre que
-        possível, use uma opção com ID Nomus. Propostas em negociação aparecem apenas como dado auxiliar.
+        Este vínculo define quais pedidos aparecem em Minha Gestão Comercial. Vendedores com
+        vários IDs Nomus aparecem consolidados por nome. Propostas em negociação são dado auxiliar.
       </p>
 
       {selectedSeller ? (
         <div className="flex flex-wrap items-center gap-2">
-          {selectedSeller.externalSellerId != null ? (
+          {selectedSeller.externalSellerIds.length > 1 ? (
+            <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              IDs Nomus {selectedSeller.externalSellerIds.join(", ")}
+            </span>
+          ) : selectedSeller.externalSellerId != null ? (
             <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
               ID Nomus {selectedSeller.externalSellerId}
             </span>
@@ -169,8 +158,13 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
           >
             {selectedSeller.confidence === "HIGH" ? "Alta confiança" : "Média confiança"}
           </span>
+          {selectedSeller.mergedFragmentCount > 1 ? (
+            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+              Consolida {selectedSeller.mergedFragmentCount} registros Nomus
+            </span>
+          ) : null}
           <span className="text-[10px] text-muted-foreground">
-            {formatCounts(selectedSeller)}
+            {formatAdminSellerOptionCounts(selectedSeller)}
             {selectedSeller.hasMergedNameFallback ? " · inclui registros sem ID" : ""}
           </span>
           <button

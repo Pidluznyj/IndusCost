@@ -22,6 +22,7 @@ function mockAuth(overrides: {
   role?: AppAuthContext["role"];
   externalSellerId?: number | null;
   sellerResponsibleName?: string | null;
+  sellerIdentityKey?: string | null;
 }): AppAuthContext {
   const permissions = overrides.permissions ?? [];
   const role = overrides.role ?? "SELLER";
@@ -37,6 +38,7 @@ function mockAuth(overrides: {
     isActive: true,
     externalSellerId: overrides.externalSellerId ?? null,
     sellerResponsibleName: overrides.sellerResponsibleName ?? null,
+    sellerIdentityKey: overrides.sellerIdentityKey ?? null,
     lastLoginAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -75,7 +77,7 @@ describe("crmCommercialAccessScope", () => {
     const result = resolveCrmSellerDashboardQueryScope(
       auth,
       "999",
-      "Outro Vendedor",
+      null,
       (raw) => (raw === "999" ? 999 : null),
       (raw) => (typeof raw === "string" ? raw : null)
     );
@@ -147,23 +149,53 @@ describe("crmCommercialAccessScope", () => {
       sellerIdentityKey: "gislene lima",
     });
     assert.deepEqual(crmCommercialSellerMatchFilters(464, "GISLENE LIMA"), {
+      externalSellerId: null,
+      responsible: null,
+      sellerIdentityKey: "gislene lima",
+    });
+    assert.deepEqual(crmCommercialSellerMatchFilters(464, null), {
       externalSellerId: 464,
       responsible: null,
       sellerIdentityKey: null,
     });
   });
 
-  it("salesOrderMatchesCrmSellerScope restringe pedidos no escopo own", () => {
+  it("salesOrderMatchesCrmSellerScope restringe pedidos no escopo own com identidade consolidada", () => {
     const ownScope = resolveCrmCommercialAccessScope(
-      mockAuth({ permissions: ["crm.seller.own"], externalSellerId: 464 })
+      mockAuth({
+        permissions: ["crm.seller.own"],
+        externalSellerId: 464,
+        sellerResponsibleName: "GISLENE LIMA",
+      })
+    );
+    assert.equal(ownScope.sellerIdentityKey, "gislene lima");
+    assert.equal(
+      salesOrderMatchesCrmSellerScope({ externalSellerId: 464, responsible: "GISLENE LIMA" }, ownScope),
+      true
     );
     assert.equal(
-      salesOrderMatchesCrmSellerScope({ externalSellerId: 464, responsible: "GISLENE" }, ownScope),
+      salesOrderMatchesCrmSellerScope({ externalSellerId: 646, responsible: "GISLENE LIMA" }, ownScope),
       true
     );
     assert.equal(
       salesOrderMatchesCrmSellerScope({ externalSellerId: 1399, responsible: "RODRIGO" }, ownScope),
       false
+    );
+  });
+
+  it("vendedor só com ID usa sellerIdentityKey enriquecido na sessão", () => {
+    const ownScope = resolveCrmCommercialAccessScope(
+      mockAuth({
+        permissions: ["crm.seller.own"],
+        externalSellerId: 464,
+        sellerIdentityKey: "gislene lima",
+      })
+    );
+    assert.equal(ownScope.sellerIdentityKey, "gislene lima");
+    assert.equal(ownScope.externalSellerId, null);
+    assert.equal(
+      salesOrderMatchesCrmSellerScope({ externalSellerId: 645, responsible: "GISLENE LIMA" }, ownScope),
+      true
     );
   });
 

@@ -37,7 +37,10 @@ export function isCrmSellerUserLinked(user: {
   return user.externalSellerId != null || Boolean(user.sellerResponsibleName?.trim());
 }
 
-/** ID Nomus tem prioridade legada; sellerIdentityKey consolida todos os IDs com mesmo nome. */
+/**
+ * Filtro SQL/Prisma para vendedor.
+ * Prioridade: sellerIdentityKey explícito → nome normalizado → ID único (legado sem nome).
+ */
 export function crmCommercialSellerMatchFilters(
   externalSellerId: number | null,
   responsible: string | null,
@@ -50,15 +53,27 @@ export function crmCommercialSellerMatchFilters(
   if (sellerIdentityKey?.trim()) {
     return { externalSellerId: null, responsible: null, sellerIdentityKey: sellerIdentityKey.trim() };
   }
+  const resp = responsible?.trim() || null;
+  if (resp) {
+    return {
+      externalSellerId: null,
+      responsible: null,
+      sellerIdentityKey: normalizeSellerIdentityName(resp),
+    };
+  }
   if (externalSellerId !== null) {
     return { externalSellerId, responsible: null, sellerIdentityKey: null };
   }
-  const resp = responsible?.trim() || null;
-  return {
-    externalSellerId: null,
-    responsible: resp,
-    sellerIdentityKey: resp ? normalizeSellerIdentityName(resp) : null,
-  };
+  return { externalSellerId: null, responsible: null, sellerIdentityKey: null };
+}
+
+export function resolveSellerIdentityKeyForAuth(auth: {
+  sellerIdentityKey?: string | null;
+  sellerResponsibleName?: string | null;
+}): string | null {
+  if (auth.sellerIdentityKey?.trim()) return auth.sellerIdentityKey.trim();
+  const name = auth.sellerResponsibleName?.trim();
+  return name ? normalizeSellerIdentityName(name) : null;
 }
 
 export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommercialAccessScope {
@@ -90,10 +105,11 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
 
   const sellerLocked = dataScope === "own";
   const ownName = dataScope === "own" ? responsible : null;
+  const ownIdentityKey = dataScope === "own" ? resolveSellerIdentityKeyForAuth(auth) : null;
   const match = crmCommercialSellerMatchFilters(
     dataScope === "own" ? externalSellerId : null,
-    dataScope === "own" ? responsible : null,
-    ownName ? normalizeSellerIdentityName(ownName) : null
+    dataScope === "own" ? ownName : null,
+    ownIdentityKey
   );
 
   return {
@@ -203,10 +219,11 @@ export function resolveCrmSellerDashboardQueryScope(
   }
 
   const ownName = auth.sellerResponsibleName?.trim() || null;
+  const ownIdentityKey = resolveSellerIdentityKeyForAuth(auth);
   const ownMatch = crmCommercialSellerMatchFilters(
     base.externalSellerId,
     ownName,
-    ownName ? normalizeSellerIdentityName(ownName) : null
+    ownIdentityKey
   );
 
   return {

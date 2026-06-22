@@ -206,6 +206,7 @@ import {
   sendAuthForbidden,
 } from "./src/lib/appAuthMiddleware.js";
 import { fetchAdminSellerOptionsFromDb } from "./src/lib/adminSellerOptions.js";
+import { enrichAppAuthSellerCommercialLink } from "./src/lib/crmSellerIdentityConsolidation.js";
 import { buildBomComparisonForProductId } from "./src/lib/nomusBomComparisonLoad.js";
 import {
   buildNomusBomBatchReport,
@@ -1310,7 +1311,8 @@ async function startServer() {
       include: { user: true },
     });
     if (!session?.user?.isActive) return null;
-    return toAppAuthContext(session.user, session.id);
+    const auth = toAppAuthContext(session.user, session.id);
+    return enrichAppAuthSellerCommercialLink(auth);
   }
 
   function setAppSessionCookie(res: express.Response, token: string): void {
