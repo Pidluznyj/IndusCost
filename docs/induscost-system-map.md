@@ -2,7 +2,7 @@
 
 > **Atualizado:** 2026-06-17  
 > **Branch:** `main`  
-> **Commit HEAD:** `bd6439063d190c2ad86f6de0cc9e2e6d5752e25e`
+> **Commit HEAD:** `13f39bb`
 
 Mapas operacionais derivados de inspeção direta do código. Útil para localizar o caminho **frontend → cliente REST → endpoint → lib → modelo Prisma** de cada fluxo.
 

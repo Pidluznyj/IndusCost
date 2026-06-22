@@ -2,7 +2,7 @@
 
 > **Atualizado:** 2026-06-17  
 > **Branch:** `main`  
-> **Commit HEAD:** `bd6439063d190c2ad86f6de0cc9e2e6d5752e25e` (`feat(finance): scripts CLI seguros para fornecedores e classificacao CC em implantacao.`)  
+> **Commit HEAD:** `13f39bb` (`fix(finance): reforcar permissoes, auditoria HTTP e guards na revisao final CC/AP.`)  
 > **Commit anterior documentado:** `7c57130` (auditoria INDUSCOST-SYSTEM-AUDIT-AND-ACTION-PLAN-A)
 
 Fotografia do repositório **sem alteração funcional**. Cada afirmação abaixo deriva de inspeção do código em `26c54ef`.
