@@ -35,6 +35,7 @@ test("buildMaterialDemandSalesOrderWhere: status in e entrega sem data", () => {
     search: "",
     includeOrdersWithoutDeliveryDate: true,
     invoicingScope: "all",
+    seller: null,
   });
   assert.ok(where.OR);
   assert.equal((where.status as { in: string[] }).in.length, 2);

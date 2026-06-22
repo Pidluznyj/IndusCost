@@ -114,6 +114,12 @@ import {
   type MaterialUsageContribution,
 } from "./src/lib/materialDemandPlannedRealized.js";
 import { buildMaterialUsageAuditPayload } from "./src/lib/materialDemandPlannedRealizedAudit.js";
+import {
+  buildMaterialDemandIntelligenceFilters,
+  buildSalesOrderRawMaterialIntelligencePayload,
+  mapPrismaSalesOrderToIntelligenceSource,
+} from "./src/lib/salesOrderRawMaterialIntelligenceService.js";
+import type { ProductBomExplosionRow } from "./src/lib/salesOrderRawMaterialIntelligenceTypes.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
 import {
   registerFleetPublicReservationRoutes,
@@ -9936,12 +9942,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
   };
 
-  const buildMaterialDemandPlannedVsRealizedDataset = async (filters: MaterialDemandFilters) => {
+  const buildMaterialDemandPlannedVsRealizedDataset = async (
+    filters: MaterialDemandFilters,
+    query: Record<string, unknown> = {}
+  ) => {
     const where = buildMaterialDemandSalesOrderWhere(filters);
     const salesOrders = await prisma.salesOrder.findMany({
       where,
       include: {
-        Customer: { select: { id: true, companyName: true } },
+        Customer: { select: { id: true, companyName: true, tradeName: true } },
         items: {
           include: {
             Product: { select: { id: true, sku: true, name: true } },
@@ -9957,6 +9966,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const analysisCache = await initAnalysisCache();
     const productAnalysisMemo = new Map<string, unknown>();
     const openBookExplosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
+    const productExplosions = new Map<string, ProductBomExplosionRow[]>();
+
     const getProductAnalysis = async (pid: string) => {
       if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
       const a = await getProductCostAnalysis(pid, analysisCache, true);
@@ -9964,170 +9975,87 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       return a;
     };
 
-    const contributions: MaterialUsageContribution[] = [];
-    const nfeByOrderId = new Map<string, ReturnType<typeof extractProcessedNfeSummaries>>();
-    const plannedOrderIds = new Set<string>();
-    const realizedOrderIds = new Set<string>();
-    let partialInvoiceFallbacks = 0;
-    let missingBomItems = 0;
-    let missingCosts = 0;
-
+    const productIds = new Set<string>();
     for (const order of salesOrders) {
-      const hasInvoicing = orderHasProcessedInvoicing(order.nomusRawResponse);
-      if (
-        !salesOrderMatchesInvoicingScope(hasInvoicing, order.status, filters.invoicingScope)
-      ) {
-        continue;
-      }
-
-      const nfes = extractProcessedNfeSummaries(order.nomusRawResponse);
-      if (nfes.length > 0) nfeByOrderId.set(order.id, nfes);
-      plannedOrderIds.add(order.id);
-      if (hasInvoicing) realizedOrderIds.add(order.id);
-
-      for (const item of order.items) {
-        const orderQty = safeNum(item.quantity) ?? 0;
-        if (!(orderQty > 0)) continue;
-
-        const { realizedQuantity: realizedOrderQty, usedPartialInvoiceFallback } =
-          resolveRealizedOrderItemQuantity({
-            orderQuantity: orderQty,
-            invoicedQuantityPerItem: null,
-            hasInvoicing,
-          });
-        if (usedPartialInvoiceFallback && hasInvoicing) partialInvoiceFallbacks += 1;
-
-        const productSkuEarly = item.Product?.sku?.trim() || item.skuSnapshot?.trim() || null;
-        const productNameEarly =
-          item.Product?.name?.trim() || item.productNameSnapshot?.trim() || "Produto";
-
-        const analysis = await getProductAnalysis(item.productId);
-        if (!analysis || isCostAnalysisFailure(analysis)) continue;
-
-        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
-          item.productId,
-          analysisCache,
-          new Set<string>(),
-          openBookExplosionMemo
-        );
-        if (!(explosion instanceof Map)) {
-          missingBomItems += 1;
-          continue;
-        }
-
-        const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
-        const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
-        const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
-        if (rows.length === 0) {
-          missingBomItems += 1;
-          continue;
-        }
-
-        for (const row of rows) {
-          const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
-          if (!mid) continue;
-          if (filters.materialId && mid !== filters.materialId) continue;
-
-          const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
-          const desc =
-            typeof row.description === "string" && row.description.trim()
-              ? row.description.trim()
-              : "Matéria-prima";
-          const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
-          const { unitKey, unitLabel } = normalizeMaterialUnitKey(unit);
-          if (filters.unitKey && unitKey !== filters.unitKey) continue;
-          const textHaystack = `${mid} ${code ?? ""} ${desc} ${unit ?? ""}`.toLowerCase();
-          if (filters.search && !textHaystack.includes(filters.search)) continue;
-
-          const qtyPerUnit = safeNum(row.quantity) ?? 0;
-          const valuePerUnit = safeNum(row.totalCost);
-          const unitCost = safeNum(row.unitCostEffective);
-          const missingCost = unitCost == null && valuePerUnit == null;
-          if (missingCost) missingCosts += 1;
-
-          contributions.push({
-            materialId: mid,
-            materialCode: code,
-            materialDescription: desc,
-            unit,
-            unitKey,
-            unitLabel,
-            orderId: order.id,
-            orderCode: order.orderCode,
-            orderStatus: order.status,
-            issueDate: order.issueDate.toISOString(),
-            expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() ?? null,
-            customerName: order.Customer?.companyName?.trim() || null,
-            productId: item.productId,
-            productSku: productSkuEarly,
-            productName: productNameEarly,
-            productSoldUnit: item.unit?.trim() || null,
-            materialQtyPerUnit: qtyPerUnit,
-            valuePerUnit,
-            unitCost,
-            plannedOrderQty: orderQty,
-            realizedOrderQty,
-            hasInvoicing,
-            usedPartialInvoiceFallback: usedPartialInvoiceFallback && hasInvoicing,
-            missingCost,
-          });
-        }
-      }
+      for (const item of order.items) productIds.add(item.productId);
     }
+
+    for (const productId of productIds) {
+      const analysis = await getProductAnalysis(productId);
+      if (!analysis || isCostAnalysisFailure(analysis)) continue;
+
+      const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+        productId,
+        analysisCache,
+        new Set<string>(),
+        openBookExplosionMemo
+      );
+      if (!(explosion instanceof Map)) continue;
+
+      const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
+      const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
+      const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
+      if (rows.length === 0) continue;
+
+      const bomRows: ProductBomExplosionRow[] = [];
+      for (const row of rows) {
+        const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
+        if (!mid) continue;
+        const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
+        const desc =
+          typeof row.description === "string" && row.description.trim()
+            ? row.description.trim()
+            : "Matéria-prima";
+        const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+        const { unitKey, unitLabel } = normalizeMaterialUnitKey(unit);
+        bomRows.push({
+          materialId: mid,
+          materialCode: code,
+          materialName: desc,
+          unit,
+          unitKey,
+          unitLabel,
+          quantityPerUnit: safeNum(row.quantity) ?? 0,
+          valuePerUnit: safeNum(row.totalCost),
+          unitCost: safeNum(row.unitCostEffective),
+        });
+      }
+      if (bomRows.length > 0) productExplosions.set(productId, bomRows);
+    }
+
+    const intelligenceFilters = buildMaterialDemandIntelligenceFilters(filters, query);
+    const sourceOrders = salesOrders.map((order) => mapPrismaSalesOrderToIntelligenceSource(order));
 
     const quantityByUnitMap = new Map<
       string,
       { unitKey: string; unitLabel: string; totalQuantity: number }
     >();
-    for (const c of contributions) {
-      const plannedQty = c.materialQtyPerUnit * c.plannedOrderQty;
-      const bucket =
-        quantityByUnitMap.get(c.unitKey) ??
-        { unitKey: c.unitKey, unitLabel: c.unitLabel, totalQuantity: 0 };
-      bucket.totalQuantity += plannedQty;
-      quantityByUnitMap.set(c.unitKey, bucket);
+    for (const bomRows of productExplosions.values()) {
+      for (const row of bomRows) {
+        const bucket =
+          quantityByUnitMap.get(row.unitKey) ??
+          { unitKey: row.unitKey, unitLabel: row.unitLabel, totalQuantity: 0 };
+        bucket.totalQuantity += row.quantityPerUnit;
+        quantityByUnitMap.set(row.unitKey, bucket);
+      }
     }
     const quantityByUnit = [...quantityByUnitMap.values()];
-    const hasMixedUnits = quantityByUnit.length > 1;
     const activeUnitKey =
       filters.unitKey ?? (quantityByUnit.length === 1 ? quantityByUnit[0]?.unitKey ?? null : null);
-    const activeUnitBucket = activeUnitKey ? quantityByUnitMap.get(activeUnitKey) : null;
-    const quantityTotalsComparable = activeUnitKey != null || !hasMixedUnits;
-    const activeUnitLabel = activeUnitBucket?.unitLabel ?? null;
 
-    const aggRows = aggregateMaterialUsageContributions(contributions);
-    const summary = buildMaterialUsagePlannedRealizedSummary(aggRows, {
+    const payload = buildSalesOrderRawMaterialIntelligencePayload({
+      orders: sourceOrders,
+      productExplosions,
+      filters,
+      intelligenceFilters,
+      invoicingScope: filters.invoicingScope,
+      quantityByUnit,
       activeUnitKey,
-      quantityTotalsComparable,
-      activeUnitLabel,
-      plannedOrdersCount: plannedOrderIds.size,
-      realizedOrdersCount: realizedOrderIds.size,
-    });
-
-    const warnings = [
-      "Realizado considera pedidos com nota fiscal emitida.",
-      "Realizado é baseado em pedidos com nota fiscal emitida, não em baixa real de estoque.",
-    ];
-    if (partialInvoiceFallbacks > 0) {
-      warnings.push(PLANNED_REALIZED_PARTIAL_INVOICE_FALLBACK_WARNING);
-    }
-    if (missingBomItems > 0) warnings.push(PLANNED_REALIZED_MISSING_BOM_WARNING);
-    if (missingCosts > 0) warnings.push(PLANNED_REALIZED_MISSING_COST_WARNING);
-
-    const dataQuality = createMaterialUsagePlannedRealizedDataQuality({
-      warnings,
-      partialInvoiceFallbacks,
-      missingBomItems,
-      missingCosts,
     });
 
     return {
-      filtersApplied: filters,
-      summary,
-      rows: aggRows,
-      dataQuality,
-      contributions,
-      nfeByOrderId,
+      ...payload,
+      nfeByOrderId: new Map(Object.entries(payload.nfeByOrderId)),
     };
   };
 
@@ -10298,12 +10226,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   const handleMaterialDemandPlannedVsRealized = async (req: express.Request, res: express.Response) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
-      const data = await buildMaterialDemandPlannedVsRealizedDataset(filters);
+      const data = await buildMaterialDemandPlannedVsRealizedDataset(
+        filters,
+        req.query as Record<string, unknown>
+      );
       res.json({
         filtersApplied: data.filtersApplied,
         summary: data.summary,
         rows: data.rows,
         dataQuality: data.dataQuality,
+        intelligence: data.intelligence,
       });
     } catch (error) {
       console.error("Material demand planned-vs-realized endpoint error:", error);
@@ -10320,7 +10252,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>, {
         materialId: materialIdParam,
       });
-      const data = await buildMaterialDemandPlannedVsRealizedDataset(filters);
+      const data = await buildMaterialDemandPlannedVsRealizedDataset(
+        filters,
+        req.query as Record<string, unknown>
+      );
       const summaryRow = data.rows.find((row) => row.materialId === materialIdParam) ?? null;
       const audit = buildMaterialUsageAuditPayload(
         materialIdParam,

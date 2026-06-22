@@ -20,6 +20,8 @@ export type MaterialDemandFilters = {
   includeOrdersWithoutDeliveryDate: boolean;
   /** Escopo de faturamento para previsto x realizado (all | invoiced | portfolio). */
   invoicingScope: MaterialDemandInvoicingScope;
+  /** Vendedor/responsável comercial (filtro opcional). */
+  seller: string | null;
 };
 
 export const MATERIAL_DEMAND_NO_DELIVERY_PERIOD = "__sem_entrega__";
@@ -117,6 +119,13 @@ export function parseMaterialDemandFilters(
       ? invoicingScopeRaw
       : "all";
 
+  const sellerRaw =
+    typeof q.seller === "string" && q.seller.trim()
+      ? q.seller.trim()
+      : typeof q.responsible === "string" && q.responsible.trim()
+        ? q.responsible.trim()
+        : null;
+
   const base: MaterialDemandFilters = {
     startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
     endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
@@ -132,6 +141,7 @@ export function parseMaterialDemandFilters(
     search: typeof q.search === "string" ? q.search.trim().toLowerCase() : "",
     includeOrdersWithoutDeliveryDate,
     invoicingScope,
+    seller: sellerRaw,
   };
   return { ...base, ...(overrides ?? {}) };
 }
@@ -170,6 +180,7 @@ export function buildMaterialDemandSalesOrderWhere(filters: MaterialDemandFilter
 
   if (filters.customerId) where.customerId = filters.customerId;
   if (filters.companyIssuer) where.companyIssuer = filters.companyIssuer;
+  if (filters.seller) where.responsible = filters.seller;
   if (filters.productId) where.items = { some: { productId: filters.productId } };
 
   return where;

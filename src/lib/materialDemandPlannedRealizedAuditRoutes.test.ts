@@ -22,12 +22,16 @@ test("payload principal planned-vs-realized não inclui audit drilldown", () => 
     server.indexOf("handleMaterialDemandPlannedVsRealizedDetails")
   );
   assert.match(handler, /rows: data\.rows/);
+  assert.match(handler, /intelligence: data\.intelligence/);
   assert.doesNotMatch(handler, /audit:/);
   assert.doesNotMatch(handler, /contributions,/);
 });
 
 test("contributions incluem customerName para auditoria", () => {
-  const server = readServer();
-  assert.match(server, /customerName: order\.Customer\?\.companyName/);
-  assert.match(server, /productSoldUnit: item\.unit/);
+  const service = readFileSync(
+    join(process.cwd(), "src/lib/salesOrderRawMaterialIntelligenceService.ts"),
+    "utf8"
+  );
+  assert.match(service, /customerName: order\.customerName/);
+  assert.match(service, /productSoldUnit: item\.unit/);
 });
