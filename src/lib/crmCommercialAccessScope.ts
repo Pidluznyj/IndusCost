@@ -7,6 +7,9 @@ import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql.js";
+import {
+  manualCommercialOwnerMatchesSellerScope,
+} from "@/src/lib/crmCustomerCommercialOwner.js";
 
 export type CrmCommercialDataScope = "global" | "own" | "none";
 
@@ -280,6 +283,23 @@ export async function isCustomerInCrmCommercialScope(
 ): Promise<boolean> {
   if (scope.dataScope === "global") return true;
   if (scope.dataScope !== "own") return false;
+
+  const manualRow = await prisma.crmCustomerCommercialOwner.findUnique({
+    where: { customerId },
+  });
+  if (manualRow?.isActive) {
+    const owner = {
+      sellerIdentityKey: manualRow.sellerIdentityKey,
+      sellerExternalId: manualRow.sellerExternalId,
+      sellerResponsibleName: manualRow.sellerResponsibleName,
+      sellerAliasExternalIds: Array.isArray(manualRow.sellerAliasExternalIds)
+        ? (manualRow.sellerAliasExternalIds as number[])
+        : [],
+    };
+    if (manualCommercialOwnerMatchesSellerScope(owner, scope)) {
+      return true;
+    }
+  }
 
   const rows = await prisma.$queryRaw<{ ok: number }[]>(
     Prisma.sql`

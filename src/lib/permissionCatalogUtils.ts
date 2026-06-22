@@ -61,6 +61,7 @@ export const PERMISSION_TEMPLATES: Record<
       "crm.activities.create",
       "crm.activities.edit",
       "crm.profile.edit",
+      "crm.customers.assign_seller",
       "customers.view",
       "customers.create",
       "customers.edit",

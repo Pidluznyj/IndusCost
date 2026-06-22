@@ -9,6 +9,11 @@ import {
   buildCrmSellerSalesOrderWhere,
 } from "@/src/lib/crmCustomerSellerScope.js";
 import { crmCommercialSellerMatchFilters } from "@/src/lib/crmCommercialAccessScope.js";
+import {
+  buildManualCommercialOwnerPortfolioWhere,
+  loadManualCommercialOwnersForCustomers,
+} from "@/src/lib/crmCustomerCommercialOwner.js";
+import type { ResolvedCustomerCommercialOwner } from "@/src/lib/crmCustomerCommercialOwnerTypes.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import { resolveSalesOrderHasInvoicing } from "@/src/lib/crmCommercialOrderRules.js";
 import {
@@ -80,7 +85,8 @@ export function buildCrmCustomerListScopeWhere(
     null,
     sellerQuery.sellerIdentityKey
   );
-  return {
+
+  const orderMatch: Prisma.CustomerWhereInput = {
     salesOrders: {
       some: buildCrmSellerSalesOrderWhere(
         match.externalSellerId,
@@ -89,6 +95,20 @@ export function buildCrmCustomerListScopeWhere(
       ),
     },
   };
+
+  const manualWhere = buildManualCommercialOwnerPortfolioWhere({
+    externalSellerId: match.externalSellerId,
+    responsible: match.responsible,
+    sellerIdentityKey: match.sellerIdentityKey,
+  });
+  const manualMatch: Prisma.CustomerWhereInput | undefined = manualWhere
+    ? { CrmCustomerCommercialOwner: { is: manualWhere } }
+    : undefined;
+
+  if (manualMatch) {
+    return { OR: [orderMatch, manualMatch] };
+  }
+  return orderMatch;
 }
 
 const nomusNfesElementsSql = (alias: string) => Prisma.sql`
@@ -311,11 +331,13 @@ export function enrichCustomersFromSalesOrders(
 export function mapCustomerRowsToListItems(
   rows: CustomerRow[],
   activityAgg: Map<string, ActivityAgg>,
-  orderEnrichment: Map<string, SalesOrderEnrichment>
+  orderEnrichment: Map<string, SalesOrderEnrichment>,
+  manualOwners?: Map<string, ResolvedCustomerCommercialOwner>
 ): CrmCustomerListItem[] {
   return rows.map((c) => {
     const agg = activityAgg.get(c.id);
     const ord = orderEnrichment.get(c.id);
+    const manual = manualOwners?.get(c.id);
     return {
       id: c.id,
       displayName: c.companyName,
@@ -329,8 +351,10 @@ export function mapCustomerRowsToListItems(
       lastContactAt: agg?.lastContactAt ? agg.lastContactAt.toISOString() : null,
       nextFollowUpAt: agg?.nextFollowUpAt ? agg.nextFollowUpAt.toISOString() : null,
       contactCount: agg?.contactCount ?? 0,
-      primarySellerResponsible: ord?.primarySellerResponsible ?? null,
-      primaryExternalSellerId: ord?.primaryExternalSellerId ?? null,
+      primarySellerResponsible:
+        manual?.sellerCanonicalName ?? ord?.primarySellerResponsible ?? null,
+      primaryExternalSellerId:
+        manual?.sellerExternalId ?? ord?.primaryExternalSellerId ?? null,
       hasPurchaseHistory: ord?.hasPurchaseHistory ?? false,
       hasOpenPortfolio: ord?.hasOpenPortfolio ?? false,
       hasOverdueFollowUp: agg?.hasOverdueFollowUp ?? false,
@@ -532,7 +556,15 @@ export async function fetchCrmCustomersList(
     }
   }
 
-  const customers = mapCustomerRowsToListItems(pageRows, activityAgg, orderEnrichment);
+  const manualOwners =
+    ids.length > 0 ? await loadManualCommercialOwnersForCustomers(ids) : new Map();
+
+  const customers = mapCustomerRowsToListItems(
+    pageRows,
+    activityAgg,
+    orderEnrichment,
+    manualOwners
+  );
 
   return {
     customers,

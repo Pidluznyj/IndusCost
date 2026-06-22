@@ -318,8 +318,9 @@ model Customer {
   relationshipStatus String?
   accountOwner       String?
   CommercialActivity CommercialActivity[]
-  CrmCustomerProfile CrmCustomerProfile?
-  CustomerCnpjLookup CustomerCnpjLookup[]
+  CrmCustomerProfile            CrmCustomerProfile?
+  CrmCustomerCommercialOwner    CrmCustomerCommercialOwner?
+  CustomerCnpjLookup            CustomerCnpjLookup[]
   proposals          Proposal[]
   salesOrders        SalesOrder[]
 }
@@ -740,6 +741,32 @@ model CrmCustomerProfile {
 
   @@index([relationshipLevel])
   @@index([commercialTemperature])
+}
+
+/// Responsável comercial manual do cliente (camada local; não altera dados Nomus).
+model CrmCustomerCommercialOwner {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId             String   @unique @db.Uuid
+  customerNameSnapshot   String?
+  sellerExternalId       Int?
+  sellerResponsibleName  String?
+  sellerCanonicalName    String
+  sellerIdentityKey      String
+  sellerAliasExternalIds Json     @default("[]")
+  assignmentSource       String   @default("MANUAL")
+  isActive               Boolean  @default(true)
+  notes                  String?
+  createdByUserId        String?  @db.Uuid
+  createdByName          String?
+  updatedByUserId        String?  @db.Uuid
+  updatedByName          String?
+  createdAt              DateTime @default(now()) @db.Timestamp(6)
+  updatedAt              DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  Customer               Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerIdentityKey])
+  @@index([sellerExternalId])
+  @@index([isActive])
 }
 
 model CommercialAuditLog {

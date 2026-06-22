@@ -22,7 +22,12 @@ function tplPerms(id: PermissionTemplateId): string[] {
 
 function buildAdminPermissions(): string[] {
   let acc = tplPerms("system_admin");
-  for (const key of ["users.manage", "accessProfiles.view", "accessProfiles.manage"]) {
+  for (const key of [
+    "users.manage",
+    "accessProfiles.view",
+    "accessProfiles.manage",
+    "crm.customers.assign_seller",
+  ]) {
     acc = enablePermission(acc, key);
   }
   return acc;

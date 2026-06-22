@@ -297,6 +297,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "crm.customer_cockpit.view",
     requires: ["crm.view", "crm.customer_cockpit.view"],
   }),
+  perm({
+    key: "crm.customers.assign_seller",
+    label: "CRM — Definir responsável comercial do cliente",
+    group: CRM,
+    module: "crm-commercial",
+    description: "Alterar o vendedor/responsável comercial no cadastro do cliente.",
+    type: "action",
+    parentKey: "crm.customer_cockpit.view",
+    requires: ["crm.view", "crm.customer_cockpit.view"],
+    risk: "sensitive",
+  }),
 
   // —— Clientes ——
   perm({ key: "customers.view", label: "Clientes", group: CLI, module: "customers", description: "Consultar clientes.", type: "menu" }),

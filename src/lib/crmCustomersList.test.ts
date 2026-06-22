@@ -58,8 +58,8 @@ describe("crmCustomersList scope", () => {
       sellerIdentityKey: null,
     });
     assert.ok(where);
-    assert.ok(where!.salesOrders);
-    assert.equal("some" in (where!.salesOrders as object), true);
+    assert.ok(where!.OR);
+    assert.equal(Array.isArray(where!.OR), true);
   });
 
   it("gestor sem filtro de vendedor não restringe por vendedor", () => {
@@ -70,13 +70,13 @@ describe("crmCustomersList scope", () => {
     assert.equal(where, undefined);
   });
 
-  it("gestor com filtro de vendedor restringe por SalesOrder", () => {
+  it("gestor com filtro de vendedor restringe por SalesOrder ou responsável manual", () => {
     const where = buildCrmCustomerListScopeWhere(globalScope(), {
       externalSellerId: 99,
       sellerIdentityKey: null,
     });
     assert.ok(where);
-    assert.ok(where!.salesOrders);
+    assert.ok(where!.OR);
   });
 
   it("parseCrmCustomerListSellerQuery normaliza sellerIdentityKey", () => {

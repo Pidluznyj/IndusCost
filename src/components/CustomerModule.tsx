@@ -27,6 +27,7 @@ import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
+import { CustomerCommercialOwnerTab } from "./customers/CustomerCommercialOwnerTab";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -41,6 +42,8 @@ type CustomerListMeta = {
 };
 
 const CUSTOMER_PAGE_SIZE = 20;
+
+type CustomerFormTab = "cadastro" | "commercial-owner";
 
 const STICKY_ACTIONS =
   "sticky right-0 z-10 bg-card group-hover:bg-accent/30 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]";
@@ -62,6 +65,7 @@ export const CustomerModule = () => {
   const [intelligenceCustomerId, setIntelligenceCustomerId] = useState<string | null>(null);
   const [intelligenceCnpj, setIntelligenceCnpj] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
+  const [formTab, setFormTab] = useState<CustomerFormTab>("cadastro");
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -131,6 +135,7 @@ export const CustomerModule = () => {
   }, [fetchData]);
 
   const handleOpenModal = (customer?: Customer) => {
+    setFormTab("cadastro");
     if (customer) {
       setEditingCustomer(customer);
       setFormData(customer);
@@ -529,7 +534,41 @@ export const CustomerModule = () => {
                 </button>
               </div>
             </div>
+
+            {editingCustomer ? (
+              <div className="px-6 pt-4 border-b border-border flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFormTab("cadastro")}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
+                    formTab === "cadastro"
+                      ? "bg-card border-border text-foreground"
+                      : "bg-transparent border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Dados cadastrais
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormTab("commercial-owner")}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
+                    formTab === "commercial-owner"
+                      ? "bg-card border-border text-foreground"
+                      : "bg-transparent border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Responsável Comercial
+                </button>
+              </div>
+            ) : null}
             
+            {formTab === "commercial-owner" && editingCustomer ? (
+              <div className="flex-1 overflow-y-auto p-6">
+                <CustomerCommercialOwnerTab customerId={editingCustomer.id} />
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Basic Info */}
@@ -695,6 +734,7 @@ export const CustomerModule = () => {
                 </button>
               </div>
             </form>
+            )}
           </motion.div>
         </div>
       )}

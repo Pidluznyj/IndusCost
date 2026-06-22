@@ -46,6 +46,7 @@ import {
   parseCrmCustomerListFilter,
   parseCrmCustomerListSellerQuery,
 } from "./src/lib/crmCustomersList.js";
+import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -12067,6 +12068,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("PUT /api/crm/customers/:customerId/profile", error);
       res.status(500).json({ error: "Erro ao salvar perfil de relacionamento." });
     }
+  });
+
+  registerCrmCustomerCommercialOwnerRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    requirePermission,
+    getCurrentAppUser,
   });
 
   app.post("/api/customers", requireAppAuth, requirePermission("customers.create"), async (req, res) => {

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { buildManualCommercialOwnerPortfolioWhere } from "@/src/lib/crmCustomerCommercialOwner.js";
 
 const VALID_ORDER_STATUSES = ["CANCELLED", "ERROR"] as const;
 
@@ -35,7 +36,8 @@ export function buildCrmSellerCustomerPortfolioWhere(
   scope: CrmCommercialAccessScope
 ): Prisma.CustomerWhereInput | undefined {
   if (scope.dataScope !== "own") return undefined;
-  return {
+
+  const orderMatch: Prisma.CustomerWhereInput = {
     salesOrders: {
       some: buildCrmSellerSalesOrderWhere(
         scope.externalSellerId,
@@ -44,6 +46,16 @@ export function buildCrmSellerCustomerPortfolioWhere(
       ),
     },
   };
+
+  const manualWhere = buildManualCommercialOwnerPortfolioWhere(scope);
+  const manualMatch: Prisma.CustomerWhereInput | undefined = manualWhere
+    ? { CrmCustomerCommercialOwner: { is: manualWhere } }
+    : undefined;
+
+  if (manualMatch) {
+    return { OR: [orderMatch, manualMatch] };
+  }
+  return orderMatch;
 }
 
 export function salesOrderMatchesCrmSellerScope(
