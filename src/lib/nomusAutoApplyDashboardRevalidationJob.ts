@@ -5,8 +5,16 @@ import {
   type AutoApplyReportContext,
 } from "@/src/lib/nomusAutoApplyBomDashboard.js";
 import type { AutoApplyBomDashboardResult } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
+import { computeAutoApplyStatusTotals } from "@/src/lib/nomusAutoApplyBomDashboardShared.js";
+import type { ParsedAutoApplyReport } from "@/src/lib/nomusAutoApplyBomReportParser.js";
+import type {
+  NomusBomAutoApplyProductResult,
+  NomusBomAutoApplyTotals,
+} from "@/src/lib/nomusBomAutoApplyAfterSyncTypes";
 import { prisma } from "@/src/lib/prisma.js";
+import { countDistinctParentCodesInStage } from "@/src/lib/nomusBomComparisonLoad.js";
 import {
+  buildAutoApplyDashboardProductsFromStage,
   countEligibleAutoApplyRevalidationProducts,
   DEFAULT_REVALIDATION_BATCH_SIZE,
   DEFAULT_REVALIDATION_CONCURRENCY,
@@ -20,6 +28,41 @@ import type {
 } from "@/src/lib/nomusAutoApplyDashboardRevalidationJobTypes.js";
 
 const STALE_JOB_MS = 4 * 60 * 60 * 1000;
+export const LIVE_STAGE_PRODUCT_LIST_SOURCE = "LIVE_STAGE_UNIVERSE";
+
+function reportContextHasProductList(context: AutoApplyReportContext): boolean {
+  return Boolean(context.parsed?.hasProductList) && (context.parsed?.products.length ?? 0) > 0;
+}
+
+/** Monta um relatório sintético com a lista viva do stage para reaproveitar o assembler. */
+function buildLiveParsedReport(
+  context: AutoApplyReportContext,
+  products: NomusBomAutoApplyProductResult[],
+  totals: NomusBomAutoApplyTotals
+): ParsedAutoApplyReport {
+  const nowIso = new Date().toISOString();
+  const baseReport = context.parsed?.report ?? context.runFallback?.report ?? null;
+  return {
+    report: baseReport
+      ? { ...baseReport, totals, products }
+      : {
+          generatedAt: nowIso,
+          mode: "DRY",
+          startedAt: nowIso,
+          finishedAt: nowIso,
+          approvedBy: "engenharia (revalidação ao vivo)",
+          batchRunId: null,
+          reportMdPath: null,
+          reportJsonPath: null,
+          totals,
+          products,
+        },
+    products,
+    totals,
+    productListSource: LIVE_STAGE_PRODUCT_LIST_SOURCE,
+    hasProductList: products.length > 0,
+  };
+}
 
 let activeJobIdInProcess: string | null = null;
 
@@ -149,18 +192,31 @@ export async function startNomusAutoApplyDashboardRevalidationJob(input?: {
   }
 
   const context = await loadAutoApplyReportContextForDashboard();
-  const parsed = context.parsed;
-  if (!parsed?.hasProductList || parsed.products.length === 0) {
-    throw new Error(
-      "Nenhuma lista de produtos disponível para revalidação. Execute a rotina batch ou regenere o relatório."
-    );
+  const hasReportList = reportContextHasProductList(context);
+
+  let totalProducts: number;
+  let eligible: number;
+
+  if (hasReportList) {
+    const reportProducts = context.parsed!.products;
+    totalProducts = reportProducts.length;
+    eligible = countEligibleAutoApplyRevalidationProducts(reportProducts);
+  } else {
+    // Sem lista no relatório: reconstruir a fila a partir do stage Nomus (fonte viva).
+    const stageCount = await countDistinctParentCodesInStage();
+    if (stageCount === 0) {
+      throw new Error(
+        "Nenhum produto no stage Nomus para revalidar. Rode o sync Nomus (sync:nomus:all) antes de atualizar o painel."
+      );
+    }
+    totalProducts = stageCount;
+    eligible = stageCount;
   }
 
-  const eligible = countEligibleAutoApplyRevalidationProducts(parsed.products);
   const job = await prisma.nomusAutoApplyDashboardSnapshot.create({
     data: {
       status: "RUNNING",
-      totalProducts: parsed.products.length,
+      totalProducts,
       eligibleProducts: eligible,
       processedProducts: 0,
       revalidatedProductCount: eligible,
@@ -171,7 +227,7 @@ export async function startNomusAutoApplyDashboardRevalidationJob(input?: {
 
   activeJobIdInProcess = job.id;
   console.info(
-    `[nomus-auto-apply-dashboard] job ${job.id} started — total=${parsed.products.length} eligible=${eligible}`
+    `[nomus-auto-apply-dashboard] job ${job.id} started — source=${hasReportList ? "REPORT" : "LIVE_STAGE"} total=${totalProducts} eligible=${eligible}`
   );
 
   void runNomusAutoApplyDashboardRevalidationJob(job.id, context).finally(() => {
@@ -189,41 +245,79 @@ async function runNomusAutoApplyDashboardRevalidationJob(
   jobId: string,
   context: AutoApplyReportContext
 ): Promise<void> {
-  const parsed = context.parsed;
-  if (!parsed?.hasProductList || parsed.products.length === 0) {
-    throw new Error("Nenhuma lista de produtos disponível para revalidação.");
-  }
-
   const started = Date.now();
   let shouldContinue = true;
 
-  try {
-    const revalidated = await revalidateAutoApplyDashboardProducts(parsed.products, {
-      concurrency: DEFAULT_REVALIDATION_CONCURRENCY,
-      batchSize: DEFAULT_REVALIDATION_BATCH_SIZE,
-      shouldContinue: () => shouldContinue,
-      onProgress: async (progress) => {
-        await prisma.nomusAutoApplyDashboardSnapshot.update({
-          where: { id: jobId },
-          data: {
-            processedProducts: progress.processedProducts,
-            revalidationErrorCount: progress.revalidationErrorCount,
-            currentParentCode: progress.currentParentCode,
-          },
-        });
+  const onProgress = async (progress: {
+    processedProducts: number;
+    revalidationErrorCount: number;
+    currentParentCode: string | null;
+  }) => {
+    await prisma.nomusAutoApplyDashboardSnapshot.update({
+      where: { id: jobId },
+      data: {
+        processedProducts: progress.processedProducts,
+        revalidationErrorCount: progress.revalidationErrorCount,
+        currentParentCode: progress.currentParentCode,
       },
     });
+  };
 
+  try {
     const statusRevalidatedAt = new Date().toISOString();
-    const result = assembleAutoApplyBomDashboardResult({
-      parsed,
-      productsForRows: revalidated.products,
-      statusRevalidatedAt,
-      revalidatedProductCount: revalidated.revalidatedCount,
-      revalidationErrorCount: revalidated.revalidationErrors,
-      fileReport: context.fileReport,
-      runFallback: context.runFallback,
-    });
+    let result: AutoApplyBomDashboardResult;
+    let revalidatedCount: number;
+    let revalidationErrors: number;
+
+    if (reportContextHasProductList(context)) {
+      // Caminho clássico: revalidar a lista de produtos vinda do relatório batch.
+      const parsed = context.parsed!;
+      const revalidated = await revalidateAutoApplyDashboardProducts(parsed.products, {
+        concurrency: DEFAULT_REVALIDATION_CONCURRENCY,
+        batchSize: DEFAULT_REVALIDATION_BATCH_SIZE,
+        shouldContinue: () => shouldContinue,
+        onProgress,
+      });
+      revalidatedCount = revalidated.revalidatedCount;
+      revalidationErrors = revalidated.revalidationErrors;
+      result = assembleAutoApplyBomDashboardResult({
+        parsed,
+        productsForRows: revalidated.products,
+        statusRevalidatedAt,
+        revalidatedProductCount: revalidatedCount,
+        revalidationErrorCount: revalidationErrors,
+        fileReport: context.fileReport,
+        runFallback: context.runFallback,
+      });
+    } else {
+      // Sem lista no relatório: reconstruir a fila operacional do stage Nomus (fonte viva).
+      const live = await buildAutoApplyDashboardProductsFromStage({
+        concurrency: DEFAULT_REVALIDATION_CONCURRENCY,
+        batchSize: DEFAULT_REVALIDATION_BATCH_SIZE,
+        shouldContinue: () => shouldContinue,
+        onProgress,
+      });
+      revalidatedCount = live.evaluated;
+      revalidationErrors = live.errors;
+      // Cards/totais são recomputados pelo assembler a partir da lista viva.
+      // parsed.totals alimenta os "totais da última execução batch APPLY" exibidos à parte:
+      // usa o relatório batch real quando disponível, senão cai na própria lista viva.
+      const liveTotals = computeAutoApplyStatusTotals(live.products, context.parsed?.totals ?? null);
+      const batchTotals: NomusBomAutoApplyTotals = context.parsed?.totals ?? {
+        ...liveTotals,
+        parentsInNomusStage: live.parentsInNomusStage,
+      };
+      const parsed = buildLiveParsedReport(context, live.products, batchTotals);
+      result = assembleAutoApplyBomDashboardResult({
+        parsed,
+        productsForRows: live.products,
+        statusRevalidatedAt,
+        revalidatedProductCount: revalidatedCount,
+        revalidationErrorCount: revalidationErrors,
+        fileReport: context.fileReport,
+        runFallback: context.runFallback,
+      });
+    }
 
     const generatedAt = new Date();
     await prisma.nomusAutoApplyDashboardSnapshot.update({
@@ -232,9 +326,10 @@ async function runNomusAutoApplyDashboardRevalidationJob(
         status: "SUCCESS",
         finishedAt: generatedAt,
         generatedAt,
-        processedProducts: revalidated.revalidatedCount,
-        revalidatedProductCount: revalidated.revalidatedCount,
-        revalidationErrorCount: revalidated.revalidationErrors,
+        totalProducts: result.totalProducts,
+        processedProducts: revalidatedCount,
+        revalidatedProductCount: revalidatedCount,
+        revalidationErrorCount: revalidationErrors,
         currentParentCode: null,
         resultJson: result as object,
         errorMessage: null,
@@ -243,7 +338,7 @@ async function runNomusAutoApplyDashboardRevalidationJob(
 
     const durationSec = Math.round((Date.now() - started) / 1000);
     console.info(
-      `[nomus-auto-apply-dashboard] job ${jobId} success in ${durationSec}s — revalidated=${revalidated.revalidatedCount} errors=${revalidated.revalidationErrors}`
+      `[nomus-auto-apply-dashboard] job ${jobId} success in ${durationSec}s — revalidated=${revalidatedCount} errors=${revalidationErrors}`
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na revalidação do painel.";

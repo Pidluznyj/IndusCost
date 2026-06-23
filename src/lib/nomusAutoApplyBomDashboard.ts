@@ -416,7 +416,7 @@ export function assembleAutoApplyBomDashboardResult(input: {
   const hasProductList = parsed.hasProductList && allRows.length > 0;
   const needsReportRegeneration = !hasProductList && Boolean(parsed.totals);
   const partialReportWarning = needsReportRegeneration
-    ? `Relatório parcial: totais disponíveis (${parsed.totals.parentsBlocked} bloqueados), mas a lista de produtos não foi encontrada no JSON. Regenerar com: ${NOMUS_AUTO_APPLY_REGENERATE_COMMAND}`
+    ? `Relatório parcial: totais disponíveis (${parsed.totals.parentsBlocked} bloqueados), mas a lista de produtos não está no snapshot atual. Clique em "Atualizar painel da engenharia" para reconstruir a fila a partir do stage Nomus (preview read-only em segundo plano) ou regenere o relatório com: ${NOMUS_AUTO_APPLY_REGENERATE_COMMAND}`
     : null;
 
   const filterCounts = computeFilterCounts(allRows);

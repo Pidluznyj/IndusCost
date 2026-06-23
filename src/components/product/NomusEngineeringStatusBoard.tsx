@@ -701,8 +701,10 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       </div>
                     ) : null}
                     <p className="text-[10px]">
-                      Os cards refletem os totais da última rotina, mas a lista operacional só fica
-                      disponível após regenerar o relatório completo.
+                      Os cards refletem os totais da última rotina. Clique em{" "}
+                      <strong>Atualizar painel da engenharia</strong> para reconstruir a lista
+                      operacional a partir do stage Nomus (preview read-only em segundo plano), ou
+                      regenere o relatório completo.
                     </p>
                   </div>
                 ) : null}

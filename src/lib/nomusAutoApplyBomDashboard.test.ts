@@ -308,6 +308,91 @@ describe("assembleAutoApplyBomDashboardResult — source", () => {
   });
 });
 
+describe("assembleAutoApplyBomDashboardResult — lista viva (snapshot do stage)", () => {
+  function liveProducts(): NomusBomAutoApplyProductResult[] {
+    return [
+      SAMPLE_308, // BLOCKED
+      {
+        parentCode: "100.01AA",
+        productId: "x1",
+        status: "NO_CHANGES",
+        canApply: true,
+        blockingReasons: [],
+        actionsPreview: [],
+      },
+      {
+        parentCode: "200.02BB",
+        productId: "x2",
+        status: "BLOCKED",
+        canApply: false,
+        blockingReasons: ["Opcionais de precificação ainda não estão resolvidos."],
+        actionsPreview: [],
+      },
+      {
+        parentCode: "300.03CC",
+        productId: null,
+        status: "SKIPPED",
+        canApply: false,
+        blockingReasons: ["Produto não cadastrado no IndusCost para este código pai."],
+        actionsPreview: [],
+      },
+    ];
+  }
+
+  function liveParsed(products: NomusBomAutoApplyProductResult[]): ParsedAutoApplyReport {
+    const nowIso = "2026-06-22T10:00:00.000Z";
+    return {
+      report: {
+        generatedAt: nowIso,
+        mode: "DRY",
+        startedAt: nowIso,
+        finishedAt: nowIso,
+        approvedBy: "engenharia (revalidação ao vivo)",
+        batchRunId: null,
+        reportMdPath: null,
+        reportJsonPath: null,
+        totals: SAMPLE_TOTALS,
+        products,
+      },
+      products,
+      totals: SAMPLE_TOTALS,
+      productListSource: "LIVE_STAGE_UNIVERSE",
+      hasProductList: true,
+    };
+  }
+
+  it("reconstrói a lista e os cards batem com a lista filtrada", () => {
+    const products = liveProducts();
+    const parsed = liveParsed(products);
+    const result = assembleAutoApplyBomDashboardResult({
+      parsed,
+      productsForRows: products,
+      statusRevalidatedAt: new Date().toISOString(),
+      revalidatedProductCount: products.length,
+      fileReport: null,
+      runFallback: null,
+    });
+
+    assert.equal(result.hasProductList, true);
+    assert.equal(result.productListSource, "LIVE_STAGE_UNIVERSE");
+    assert.equal(result.products.length, 4);
+
+    // Cards refletem a própria lista viva (não os totais do relatório batch).
+    assert.equal(result.totals?.parentsEvaluated, 4);
+    assert.equal(result.totals?.parentsBlocked, 2);
+    assert.equal(result.totals?.parentsNoChanges, 1);
+    assert.equal(result.totals?.parentsSkipped, 1);
+
+    // Card "Bloqueados" filtra exatamente os bloqueados na lista.
+    const blocked = filterDashboardProducts(result.products, { filter: "BLOCKED" });
+    assert.equal(blocked.length, result.totals?.parentsBlocked);
+
+    // Totais da última execução batch APPLY continuam visíveis à parte.
+    assert.ok(result.batchTotals);
+    assert.equal(result.batchTotals?.parentsBlocked, SAMPLE_TOTALS.parentsBlocked);
+  });
+});
+
 describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
   it("endpoint retorna lista quando JSON usa items", async () => {
     const path = writeTempReport("nomus-auto-sync-bom-apply-report.json", {

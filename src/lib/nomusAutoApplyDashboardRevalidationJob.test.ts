@@ -28,6 +28,17 @@ describe("nomusAutoApplyDashboardRevalidationJob — estrutura", () => {
     assert.match(jobSrc, /activeJobIdInProcess/);
   });
 
+  it("reconstrói a fila a partir do stage Nomus quando o relatório não tem lista", () => {
+    // Não pode mais lançar erro quando falta lista no relatório.
+    assert.doesNotMatch(jobSrc, /Nenhuma lista de produtos disponível para revalidação\./);
+    // Usa contagem do stage e build da lista viva em lotes.
+    assert.match(jobSrc, /countDistinctParentCodesInStage/);
+    assert.match(jobSrc, /buildAutoApplyDashboardProductsFromStage/);
+    assert.match(jobSrc, /LIVE_STAGE_PRODUCT_LIST_SOURCE/);
+    // Cards/totais recomputados da lista viva.
+    assert.match(jobSrc, /computeAutoApplyStatusTotals/);
+  });
+
   it("schema possui NomusAutoApplyDashboardSnapshot", () => {
     assert.match(schemaSrc, /model NomusAutoApplyDashboardSnapshot/);
     assert.match(schemaSrc, /resultJson/);
