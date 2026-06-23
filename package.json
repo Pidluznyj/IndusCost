@@ -58,6 +58,8 @@
     "test:sales-orders-fulfillment": "tsx --test src/lib/salesOrderManagementFulfillment.test.ts",
     "test:sales-orders-metrics-engine": "tsx --test src/lib/salesOrderMetricsEngine.test.ts",
     "audit:sales-order-consumers-after-migration": "tsx scripts/audit-sales-order-consumers-after-migration.ts",
+    "audit:sales-order-final-validation": "tsx scripts/audit-sales-order-final-validation.ts",
+    "test:sales-order-final-validation": "tsx --test src/lib/salesOrderFinalValidation.test.ts src/lib/salesOrderMetricsEngine.test.ts src/lib/salesOrderManagementFulfillment.test.ts",
     "audit:sales-order-fulfillment": "tsx scripts/audit-sales-order-fulfillment.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:accounts-receivable": "tsx --test src/lib/nomusAccountsReceivable.test.ts src/lib/nomusAccountsReceivableSyncLogParse.test.ts",
