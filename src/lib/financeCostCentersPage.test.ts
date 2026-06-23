@@ -106,4 +106,117 @@ describe("financeCostCentersPage", () => {
     assert.match(page, /title="Centros de Custo"/);
     assert.match(page, /buildFinanceTabLoadError/);
   });
+
+  describe("aba Títulos sem Classificação — ação Classificar fornecedor", () => {
+    const tab = () =>
+      read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+
+    it("o clique em Classificar fornecedor abre a modal (não navega para regras)", () => {
+      const src = tab();
+      assert.match(src, /data-testid="finance-unclassified-classify-supplier-button"/);
+      assert.match(src, /onClick=\{\(\) => openClassifyModal\(row\)\}/);
+      assert.match(src, /data-testid="finance-unclassified-classify-modal"/);
+    });
+
+    it("a modal mostra causa, contagem, valor e fornecedor vinculado", () => {
+      const src = tab();
+      assert.match(src, /classifyGroup\.cause/);
+      assert.match(src, /classifyGroup\.titlesCount/);
+      assert.match(src, /formatFinanceCurrency\(classifyGroup\.amount\)/);
+      assert.match(src, /Fornecedor financeiro/);
+      assert.match(src, /data-testid="finance-unclassified-cost-center-select"/);
+      assert.match(src, /Percentual padrão 100%/);
+    });
+
+    it("fornecedor não casado: autocomplete antes de escolher o centro de custo", () => {
+      const src = tab();
+      assert.match(src, /needsSupplierLink/);
+      assert.match(src, /data-testid="finance-unclassified-supplier-search"/);
+      assert.match(src, /\/api\/finance\/supplier-cost-center-rules\/suppliers\/search/);
+    });
+
+    it("confirmar cria a regra e aplica por fornecedor com confirmação", () => {
+      const src = tab();
+      assert.match(src, /data-testid="finance-unclassified-classify-confirm"/);
+      assert.match(src, /"\/api\/finance\/supplier-cost-center-rules"/);
+      assert.match(src, /replaceExisting: true/);
+      assert.match(src, /autoApply: true/);
+      assert.match(src, /classify-batch-apply/);
+      assert.match(src, /supplierId: effectiveSupplierId/);
+      assert.match(src, /FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT/);
+      // exige confirmação explícita (checkbox) antes de aplicar
+      assert.match(src, /modalConfirmChecked/);
+      assert.match(src, /data-testid="finance-unclassified-confirm-checkbox"/);
+    });
+
+    it("preserva classificação manual bloqueada", () => {
+      const src = tab();
+      assert.match(src, /skippedManualLocked/);
+      assert.match(src, /manuais bloqueadas não serão sobrescritas/);
+    });
+
+    it("atualiza a lista após sucesso", () => {
+      const src = tab();
+      assert.match(src, /closeClassifyModal\(\);\s*await load\(\);\s*onApplied\?\.\(\);/);
+      assert.match(src, /data-testid="finance-unclassified-notice"/);
+    });
+
+    it("não usa UUID como campo principal visível e respeita permissão de regra", () => {
+      const src = tab();
+      assert.match(src, /canManageRules/);
+      assert.match(src, /onNavigateTab\("rules"\)/); // fallback quando sem permissão
+      assert.doesNotMatch(src, /placeholder="[^"]*UUID/i);
+      const page = read("src/components/finance/cost-centers/FinanceCostCentersPage.tsx");
+      assert.match(page, /canManageRules=\{canManageRules\}/);
+    });
+  });
+
+  describe("aba Títulos sem Classificação — exportar/importar planilha", () => {
+    const tab = () =>
+      read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+
+    it("botões de exportar e importar existem", () => {
+      const src = tab();
+      assert.match(src, /data-testid="finance-unclassified-export-button"/);
+      assert.match(src, /data-testid="finance-unclassified-import-button"/);
+      assert.match(src, /Exportar planilha/);
+      assert.match(src, /Importar planilha/);
+    });
+
+    it("exportar baixa o arquivo do endpoint de export", () => {
+      const src = tab();
+      assert.match(src, /\/api\/finance\/cost-centers\/unclassified\/export/);
+      assert.match(src, /anchor\.download = "titulos-sem-classificacao\.xlsx"/);
+    });
+
+    it("importar abre modal com upload, preview e botão de aplicar", () => {
+      const src = tab();
+      assert.match(src, /data-testid="finance-unclassified-import-modal"/);
+      assert.match(src, /data-testid="finance-unclassified-import-file"/);
+      assert.match(src, /data-testid="finance-unclassified-import-preview"/);
+      assert.match(src, /data-testid="finance-unclassified-import-apply-button"/);
+      assert.match(src, /import\/preview/);
+      assert.match(src, /import\/apply/);
+    });
+
+    it("aplicar importação atualiza a lista e exige confirmação de sensíveis", () => {
+      const src = tab();
+      assert.match(src, /requiredConfirmationText/);
+      assert.match(src, /confirmSensitive/);
+      assert.match(src, /data-testid="finance-unclassified-import-confirm-sensitive"/);
+      assert.match(src, /await load\(\);\s*onApplied\?\.\(\);/);
+    });
+
+    it("erros por linha são exibidos", () => {
+      const src = tab();
+      assert.match(src, /Erros por linha/);
+      assert.match(src, /line\.errors/);
+    });
+
+    it("frontend não importa a lib de servidor (prisma/xlsx)", () => {
+      const src = tab();
+      assert.doesNotMatch(src, /financeUnclassifiedImport"/);
+      assert.doesNotMatch(src, /from ["'].*xlsx/i);
+    });
+  });
 });

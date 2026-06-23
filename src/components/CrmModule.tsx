@@ -1937,6 +1937,20 @@ export const CrmModule = () => {
     void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, key);
   };
 
+  const handleClearPortfolioSearch = () => {
+    setSearchInput("");
+    setSearchApplied("");
+    void loadCrmCustomers("", crmCustomerFilter, 0, portfolioSellerKey);
+  };
+
+  const handleClearPortfolioFilters = () => {
+    setSearchInput("");
+    setSearchApplied("");
+    setCrmCustomerFilter("all");
+    setPortfolioSellerKey(SELLER_KEY_ALL);
+    void loadCrmCustomers("", "all", 0, SELLER_KEY_ALL);
+  };
+
   const selectCustomerById = useCallback(
     (customerId: string, meta?: { displayName?: string; taxId?: string }) => {
       const existing = customers.find((c) => c.id === customerId);
@@ -2221,8 +2235,11 @@ export const CrmModule = () => {
           onPortfolioSellerChange={handlePortfolioSellerChange}
           scopeLabel={portfolioScopeLabel}
           searchInput={searchInput}
+          appliedSearch={searchApplied}
           onSearchInputChange={setSearchInput}
           onSearchSubmit={handleSearch}
+          onClearSearch={handleClearPortfolioSearch}
+          onClearAllFilters={handleClearPortfolioFilters}
           crmCustomerFilter={crmCustomerFilter}
           onFilterChange={applyCustomerFilter}
           customers={customers}

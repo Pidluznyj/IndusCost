@@ -36,6 +36,8 @@ export type { SalesOrderManagementSummary } from "./salesOrderManagementTypes.js
 
 export type SalesOrderManagementFilters = {
   year?: number;
+  /** "Todos os anos" explícito: ignora a janela de ano (sem filtro por ano). */
+  allYears?: boolean;
   month?: number;
   customerId?: string;
   responsible?: string;
@@ -60,16 +62,29 @@ export type SalesOrderManagementFilters = {
 };
 
 export function parseSalesOrderManagementFilters(
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
+  now: Date = new Date()
 ): SalesOrderManagementFilters {
   const yearRaw = query.year;
   const monthRaw = query.month;
-  const year =
+
+  // "all" (ou "todos") explícito = todos os anos, sem filtro de ano.
+  // Ausente/vazio/inválido = ano vigente (calculado dinamicamente, nunca hardcoded).
+  const yearToken =
+    typeof yearRaw === "string" ? yearRaw.trim().toLowerCase() : "";
+  const allYears = yearToken === "all" || yearToken === "todos";
+
+  const parsedYear =
     typeof yearRaw === "string" && yearRaw.trim()
       ? Number(yearRaw)
       : typeof yearRaw === "number"
         ? yearRaw
         : undefined;
+  const year = allYears
+    ? undefined
+    : Number.isFinite(parsedYear)
+      ? (parsedYear as number)
+      : now.getFullYear();
   const month =
     typeof monthRaw === "string" && monthRaw.trim()
       ? Number(monthRaw)
@@ -85,7 +100,8 @@ export function parseSalesOrderManagementFilters(
   };
 
   return {
-    year: Number.isFinite(year) ? year : undefined,
+    year,
+    allYears: allYears ? true : undefined,
     month: Number.isFinite(month) ? month : undefined,
     customerId: typeof query.customerId === "string" ? query.customerId.trim() : undefined,
     responsible: typeof query.responsible === "string" ? query.responsible.trim() : undefined,
@@ -130,7 +146,9 @@ export function buildSalesOrderManagementWhere(
 ): Prisma.SalesOrderWhereInput {
   let startDate = filters.startDate ?? null;
   let endDate = filters.endDate ?? null;
-  if (filters.year != null) {
+  // allYears = sem janela de ano. Caso contrário, a janela usa SalesOrder.issueDate
+  // (pedido vendido), nunca data de NF-e.
+  if (!filters.allYears && filters.year != null) {
     startDate = new Date(filters.year, (filters.month ?? 1) - 1, 1);
     endDate = filters.month
       ? new Date(filters.year, filters.month, 0, 23, 59, 59, 999)

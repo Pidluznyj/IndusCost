@@ -516,6 +516,32 @@ export function buildSellerFilterSqlForOrders(
   return Prisma.sql`TRUE`;
 }
 
+/**
+ * WHERE de busca textual do cliente (puro/testável). Cobre nome/razão social (`companyName`),
+ * nome fantasia (`tradeName`), e-mail, telefone, cidade, UF e inscrição estadual (`stateTaxId`).
+ * O match de documento (CNPJ/CPF) entra via `taxIdMatchedIds`, pré-resolvido por SQL com
+ * normalização de dígitos (suporta busca com ou sem pontuação). Retorna `undefined` quando
+ * não há termo de busca — assim a busca se combina por AND com o escopo do vendedor.
+ */
+export function buildCrmCustomerSearchWhere(
+  search: string,
+  taxIdMatchedIds: string[] = []
+): Prisma.CustomerWhereInput | undefined {
+  const term = search.trim();
+  if (term.length === 0) return undefined;
+  const ors: Prisma.CustomerWhereInput[] = [
+    { companyName: { contains: term, mode: "insensitive" } },
+    { tradeName: { contains: term, mode: "insensitive" } },
+    { email: { contains: term, mode: "insensitive" } },
+    { phone: { contains: term, mode: "insensitive" } },
+    { city: { contains: term, mode: "insensitive" } },
+    { state: { contains: term, mode: "insensitive" } },
+    { stateTaxId: { contains: term, mode: "insensitive" } },
+  ];
+  if (taxIdMatchedIds.length > 0) ors.push({ id: { in: taxIdMatchedIds } });
+  return { OR: ors };
+}
+
 export type FetchCrmCustomersListInput = {
   search: string;
   filter: CrmCustomerListFilter;
@@ -548,16 +574,7 @@ export async function fetchCrmCustomersList(
         )
       ).map((r) => r.id);
     }
-    const ors: Prisma.CustomerWhereInput[] = [
-      { companyName: { contains: search, mode: "insensitive" } },
-      { tradeName: { contains: search, mode: "insensitive" } },
-      { email: { contains: search, mode: "insensitive" } },
-      { phone: { contains: search, mode: "insensitive" } },
-      { city: { contains: search, mode: "insensitive" } },
-      { state: { contains: search, mode: "insensitive" } },
-    ];
-    if (taxIdIds.length > 0) ors.push({ id: { in: taxIdIds } });
-    searchWhere = { OR: ors };
+    searchWhere = buildCrmCustomerSearchWhere(search, taxIdIds);
   }
 
   const filterWhere =

@@ -660,3 +660,28 @@ describe("listUnclassifiedAccountsPayable — separação de causas", () => {
     assert.equal(out.items.length, 0);
   });
 });
+
+describe("importação de classificações AP — integração segura", () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8");
+
+  it("a lib de importação reutiliza o apply em lote (respeita manual locked) e não altera Nomus", () => {
+    const lib = read("src/lib/financeUnclassifiedImport.ts");
+    // Reutiliza o apply em lote por fornecedor, que pula MANUAL_LOCKED.
+    assert.match(lib, /applyBatchAccountsPayableAllocationDefault/);
+    assert.match(lib, /unclassifiedOnly: true, supplierId/);
+    assert.match(lib, /skippedManualLocked/);
+    // Não escreve em NomusAccountsPayable (apenas leitura para personId/documento).
+    assert.doesNotMatch(lib, /nomusAccountsPayable\.(update|create|delete|upsert)/);
+  });
+
+  it("endpoints de export/import estão registrados com permissões", () => {
+    const routes = read("src/lib/financeUnclassifiedImportRoutes.ts");
+    const server = read("server.ts");
+    assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/export/);
+    assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/import\/preview/);
+    assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/import\/apply/);
+    assert.match(routes, /FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS/);
+    assert.match(routes, /upload\.single\("file"\)/);
+    assert.match(server, /registerFinanceUnclassifiedImportRoutes/);
+  });
+});

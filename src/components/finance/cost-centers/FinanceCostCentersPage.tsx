@@ -289,6 +289,7 @@ export function FinanceCostCentersPage() {
         <FinanceUnclassifiedPayablesTab
           dashboard={data}
           canApplyBatch={canApplyBatch}
+          canManageRules={canManageRules}
           onNavigateTab={setActiveTab}
           onApplied={() => void load()}
         />

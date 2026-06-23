@@ -274,12 +274,12 @@ export function SalesOrderManagementPage() {
                 setPage(1);
               }}
             >
-              <option value="">Todos</option>
               {yearOptions.map((y) => (
                 <option key={y} value={String(y)}>
                   {y}
                 </option>
               ))}
+              <option value="all">Todos os anos</option>
             </select>
           </div>
           <div>
@@ -659,7 +659,9 @@ export function SalesOrderManagementPage() {
         ) : loadError ? (
           "Falha ao carregar pedidos."
         ) : total === 0 ? (
-          "Nenhum pedido no filtro atual."
+          year === "all"
+            ? "Nenhum pedido encontrado para os filtros aplicados."
+            : "Nenhum pedido encontrado para o ano selecionado."
         ) : (
           <>
             Exibindo página <span className="font-semibold text-foreground">{page}</span> de{" "}
@@ -712,7 +714,9 @@ export function SalesOrderManagementPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="p-8 text-center text-muted-foreground">
-                    Nenhum pedido encontrado.
+                    {year === "all"
+                      ? "Nenhum pedido encontrado para os filtros aplicados."
+                      : "Nenhum pedido encontrado para o ano selecionado."}
                   </td>
                 </tr>
               ) : (

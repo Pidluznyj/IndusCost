@@ -6,8 +6,10 @@ import { Prisma } from "@prisma/client";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import {
   aggregateCustomerActivities,
+  buildCrmCustomerListAndWhere,
   buildCrmCustomerListFilterWhere,
   buildCrmCustomerListScopeWhere,
+  buildCrmCustomerSearchWhere,
   enrichCustomersFromSalesOrders,
   fetchCrmManualOwnerCustomerIds,
   fetchCrmSellerScopeCustomerIds,
@@ -20,8 +22,17 @@ import {
 import { CRM_CUSTOMER_LIST_FILTERS } from "@/src/lib/crmCustomersListTypes.js";
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
+  buildActivePortfolioFilterChips,
   computePortfolioEmptySummary,
 } from "@/src/components/crm/crmCustomerPortfolioUi.js";
+
+function findOr(
+  where: Prisma.CustomerWhereInput | undefined,
+  predicate: (clause: Prisma.CustomerWhereInput) => boolean
+): boolean {
+  const ors = (where?.OR ?? []) as Prisma.CustomerWhereInput[];
+  return ors.some(predicate);
+}
 
 const NOW = new Date("2026-06-17T12:00:00.000Z");
 
@@ -382,5 +393,161 @@ describe("crmCustomersList UI integration", () => {
     assert.match(block, /fetchCrmCustomersList/);
     assert.match(block, /requireCrmCommercialDataScope/);
     assert.match(block, /parseCrmCustomerListSellerQuery/);
+  });
+
+  it("endpoint aceita sellerName como alias de sellerIdentityKey", () => {
+    const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    const block = server.slice(
+      server.indexOf('app.get("/api/crm/customers"'),
+      server.indexOf('app.get("/api/crm/customers/:customerId/profile"')
+    );
+    assert.match(block, /sellerName/);
+  });
+});
+
+describe("crmCustomersList — filtro de vendedor + busca + permissão (casos obrigatórios)", () => {
+  const gisleneIds = ["g1", "g2"];
+
+  function scopePrisma(orderIds: string[], manualIds: string[] = []) {
+    return {
+      $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> =>
+        orderIds.map((id) => ({ id })) as unknown as T,
+      crmCustomerCommercialOwner: {
+        findMany: async () => manualIds.map((id) => ({ customerId: id })),
+      },
+    } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
+  }
+
+  it("1. admin/gestor pode listar clientes de qualquer vendedor escolhido", () => {
+    const decision = resolveCrmCustomerListSellerScopeFilter(globalScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: "rodrigo",
+    });
+    assert.deepEqual(decision, {
+      externalSellerId: null,
+      responsible: null,
+      sellerIdentityKey: "rodrigo",
+    });
+  });
+
+  it("2. vendedor comum vê somente a própria carteira (ignora query de vendedor)", () => {
+    const decision = resolveCrmCustomerListSellerScopeFilter(ownScope(), {
+      externalSellerId: 999,
+      sellerIdentityKey: "outro vendedor",
+    });
+    assert.deepEqual(decision, {
+      externalSellerId: 464,
+      responsible: "GISLENE LIMA",
+      sellerIdentityKey: "gislene lima",
+    });
+  });
+
+  it("3. filtro por vendedor retorna somente clientes daquele vendedor", async () => {
+    const where = await resolveCrmCustomerListScopeWhere(
+      scopePrisma(gisleneIds),
+      globalScope(),
+      { externalSellerId: null, sellerIdentityKey: "gislene lima" }
+    );
+    assert.deepEqual(where, { id: { in: gisleneIds } });
+  });
+
+  it("4. busca textual é combinada por AND com o escopo do vendedor", async () => {
+    const scopeWhere = await resolveCrmCustomerListScopeWhere(
+      scopePrisma(gisleneIds),
+      globalScope(),
+      { externalSellerId: null, sellerIdentityKey: "gislene lima" }
+    );
+    const searchWhere = buildCrmCustomerSearchWhere("Esmaltec");
+    const combined = buildCrmCustomerListAndWhere([scopeWhere, undefined, searchWhere]);
+    assert.ok(Array.isArray(combined.AND));
+    const parts = combined.AND as Prisma.CustomerWhereInput[];
+    assert.ok(parts.some((p) => JSON.stringify(p) === JSON.stringify(scopeWhere)));
+    assert.ok(parts.some((p) => Array.isArray(p.OR)));
+  });
+
+  it("5. busca por nome/razão/fantasia do cliente", () => {
+    const where = buildCrmCustomerSearchWhere("Esmaltec");
+    assert.ok(
+      findOr(where, (c) => c.companyName?.contains === "Esmaltec" && c.companyName?.mode === "insensitive")
+    );
+    assert.ok(findOr(where, (c) => c.tradeName?.contains === "Esmaltec"));
+  });
+
+  it("6. busca por documento/CNPJ entra via ids pré-resolvidos por dígitos", () => {
+    const where = buildCrmCustomerSearchWhere("12.345", ["c-doc-1", "c-doc-2"]);
+    assert.ok(findOr(where, (c) => Array.isArray(c.id?.in)));
+    const idClause = (where?.OR as Prisma.CustomerWhereInput[]).find((c) => c.id?.in);
+    assert.deepEqual(idClause?.id?.in, ["c-doc-1", "c-doc-2"]);
+  });
+
+  it("7. busca por cidade e UF", () => {
+    const where = buildCrmCustomerSearchWhere("PR");
+    assert.ok(findOr(where, (c) => c.city?.contains === "PR"));
+    assert.ok(findOr(where, (c) => c.state?.contains === "PR"));
+  });
+
+  it("8. Gislene com sellerIdentityKey normalizado retorna clientes (espaços/caixa)", async () => {
+    const parsed = parseCrmCustomerListSellerQuery("464", "  GISLENE   LIMA  ");
+    assert.equal(parsed.sellerIdentityKey, "gislene lima");
+    const where = await resolveCrmCustomerListScopeWhere(scopePrisma(gisleneIds), globalScope(), parsed);
+    assert.deepEqual(where, { id: { in: gisleneIds } });
+  });
+
+  it("9. Gislene + busca textual restringe à carteira dela", async () => {
+    const scopeWhere = await resolveCrmCustomerListScopeWhere(
+      scopePrisma(gisleneIds),
+      globalScope(),
+      { externalSellerId: 464, sellerIdentityKey: "gislene lima" }
+    );
+    const searchWhere = buildCrmCustomerSearchWhere("Esmaltec");
+    const combined = buildCrmCustomerListAndWhere([scopeWhere, searchWhere]);
+    const parts = combined.AND as Prisma.CustomerWhereInput[];
+    assert.deepEqual(
+      parts.find((p) => p.id)?.id,
+      { in: gisleneIds }
+    );
+    assert.ok(parts.some((p) => Array.isArray(p.OR)));
+  });
+
+  it("10. vendedor passando outro sellerId continua restrito à própria carteira", async () => {
+    // No backend o sellerQuery é ignorado para escopo 'own' (rota nem repassa o filtro).
+    const where = await resolveCrmCustomerListScopeWhere(
+      scopePrisma(gisleneIds),
+      ownScope(),
+      { externalSellerId: 999, sellerIdentityKey: "rodrigo" }
+    );
+    // Resolve usa o vínculo do próprio usuário (Gislene), não o vendedor 999/rodrigo.
+    assert.deepEqual(where, { id: { in: gisleneIds } });
+  });
+
+  it("chips de filtros ativos resumem vendedor, busca e filtro rápido", () => {
+    const chips = buildActivePortfolioFilterChips({
+      sellerLabel: "GISLENE LIMA",
+      searchTerm: "Esmaltec",
+      filter: "withOpenPortfolio",
+    });
+    assert.equal(chips.length, 3);
+    assert.ok(chips.some((c) => c.key === "seller" && c.label.includes("GISLENE LIMA")));
+    assert.ok(chips.some((c) => c.key === "search" && c.label.includes("Esmaltec")));
+    assert.ok(chips.some((c) => c.key === "filter"));
+  });
+
+  it("chips de filtros ativos ficam vazios sem filtros (filter 'all')", () => {
+    const chips = buildActivePortfolioFilterChips({
+      sellerLabel: null,
+      searchTerm: "  ",
+      filter: "all",
+    });
+    assert.deepEqual(chips, []);
+  });
+
+  it("seção da carteira expõe limpar filtros e estado vazio do vendedor", () => {
+    const portfolio = readFileSync(
+      join(process.cwd(), "src/components/crm/CrmCustomerPortfolioSection.tsx"),
+      "utf8"
+    );
+    assert.match(portfolio, /Limpar filtros/);
+    assert.match(portfolio, /Nenhum cliente encontrado para este vendedor com os filtros aplicados\./);
+    assert.match(portfolio, /buildActivePortfolioFilterChips/);
   });
 });

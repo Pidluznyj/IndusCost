@@ -55,6 +55,36 @@ export function buildCustomerListStatusTags(customer: CrmCustomerListItem): Cust
   return tags;
 }
 
+export type ActivePortfolioFilterChip = {
+  key: "seller" | "search" | "filter";
+  label: string;
+};
+
+/**
+ * Resume os filtros ativos da carteira em chips (puro/testável). Inclui vendedor selecionado,
+ * termo de busca aplicado e filtro rápido (exceto "Todos"). Usado para exibir os filtros em uso
+ * e permitir limpar cada um.
+ */
+export function buildActivePortfolioFilterChips(input: {
+  sellerLabel: string | null;
+  searchTerm: string;
+  filter: CrmCustomerListFilter;
+}): ActivePortfolioFilterChip[] {
+  const chips: ActivePortfolioFilterChip[] = [];
+  if (input.sellerLabel && input.sellerLabel.trim()) {
+    chips.push({ key: "seller", label: `Vendedor: ${input.sellerLabel.trim()}` });
+  }
+  const term = input.searchTerm.trim();
+  if (term) {
+    chips.push({ key: "search", label: `Busca: "${term}"` });
+  }
+  if (input.filter !== "all") {
+    const chip = CRM_PORTFOLIO_FILTER_CHIPS.find((c) => c.value === input.filter);
+    if (chip) chips.push({ key: "filter", label: chip.label });
+  }
+  return chips;
+}
+
 export type PortfolioEmptySummary = {
   totalListed: number;
   withOpenPortfolio: number;

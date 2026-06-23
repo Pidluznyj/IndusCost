@@ -541,4 +541,17 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
     assert.match(suppliersRoutes, /\/api\/finance\/suppliers\/search/);
     assert.match(suppliersRoutes, /searchFinancialSuppliersForRulesDefault/);
   });
+
+  it("importação de classificações reutiliza a criação de regra e o rebuild de fornecedor", () => {
+    const lib = readFileSync(
+      join(process.cwd(), "src/lib/financeUnclassifiedImport.ts"),
+      "utf8"
+    );
+    // Cria SupplierCostCenterRule pela função existente (com auditoria), sem reescrever lógica.
+    assert.match(lib, /createSupplierCostCenterRulesBatchDefault/);
+    assert.match(lib, /replaceExisting: true/);
+    // Casa/cria FinancialSupplier + alias pelas funções de rebuild existentes.
+    assert.match(lib, /upsertFinancialSupplierFromGroup/);
+    assert.match(lib, /upsertFinancialSupplierAliases/);
+  });
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { Loader2, Search, Users } from "lucide-react";
+import { Loader2, Search, Users, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { CrmCustomerListFilter, CrmCustomerListItem } from "@/src/lib/crmCustomersListTypes";
 import type { SellerOption } from "@/src/components/crmSellerDashboardTypes";
@@ -10,6 +10,7 @@ import {
 } from "@/src/components/crmSellerDashboardUi";
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
+  buildActivePortfolioFilterChips,
   buildCustomerListStatusTags,
   computePortfolioEmptySummary,
 } from "@/src/components/crm/crmCustomerPortfolioUi";
@@ -29,8 +30,11 @@ export type CrmCustomerPortfolioSectionProps = {
   onPortfolioSellerChange: (key: string) => void;
   scopeLabel: string;
   searchInput: string;
+  appliedSearch: string;
   onSearchInputChange: (value: string) => void;
   onSearchSubmit: (e: React.FormEvent) => void;
+  onClearSearch: () => void;
+  onClearAllFilters: () => void;
   crmCustomerFilter: CrmCustomerListFilter;
   onFilterChange: (filter: CrmCustomerListFilter) => void;
   customers: CrmCustomerListItem[];
@@ -71,8 +75,11 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   onPortfolioSellerChange,
   scopeLabel,
   searchInput,
+  appliedSearch,
   onSearchInputChange,
   onSearchSubmit,
+  onClearSearch,
+  onClearAllFilters,
   crmCustomerFilter,
   onFilterChange,
   customers,
@@ -96,6 +103,26 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   children,
 }) => {
   const emptySummary = computePortfolioEmptySummary(customers);
+
+  const selectedSellerLabel =
+    portfolioSellerKey !== SELLER_KEY_ALL
+      ? (() => {
+          const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === portfolioSellerKey);
+          return opt ? formatSellerOptionLabel(opt) : null;
+        })()
+      : null;
+
+  const activeChips = buildActivePortfolioFilterChips({
+    sellerLabel: selectedSellerLabel,
+    searchTerm: appliedSearch,
+    filter: crmCustomerFilter,
+  });
+
+  const onClearChip = (key: "seller" | "search" | "filter") => {
+    if (key === "seller") onPortfolioSellerChange(SELLER_KEY_ALL);
+    else if (key === "search") onClearSearch();
+    else onFilterChange("all");
+  };
 
   return (
     <section className="space-y-6" aria-label="Carteira de clientes">
@@ -160,7 +187,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
-                  placeholder="Nome, fantasia, CNPJ, e-mail ou telefone…"
+                  placeholder="Nome, fantasia, CNPJ/CPF, cidade ou UF…"
                   className="w-full pl-11 pr-3 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
                   value={searchInput}
                   onChange={(e) => onSearchInputChange(e.target.value)}
@@ -174,6 +201,41 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
                 Buscar
               </button>
             </form>
+
+            {activeChips.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Filtros ativos
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onClearAllFilters}
+                    className="text-[11px] font-semibold text-primary hover:underline"
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeChips.map((chip) => (
+                    <span
+                      key={chip.key}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                    >
+                      {chip.label}
+                      <button
+                        type="button"
+                        onClick={() => onClearChip(chip.key)}
+                        className="rounded-full p-0.5 hover:bg-primary/20"
+                        aria-label={`Remover filtro ${chip.label}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -211,8 +273,20 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
               <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
                 <p className="text-sm font-semibold text-foreground">Nenhum cliente encontrado</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Ajuste a busca ou os filtros. O escopo do seu usuário também limita os resultados.
+                  {activeChips.length > 0
+                    ? "Nenhum cliente encontrado para este vendedor com os filtros aplicados."
+                    : "Ajuste a busca ou os filtros. O escopo do seu usuário também limita os resultados."}
                 </p>
+                {activeChips.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={onClearAllFilters}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Limpar filtros
+                  </button>
+                ) : null}
               </div>
             ) : (
               <ul className="space-y-2 max-h-[min(720px,75vh)] overflow-y-auto pr-1">

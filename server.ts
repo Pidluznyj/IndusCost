@@ -143,6 +143,7 @@ import { registerFinanceCostCentersRoutes } from "./src/lib/financeCostCentersRo
 import { registerFinanceCostCenterReclassificationRoutes } from "./src/lib/financeCostCenterReclassificationRoutes.js";
 import { registerFinanceSupplierCostCenterRulesRoutes } from "./src/lib/financeSupplierCostCenterRulesRoutes.js";
 import { registerFinanceAccountsPayableCostCenterAllocationRoutes } from "./src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
+import { registerFinanceUnclassifiedImportRoutes } from "./src/lib/financeUnclassifiedImportRoutes.js";
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
@@ -11620,12 +11621,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
       const filter = parseCrmCustomerListFilter(filterRaw);
+      // `sellerName` é alias aceito para `sellerIdentityKey` (ambos normalizados no parse).
+      // Para escopo `own` o filtro de vendedor é ignorado de propósito: o backend força o
+      // vínculo do usuário logado (vendedor não consegue burlar enviando outro vendedor).
+      const sellerIdentityRaw =
+        (typeof req.query.sellerIdentityKey === "string" && req.query.sellerIdentityKey.trim()
+          ? req.query.sellerIdentityKey
+          : req.query.sellerName) ?? null;
       const sellerQuery =
         commercialScope.dataScope === "global"
-          ? parseCrmCustomerListSellerQuery(
-              req.query.externalSellerId,
-              req.query.sellerIdentityKey
-            )
+          ? parseCrmCustomerListSellerQuery(req.query.externalSellerId, sellerIdentityRaw)
           : { externalSellerId: null, sellerIdentityKey: null };
 
       const payload = await fetchCrmCustomersList(prisma, commercialScope, {
@@ -13143,6 +13148,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerFinanceAccountsPayableCostCenterAllocationRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceUnclassifiedImportRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
