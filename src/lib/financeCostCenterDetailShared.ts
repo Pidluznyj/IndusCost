@@ -81,6 +81,9 @@ export type CostCenterDetailSummary = {
   topSupplierName: string | null;
   topSupplierAmount: number;
   topNomusClassification: string | null;
+  paidAmount: number;
+  averageAllocatedPerTitle: number;
+  lastAllocationUpdateAt: string | null;
   allocationSourceBreakdown: {
     AUTO_RULE: number;
     BATCH: number;

@@ -55,7 +55,12 @@ export type CostCenterDetailListFilters = FinanceApDashboardFilters & {
   maxAmount?: number;
   search?: string;
   hasPayment?: "all" | "yes" | "no";
-  timing?: "all" | "overdue" | "upcoming";
+  timing?: "all" | "overdue" | "upcoming" | "paid";
+  nomusClassification?: string;
+  competenceDateFrom?: string;
+  competenceDateTo?: string;
+  paymentDateFrom?: string;
+  paymentDateTo?: string;
 };
 
 export type CostCenterDetailUserContext = {
@@ -199,6 +204,37 @@ export function buildCostCenterDetailAllocationRow(
   };
 }
 
+function parseIsoDateFilter(value: string | undefined): Date | undefined {
+  if (!value?.trim()) return undefined;
+  const d = new Date(`${value.trim()}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function rowDateInRange(
+  isoDate: string | null,
+  from?: string | Date,
+  to?: string | Date
+): boolean {
+  if (!from && !to) return true;
+  if (!isoDate) return false;
+  const time = new Date(isoDate).getTime();
+  const fromTime =
+    from instanceof Date ? from.getTime() : parseIsoDateFilter(from)?.getTime();
+  const toTime = to instanceof Date ? to.getTime() : parseIsoDateFilter(to)?.getTime();
+  if (fromTime != null && time < fromTime) return false;
+  if (toTime != null && time > toTime) return false;
+  return true;
+}
+
+function isPaidAllocationRow(row: CostCenterDetailAllocationRow): boolean {
+  return Boolean(
+    row.paymentDate ||
+      row.settlementDate ||
+      row.balancePayable <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE ||
+      row.statusKey === "settled"
+  );
+}
+
 export function matchesCostCenterDetailFilters(
   row: CostCenterDetailAllocationRow,
   filters: CostCenterDetailListFilters,
@@ -224,6 +260,19 @@ export function matchesCostCenterDetailFilters(
   if (filters.timing === "upcoming" && row.statusKey !== "upcoming" && row.statusKey !== "dueToday") {
     return false;
   }
+  if (filters.timing === "paid" && !isPaidAllocationRow(row)) return false;
+
+  if (filters.nomusClassification?.trim()) {
+    const needle = normalizeSearch(filters.nomusClassification);
+    if (!normalizeSearch(row.nomusClassification).includes(needle)) return false;
+  }
+
+  if (!rowDateInRange(row.dueDate, filters.dueDateFrom, filters.dueDateTo)) return false;
+  if (!rowDateInRange(row.competenceDate, filters.competenceDateFrom, filters.competenceDateTo)) {
+    return false;
+  }
+  const paymentIso = row.paymentDate ?? row.settlementDate;
+  if (!rowDateInRange(paymentIso, filters.paymentDateFrom, filters.paymentDateTo)) return false;
 
   if (filters.competenceYear != null) {
     if (!row.competenceDate) return false;
@@ -345,7 +394,9 @@ export function buildCostCenterDetailSummaryFromRows(
   const sourceBreakdown = { AUTO_RULE: 0, BATCH: 0, MANUAL: 0 };
   let overdueAmount = 0;
   let upcomingAmount = 0;
+  let paidAmount = 0;
   let totalAllocated = 0;
+  let lastAllocationUpdateAt: string | null = null;
   const titleIds = new Set<number>();
 
   for (const row of rows) {
@@ -355,6 +406,10 @@ export function buildCostCenterDetailSummaryFromRows(
     if (row.statusKey === "overdue") overdueAmount += row.allocatedAmount;
     if (row.statusKey === "upcoming" || row.statusKey === "dueToday") {
       upcomingAmount += row.allocatedAmount;
+    }
+    if (isPaidAllocationRow(row)) paidAmount += row.allocatedAmount;
+    if (!lastAllocationUpdateAt || row.allocationUpdatedAt > lastAllocationUpdateAt) {
+      lastAllocationUpdateAt = row.allocationUpdatedAt;
     }
     const supplierKey = row.supplierId ?? row.personName ?? `ap:${row.accountsPayableId}`;
     const supplierName = row.supplierName ?? row.personName ?? "—";
@@ -388,6 +443,11 @@ export function buildCostCenterDetailSummaryFromRows(
     topSupplierName: topSupplier?.name ?? null,
     topSupplierAmount: finiteMoney(topSupplier?.amount ?? 0),
     topNomusClassification: topClassification,
+    paidAmount: finiteMoney(paidAmount),
+    averageAllocatedPerTitle: finiteMoney(
+      titleIds.size > 0 ? totalAllocated / titleIds.size : 0
+    ),
+    lastAllocationUpdateAt,
     allocationSourceBreakdown: {
       AUTO_RULE: finiteMoney(sourceBreakdown.AUTO_RULE),
       BATCH: finiteMoney(sourceBreakdown.BATCH),
@@ -459,7 +519,18 @@ export function parseCostCenterDetailListQuery(
     hasPayment:
       query.hasPayment === "yes" || query.hasPayment === "no" ? query.hasPayment : "all",
     timing:
-      query.timing === "overdue" || query.timing === "upcoming" ? query.timing : "all",
+      query.timing === "overdue" || query.timing === "upcoming" || query.timing === "paid"
+        ? query.timing
+        : "all",
+    nomusClassification:
+      typeof query.nomusClassification === "string" ? query.nomusClassification : undefined,
+    competenceDateFrom:
+      typeof query.competenceDateFrom === "string" ? query.competenceDateFrom : undefined,
+    competenceDateTo:
+      typeof query.competenceDateTo === "string" ? query.competenceDateTo : undefined,
+    paymentDateFrom:
+      typeof query.paymentDateFrom === "string" ? query.paymentDateFrom : undefined,
+    paymentDateTo: typeof query.paymentDateTo === "string" ? query.paymentDateTo : undefined,
   };
 }
 

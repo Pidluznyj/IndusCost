@@ -4,10 +4,13 @@ import { Plus, RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
+import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
+import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import {
   buildFinanceCostCentersListApiPath,
   FINANCE_COST_CENTERS_LIST_STATUS_OPTIONS,
 } from "@/src/lib/financeCostCentersPageTypes";
+import { FinanceCostCenterExpenseMapSection } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection";
 import { buildFinanceCostCenterDetailPath } from "@/src/lib/financeNavigation";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import {
@@ -47,9 +50,18 @@ import {
 type Props = {
   canManage: boolean;
   onChanged?: () => void;
+  dashboard?: FinanceCostCenterDashboardPayload | null;
+  appliedFilters?: FinanceCostCentersUiFilters;
+  dashboardLoading?: boolean;
 };
 
-export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
+export function FinanceCostCentersCrudTab({
+  canManage,
+  onChanged,
+  dashboard = null,
+  appliedFilters,
+  dashboardLoading = false,
+}: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<FinanceCostCenterDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -400,6 +412,15 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
             ))}
           </FinanceCostCenterGridTableShell>
         </>
+      ) : null}
+
+      {appliedFilters ? (
+        <FinanceCostCenterExpenseMapSection
+          dashboard={dashboard}
+          appliedFilters={appliedFilters}
+          centers={items}
+          dashboardLoading={dashboardLoading}
+        />
       ) : null}
 
       {formOpen ? (

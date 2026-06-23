@@ -114,6 +114,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx",
       "src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx",
+      "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx",
     ];
     for (const file of files) {
       const src = read(file);

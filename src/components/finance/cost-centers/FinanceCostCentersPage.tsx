@@ -315,7 +315,13 @@ export function FinanceCostCentersPage() {
         <FinanceCostCenterOverviewTab data={data} loading={loading} />
       ) : null}
       {activeTab === "centers" ? (
-        <FinanceCostCentersCrudTab canManage={canManageCenters} onChanged={() => void load()} />
+        <FinanceCostCentersCrudTab
+          canManage={canManageCenters}
+          onChanged={() => void load()}
+          dashboard={data}
+          appliedFilters={appliedFilters}
+          dashboardLoading={loading}
+        />
       ) : null}
       {activeTab === "suppliers" ? (
         <FinanceSuppliersTab
