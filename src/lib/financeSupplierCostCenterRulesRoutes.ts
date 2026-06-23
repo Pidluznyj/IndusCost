@@ -10,6 +10,7 @@ import {
   parseSupplierCostCenterRulePreviewBody,
   parseSupplierCostCenterRuleUpdateBody,
   previewSupplierCostCenterRuleImpactDefault,
+  searchFinancialSuppliersForRulesDefault,
   updateSupplierCostCenterRuleDefault,
   type SupplierCostCenterRuleListQuery,
 } from "@/src/lib/financeSupplierCostCenterRules.js";
@@ -80,6 +81,37 @@ export function registerFinanceSupplierCostCenterRulesRoutes(
       );
     }
   });
+
+  app.get(
+    "/api/finance/supplier-cost-center-rules/suppliers/search",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const search = typeof req.query.search === "string" ? req.query.search : "";
+        const limitRaw =
+          typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
+        const payload = await searchFinancialSuppliersForRulesDefault({
+          search,
+          limit: limitRaw,
+        });
+        return res.json(payload);
+      } catch (error) {
+        if (error instanceof FinanceSupplierCostCenterRuleError) {
+          return handleValidationError(res, error);
+        }
+        console.error(
+          "GET /api/finance/supplier-cost-center-rules/suppliers/search",
+          error
+        );
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao buscar fornecedores.", error)
+        );
+      }
+    }
+  );
 
   app.post("/api/finance/supplier-cost-center-rules/preview", ...viewGuard, async (req, res) => {
     try {

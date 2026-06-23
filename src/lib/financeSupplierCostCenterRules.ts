@@ -38,6 +38,42 @@ export type SupplierCostCenterRuleDto = {
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Enriquecimento (somente leitura) do fornecedor para exibição na tabela. */
+  supplierName?: string | null;
+  supplierDocument?: string | null;
+  supplierFound?: boolean;
+};
+
+/** Resultado do autocomplete de fornecedores financeiros. */
+export type FinanceSupplierSearchResult = {
+  id: string;
+  name: string;
+  document: string | null;
+  externalCode: string | null;
+  titlesCount: number;
+  lastTitleDate: string | null;
+  totalValue: number | null;
+};
+
+/** Linha bruta (fonte consolidada FinancialSupplier) usada pelo autocomplete. */
+export type FinanceSupplierSearchRow = {
+  id: string;
+  displayName: string;
+  document: string | null;
+  normalizedDocument: string | null;
+  status: string;
+  titlesCount: number | null;
+  totalAmountSeen: Prisma.Decimal | number | null;
+  lastSeenAt: Date | null;
+  aliases: Array<{ externalSupplierId: number | null }>;
+};
+
+/** Resumo do fornecedor para enriquecer a listagem de regras. */
+export type FinanceSupplierSummaryRow = {
+  id: string;
+  displayName: string;
+  document: string | null;
+  normalizedDocument: string | null;
 };
 
 export type SupplierCostCenterRuleLineInput = {
@@ -162,6 +198,10 @@ export type FinanceSupplierCostCenterRulesDeps = {
     priority?: number
   ) => Promise<SupplierCostCenterRuleRecord[]>;
   findSupplier: (id: string) => Promise<SupplierWithAliases | null>;
+  /** Autocomplete de fornecedores (fonte consolidada FinancialSupplier). Opcional p/ testes legados. */
+  searchSuppliers?: (search: string, limit: number) => Promise<FinanceSupplierSearchRow[]>;
+  /** Resumo de fornecedores por id, p/ enriquecer a listagem de regras. Opcional p/ testes legados. */
+  findSuppliersByIds?: (ids: string[]) => Promise<FinanceSupplierSummaryRow[]>;
   findCostCenter: (id: string) => Promise<{ id: string; code: string; name: string; status: string } | null>;
   createRules: (
     rows: Array<{
@@ -230,6 +270,92 @@ export function serializeSupplierCostCenterRule(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Where de busca de fornecedores financeiros (puro/testável).
+ * Cobre: nome/razão/fantasia, documento com e sem pontuação, código externo (alias) e UUID (fallback).
+ */
+export function buildFinancialSupplierSearchWhere(
+  rawSearch: string
+): Prisma.FinancialSupplierWhereInput {
+  const search = (rawSearch ?? "").trim();
+  if (!search) return {};
+
+  const or: Prisma.FinancialSupplierWhereInput[] = [
+    { displayName: { contains: search, mode: "insensitive" } },
+    { legalName: { contains: search, mode: "insensitive" } },
+    { tradeName: { contains: search, mode: "insensitive" } },
+    { document: { contains: search, mode: "insensitive" } },
+  ];
+
+  const normalizedName = normalizeSupplierName(search);
+  if (normalizedName) {
+    or.push({ normalizedName: { contains: normalizedName } });
+    or.push({ aliases: { some: { normalizedName: { contains: normalizedName } } } });
+  }
+
+  const digits = search.replace(/\D/g, "");
+  if (digits.length >= 2) {
+    or.push({ normalizedDocument: { contains: digits } });
+    or.push({ aliases: { some: { normalizedDocument: { contains: digits } } } });
+  }
+
+  if (/^\d+$/.test(search)) {
+    const externalSupplierId = Number.parseInt(search, 10);
+    if (Number.isFinite(externalSupplierId)) {
+      or.push({ aliases: { some: { externalSupplierId } } });
+    }
+  }
+
+  if (UUID_PATTERN.test(search)) {
+    or.push({ id: search });
+  }
+
+  return { OR: or };
+}
+
+export function serializeFinancialSupplierSearchRow(
+  row: FinanceSupplierSearchRow
+): FinanceSupplierSearchResult {
+  const externalCode = row.aliases
+    .map((alias) => alias.externalSupplierId)
+    .find((id): id is number => id != null);
+  return {
+    id: row.id,
+    name: row.displayName,
+    document: row.document ?? row.normalizedDocument ?? null,
+    externalCode: externalCode != null ? String(externalCode) : null,
+    titlesCount: row.titlesCount ?? 0,
+    lastTitleDate: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
+    totalValue: row.totalAmountSeen != null ? decimalToNumber(row.totalAmountSeen) : null,
+  };
+}
+
+export function clampSupplierSearchLimit(raw: number | undefined): number {
+  const value = Number.isFinite(Number(raw)) ? Math.trunc(Number(raw)) : 20;
+  if (value < 1) return 1;
+  if (value > 50) return 50;
+  return value;
+}
+
+export async function searchFinancialSuppliersForRules(
+  deps: FinanceSupplierCostCenterRulesDeps,
+  input: { search?: string; limit?: number } = {}
+): Promise<{ suppliers: FinanceSupplierSearchResult[] }> {
+  if (!deps.searchSuppliers) {
+    throw new FinanceSupplierCostCenterRuleError(
+      "SEARCH_NOT_SUPPORTED",
+      "Busca de fornecedores não disponível."
+    );
+  }
+  const search = (input.search ?? "").trim();
+  const limit = clampSupplierSearchLimit(input.limit);
+  const rows = await deps.searchSuppliers(search, limit);
+  return { suppliers: rows.map(serializeFinancialSupplierSearchRow) };
 }
 
 export function validateSupplierRulePercentageTotal(
@@ -469,7 +595,24 @@ export async function listSupplierCostCenterRules(
   query: SupplierCostCenterRuleListQuery = {}
 ): Promise<{ items: SupplierCostCenterRuleDto[] }> {
   const rows = await deps.listRules(query);
-  return { items: rows.map(serializeSupplierCostCenterRule) };
+  let suppliersById = new Map<string, FinanceSupplierSummaryRow>();
+  if (deps.findSuppliersByIds) {
+    const supplierIds = [...new Set(rows.map((row) => row.supplierId))];
+    const suppliers = await deps.findSuppliersByIds(supplierIds);
+    suppliersById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+  }
+  return {
+    items: rows.map((row) => {
+      const base = serializeSupplierCostCenterRule(row);
+      const supplier = suppliersById.get(row.supplierId);
+      return {
+        ...base,
+        supplierName: supplier?.displayName ?? null,
+        supplierDocument: supplier?.document ?? supplier?.normalizedDocument ?? null,
+        supplierFound: Boolean(supplier),
+      };
+    }),
+  };
 }
 
 export async function createSupplierCostCenterRulesBatch(
@@ -802,6 +945,51 @@ export function createDefaultFinanceSupplierCostCenterRulesDeps(): FinanceSuppli
           },
         },
       }),
+    searchSuppliers: async (search, limit) => {
+      const rows = await prisma.financialSupplier.findMany({
+        where: buildFinancialSupplierSearchWhere(search),
+        orderBy: [{ titlesCount: "desc" }, { displayName: "asc" }],
+        take: limit,
+        select: {
+          id: true,
+          displayName: true,
+          document: true,
+          normalizedDocument: true,
+          status: true,
+          titlesCount: true,
+          totalAmountSeen: true,
+          lastSeenAt: true,
+          aliases: {
+            select: { externalSupplierId: true },
+            orderBy: { titlesCount: "desc" },
+          },
+        },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        displayName: row.displayName,
+        document: row.document,
+        normalizedDocument: row.normalizedDocument,
+        status: row.status,
+        titlesCount: row.titlesCount,
+        totalAmountSeen: row.totalAmountSeen,
+        lastSeenAt: row.lastSeenAt,
+        aliases: row.aliases.map((alias) => ({ externalSupplierId: alias.externalSupplierId })),
+      }));
+    },
+    findSuppliersByIds: async (ids) => {
+      if (ids.length === 0) return [];
+      const rows = await prisma.financialSupplier.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, displayName: true, document: true, normalizedDocument: true },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        displayName: row.displayName,
+        document: row.document,
+        normalizedDocument: row.normalizedDocument,
+      }));
+    },
     findCostCenter: async (id) =>
       prisma.financialCostCenter.findUnique({
         where: { id },
@@ -927,6 +1115,15 @@ export async function previewSupplierCostCenterRuleImpactDefault(
   input: SupplierCostCenterRulePreviewInput
 ): Promise<SupplierCostCenterRulePreviewPayload> {
   return previewSupplierCostCenterRuleImpact(
+    createDefaultFinanceSupplierCostCenterRulesDeps(),
+    input
+  );
+}
+
+export async function searchFinancialSuppliersForRulesDefault(
+  input: { search?: string; limit?: number } = {}
+): Promise<{ suppliers: FinanceSupplierSearchResult[] }> {
+  return searchFinancialSuppliersForRules(
     createDefaultFinanceSupplierCostCenterRulesDeps(),
     input
   );

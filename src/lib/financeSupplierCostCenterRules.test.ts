@@ -5,15 +5,21 @@ import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import {
   accountsPayableMatchesFinancialSupplier,
+  buildFinancialSupplierSearchWhere,
+  clampSupplierSearchLimit,
   createSupplierCostCenterRulesBatch,
   deactivateSupplierCostCenterRule,
   FinanceSupplierCostCenterRuleError,
   isManualLockedAllocation,
+  listSupplierCostCenterRules,
   previewSupplierCostCenterRuleImpact,
+  searchFinancialSuppliersForRules,
+  serializeFinancialSupplierSearchRow,
   validateSupplierRulePercentageTotal,
   type AllocationPreviewRow,
   type ApRulePreviewRow,
   type FinanceSupplierCostCenterRulesDeps,
+  type FinanceSupplierSearchRow,
   type SupplierCostCenterRuleRecord,
   type SupplierWithAliases,
 } from "./financeSupplierCostCenterRules.js";
@@ -382,5 +388,148 @@ describe("financeSupplierCostCenterRules", () => {
       personName: "Fornecedor Teste",
     };
     assert.equal(accountsPayableMatchesFinancialSupplier(ap, supplier), true);
+  });
+});
+
+describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
+  function searchRow(over: Partial<FinanceSupplierSearchRow> = {}): FinanceSupplierSearchRow {
+    return {
+      id: "sup-1",
+      displayName: "Fornecedor Teste",
+      document: "12.345.678/0001-90",
+      normalizedDocument: "12345678000190",
+      status: "ACTIVE",
+      titlesCount: 7,
+      totalAmountSeen: new Prisma.Decimal(1500.5),
+      lastSeenAt: new Date("2026-06-01T00:00:00.000Z"),
+      aliases: [{ externalSupplierId: 10 }],
+      ...over,
+    };
+  }
+
+  it("1. busca por nome filtra displayName/normalizedName", () => {
+    const json = JSON.stringify(buildFinancialSupplierSearchWhere("Forn Teste"));
+    assert.match(json, /displayName/);
+    assert.match(json, /normalizedName/);
+  });
+
+  it("2. busca por documento COM pontuação normaliza para dígitos", () => {
+    const json = JSON.stringify(buildFinancialSupplierSearchWhere("12.345.678/0001-90"));
+    assert.match(json, /"normalizedDocument":\{"contains":"12345678000190"\}/);
+  });
+
+  it("3. busca por documento SEM pontuação", () => {
+    const json = JSON.stringify(buildFinancialSupplierSearchWhere("12345678000190"));
+    assert.match(json, /"normalizedDocument":\{"contains":"12345678000190"\}/);
+  });
+
+  it("4. busca por UUID usa id como fallback técnico", () => {
+    const uuid = "11111111-2222-3333-4444-555555555555";
+    const where = buildFinancialSupplierSearchWhere(uuid);
+    const or = (where.OR ?? []) as Array<Record<string, unknown>>;
+    assert.ok(or.some((clause) => clause.id === uuid));
+  });
+
+  it("5. busca por código externo numérico atinge aliases.externalSupplierId", () => {
+    const json = JSON.stringify(buildFinancialSupplierSearchWhere("10"));
+    assert.match(json, /"externalSupplierId":10/);
+  });
+
+  it("6. busca vazia não restringe", () => {
+    assert.deepEqual(buildFinancialSupplierSearchWhere("   "), {});
+  });
+
+  it("7. serializa linha consolidada para o autocomplete", () => {
+    const result = serializeFinancialSupplierSearchRow(searchRow());
+    assert.equal(result.id, "sup-1");
+    assert.equal(result.name, "Fornecedor Teste");
+    assert.equal(result.document, "12.345.678/0001-90");
+    assert.equal(result.externalCode, "10");
+    assert.equal(result.titlesCount, 7);
+    assert.equal(result.lastTitleDate, "2026-06-01T00:00:00.000Z");
+    assert.equal(result.totalValue, 1500.5);
+  });
+
+  it("8. searchFinancialSuppliersForRules normaliza termo e limita a 50", async () => {
+    const captured: { search?: string; limit?: number } = {};
+    const deps = {
+      searchSuppliers: async (search: string, limit: number) => {
+        captured.search = search;
+        captured.limit = limit;
+        return [searchRow()];
+      },
+    } as unknown as FinanceSupplierCostCenterRulesDeps;
+    const out = await searchFinancialSuppliersForRules(deps, { search: " teste ", limit: 999 });
+    assert.equal(captured.search, "teste");
+    assert.equal(captured.limit, 50);
+    assert.equal(out.suppliers.length, 1);
+    assert.equal(out.suppliers[0]!.id, "sup-1");
+  });
+
+  it("9. clampSupplierSearchLimit respeita 1..50 com default 20", () => {
+    assert.equal(clampSupplierSearchLimit(undefined), 20);
+    assert.equal(clampSupplierSearchLimit(0), 1);
+    assert.equal(clampSupplierSearchLimit(999), 50);
+    assert.equal(clampSupplierSearchLimit(30), 30);
+  });
+
+  it("10. listagem enriquece nome/documento e marca regra antiga órfã", async () => {
+    const buildRule = (id: string, supplierId: string): SupplierCostCenterRuleRecord => ({
+      id,
+      supplierId,
+      costCenterId: "cc-1",
+      percentage: new Prisma.Decimal(100),
+      priority: 100,
+      autoApply: true,
+      isActive: true,
+      company: null,
+      notes: null,
+      createdByUserId: null,
+      createdByName: null,
+      createdAt: new Date("2026-06-17T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-17T12:00:00.000Z"),
+    });
+    const deps = {
+      listRules: async () => [buildRule("r1", "sup-1"), buildRule("r2", "ghost")],
+      findSuppliersByIds: async (ids: string[]) =>
+        ids.includes("sup-1")
+          ? [
+              {
+                id: "sup-1",
+                displayName: "Fornecedor Teste",
+                document: "12.345.678/0001-90",
+                normalizedDocument: "12345678000190",
+              },
+            ]
+          : [],
+    } as unknown as FinanceSupplierCostCenterRulesDeps;
+
+    const out = await listSupplierCostCenterRules(deps, {});
+    const enriched = out.items.find((item) => item.id === "r1")!;
+    const orphan = out.items.find((item) => item.id === "r2")!;
+    assert.equal(enriched.supplierName, "Fornecedor Teste");
+    assert.equal(enriched.supplierDocument, "12.345.678/0001-90");
+    assert.equal(enriched.supplierFound, true);
+    assert.equal(orphan.supplierName, null);
+    assert.equal(orphan.supplierFound, false);
+  });
+
+  it("11. modal usa autocomplete (sem UUID como campo principal) e rota de busca existe", () => {
+    const tab = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(tab, /UUID do fornecedor financeiro/);
+    assert.match(tab, /Buscar fornecedor por nome, CNPJ, documento ou código/);
+    assert.match(tab, /finance-rules-supplier-search/);
+    assert.match(tab, /finance-rules-selected-supplier/);
+    assert.match(tab, /supplierName/);
+    assert.match(tab, /Fornecedor não encontrado/);
+
+    const routes = readFileSync(
+      join(process.cwd(), "src/lib/financeSupplierCostCenterRulesRoutes.ts"),
+      "utf8"
+    );
+    assert.match(routes, /supplier-cost-center-rules\/suppliers\/search/);
   });
 });
