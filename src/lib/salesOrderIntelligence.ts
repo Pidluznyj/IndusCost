@@ -4,6 +4,7 @@ import {
   type EnrichedLifecycleItem,
   type SalesOrderLifecycleInput,
 } from "./salesOrderLifecycleStatus.js";
+import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
 import { buildSalesOrderTimeline } from "./salesOrderLifecycleTimeline.js";
 import type {
   SalesOrderItemNomusStatus,
@@ -521,6 +522,7 @@ export function buildSalesOrderIntelligencePayload(input: {
   };
   referenceDate?: Date;
   requiresProduction?: boolean;
+  linkedNfeContext?: SalesOrderLinkedNfeContext | null;
 }): SalesOrderIntelligencePayload {
   const referenceDate = input.referenceDate ?? new Date();
   const lifecycleInput: SalesOrderLifecycleInput = {
@@ -529,7 +531,9 @@ export function buildSalesOrderIntelligencePayload(input: {
     originalStatus: input.order.status,
     issueDate: input.order.issueDate,
     expectedDeliveryDate: input.order.expectedDeliveryDate,
+    totalNetValue: input.order.totalNetValue,
     nomusRawResponse: input.order.nomusRawResponse,
+    linkedNfeContext: input.linkedNfeContext,
     items: input.order.items,
     referenceDate,
     requiresProduction: input.requiresProduction,
@@ -600,6 +604,8 @@ export function buildSalesOrderIntelligencePayload(input: {
     expectedDeliveryDate: input.order.expectedDeliveryDate,
     nomusRawResponse: input.order.nomusRawResponse,
     referenceDate,
+    linkedNfeContext: input.linkedNfeContext,
+    totalNetValue: decimalToNumber(input.order.totalNetValue),
   });
   const logisticVsExecutive = compareLogisticToExecutiveStatus(
     logisticStatus,
@@ -629,13 +635,21 @@ export function buildSalesOrderIntelligencePayload(input: {
     production,
     invoicing: {
       hasInvoice: lifecycle.hasInvoice,
-      invoiceCount: lifecycle.invoiceNumbers.length,
-      invoiceNumbers: lifecycle.invoiceNumbers,
+      invoiceCount: lifecycle.nfeCount ?? lifecycle.invoiceNumbers.length,
+      invoiceNumbers: lifecycle.nfeNumbers ?? lifecycle.invoiceNumbers,
       firstInvoiceDate: lifecycle.firstInvoiceDate,
-      lastInvoiceDate: lifecycle.lastInvoiceDate,
-      invoicedAmount: lifecycle.hasInvoice ? invoicedAmount || null : null,
-      invoicedPercent: lifecycle.invoicedPercent,
+      lastInvoiceDate: lifecycle.lastInvoiceDate ?? lifecycle.lastNfeProcessingDate ?? null,
+      invoicedAmount: lifecycle.hasInvoice ? lifecycle.nfeTotalValue ?? invoicedAmount || null : null,
+      invoicedPercent: lifecycle.invoiceCoveragePercent ?? lifecycle.invoicedPercent,
       invoiceTiming: resolveInvoiceTiming(lifecycle),
+      linkedNfeSource: lifecycle.linkedNfeSource ?? null,
+      isFullyInvoiced: lifecycle.isFullyInvoiced ?? false,
+      isPartiallyInvoiced: lifecycle.isPartiallyInvoiced ?? false,
+      slaStatus: lifecycle.slaStatus ?? null,
+      slaDays: lifecycle.slaDays ?? null,
+      daysLate: lifecycle.daysLate ?? lifecycle.daysOverdue,
+      needsDataReview: lifecycle.needsDataReview ?? false,
+      reviewReasons: lifecycle.reviewReasons ?? [],
     },
     invoices,
     items: enrichedItems.map((item, index) => ({
@@ -717,10 +731,12 @@ export function mapLifecycleToManagementRow(
   context?: {
     items?: EnrichedLifecycleItem[];
     referenceDate?: Date;
+    linkedNfeContext?: SalesOrderLinkedNfeContext | null;
   }
 ) {
   const referenceDate = context?.referenceDate ?? new Date();
   const items = context?.items ?? [];
+  const linkedNfeContext = context?.linkedNfeContext ?? null;
   const { risks, suggestedActions } = buildSalesOrderRisksAndActions({ lifecycle, items });
   const highRiskCount = risks.filter((r) => r.severity === "high").length;
   const productionFields = resolveProductionOrderRowFields(
@@ -732,6 +748,8 @@ export function mapLifecycleToManagementRow(
     expectedDeliveryDate: order.expectedDeliveryDate,
     nomusRawResponse: order.nomusRawResponse,
     referenceDate,
+    linkedNfeContext,
+    totalNetValue: decimalToNumber(order.totalNetValue),
   });
 
   return {

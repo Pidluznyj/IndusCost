@@ -114,6 +114,26 @@ export type SalesOrderLifecycleSummary = {
     missingProductionOrderLink: boolean;
     usedRawFallback: boolean;
   };
+  linkedNfeSource?: "linked" | "raw_fallback";
+  nfeCount?: number;
+  nfeNumbers?: string[];
+  nfeKeys?: string[];
+  lastNfeProcessingDate?: string | null;
+  nfeTotalValue?: number;
+  invoiceCoveragePercent?: number | null;
+  isFullyInvoiced?: boolean;
+  isPartiallyInvoiced?: boolean;
+  isNotInvoiced?: boolean;
+  isOnTime?: boolean | null;
+  isLate?: boolean | null;
+  daysLate?: number | null;
+  daysToInvoice?: number | null;
+  needsDataReview?: boolean;
+  reviewReasons?: string[];
+  hasCut?: boolean;
+  isComplete?: boolean;
+  slaStatus?: "on_time" | "late" | "pending" | "review";
+  slaDays?: number | null;
 };
 
 export type SalesOrderTimelineEventKey =

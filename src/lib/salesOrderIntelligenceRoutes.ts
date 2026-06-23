@@ -2,6 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "./prisma.js";
 import { buildSalesOrderIntelligencePayload } from "./salesOrderIntelligence.js";
+import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
 import { buildSalesOrderNfeLinkDiagnostic } from "./salesOrderNfeLink.js";
 import {
   buildSalesOrderManagementWhere,
@@ -49,6 +50,15 @@ export async function loadSalesOrderIntelligence(orderId: string) {
     },
   });
   if (!order) return null;
+  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap([
+    {
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    },
+  ]);
   return buildSalesOrderIntelligencePayload({
     order: {
       id: order.id,
@@ -65,6 +75,7 @@ export async function loadSalesOrderIntelligence(orderId: string) {
       customer: order.Customer,
       items: order.items,
     },
+    linkedNfeContext: linkedNfeContextMap.get(order.id) ?? null,
   });
 }
 
@@ -93,9 +104,21 @@ export async function loadSalesOrderManagementPage(
     },
   });
 
+  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+    orders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    }))
+  );
+
   const { rows, cards, summary, cardAmounts, dashboardCards } = buildManagementRowsFromOrders(
     orders,
-    filters
+    filters,
+    undefined,
+    linkedNfeContextMap
   );
   const total = rows.length;
   const start = (page - 1) * pageSize;

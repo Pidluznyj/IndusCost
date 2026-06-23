@@ -1,6 +1,7 @@
 import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
 import { isCancelledSalesOrderStatus, isOverdueSalesOrder } from "./salesOrderDashboardRules.js";
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
+import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
 import type {
   SalesOrderBillingStatus,
   SalesOrderCompletionStatus,
@@ -44,7 +45,9 @@ export type SalesOrderLifecycleInput = {
   originalStatus: string;
   issueDate?: Date | string | null;
   expectedDeliveryDate?: Date | string | null;
+  totalNetValue?: unknown;
   nomusRawResponse?: unknown;
+  linkedNfeContext?: SalesOrderLinkedNfeContext | null;
   items: SalesOrderLifecycleItemInput[];
   referenceDate?: Date;
   requiresProduction?: boolean;
@@ -193,6 +196,17 @@ function isOrderFullyReturned(items: EnrichedLifecycleItem[]): boolean {
 
 function isTerminalOperationalStatus(status: SalesOrderOperationalStatus): boolean {
   return status === "cancelled" || status === "fully_returned";
+}
+
+function deriveBillingStatusFromLinked(
+  linked: SalesOrderLinkedNfeContext | null | undefined,
+  hasCut: boolean,
+  fallback: SalesOrderBillingStatus
+): SalesOrderBillingStatus {
+  if (!linked || !linked.hasNfe) return fallback;
+  if (linked.isFullyInvoiced) return hasCut ? "invoiced_with_cut" : "fully_invoiced";
+  if (linked.isPartiallyInvoiced) return hasCut ? "invoiced_with_cut" : "partially_invoiced";
+  return fallback;
 }
 
 function deriveDeadlineStatus(input: {
@@ -356,10 +370,16 @@ export function buildSalesOrderLifecycleSummary(
 ): { lifecycle: SalesOrderLifecycleSummary; items: EnrichedLifecycleItem[] } {
   const referenceDate = input.referenceDate ?? new Date();
   const rawItems = extractNomusRawItems(input.nomusRawResponse);
-  const nfes = extractNomusRawNfes(input.nomusRawResponse);
   const productionOrders = extractNomusProductionOrders(input.nomusRawResponse);
-  const hasInvoice = salesOrderHasInvoicing(input.nomusRawResponse);
-  const invoiceMeta = resolveInvoiceDates(nfes);
+  const linked = input.linkedNfeContext ?? null;
+  const hasInvoice = linked?.hasNfe ?? salesOrderHasInvoicing(input.nomusRawResponse);
+  const invoiceMeta = linked
+    ? {
+        first: linked.firstNfeProcessingDate,
+        last: linked.lastNfeProcessingDate,
+        numbers: linked.nfeNumbers,
+      }
+    : resolveInvoiceDates(extractNomusRawNfes(input.nomusRawResponse));
   const issueDate = toDate(input.issueDate);
   const expectedDeliveryDate = toDate(input.expectedDeliveryDate);
   const items = enrichItems(input, rawItems, productionOrders, hasInvoice);
@@ -394,18 +414,19 @@ export function buildSalesOrderLifecycleSummary(
       ? Math.max(0, orderedQuantityTotal - fulfilledQuantityTotal)
       : null;
 
-  const hasCut = items.some((i) => i.hasCut);
+  const hasCut = items.some((i) => i.hasCut) || linked?.hasCut === true;
   const orderFullyCancelled = isOrderFullyCancelled(input.originalStatus, items);
   const orderFullyReturned = isOrderFullyReturned(items);
-  const billingStatus = deriveBillingStatus(
+  const legacyBillingStatus = deriveBillingStatus(
     hasInvoice,
     invoicedQuantityTotal,
     orderedQuantityTotal,
     hasCut
   );
+  const billingStatus = deriveBillingStatusFromLinked(linked, hasCut, legacyBillingStatus);
   const deadlineStatus = deriveDeadlineStatus({
     expectedDeliveryDate,
-    firstInvoiceDate: invoiceMeta.first,
+    firstInvoiceDate: (linked?.isFullyInvoiced ? invoiceMeta.last : invoiceMeta.first) ?? invoiceMeta.first,
     referenceDate,
     hasInvoice,
     isCancelled: orderFullyCancelled,
@@ -468,6 +489,10 @@ export function buildSalesOrderLifecycleSummary(
       ? diffCalendarDays(invoiceMeta.first, expectedDeliveryDate)
       : null;
 
+  if (linked?.reviewReasons?.length) {
+    warnings.push(...linked.reviewReasons);
+  }
+
   const lifecycle: SalesOrderLifecycleSummary = {
     salesOrderId: input.salesOrderId,
     salesOrderNumber: input.salesOrderNumber,
@@ -508,7 +533,7 @@ export function buildSalesOrderLifecycleSummary(
     invoicedQuantityTotal,
     pendingQuantityTotal,
     fulfilledPercent: safeRatio(fulfilledQuantityTotal, orderedQuantityTotal),
-    invoicedPercent: safeRatio(invoicedQuantityTotal, orderedQuantityTotal),
+    invoicedPercent: linked?.invoiceCoveragePercent ?? safeRatio(invoicedQuantityTotal, orderedQuantityTotal),
     hasInvoice,
     invoiceNumbers: invoiceMeta.numbers,
     hasLinkedProductionOrder: productionOrders.length > 0,
@@ -522,6 +547,30 @@ export function buildSalesOrderLifecycleSummary(
       missingProductionOrderLink: productionOrders.length === 0,
       usedRawFallback,
     },
+    linkedNfeSource: linked?.source,
+    nfeCount: linked?.nfeCount ?? (hasInvoice ? invoiceMeta.numbers.length : 0),
+    nfeNumbers: linked?.nfeNumbers ?? invoiceMeta.numbers,
+    nfeKeys: linked?.nfeKeys ?? [],
+    lastNfeProcessingDate: linked?.lastNfeProcessingDate
+      ? formatYmdLocal(linked.lastNfeProcessingDate)
+      : invoiceMeta.last
+        ? formatYmdLocal(invoiceMeta.last)
+        : null,
+    nfeTotalValue: linked?.nfeTotalValue ?? 0,
+    invoiceCoveragePercent: linked?.invoiceCoveragePercent ?? null,
+    isFullyInvoiced: linked?.isFullyInvoiced ?? (hasInvoice && billingStatus === "fully_invoiced"),
+    isPartiallyInvoiced: linked?.isPartiallyInvoiced ?? billingStatus === "partially_invoiced",
+    isNotInvoiced: linked?.isNotInvoiced ?? !hasInvoice,
+    isOnTime: linked?.isOnTime ?? null,
+    isLate: linked?.isLate ?? null,
+    daysLate: linked?.daysLate ?? daysOverdue,
+    daysToInvoice: linked?.daysToInvoice ?? null,
+    needsDataReview: linked?.needsDataReview ?? false,
+    reviewReasons: linked?.reviewReasons ?? [],
+    hasCut: linked?.hasCut ?? hasCut,
+    isComplete: linked?.isComplete ?? billingStatus === "fully_invoiced",
+    slaStatus: linked?.slaStatus,
+    slaDays: linked?.slaDays ?? null,
   };
 
   return { lifecycle, items };

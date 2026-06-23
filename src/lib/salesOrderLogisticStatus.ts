@@ -27,6 +27,7 @@ import {
   parseNomusBrOrIsoDate,
   startOfLocalDay,
 } from "./salesOrderNomusRaw.js";
+import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
 
 /** Códigos pendentes da fórmula BI: VALUE(status) IN {1, 2, 3}. */
 export const NOMUS_PENDING_ITEM_STATUS_CODES = new Set<number>([1, 2, 3]);
@@ -135,6 +136,45 @@ function collectItemStatusCodes(nomusRawResponse: unknown): string[] {
     }
   }
   return [...codes];
+}
+
+function resolveInvoiceProcessingDates(input: {
+  linkedNfeContext?: SalesOrderLinkedNfeContext | null;
+  nomusRawResponse?: unknown;
+}): { first: Date | null; last: Date | null; hasNfe: boolean; isFullyInvoiced: boolean; isPartiallyInvoiced: boolean } {
+  const linked = input.linkedNfeContext;
+  if (linked && linked.source === "linked") {
+    return {
+      first: linked.firstNfeProcessingDate,
+      last: linked.lastNfeProcessingDate,
+      hasNfe: linked.hasNfe,
+      isFullyInvoiced: linked.isFullyInvoiced,
+      isPartiallyInvoiced: linked.isPartiallyInvoiced,
+    };
+  }
+  if (linked) {
+    return {
+      first: linked.firstNfeProcessingDate,
+      last: linked.lastNfeProcessingDate ?? linked.firstNfeProcessingDate,
+      hasNfe: linked.hasNfe,
+      isFullyInvoiced: linked.isFullyInvoiced,
+      isPartiallyInvoiced: linked.isPartiallyInvoiced,
+    };
+  }
+  const nfes = extractNomusRawNfes(input.nomusRawResponse);
+  const dates: Date[] = [];
+  for (const nfe of nfes) {
+    const d = parseNomusBrOrIsoDate(nfe.dataProcessamento);
+    if (d) dates.push(d);
+  }
+  dates.sort((a, b) => a.getTime() - b.getTime());
+  return {
+    first: dates[0] ?? null,
+    last: dates[dates.length - 1] ?? null,
+    hasNfe: dates.length > 0,
+    isFullyInvoiced: dates.length > 0,
+    isPartiallyInvoiced: false,
+  };
 }
 
 function resolveFirstInvoiceProcessingDate(nomusRawResponse: unknown): Date | null {
@@ -249,11 +289,36 @@ export function buildSalesOrderBiLogisticStatus(input: {
   expectedDeliveryDate?: Date | string | null;
   nomusRawResponse?: unknown;
   referenceDate?: Date;
+  linkedNfeContext?: SalesOrderLinkedNfeContext | null;
+  totalNetValue?: number | null;
 }): SalesOrderLogisticStatusResult {
   const referenceDate = startOfLocalDay(input.referenceDate ?? new Date());
   const plannedDate = resolvePlannedDeliveryDate(input);
-  const invoiceDate = resolveFirstInvoiceProcessingDate(input.nomusRawResponse);
+  const invoiceMeta = resolveInvoiceProcessingDates(input);
+  const linked = input.linkedNfeContext;
   const itemAnalysis = analyzeItemStatuses(input.nomusRawResponse ?? null);
+
+  if (linked?.needsDataReview && (!plannedDate || linked.reviewReasons.some((r) => r.includes("Valor líquido")))) {
+    return buildReviewResult(
+      {
+        plannedDeliveryDate: plannedDate ? formatYmd(plannedDate) : null,
+        invoiceProcessingDate: invoiceMeta.last ? formatYmd(invoiceMeta.last) : null,
+        itemStatusCodes: itemAnalysis.itemStatusCodes,
+        hasPendingItem: itemAnalysis.hasPendingNumeric,
+      },
+      linked.reviewReasons.join(" "),
+      linked.reviewReasons.join(" ")
+    );
+  }
+
+  const invoiceDate =
+    invoiceMeta.isFullyInvoiced && invoiceMeta.last
+      ? invoiceMeta.last
+      : invoiceMeta.isFullyInvoiced
+        ? invoiceMeta.first
+        : invoiceMeta.hasNfe && !invoiceMeta.isPartiallyInvoiced
+          ? invoiceMeta.first
+          : null;
 
   const baseEvidence = {
     plannedDeliveryDate: plannedDate ? formatYmd(plannedDate) : null,

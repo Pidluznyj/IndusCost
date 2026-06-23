@@ -1,6 +1,7 @@
 import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
 import { computeTicketAverage } from "./salesOrderDashboardRules.js";
 import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
+import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
 import {
   buildBiLogisticStatusCardMetrics,
   buildSalesOrderBiLogisticStatus,
@@ -79,13 +80,16 @@ export function filterOrdersByLogisticStatus(
 
 export function enrichOrdersWithLogisticStatus(
   rows: FinanceSalesOrdersDashboardOrderRow[],
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
 ): Array<FinanceSalesOrdersDashboardOrderRow & { logisticStatusCardId: BiLogisticStatusCardId }> {
   return rows.map((row) => {
     const logistic = buildSalesOrderBiLogisticStatus({
       expectedDeliveryDate: row.expectedDeliveryDate,
       nomusRawResponse: row.nomusRawResponse,
       referenceDate,
+      linkedNfeContext: linkedNfeContextMap?.get(row.id) ?? null,
+      totalNetValue: row.totalNetValue,
     });
     return { ...row, logisticStatusCardId: logistic.cardId };
   });
@@ -275,6 +279,7 @@ export function buildExtendedMetricsFromOrders(input: {
   orders: FinanceSalesOrdersDashboardOrderRow[];
   filters: FinanceSalesOrdersDashboardFilters;
   referenceDate?: Date;
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>;
 }): {
   manufacturingStatusBreakdown: FinanceSalesOrdersManufacturingStatusBreakdownRow[];
   logisticStatusBreakdown: FinanceSalesOrdersLogisticStatusBreakdownRow[];
@@ -286,7 +291,11 @@ export function buildExtendedMetricsFromOrders(input: {
   logisticAmounts: Record<BiLogisticStatusCardId, number>;
 } {
   const referenceDate = input.referenceDate ?? new Date();
-  const enriched = enrichOrdersWithLogisticStatus(input.orders, referenceDate);
+  const enriched = enrichOrdersWithLogisticStatus(
+    input.orders,
+    referenceDate,
+    input.linkedNfeContextMap
+  );
   const filtered = filterOrdersByLogisticStatus(enriched, input.filters.logisticStatus);
 
   const { counts: logisticCounts, amounts: logisticAmounts } = buildBiLogisticStatusCardMetrics(

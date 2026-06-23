@@ -4,6 +4,7 @@ import {
   buildSalesOrderLifecycleSummary,
   type SalesOrderLifecycleInput,
 } from "./salesOrderLifecycleStatus.js";
+import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
 import {
   mapLifecycleToManagementRow,
   type SalesOrderIntelligencePayload,
@@ -272,7 +273,8 @@ export function buildManagementRowsFromOrders(
     items: SalesOrderLifecycleInput["items"];
   }>,
   filters: SalesOrderManagementFilters,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
 ): {
   rows: SalesOrderManagementRow[];
   cards: SalesOrderManagementCards;
@@ -281,13 +283,16 @@ export function buildManagementRowsFromOrders(
   summary: SalesOrderManagementSummary;
 } {
   const computed = orders.map((order) => {
+    const linkedNfeContext = linkedNfeContextMap?.get(order.id) ?? null;
     const { lifecycle, items } = buildSalesOrderLifecycleSummary({
       salesOrderId: order.id,
       salesOrderNumber: order.orderCode,
       originalStatus: order.status,
       issueDate: order.issueDate,
       expectedDeliveryDate: order.expectedDeliveryDate,
+      totalNetValue: order.totalNetValue,
       nomusRawResponse: order.nomusRawResponse,
+      linkedNfeContext,
       items: order.items,
       referenceDate,
     });
@@ -305,7 +310,7 @@ export function buildManagementRowsFromOrders(
         Customer: order.Customer,
       },
       lifecycle,
-      { items, referenceDate }
+      { items, referenceDate, linkedNfeContext }
     );
     return { row, lifecycle };
   });

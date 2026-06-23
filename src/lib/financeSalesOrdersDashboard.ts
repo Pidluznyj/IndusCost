@@ -29,6 +29,7 @@ import {
   mapPrismaOrderToDashboardRow,
   OPEN_PORTFOLIO_EVOLUTION_NOTE,
 } from "./financeSalesOrdersExtendedMetrics.js";
+import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
 import {
   isBiLogisticStatusCardId,
   type BiLogisticStatusCardId,
@@ -523,10 +524,20 @@ export async function buildFinanceSalesOrdersDashboard(
   topCustomers = await queryTopCustomersFiltered(filters, filters.year);
 
   const dashboardOrders = await loadDashboardOrders(filters, periodBounds.from, periodBounds.to);
+  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+    dashboardOrders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    }))
+  );
   const extended = buildExtendedMetricsFromOrders({
     orders: dashboardOrders,
     filters,
     referenceDate: now,
+    linkedNfeContextMap,
   });
 
   const excluded = await queryExcludedCounts();
