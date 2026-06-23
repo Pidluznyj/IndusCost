@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
@@ -17,8 +18,35 @@ import {
   FinanceModuleErrorBanner,
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
+import {
+  FinanceCostCenterGridActiveFilters,
+  FinanceCostCenterGridPagination,
+  FinanceCostCenterGridSearchBar,
+  FinanceCostCenterGridSummary,
+  FinanceCostCenterGridTableShell,
+  FinanceCostCenterSortableTh,
+} from "@/src/components/finance/cost-centers/FinanceCostCenterGridKit";
+import {
+  buildFinanceGridEmptyState,
+  clampFinanceGridPage,
+  DEFAULT_RULE_GRID_SORT,
+  paginateFinanceGridRows,
+  prepareRuleGridRows,
+  readFinanceGridUrlInt,
+  readFinanceGridUrlSort,
+  readFinanceGridUrlString,
+  RULE_GRID_SORT_ACCESSORS,
+  toggleSortState,
+  writeFinanceGridUrlParams,
+  type RuleGridSortKey,
+} from "@/src/lib/financeCostCenterGridKit";
+import { getSortDefaultDirection } from "@/src/lib/soldProductsTableSort";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
+import {
+  financeModuleFilterFieldClass,
+  financeModuleFilterLabelClass,
+} from "@/src/lib/financeModuleUiStandards";
 
 type Props = {
   canManage: boolean;
@@ -38,6 +66,7 @@ function formatSupplierMeta(supplier: FinanceSupplierSearchResult): string {
 }
 
 export function FinanceSupplierRulesTab({ canManage }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rules, setRules] = useState<SupplierCostCenterRuleDto[]>([]);
   const [centers, setCenters] = useState<FinanceCostCenterDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +83,27 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
   const [supplierSearching, setSupplierSearching] = useState(false);
   const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
   const searchSeq = useRef(0);
+
+  const search = readFinanceGridUrlString(searchParams, "rule_q");
+  const statusFilter = (readFinanceGridUrlString(searchParams, "rule_status", "all") ||
+    "all") as "all" | "active" | "inactive";
+  const costCenterFilter = readFinanceGridUrlString(searchParams, "rule_cc");
+  const sort = readFinanceGridUrlSort(
+    searchParams,
+    "rule_sort",
+    "rule_dir",
+    ["supplier", "costCenter", "status", "percentage", "updatedAt"] as const,
+    DEFAULT_RULE_GRID_SORT
+  );
+  const page = readFinanceGridUrlInt(searchParams, "rule_page", 1);
+  const pageSize = readFinanceGridUrlInt(searchParams, "rule_limit", 50, 1, 500);
+
+  const patchUrl = useCallback(
+    (patch: Record<string, string | number | null | undefined>) => {
+      setSearchParams(writeFinanceGridUrlParams(searchParams, patch), { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,8 +175,81 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
     return map;
   }, [rules]);
 
-  const centerName = (id: string) =>
-    centers.find((row) => row.id === id)?.code ?? id.slice(0, 8);
+  const centerName = (id: string) => {
+    const cc = centers.find((row) => row.id === id);
+    return cc ? `${cc.code} — ${cc.name}` : id.slice(0, 8);
+  };
+
+  const gridRows = useMemo(
+    () =>
+      prepareRuleGridRows(
+        rules.map((row) => ({
+          id: row.id,
+          supplierId: row.supplierId,
+          supplierName: row.supplierName ?? null,
+          supplierDocument: row.supplierDocument ?? null,
+          costCenterId: row.costCenterId,
+          costCenterLabel: centerName(row.costCenterId),
+          percentage: row.percentage,
+          autoApply: row.autoApply,
+          isActive: row.isActive,
+          updatedAt: row.updatedAt ?? null,
+        })),
+        { search, status: statusFilter, costCenterId: costCenterFilter },
+        sort
+      ),
+    [rules, centers, search, statusFilter, costCenterFilter, sort]
+  );
+
+  const { pageRows, totalPages, total } = useMemo(() => {
+    const paged = paginateFinanceGridRows(gridRows, { page, pageSize });
+    return { ...paged, page: clampFinanceGridPage(page, paged.totalPages) };
+  }, [gridRows, page, pageSize]);
+
+  const hasActiveFilters =
+    Boolean(search.trim()) || statusFilter !== "all" || Boolean(costCenterFilter);
+  const emptyCopy = buildFinanceGridEmptyState(
+    rules.length > 0,
+    hasActiveFilters,
+    {
+      title: "Nenhuma regra cadastrada",
+      description:
+        "Crie uma regra 100% ou um rateio para classificar títulos automaticamente por fornecedor.",
+    },
+    {
+      title: "Nenhuma regra no filtro",
+      description: "Ajuste busca, status ou centro de custo para ver outras regras.",
+    }
+  );
+
+  const handleSort = (key: RuleGridSortKey) => {
+    const next = toggleSortState(sort, key, getSortDefaultDirection(RULE_GRID_SORT_ACCESSORS, key));
+    patchUrl({ rule_sort: next.key, rule_dir: next.direction, rule_page: 1 });
+  };
+
+  const filterChips = [
+    ...(statusFilter !== "all"
+      ? [
+          {
+            key: "status",
+            label: statusFilter === "active" ? "Ativas" : "Inativas",
+            onRemove: () => patchUrl({ rule_status: null, rule_page: 1 }),
+          },
+        ]
+      : []),
+    ...(costCenterFilter
+      ? [
+          {
+            key: "cc",
+            label: `Centro: ${centerName(costCenterFilter)}`,
+            onRemove: () => patchUrl({ rule_cc: null, rule_page: 1 }),
+          },
+        ]
+      : []),
+    ...(search.trim()
+      ? [{ key: "q", label: `Busca: ${search.trim()}`, onRemove: () => patchUrl({ rule_q: null, rule_page: 1 }) }]
+      : []),
+  ];
 
   const totalPercentage = useMemo(
     () => lines.reduce((sum, line) => sum + (Number(line.percentage) || 0), 0),
@@ -224,10 +347,50 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
 
   return (
     <div className="space-y-4" data-testid="finance-cost-centers-rules-tab">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Defina regras de 100% ou rateio por fornecedor. O preview mostra o impacto antes de salvar.
         </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <FinanceCostCenterGridSearchBar
+            value={search}
+            onChange={(value) => patchUrl({ rule_q: value || null, rule_page: 1 })}
+            placeholder="Fornecedor ou centro"
+            testId="finance-rules-search"
+          />
+          <label className="space-y-1">
+            <span className={financeModuleFilterLabelClass()}>Status</span>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={statusFilter}
+              onChange={(e) =>
+                patchUrl({
+                  rule_status: e.target.value === "all" ? null : e.target.value,
+                  rule_page: 1,
+                })
+              }
+            >
+              <option value="all">Todas</option>
+              <option value="active">Ativas</option>
+              <option value="inactive">Inativas</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className={financeModuleFilterLabelClass()}>Centro</span>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={costCenterFilter}
+              onChange={(e) => patchUrl({ rule_cc: e.target.value || null, rule_page: 1 })}
+            >
+              <option value="">Todos</option>
+              {centers.map((cc) => (
+                <option key={cc.id} value={cc.id}>
+                  {cc.code} — {cc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="flex gap-2">
           <button type="button" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold" onClick={() => void load()}>
             <RefreshCw className="h-4 w-4" />
@@ -247,79 +410,101 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
         </div>
       </div>
 
+      <FinanceCostCenterGridActiveFilters
+        chips={filterChips}
+        onClear={
+          hasActiveFilters
+            ? () => patchUrl({ rule_q: null, rule_status: null, rule_cc: null, rule_page: 1 })
+            : undefined
+        }
+      />
+
       {error ? <FinanceModuleErrorBanner message={error} onRetry={() => void load()} onDismiss={() => setError(null)} /> : null}
       {loading ? <FinanceModuleLoadingBlock label="Carregando regras…" /> : null}
 
-      {!loading && rules.length === 0 ? (
-        <FinanceModuleEmptyState
-          title="Nenhuma regra cadastrada"
-          description="Crie uma regra 100% ou um rateio para classificar títulos automaticamente por fornecedor."
-        />
+      {!loading && gridRows.length === 0 ? (
+        <FinanceModuleEmptyState title={emptyCopy.title} description={emptyCopy.description} />
       ) : null}
 
-      {!loading && rules.length > 0 ? (
-        <div className={cn(financeBiCardClass, "overflow-x-auto")}>
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-[10px] font-bold uppercase text-muted-foreground">
-                <th className="px-3 py-2">Fornecedor</th>
-                <th className="px-3 py-2">Centro</th>
-                <th className="px-3 py-2">%</th>
-                <th className="px-3 py-2">Auto</th>
-                <th className="px-3 py-2">Status</th>
-                {canManage ? <th className="px-3 py-2">Ações</th> : null}
+      {!loading && gridRows.length > 0 ? (
+        <>
+          <FinanceCostCenterGridSummary
+            totals={{ rowCount: total }}
+            filteredCount={total}
+            page={clampFinanceGridPage(page, totalPages)}
+            totalPages={totalPages}
+            amountLabel="Regras"
+          />
+          <FinanceCostCenterGridTableShell
+            tableClassName="min-w-[720px]"
+            head={
+              <tr className="border-b border-border text-left">
+                <FinanceCostCenterSortableTh label="Fornecedor" sortKey="supplier" sort={sort} onSort={handleSort} />
+                <FinanceCostCenterSortableTh label="Centro" sortKey="costCenter" sort={sort} onSort={handleSort} />
+                <FinanceCostCenterSortableTh label="%" sortKey="percentage" sort={sort} onSort={handleSort} align="right" />
+                <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">Auto</th>
+                <FinanceCostCenterSortableTh label="Status" sortKey="status" sort={sort} onSort={handleSort} />
+                {canManage ? (
+                  <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">Ações</th>
+                ) : null}
               </tr>
-            </thead>
-            <tbody>
-              {rules.map((row) => {
-                const supplier = supplierById.get(row.supplierId);
-                return (
-                  <tr key={row.id} className="border-b border-border/60">
+            }
+            footer={
+              <FinanceCostCenterGridPagination
+                page={clampFinanceGridPage(page, totalPages)}
+                totalPages={totalPages}
+                pageSize={pageSize}
+                onPageChange={(nextPage) => patchUrl({ rule_page: nextPage })}
+                onPageSizeChange={(nextSize) => patchUrl({ rule_limit: nextSize, rule_page: 1 })}
+              />
+            }
+          >
+            {pageRows.map((row) => {
+              const supplier = supplierById.get(row.supplierId);
+              const rule = rules.find((r) => r.id === row.id)!;
+              return (
+                <tr key={row.id} className="border-b border-border/60">
+                  <td className="px-3 py-2">
+                    {supplier?.found ? (
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{supplier.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {supplier.document ?? "Sem documento"}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-amber-700">Fornecedor não encontrado</span>
+                        <span className="font-mono text-[10px] text-muted-foreground/70">
+                          ID técnico: {row.supplierId.slice(0, 8)}…
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">{row.costCenterLabel}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{row.percentage}%</td>
+                  <td className="px-3 py-2">{row.autoApply ? "Sim" : "Não"}</td>
+                  <td className="px-3 py-2">{row.isActive ? "Ativa" : "Inativa"}</td>
+                  {canManage && rule.isActive ? (
                     <td className="px-3 py-2">
-                      {supplier?.found ? (
-                        <div className="flex flex-col">
-                          <span className="font-semibold">{supplier.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {supplier.document ?? "Sem documento"}
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground/70">
-                            {row.supplierId.slice(0, 8)}…
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-amber-700">Fornecedor não encontrado</span>
-                          <span className="font-mono text-[10px] text-muted-foreground/70">
-                            ID técnico: {row.supplierId.slice(0, 8)}…
-                          </span>
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        data-testid="finance-rules-deactivate-button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"
+                        onClick={() => void deactivate(row.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Desativar
+                      </button>
                     </td>
-                    <td className="px-3 py-2">{centerName(row.costCenterId)}</td>
-                    <td className="px-3 py-2">{row.percentage}%</td>
-                    <td className="px-3 py-2">{row.autoApply ? "Sim" : "Não"}</td>
-                    <td className="px-3 py-2">{row.isActive ? "Ativa" : "Inativa"}</td>
-                    {canManage && row.isActive ? (
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          data-testid="finance-rules-deactivate-button"
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"
-                          onClick={() => void deactivate(row.id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Desativar
-                        </button>
-                      </td>
-                    ) : canManage ? (
-                      <td className="px-3 py-2">—</td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  ) : canManage ? (
+                    <td className="px-3 py-2">—</td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </FinanceCostCenterGridTableShell>
+        </>
       ) : null}
 
       {formOpen ? (

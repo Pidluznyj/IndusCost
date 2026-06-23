@@ -59,6 +59,29 @@ describe("financeCostCentersPage", () => {
     assert.match(unclassified, /Nenhum título sem classificação/);
   });
 
+  it("grids padronizados com busca, ordenação e paginação", () => {
+    const kit = read("src/lib/financeCostCenterGridKit.ts");
+    const ui = read("src/components/finance/cost-centers/FinanceCostCenterGridKit.tsx");
+    const crud = read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx");
+    const suppliers = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const rules = read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx");
+    const unclassified = read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+    const audit = read("src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx");
+    assert.match(kit, /prepareCostCenterCrudGridRows/);
+    assert.match(kit, /prepareSupplierGridRows/);
+    assert.match(kit, /prepareUnclassifiedGroupedRows/);
+    assert.match(ui, /FinanceCostCenterSortableTh/);
+    assert.match(ui, /FinanceCostCenterGridPagination/);
+    assert.match(crud, /FinanceCostCenterSortableTh/);
+    assert.match(crud, /finance-cost-centers-crud-search/);
+    assert.match(suppliers, /finance-suppliers-search/);
+    assert.match(rules, /finance-rules-search/);
+    assert.match(unclassified, /finance-unclassified-search/);
+    assert.match(audit, /finance-audit-search/);
+    assert.match(crud, /useSearchParams/);
+    assert.match(unclassified, /groupUnclassifiedPayablesBySupplier/);
+  });
+
   it("visão geral explica escopo e sem classificação real", () => {
     const overview = read("src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx");
     const page = read("src/components/finance/cost-centers/FinanceCostCentersPage.tsx");
