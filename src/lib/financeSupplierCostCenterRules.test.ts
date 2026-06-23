@@ -407,10 +407,12 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
     };
   }
 
-  it("1. busca por nome filtra displayName/normalizedName", () => {
+  it("1. busca por nome filtra displayName/normalizedName e aliases originais", () => {
     const json = JSON.stringify(buildFinancialSupplierSearchWhere("Forn Teste"));
     assert.match(json, /displayName/);
     assert.match(json, /normalizedName/);
+    assert.match(json, /originalName/);
+    assert.match(json, /originalDocument/);
   });
 
   it("2. busca por documento COM pontuação normaliza para dígitos", () => {
@@ -531,5 +533,12 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
       "utf8"
     );
     assert.match(routes, /supplier-cost-center-rules\/suppliers\/search/);
+
+    const suppliersRoutes = readFileSync(
+      join(process.cwd(), "src/lib/financeSuppliersRoutes.ts"),
+      "utf8"
+    );
+    assert.match(suppliersRoutes, /\/api\/finance\/suppliers\/search/);
+    assert.match(suppliersRoutes, /searchFinancialSuppliersForRulesDefault/);
   });
 });

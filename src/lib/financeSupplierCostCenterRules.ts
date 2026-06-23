@@ -290,6 +290,8 @@ export function buildFinancialSupplierSearchWhere(
     { legalName: { contains: search, mode: "insensitive" } },
     { tradeName: { contains: search, mode: "insensitive" } },
     { document: { contains: search, mode: "insensitive" } },
+    { aliases: { some: { originalName: { contains: search, mode: "insensitive" } } } },
+    { aliases: { some: { originalDocument: { contains: search, mode: "insensitive" } } } },
   ];
 
   const normalizedName = normalizeSupplierName(search);

@@ -7,6 +7,7 @@ import {
   buildFinancialSuppliersFromAccountsPayablePreviewDefault,
   FinanceSupplierRebuildError,
 } from "@/src/lib/financeSupplierRebuild.js";
+import { searchFinancialSuppliersForRulesDefault } from "@/src/lib/financeSupplierCostCenterRules.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
@@ -29,6 +30,22 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
     requireAppAuth,
     requireAnyPermission([...FINANCE_SUPPLIERS_APPLY_PERMISSIONS]),
   ] as const;
+
+  app.get("/api/finance/suppliers/search", ...previewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const search = typeof req.query.search === "string" ? req.query.search : "";
+      const limitRaw =
+        typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
+      const payload = await searchFinancialSuppliersForRulesDefault({ search, limit: limitRaw });
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/finance/suppliers/search", error);
+      return res.status(500).json(financeApiErrorJson("Erro ao buscar fornecedores.", error));
+    }
+  });
 
   app.get("/api/finance/suppliers/rebuild-from-ap-preview", ...previewGuard, async (req, res) => {
     try {

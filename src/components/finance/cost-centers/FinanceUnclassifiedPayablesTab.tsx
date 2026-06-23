@@ -15,11 +15,37 @@ import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTypes";
 
+type UnclassifiedCause =
+  | "MANUAL_LOCKED"
+  | "PARTIAL_ALLOCATION"
+  | "NO_SUPPLIER"
+  | "SUPPLIER_NO_RULE"
+  | "RULE_NOT_APPLIED";
+
 type UnclassifiedItem = {
   externalId: number;
   titleAmount: number;
   companyName: string | null;
   personName: string | null;
+  cause?: UnclassifiedCause;
+  supplierId?: string | null;
+  supplierName?: string | null;
+};
+
+const CAUSE_LABEL: Record<UnclassifiedCause, string> = {
+  MANUAL_LOCKED: "Manual bloqueado",
+  PARTIAL_ALLOCATION: "Rateio incompleto",
+  NO_SUPPLIER: "Fornecedor não casado",
+  SUPPLIER_NO_RULE: "Fornecedor sem regra ativa",
+  RULE_NOT_APPLIED: "Regra ativa, alocação pendente",
+};
+
+const CAUSE_HINT: Record<UnclassifiedCause, string> = {
+  MANUAL_LOCKED: "Classificação manual protegida — não será sobrescrita.",
+  PARTIAL_ALLOCATION: "Possui alocação parcial; complete o rateio para 100%.",
+  NO_SUPPLIER: "Rode o bootstrap de fornecedores a partir do AP.",
+  SUPPLIER_NO_RULE: "Cadastre uma regra de classificação para o fornecedor.",
+  RULE_NOT_APPLIED: "Aplique o preview em lote para classificar.",
 };
 
 type Props = {
@@ -36,6 +62,7 @@ export function FinanceUnclassifiedPayablesTab({
   onApplied,
 }: Props) {
   const [items, setItems] = useState<UnclassifiedItem[]>([]);
+  const [causeSummary, setCauseSummary] = useState<Partial<Record<UnclassifiedCause, number>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<BatchAllocationPreviewPayload | null>(null);
@@ -46,14 +73,16 @@ export function FinanceUnclassifiedPayablesTab({
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchJsonOk<{ items: UnclassifiedItem[] }>(
-        "/api/finance/accounts-payable/unclassified",
-        { credentials: "include" }
-      );
+      const payload = await fetchJsonOk<{
+        items: UnclassifiedItem[];
+        causeSummary?: Partial<Record<UnclassifiedCause, number>>;
+      }>("/api/finance/accounts-payable/unclassified", { credentials: "include" });
       setItems(payload.items);
+      setCauseSummary(payload.causeSummary ?? {});
     } catch (e) {
       setError(buildFinanceTabLoadError("Não foi possível carregar títulos sem classificação.", e));
       setItems([]);
+      setCauseSummary({});
     } finally {
       setLoading(false);
     }
@@ -66,18 +95,34 @@ export function FinanceUnclassifiedPayablesTab({
   const grouped = useMemo(() => {
     const map = new Map<
       string,
-      { name: string; titlesCount: number; amount: number; openAmount: number }
+      {
+        name: string;
+        titlesCount: number;
+        amount: number;
+        openAmount: number;
+        cause: UnclassifiedCause | null;
+      }
     >();
     for (const item of items) {
       const key = item.personName ?? `Título ${item.externalId}`;
-      const row = map.get(key) ?? { name: key, titlesCount: 0, amount: 0, openAmount: 0 };
+      const row =
+        map.get(key) ?? { name: key, titlesCount: 0, amount: 0, openAmount: 0, cause: null };
       row.titlesCount += 1;
       row.amount += item.titleAmount;
       row.openAmount += item.titleAmount;
+      if (item.cause) row.cause = item.cause;
       map.set(key, row);
     }
     return [...map.values()].sort((a, b) => b.amount - a.amount);
   }, [items]);
+
+  const causeChips = useMemo(
+    () =>
+      (Object.keys(CAUSE_LABEL) as UnclassifiedCause[])
+        .map((cause) => ({ cause, count: causeSummary[cause] ?? 0 }))
+        .filter((entry) => entry.count > 0),
+    [causeSummary]
+  );
 
   const runPreview = async () => {
     try {
@@ -153,6 +198,21 @@ export function FinanceUnclassifiedPayablesTab({
       {error ? <FinanceModuleErrorBanner message={error} onRetry={() => void load()} onDismiss={() => setError(null)} /> : null}
       {loading ? <FinanceModuleLoadingBlock label="Carregando títulos sem classificação…" /> : null}
 
+      {!loading && causeChips.length > 0 ? (
+        <div className="flex flex-wrap gap-2" data-testid="finance-unclassified-cause-summary">
+          {causeChips.map(({ cause, count }) => (
+            <span
+              key={cause}
+              title={CAUSE_HINT[cause]}
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-semibold"
+            >
+              {CAUSE_LABEL[cause]}
+              <span className="rounded-full bg-primary/10 px-1.5 text-primary">{count}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {!loading && grouped.length === 0 ? (
         <FinanceModuleEmptyState
           title="Nenhum título sem classificação"
@@ -168,6 +228,7 @@ export function FinanceUnclassifiedPayablesTab({
                 <th className="px-3 py-2">Fornecedor</th>
                 <th className="px-3 py-2">Títulos</th>
                 <th className="px-3 py-2">Valor</th>
+                <th className="px-3 py-2">Causa</th>
                 <th className="px-3 py-2">Sugestão</th>
                 <th className="px-3 py-2">Ação</th>
               </tr>
@@ -178,10 +239,19 @@ export function FinanceUnclassifiedPayablesTab({
                   <td className="px-3 py-2 font-semibold">{row.name}</td>
                   <td className="px-3 py-2">{row.titlesCount}</td>
                   <td className="px-3 py-2">{formatFinanceCurrency(row.amount)}</td>
+                  <td className="px-3 py-2">
+                    {row.cause ? (
+                      <span className="text-xs font-semibold">{CAUSE_LABEL[row.cause]}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    {unclassified && unclassified.titlesCount > 0
-                      ? "Definir regra para o fornecedor"
-                      : "Revisar fornecedor"}
+                    {row.cause
+                      ? CAUSE_HINT[row.cause]
+                      : unclassified && unclassified.titlesCount > 0
+                        ? "Definir regra para o fornecedor"
+                        : "Revisar fornecedor"}
                   </td>
                   <td className="px-3 py-2">
                     <button

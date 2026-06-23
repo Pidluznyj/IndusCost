@@ -759,10 +759,62 @@ export async function buildClassificationSummary(
   };
 }
 
+/** Motivo real pelo qual um título AP segue sem classificação completa. */
+export type UnclassifiedCause =
+  | "MANUAL_LOCKED"
+  | "PARTIAL_ALLOCATION"
+  | "NO_SUPPLIER"
+  | "SUPPLIER_NO_RULE"
+  | "RULE_NOT_APPLIED";
+
+export const UNCLASSIFIED_CAUSES: UnclassifiedCause[] = [
+  "MANUAL_LOCKED",
+  "PARTIAL_ALLOCATION",
+  "NO_SUPPLIER",
+  "SUPPLIER_NO_RULE",
+  "RULE_NOT_APPLIED",
+];
+
+export type UnclassifiedItem = {
+  externalId: number;
+  titleAmount: number;
+  companyName: string | null;
+  personName: string | null;
+  cause: UnclassifiedCause;
+  supplierId: string | null;
+  supplierName: string | null;
+};
+
+export type UnclassifiedListPayload = {
+  items: UnclassifiedItem[];
+  causeSummary: Record<UnclassifiedCause, number>;
+};
+
+/**
+ * Determina a causa real da não-classificação (função pura, testável).
+ * Ordem de prioridade: manual bloqueado → rateio parcial → sem fornecedor →
+ * fornecedor sem regra ativa → fornecedor com regra ativa mas alocação não aplicada.
+ */
+export function resolveUnclassifiedCause(input: {
+  hasManualLocked: boolean;
+  allocationPercentageTotal: number;
+  hasSupplier: boolean;
+  hasActiveAutoApplyRule: boolean;
+  hasActiveRule: boolean;
+}): UnclassifiedCause {
+  if (input.hasManualLocked) return "MANUAL_LOCKED";
+  if (input.allocationPercentageTotal > FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE) {
+    return "PARTIAL_ALLOCATION";
+  }
+  if (!input.hasSupplier) return "NO_SUPPLIER";
+  if (!input.hasActiveRule || !input.hasActiveAutoApplyRule) return "SUPPLIER_NO_RULE";
+  return "RULE_NOT_APPLIED";
+}
+
 export async function listUnclassifiedAccountsPayable(
   deps: FinanceApAllocationDeps,
   filters: BatchAllocationFilters
-): Promise<{ items: Array<{ externalId: number; titleAmount: number; companyName: string | null; personName: string | null }> }> {
+): Promise<UnclassifiedListPayload> {
   const apRows = await deps.loadApRows(filters);
   const allocations = await deps.loadAllocationsForPayables(apRows.map((row) => row.externalId));
   const byPayable = new Map<number, AllocationRecord[]>();
@@ -772,21 +824,65 @@ export async function listUnclassifiedAccountsPayable(
     byPayable.set(allocation.accountsPayableId, list);
   }
 
-  const items = apRows
-    .filter((ap) => {
-      const rows = byPayable.get(ap.externalId) ?? [];
-      if (rows.length === 0) return true;
-      const pct = rows.reduce((sum, row) => sum + decimalToNumber(row.percentage), 0);
-      return Math.abs(pct - 100) > FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE;
-    })
-    .map((ap) => ({
+  const suppliers = await deps.loadAllSuppliers();
+  const rulesBySupplier = new Map<string, SupplierRuleRecord[]>();
+  const loadRules = async (supplierId: string): Promise<SupplierRuleRecord[]> => {
+    const cached = rulesBySupplier.get(supplierId);
+    if (cached) return cached;
+    const rows = await deps.loadRulesForSupplier(supplierId);
+    rulesBySupplier.set(supplierId, rows);
+    return rows;
+  };
+
+  const causeSummary: Record<UnclassifiedCause, number> = {
+    MANUAL_LOCKED: 0,
+    PARTIAL_ALLOCATION: 0,
+    NO_SUPPLIER: 0,
+    SUPPLIER_NO_RULE: 0,
+    RULE_NOT_APPLIED: 0,
+  };
+
+  const items: UnclassifiedItem[] = [];
+
+  for (const ap of apRows) {
+    const rows = byPayable.get(ap.externalId) ?? [];
+    const pctTotal = rows.reduce((sum, row) => sum + decimalToNumber(row.percentage), 0);
+    const fullyClassified =
+      rows.length > 0 && Math.abs(pctTotal - 100) <= FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE;
+    if (fullyClassified) continue;
+
+    const supplier = resolveSupplierForAccountsPayable(ap, suppliers);
+    let hasActiveRule = false;
+    let hasActiveAutoApplyRule = false;
+    if (supplier) {
+      const rules = (await loadRules(supplier.id)).filter(
+        (r) => r.isActive && accountsPayableMatchesCompany(ap, r.company)
+      );
+      hasActiveRule = rules.length > 0;
+      hasActiveAutoApplyRule = rules.some((r) => r.autoApply);
+    }
+
+    const cause = resolveUnclassifiedCause({
+      hasManualLocked: hasManualLockedAllocation(rows),
+      allocationPercentageTotal: pctTotal,
+      hasSupplier: Boolean(supplier),
+      hasActiveAutoApplyRule,
+      hasActiveRule,
+    });
+    causeSummary[cause] += 1;
+
+    items.push({
       externalId: ap.externalId,
       titleAmount: resolveTitleAllocationBaseAmount(ap),
       companyName: ap.companyName ?? null,
       personName: ap.personName ?? null,
-    }));
+      cause,
+      supplierId: supplier?.id ?? null,
+      supplierName: supplier?.displayName ?? null,
+    });
+  }
 
-  return { items };
+  return { items, causeSummary };
 }
 
 function mapApRow(row: {

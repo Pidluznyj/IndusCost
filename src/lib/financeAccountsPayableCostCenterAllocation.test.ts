@@ -12,12 +12,14 @@ import {
   applyBatchAccountsPayableAllocation,
   assertFinanceApAllocationBatchConfirmation,
   FinanceApAllocationError,
+  listUnclassifiedAccountsPayable,
   previewAccountsPayableAllocation,
   previewBatchAccountsPayableAllocation,
   protectManualLockedAllocations,
   resolveCostCenterRulesForSupplier,
   resolveSupplierForAccountsPayable,
   resolveTitleAllocationBaseAmount,
+  resolveUnclassifiedCause,
   splitAmountByPercentages,
   validateAllocationTotals,
   type AllocationRecord,
@@ -480,5 +482,181 @@ describe("financeAccountsPayableCostCenterAllocation", () => {
 
   it("resolveTitleAllocationBaseAmount usa balancePayable", () => {
     assert.equal(resolveTitleAllocationBaseAmount({ externalId: 1, balancePayable: 250 }), 250);
+  });
+});
+
+describe("listUnclassifiedAccountsPayable — separação de causas", () => {
+  function baseState(over: Partial<MockState> = {}): MockState {
+    return {
+      apRows: [],
+      suppliers: [supplierActive()],
+      rules: [],
+      allocations: [],
+      auditLogs: [],
+      costCenters: [{ id: "cc-1", code: "ADM", name: "Admin", status: "ACTIVE" }],
+      apWrites: 0,
+      nextAllocationId: 1,
+      auditShouldFailOnNth: null,
+      auditCreateCount: 0,
+      transactionActive: false,
+      ...over,
+    };
+  }
+
+  function lockedAlloc(externalId: number, percentage = 50): AllocationRecord {
+    return {
+      id: `lock-${externalId}`,
+      accountsPayableId: externalId,
+      supplierId: "sup-1",
+      costCenterId: "cc-1",
+      amount: new Prisma.Decimal(percentage * 10),
+      percentage: new Prisma.Decimal(percentage),
+      source: "MANUAL",
+      confidence: null,
+      lockedManual: true,
+      ruleId: null,
+      notes: null,
+    };
+  }
+
+  function partialAlloc(externalId: number, percentage = 60): AllocationRecord {
+    return {
+      id: `part-${externalId}`,
+      accountsPayableId: externalId,
+      supplierId: "sup-1",
+      costCenterId: "cc-1",
+      amount: new Prisma.Decimal(percentage * 10),
+      percentage: new Prisma.Decimal(percentage),
+      source: "AUTO_RULE",
+      confidence: null,
+      lockedManual: false,
+      ruleId: "r1",
+      notes: null,
+    };
+  }
+
+  it("resolveUnclassifiedCause prioriza manual e parcial", () => {
+    assert.equal(
+      resolveUnclassifiedCause({
+        hasManualLocked: true,
+        allocationPercentageTotal: 50,
+        hasSupplier: true,
+        hasActiveAutoApplyRule: true,
+        hasActiveRule: true,
+      }),
+      "MANUAL_LOCKED"
+    );
+    assert.equal(
+      resolveUnclassifiedCause({
+        hasManualLocked: false,
+        allocationPercentageTotal: 60,
+        hasSupplier: true,
+        hasActiveAutoApplyRule: true,
+        hasActiveRule: true,
+      }),
+      "PARTIAL_ALLOCATION"
+    );
+    assert.equal(
+      resolveUnclassifiedCause({
+        hasManualLocked: false,
+        allocationPercentageTotal: 0,
+        hasSupplier: false,
+        hasActiveAutoApplyRule: false,
+        hasActiveRule: false,
+      }),
+      "NO_SUPPLIER"
+    );
+    assert.equal(
+      resolveUnclassifiedCause({
+        hasManualLocked: false,
+        allocationPercentageTotal: 0,
+        hasSupplier: true,
+        hasActiveAutoApplyRule: false,
+        hasActiveRule: false,
+      }),
+      "SUPPLIER_NO_RULE"
+    );
+    assert.equal(
+      resolveUnclassifiedCause({
+        hasManualLocked: false,
+        allocationPercentageTotal: 0,
+        hasSupplier: true,
+        hasActiveAutoApplyRule: true,
+        hasActiveRule: true,
+      }),
+      "RULE_NOT_APPLIED"
+    );
+  });
+
+  it("título sem fornecedor casado → NO_SUPPLIER", async () => {
+    const noMatch: ApAllocationTitleRow = {
+      externalId: 900,
+      personId: 999,
+      personName: "Pessoa Sem Cadastro",
+      personCnpj: null,
+      companyName: "Empresa A",
+      balancePayable: 1000,
+      amountPayable: 1000,
+    };
+    const state = baseState({ apRows: [noMatch] });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items.length, 1);
+    assert.equal(out.items[0]!.cause, "NO_SUPPLIER");
+    assert.equal(out.causeSummary.NO_SUPPLIER, 1);
+  });
+
+  it("fornecedor casado sem regra → SUPPLIER_NO_RULE", async () => {
+    const state = baseState({ apRows: [apRow(901)], rules: [] });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items[0]!.cause, "SUPPLIER_NO_RULE");
+    assert.equal(out.items[0]!.supplierId, "sup-1");
+    assert.equal(out.causeSummary.SUPPLIER_NO_RULE, 1);
+  });
+
+  it("fornecedor com regra ativa autoApply mas sem alocação → RULE_NOT_APPLIED", async () => {
+    const state = baseState({ apRows: [apRow(902)], rules: [rule("r1", "cc-1", 100)] });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items[0]!.cause, "RULE_NOT_APPLIED");
+    assert.equal(out.causeSummary.RULE_NOT_APPLIED, 1);
+  });
+
+  it("regra existente sem autoApply não conta como aplicável → SUPPLIER_NO_RULE", async () => {
+    const state = baseState({
+      apRows: [apRow(903)],
+      rules: [rule("r1", "cc-1", 100, { autoApply: false })],
+    });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items[0]!.cause, "SUPPLIER_NO_RULE");
+  });
+
+  it("alocação parcial (<100%) → PARTIAL_ALLOCATION", async () => {
+    const state = baseState({
+      apRows: [apRow(904)],
+      rules: [rule("r1", "cc-1", 100)],
+      allocations: [partialAlloc(904, 60)],
+    });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items[0]!.cause, "PARTIAL_ALLOCATION");
+    assert.equal(out.causeSummary.PARTIAL_ALLOCATION, 1);
+  });
+
+  it("alocação manual bloqueada parcial → MANUAL_LOCKED (protege manual)", async () => {
+    const state = baseState({
+      apRows: [apRow(905)],
+      rules: [rule("r1", "cc-1", 100)],
+      allocations: [lockedAlloc(905, 50)],
+    });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items[0]!.cause, "MANUAL_LOCKED");
+    assert.equal(out.causeSummary.MANUAL_LOCKED, 1);
+  });
+
+  it("título 100% classificado não aparece na lista", async () => {
+    const state = baseState({
+      apRows: [apRow(906)],
+      allocations: [partialAlloc(906, 100)],
+    });
+    const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
+    assert.equal(out.items.length, 0);
   });
 });
