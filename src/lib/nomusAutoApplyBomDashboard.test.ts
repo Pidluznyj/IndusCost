@@ -393,6 +393,97 @@ describe("assembleAutoApplyBomDashboardResult — lista viva (snapshot do stage)
   });
 });
 
+describe("buildNomusAutoApplyBomDashboard — precedência de fontes", () => {
+  function liveProductsForSnapshot(): NomusBomAutoApplyProductResult[] {
+    return [
+      SAMPLE_308,
+      {
+        parentCode: "100.01AA",
+        productId: "x1",
+        status: "NO_CHANGES",
+        canApply: true,
+        blockingReasons: [],
+        actionsPreview: [],
+      },
+    ];
+  }
+
+  function buildSnapshotResult() {
+    const products = liveProductsForSnapshot();
+    const parsed: ParsedAutoApplyReport = {
+      report: {
+        generatedAt: "2026-06-23T10:00:00.000Z",
+        mode: "DRY",
+        startedAt: "2026-06-23T10:00:00.000Z",
+        finishedAt: "2026-06-23T10:00:00.000Z",
+        approvedBy: "engenharia",
+        batchRunId: null,
+        reportMdPath: null,
+        reportJsonPath: null,
+        totals: SAMPLE_TOTALS,
+        products,
+      },
+      products,
+      totals: SAMPLE_TOTALS,
+      productListSource: "products",
+      hasProductList: true,
+    };
+    return assembleAutoApplyBomDashboardResult({
+      parsed,
+      productsForRows: products,
+      statusRevalidatedAt: new Date().toISOString(),
+      revalidatedProductCount: products.length,
+      fileReport: null,
+      runFallback: null,
+    });
+  }
+
+  it("snapshot SUCCESS com lista tem precedência sobre relatório parcial sem lista", async () => {
+    const snapshotResult = buildSnapshotResult();
+    const stored = {
+      id: "snap-1",
+      status: "SUCCESS",
+      generatedAt: "2026-06-23T10:00:00.000Z",
+      result: snapshotResult,
+    };
+
+    // Relatório parcial em disco: só totais, sem lista de produtos.
+    const partialPath = writeTempReport("nomus-auto-sync-bom-apply-report.json", {
+      totals: SAMPLE_TOTALS,
+      summary: SAMPLE_TOTALS,
+    });
+
+    const result = await buildNomusAutoApplyBomDashboard(
+      { reportPath: partialPath, preferSnapshot: true },
+      { loadSnapshot: async () => stored }
+    );
+
+    assert.equal(result.hasProductList, true);
+    assert.equal(result.productListSource, "products");
+    assert.ok(result.products.length > 0);
+    assert.equal(result.needsReportRegeneration, false);
+    assert.equal(result.partialReportWarning, null);
+  });
+
+  it("sem snapshot, cai para o relatório de arquivo", async () => {
+    const path = writeTempReport("nomus-auto-sync-bom-apply-report.json", {
+      generatedAt: "2026-05-26T10:00:00.000Z",
+      mode: "APPLY",
+      summary: SAMPLE_TOTALS,
+      items: [SAMPLE_308],
+    });
+
+    const result = await buildNomusAutoApplyBomDashboard(
+      { reportPath: path, preferSnapshot: true },
+      { loadSnapshot: async () => null }
+    );
+
+    assert.equal(result.hasProductList, true);
+    assert.equal(result.products.length, 1);
+    assert.equal(result.products[0].parentCode, "308.05AB");
+  });
+});
+
 describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
   it("endpoint retorna lista quando JSON usa items", async () => {
     const path = writeTempReport("nomus-auto-sync-bom-apply-report.json", {

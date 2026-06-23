@@ -480,23 +480,34 @@ export function assembleAutoApplyBomDashboardResult(input: {
   };
 }
 
-export async function buildNomusAutoApplyBomDashboard(input: {
-  filter?: AutoApplyDashboardFilter;
-  search?: string;
-  /** Caminho explícito: lê só esse arquivo (sem varrer docs/generated nem DB). */
-  reportPath?: string;
-  /** Reavalia bloqueados/ignorados com preview read-only síncrono (evitar em GET — usar job). */
-  revalidateBlocked?: boolean;
-  /** Retorna último snapshot SUCCESS persistido quando disponível. */
-  preferSnapshot?: boolean;
-} = {}): Promise<AutoApplyBomDashboardResult> {
+export type BuildNomusAutoApplyBomDashboardDeps = {
+  /** Injeção para teste: carrega o último snapshot SUCCESS persistido. */
+  loadSnapshot?: typeof getLatestSuccessfulAutoApplyDashboardSnapshot;
+};
+
+export async function buildNomusAutoApplyBomDashboard(
+  input: {
+    filter?: AutoApplyDashboardFilter;
+    search?: string;
+    /** Caminho explícito: lê só esse arquivo (sem varrer docs/generated nem DB). */
+    reportPath?: string;
+    /** Reavalia bloqueados/ignorados com preview read-only síncrono (evitar em GET — usar job). */
+    revalidateBlocked?: boolean;
+    /** Retorna último snapshot SUCCESS persistido quando disponível. */
+    preferSnapshot?: boolean;
+  } = {},
+  deps: BuildNomusAutoApplyBomDashboardDeps = {}
+): Promise<AutoApplyBomDashboardResult> {
   const filter = input.filter ?? "ALL";
   const search = input.search?.trim() || null;
   const revalidateBlocked = input.revalidateBlocked === true;
   const preferSnapshot = input.preferSnapshot !== false;
+  const loadSnapshot = deps.loadSnapshot ?? getLatestSuccessfulAutoApplyDashboardSnapshot;
 
+  // Precedência: snapshot SUCCESS com lista viva > relatório JSON parcial em docs/generated.
+  // Um relatório parcial (só totais) nunca pode esconder a fila operacional do snapshot.
   if (preferSnapshot && !revalidateBlocked) {
-    const stored = await getLatestSuccessfulAutoApplyDashboardSnapshot();
+    const stored = await loadSnapshot();
     if (stored?.result) {
       return {
         ...stored.result,

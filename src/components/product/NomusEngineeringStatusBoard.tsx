@@ -56,13 +56,35 @@ import type { NomusAutoApplyDashboardRevalidationStatus } from "@/src/lib/nomusA
 import type { MasterDataImportDiagnosticResult } from "@/src/lib/nomusMasterDataImportTypes";
 import type { EqualizePreviewResult } from "@/src/lib/nomusMasterDataEqualizeTypes";
 
-type StatusSnapshot = {
+export type StatusSnapshot = {
   masterData: MasterDataImportDiagnosticResult | null;
   equalize: EqualizePreviewResult | null;
   autoApply: AutoApplyBomDashboardResult | null;
   runs: EngineeringRunRecentItem[];
   generatedAt: string;
 };
+
+/**
+ * Mescla um resultado de dashboard recém-carregado no snapshot atual, preservando
+ * masterData/equalize/runs. Mantido puro para ser testável e para garantir que o
+ * `autoApply` (fila operacional) nunca seja descartado após o job terminar.
+ */
+export function nextSnapshotWithAutoApply(
+  prev: StatusSnapshot | null,
+  autoApply: AutoApplyBomDashboardResult | null,
+  generatedAt: string = new Date().toISOString()
+): StatusSnapshot {
+  if (prev) {
+    return { ...prev, autoApply, generatedAt };
+  }
+  return {
+    masterData: null,
+    equalize: null,
+    autoApply,
+    runs: [],
+    generatedAt,
+  };
+}
 
 const FILTER_OPTIONS: Array<{ value: AutoApplyDashboardFilter; label: string }> = [
   { value: "ALL", label: "Todos" },
@@ -270,7 +292,9 @@ export const NomusEngineeringStatusBoard: React.FC<{
     if (!pollJobId) return;
 
     let cancelled = false;
+    let finished = false;
     const tick = async () => {
+      if (finished) return;
       try {
         const status = await fetchNomusAutoApplyBomDashboardRevalidationStatus();
         if (cancelled) return;
@@ -278,8 +302,11 @@ export const NomusEngineeringStatusBoard: React.FC<{
 
         if (status.status === "RUNNING") return;
 
-        setPollJobId(null);
-        setLoading(false);
+        // Job terminou: marca como finalizado para evitar reprocessamento e carrega o
+        // dashboard (snapshot SUCCESS). IMPORTANTE: aplicar o autoApply no snapshot ANTES
+        // de limpar pollJobId — limpar antes dispara o cleanup do effect (cancelled=true)
+        // e o resultado seria descartado, deixando a fila operacional sem renderizar.
+        finished = true;
 
         if (status.status === "FAILED") {
           setError(
@@ -290,23 +317,16 @@ export const NomusEngineeringStatusBoard: React.FC<{
 
         const autoApply = await fetchNomusAutoApplyBomDashboard();
         if (cancelled) return;
-        setSnapshot((prev) =>
-          prev
-            ? { ...prev, autoApply, generatedAt: new Date().toISOString() }
-            : {
-                masterData: null,
-                equalize: null,
-                autoApply,
-                runs: [],
-                generatedAt: new Date().toISOString(),
-              }
-        );
+        setSnapshot((prev) => nextSnapshotWithAutoApply(prev, autoApply));
         setPage(0);
+        setLoading(false);
+        setPollJobId(null);
       } catch (e) {
         if (cancelled) return;
-        setPollJobId(null);
+        finished = true;
         setLoading(false);
         setError(e instanceof Error ? e.message : "Erro ao acompanhar revalidação.");
+        setPollJobId(null);
       }
     };
 
@@ -319,16 +339,30 @@ export const NomusEngineeringStatusBoard: React.FC<{
   }, [pollJobId]);
 
   useEffect(() => {
-    void fetchNomusAutoApplyBomDashboardRevalidationStatus()
-      .then((status) => {
+    let cancelled = false;
+    void (async () => {
+      // Se há um job rodando, retoma o polling (a barra de progresso aparece via
+      // revalidationRunning, independente de loading).
+      try {
+        const status = await fetchNomusAutoApplyBomDashboardRevalidationStatus();
+        if (cancelled) return;
         if (status.status === "RUNNING" && status.jobId) {
           setRevalidationJob(status);
           setPollJobId(status.jobId);
-          setLoading(true);
         }
-      })
-      .catch(() => undefined);
-  }, []);
+      } catch {
+        /* ignore — segue para carregar o último snapshot disponível */
+      }
+      if (cancelled) return;
+      // Ao abrir a tela, carrega o último snapshot SUCCESS (GET leve, sem revalidação
+      // pesada) para que a fila operacional apareça sem precisar clicar em Atualizar,
+      // e para não ficar vazia enquanto um job roda (mostra a última foto disponível).
+      await loadAll();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAll]);
 
   useEffect(() => {
     setPage(0);
