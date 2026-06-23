@@ -1,0 +1,167 @@
+import type express from "express";
+import type { RequestHandler } from "express";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import {
+  applyCostCenterReallocationDefault,
+  buildCostCenterDetailSummaryDefault,
+  FinanceCostCenterDetailError,
+  listCostCenterDetailAllocationsDefault,
+  parseCostCenterDetailListQuery,
+  parseCostCenterReallocationBody,
+  previewCostCenterReallocationDefault,
+} from "@/src/lib/financeCostCenterDetail.js";
+import { FinanceCostCenterValidationError } from "@/src/lib/financeCostCenters.js";
+import { FINANCE_COST_CENTERS_VIEW_PERMISSIONS } from "@/src/lib/financeCostCentersRoutes.js";
+import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import { FinanceApFilterParseError } from "@/src/lib/financeAccountsPayableDashboard.js";
+
+type AuthGuards = {
+  requireAppAuth: RequestHandler;
+  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+};
+
+export const FINANCE_COST_CENTER_REALLOCATION_PERMISSIONS = [
+  "finance.cost_centers.manage",
+  "finance.ap_allocations.apply_batch",
+] as const;
+
+function canReallocate(user: AppAuthContext): boolean {
+  if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
+  return FINANCE_COST_CENTER_REALLOCATION_PERMISSIONS.some((permission) =>
+    user.effectivePermissions.includes(permission)
+  );
+}
+
+function handleDetailError(
+  res: express.Response,
+  error:
+    | FinanceCostCenterDetailError
+    | FinanceCostCenterValidationError
+    | FinanceApFilterParseError
+) {
+  const status =
+    error instanceof FinanceCostCenterValidationError && error.code === "NOT_FOUND"
+      ? 404
+      : error instanceof FinanceCostCenterDetailError && error.code === "NOT_FOUND"
+        ? 404
+        : 400;
+  return res.status(status).json({
+    error: error.message,
+    code: "code" in error ? error.code : "INVALID_FILTER",
+  });
+}
+
+export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth: AuthGuards) {
+  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const viewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_COST_CENTERS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  app.post("/api/finance/cost-centers/reallocation/preview", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      if (!canReallocate(user)) {
+        return res.status(403).json({ error: "Sem permissão para realocar alocações." });
+      }
+
+      const input = parseCostCenterReallocationBody(req.body);
+      const preview = await previewCostCenterReallocationDefault(input);
+      return res.json(preview);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("POST /api/finance/cost-centers/reallocation/preview", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao gerar preview de realocação.", error)
+      );
+    }
+  });
+
+  app.post("/api/finance/cost-centers/reallocation/apply", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      if (!canReallocate(user)) {
+        return res.status(403).json({ error: "Sem permissão para realocar alocações." });
+      }
+
+      const input = parseCostCenterReallocationBody(req.body);
+      const result = await applyCostCenterReallocationDefault(input, {
+        userId: user.id,
+        userName: user.name,
+      });
+      return res.json(result);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("POST /api/finance/cost-centers/reallocation/apply", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao aplicar realocação.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/:id/summary", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const id = String(req.params.id ?? "").trim();
+      const filters = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
+      const { page: _p, limit: _l, sortBy: _s, sortDirection: _d, ...summaryFilters } = filters;
+      void _p;
+      void _l;
+      void _s;
+      void _d;
+      const summary = await buildCostCenterDetailSummaryDefault(id, summaryFilters);
+      return res.json({ summary });
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/:id/summary", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar resumo do centro de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/:id/allocations", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const id = String(req.params.id ?? "").trim();
+      const query = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
+      const payload = await listCostCenterDetailAllocationsDefault(id, query);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/:id/allocations", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao listar alocações do centro de custo.", error)
+      );
+    }
+  });
+}

@@ -83,9 +83,19 @@ export function isFinanceSectionId(value: string): value is FinanceSectionId {
 }
 
 /** URL canônica do módulo Financeiro. */
+export function isFinanceCostCenterDetailPath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  return /^\/finance\/cost-centers\/[0-9a-f-]{36}$/i.test(normalized);
+}
+
+export function buildFinanceCostCenterDetailPath(costCenterId: string): string {
+  return `/finance/cost-centers/${costCenterId}`;
+}
+
 export function isFinanceCanonicalPath(pathname: string): boolean {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   if (normalized === FINANCE_BASE_PATH) return true;
+  if (isFinanceCostCenterDetailPath(normalized)) return true;
   return FINANCE_SECTION_IDS.some((id) => normalized === FINANCE_SECTION_PATHS[id]);
 }
 

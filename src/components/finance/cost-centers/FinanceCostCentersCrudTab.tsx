@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -7,6 +8,7 @@ import {
   buildFinanceCostCentersListApiPath,
   FINANCE_COST_CENTERS_LIST_STATUS_OPTIONS,
 } from "@/src/lib/financeCostCentersPageTypes";
+import { buildFinanceCostCenterDetailPath } from "@/src/lib/financeNavigation";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   FinanceModuleEmptyState,
@@ -189,13 +191,21 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
                 <th className="px-3 py-2">Nome</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Atualizado</th>
-                {canManage ? <th className="px-3 py-2">Ações</th> : null}
+                <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
               {items.map((row) => (
                 <tr key={row.id} className="border-b border-border/60">
-                  <td className="px-3 py-2 font-semibold">{row.code}</td>
+                  <td className="px-3 py-2 font-semibold">
+                    <Link
+                      to={buildFinanceCostCenterDetailPath(row.id)}
+                      className="text-primary hover:underline"
+                      data-testid="finance-cost-centers-open-detail"
+                    >
+                      {row.code}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2">{row.name}</td>
                   <td className="px-3 py-2">
                     <span
@@ -210,30 +220,39 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{formatFinanceDateTime(row.updatedAt)}</td>
-                  {canManage ? (
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          data-testid="finance-cost-centers-edit-button"
-                          className="text-xs font-semibold text-primary"
-                          onClick={() => openEdit(row)}
-                        >
-                          Editar
-                        </button>
-                        {row.status === "ACTIVE" ? (
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={buildFinanceCostCenterDetailPath(row.id)}
+                        className="text-xs font-semibold text-primary"
+                        data-testid="finance-cost-centers-view-allocations-button"
+                      >
+                        Ver lançamentos
+                      </Link>
+                      {canManage ? (
+                        <>
                           <button
                             type="button"
-                            data-testid="finance-cost-centers-inactivate-button"
-                            className="text-xs font-semibold text-amber-700"
-                            onClick={() => void inactivate(row)}
+                            data-testid="finance-cost-centers-edit-button"
+                            className="text-xs font-semibold text-primary"
+                            onClick={() => openEdit(row)}
                           >
-                            Inativar
+                            Editar
                           </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  ) : null}
+                          {row.status === "ACTIVE" ? (
+                            <button
+                              type="button"
+                              data-testid="finance-cost-centers-inactivate-button"
+                              className="text-xs font-semibold text-amber-700"
+                              onClick={() => void inactivate(row)}
+                            >
+                              Inativar
+                            </button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

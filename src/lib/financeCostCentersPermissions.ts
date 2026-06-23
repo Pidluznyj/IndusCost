@@ -54,3 +54,10 @@ export function canViewFinanceCostCenterAudit(auth: FinanceCostCentersPermission
     auth.hasPermission("finance.view")
   );
 }
+
+export function canReallocateFinanceCostCenterAllocations(
+  auth: FinanceCostCentersPermissionCheck & { role?: string }
+): boolean {
+  if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN") return true;
+  return canManageFinanceCostCenters(auth) || canApplyFinanceApAllocationsBatch(auth);
+}

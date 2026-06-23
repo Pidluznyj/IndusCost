@@ -17,6 +17,7 @@ import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
 import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
 import { canViewFinanceCostCenters } from "@/src/lib/financeCostCentersPermissions";
 import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/FinanceCostCentersPage";
+import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
 import { canViewFinanceSalesOrders } from "@/src/lib/financeSalesOrdersPermissions";
 import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
 import {
@@ -171,6 +172,7 @@ export function FinanceModule() {
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />
         <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
+        <Route path="cost-centers/:costCenterId" element={sectionRoutes["cost-centers"] ? <FinanceCostCenterDetailPage /> : <Navigate to={defaultPath} replace />} />
         <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
         <Route path="executive-report" element={sectionRoutes["executive-report"]} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />
