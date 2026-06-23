@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
   CheckCircle2,
   Download,
   Eye,
@@ -29,20 +28,37 @@ import {
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
+  CLASSIFY_APPLY_LOADING_MESSAGE,
+  CLASSIFY_APPLY_LOADING_TITLE,
+  formatImportApplySuccessMessage,
+  IMPORT_APPLY_LOADING_MESSAGE,
+  IMPORT_APPLY_LOADING_TITLE,
+  importApplyButtonDisabled,
+  UNCLASSIFIED_CAUSE_CHIP_CLASS,
+  UNCLASSIFIED_CAUSE_HINT,
+  UNCLASSIFIED_CAUSE_LABEL,
+  UNCLASSIFIED_CAUSE_SUGGESTION,
+  UNCLASSIFIED_CLASSIFY_FLOW_HINT,
+  type UnclassifiedCauseUi,
+} from "@/src/lib/financeUnclassifiedPayablesUi";
+import {
   FinanceModuleEmptyState,
   FinanceModuleErrorBanner,
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
+import {
+  CostCenterDialog,
+  ModalErrorBlock,
+  ModalLoadingOverlay,
+  ModalSuccessBlock,
+  PreviewStatGrid,
+  SensitiveConfirmAlert,
+} from "@/src/components/finance/cost-centers/financeUnclassifiedModalUi";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTypes";
 
-type UnclassifiedCause =
-  | "MANUAL_LOCKED"
-  | "PARTIAL_ALLOCATION"
-  | "NO_SUPPLIER"
-  | "SUPPLIER_NO_RULE"
-  | "RULE_NOT_APPLIED";
+type UnclassifiedCause = UnclassifiedCauseUi;
 
 type UnclassifiedItem = {
   externalId: number;
@@ -52,22 +68,6 @@ type UnclassifiedItem = {
   cause?: UnclassifiedCause;
   supplierId?: string | null;
   supplierName?: string | null;
-};
-
-const CAUSE_LABEL: Record<UnclassifiedCause, string> = {
-  MANUAL_LOCKED: "Manual bloqueado",
-  PARTIAL_ALLOCATION: "Rateio incompleto",
-  NO_SUPPLIER: "Fornecedor não casado",
-  SUPPLIER_NO_RULE: "Fornecedor sem regra ativa",
-  RULE_NOT_APPLIED: "Regra ativa, alocação pendente",
-};
-
-const CAUSE_HINT: Record<UnclassifiedCause, string> = {
-  MANUAL_LOCKED: "Classificação manual protegida — não será sobrescrita.",
-  PARTIAL_ALLOCATION: "Possui alocação parcial; complete o rateio para 100%.",
-  NO_SUPPLIER: "Rode o bootstrap de fornecedores a partir do AP.",
-  SUPPLIER_NO_RULE: "Cadastre uma regra de classificação para o fornecedor.",
-  RULE_NOT_APPLIED: "Aplique o preview em lote para classificar.",
 };
 
 type GroupedRow = {
@@ -140,7 +140,6 @@ export function FinanceUnclassifiedPayablesTab({
   const [applying, setApplying] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
-  // Classificação por fornecedor (modal)
   const [classifyGroup, setClassifyGroup] = useState<GroupedRow | null>(null);
   const [centers, setCenters] = useState<FinanceCostCenterDto[]>([]);
   const [centersLoaded, setCentersLoaded] = useState(false);
@@ -150,21 +149,21 @@ export function FinanceUnclassifiedPayablesTab({
   const [modalConfirmChecked, setModalConfirmChecked] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
-  // Autocomplete de fornecedor (apenas quando não há fornecedor casado)
   const [supplierQuery, setSupplierQuery] = useState("");
   const [supplierResults, setSupplierResults] = useState<FinanceSupplierSearchResult[]>([]);
   const [supplierSearching, setSupplierSearching] = useState(false);
   const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
   const searchSeq = useRef(0);
 
-  // Exportar / Importar planilha
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importLoadingPreview, setImportLoadingPreview] = useState(false);
   const [importApplying, setImportApplying] = useState(false);
+  const [importApplyResult, setImportApplyResult] = useState<ImportApplyResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importErrorDetails, setImportErrorDetails] = useState<string | null>(null);
   const [importConfirmSensitive, setImportConfirmSensitive] = useState(false);
 
   const load = useCallback(async () => {
@@ -218,7 +217,7 @@ export function FinanceUnclassifiedPayablesTab({
 
   const causeChips = useMemo(
     () =>
-      (Object.keys(CAUSE_LABEL) as UnclassifiedCause[])
+      (Object.keys(UNCLASSIFIED_CAUSE_LABEL) as UnclassifiedCause[])
         .map((cause) => ({ cause, count: causeSummary[cause] ?? 0 }))
         .filter((entry) => entry.count > 0),
     [causeSummary]
@@ -282,7 +281,6 @@ export function FinanceUnclassifiedPayablesTab({
   const effectiveSupplierId = classifyGroup?.supplierId ?? modalSupplier?.id ?? null;
   const needsSupplierLink = Boolean(classifyGroup) && !classifyGroup?.supplierId;
 
-  // Busca de fornecedor com debounce, apenas quando o grupo não tem fornecedor casado.
   useEffect(() => {
     if (!classifyGroup || !needsSupplierLink || modalSupplier) return;
     const term = supplierQuery.trim();
@@ -331,7 +329,8 @@ export function FinanceUnclassifiedPayablesTab({
     void ensureCenters();
   };
 
-  const closeClassifyModal = () => {
+  const closeClassifyModal = (force = false) => {
+    if (modalSaving && !force) return;
     setClassifyGroup(null);
     setModalSaving(false);
     setModalError(null);
@@ -360,7 +359,9 @@ export function FinanceUnclassifiedPayablesTab({
   };
 
   const confirmClassify = async () => {
-    if (!canManageRules || !effectiveSupplierId || !modalCostCenterId || !modalConfirmChecked) return;
+    if (!canManageRules || !effectiveSupplierId || !modalCostCenterId || !modalConfirmChecked || modalSaving) {
+      return;
+    }
     setModalSaving(true);
     setModalError(null);
     try {
@@ -405,7 +406,7 @@ export function FinanceUnclassifiedPayablesTab({
       }
 
       setNotice(appliedMessage);
-      closeClassifyModal();
+      closeClassifyModal(true);
       await load();
       onApplied?.();
     } catch (e) {
@@ -444,19 +445,33 @@ export function FinanceUnclassifiedPayablesTab({
     setImportOpen(true);
     setImportFile(null);
     setImportPreview(null);
+    setImportApplyResult(null);
     setImportError(null);
+    setImportErrorDetails(null);
     setImportConfirmSensitive(false);
   };
 
   const closeImportModal = () => {
+    if (importApplying) return;
     setImportOpen(false);
-    setImportApplying(false);
     setImportLoadingPreview(false);
+    setImportApplyResult(null);
+    setImportError(null);
+    setImportErrorDetails(null);
+  };
+
+  const finishImportSuccess = async (result: ImportApplyResult) => {
+    setImportApplyResult(result);
+    setNotice(formatImportApplySuccessMessage(result));
+    await load();
+    onApplied?.();
   };
 
   const runImportPreview = async (file: File) => {
     setImportLoadingPreview(true);
     setImportError(null);
+    setImportErrorDetails(null);
+    setImportApplyResult(null);
     setImportPreview(null);
     try {
       const formData = new FormData();
@@ -467,16 +482,19 @@ export function FinanceUnclassifiedPayablesTab({
       );
       setImportPreview(payload);
     } catch (e) {
-      setImportError(buildFinanceTabLoadError("Não foi possível validar a planilha.", e));
+      const message = buildFinanceTabLoadError("Não foi possível validar a planilha.", e);
+      setImportError(message);
+      setImportErrorDetails(e instanceof Error ? e.message : String(e));
     } finally {
       setImportLoadingPreview(false);
     }
   };
 
   const applyImport = async () => {
-    if (!importFile || !importPreview) return;
+    if (!importFile || !importPreview || importApplying) return;
     setImportApplying(true);
     setImportError(null);
+    setImportErrorDetails(null);
     try {
       const formData = new FormData();
       formData.append("file", importFile);
@@ -486,36 +504,74 @@ export function FinanceUnclassifiedPayablesTab({
         "/api/finance/cost-centers/unclassified/import/apply",
         { method: "POST", credentials: "include", body: formData }
       );
-      let message = `Importação aplicada: ${result.rulesCreated} regra(s), ${result.titlesAllocated} título(s) classificados.`;
-      if (result.suppliersCreated > 0) message += ` ${result.suppliersCreated} fornecedor(es) criados.`;
-      if (result.titlesIgnoredManualLocked > 0) {
-        message += ` ${result.titlesIgnoredManualLocked} título(s) com classificação manual preservados.`;
-      }
-      if (result.skippedSensitiveUnconfirmed > 0) {
-        message += ` ${result.skippedSensitiveUnconfirmed} linha(s) sensível(is) ignorada(s) sem confirmação.`;
-      }
-      setNotice(message);
-      closeImportModal();
-      await load();
-      onApplied?.();
+      await finishImportSuccess(result);
     } catch (e) {
-      setImportError(buildFinanceTabLoadError("Não foi possível aplicar a importação.", e));
+      const message = buildFinanceTabLoadError("Não foi possível aplicar a importação.", e);
+      setImportError(message);
+      setImportErrorDetails(e instanceof Error ? e.message : String(e));
     } finally {
       setImportApplying(false);
     }
   };
 
+  const importCanApply =
+    Boolean(importPreview) &&
+    importPreview.validLines + importPreview.sensitiveRequiringConfirmation > 0;
+
+  const importApplyDisabled = importApplyButtonDisabled({
+    applying: importApplying,
+    loadingPreview: importLoadingPreview,
+    sensitiveCount: importPreview?.sensitiveRequiringConfirmation ?? 0,
+    confirmSensitive: importConfirmSensitive,
+    canApply: importCanApply,
+  });
+
+  const importPreviewStats = importPreview
+    ? [
+        { label: "Linhas lidas", value: importPreview.totalRead },
+        { label: "Válidas", value: importPreview.validLines, tone: "ok" as const },
+        { label: "Inválidas", value: importPreview.invalidLines, tone: "error" as const },
+        { label: "Ignoradas", value: importPreview.skippedLines },
+        { label: "Fornecedores a criar", value: importPreview.suppliersToCreate },
+        { label: "Fornecedores a vincular", value: importPreview.suppliersToLink },
+        { label: "Regras a criar", value: importPreview.rulesToCreate },
+        { label: "Títulos a classificar", value: importPreview.titlesToAllocate },
+        {
+          label: "Sensíveis (confirmar)",
+          value: importPreview.sensitiveRequiringConfirmation,
+          tone: importPreview.sensitiveRequiringConfirmation > 0 ? ("warn" as const) : undefined,
+        },
+      ]
+    : [];
+
+  const importApplyLoadingStats = importPreview
+    ? [
+        { label: "Fornecedores a criar", value: importPreview.suppliersToCreate },
+        { label: "Fornecedores a vincular", value: importPreview.suppliersToLink },
+        { label: "Regras a criar", value: importPreview.rulesToCreate },
+        { label: "Títulos a classificar", value: importPreview.titlesToAllocate },
+        {
+          label: "Sensíveis confirmados",
+          value: importConfirmSensitive ? importPreview.sensitiveRequiringConfirmation : 0,
+        },
+      ]
+    : [];
+
   const unclassified = dashboard?.unclassified;
 
   return (
-    <div className="space-y-4" data-testid="finance-cost-centers-unclassified-tab">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Títulos AP sem classificação completa. Agrupe por fornecedor e aplique regras em lote com
-          confirmação.
+    <div className="space-y-5" data-testid="finance-cost-centers-unclassified-tab">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-muted-foreground leading-relaxed">
+          Títulos AP sem classificação completa. Agrupe por fornecedor, classifique manualmente ou
+          use exportação/importação de planilha com preview.
         </p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold" onClick={() => void load()}>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-muted/40"
+            onClick={() => void load()}
+          >
             <RefreshCw className="h-4 w-4" />
             Atualizar
           </button>
@@ -533,7 +589,7 @@ export function FinanceUnclassifiedPayablesTab({
             <button
               type="button"
               data-testid="finance-unclassified-import-button"
-              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"
+              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-muted/40"
               onClick={openImportModal}
             >
               <Upload className="h-4 w-4" />
@@ -541,29 +597,29 @@ export function FinanceUnclassifiedPayablesTab({
             </button>
           ) : null}
           {canApplyBatch ? (
-            <>
-              <button
-                type="button"
-                data-testid="finance-unclassified-preview-button"
-                className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"
-                onClick={() => void runPreview()}
-              >
-                <Play className="h-4 w-4" />
-                Preview em lote
-              </button>
-            </>
+            <button
+              type="button"
+              data-testid="finance-unclassified-preview-button"
+              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-muted/40"
+              onClick={() => void runPreview()}
+            >
+              <Play className="h-4 w-4" />
+              Preview em lote
+            </button>
           ) : null}
         </div>
       </div>
 
-      {error ? <FinanceModuleErrorBanner message={error} onRetry={() => void load()} onDismiss={() => setError(null)} /> : null}
+      {error ? (
+        <FinanceModuleErrorBanner message={error} onRetry={() => void load()} onDismiss={() => setError(null)} />
+      ) : null}
       {notice ? (
         <div
           data-testid="finance-unclassified-notice"
-          className="flex items-start justify-between gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+          className="flex items-start justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
         >
-          <span className="inline-flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
+          <span className="inline-flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             {notice}
           </span>
           <button type="button" className="text-emerald-700" onClick={() => setNotice(null)}>
@@ -574,17 +630,25 @@ export function FinanceUnclassifiedPayablesTab({
       {loading ? <FinanceModuleLoadingBlock label="Carregando títulos sem classificação…" /> : null}
 
       {!loading && causeChips.length > 0 ? (
-        <div className="flex flex-wrap gap-2" data-testid="finance-unclassified-cause-summary">
-          {causeChips.map(({ cause, count }) => (
-            <span
-              key={cause}
-              title={CAUSE_HINT[cause]}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-semibold"
-            >
-              {CAUSE_LABEL[cause]}
-              <span className="rounded-full bg-primary/10 px-1.5 text-primary">{count}</span>
-            </span>
-          ))}
+        <div className="space-y-2" data-testid="finance-unclassified-cause-summary">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Resumo por causa
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {causeChips.map(({ cause, count }) => (
+              <span
+                key={cause}
+                title={UNCLASSIFIED_CAUSE_HINT[cause]}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm",
+                  UNCLASSIFIED_CAUSE_CHIP_CLASS[cause]
+                )}
+              >
+                {UNCLASSIFIED_CAUSE_LABEL[cause]}
+                <span className="rounded-full bg-white/70 px-2 py-0.5 tabular-nums">{count}</span>
+              </span>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -597,45 +661,52 @@ export function FinanceUnclassifiedPayablesTab({
 
       {!loading && grouped.length > 0 ? (
         <div className={cn(financeBiCardClass, "overflow-x-auto")}>
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-[10px] font-bold uppercase text-muted-foreground">
-                <th className="px-3 py-2">Fornecedor</th>
-                <th className="px-3 py-2">Títulos</th>
-                <th className="px-3 py-2">Valor</th>
-                <th className="px-3 py-2">Causa</th>
-                <th className="px-3 py-2">Sugestão</th>
-                <th className="px-3 py-2">Ação</th>
+              <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-3">Fornecedor</th>
+                <th className="px-4 py-3">Títulos</th>
+                <th className="px-4 py-3">Valor</th>
+                <th className="px-4 py-3">Causa</th>
+                <th className="px-4 py-3">Sugestão</th>
+                <th className="px-4 py-3 text-right">Ação</th>
               </tr>
             </thead>
             <tbody>
               {grouped.map((row) => (
-                <tr key={row.name} className="border-b border-border/60">
-                  <td className="px-3 py-2 font-semibold">{row.name}</td>
-                  <td className="px-3 py-2">{row.titlesCount}</td>
-                  <td className="px-3 py-2">{formatFinanceCurrency(row.amount)}</td>
-                  <td className="px-3 py-2">
+                <tr key={row.name} className="border-b border-border/60 hover:bg-muted/20">
+                  <td className="px-4 py-3 font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 tabular-nums">{row.titlesCount}</td>
+                  <td className="px-4 py-3 tabular-nums">{formatFinanceCurrency(row.amount)}</td>
+                  <td className="px-4 py-3">
                     {row.cause ? (
-                      <span className="text-xs font-semibold">{CAUSE_LABEL[row.cause]}</span>
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
+                          UNCLASSIFIED_CAUSE_CHIP_CLASS[row.cause]
+                        )}
+                      >
+                        {UNCLASSIFIED_CAUSE_LABEL[row.cause]}
+                      </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">
+                  <td className="px-4 py-3 text-[11px] text-muted-foreground max-w-[180px]">
                     {row.cause
-                      ? CAUSE_HINT[row.cause]
+                      ? UNCLASSIFIED_CAUSE_SUGGESTION[row.cause]
                       : unclassified && unclassified.titlesCount > 0
-                        ? "Definir regra para o fornecedor"
+                        ? "Definir regra"
                         : "Revisar fornecedor"}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-4 py-3 text-right">
                     <button
                       type="button"
                       data-testid="finance-unclassified-classify-supplier-button"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10"
                       onClick={() => openClassifyModal(row)}
                     >
-                      <Settings2 className="h-3 w-3" />
+                      <Settings2 className="h-3.5 w-3.5" />
                       Classificar fornecedor
                     </button>
                   </td>
@@ -647,7 +718,7 @@ export function FinanceUnclassifiedPayablesTab({
       ) : null}
 
       {preview && canApplyBatch ? (
-        <div className={cn(financeBiCardClass, "space-y-3")}>
+        <div className={cn(financeBiCardClass, "space-y-3 p-4")}>
           <h3 className="font-semibold">Preview em lote</h3>
           <p className="text-sm text-muted-foreground">
             Criar: {preview.summary.wouldCreate} · Substituir: {preview.summary.wouldReplace} ·
@@ -678,50 +749,73 @@ export function FinanceUnclassifiedPayablesTab({
       ) : null}
 
       {classifyGroup ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div
-            className={cn(financeBiCardClass, "w-full max-w-lg space-y-4")}
-            data-testid="finance-unclassified-classify-modal"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-lg font-semibold">Classificar fornecedor</h3>
+        <CostCenterDialog
+          testId="finance-unclassified-classify-modal"
+          title="Classificar fornecedor"
+          subtitle="Defina o centro de custo e aplique a classificação aos títulos elegíveis deste fornecedor."
+          onClose={closeClassifyModal}
+          closeDisabled={modalSaving}
+          maxWidthClass="max-w-xl"
+          footer={
+            <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold"
+                className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40"
                 onClick={closeClassifyModal}
+                disabled={modalSaving}
               >
-                <X className="h-3 w-3" />
-                Fechar
+                Cancelar
+              </button>
+              <button
+                type="button"
+                data-testid="finance-unclassified-classify-confirm"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                disabled={!modalCanConfirm}
+                onClick={() => void confirmClassify()}
+              >
+                {modalSaving ? "Classificando…" : "Criar regra e classificar"}
               </button>
             </div>
+          }
+        >
+          <div className="relative space-y-5">
+            {modalSaving ? (
+              <ModalLoadingOverlay
+                testId="finance-unclassified-classify-loading"
+                title={CLASSIFY_APPLY_LOADING_TITLE}
+                message={CLASSIFY_APPLY_LOADING_MESSAGE}
+              />
+            ) : null}
 
-            <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-              <p className="font-semibold">{classifyGroup.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {classifyGroup.cause ? CAUSE_LABEL[classifyGroup.cause] : "Sem classificação"} ·{" "}
-                {formatFinanceInteger(classifyGroup.titlesCount)} título(s) ·{" "}
-                {formatFinanceCurrency(classifyGroup.amount)}
-              </p>
-              {classifyGroup.supplierId ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Fornecedor financeiro:{" "}
-                  <span className="font-semibold">
-                    {classifyGroup.supplierName ?? "vinculado"}
+            <section className="rounded-xl border border-border bg-muted/20 p-4 space-y-2">
+              <p className="text-base font-semibold">{classifyGroup.name}</p>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {classifyGroup.cause ? (
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 font-semibold",
+                      UNCLASSIFIED_CAUSE_CHIP_CLASS[classifyGroup.cause]
+                    )}
+                  >
+                    {UNCLASSIFIED_CAUSE_LABEL[classifyGroup.cause]}
                   </span>
+                ) : null}
+                <span>{formatFinanceInteger(classifyGroup.titlesCount)} título(s)</span>
+                <span>{formatFinanceCurrency(classifyGroup.amount)}</span>
+              </div>
+              {classifyGroup.cause ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {UNCLASSIFIED_CLASSIFY_FLOW_HINT[classifyGroup.cause]}
                 </p>
-              ) : (
-                <p className="mt-1 text-xs text-amber-700">
-                  Sem fornecedor financeiro vinculado — busque e vincule abaixo.
-                </p>
-              )}
-            </div>
+              ) : null}
+            </section>
 
             {needsSupplierLink ? (
-              <div className="space-y-1 text-sm">
-                <span className="font-semibold">Fornecedor financeiro</span>
+              <section className="space-y-2">
+                <h4 className="text-sm font-semibold">Fornecedor gerencial</h4>
                 {modalSupplier ? (
                   <div
-                    className="rounded-lg border border-primary/40 bg-primary/5 p-3"
+                    className="rounded-xl border border-primary/30 bg-primary/5 p-3"
                     data-testid="finance-unclassified-selected-supplier"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -731,49 +825,44 @@ export function FinanceUnclassifiedPayablesTab({
                           {modalSupplier.document ?? "Sem documento"}
                           {modalSupplier.externalCode ? ` · código ${modalSupplier.externalCode}` : ""}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatFinanceInteger(modalSupplier.titlesCount)} título(s)
-                        </p>
                       </div>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold"
+                        className="rounded-lg border px-2 py-1 text-xs font-semibold"
+                        disabled={modalSaving}
                         onClick={() => {
                           setModalSupplier(null);
                           setModalPreview(null);
                         }}
                       >
-                        <X className="h-3 w-3" />
                         Trocar
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                  <div className="relative space-y-1">
+                    <div className="flex items-center gap-2 rounded-xl border px-3 py-2.5">
                       <Search className="h-4 w-4 text-muted-foreground" />
                       <input
                         data-testid="finance-unclassified-supplier-search"
                         className="w-full bg-transparent text-sm outline-none"
                         value={supplierQuery}
+                        disabled={modalSaving}
                         onChange={(e) => {
                           setSupplierQuery(e.target.value);
                           setSupplierDropdownOpen(true);
                         }}
                         onFocus={() => setSupplierDropdownOpen(true)}
-                        placeholder="Buscar fornecedor por nome, CNPJ, documento ou código..."
+                        placeholder="Buscar por nome, CNPJ ou código…"
                       />
                     </div>
                     {supplierDropdownOpen && supplierQuery.trim().length >= 2 ? (
-                      <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-background shadow-lg">
+                      <div className="absolute z-10 mt-1 max-h-52 w-full overflow-auto rounded-xl border bg-background shadow-lg">
                         {supplierSearching ? (
-                          <p className="px-3 py-2 text-xs text-muted-foreground">
-                            Buscando fornecedores…
-                          </p>
+                          <p className="px-3 py-2 text-xs text-muted-foreground">Buscando…</p>
                         ) : supplierResults.length === 0 ? (
                           <p className="px-3 py-2 text-xs text-muted-foreground">
-                            Nenhum fornecedor encontrado. Rode o bootstrap de fornecedores a partir do
-                            AP na aba Fornecedores.
+                            Nenhum fornecedor encontrado.
                           </p>
                         ) : (
                           supplierResults.map((supplier) => (
@@ -781,7 +870,7 @@ export function FinanceUnclassifiedPayablesTab({
                               key={supplier.id}
                               type="button"
                               data-testid="finance-unclassified-supplier-option"
-                              className="block w-full border-b border-border/40 px-3 py-2 text-left hover:bg-muted/50"
+                              className="block w-full border-b px-3 py-2 text-left hover:bg-muted/50"
                               onClick={() => {
                                 setModalSupplier(supplier);
                                 setSupplierDropdownOpen(false);
@@ -789,29 +878,29 @@ export function FinanceUnclassifiedPayablesTab({
                               }}
                             >
                               <p className="text-sm font-semibold">{supplier.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {supplier.document ?? "Sem documento"} ·{" "}
-                                {formatFinanceInteger(supplier.titlesCount)} título(s)
-                              </p>
+                              <p className="text-xs text-muted-foreground">{supplier.document ?? "—"}</p>
                             </button>
                           ))
                         )}
                       </div>
                     ) : null}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Digite ao menos 2 caracteres para buscar.
-                    </p>
                   </div>
                 )}
-              </div>
-            ) : null}
+              </section>
+            ) : (
+              <section className="rounded-xl border border-border bg-muted/15 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Fornecedor financeiro: </span>
+                <span className="font-semibold">{classifyGroup.supplierName ?? "vinculado"}</span>
+              </section>
+            )}
 
-            <label className="block space-y-1 text-sm">
-              <span className="font-semibold">Centro de custo</span>
+            <section className="space-y-2">
+              <h4 className="text-sm font-semibold">Centro de custo</h4>
               <select
                 data-testid="finance-unclassified-cost-center-select"
-                className="w-full rounded-lg border px-3 py-2 text-sm"
+                className="w-full rounded-xl border px-3 py-2.5 text-sm"
                 value={modalCostCenterId}
+                disabled={modalSaving}
                 onChange={(e) => {
                   setModalCostCenterId(e.target.value);
                   setModalPreview(null);
@@ -824,23 +913,22 @@ export function FinanceUnclassifiedPayablesTab({
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-muted-foreground">
-                Percentual padrão 100%. Para rateio, use a aba Regras de Classificação.
-              </span>
-            </label>
+              <p className="text-xs text-muted-foreground">Percentual padrão 100%.</p>
+            </section>
 
             <button
               type="button"
               data-testid="finance-unclassified-modal-preview-button"
               className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-              disabled={!effectiveSupplierId || !modalCostCenterId}
+              disabled={!effectiveSupplierId || !modalCostCenterId || modalSaving}
               onClick={() => void runModalPreview()}
             >
               <Eye className="h-4 w-4" />
               Pré-visualizar impacto
             </button>
+
             {modalPreview ? (
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <section className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
                 <p>
                   Títulos em aberto: {formatFinanceInteger(modalPreview.openTitlesCount)} · Bloqueados
                   manual: {formatFinanceInteger(modalPreview.manualLockedTitlesCount)}
@@ -850,13 +938,11 @@ export function FinanceUnclassifiedPayablesTab({
                     Classificações manuais bloqueadas não serão sobrescritas.
                   </p>
                 ) : null}
-              </div>
+              </section>
             ) : null}
 
             {modalError ? (
-              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {modalError}
-              </div>
+              <ModalErrorBlock title="Não foi possível classificar" message={modalError} />
             ) : null}
 
             <label className="flex items-start gap-2 text-sm">
@@ -865,191 +951,157 @@ export function FinanceUnclassifiedPayablesTab({
                 data-testid="finance-unclassified-confirm-checkbox"
                 className="mt-1"
                 checked={modalConfirmChecked}
+                disabled={modalSaving}
                 onChange={(e) => setModalConfirmChecked(e.target.checked)}
               />
               <span>
-                Confirmo criar a regra de classificação (100%) e aplicar aos títulos elegíveis deste
-                fornecedor, preservando classificações manuais bloqueadas.
+                Confirmo criar a regra (100%) e aplicar aos títulos elegíveis, preservando
+                classificações manuais bloqueadas.
               </span>
             </label>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border px-3 py-2 text-sm"
-                onClick={closeClassifyModal}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                data-testid="finance-unclassified-classify-confirm"
-                className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                disabled={!modalCanConfirm}
-                onClick={() => void confirmClassify()}
-              >
-                {modalSaving ? "Classificando…" : "Criar regra e classificar"}
-              </button>
-            </div>
           </div>
-        </div>
+        </CostCenterDialog>
       ) : null}
 
       {importOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div
-            className={cn(financeBiCardClass, "w-full max-w-2xl space-y-4")}
-            data-testid="finance-unclassified-import-modal"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-lg font-semibold">Importar planilha de classificação</h3>
+        <CostCenterDialog
+          testId="finance-unclassified-import-modal"
+          title="Importar planilha de classificação"
+          subtitle="Valide o arquivo, revise o preview e aplique somente após confirmar linhas sensíveis, se houver."
+          onClose={closeImportModal}
+          closeDisabled={importApplying}
+          maxWidthClass="max-w-4xl"
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold"
+                className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40"
                 onClick={closeImportModal}
+                disabled={importApplying}
               >
-                <X className="h-3 w-3" />
-                Fechar
+                {importApplyResult ? "Fechar" : "Cancelar"}
               </button>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              Exporte a planilha, preencha as colunas de ação, centro de custo e percentual, marque
-              <span className="font-semibold"> aplicar = SIM</span> e importe aqui. A validação roda
-              antes de qualquer alteração.
-            </p>
-
-            <label className="block space-y-1 text-sm">
-              <span className="font-semibold">Arquivo (.xlsx)</span>
-              <input
-                type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                data-testid="finance-unclassified-import-file"
-                className="block w-full text-sm"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setImportFile(file);
-                  setImportPreview(null);
-                  setImportError(null);
-                  if (file) void runImportPreview(file);
-                }}
-              />
-            </label>
-
-            {importLoadingPreview ? (
-              <FinanceModuleLoadingBlock label="Validando planilha…" />
-            ) : null}
-
-            {importError ? (
-              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {importError}
-              </div>
-            ) : null}
-
-            {importPreview ? (
-              <div className="space-y-3" data-testid="finance-unclassified-import-preview">
-                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-                  <SummaryStat label="Linhas lidas" value={importPreview.totalRead} />
-                  <SummaryStat label="Válidas" value={importPreview.validLines} tone="ok" />
-                  <SummaryStat label="Inválidas" value={importPreview.invalidLines} tone="error" />
-                  <SummaryStat label="Ignoradas" value={importPreview.skippedLines} />
-                  <SummaryStat label="Fornecedores a criar" value={importPreview.suppliersToCreate} />
-                  <SummaryStat label="Fornecedores a vincular" value={importPreview.suppliersToLink} />
-                  <SummaryStat label="Regras a criar" value={importPreview.rulesToCreate} />
-                  <SummaryStat label="Títulos a classificar" value={importPreview.titlesToAllocate} />
-                  <SummaryStat
-                    label="Sensíveis (confirmar)"
-                    value={importPreview.sensitiveRequiringConfirmation}
-                    tone={importPreview.sensitiveRequiringConfirmation > 0 ? "warn" : undefined}
-                  />
-                </div>
-
-                {importPreview.lines.some((line) => line.errors.length > 0) ? (
-                  <div className="max-h-40 overflow-auto rounded-lg border border-border bg-muted/30 p-2 text-xs">
-                    <p className="mb-1 font-semibold">Erros por linha</p>
-                    {importPreview.lines
-                      .filter((line) => line.errors.length > 0)
-                      .map((line) => (
-                        <p key={line.rowNumber} className="text-rose-700">
-                          Linha {line.rowNumber}
-                          {line.personNameNomus ? ` (${line.personNameNomus})` : ""}:{" "}
-                          {line.errors.join(" ")}
-                        </p>
-                      ))}
-                  </div>
-                ) : null}
-
-                {importPreview.sensitiveRequiringConfirmation > 0 ? (
-                  <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                    <input
-                      type="checkbox"
-                      data-testid="finance-unclassified-import-confirm-sensitive"
-                      className="mt-1"
-                      checked={importConfirmSensitive}
-                      onChange={(e) => setImportConfirmSensitive(e.target.checked)}
-                    />
-                    <span className="inline-flex items-start gap-1">
-                      <AlertTriangle className="mt-0.5 h-4 w-4" />
-                      Há {importPreview.sensitiveRequiringConfirmation} linha(s) sensível(is) (conta
-                      administrativa, receita federal, sócios, financiamentos ou grupo interno).
-                      Confirmo a classificação dessas linhas.
-                    </span>
-                  </label>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border px-3 py-2 text-sm"
-                onClick={closeImportModal}
-              >
-                Cancelar
-              </button>
-              {importPreview && importPreview.validLines + importPreview.sensitiveRequiringConfirmation > 0 ? (
+              {importApplyResult ? null : importCanApply ? (
                 <button
                   type="button"
                   data-testid="finance-unclassified-import-apply-button"
-                  className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                  disabled={
-                    importApplying ||
-                    (importPreview.sensitiveRequiringConfirmation > 0 && !importConfirmSensitive)
-                  }
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  disabled={importApplyDisabled}
                   onClick={() => void applyImport()}
                 >
                   {importApplying ? "Aplicando…" : "Aplicar importação"}
                 </button>
               ) : null}
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+          }
+        >
+          <div className="relative space-y-6">
+            {importApplying ? (
+              <ModalLoadingOverlay
+                testId="finance-unclassified-import-loading"
+                title={IMPORT_APPLY_LOADING_TITLE}
+                message={IMPORT_APPLY_LOADING_MESSAGE}
+                stats={importApplyLoadingStats}
+              />
+            ) : null}
 
-function SummaryStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "ok" | "error" | "warn";
-}) {
-  const toneClass =
-    tone === "ok"
-      ? "text-emerald-700"
-      : tone === "error"
-        ? "text-rose-700"
-        : tone === "warn"
-          ? "text-amber-700"
-          : "text-foreground";
-  return (
-    <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
-      <p className="text-[10px] font-bold uppercase text-muted-foreground">{label}</p>
-      <p className={cn("text-lg font-semibold", toneClass)}>{value}</p>
+            {importApplyResult ? (
+              <ModalSuccessBlock
+                title="Importação aplicada com sucesso."
+                message={formatImportApplySuccessMessage(importApplyResult)}
+                stats={[
+                  { label: "Fornecedores criados", value: importApplyResult.suppliersCreated },
+                  { label: "Fornecedores vinculados", value: importApplyResult.suppliersLinked },
+                  { label: "Regras criadas", value: importApplyResult.rulesCreated },
+                  { label: "Títulos classificados", value: importApplyResult.titlesAllocated },
+                  {
+                    label: "Manuais preservados",
+                    value: importApplyResult.titlesIgnoredManualLocked,
+                  },
+                ]}
+              />
+            ) : (
+              <>
+                <section className="space-y-2">
+                  <h4 className="text-sm font-semibold">Arquivo selecionado</h4>
+                  <input
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    data-testid="finance-unclassified-import-file"
+                    className="block w-full rounded-xl border border-dashed px-3 py-3 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-semibold"
+                    disabled={importApplying}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      setImportFile(file);
+                      setImportPreview(null);
+                      setImportError(null);
+                      setImportErrorDetails(null);
+                      if (file) void runImportPreview(file);
+                    }}
+                  />
+                  {importFile ? (
+                    <p className="text-xs text-muted-foreground">
+                      {importFile.name} · {(importFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Exporte a planilha, preencha as colunas e marque aplicar = SIM.
+                    </p>
+                  )}
+                </section>
+
+                {importLoadingPreview ? (
+                  <FinanceModuleLoadingBlock label="Validando planilha…" />
+                ) : null}
+
+                {importError ? (
+                  <ModalErrorBlock
+                    title="Não foi possível concluir a importação"
+                    message={importError}
+                    details={importErrorDetails}
+                    hint="Corrija a planilha e gere novo preview antes de aplicar."
+                  />
+                ) : null}
+
+                {importPreview ? (
+                  <section className="space-y-4" data-testid="finance-unclassified-import-preview">
+                    <div>
+                      <h4 className="text-sm font-semibold">Resumo do preview</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Nenhuma alteração é feita até você clicar em Aplicar importação.
+                      </p>
+                    </div>
+                    <PreviewStatGrid stats={importPreviewStats} />
+
+                    {importPreview.lines.some((line) => line.errors.length > 0) ? (
+                      <div className="max-h-44 overflow-auto rounded-xl border border-border bg-muted/20 p-3 text-xs">
+                        <p className="mb-2 font-semibold">Erros por linha</p>
+                        {importPreview.lines
+                          .filter((line) => line.errors.length > 0)
+                          .map((line) => (
+                            <p key={line.rowNumber} className="text-rose-700 py-0.5">
+                              Linha {line.rowNumber}
+                              {line.personNameNomus ? ` (${line.personNameNomus})` : ""}:{" "}
+                              {line.errors.join(" ")}
+                            </p>
+                          ))}
+                      </div>
+                    ) : null}
+
+                    {importPreview.sensitiveRequiringConfirmation > 0 ? (
+                      <SensitiveConfirmAlert
+                        count={importPreview.sensitiveRequiringConfirmation}
+                        checked={importConfirmSensitive}
+                        onChange={setImportConfirmSensitive}
+                      />
+                    ) : null}
+                  </section>
+                ) : null}
+              </>
+            )}
+          </div>
+        </CostCenterDialog>
+      ) : null}
     </div>
   );
 }

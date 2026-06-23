@@ -37,6 +37,8 @@ describe("financeCostCentersPage", () => {
     assert.match(read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx"), /finance-cost-centers-suppliers-tab/);
     assert.match(read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx"), /finance-cost-centers-rules-tab/);
     assert.match(read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx"), /finance-cost-centers-unclassified-tab/);
+    assert.match(read("src/components/finance/cost-centers/financeUnclassifiedModalUi.tsx"), /CostCenterDialog/);
+    assert.match(read("src/lib/financeUnclassifiedPayablesUi.ts"), /UNCLASSIFIED_CAUSE_LABEL/);
     assert.match(read("src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx"), /finance-cost-centers-audit-tab/);
   });
 
@@ -115,7 +117,7 @@ describe("financeCostCentersPage", () => {
       const src = tab();
       assert.match(src, /data-testid="finance-unclassified-classify-supplier-button"/);
       assert.match(src, /onClick=\{\(\) => openClassifyModal\(row\)\}/);
-      assert.match(src, /data-testid="finance-unclassified-classify-modal"/);
+      assert.match(src, /testId="finance-unclassified-classify-modal"/);
     });
 
     it("a modal mostra causa, contagem, valor e fornecedor vinculado", () => {
@@ -123,7 +125,7 @@ describe("financeCostCentersPage", () => {
       assert.match(src, /classifyGroup\.cause/);
       assert.match(src, /classifyGroup\.titlesCount/);
       assert.match(src, /formatFinanceCurrency\(classifyGroup\.amount\)/);
-      assert.match(src, /Fornecedor financeiro/);
+      assert.match(src, /Fornecedor gerencial/);
       assert.match(src, /data-testid="finance-unclassified-cost-center-select"/);
       assert.match(src, /Percentual padrão 100%/);
     });
@@ -157,7 +159,7 @@ describe("financeCostCentersPage", () => {
 
     it("atualiza a lista após sucesso", () => {
       const src = tab();
-      assert.match(src, /closeClassifyModal\(\);\s*await load\(\);\s*onApplied\?\.\(\);/);
+      assert.match(src, /closeClassifyModal\(true\);\s*await load\(\);\s*onApplied\?\.\(\);/);
       assert.match(src, /data-testid="finance-unclassified-notice"/);
     });
 
@@ -174,6 +176,8 @@ describe("financeCostCentersPage", () => {
   describe("aba Títulos sem Classificação — exportar/importar planilha", () => {
     const tab = () =>
       read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+    const modalUi = () =>
+      read("src/components/finance/cost-centers/financeUnclassifiedModalUi.tsx");
 
     it("botões de exportar e importar existem", () => {
       const src = tab();
@@ -191,7 +195,7 @@ describe("financeCostCentersPage", () => {
 
     it("importar abre modal com upload, preview e botão de aplicar", () => {
       const src = tab();
-      assert.match(src, /data-testid="finance-unclassified-import-modal"/);
+      assert.match(src, /testId="finance-unclassified-import-modal"/);
       assert.match(src, /data-testid="finance-unclassified-import-file"/);
       assert.match(src, /data-testid="finance-unclassified-import-preview"/);
       assert.match(src, /data-testid="finance-unclassified-import-apply-button"/);
@@ -203,7 +207,8 @@ describe("financeCostCentersPage", () => {
       const src = tab();
       assert.match(src, /requiredConfirmationText/);
       assert.match(src, /confirmSensitive/);
-      assert.match(src, /data-testid="finance-unclassified-import-confirm-sensitive"/);
+      assert.match(modalUi(), /finance-unclassified-import-confirm-sensitive/);
+      assert.match(src, /finishImportSuccess/);
       assert.match(src, /await load\(\);\s*onApplied\?\.\(\);/);
     });
 
