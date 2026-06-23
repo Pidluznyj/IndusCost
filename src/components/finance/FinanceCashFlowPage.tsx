@@ -31,7 +31,7 @@ import {
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
 import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/FinanceCashFlowRiskTab";
-import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
+import { FinanceCashFlowDailyRadar } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadar";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
 import { FinanceCashFlowMonthlyPlannedChart } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyPlannedChart";
@@ -610,10 +610,7 @@ export function FinanceCashFlowPage() {
             />
           </section>
 
-          <FinanceCashFlowDetailTable
-            inflows={[...payload.largestProjectedInflows, ...payload.overdueReceivables]}
-            outflows={[...payload.largestProjectedOutflows, ...payload.overduePayables]}
-          />
+          <FinanceCashFlowDailyRadar />
         </div>
       ) : null}
 

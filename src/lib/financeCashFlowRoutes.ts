@@ -25,6 +25,18 @@ import {
   buildFinanceCashFlowExportCsv,
   financeCashFlowExportFilename,
 } from "@/src/lib/financeCashFlowExport.js";
+import {
+  buildFinanceCashFlowDailyRadar,
+  createDailyRadarDashboardFilters,
+  parseDailyRadarQuery,
+  filterDailyRadarPortfolioRows,
+} from "@/src/lib/financeCashFlowDailyRadar.js";
+import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { buildFinanceArPrismaWhere } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import {
+  toCashFlowPortfolioApFilters,
+  toCashFlowPortfolioArFilters,
+} from "@/src/lib/financeCashFlowDashboard.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
@@ -72,6 +84,39 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
   const apFilters = toApLoadFilters(filters);
   const arWhere = buildCashFlowArPrismaWhere(filters, arFilters, new Date(), arSyncCutoff);
   const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, new Date(), apSyncCutoff);
+
+  const [arPrisma, apPrisma] = await Promise.all([
+    prisma.nomusAccountsReceivable.findMany({
+      where: arWhere,
+      select: FINANCE_CASH_FLOW_AR_SELECT,
+      orderBy: { dueDate: "asc" },
+    }),
+    prisma.nomusAccountsPayable.findMany({
+      where: apWhere,
+      select: FINANCE_CASH_FLOW_AP_SELECT,
+      orderBy: { dueDate: "asc" },
+    }),
+  ]);
+
+  return {
+    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
+    arSyncCutoff,
+    apSyncCutoff,
+  };
+}
+
+/** Carrega portfólio AR/AP aberto sem recorte de período — independente dos filtros da página. */
+async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
+  const filters = createDailyRadarDashboardFilters();
+  const [arSyncCutoff, apSyncCutoff] = await Promise.all([
+    resolveNomusArReportSyncCutoffFromPrisma(prisma),
+    resolveNomusApReportSyncCutoffFromPrisma(prisma),
+  ]);
+  const arFilters = toCashFlowPortfolioArFilters(filters);
+  const apFilters = toCashFlowPortfolioApFilters(filters);
+  const arWhere = buildFinanceArPrismaWhere(arFilters, referenceDate, arSyncCutoff);
+  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
 
   const [arPrisma, apPrisma] = await Promise.all([
     prisma.nomusAccountsReceivable.findMany({
@@ -178,6 +223,32 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(csv);
+    }
+  );
+
+  app.get(
+    "/api/finance/cash-flow/daily-radar",
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      const query = parseDailyRadarQuery(req.query as Record<string, unknown>);
+      const referenceDate = new Date();
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+        await loadDailyRadarPortfolioRows(referenceDate);
+      const portfolio = filterDailyRadarPortfolioRows(
+        arRows,
+        apRows,
+        referenceDate,
+        arSyncCutoff,
+        apSyncCutoff
+      );
+      const payload = buildFinanceCashFlowDailyRadar(
+        portfolio.arRows,
+        portfolio.apRows,
+        query,
+        referenceDate
+      );
+      res.json(payload);
     }
   );
 }
