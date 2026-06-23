@@ -3,10 +3,12 @@ import { CalendarRange } from "lucide-react";
 import { FinanceKpiCard, type FinanceKpiCardProps } from "@/src/components/finance/shared/FinanceKpiCard";
 import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceBillingHorizonDrilldownSection } from "@/src/components/finance/billing/FinanceBillingHorizonDrilldownSection";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
 import { mapHorizonBucketsToCards } from "@/src/lib/financeAgingBucketDrilldownTypes";
 import type { FinanceApUiFilters } from "@/src/lib/financeAccountsPayableDashboardTypes";
 import type { FinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import type { FinanceBillingHorizonDrilldownFilters } from "@/src/lib/financeBillingHorizonDrilldownTypes";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 
 type FinanceHorizonVariant = "ap" | "ar" | "billing";
@@ -32,7 +34,7 @@ export function FinanceHorizonSection({
   summary: FinanceHorizonSummary | null | undefined;
   variant: FinanceHorizonVariant;
   loading?: boolean;
-  filters?: FinanceApUiFilters | FinanceArUiFilters;
+  filters?: FinanceApUiFilters | FinanceArUiFilters | FinanceBillingHorizonDrilldownFilters;
   enableDrilldown?: boolean;
 }) {
   if (!summary && !loading) return null;
@@ -58,8 +60,15 @@ export function FinanceHorizonSection({
           <FinanceAgingBucketDrilldownSection
             module="ap"
             cards={cards}
-            filters={filters}
+            filters={filters as FinanceApUiFilters}
             horizonMode
+            loadingCards={loading && !summary}
+          />
+        ) : enableDrilldown && variant === "billing" && filters ? (
+          <FinanceBillingHorizonDrilldownSection
+            cards={cards}
+            filters={filters as FinanceBillingHorizonDrilldownFilters}
+            countUnitLabel={summary?.countUnitLabel ?? "pedido(s)"}
             loadingCards={loading && !summary}
           />
         ) : loading && !summary ? (
@@ -78,7 +87,11 @@ export function FinanceHorizonSection({
                   icon={CalendarRange}
                   label={bucket.label}
                   value={formatFinanceKpiCurrency(bucket.amount)}
-                  subtitle={bucket.count > 0 ? `${bucket.count} título(s)` : "—"}
+                  subtitle={
+                    bucket.count > 0
+                      ? `${bucket.count} ${summary?.countUnitLabel ?? "título(s)"}`
+                      : "—"
+                  }
                   compact
                 />
               </React.Fragment>

@@ -120,6 +120,7 @@ import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
+import type { FinanceBillingHorizonDrilldownFilters } from "@/src/lib/financeBillingHorizonDrilldownTypes";
 
 export function FinanceBillingPage() {
   const auth = useAuth();
@@ -181,6 +182,14 @@ export function FinanceBillingPage() {
   const nfeQueryString = useMemo(
     () => buildFinanceBillingNfeQuery(appliedNfeFilters),
     [appliedNfeFilters]
+  );
+
+  const horizonDrilldownFilters = useMemo<FinanceBillingHorizonDrilldownFilters>(
+    () => ({
+      customerCnpj: appliedNfeFilters.customerCnpj,
+      documentNumber: appliedNfeFilters.documentNumber,
+    }),
+    [appliedNfeFilters.customerCnpj, appliedNfeFilters.documentNumber]
   );
 
   const [data, setData] = useState<FinanceBillingDashboardPayload | null>(null);
@@ -888,6 +897,8 @@ export function FinanceBillingPage() {
         summary={tab?.forecast?.financialHorizon}
         variant="billing"
         loading={loading}
+        filters={horizonDrilldownFilters}
+        enableDrilldown
       />
 
       <section className={financeBiSectionClass}>

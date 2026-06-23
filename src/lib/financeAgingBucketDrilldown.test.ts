@@ -23,12 +23,18 @@ describe("FinanceAgingBucketDrilldownSection — UI", () => {
     assert.match(read("src/components/finance/FinanceAccountsPayablePage.tsx"), /FinanceAgingBucketDrilldownSection/);
     assert.match(read("src/components/finance/FinanceArOpenHorizonSection.tsx"), /horizonMode/);
     assert.match(read("src/components/finance/shared/FinanceHorizonSection.tsx"), /enableDrilldown/);
+    assert.match(read("src/components/finance/FinanceBillingPage.tsx"), /enableDrilldown/);
   });
 
-  it("AP inclui centro de custo no grid", () => {
+  it("AP e AR exibem descrição do lançamento no grid de drilldown", () => {
     const source = read("src/components/finance/shared/FinanceAgingBucketDrilldownSection.tsx");
-    assert.match(source, /Centro de custo/);
-    assert.match(source, /costCenterLabel/);
-    assert.match(source, /FINANCE_AP_NO_CLASSIFICATION/);
+    assert.match(source, /Descrição do lançamento/);
+    assert.match(source, /LaunchDescriptionCell/);
+    assert.match(source, /resolveFinanceLaunchDescription/);
+    assert.match(source, /row\.description/);
+    assert.doesNotMatch(source, /costCenterLabel/);
+    assert.doesNotMatch(source, /FINANCE_AP_NO_CLASSIFICATION/);
+    assert.match(source, /max-w-\[220px\] truncate/);
+    assert.match(source, /title=\{resolved/);
   });
 });
