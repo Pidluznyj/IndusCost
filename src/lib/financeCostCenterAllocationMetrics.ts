@@ -41,18 +41,56 @@ export function parseFinanceCostCenterApScope(value: unknown): FinanceCostCenter
   if (raw === "all" || raw === "all_in_filter" || raw === "periodo" || raw === "competencia") {
     return "all_in_filter";
   }
+  if (raw === "open" || raw === "open_only" || raw === "aberto") {
+    return "open_only";
+  }
   return "open_only";
 }
 
-/** Valor base do título para métricas de centro de custo (saldo em aberto por padrão). */
+/** Escopo gerencial derivado do filtro de status AP (quando apScope não é explícito na query). */
+export function resolveCostCenterApScopeFromStatus(status: string | undefined): FinanceCostCenterApScope {
+  const normalized = (status ?? "all").trim().toLowerCase();
+  if (
+    normalized === "open" ||
+    normalized === "overdue" ||
+    normalized === "duetoday" ||
+    normalized === "upcoming"
+  ) {
+    return "open_only";
+  }
+  return "all_in_filter";
+}
+
+export function resolveOpenOnlyFromApStatus(status: string | undefined): boolean {
+  return resolveCostCenterApScopeFromStatus(status) === "open_only";
+}
+
+export function resolveCostCenterClassificationScopeLabel(
+  status: string | undefined,
+  scope: FinanceCostCenterApScope
+): string {
+  const normalized = (status ?? "all").trim().toLowerCase();
+  if (scope === "open_only" || normalized === "open") return "Total AP em aberto";
+  if (normalized === "settled") return "Total AP pago/liquidado";
+  return "Total AP no filtro";
+}
+
+/**
+ * Valor base do título para métricas de centro de custo.
+ * - open_only: saldo em aberto (balancePayable), coerente com visão “em aberto”.
+ * - all_in_filter: amountPayable (alinha com Total a pagar do dashboard AP no período).
+ */
 export function resolveCostCenterTitleAmount(
-  row: Pick<FinanceApDashboardRow, "balancePayable" | "amountPayable">,
+  row: Pick<FinanceApDashboardRow, "balancePayable" | "amountPayable" | "amountPaid">,
   scope: FinanceCostCenterApScope = "open_only"
 ): number {
   const balance = Math.abs(row.balancePayable);
   if (scope === "open_only") return finiteMoney(balance);
   const payable = Math.abs(row.amountPayable);
-  return finiteMoney(balance > 0 ? balance : payable);
+  if (payable > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) return finiteMoney(payable);
+  if (balance > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) return finiteMoney(balance);
+  const paid = Math.abs(row.amountPaid ?? 0);
+  return finiteMoney(paid);
 }
 
 export function isCostCenterTitleInScope(

@@ -16,6 +16,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
+import { resolveCostCenterClassificationScopeLabel } from "@/src/lib/financeCostCenterAllocationMetrics";
 import { formatFinanceCurrency, formatFinancePercent } from "@/src/lib/financeAccountsReceivableFormat";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
@@ -48,7 +49,12 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
 
   const summary = data?.summary;
   const diagnostics = data?.audit.diagnostics;
-  const scopeOpenOnly = diagnostics?.scopeUsed !== "all_in_filter";
+  const filtersApplied = data?.audit.filtersApplied;
+  const scopeOpenOnly = diagnostics?.scopeUsed === "open_only";
+  const scopeLabel = resolveCostCenterClassificationScopeLabel(
+    filtersApplied?.status,
+    diagnostics?.scopeUsed ?? "all_in_filter"
+  );
   const byCostCenter = data?.byCostCenter ?? [];
   const unclassifiedTop = data?.unclassified.topUnclassifiedSuppliers ?? [];
   const monthly = data?.monthlySeries.totals ?? [];
@@ -76,11 +82,12 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
         data-testid="finance-cost-centers-overview-scope-hint"
       >
         <p>
-          <span className="font-medium text-foreground">Sem classificação</span> = valor do título
-          sem centro de custo alocado (diferença real, tolerância de R$ 0,01).
+          <span className="font-medium text-foreground">Sem classificação</span> = títulos sem
+          alocação completa no escopo filtrado (diferença real em centro de custo, tolerância de R$
+          0,01).
           {scopeOpenOnly
-            ? " Os totais consideram apenas AP em aberto (saldo &gt; 0) no período filtrado."
-            : " Os totais incluem títulos liquidados do período filtrado."}
+            ? " O escopo atual considera apenas AP em aberto (saldo &gt; 0)."
+            : " A classificação considera o escopo do filtro atual — com Status = Todos, inclui títulos pagos e em aberto."}
         </p>
         <p className="mt-1">
           <span className="font-medium text-foreground">Fornecedor sem regra</span> = cadastro sem
@@ -91,7 +98,7 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <FinanceKpiCard
-          label={scopeOpenOnly ? "Total AP em aberto no filtro" : "Total AP no filtro"}
+          label={scopeLabel}
           value={formatFinanceKpiCurrency(summary?.totalAmount ?? 0)}
           icon={Layers}
           loading={loading}
@@ -105,13 +112,34 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
         <FinanceKpiCard
           label="Total sem classificação"
           value={formatFinanceKpiCurrency(summary?.unclassifiedAmount ?? 0)}
+          helperText="Títulos sem alocação completa no escopo filtrado."
           icon={TrendingUp}
+          loading={loading}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <FinanceKpiCard
+          label="Em aberto"
+          value={formatFinanceKpiCurrency(summary?.openAmount ?? 0)}
+          helperText="Indicador auxiliar — não define o escopo da classificação."
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Vencido"
+          value={formatFinanceKpiCurrency(summary?.overdueAmount ?? 0)}
+          helperText="Indicador auxiliar no escopo filtrado."
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Pago/liquidado"
+          value={formatFinanceKpiCurrency(summary?.paidAmount ?? 0)}
+          helperText="Indicador auxiliar no escopo filtrado."
           loading={loading}
         />
         <FinanceKpiCard
           label="% classificado"
           value={formatFinancePercent(summary?.classifiedPercentage ?? 0)}
-          icon={PieChart}
           loading={loading}
         />
       </div>
@@ -138,7 +166,7 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
       <div className="grid gap-4 xl:grid-cols-2">
         <FinanceBillingChartShell
           title="AP por centro de custo"
-          subtitle="Valores classificados no período filtrado."
+          subtitle="Valores classificados no escopo do filtro aplicado."
           empty={ccChartData.length === 0}
         >
           <ResponsiveContainer width="100%" height={FINANCE_BILLING_CHART_HEIGHT}>

@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import {
   isTitleRealAllocated,
+  resolveCostCenterApScopeFromStatus,
+  resolveCostCenterTitleAmount,
+  resolveOpenOnlyFromApStatus,
   resolveTitleAllocatedAmount,
   resolveTitleUnallocatedGap,
 } from "./financeCostCenterAllocationMetrics.js";
@@ -36,5 +39,30 @@ describe("financeCostCenterAllocationMetrics", () => {
 
   it("sem alocação = gap integral", () => {
     assert.equal(resolveTitleUnallocatedGap([], 800), 800);
+  });
+
+  it("status Todos usa escopo all_in_filter e amountPayable como base", () => {
+    assert.equal(resolveCostCenterApScopeFromStatus("all"), "all_in_filter");
+    assert.equal(resolveOpenOnlyFromApStatus("all"), false);
+    const settled = resolveCostCenterTitleAmount(
+      { balancePayable: 0, amountPayable: 5000, amountPaid: 5000 },
+      "all_in_filter"
+    );
+    assert.equal(settled, 5000);
+    const open = resolveCostCenterTitleAmount(
+      { balancePayable: 600, amountPayable: 1000, amountPaid: 400 },
+      "open_only"
+    );
+    assert.equal(open, 600);
+    const gerencial = resolveCostCenterTitleAmount(
+      { balancePayable: 600, amountPayable: 1000, amountPaid: 400 },
+      "all_in_filter"
+    );
+    assert.equal(gerencial, 1000);
+  });
+
+  it("status Em aberto usa escopo open_only", () => {
+    assert.equal(resolveCostCenterApScopeFromStatus("open"), "open_only");
+    assert.equal(resolveOpenOnlyFromApStatus("open"), true);
   });
 });

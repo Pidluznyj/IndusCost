@@ -87,8 +87,10 @@ describe("financeCostCentersPage", () => {
     const page = read("src/components/finance/cost-centers/FinanceCostCentersPage.tsx");
     assert.match(overview, /finance-cost-centers-overview-scope-hint/);
     assert.match(overview, /Sem classificação/);
-    assert.match(overview, /Total AP em aberto no filtro/);
+    assert.match(overview, /resolveCostCenterClassificationScopeLabel/);
+    assert.match(overview, /Títulos sem alocação completa no escopo filtrado/);
     assert.match(overview, /Fornecedor sem regra/);
+    assert.match(overview, /Indicador auxiliar/);
     assert.match(page, /Diagnóstico de classificação/);
   });
 
@@ -203,6 +205,7 @@ describe("financeCostCentersPage", () => {
       assert.doesNotMatch(src, /placeholder="[^"]*UUID/i);
       const page = read("src/components/finance/cost-centers/FinanceCostCentersPage.tsx");
       assert.match(page, /canManageRules=\{canManageRules\}/);
+      assert.match(page, /appliedFilters=\{appliedFilters\}/);
     });
   });
 

@@ -83,8 +83,8 @@ function buildAuditSections(data: FinanceCostCenterDashboardPayload | null): Fin
           label: "Escopo",
           value:
             data.audit.diagnostics.scopeUsed === "open_only"
-              ? "AP em aberto (saldo > 0)"
-              : "Todos no filtro (inclui liquidados)",
+              ? "AP em aberto (saldo > 0) — conforme filtro de status"
+              : "Todos os títulos no filtro (pagos e em aberto)",
         },
         { label: "Títulos no filtro (bruto)", value: String(data.audit.diagnostics.titlesInFilter) },
         { label: "Títulos em aberto", value: String(data.audit.diagnostics.titlesOpen) },
@@ -332,6 +332,7 @@ export function FinanceCostCentersPage() {
       {activeTab === "unclassified" && canViewAllocations ? (
         <FinanceUnclassifiedPayablesTab
           dashboard={data}
+          appliedFilters={appliedFilters}
           canApplyBatch={canApplyBatch}
           canManageRules={canManageRules}
           onNavigateTab={setActiveTab}

@@ -1,4 +1,5 @@
 import { FINANCE_AR_STATUS_OPTIONS } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import { resolveOpenOnlyFromApStatus } from "@/src/lib/financeCostCenterAllocationMetrics";
 
 export type FinanceCostCentersTabId =
   | "overview"
@@ -68,6 +69,14 @@ export function createDefaultFinanceCostCentersUiFilters(): FinanceCostCentersUi
     supplierId: "",
     classification: "all",
   };
+}
+
+export function buildFinanceCostCentersUnclassifiedQuery(
+  filters: FinanceCostCentersUiFilters
+): string {
+  const q = new URLSearchParams();
+  q.set("openOnly", resolveOpenOnlyFromApStatus(filters.status) ? "true" : "false");
+  return q.toString();
 }
 
 export function buildFinanceCostCentersDashboardQuery(filters: FinanceCostCentersUiFilters): string {

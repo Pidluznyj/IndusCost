@@ -16,6 +16,7 @@ import {
   isCostCenterTitleInScope,
   isTitleRealAllocated,
   parseFinanceCostCenterApScope,
+  resolveCostCenterApScopeFromStatus,
   resolveCostCenterTitleAmount,
   resolveTitleAllocatedAmount,
   resolveTitleUnallocatedGap,
@@ -273,13 +274,25 @@ export function parseFinanceCostCenterDashboardFilters(
     typeof query.supplierId === "string" && query.supplierId.trim()
       ? query.supplierId.trim()
       : undefined;
+  const hasExplicitApScope =
+    typeof query.apScope === "string" && query.apScope.trim().length > 0;
+  const apScope = hasExplicitApScope
+    ? parseFinanceCostCenterApScope(query.apScope)
+    : resolveCostCenterApScopeFromStatus(base.status);
+
   return {
     ...base,
     costCenterId,
     supplierId,
     classification: parseClassificationFilter(query.classification),
-    apScope: parseFinanceCostCenterApScope(query.apScope),
+    apScope,
   };
+}
+
+export function resolveFinanceCostCenterDashboardApScope(
+  filters: FinanceCostCenterDashboardFilters
+): FinanceCostCenterApScope {
+  return filters.apScope ?? resolveCostCenterApScopeFromStatus(filters.status);
 }
 
 export function filterCostCenterDashboardRows(
@@ -288,7 +301,7 @@ export function filterCostCenterDashboardRows(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApDashboardRow[] {
-  const apScope = filters.apScope ?? "open_only";
+  const apScope = resolveFinanceCostCenterDashboardApScope(filters);
   return filterFinanceApRows(rows, filters, referenceDate, syncCutoff).filter((row) =>
     isCostCenterTitleInScope(row, apScope)
   );
@@ -383,7 +396,7 @@ export function buildFinanceCostCenterDashboard(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCostCenterDashboardPayload {
-  const apScope = filters.apScope ?? "open_only";
+  const apScope = resolveFinanceCostCenterDashboardApScope(filters);
   const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
   const allInFilterRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const ccMeta = new Map(costCenters.map((row) => [row.id, row]));

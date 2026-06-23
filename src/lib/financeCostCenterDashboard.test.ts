@@ -104,7 +104,7 @@ function assertPayloadShape(payload: FinanceCostCenterDashboardPayload) {
 describe("financeCostCenterDashboard", () => {
   it("1. dashboard sem alocações não quebra", () => {
     const state: MockState = {
-      apRows: [apRow({ externalId: 1, balancePayable: 500 })],
+      apRows: [apRow({ externalId: 1, balancePayable: 500, amountPayable: 500 })],
       allocations: [],
       costCenters: [{ id: "cc-1", code: "ADM", name: "Administrativo", status: "ACTIVE" }],
       suppliers: [supplierActive()],
@@ -157,8 +157,8 @@ describe("financeCostCenterDashboard", () => {
   it("3. sem classificação aparece separado (apenas gap real)", () => {
     const state: MockState = {
       apRows: [
-        apRow({ externalId: 3, balancePayable: 400 }),
-        apRow({ externalId: 4, balancePayable: 600, personName: "Outro" }),
+        apRow({ externalId: 3, balancePayable: 400, amountPayable: 400 }),
+        apRow({ externalId: 4, balancePayable: 600, amountPayable: 600, personName: "Outro" }),
       ],
       allocations: [
         {
@@ -240,10 +240,129 @@ describe("financeCostCenterDashboard", () => {
       suppliers: [],
       supplierIdsWithRules: [],
     };
-    const payload = buildDashboard(state);
+    const payload = buildDashboard(
+      state,
+      parseFinanceCostCenterDashboardFilters({ status: "open" })
+    );
     assert.equal(payload.summary.totalAmount, 300);
     assert.equal(payload.audit.diagnostics.titlesOpen, 1);
     assert.equal(payload.audit.diagnostics.scopeUsed, "open_only");
+  });
+
+  it("3e. status Todos inclui pagos e em aberto no escopo de classificação", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({ externalId: 40, balancePayable: 300, amountPayable: 300 }),
+        apRow({
+          externalId: 41,
+          balancePayable: 0,
+          amountPayable: 5000,
+          amountPaid: 5000,
+        }),
+      ],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(
+      state,
+      parseFinanceCostCenterDashboardFilters({ status: "all" })
+    );
+    assert.equal(payload.audit.diagnostics.scopeUsed, "all_in_filter");
+    assert.equal(payload.summary.totalAmount, 5300);
+    assert.equal(payload.summary.unclassifiedAmount, 5300);
+    assert.equal(payload.summary.classifiedAmount, 0);
+  });
+
+  it("3f. título pago com alocação entra como classificado", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({
+          externalId: 42,
+          balancePayable: 0,
+          amountPayable: 2000,
+          amountPaid: 2000,
+        }),
+      ],
+      allocations: [
+        {
+          id: "a42",
+          accountsPayableId: 42,
+          supplierId: "sup-1",
+          costCenterId: "cc-1",
+          amount: new Prisma.Decimal(2000),
+          percentage: new Prisma.Decimal(100),
+        },
+      ],
+      costCenters: [{ id: "cc-1", code: "ADM", name: "Administrativo", status: "ACTIVE" }],
+      suppliers: [supplierActive()],
+      supplierIdsWithRules: ["sup-1"],
+    };
+    const payload = buildDashboard(
+      state,
+      parseFinanceCostCenterDashboardFilters({ status: "all" })
+    );
+    assert.equal(payload.summary.totalAmount, 2000);
+    assert.equal(payload.summary.classifiedAmount, 2000);
+    assert.equal(payload.summary.unclassifiedAmount, 0);
+  });
+
+  it("3g. título pago sem alocação aparece em sem classificação", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({
+          externalId: 43,
+          balancePayable: 0,
+          amountPayable: 1500,
+          amountPaid: 1500,
+        }),
+      ],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(
+      state,
+      parseFinanceCostCenterDashboardFilters({ status: "all" })
+    );
+    assert.equal(payload.summary.unclassifiedAmount, 1500);
+    assert.equal(payload.unclassified.titlesCount, 1);
+  });
+
+  it("3h. classificado + sem classificação = total no filtro", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({ externalId: 44, balancePayable: 400, amountPayable: 400 }),
+        apRow({
+          externalId: 45,
+          balancePayable: 0,
+          amountPayable: 600,
+          amountPaid: 600,
+        }),
+      ],
+      allocations: [
+        {
+          id: "a44",
+          accountsPayableId: 44,
+          supplierId: "sup-1",
+          costCenterId: "cc-1",
+          amount: new Prisma.Decimal(400),
+          percentage: new Prisma.Decimal(100),
+        },
+      ],
+      costCenters: [{ id: "cc-1", code: "ADM", name: "Administrativo", status: "ACTIVE" }],
+      suppliers: [supplierActive()],
+      supplierIdsWithRules: ["sup-1"],
+    };
+    const payload = buildDashboard(
+      state,
+      parseFinanceCostCenterDashboardFilters({ status: "all" })
+    );
+    const sum = payload.summary.classifiedAmount + payload.summary.unclassifiedAmount;
+    assert.ok(Math.abs(sum - payload.summary.totalAmount) <= 0.01);
+    assert.equal(payload.summary.totalAmount, 1000);
   });
 
   it("4. filtro por centro de custo", () => {
@@ -347,8 +466,8 @@ describe("financeCostCenterDashboard", () => {
   it("7. filtro por mês/ano", () => {
     const state: MockState = {
       apRows: [
-        apRow({ externalId: 10, dueDate: new Date(2026, 4, 15), balancePayable: 100 }),
-        apRow({ externalId: 11, dueDate: new Date(2026, 5, 15), balancePayable: 200 }),
+        apRow({ externalId: 10, dueDate: new Date(2026, 4, 15), balancePayable: 100, amountPayable: 100 }),
+        apRow({ externalId: 11, dueDate: new Date(2026, 5, 15), balancePayable: 200, amountPayable: 200 }),
       ],
       allocations: [],
       costCenters: [],
@@ -396,7 +515,7 @@ describe("financeCostCenterDashboard", () => {
     assert.ok("allocationsConsidered" in payload.audit);
     assert.ok("lastApSyncAt" in payload.audit);
     assert.ok("diagnostics" in payload.audit);
-    assert.equal(payload.audit.diagnostics.scopeUsed, "open_only");
+    assert.equal(payload.audit.diagnostics.scopeUsed, "all_in_filter");
   });
 
   it("10. endpoint exige permissão finance.cost_centers.view", () => {

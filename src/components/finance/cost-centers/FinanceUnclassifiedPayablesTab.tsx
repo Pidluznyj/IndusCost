@@ -84,6 +84,10 @@ import {
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTypes";
+import {
+  buildFinanceCostCentersUnclassifiedQuery,
+  type FinanceCostCentersUiFilters,
+} from "@/src/lib/financeCostCentersPageTypes";
 
 type UnclassifiedCause = UnclassifiedCauseUi;
 
@@ -145,6 +149,7 @@ type ImportApplyResult = {
 
 type Props = {
   dashboard: FinanceCostCenterDashboardPayload | null;
+  appliedFilters: FinanceCostCentersUiFilters;
   canApplyBatch: boolean;
   canManageRules: boolean;
   onNavigateTab: (tab: FinanceCostCentersTabId) => void;
@@ -153,6 +158,7 @@ type Props = {
 
 export function FinanceUnclassifiedPayablesTab({
   dashboard,
+  appliedFilters,
   canApplyBatch,
   canManageRules,
   onNavigateTab,
@@ -218,10 +224,11 @@ export function FinanceUnclassifiedPayablesTab({
     setLoading(true);
     setError(null);
     try {
+      const query = buildFinanceCostCentersUnclassifiedQuery(appliedFilters);
       const payload = await fetchJsonOk<{
         items: UnclassifiedItem[];
         causeSummary?: Partial<Record<UnclassifiedCause, number>>;
-      }>("/api/finance/accounts-payable/unclassified", { credentials: "include" });
+      }>(`/api/finance/accounts-payable/unclassified?${query}`, { credentials: "include" });
       setItems(payload.items);
       setCauseSummary(payload.causeSummary ?? {});
     } catch (e) {
@@ -231,7 +238,7 @@ export function FinanceUnclassifiedPayablesTab({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [appliedFilters]);
 
   useEffect(() => {
     void load();

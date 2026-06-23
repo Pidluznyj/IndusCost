@@ -822,7 +822,7 @@ export async function listUnclassifiedAccountsPayable(
 ): Promise<UnclassifiedListPayload> {
   const effectiveFilters: BatchAllocationFilters = {
     ...filters,
-    openOnly: filters.openOnly !== false,
+    openOnly: filters.openOnly === true,
   };
   const apRows = await deps.loadApRows(effectiveFilters);
   const allocations = await deps.loadAllocationsForPayables(apRows.map((row) => row.externalId));
