@@ -15,6 +15,10 @@ import {
   reportMaintenance,
   reportUsage,
 } from "@/src/lib/fleetManagementOps.js";
+import {
+  buildFleetExecutiveDashboard,
+  parseFleetExecutiveDashboardQuery,
+} from "@/src/lib/fleetExecutiveDashboard.js";
 import { loadFleetSettings } from "@/src/lib/fleetService.js";
 import { validatePublicReservationSlug } from "@/src/lib/fleetPublicReservationLink.js";
 import { FleetValidationError } from "@/src/lib/fleetValidation.js";
@@ -159,16 +163,24 @@ export async function saveFleetSettingsWithAudit(
   return prisma.fleetSettings.findMany({ orderBy: { key: "asc" } });
 }
 
-export async function getFleetDashboardPayload(showFinancial: boolean) {
+export async function getFleetDashboardPayload(
+  showFinancial: boolean,
+  query: Record<string, unknown> = {}
+) {
+  const filters = parseFleetExecutiveDashboardQuery(query);
   const settings = await loadFleetSettings();
-  const [cards, { alerts }, financial] = await Promise.all([
+  const competence = `${filters.year}-${String(filters.month).padStart(2, "0")}`;
+  const [cards, { alerts }, financial, executive] = await Promise.all([
     buildFleetDashboardCards(settings),
     getFleetAlerts({ showFinancial, settings }),
-    buildFleetFinancialDashboard(),
+    buildFleetFinancialDashboard(competence),
+    buildFleetExecutiveDashboard(filters, settings, showFinancial),
   ]);
   return {
     cards,
     alerts,
     financial: maskFinancialData(financial, showFinancial),
+    executive,
+    filters,
   };
 }

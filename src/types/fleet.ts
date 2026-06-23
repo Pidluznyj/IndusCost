@@ -471,10 +471,112 @@ export type FleetDashboardCards = {
   openIncidents: number;
 };
 
+export type FleetExecutiveDashboardFilters = {
+  year: number;
+  month: number;
+  vehicleStatus?: string;
+  vehicleType?: string;
+  plate?: string;
+  unit?: string;
+  driverId?: string;
+  vehicleId?: string;
+};
+
+export type FleetExecutiveTopVehicle = {
+  vehicleId: string;
+  plate: string;
+  brand: string;
+  model: string;
+  value: number;
+  label: string;
+};
+
+export type FleetExecutiveVehicleRow = {
+  id: string;
+  plate: string;
+  brand: string;
+  model: string;
+  modelYear: number | null;
+  status: string;
+  vehicleType: string | null;
+  unit: string | null;
+  currentKm: number | null;
+  monthlyKm: number;
+  monthlyReservations: number;
+  lastReservation: {
+    id: string;
+    startDateTime: string;
+    endDateTime: string;
+    status: string;
+    driverName?: string | null;
+  } | null;
+  nextReservation: {
+    id: string;
+    startDateTime: string;
+    endDateTime: string;
+    status: string;
+    driverName?: string | null;
+  } | null;
+  idleDays: number | null;
+  alerts: FleetAlertDto[];
+  alertCount: number;
+};
+
+export type FleetExecutiveDashboard = {
+  filters: FleetExecutiveDashboardFilters;
+  competenceLabel: string;
+  summary: {
+    totalVehicles: number;
+    activeVehicles: number;
+    inactiveVehicles: number;
+    availableVehicles: number;
+    inUseVehicles: number;
+    reservedVehicles: number;
+    maintenanceVehicles: number;
+    openReservations: number;
+    closedReservationsInMonth: number;
+    monthlyKm: number;
+    monthlyKmDataAvailable: boolean;
+    topReservedVehicle: FleetExecutiveTopVehicle | null;
+    topKmVehicle: FleetExecutiveTopVehicle | null;
+    activeAlerts: number;
+    criticalAlerts: number;
+    warningAlerts: number;
+    infoAlerts: number;
+  };
+  reservationsByStatus: Array<{ status: string; count: number }>;
+  reservationSummary: {
+    open: number;
+    inProgress: number;
+    finished: number;
+    canceled: number;
+    overdue: number;
+    today: number;
+    upcoming: number;
+  };
+  kmByVehicle: Array<{ vehicleId: string; plate: string; label: string; km: number }>;
+  topVehiclesByReservation: FleetExecutiveTopVehicle[];
+  topVehiclesByKm: FleetExecutiveTopVehicle[];
+  topIdleVehicles: Array<FleetExecutiveTopVehicle & { idleDays: number }>;
+  topDrivers: Array<{ driverId: string; name: string; reservations: number }>;
+  attentionReservations: Array<{
+    id: string;
+    plate: string;
+    status: string;
+    endDateTime: string;
+    reason: string;
+    severity: "critical" | "warning" | "info";
+  }>;
+  vehicles: FleetExecutiveVehicleRow[];
+  alerts: FleetAlertDto[];
+};
+
 export type FleetDashboardResponse = {
   cards: FleetDashboardCards;
   alerts: FleetAlertDto[];
   financial?: FleetFinancialDashboard;
+  executive?: FleetExecutiveDashboard;
+  filters?: FleetExecutiveDashboardFilters;
 };
 
 export const FLEET_REPORT_TYPES = [

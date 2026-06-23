@@ -71,7 +71,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const user = await getCurrentAppUser(req);
       const perms = user ? user.effectivePermissions ?? getEffectivePermissions(user) : [];
       const showFinancial = user != null && canViewFleetFinancial(perms);
-      res.json(await getFleetDashboardPayload(showFinancial));
+      res.json(await getFleetDashboardPayload(showFinancial, req.query as Record<string, unknown>));
     } catch (e) {
       handleFleetRouteError(res, e, "GET /api/fleet/dashboard", req);
     }

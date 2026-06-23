@@ -1,16 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  CalendarPlus,
-  Car,
-  ClipboardList,
-  Loader2,
-  QrCode,
-  RefreshCw,
-  Settings,
-  Users,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, Settings, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { FleetVehiclesTab } from "@/src/components/fleet/FleetVehiclesTab";
@@ -36,6 +25,7 @@ import {
   getVisibleFleetTabs,
   type FleetTabId,
 } from "@/src/components/fleet/fleetNavigation";
+import { FleetOverviewTab } from "@/src/components/fleet/FleetOverviewTab";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
 const BOOL_SETTING_KEYS = [
@@ -46,62 +36,24 @@ const BOOL_SETTING_KEYS = [
   "publicReservationEnabled",
 ];
 
-function Card({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: number | string;
-  highlight?: "ok" | "warn" | "danger";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-white p-3 shadow-sm",
-        highlight === "danger"
-          ? "border-red-200"
-          : highlight === "warn"
-            ? "border-amber-200"
-            : "border-slate-200"
-      )}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p
-        className={cn(
-          "mt-0.5 text-xl font-semibold",
-          highlight === "danger"
-            ? "text-red-700"
-            : highlight === "warn"
-              ? "text-amber-700"
-              : "text-slate-900"
-        )}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
+type OverviewFilters = {
+  year: number;
+  month: number;
+  status: string;
+  plate: string;
+  unit: string;
+  vehicleType: string;
+};
 
-function ShortcutButton({
-  label,
-  icon: Icon,
-  onClick,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-    >
-      <Icon className="h-4 w-4 text-slate-500" />
-      {label}
-    </button>
-  );
+function buildOverviewQuery(filters: OverviewFilters): string {
+  const qs = new URLSearchParams();
+  qs.set("year", String(filters.year));
+  qs.set("month", String(filters.month));
+  if (filters.status) qs.set("status", filters.status);
+  if (filters.plate) qs.set("plate", filters.plate);
+  if (filters.unit) qs.set("unit", filters.unit);
+  if (filters.vehicleType) qs.set("vehicleType", filters.vehicleType);
+  return qs.toString();
 }
 
 export function FleetModule() {
@@ -110,7 +62,17 @@ export function FleetModule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showCompliance, setShowCompliance] = useState(false);
+  const [overviewFilters, setOverviewFilters] = useState<OverviewFilters>(() => {
+    const now = new Date();
+    return {
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "",
+      plate: "",
+      unit: "",
+      vehicleType: "",
+    };
+  });
 
   const { canView, canSettings, canManage, canFinancial } = fleet;
 
@@ -127,9 +89,10 @@ export function FleetModule() {
   >([]);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (filters: OverviewFilters) => {
+    const query = buildOverviewQuery(filters);
     const [data, alertsRes] = await Promise.all([
-      fetchJsonOk<FleetDashboardResponse>("/api/fleet/dashboard"),
+      fetchJsonOk<FleetDashboardResponse>(`/api/fleet/dashboard?${query}`),
       fetchJsonOk<{ alerts: FleetDashboardResponse["alerts"]; count: number }>("/api/fleet/alerts"),
     ]);
     setDashboard({ ...data, alerts: alertsRes.alerts });
@@ -145,14 +108,14 @@ export function FleetModule() {
     setError(null);
     setSettingsSaved(false);
     try {
-      if (tab === "overview") await loadDashboard();
+      if (tab === "overview") await loadDashboard(overviewFilters);
       else if (tab === "settings") await loadSettings();
     } catch (e: unknown) {
       setError(formatFleetApiError(e, "Erro ao carregar dados."));
     } finally {
       setLoading(false);
     }
-  }, [tab, loadDashboard, loadSettings]);
+  }, [tab, loadDashboard, loadSettings, overviewFilters]);
 
   useEffect(() => {
     void refresh();
@@ -161,10 +124,10 @@ export function FleetModule() {
   useEffect(() => {
     if (tab !== "overview") return;
     const timer = window.setInterval(() => {
-      void loadDashboard();
+      void loadDashboard(overviewFilters);
     }, 60_000);
     return () => window.clearInterval(timer);
-  }, [tab, loadDashboard]);
+  }, [tab, loadDashboard, overviewFilters]);
 
   const saveSettings = async () => {
     if (!canSettings) return;
@@ -185,7 +148,6 @@ export function FleetModule() {
     }
   };
 
-  const c = dashboard?.cards;
   const activeTabDef = getFleetTabDef(tab);
 
   return (
@@ -270,144 +232,14 @@ export function FleetModule() {
         </div>
       )}
 
-      {tab === "overview" && dashboard && c && (
-        <div className="space-y-4">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <Card label="Veículos ativos" value={c.totalOperational} />
-            <Card label="Disponíveis agora" value={c.available} highlight="ok" />
-            <Card label="Reservas hoje" value={c.reservationsToday} />
-            <Card
-              label="Reservas em atraso"
-              value={c.reservationsOverdue}
-              highlight={c.reservationsOverdue > 0 ? "warn" : undefined}
-            />
-            <Card
-              label="Em manutenção"
-              value={c.maintenance}
-              highlight={c.maintenance > 0 ? "warn" : undefined}
-            />
-            <Card label="Em uso" value={c.inUse} />
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Atalhos</h3>
-            <div className="flex flex-wrap gap-2">
-              <ShortcutButton
-                label="Nova reserva"
-                icon={CalendarPlus}
-                onClick={() => setTab("reservations")}
-              />
-              <ShortcutButton
-                label="Solicitações QR"
-                icon={QrCode}
-                onClick={() => setTab("publicRequests")}
-              />
-              <ShortcutButton label="Veículos" icon={Car} onClick={() => setTab("vehicles")} />
-              <ShortcutButton label="Motoristas" icon={Users} onClick={() => setTab("drivers")} />
-              <ShortcutButton
-                label="Checklists"
-                icon={ClipboardList}
-                onClick={() => setTab("checklists")}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <button
-              type="button"
-              onClick={() => setShowCompliance((v) => !v)}
-              className="text-sm font-semibold text-slate-700 hover:text-slate-900"
-            >
-              {showCompliance ? "▾" : "▸"} Conformidade e alertas detalhados
-            </button>
-            {showCompliance && (
-              <div className="mt-3 space-y-3">
-                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                  <Card
-                    label="CNHs vencidas"
-                    value={c.cnhsExpired}
-                    highlight={c.cnhsExpired > 0 ? "danger" : undefined}
-                  />
-                  <Card
-                    label="CNHs vencendo"
-                    value={c.cnhsExpiring}
-                    highlight={c.cnhsExpiring > 0 ? "warn" : undefined}
-                  />
-                  <Card
-                    label="Docs vencidos"
-                    value={c.documentsExpired}
-                    highlight={c.documentsExpired > 0 ? "danger" : undefined}
-                  />
-                  <Card label="Manutenções abertas" value={c.openMaintenances} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {dashboard.financial && canFinancial && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-              <h3 className="font-semibold text-slate-900">Financeiro do mês</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs text-slate-500">
-                    Custo total ({dashboard.financial.competence})
-                  </p>
-                  <p className="text-xl font-semibold">
-                    {dashboard.financial.totalMonth != null
-                      ? dashboard.financial.totalMonth.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Custo por km</p>
-                  <p className="text-xl font-semibold">
-                    {dashboard.financial.costPerKm != null
-                      ? dashboard.financial.costPerKm.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })
-                      : dashboard.financial.kmMonth > 0
-                        ? "—"
-                        : "—"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="font-semibold text-slate-900">Alertas</h3>
-            {dashboard.alerts.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">Nenhum alerta no momento. Tudo em ordem.</p>
-            ) : (
-              <ul className="mt-2 max-h-80 overflow-y-auto space-y-2">
-                {dashboard.alerts.slice(0, 30).map((a, i) => (
-                  <li
-                    key={`${a.code ?? "alert"}-${i}`}
-                    className={cn(
-                      "text-sm rounded-lg px-2 py-1.5",
-                      a.level === "critical"
-                        ? "bg-red-50 text-red-800"
-                        : a.level === "warning"
-                          ? "bg-amber-50 text-amber-800"
-                          : "bg-slate-50 text-slate-700"
-                    )}
-                  >
-                    {a.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {dashboard.alerts.length > 30 && (
-              <p className="mt-2 text-xs text-slate-500">
-                Exibindo 30 de {dashboard.alerts.length} alertas.
-              </p>
-            )}
-          </div>
-        </div>
+      {tab === "overview" && dashboard && (
+        <FleetOverviewTab
+          dashboard={dashboard}
+          canFinancial={canFinancial}
+          filters={overviewFilters}
+          onFiltersChange={(patch) => setOverviewFilters((prev) => ({ ...prev, ...patch }))}
+          onNavigateTab={setTab}
+        />
       )}
 
       {tab === "vehicles" && <FleetVehiclesTab />}
