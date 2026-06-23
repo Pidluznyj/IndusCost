@@ -66,7 +66,12 @@ export function parseCrmCustomerListSellerQuery(
   return { externalSellerId, sellerIdentityKey };
 }
 
-/** Escopo efetivo da carteira: own do usuário ou filtro de vendedor escolhido pelo gestor. */
+/**
+ * @deprecated Usa `salesOrders.some` com Prisma `equals`/`insensitive`, que NÃO normaliza
+ * espaços múltiplos/acentos. Mantido apenas para compatibilidade. A seleção real da carteira
+ * passa por {@link resolveCrmCustomerListScopeWhere}, que pré-seleciona os clientes via SQL
+ * normalizado (mesma regra consolidada do dashboard por vendedor).
+ */
 export function buildCrmCustomerListScopeWhere(
   commercialScope: CrmCommercialAccessScope,
   sellerQuery: CrmCustomerListSellerQuery
@@ -109,6 +114,109 @@ export function buildCrmCustomerListScopeWhere(
     return { OR: [orderMatch, manualMatch] };
   }
   return orderMatch;
+}
+
+/** Filtro consolidado de vendedor (mesma forma usada por `buildCrmSellerFilterSql`). */
+export type CrmSellerScopeFilter = {
+  externalSellerId: number | null;
+  responsible: string | null;
+  sellerIdentityKey: string | null;
+};
+
+/**
+ * Decide o filtro efetivo de vendedor da carteira (puro, testável):
+ * - `own`: o próprio vínculo consolidado do usuário (prioriza sellerIdentityKey);
+ * - `global` sem filtro: "all" (sem restrição de vendedor);
+ * - `global` com filtro: o vendedor escolhido pelo gestor;
+ * - demais (none): "none" (carteira vazia por segurança).
+ */
+export function resolveCrmCustomerListSellerScopeFilter(
+  commercialScope: CrmCommercialAccessScope,
+  sellerQuery: CrmCustomerListSellerQuery
+): CrmSellerScopeFilter | "all" | "none" {
+  if (commercialScope.dataScope === "own") {
+    return {
+      externalSellerId: commercialScope.externalSellerId,
+      responsible: commercialScope.responsible,
+      sellerIdentityKey: commercialScope.sellerIdentityKey,
+    };
+  }
+  if (commercialScope.dataScope !== "global") return "none";
+
+  const hasSellerFilter =
+    sellerQuery.sellerIdentityKey !== null || sellerQuery.externalSellerId !== null;
+  if (!hasSellerFilter) return "all";
+
+  return crmCommercialSellerMatchFilters(
+    sellerQuery.externalSellerId,
+    null,
+    sellerQuery.sellerIdentityKey
+  );
+}
+
+/**
+ * Clientes elegíveis por vendedor a partir de SalesOrder, usando a MESMA regra SQL
+ * normalizada do dashboard (`buildCrmSellerFilterSql`). Normaliza caixa, acento e espaços
+ * múltiplos — resolve o caso "GISLENE  LIMA" vs "gislene lima".
+ */
+export async function fetchCrmSellerScopeCustomerIds(
+  prismaClient: { $queryRaw: <T>(q: Prisma.Sql) => Promise<T> },
+  filter: CrmSellerScopeFilter
+): Promise<string[]> {
+  const sellerMatch = buildCrmSellerFilterSql("so", filter);
+  const rows = await prismaClient.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT DISTINCT so."customerId" AS id
+    FROM "SalesOrder" so
+    WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
+      AND so."customerId" IS NOT NULL
+      AND ${sellerMatch}
+  `);
+  return rows.map((r) => r.id).filter((id): id is string => Boolean(id));
+}
+
+type ManualOwnerFinder = {
+  crmCustomerCommercialOwner: {
+    findMany: (args: {
+      where: Prisma.CrmCustomerCommercialOwnerWhereInput;
+      select: { customerId: true };
+    }) => Promise<{ customerId: string }[]>;
+  };
+};
+
+/** Clientes com vínculo manual ativo que casam com o vendedor (independe de pedido recente). */
+export async function fetchCrmManualOwnerCustomerIds(
+  prismaClient: ManualOwnerFinder,
+  filter: CrmSellerScopeFilter
+): Promise<string[]> {
+  const manualWhere = buildManualCommercialOwnerPortfolioWhere(filter);
+  if (!manualWhere) return [];
+  const rows = await prismaClient.crmCustomerCommercialOwner.findMany({
+    where: manualWhere,
+    select: { customerId: true },
+  });
+  return rows.map((r) => r.customerId);
+}
+
+/**
+ * Escopo efetivo da carteira (assíncrono). Pré-seleciona os IDs de cliente por vendedor via SQL
+ * normalizado (pedidos) + vínculo manual, unindo ambos. Quando há filtro de vendedor ativo e
+ * nenhum cliente casa, retorna `{ id: { in: [] } }` (carteira vazia correta, sem vazar todos).
+ */
+export async function resolveCrmCustomerListScopeWhere(
+  prismaClient: PrismaClient,
+  commercialScope: CrmCommercialAccessScope,
+  sellerQuery: CrmCustomerListSellerQuery
+): Promise<Prisma.CustomerWhereInput | undefined> {
+  const decision = resolveCrmCustomerListSellerScopeFilter(commercialScope, sellerQuery);
+  if (decision === "all") return undefined;
+  if (decision === "none") return { id: { in: [] } };
+
+  const [orderIds, manualIds] = await Promise.all([
+    fetchCrmSellerScopeCustomerIds(prismaClient, decision),
+    fetchCrmManualOwnerCustomerIds(prismaClient, decision),
+  ]);
+  const union = Array.from(new Set<string>([...orderIds, ...manualIds]));
+  return { id: { in: union } };
 }
 
 const nomusNfesElementsSql = (alias: string) => Prisma.sql`
@@ -455,7 +563,7 @@ export async function fetchCrmCustomersList(
   const filterWhere =
     filter === "withOpenPortfolio" ? undefined : buildCrmCustomerListFilterWhere(filter, now);
 
-  const scopeWhere = buildCrmCustomerListScopeWhere(commercialScope, sellerQuery);
+  const scopeWhere = await resolveCrmCustomerListScopeWhere(prisma, commercialScope, sellerQuery);
   let where = buildCrmCustomerListAndWhere([scopeWhere, filterWhere, searchWhere]);
 
   if (filter === "withOpenPortfolio") {

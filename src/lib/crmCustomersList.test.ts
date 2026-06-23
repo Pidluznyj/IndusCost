@@ -2,14 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { Prisma } from "@prisma/client";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import {
   aggregateCustomerActivities,
   buildCrmCustomerListFilterWhere,
   buildCrmCustomerListScopeWhere,
   enrichCustomersFromSalesOrders,
+  fetchCrmManualOwnerCustomerIds,
+  fetchCrmSellerScopeCustomerIds,
   parseCrmCustomerListFilter,
   parseCrmCustomerListSellerQuery,
+  resolveCrmCustomerListScopeWhere,
+  resolveCrmCustomerListSellerScopeFilter,
+  type CrmSellerScopeFilter,
 } from "@/src/lib/crmCustomersList.js";
 import { CRM_CUSTOMER_LIST_FILTERS } from "@/src/lib/crmCustomersListTypes.js";
 import {
@@ -83,6 +89,173 @@ describe("crmCustomersList scope", () => {
     const q = parseCrmCustomerListSellerQuery("12", "  GISLENE LIMA  ");
     assert.equal(q.externalSellerId, 12);
     assert.equal(q.sellerIdentityKey, "gislene lima");
+  });
+});
+
+describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
+  function captureQueryPrisma(returnIds: string[]) {
+    const captured: { sql?: Prisma.Sql } = {};
+    const client = {
+      $queryRaw: async <T>(q: Prisma.Sql): Promise<T> => {
+        captured.sql = q;
+        return returnIds.map((id) => ({ id })) as unknown as T;
+      },
+    };
+    return { client, captured };
+  }
+
+  function captureManualPrisma(returnIds: string[]) {
+    const captured: { where?: Prisma.CrmCustomerCommercialOwnerWhereInput } = {};
+    const client = {
+      crmCustomerCommercialOwner: {
+        findMany: async (args: {
+          where: Prisma.CrmCustomerCommercialOwnerWhereInput;
+          select: { customerId: true };
+        }) => {
+          captured.where = args.where;
+          return returnIds.map((id) => ({ customerId: id }));
+        },
+      },
+    };
+    return { client, captured };
+  }
+
+  const gisleneFilter: CrmSellerScopeFilter = {
+    externalSellerId: null,
+    responsible: null,
+    sellerIdentityKey: "gislene lima",
+  };
+
+  it("decisão pura: own usa o vínculo consolidado do usuário", () => {
+    const decision = resolveCrmCustomerListSellerScopeFilter(ownScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: null,
+    });
+    assert.deepEqual(decision, {
+      externalSellerId: 464,
+      responsible: "GISLENE LIMA",
+      sellerIdentityKey: "gislene lima",
+    });
+  });
+
+  it("decisão pura: global sem filtro = 'all'; com filtro = vendedor escolhido", () => {
+    assert.equal(
+      resolveCrmCustomerListSellerScopeFilter(globalScope(), {
+        externalSellerId: null,
+        sellerIdentityKey: null,
+      }),
+      "all"
+    );
+    assert.deepEqual(
+      resolveCrmCustomerListSellerScopeFilter(globalScope(), {
+        externalSellerId: null,
+        sellerIdentityKey: "gislene lima",
+      }),
+      { externalSellerId: null, responsible: null, sellerIdentityKey: "gislene lima" }
+    );
+  });
+
+  it("decisão pura: ID legado preservado quando não há sellerIdentityKey", () => {
+    assert.deepEqual(
+      resolveCrmCustomerListSellerScopeFilter(globalScope(), {
+        externalSellerId: 464,
+        sellerIdentityKey: null,
+      }),
+      { externalSellerId: 464, responsible: null, sellerIdentityKey: null }
+    );
+  });
+
+  it("SQL por sellerIdentityKey normaliza espaços/acento/caixa (casa 'GISLENE  LIMA')", async () => {
+    const { client, captured } = captureQueryPrisma(["c1", "c2"]);
+    const ids = await fetchCrmSellerScopeCustomerIds(client, gisleneFilter);
+    assert.deepEqual(ids, ["c1", "c2"]);
+    const text = captured.sql!.strings.join(" ");
+    // normalização SQL (mesma do dashboard): REGEXP_REPLACE de espaços + translate de acentos
+    assert.match(text, /REGEXP_REPLACE/);
+    assert.match(text, /translate/);
+    assert.match(text, /NOT IN \('CANCELLED', 'ERROR'\)/);
+    // a chave comparada é a forma normalizada com 1 espaço
+    assert.ok(captured.sql!.values.includes("gislene lima"));
+  });
+
+  it("SQL por externalSellerId (legado) compara o ID, sem normalizar nome", async () => {
+    const { client, captured } = captureQueryPrisma(["c9"]);
+    const ids = await fetchCrmSellerScopeCustomerIds(client, {
+      externalSellerId: 464,
+      responsible: null,
+      sellerIdentityKey: null,
+    });
+    assert.deepEqual(ids, ["c9"]);
+    const text = captured.sql!.strings.join(" ");
+    assert.match(text, /"externalSellerId"/);
+    assert.ok(captured.sql!.values.includes(464));
+  });
+
+  it("manual: busca clientes com vínculo manual ativo pela mesma sellerIdentityKey", async () => {
+    const { client, captured } = captureManualPrisma(["m1"]);
+    const ids = await fetchCrmManualOwnerCustomerIds(client, gisleneFilter);
+    assert.deepEqual(ids, ["m1"]);
+    assert.deepEqual(captured.where, { isActive: true, sellerIdentityKey: "gislene lima" });
+  });
+
+  it("resolver une pedidos + manual e deduplica", async () => {
+    const fakePrisma = {
+      $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> =>
+        [{ id: "a" }, { id: "b" }] as unknown as T,
+      crmCustomerCommercialOwner: {
+        findMany: async () => [{ customerId: "b" }, { customerId: "c" }],
+      },
+    } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
+
+    const where = await resolveCrmCustomerListScopeWhere(fakePrisma, globalScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: "gislene lima",
+    });
+    assert.deepEqual(where, { id: { in: ["a", "b", "c"] } });
+  });
+
+  it("resolver: global sem filtro não restringe (undefined)", async () => {
+    const fakePrisma = {
+      $queryRaw: async () => [],
+      crmCustomerCommercialOwner: { findMany: async () => [] },
+    } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
+    const where = await resolveCrmCustomerListScopeWhere(fakePrisma, globalScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: null,
+    });
+    assert.equal(where, undefined);
+  });
+
+  it("resolver: filtro ativo sem clientes retorna carteira vazia (não vaza todos)", async () => {
+    const fakePrisma = {
+      $queryRaw: async () => [],
+      crmCustomerCommercialOwner: { findMany: async () => [] },
+    } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
+    const where = await resolveCrmCustomerListScopeWhere(fakePrisma, globalScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: "vendedor inexistente",
+    });
+    assert.deepEqual(where, { id: { in: [] } });
+  });
+
+  it("own e global usam o MESMO caminho de resolução de escopo", async () => {
+    const calls: CrmSellerScopeFilter[] = [];
+    const fakePrisma = {
+      $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> => [{ id: "x" }] as unknown as T,
+      crmCustomerCommercialOwner: { findMany: async () => [] },
+    } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
+
+    const ownWhere = await resolveCrmCustomerListScopeWhere(fakePrisma, ownScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: null,
+    });
+    const globalWhere = await resolveCrmCustomerListScopeWhere(fakePrisma, globalScope(), {
+      externalSellerId: null,
+      sellerIdentityKey: "gislene lima",
+    });
+    void calls;
+    assert.deepEqual(ownWhere, { id: { in: ["x"] } });
+    assert.deepEqual(globalWhere, { id: { in: ["x"] } });
   });
 });
 
