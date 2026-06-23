@@ -154,7 +154,7 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(totalByCc, 1000);
   });
 
-  it("3. sem classificação aparece separado", () => {
+  it("3. sem classificação aparece separado (apenas gap real)", () => {
     const state: MockState = {
       apRows: [
         apRow({ externalId: 3, balancePayable: 400 }),
@@ -179,6 +179,71 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.summary.unclassifiedAmount, 600);
     assert.equal(payload.unclassified.titlesCount, 1);
     assert.equal(payload.unclassified.amount, 600);
+  });
+
+  it("3b. alocação parcial soma só o gap em sem classificação", () => {
+    const state: MockState = {
+      apRows: [apRow({ externalId: 30, balancePayable: 1000 })],
+      allocations: [
+        {
+          id: "a30",
+          accountsPayableId: 30,
+          supplierId: "sup-1",
+          costCenterId: "cc-1",
+          amount: new Prisma.Decimal(600),
+          percentage: new Prisma.Decimal(60),
+        },
+      ],
+      costCenters: [{ id: "cc-1", code: "ADM", name: "Administrativo", status: "ACTIVE" }],
+      suppliers: [supplierActive()],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(state);
+    assert.equal(payload.summary.classifiedAmount, 600);
+    assert.equal(payload.summary.unclassifiedAmount, 400);
+    assert.equal(payload.summary.totalAmount, 1000);
+  });
+
+  it("3c. título alocado 100% não entra em sem classificação sem regra de fornecedor", () => {
+    const state: MockState = {
+      apRows: [apRow({ externalId: 31, balancePayable: 2000, personName: "CONTA ADMINISTRATIVA" })],
+      allocations: [
+        {
+          id: "a31",
+          accountsPayableId: 31,
+          supplierId: null,
+          costCenterId: "cc-folha",
+          amount: new Prisma.Decimal(2000),
+          percentage: new Prisma.Decimal(100),
+        },
+      ],
+      costCenters: [
+        { id: "cc-folha", code: "ADM-FOLHA", name: "Folha", status: "ACTIVE" },
+      ],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(state);
+    assert.equal(payload.summary.unclassifiedAmount, 0);
+    assert.equal(payload.unclassified.titlesCount, 0);
+    assert.equal(payload.unclassified.topUnclassifiedSuppliers.length, 0);
+  });
+
+  it("3d. escopo open_only exclui títulos liquidados do total", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({ externalId: 32, balancePayable: 300 }),
+        apRow({ externalId: 33, balancePayable: 0, amountPayable: 5000, amountPaid: 5000 }),
+      ],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(state);
+    assert.equal(payload.summary.totalAmount, 300);
+    assert.equal(payload.audit.diagnostics.titlesOpen, 1);
+    assert.equal(payload.audit.diagnostics.scopeUsed, "open_only");
   });
 
   it("4. filtro por centro de custo", () => {
@@ -330,6 +395,8 @@ describe("financeCostCenterDashboard", () => {
     assert.ok("titlesConsidered" in payload.audit);
     assert.ok("allocationsConsidered" in payload.audit);
     assert.ok("lastApSyncAt" in payload.audit);
+    assert.ok("diagnostics" in payload.audit);
+    assert.equal(payload.audit.diagnostics.scopeUsed, "open_only");
   });
 
   it("10. endpoint exige permissão finance.cost_centers.view", () => {

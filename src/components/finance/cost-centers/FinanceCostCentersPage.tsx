@@ -43,7 +43,7 @@ import {
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import { formatFinanceCurrency, formatFinanceDateTime, formatFinancePercent } from "@/src/lib/financeAccountsReceivableFormat";
 import type { FinanceDataAuditSection } from "@/src/lib/financeDataAudit";
 import { FinanceCostCenterOverviewTab } from "@/src/components/finance/cost-centers/FinanceCostCenterOverviewTab";
 import { FinanceCostCentersCrudTab } from "@/src/components/finance/cost-centers/FinanceCostCentersCrudTab";
@@ -71,6 +71,50 @@ function buildAuditSections(data: FinanceCostCenterDashboardPayload | null): Fin
         {
           label: "Última sync AP",
           value: data.audit.lastApSyncAt ? formatFinanceDateTime(data.audit.lastApSyncAt) : "—",
+        },
+      ],
+    },
+    {
+      kind: "list",
+      id: "diagnostics",
+      title: "Diagnóstico de classificação",
+      items: [
+        {
+          label: "Escopo",
+          value:
+            data.audit.diagnostics.scopeUsed === "open_only"
+              ? "AP em aberto (saldo > 0)"
+              : "Todos no filtro (inclui liquidados)",
+        },
+        { label: "Títulos no filtro (bruto)", value: String(data.audit.diagnostics.titlesInFilter) },
+        { label: "Títulos em aberto", value: String(data.audit.diagnostics.titlesOpen) },
+        {
+          label: "Liquidados no período",
+          value: String(data.audit.diagnostics.titlesSettledInPeriod),
+        },
+        {
+          label: "Base de valor",
+          value: formatFinanceCurrency(data.audit.diagnostics.totalAmountBase),
+        },
+        {
+          label: "Alocado real",
+          value: formatFinanceCurrency(data.audit.diagnostics.totalAllocatedReal),
+        },
+        {
+          label: "Gap sem classificação",
+          value: formatFinanceCurrency(data.audit.diagnostics.totalUnallocatedGap),
+        },
+        {
+          label: "Títulos com gap",
+          value: String(data.audit.diagnostics.titlesWithUnallocatedGap),
+        },
+        {
+          label: "Gap — sem fornecedor",
+          value: formatFinanceCurrency(data.audit.diagnostics.amountNoSupplierGap),
+        },
+        {
+          label: "Gap — fornecedor sem regra",
+          value: formatFinanceCurrency(data.audit.diagnostics.amountSupplierNoRuleGap),
         },
       ],
     },

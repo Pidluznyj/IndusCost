@@ -629,7 +629,7 @@ describe("listUnclassifiedAccountsPayable — separação de causas", () => {
     assert.equal(out.items[0]!.cause, "SUPPLIER_NO_RULE");
   });
 
-  it("alocação parcial (<100%) → PARTIAL_ALLOCATION", async () => {
+  it("alocação parcial (<100%) → PARTIAL_ALLOCATION e gap financeiro", async () => {
     const state = baseState({
       apRows: [apRow(904)],
       rules: [rule("r1", "cc-1", 100)],
@@ -638,6 +638,7 @@ describe("listUnclassifiedAccountsPayable — separação de causas", () => {
     const out = await listUnclassifiedAccountsPayable(createMockDeps(state), {});
     assert.equal(out.items[0]!.cause, "PARTIAL_ALLOCATION");
     assert.equal(out.causeSummary.PARTIAL_ALLOCATION, 1);
+    assert.equal(out.items[0]!.titleAmount, 400);
   });
 
   it("alocação manual bloqueada parcial → MANUAL_LOCKED (protege manual)", async () => {

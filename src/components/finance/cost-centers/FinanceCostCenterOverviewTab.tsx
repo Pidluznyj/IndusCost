@@ -47,6 +47,8 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
   }
 
   const summary = data?.summary;
+  const diagnostics = data?.audit.diagnostics;
+  const scopeOpenOnly = diagnostics?.scopeUsed !== "all_in_filter";
   const byCostCenter = data?.byCostCenter ?? [];
   const unclassifiedTop = data?.unclassified.topUnclassifiedSuppliers ?? [];
   const monthly = data?.monthlySeries.totals ?? [];
@@ -69,9 +71,27 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
 
   return (
     <div className="space-y-6" data-testid="finance-cost-centers-overview-tab">
+      <div
+        className="rounded-xl border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+        data-testid="finance-cost-centers-overview-scope-hint"
+      >
+        <p>
+          <span className="font-medium text-foreground">Sem classificação</span> = valor do título
+          sem centro de custo alocado (diferença real, tolerância de R$ 0,01).
+          {scopeOpenOnly
+            ? " Os totais consideram apenas AP em aberto (saldo &gt; 0) no período filtrado."
+            : " Os totais incluem títulos liquidados do período filtrado."}
+        </p>
+        <p className="mt-1">
+          <span className="font-medium text-foreground">Fornecedor sem regra</span> = cadastro sem
+          regra automática ativa — não entra no valor financeiro de sem classificação quando o
+          título já está alocado.
+        </p>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <FinanceKpiCard
-          label="Total AP no filtro"
+          label={scopeOpenOnly ? "Total AP em aberto no filtro" : "Total AP no filtro"}
           value={formatFinanceKpiCurrency(summary?.totalAmount ?? 0)}
           icon={Layers}
           loading={loading}
@@ -110,6 +130,7 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
         <FinanceKpiCard
           label="Fornecedores sem regra"
           value={String(summary?.suppliersWithoutRules ?? 0)}
+          helperText="Cadastros ativos sem regra automática (contagem, não valor financeiro)."
           loading={loading}
         />
       </div>
@@ -133,7 +154,7 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
 
         <FinanceBillingChartShell
           title="Sem classificação por fornecedor"
-          subtitle="Principais fornecedores com títulos pendentes de classificação."
+          subtitle="Apenas o valor sem alocação real de centro de custo (não inclui fornecedor sem regra já classificado)."
           empty={unclassifiedChartData.length === 0}
         >
           <ResponsiveContainer width="100%" height={FINANCE_BILLING_CHART_HEIGHT}>

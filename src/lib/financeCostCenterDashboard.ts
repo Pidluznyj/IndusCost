@@ -11,7 +11,16 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
-import { FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
+import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
+import {
+  isCostCenterTitleInScope,
+  isTitleRealAllocated,
+  parseFinanceCostCenterApScope,
+  resolveCostCenterTitleAmount,
+  resolveTitleAllocatedAmount,
+  resolveTitleUnallocatedGap,
+  type FinanceCostCenterApScope,
+} from "@/src/lib/financeCostCenterAllocationMetrics.js";
 import {
   accountsPayableMatchesFinancialSupplier,
   type SupplierWithAliases,
@@ -42,6 +51,7 @@ export type FinanceCostCenterDashboardFilters = FinanceApDashboardFilters & {
   costCenterId?: string;
   supplierId?: string;
   classification?: FinanceCostCenterDashboardClassificationFilter;
+  apScope?: FinanceCostCenterApScope;
 };
 
 export type AllocationDashboardRow = {
@@ -134,12 +144,28 @@ export type FinanceCostCenterDashboardMonthlySeries = {
   byCostCenter: FinanceCostCenterDashboardMonthlyByCostCenterRow[];
 };
 
+export type FinanceCostCenterDashboardDiagnostics = {
+  scopeUsed: FinanceCostCenterApScope;
+  titlesInFilter: number;
+  titlesOpen: number;
+  titlesSettledInPeriod: number;
+  totalAmountBase: number;
+  totalAllocatedReal: number;
+  totalUnallocatedGap: number;
+  titlesWithUnallocatedGap: number;
+  titlesSupplierNoRule: number;
+  titlesNoSupplier: number;
+  amountSupplierNoRuleGap: number;
+  amountNoSupplierGap: number;
+};
+
 export type FinanceCostCenterDashboardAudit = {
   dataSources: string[];
   filtersApplied: FinanceCostCenterDashboardFilters;
   titlesConsidered: number;
   allocationsConsidered: number;
   lastApSyncAt: string | null;
+  diagnostics: FinanceCostCenterDashboardDiagnostics;
 };
 
 export type FinanceCostCenterDashboardPayload = {
@@ -252,29 +278,35 @@ export function parseFinanceCostCenterDashboardFilters(
     costCenterId,
     supplierId,
     classification: parseClassificationFilter(query.classification),
+    apScope: parseFinanceCostCenterApScope(query.apScope),
   };
 }
 
-export function resolveTitleDashboardAmount(row: FinanceApDashboardRow): number {
-  const balance = Math.abs(row.balancePayable);
-  const payable = Math.abs(row.amountPayable);
-  return finiteMoney(balance > 0 ? balance : payable);
+export function filterCostCenterDashboardRows(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceCostCenterDashboardFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceApDashboardRow[] {
+  const apScope = filters.apScope ?? "open_only";
+  return filterFinanceApRows(rows, filters, referenceDate, syncCutoff).filter((row) =>
+    isCostCenterTitleInScope(row, apScope)
+  );
 }
 
-export function isTitleFullyClassified(allocations: AllocationDashboardRow[]): boolean {
-  if (allocations.length === 0) return false;
-  const pct = finiteMoney(
-    allocations.reduce((sum, row) => sum + decimalFieldToNumber(row.percentage), 0)
-  );
-  return Math.abs(pct - 100) <= FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE;
+export { isTitleFullyClassified } from "@/src/lib/financeCostCenterAllocationMetrics.js";
+
+export function resolveTitleDashboardAmount(row: FinanceApDashboardRow): number {
+  return resolveCostCenterTitleAmount(row, "all_in_filter");
 }
 
 export function computeTitleMetrics(
   row: FinanceApDashboardRow,
-  referenceDate: Date
+  referenceDate: Date,
+  apScope: FinanceCostCenterApScope = "open_only"
 ): TitleMetrics {
   const normalized = normalizeAccountsPayableTitle(row);
-  const titleAmount = resolveTitleDashboardAmount(row);
+  const titleAmount = resolveCostCenterTitleAmount(row, apScope);
   const status = classifyFinanceApTitle(row, referenceDate);
   const openAmount = finiteMoney(normalized.openAmount);
   const paidAmount = finiteMoney(normalized.isSettled ? normalized.realizedAmount : 0);
@@ -351,7 +383,9 @@ export function buildFinanceCostCenterDashboard(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCostCenterDashboardPayload {
-  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const apScope = filters.apScope ?? "open_only";
+  const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
+  const allInFilterRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const ccMeta = new Map(costCenters.map((row) => [row.id, row]));
 
   const allocationsByPayable = new Map<number, AllocationDashboardRow[]>();
@@ -378,109 +412,51 @@ export function buildFinanceCostCenterDashboard(
   let unclassifiedTitlesCount = 0;
   let unclassifiedAmountTotal = 0;
   let allocationsConsidered = 0;
+  let diagTitlesOpen = 0;
+  let diagTitlesSettled = 0;
+  let diagTotalAmountBase = 0;
+  let diagTotalAllocatedReal = 0;
+  let diagTotalUnallocatedGap = 0;
+  let diagTitlesSupplierNoRule = 0;
+  let diagTitlesNoSupplier = 0;
+  let diagAmountSupplierNoRuleGap = 0;
+  let diagAmountNoSupplierGap = 0;
 
   for (const row of filteredRows) {
     const rowAllocations = allocationsByPayable.get(row.externalId) ?? [];
-    const classified = isTitleFullyClassified(rowAllocations);
+    const titleAmount = resolveCostCenterTitleAmount(row, apScope);
+    if (titleAmount <= 0) continue;
+
+    const allocatedAmount = resolveTitleAllocatedAmount(rowAllocations, titleAmount);
+    const unallocatedGap = resolveTitleUnallocatedGap(rowAllocations, titleAmount);
+    const fullyAllocated = isTitleRealAllocated(rowAllocations, titleAmount);
 
     if (!matchesSupplierFilter(row, rowAllocations, filters.supplierId, suppliers)) continue;
-    if (!matchesClassificationFilter(classified, filters.classification)) continue;
+    if (!matchesClassificationFilter(fullyAllocated, filters.classification)) continue;
 
-    const metrics = computeTitleMetrics(row, referenceDate);
+    const costCenterFilter = filters.costCenterId;
+    if (
+      costCenterFilter &&
+      !rowAllocations.some((allocation) => allocation.costCenterId === costCenterFilter)
+    ) {
+      continue;
+    }
+
+    const metrics = computeTitleMetrics(row, referenceDate, apScope);
     const supplier = resolveFinancialSupplier(row, suppliers);
     const supplierKey = supplier?.id ?? `ap:${row.personName ?? row.externalId}`;
     const month = monthKey(row.dueDate);
-    const costCenterFilter = filters.costCenterId;
 
-    if (classified) {
-      const applicableAllocations = costCenterFilter
-        ? rowAllocations.filter((allocation) => allocation.costCenterId === costCenterFilter)
-        : rowAllocations;
-      if (costCenterFilter && applicableAllocations.length === 0) continue;
+    diagTotalAmountBase += titleAmount;
+    diagTotalAllocatedReal += allocatedAmount;
+    diagTotalUnallocatedGap += unallocatedGap;
+    if (row.balancePayable > 0) diagTitlesOpen += 1;
 
-      classifiedAmount += metrics.titleAmount;
-      openAmount += metrics.openAmount;
-      overdueAmount += metrics.overdueAmount;
-      paidAmount += metrics.paidAmount;
-
-      for (const allocation of applicableAllocations) {
-        allocationsConsidered += 1;
-        const sharePct = decimalFieldToNumber(allocation.percentage);
-        const lineAmount = resolveAllocationShareAmount(allocation, metrics.titleAmount);
-        const lineOpen = prorateByShare(metrics.openAmount, sharePct);
-        const lineOverdue = prorateByShare(metrics.overdueAmount, sharePct);
-        const linePaid = prorateByShare(metrics.paidAmount, sharePct);
-        const meta = ccMeta.get(allocation.costCenterId);
-
-        const ccRow = byCostCenter.get(allocation.costCenterId) ?? {
-          costCenterId: allocation.costCenterId,
-          code: meta?.code ?? allocation.costCenterId,
-          name: meta?.name ?? allocation.costCenterId,
-          amount: 0,
-          openAmount: 0,
-          overdueAmount: 0,
-          paidAmount: 0,
-          titleIds: new Set<number>(),
-        };
-        ccRow.amount += lineAmount;
-        ccRow.openAmount += lineOpen;
-        ccRow.overdueAmount += lineOverdue;
-        ccRow.paidAmount += linePaid;
-        ccRow.titleIds.add(row.externalId);
-        byCostCenter.set(allocation.costCenterId, ccRow);
-
-        const supplierRow = bySupplier.get(supplierKey) ?? {
-          supplierId: supplier?.id ?? null,
-          name: supplier?.displayName ?? row.personName ?? "Fornecedor não identificado",
-          document: supplier?.normalizedDocument ?? row.personCnpj ?? null,
-          amount: 0,
-          titleIds: new Set<number>(),
-          costCenterShares: new Map<string, number>(),
-        };
-        supplierRow.amount += lineAmount;
-        supplierRow.titleIds.add(row.externalId);
-        supplierRow.costCenterShares.set(
-          allocation.costCenterId,
-          (supplierRow.costCenterShares.get(allocation.costCenterId) ?? 0) + lineAmount
-        );
-        bySupplier.set(supplierKey, supplierRow);
-
-        if (month) {
-          const monthlyCcKey = `${month}:${allocation.costCenterId}`;
-          const monthlyCc = monthlyByCc.get(monthlyCcKey) ?? {
-            year: row.dueDate!.getFullYear(),
-            month: row.dueDate!.getMonth() + 1,
-            costCenterId: allocation.costCenterId,
-            code: meta?.code ?? allocation.costCenterId,
-            name: meta?.name ?? allocation.costCenterId,
-            amount: 0,
-          };
-          monthlyCc.amount += lineAmount;
-          monthlyByCc.set(monthlyCcKey, monthlyCc);
-        }
-      }
-
-      if (month) {
-        const monthly = monthlyTotals.get(month) ?? {
-          year: row.dueDate!.getFullYear(),
-          month: row.dueDate!.getMonth() + 1,
-          totalAmount: 0,
-          classifiedAmount: 0,
-          unclassifiedAmount: 0,
-        };
-        monthly.totalAmount += metrics.titleAmount;
-        monthly.classifiedAmount += metrics.titleAmount;
-        monthlyTotals.set(month, monthly);
-      }
-    } else {
-      if (costCenterFilter) continue;
-
-      unclassifiedAmount += metrics.titleAmount;
+    classifiedAmount += allocatedAmount;
+    if (unallocatedGap > 0) {
+      unclassifiedAmount += unallocatedGap;
       unclassifiedTitlesCount += 1;
-      unclassifiedAmountTotal += metrics.titleAmount;
-      openAmount += metrics.openAmount;
-      overdueAmount += metrics.overdueAmount;
-      paidAmount += metrics.paidAmount;
+      unclassifiedAmountTotal += unallocatedGap;
 
       const supplierName = supplier?.displayName ?? row.personName ?? "Fornecedor não identificado";
       const supplierDocument = supplier?.normalizedDocument ?? row.personCnpj ?? null;
@@ -492,9 +468,86 @@ export function buildFinanceCostCenterDashboard(
         amount: 0,
       };
       unclassifiedRow.titlesCount += 1;
-      unclassifiedRow.amount += metrics.titleAmount;
+      unclassifiedRow.amount += unallocatedGap;
       unclassifiedSuppliers.set(unclassifiedKey, unclassifiedRow);
 
+      if (!supplier) {
+        diagTitlesNoSupplier += 1;
+        diagAmountNoSupplierGap += unallocatedGap;
+      } else if (!supplierIdsWithRules.has(supplier.id)) {
+        diagTitlesSupplierNoRule += 1;
+        diagAmountSupplierNoRuleGap += unallocatedGap;
+      }
+    }
+
+    openAmount += metrics.openAmount;
+    overdueAmount += metrics.overdueAmount;
+    paidAmount += metrics.paidAmount;
+
+    const applicableAllocations = costCenterFilter
+      ? rowAllocations.filter((allocation) => allocation.costCenterId === costCenterFilter)
+      : rowAllocations;
+
+    for (const allocation of applicableAllocations) {
+      allocationsConsidered += 1;
+      const sharePct = decimalFieldToNumber(allocation.percentage);
+      const lineAmount = resolveAllocationShareAmount(allocation, titleAmount);
+      const lineOpen = prorateByShare(metrics.openAmount, sharePct);
+      const lineOverdue = prorateByShare(metrics.overdueAmount, sharePct);
+      const linePaid = prorateByShare(metrics.paidAmount, sharePct);
+      const meta = ccMeta.get(allocation.costCenterId);
+
+      const ccRow = byCostCenter.get(allocation.costCenterId) ?? {
+        costCenterId: allocation.costCenterId,
+        code: meta?.code ?? allocation.costCenterId,
+        name: meta?.name ?? allocation.costCenterId,
+        amount: 0,
+        openAmount: 0,
+        overdueAmount: 0,
+        paidAmount: 0,
+        titleIds: new Set<number>(),
+      };
+      ccRow.amount += lineAmount;
+      ccRow.openAmount += lineOpen;
+      ccRow.overdueAmount += lineOverdue;
+      ccRow.paidAmount += linePaid;
+      ccRow.titleIds.add(row.externalId);
+      byCostCenter.set(allocation.costCenterId, ccRow);
+
+      const supplierRow = bySupplier.get(supplierKey) ?? {
+        supplierId: supplier?.id ?? null,
+        name: supplier?.displayName ?? row.personName ?? "Fornecedor não identificado",
+        document: supplier?.normalizedDocument ?? row.personCnpj ?? null,
+        amount: 0,
+        titleIds: new Set<number>(),
+        costCenterShares: new Map<string, number>(),
+      };
+      supplierRow.amount += lineAmount;
+      supplierRow.titleIds.add(row.externalId);
+      supplierRow.costCenterShares.set(
+        allocation.costCenterId,
+        (supplierRow.costCenterShares.get(allocation.costCenterId) ?? 0) + lineAmount
+      );
+      bySupplier.set(supplierKey, supplierRow);
+
+      if (month) {
+        const monthlyCcKey = `${month}:${allocation.costCenterId}`;
+        const monthlyCc = monthlyByCc.get(monthlyCcKey) ?? {
+          year: row.dueDate!.getFullYear(),
+          month: row.dueDate!.getMonth() + 1,
+          costCenterId: allocation.costCenterId,
+          code: meta?.code ?? allocation.costCenterId,
+          name: meta?.name ?? allocation.costCenterId,
+          amount: 0,
+        };
+        monthlyCc.amount += lineAmount;
+        monthlyByCc.set(monthlyCcKey, monthlyCc);
+      }
+    }
+
+    if (!fullyAllocated && applicableAllocations.length === 0) {
+      const supplierName = supplier?.displayName ?? row.personName ?? "Fornecedor não identificado";
+      const supplierDocument = supplier?.normalizedDocument ?? row.personCnpj ?? null;
       const supplierRow = bySupplier.get(supplierKey) ?? {
         supplierId: supplier?.id ?? null,
         name: supplierName,
@@ -503,22 +556,32 @@ export function buildFinanceCostCenterDashboard(
         titleIds: new Set<number>(),
         costCenterShares: new Map<string, number>(),
       };
-      supplierRow.amount += metrics.titleAmount;
+      supplierRow.amount += unallocatedGap;
       supplierRow.titleIds.add(row.externalId);
       bySupplier.set(supplierKey, supplierRow);
+    }
 
-      if (month) {
-        const monthly = monthlyTotals.get(month) ?? {
-          year: row.dueDate!.getFullYear(),
-          month: row.dueDate!.getMonth() + 1,
-          totalAmount: 0,
-          classifiedAmount: 0,
-          unclassifiedAmount: 0,
-        };
-        monthly.totalAmount += metrics.titleAmount;
-        monthly.unclassifiedAmount += metrics.titleAmount;
-        monthlyTotals.set(month, monthly);
-      }
+    if (month) {
+      const monthly = monthlyTotals.get(month) ?? {
+        year: row.dueDate!.getFullYear(),
+        month: row.dueDate!.getMonth() + 1,
+        totalAmount: 0,
+        classifiedAmount: 0,
+        unclassifiedAmount: 0,
+      };
+      monthly.totalAmount += titleAmount;
+      monthly.classifiedAmount += allocatedAmount;
+      monthly.unclassifiedAmount += unallocatedGap;
+      monthlyTotals.set(month, monthly);
+    }
+  }
+
+  for (const row of allInFilterRows) {
+    if (row.balancePayable > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) {
+      continue;
+    }
+    if (resolveCostCenterTitleAmount(row, "all_in_filter") > 0) {
+      diagTitlesSettled += 1;
     }
   }
 
@@ -623,6 +686,20 @@ export function buildFinanceCostCenterDashboard(
       titlesConsidered: filteredRows.length,
       allocationsConsidered,
       lastApSyncAt,
+      diagnostics: {
+        scopeUsed: apScope,
+        titlesInFilter: allInFilterRows.length,
+        titlesOpen: diagTitlesOpen,
+        titlesSettledInPeriod: diagTitlesSettled,
+        totalAmountBase: finiteMoney(diagTotalAmountBase),
+        totalAllocatedReal: finiteMoney(diagTotalAllocatedReal),
+        totalUnallocatedGap: finiteMoney(diagTotalUnallocatedGap),
+        titlesWithUnallocatedGap: unclassifiedTitlesCount,
+        titlesSupplierNoRule: diagTitlesSupplierNoRule,
+        titlesNoSupplier: diagTitlesNoSupplier,
+        amountSupplierNoRuleGap: finiteMoney(diagAmountSupplierNoRuleGap),
+        amountNoSupplierGap: finiteMoney(diagAmountNoSupplierGap),
+      },
     },
   };
 }

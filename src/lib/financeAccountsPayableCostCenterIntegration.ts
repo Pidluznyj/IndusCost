@@ -16,9 +16,13 @@ import {
 import { fleetRowsToCsv } from "@/src/lib/fleetCsv.js";
 import {
   isTitleFullyClassified,
-  resolveTitleDashboardAmount,
-  type AllocationDashboardRow,
-  type CostCenterMetaRow,
+  resolveCostCenterTitleAmount,
+  resolveTitleAllocatedAmount,
+  resolveTitleUnallocatedGap,
+} from "@/src/lib/financeCostCenterAllocationMetrics.js";
+import type {
+  AllocationDashboardRow,
+  CostCenterMetaRow,
 } from "@/src/lib/financeCostCenterDashboard.js";
 import { FINANCE_AP_ALLOCATION_AUDIT_ENTITY } from "@/src/lib/financeApAllocationShared.js";
 import {
@@ -253,8 +257,8 @@ export function enrichApTitleClassification(
 ): FinanceApTitleClassificationEnrichment {
   void referenceDate;
   const allocations = ctx.allocationsByPayable.get(row.externalId) ?? [];
-  const classified = isTitleFullyClassified(allocations);
-  const titleAmount = resolveTitleDashboardAmount(row);
+  const titleAmount = resolveCostCenterTitleAmount(row, "open_only");
+  const classified = isTitleFullyClassified(allocations, titleAmount);
   const supplier = resolveConsolidatedSupplier(row, allocations, ctx.suppliers);
   const lines: FinanceApTitleClassificationLine[] = allocations.map((allocation) => {
     const meta = ctx.costCenterById.get(allocation.costCenterId);
@@ -291,7 +295,9 @@ export function enrichApTitleClassification(
     isSplit: statusKey === "split",
     isManualLocked: allocations.some((a) => a.lockedManual),
     allocatedPercentage,
-    allocatedAmount: classified ? titleAmount : 0,
+    allocatedAmount: classified
+      ? titleAmount
+      : finiteMoney(resolveTitleAllocatedAmount(allocations, titleAmount)),
     lines,
   };
 }
@@ -362,12 +368,11 @@ export function computeApClassificationSummary(
   let unclassifiedAmount = 0;
   for (const row of rows) {
     const allocations = ctx.allocationsByPayable.get(row.externalId) ?? [];
-    const amount = resolveTitleDashboardAmount(row);
-    if (isTitleFullyClassified(allocations)) {
-      classifiedAmount += amount;
-    } else {
-      unclassifiedAmount += amount;
-    }
+    const amount = resolveCostCenterTitleAmount(row, "open_only");
+    const allocated = resolveTitleAllocatedAmount(allocations, amount);
+    const gap = resolveTitleUnallocatedGap(allocations, amount);
+    classifiedAmount += allocated;
+    unclassifiedAmount += gap;
   }
   const total = classifiedAmount + unclassifiedAmount;
   return {

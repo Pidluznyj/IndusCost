@@ -59,6 +59,16 @@ describe("financeCostCentersPage", () => {
     assert.match(unclassified, /Nenhum título sem classificação/);
   });
 
+  it("visão geral explica escopo e sem classificação real", () => {
+    const overview = read("src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx");
+    const page = read("src/components/finance/cost-centers/FinanceCostCentersPage.tsx");
+    assert.match(overview, /finance-cost-centers-overview-scope-hint/);
+    assert.match(overview, /Sem classificação/);
+    assert.match(overview, /Total AP em aberto no filtro/);
+    assert.match(overview, /Fornecedor sem regra/);
+    assert.match(page, /Diagnóstico de classificação/);
+  });
+
   it("botões principais existem", () => {
     const crud = read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx");
     const rules = read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx");

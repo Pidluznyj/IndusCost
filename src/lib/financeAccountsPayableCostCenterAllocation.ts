@@ -7,13 +7,16 @@ import {
   validateSupplierRulePercentageTotal,
   type SupplierWithAliases,
 } from "@/src/lib/financeSupplierCostCenterRules.js";
-import {
-  FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE,
+import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE,
   FINANCE_AP_ALLOCATION_AUDIT_ACTION,
   FINANCE_AP_ALLOCATION_AUDIT_ENTITY,
   FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT,
   FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE,
 } from "@/src/lib/financeApAllocationShared.js";
+import {
+  isTitleRealAllocated,
+  resolveTitleUnallocatedGap,
+} from "@/src/lib/financeCostCenterAllocationMetrics.js";
 import { extractSupplierFromAccountsPayable } from "@/src/lib/financeSupplierIdentity.js";
 import { prisma } from "@/src/lib/prisma.js";
 
@@ -148,6 +151,8 @@ export type BatchAllocationFilters = {
   unclassifiedOnly?: boolean;
   companyName?: string;
   supplierId?: string;
+  /** Quando true (padrão na listagem de centros de custo), considera só AP com saldo em aberto. */
+  openOnly?: boolean;
 };
 
 export type FinanceApAllocationDeps = {
@@ -815,7 +820,11 @@ export async function listUnclassifiedAccountsPayable(
   deps: FinanceApAllocationDeps,
   filters: BatchAllocationFilters
 ): Promise<UnclassifiedListPayload> {
-  const apRows = await deps.loadApRows(filters);
+  const effectiveFilters: BatchAllocationFilters = {
+    ...filters,
+    openOnly: filters.openOnly !== false,
+  };
+  const apRows = await deps.loadApRows(effectiveFilters);
   const allocations = await deps.loadAllocationsForPayables(apRows.map((row) => row.externalId));
   const byPayable = new Map<number, AllocationRecord[]>();
   for (const allocation of allocations) {
@@ -846,10 +855,10 @@ export async function listUnclassifiedAccountsPayable(
 
   for (const ap of apRows) {
     const rows = byPayable.get(ap.externalId) ?? [];
+    const baseAmount = resolveTitleAllocationBaseAmount(ap);
     const pctTotal = rows.reduce((sum, row) => sum + decimalToNumber(row.percentage), 0);
-    const fullyClassified =
-      rows.length > 0 && Math.abs(pctTotal - 100) <= FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE;
-    if (fullyClassified) continue;
+    const unallocatedGap = resolveTitleUnallocatedGap(rows, baseAmount);
+    if (isTitleRealAllocated(rows, baseAmount)) continue;
 
     const supplier = resolveSupplierForAccountsPayable(ap, suppliers);
     let hasActiveRule = false;
@@ -873,7 +882,7 @@ export async function listUnclassifiedAccountsPayable(
 
     items.push({
       externalId: ap.externalId,
-      titleAmount: resolveTitleAllocationBaseAmount(ap),
+      titleAmount: unallocatedGap,
       companyName: ap.companyName ?? null,
       personName: ap.personName ?? null,
       cause,
@@ -970,6 +979,11 @@ function createPrismaFinanceApAllocationDeps(
         } else {
           mapped = [];
         }
+      }
+      if (filters.openOnly) {
+        mapped = mapped.filter(
+          (ap) => (ap.balancePayable ?? 0) > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE
+        );
       }
       if (filters.unclassifiedOnly) {
         const unclassified = await listUnclassifiedAccountsPayable(base, {});
@@ -1139,6 +1153,11 @@ export function parseBatchAllocationFiltersBody(body: unknown): BatchAllocationF
   }
   if (typeof record.supplierId === "string" && record.supplierId.trim()) {
     filters.supplierId = record.supplierId.trim();
+  }
+  if (record.openOnly === false || record.openOnly === "false") {
+    filters.openOnly = false;
+  } else if (record.openOnly === true || record.openOnly === "true") {
+    filters.openOnly = true;
   }
   return filters;
 }
