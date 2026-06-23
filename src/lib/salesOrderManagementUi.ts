@@ -64,6 +64,41 @@ export const COMPLETION_STATUS_FILTER_OPTIONS: Array<{ value: string; label: str
   { value: "mixed", label: "Misto" },
 ];
 
+export const PRAZO_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "on_time", label: "No prazo" },
+  { value: "late", label: "Atrasado" },
+  { value: "pending", label: "Pendente" },
+  { value: "review", label: "Revisar dados" },
+];
+
+export const FULFILLMENT_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "complete", label: "Completo" },
+  { value: "partial", label: "Parcial" },
+  { value: "none", label: "Sem atendimento/faturamento" },
+];
+
+export const INVOICE_COVERAGE_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "0", label: "0%" },
+  { value: "partial", label: "Parcial" },
+  { value: "100", label: "100%" },
+  { value: "over100", label: "Acima de 100% / divergente" },
+];
+
+export const REVIEW_DATA_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "true", label: "Sim — revisar" },
+  { value: "false", label: "Não" },
+];
+
+export const CUT_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "true", label: "Com corte" },
+  { value: "false", label: "Sem corte" },
+];
+
 export const ITEM_NOMUS_STATUS_LABELS: Record<SalesOrderItemNomusStatus, string> = {
   awaiting_release: "Aguardando liberação",
   released: "Liberado",

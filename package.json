@@ -55,6 +55,8 @@
     "backfill:sales-order-nfe-links:dry": "tsx scripts/backfill-sales-order-nfe-links.ts --dry-run",
     "backfill:sales-order-nfe-links:apply": "tsx scripts/backfill-sales-order-nfe-links.ts --apply",
     "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts",
+    "test:sales-orders-fulfillment": "tsx --test src/lib/salesOrderManagementFulfillment.test.ts",
+    "audit:sales-order-fulfillment": "tsx scripts/audit-sales-order-fulfillment.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:accounts-receivable": "tsx --test src/lib/nomusAccountsReceivable.test.ts src/lib/nomusAccountsReceivableSyncLogParse.test.ts",
     "test:nomus:accounts-payable": "tsx --test src/lib/nomusAccountsPayable.test.ts src/lib/nomusAccountsPayableSyncLogParse.test.ts",

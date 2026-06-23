@@ -132,6 +132,14 @@ export type SalesOrderIntelligencePayload = {
       | "no_due_date"
       | "not_invoiced"
       | "unknown";
+    linkedNfeSource?: "linked" | "raw_fallback" | null;
+    isFullyInvoiced?: boolean;
+    isPartiallyInvoiced?: boolean;
+    slaStatus?: "on_time" | "late" | "pending" | "review" | null;
+    slaDays?: number | null;
+    daysLate?: number | null;
+    needsDataReview?: boolean;
+    reviewReasons?: string[];
   };
   invoices: SalesOrderIntelligenceInvoice[];
   items: Array<{
@@ -193,6 +201,34 @@ export type SalesOrderIntelligencePayload = {
     itemsCancelled: number;
     itemsWithCut: number;
     statusNomusRaw?: string | number | null;
+  };
+  linkedNfes: Array<{
+    linkId: string;
+    nfeExternalId: number;
+    number: string | null;
+    series: string | null;
+    accessKey: string | null;
+    status: number | null;
+    processingDate: string | null;
+    issueDate: string | null;
+    totalValue: number;
+    tipoOperacao: number | null;
+    protocolo: string | null;
+    usuario: string | null;
+    dataSource: "linked" | "raw_fallback";
+    nomusNfeMatched: boolean;
+  }>;
+  fulfillmentCalculation: {
+    expectedDeliveryDate: string | null;
+    completionDate: string | null;
+    soldValue: number;
+    invoicedValue: number;
+    invoiceCoveragePercent: number | null;
+    calculatedStatus: string;
+    daysLate: number | null;
+    slaDays: number | null;
+    statusReason: string;
+    reviewAlerts: string[];
   };
 };
 
@@ -614,6 +650,41 @@ export function buildSalesOrderIntelligencePayload(input: {
 
   const invoiceTiming = resolveInvoiceTiming(lifecycle);
 
+  const linkedNfeContext = input.linkedNfeContext ?? null;
+  const linkedNfes =
+    linkedNfeContext?.nfeLinks.map((link, index) => ({
+      linkId: link.id,
+      nfeExternalId: link.nfeExternalId,
+      number: link.nfeNumber,
+      series: null,
+      accessKey: link.nfeKey,
+      status: linkedNfeContext.nfeStatuses[index] ?? null,
+      processingDate: linkedNfeContext.lastNfeProcessingDate?.toISOString() ?? null,
+      issueDate: linkedNfeContext.lastNfeIssueDate?.toISOString() ?? null,
+      totalValue:
+        linkedNfeContext.nfeCount > 0
+          ? linkedNfeContext.nfeTotalValue / linkedNfeContext.nfeCount
+          : 0,
+      tipoOperacao: linkedNfeContext.nfeTipoOperacao[index] ?? null,
+      protocolo: null,
+      usuario: null,
+      dataSource: linkedNfeContext.source,
+      nomusNfeMatched: !!link.nomusNfeId,
+    })) ?? [];
+
+  const fulfillmentCalculation = {
+    expectedDeliveryDate: lifecycle.expectedDeliveryDate ?? null,
+    completionDate: lifecycle.lastNfeProcessingDate ?? lifecycle.lastInvoiceDate ?? null,
+    soldValue: decimalToNumber(input.order.totalNetValue) ?? 0,
+    invoicedValue: lifecycle.nfeTotalValue ?? 0,
+    invoiceCoveragePercent: lifecycle.invoiceCoveragePercent ?? lifecycle.invoicedPercent,
+    calculatedStatus: logisticStatus.label,
+    daysLate: lifecycle.daysLate ?? lifecycle.daysOverdue,
+    slaDays: lifecycle.slaDays ?? lifecycle.daysToInvoice ?? null,
+    statusReason: logisticStatus.ruleExplanation,
+    reviewAlerts: lifecycle.reviewReasons ?? [],
+  };
+
   return {
     order: {
       id: input.order.id,
@@ -639,7 +710,9 @@ export function buildSalesOrderIntelligencePayload(input: {
       invoiceNumbers: lifecycle.nfeNumbers ?? lifecycle.invoiceNumbers,
       firstInvoiceDate: lifecycle.firstInvoiceDate,
       lastInvoiceDate: lifecycle.lastInvoiceDate ?? lifecycle.lastNfeProcessingDate ?? null,
-      invoicedAmount: lifecycle.hasInvoice ? lifecycle.nfeTotalValue ?? invoicedAmount || null : null,
+      invoicedAmount: lifecycle.hasInvoice
+        ? (lifecycle.nfeTotalValue ?? invoicedAmount ?? null)
+        : null,
       invoicedPercent: lifecycle.invoiceCoveragePercent ?? lifecycle.invoicedPercent,
       invoiceTiming: resolveInvoiceTiming(lifecycle),
       linkedNfeSource: lifecycle.linkedNfeSource ?? null,
@@ -678,6 +751,8 @@ export function buildSalesOrderIntelligencePayload(input: {
       missingLinks,
       sourceNotes,
     },
+    linkedNfes,
+    fulfillmentCalculation,
   };
 }
 
@@ -773,7 +848,17 @@ export function mapLifecycleToManagementRow(
     deadlineStatus: lifecycle.deadlineStatus,
     daysOverdue: lifecycle.daysOverdue,
     hasInvoice: lifecycle.hasInvoice,
-    invoiceNumbers: lifecycle.invoiceNumbers,
+    invoiceNumbers: lifecycle.nfeNumbers ?? lifecycle.invoiceNumbers,
+    lastInvoiceDate: lifecycle.lastNfeProcessingDate ?? lifecycle.lastInvoiceDate ?? null,
+    invoicedValue: lifecycle.nfeTotalValue ?? 0,
+    invoiceCoveragePercent: lifecycle.invoiceCoveragePercent ?? lifecycle.invoicedPercent,
+    nfeCount: lifecycle.nfeCount ?? lifecycle.invoiceNumbers.length,
+    linkedNfeSource: lifecycle.linkedNfeSource,
+    slaStatus: lifecycle.slaStatus ?? (lifecycle.needsDataReview ? "review" : "pending"),
+    slaDays: lifecycle.slaDays ?? lifecycle.daysToInvoice ?? null,
+    needsDataReview: lifecycle.needsDataReview ?? false,
+    reviewReasons: lifecycle.reviewReasons ?? [],
+    hasCut: lifecycle.hasCut ?? lifecycle.completionStatus === "with_cut",
     hasLinkedProductionOrder: lifecycle.hasLinkedProductionOrder,
     productionOrderLate: lifecycle.productionOrderLate,
     productionOrderStatus: productionFields.productionOrderStatus,

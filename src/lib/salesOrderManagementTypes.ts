@@ -120,6 +120,18 @@ export type SalesOrderManagementRow = {
   hasInvoice: boolean;
   invoiceNumbers: string[];
   invoicedPercent: number | null;
+  /** Valor faturado (soma NF-es vinculadas). */
+  invoicedValue: number;
+  lastInvoiceDate?: string | null;
+  invoiceCoveragePercent: number | null;
+  nfeCount: number;
+  linkedNfeSource?: "linked" | "raw_fallback";
+
+  slaStatus: "on_time" | "late" | "pending" | "review";
+  slaDays: number | null;
+  needsDataReview: boolean;
+  reviewReasons: string[];
+  hasCut: boolean;
 
   hasLinkedProductionOrder: boolean;
   productionOrderLate: boolean;
@@ -140,8 +152,12 @@ export function assertManagementRowFinite(row: SalesOrderManagementRow): boolean
   const nums = [
     row.totalNetValue,
     row.invoicedPercent,
+    row.invoicedValue,
+    row.invoiceCoveragePercent,
     row.fulfilledPercent,
     row.daysOverdue,
+    row.slaDays,
+    row.nfeCount,
     row.riskCount,
     row.highRiskCount,
     row.itemsCount,

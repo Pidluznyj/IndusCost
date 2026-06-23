@@ -22,6 +22,17 @@ import type {
   SalesOrderManagementCards,
   SalesOrderManagementRow,
 } from "./salesOrderManagementTypes.js";
+import {
+  buildFulfillmentCharts,
+  buildFulfillmentKpis,
+  matchesFulfillmentExtendedFilters,
+  parseFulfillmentExtendedFilters,
+  sortManagementRowsByColumn,
+  type SalesOrderFulfillmentCharts,
+  type SalesOrderFulfillmentExtendedFilters,
+  type SalesOrderFulfillmentKpis,
+  type SalesOrderManagementSortKey,
+} from "./salesOrderManagementFulfillment.js";
 import { cardsToManagementSummary, type SalesOrderManagementSummary } from "./salesOrderManagementTypes.js";
 
 export type {
@@ -60,7 +71,9 @@ export type SalesOrderManagementFilters = {
   startDate?: Date | null;
   endDate?: Date | null;
   status?: string;
-};
+  sortBy?: SalesOrderManagementSortKey;
+  sortDir?: "asc" | "desc";
+} & SalesOrderFulfillmentExtendedFilters;
 
 export function parseSalesOrderManagementFilters(
   query: Record<string, unknown>,
@@ -139,6 +152,12 @@ export function parseSalesOrderManagementFilters(
           ? query.managementStatus
           : "",
     status: typeof query.status === "string" ? query.status.trim() : undefined,
+    sortBy:
+      typeof query.sortBy === "string"
+        ? (query.sortBy as SalesOrderManagementSortKey)
+        : undefined,
+    sortDir: query.sortDir === "asc" || query.sortDir === "desc" ? query.sortDir : undefined,
+    ...parseFulfillmentExtendedFilters(query),
   };
 }
 
@@ -208,6 +227,7 @@ function matchesManagementFilters(
   if (logisticFilter && row.logisticStatusCardId !== logisticFilter) {
     return false;
   }
+  if (!matchesFulfillmentExtendedFilters(row, filters)) return false;
   return true;
 }
 
@@ -281,6 +301,8 @@ export function buildManagementRowsFromOrders(
   cardAmounts: SalesOrderManagementCardAmounts;
   dashboardCards: ManagementDashboardCard[];
   summary: SalesOrderManagementSummary;
+  fulfillmentKpis: SalesOrderFulfillmentKpis;
+  fulfillmentCharts: SalesOrderFulfillmentCharts;
 } {
   const computed = orders.map((order) => {
     const linkedNfeContext = linkedNfeContextMap?.get(order.id) ?? null;
@@ -327,7 +349,12 @@ export function buildManagementRowsFromOrders(
   const cards = buildSalesOrderManagementCards(cardRows);
   const cardAmounts = buildSalesOrderManagementCardAmounts(cardRows);
   const dashboard = buildManagementDashboardCards(cardRows);
-  const filteredRows = sortManagementRowsByRisk(filtered.map((f) => f.row));
+  let filteredRows: SalesOrderManagementRow[] = filtered.map((f) => f.row);
+  if (filters.sortBy) {
+    filteredRows = sortManagementRowsByColumn(filteredRows, filters.sortBy, filters.sortDir ?? "desc");
+  } else {
+    filteredRows = sortManagementRowsByRisk(filteredRows);
+  }
 
   return {
     rows: filteredRows,
@@ -342,6 +369,8 @@ export function buildManagementRowsFromOrders(
       reconciliation: dashboard.reconciliation,
       gridFilteredCount: filteredRows.length,
     }),
+    fulfillmentKpis: buildFulfillmentKpis(filteredRows),
+    fulfillmentCharts: buildFulfillmentCharts(filteredRows),
   };
 }
 
@@ -354,6 +383,8 @@ export type SalesOrderManagementResponse = {
   cardAmounts?: SalesOrderManagementCardAmounts;
   dashboardCards?: ManagementDashboardCard[];
   summary?: SalesOrderManagementSummary;
+  fulfillmentKpis?: SalesOrderFulfillmentKpis;
+  fulfillmentCharts?: SalesOrderFulfillmentCharts;
   rows: SalesOrderManagementRow[];
 };
 

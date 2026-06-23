@@ -361,22 +361,127 @@ function TabPanel({
   }
 
   if (tab === "invoicing") {
-    if (invoices.length === 0) {
-      return (
-        <div className="space-y-3" data-testid="sales-order-intelligence-invoicing">
-          <p className="text-sm text-muted-foreground">
-            Nenhuma nota fiscal vinculada localizada na integração.
-          </p>
-          <SummaryCard
-            label="Resumo"
-            value={invoicing.hasInvoice ? "Indício de NF sem detalhes no raw" : "Sem NF"}
-          />
-        </div>
-      );
-    }
+    const { linkedNfes, fulfillmentCalculation } = payload;
+
     return (
-      <div className="overflow-x-auto space-y-3" data-testid="sales-order-intelligence-invoicing">
-        <table className="w-full text-left text-xs">
+      <div className="space-y-6" data-testid="sales-order-intelligence-invoicing">
+        <div>
+          <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
+            NF-es vinculadas
+          </h3>
+          {linkedNfes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma NF-e vinculada via SalesOrderNfeLink.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs" data-testid="sales-order-linked-nfes">
+                <thead className="border-b border-border bg-accent/40">
+                  <tr>
+                    <th className="p-2 font-semibold">Número</th>
+                    <th className="p-2 font-semibold">Série</th>
+                    <th className="p-2 font-semibold">Chave</th>
+                    <th className="p-2 font-semibold">Status</th>
+                    <th className="p-2 font-semibold">Processamento</th>
+                    <th className="p-2 font-semibold">Emissão XML</th>
+                    <th className="p-2 font-semibold text-right">Valor</th>
+                    <th className="p-2 font-semibold">Tipo op.</th>
+                    <th className="p-2 font-semibold">Origem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linkedNfes.map((nfe) => (
+                    <tr key={nfe.linkId} className="border-b border-border/60">
+                      <td className="p-2">{nfe.number ?? "—"}</td>
+                      <td className="p-2">{nfe.series ?? "—"}</td>
+                      <td className="p-2 max-w-[8rem] truncate" title={nfe.accessKey ?? undefined}>
+                        {nfe.accessKey ?? "—"}
+                      </td>
+                      <td className="p-2">{nfe.status ?? "—"}</td>
+                      <td className="p-2">{formatSalesOrderDate(nfe.processingDate)}</td>
+                      <td className="p-2">{formatSalesOrderDate(nfe.issueDate)}</td>
+                      <td className="p-2 text-right tabular-nums">{formatCurrency(nfe.totalValue)}</td>
+                      <td className="p-2">{nfe.tipoOperacao ?? "—"}</td>
+                      <td className="p-2">
+                        {nfe.dataSource}
+                        {nfe.nomusNfeMatched ? " · NomusNfe" : " · sem match"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div data-testid="sales-order-fulfillment-calculation">
+          <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
+            Cálculo de atendimento e prazo
+          </h3>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-muted-foreground text-xs">Data planejada entrega</dt>
+              <dd className="font-medium">
+                {formatSalesOrderDate(fulfillmentCalculation.expectedDeliveryDate)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Data faturamento/conclusão</dt>
+              <dd className="font-medium">
+                {formatSalesOrderDate(fulfillmentCalculation.completionDate)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Valor pedido</dt>
+              <dd className="font-medium">{formatCurrency(fulfillmentCalculation.soldValue)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Valor faturado</dt>
+              <dd className="font-medium">{formatCurrency(fulfillmentCalculation.invoicedValue)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">% faturado</dt>
+              <dd className="font-medium">
+                {formatSalesOrderPercent(fulfillmentCalculation.invoiceCoveragePercent)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Status calculado (BI)</dt>
+              <dd className="font-medium">{fulfillmentCalculation.calculatedStatus}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Dias de atraso</dt>
+              <dd className="font-medium">
+                {fulfillmentCalculation.daysLate ?? "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">SLA (dias)</dt>
+              <dd className="font-medium">{fulfillmentCalculation.slaDays ?? "—"}</dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-muted-foreground">{fulfillmentCalculation.statusReason}</p>
+          {fulfillmentCalculation.reviewAlerts.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-xs text-red-800">
+              {fulfillmentCalculation.reviewAlerts.map((alert) => (
+                <li key={alert} className="flex items-start gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  {alert}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        {invoices.length === 0 ? (
+          <SummaryCard
+            label="Resumo integração raw"
+            value={invoicing.hasInvoice ? "Indício de NF sem detalhes no raw" : "Sem NF no raw"}
+          />
+        ) : (
+          <div className="overflow-x-auto space-y-3">
+            <h3 className="text-xs font-bold uppercase text-muted-foreground">NF-es no raw Nomus</h3>
+            <table className="w-full text-left text-xs">
           <thead className="border-b border-border bg-accent/40">
             <tr>
               <th className="p-2 font-semibold">NF</th>
@@ -438,6 +543,8 @@ function TabPanel({
             ))}
           </tbody>
         </table>
+          </div>
+        )}
       </div>
     );
   }

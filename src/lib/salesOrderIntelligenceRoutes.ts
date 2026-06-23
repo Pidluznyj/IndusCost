@@ -5,6 +5,11 @@ import { buildSalesOrderIntelligencePayload } from "./salesOrderIntelligence.js"
 import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
 import { buildSalesOrderNfeLinkDiagnostic } from "./salesOrderNfeLink.js";
 import {
+  buildFulfillmentAudit,
+  countRawNfesInPayload,
+  type SalesOrderFulfillmentAudit,
+} from "./salesOrderManagementFulfillment.js";
+import {
   buildSalesOrderManagementWhere,
   buildManagementRowsFromOrders,
   parseSalesOrderManagementFilters,
@@ -114,7 +119,8 @@ export async function loadSalesOrderManagementPage(
     }))
   );
 
-  const { rows, cards, summary, cardAmounts, dashboardCards } = buildManagementRowsFromOrders(
+  const { rows, cards, summary, cardAmounts, dashboardCards, fulfillmentKpis, fulfillmentCharts } =
+    buildManagementRowsFromOrders(
     orders,
     filters,
     undefined,
@@ -133,8 +139,92 @@ export async function loadSalesOrderManagementPage(
     cardAmounts,
     dashboardCards,
     summary,
+    fulfillmentKpis,
+    fulfillmentCharts,
     rows: pageRows,
   };
+}
+
+export async function loadSalesOrderFulfillmentAudit(
+  query: Record<string, unknown>
+): Promise<SalesOrderFulfillmentAudit> {
+  const filters = parseSalesOrderManagementFilters(query);
+  const where = buildSalesOrderManagementWhere(filters);
+
+  const orders = await prisma.salesOrder.findMany({
+    where,
+    select: {
+      id: true,
+      orderCode: true,
+      status: true,
+      issueDate: true,
+      expectedDeliveryDate: true,
+      totalNetValue: true,
+      responsible: true,
+      nomusRawResponse: true,
+      companyIssuer: true,
+      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+      items: {
+        select: {
+          id: true,
+          externalProductId: true,
+          skuSnapshot: true,
+          productNameSnapshot: true,
+          quantity: true,
+        },
+      },
+    },
+  });
+
+  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+    orders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    }))
+  );
+
+  const { rows } = buildManagementRowsFromOrders(
+    orders,
+    filters,
+    undefined,
+    linkedNfeContextMap
+  );
+
+  const orderIds = orders.map((o) => o.id);
+  const links =
+    orderIds.length > 0
+      ? await prisma.salesOrderNfeLink.findMany({
+          where: { salesOrderId: { in: orderIds } },
+          select: { salesOrderId: true, nomusNfeId: true },
+        })
+      : [];
+
+  const linkCountsByOrderId = new Map<string, number>();
+  const unmatchedLinkCountsByOrderId = new Map<string, number>();
+  for (const link of links) {
+    linkCountsByOrderId.set(link.salesOrderId, (linkCountsByOrderId.get(link.salesOrderId) ?? 0) + 1);
+    if (!link.nomusNfeId) {
+      unmatchedLinkCountsByOrderId.set(
+        link.salesOrderId,
+        (unmatchedLinkCountsByOrderId.get(link.salesOrderId) ?? 0) + 1
+      );
+    }
+  }
+
+  const rawNfeCountsByOrderId = new Map<string, number>();
+  for (const order of orders) {
+    rawNfeCountsByOrderId.set(order.id, countRawNfesInPayload(order.nomusRawResponse));
+  }
+
+  return buildFulfillmentAudit({
+    rows,
+    linkCountsByOrderId,
+    rawNfeCountsByOrderId,
+    unmatchedLinkCountsByOrderId,
+  });
 }
 
 export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth: AuthGuards) {
@@ -190,6 +280,20 @@ export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth:
         } catch (error) {
           console.error("GET /api/admin/sales-orders/nfe-links/diagnostic", error);
           res.status(500).json({ error: "Erro ao gerar diagnóstico de vínculos NF-e." });
+        }
+      }
+    );
+
+    app.get(
+      "/api/admin/sales-orders/fulfillment/audit",
+      auth.requireUserAdminOrBootstrap,
+      async (req, res) => {
+        try {
+          const payload = await loadSalesOrderFulfillmentAudit(req.query as Record<string, unknown>);
+          res.json(payload);
+        } catch (error) {
+          console.error("GET /api/admin/sales-orders/fulfillment/audit", error);
+          res.status(500).json({ error: "Erro ao gerar auditoria de fulfillment." });
         }
       }
     );
