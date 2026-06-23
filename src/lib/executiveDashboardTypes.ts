@@ -224,10 +224,37 @@ export type SalesFunnelCriticalOrderRow = {
   priority: "overdue" | "open";
 };
 
+export type SalesFunnelOperationalStage = {
+  id:
+    | "sold"
+    | "withNfe"
+    | "invoicedOnTime"
+    | "invoicedLate"
+    | "pendingNoNfe"
+    | "pendingLate"
+    | "partial"
+    | "withCut"
+    | "cancelled"
+    | "reviewData";
+  label: string;
+  description: string;
+  count: number;
+  value: ExecutiveMetricValue;
+  percentOfSold: ExecutiveMetricValue;
+  formatted: {
+    count: string;
+    value: string;
+    compactValue: string;
+    percentOfSold: string;
+  };
+};
+
 export type SalesFunnelDashboardTab = ExecutiveSectionBase & {
   selectedYear: number;
   summaryCards: DashboardMetricCard[];
   funnelStages: SalesFunnelStage[];
+  operationalFunnelStages: SalesFunnelOperationalStage[];
+  operationalSummaryCards: DashboardMetricCard[];
   monthlyEvolution: SalesFunnelMonthlyPoint[];
   statusBreakdown: DashboardStatusBreakdownRow[];
   conversionByMonth: SalesFunnelConversionMonth[];

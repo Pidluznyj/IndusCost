@@ -1,5 +1,5 @@
 import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
-import { isOpenPortfolioOrder } from "./salesOrderDashboardRules.js";
+import { isCancelledSalesOrderStatus, isOpenPortfolioOrder } from "./salesOrderDashboardRules.js";
 import type {
   MaterialDemandInvoicingScope,
   MaterialUsageContribution,
@@ -132,6 +132,7 @@ export function salesOrderMatchesInvoicingScope(
   orderStatus: string,
   scope: MaterialDemandInvoicingScope
 ): boolean {
+  if (isCancelledSalesOrderStatus(orderStatus) || orderStatus === "ERROR") return false;
   if (scope === "all") return true;
   if (scope === "invoiced") return hasInvoicing;
   return isOpenPortfolioOrder({
@@ -364,7 +365,7 @@ export function createMaterialUsagePlannedRealizedDataQuality(
     warnings: partial.warnings ?? [PLANNED_REALIZED_REALIZED_BASIS_NOTE],
     sources: partial.sources ?? [
       "Previsto: SalesOrder + SalesOrderItem + BOM (ProductBOM)",
-      "Realizado: pedidos com NF processada (nomusRawResponse.nfes.dataProcessamento)",
+      "Realizado: pedidos com NF vinculada (motor salesOrderMetricsEngine)",
     ],
     partialInvoiceFallbacks: partial.partialInvoiceFallbacks ?? 0,
     missingBomItems: partial.missingBomItems ?? 0,

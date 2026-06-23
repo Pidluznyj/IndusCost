@@ -24,7 +24,11 @@ import {
 } from "recharts";
 import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "@/src/lib/executiveDashboardYear";
-import type { SalesFunnelDashboardTab, SalesFunnelStage } from "@/src/lib/executiveDashboardTypes";
+import type {
+  SalesFunnelDashboardTab,
+  SalesFunnelOperationalStage,
+  SalesFunnelStage,
+} from "@/src/lib/executiveDashboardTypes";
 import {
   formatExecutiveCompactCurrency,
   formatExecutiveCurrency,
@@ -38,6 +42,22 @@ const STAGE_COLORS: Record<SalesFunnelStage["id"], string> = {
   openPortfolio: "#ED7D31",
   invoiced: "#2E7D32",
   overdue: "#C62828",
+  cancelled: "#757575",
+};
+
+const OPERATIONAL_STAGE_COLORS: Record<
+  import("@/src/lib/executiveDashboardTypes").SalesFunnelOperationalStage["id"],
+  string
+> = {
+  sold: "#1565C0",
+  withNfe: "#2E7D32",
+  invoicedOnTime: "#1B5E20",
+  invoicedLate: "#C62828",
+  pendingNoNfe: "#ED7D31",
+  pendingLate: "#B71C1C",
+  partial: "#F9A825",
+  withCut: "#6A1B9A",
+  reviewData: "#FF6F00",
   cancelled: "#757575",
 };
 
@@ -85,14 +105,14 @@ function SummaryCards({ cards }: { cards: SalesFunnelDashboardTab["summaryCards"
   );
 }
 
-function OperationalFunnel({ stages }: { stages: SalesFunnelStage[] }) {
+function LegacyCommercialFunnel({ stages }: { stages: SalesFunnelStage[] }) {
   const maxCount = Math.max(...stages.map((s) => s.count), 1);
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-lg font-bold">Pipeline operacional de pedidos</h3>
+          <h3 className="text-lg font-bold">Funil comercial (emitidos → faturados)</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Visão não linear — etapas podem se sobrepor (ex.: atrasados ⊆ carteira).
           </p>
@@ -116,6 +136,54 @@ function OperationalFunnel({ stages }: { stages: SalesFunnelStage[] }) {
                   style={{
                     width: `${widthPct}%`,
                     backgroundColor: STAGE_COLORS[stage.id],
+                    minWidth: stage.count > 0 ? "4rem" : "0",
+                  }}
+                >
+                  {stage.count > 0 ? stage.formatted.count : null}
+                </div>
+              </div>
+              <p className="mt-1 hidden text-[11px] text-muted-foreground group-hover:block">
+                {stage.description}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SalesOperationalFunnel({ stages }: { stages: SalesFunnelOperationalStage[] }) {
+  const maxCount = Math.max(...stages.map((s) => s.count), 1);
+
+  return (
+    <section className="rounded-3xl border border-primary/20 bg-card p-6 shadow-sm">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-bold">Funil Operacional de Vendas</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Jornada logística/faturamento via motor único — vendido, NF, prazo, pendências e parciais.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {stages.map((stage) => {
+          const widthPct = Math.max(8, (stage.count / maxCount) * 100);
+          return (
+            <div key={stage.id} className="group" title={stage.description}>
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-semibold">{stage.label}</span>
+                <span className="text-muted-foreground">
+                  {stage.formatted.count} · {stage.formatted.compactValue} ·{" "}
+                  {stage.formatted.percentOfSold} dos vendidos
+                </span>
+              </div>
+              <div className="h-10 w-full overflow-hidden rounded-xl bg-accent/30">
+                <div
+                  className="flex h-full items-center rounded-xl px-3 text-xs font-bold text-white transition-all duration-500"
+                  style={{
+                    width: `${widthPct}%`,
+                    backgroundColor: OPERATIONAL_STAGE_COLORS[stage.id],
                     minWidth: stage.count > 0 ? "4rem" : "0",
                   }}
                 >
@@ -279,7 +347,20 @@ export function SalesFunnelPanel({
 
       <SummaryCards cards={tab.summaryCards} />
 
-      <OperationalFunnel stages={tab.funnelStages} />
+      {tab.operationalSummaryCards?.length ? (
+        <>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+            Indicadores operacionais (motor único)
+          </h3>
+          <SummaryCards cards={tab.operationalSummaryCards} />
+        </>
+      ) : null}
+
+      {tab.operationalFunnelStages?.length ? (
+        <SalesOperationalFunnel stages={tab.operationalFunnelStages} />
+      ) : null}
+
+      <LegacyCommercialFunnel stages={tab.funnelStages} />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">

@@ -1,5 +1,6 @@
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
+import { isCancelledSalesOrderStatus } from "./salesOrderDashboardRules.js";
 import {
   aggregateMaterialUsageContributions,
   buildMaterialUsagePlannedRealizedSummary,
@@ -295,6 +296,7 @@ export function buildSalesOrderRawMaterialIntelligencePayload(input: {
 
   for (const order of input.orders) {
     if (!matchesSellerFilter(order, input.intelligenceFilters.seller)) continue;
+    if (isCancelledSalesOrderStatus(order.status)) continue;
     if (input.intelligenceFilters.customerId && order.customerName == null) {
       // customer filter handled at query level; keep defensive
     }

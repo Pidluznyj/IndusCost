@@ -23,13 +23,16 @@ import {
 import {
   computeTicketAverage,
   computeDaysOverdue,
+  isCancelledSalesOrderStatus,
   isOverdueSalesOrderInSelectedYear,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import {
-  orderIsInvoicedSql,
-  orderNotInvoicedSql,
-  toPgDateYmd,
-} from "@/src/lib/salesOrderInvoicingSql.js";
+  aggregateSalesOrderMetrics,
+  buildOperationalFunnelStages,
+  loadSalesOrderEnrichedMetricsForIssueYear,
+  type SalesOrderEnrichedMetrics,
+  type SalesOperationalFunnelStage,
+} from "@/src/lib/salesOrderMetricsEngine.js";
 import type {
   DashboardMetricCard,
   DashboardStatusBreakdownRow,
@@ -38,6 +41,7 @@ import type {
   SalesFunnelDashboardTab,
   SalesFunnelMonthlyPoint,
   SalesFunnelOpenCustomerRow,
+  SalesFunnelOperationalStage,
   SalesFunnelStage,
 } from "@/src/lib/executiveDashboardTypes.js";
 
@@ -47,8 +51,179 @@ const CRITICAL_ORDERS_LIMIT = 15;
 const OPEN_DAYS_THRESHOLD = 30;
 
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
-const IS_INVOICED = orderIsInvoicedSql("so");
-const NOT_INVOICED = orderNotInvoicedSql("so");
+
+function formatOperationalStage(stage: SalesOperationalFunnelStage, soldCount: number): SalesFunnelOperationalStage {
+  const percentOfSold = computeFunnelPercent(stage.count, soldCount);
+  return {
+    id: stage.id,
+    label: stage.label,
+    description: stage.description,
+    count: stage.count,
+    value: stage.value,
+    percentOfSold,
+    formatted: {
+      count: formatExecutiveInteger(stage.count),
+      value: formatExecutiveCurrency(stage.value),
+      compactValue: formatExecutiveCompactCurrency(stage.value),
+      percentOfSold: percentOfSold != null ? formatExecutivePercent(percentOfSold, 1) : "—",
+    },
+  };
+}
+
+function buildYearFunnelTotalsFromEngine(metrics: SalesOrderEnrichedMetrics[]) {
+  const emittedCount = metrics.length;
+  const emittedValue = metrics.reduce((sum, m) => sum + m.totalNetValue, 0);
+  const valid = metrics.filter((m) => !isCancelledSalesOrderStatus(m.orderStatus));
+  const validCount = valid.length;
+  const validValue = valid.reduce((sum, m) => sum + m.totalNetValue, 0);
+  const invoiced = valid.filter((m) => m.hasNfe);
+  const open = valid.filter(
+    (m) =>
+      m.isPendingInvoice &&
+      m.logisticStatusCardId !== "finishedOrCancelled" &&
+      m.logisticStatusCardId !== "reviewData"
+  );
+  const overdue = valid.filter((m) => m.logisticStatusCardId === "overduePending");
+  const cancelled = metrics.filter((m) => isCancelledSalesOrderStatus(m.orderStatus));
+  const avgDaysOverdue =
+    overdue.length > 0
+      ? overdue.reduce((sum, m) => sum + (m.daysLate ?? 0), 0) / overdue.length
+      : null;
+
+  return {
+    emittedCount,
+    emittedValue,
+    validCount,
+    validValue,
+    invoicedCount: invoiced.length,
+    invoicedValue: invoiced.reduce((sum, m) => sum + m.totalNetValue, 0),
+    openCount: open.length,
+    openValue: open.reduce((sum, m) => sum + m.totalNetValue, 0),
+    overdueCount: overdue.length,
+    overdueValue: overdue.reduce((sum, m) => sum + m.totalNetValue, 0),
+    cancelledCount: cancelled.length,
+    cancelledValue: cancelled.reduce((sum, m) => sum + m.totalNetValue, 0),
+    avgDaysOverdue,
+  };
+}
+
+function buildMonthlyFunnelFromEngine(
+  metrics: SalesOrderEnrichedMetrics[],
+  year: number
+): Map<number, { issuedCount: number; issuedValue: number; invoicedCount: number; invoicedValue: number }> {
+  const map = new Map<number, { issuedCount: number; issuedValue: number; invoicedCount: number; invoicedValue: number }>();
+  for (const m of metrics) {
+    if (!m.issueDate) continue;
+    const issue = new Date(m.issueDate);
+    if (issue.getFullYear() !== year) continue;
+    if (isCancelledSalesOrderStatus(m.orderStatus)) continue;
+    const month = issue.getMonth() + 1;
+    const bucket = map.get(month) ?? { issuedCount: 0, issuedValue: 0, invoicedCount: 0, invoicedValue: 0 };
+    bucket.issuedCount += 1;
+    bucket.issuedValue += m.totalNetValue;
+    if (m.hasNfe) {
+      bucket.invoicedCount += 1;
+      bucket.invoicedValue += m.totalNetValue;
+    }
+    map.set(month, bucket);
+  }
+  return map;
+}
+
+function buildOpenPortfolioByCustomerFromEngine(
+  metrics: SalesOrderEnrichedMetrics[],
+  today: Date
+): SalesFunnelOpenCustomerRow[] {
+  const open = metrics.filter(
+    (m) =>
+      !isCancelledSalesOrderStatus(m.orderStatus) &&
+      m.isPendingInvoice &&
+      m.logisticStatusCardId !== "finishedOrCancelled"
+  );
+  const byCustomer = new Map<
+    string,
+    { customerName: string; orderCount: number; openValue: number; oldestIssue: Date }
+  >();
+  for (const m of open) {
+    const key = m.customerId ?? m.customerName;
+    const issue = m.issueDate ? new Date(m.issueDate) : today;
+    const current = byCustomer.get(key) ?? {
+      customerName: m.customerName,
+      orderCount: 0,
+      openValue: 0,
+      oldestIssue: issue,
+    };
+    current.orderCount += 1;
+    current.openValue += m.totalNetValue;
+    if (issue < current.oldestIssue) current.oldestIssue = issue;
+    byCustomer.set(key, current);
+  }
+  return [...byCustomer.entries()]
+    .map(([customerId, row]) => ({
+      customerId,
+      customerName: row.customerName,
+      orderCount: row.orderCount,
+      openValue: row.openValue,
+      oldestIssueDate: row.oldestIssue.toISOString(),
+      daysOpen: computeDaysOpen(row.oldestIssue, today),
+    }))
+    .sort((a, b) => (b.openValue ?? 0) - (a.openValue ?? 0))
+    .slice(0, TOP_CUSTOMERS_LIMIT);
+}
+
+function buildCriticalOrdersFromEngine(
+  metrics: SalesOrderEnrichedMetrics[],
+  selectedYear: number,
+  today: Date
+): SalesFunnelCriticalOrderRow[] {
+  const openSince = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  openSince.setDate(openSince.getDate() - OPEN_DAYS_THRESHOLD);
+
+  const candidates = metrics.filter((m) => {
+    if (isCancelledSalesOrderStatus(m.orderStatus)) return false;
+    if (!m.isPendingInvoice || m.logisticStatusCardId === "finishedOrCancelled") return false;
+    const issue = m.issueDate ? new Date(m.issueDate) : null;
+    const isOverdue = m.logisticStatusCardId === "overduePending";
+    const isLongOpen = issue != null && issue <= openSince;
+    return isOverdue || isLongOpen;
+  });
+
+  return candidates
+    .sort((a, b) => {
+      const aOverdue = a.logisticStatusCardId === "overduePending" ? 0 : 1;
+      const bOverdue = b.logisticStatusCardId === "overduePending" ? 0 : 1;
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+      const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
+      const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
+      if (da !== db) return da - db;
+      const ia = a.issueDate ? new Date(a.issueDate).getTime() : 0;
+      const ib = b.issueDate ? new Date(b.issueDate).getTime() : 0;
+      return ia - ib;
+    })
+    .slice(0, CRITICAL_ORDERS_LIMIT)
+    .map((m) => {
+      const issueDate = m.issueDate ? new Date(m.issueDate) : today;
+      const expectedDelivery = m.expectedDeliveryDate ? new Date(m.expectedDeliveryDate) : null;
+      const isOverdue = m.logisticStatusCardId === "overduePending";
+      const daysOverdue =
+        isOverdue && expectedDelivery ? computeDaysOverdue(expectedDelivery, today) : null;
+      return {
+        orderId: m.salesOrderId,
+        orderCode: m.orderCode,
+        customerName: m.customerName,
+        issueDate: issueDate.toISOString(),
+        expectedDeliveryDate: expectedDelivery?.toISOString() ?? null,
+        totalNetValue: m.totalNetValue,
+        status: m.orderStatus,
+        statusLabel: SALES_ORDER_STATUS_LABELS[m.orderStatus] ?? m.orderStatus,
+        isInvoiced: m.hasNfe,
+        isOverdue,
+        daysOverdue,
+        daysOpen: computeDaysOpen(issueDate, today),
+        priority: isOverdue ? ("overdue" as const) : ("open" as const),
+      };
+    });
+}
 
 function metricCard(
   id: string,
@@ -111,146 +286,6 @@ function buildStage(
   };
 }
 
-async function queryYearFunnelTotals(
-  yearStart: Date,
-  yearEnd: Date,
-  todayYmd: string
-): Promise<{
-  emittedCount: number;
-  emittedValue: number | null;
-  validCount: number;
-  validValue: number | null;
-  invoicedCount: number;
-  invoicedValue: number | null;
-  openCount: number;
-  openValue: number | null;
-  overdueCount: number;
-  overdueValue: number | null;
-  cancelledCount: number;
-  cancelledValue: number | null;
-  avgDaysOverdue: number | null;
-}> {
-  const [row] = await prisma.$queryRaw<
-    {
-      emitted_count: bigint;
-      emitted_value: unknown;
-      valid_count: bigint;
-      valid_value: unknown;
-      invoiced_count: bigint;
-      invoiced_value: unknown;
-      open_count: bigint;
-      open_value: unknown;
-      overdue_count: bigint;
-      overdue_value: unknown;
-      cancelled_count: bigint;
-      cancelled_value: unknown;
-      avg_days_overdue: unknown;
-    }[]
-  >(
-    Prisma.sql`
-      SELECT
-        COUNT(*)::bigint AS emitted_count,
-        COALESCE(SUM(so."totalNetValue"), 0) AS emitted_value,
-        COUNT(*) FILTER (WHERE ${NOT_CANCELLED})::bigint AS valid_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${NOT_CANCELLED}), 0) AS valid_value,
-        COUNT(*) FILTER (WHERE ${NOT_CANCELLED} AND ${IS_INVOICED})::bigint AS invoiced_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${NOT_CANCELLED} AND ${IS_INVOICED}), 0) AS invoiced_value,
-        COUNT(*) FILTER (WHERE ${NOT_CANCELLED} AND ${NOT_INVOICED})::bigint AS open_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${NOT_CANCELLED} AND ${NOT_INVOICED}), 0) AS open_value,
-        COUNT(*) FILTER (
-          WHERE ${NOT_CANCELLED}
-            AND ${NOT_INVOICED}
-            AND so."expectedDeliveryDate" IS NOT NULL
-            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-        )::bigint AS overdue_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (
-          WHERE ${NOT_CANCELLED}
-            AND ${NOT_INVOICED}
-            AND so."expectedDeliveryDate" IS NOT NULL
-            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-        ), 0) AS overdue_value,
-        COUNT(*) FILTER (WHERE so.status = 'CANCELLED')::bigint AS cancelled_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE so.status = 'CANCELLED'), 0) AS cancelled_value,
-        AVG(
-          (${todayYmd}::date - so."expectedDeliveryDate"::date)
-        ) FILTER (
-          WHERE ${NOT_CANCELLED}
-            AND ${NOT_INVOICED}
-            AND so."expectedDeliveryDate" IS NOT NULL
-            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-        ) AS avg_days_overdue
-      FROM "SalesOrder" so
-      WHERE so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-    `
-  );
-
-  return {
-    emittedCount: Number(row?.emitted_count ?? 0n),
-    emittedValue: decimalToNumber(row?.emitted_value),
-    validCount: Number(row?.valid_count ?? 0n),
-    validValue: decimalToNumber(row?.valid_value),
-    invoicedCount: Number(row?.invoiced_count ?? 0n),
-    invoicedValue: decimalToNumber(row?.invoiced_value),
-    openCount: Number(row?.open_count ?? 0n),
-    openValue: decimalToNumber(row?.open_value),
-    overdueCount: Number(row?.overdue_count ?? 0n),
-    overdueValue: decimalToNumber(row?.overdue_value),
-    cancelledCount: Number(row?.cancelled_count ?? 0n),
-    cancelledValue: decimalToNumber(row?.cancelled_value),
-    avgDaysOverdue: decimalToNumber(row?.avg_days_overdue),
-  };
-}
-
-async function queryMonthlyFunnel(year: number): Promise<
-  Map<
-    number,
-    {
-      issuedCount: number;
-      issuedValue: number;
-      invoicedCount: number;
-      invoicedValue: number;
-    }
-  >
-> {
-  const yearStart = startOfYear(new Date(year, 0, 1));
-  const yearEnd = endOfYear(new Date(year, 0, 1));
-  const rows = await prisma.$queryRaw<
-    {
-      month: number;
-      issued_count: bigint;
-      issued_value: unknown;
-      invoiced_count: bigint;
-      invoiced_value: unknown;
-    }[]
-  >(
-    Prisma.sql`
-      SELECT
-        EXTRACT(MONTH FROM so."issueDate")::int AS month,
-        COUNT(*) FILTER (WHERE ${NOT_CANCELLED})::bigint AS issued_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${NOT_CANCELLED}), 0) AS issued_value,
-        COUNT(*) FILTER (WHERE ${NOT_CANCELLED} AND ${IS_INVOICED})::bigint AS invoiced_count,
-        COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${NOT_CANCELLED} AND ${IS_INVOICED}), 0) AS invoiced_value
-      FROM "SalesOrder" so
-      WHERE so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-      GROUP BY 1
-      ORDER BY 1
-    `
-  );
-
-  const map = new Map<number, { issuedCount: number; issuedValue: number; invoicedCount: number; invoicedValue: number }>();
-  for (const row of rows) {
-    map.set(row.month, {
-      issuedCount: Number(row.issued_count),
-      issuedValue: decimalToNumber(row.issued_value) ?? 0,
-      invoicedCount: Number(row.invoiced_count),
-      invoicedValue: decimalToNumber(row.invoiced_value) ?? 0,
-    });
-  }
-  return map;
-}
-
 async function queryStatusBreakdown(yearStart: Date, yearEnd: Date): Promise<DashboardStatusBreakdownRow[]> {
   const rows = await prisma.$queryRaw<{ status: string; count: bigint; total: unknown }[]>(
     Prisma.sql`
@@ -273,140 +308,6 @@ async function queryStatusBreakdown(yearStart: Date, yearEnd: Date): Promise<Das
   }));
 }
 
-async function queryOpenPortfolioByCustomer(
-  yearStart: Date,
-  yearEnd: Date,
-  today: Date
-): Promise<SalesFunnelOpenCustomerRow[]> {
-  const rows = await prisma.$queryRaw<
-    {
-      customer_id: string;
-      customer_name: string;
-      order_count: bigint;
-      open_value: unknown;
-      oldest_issue: Date;
-    }[]
-  >(
-    Prisma.sql`
-      SELECT
-        c.id AS customer_id,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
-        COUNT(*)::bigint AS order_count,
-        COALESCE(SUM(so."totalNetValue"), 0) AS open_value,
-        MIN(so."issueDate") AS oldest_issue
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${NOT_CANCELLED}
-        AND ${NOT_INVOICED}
-        AND so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-      GROUP BY c.id, customer_name
-      ORDER BY open_value DESC
-      LIMIT ${TOP_CUSTOMERS_LIMIT}
-    `
-  );
-
-  return rows.map((row) => {
-    const oldest = new Date(row.oldest_issue);
-    return {
-      customerId: row.customer_id,
-      customerName: row.customer_name,
-      orderCount: Number(row.order_count),
-      openValue: decimalToNumber(row.open_value),
-      oldestIssueDate: oldest.toISOString(),
-      daysOpen: computeDaysOpen(oldest, today),
-    };
-  });
-}
-
-async function queryCriticalOrders(
-  selectedYear: number,
-  yearStart: Date,
-  yearEnd: Date,
-  todayYmd: string,
-  today: Date
-): Promise<SalesFunnelCriticalOrderRow[]> {
-  const openSince = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  openSince.setDate(openSince.getDate() - OPEN_DAYS_THRESHOLD);
-  const openSinceYmd = toPgDateYmd(openSince);
-
-  const rows = await prisma.$queryRaw<
-    {
-      id: string;
-      order_code: string;
-      customer_name: string;
-      issue_date: Date;
-      expected_delivery_date: Date | null;
-      total_net_value: unknown;
-      status: string;
-    }[]
-  >(
-    Prisma.sql`
-      SELECT
-        so.id,
-        so."orderCode" AS order_code,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
-        so."issueDate" AS issue_date,
-        so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value,
-        so.status::text AS status
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${NOT_CANCELLED}
-        AND ${NOT_INVOICED}
-        AND so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-        AND (
-          (
-            so."expectedDeliveryDate" IS NOT NULL
-            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-          )
-          OR so."issueDate"::date <= ${openSinceYmd}::date
-        )
-      ORDER BY
-        CASE
-          WHEN so."expectedDeliveryDate" IS NOT NULL
-            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-          THEN 0
-          ELSE 1
-        END,
-        so."expectedDeliveryDate" ASC NULLS LAST,
-        so."issueDate" ASC
-      LIMIT ${CRITICAL_ORDERS_LIMIT}
-    `
-  );
-
-  return rows.map((row) => {
-    const issueDate = new Date(row.issue_date);
-    const expectedDelivery = row.expected_delivery_date ? new Date(row.expected_delivery_date) : null;
-    const isOverdue = isOverdueSalesOrderInSelectedYear({
-      status: row.status,
-      issueDate,
-      selectedYear,
-      expectedDeliveryDate: expectedDelivery,
-      today,
-      hasNfeDataProcessamento: false,
-    });
-    const daysOverdue =
-      isOverdue && expectedDelivery ? computeDaysOverdue(expectedDelivery, today) : null;
-    return {
-      orderId: row.id,
-      orderCode: row.order_code,
-      customerName: row.customer_name,
-      issueDate: issueDate.toISOString(),
-      expectedDeliveryDate: expectedDelivery?.toISOString() ?? null,
-      totalNetValue: decimalToNumber(row.total_net_value),
-      status: row.status,
-      statusLabel: SALES_ORDER_STATUS_LABELS[row.status] ?? row.status,
-      isInvoiced: false,
-      isOverdue,
-      daysOverdue,
-      daysOpen: computeDaysOpen(issueDate, today),
-      priority: isOverdue ? "overdue" : "open",
-    };
-  });
-}
-
 export async function buildSalesFunnelDashboardTab(
   yearCtx: ExecutiveDashboardYearContext
 ): Promise<SalesFunnelDashboardTab> {
@@ -414,16 +315,19 @@ export async function buildSalesFunnelDashboardTab(
   const yearStart = startOfYear(new Date(year, 0, 1));
   const yearEnd = endOfYear(new Date(year, 0, 1));
   const operationalNow = new Date();
-  const todayYmd = toPgDateYmd(operationalNow);
 
-  const [totals, monthlyMap, statusBreakdown, openPortfolioByCustomer, criticalOrders] =
-    await Promise.all([
-      queryYearFunnelTotals(yearStart, yearEnd, todayYmd),
-      queryMonthlyFunnel(year),
-      queryStatusBreakdown(yearStart, yearEnd),
-      queryOpenPortfolioByCustomer(yearStart, yearEnd, operationalNow),
-      queryCriticalOrders(year, yearStart, yearEnd, todayYmd, operationalNow),
-    ]);
+  const engineMetrics = await loadSalesOrderEnrichedMetricsForIssueYear(year, operationalNow);
+  const totals = buildYearFunnelTotalsFromEngine(engineMetrics);
+  const aggregate = aggregateSalesOrderMetrics(engineMetrics);
+  const operationalFunnelRaw = buildOperationalFunnelStages(engineMetrics);
+  const soldCount = operationalFunnelRaw.find((s) => s.id === "sold")?.count ?? totals.validCount;
+
+  const [monthlyMap, statusBreakdown, openPortfolioByCustomer, criticalOrders] = await Promise.all([
+    Promise.resolve(buildMonthlyFunnelFromEngine(engineMetrics, year)),
+    queryStatusBreakdown(yearStart, yearEnd),
+    Promise.resolve(buildOpenPortfolioByCustomerFromEngine(engineMetrics, operationalNow)),
+    Promise.resolve(buildCriticalOrdersFromEngine(engineMetrics, year, operationalNow)),
+  ]);
 
   const ticketAvg = computeTicketAverage(totals.validValue, totals.validCount);
   const invoicedPercent = computeFunnelPercent(totals.invoicedCount, totals.validCount);
@@ -577,12 +481,42 @@ export async function buildSalesFunnelDashboardTab(
     }),
   ];
 
+  const operationalFunnelStages = operationalFunnelRaw.map((stage) =>
+    formatOperationalStage(stage, soldCount)
+  );
+
+  const operationalSummaryCards: DashboardMetricCard[] = [
+    metricCard("op-sold-value", "Valor vendido", aggregate.totalSoldValue, {
+      asCurrency: true,
+      compact: true,
+      hint: `${formatExecutiveInteger(aggregate.totalOrders)} pedidos válidos`,
+    }),
+    metricCard("op-invoiced-value", "Valor faturado (NF)", aggregate.totalInvoicedValue, {
+      asCurrency: true,
+      compact: true,
+      hint: `${formatExecutiveInteger(aggregate.withNfeCount)} com NF`,
+    }),
+    metricCard("op-gap", "Gap vendido × faturado", aggregate.soldInvoicedGap, {
+      asCurrency: true,
+      compact: true,
+    }),
+    metricCard("op-coverage", "% faturado", aggregate.invoiceCoveragePercent, {
+      asPercent: true,
+    }),
+    metricCard("op-on-time", "No prazo", aggregate.deliveredOnTimeCount + aggregate.pendingOnTimeCount),
+    metricCard("op-late", "Atrasados", aggregate.deliveredLateCount + aggregate.pendingLateCount),
+    metricCard("op-pending", "Pendentes sem NF", aggregate.withoutNfeCount),
+    metricCard("op-partial", "Parciais", aggregate.partialCount),
+  ];
+
   return {
     available: true,
-    source: "SalesOrder por issueDate; faturado via NF processada; carteira/atraso operacional",
+    source: "SalesOrder + motor único salesOrderMetricsEngine (NF vinculada, status logístico)",
     selectedYear: year,
     summaryCards,
     funnelStages,
+    operationalFunnelStages,
+    operationalSummaryCards,
     monthlyEvolution,
     statusBreakdown,
     conversionByMonth,
@@ -590,10 +524,10 @@ export async function buildSalesFunnelDashboardTab(
     criticalOrders,
     rules: [
       "Data comercial: issueDate do pedido.",
-      "Valor: totalNetValue.",
-      "Faturado: NF com data de processamento.",
-      "Atrasados: emitidos no ano selecionado, entrega vencida, sem NF.",
-      "Evolução mensal de carteira/atraso: pendente (snapshot histórico).",
+      "Valor vendido: totalNetValue do pedido.",
+      "Valor faturado: soma das NF-es vinculadas (sem duplicar pedido).",
+      "Status logístico/prazo: motor salesOrderMetricsEngine (Gestão de Pedidos).",
+      "Funil operacional: jornada vendido → NF → prazo/atraso/pendente/parcial.",
     ],
     unavailableIndicators: [],
   };

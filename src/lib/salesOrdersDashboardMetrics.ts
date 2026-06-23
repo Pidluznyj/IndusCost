@@ -40,9 +40,9 @@ import {
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import {
-  orderNotInvoicedSql,
-  toPgDateYmd,
-} from "@/src/lib/salesOrderInvoicingSql.js";
+  loadSalesOrderEnrichedMetricsForIssueYear,
+  loadSalesOrderEnrichedMetricsFromDb,
+} from "@/src/lib/salesOrderMetricsEngine.js";
 import {
   buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
@@ -122,97 +122,56 @@ async function aggregateByIssueDate(from: Date, to: Date): Promise<{ count: numb
   };
 }
 
-async function queryOpenPortfolio(): Promise<{ count: number | null; net: number | null }> {
-  const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
-    Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so
-      WHERE ${NOT_CANCELLED}
-        AND ${orderNotInvoicedSql("so")}
-    `
+async function queryOpenPortfolio(referenceDate: Date): Promise<{ count: number | null; net: number | null }> {
+  const metrics = await loadSalesOrderEnrichedMetricsFromDb(
+    { status: { not: "CANCELLED" } },
+    referenceDate
   );
-  return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
+  const open = metrics.filter(
+    (m) => !m.hasNfe && m.logisticStatusCardId !== "finishedOrCancelled"
+  );
+  return {
+    count: open.length,
+    net: open.reduce((sum, m) => sum + m.totalNetValue, 0),
+  };
 }
 
 async function queryOverdueSummary(
   selectedYear: number,
   today: Date
 ): Promise<{ count: number | null; net: number | null }> {
-  const todayYmd = toPgDateYmd(today);
-  const yearStart = startOfYear(new Date(selectedYear, 0, 1));
-  const yearEnd = endOfYear(new Date(selectedYear, 0, 1));
-  const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
-    Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so
-      WHERE ${NOT_CANCELLED}
-        AND ${orderNotInvoicedSql("so")}
-        AND so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-        AND so."expectedDeliveryDate" IS NOT NULL
-        AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-    `
-  );
-  return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
+  const metrics = await loadSalesOrderEnrichedMetricsForIssueYear(selectedYear, today);
+  const overdue = metrics.filter((m) => m.logisticStatusCardId === "overduePending");
+  return {
+    count: overdue.length,
+    net: overdue.reduce((sum, m) => sum + m.totalNetValue, 0),
+  };
 }
 
 async function queryOverdueList(selectedYear: number, now: Date): Promise<OverdueOrderRow[]> {
-  const todayYmd = toPgDateYmd(now);
-  const yearStart = startOfYear(new Date(selectedYear, 0, 1));
-  const yearEnd = endOfYear(new Date(selectedYear, 0, 1));
-  const rows = await prisma.$queryRaw<
-    {
-      id: string;
-      order_code: string;
-      customer_name: string;
-      issue_date: Date;
-      expected_delivery_date: Date;
-      total_net_value: unknown;
-      status: string;
-    }[]
-  >(
-    Prisma.sql`
-      SELECT
-        so.id,
-        so."orderCode" AS order_code,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
-        so."issueDate" AS issue_date,
-        so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value,
-        so.status::text AS status
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${NOT_CANCELLED}
-        AND ${orderNotInvoicedSql("so")}
-        AND so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-        AND so."expectedDeliveryDate" IS NOT NULL
-        AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-      ORDER BY so."expectedDeliveryDate" ASC, so."issueDate" ASC
-      LIMIT ${OVERDUE_LIST_LIMIT}
-    `
-  );
-
-  const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return rows.map((row) => {
-    const delivery = new Date(row.expected_delivery_date);
-    const deliveryDay = new Date(delivery.getFullYear(), delivery.getMonth(), delivery.getDate());
-    const daysOverdue = Math.max(
-      0,
-      Math.floor((todayDay.getTime() - deliveryDay.getTime()) / (24 * 60 * 60 * 1000))
-    );
-    return {
-      orderId: row.id,
-      orderCode: row.order_code,
-      customerName: row.customer_name,
-      issueDate: row.issue_date.toISOString(),
-      expectedDeliveryDate: delivery.toISOString(),
-      daysOverdue,
-      totalNetValue: decimalToNumber(row.total_net_value),
-      status: row.status,
-      statusLabel: SALES_ORDER_STATUS_LABELS[row.status] ?? row.status,
-    };
-  });
+  const metrics = await loadSalesOrderEnrichedMetricsForIssueYear(selectedYear, now);
+  return metrics
+    .filter((m) => m.logisticStatusCardId === "overduePending")
+    .sort((a, b) => {
+      const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
+      const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
+      if (da !== db) return da - db;
+      const ia = a.issueDate ? new Date(a.issueDate).getTime() : 0;
+      const ib = b.issueDate ? new Date(b.issueDate).getTime() : 0;
+      return ia - ib;
+    })
+    .slice(0, OVERDUE_LIST_LIMIT)
+    .map((m) => ({
+      orderId: m.salesOrderId,
+      orderCode: m.orderCode,
+      customerName: m.customerName,
+      issueDate: m.issueDate ?? new Date(0).toISOString(),
+      expectedDeliveryDate: m.expectedDeliveryDate ?? new Date(0).toISOString(),
+      daysOverdue: m.daysLate ?? 0,
+      totalNetValue: m.totalNetValue,
+      status: m.orderStatus,
+      statusLabel: SALES_ORDER_STATUS_LABELS[m.orderStatus] ?? m.orderStatus,
+    }));
 }
 
 async function queryMonthlyByIssueDate(year: number): Promise<Map<number, number>> {
@@ -295,7 +254,7 @@ export async function buildSalesOrdersDashboardTab(
     aggregateByIssueDate(monthStart, monthEnd),
     aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
     aggregateByIssueDate(prevYearStart, prevYearEnd),
-    queryOpenPortfolio(),
+    queryOpenPortfolio(operationalNow),
     queryOverdueSummary(year, operationalNow),
     queryOverdueList(year, operationalNow),
     queryMonthlyByIssueDate(year),
