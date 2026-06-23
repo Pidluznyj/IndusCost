@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
+import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
 
 const prisma = new PrismaClient();
 
@@ -974,6 +975,17 @@ async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: 
         });
         itemsCreated += plan.lines.length;
       }
+
+      await upsertSalesOrderNfeLinksForOrder(
+        {
+          id: salesOrderId,
+          externalSalesOrderId: plan.externalSalesOrderId,
+          externalSalesOrderCode: plan.codigoPedido,
+          orderCode: plan.codigoPedido,
+          nomusRawResponse: pedido,
+        },
+        tx
+      );
     });
   }
 

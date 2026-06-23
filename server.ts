@@ -12660,6 +12660,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   registerSalesOrderIntelligenceRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+    requireUserAdminOrBootstrap,
   });
 
   app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {

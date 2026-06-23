@@ -496,10 +496,53 @@ model SalesOrder {
   Proposal               Proposal?        @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items                  SalesOrderItem[]
   CommercialActivity     CommercialActivity[]
+  nfeLinks               SalesOrderNfeLink[]
 
   @@index([customerId])
   @@index([status])
   @@index([issueDate])
+}
+
+/// Vínculo normalizado Pedido de Venda → NF-e Nomus (chave: nfes.id → NomusNfe.externalId).
+model SalesOrderNfeLink {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId           String    @db.Uuid
+  externalSalesOrderId   Int?
+  externalSalesOrderCode String?
+  orderCode              String?
+  nfeExternalId          Int
+  nfeNumber              String?
+  nfeSerie               String?
+  nfeKey                 String?
+  nfeStatus              Int?
+  tipoOperacao           Int?
+  tipoEmissao            Int?
+  dataProcessamento      DateTime?
+  horaProcessamento      String?
+  cnpjEmitente           String?
+  protocolo              String?
+  recibo                 String?
+  usuario                String?
+  ambiente               Int?
+  finalidade             Int?
+  isFornecedor           Int?
+  nomusNfeId             String?
+  rawPayload             Json?
+  presentInLastPayload   Boolean   @default(true)
+  firstSeenAt            DateTime  @default(now())
+  lastSeenAt             DateTime  @default(now())
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @default(now()) @updatedAt
+
+  SalesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salesOrderId, nfeExternalId])
+  @@index([salesOrderId])
+  @@index([nfeExternalId])
+  @@index([nfeNumber])
+  @@index([nfeKey])
+  @@index([dataProcessamento])
+  @@index([externalSalesOrderId])
 }
 
 model SalesOrderItem {

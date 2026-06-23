@@ -2,6 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "./prisma.js";
 import { buildSalesOrderIntelligencePayload } from "./salesOrderIntelligence.js";
+import { buildSalesOrderNfeLinkDiagnostic } from "./salesOrderNfeLink.js";
 import {
   buildSalesOrderManagementWhere,
   buildManagementRowsFromOrders,
@@ -12,6 +13,7 @@ import {
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireUserAdminOrBootstrap?: RequestHandler;
 };
 
 const SALES_ORDER_VIEW_PERMISSIONS = ["sales_orders.view"];
@@ -153,6 +155,22 @@ export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth:
       }
     }
   );
+
+  if (auth.requireUserAdminOrBootstrap) {
+    app.get(
+      "/api/admin/sales-orders/nfe-links/diagnostic",
+      auth.requireUserAdminOrBootstrap,
+      async (_req, res) => {
+        try {
+          const payload = await buildSalesOrderNfeLinkDiagnostic();
+          res.json(payload);
+        } catch (error) {
+          console.error("GET /api/admin/sales-orders/nfe-links/diagnostic", error);
+          res.status(500).json({ error: "Erro ao gerar diagnóstico de vínculos NF-e." });
+        }
+      }
+    );
+  }
 }
 
 export { SALES_ORDER_VIEW_PERMISSIONS, SALES_ORDER_DETAIL_PERMISSIONS };
