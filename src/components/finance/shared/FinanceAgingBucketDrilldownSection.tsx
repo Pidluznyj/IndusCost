@@ -12,13 +12,13 @@ import { buildFinanceArTitlesQuery } from "@/src/lib/financeAccountsReceivableDa
 import type { FinanceApUiFilters } from "@/src/lib/financeAccountsPayableDashboardTypes";
 import type { FinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import type { FinanceAgingBucketCardSource } from "@/src/lib/financeAgingBucketDrilldownTypes";
-import { FINANCE_AP_NO_CLASSIFICATION } from "@/src/lib/financeAccountsPayableCostCenterShared";
 import {
   displayFinanceText,
   formatFinanceCurrency,
   formatFinanceDate,
   formatFinanceDaysOverdue,
   formatFinanceInteger,
+  resolveFinanceLaunchDescription,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   formatFinanceCalculatedStatus,
@@ -31,8 +31,10 @@ type Props = {
   module: FinanceAgingDrilldownModule;
   cards: FinanceAgingBucketCardSource[];
   filters: FinanceArUiFilters | FinanceApUiFilters;
-  /** Horizonte financeiro: ignora filtros de período (AR ignora todos os filtros globais). */
+  /** Horizonte financeiro: ignora filtros de período; AR usa carteira aberta global dos cards. */
   horizonMode?: boolean;
+  /** Texto adicional abaixo do título do grid (horizonte AR). */
+  horizonDrilldownNote?: string;
   loadingCards?: boolean;
   cardTone?: (key: string) => "neutral" | "danger" | "warning" | "info";
 };
@@ -77,6 +79,7 @@ export function FinanceAgingBucketDrilldownSection({
   cards,
   filters,
   horizonMode = false,
+  horizonDrilldownNote,
   loadingCards = false,
   cardTone,
 }: Props) {
@@ -180,6 +183,9 @@ export function FinanceAgingBucketDrilldownSection({
                   ? "Listando os títulos que compõem o card selecionado no horizonte financeiro."
                   : "Listando os títulos que compõem o card selecionado, respeitando os filtros atuais."}
               </p>
+              {horizonMode && horizonDrilldownNote ? (
+                <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{horizonDrilldownNote}</p>
+              ) : null}
               {data?.bucketTotals ? (
                 <p className="text-[10px] text-[#9CA3AF] mt-1">
                   Total: {formatFinanceCurrency(data.bucketTotals.openBalanceAmount)} ·{" "}
@@ -208,6 +214,8 @@ export function FinanceAgingBucketDrilldownSection({
             <p className="text-sm text-muted-foreground py-4">
               Nenhum título encontrado para esta faixa com os filtros atuais.
             </p>
+          ) : module === "ar" && horizonMode ? (
+            <ArHorizonDrilldownTable data={data as FinanceArTitlesPayload} />
           ) : module === "ar" ? (
             <ArDrilldownTable data={data as FinanceArTitlesPayload} />
           ) : (
@@ -247,6 +255,63 @@ export function FinanceAgingBucketDrilldownSection({
   );
 }
 
+function LaunchDescriptionCell({ description }: { description: string | null }) {
+  const resolved = resolveFinanceLaunchDescription({ description });
+  const label = displayFinanceText(resolved);
+  return (
+    <td className="px-3 py-2 max-w-[220px] truncate" title={resolved ?? undefined}>
+      {label}
+    </td>
+  );
+}
+
+function resolveArHorizonDocument(row: FinanceArTitlesPayload["items"][number]): string | null {
+  return row.sourceInvoiceNumber?.trim() || row.personCnpj?.trim() || null;
+}
+
+function ArHorizonDrilldownTable({ data }: { data: FinanceArTitlesPayload }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
+      <table className="min-w-full text-[11px]">
+        <thead className="bg-[#F9FAFB] text-[#6B7280]">
+          <tr>
+            <th className="px-3 py-2 text-left font-semibold">Cliente</th>
+            <th className="px-3 py-2 text-left font-semibold">Documento</th>
+            <th className="px-3 py-2 text-left font-semibold">Vencimento</th>
+            <th className="px-3 py-2 text-right font-semibold">Dias</th>
+            <th className="px-3 py-2 text-right font-semibold">Valor a receber</th>
+            <th className="px-3 py-2 text-right font-semibold">Saldo</th>
+            <th className="px-3 py-2 text-left font-semibold">Status</th>
+            <th className="px-3 py-2 text-left font-semibold">Descrição do lançamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.items.map((row) => (
+            <tr key={row.externalId} className="border-t border-[#F3F4F6]">
+              <td className="px-3 py-2 max-w-[180px] truncate" title={row.personName ?? undefined}>
+                {displayFinanceText(row.personName)}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {displayFinanceText(resolveArHorizonDocument(row))}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
+              <td className="px-3 py-2 text-right">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
+              <td className="px-3 py-2 text-right">{formatFinanceCurrency(row.amountReceivable)}</td>
+              <td className="px-3 py-2 text-right font-medium">
+                {formatFinanceCurrency(row.balanceReceivable)}
+              </td>
+              <td className="px-3 py-2">
+                <StatusBadge status={row.calculatedStatus} />
+              </td>
+              <LaunchDescriptionCell description={row.description} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ArDrilldownTable({ data }: { data: FinanceArTitlesPayload }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
@@ -261,6 +326,7 @@ function ArDrilldownTable({ data }: { data: FinanceArTitlesPayload }) {
             <th className="px-3 py-2 text-right font-semibold">Valor original</th>
             <th className="px-3 py-2 text-right font-semibold">Em aberto</th>
             <th className="px-3 py-2 text-left font-semibold">Status</th>
+            <th className="px-3 py-2 text-left font-semibold">Descrição do lançamento</th>
           </tr>
         </thead>
         <tbody>
@@ -280,6 +346,7 @@ function ArDrilldownTable({ data }: { data: FinanceArTitlesPayload }) {
               <td className="px-3 py-2">
                 <StatusBadge status={row.calculatedStatus} />
               </td>
+              <LaunchDescriptionCell description={row.description} />
             </tr>
           ))}
         </tbody>
@@ -301,7 +368,7 @@ function ApDrilldownTable({ data }: { data: FinanceApTitlesPayload }) {
             <th className="px-3 py-2 text-right font-semibold">Valor a pagar</th>
             <th className="px-3 py-2 text-right font-semibold">Saldo</th>
             <th className="px-3 py-2 text-left font-semibold">Status</th>
-            <th className="px-3 py-2 text-left font-semibold">Centro de custo</th>
+            <th className="px-3 py-2 text-left font-semibold">Descrição do lançamento</th>
           </tr>
         </thead>
         <tbody>
@@ -318,9 +385,7 @@ function ApDrilldownTable({ data }: { data: FinanceApTitlesPayload }) {
                 {formatFinanceCurrency(row.balancePayable)}
               </td>
               <td className="px-3 py-2">{formatFinanceCalculatedStatus(row.calculatedStatus)}</td>
-              <td className="px-3 py-2">
-                {displayFinanceText(row.costCenterLabel ?? FINANCE_AP_NO_CLASSIFICATION)}
-              </td>
+              <LaunchDescriptionCell description={row.description} />
             </tr>
           ))}
         </tbody>

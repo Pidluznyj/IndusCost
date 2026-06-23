@@ -200,6 +200,10 @@ export function mapRowToTitleListItem(
   };
 }
 
+export function isFinanceArHorizonTitlesQuery(query: Pick<FinanceArTitlesQuery, "agingBucket">): boolean {
+  return query.agingBucket != null && isFinanceHorizonDrilldownBucketKey(query.agingBucket);
+}
+
 function rowMatchesArAgingBucketDrilldown(
   row: FinanceArDashboardRow,
   bucketKey: FinanceAgingBucketParam,
@@ -228,8 +232,7 @@ export function buildFinanceArTitlesPayload(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArTitlesPayload {
-  const isHorizonDrilldown =
-    query.agingBucket != null && isFinanceHorizonDrilldownBucketKey(query.agingBucket);
+  const isHorizonDrilldown = isFinanceArHorizonTitlesQuery(query);
 
   let filtered: FinanceArDashboardRow[];
   if (isHorizonDrilldown) {

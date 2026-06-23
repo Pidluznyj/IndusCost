@@ -30,6 +30,10 @@ export const FINANCE_AR_OPEN_HORIZON_SCOPE_NOTE =
 export const FINANCE_AR_OPEN_HORIZON_OVERDUE_NOTE =
   "Títulos vencidos aparecem separados para não distorcer o total dos próximos 60 dias.";
 
+/** Filtros neutros para drilldown do horizonte — mesma carteira global dos cards (ignora mês/ano da página). */
+export const FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE =
+  "Drilldown usa a carteira aberta global dos cards, independente dos filtros de mês/ano da página.";
+
 export type AccountsReceivableOpenHorizonBucketKey =
   | "overdue"
   | "0_7"

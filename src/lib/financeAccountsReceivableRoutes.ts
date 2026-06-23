@@ -15,6 +15,7 @@ import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccounts
 import { loadFinanceArOpenHorizonRowsFromPrisma } from "@/src/lib/financeAccountsReceivableHorizon.js";
 import {
   buildFinanceArTitlesPayload,
+  isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "@/src/lib/financeAccountsReceivableTitles.js";
 import { prisma } from "@/src/lib/prisma.js";
@@ -114,11 +115,11 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
 
       const query = parseFinanceArTitlesOrRespond(res, req.query as Record<string, unknown>);
       if (!query) return;
-      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(
-        prisma,
-        query.filters
-      );
-      const payload = buildFinanceArTitlesPayload(rows, query, new Date(), syncCutoff);
+      const referenceDate = new Date();
+      const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
+        ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
+        : await loadFinanceArManagementRowsFromPrisma(prisma, query.filters);
+      const payload = buildFinanceArTitlesPayload(rows, query, referenceDate, syncCutoff);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/titles", error);

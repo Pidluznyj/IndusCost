@@ -8,6 +8,7 @@ import { cn } from "@/src/lib/utils";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
 import { createDefaultFinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import { FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE } from "@/src/lib/financeAccountsReceivableHorizon";
 import type { FinanceAgingBucketCardSource } from "@/src/lib/financeAgingBucketDrilldownTypes";
 
 function HorizonDistributionBar({
@@ -99,6 +100,7 @@ export function FinanceArOpenHorizonSection({
           cards={cards}
           filters={createDefaultFinanceArUiFilters()}
           horizonMode
+          horizonDrilldownNote={FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE}
           loadingCards={loading && !horizon}
           cardTone={(key) => (key === "overdue" ? "danger" : "neutral")}
         />

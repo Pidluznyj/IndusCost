@@ -212,7 +212,7 @@ describe("financeAccountsReceivableHorizon", () => {
     assert.ok((bucket?.shareOfTotal60 ?? 0) > 0);
   });
 
-  it("componente prepara tabela de títulos por bucket", () => {
+  it("componente integra drilldown interativo por faixa", () => {
     const horizon = buildAccountsReceivableOpenHorizon(
       [arRow({ externalId: 1, dueDate: addDays(REF, 20), balanceReceivable: 100, personName: "Cliente X" })],
       REF
@@ -223,8 +223,16 @@ describe("financeAccountsReceivableHorizon", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceArOpenHorizonSection.tsx"),
       "utf8"
     );
-    assert.match(component, /titlesByBucket/);
-    assert.match(component, /Valor em aberto/);
+    assert.match(component, /FinanceAgingBucketDrilldownSection/);
+    assert.match(component, /horizonMode/);
+    const drilldown = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "shared", "FinanceAgingBucketDrilldownSection.tsx"),
+      "utf8"
+    );
+    assert.match(drilldown, /ArHorizonDrilldownTable/);
+    assert.match(drilldown, /Valor a receber/);
+    assert.match(drilldown, /Descrição do lançamento/);
+    assert.doesNotMatch(drilldown, /Centro de custo/i);
   });
 
   it("página AR usa FinanceArOpenHorizonSection", () => {

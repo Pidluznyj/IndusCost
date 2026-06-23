@@ -37,4 +37,13 @@ describe("FinanceAgingBucketDrilldownSection — UI", () => {
     assert.match(source, /max-w-\[220px\] truncate/);
     assert.match(source, /title=\{resolved/);
   });
+
+  it("horizonte AR usa grid dedicado com Cliente e Saldo", () => {
+    const source = read("src/components/finance/shared/FinanceAgingBucketDrilldownSection.tsx");
+    assert.match(source, /function ArHorizonDrilldownTable/);
+    assert.match(source, /Valor a receber/);
+    assert.match(source, /module === "ar" && horizonMode/);
+    assert.match(read("src/components/finance/FinanceArOpenHorizonSection.tsx"), /horizonMode/);
+    assert.match(read("src/lib/financeAccountsReceivableRoutes.ts"), /loadFinanceArOpenHorizonRowsFromPrisma/);
+  });
 });

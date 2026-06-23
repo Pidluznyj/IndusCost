@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 import {
   buildFinanceArTitlesPayload,
+  isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "./financeAccountsReceivableTitles.js";
+import { buildAccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 
 function row(partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">): FinanceArDashboardRow {
   return {
@@ -229,5 +231,50 @@ describe("financeAccountsReceivableTitles", () => {
   it("parseFinanceArTitlesQuery interpreta invoiceIssued", () => {
     const q = parseFinanceArTitlesQuery({ invoiceIssued: "yes", page: "1" });
     assert.equal(q.filters.invoiceIssued, "yes");
+  });
+
+  it("horizonte filtra faixa 0_7 ignorando filtros de mês", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 12) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 6, 12) }),
+    ];
+    const query = {
+      page: 1,
+      limit: 50,
+      sortBy: "dueDate" as const,
+      sortDirection: "asc" as const,
+      filters: { status: "all" as const, year: 2026, month: 6 },
+      localFilter: "all" as const,
+      agingBucket: "0_7" as const,
+    };
+    assert.equal(isFinanceArHorizonTitlesQuery(query), true);
+    const payload = buildFinanceArTitlesPayload(rows, query, REF);
+    assert.equal(payload.total, 1);
+    assert.equal(payload.items[0]?.externalId, 1);
+    assert.equal(payload.bucketTotals?.titlesCount, 1);
+    assert.equal(payload.bucketTotals?.openBalanceAmount, 100);
+  });
+
+  it("totais do drilldown de horizonte batem com buildAccountsReceivableOpenHorizon", () => {
+    const due = new Date(2026, 5, 12);
+    const rows = [row({ externalId: 1, balanceReceivable: 150, dueDate: due })];
+    const horizon = buildAccountsReceivableOpenHorizon(rows, REF);
+    const card = horizon.buckets.find((b) => b.key === "0_7");
+    assert.ok(card);
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 50,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all", year: 2026, month: 7 },
+        localFilter: "all",
+        agingBucket: "0_7",
+      },
+      REF
+    );
+    assert.equal(payload.bucketTotals?.titlesCount, card!.titlesCount);
+    assert.equal(payload.bucketTotals?.openBalanceAmount, card!.amount);
   });
 });
