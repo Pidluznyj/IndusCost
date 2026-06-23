@@ -88,3 +88,24 @@ export function displayFinanceText(value: string | null | undefined): string {
   const trimmed = value?.trim();
   return trimmed ? trimmed : "—";
 }
+
+/** Lê `descricaoLancamento` do payload Nomus quando o campo materializado estiver vazio. */
+export function readNomusLaunchDescriptionFromPayload(rawPayload: unknown): string | null {
+  if (rawPayload == null || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    return null;
+  }
+  const value = (rawPayload as Record<string, unknown>).descricaoLancamento;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Descrição do lançamento para grids AP/AR (campo materializado → fallback Nomus → null). */
+export function resolveFinanceLaunchDescription(input: {
+  description?: string | null;
+  rawPayload?: unknown;
+}): string | null {
+  const direct = input.description?.trim();
+  if (direct) return direct;
+  return readNomusLaunchDescriptionFromPayload(input.rawPayload);
+}

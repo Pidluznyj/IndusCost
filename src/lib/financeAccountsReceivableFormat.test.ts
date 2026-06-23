@@ -9,6 +9,8 @@ import {
   formatFinanceMonthLabel,
   formatFinancePercent,
   formatFinanceDaysOverdue,
+  readNomusLaunchDescriptionFromPayload,
+  resolveFinanceLaunchDescription,
   safeFinanceNumber,
 } from "./financeAccountsReceivableFormat.js";
 import { buildFinanceArDashboardQuery, EMPTY_FINANCE_AR_UI_FILTERS } from "./financeAccountsReceivableDashboardTypes.js";
@@ -115,5 +117,18 @@ describe("buildFinanceArDashboardQuery", () => {
   it("não envia invoiceIssued=all", () => {
     const qs = buildFinanceArDashboardQuery(EMPTY_FINANCE_AR_UI_FILTERS);
     assert.doesNotMatch(qs, /invoiceIssued=/);
+  });
+
+  it("resolveFinanceLaunchDescription prioriza description e faz fallback no payload Nomus", () => {
+    assert.equal(resolveFinanceLaunchDescription({ description: "  Parcela NF 100  " }), "Parcela NF 100");
+    assert.equal(
+      resolveFinanceLaunchDescription({
+        description: null,
+        rawPayload: { descricaoLancamento: "Do payload" },
+      }),
+      "Do payload"
+    );
+    assert.equal(resolveFinanceLaunchDescription({ description: "" }), null);
+    assert.equal(readNomusLaunchDescriptionFromPayload(null), null);
   });
 });
