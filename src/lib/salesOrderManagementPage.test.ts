@@ -166,6 +166,14 @@ describe("salesOrderManagementPage", () => {
     assert.match(app, /SalesOrderManagementPage/);
   });
 
+  it("renderiza Busca inteligente com debounce e q na API", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /Busca inteligente/);
+    assert.match(page, /sales-order-management-smart-search/);
+    assert.match(page, /params\.set\("q", search\)/);
+    assert.match(page, /setSearchDraft\(""\)/);
+  });
+
   it("drawer chama endpoint sob demanda", () => {
     assert.equal(getSalesOrderIntelligenceApiPath("abc"), "/api/sales-orders/abc/intelligence");
   });

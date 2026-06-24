@@ -138,6 +138,8 @@ export function SalesOrderManagementPage() {
   const [reviewDataFilter, setReviewDataFilter] = useState("");
   const [cutFilter, setCutFilter] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
+  const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SalesOrderManagementSortKey>("issueDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [fulfillmentKpis, setFulfillmentKpis] = useState<SalesOrderFulfillmentKpis | null>(null);
@@ -150,6 +152,14 @@ export function SalesOrderManagementPage() {
   const [intelLoading, setIntelLoading] = useState(false);
   const [intelError, setIntelError] = useState<string | null>(null);
   const [intelPayload, setIntelPayload] = useState<SalesOrderIntelligencePayload | null>(null);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearch(searchDraft.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchDraft]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -188,6 +198,7 @@ export function SalesOrderManagementPage() {
     if (cutFilter === "true") params.set("hasCut", "true");
     if (cutFilter === "false") params.set("hasCut", "false");
     if (invoiceNumber.trim()) params.set("invoiceNumber", invoiceNumber.trim());
+    if (search) params.set("q", search);
     if (sortBy) params.set("sortBy", sortBy);
     if (sortDir) params.set("sortDir", sortDir);
     return params.toString();
@@ -221,6 +232,7 @@ export function SalesOrderManagementPage() {
     reviewDataFilter,
     cutFilter,
     invoiceNumber,
+    search,
     sortBy,
     sortDir,
   ]);
@@ -379,6 +391,20 @@ export function SalesOrderManagementPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">
+              Busca inteligente
+            </label>
+            <input
+              type="search"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              placeholder="Buscar por pedido, NF, cliente, vendedor ou documento..."
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              aria-label="Busca inteligente de pedidos"
+              data-testid="sales-order-management-smart-search"
+            />
           </div>
           <div>
             <CustomerAutocompleteFilter
@@ -746,6 +772,8 @@ export function SalesOrderManagementPage() {
             setReviewDataFilter("");
             setCutFilter("");
             setInvoiceNumber("");
+            setSearchDraft("");
+            setSearch("");
             setSortBy("issueDate");
             setSortDir("desc");
             setPage(1);
