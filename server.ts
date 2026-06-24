@@ -156,6 +156,10 @@ import {
   buildSalesOrderListSummary,
   buildSalesOrderListWhere,
 } from "./src/lib/salesOrdersListSummary.js";
+import {
+  parseSalesOrderMonthParam,
+  parseSalesOrderYearParam,
+} from "./src/lib/salesOrderPeriodFilter.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import {
   getNomusDailySyncStatus,
@@ -12623,6 +12627,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const responsible = String(req.query.responsible ?? "").trim();
       const startDate = parseDateQueryStart(req.query.startDate);
       const endDate = parseDateQueryEnd(req.query.endDate);
+      // Filtro executivo Ano/Mês por data de emissão (issueDate); inválidos são ignorados.
+      const year = parseSalesOrderYearParam(req.query.year);
+      const month = parseSalesOrderMonthParam(req.query.month);
 
       const where = buildSalesOrderListWhere({
         status: status || undefined,
@@ -12630,6 +12637,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         responsible: responsible || undefined,
         startDate,
         endDate,
+        year,
+        month,
       });
 
       const page = parsePositiveIntQuery(req.query.page, 1);

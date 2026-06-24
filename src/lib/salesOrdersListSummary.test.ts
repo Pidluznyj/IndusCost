@@ -96,6 +96,59 @@ describe("salesOrdersListSummary", () => {
     assert.deepEqual(where.issueDate, { gte: start, lte: end });
   });
 
+  it("buildSalesOrderListWhere filtra issueDate por ano", () => {
+    const where = buildSalesOrderListWhere({ year: 2026 });
+    assert.deepEqual(where.issueDate, {
+      gte: new Date(2026, 0, 1, 0, 0, 0, 0),
+      lt: new Date(2027, 0, 1, 0, 0, 0, 0),
+    });
+  });
+
+  it("buildSalesOrderListWhere filtra issueDate por ano e mês", () => {
+    const where = buildSalesOrderListWhere({ year: 2026, month: 6 });
+    assert.deepEqual(where.issueDate, {
+      gte: new Date(2026, 5, 1, 0, 0, 0, 0),
+      lt: new Date(2026, 6, 1, 0, 0, 0, 0),
+    });
+  });
+
+  it("buildSalesOrderListWhere calcula corretamente o fim de dezembro", () => {
+    const where = buildSalesOrderListWhere({ year: 2026, month: 12 });
+    assert.deepEqual(where.issueDate, {
+      gte: new Date(2026, 11, 1, 0, 0, 0, 0),
+      lt: new Date(2027, 0, 1, 0, 0, 0, 0),
+    });
+  });
+
+  it("buildSalesOrderListWhere ignora ano inválido (filtros antigos seguem)", () => {
+    const where = buildSalesOrderListWhere({
+      status: "DRAFT",
+      year: Number.NaN as unknown as number,
+      month: 6,
+    });
+    assert.equal(where.status, "DRAFT");
+    assert.equal(where.issueDate, undefined);
+  });
+
+  it("UI da lista renderiza filtros Ano e Mês ligados à API e ao reset de página", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    // Filtro Ano (label + opção "Todos os anos")
+    assert.ok(page.includes(">Ano<"));
+    assert.ok(page.includes("Todos os anos"));
+    // Filtro Mês (label + opção "Todos os meses")
+    assert.ok(page.includes(">Mês<"));
+    assert.ok(page.includes("Todos os meses"));
+    // Alterar Ano/Mês chama API com year/month
+    assert.ok(page.includes('params.set("year", year)'));
+    assert.ok(page.includes('params.set("month", month)'));
+    // Ano/Mês entram na chave de filtros que dispara reset para página 1
+    assert.ok(/listFiltersKey[\s\S]*year[\s\S]*month/.test(page));
+    assert.ok(page.includes("setCurrentPage(1)"));
+  });
+
   it("paginação não altera summary quando agregado no universo filtrado", () => {
     const filtered = allRows;
     const summaryFull = summarizeSalesOrderListRows(filtered);

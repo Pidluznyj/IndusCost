@@ -8,6 +8,10 @@ import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAuto
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
+import {
+  SALES_ORDER_MONTH_OPTIONS,
+  buildSalesOrderYearOptions,
+} from "@/src/lib/salesOrderPeriodFilter";
 
 type SalesOrderRow = {
   id: string;
@@ -100,16 +104,20 @@ function SalesOrderList() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
   const [responsible, setResponsible] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [year, setYear] = useState<string>(() => String(currentYear));
+  const [month, setMonth] = useState<string>("");
 
   const listFiltersKey = useMemo(
-    () => JSON.stringify({ status, customerId, responsible, startDate, endDate }),
-    [status, customerId, responsible, startDate, endDate]
+    () => JSON.stringify({ status, customerId, responsible, startDate, endDate, year, month }),
+    [status, customerId, responsible, startDate, endDate, year, month]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
@@ -125,6 +133,8 @@ function SalesOrderList() {
         if (responsible.trim()) params.set("responsible", responsible.trim());
         if (startDate) params.set("startDate", startDate);
         if (endDate) params.set("endDate", endDate);
+        if (year) params.set("year", year);
+        if (month) params.set("month", month);
         const q = params.toString();
         const data = await fetchJsonOk<SalesOrderListResponse | SalesOrderRow[]>(
           `/api/sales-orders?${q}`,
@@ -172,7 +182,7 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, customerId, responsible, startDate, endDate]
+    [status, customerId, responsible, startDate, endDate, year, month]
   );
 
   useEffect(() => {
@@ -202,6 +212,38 @@ function SalesOrderList() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Ano</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              aria-label="Filtrar por ano de emissão"
+            >
+              <option value="">Todos os anos</option>
+              {yearOptions.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Mês</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label="Filtrar por mês de emissão"
+            >
+              <option value="">Todos os meses</option>
+              {SALES_ORDER_MONTH_OPTIONS.map((m) => (
+                <option key={m.value} value={String(m.value)}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Status</label>
             <select
@@ -272,6 +314,8 @@ function SalesOrderList() {
             setResponsible("");
             setStartDate("");
             setEndDate("");
+            setYear("");
+            setMonth("");
             setCurrentPage(1);
           }}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"

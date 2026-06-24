@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import { computeTicketAverage } from "@/src/lib/salesOrderDashboardRules.js";
+import { resolveSalesOrderIssueDateRange } from "@/src/lib/salesOrderPeriodFilter.js";
 
 export const SALES_ORDER_LIST_STATUS_VALUES = [
   "DRAFT",
@@ -18,6 +19,10 @@ export type SalesOrderListFilters = {
   responsible?: string;
   startDate?: Date | null;
   endDate?: Date | null;
+  /** Ano de emissão (filtro executivo) — base em SalesOrder.issueDate. */
+  year?: number | null;
+  /** Mês de emissão (1-12); só aplica quando `year` é válido. */
+  month?: number | null;
 };
 
 export type SalesOrderListSummary = {
@@ -44,18 +49,32 @@ export function buildSalesOrderListWhere(
   const startDate = filters.startDate ?? null;
   const endDate = filters.endDate ?? null;
 
+  // Filtro executivo Ano/Mês (sempre sobre issueDate, fim exclusivo).
+  const periodRange = resolveSalesOrderIssueDateRange(
+    filters.year ?? null,
+    filters.month ?? null
+  );
+
+  const issueDate: Prisma.DateTimeFilter = {};
+  if (startDate) issueDate.gte = startDate;
+  if (endDate) issueDate.lte = endDate;
+  if (periodRange) {
+    // Combina com um startDate explícito mantendo o limite inferior mais restritivo.
+    const currentGte = issueDate.gte instanceof Date ? issueDate.gte : null;
+    if (!currentGte || periodRange.gte > currentGte) {
+      issueDate.gte = periodRange.gte;
+    }
+    issueDate.lt = periodRange.lt;
+  }
+
+  const hasIssueDateFilter =
+    issueDate.gte != null || issueDate.lte != null || issueDate.lt != null;
+
   return {
     ...(status && isValidSalesOrderListStatus(status) ? { status } : {}),
     ...(customerId ? { customerId } : {}),
     ...(responsible ? { responsible } : {}),
-    ...(startDate || endDate
-      ? {
-          issueDate: {
-            ...(startDate ? { gte: startDate } : {}),
-            ...(endDate ? { lte: endDate } : {}),
-          },
-        }
-      : {}),
+    ...(hasIssueDateFilter ? { issueDate } : {}),
   };
 }
 
