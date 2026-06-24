@@ -1102,7 +1102,7 @@ export function SalesOrderManagementPage() {
                         </div>
                       )}
                     </td>
-                    <td className="p-3">{formatSalesOrderDate(row.lastInvoiceDate)}</td>
+                    <td className="p-3">{row.nfeProcessingDisplay}</td>
                     <td className="p-3 text-right tabular-nums">{formatCurrency(row.totalNetValue)}</td>
                     <td className="p-3 text-right tabular-nums">{formatCurrency(row.invoicedValue)}</td>
                     <td className="p-3 text-right tabular-nums">

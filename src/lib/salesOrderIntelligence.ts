@@ -1,4 +1,5 @@
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
+import { formatNfeProcessamentoDisplay } from "./salesOrderDeliveryDelay.js";
 import {
   buildSalesOrderLifecycleSummary,
   type EnrichedLifecycleItem,
@@ -850,6 +851,10 @@ export function mapLifecycleToManagementRow(
     hasInvoice: lifecycle.hasInvoice,
     invoiceNumbers: lifecycle.nfeNumbers ?? lifecycle.invoiceNumbers,
     lastInvoiceDate: lifecycle.lastNfeProcessingDate ?? lifecycle.lastInvoiceDate ?? null,
+    nfeProcessingDisplay: formatNfeProcessamentoDisplay(
+      lifecycle.lastNfeProcessingDate ?? lifecycle.lastInvoiceDate ?? null,
+      (lifecycle.nfeCount ?? 0) > 0 || (lifecycle.nfeNumbers?.length ?? 0) > 0
+    ),
     invoicedValue: lifecycle.nfeTotalValue ?? 0,
     invoiceCoveragePercent: lifecycle.invoiceCoveragePercent ?? lifecycle.invoicedPercent,
     nfeCount: lifecycle.nfeCount ?? lifecycle.invoiceNumbers.length,

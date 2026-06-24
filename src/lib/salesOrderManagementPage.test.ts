@@ -64,8 +64,14 @@ describe("salesOrderManagementPage", () => {
   it("tabela mostra prazo e completeza", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /formatDeadlineBadge/);
-    assert.match(page, /Previsão entrega/);
+    assert.match(page, /Entrega planejada/);
     assert.match(page, /COMPLETION_STATUS_LABELS/);
+  });
+
+  it("coluna Data NF usa nfeProcessingDisplay (Não Processada / dd/mm/yyyy)", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /Data NF/);
+    assert.match(page, /row\.nfeProcessingDisplay/);
   });
 
   it("filtros existem incluindo NF e OP", () => {

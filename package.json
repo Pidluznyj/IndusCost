@@ -59,6 +59,7 @@
     "backfill:sales-order-nfe-links:apply": "tsx scripts/backfill-sales-order-nfe-links.ts --apply",
     "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts",
     "test:sales-orders-fulfillment": "tsx --test src/lib/salesOrderManagementFulfillment.test.ts",
+    "test:sales-orders-delay": "tsx --test src/lib/salesOrderDeliveryDelay.test.ts src/lib/salesOrderManagementDelayParity.test.ts",
     "test:sales-orders-metrics-engine": "tsx --test src/lib/salesOrderMetricsEngine.test.ts",
     "audit:sales-order-consumers-after-migration": "tsx scripts/audit-sales-order-consumers-after-migration.ts",
     "audit:sales-order-final-validation": "tsx scripts/audit-sales-order-final-validation.ts",

@@ -1,4 +1,5 @@
 import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
+import { computeSalesOrderDeliveryDelayDays } from "./salesOrderDeliveryDelay.js";
 import { isCancelledSalesOrderStatus, isOverdueSalesOrder } from "./salesOrderDashboardRules.js";
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
@@ -480,10 +481,22 @@ export function buildSalesOrderLifecycleSummary(
     orderFullyCancelled || orderFullyReturned || !expectedDeliveryDate
       ? null
       : diffCalendarDays(referenceDate, expectedDeliveryDate);
+  // Atraso = max(0, DataReal(NF processada) - DataPlanejada); sem NF usa Hoje.
+  // DataReal só é a NF processada (invoiceMeta), nunca a data de hoje quando já faturado.
+  const realInvoiceDateForDelay = hasInvoice ? (invoiceMeta.last ?? invoiceMeta.first) : null;
+  const deliveryDelayDays = computeSalesOrderDeliveryDelayDays({
+    plannedDeliveryDate: expectedDeliveryDate,
+    realInvoiceDate: realInvoiceDateForDelay,
+    referenceDate,
+    isCancelled: orderFullyCancelled || orderFullyReturned,
+  });
   const daysOverdue =
-    orderFullyCancelled || orderFullyReturned || expectedDeliveryDate == null || daysUntilDue == null || daysUntilDue >= 0
+    orderFullyCancelled ||
+    orderFullyReturned ||
+    expectedDeliveryDate == null ||
+    deliveryDelayDays <= 0
       ? null
-      : Math.abs(daysUntilDue);
+      : deliveryDelayDays;
   const daysInvoiceEarlyOrLate =
     expectedDeliveryDate && invoiceMeta.first
       ? diffCalendarDays(invoiceMeta.first, expectedDeliveryDate)

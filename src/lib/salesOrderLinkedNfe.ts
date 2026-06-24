@@ -196,6 +196,11 @@ function buildContextFromExtractedRows(input: {
   if (hasValueDivergence) {
     reviewReasons.push("Valor faturado excede o valor líquido do pedido além da tolerância.");
   }
+  // NF processada porém sem valor fiscal: não classificar como atraso por isso —
+  // o prazo segue pela DataReal, mas sinaliza revisão de dados.
+  if (hasNfe && nfeTotalValue <= 0 && totalNet != null && totalNet > 0) {
+    reviewReasons.push("NF vinculada sem valor fiscal.");
+  }
 
   const completionDate = processingDates[processingDates.length - 1] ?? null;
   let isOnTime: boolean | null = null;

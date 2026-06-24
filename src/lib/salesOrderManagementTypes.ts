@@ -123,6 +123,12 @@ export type SalesOrderManagementRow = {
   /** Valor faturado (soma NF-es vinculadas). */
   invoicedValue: number;
   lastInvoiceDate?: string | null;
+  /**
+   * Exibição da coluna "Data NF" (Data de Processamento da NF-e):
+   * "dd/mm/yyyy" quando processada, "Não Processada" quando há NF vinculada
+   * sem processamento, "—" quando não há NF vinculada.
+   */
+  nfeProcessingDisplay: string;
   invoiceCoveragePercent: number | null;
   nfeCount: number;
   linkedNfeSource?: "linked" | "raw_fallback";
