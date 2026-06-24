@@ -38,6 +38,7 @@ export function ExecutiveCashFlowChart({
         data={data}
         height={chartHeight}
         showValueLabels
+        showLineValueLabels={false}
         presentation="executive"
         testId="executive-cash-flow-planned-chart"
       />

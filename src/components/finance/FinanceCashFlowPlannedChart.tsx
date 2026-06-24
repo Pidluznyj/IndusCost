@@ -75,16 +75,23 @@ export function FinanceCashFlowPlannedChart({
   data,
   height = FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT,
   showValueLabels = false,
+  showLineValueLabels,
   testId = "finance-cash-flow-planned-chart",
   presentation = "default",
 }: {
   data: ExecutiveMonthlyPlannedChartRow[];
   height?: number;
   showValueLabels?: boolean;
+  /**
+   * Controla os rótulos numéricos da linha (saldo acumulado) de forma
+   * independente das barras. Quando ausente, segue `showValueLabels`.
+   */
+  showLineValueLabels?: boolean;
   testId?: string;
   presentation?: "default" | "executive";
 }) {
   const isExecutive = presentation === "executive";
+  const showAccumulatedLabels = showLineValueLabels ?? showValueLabels;
   const margin =
     showValueLabels || isExecutive
       ? isExecutive
@@ -153,7 +160,7 @@ export function FinanceCashFlowPlannedChart({
             dot={{ r: 2, fill: FINANCE_BI_COLORS.primary }}
             connectNulls={false}
           >
-            {showValueLabels ? (
+            {showAccumulatedLabels ? (
               <LabelList
                 dataKey="accumulatedBalance"
                 content={<ChartLineValueLabel fontSize={lineLabelSize} />}
