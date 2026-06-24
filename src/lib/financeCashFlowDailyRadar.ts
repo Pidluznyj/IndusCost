@@ -138,24 +138,47 @@ export type DailyRadarReceivableRow = {
   paymentMethod: string | null;
 };
 
+/** Totalizadores de uma coluna de valores (faixa ou dia, após busca/filtros). */
+export type DailyRadarGridSummary = {
+  count: number;
+  total: number;
+  overdueTotal: number;
+  upcomingTotal: number;
+  maxAmount: number;
+  averageAmount: number;
+};
+
+export type DailyRadarDetailGroup<Row> = {
+  summary: DailyRadarGridSummary;
+  /** @deprecated use summary.total — mantido por compatibilidade. */
+  total: number;
+  /** @deprecated use summary.count — mantido por compatibilidade. */
+  count: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  rows: Row[];
+};
+
 export type DailyRadarDayDetail = {
   date: string;
-  payables: {
-    total: number;
-    count: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-    rows: DailyRadarPayableRow[];
-  };
-  receivables: {
-    total: number;
-    count: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-    rows: DailyRadarReceivableRow[];
-  };
+  payables: DailyRadarDetailGroup<DailyRadarPayableRow>;
+  receivables: DailyRadarDetailGroup<DailyRadarReceivableRow>;
+};
+
+export type DailyRadarDetailLevel = "range" | "day";
+
+/** Detalhe progressivo do drill-down (faixa ou dia) com grids AP/AR. */
+export type DailyRadarSelectedDetail = {
+  level: DailyRadarDetailLevel;
+  rangeKey: DailyRadarRangeKey;
+  rangeLabel: string;
+  date: string | null;
+  entriesTotal: number;
+  exitsTotal: number;
+  netTotal: number;
+  payables: DailyRadarDetailGroup<DailyRadarPayableRow>;
+  receivables: DailyRadarDetailGroup<DailyRadarReceivableRow>;
 };
 
 export type DailyRadarPayload = {
@@ -165,6 +188,7 @@ export type DailyRadarPayload = {
     key: DailyRadarRangeKey;
     days: DailyRadarDaySummary[];
   };
+  selectedDetail?: DailyRadarSelectedDetail;
   selectedDay?: DailyRadarDayDetail;
 };
 
@@ -468,38 +492,74 @@ function paginate<T>(rows: T[], page: number, pageSize: number) {
   return { rows: rows.slice(start, start + pageSize), page: safePage, pageSize, totalPages, total };
 }
 
-function buildDayDetail(
-  movements: InternalMovement[],
-  dayIso: string,
+function summarizeGrid(items: Array<{ amount: number; overdue: boolean }>): DailyRadarGridSummary {
+  let total = 0;
+  let overdueTotal = 0;
+  let upcomingTotal = 0;
+  let maxAmount = 0;
+  for (const item of items) {
+    total += item.amount;
+    if (item.overdue) overdueTotal += item.amount;
+    else upcomingTotal += item.amount;
+    if (item.amount > maxAmount) maxAmount = item.amount;
+  }
+  const count = items.length;
+  return {
+    count,
+    total: finiteMoney(total),
+    overdueTotal: finiteMoney(overdueTotal),
+    upcomingTotal: finiteMoney(upcomingTotal),
+    maxAmount: finiteMoney(maxAmount),
+    averageAmount: count > 0 ? finiteMoney(total / count) : 0,
+  };
+}
+
+/**
+ * Detalhe AP/AR de um escopo de movimentos (dia OU faixa inteira), com busca,
+ * ordenação, paginação e totalizadores. Usado tanto para `selectedDetail`
+ * (drill-down progressivo) quanto para `selectedDay` (compatibilidade).
+ */
+function buildScopedDetail(
+  scopeMovements: InternalMovement[],
   query: DailyRadarQuery,
   referenceDate: Date
-): DailyRadarDayDetail {
+): {
+  payables: DailyRadarDetailGroup<DailyRadarPayableRow>;
+  receivables: DailyRadarDetailGroup<DailyRadarReceivableRow>;
+  entriesTotal: number;
+  exitsTotal: number;
+  netTotal: number;
+} {
   const search = normalizeSearch(query.search ?? "");
   const pageSize = Math.min(Math.max(query.pageSize ?? 25, 1), 200);
   const page = query.page ?? 1;
 
-  const dayMovements = movements.filter((m) => toIsoDate(m.operationalDate) === dayIso);
-  let payables = dayMovements
+  let payables = scopeMovements
     .filter((m) => m.type === "AP" && m.ap)
-    .map((m) => mapPayableRow(m.ap!, referenceDate));
-  let receivables = dayMovements
+    .map((m) => ({ row: mapPayableRow(m.ap!, referenceDate), overdue: m.dayOffset < 0 }));
+  let receivables = scopeMovements
     .filter((m) => m.type === "AR" && m.ar)
-    .map((m) => mapReceivableRow(m.ar!, referenceDate));
+    .map((m) => ({ row: mapReceivableRow(m.ar!, referenceDate), overdue: m.dayOffset < 0 }));
 
   if (search) {
-    payables = payables.filter((r) =>
+    payables = payables.filter((p) =>
       matchesSearch(
-        `${r.supplier ?? ""} ${r.company ?? ""} ${r.description ?? ""} ${r.document ?? ""}`,
+        `${p.row.supplier ?? ""} ${p.row.company ?? ""} ${p.row.description ?? ""} ${p.row.document ?? ""}`,
         search
       )
     );
     receivables = receivables.filter((r) =>
       matchesSearch(
-        `${r.customer ?? ""} ${r.company ?? ""} ${r.description ?? ""} ${r.document ?? ""}`,
+        `${r.row.customer ?? ""} ${r.row.company ?? ""} ${r.row.description ?? ""} ${r.row.document ?? ""}`,
         search
       )
     );
   }
+
+  const payableSummary = summarizeGrid(payables.map((p) => ({ amount: p.row.amount, overdue: p.overdue })));
+  const receivableSummary = summarizeGrid(
+    receivables.map((r) => ({ amount: r.row.amount, overdue: r.overdue }))
+  );
 
   const payableSortKey = (query.payableSortBy as PayableSortKey) || (query.sortBy as PayableSortKey) || "amount";
   const receivableSortKey =
@@ -507,45 +567,61 @@ function buildDayDetail(
   const payableSortDir = query.payableSortDirection ?? query.sortDirection ?? "desc";
   const receivableSortDir = query.receivableSortDirection ?? query.sortDirection ?? "desc";
 
+  let payableRows = payables.map((p) => p.row);
+  let receivableRows = receivables.map((r) => r.row);
+
   if (PAYABLE_SORT_ACCESSORS[payableSortKey as PayableSortKey]) {
-    payables = sortRows(
-      payables,
+    payableRows = sortRows(
+      payableRows,
       { key: payableSortKey as PayableSortKey, direction: payableSortDir },
       PAYABLE_SORT_ACCESSORS
     );
   }
   if (RECEIVABLE_SORT_ACCESSORS[receivableSortKey as ReceivableSortKey]) {
-    receivables = sortRows(
-      receivables,
+    receivableRows = sortRows(
+      receivableRows,
       { key: receivableSortKey as ReceivableSortKey, direction: receivableSortDir },
       RECEIVABLE_SORT_ACCESSORS
     );
   }
 
-  const payableTotals = payables.reduce((s, r) => s + r.amount, 0);
-  const receivableTotals = receivables.reduce((s, r) => s + r.amount, 0);
-  const payablesPage = paginate(payables, page, pageSize);
-  const receivablesPage = paginate(receivables, page, pageSize);
+  const payablesPage = paginate(payableRows, page, pageSize);
+  const receivablesPage = paginate(receivableRows, page, pageSize);
 
   return {
-    date: dayIso,
     payables: {
-      total: finiteMoney(payableTotals),
-      count: payables.length,
+      summary: payableSummary,
+      total: payableSummary.total,
+      count: payableSummary.count,
       page: payablesPage.page,
       pageSize,
       totalPages: payablesPage.totalPages,
       rows: payablesPage.rows,
     },
     receivables: {
-      total: finiteMoney(receivableTotals),
-      count: receivables.length,
+      summary: receivableSummary,
+      total: receivableSummary.total,
+      count: receivableSummary.count,
       page: receivablesPage.page,
       pageSize,
       totalPages: receivablesPage.totalPages,
       rows: receivablesPage.rows,
     },
+    entriesTotal: receivableSummary.total,
+    exitsTotal: payableSummary.total,
+    netTotal: finiteMoney(receivableSummary.total - payableSummary.total),
   };
+}
+
+function buildDayDetail(
+  movements: InternalMovement[],
+  dayIso: string,
+  query: DailyRadarQuery,
+  referenceDate: Date
+): DailyRadarDayDetail {
+  const dayMovements = movements.filter((m) => toIsoDate(m.operationalDate) === dayIso);
+  const scoped = buildScopedDetail(dayMovements, query, referenceDate);
+  return { date: dayIso, payables: scoped.payables, receivables: scoped.receivables };
 }
 
 export function buildDailyRadarQuery(params: {
@@ -632,6 +708,34 @@ export function buildFinanceCashFlowDailyRadar(
     payload.selectedRange = {
       key: rangeDef.key,
       days: buildDaysForRange(movements, rangeDef, baseDate),
+    };
+
+    // Drill-down progressivo: faixa inteira por padrão, refinando ao dia quando houver dia.
+    const rangeMovements = movements.filter((m) => matchesRange(m.dayOffset, rangeDef));
+    let scopeMovements = rangeMovements;
+    let level: DailyRadarDetailLevel = "range";
+    let dateIso: string | null = null;
+    if (query.day) {
+      const parsedDay = parseIsoDate(query.day);
+      if (parsedDay) {
+        const dayKey = toIsoDate(parsedDay);
+        scopeMovements = rangeMovements.filter((m) => toIsoDate(m.operationalDate) === dayKey);
+        level = "day";
+        dateIso = dayKey;
+      }
+    }
+
+    const scoped = buildScopedDetail(scopeMovements, query, referenceDate);
+    payload.selectedDetail = {
+      level,
+      rangeKey: rangeDef.key,
+      rangeLabel: rangeDef.label,
+      date: dateIso,
+      entriesTotal: scoped.entriesTotal,
+      exitsTotal: scoped.exitsTotal,
+      netTotal: scoped.netTotal,
+      payables: scoped.payables,
+      receivables: scoped.receivables,
     };
   }
 

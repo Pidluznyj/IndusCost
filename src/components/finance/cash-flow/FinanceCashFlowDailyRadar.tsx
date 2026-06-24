@@ -11,9 +11,12 @@ import {
   buildDailyRadarQuery,
   dailyRadarDayCardLabel,
   toggleSortState,
+  type DailyRadarDetailGroup,
+  type DailyRadarPayableRow,
   type DailyRadarPayload,
   type DailyRadarRangeKey,
   type DailyRadarRangeSummary,
+  type DailyRadarReceivableRow,
   type SortState,
 } from "@/src/lib/financeCashFlowDailyRadar";
 import {
@@ -215,7 +218,8 @@ export function FinanceCashFlowDailyRadar() {
     setPage(1);
   };
 
-  const dayDetail = payload?.selectedDay;
+  const detail = payload?.selectedDetail;
+  const isDayLevel = detail?.level === "day";
 
   return (
     <section
@@ -292,36 +296,37 @@ export function FinanceCashFlowDailyRadar() {
             </div>
           ) : null}
 
-          {selectedDay && dayDetail ? (
+          {detail ? (
             <div className={cn(financeBiCardClass, "p-4 space-y-4")} data-testid="cash-flow-radar-day-detail">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-[#111827]">
-                    Detalhe do dia — {formatFinanceDate(dayDetail.date)}
+                    {isDayLevel && detail.date
+                      ? `Detalhe do dia — ${formatFinanceDate(detail.date)}`
+                      : `Detalhe da faixa — ${detail.rangeLabel}`}
                   </h3>
                   <div className="mt-2 flex flex-wrap gap-4 text-[11px]">
                     <span className="text-[#059669]">
-                      Entradas: <strong>{formatFinanceCurrency(dayDetail.receivables.total)}</strong>
+                      Entradas: <strong>{formatFinanceCurrency(detail.entriesTotal)}</strong>
                     </span>
                     <span className="text-[#DC2626]">
-                      Saídas: <strong>{formatFinanceCurrency(dayDetail.payables.total)}</strong>
+                      Saídas: <strong>{formatFinanceCurrency(detail.exitsTotal)}</strong>
                     </span>
-                    <span className={netTone(dayDetail.receivables.total - dayDetail.payables.total)}>
-                      Saldo líquido:{" "}
-                      <strong>
-                        {formatFinanceCurrency(dayDetail.receivables.total - dayDetail.payables.total)}
-                      </strong>
+                    <span className={netTone(detail.netTotal)}>
+                      Saldo líquido: <strong>{formatFinanceCurrency(detail.netTotal)}</strong>
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDay(null)}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Limpar dia
-                </button>
+                {isDayLevel ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDay(null)}
+                    className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Limpar dia
+                  </button>
+                ) : null}
               </div>
 
               <FinanceCostCenterGridSearchBar
@@ -334,12 +339,12 @@ export function FinanceCashFlowDailyRadar() {
               {loading ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Carregando detalhe do dia…
+                  Carregando títulos do período…
                 </div>
               ) : (
                 <div className="space-y-6">
                   <PayablesGrid
-                    detail={dayDetail.payables}
+                    detail={detail.payables}
                     sort={payableSort}
                     onSort={handlePayableSort}
                     page={page}
@@ -351,7 +356,7 @@ export function FinanceCashFlowDailyRadar() {
                     }}
                   />
                   <ReceivablesGrid
-                    detail={dayDetail.receivables}
+                    detail={detail.receivables}
                     sort={receivableSort}
                     onSort={handleReceivableSort}
                     page={page}
@@ -372,6 +377,35 @@ export function FinanceCashFlowDailyRadar() {
   );
 }
 
+function GridTotalizers({
+  summary,
+  variant,
+}: {
+  summary: DailyRadarDetailGroup<unknown>["summary"];
+  variant: "payable" | "receivable";
+}) {
+  const totalLabel = variant === "payable" ? "Total a pagar" : "Total a receber";
+  const totalTone = variant === "payable" ? "text-[#DC2626]" : "text-[#059669]";
+  const stats: Array<{ label: string; value: string; tone?: string }> = [
+    { label: "Títulos", value: formatFinanceInteger(summary.count) },
+    { label: totalLabel, value: formatFinanceCurrency(summary.total), tone: totalTone },
+    { label: "Vencido", value: formatFinanceCurrency(summary.overdueTotal), tone: "text-[#B91C1C]" },
+    { label: "A vencer", value: formatFinanceCurrency(summary.upcomingTotal) },
+    { label: "Maior título", value: formatFinanceCurrency(summary.maxAmount) },
+    { label: "Ticket médio", value: formatFinanceCurrency(summary.averageAmount) },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {stats.map((s) => (
+        <div key={s.label} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2.5 py-1.5">
+          <p className="text-[9px] font-medium uppercase tracking-wide text-[#9CA3AF]">{s.label}</p>
+          <p className={cn("text-[12px] font-bold text-[#111827]", s.tone)}>{s.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PayablesGrid({
   detail,
   sort,
@@ -381,7 +415,7 @@ function PayablesGrid({
   onPageChange,
   onPageSizeChange,
 }: {
-  detail: NonNullable<DailyRadarPayload["selectedDay"]>["payables"];
+  detail: DailyRadarDetailGroup<DailyRadarPayableRow>;
   sort: SortState<PayableSortKey>;
   onSort: (key: PayableSortKey) => void;
   page: number;
@@ -394,12 +428,14 @@ function PayablesGrid({
       <div>
         <h4 className="text-xs font-bold text-[#111827]">Contas a Pagar</h4>
         <p className="text-[10px] text-[#6B7280]">
-          {formatFinanceInteger(detail.count)} título(s) · Total {formatFinanceCurrency(detail.total)}
+          {formatFinanceInteger(detail.summary.count)} título(s) · Total{" "}
+          {formatFinanceCurrency(detail.summary.total)}
         </p>
       </div>
-      {detail.count === 0 ? (
+      <GridTotalizers summary={detail.summary} variant="payable" />
+      {detail.summary.count === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center rounded-lg border border-dashed border-[#E5E7EB]">
-          Nenhum pagamento previsto para este dia.
+          Nenhuma conta a pagar encontrada para este filtro.
         </p>
       ) : (
         <FinanceCostCenterGridTableShell
@@ -454,6 +490,13 @@ function PayablesGrid({
               <td className="px-3 py-2">{displayFinanceText(row.paymentMethod)}</td>
             </tr>
           ))}
+          <tr className="border-t-2 border-border bg-[#F9FAFB] text-xs font-bold text-[#111827]">
+            <td className="px-3 py-2" colSpan={5}>
+              Total ({formatFinanceInteger(detail.summary.count)} título(s))
+            </td>
+            <td className="px-3 py-2 text-right">{formatFinanceCurrency(detail.summary.total)}</td>
+            <td className="px-3 py-2" colSpan={3} />
+          </tr>
         </FinanceCostCenterGridTableShell>
       )}
     </div>
@@ -469,7 +512,7 @@ function ReceivablesGrid({
   onPageChange,
   onPageSizeChange,
 }: {
-  detail: NonNullable<DailyRadarPayload["selectedDay"]>["receivables"];
+  detail: DailyRadarDetailGroup<DailyRadarReceivableRow>;
   sort: SortState<ReceivableSortKey>;
   onSort: (key: ReceivableSortKey) => void;
   page: number;
@@ -482,12 +525,14 @@ function ReceivablesGrid({
       <div>
         <h4 className="text-xs font-bold text-[#111827]">Contas a Receber</h4>
         <p className="text-[10px] text-[#6B7280]">
-          {formatFinanceInteger(detail.count)} título(s) · Total {formatFinanceCurrency(detail.total)}
+          {formatFinanceInteger(detail.summary.count)} título(s) · Total{" "}
+          {formatFinanceCurrency(detail.summary.total)}
         </p>
       </div>
-      {detail.count === 0 ? (
+      <GridTotalizers summary={detail.summary} variant="receivable" />
+      {detail.summary.count === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center rounded-lg border border-dashed border-[#E5E7EB]">
-          Nenhum recebimento previsto para este dia.
+          Nenhuma conta a receber encontrada para este filtro.
         </p>
       ) : (
         <FinanceCostCenterGridTableShell
@@ -542,6 +587,13 @@ function ReceivablesGrid({
               <td className="px-3 py-2">{displayFinanceText(row.paymentMethod)}</td>
             </tr>
           ))}
+          <tr className="border-t-2 border-border bg-[#F9FAFB] text-xs font-bold text-[#111827]">
+            <td className="px-3 py-2" colSpan={5}>
+              Total ({formatFinanceInteger(detail.summary.count)} título(s))
+            </td>
+            <td className="px-3 py-2 text-right">{formatFinanceCurrency(detail.summary.total)}</td>
+            <td className="px-3 py-2" colSpan={3} />
+          </tr>
         </FinanceCostCenterGridTableShell>
       )}
     </div>

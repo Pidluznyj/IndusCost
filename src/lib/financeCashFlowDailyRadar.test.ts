@@ -168,6 +168,117 @@ describe("financeCashFlowDailyRadar", () => {
     assert.equal(daySummary!.netTotal, day.receivables.total - day.payables.total);
   });
 
+  it("faixa selecionada já retorna selectedDetail com grids AP/AR da faixa inteira", () => {
+    const arRows = [
+      arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 9) }),
+      arRow({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 11) }),
+    ];
+    const apRows = [
+      apRow({ externalId: 10, balancePayable: 40, dueDate: new Date(2026, 5, 10) }),
+      apRow({ externalId: 11, balancePayable: 60, dueDate: new Date(2026, 5, 14) }),
+    ];
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      { baseDate: BASE, rangeKey: "0-7" },
+      BASE
+    );
+    assert.ok(payload.selectedDetail);
+    const detail = payload.selectedDetail!;
+    assert.equal(detail.level, "range");
+    assert.equal(detail.rangeKey, "0-7");
+    assert.equal(detail.date, null);
+    // Grids mostram TODOS os títulos da faixa, não apenas de um dia.
+    assert.equal(detail.receivables.summary.count, 2);
+    assert.equal(detail.payables.summary.count, 2);
+    assert.equal(detail.receivables.summary.total, 300);
+    assert.equal(detail.payables.summary.total, 100);
+    assert.equal(detail.entriesTotal, 300);
+    assert.equal(detail.exitsTotal, 100);
+    assert.equal(detail.netTotal, 200);
+  });
+
+  it("selecionar um dia refina selectedDetail para apenas os títulos do dia", () => {
+    const arRows = [
+      arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 9) }),
+      arRow({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 11) }),
+    ];
+    const apRows = [apRow({ externalId: 10, balancePayable: 40, dueDate: new Date(2026, 5, 11) })];
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      { baseDate: BASE, rangeKey: "0-7", day: "2026-06-11" },
+      BASE
+    );
+    assert.ok(payload.selectedDetail);
+    const detail = payload.selectedDetail!;
+    assert.equal(detail.level, "day");
+    assert.equal(detail.date, "2026-06-11");
+    assert.equal(detail.receivables.summary.count, 1);
+    assert.equal(detail.receivables.summary.total, 200);
+    assert.equal(detail.payables.summary.count, 1);
+    assert.equal(detail.payables.summary.total, 40);
+    assert.equal(detail.netTotal, 160);
+  });
+
+  it("busca interna filtra grids AP e AR do selectedDetail", () => {
+    const arRows = [
+      arRow({ externalId: 1, personName: "Maria Eliana", balanceReceivable: 100, dueDate: new Date(2026, 5, 9) }),
+      arRow({ externalId: 2, personName: "Gislene Lima", balanceReceivable: 200, dueDate: new Date(2026, 5, 11) }),
+    ];
+    const apRows = [
+      apRow({ externalId: 10, personName: "Maria Eliana", balancePayable: 40, dueDate: new Date(2026, 5, 10) }),
+      apRow({ externalId: 11, personName: "Outro Fornecedor", balancePayable: 60, dueDate: new Date(2026, 5, 14) }),
+    ];
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      { baseDate: BASE, rangeKey: "0-7", search: "maria" },
+      BASE
+    );
+    const detail = payload.selectedDetail!;
+    assert.equal(detail.receivables.summary.count, 1);
+    assert.equal(detail.receivables.rows[0]?.customer, "Maria Eliana");
+    assert.equal(detail.payables.summary.count, 1);
+    assert.equal(detail.payables.rows[0]?.supplier, "Maria Eliana");
+    assert.equal(detail.entriesTotal, 100);
+    assert.equal(detail.exitsTotal, 40);
+  });
+
+  it("totalizadores da faixa incluem vencido e maior título", () => {
+    const apRows = [
+      apRow({ externalId: 10, balancePayable: 900, dueDate: new Date(2026, 5, 1) }),
+      apRow({ externalId: 11, balancePayable: 100, dueDate: new Date(2026, 5, 3) }),
+    ];
+    const payload = buildFinanceCashFlowDailyRadar(
+      [],
+      apRows,
+      { baseDate: BASE, rangeKey: "overdue" },
+      BASE
+    );
+    const detail = payload.selectedDetail!;
+    assert.equal(detail.payables.summary.count, 2);
+    assert.equal(detail.payables.summary.total, 1000);
+    assert.equal(detail.payables.summary.overdueTotal, 1000);
+    assert.equal(detail.payables.summary.upcomingTotal, 0);
+    assert.equal(detail.payables.summary.maxAmount, 900);
+    assert.equal(detail.payables.summary.averageAmount, 500);
+  });
+
+  it("selectedDay permanece compatível com summary adicional", () => {
+    const arRows = [arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 9) })];
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      [],
+      { baseDate: BASE, day: "2026-06-09" },
+      BASE
+    );
+    assert.ok(payload.selectedDay);
+    assert.equal(payload.selectedDay!.receivables.total, 100);
+    assert.equal(payload.selectedDay!.receivables.summary.total, 100);
+    assert.equal(payload.selectedDay!.receivables.summary.count, 1);
+  });
+
   it("vencidos ficam na faixa overdue, não em D0", () => {
     const apRows = [apRow({ balancePayable: 900, dueDate: new Date(2026, 5, 1) })];
     const payload = buildFinanceCashFlowDailyRadar(
@@ -232,6 +343,38 @@ describe("financeCashFlowDailyRadar", () => {
     assert.ok(page.includes("cash-flow-daily-radar") || radar.includes("cash-flow-daily-radar"));
     assert.ok(!page.includes("FinanceCashFlowDetailTable"));
     assert.ok(radar.includes("/api/finance/cash-flow/daily-radar"));
+  });
+
+  it("Radar renderiza grids a partir de selectedDetail (faixa e dia), empilhados e com totalizadores", () => {
+    const radar = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowDailyRadar.tsx"
+      ),
+      "utf8"
+    );
+    // Drill-down progressivo usa selectedDetail nos dois níveis.
+    assert.ok(radar.includes("payload?.selectedDetail"));
+    assert.ok(radar.includes("Detalhe da faixa —"));
+    assert.ok(radar.includes("Detalhe do dia —"));
+    // Grids um abaixo do outro (stack vertical, sem grid de duas colunas).
+    assert.ok(radar.includes('<div className="space-y-6">'));
+    assert.ok(!radar.includes("xl:grid-cols-2"));
+    // Totalizadores e rodapé de total.
+    assert.ok(radar.includes("GridTotalizers"));
+    assert.ok(radar.includes("Ticket médio"));
+    assert.ok(radar.includes("Maior título"));
+    assert.ok(radar.includes("Total ("));
+    // Mensagens de vazio por filtro.
+    assert.ok(radar.includes("Nenhuma conta a pagar encontrada para este filtro."));
+    assert.ok(radar.includes("Nenhuma conta a receber encontrada para este filtro."));
+    // Limpar dia continua disponível no nível de dia.
+    assert.ok(radar.includes("Limpar dia"));
+    assert.ok(radar.includes("Limpar faixa"));
   });
 
   it("rotas expõem endpoint daily-radar", () => {
