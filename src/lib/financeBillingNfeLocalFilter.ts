@@ -1,4 +1,4 @@
-import { NomusNfeBillingClassification } from "@prisma/client";
+import { NomusNfeBillingClassification } from "@/src/lib/nomusNfeBillingClassification.js";
 import {
   NOMUS_NFE_STATUS_AUTHORIZED,
   NOMUS_NFE_STATUS_CANCELLED,

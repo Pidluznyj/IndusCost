@@ -1,5 +1,7 @@
-import { NomusNfeBillingClassification } from "@prisma/client";
+import { NomusNfeBillingClassification } from "@/src/lib/nomusNfeBillingClassification.js";
 import { NOMUS_NFES_SYNC_CUTOFF_DATE } from "@/src/lib/nomusNfesSyncConstants.js";
+
+export { NomusNfeBillingClassification } from "@/src/lib/nomusNfeBillingClassification.js";
 
 /** CNPJs do grupo econômico (Power BI validado). */
 export const NOMUS_NFE_GROUP_CNPJS = [

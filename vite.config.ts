@@ -12,10 +12,12 @@ export default defineConfig(({mode}) => {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     resolve: {
+      // NÃO adicione aliases-stub para Prisma aqui. A separação server/cliente é
+      // garantida na arquitetura (ver scripts/checkFrontendServerImports.ts):
+      // nenhum arquivo do bundle React pode importar Prisma direta ou
+      // indiretamente. Mascarar com stub esconde vazamentos reais.
       alias: {
         '@': path.resolve(__dirname, '.'),
-        '@/src/lib/prisma.js': path.resolve(__dirname, 'src/lib/prisma.browser-stub.ts'),
-        '@/src/lib/prisma': path.resolve(__dirname, 'src/lib/prisma.browser-stub.ts'),
       },
     },
     server: {

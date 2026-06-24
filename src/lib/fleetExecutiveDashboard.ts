@@ -90,18 +90,9 @@ export function computeUsageKmRecord(usage: {
   return 0;
 }
 
-export function sortFleetExecutiveGridRows(
-  rows: FleetExecutiveVehicleRow[],
-  sortKey: "plate" | "monthlyReservations" | "monthlyKm" | "status",
-  sortDir: "asc" | "desc"
-): FleetExecutiveVehicleRow[] {
-  const dir = sortDir === "asc" ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    if (sortKey === "plate") return a.plate.localeCompare(b.plate) * dir;
-    if (sortKey === "status") return a.status.localeCompare(b.status) * dir;
-    return (a[sortKey] - b[sortKey]) * dir;
-  });
-}
+// Helper puro de apresentação reexportado a partir do módulo .presentation
+// (mantém compatibilidade com consumidores server-side e testes existentes).
+export { sortFleetExecutiveGridRows } from "@/src/lib/fleetExecutiveDashboard.presentation.js";
 
 export function sumMonthlyKmFromUsages(
   usages: Array<{ kmDriven: unknown; checkoutKm: unknown; checkinKm: unknown }>

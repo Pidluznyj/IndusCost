@@ -22,7 +22,7 @@ import {
   FleetStatusBadge,
   formatFleetKm,
 } from "@/src/components/fleet/fleetUi";
-import { sortFleetExecutiveGridRows } from "@/src/lib/fleetExecutiveDashboard";
+import { sortFleetExecutiveGridRows } from "@/src/lib/fleetExecutiveDashboard.presentation";
 import { cn } from "@/src/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {

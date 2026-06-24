@@ -4,8 +4,26 @@
  * Técnico: 500 com mensagem segura (sem stack no JSON).
  */
 import type express from "express";
-import { Prisma } from "@prisma/client";
 import { FleetValidationError } from "@/src/lib/fleetValidation.js";
+
+/**
+ * Detecção de erros do Prisma por duck-typing (sem importar @prisma/client,
+ * que jamais pode entrar no bundle do navegador). Os erros do Prisma expõem
+ * `name` e, no caso de request conhecida, um `code` (ex.: "P2002").
+ */
+function isPrismaKnownRequestError(
+  error: unknown
+): error is Error & { code: string } {
+  return (
+    error instanceof Error &&
+    error.name === "PrismaClientKnownRequestError" &&
+    typeof (error as { code?: unknown }).code === "string"
+  );
+}
+
+function isPrismaInitializationError(error: unknown): boolean {
+  return error instanceof Error && error.name === "PrismaClientInitializationError";
+}
 
 export const FLEET_SAFE_INTERNAL_MESSAGE =
   "Não foi possível concluir a operação. Tente novamente ou contate o suporte.";
@@ -122,7 +140,7 @@ export function mapFleetErrorToHttp(error: unknown): FleetMappedError {
     };
   }
 
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+  if (isPrismaKnownRequestError(error)) {
     if (error.code === "P2002") {
       return {
         status: 409,
@@ -150,7 +168,7 @@ export function mapFleetErrorToHttp(error: unknown): FleetMappedError {
     };
   }
 
-  if (error instanceof Prisma.PrismaClientInitializationError) {
+  if (isPrismaInitializationError(error)) {
     return {
       status: 500,
       code: "FLEET_DATABASE_UNAVAILABLE",
