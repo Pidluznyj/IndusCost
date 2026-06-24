@@ -146,10 +146,31 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(css, /executive-chart-body/);
-    assert.match(css, /65mm/);
+    assert.match(css, /executive-chart-region/);
+    // Gráfico cresce para ocupar a área útil (sem teto fixo pequeno).
+    assert.match(css, /\.executive-chart-body\s*\{[\s\S]*flex:\s*1 1 auto/);
+    assert.match(css, /min-height:\s*80mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
     assert.match(css, /margin-top:\s*auto/);
+  });
+
+  it("print CSS fixa altura da página paisagem para evitar páginas em branco", () => {
+    const css = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "executive-report",
+        "finance-executive-report-print.css"
+      ),
+      "utf8"
+    );
+    // Altura fixa (< altura útil) + overflow hidden evita vazamento de conteúdo
+    // que gerava páginas quase em branco apenas com rodapé.
+    assert.match(css, /\.executive-print-page\s*\{[\s\S]*height:\s*193mm/);
+    assert.match(css, /\.executive-print-page\s*\{[\s\S]*overflow:\s*hidden/);
   });
 
   it("print CSS evita break-inside rígido na seção inteira", () => {

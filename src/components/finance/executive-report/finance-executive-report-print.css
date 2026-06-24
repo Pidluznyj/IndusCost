@@ -2,7 +2,7 @@
 
 @page {
   size: A4 landscape;
-  margin: 8mm;
+  margin: 6mm;
 }
 
 @media print {
@@ -77,19 +77,27 @@
     color: #0f172a !important;
   }
 
+  /*
+   * Cada seção ocupa exatamente uma página paisagem.
+   * A4 paisagem = 210mm de altura; com margem @page de 6mm sobram 198mm úteis.
+   * Fixamos uma altura levemente menor (193mm) como folga de arredondamento para
+   * evitar "vazamento" de conteúdo para uma página seguinte quase em branco
+   * (sintoma clássico: página só com rodapé/data).
+   */
   .executive-print-page {
     break-after: page;
     page-break-after: always;
     break-inside: avoid;
     page-break-inside: avoid;
-    min-height: 0;
-    overflow: visible !important;
+    height: 193mm;
+    max-height: 193mm;
+    overflow: hidden !important;
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 2mm;
+    gap: 1.5mm;
     padding: 0;
-    padding-bottom: 1mm;
+    box-sizing: border-box;
     background: #fff !important;
   }
 
@@ -98,11 +106,13 @@
     page-break-after: auto;
   }
 
+  /* Corpo da página cresce e distribui o espaço para o card do gráfico. */
   .executive-print-page-body {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: visible !important;
-    padding-bottom: 1mm;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
   }
 
   .executive-print-page-header {
@@ -274,9 +284,38 @@
     box-shadow: none !important;
     border: 0.3mm solid #e2e8f0 !important;
     border-radius: 2mm !important;
-    padding: 3mm !important;
+    padding: 2.5mm 3mm !important;
     margin: 0 !important;
     background: #fff !important;
+    /* A seção é uma coluna flex: cabeçalho/KPI fixos e o gráfico ocupa o resto. */
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .finance-executive-section-header {
+    flex: 0 0 auto;
+    margin-bottom: 1mm !important;
+  }
+
+  /*
+   * Região do gráfico: cresce para ocupar toda a área restante da página,
+   * deixando o gráfico como elemento principal (≈55–65% da altura útil).
+   */
+  .executive-chart-region {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 2mm !important;
+  }
+
+  .executive-chart-region > .executive-chart,
+  .executive-chart-region > .executive-chart-shell {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .finance-executive-report-section-title {
@@ -334,48 +373,60 @@
     overflow: hidden !important;
     box-shadow: none !important;
     border: 0.3mm solid #e2e8f0 !important;
-    padding: 2mm !important;
-    margin-top: 2mm !important;
-    margin-bottom: 1mm !important;
+    padding: 2mm 2.5mm !important;
+    margin: 0 !important;
     background: #fff !important;
+    /* Card do gráfico também é coluna flex para o corpo crescer. */
+    display: flex;
+    flex-direction: column;
   }
 
   .executive-chart-header {
+    flex: 0 0 auto;
     margin-bottom: 1mm !important;
   }
 
   .executive-chart-title {
-    font-size: 10pt !important;
+    font-size: 11pt !important;
   }
 
   .executive-chart-subtitle {
-    font-size: 7.5pt !important;
+    font-size: 8pt !important;
   }
 
+  /*
+   * Corpo do gráfico ocupa toda a altura restante do card (sem teto fixo).
+   * Sobrescreve a altura inline (style={{ height }}) definida no React para que,
+   * em paisagem, o gráfico fique grande e legível.
+   */
   .executive-chart-body {
-    height: 65mm !important;
-    min-height: 65mm !important;
-    max-height: 65mm !important;
+    flex: 1 1 auto !important;
+    min-height: 80mm !important;
+    height: auto !important;
+    max-height: none !important;
     overflow: hidden !important;
   }
 
+  .executive-chart-body > div,
   .executive-chart-body .recharts-responsive-container,
   .executive-chart-body .recharts-wrapper {
-    height: 65mm !important;
-    max-height: 65mm !important;
+    height: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
   }
 
   .executive-chart-body .recharts-cartesian-axis-tick text,
   .executive-chart-body .recharts-legend-item-text {
-    font-size: 8pt !important;
+    font-size: 9pt !important;
   }
 
   .executive-chart-scenario {
+    flex: 0 0 auto;
     break-inside: avoid;
     page-break-inside: avoid;
     font-size: 7.5pt !important;
     padding: 1.5mm 2mm !important;
-    margin: 1mm 0 1.5mm !important;
+    margin: 1mm 0 !important;
   }
 
   .executive-chart-body svg {

@@ -264,7 +264,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             <ExecutiveBarComparisonChart
               title="Faturamento mês a mês"
               subtitle={formatExecutiveReportBillingYearsSubtitle(
@@ -330,7 +330,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             <ExecutiveRealizedProjectedChart
               title="Realizado × Projeção × Meta"
               model={realizedProjected}
@@ -383,7 +383,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             <ExecutiveScheduleChart
               title="Agenda mensal — Contas a Receber"
               subtitle="Em aberto, atrasado e a vencer por mês"
@@ -440,7 +440,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             <ExecutiveScheduleChart
               title="Agenda mensal — Contas a Pagar"
               subtitle="Em aberto, vencido e a vencer por mês"
@@ -506,7 +506,7 @@ export function ExecutiveReportDocument({
             </div>
           ) : null}
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             <ExecutiveCashFlowChart
               year={report.year}
               rows={cashFlowChart.rows}
@@ -576,7 +576,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6">
+          <div className="mt-6 executive-chart-region">
             {salesTab.chartSeries ? (
               <ExecutiveSalesOrdersChart
                 title={`Pedidos de venda — ${report.year}`}
