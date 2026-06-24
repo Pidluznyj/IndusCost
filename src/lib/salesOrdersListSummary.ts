@@ -2,6 +2,10 @@ import type { Prisma } from "@prisma/client";
 import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import { computeTicketAverage } from "@/src/lib/salesOrderDashboardRules.js";
 import { resolveSalesOrderIssueDateRange } from "@/src/lib/salesOrderPeriodFilter.js";
+import {
+  buildSalesOrderSearchCodeTokens,
+  normalizeSalesOrderSearchTerm,
+} from "@/src/lib/salesOrderSmartSearch.js";
 
 export const SALES_ORDER_LIST_STATUS_VALUES = [
   "DRAFT",
@@ -23,7 +27,46 @@ export type SalesOrderListFilters = {
   year?: number | null;
   /** Mês de emissão (1-12); só aplica quando `year` é válido. */
   month?: number | null;
+  /** Busca inteligente (q): pedido/NF/cliente/vendedor/empresa/itens. */
+  q?: string | null;
 };
+
+/**
+ * Monta o `OR` da busca inteligente sobre campos reais do schema.
+ * Tokens de código (com/sem prefixo PD, sem espaços, com/sem zeros à esquerda)
+ * batem em `orderCode`/`externalSalesOrderCode`/NF; o termo livre bate em
+ * cliente/vendedor/empresa/itens. Retorna null quando não há termo.
+ */
+export function buildSalesOrderSearchOr(
+  q: string | null | undefined
+): Prisma.SalesOrderWhereInput[] | null {
+  const term = normalizeSalesOrderSearchTerm(q);
+  if (!term) return null;
+
+  const insensitive = { mode: "insensitive" as const };
+  const or: Prisma.SalesOrderWhereInput[] = [];
+
+  for (const token of buildSalesOrderSearchCodeTokens(q)) {
+    or.push({ orderCode: { contains: token, ...insensitive } });
+    or.push({ externalSalesOrderCode: { contains: token, ...insensitive } });
+    or.push({ nfeLinks: { some: { nfeNumber: { contains: token, ...insensitive } } } });
+    or.push({ nfeLinks: { some: { orderCode: { contains: token, ...insensitive } } } });
+    or.push({
+      nfeLinks: { some: { externalSalesOrderCode: { contains: token, ...insensitive } } },
+    });
+  }
+
+  or.push({ responsible: { contains: term, ...insensitive } });
+  or.push({ companyIssuer: { contains: term, ...insensitive } });
+  or.push({ Customer: { is: { companyName: { contains: term, ...insensitive } } } });
+  or.push({ Customer: { is: { tradeName: { contains: term, ...insensitive } } } });
+  or.push({ Customer: { is: { taxId: { contains: term, ...insensitive } } } });
+  or.push({ nfeLinks: { some: { nfeKey: { contains: term, ...insensitive } } } });
+  or.push({ items: { some: { productNameSnapshot: { contains: term, ...insensitive } } } });
+  or.push({ items: { some: { skuSnapshot: { contains: term, ...insensitive } } } });
+
+  return or;
+}
 
 export type SalesOrderListSummary = {
   totalOrders: number;
@@ -70,11 +113,14 @@ export function buildSalesOrderListWhere(
   const hasIssueDateFilter =
     issueDate.gte != null || issueDate.lte != null || issueDate.lt != null;
 
+  const searchOr = buildSalesOrderSearchOr(filters.q);
+
   return {
     ...(status && isValidSalesOrderListStatus(status) ? { status } : {}),
     ...(customerId ? { customerId } : {}),
     ...(responsible ? { responsible } : {}),
     ...(hasIssueDateFilter ? { issueDate } : {}),
+    ...(searchOr ? { OR: searchOr } : {}),
   };
 }
 

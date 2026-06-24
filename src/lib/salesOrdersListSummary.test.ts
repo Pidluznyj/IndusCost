@@ -149,6 +149,87 @@ describe("salesOrdersListSummary", () => {
     assert.ok(page.includes("setCurrentPage(1)"));
   });
 
+  function orContains(where: ReturnType<typeof buildSalesOrderListWhere>): string[] {
+    const or = (where.OR ?? []) as Array<Record<string, any>>;
+    const found: string[] = [];
+    const walk = (node: any): void => {
+      if (!node || typeof node !== "object") return;
+      if (typeof node.contains === "string") found.push(node.contains);
+      for (const value of Object.values(node)) walk(value);
+    };
+    for (const clause of or) walk(clause);
+    return found;
+  }
+
+  it("busca por número puro 02682 monta OR com tokens 02682 e 2682", () => {
+    const where = buildSalesOrderListWhere({ q: "02682" });
+    assert.ok(Array.isArray(where.OR));
+    const contains = orContains(where);
+    assert.ok(contains.includes("02682"));
+    assert.ok(contains.includes("2682"));
+  });
+
+  it("busca PD 02682 encontra mesmo pedido salvo como 02682 (token 02682 presente)", () => {
+    const where = buildSalesOrderListWhere({ q: "PD 02682" });
+    const contains = orContains(where);
+    // Token numérico permite casar 'PD 02682' do banco quando usuário digita variações.
+    assert.ok(contains.includes("02682"));
+    assert.ok(contains.includes("pd02682"));
+  });
+
+  it("OR cobre pedido, NF, cliente, vendedor, empresa e itens", () => {
+    const where = buildSalesOrderListWhere({ q: "maria" });
+    const or = (where.OR ?? []) as Array<Record<string, any>>;
+    const json = JSON.stringify(or);
+    assert.ok(json.includes("orderCode"));
+    assert.ok(json.includes("nfeLinks"));
+    assert.ok(json.includes("nfeNumber"));
+    assert.ok(json.includes("responsible"));
+    assert.ok(json.includes("companyIssuer"));
+    assert.ok(json.includes("Customer"));
+    assert.ok(json.includes("companyName"));
+    assert.ok(json.includes("items"));
+    assert.ok(json.includes("productNameSnapshot"));
+  });
+
+  it("busca combina com year/month (issueDate + OR juntos)", () => {
+    const where = buildSalesOrderListWhere({ q: "02682", year: 2026, month: 6 });
+    assert.ok(where.issueDate, "mantém filtro de período");
+    assert.ok(Array.isArray(where.OR), "mantém busca inteligente");
+  });
+
+  it("busca combina com status e cliente existentes", () => {
+    const where = buildSalesOrderListWhere({
+      q: "02682",
+      status: "SENT_TO_NOMUS",
+      customerId: "cust-1",
+    });
+    assert.equal(where.status, "SENT_TO_NOMUS");
+    assert.equal(where.customerId, "cust-1");
+    assert.ok(Array.isArray(where.OR));
+  });
+
+  it("sem q → nenhum OR (filtros antigos intactos)", () => {
+    const where = buildSalesOrderListWhere({ status: "DRAFT" });
+    assert.equal(where.OR, undefined);
+    assert.equal(where.status, "DRAFT");
+  });
+
+  it("UI da lista renderiza Busca inteligente ligada à API com debounce e reset", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("Busca inteligente"));
+    assert.ok(page.includes('params.set("q", search)'));
+    // debounce ~300ms
+    assert.ok(/setTimeout\(\(\) => setSearch\(searchDraft\.trim\(\)\), 300\)/.test(page));
+    // entra na chave que dispara reset para página 1
+    assert.ok(/listFiltersKey[\s\S]*search/.test(page));
+    // Limpar filtros limpa a busca
+    assert.ok(page.includes('setSearch("")'));
+  });
+
   it("paginação não altera summary quando agregado no universo filtrado", () => {
     const filtered = allRows;
     const summaryFull = summarizeSalesOrderListRows(filtered);

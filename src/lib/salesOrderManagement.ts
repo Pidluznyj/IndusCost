@@ -71,6 +71,8 @@ export type SalesOrderManagementFilters = {
   startDate?: Date | null;
   endDate?: Date | null;
   status?: string;
+  /** Busca inteligente (q): pedido/NF/cliente/vendedor/empresa/itens. */
+  q?: string;
   sortBy?: SalesOrderManagementSortKey;
   sortDir?: "asc" | "desc";
 } & SalesOrderFulfillmentExtendedFilters;
@@ -152,6 +154,7 @@ export function parseSalesOrderManagementFilters(
           ? query.managementStatus
           : "",
     status: typeof query.status === "string" ? query.status.trim() : undefined,
+    q: typeof query.q === "string" && query.q.trim() ? query.q.trim() : undefined,
     sortBy:
       typeof query.sortBy === "string"
         ? (query.sortBy as SalesOrderManagementSortKey)
@@ -181,6 +184,7 @@ export function buildSalesOrderManagementWhere(
     responsible: filters.responsible,
     startDate,
     endDate,
+    q: filters.q,
   });
 
   if (filters.companyIssuer) {

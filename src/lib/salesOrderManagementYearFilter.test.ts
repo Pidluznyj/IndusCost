@@ -155,4 +155,19 @@ describe("salesOrderManagement — filtro de ano (ano vigente padrão)", () => {
     assert.match(page, /value="all">Todos os anos/);
     assert.match(page, /Nenhum pedido encontrado para o ano selecionado\./);
   });
+
+  it("busca inteligente (q) flui para a Gestão sem quebrar e combina com ano", () => {
+    const filters = parseSalesOrderManagementFilters({ year: "2026", q: "02682" }, NOW_2026);
+    assert.equal(filters.q, "02682");
+    const where = buildSalesOrderManagementWhere(filters);
+    assert.ok(where.issueDate, "mantém filtro de ano");
+    assert.ok(Array.isArray(where.OR), "aplica busca inteligente na Gestão");
+  });
+
+  it("Gestão sem q não cria OR (compatível com filtros antigos)", () => {
+    const where = buildSalesOrderManagementWhere(
+      parseSalesOrderManagementFilters({ year: "2026" }, NOW_2026)
+    );
+    assert.equal(where.OR, undefined);
+  });
 });

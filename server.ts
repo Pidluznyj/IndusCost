@@ -12630,6 +12630,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       // Filtro executivo Ano/Mês por data de emissão (issueDate); inválidos são ignorados.
       const year = parseSalesOrderYearParam(req.query.year);
       const month = parseSalesOrderMonthParam(req.query.month);
+      // Busca inteligente (pedido/NF/cliente/vendedor/empresa/itens).
+      const q = String(req.query.q ?? "").trim();
 
       const where = buildSalesOrderListWhere({
         status: status || undefined,
@@ -12639,6 +12641,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         endDate,
         year,
         month,
+        q: q || undefined,
       });
 
       const page = parsePositiveIntQuery(req.query.page, 1);

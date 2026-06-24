@@ -114,10 +114,19 @@ function SalesOrderList() {
   const [endDate, setEndDate] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
   const [month, setMonth] = useState<string>("");
+  // Busca inteligente: searchDraft é o input imediato; search é o valor com debounce.
+  const [searchDraft, setSearchDraft] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchDraft]);
 
   const listFiltersKey = useMemo(
-    () => JSON.stringify({ status, customerId, responsible, startDate, endDate, year, month }),
-    [status, customerId, responsible, startDate, endDate, year, month]
+    () =>
+      JSON.stringify({ status, customerId, responsible, startDate, endDate, year, month, search }),
+    [status, customerId, responsible, startDate, endDate, year, month, search]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
@@ -135,6 +144,7 @@ function SalesOrderList() {
         if (endDate) params.set("endDate", endDate);
         if (year) params.set("year", year);
         if (month) params.set("month", month);
+        if (search) params.set("q", search);
         const q = params.toString();
         const data = await fetchJsonOk<SalesOrderListResponse | SalesOrderRow[]>(
           `/api/sales-orders?${q}`,
@@ -182,7 +192,7 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, customerId, responsible, startDate, endDate, year, month]
+    [status, customerId, responsible, startDate, endDate, year, month, search]
   );
 
   useEffect(() => {
@@ -243,6 +253,20 @@ function SalesOrderList() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">
+              Busca inteligente
+            </label>
+            <input
+              type="search"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              placeholder="Buscar por pedido, NF, cliente, vendedor ou documento..."
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              aria-label="Busca inteligente de pedidos"
+              data-testid="sales-orders-smart-search"
+            />
           </div>
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Status</label>
@@ -316,6 +340,8 @@ function SalesOrderList() {
             setEndDate("");
             setYear("");
             setMonth("");
+            setSearchDraft("");
+            setSearch("");
             setCurrentPage(1);
           }}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
@@ -326,9 +352,14 @@ function SalesOrderList() {
 
       <p className="text-xs text-muted-foreground">
         {total === 0 ? (
-          <>Nenhum pedido no filtro atual.</>
+          <>Nenhum pedido encontrado para os filtros informados.</>
         ) : (
           <>
+            {search ? (
+              <>
+                Busca: <span className="font-semibold text-foreground">"{search}"</span> ·{" "}
+              </>
+            ) : null}
             Exibindo{" "}
             <span className="font-semibold text-foreground">
               {listShownRange.from}–{listShownRange.to}
