@@ -6,6 +6,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
+import { fetchJsonOk } from "@/src/lib/http";
 
 type HeaderSyncLog = {
   status?: "SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED";
@@ -28,15 +29,9 @@ export const Layout = () => {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/settings/nomus-sync/logs?limit=1&target=sales-orders&mode=all&kind=all");
-        if (!res.ok) {
-          if (!cancelled) {
-            setLastSyncAt("—");
-            setLastSyncStatus("UNKNOWN");
-          }
-          return;
-        }
-        const rows = (await res.json()) as HeaderSyncLog[];
+        const rows = await fetchJsonOk<HeaderSyncLog[]>(
+          "/api/settings/nomus-sync/logs?limit=1&target=sales-orders&mode=all&kind=all"
+        );
         const first = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
         const stamp = first?.finishedAt || first?.modifiedAt || null;
         const date = stamp ? new Date(stamp) : null;

@@ -7,8 +7,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { APP_AUTH_REQUIRED_EVENT, fetchJsonOk } from "@/src/lib/http";
 import type { AuthMeResponse, AuthUser } from "@/src/lib/appAuthClient";
+
+const SESSION_EXPIRED_MESSAGE = "Sessão expirada. Faça login novamente.";
 
 export type AuthContextValue = {
   authUser: AuthUser | null;
@@ -37,7 +39,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const data = await fetchJsonOk<AuthMeResponse>("/api/auth/me");
+      const data = await fetchJsonOk<AuthMeResponse>("/api/auth/me", {
+        suppressAuthEvent: true,
+      });
       if (seq !== loadSeq.current) return;
       if (data.authenticated && data.user) {
         setAuthUser(data.user);
@@ -66,12 +70,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void loadMe();
   }, [loadMe]);
 
+  // 401 global (qualquer chamada protegida sem sessão válida): limpa o usuário e
+  // deixa o RequireAuth redirecionar ao login. Idempotente — evita avalanche.
+  useEffect(() => {
+    const handleAuthRequired = () => {
+      loadSeq.current += 1; // invalida loadMe em voo
+      setAuthUser(null);
+      setAuthenticated(false);
+      setAuthLoading(false);
+      setAuthError((prev) => prev ?? SESSION_EXPIRED_MESSAGE);
+    };
+    window.addEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
+    return () => window.removeEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
+  }, []);
+
   const login = useCallback(async (email: string, password: string) => {
     setAuthError(null);
     const res = await fetchJsonOk<{ user: AuthUser }>("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password }),
+      // Falha de credenciais (401) é tratada no formulário, não como sessão expirada.
+      suppressAuthEvent: true,
     });
     setAuthUser(res.user);
     setAuthenticated(true);

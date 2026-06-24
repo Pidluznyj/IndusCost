@@ -28,6 +28,7 @@ import {
   Legend,
 } from "recharts";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion } from "motion/react";
 import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
 import { ExecutiveDashboardPanel } from "@/src/components/dashboard/ExecutiveDashboardPanel";
@@ -78,12 +79,9 @@ export const DashboardModule = () => {
     setExecutiveLoading(true);
     setExecutiveError(null);
     try {
-      const res = await fetch(`/api/dashboard/executive-summary?year=${executiveYear}`);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
-      const json = (await res.json()) as ExecutiveDashboardSummary;
+      const json = await fetchJsonOk<ExecutiveDashboardSummary>(
+        `/api/dashboard/executive-summary?year=${executiveYear}`
+      );
       setExecutiveData(json);
       setExecutiveError(null);
       if (json.selectedYear && json.selectedYear !== executiveYear) {
@@ -101,12 +99,7 @@ export const DashboardModule = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await fetch("/api/dashboard");
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
-      const json = (await res.json()) as DashboardData;
+      const json = await fetchJsonOk<DashboardData>("/api/dashboard");
       setData(json);
       setFetchError(null);
     } catch (error) {

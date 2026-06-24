@@ -210,6 +210,7 @@ import {
   verifyPassword,
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
+import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
 import {
   createAuthGuards,
   resolveSellerDashboardScope,
@@ -581,6 +582,15 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+  // Respostas de API nunca podem ser cacheadas pelo navegador. Sem isso, um
+  // /api/auth/me autenticado pode ficar em cache e mostrar usuário logado
+  // enquanto as demais chamadas protegidas retornam 401 (estado híbrido).
+  app.use("/api", (_req, res, next) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
+    next();
+  });
+
   if (bootstrapAdminConfig.enabled && !isBootstrapReady) {
     console.warn(
       "[bootstrap-admin] habilitado, porém incompleto. Defina BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD e BOOTSTRAP_ADMIN_SESSION_SECRET."
@@ -605,7 +615,7 @@ async function startServer() {
     res.cookie(BOOTSTRAP_ADMIN_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecureFor(res),
       maxAge: BOOTSTRAP_ADMIN_SESSION_TTL_MS,
       path: "/",
     });
@@ -616,7 +626,7 @@ async function startServer() {
     res.clearCookie(BOOTSTRAP_ADMIN_COOKIE_NAME, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecureFor(res),
       path: "/",
     });
   }
@@ -1322,11 +1332,19 @@ async function startServer() {
     return enrichAppAuthSellerCommercialLink(auth);
   }
 
+  function cookieSecureFor(res: express.Response): boolean {
+    return resolveCookieSecure({
+      forcedSecure: process.env.APP_COOKIE_SECURE,
+      requestSecure: res.req?.secure,
+      forwardedProto: res.req?.headers["x-forwarded-proto"],
+    });
+  }
+
   function setAppSessionCookie(res: express.Response, token: string): void {
     res.cookie(APP_SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecureFor(res),
       maxAge: APP_SESSION_TTL_MS,
       path: "/",
     });
@@ -1336,7 +1354,7 @@ async function startServer() {
     res.clearCookie(APP_SESSION_COOKIE_NAME, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecureFor(res),
       path: "/",
     });
   }
