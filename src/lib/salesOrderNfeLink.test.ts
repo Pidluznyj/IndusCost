@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  applySalesOrderNfeLinkBackfill,
   buildSalesOrderNfeLinkWriteData,
   extractSalesOrderNfesFromNomusPayload,
   parseNomusNfeProcessingDate,
+  planSalesOrderNfeLinkBackfill,
   upsertSalesOrderNfeLinksForOrder,
 } from "./salesOrderNfeLink.js";
 
@@ -192,7 +194,7 @@ describe("salesOrderNfeLink", () => {
   it("backfill dry-run não altera dados (script wiring)", () => {
     const script = read("scripts/backfill-sales-order-nfe-links.ts");
     assert.match(script, /--dry-run/);
-    assert.match(script, /previewSalesOrderNfeLinkBackfill/);
+    assert.match(script, /planSalesOrderNfeLinkBackfill/);
     assert.match(script, /Nenhum dado alterado/);
   });
 
@@ -212,5 +214,274 @@ describe("salesOrderNfeLink", () => {
   it("endpoint admin de diagnóstico registrado", () => {
     assert.match(read("src/lib/salesOrderIntelligenceRoutes.ts"), /nfe-links\/diagnostic/);
     assert.match(read("src/lib/salesOrderIntelligenceRoutes.ts"), /buildSalesOrderNfeLinkDiagnostic/);
+  });
+
+  it("módulo de extração de NF-e é browser-safe (sem Prisma)", () => {
+    const src = read("src/lib/salesOrderNomusNfeExtract.ts");
+    assert.doesNotMatch(src, /@prisma\/client/);
+    assert.doesNotMatch(src, /lib\/prisma/);
+  });
+});
+
+type StoredLink = Record<string, unknown> & {
+  id: string;
+  salesOrderId: string;
+  nfeExternalId: number;
+  presentInLastPayload: boolean;
+};
+
+type MockSeed = {
+  orders: Array<{
+    id: string;
+    orderCode: string;
+    externalSalesOrderId: number | null;
+    externalSalesOrderCode: string | null;
+    nomusRawResponse: unknown;
+  }>;
+  nomusExternalIds: number[];
+  links?: StoredLink[];
+};
+
+function makeMockDb(seed: MockSeed) {
+  const links = new Map<string, StoredLink>();
+  for (const link of seed.links ?? []) links.set(link.id, { ...link });
+  const nomusSet = new Set(seed.nomusExternalIds);
+
+  const calls = {
+    salesOrderFindMany: 0,
+    nomusFindMany: 0,
+    linkFindMany: 0,
+    createMany: 0,
+    update: 0,
+    updateMany: 0,
+    transaction: 0,
+  };
+
+  let seq = links.size;
+
+  const keyOf = (salesOrderId: string, nfeExternalId: number) => `${salesOrderId}:${nfeExternalId}`;
+
+  const db = {
+    salesOrder: {
+      findMany: async () => {
+        calls.salesOrderFindMany += 1;
+        return seed.orders.map((o) => ({ ...o }));
+      },
+    },
+    nomusNfe: {
+      findMany: async ({ where }: { where: { externalId: { in: number[] } } }) => {
+        calls.nomusFindMany += 1;
+        return where.externalId.in
+          .filter((id) => nomusSet.has(id))
+          .map((id) => ({ id: `nomus-${id}`, externalId: id }));
+      },
+    },
+    salesOrderNfeLink: {
+      findMany: async () => {
+        calls.linkFindMany += 1;
+        return [...links.values()].map((row) => ({ ...row }));
+      },
+      createMany: async ({
+        data,
+        skipDuplicates,
+      }: {
+        data: StoredLink[];
+        skipDuplicates?: boolean;
+      }) => {
+        calls.createMany += 1;
+        let count = 0;
+        for (const row of data) {
+          const existingKey = [...links.values()].find(
+            (l) => keyOf(l.salesOrderId, l.nfeExternalId) === keyOf(row.salesOrderId, row.nfeExternalId)
+          );
+          if (existingKey && skipDuplicates) continue;
+          seq += 1;
+          const id = `link-${seq}`;
+          links.set(id, { ...row, id });
+          count += 1;
+        }
+        return { count };
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        calls.update += 1;
+        const row = links.get(where.id);
+        if (!row) throw new Error(`missing link ${where.id}`);
+        Object.assign(row, data);
+        return { ...row };
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id?: { in: string[] } };
+        data: Record<string, unknown>;
+      }) => {
+        calls.updateMany += 1;
+        let count = 0;
+        const ids = where.id?.in ?? [];
+        for (const id of ids) {
+          const row = links.get(id);
+          if (!row) continue;
+          Object.assign(row, data);
+          count += 1;
+        }
+        return { count };
+      },
+    },
+    $transaction: async (promises: Array<Promise<unknown>>) => {
+      calls.transaction += 1;
+      return Promise.all(promises);
+    },
+  };
+
+  return { db, links, calls };
+}
+
+const NFE_A = { id: 111, numero: "100", serie: "1", chave: "A".repeat(44), status: 100, dataProcessamento: "10/06/2026" };
+const NFE_B = { id: 222, numero: "200", serie: "1", chave: "B".repeat(44), status: 100, dataProcessamento: "11/06/2026" };
+const NFE_C = { id: 333, numero: "300", serie: "1", chave: "C".repeat(44), status: 100, dataProcessamento: "12/06/2026" };
+
+describe("salesOrderNfeLink — backfill em lote (planner)", () => {
+  it("cruza NomusNfe em lote (1 query) — sem N+1", async () => {
+    const { db, calls } = makeMockDb({
+      orders: [
+        { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1", nomusRawResponse: { nfes: [NFE_A] } },
+        { id: "so-2", orderCode: "PD-2", externalSalesOrderId: 2, externalSalesOrderCode: "PD-2", nomusRawResponse: { nfes: [NFE_B, NFE_C] } },
+      ],
+      nomusExternalIds: [111, 222, 333],
+    });
+
+    const plan = await planSalesOrderNfeLinkBackfill(db as never);
+
+    assert.equal(calls.salesOrderFindMany, 1);
+    assert.equal(calls.nomusFindMany, 1, "NomusNfe deve ser consultado em lote (1 query)");
+    assert.equal(calls.linkFindMany, 1);
+    assert.equal(plan.ordersAnalyzed, 2);
+    assert.equal(plan.totalNfesFound, 3);
+    assert.equal(plan.uniqueNfes, 3);
+    assert.equal(plan.matchedNomusNfe, 3);
+    assert.equal(plan.unmatchedNomusNfe, 0);
+    assert.equal(plan.toCreate.length, 3);
+    assert.equal(plan.ordersWithMultipleNfes, 1);
+  });
+
+  it("planeja criar quando não existe, atualizar quando difere, manter quando igual", async () => {
+    const now = new Date();
+    const baseData = buildSalesOrderNfeLinkWriteData(
+      { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1" },
+      extractSalesOrderNfesFromNomusPayload({ nfes: [NFE_A] })[0],
+      "nomus-111",
+      now
+    );
+    const staleData = buildSalesOrderNfeLinkWriteData(
+      { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1" },
+      extractSalesOrderNfesFromNomusPayload({ nfes: [{ ...NFE_B, numero: "ANTIGO" }] })[0],
+      "nomus-222",
+      now
+    );
+
+    const { db } = makeMockDb({
+      orders: [
+        {
+          id: "so-1",
+          orderCode: "PD-1",
+          externalSalesOrderId: 1,
+          externalSalesOrderCode: "PD-1",
+          nomusRawResponse: { nfes: [NFE_A, NFE_B, NFE_C] },
+        },
+      ],
+      nomusExternalIds: [111, 222, 333],
+      links: [
+        { ...baseData, id: "link-A", salesOrderId: "so-1", nfeExternalId: 111, presentInLastPayload: true },
+        { ...staleData, id: "link-B", salesOrderId: "so-1", nfeExternalId: 222, presentInLastPayload: true },
+      ],
+    });
+
+    const plan = await planSalesOrderNfeLinkBackfill(db as never);
+
+    assert.equal(plan.unchanged, 1, "NFE_A idêntica deve ficar sem alteração");
+    assert.equal(plan.toUpdate.length, 1, "NFE_B com numero diferente deve atualizar");
+    assert.equal(plan.toUpdate[0].item.nfe.nfeExternalId, 222);
+    assert.equal(plan.toCreate.length, 1, "NFE_C nova deve criar");
+    assert.equal(plan.toCreate[0].nfe.nfeExternalId, 333);
+  });
+
+  it("reporta NF-e sem match em NomusNfe sem quebrar", async () => {
+    const { db } = makeMockDb({
+      orders: [
+        { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1", nomusRawResponse: { nfes: [NFE_A, NFE_B] } },
+      ],
+      nomusExternalIds: [111],
+    });
+
+    const plan = await planSalesOrderNfeLinkBackfill(db as never);
+    assert.equal(plan.matchedNomusNfe, 1);
+    assert.equal(plan.unmatchedNomusNfe, 1);
+    assert.equal(plan.examples.unmatched.length, 1);
+    assert.equal(plan.examples.unmatched[0].nfeExternalId, 222);
+  });
+
+  it("pedido sem NF-e não quebra e conta corretamente", async () => {
+    const { db } = makeMockDb({
+      orders: [
+        { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1", nomusRawResponse: { nfes: [] } },
+        { id: "so-2", orderCode: "PD-2", externalSalesOrderId: 2, externalSalesOrderCode: "PD-2", nomusRawResponse: {} },
+        { id: "so-3", orderCode: "PD-3", externalSalesOrderId: 3, externalSalesOrderCode: "PD-3", nomusRawResponse: { nfes: [NFE_A] } },
+      ],
+      nomusExternalIds: [111],
+    });
+
+    const plan = await planSalesOrderNfeLinkBackfill(db as never);
+    assert.equal(plan.ordersAnalyzed, 3);
+    assert.equal(plan.ordersWithoutNfes, 2);
+    assert.equal(plan.ordersWithNfes, 1);
+    assert.equal(plan.toCreate.length, 1);
+  });
+
+  it("apply cria em lote e é idempotente (segunda execução não duplica)", async () => {
+    const seed: MockSeed = {
+      orders: [
+        { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1", nomusRawResponse: { nfes: [NFE_A] } },
+        { id: "so-2", orderCode: "PD-2", externalSalesOrderId: 2, externalSalesOrderCode: "PD-2", nomusRawResponse: { nfes: [NFE_B, NFE_C] } },
+      ],
+      nomusExternalIds: [111, 222, 333],
+    };
+    const mock = makeMockDb(seed);
+
+    const first = await applySalesOrderNfeLinkBackfill(mock.db as never);
+    assert.equal(first.created, 3);
+    assert.equal(first.updated, 0);
+    assert.equal(mock.links.size, 3);
+    assert.equal(mock.calls.createMany >= 1, true);
+
+    const second = await applySalesOrderNfeLinkBackfill(mock.db as never);
+    assert.equal(second.created, 0, "segunda execução não cria duplicados");
+    assert.equal(second.updated, 0, "segunda execução não atualiza nada igual");
+    assert.equal(second.unchanged, 3);
+    assert.equal(mock.links.size, 3, "total de links permanece 3");
+  });
+
+  it("apply marca como ausente vínculos que sumiram do payload", async () => {
+    const now = new Date();
+    const linkData = buildSalesOrderNfeLinkWriteData(
+      { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1" },
+      extractSalesOrderNfesFromNomusPayload({ nfes: [NFE_B] })[0],
+      "nomus-222",
+      now
+    );
+    const mock = makeMockDb({
+      orders: [
+        { id: "so-1", orderCode: "PD-1", externalSalesOrderId: 1, externalSalesOrderCode: "PD-1", nomusRawResponse: { nfes: [NFE_A] } },
+      ],
+      nomusExternalIds: [111, 222],
+      links: [
+        { ...linkData, id: "link-old", salesOrderId: "so-1", nfeExternalId: 222, presentInLastPayload: true },
+      ],
+    });
+
+    const result = await applySalesOrderNfeLinkBackfill(mock.db as never);
+    assert.equal(result.created, 1, "NFE_A nova é criada");
+    assert.equal(result.markedAbsent, 1, "NFE_B que sumiu é marcada ausente");
+    assert.equal(mock.links.get("link-old")?.presentInLastPayload, false);
   });
 });
