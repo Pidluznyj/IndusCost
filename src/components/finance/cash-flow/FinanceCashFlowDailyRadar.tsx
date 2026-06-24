@@ -337,7 +337,7 @@ export function FinanceCashFlowDailyRadar() {
                   Carregando detalhe do dia…
                 </div>
               ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="space-y-6">
                   <PayablesGrid
                     detail={dayDetail.payables}
                     sort={payableSort}
