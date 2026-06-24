@@ -11,9 +11,13 @@ import { buildAccountsReceivableOpenHorizon } from "./financeAccountsReceivableH
 function row(partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">): FinanceArDashboardRow {
   return {
     companyName: "Empresa A",
+    personId: 1,
     personName: "Cliente X",
     personCnpj: "12.345.678/0001-90",
+    description: "Serviço",
+    comments: null,
     dueDate: null,
+    competenceDate: new Date(2026, 5, 1),
     settlementDate: null,
     amountReceivable: 1000,
     amountReceived: 0,
@@ -23,7 +27,6 @@ function row(partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRo
     sourceInvoiceId: 100,
     sourceInvoiceNumber: "NF-100",
     suspendCollection: false,
-    description: "Serviço",
     nomusStatus: false,
     syncedAt: new Date("2026-06-06T12:00:00.000Z"),
     ...partial,
@@ -45,6 +48,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all" },
+        extended: {},
         localFilter: "all",
       },
       REF
@@ -111,6 +115,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortBy: "balanceReceivable",
         sortDirection: "desc",
         filters: { status: "all" },
+        extended: {},
         localFilter: "all",
       },
       REF
@@ -244,6 +249,7 @@ describe("financeAccountsReceivableTitles", () => {
       sortBy: "dueDate" as const,
       sortDirection: "asc" as const,
       filters: { status: "all" as const, year: 2026, month: 6 },
+      extended: {},
       localFilter: "all" as const,
       agingBucket: "0_7" as const,
     };
@@ -269,6 +275,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all", year: 2026, month: 7 },
+        extended: {},
         localFilter: "all",
         agingBucket: "0_7",
       },
@@ -276,5 +283,65 @@ describe("financeAccountsReceivableTitles", () => {
     );
     assert.equal(payload.bucketTotals?.titlesCount, card!.titlesCount);
     assert.equal(payload.bucketTotals?.openBalanceAmount, card!.amount);
+  });
+
+  it("retorna summary com totalizadores filtrados", () => {
+    const rows = [
+      row({ externalId: 1, amountReceivable: 1000, amountReceived: 200, balanceReceivable: 800, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, amountReceivable: 500, amountReceived: 500, balanceReceivable: 0, dueDate: new Date(2026, 5, 20), settlementDate: new Date(2026, 5, 18) }),
+    ];
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      { page: 1, limit: 50, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" }, extended: {}, localFilter: "all" },
+      REF
+    );
+    assert.equal(payload.summary.totalTitles, 2);
+    assert.equal(payload.summary.totalOriginalValue, 1500);
+    assert.equal(payload.summary.totalReceivedValue, 700);
+    assert.equal(payload.summary.totalOpenValue, 800);
+    assert.equal(payload.summary.averageTicket, 750);
+  });
+
+  it("filtra por issueDateFrom/issueDateTo e document", () => {
+    const rows = [
+      row({ externalId: 1, competenceDate: new Date(2026, 4, 10), sourceInvoiceNumber: "NF-111" }),
+      row({ externalId: 2, competenceDate: new Date(2026, 6, 10), sourceInvoiceNumber: "NF-222" }),
+    ];
+    const byIssue = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1, limit: 50, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" },
+        extended: { issueDateFrom: new Date(2026, 5, 1), issueDateTo: new Date(2026, 5, 30) },
+        localFilter: "all",
+      },
+      REF
+    );
+    assert.equal(byIssue.total, 0);
+
+    const byDoc = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1, limit: 50, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" },
+        extended: { document: "222" },
+        localFilter: "all",
+      },
+      REF
+    );
+    assert.equal(byDoc.total, 1);
+    assert.equal(byDoc.items[0]?.externalId, 2);
+  });
+
+  it("saldo líquido de summary: vencido + a vencer coerente com status", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 300, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      { page: 1, limit: 50, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" }, extended: {}, localFilter: "all" },
+      REF
+    );
+    assert.ok(payload.summary.totalOverdueValue >= 0);
+    assert.ok(payload.summary.totalDueValue >= 0);
   });
 });

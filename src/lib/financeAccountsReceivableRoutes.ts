@@ -11,6 +11,10 @@ import {
   buildFinanceArExportCsv,
 } from "@/src/lib/financeAccountsReceivableExport.js";
 import { financeArExportFilename } from "@/src/lib/financeAccountsReceivableFormat.js";
+import {
+  buildFinanceArTitlesExportBuffer,
+  financeArTitlesExportFilename,
+} from "@/src/lib/financeAccountsReceivableTitlesExport.js";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
 import { loadFinanceArOpenHorizonRowsFromPrisma } from "@/src/lib/financeAccountsReceivableHorizon.js";
 import {
@@ -124,6 +128,41 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/titles", error);
       return res.status(500).json({ error: "Erro ao listar títulos de contas a receber." });
+    }
+  });
+
+  app.get("/api/finance/accounts-receivable/titles/export.xlsx", ...exportGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+
+      const rawQuery = { ...(req.query as Record<string, unknown>), page: "1", pageSize: "50000" };
+      const query = parseFinanceArTitlesOrRespond(res, rawQuery);
+      if (!query) return;
+      const referenceDate = new Date();
+      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(prisma, query.filters);
+      const exportQuery = { ...query, page: 1, limit: 50_000 };
+      const payload = buildFinanceArTitlesPayload(rows, exportQuery, referenceDate, syncCutoff);
+      const allPayload = buildFinanceArTitlesPayload(
+        rows,
+        { ...exportQuery, limit: Math.max(payload.total, 1) },
+        referenceDate,
+        syncCutoff
+      );
+      const generatedAt = new Date().toISOString();
+      const buffer = buildFinanceArTitlesExportBuffer(allPayload, allPayload.items, generatedAt);
+      const filename = financeArTitlesExportFilename(referenceDate);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    } catch (error) {
+      console.error("GET /api/finance/accounts-receivable/titles/export.xlsx", error);
+      return res.status(500).json({ error: "Erro ao exportar títulos em Excel." });
     }
   });
 

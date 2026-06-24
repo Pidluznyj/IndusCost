@@ -27,6 +27,7 @@ import {
   isDefaultFinanceArUiFilters,
   FINANCE_AR_INVOICE_ISSUED_OPTIONS,
   FINANCE_AR_MONTH_OPTIONS,
+  FINANCE_AR_PAGE_VIEWS,
   FINANCE_AR_STATUS_OPTIONS,
   FINANCE_AR_TABS,
   normalizeFinanceArUiFilters,
@@ -35,6 +36,7 @@ import {
   type FinanceArDashboardCards,
   type FinanceArDataQualityAlertItem,
   type FinanceArDataQualityAlertKey,
+  type FinanceArPageViewId,
   type FinanceArTabId,
   type FinanceArTopDebtor,
   type FinanceArUiFilters,
@@ -66,7 +68,7 @@ import {
 } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
 import { FinanceArInvoicePortfolioPanel } from "@/src/components/finance/FinanceAccountsReceivableInvoicePortfolioPanel";
 import { FinanceAccountsReceivableSyncPanel } from "@/src/components/finance/FinanceAccountsReceivableSyncPanel";
-import { FinanceArTitlesTab } from "@/src/components/finance/FinanceAccountsReceivableTitlesTab";
+import { FinanceArAnalyticalTitlesTab } from "@/src/components/finance/FinanceArAnalyticalTitlesTab";
 import { FinanceAccountsReceivableOverdueTab } from "@/src/components/finance/FinanceAccountsReceivableOverdueTab";
 import {
   FinanceArAgingChart,
@@ -499,8 +501,8 @@ export function FinanceAccountsReceivablePage() {
   const canExport = canExportFinanceAccountsReceivable(auth);
   const canRunSync = canRunFinanceAccountsReceivableSync(auth);
 
-  const [activeTab, setActiveTab] = useState<FinanceArTabId>("titles");
-  const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceArDataQualityAlertKey | null>(null);
+  const [pageView, setPageView] = useState<FinanceArPageViewId>("overview");
+  const [activeTab, setActiveTab] = useState<FinanceArTabId>("overdue");
   const [draftFilters, setDraftFilters] = useState<FinanceArUiFilters>(() =>
     createDefaultFinanceArUiFilters()
   );
@@ -583,9 +585,8 @@ export function FinanceAccountsReceivablePage() {
     }
   };
 
-  const handleViewTitlesFromAlert = (key: FinanceArDataQualityAlertKey) => {
-    setTitlesQualityAlert(key);
-    setActiveTab("titles");
+  const handleViewTitlesFromAlert = (_key: FinanceArDataQualityAlertKey) => {
+    setPageView("titles-analytical");
   };
 
   const handleApplyFilters = () => setAppliedFilters(normalizedDraftFilters);
@@ -595,7 +596,6 @@ export function FinanceAccountsReceivablePage() {
     const normalized = normalizeFinanceArUiFilters(defaults);
     setDraftFilters(defaults);
     setAppliedFilters(normalized);
-    setTitlesQualityAlert(null);
   };
 
   const handleFilterInvoiceIssued = (value: "all" | "yes" | "no") => {
@@ -712,7 +712,18 @@ export function FinanceAccountsReceivablePage() {
         sections={auditSections}
       />
 
+      <FinanceDetailTabs
+        tabs={FINANCE_AR_PAGE_VIEWS}
+        activeId={pageView}
+        onChange={setPageView}
+        className="mb-2"
+      />
+
       <main data-testid="finance-main-content">
+      {pageView === "titles-analytical" ? (
+        <FinanceArAnalyticalTitlesTab canExport={canExport} />
+      ) : (
+        <>
       {dashboardError ? (
         <FinanceModuleErrorBanner
           message={dashboardError}
@@ -1039,7 +1050,7 @@ export function FinanceAccountsReceivablePage() {
         <FinanceArHighlightTable
           rows={data?.criticalTitles ?? []}
           loading={loading && !data}
-          onViewAll={() => setActiveTab("titles")}
+          onViewAll={() => setPageView("titles-analytical")}
         />
       </div>
 
@@ -1087,13 +1098,6 @@ export function FinanceAccountsReceivablePage() {
                 <FinanceArCustomersTab data={data} />
               )
             ) : null}
-            {activeTab === "titles" ? (
-              <FinanceArTitlesTab
-                filters={appliedFilters}
-                qualityAlert={titlesQualityAlert}
-                onClearQualityAlert={() => setTitlesQualityAlert(null)}
-              />
-            ) : null}
             {activeTab === "overdue" ? (
               <FinanceAccountsReceivableOverdueTab
                 globalFilters={appliedFilters}
@@ -1125,6 +1129,8 @@ export function FinanceAccountsReceivablePage() {
           </div>
         </div>
       </div>
+        </>
+      )}
       </main>
 
       <FinanceAccountsReceivableSyncPanel

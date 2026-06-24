@@ -62,10 +62,13 @@ export class FinanceArFilterParseError extends Error {
 export type FinanceArDashboardRow = {
   externalId: number;
   companyName: string | null;
+  personId: number | null;
   personName: string | null;
   personCnpj: string | null;
   description: string | null;
+  comments: string | null;
   dueDate: Date | null;
+  competenceDate: Date | null;
   settlementDate: Date | null;
   amountReceivable: number;
   amountReceived: number;
@@ -114,10 +117,13 @@ export function decimalFieldToNumber(value: Prisma.Decimal | null | undefined): 
 export function mapPrismaRowToFinanceArDashboardRow(row: {
   externalId: number;
   companyName: string | null;
+  personId?: number | null;
   personName: string | null;
   personCnpj: string | null;
   description?: string | null;
+  comments?: string | null;
   dueDate: Date | null;
+  competenceDate?: Date | null;
   settlementDate: Date | null;
   amountReceivable: Prisma.Decimal | null;
   amountReceived: Prisma.Decimal | null;
@@ -133,10 +139,13 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
   return {
     externalId: row.externalId,
     companyName: row.companyName,
+    personId: row.personId ?? null,
     personName: row.personName,
     personCnpj: row.personCnpj,
     description: row.description ?? null,
+    comments: row.comments ?? null,
     dueDate: row.dueDate,
+    competenceDate: row.competenceDate ?? null,
     settlementDate: row.settlementDate,
     amountReceivable: decimalFieldToNumber(row.amountReceivable),
     amountReceived: decimalFieldToNumber(row.amountReceived),

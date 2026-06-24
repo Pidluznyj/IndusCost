@@ -341,9 +341,82 @@ export function buildFinanceArTitlesQuery(
   return q.toString();
 }
 
+/** Abas de nível de página — Visão Geral vs Grid Analítico de Títulos. */
+export const FINANCE_AR_PAGE_VIEWS = [
+  { id: "overview", label: "Visão Geral" },
+  { id: "titles-analytical", label: "Títulos" },
+] as const;
+
+export type FinanceArPageViewId = (typeof FINANCE_AR_PAGE_VIEWS)[number]["id"];
+
+/** Filtros estendidos da aba Grid Analítico de Títulos. */
+export type FinanceArAnalyticalUiFilters = FinanceArUiFilters & {
+  customerId: string;
+  issueDateFrom: string;
+  issueDateTo: string;
+  document: string;
+  minValue: string;
+  maxValue: string;
+  origin: string;
+  delaySituation: string;
+};
+
+export function createDefaultFinanceArAnalyticalUiFilters(
+  referenceDate = new Date()
+): FinanceArAnalyticalUiFilters {
+  return {
+    ...createDefaultFinanceArUiFilters(referenceDate),
+    customerId: "",
+    issueDateFrom: "",
+    issueDateTo: "",
+    document: "",
+    minValue: "",
+    maxValue: "",
+    origin: "all",
+    delaySituation: "all",
+  };
+}
+
+export function buildFinanceArAnalyticalTitlesQuery(
+  filters: Partial<FinanceArAnalyticalUiFilters> & Pick<FinanceArAnalyticalUiFilters, "status">,
+  extras?: {
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortDirection?: string;
+    search?: string;
+  }
+): string {
+  const normalized = {
+    ...createDefaultFinanceArAnalyticalUiFilters(),
+    ...filters,
+    status: filters.status ?? "all",
+  };
+  const q = new URLSearchParams(buildFinanceArDashboardQuery(normalized));
+  if (normalized.customerId.trim()) q.set("customerId", normalized.customerId.trim());
+  if (normalized.issueDateFrom.trim()) q.set("issueDateFrom", normalized.issueDateFrom.trim());
+  if (normalized.issueDateTo.trim()) q.set("issueDateTo", normalized.issueDateTo.trim());
+  if (normalized.document.trim()) q.set("document", normalized.document.trim());
+  if (normalized.minValue.trim()) q.set("minValue", normalized.minValue.trim());
+  if (normalized.maxValue.trim()) q.set("maxValue", normalized.maxValue.trim());
+  if (normalized.origin !== "all") q.set("origin", normalized.origin);
+  if (normalized.delaySituation !== "all") q.set("delaySituation", normalized.delaySituation);
+  if (extras?.page) q.set("page", String(extras.page));
+  if (extras?.pageSize) q.set("pageSize", String(extras.pageSize));
+  if (extras?.sortBy) q.set("sortBy", extras.sortBy);
+  if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
+  if (extras?.search?.trim()) q.set("search", extras.search.trim());
+  return q.toString();
+}
+
+export function buildFinanceArAnalyticalTitlesExportQuery(
+  filters: Partial<FinanceArAnalyticalUiFilters> & Pick<FinanceArAnalyticalUiFilters, "status">
+): string {
+  return buildFinanceArAnalyticalTitlesQuery(filters, { page: 1, pageSize: 50_000 });
+}
+
 /** Abas executivas principais (Objetivo 3). */
 export const FINANCE_AR_EXECUTIVE_TABS = [
-  { id: "titles", label: "Títulos" },
   { id: "overdue", label: "Atrasados" },
   { id: "customers", label: "Clientes" },
   { id: "aging", label: "Aging" },
