@@ -7,8 +7,8 @@ import {
   parseNomusBrOrIsoDate,
   startOfLocalDay,
 } from "./salesOrderNomusRaw.js";
-import type { ExtractedSalesOrderNfe } from "./salesOrderNfeLink.js";
-import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNfeLink.js";
+import type { ExtractedSalesOrderNfe } from "./salesOrderNomusNfeExtract.js";
+import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNomusNfeExtract.js";
 
 export const INVOICE_COVERAGE_TOLERANCE_ABSOLUTE = 1;
 export const INVOICE_COVERAGE_TOLERANCE_PERCENT = 0.01;

@@ -4,7 +4,6 @@
 
 import type { SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { SalesOrderLinkedNfeContext } from "@/src/lib/salesOrderLinkedNfe";
-import { extractSalesOrderNfesFromNomusPayload } from "@/src/lib/salesOrderNfeLink";
 import {
   buildPortfolioAbcForCustomer,
   enrichCrossSellFromMix,
@@ -92,10 +91,6 @@ export function salesOrderHasInvoicing(
   linkedNfeContext?: SalesOrderLinkedNfeContext | null
 ): boolean {
   if (linkedNfeContext) return linkedNfeContext.hasNfe;
-  const structured = extractSalesOrderNfesFromNomusPayload(nomusRawResponse);
-  if (structured.some((nfe) => String(nfe.dataProcessamento ?? "").trim().length > 0)) {
-    return true;
-  }
   if (!nomusRawResponse || typeof nomusRawResponse !== "object") return false;
   const nfes = (nomusRawResponse as { nfes?: unknown }).nfes;
   if (!Array.isArray(nfes)) return false;

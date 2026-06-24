@@ -1,9 +1,21 @@
 import type { ManagementStatusCardId } from "./salesOrderManagementStatus.js";
 import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
-import { computeAverageLinkedNfeSlaDays } from "./salesOrderLinkedNfe.js";
 import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
-import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNfeLink.js";
+import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNomusNfeExtract.js";
 import { startOfLocalDay } from "./salesOrderNomusRaw.js";
+
+function computeAverageLinkedNfeSlaDays(
+  contexts: Iterable<Pick<SalesOrderLinkedNfeContext, "daysToInvoice">>
+): number | null {
+  const values: number[] = [];
+  for (const context of contexts) {
+    if (context.daysToInvoice != null && Number.isFinite(context.daysToInvoice)) {
+      values.push(context.daysToInvoice);
+    }
+  }
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
 
 export type SalesOrderFulfillmentKpis = {
   totalOrders: number;

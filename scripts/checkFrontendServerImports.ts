@@ -80,6 +80,18 @@ const FORBIDDEN_SPECIFIERS: Array<{
     },
   },
   {
+    rule: "salesOrderNfeLink é server-side (importa Prisma)",
+    test: (s) => /(^|\/)salesOrderNfeLink$/.test(s.replace(/\.(?:ts|tsx|js|jsx)$/, "")),
+  },
+  {
+    rule: "salesOrderMetricsEngine é server-side (importa Prisma)",
+    test: (s) => /(^|\/)salesOrderMetricsEngine$/.test(s.replace(/\.(?:ts|tsx|js|jsx)$/, "")),
+  },
+  {
+    rule: "salesOrderLinkedNfe é server-side (importa Prisma)",
+    test: (s) => /(^|\/)salesOrderLinkedNfe$/.test(s.replace(/\.(?:ts|tsx|js|jsx)$/, "")),
+  },
+  {
     rule: "Lib server-side do histórico de alterações (usar ...HistoryTypes ou ...HistoryClient)",
     test: (s) => {
       const base = s.replace(/\.(?:ts|tsx|js|jsx)$/, "");
@@ -98,7 +110,9 @@ const KNOWN_SERVER_LIBS = new Set<string>([
   "nomusMasterDataImport",
   "nomusMasterDataEqualize",
   "productChangeHistory",
-  // Sinta-se livre para acrescentar outras libs server-side aqui.
+  "salesOrderNfeLink",
+  "salesOrderMetricsEngine",
+  "salesOrderLinkedNfe",
 ]);
 
 const IMPORT_REGEX =

@@ -70,6 +70,12 @@ describe("customerCommercialSalesOrderView", () => {
     assert.equal(salesOrderHasInvoicing({ nfes: [{ dataProcessamento: "" }] }), false);
   });
 
+  it("não importa salesOrderNfeLink (evita Prisma no bundle do navegador)", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/customerCommercialSalesOrderView.ts"), "utf8");
+    assert.doesNotMatch(src, /salesOrderNfeLink/);
+    assert.doesNotMatch(src, /@prisma\/client/);
+  });
+
   it("cliente com SalesOrder tem receita > 0 sem propostas", () => {
     const orders = britaniaOrders();
     const revenue = orders
