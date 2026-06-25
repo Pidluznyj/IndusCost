@@ -1,0 +1,241 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import { calculateSalesOrderItemMargin } from "./salesOrderMarginMath.js";
+import {
+  assembleSalesOrderMarginItemInput,
+  buildSalesOrderMarginInputsFromResolutions,
+  extractSalesOrderItemRevenue,
+  indexSalesOrderMarginProducts,
+  registerSalesOrderMarginExternalProductMapping,
+  resolveSalesOrderItemCost,
+  resolveSalesOrderItemCosts,
+  resolveSalesOrderItemProduct,
+  resolveSalesOrderItemProducts,
+  type SalesOrderMarginResolverItem,
+} from "./salesOrderMarginResolver.js";
+
+const PRODUCT_A = {
+  id: "prod-a",
+  sku: "100.01AA",
+  name: "Produto A",
+  sourceExternalId: "9001",
+};
+
+const PRODUCT_B = {
+  id: "prod-b",
+  sku: "200.02BB",
+  name: "Produto B",
+};
+
+function item(overrides: Partial<SalesOrderMarginResolverItem> = {}): SalesOrderMarginResolverItem {
+  return {
+    salesOrderItemId: "item-1",
+    productId: null,
+    externalProductId: null,
+    skuSnapshot: null,
+    productNameSnapshot: null,
+    quantity: 10,
+    negotiatedPrice: 100,
+    totalNetValue: 1000,
+    ...overrides,
+  };
+}
+
+function buildIndex() {
+  return indexSalesOrderMarginProducts([PRODUCT_A, PRODUCT_B]);
+}
+
+describe("salesOrderMarginResolver — produto", () => {
+  it("1. resolve produto por productId", () => {
+    const index = buildIndex();
+    const result = resolveSalesOrderItemProduct(item({ productId: "prod-a" }), index);
+    assert.equal(result.productId, "prod-a");
+    assert.equal(result.resolutionSource, "LOCAL_PRODUCT_ID");
+    assert.equal(result.confidence, "HIGH");
+  });
+
+  it("2. resolve produto por externalProductId", () => {
+    const index = buildIndex();
+    registerSalesOrderMarginExternalProductMapping(index, 9001, PRODUCT_A);
+    const result = resolveSalesOrderItemProduct(item({ externalProductId: 9001 }), index);
+    assert.equal(result.productId, "prod-a");
+    assert.equal(result.resolutionSource, "EXTERNAL_PRODUCT_ID");
+  });
+
+  it("3. resolve produto por SKU", () => {
+    const index = buildIndex();
+    const result = resolveSalesOrderItemProduct(item({ skuSnapshot: "200.02BB" }), index);
+    assert.equal(result.productId, "prod-b");
+    assert.equal(result.resolutionSource, "SKU");
+  });
+
+  it("4. SKU com espaços/caixa diferente resolve", () => {
+    const index = buildIndex();
+    const result = resolveSalesOrderItemProduct(item({ skuSnapshot: "  100.01aa  " }), index);
+    assert.equal(result.productId, "prod-a");
+    assert.equal(result.resolutionSource, "SKU");
+  });
+
+  it("5. item sem produto retorna NOT_FOUND", () => {
+    const index = buildIndex();
+    const result = resolveSalesOrderItemProduct(item({ skuSnapshot: "INEXISTENTE" }), index);
+    assert.equal(result.productId, null);
+    assert.equal(result.resolutionSource, "NOT_FOUND");
+    assert.equal(result.confidence, "MISSING");
+  });
+});
+
+describe("salesOrderMarginResolver — custo", () => {
+  it("6. produto encontrado com custo oficial retorna custo", () => {
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: "item-1",
+      productId: "prod-a",
+      analysis: { summary: { totalIndustrialCost: 42.5 } },
+    });
+    assert.equal(cost.unitCost, 42.5);
+    assert.equal(cost.costSource, "OFFICIAL_FINAL_COST");
+    assert.equal(cost.costConfidence, "HIGH");
+  });
+
+  it("7. produto encontrado sem custo retorna MISSING_COST", () => {
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: "item-1",
+      productId: "prod-a",
+      analysis: { error: "BOM_CYCLE" },
+    });
+    assert.equal(cost.unitCost, null);
+    assert.equal(cost.costSource, "MISSING_COST");
+  });
+});
+
+describe("salesOrderMarginResolver — performance e montagem", () => {
+  it("8. não faz N+1 para produtos repetidos no resolver de custo", async () => {
+    const items = [
+      item({ salesOrderItemId: "i1", productId: "prod-a" }),
+      item({ salesOrderItemId: "i2", productId: "prod-a" }),
+      item({ salesOrderItemId: "i3", productId: "prod-b" }),
+    ];
+    const index = buildIndex();
+    const products = resolveSalesOrderItemProducts(items, index);
+    let calls = 0;
+    const costs = await resolveSalesOrderItemCosts(items, products, async (productId) => {
+      calls += 1;
+      return {
+        analysis: {
+          productId,
+          summary: { totalIndustrialCost: productId === "prod-a" ? 10 : 20 },
+        },
+      };
+    });
+    assert.equal(calls, 2);
+    assert.equal(costs.get("i1")?.unitCost, 10);
+    assert.equal(costs.get("i3")?.unitCost, 20);
+  });
+
+  it("9. monta input de margem com receita líquida correta", () => {
+    const index = buildIndex();
+    const row = item({ productId: "prod-a", totalNetValue: 850, negotiatedPrice: 99 });
+    const product = resolveSalesOrderItemProduct(row, index);
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: row.salesOrderItemId,
+      productId: product.productId,
+      analysis: { summary: { totalIndustrialCost: 30 } },
+    });
+    const input = assembleSalesOrderMarginItemInput(row, product, cost);
+    assert.equal(input.netTotalValue, 850);
+    assert.equal(input.netUnitPrice, 85);
+  });
+
+  it("10. monta input de margem com custo unitário correto", () => {
+    const index = buildIndex();
+    const row = item({ productId: "prod-a" });
+    const product = resolveSalesOrderItemProduct(row, index);
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: row.salesOrderItemId,
+      productId: product.productId,
+      analysis: { summary: { totalIndustrialCost: 55 } },
+    });
+    const input = assembleSalesOrderMarginItemInput(row, product, cost);
+    assert.equal(input.unitCost, 55);
+    assert.equal(input.costSource, "OFFICIAL_FINAL_COST");
+  });
+
+  it("11. item sem produto vira status SEM_PRODUTO_VINCULADO", () => {
+    const index = buildIndex();
+    const row = item({ skuSnapshot: "ZZZ" });
+    const product = resolveSalesOrderItemProduct(row, index);
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: row.salesOrderItemId,
+      productId: product.productId,
+    });
+    const input = assembleSalesOrderMarginItemInput(row, product, cost);
+    const margin = calculateSalesOrderItemMargin(input);
+    assert.equal(margin.status, "SEM_PRODUTO_VINCULADO");
+  });
+
+  it("12. item sem custo vira status SEM_CUSTO", () => {
+    const index = buildIndex();
+    const row = item({ productId: "prod-a" });
+    const product = resolveSalesOrderItemProduct(row, index);
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: row.salesOrderItemId,
+      productId: product.productId,
+    });
+    const input = assembleSalesOrderMarginItemInput(row, product, cost);
+    const margin = calculateSalesOrderItemMargin(input);
+    assert.equal(margin.status, "SEM_CUSTO");
+  });
+
+  it("receita via quantity × negotiatedPrice quando totalNetValue ausente", () => {
+    const revenue = extractSalesOrderItemRevenue(
+      item({ totalNetValue: null, negotiatedPrice: 25, quantity: 4 })
+    );
+    assert.equal(revenue.netTotalValue, 100);
+    assert.equal(revenue.netUnitPrice, 25);
+  });
+
+  it("pipeline completo com resoluções", () => {
+    const rows = [
+      item({ salesOrderItemId: "i1", productId: "prod-a" }),
+      item({ salesOrderItemId: "i2", productId: "prod-b", totalNetValue: 500 }),
+    ];
+    const index = buildIndex();
+    const products = resolveSalesOrderItemProducts(rows, index);
+    const costs = new Map([
+      [
+        "i1",
+        resolveSalesOrderItemCost({
+          salesOrderItemId: "i1",
+          productId: "prod-a",
+          analysis: { summary: { totalIndustrialCost: 60 } },
+        }),
+      ],
+      [
+        "i2",
+        resolveSalesOrderItemCost({
+          salesOrderItemId: "i2",
+          productId: "prod-b",
+          analysis: { summary: { totalIndustrialCost: 100 } },
+        }),
+      ],
+    ]);
+    const inputs = buildSalesOrderMarginInputsFromResolutions(rows, products, costs);
+    assert.equal(inputs.length, 2);
+    assert.equal(inputs[0]?.unitCost, 60);
+    assert.equal(inputs[1]?.netTotalValue, 500);
+  });
+});
+
+describe("salesOrderMarginResolver — frontend safety", () => {
+  it("13. build não reintroduz Prisma no resolver puro", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src", "lib", "salesOrderMarginResolver.ts"),
+      "utf8"
+    );
+    assert.doesNotMatch(src, /@prisma\/client/);
+    assert.doesNotMatch(src, /src\/lib\/prisma/);
+    assert.doesNotMatch(src, /\.server/);
+  });
+});

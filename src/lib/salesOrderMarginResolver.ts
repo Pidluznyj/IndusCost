@@ -1,0 +1,501 @@
+/**
+ * Tipos e resolução pura de produto/receita para margem de Pedidos de Venda.
+ * Sem Prisma — seguro para testes e importação indireta no frontend (apenas tipos/funções puras).
+ */
+import { normalizeSku } from "./nomusBomComparison.js";
+import {
+  extractOfficialProductFinalUnitCost,
+  resolveOfficialProductFinalCostFromAnalysis,
+  isOfficialProductFinalCostFailure,
+} from "./productOfficialFinalCost.js";
+import type {
+  SalesOrderCostConfidence,
+  SalesOrderCostSource,
+  SalesOrderMarginItemInput,
+} from "./salesOrderMarginTypes.js";
+
+export type ProductResolutionSource =
+  | "LOCAL_PRODUCT_ID"
+  | "EXTERNAL_PRODUCT_ID"
+  | "SKU"
+  | "RAW_NOMUS_CODE"
+  | "NOT_FOUND";
+
+export type ProductResolution = {
+  salesOrderItemId: string;
+  productId: string | null;
+  productSku: string | null;
+  productName: string | null;
+  resolutionSource: ProductResolutionSource;
+  confidence: SalesOrderCostConfidence;
+  notes: string[];
+};
+
+export type CostResolution = {
+  salesOrderItemId: string;
+  productId: string | null;
+  unitCost: number | null;
+  costSource: SalesOrderCostSource;
+  costConfidence: SalesOrderCostConfidence;
+  calculatedAt?: string;
+  notes: string[];
+};
+
+export type SalesOrderMarginResolverProductRow = {
+  id: string;
+  sku: string;
+  name: string;
+  sourceExternalId?: string | null;
+};
+
+export type SalesOrderMarginResolverItem = {
+  salesOrderItemId: string;
+  productId?: string | null;
+  externalProductId?: number | string | null;
+  skuSnapshot?: string | null;
+  productNameSnapshot?: string | null;
+  quantity: unknown;
+  /** Preço unitário negociado (`SalesOrderItem.negotiatedPrice`). */
+  negotiatedPrice?: unknown;
+  /** Receita líquida da linha (`SalesOrderItem.totalNetValue`). */
+  totalNetValue?: unknown;
+  /** Custo unitário já persistido na linha (`SalesOrderItem.unitCost`), se houver. */
+  unitCost?: unknown | null;
+  itemStatus?: string | number | null;
+  isCanceled?: boolean;
+  /** Payload bruto do item Nomus (`itensPedido[]`), quando disponível. */
+  nomusRawItem?: Record<string, unknown> | null;
+};
+
+export type SalesOrderMarginProductBatchIndex = {
+  byId: Map<string, SalesOrderMarginResolverProductRow>;
+  bySourceExternalId: Map<string, SalesOrderMarginResolverProductRow>;
+  bySku: Map<string, SalesOrderMarginResolverProductRow>;
+  byExternalProductId: Map<string, SalesOrderMarginResolverProductRow>;
+  catalogSkuByExternalId: Map<string, string>;
+};
+
+export type SalesOrderMarginCostLogSnapshot = {
+  totalCiu: number;
+  calculatedAt: string;
+};
+
+export type SalesOrderMarginProductCostPayload = {
+  analysis?: unknown;
+  costLog?: SalesOrderMarginCostLogSnapshot | null;
+};
+
+export type SalesOrderMarginProductCostResolver = (
+  productId: string
+) => Promise<SalesOrderMarginProductCostPayload>;
+
+function safeFinite(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function asString(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
+function toInt(value: unknown): number | null {
+  const n = safeFinite(value);
+  if (n == null) return null;
+  const i = Math.trunc(n);
+  return Number.isFinite(i) ? i : null;
+}
+
+export function createEmptySalesOrderMarginProductBatchIndex(): SalesOrderMarginProductBatchIndex {
+  return {
+    byId: new Map(),
+    bySourceExternalId: new Map(),
+    bySku: new Map(),
+    byExternalProductId: new Map(),
+    catalogSkuByExternalId: new Map(),
+  };
+}
+
+export function indexSalesOrderMarginProducts(
+  products: SalesOrderMarginResolverProductRow[]
+): SalesOrderMarginProductBatchIndex {
+  const index = createEmptySalesOrderMarginProductBatchIndex();
+  for (const product of products) {
+    index.byId.set(product.id, product);
+    index.bySku.set(normalizeSku(product.sku), product);
+    if (product.sourceExternalId?.trim()) {
+      index.bySourceExternalId.set(product.sourceExternalId.trim(), product);
+    }
+  }
+  return index;
+}
+
+export function registerSalesOrderMarginExternalProductMapping(
+  index: SalesOrderMarginProductBatchIndex,
+  externalProductId: string | number,
+  product: SalesOrderMarginResolverProductRow
+): void {
+  index.byExternalProductId.set(String(externalProductId), product);
+}
+
+export function registerSalesOrderMarginCatalogMapping(
+  index: SalesOrderMarginProductBatchIndex,
+  externalProductId: string | number,
+  catalogCode: string
+): void {
+  index.catalogSkuByExternalId.set(String(externalProductId), catalogCode);
+}
+
+function lookupProductBySku(
+  index: SalesOrderMarginProductBatchIndex,
+  sku: string | null | undefined
+): SalesOrderMarginResolverProductRow | null {
+  if (!sku?.trim()) return null;
+  return index.bySku.get(normalizeSku(sku)) ?? null;
+}
+
+function extractNomusRawProductCode(raw: Record<string, unknown> | null | undefined): string | null {
+  if (!raw) return null;
+  return asString(raw.codigo) ?? asString(raw.codigoProduto);
+}
+
+function extractNomusRawProductId(raw: Record<string, unknown> | null | undefined): string | null {
+  if (!raw) return null;
+  const id = toInt(raw.idProduto) ?? toInt(raw.id);
+  return id != null ? String(id) : null;
+}
+
+/**
+ * Resolve produto local para um item (função pura com índice pré-carregado).
+ */
+export function resolveSalesOrderItemProduct(
+  item: SalesOrderMarginResolverItem,
+  index: SalesOrderMarginProductBatchIndex
+): ProductResolution {
+  const notes: string[] = [];
+  const base = {
+    salesOrderItemId: item.salesOrderItemId,
+    productId: null as string | null,
+    productSku: item.skuSnapshot ?? null,
+    productName: item.productNameSnapshot ?? null,
+    resolutionSource: "NOT_FOUND" as ProductResolutionSource,
+    confidence: "MISSING" as SalesOrderCostConfidence,
+    notes,
+  };
+
+  if (item.productId && index.byId.has(item.productId)) {
+    const product = index.byId.get(item.productId)!;
+    notes.push("Produto resolvido por productId local do SalesOrderItem.");
+    return {
+      ...base,
+      productId: product.id,
+      productSku: product.sku,
+      productName: product.name,
+      resolutionSource: "LOCAL_PRODUCT_ID",
+      confidence: "HIGH",
+    };
+  }
+
+  const externalId =
+    item.externalProductId != null && String(item.externalProductId).trim() !== ""
+      ? String(item.externalProductId)
+      : extractNomusRawProductId(item.nomusRawItem);
+
+  if (externalId) {
+    const byExt =
+      index.byExternalProductId.get(externalId) ??
+      index.bySourceExternalId.get(externalId);
+    if (byExt) {
+      notes.push(`Produto resolvido por externalProductId=${externalId}.`);
+      return {
+        ...base,
+        productId: byExt.id,
+        productSku: byExt.sku,
+        productName: byExt.name,
+        resolutionSource: "EXTERNAL_PRODUCT_ID",
+        confidence: "HIGH",
+      };
+    }
+
+    const catalogCode = index.catalogSkuByExternalId.get(externalId);
+    const fromCatalog = lookupProductBySku(index, catalogCode);
+    if (fromCatalog) {
+      notes.push(`Produto resolvido via catálogo Nomus (externalProductId=${externalId}).`);
+      return {
+        ...base,
+        productId: fromCatalog.id,
+        productSku: fromCatalog.sku,
+        productName: fromCatalog.name,
+        resolutionSource: "EXTERNAL_PRODUCT_ID",
+        confidence: "MEDIUM",
+      };
+    }
+  }
+
+  const rawCode = extractNomusRawProductCode(item.nomusRawItem);
+  const skuCandidates = [item.skuSnapshot, rawCode].filter(Boolean) as string[];
+
+  for (const sku of skuCandidates) {
+    const found = lookupProductBySku(index, sku);
+    if (found) {
+      notes.push(
+        rawCode && normalizeSku(sku) === normalizeSku(rawCode)
+          ? "Produto resolvido por código Nomus bruto."
+          : "Produto resolvido por SKU normalizado."
+      );
+      return {
+        ...base,
+        productId: found.id,
+        productSku: found.sku,
+        productName: found.name,
+        resolutionSource:
+          rawCode && normalizeSku(sku) === normalizeSku(rawCode) ? "RAW_NOMUS_CODE" : "SKU",
+        confidence: "MEDIUM",
+      };
+    }
+  }
+
+  notes.push("Nenhum produto local encontrado para o item.");
+  return base;
+}
+
+export function resolveSalesOrderItemProducts(
+  items: SalesOrderMarginResolverItem[],
+  index: SalesOrderMarginProductBatchIndex
+): Map<string, ProductResolution> {
+  const map = new Map<string, ProductResolution>();
+  for (const item of items) {
+    map.set(item.salesOrderItemId, resolveSalesOrderItemProduct(item, index));
+  }
+  return map;
+}
+
+/**
+ * Receita líquida do item — campos reais:
+ * 1. SalesOrderItem.totalNetValue
+ * 2. quantity × SalesOrderItem.negotiatedPrice
+ * 3. Nomus bruto: valorTotal | valorTotalItem | valorLiquido ou qtd×unitário − desconto + acréscimo
+ */
+export function extractSalesOrderItemRevenue(item: SalesOrderMarginResolverItem): {
+  netTotalValue: number | null;
+  netUnitPrice: number | null;
+  notes: string[];
+} {
+  const notes: string[] = [];
+  const quantity = safeFinite(item.quantity) ?? 0;
+  const storedNet = safeFinite(item.totalNetValue);
+  if (storedNet != null) {
+    notes.push("Receita líquida de SalesOrderItem.totalNetValue.");
+    const unit = quantity > 0 ? storedNet / quantity : safeFinite(item.negotiatedPrice);
+    return { netTotalValue: storedNet, netUnitPrice: unit, notes };
+  }
+
+  const negotiated = safeFinite(item.negotiatedPrice);
+  if (negotiated != null && quantity > 0) {
+    notes.push("Receita líquida calculada de quantity × negotiatedPrice.");
+    return {
+      netTotalValue: quantity * negotiated,
+      netUnitPrice: negotiated,
+      notes,
+    };
+  }
+
+  const raw = item.nomusRawItem;
+  if (raw) {
+    const q = safeFinite(raw.quantidade) ?? quantity;
+    const unitPrice = safeFinite(raw.valorUnitario);
+    const discount = safeFinite(raw.valorDesconto) ?? 0;
+    const addition = safeFinite(raw.valorAcrescimo) ?? 0;
+    const computed = q * (unitPrice ?? 0) - discount + addition;
+    const explicit =
+      safeFinite(raw.valorTotal) ??
+      safeFinite(raw.valorTotalItem) ??
+      safeFinite(raw.valorLiquido);
+    const net = explicit != null && explicit > 0 ? explicit : computed > 0 ? computed : null;
+    if (net != null) {
+      notes.push("Receita líquida derivada do payload Nomus do item.");
+      return {
+        netTotalValue: net,
+        netUnitPrice: q > 0 ? net / q : unitPrice,
+        notes,
+      };
+    }
+  }
+
+  notes.push("Receita líquida indisponível.");
+  return { netTotalValue: null, netUnitPrice: negotiated, notes };
+}
+
+export function resolveSalesOrderItemCost(input: {
+  salesOrderItemId: string;
+  productId: string | null;
+  storedUnitCost?: unknown | null;
+  costLog?: SalesOrderMarginCostLogSnapshot | null;
+  analysis?: unknown;
+}): CostResolution {
+  const notes: string[] = [];
+  const base: CostResolution = {
+    salesOrderItemId: input.salesOrderItemId,
+    productId: input.productId,
+    unitCost: null,
+    costSource: "MISSING_COST",
+    costConfidence: "MISSING",
+    notes,
+  };
+
+  if (!input.productId) {
+    notes.push("Custo não resolvido: produto ausente.");
+    return base;
+  }
+
+  const stored = safeFinite(input.storedUnitCost);
+  if (stored != null && stored > 0) {
+    notes.push("Custo unitário histórico da linha SalesOrderItem.unitCost.");
+    return {
+      ...base,
+      unitCost: stored,
+      costSource: "HISTORICAL_SNAPSHOT",
+      costConfidence: "HIGH",
+      notes,
+    };
+  }
+
+  if (input.costLog && safeFinite(input.costLog.totalCiu) != null && input.costLog.totalCiu > 0) {
+    notes.push("Custo de CostCalculationLog (snapshot histórico do motor).");
+    return {
+      ...base,
+      unitCost: input.costLog.totalCiu,
+      costSource: "HISTORICAL_SNAPSHOT",
+      costConfidence: "MEDIUM",
+      calculatedAt: input.costLog.calculatedAt,
+      notes,
+    };
+  }
+
+  if (input.analysis != null) {
+    const resolved = resolveOfficialProductFinalCostFromAnalysis(input.analysis);
+    if (!isOfficialProductFinalCostFailure(resolved)) {
+      const partial = resolved.costAnalysisPartial;
+      notes.push(
+        partial
+          ? "Custo oficial parcial via getProductCostAnalysis (totalIndustrialCost)."
+          : "Custo oficial via getProductCostAnalysis (totalIndustrialCost)."
+      );
+      return {
+        ...base,
+        unitCost: resolved.finalUnitCost,
+        costSource: partial ? "CURRENT_ENGINEERING_COST" : "OFFICIAL_FINAL_COST",
+        costConfidence: partial ? "MEDIUM" : "HIGH",
+        notes,
+      };
+    }
+
+    const diag = resolved.diagnostics[0];
+    notes.push(diag?.message ?? "Motor de custo retornou falha.");
+    return base;
+  }
+
+  notes.push("Análise de custo não disponível para o produto.");
+  return base;
+}
+
+export async function resolveSalesOrderItemCosts(
+  items: SalesOrderMarginResolverItem[],
+  productResolutions: Map<string, ProductResolution>,
+  resolveProductCost: SalesOrderMarginProductCostResolver,
+  cache: Map<string, SalesOrderMarginProductCostPayload> = new Map()
+): Promise<Map<string, CostResolution>> {
+  const uniqueProductIds = [
+    ...new Set(
+      [...productResolutions.values()]
+        .map((row) => row.productId)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+
+  await Promise.all(
+    uniqueProductIds.map(async (productId) => {
+      if (cache.has(productId)) return;
+      cache.set(productId, await resolveProductCost(productId));
+    })
+  );
+
+  const map = new Map<string, CostResolution>();
+  for (const item of items) {
+    const product = productResolutions.get(item.salesOrderItemId);
+    const productId = product?.productId ?? null;
+    const payload = productId ? (cache.get(productId) ?? {}) : {};
+    map.set(
+      item.salesOrderItemId,
+      resolveSalesOrderItemCost({
+        salesOrderItemId: item.salesOrderItemId,
+        productId,
+        storedUnitCost: item.unitCost,
+        costLog: payload.costLog ?? null,
+        analysis: payload.analysis,
+      })
+    );
+  }
+  return map;
+}
+
+export function assembleSalesOrderMarginItemInput(
+  item: SalesOrderMarginResolverItem,
+  product: ProductResolution,
+  cost: CostResolution
+): SalesOrderMarginItemInput {
+  const revenue = extractSalesOrderItemRevenue(item);
+  const productLinked = product.productId != null;
+  return {
+    salesOrderItemId: item.salesOrderItemId,
+    productId: product.productId,
+    externalProductId: productLinked ? (item.externalProductId ?? null) : null,
+    productSku: productLinked ? product.productSku : null,
+    productCode: productLinked ? product.productSku : null,
+    productName: product.productName,
+    quantity: safeFinite(item.quantity) ?? 0,
+    netUnitPrice: revenue.netUnitPrice,
+    netTotalValue: revenue.netTotalValue,
+    itemStatus: item.itemStatus ?? null,
+    isCanceled: item.isCanceled,
+    unitCost: cost.unitCost,
+    costSource: cost.costSource,
+    costConfidence: cost.costConfidence,
+  };
+}
+
+export function buildSalesOrderMarginInputsFromResolutions(
+  items: SalesOrderMarginResolverItem[],
+  productResolutions: Map<string, ProductResolution>,
+  costResolutions: Map<string, CostResolution>
+): SalesOrderMarginItemInput[] {
+  return items.map((item) =>
+    assembleSalesOrderMarginItemInput(
+      item,
+      productResolutions.get(item.salesOrderItemId) ?? {
+        salesOrderItemId: item.salesOrderItemId,
+        productId: null,
+        productSku: item.skuSnapshot ?? null,
+        productName: item.productNameSnapshot ?? null,
+        resolutionSource: "NOT_FOUND",
+        confidence: "MISSING",
+        notes: [],
+      },
+      costResolutions.get(item.salesOrderItemId) ?? {
+        salesOrderItemId: item.salesOrderItemId,
+        productId: null,
+        unitCost: null,
+        costSource: "MISSING_COST",
+        costConfidence: "MISSING",
+        notes: [],
+      }
+    )
+  );
+}
+
+/** Atalho para validar análise isolada (testes / server). */
+export function extractOfficialUnitCostFromAnalysis(analysis: unknown): number | null {
+  return extractOfficialProductFinalUnitCost(analysis);
+}
