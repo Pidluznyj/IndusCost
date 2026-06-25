@@ -40,7 +40,6 @@ import type {
   FinanceArTitlesSortBy,
 } from "@/src/lib/financeAccountsReceivableTitles";
 import { fetchJsonOk } from "@/src/lib/http";
-import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
 import { cn } from "@/src/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -90,6 +89,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   const [data, setData] = useState<FinanceArTitlesPayload | null>(null);
   const [printItems, setPrintItems] = useState<FinanceArTitleListItem[] | null>(null);
   const [printPayload, setPrintPayload] = useState<FinanceArTitlesPayload | null>(null);
+  const [printRequestId, setPrintRequestId] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -125,6 +125,31 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (printRequestId === 0 || !printPayload || !printItems) return;
+
+    document.body.classList.add("ar-titles-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("ar-titles-print-route");
+      setPrintPayload(null);
+      setPrintItems(null);
+      setPrintRequestId(0);
+      setPrinting(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, printPayload, printItems]);
 
   const handleApplyFilters = () => {
     const normalized = normalizeFinanceArAnalyticalUiFilters(draftFilters);
@@ -168,7 +193,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   };
 
   const handleExportPdf = async () => {
-    if (!canExport) return;
+    if (!canExport || printing) return;
     setPrinting(true);
     setError(null);
     try {
@@ -178,20 +203,9 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
       );
       setPrintPayload(payload);
       setPrintItems(payload.items);
-      document.body.classList.add("ar-titles-print-route");
-      window.addEventListener(
-        "afterprint",
-        () => {
-          document.body.classList.remove("ar-titles-print-route");
-          setPrintItems(null);
-          setPrintPayload(null);
-        },
-        { once: true }
-      );
-      triggerBrowserPrint(300);
+      setPrintRequestId((id) => id + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao preparar PDF.");
-    } finally {
       setPrinting(false);
     }
   };

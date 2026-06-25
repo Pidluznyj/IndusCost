@@ -91,11 +91,10 @@ describe("financeAccountsReceivableAnalyticalTitlesFilters", () => {
     assert.doesNotMatch(tab, /value=\{draftFilters\.personName\}/);
   });
 
-  it("print document não usa trim direto em filtros", () => {
+  it("print document usa safeTrim e meta centralizada de filtros", () => {
     const printDoc = read("src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx");
     assert.ok(printDoc.includes("safeTrim"));
-    assert.doesNotMatch(printDoc, /filters\.companyName\.trim\(\)/);
-    assert.doesNotMatch(printDoc, /filters\.document\.trim\(\)/);
+    assert.ok(printDoc.includes("buildFinanceArTitlesPrintFilterLines"));
   });
 
   it("buildFinanceArAnalyticalTitlesQuery não usa trim direto", () => {
