@@ -66,6 +66,8 @@
     "audit:sales-order-final-validation": "tsx scripts/audit-sales-order-final-validation.ts",
     "test:sales-order-final-validation": "tsx --test src/lib/salesOrderFinalValidation.test.ts src/lib/salesOrderMetricsEngine.test.ts src/lib/salesOrderManagementFulfillment.test.ts",
     "audit:sales-order-fulfillment": "tsx scripts/audit-sales-order-fulfillment.ts",
+    "audit:sales-order-margins": "tsx scripts/audit-sales-order-margins.ts",
+    "test:sales-orders-margins": "tsx --test src/lib/salesOrderMarginMath.test.ts src/lib/salesOrderMarginResolver.test.ts src/lib/salesOrderMarginService.test.ts src/lib/salesOrderMarginUi.test.ts src/lib/salesOrderMarginIndicators.test.ts src/lib/salesOrderManagementMargin.test.ts src/lib/salesOrderInternalMarginExport.test.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:accounts-receivable": "tsx --test src/lib/nomusAccountsReceivable.test.ts src/lib/nomusAccountsReceivableSyncLogParse.test.ts",
     "test:nomus:accounts-payable": "tsx --test src/lib/nomusAccountsPayable.test.ts src/lib/nomusAccountsPayableSyncLogParse.test.ts",
