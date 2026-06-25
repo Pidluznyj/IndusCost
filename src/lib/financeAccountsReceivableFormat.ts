@@ -1,4 +1,5 @@
 import { formatFinanceKpiCurrency } from "./financeKpiFormat.js";
+import { formatCivilDate } from "./financeCivilDate.js";
 
 /** Formatadores da UI Financeiro > Contas a Receber (sem NaN/null na tela). */
 
@@ -33,10 +34,7 @@ export function formatFinanceInteger(value: unknown): string {
 }
 
 export function formatFinanceDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("pt-BR");
+  return formatCivilDate(iso);
 }
 
 export function formatFinanceDateTime(iso: string | null | undefined): string {

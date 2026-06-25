@@ -1,15 +1,13 @@
 import * as XLSX from "xlsx";
 import { formatFinanceCalculatedStatus } from "./financeAccountsReceivableFormat.js";
+import { formatCivilDate } from "./financeCivilDate.js";
 import type { FinanceCashFlowDailyRadarExportPayload } from "./financeCashFlowDailyRadarExport.js";
 
 export const FINANCE_CASH_FLOW_DAILY_RADAR_EXPORT_TITLE =
   "Fluxo de Caixa — Radar Diário de Caixa";
 
 function formatDateBr(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("pt-BR");
+  return formatCivilDate(iso);
 }
 
 function formatDateTimeBr(iso: string): string {

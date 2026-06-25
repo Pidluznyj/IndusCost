@@ -1,6 +1,6 @@
 /** Buckets não acumulativos do horizonte financeiro (0–60 dias a partir de hoje). */
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { diffCivilDays } from "./financeCivilDate.js";
 
 export type FinanceHorizonBucketKey =
   | "0_7"
@@ -54,9 +54,7 @@ export function roundHorizonMoney(value: number): number {
 }
 
 export function computeDaysFromToday(operationalDate: Date, today: Date): number {
-  const op = startOfLocalDay(operationalDate);
-  const t = startOfLocalDay(today);
-  return Math.floor((op.getTime() - t.getTime()) / MS_PER_DAY);
+  return diffCivilDays(today, operationalDate);
 }
 
 export function assignFinanceHorizonBucketKey(

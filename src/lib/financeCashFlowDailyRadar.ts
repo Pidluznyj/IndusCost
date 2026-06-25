@@ -5,6 +5,11 @@
 import { classifyFinanceArTitle, roundMoney, startOfLocalDay } from "./financeAccountsReceivableDashboard.js";
 import { classifyFinanceApTitle } from "./financeAccountsPayableDashboard.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
+import {
+  civilDateToLocalDate,
+  startOfCivilDate,
+  toCivilDateKey,
+} from "./financeCivilDate.js";
 import type { FinanceCashFlowApRow, FinanceCashFlowArRow } from "./financeCashFlowDashboard.js";
 import {
   toCashFlowPortfolioApFilters,
@@ -127,6 +132,11 @@ export type DailyRadarPayableRow = {
   status: string;
   paymentMethod: string | null;
   rescheduled: boolean;
+  vencimentoOficial: string | null;
+  dataAgendada: string | null;
+  dataPagamento: string | null;
+  dataUsadaNoFluxo: string;
+  fonteDataFluxo: "vencimento" | "agendamento" | "pagamento";
 };
 
 export type DailyRadarReceivableRow = {
@@ -219,17 +229,21 @@ function finiteMoney(value: number): number {
 }
 
 function toIsoDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return toCivilDateKey(date) ?? "";
 }
 
 function parseIsoDate(value: string): Date | null {
-  const raw = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-  const d = new Date(`${raw}T12:00:00`);
-  return Number.isNaN(d.getTime()) ? null : startOfLocalDay(d);
+  const key = toCivilDateKey(value);
+  if (!key) return null;
+  const d = civilDateToLocalDate(key);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeMovementDate(date: Date | null): Date | null {
+  if (!date) return null;
+  const key = toCivilDateKey(date);
+  if (!key) return null;
+  return civilDateToLocalDate(key);
 }
 
 function weekdayLabel(date: Date): string {
@@ -266,7 +280,8 @@ export function collectDailyRadarMovements(
 
   for (const row of arRows) {
     if (!shouldIncludeCashFlowArMovement(row, "projected")) continue;
-    const operationalDate = resolveCashFlowArMovementDate(row, "projected", dateBase);
+    const operationalDateRaw = resolveCashFlowArMovementDate(row, "projected", dateBase);
+    const operationalDate = normalizeMovementDate(operationalDateRaw);
     if (!operationalDate) continue;
     const amount = resolveCashFlowArAmount(row, "projected");
     if (amount <= 0) continue;
@@ -276,7 +291,8 @@ export function collectDailyRadarMovements(
 
   for (const row of apRows) {
     if (!shouldIncludeCashFlowApMovement(row, "projected")) continue;
-    const operationalDate = resolveCashFlowApMovementDate(row, "projected", dateBase);
+    const operationalDateRaw = resolveCashFlowApMovementDate(row, "projected", dateBase);
+    const operationalDate = normalizeMovementDate(operationalDateRaw);
     if (!operationalDate) continue;
     const amount = resolveCashFlowApAmount(row, "projected");
     if (amount <= 0) continue;
@@ -430,26 +446,48 @@ function matchesSearch(haystack: string, term: string): boolean {
 }
 
 function mapPayableRow(row: FinanceCashFlowApRow, referenceDate: Date): DailyRadarPayableRow {
-  const operational = getAccountsPayableOperationalDueDate(row);
   const due = row.dueDate;
   const schedule = row.scheduleDate ?? null;
+  const payment = row.paymentDate ?? row.settlementDate ?? null;
+  const operational = getAccountsPayableOperationalDueDate(row);
+  const vencimentoOficial = toCivilDateKey(due);
+  const dataAgendada = toCivilDateKey(schedule);
+  const dataPagamento = toCivilDateKey(payment);
+  let fonteDataFluxo: DailyRadarPayableRow["fonteDataFluxo"] = "vencimento";
+  if (operational && schedule && due) {
+    const dueKey = toCivilDateKey(due);
+    const schedKey = toCivilDateKey(schedule);
+    if (dueKey && schedKey && schedKey > dueKey) {
+      fonteDataFluxo = "agendamento";
+    }
+  } else if (operational && schedule && !due) {
+    fonteDataFluxo = "agendamento";
+  } else if (operational && payment && toCivilDateKey(operational) === dataPagamento) {
+    fonteDataFluxo = "pagamento";
+  }
   const rescheduled =
     due != null &&
     schedule != null &&
-    startOfLocalDay(schedule).getTime() > startOfLocalDay(due).getTime();
+    startOfCivilDate(schedule).getTime() > startOfCivilDate(due).getTime();
+  const dataUsadaNoFluxo = toCivilDateKey(operational) ?? "";
   return {
     id: `ap-${row.externalId}`,
     supplier: row.personName,
     company: row.companyName,
     description: row.description ?? null,
     document: row.documentNumber ?? (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null),
-    operationalDate: operational ? toIsoDate(operational) : "",
-    dueDate: due ? toIsoDate(due) : null,
-    scheduleDate: schedule ? toIsoDate(schedule) : null,
+    operationalDate: dataUsadaNoFluxo,
+    dueDate: vencimentoOficial,
+    scheduleDate: dataAgendada,
     amount: finiteMoney(resolveCashFlowApAmount(row, "projected")),
     status: classifyFinanceApTitle(row, referenceDate),
     paymentMethod: row.paymentMethodName,
     rescheduled,
+    vencimentoOficial,
+    dataAgendada,
+    dataPagamento,
+    dataUsadaNoFluxo,
+    fonteDataFluxo,
   };
 }
 
@@ -461,7 +499,7 @@ function mapReceivableRow(row: FinanceCashFlowArRow, referenceDate: Date): Daily
     company: row.companyName,
     description: row.description ?? null,
     document: row.sourceInvoiceNumber ?? (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null),
-    operationalDate: due ? toIsoDate(due) : "",
+    operationalDate: toCivilDateKey(due) ?? "",
     amount: finiteMoney(resolveCashFlowArAmount(row, "projected")),
     status: classifyFinanceArTitle(row, referenceDate),
     invoiceIssued: row.sourceInvoiceId != null,

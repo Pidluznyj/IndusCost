@@ -1,5 +1,4 @@
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
+import { diffCivilDays, startOfCivilDate } from "./financeCivilDate.js";
 import {
   FINANCE_AP_INTERCOMPANY_GROUP,
   isIntercompanyPayable,
@@ -39,8 +38,8 @@ export function getAccountsPayableOperationalDueDate(row: FinanceApOperationalRo
   const scheduleDate = row.scheduleDate ?? null;
 
   if (dueDate && scheduleDate) {
-    const due = startOfLocalDay(dueDate).getTime();
-    const sched = startOfLocalDay(scheduleDate).getTime();
+    const due = startOfCivilDate(dueDate).getTime();
+    const sched = startOfCivilDate(scheduleDate).getTime();
     return sched > due ? scheduleDate : dueDate;
   }
 
@@ -63,16 +62,14 @@ export function isAccountsPayableOverdue(row: FinanceApOperationalRow, today: Da
   return (
     isAccountsPayableOpen(row) &&
     !isAccountsPayablePurchaseOrderSchedule(row) &&
-    startOfLocalDay(operationalDueDate) < startOfLocalDay(today)
+    startOfCivilDate(operationalDueDate) < startOfLocalDay(today)
   );
 }
 
 export function computeDaysOverdueForDate(dueDate: Date | null, today: Date): number {
   if (!dueDate) return 0;
-  const due = startOfLocalDay(dueDate);
-  const t = startOfLocalDay(today);
-  if (due >= t) return 0;
-  return Math.floor((t.getTime() - due.getTime()) / MS_PER_DAY);
+  const overdue = diffCivilDays(dueDate, today);
+  return overdue > 0 ? overdue : 0;
 }
 
 export function computeFinanceApDaysOverdue(
@@ -95,6 +92,6 @@ export function getAccountsPayableExcludedReason(row: FinanceApOperationalRow): 
 export function hasAccountsPayableRescheduledPayment(row: FinanceApOperationalRow): boolean {
   if (!row.scheduleDate || !row.dueDate) return false;
   return (
-    startOfLocalDay(row.scheduleDate).getTime() !== startOfLocalDay(row.dueDate).getTime()
+    startOfCivilDate(row.scheduleDate).getTime() !== startOfCivilDate(row.dueDate).getTime()
   );
 }
