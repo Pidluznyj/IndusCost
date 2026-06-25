@@ -154,7 +154,11 @@ export type SalesOrderManagementRow = {
   suggestedActionLabel?: string | null;
   /** Margem consolidada calculada no backend (motor único). */
   marginSummary?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload;
+  /** Contagens de itens para análise econômica no drawer. */
+  marginDetail?: import("./salesOrderManagementMargin.js").SalesOrderManagementMarginItemCounts;
 };
+
+export type { SalesOrderManagementMarginEconomics } from "./salesOrderManagementMargin.js";
 
 export function assertManagementRowFinite(row: SalesOrderManagementRow): boolean {
   const nums = [

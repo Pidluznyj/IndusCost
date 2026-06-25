@@ -2,11 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Clock,
+  DollarSign,
   FileText,
   LayoutGrid,
   Loader2,
   Package,
+  Percent,
   Receipt,
+  Scale,
+  TrendingDown,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
@@ -16,6 +20,7 @@ import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import type {
   SalesOrderManagementCardAmounts,
   SalesOrderManagementCards,
+  SalesOrderManagementMarginEconomics,
   SalesOrderManagementRow,
   SalesOrderManagementSummary,
 } from "@/src/lib/salesOrderManagementTypes";
@@ -62,6 +67,16 @@ import {
 } from "@/src/components/sales/SalesOrderManagementFulfillmentPanel";
 import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
+import { SalesOrderEconomicAnalysisPanel } from "@/src/components/sales/SalesOrderEconomicAnalysisPanel";
+import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import {
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+  pickSalesOrderListMarginPercent,
+  pickSalesOrderListMarginValue,
+} from "@/src/lib/salesOrderMarginDisplay";
+
+const TABLE_COLSPAN = 21;
 
 type ManagementResponse = {
   page: number;
@@ -74,6 +89,7 @@ type ManagementResponse = {
   summary?: SalesOrderManagementSummary;
   fulfillmentKpis?: SalesOrderFulfillmentKpis;
   fulfillmentCharts?: SalesOrderFulfillmentCharts;
+  marginEconomics?: SalesOrderManagementMarginEconomics;
   rows: SalesOrderManagementRow[];
 };
 
@@ -146,6 +162,8 @@ export function SalesOrderManagementPage() {
   const [fulfillmentCharts, setFulfillmentCharts] = useState<SalesOrderFulfillmentCharts | null>(
     null
   );
+  const [marginEconomics, setMarginEconomics] =
+    useState<SalesOrderManagementMarginEconomics | null>(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<SalesOrderManagementRow | null>(null);
@@ -252,6 +270,7 @@ export function SalesOrderManagementPage() {
       setManagementSummary(data.summary ?? null);
       setFulfillmentKpis(data.fulfillmentKpis ?? null);
       setFulfillmentCharts(data.fulfillmentCharts ?? null);
+      setMarginEconomics(data.marginEconomics ?? null);
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(1, data.totalPages ?? 1));
     } catch (e) {
@@ -265,6 +284,7 @@ export function SalesOrderManagementPage() {
       setManagementSummary(null);
       setFulfillmentKpis(null);
       setFulfillmentCharts(null);
+      setMarginEconomics(null);
       setTotal(0);
       setTotalPages(1);
     } finally {
@@ -849,6 +869,86 @@ export function SalesOrderManagementPage() {
         ) : null}
       </div>
 
+      <div data-testid="sales-order-management-economic-summary">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Análise econômica
+        </p>
+        {marginEconomics?.scopeNote ? (
+          <p className="mt-1 text-[10px] text-muted-foreground">{marginEconomics.scopeNote}</p>
+        ) : null}
+        <div className="indus-kpi-grid mt-2">
+          <FinanceBiKpiCard
+            icon={DollarSign}
+            label="Valor vendido"
+            value={
+              loading || loadError
+                ? "—"
+                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.netRevenue)
+            }
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Scale}
+            label="Custo estimado"
+            value={
+              loading || loadError
+                ? "—"
+                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.totalCost)
+            }
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={DollarSign}
+            label="Margem R$"
+            value={
+              loading || loadError
+                ? "—"
+                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.marginValue)
+            }
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Percent}
+            label="Margem %"
+            value={
+              loading || loadError
+                ? "—"
+                : formatSalesOrderMarginPercent(marginEconomics?.consolidated?.marginPercent)
+            }
+            loading={loading}
+            hint="Ponderada por receita líquida do filtro"
+          />
+          <FinanceBiKpiCard
+            icon={TrendingDown}
+            label="Margem negativa"
+            value={
+              loading || loadError
+                ? "—"
+                : `${marginEconomics?.ordersWithNegativeMargin ?? 0} pedido(s)`
+            }
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={AlertTriangle}
+            label="Sem custo"
+            value={
+              loading || loadError ? "—" : `${marginEconomics?.ordersWithoutCost ?? 0} pedido(s)`
+            }
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Package}
+            label="Sem produto"
+            value={
+              loading || loadError
+                ? "—"
+                : `${marginEconomics?.ordersWithoutProduct ?? 0} pedido(s)`
+            }
+            loading={loading}
+          />
+        </div>
+      </div>
+
       <SalesOrderManagementFulfillmentKpis kpis={fulfillmentKpis} loading={loading || !!loadError} />
       <SalesOrderManagementFulfillmentCharts charts={fulfillmentCharts} />
 
@@ -1050,6 +1150,9 @@ export function SalesOrderManagementPage() {
                     Status logístico{sortIndicator("logisticStatusLabel")}
                   </button>
                 </th>
+                <th className="p-3 font-semibold text-right">Margem %</th>
+                <th className="p-3 font-semibold text-right hidden lg:table-cell">Margem R$</th>
+                <th className="p-3 font-semibold">Status margem</th>
                 <th className="p-3 font-semibold">Prazo</th>
                 <th className="p-3 font-semibold text-right">
                   <button type="button" className="hover:underline" onClick={() => toggleSort("daysOverdue")}>
@@ -1070,20 +1173,20 @@ export function SalesOrderManagementPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={18} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={TABLE_COLSPAN} className="p-8 text-center text-muted-foreground">
                     <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
                     Carregando…
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={18} className="p-8 text-center text-destructive">
+                  <td colSpan={TABLE_COLSPAN} className="p-8 text-center text-destructive">
                     {loadError}
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={18} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={TABLE_COLSPAN} className="p-8 text-center text-muted-foreground">
                     {year === "all"
                       ? "Nenhum pedido encontrado para os filtros aplicados."
                       : "Nenhum pedido encontrado para o ano selecionado."}
@@ -1140,9 +1243,38 @@ export function SalesOrderManagementPage() {
                       <span
                         className={badgeClass("status")}
                         title={row.executiveStatusLabel}
+                        data-testid="sales-order-logistic-status"
                       >
                         {row.logisticStatusLabel}
                       </span>
+                    </td>
+                    <td
+                      className={cn(
+                        "p-3 text-right tabular-nums font-mono text-xs",
+                        row.marginSummary?.hasNegativeMargin && "text-red-700 font-semibold"
+                      )}
+                      data-testid="sales-order-management-margin-percent"
+                    >
+                      {pickSalesOrderListMarginPercent(row.marginSummary)}
+                    </td>
+                    <td
+                      className={cn(
+                        "p-3 text-right tabular-nums font-mono text-xs hidden lg:table-cell",
+                        row.marginSummary?.hasNegativeMargin && "text-red-700 font-semibold"
+                      )}
+                      data-testid="sales-order-management-margin-value"
+                    >
+                      {pickSalesOrderListMarginValue(row.marginSummary)}
+                    </td>
+                    <td className="p-3" data-testid="sales-order-management-margin-status">
+                      {row.marginSummary ? (
+                        <SalesOrderMarginStatusBadge
+                          label={row.marginSummary.statusLabel}
+                          status={row.marginSummary.status}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="p-3">
                       <span
@@ -1262,6 +1394,8 @@ export function SalesOrderManagementPage() {
         loading={intelLoading}
         error={intelError}
         payload={intelPayload}
+        marginSummary={selectedRow?.marginSummary}
+        marginDetail={selectedRow?.marginDetail}
         orderLabel={
           selectedRow
             ? `${selectedRow.number} · ${selectedRow.customerName}`

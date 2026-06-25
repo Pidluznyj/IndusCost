@@ -24,6 +24,9 @@ import {
 } from "@/src/lib/salesOrderStatusAudit";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import "./sales-order-intelligence.css";
+import { SalesOrderEconomicAnalysisPanel } from "@/src/components/sales/SalesOrderEconomicAnalysisPanel";
+import type { SalesOrderManagementMarginItemCounts } from "@/src/lib/salesOrderManagementMargin";
+import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 
 function SummaryCard({
   label,
@@ -116,9 +119,13 @@ function SourceBadge({ source }: { source: string }) {
 function TabPanel({
   tab,
   payload,
+  marginSummary,
+  marginDetail,
 }: {
   tab: SalesOrderIntelligenceDrawerTabId;
   payload: SalesOrderIntelligencePayload;
+  marginSummary?: SalesOrderMarginSummaryPayload | null;
+  marginDetail?: SalesOrderManagementMarginItemCounts | null;
 }) {
   const {
     lifecycle,
@@ -215,6 +222,12 @@ function TabPanel({
             </ul>
           </div>
         ) : null}
+        <div className="rounded-xl border border-border bg-muted/20 p-4">
+          <SalesOrderEconomicAnalysisPanel
+            summary={marginSummary}
+            itemCounts={marginDetail}
+          />
+        </div>
       </div>
     );
   }
@@ -719,6 +732,8 @@ export function SalesOrderIntelligenceDrawer({
   loading,
   error,
   payload,
+  marginSummary,
+  marginDetail,
   orderLabel,
 }: {
   open: boolean;
@@ -726,6 +741,8 @@ export function SalesOrderIntelligenceDrawer({
   loading: boolean;
   error: string | null;
   payload: SalesOrderIntelligencePayload | null;
+  marginSummary?: SalesOrderMarginSummaryPayload | null;
+  marginDetail?: SalesOrderManagementMarginItemCounts | null;
   orderLabel: string;
 }) {
   const [tab, setTab] = React.useState<SalesOrderIntelligenceDrawerTabId>("summary");
@@ -812,7 +829,12 @@ export function SalesOrderIntelligenceDrawer({
               {error}
             </div>
           ) : payload ? (
-            <TabPanel tab={tab} payload={payload} />
+            <TabPanel
+              tab={tab}
+              payload={payload}
+              marginSummary={marginSummary}
+              marginDetail={marginDetail}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">Selecione um pedido.</p>
           )}

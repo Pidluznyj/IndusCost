@@ -23,6 +23,9 @@ import {
   resolveSalesOrderMarginStatusMeta,
   resolveSalesOrderMarginSummaryStatusMeta,
 } from "./salesOrderMarginStatus.js";
+import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+
+export { aggregateSalesOrderMarginSummaries };
 import type {
   SalesOrderItemMarginPayload,
   SalesOrderMarginItemResult,
@@ -353,54 +356,3 @@ export async function buildSalesOrderMarginInputsForOrder(
   return buildSalesOrderMarginInputs(prisma, resolverItems, getSalesOrderMarginProductCostResolver());
 }
 
-export function aggregateSalesOrderMarginSummaries(
-  summaries: SalesOrderMarginSummaryPayload[]
-): SalesOrderMarginSummaryPayload | undefined {
-  if (summaries.length === 0) return undefined;
-
-  const netRevenue = summaries.reduce((sum, row) => sum + row.netRevenue, 0);
-  const totalCost = summaries.reduce((sum, row) => sum + row.totalCost, 0);
-  const marginValue = summaries.reduce((sum, row) => sum + row.marginValue, 0);
-  const itemsCount = summaries.reduce((sum, row) => sum + row.itemsCount, 0);
-  const validItemsCount = summaries.reduce((sum, row) => sum + row.validItemsCount, 0);
-  const ignoredItemsCount = summaries.reduce((sum, row) => sum + row.ignoredItemsCount, 0);
-
-  const flags = {
-    hasMissingCost: summaries.some((row) => row.hasMissingCost),
-    hasMissingProduct: summaries.some((row) => row.hasMissingProduct),
-    hasNegativeMargin: summaries.some((row) => row.hasNegativeMargin),
-    hasInvalidRevenue: summaries.some((row) => row.hasInvalidRevenue),
-  };
-
-  const marginPercent = netRevenue > 0 ? (marginValue / netRevenue) * 100 : null;
-  const markup = totalCost > 0 ? netRevenue / totalCost : null;
-
-  let status: SalesOrderMarginSummaryPayload["status"] = "OK";
-  if (validItemsCount === 0) {
-    if (flags.hasInvalidRevenue) status = "REVISAR_DADOS";
-    else if (flags.hasMissingProduct && !flags.hasMissingCost) status = "SEM_PRODUTO_VINCULADO";
-    else if (flags.hasMissingCost && !flags.hasMissingProduct) status = "SEM_CUSTO";
-    else if (flags.hasMissingCost || flags.hasMissingProduct) status = "PARTIAL";
-    else status = "REVISAR_DADOS";
-  } else if (flags.hasMissingCost || flags.hasMissingProduct || flags.hasInvalidRevenue) {
-    status = "PARTIAL";
-  } else if (flags.hasNegativeMargin) {
-    status = "MARGEM_NEGATIVA";
-  }
-
-  const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
-  return {
-    netRevenue,
-    totalCost,
-    marginValue,
-    marginPercent,
-    markup,
-    itemsCount,
-    validItemsCount,
-    ignoredItemsCount,
-    ...flags,
-    status,
-    statusLabel: meta.statusLabel,
-    statusSeverity: meta.statusSeverity,
-  };
-}

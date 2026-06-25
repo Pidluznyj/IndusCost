@@ -30,10 +30,8 @@ import {
   OPEN_PORTFOLIO_EVOLUTION_NOTE,
 } from "./financeSalesOrdersExtendedMetrics.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
-import {
-  aggregateSalesOrderMarginSummaries,
-  calculateSalesOrderMarginsForOrders,
-} from "./salesOrderMarginService.server.js";
+import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import { calculateSalesOrderMarginsForOrders } from "./salesOrderMarginService.server.js";
 import {
   isBiLogisticStatusCardId,
   type BiLogisticStatusCardId,

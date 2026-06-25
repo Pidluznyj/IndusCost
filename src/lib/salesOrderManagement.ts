@@ -20,8 +20,10 @@ import {
 import type {
   SalesOrderManagementCardAmounts,
   SalesOrderManagementCards,
+  SalesOrderManagementMarginEconomics,
   SalesOrderManagementRow,
 } from "./salesOrderManagementTypes.js";
+import type { SalesOrderMarginStatusFilter } from "./salesOrderManagementMargin.js";
 import {
   buildFulfillmentCharts,
   buildFulfillmentKpis,
@@ -75,6 +77,8 @@ export type SalesOrderManagementFilters = {
   q?: string;
   sortBy?: SalesOrderManagementSortKey;
   sortDir?: "asc" | "desc";
+  /** Filtro futuro de status margem (aplicado após cálculo no backend). */
+  marginStatus?: SalesOrderMarginStatusFilter;
 } & SalesOrderFulfillmentExtendedFilters;
 
 export function parseSalesOrderManagementFilters(
@@ -160,8 +164,29 @@ export function parseSalesOrderManagementFilters(
         ? (query.sortBy as SalesOrderManagementSortKey)
         : undefined,
     sortDir: query.sortDir === "asc" || query.sortDir === "desc" ? query.sortDir : undefined,
+    marginStatus: parseSalesOrderMarginStatusFilter(query.marginStatus),
     ...parseFulfillmentExtendedFilters(query),
   };
+}
+
+const VALID_MARGIN_STATUS_FILTERS = new Set<SalesOrderMarginStatusFilter>([
+  "",
+  "OK",
+  "PARTIAL",
+  "SEM_CUSTO",
+  "SEM_PRODUTO_VINCULADO",
+  "MARGEM_NEGATIVA",
+  "REVISAR_DADOS",
+]);
+
+function parseSalesOrderMarginStatusFilter(
+  raw: unknown
+): SalesOrderMarginStatusFilter {
+  if (typeof raw !== "string") return "";
+  const token = raw.trim();
+  return VALID_MARGIN_STATUS_FILTERS.has(token as SalesOrderMarginStatusFilter)
+    ? (token as SalesOrderMarginStatusFilter)
+    : "";
 }
 
 export function buildSalesOrderManagementWhere(
@@ -389,6 +414,7 @@ export type SalesOrderManagementResponse = {
   summary?: SalesOrderManagementSummary;
   fulfillmentKpis?: SalesOrderFulfillmentKpis;
   fulfillmentCharts?: SalesOrderFulfillmentCharts;
+  marginEconomics?: SalesOrderManagementMarginEconomics;
   rows: SalesOrderManagementRow[];
 };
 

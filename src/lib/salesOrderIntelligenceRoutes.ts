@@ -19,6 +19,11 @@ import {
   attachMarginsToSalesOrders,
   calculateSalesOrderMarginsForOrders,
 } from "./salesOrderMarginService.server.js";
+import {
+  buildSalesOrderManagementMarginEconomics,
+  countMarginItemStatuses,
+  matchesSalesOrderMarginStatusFilter,
+} from "./salesOrderManagementMargin.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -145,13 +150,30 @@ export async function loadSalesOrderManagementPage(
     }))
   );
 
+  const itemResultsByOrderId = new Map<string, import("./salesOrderMarginTypes.js").SalesOrderMarginItemResult[]>();
   for (const row of rows) {
-    row.marginSummary = marginByOrder.get(row.id)?.marginSummary;
+    const marginResult = marginByOrder.get(row.id);
+    row.marginSummary = marginResult?.marginSummary;
+    if (marginResult) {
+      row.marginDetail = countMarginItemStatuses(marginResult.itemResults);
+      itemResultsByOrderId.set(row.id, marginResult.itemResults);
+    }
   }
 
-  const total = rows.length;
+  const marginFilteredRows = filters.marginStatus
+    ? rows.filter((row) =>
+        matchesSalesOrderMarginStatusFilter(row.marginSummary, filters.marginStatus!)
+      )
+    : rows;
+
+  const marginEconomics = buildSalesOrderManagementMarginEconomics(
+    marginFilteredRows,
+    itemResultsByOrderId
+  );
+
+  const total = marginFilteredRows.length;
   const start = (page - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
+  const pageRows = marginFilteredRows.slice(start, start + pageSize);
 
   return {
     page,
@@ -164,6 +186,7 @@ export async function loadSalesOrderManagementPage(
     summary,
     fulfillmentKpis,
     fulfillmentCharts,
+    marginEconomics,
     rows: pageRows,
   };
 }
