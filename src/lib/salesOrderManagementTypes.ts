@@ -152,6 +152,8 @@ export type SalesOrderManagementRow = {
   riskFlags: SalesOrderRiskFlag[];
 
   suggestedActionLabel?: string | null;
+  /** Margem consolidada calculada no backend (motor único). */
+  marginSummary?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload;
 };
 
 export function assertManagementRowFinite(row: SalesOrderManagementRow): boolean {

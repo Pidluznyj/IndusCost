@@ -62,6 +62,9 @@ export type FinanceSalesOrdersDashboardSummary = {
 
   overdueOpenOrdersAmount: number;
   overdueOpenOrdersCount: number;
+
+  /** Margem consolidada do período (pedidos com issueDate no filtro). */
+  marginPortfolio?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload;
 };
 
 export type FinanceSalesOrdersMonthlyComparisonRow = {
@@ -133,6 +136,7 @@ export type FinanceSalesOrdersCriticalOrderRow = {
   hasProcessedInvoice: boolean;
   expectedDeliveryDate: string | null;
   reasons: Array<"overdue_pending" | "high_open_portfolio" | "without_invoice" | "review_data">;
+  marginSummary?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload;
 };
 
 export type FinanceSalesOrdersOpenPortfolioEvolutionRow = {

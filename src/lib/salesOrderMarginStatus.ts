@@ -1,7 +1,10 @@
 import type {
   SalesOrderMarginItemInput,
+  SalesOrderMarginItemResult,
   SalesOrderMarginStatus,
   SalesOrderMarginStatusSeverity,
+  SalesOrderMarginSummary,
+  SalesOrderMarginSummaryStatus,
 } from "./salesOrderMarginTypes.js";
 
 export const SALES_ORDER_MARGIN_STATUS_LABEL: Record<SalesOrderMarginStatus, string> = {
@@ -76,4 +79,83 @@ export function hasSalesOrderMarginProductLink(input: SalesOrderMarginItemInput)
 
 export function isSalesOrderMarginConsolidationEligible(status: SalesOrderMarginStatus): boolean {
   return !SALES_ORDER_MARGIN_CONSOLIDATION_EXCLUDED.has(status);
+}
+
+export const SALES_ORDER_MARGIN_SUMMARY_STATUS_LABEL: Record<
+  SalesOrderMarginSummaryStatus,
+  string
+> = {
+  OK: "Margem calculada",
+  PARTIAL: "Margem parcial",
+  SEM_PRODUTO_VINCULADO: "Sem produto vinculado",
+  SEM_CUSTO: "Custo indisponível",
+  RECEITA_INVALIDA: "Receita líquida inválida",
+  CUSTO_ZERO: "Custo zerado",
+  ITEM_CANCELADO: "Itens cancelados",
+  MARGEM_NEGATIVA: "Margem negativa",
+  REVISAR_DADOS: "Revisar dados",
+};
+
+export const SALES_ORDER_MARGIN_SUMMARY_STATUS_SEVERITY: Record<
+  SalesOrderMarginSummaryStatus,
+  SalesOrderMarginStatusSeverity
+> = {
+  OK: "success",
+  PARTIAL: "warning",
+  SEM_PRODUTO_VINCULADO: "warning",
+  SEM_CUSTO: "warning",
+  RECEITA_INVALIDA: "danger",
+  CUSTO_ZERO: "warning",
+  ITEM_CANCELADO: "neutral",
+  MARGEM_NEGATIVA: "danger",
+  REVISAR_DADOS: "warning",
+};
+
+export function resolveSalesOrderMarginSummaryStatusMeta(
+  status: SalesOrderMarginSummaryStatus
+): {
+  statusLabel: string;
+  statusSeverity: SalesOrderMarginStatusSeverity;
+} {
+  return {
+    statusLabel: SALES_ORDER_MARGIN_SUMMARY_STATUS_LABEL[status],
+    statusSeverity: SALES_ORDER_MARGIN_SUMMARY_STATUS_SEVERITY[status],
+  };
+}
+
+/**
+ * Refina o status consolidado do pedido conforme regras de negócio (Prompt 4).
+ */
+export function refineSalesOrderMarginSummaryStatus(
+  summary: SalesOrderMarginSummary,
+  itemResults: SalesOrderMarginItemResult[]
+): SalesOrderMarginSummaryStatus {
+  if (summary.validItemsCount > 0) {
+    if (
+      summary.hasMissingCost ||
+      summary.hasMissingProduct ||
+      summary.hasInvalidRevenue
+    ) {
+      return "PARTIAL";
+    }
+    if (summary.hasNegativeMargin) return "MARGEM_NEGATIVA";
+    return "OK";
+  }
+
+  const activeItems = itemResults.filter((item) => item.status !== "ITEM_CANCELADO");
+  if (activeItems.length === 0) {
+    if (itemResults.length > 0 && itemResults.every((i) => i.status === "ITEM_CANCELADO")) {
+      return "ITEM_CANCELADO";
+    }
+    return summary.hasInvalidRevenue ? "REVISAR_DADOS" : summary.status;
+  }
+
+  if (activeItems.every((item) => item.status === "SEM_PRODUTO_VINCULADO")) {
+    return "SEM_PRODUTO_VINCULADO";
+  }
+  if (activeItems.every((item) => item.status === "SEM_CUSTO")) {
+    return "SEM_CUSTO";
+  }
+  if (summary.hasInvalidRevenue) return "REVISAR_DADOS";
+  return "PARTIAL";
 }

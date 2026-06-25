@@ -93,3 +93,44 @@ export type SalesOrderMarginSummary = {
 
   status: SalesOrderMarginSummaryStatus;
 };
+
+/** Payload de margem por item exposto nos endpoints internos de Pedidos de Venda. */
+export type SalesOrderItemMarginPayload = {
+  netRevenue: number;
+  unitCost: number | null;
+  totalCost: number | null;
+  marginValue: number | null;
+  marginPercent: number | null;
+  markup: number | null;
+  status: SalesOrderMarginStatus;
+  statusLabel: string;
+  statusSeverity: SalesOrderMarginStatusSeverity;
+  costSource: SalesOrderCostSource;
+  costConfidence: SalesOrderCostConfidence;
+  productResolutionSource:
+    | "LOCAL_PRODUCT_ID"
+    | "EXTERNAL_PRODUCT_ID"
+    | "SKU"
+    | "RAW_NOMUS_CODE"
+    | "NOT_FOUND";
+  notes: string[];
+};
+
+/** Payload consolidado de margem por pedido nos endpoints internos. */
+export type SalesOrderMarginSummaryPayload = {
+  netRevenue: number;
+  totalCost: number;
+  marginValue: number;
+  marginPercent: number | null;
+  markup: number | null;
+  itemsCount: number;
+  validItemsCount: number;
+  ignoredItemsCount: number;
+  hasMissingCost: boolean;
+  hasMissingProduct: boolean;
+  hasNegativeMargin: boolean;
+  hasInvalidRevenue: boolean;
+  status: SalesOrderMarginSummaryStatus;
+  statusLabel: string;
+  statusSeverity: SalesOrderMarginStatusSeverity;
+};

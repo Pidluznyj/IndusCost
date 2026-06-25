@@ -31,6 +31,10 @@ import {
 } from "./financeSalesOrdersExtendedMetrics.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
 import {
+  aggregateSalesOrderMarginSummaries,
+  calculateSalesOrderMarginsForOrders,
+} from "./salesOrderMarginService.server.js";
+import {
   isBiLogisticStatusCardId,
   type BiLogisticStatusCardId,
 } from "./salesOrderLogisticStatus.js";
@@ -524,6 +528,16 @@ export async function buildFinanceSalesOrdersDashboard(
   topCustomers = await queryTopCustomersFiltered(filters, filters.year);
 
   const dashboardOrders = await loadDashboardOrders(filters, periodBounds.from, periodBounds.to);
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(
+    prisma,
+    dashboardOrders.map((order) => ({
+      id: order.id,
+      nomusRawResponse: order.nomusRawResponse,
+    }))
+  );
+  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+    [...marginByOrder.values()].map((row) => row.marginSummary)
+  );
   const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
     dashboardOrders.map((order) => ({
       id: order.id,
@@ -540,9 +554,17 @@ export async function buildFinanceSalesOrdersDashboard(
     linkedNfeContextMap,
   });
 
+  const criticalOrders = extended.criticalOrders.map((row) => ({
+    ...row,
+    marginSummary: marginByOrder.get(row.orderId)?.marginSummary,
+  }));
+
   const excluded = await queryExcludedCounts();
   const monthlyComparison = buildMonthlyComparison(currentMonthly, previousMonthly);
-  const summary = buildSummaryFromTab(tab, filters, periodAgg, portfolio);
+  const summary = {
+    ...buildSummaryFromTab(tab, filters, periodAgg, portfolio),
+    marginPortfolio,
+  };
 
   const warnings: string[] = [];
   if (excluded.cancelled > 0) {
@@ -574,7 +596,7 @@ export async function buildFinanceSalesOrdersDashboard(
     })),
     manufacturingStatusBreakdown: extended.manufacturingStatusBreakdown,
     logisticStatusBreakdown: extended.logisticStatusBreakdown,
-    criticalOrders: extended.criticalOrders,
+    criticalOrders,
     openPortfolioEvolution: extended.openPortfolioEvolution,
     portfolioBreakdown: {
       notInvoicedAmount: portfolio.open.net,

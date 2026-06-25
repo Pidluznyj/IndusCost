@@ -155,6 +155,11 @@ import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRanking
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import {
+  attachMarginToSalesOrderDetail,
+  attachMarginsToSalesOrders,
+} from "./src/lib/salesOrderMarginService.server.js";
+import { setSalesOrderMarginProductCostResolver } from "./src/lib/salesOrderMarginProductCostResolver.js";
+import {
   buildSalesOrderListSummary,
   buildSalesOrderListWhere,
 } from "./src/lib/salesOrdersListSummary.js";
@@ -12626,6 +12631,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   //   itensPedido: [{ item, idProduto, quantidade, valorUnitario, dataEntrega? }] }
   // Preencher nomusRawResponse / sentToNomusAt após resposta; não implementar nesta etapa.
 
+  setSalesOrderMarginProductCostResolver(async (productId) => {
+    const cache = await initAnalysisCache();
+    return getProductCostAnalysis(productId, cache, false);
+  });
+
   app.get("/api/sales-orders", requireAppAuth, requirePermission("sales_orders.view"), async (req, res) => {
     try {
       const status = String(req.query.status ?? "").trim();
@@ -12679,8 +12689,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         totalItems: aggregate._sum.totalItems,
       });
 
+      const data = await attachMarginsToSalesOrders(prisma, rows);
+
       res.json({
-        data: rows,
+        data,
         page,
         pageSize,
         total,
@@ -12714,7 +12726,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         },
       });
       if (!row) return res.status(404).json({ error: "Pedido de venda não encontrado." });
-      res.json(row);
+      const enriched = await attachMarginToSalesOrderDetail(prisma, row);
+      res.json(enriched);
     } catch (e: any) {
       console.error("GET /api/sales-orders/:id", e);
       res.status(500).json({ error: e?.message || "Erro ao carregar pedido de venda." });

@@ -1,0 +1,406 @@
+/**
+ * Serviço server-only: anexa margem calculada aos payloads internos de Pedidos de Venda.
+ */
+import type { PrismaClient } from "@prisma/client";
+import {
+  calculateSalesOrderItemMargin,
+  calculateSalesOrderMarginSummary,
+} from "./salesOrderMarginMath.js";
+import { getSalesOrderMarginProductCostResolver } from "./salesOrderMarginProductCostResolver.js";
+import {
+  buildSalesOrderMarginInputsFromResolutions,
+  resolveSalesOrderItemCosts,
+  resolveSalesOrderItemProducts,
+  type ProductResolution,
+  type SalesOrderMarginResolverItem,
+} from "./salesOrderMarginResolver.js";
+import {
+  buildSalesOrderMarginInputs,
+  loadSalesOrderMarginProductBatchIndex,
+} from "./salesOrderMarginResolver.server.js";
+import {
+  refineSalesOrderMarginSummaryStatus,
+  resolveSalesOrderMarginStatusMeta,
+  resolveSalesOrderMarginSummaryStatusMeta,
+} from "./salesOrderMarginStatus.js";
+import type {
+  SalesOrderItemMarginPayload,
+  SalesOrderMarginItemResult,
+  SalesOrderMarginSummaryPayload,
+} from "./salesOrderMarginTypes.js";
+import {
+  extractNomusRawItems,
+  matchRawItemToDbItem,
+  resolveSalesOrderItemNomusStatus,
+} from "./salesOrderNomusRaw.js";
+
+export const SALES_ORDER_ITEM_MARGIN_SELECT = {
+  id: true,
+  salesOrderId: true,
+  productId: true,
+  externalProductId: true,
+  skuSnapshot: true,
+  productNameSnapshot: true,
+  quantity: true,
+  negotiatedPrice: true,
+  totalNetValue: true,
+  unitCost: true,
+} as const;
+
+export type SalesOrderItemForMargin = {
+  id: string;
+  salesOrderId?: string;
+  productId?: string | null;
+  externalProductId?: number | null;
+  skuSnapshot?: string | null;
+  productNameSnapshot?: string | null;
+  quantity: unknown;
+  negotiatedPrice?: unknown;
+  totalNetValue?: unknown;
+  unitCost?: unknown | null;
+};
+
+export type SalesOrderForMargin = {
+  id: string;
+  nomusRawResponse?: unknown;
+  items?: SalesOrderItemForMargin[];
+};
+
+export type SalesOrderMarginOrderResult = {
+  marginSummary: SalesOrderMarginSummaryPayload;
+  itemMargins: Map<string, SalesOrderItemMarginPayload>;
+  itemResults: SalesOrderMarginItemResult[];
+};
+
+export type SalesOrderMarginContext = {
+  byOrderId: Map<string, SalesOrderMarginOrderResult>;
+  costAnalysisCalls: number;
+};
+
+function mapItemToResolverInput(
+  item: SalesOrderItemForMargin,
+  order: SalesOrderForMargin,
+  itemIndex: number,
+  totalItems: number
+): SalesOrderMarginResolverItem {
+  const dbItem = {
+    externalProductId: item.externalProductId,
+    skuSnapshot: item.skuSnapshot,
+    productNameSnapshot: item.productNameSnapshot,
+  };
+  const matchOptions = { itemIndex, totalDbItems: totalItems };
+  const rawItems = extractNomusRawItems(order.nomusRawResponse);
+  const matched = matchRawItemToDbItem(rawItems, dbItem, matchOptions);
+  const nomusStatus = resolveSalesOrderItemNomusStatus(
+    order.nomusRawResponse,
+    dbItem,
+    matchOptions
+  );
+
+  return {
+    salesOrderItemId: item.id,
+    productId: item.productId,
+    externalProductId: item.externalProductId,
+    skuSnapshot: item.skuSnapshot,
+    productNameSnapshot: item.productNameSnapshot,
+    quantity: item.quantity,
+    negotiatedPrice: item.negotiatedPrice,
+    totalNetValue: item.totalNetValue,
+    unitCost: item.unitCost,
+    itemStatus: nomusStatus === "cancelled" ? "CANCELADO" : matched?.status ?? null,
+    isCanceled: nomusStatus === "cancelled",
+    nomusRawItem: matched?.raw ?? null,
+  };
+}
+
+function formatItemMarginPayload(
+  result: SalesOrderMarginItemResult,
+  productResolution: ProductResolution
+): SalesOrderItemMarginPayload {
+  const meta = resolveSalesOrderMarginStatusMeta(result.status);
+  return {
+    netRevenue: result.netRevenue,
+    unitCost: result.unitCost,
+    totalCost: result.totalCost,
+    marginValue: result.marginValue,
+    marginPercent: result.marginPercent,
+    markup: result.markup,
+    status: result.status,
+    statusLabel: meta.statusLabel,
+    statusSeverity: meta.statusSeverity,
+    costSource: result.costSource,
+    costConfidence: result.costConfidence,
+    productResolutionSource: productResolution.resolutionSource,
+    notes: [...productResolution.notes, ...result.notes],
+  };
+}
+
+function formatSummaryPayload(
+  summary: ReturnType<typeof calculateSalesOrderMarginSummary>,
+  itemResults: SalesOrderMarginItemResult[]
+): SalesOrderMarginSummaryPayload {
+  const status = refineSalesOrderMarginSummaryStatus(summary, itemResults);
+  const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
+  return {
+    netRevenue: summary.netRevenue,
+    totalCost: summary.totalCost,
+    marginValue: summary.marginValue,
+    marginPercent: summary.marginPercent,
+    markup: summary.markup,
+    itemsCount: summary.itemsCount,
+    validItemsCount: summary.validItemsCount,
+    ignoredItemsCount: summary.ignoredItemsCount,
+    hasMissingCost: summary.hasMissingCost,
+    hasMissingProduct: summary.hasMissingProduct,
+    hasNegativeMargin: summary.hasNegativeMargin,
+    hasInvalidRevenue: summary.hasInvalidRevenue,
+    status,
+    statusLabel: meta.statusLabel,
+    statusSeverity: meta.statusSeverity,
+  };
+}
+
+export async function loadSalesOrderItemsForMargin(
+  prisma: PrismaClient,
+  orderIds: string[]
+): Promise<Map<string, SalesOrderItemForMargin[]>> {
+  if (orderIds.length === 0) return new Map();
+
+  const rows = await prisma.salesOrderItem.findMany({
+    where: { salesOrderId: { in: orderIds } },
+    select: SALES_ORDER_ITEM_MARGIN_SELECT,
+    orderBy: { createdAt: "asc" },
+  });
+
+  const map = new Map<string, SalesOrderItemForMargin[]>();
+  for (const row of rows) {
+    const list = map.get(row.salesOrderId) ?? [];
+    list.push(row);
+    map.set(row.salesOrderId, list);
+  }
+  return map;
+}
+
+export async function buildSalesOrderMarginContext(
+  prisma: PrismaClient,
+  orders: SalesOrderForMargin[],
+  options?: {
+    itemsByOrderId?: Map<string, SalesOrderItemForMargin[]>;
+    costCache?: Map<string, { analysis?: unknown; costLog?: { totalCiu: number; calculatedAt: string } | null }>;
+  }
+): Promise<SalesOrderMarginContext> {
+  const itemsByOrderId =
+    options?.itemsByOrderId ??
+    (await loadSalesOrderItemsForMargin(
+      prisma,
+      orders.map((order) => order.id)
+    ));
+
+  const resolverItems: SalesOrderMarginResolverItem[] = [];
+  const itemOrderMap = new Map<string, string>();
+
+  for (const order of orders) {
+    const items = order.items ?? itemsByOrderId.get(order.id) ?? [];
+    items.forEach((item, index) => {
+      resolverItems.push(mapItemToResolverInput(item, order, index, items.length));
+      itemOrderMap.set(item.id, order.id);
+    });
+  }
+
+  if (resolverItems.length === 0) {
+    const byOrderId = new Map<string, SalesOrderMarginOrderResult>();
+    for (const order of orders) {
+      byOrderId.set(order.id, {
+        marginSummary: formatSummaryPayload(
+          calculateSalesOrderMarginSummary([]),
+          []
+        ),
+        itemMargins: new Map(),
+        itemResults: [],
+      });
+    }
+    return { byOrderId, costAnalysisCalls: 0 };
+  }
+
+  const productIndex = await loadSalesOrderMarginProductBatchIndex(prisma, resolverItems);
+  const productResolutions = resolveSalesOrderItemProducts(resolverItems, productIndex);
+
+  let costAnalysisCalls = 0;
+  const resolveAnalysis = getSalesOrderMarginProductCostResolver();
+  const costCache = options?.costCache ?? new Map();
+  const costResolutions = await resolveSalesOrderItemCosts(
+    resolverItems,
+    productResolutions,
+    async (productId) => {
+      if (!costCache.has(productId)) {
+        costAnalysisCalls += 1;
+        costCache.set(productId, { analysis: await resolveAnalysis(productId) });
+      }
+      return costCache.get(productId) ?? {};
+    },
+    costCache
+  );
+
+  const marginInputs = buildSalesOrderMarginInputsFromResolutions(
+    resolverItems,
+    productResolutions,
+    costResolutions
+  );
+
+  const itemResultsByOrder = new Map<string, SalesOrderMarginItemResult[]>();
+  const itemMarginsByOrder = new Map<string, Map<string, SalesOrderItemMarginPayload>>();
+
+  for (const input of marginInputs) {
+    const itemId = input.salesOrderItemId;
+    if (!itemId) continue;
+    const orderId = itemOrderMap.get(itemId);
+    if (!orderId) continue;
+
+    const result = calculateSalesOrderItemMargin(input);
+    const productResolution =
+      productResolutions.get(itemId) ??
+      ({
+        salesOrderItemId: itemId,
+        productId: null,
+        productSku: null,
+        productName: null,
+        resolutionSource: "NOT_FOUND",
+        confidence: "MISSING",
+        notes: [],
+      } satisfies ProductResolution);
+
+    const orderItemResults = itemResultsByOrder.get(orderId) ?? [];
+    orderItemResults.push(result);
+    itemResultsByOrder.set(orderId, orderItemResults);
+
+    const orderItemMargins = itemMarginsByOrder.get(orderId) ?? new Map();
+    orderItemMargins.set(itemId, formatItemMarginPayload(result, productResolution));
+    itemMarginsByOrder.set(orderId, orderItemMargins);
+  }
+
+  const byOrderId = new Map<string, SalesOrderMarginOrderResult>();
+  for (const order of orders) {
+    const itemResults = itemResultsByOrder.get(order.id) ?? [];
+    byOrderId.set(order.id, {
+      marginSummary: formatSummaryPayload(
+        calculateSalesOrderMarginSummary(itemResults),
+        itemResults
+      ),
+      itemMargins: itemMarginsByOrder.get(order.id) ?? new Map(),
+      itemResults,
+    });
+  }
+
+  return { byOrderId, costAnalysisCalls };
+}
+
+export async function calculateSalesOrderMarginsForOrders(
+  prisma: PrismaClient,
+  orders: SalesOrderForMargin[],
+  options?: Parameters<typeof buildSalesOrderMarginContext>[2]
+): Promise<Map<string, SalesOrderMarginOrderResult>> {
+  const context = await buildSalesOrderMarginContext(prisma, orders, options);
+  return context.byOrderId;
+}
+
+export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
+  prisma: PrismaClient,
+  orders: T[]
+): Promise<Array<T & { marginSummary?: SalesOrderMarginSummaryPayload }>> {
+  if (orders.length === 0) return [];
+
+  const context = await buildSalesOrderMarginContext(prisma, orders);
+  return orders.map((order) => ({
+    ...order,
+    marginSummary: context.byOrderId.get(order.id)?.marginSummary,
+  }));
+}
+
+export async function attachMarginToSalesOrderDetail<
+  T extends SalesOrderForMargin & { items: SalesOrderItemForMargin[] },
+>(prisma: PrismaClient, order: T): Promise<
+  T & {
+    marginSummary?: SalesOrderMarginSummaryPayload;
+    items: Array<T["items"][number] & { margin?: SalesOrderItemMarginPayload }>;
+  }
+> {
+  const context = await buildSalesOrderMarginContext(prisma, [order], {
+    itemsByOrderId: new Map([[order.id, order.items]]),
+  });
+  const result = context.byOrderId.get(order.id);
+  if (!result) {
+    return { ...order, items: order.items.map((item) => ({ ...item })) };
+  }
+
+  return {
+    ...order,
+    marginSummary: result.marginSummary,
+    items: order.items.map((item) => ({
+      ...item,
+      margin: result.itemMargins.get(item.id),
+    })),
+  };
+}
+
+/** Atalho para um único pedido com itens já carregados (testes / rotas). */
+export async function buildSalesOrderMarginInputsForOrder(
+  prisma: PrismaClient,
+  order: SalesOrderForMargin & { items: SalesOrderItemForMargin[] }
+) {
+  const resolverItems = order.items.map((item, index) =>
+    mapItemToResolverInput(item, order, index, order.items.length)
+  );
+  return buildSalesOrderMarginInputs(prisma, resolverItems, getSalesOrderMarginProductCostResolver());
+}
+
+export function aggregateSalesOrderMarginSummaries(
+  summaries: SalesOrderMarginSummaryPayload[]
+): SalesOrderMarginSummaryPayload | undefined {
+  if (summaries.length === 0) return undefined;
+
+  const netRevenue = summaries.reduce((sum, row) => sum + row.netRevenue, 0);
+  const totalCost = summaries.reduce((sum, row) => sum + row.totalCost, 0);
+  const marginValue = summaries.reduce((sum, row) => sum + row.marginValue, 0);
+  const itemsCount = summaries.reduce((sum, row) => sum + row.itemsCount, 0);
+  const validItemsCount = summaries.reduce((sum, row) => sum + row.validItemsCount, 0);
+  const ignoredItemsCount = summaries.reduce((sum, row) => sum + row.ignoredItemsCount, 0);
+
+  const flags = {
+    hasMissingCost: summaries.some((row) => row.hasMissingCost),
+    hasMissingProduct: summaries.some((row) => row.hasMissingProduct),
+    hasNegativeMargin: summaries.some((row) => row.hasNegativeMargin),
+    hasInvalidRevenue: summaries.some((row) => row.hasInvalidRevenue),
+  };
+
+  const marginPercent = netRevenue > 0 ? (marginValue / netRevenue) * 100 : null;
+  const markup = totalCost > 0 ? netRevenue / totalCost : null;
+
+  let status: SalesOrderMarginSummaryPayload["status"] = "OK";
+  if (validItemsCount === 0) {
+    if (flags.hasInvalidRevenue) status = "REVISAR_DADOS";
+    else if (flags.hasMissingProduct && !flags.hasMissingCost) status = "SEM_PRODUTO_VINCULADO";
+    else if (flags.hasMissingCost && !flags.hasMissingProduct) status = "SEM_CUSTO";
+    else if (flags.hasMissingCost || flags.hasMissingProduct) status = "PARTIAL";
+    else status = "REVISAR_DADOS";
+  } else if (flags.hasMissingCost || flags.hasMissingProduct || flags.hasInvalidRevenue) {
+    status = "PARTIAL";
+  } else if (flags.hasNegativeMargin) {
+    status = "MARGEM_NEGATIVA";
+  }
+
+  const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
+  return {
+    netRevenue,
+    totalCost,
+    marginValue,
+    marginPercent,
+    markup,
+    itemsCount,
+    validItemsCount,
+    ignoredItemsCount,
+    ...flags,
+    status,
+    statusLabel: meta.statusLabel,
+    statusSeverity: meta.statusSeverity,
+  };
+}

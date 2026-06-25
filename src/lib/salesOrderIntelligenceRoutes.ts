@@ -15,6 +15,10 @@ import {
   parseSalesOrderManagementFilters,
   type SalesOrderManagementResponse,
 } from "./salesOrderManagement.js";
+import {
+  attachMarginsToSalesOrders,
+  calculateSalesOrderMarginsForOrders,
+} from "./salesOrderMarginService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -100,10 +104,15 @@ export async function loadSalesOrderManagementPage(
       items: {
         select: {
           id: true,
+          salesOrderId: true,
+          productId: true,
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,
           quantity: true,
+          negotiatedPrice: true,
+          totalNetValue: true,
+          unitCost: true,
         },
       },
     },
@@ -126,6 +135,20 @@ export async function loadSalesOrderManagementPage(
     undefined,
     linkedNfeContextMap
   );
+
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(
+    prisma,
+    orders.map((order) => ({
+      id: order.id,
+      nomusRawResponse: order.nomusRawResponse,
+      items: order.items,
+    }))
+  );
+
+  for (const row of rows) {
+    row.marginSummary = marginByOrder.get(row.id)?.marginSummary;
+  }
+
   const total = rows.length;
   const start = (page - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
