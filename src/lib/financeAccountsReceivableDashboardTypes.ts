@@ -4,6 +4,14 @@ import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.j
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import { isNomusPersonIdCustomerParam } from "./financeAccountsReceivableCustomerMatch.js";
 import { safeTrim } from "./safeTrim.js";
+
+function positiveAmountFilterParam(value: string): string | null {
+  const raw = safeTrim(value);
+  if (!raw) return null;
+  const n = Number.parseFloat(raw.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return raw;
+}
 import {
   DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,
   type FinanceArOverdueUiFilters,
@@ -417,7 +425,7 @@ export function normalizeFinanceArAnalyticalUiFilters(
   return {
     ...base,
     customerId: safeTrim(raw.customerId),
-    customerName: safeTrim(raw.customerName),
+    customerName: safeTrim(raw.customerName) || safeTrim(raw.personName),
     issueDateFrom: safeTrim(raw.issueDateFrom),
     issueDateTo: safeTrim(raw.issueDateTo),
     document: safeTrim(raw.document),
@@ -444,7 +452,7 @@ export function buildFinanceArAnalyticalTitlesQuery(
   const hasCustomerFilter = hasNomusCustomerId || Boolean(customerName);
 
   const dashboardFilters = hasCustomerFilter
-    ? { ...normalized, personName: "", personCnpj: hasNomusCustomerId ? "" : normalized.personCnpj }
+    ? { ...normalized, personName: "", personCnpj: "" }
     : normalized;
 
   const q = new URLSearchParams(buildFinanceArDashboardQuery(dashboardFilters));
@@ -453,13 +461,15 @@ export function buildFinanceArAnalyticalTitlesQuery(
   } else if (customerName) {
     q.set("customerName", customerName);
     const cnpj = safeTrim(normalized.personCnpj);
-    if (cnpj) q.set("personCnpj", cnpj);
+    if (cnpj) q.set("customerCnpj", cnpj);
   }
   if (normalized.issueDateFrom) q.set("issueDateFrom", normalized.issueDateFrom);
   if (normalized.issueDateTo) q.set("issueDateTo", normalized.issueDateTo);
   if (normalized.document) q.set("document", normalized.document);
-  if (normalized.minValue) q.set("minValue", normalized.minValue);
-  if (normalized.maxValue) q.set("maxValue", normalized.maxValue);
+  const minValue = positiveAmountFilterParam(normalized.minValue);
+  if (minValue) q.set("minValue", minValue);
+  const maxValue = positiveAmountFilterParam(normalized.maxValue);
+  if (maxValue) q.set("maxValue", maxValue);
   if (normalized.origin !== "all") q.set("origin", normalized.origin);
   if (normalized.delaySituation !== "all") q.set("delaySituation", normalized.delaySituation);
   if (extras?.page) q.set("page", String(extras.page));

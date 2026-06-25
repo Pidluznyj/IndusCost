@@ -205,10 +205,12 @@ describe("financeArAnalyticalTitles customer filter", () => {
       year: "2026",
       personName: "Esmaltec S/A",
       customerName: "Esmaltec S/A",
+      personCnpj: "08.056.614/0001-00",
       page: "1",
     });
     const prismaFilters = financeArTitlesPrismaFilters(query);
     assert.equal(prismaFilters.personName, undefined);
+    assert.equal(prismaFilters.personCnpj, undefined);
     assert.equal(query.filters.year, 2026);
   });
 

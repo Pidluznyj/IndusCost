@@ -160,6 +160,13 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** Valor mínimo/máximo de filtro — zero ou negativo = sem filtro. */
+function parseOptionalAmountFilter(value: unknown): number | undefined {
+  const n = parseOptionalNumber(value);
+  if (n == null || n <= 0) return undefined;
+  return n;
+}
+
 function parseOriginFilter(value: unknown): FinanceArTitlesOriginFilter {
   const raw = String(value ?? "").trim().toLowerCase();
   if (raw === "withnfe" || raw === "with_nfe" || raw === "withNfe") return "withNfe";
@@ -180,14 +187,18 @@ export function parseFinanceArTitlesExtendedFilters(
 ): FinanceArTitlesExtendedFilters {
   const issueDateFrom = parseIsoDateParam(query.issueDateFrom);
   const issueDateTo = parseIsoDateParam(query.issueDateTo);
-  const minValue = parseOptionalNumber(query.minValue);
-  const maxValue = parseOptionalNumber(query.maxValue);
+  const minValue = parseOptionalAmountFilter(query.minValue);
+  const maxValue = parseOptionalAmountFilter(query.maxValue);
   const document = typeof query.document === "string" ? query.document.trim() : undefined;
   const origin = parseOriginFilter(query.origin);
   const customerId = parseNomusPersonIdCustomerParam(query.customerId);
   const customerName = parseFinanceCustomerNameParam(query);
   const customerCnpjRaw =
-    typeof query.personCnpj === "string" ? query.personCnpj.trim() : undefined;
+    typeof query.customerCnpj === "string"
+      ? query.customerCnpj.trim()
+      : typeof query.personCnpj === "string" && customerName
+        ? query.personCnpj.trim()
+        : "";
   const customerCnpj = customerName && customerCnpjRaw ? customerCnpjRaw : undefined;
   const delaySituation = parseDelayFilter(query.delaySituation);
   return {
@@ -471,6 +482,7 @@ export function financeArTitlesPrismaFilters(
   const filters = { ...query.filters };
   if (query.extended.customerId != null || query.extended.customerName) {
     filters.personName = undefined;
+    filters.personCnpj = undefined;
   }
   return filters;
 }
