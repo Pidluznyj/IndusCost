@@ -27,6 +27,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
+import { FinanceCashFlowDailyRadarExportButtons } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadarExportButtons";
 
 type PayableSortKey = "supplier" | "company" | "amount" | "status" | "operationalDate";
 type ReceivableSortKey = "customer" | "company" | "amount" | "status" | "operationalDate";
@@ -317,16 +318,42 @@ export function FinanceCashFlowDailyRadar() {
                     </span>
                   </div>
                 </div>
-                {isDayLevel ? (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDay(null)}
-                    className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Limpar dia
-                  </button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <FinanceCashFlowDailyRadarExportButtons
+                    rangeKey={detail.rangeKey}
+                    rangeLabel={detail.rangeLabel}
+                    baseDate={payload.baseDate}
+                    selectedDate={detail.date}
+                    search={search || undefined}
+                    payableSortBy={payableSort.key}
+                    payableSortDirection={payableSort.direction}
+                    receivableSortBy={receivableSort.key}
+                    receivableSortDirection={receivableSort.direction}
+                    disabled={loading}
+                  />
+                  {isDayLevel ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDay(null)}
+                      className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Limpar dia
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRange(null);
+                        setSelectedDay(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Limpar faixa
+                    </button>
+                  )}
+                </div>
               </div>
 
               <FinanceCostCenterGridSearchBar

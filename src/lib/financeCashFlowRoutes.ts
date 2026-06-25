@@ -31,6 +31,15 @@ import {
   parseDailyRadarQuery,
   filterDailyRadarPortfolioRows,
 } from "@/src/lib/financeCashFlowDailyRadar.js";
+import {
+  buildFinanceCashFlowDailyRadarExportPayload,
+  FinanceCashFlowDailyRadarExportError,
+  parseDailyRadarExportQuery,
+} from "@/src/lib/financeCashFlowDailyRadarExport.js";
+import {
+  buildFinanceCashFlowDailyRadarExportBuffer,
+  buildFinanceCashFlowDailyRadarExportFilename,
+} from "@/src/lib/financeCashFlowDailyRadarExportXlsx.js";
 import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { buildFinanceArPrismaWhere } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
@@ -249,6 +258,109 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         referenceDate
       );
       res.json(payload);
+    }
+  );
+
+  const dailyRadarExportGuard = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_EXPORT_PERMISSIONS]),
+  ] as const;
+
+  function parseDailyRadarExportOrRespond(
+    res: express.Response,
+    query: Record<string, unknown>
+  ) {
+    try {
+      return parseDailyRadarExportQuery(query);
+    } catch (error) {
+      if (error instanceof FinanceCashFlowDailyRadarExportError) {
+        res.status(400).json({ error: error.message });
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  app.get(
+    "/api/finance/cash-flow/daily-radar/export-data",
+    ...dailyRadarExportGuard,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) {
+          return res.status(401).json({ error: "Não autenticado." });
+        }
+
+        const query = parseDailyRadarExportOrRespond(res, req.query as Record<string, unknown>);
+        if (!query) return;
+
+        const referenceDate = new Date();
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+          await loadDailyRadarPortfolioRows(referenceDate);
+        const portfolio = filterDailyRadarPortfolioRows(
+          arRows,
+          apRows,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff
+        );
+        const payload = buildFinanceCashFlowDailyRadarExportPayload(
+          portfolio.arRows,
+          portfolio.apRows,
+          query,
+          { userName: user.name ?? null },
+          referenceDate
+        );
+        return res.json(payload);
+      } catch (error) {
+        console.error("GET /api/finance/cash-flow/daily-radar/export-data", error);
+        return res.status(500).json({ error: "Erro ao montar dados de exportação do radar diário." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/cash-flow/daily-radar/export.xlsx",
+    ...dailyRadarExportGuard,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) {
+          return res.status(401).json({ error: "Não autenticado." });
+        }
+
+        const query = parseDailyRadarExportOrRespond(res, req.query as Record<string, unknown>);
+        if (!query) return;
+
+        const referenceDate = new Date();
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+          await loadDailyRadarPortfolioRows(referenceDate);
+        const portfolio = filterDailyRadarPortfolioRows(
+          arRows,
+          apRows,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff
+        );
+        const payload = buildFinanceCashFlowDailyRadarExportPayload(
+          portfolio.arRows,
+          portfolio.apRows,
+          query,
+          { userName: user.name ?? null },
+          referenceDate
+        );
+        const buffer = buildFinanceCashFlowDailyRadarExportBuffer(payload);
+        const filename = buildFinanceCashFlowDailyRadarExportFilename(payload);
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(buffer);
+      } catch (error) {
+        console.error("GET /api/finance/cash-flow/daily-radar/export.xlsx", error);
+        return res.status(500).json({ error: "Erro ao exportar radar diário em Excel." });
+      }
     }
   );
 }

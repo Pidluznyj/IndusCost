@@ -71,6 +71,8 @@ const WEEKDAY_PT = [
   "Sábado",
 ] as const;
 
+export const DAILY_RADAR_EXPORT_PAGE_SIZE = 50_000;
+
 export type DailyRadarQuery = {
   baseDate: Date;
   rangeKey?: DailyRadarRangeKey;
@@ -84,6 +86,8 @@ export type DailyRadarQuery = {
   receivableSortDirection?: SortDirection;
   page?: number;
   pageSize?: number;
+  /** Quando true, ignora o limite de paginação da UI (exportação). */
+  exportAll?: boolean;
 };
 
 export type DailyRadarRangeSummary = {
@@ -531,7 +535,8 @@ function buildScopedDetail(
   netTotal: number;
 } {
   const search = normalizeSearch(query.search ?? "");
-  const pageSize = Math.min(Math.max(query.pageSize ?? 25, 1), 200);
+  const pageSizeCap = query.exportAll ? DAILY_RADAR_EXPORT_PAGE_SIZE : 200;
+  const pageSize = Math.min(Math.max(query.pageSize ?? 25, 1), pageSizeCap);
   const page = query.page ?? 1;
 
   let payables = scopeMovements
