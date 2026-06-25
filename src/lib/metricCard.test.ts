@@ -46,9 +46,17 @@ describe("formatFinancialMetric", () => {
 });
 
 describe("MetricCard design system", () => {
+  it("MetricCard renderiza fundo neutro por padrão", () => {
+    const css = readFileSync(metricCssPath, "utf8");
+    assert.match(css, /background:\s*hsl\(var\(--card\)\)/);
+    assert.doesNotMatch(css, /bg-emerald-50/);
+    assert.doesNotMatch(css, /bg-red-50/);
+    assert.doesNotMatch(css, /bg-blue-50/);
+  });
+
   it("MetricCard renderiza label e valor", () => {
     const src = readFileSync(metricCardPath, "utf8");
-    assert.match(src, /label/);
+    assert.match(src, /metric-card-label/);
     assert.match(src, /data-testid="metric-card-value"/);
     assert.match(src, /data-testid="metric-card"/);
   });
@@ -62,34 +70,53 @@ describe("MetricCard design system", () => {
     assert.match(src, /resolveMetricDisplay/);
   });
 
-  it("variante danger aplica estilo de alerta", () => {
-    const src = readFileSync(metricCardPath, "utf8");
-    assert.match(src, /danger:/);
-    assert.match(src, /text-red-700/);
-    assert.match(src, /bg-red-50/);
+  it("variante success aplica acento verde, não fundo inteiro verde forte", () => {
+    const css = readFileSync(metricCssPath, "utf8");
+    assert.match(css, /\.metric-card--success[\s\S]*--metric-accent:\s*#059669/);
+    assert.doesNotMatch(css, /background:.*#059669/);
+    assert.doesNotMatch(readFileSync(metricCardPath, "utf8"), /bg-emerald/);
   });
 
-  it("variante success aplica estilo positivo", () => {
+  it("variante danger aplica acento vermelho e valor vermelho", () => {
+    const css = readFileSync(metricCssPath, "utf8");
+    assert.match(css, /\.metric-card--danger[\s\S]*--metric-accent:\s*#dc2626/);
+    assert.match(css, /\.metric-card--danger \.metric-card-value[\s\S]*color:\s*#dc2626/);
+    assert.doesNotMatch(readFileSync(metricCardPath, "utf8"), /bg-red/);
+  });
+
+  it("valor grande continua em formato compacto", () => {
+    const resolved = resolveMetricDisplay({
+      label: "Valor recebido",
+      amount: 7_481_134.82,
+      amountFormat: "currency",
+    });
+    assert.match(resolved.display, /Mi|mil/);
+  });
+
+  it("valor completo aparece em title e subtítulo", () => {
     const src = readFileSync(metricCardPath, "utf8");
-    assert.match(src, /success:/);
-    assert.match(src, /text-emerald-700/);
+    assert.match(src, /title=\{displayTitle\}/);
+    assert.match(src, /metric-card-subtitle/);
   });
 
   it("MetricCardGrid é responsivo com auto-fit", () => {
     const css = readFileSync(metricCssPath, "utf8");
-    assert.match(css, /repeat\(auto-fit,\s*minmax/);
+    assert.match(css, /repeat\(auto-fit,\s*minmax\(var\(--metric-card-min,\s*220px\)/);
+    assert.match(css, /min-height:\s*118px/);
     const grid = readFileSync(metricGridPath, "utf8");
     assert.match(grid, /MetricCardGrid/);
     assert.match(grid, /data-testid="metric-card-grid"/);
   });
 
-  it("aba Contas a Receber → Títulos usa MetricCard", () => {
+  it("aba Contas a Receber → Títulos usa o novo padrão MetricCard", () => {
     const tab = readFileSync(arTitlesTabPath, "utf8");
     assert.match(tab, /MetricCard/);
     assert.match(tab, /MetricCardGrid/);
     assert.match(tab, /finance-ar-titles-summary-kpis/);
-    assert.match(tab, /summary\.totalOriginalValue/);
-    assert.match(tab, /summary\.totalOverdueValue/);
+    assert.match(tab, /variant="info"/);
+    assert.match(tab, /variant="danger"/);
+    assert.match(tab, /variant="success"/);
+    assert.match(tab, /variant="neutral"/);
     assert.doesNotMatch(tab, /FinanceBiKpiCard/);
     assert.doesNotMatch(tab, /xl:grid-cols-7/);
   });

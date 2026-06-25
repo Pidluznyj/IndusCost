@@ -18,14 +18,14 @@ import "./metric-card.css";
 type MetricCardGridProps = {
   children: React.ReactNode;
   className?: string;
-  /** Largura mínima de cada card — padrão 210px para métricas financeiras. */
+  /** Largura mínima de cada card — padrão 220px para métricas financeiras. */
   minColumnWidth?: number;
 };
 
 export function MetricCardGrid({
   children,
   className,
-  minColumnWidth = 210,
+  minColumnWidth = 220,
 }: MetricCardGridProps) {
   return (
     <div

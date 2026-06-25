@@ -2,7 +2,7 @@ import "./finance-ar-titles-print.css";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw, AlertTriangle, CalendarClock, CheckCircle2, FileText, Receipt, Scale, Wallet } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { MetricCard } from "@/src/components/ui/MetricCard";
@@ -449,12 +449,15 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             amount={summary.totalTitles}
             amountFormat="number"
             variant="info"
+            icon={<FileText />}
             loading={loading}
           />
           <MetricCard
             label="Valor original"
             amount={summary.totalOriginalValue}
             amountFormat="currency"
+            variant="neutral"
+            icon={<Receipt />}
             loading={loading}
           />
           <MetricCard
@@ -462,6 +465,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             amount={summary.totalReceivedValue}
             amountFormat="currency"
             variant="success"
+            icon={<CheckCircle2 />}
             loading={loading}
           />
           <MetricCard
@@ -469,6 +473,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             amount={summary.totalOpenValue}
             amountFormat="currency"
             variant="info"
+            icon={<Wallet />}
             loading={loading}
           />
           <MetricCard
@@ -476,19 +481,23 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             amount={summary.totalOverdueValue}
             amountFormat="currency"
             variant="danger"
+            icon={<AlertTriangle />}
             loading={loading}
           />
           <MetricCard
             label="A vencer"
             amount={summary.totalDueValue}
             amountFormat="currency"
-            variant="success"
+            variant="neutral"
+            icon={<CalendarClock />}
             loading={loading}
           />
           <MetricCard
             label="Ticket médio"
             amount={summary.averageTicket}
             amountFormat="currency"
+            variant="neutral"
+            icon={<Scale />}
             loading={loading}
           />
         </MetricCardGrid>

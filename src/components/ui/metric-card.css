@@ -1,37 +1,120 @@
 .metric-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(var(--metric-card-min, 210px), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(var(--metric-card-min, 220px), 1fr));
+  gap: 16px;
   align-items: stretch;
 }
 
 .metric-card {
+  --metric-accent: #64748b;
+
+  position: relative;
   min-width: 0;
-  min-height: 7.5rem;
+  min-height: 118px;
   display: flex;
   flex-direction: column;
+  padding: 14px 16px 12px 18px;
+  border: 1px solid hsl(var(--border));
+  border-left-width: 4px;
+  border-left-color: var(--metric-accent);
+  border-radius: 14px;
+  background: hsl(var(--card));
+  box-shadow: none;
+}
+
+.metric-card--default {
+  --metric-accent: #475569;
+}
+
+.metric-card--neutral {
+  --metric-accent: #64748b;
+}
+
+.metric-card--info {
+  --metric-accent: #2563eb;
+}
+
+.metric-card--success {
+  --metric-accent: #059669;
+}
+
+.metric-card--danger {
+  --metric-accent: #dc2626;
+}
+
+.metric-card--warning {
+  --metric-accent: #d97706;
+}
+
+.metric-card-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.metric-card-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--metric-accent) 10%, transparent);
+  color: var(--metric-accent);
+}
+
+.metric-card-icon-wrap svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .metric-card-value {
   max-width: 100%;
+  margin-top: 8px;
   font-variant-numeric: tabular-nums;
-  font-size: clamp(1.125rem, 1.35vw + 0.45rem, 1.75rem);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  font-size: clamp(1.75rem, 1.6vw + 0.65rem, 2.125rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: #020617;
   overflow: visible;
   white-space: nowrap;
   text-overflow: clip;
 }
 
+.metric-card--danger .metric-card-value {
+  color: #dc2626;
+}
+
 .metric-card-value--compact {
-  font-size: clamp(1.25rem, 1.5vw + 0.5rem, 1.875rem);
+  font-size: clamp(1.75rem, 1.75vw + 0.7rem, 2.125rem);
+}
+
+.metric-card-subtitle {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #64748b;
 }
 
 .metric-card--compact {
-  min-height: 6.5rem;
+  min-height: 104px;
+  padding: 12px 14px 10px 16px;
 }
 
 .metric-card--compact .metric-card-value {
-  font-size: clamp(1rem, 1.2vw + 0.4rem, 1.5rem);
+  font-size: clamp(1.5rem, 1.4vw + 0.55rem, 1.875rem);
+}
+
+.metric-card-loading {
+  margin-top: 8px;
+  height: 2rem;
+  width: 7rem;
+  border-radius: 6px;
+  background: hsl(var(--muted) / 0.55);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
