@@ -112,6 +112,30 @@ export function serializeInventoryMovement(row: InventoryMovement) {
   };
 }
 
+type DashboardMovementRow = InventoryMovement & {
+  item?: { code: string; description: string } | null;
+  sourceWarehouse?: { code: string; name: string } | null;
+  destinationWarehouse?: { code: string; name: string } | null;
+};
+
+/** Movimento enriquecido para o dashboard (item + almoxarifado legíveis). */
+export function serializeInventoryDashboardMovement(row: DashboardMovementRow) {
+  const warehouse = row.destinationWarehouse ?? row.sourceWarehouse;
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    movementType: row.movementType,
+    quantity: inventoryDec(row.quantity),
+    unit: row.unit,
+    movementDate: row.movementDate.toISOString(),
+    warehouseCode: warehouse?.code ?? null,
+    warehouseName: warehouse?.name ?? null,
+    responsibleUserId: row.responsibleUserId,
+  };
+}
+
 export type InventoryBalanceWithItem = InventoryBalance & {
   item: Pick<InventoryItem, "code" | "description" | "itemType" | "status" | "minimumStock" | "reorderPoint" | "unit">;
   warehouse: Pick<InventoryWarehouse, "code" | "name" | "status">;

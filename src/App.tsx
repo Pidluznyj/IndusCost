@@ -26,6 +26,7 @@ import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecuti
 import { ProjectClientReportPage } from "./components/projects/ProjectClientReportPage";
 import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
+import { InventoryModule } from "./components/InventoryModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
 import { FleetPublicVehicleChecklistPage } from "./components/fleet/FleetPublicVehicleChecklistPage";
@@ -372,6 +373,17 @@ export default function App() {
               description="Controle de solicitações de manutenção predial/facilities, responsáveis, status e materiais."
             >
               <MaintenanceModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="inventory"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Controle de itens, saldos, movimentações e conferências."
+            >
+              <InventoryModule />
             </ModulePageShell>
           }
         />

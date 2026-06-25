@@ -24,6 +24,7 @@ import {
   Car,
   Banknote,
   FolderKanban,
+  Warehouse,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -46,6 +47,7 @@ const ALL_MENU_ITEMS: {
   { id: "materials", icon: Truck, label: MODULE_LABELS.materials },
   { id: "purchases", icon: ShoppingCart, label: MODULE_LABELS.purchases },
   { id: "maintenance", icon: Wrench, label: MODULE_LABELS.maintenance },
+  { id: "inventory", icon: Warehouse, label: MODULE_LABELS.inventory },
   { id: "projects", icon: FolderKanban, label: MODULE_LABELS.projects },
   { id: "fleet", icon: Car, label: MODULE_LABELS.fleet },
   { id: "products", icon: Package, label: MODULE_LABELS.products },

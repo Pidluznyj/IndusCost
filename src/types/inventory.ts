@@ -139,3 +139,43 @@ export const INVENTORY_DEFAULT_WAREHOUSE_CODES = [
   "EXPEDICAO",
   "SUCATA",
 ] as const;
+
+export type InventoryDashboardCriticalItem = {
+  itemId: string;
+  code: string;
+  description: string;
+  itemType: InventoryItemType;
+  availableQuantity: number;
+  minimumStock: number | null;
+  reorderPoint: number | null;
+  operationalStatus: string;
+};
+
+export type InventoryDashboardRecentMovement = {
+  id: string;
+  itemId: string;
+  itemCode: string | null;
+  itemDescription: string | null;
+  movementType: InventoryMovementType;
+  quantity: number;
+  unit: string;
+  movementDate: string;
+  warehouseCode: string | null;
+  warehouseName: string | null;
+  responsibleUserId: string | null;
+};
+
+export type InventoryDashboardPayload = {
+  totalInventoryValue: number;
+  itemsCount: number;
+  belowMinimumCount: number;
+  belowReorderPointCount: number;
+  negativeStockCount: number;
+  blockedItemsCount: number;
+  reservedItemsCount: number;
+  quarantineItemsCount: number;
+  recentMovements: InventoryDashboardRecentMovement[];
+  criticalRawMaterials: InventoryDashboardCriticalItem[];
+  criticalSupplies: InventoryDashboardCriticalItem[];
+  finishedProductsAvailable: InventoryDashboardCriticalItem[];
+};

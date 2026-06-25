@@ -254,7 +254,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   materials: "Suprimentos",
   purchases: "Compras",
   maintenance: "Manutenção Predial",
-  inventory: "Estoque",
+  inventory: "Estoque / Almoxarifado",
   projects: "Projetos",
   fleet: "Gestão de Frota",
   products: "Produtos",

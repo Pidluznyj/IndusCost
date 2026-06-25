@@ -6,7 +6,7 @@ import { calculateInventoryStatus } from "./inventoryStatus.js";
 import {
   inventoryDec,
   inventoryDecOrNull,
-  serializeInventoryMovement,
+  serializeInventoryDashboardMovement,
 } from "./inventorySerialization.server.js";
 import type { InventoryItemType } from "./inventoryTypes.js";
 
@@ -30,7 +30,7 @@ export type InventoryDashboardPayload = {
   blockedItemsCount: number;
   reservedItemsCount: number;
   quarantineItemsCount: number;
-  recentMovements: ReturnType<typeof serializeInventoryMovement>[];
+  recentMovements: ReturnType<typeof serializeInventoryDashboardMovement>[];
   criticalRawMaterials: InventoryDashboardCriticalItem[];
   criticalSupplies: InventoryDashboardCriticalItem[];
   finishedProductsAvailable: InventoryDashboardCriticalItem[];
@@ -118,6 +118,11 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
     prisma.inventoryMovement.findMany({
       orderBy: { movementDate: "desc" },
       take: 10,
+      include: {
+        item: { select: { code: true, description: true } },
+        sourceWarehouse: { select: { code: true, name: true } },
+        destinationWarehouse: { select: { code: true, name: true } },
+      },
     }),
     prisma.inventoryBalance.aggregate({
       _sum: { totalValue: true },
@@ -183,7 +188,7 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
     blockedItemsCount,
     reservedItemsCount,
     quarantineItemsCount,
-    recentMovements: recentMovements.map(serializeInventoryMovement),
+    recentMovements: recentMovements.map(serializeInventoryDashboardMovement),
     criticalRawMaterials: criticalRawMaterials.slice(0, 20),
     criticalSupplies: criticalSupplies.slice(0, 20),
     finishedProductsAvailable: finishedProductsAvailable.slice(0, 20),
