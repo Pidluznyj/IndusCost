@@ -49,6 +49,7 @@ import { FinanceCostCenterOverviewTab } from "@/src/components/finance/cost-cent
 import { FinanceCostCentersCrudTab } from "@/src/components/finance/cost-centers/FinanceCostCentersCrudTab";
 import { FinanceSuppliersTab } from "@/src/components/finance/cost-centers/FinanceSuppliersTab";
 import { FinanceSupplierRulesTab } from "@/src/components/finance/cost-centers/FinanceSupplierRulesTab";
+import { FinanceGeneralClassificationRulesPanel } from "@/src/components/finance/cost-centers/FinanceGeneralClassificationRulesPanel";
 import { FinanceUnclassifiedPayablesTab } from "@/src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab";
 import { FinanceCostCenterAuditTab } from "@/src/components/finance/cost-centers/FinanceCostCenterAuditTab";
 
@@ -331,7 +332,10 @@ export function FinanceCostCentersPage() {
         />
       ) : null}
       {activeTab === "rules" && (canViewRules || canManageRules) ? (
-        <FinanceSupplierRulesTab canManage={canManageRules} />
+        <div className="space-y-8">
+          <FinanceSupplierRulesTab canManage={canManageRules} />
+          <FinanceGeneralClassificationRulesPanel canManage={canManageRules} />
+        </div>
       ) : activeTab === "rules" ? (
         <FinanceModuleErrorBanner message="Sem permissão para regras de classificação." />
       ) : null}

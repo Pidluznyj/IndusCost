@@ -31,6 +31,8 @@ import {
   type FinanceCcReallocationReason,
 } from "@/src/lib/financeCostCenterDetailShared.js";
 import { FinanceCostCenterValidationError } from "@/src/lib/financeCostCenters.js";
+import { classificationRuleTypeLabel } from "@/src/lib/financeCostCenterClassificationRuleMatcher.js";
+import { FINANCE_CLASSIFICATION_RULE_TYPE_LABEL } from "@/src/lib/financeCostCenterClassificationRulesShared.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 export class FinanceCostCenterDetailError extends Error {
@@ -79,6 +81,10 @@ type AllocationWithAp = {
     percentage: Prisma.Decimal;
     source: CostCenterAllocationSource;
     lockedManual: boolean;
+    classificationRuleId: string | null;
+    classificationRuleType: string | null;
+    classificationRuleName: string | null;
+    classificationRuleReason: string | null;
     notes: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -158,6 +164,17 @@ function resolveStatusLabel(row: FinanceApDashboardRow, referenceDate: Date): {
   return { key: status, label: labels[status] ?? status };
 }
 
+function resolveAllocationRuleSourceLabel(entry: AllocationWithAp): string | null {
+  if (entry.allocation.classificationRuleType) {
+    const typed = entry.allocation.classificationRuleType as keyof typeof FINANCE_CLASSIFICATION_RULE_TYPE_LABEL;
+    return FINANCE_CLASSIFICATION_RULE_TYPE_LABEL[typed] ?? classificationRuleTypeLabel(typed as never);
+  }
+  if (entry.allocation.ruleId) return "Regra por fornecedor";
+  if (entry.allocation.source === "MANUAL") return "Manual";
+  if (entry.allocation.source === "BATCH") return "Lote";
+  return null;
+}
+
 export function buildCostCenterDetailAllocationRow(
   entry: AllocationWithAp,
   referenceDate: Date = new Date()
@@ -193,6 +210,11 @@ export function buildCostCenterDetailAllocationRow(
     allocatedPercentage: finiteMoney(decimalFieldToNumber(entry.allocation.percentage)),
     allocationSource: entry.allocation.source,
     lockedManual: entry.allocation.lockedManual,
+    allocationRuleSourceLabel: resolveAllocationRuleSourceLabel(entry),
+    allocationRuleName: entry.allocation.classificationRuleName,
+    allocationRuleType: entry.allocation.classificationRuleType,
+    allocationRuleReason:
+      entry.allocation.classificationRuleReason ?? entry.allocation.notes,
     costCenterId: entry.allocation.costCenterId,
     costCenterCode: entry.costCenterCode,
     costCenterName: entry.costCenterName,
@@ -653,6 +675,10 @@ export async function loadCostCenterDetailEntries(
           percentage: allocation.percentage,
           source: allocation.source as CostCenterAllocationSource,
           lockedManual: allocation.lockedManual,
+          classificationRuleId: allocation.classificationRuleId,
+          classificationRuleType: allocation.classificationRuleType,
+          classificationRuleName: allocation.classificationRuleName,
+          classificationRuleReason: allocation.classificationRuleReason,
           notes: allocation.notes,
           createdAt: allocation.createdAt,
           updatedAt: allocation.updatedAt,

@@ -54,6 +54,10 @@ export type CostCenterDetailAllocationRow = {
   allocatedPercentage: number;
   allocationSource: CostCenterAllocationSource;
   lockedManual: boolean;
+  allocationRuleSourceLabel: string | null;
+  allocationRuleName: string | null;
+  allocationRuleType: string | null;
+  allocationRuleReason: string | null;
   costCenterId: string;
   costCenterCode: string;
   costCenterName: string;

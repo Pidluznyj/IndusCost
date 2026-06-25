@@ -2951,6 +2951,18 @@ enum CostCenterAllocationSource {
   BATCH
 }
 
+enum FinancialCostCenterClassificationRuleType {
+  SUPPLIER
+  NOMUS_CLASSIFICATION
+  DESCRIPTION_CONTAINS
+  DOCUMENT_CONTAINS
+  KEYWORDS
+  NO_SUPPLIER
+  FINANCIAL_NATURE
+  MANUAL
+  COMPOSITE
+}
+
 /// Fornecedor consolidado para classificação gerencial de AP (não substitui personName/personCnpj no Nomus).
 model FinancialSupplier {
   id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -2972,6 +2984,7 @@ model FinancialSupplier {
 
   aliases       FinancialSupplierAlias[]
   costCenterRules SupplierCostCenterRule[]
+  classificationRules FinancialCostCenterClassificationRule[]
   allocations   AccountsPayableCostCenterAllocation[]
 
   @@index([normalizedDocument])
@@ -3024,6 +3037,7 @@ model FinancialCostCenter {
   costCenterRules SupplierCostCenterRule[]
   allocations     AccountsPayableCostCenterAllocation[]
   reclassificationRulesTarget FinancialCostCenterReclassificationRule[]
+  classificationRules FinancialCostCenterClassificationRule[]
 
   @@index([status])
   @@index([parentId])
@@ -3055,6 +3069,45 @@ model FinancialCostCenterReclassificationRule {
   @@index([isActive])
   @@index([priority])
   @@index([targetCostCenterId])
+}
+
+/// Regra gerencial de classificação AP → centro de custo (fornecedor opcional).
+model FinancialCostCenterClassificationRule {
+  id                   String                                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String
+  ruleType             FinancialCostCenterClassificationRuleType
+  costCenterId         String                                    @db.Uuid
+  percentage           Decimal                                   @default(100) @db.Decimal(5, 2)
+  priority             Int                                       @default(100)
+  isActive             Boolean                                   @default(true)
+  autoApply            Boolean                                   @default(false)
+  supplierId           String?                                   @db.Uuid
+  nomusClassification  String?
+  descriptionContains  String?
+  documentContains     String?
+  keywords             Json?
+  financialNature      String?
+  company              String?
+  minAmount            Decimal?                                  @db.Decimal(20, 2)
+  maxAmount            Decimal?                                  @db.Decimal(20, 2)
+  titleStatus          String?
+  accountsPayableId    Int?
+  notes                String?
+  createdByUserId      String?
+  createdByName        String?
+  createdAt            DateTime                                  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                                  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  costCenter   FinancialCostCenter                     @relation(fields: [costCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  supplier     FinancialSupplier?                      @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  allocations  AccountsPayableCostCenterAllocation[]
+
+  @@index([ruleType, isActive])
+  @@index([supplierId])
+  @@index([costCenterId])
+  @@index([priority])
+  @@index([accountsPayableId])
+  @@index([company])
 }
 
 /// Regra fornecedor → centro de custo (classificação automática futura).
@@ -3095,6 +3148,10 @@ model AccountsPayableCostCenterAllocation {
   confidence        Decimal?                   @db.Decimal(5, 2)
   lockedManual      Boolean                    @default(false)
   ruleId            String?                    @db.Uuid
+  classificationRuleId   String?                    @db.Uuid
+  classificationRuleType String?
+  classificationRuleName String?
+  classificationRuleReason String?
   notes             String?
   createdByUserId   String?
   createdByName     String?
@@ -3104,6 +3161,7 @@ model AccountsPayableCostCenterAllocation {
   supplier   FinancialSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   costCenter FinancialCostCenter     @relation(fields: [costCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   rule       SupplierCostCenterRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  classificationRule FinancialCostCenterClassificationRule? @relation(fields: [classificationRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([accountsPayableId, costCenterId])
   @@index([accountsPayableId])

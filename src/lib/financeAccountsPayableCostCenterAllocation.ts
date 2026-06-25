@@ -18,6 +18,10 @@ import {
   resolveTitleUnallocatedGap,
 } from "@/src/lib/financeCostCenterAllocationMetrics.js";
 import { extractSupplierFromAccountsPayable } from "@/src/lib/financeSupplierIdentity.js";
+import {
+  resolveBestClassificationMatch,
+  type ClassificationApRow,
+} from "@/src/lib/financeCostCenterClassificationRuleMatcher.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 export class FinanceApAllocationError extends Error {
@@ -37,6 +41,11 @@ export type ApAllocationTitleRow = {
   personCnpj?: string | null;
   companyId?: number | null;
   companyName?: string | null;
+  classification?: string | null;
+  description?: string | null;
+  comments?: string | null;
+  documentNumber?: string | null;
+  status?: boolean | null;
   rawPayload?: unknown;
   balancePayable?: number;
   amountPayable?: number;
@@ -69,6 +78,10 @@ export type AllocationRecord = {
   confidence: Prisma.Decimal | null;
   lockedManual: boolean;
   ruleId: string | null;
+  classificationRuleId: string | null;
+  classificationRuleType: string | null;
+  classificationRuleName: string | null;
+  classificationRuleReason: string | null;
   notes: string | null;
 };
 
@@ -88,6 +101,10 @@ export type ProposedAllocationLine = {
   percentage: number;
   amount: number;
   ruleId: string | null;
+  classificationRuleId?: string | null;
+  classificationRuleType?: string | null;
+  classificationRuleName?: string | null;
+  classificationRuleReason?: string | null;
   source: "AUTO_RULE" | "MANUAL" | "BATCH";
 };
 
@@ -162,6 +179,29 @@ export type FinanceApAllocationDeps = {
   loadAllocationsForPayable: (externalId: number) => Promise<AllocationRecord[]>;
   loadAllocationsForPayables: (externalIds: number[]) => Promise<AllocationRecord[]>;
   loadRulesForSupplier: (supplierId: string) => Promise<SupplierRuleRecord[]>;
+  loadActiveClassificationRules?: () => Promise<
+    Array<{
+      id: string;
+      name: string;
+      ruleType: string;
+      costCenterId: string;
+      percentage: number;
+      priority: number;
+      autoApply: boolean;
+      isActive: boolean;
+      supplierId: string | null;
+      nomusClassification: string | null;
+      descriptionContains: string | null;
+      documentContains: string | null;
+      keywords: string[];
+      financialNature: string | null;
+      company: string | null;
+      minAmount: number | null;
+      maxAmount: number | null;
+      titleStatus: string | null;
+      accountsPayableId: number | null;
+    }>
+  >;
   loadCostCenterMeta: (
     id: string
   ) => Promise<{ id: string; code: string; name: string; status: string } | null>;
@@ -175,6 +215,10 @@ export type FinanceApAllocationDeps = {
       percentage: number;
       source: "AUTO_RULE" | "MANUAL" | "BATCH";
       ruleId: string | null;
+      classificationRuleId?: string | null;
+      classificationRuleType?: string | null;
+      classificationRuleName?: string | null;
+      classificationRuleReason?: string | null;
       lockedManual: boolean;
       notes: string | null;
       createdByUserId: string | null;
@@ -201,6 +245,11 @@ const AP_ALLOCATION_SELECT = {
   personCnpj: true,
   companyId: true,
   companyName: true,
+  classification: true,
+  description: true,
+  comments: true,
+  documentNumber: true,
+  status: true,
   rawPayload: true,
   balancePayable: true,
   amountPayable: true,
@@ -330,6 +379,45 @@ export function isTitleInClosedPeriod(
   return comp.getTime() <= closed.getTime();
 }
 
+function mapApToClassificationRow(ap: ApAllocationTitleRow): ClassificationApRow {
+  return {
+    externalId: ap.externalId,
+    personId: ap.personId,
+    personName: ap.personName,
+    personCnpj: ap.personCnpj,
+    companyId: ap.companyId,
+    companyName: ap.companyName,
+    classification: ap.classification,
+    description: ap.description,
+    comments: ap.comments,
+    documentNumber: ap.documentNumber,
+    status: ap.status,
+    balancePayable: ap.balancePayable,
+    amountPayable: ap.amountPayable,
+    rawPayload: ap.rawPayload,
+  };
+}
+
+function buildLinesFromMatch(
+  match: NonNullable<ReturnType<typeof resolveBestClassificationMatch>>,
+  titleAmount: number
+): ProposedAllocationLine[] {
+  const amounts = splitAmountByPercentages(titleAmount, [match.percentage]);
+  return [
+    {
+      costCenterId: match.costCenterId,
+      percentage: match.percentage,
+      amount: amounts[0]!,
+      ruleId: match.kind === "SUPPLIER" ? match.ruleId : null,
+      classificationRuleId: match.kind === "CLASSIFICATION" ? match.ruleId : null,
+      classificationRuleType: match.kind === "CLASSIFICATION" ? match.ruleType : null,
+      classificationRuleName: match.ruleName,
+      classificationRuleReason: match.reason,
+      source: "AUTO_RULE" as const,
+    },
+  ];
+}
+
 function buildLinesFromRules(
   rules: SupplierRuleRecord[],
   titleAmount: number
@@ -415,48 +503,52 @@ async function buildPreviewForTitle(
   }
 
   const supplier = resolveSupplierForAccountsPayable(ap, suppliers);
-  if (!supplier) {
+  const classificationRules = deps.loadActiveClassificationRules
+    ? await deps.loadActiveClassificationRules()
+    : [];
+  const supplierRules = supplier
+    ? (await deps.loadRulesForSupplier(supplier.id)).map((rule) => ({
+        id: rule.id,
+        supplierId: rule.supplierId,
+        costCenterId: rule.costCenterId,
+        percentage: decimalToNumber(rule.percentage),
+        priority: rule.priority,
+        autoApply: rule.autoApply,
+        isActive: rule.isActive,
+        company: rule.company,
+      }))
+    : [];
+
+  const match = resolveBestClassificationMatch({
+    ap: mapApToClassificationRow(ap),
+    supplier,
+    supplierRules,
+    classificationRules,
+    requireAutoApply: options?.requireAutoApply,
+  });
+
+  if (!match) {
     return {
       accountsPayableId: ap.externalId,
       action: "skip",
-      skipReason: "NO_SUPPLIER",
-      supplierId: null,
-      supplierName: null,
+      skipReason: supplier ? "NO_RULE" : "NO_SUPPLIER",
+      supplierId: supplier?.id ?? null,
+      supplierName: supplier?.displayName ?? null,
       titleAmount,
       lines: [],
       existingAllocationIds: existing.map((row) => row.id),
     };
   }
 
-  const rules = resolveCostCenterRulesForSupplier(
-    supplier.id,
-    ap,
-    await deps.loadRulesForSupplier(supplier.id),
-    options
-  );
-
-  if (rules.length === 0) {
-    return {
-      accountsPayableId: ap.externalId,
-      action: "skip",
-      skipReason: "NO_RULE",
-      supplierId: supplier.id,
-      supplierName: supplier.displayName,
-      titleAmount,
-      lines: [],
-      existingAllocationIds: existing.map((row) => row.id),
-    };
-  }
-
-  const lines = buildLinesFromRules(rules, titleAmount);
+  const lines = buildLinesFromMatch(match, titleAmount);
   validateAllocationTotals(lines, titleAmount);
 
   return {
     accountsPayableId: ap.externalId,
     action: existing.length > 0 ? "replace" : "create",
     skipReason: null,
-    supplierId: supplier.id,
-    supplierName: supplier.displayName,
+    supplierId: match.supplierId,
+    supplierName: supplier?.displayName ?? null,
     titleAmount,
     lines,
     existingAllocationIds: existing
@@ -553,6 +645,10 @@ async function persistAllocationsForTitle(
       percentage: line.percentage,
       source: options.source,
       ruleId: line.ruleId,
+      classificationRuleId: line.classificationRuleId ?? null,
+      classificationRuleType: line.classificationRuleType ?? null,
+      classificationRuleName: line.classificationRuleName ?? null,
+      classificationRuleReason: line.classificationRuleReason ?? null,
       lockedManual: options.lockedManual,
       notes: options.notes ?? null,
       createdByUserId: user.userId,
@@ -901,6 +997,11 @@ function mapApRow(row: {
   personCnpj: string | null;
   companyId: number | null;
   companyName: string | null;
+  classification: string | null;
+  description: string | null;
+  comments: string | null;
+  documentNumber: string | null;
+  status: boolean | null;
   rawPayload: unknown;
   balancePayable: Prisma.Decimal | null;
   amountPayable: Prisma.Decimal | null;
@@ -915,6 +1016,11 @@ function mapApRow(row: {
     personCnpj: row.personCnpj,
     companyId: row.companyId,
     companyName: row.companyName,
+    classification: row.classification,
+    description: row.description,
+    comments: row.comments,
+    documentNumber: row.documentNumber,
+    status: row.status,
     rawPayload: row.rawPayload,
     balancePayable: decimalFieldToNumber(row.balancePayable),
     amountPayable: decimalFieldToNumber(row.amountPayable),
@@ -931,6 +1037,7 @@ function createPrismaFinanceApAllocationDeps(
     | "nomusAccountsPayable"
     | "accountsPayableCostCenterAllocation"
     | "supplierCostCenterRule"
+    | "financialCostCenterClassificationRule"
     | "financialCostCenter"
     | "financialCostCenterAuditLog"
   >
@@ -1006,6 +1113,34 @@ function createPrismaFinanceApAllocationDeps(
       db.supplierCostCenterRule.findMany({
         where: { supplierId, isActive: true },
       }),
+    loadActiveClassificationRules: async () => {
+      const rows = await db.financialCostCenterClassificationRule.findMany({
+        where: { isActive: true },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        ruleType: row.ruleType,
+        costCenterId: row.costCenterId,
+        percentage: decimalToNumber(row.percentage),
+        priority: row.priority,
+        autoApply: row.autoApply,
+        isActive: row.isActive,
+        supplierId: row.supplierId,
+        nomusClassification: row.nomusClassification,
+        descriptionContains: row.descriptionContains,
+        documentContains: row.documentContains,
+        keywords: Array.isArray(row.keywords)
+          ? row.keywords.filter((item): item is string => typeof item === "string")
+          : [],
+        financialNature: row.financialNature,
+        company: row.company,
+        minAmount: row.minAmount != null ? decimalToNumber(row.minAmount) : null,
+        maxAmount: row.maxAmount != null ? decimalToNumber(row.maxAmount) : null,
+        titleStatus: row.titleStatus,
+        accountsPayableId: row.accountsPayableId,
+      }));
+    },
     loadCostCenterMeta: async (id) =>
       db.financialCostCenter.findUnique({
         where: { id },
@@ -1029,6 +1164,10 @@ function createPrismaFinanceApAllocationDeps(
             percentage: new Prisma.Decimal(line.percentage),
             source: line.source,
             ruleId: line.ruleId,
+            classificationRuleId: line.classificationRuleId ?? null,
+            classificationRuleType: line.classificationRuleType ?? null,
+            classificationRuleName: line.classificationRuleName ?? null,
+            classificationRuleReason: line.classificationRuleReason ?? null,
             lockedManual: line.lockedManual,
             notes: line.notes,
             createdByUserId: line.createdByUserId,

@@ -736,6 +736,8 @@ export function FinanceCostCenterExpenseMapSection({
                     sort={{ key: drilldown.sortBy, direction: drilldown.sortDirection }}
                     onSort={handleSort}
                   />
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">Regra</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">Motivo</th>
                   <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">Locked</th>
                   <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">Notas</th>
                 </tr>
@@ -772,6 +774,13 @@ export function FinanceCostCenterExpenseMapSection({
                   <td className="px-3 py-2 text-right font-semibold">{formatFinanceCurrency(row.allocatedAmount)}</td>
                   <td className="px-3 py-2 text-right">{row.allocatedPercentage}%</td>
                   <td className="px-3 py-2">{sourceBadge(row.allocationSource)}</td>
+                  <td className="px-3 py-2 max-w-[160px] truncate" title={row.allocationRuleName ?? undefined}>
+                    <p>{displayFinanceText(row.allocationRuleSourceLabel ?? row.allocationRuleType)}</p>
+                    <p className="text-[10px] text-muted-foreground">{displayFinanceText(row.allocationRuleName)}</p>
+                  </td>
+                  <td className="px-3 py-2 max-w-[180px] truncate" title={row.allocationRuleReason ?? undefined}>
+                    {displayFinanceText(row.allocationRuleReason)}
+                  </td>
                   <td className="px-3 py-2">{row.lockedManual ? "Sim" : "—"}</td>
                   <td className="px-3 py-2 max-w-[180px] truncate" title={row.allocationNotes ?? undefined}>
                     {displayFinanceText(row.allocationNotes)}
