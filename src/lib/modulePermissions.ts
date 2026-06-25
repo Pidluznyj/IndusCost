@@ -9,6 +9,7 @@ export type AppModuleId =
   | "materials"
   | "purchases"
   | "maintenance"
+  | "inventory"
   | "projects"
   | "fleet"
   | "products"
@@ -39,6 +40,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "materials",
   "purchases",
   "maintenance",
+  "inventory",
   "projects",
   "fleet",
   "products",
@@ -103,6 +105,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasAnyPermission([...SETTINGS_MENU_PERMISSIONS]);
     case "maintenance":
       return check.hasPermission("maintenance.view");
+    case "inventory":
+      return check.hasPermission("inventory.view");
     case "projects":
       return check.hasPermission("projects.view");
     case "fleet": {
@@ -250,6 +254,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   materials: "Suprimentos",
   purchases: "Compras",
   maintenance: "Manutenção Predial",
+  inventory: "Estoque",
   projects: "Projetos",
   fleet: "Gestão de Frota",
   products: "Produtos",

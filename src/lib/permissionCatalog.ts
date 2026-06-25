@@ -38,6 +38,7 @@ const SYS = "Configurações / Sistema";
 const MNT = "Manutenção";
 const PRJ = "Projetos";
 const FLT = "Gestão de Frota";
+const INV = "Estoque";
 
 const FIN = "Financeiro";
 
@@ -1164,6 +1165,87 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["fleet.view"],
     risk: "critical",
   }),
+
+  // —— Estoque / Almoxarifado ——
+  perm({
+    key: "inventory.view",
+    label: "Estoque",
+    group: INV,
+    module: "inventory",
+    description: "Acessar o módulo de estoque e consultar saldos, movimentações e dashboard.",
+    type: "menu",
+  }),
+  perm({
+    key: "inventory.manage",
+    label: "Estoque — Gerenciar",
+    group: INV,
+    module: "inventory",
+    description: "Cadastrar e editar itens, almoxarifados e locais.",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
+  perm({
+    key: "inventory.movements.create",
+    label: "Estoque — Registrar movimentação",
+    group: INV,
+    module: "inventory",
+    description: "Registrar movimentações manuais de estoque.",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
+  perm({
+    key: "inventory.movements.override",
+    label: "Estoque — Override de saldo",
+    group: INV,
+    module: "inventory",
+    description: "Permitir saída acima do saldo disponível (com auditoria).",
+    type: "action",
+    parentKey: "inventory.movements.create",
+    requires: ["inventory.view", "inventory.movements.create"],
+    risk: "critical",
+  }),
+  perm({
+    key: "inventory.reservations.manage",
+    label: "Estoque — Reservas",
+    group: INV,
+    module: "inventory",
+    description: "Criar e cancelar reservas manuais de estoque.",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
+  perm({
+    key: "inventory.count.manage",
+    label: "Estoque — Conferência física",
+    group: INV,
+    module: "inventory",
+    description: "Abrir, contar e aprovar sessões de inventário físico.",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
+  perm({
+    key: "inventory.audit.view",
+    label: "Estoque — Auditoria",
+    group: INV,
+    module: "inventory",
+    description: "Consultar trilha de auditoria detalhada do estoque.",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
+  perm({
+    key: "inventory.export",
+    label: "Estoque — Exportar",
+    group: INV,
+    module: "inventory",
+    description: "Exportar saldos e movimentações (CSV/XLSX).",
+    type: "action",
+    parentKey: "inventory.view",
+    requires: ["inventory.view"],
+  }),
 ];
 
 export const ALL_PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);
@@ -1181,4 +1263,5 @@ export const PERMISSION_GROUP_ORDER = [
   SYS,
   MNT,
   FLT,
+  INV,
 ] as const;
