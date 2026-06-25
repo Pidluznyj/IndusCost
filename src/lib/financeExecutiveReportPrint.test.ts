@@ -6,6 +6,7 @@ import {
   canPrintExecutiveReport,
   executiveReportPrintNeedsQualityConfirm,
   resolveExecutiveReportPrintAction,
+  waitForExecutiveReportChartsReady,
 } from "./financeExecutiveReportPrint.js";
 
 describe("financeExecutiveReportPrint", () => {
@@ -145,14 +146,14 @@ describe("financeExecutiveReportPrint", () => {
       ),
       "utf8"
     );
+    assert.match(css, /executive-report-chart-frame/);
     assert.match(css, /executive-chart-body/);
     assert.match(css, /executive-chart-region/);
-    // Gráfico cresce para ocupar a área útil (sem teto fixo pequeno).
-    assert.match(css, /\.executive-chart-body\s*\{[\s\S]*flex:\s*1 1 auto/);
-    assert.match(css, /min-height:\s*80mm/);
+    assert.match(css, /\.executive-report-chart-frame[\s\S]*height:\s*105mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
     assert.match(css, /margin-top:\s*auto/);
+    assert.doesNotMatch(css, /\.executive-chart-body\s*\{[\s\S]*height:\s*auto/);
   });
 
   it("print CSS fixa altura da página paisagem para evitar páginas em branco", () => {
@@ -264,5 +265,48 @@ describe("financeExecutiveReportPrint", () => {
       }),
       "print"
     );
+  });
+
+  it("containers de gráfico possuem data-report-chart e altura explícita", () => {
+    const shell = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "charts", "ExecutiveChartShell.tsx"),
+      "utf8"
+    );
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceExecutiveReportPage.tsx"),
+      "utf8"
+    );
+    assert.match(shell, /data-report-chart/);
+    assert.match(shell, /executive-report-chart-frame/);
+    assert.match(shell, /minHeight:\s*height/);
+    assert.match(page, /waitForExecutiveReportChartsReady/);
+  });
+
+  it("gráficos Recharts usam altura explícita e animação desativada", () => {
+    const charts = [
+      "ExecutiveBarComparisonChart.tsx",
+      "ExecutiveRealizedProjectedChart.tsx",
+      "ExecutiveScheduleChart.tsx",
+      "ExecutiveSalesOrdersChart.tsx",
+    ];
+    for (const file of charts) {
+      const src = readFileSync(
+        join(process.cwd(), "src", "components", "finance", "executive-report", "charts", file),
+        "utf8"
+      );
+      assert.match(src, /useExecutiveChartFrameHeight/);
+      assert.match(src, /height=\{chartHeight\}/);
+      assert.match(src, /isAnimationActive=\{EXECUTIVE_CHART_IS_ANIMATION_ACTIVE\}/);
+    }
+    const cashFlow = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
+      "utf8"
+    );
+    assert.match(cashFlow, /data-report-chart/);
+    assert.match(cashFlow, /EXECUTIVE_CHART_IS_ANIMATION_ACTIVE/);
+  });
+
+  it("waitForExecutiveReportChartsReady retorna true sem document (SSR)", async () => {
+    assert.equal(await waitForExecutiveReportChartsReady(), true);
   });
 });

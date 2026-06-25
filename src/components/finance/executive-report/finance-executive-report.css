@@ -113,7 +113,8 @@
   color: #475569;
 }
 
-.executive-chart-body {
+.executive-chart-body,
+.executive-report-chart-frame {
   width: 100%;
   overflow: hidden;
 }

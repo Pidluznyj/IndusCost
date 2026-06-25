@@ -15,6 +15,7 @@ import {
 import {
   EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE,
   resolveExecutiveReportPrintAction,
+  waitForExecutiveReportChartsReady,
 } from "@/src/lib/financeExecutiveReportPrint";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { ExecutiveReportFilters } from "@/src/components/finance/executive-report/ExecutiveReportFilters";
@@ -60,6 +61,7 @@ export function FinanceExecutiveReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const appliedQuery = useMemo(
     () => buildFinanceExecutiveReportQuery(appliedFilters),
@@ -119,7 +121,7 @@ export function FinanceExecutiveReportPage() {
     setAppliedFilters(defaults);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const action = resolveExecutiveReportPrintAction({
       loading,
       report,
@@ -133,7 +135,21 @@ export function FinanceExecutiveReportPage() {
     if (action === "blocked-cancelled") {
       return;
     }
-    window.print();
+
+    if (printing) return;
+    setPrinting(true);
+    try {
+      const chartsReady = await waitForExecutiveReportChartsReady();
+      if (!chartsReady) {
+        window.alert(
+          "Os gráficos ainda estão carregando. Aguarde alguns segundos e tente exportar novamente."
+        );
+        return;
+      }
+      window.print();
+    } finally {
+      setPrinting(false);
+    }
   };
 
   const auditSections = useMemo(
@@ -163,7 +179,7 @@ export function FinanceExecutiveReportPage() {
         onApply={handleApply}
         onClear={handleClear}
         onRefresh={() => void loadReport()}
-        onPrint={handlePrint}
+        onPrint={() => void handlePrint()}
         onAudit={() => setAuditOpen(true)}
         auditWarningCount={report?.dataQuality.warnings.length ?? 0}
         applyDisabled={!hasPendingFilterChanges}

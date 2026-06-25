@@ -25,12 +25,14 @@ import {
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
   EXECUTIVE_CHART_MARGIN,
   EXECUTIVE_CHART_X_TICK,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { useExecutiveChartFrameHeight } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 function SalesTooltip({
   active,
@@ -83,6 +85,7 @@ export function ExecutiveSalesOrdersChart({
   targetMissing?: boolean;
   scenarioText?: string;
 }) {
+  const chartHeight = useExecutiveChartFrameHeight();
   const data = rows.map((row) => ({
     name: row.monthLabel,
     month: row.month,
@@ -103,7 +106,7 @@ export function ExecutiveSalesOrdersChart({
         testId="executive-sales-orders-chart"
         scenarioText={scenarioText}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={chartHeight}>
           <ComposedChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
@@ -128,6 +131,7 @@ export function ExecutiveSalesOrdersChart({
               fill={config.colors.previousYearBar}
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
+              isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
             >
               <LabelList
                 dataKey="previousYear"
@@ -140,6 +144,7 @@ export function ExecutiveSalesOrdersChart({
               fill={config.colors.currentYearBar}
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
+              isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
             >
               {data.map((entry) => (
                 <Cell
@@ -162,6 +167,7 @@ export function ExecutiveSalesOrdersChart({
               stroke={config.colors.targetLine}
               strokeWidth={2.5}
               dot={false}
+              isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
             />
             {config.colors.projectedLine ? (
               <Line
@@ -172,6 +178,7 @@ export function ExecutiveSalesOrdersChart({
                 strokeWidth={2}
                 strokeDasharray="6 4"
                 dot={false}
+                isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
               />
             ) : null}
           </ComposedChart>

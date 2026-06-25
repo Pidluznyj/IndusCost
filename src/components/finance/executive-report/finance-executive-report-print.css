@@ -395,24 +395,34 @@
   }
 
   /*
-   * Corpo do gráfico ocupa toda a altura restante do card (sem teto fixo).
-   * Sobrescreve a altura inline (style={{ height }}) definida no React para que,
-   * em paisagem, o gráfico fique grande e legível.
+   * Corpo do gráfico: altura explícita para o Recharts ResponsiveContainer.
+   * NÃO usar height: auto — colapsa o SVG no PDF (altura 0).
    */
+  .executive-report-chart-frame,
   .executive-chart-body {
-    flex: 1 1 auto !important;
-    min-height: 80mm !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: hidden !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: 105mm !important;
+    min-height: 105mm !important;
+    max-height: 105mm !important;
+    overflow: visible !important;
+    display: block !important;
   }
 
-  .executive-chart-body > div,
+  .executive-report-chart-frame .recharts-responsive-container,
   .executive-chart-body .recharts-responsive-container,
+  .executive-report-chart-frame .recharts-wrapper,
   .executive-chart-body .recharts-wrapper {
-    height: 100% !important;
-    max-height: none !important;
     width: 100% !important;
+    height: 100% !important;
+    max-height: 105mm !important;
+  }
+
+  .executive-report-chart-frame svg,
+  .executive-chart-body svg {
+    display: block !important;
+    overflow: visible !important;
+    max-width: 100% !important;
   }
 
   .executive-chart-body .recharts-cartesian-axis-tick text,
@@ -427,10 +437,6 @@
     font-size: 7.5pt !important;
     padding: 1.5mm 2mm !important;
     margin: 1mm 0 !important;
-  }
-
-  .executive-chart-body svg {
-    overflow: hidden !important;
   }
 
   .executive-target-hint {

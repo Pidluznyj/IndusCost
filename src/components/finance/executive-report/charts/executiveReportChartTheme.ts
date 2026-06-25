@@ -2,6 +2,12 @@
 
 export const EXECUTIVE_CHART_HEIGHT = 440;
 
+/** Altura mínima do frame em impressão/PDF (A4 paisagem). */
+export const EXECUTIVE_CHART_PRINT_FRAME_HEIGHT = "105mm";
+
+/** Recharts: desativar animação em relatório executivo (impressão/PDF). */
+export const EXECUTIVE_CHART_IS_ANIMATION_ACTIVE = false;
+
 export const EXECUTIVE_CHART_MARGIN = {
   top: 36,
   right: 20,

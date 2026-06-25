@@ -24,11 +24,13 @@ import {
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_MARGIN,
   EXECUTIVE_CHART_X_TICK_EMPHASIS,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { useExecutiveChartFrameHeight } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 function RealizedTooltip({
   active,
@@ -60,6 +62,7 @@ export function ExecutiveRealizedProjectedChart({
   selectedYear: number;
   scenarioText?: string;
 }) {
+  const chartHeight = useExecutiveChartFrameHeight();
   const chartData = [
     {
       name: "Realizado",
@@ -94,7 +97,7 @@ export function ExecutiveRealizedProjectedChart({
         testId="executive-realized-projected-chart"
         scenarioText={scenarioText}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={chartHeight}>
           <BarChart data={chartData} margin={EXECUTIVE_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
@@ -112,7 +115,12 @@ export function ExecutiveRealizedProjectedChart({
             />
             <Tooltip content={<RealizedTooltip />} />
             <ReferenceLine y={0} stroke="#94A3B8" />
-            <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={72}>
+            <Bar
+              dataKey="value"
+              radius={[6, 6, 0, 0]}
+              maxBarSize={72}
+              isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
+            >
               {chartData.map((entry) => (
                 <Cell
                   key={entry.name}

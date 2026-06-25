@@ -25,6 +25,7 @@ import {
 } from "@/src/components/finance/shared/ChartValueLabel";
 import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
   EXECUTIVE_CHART_LINE_LABEL_SIZE,
   EXECUTIVE_CHART_MARGIN,
@@ -111,7 +112,7 @@ export function FinanceCashFlowPlannedChart({
   const lineLabelSize = isExecutive ? EXECUTIVE_CHART_LINE_LABEL_SIZE : undefined;
 
   return (
-    <div data-testid={testId} style={{ width: "100%", height }}>
+    <div data-testid={testId} data-report-chart={isExecutive ? true : undefined} style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={data} margin={margin}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
@@ -137,6 +138,7 @@ export function FinanceCashFlowPlannedChart({
             name="Saldo líquido mensal"
             maxBarSize={36}
             radius={[3, 3, 0, 0]}
+            isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
           >
             {data.map((entry) => (
               <Cell
@@ -159,6 +161,7 @@ export function FinanceCashFlowPlannedChart({
             strokeWidth={2}
             dot={{ r: 2, fill: FINANCE_BI_COLORS.primary }}
             connectNulls={false}
+            isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
           >
             {showAccumulatedLabels ? (
               <LabelList

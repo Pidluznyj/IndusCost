@@ -4,6 +4,7 @@ import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReport
 import { EXECUTIVE_REPORT_AUTO_TARGET_SHORT } from "@/src/lib/financeExecutiveReportUxCopy";
 import { ExecutiveChartScenario } from "@/src/components/finance/executive-report/charts/ExecutiveChartScenario";
 import { EXECUTIVE_CHART_HEIGHT } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { ExecutiveChartFrameContext } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 export { EXECUTIVE_CHART_HEIGHT };
 
@@ -37,9 +38,15 @@ export function ExecutiveChartShell({
     <div className={cn("executive-chart-shell executive-chart", empty && "executive-chart-shell--empty")} data-testid={testId}>
       <ExecutiveChartHeader title={title} subtitle={subtitle} />
       {scenarioText ? <ExecutiveChartScenario text={scenarioText} /> : null}
-      <div className="executive-chart-body" style={{ height }}>
-        {children}
-      </div>
+      <ExecutiveChartFrameContext.Provider value={height}>
+        <div
+          className="executive-chart-body executive-report-chart-frame"
+          data-report-chart
+          style={{ height, minHeight: height }}
+        >
+          {children}
+        </div>
+      </ExecutiveChartFrameContext.Provider>
     </div>
   );
 }

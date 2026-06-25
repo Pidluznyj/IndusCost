@@ -23,12 +23,14 @@ import { ExecutiveChartShell } from "@/src/components/finance/executive-report/c
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
   EXECUTIVE_CHART_MARGIN,
   EXECUTIVE_CHART_X_TICK,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { useExecutiveChartFrameHeight } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 function ComparisonTooltip({
   active,
@@ -74,6 +76,7 @@ export function ExecutiveBarComparisonChart({
   empty?: boolean;
   scenarioText?: string;
 }) {
+  const chartHeight = useExecutiveChartFrameHeight();
   const data = useMemo(
     () =>
       rows.map((row) => {
@@ -98,7 +101,7 @@ export function ExecutiveBarComparisonChart({
       testId="executive-bar-comparison-chart"
       scenarioText={scenarioText}
     >
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
@@ -125,6 +128,7 @@ export function ExecutiveBarComparisonChart({
               fill={series.color}
               radius={[4, 4, 0, 0]}
               maxBarSize={28}
+              isAnimationActive={EXECUTIVE_CHART_IS_ANIMATION_ACTIVE}
             >
               {data.map((entry) => (
                 <Cell
