@@ -1,0 +1,37 @@
+.metric-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--metric-card-min, 210px), 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.metric-card {
+  min-width: 0;
+  min-height: 7.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-card-value {
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.125rem, 1.35vw + 0.45rem, 1.75rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  overflow: visible;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+.metric-card-value--compact {
+  font-size: clamp(1.25rem, 1.5vw + 0.5rem, 1.875rem);
+}
+
+.metric-card--compact {
+  min-height: 6.5rem;
+}
+
+.metric-card--compact .metric-card-value {
+  font-size: clamp(1rem, 1.2vw + 0.4rem, 1.5rem);
+}

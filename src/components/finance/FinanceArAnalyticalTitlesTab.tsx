@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import { StatusBadge } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
 import {
   FinanceArErrorBanner,
@@ -424,15 +425,55 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
       {error ? <FinanceArErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
       {summary ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-          <FinanceBiKpiCard label="Títulos" value={formatFinanceInteger(summary.totalTitles)} />
-          <FinanceBiKpiCard label="Valor original" value={formatFinanceCurrency(summary.totalOriginalValue)} />
-          <FinanceBiKpiCard label="Valor recebido" value={formatFinanceCurrency(summary.totalReceivedValue)} />
-          <FinanceBiKpiCard label="Em aberto" value={formatFinanceCurrency(summary.totalOpenValue)} />
-          <FinanceBiKpiCard label="Vencido" value={formatFinanceCurrency(summary.totalOverdueValue)} colorClass="text-[#DC2626]" />
-          <FinanceBiKpiCard label="A vencer" value={formatFinanceCurrency(summary.totalDueValue)} colorClass="text-[#059669]" />
-          <FinanceBiKpiCard label="Ticket médio" value={formatFinanceCurrency(summary.averageTicket)} />
-        </div>
+        <MetricCardGrid data-testid="finance-ar-titles-summary-kpis">
+          <MetricCard
+            label="Títulos"
+            amount={summary.totalTitles}
+            amountFormat="number"
+            variant="info"
+            loading={loading}
+          />
+          <MetricCard
+            label="Valor original"
+            amount={summary.totalOriginalValue}
+            amountFormat="currency"
+            loading={loading}
+          />
+          <MetricCard
+            label="Valor recebido"
+            amount={summary.totalReceivedValue}
+            amountFormat="currency"
+            variant="success"
+            loading={loading}
+          />
+          <MetricCard
+            label="Em aberto"
+            amount={summary.totalOpenValue}
+            amountFormat="currency"
+            variant="info"
+            loading={loading}
+          />
+          <MetricCard
+            label="Vencido"
+            amount={summary.totalOverdueValue}
+            amountFormat="currency"
+            variant="danger"
+            loading={loading}
+          />
+          <MetricCard
+            label="A vencer"
+            amount={summary.totalDueValue}
+            amountFormat="currency"
+            variant="success"
+            loading={loading}
+          />
+          <MetricCard
+            label="Ticket médio"
+            amount={summary.averageTicket}
+            amountFormat="currency"
+            loading={loading}
+          />
+        </MetricCardGrid>
       ) : null}
 
       <div className="flex flex-wrap gap-3 items-end ar-titles-no-print">
