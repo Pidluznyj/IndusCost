@@ -7,7 +7,19 @@ import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNav
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import {
+  SalesOrderMarginAnalysisSection,
+  SalesOrderMarginStatusBadge,
+} from "@/src/components/sales/SalesOrderMarginAnalysis";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
+import {
+  pickSalesOrderListMarginPercent,
+  pickSalesOrderListMarginValue,
+} from "@/src/lib/salesOrderMarginDisplay";
+import type {
+  SalesOrderItemMarginPayload,
+  SalesOrderMarginSummaryPayload,
+} from "@/src/lib/salesOrderMarginTypes";
 import {
   SALES_ORDER_MONTH_OPTIONS,
   buildSalesOrderYearOptions,
@@ -23,6 +35,8 @@ type SalesOrderRow = {
   totalItems: number;
   totalNetValue: unknown;
   totalMarginPerc: unknown;
+  totalMarginValue?: unknown;
+  marginSummary?: SalesOrderMarginSummaryPayload;
   Customer?: { companyName?: string; tradeName?: string };
   Proposal?: { number: number; externalProposalCode?: string | null; title?: string | null };
 };
@@ -38,7 +52,6 @@ type SalesOrderDetail = SalesOrderRow & {
   totalGrossValue: unknown;
   totalDiscount: unknown;
   totalCost: unknown;
-  totalMarginValue: unknown;
   totalTaxes: unknown;
   totalFreight: unknown;
   sentToNomusAt: string | null;
@@ -55,6 +68,7 @@ type SalesOrderDetail = SalesOrderRow & {
     totalCost: unknown;
     marginValue: unknown;
     marginPerc: unknown;
+    margin?: SalesOrderItemMarginPayload;
   }>;
 };
 
@@ -422,19 +436,21 @@ function SalesOrderList() {
                 <th className="p-3 font-semibold">Status</th>
                 <th className="p-3 font-semibold text-right">Valor líquido</th>
                 <th className="p-3 font-semibold text-right">Margem %</th>
+                <th className="p-3 font-semibold text-right hidden lg:table-cell">Margem R$</th>
+                <th className="p-3 font-semibold">Status margem</th>
                 <th className="p-3 font-semibold text-right">Itens</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={11} className="p-8 text-center text-muted-foreground">
                     <Loader2 className="h-6 w-6 animate-spin inline text-primary" />
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={11} className="p-8 text-center text-muted-foreground">
                     Nenhum pedido de venda encontrado.
                   </td>
                 </tr>
@@ -444,6 +460,7 @@ function SalesOrderList() {
                     key={r.id}
                     className="hover:bg-accent/30 cursor-pointer"
                     onClick={() => navigate(`/sales-orders/${r.id}`)}
+                    data-testid={`sales-order-row-${r.id}`}
                   >
                     <td className="p-3 font-mono font-semibold">{r.orderCode}</td>
                     <td className="p-3">
@@ -474,7 +491,25 @@ function SalesOrderList() {
                       </span>
                     </td>
                     <td className="p-3 text-right font-mono font-medium">{money(r.totalNetValue, 2)}</td>
-                    <td className="p-3 text-right font-mono">{Number.isFinite(Number(r.totalMarginPerc)) ? `${formatNumber(r.totalMarginPerc, 2)}%` : "—"}</td>
+                    <td
+                      className="p-3 text-right font-mono"
+                      data-testid="sales-order-list-margin-percent"
+                    >
+                      {pickSalesOrderListMarginPercent(r.marginSummary, r.totalMarginPerc)}
+                    </td>
+                    <td className="p-3 text-right font-mono hidden lg:table-cell">
+                      {pickSalesOrderListMarginValue(r.marginSummary, r.totalMarginValue)}
+                    </td>
+                    <td className="p-3">
+                      {r.marginSummary ? (
+                        <SalesOrderMarginStatusBadge
+                          label={r.marginSummary.statusLabel}
+                          status={r.marginSummary.status}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="p-3 text-right">{r.totalItems}</td>
                   </tr>
                 ))
@@ -639,7 +674,7 @@ function SalesOrderDetailView({ id }: { id: string }) {
       </div>
 
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3">Totais</h3>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3">Totais comerciais</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <div>
             <p className="text-[10px] text-muted-foreground">Bruto</p>
@@ -654,18 +689,6 @@ function SalesOrderDetailView({ id }: { id: string }) {
             <p className="font-mono font-semibold text-primary">{money(row.totalNetValue)}</p>
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground">Custo total</p>
-            <p className="font-mono font-semibold">{money(row.totalCost)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Margem R$</p>
-            <p className="font-mono font-semibold">{money(row.totalMarginValue)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Margem %</p>
-            <p className="font-mono font-semibold">{Number.isFinite(Number(row.totalMarginPerc)) ? `${formatNumber(row.totalMarginPerc, 2)}%` : "—"}</p>
-          </div>
-          <div>
             <p className="text-[10px] text-muted-foreground">Impostos</p>
             <p className="font-mono font-semibold">{money(row.totalTaxes)}</p>
           </div>
@@ -676,9 +699,11 @@ function SalesOrderDetailView({ id }: { id: string }) {
         </div>
       </div>
 
+      <SalesOrderMarginAnalysisSection summary={row.marginSummary} items={row.items ?? []} />
+
       <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         <div className="p-4 border-b border-border bg-accent/30">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Itens</h3>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Itens comerciais</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm min-w-[720px]">
@@ -690,8 +715,6 @@ function SalesOrderDetailView({ id }: { id: string }) {
                 <th className="p-3 font-semibold">Un.</th>
                 <th className="p-3 font-semibold text-right">Preço unit.</th>
                 <th className="p-3 font-semibold text-right">Total líquido</th>
-                <th className="p-3 font-semibold text-right">Custo</th>
-                <th className="p-3 font-semibold text-right">Margem</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -703,11 +726,6 @@ function SalesOrderDetailView({ id }: { id: string }) {
                   <td className="p-3 text-muted-foreground">{it.unit || "—"}</td>
                   <td className="p-3 text-right font-mono">{money(it.negotiatedPrice)}</td>
                   <td className="p-3 text-right font-mono font-medium">{money(it.totalNetValue)}</td>
-                  <td className="p-3 text-right font-mono">{money(it.totalCost)}</td>
-                  <td className="p-3 text-right text-xs">
-                    <div className="font-mono">{money(it.marginValue)}</div>
-                    <div className="text-muted-foreground">{Number.isFinite(Number(it.marginPerc)) ? `${formatNumber(it.marginPerc, 2)}%` : "—"}</div>
-                  </td>
                 </tr>
               ))}
             </tbody>

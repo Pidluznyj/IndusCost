@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, it } from "node:test";
+import {
+  buildSalesOrderMarginAlerts,
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+  formatSalesOrderMarkup,
+  pickSalesOrderListMarginPercent,
+  pickSalesOrderListMarginValue,
+  salesOrderMarginSummaryStatusBadgeClass,
+} from "./salesOrderMarginDisplay.js";
+import type {
+  SalesOrderItemMarginPayload,
+  SalesOrderMarginSummaryPayload,
+} from "./salesOrderMarginTypes.js";
+import { SalesOrderMarginStatusBadge } from "../components/sales/SalesOrderMarginStatusBadge.js";
+
+function summary(
+  partial: Partial<SalesOrderMarginSummaryPayload> = {}
+): SalesOrderMarginSummaryPayload {
+  return {
+    netRevenue: 1000,
+    totalCost: 400,
+    marginValue: 600,
+    marginPercent: 60,
+    markup: 2.5,
+    itemsCount: 1,
+    validItemsCount: 1,
+    ignoredItemsCount: 0,
+    hasMissingCost: false,
+    hasMissingProduct: false,
+    hasNegativeMargin: false,
+    hasInvalidRevenue: false,
+    status: "OK",
+    statusLabel: "Margem calculada",
+    statusSeverity: "success",
+    ...partial,
+  };
+}
+
+function itemMargin(
+  partial: Partial<SalesOrderItemMarginPayload> = {}
+): SalesOrderItemMarginPayload {
+  return {
+    netRevenue: 100,
+    unitCost: 40,
+    totalCost: 40,
+    marginValue: 60,
+    marginPercent: 60,
+    markup: 2.5,
+    status: "OK",
+    statusLabel: "Margem calculada",
+    statusSeverity: "success",
+    costSource: "OFFICIAL_FINAL_COST",
+    costConfidence: "HIGH",
+    productResolutionSource: "LOCAL_PRODUCT_ID",
+    notes: [],
+    ...partial,
+  };
+}
+
+describe("salesOrderMarginDisplay", () => {
+  it("formata moeda, percentual e markup sem NaN", () => {
+    assert.match(formatSalesOrderMarginMoney(12345.67), /12\.345,67/);
+    assert.equal(formatSalesOrderMarginMoney(null), "—");
+    assert.equal(formatSalesOrderMarginPercent(36.25), "36,25%");
+    assert.equal(formatSalesOrderMarginPercent(undefined), "—");
+    assert.equal(formatSalesOrderMarkup(1.56), "1,56x");
+    assert.equal(formatSalesOrderMarkup(0), "—");
+  });
+
+  it("2. lista mostra — quando margem é null/ausente", () => {
+    assert.equal(pickSalesOrderListMarginPercent(null, null), "—");
+    assert.equal(pickSalesOrderListMarginValue(undefined, undefined), "—");
+  });
+
+  it("1. lista renderiza margem do pedido a partir de marginSummary", () => {
+    assert.equal(pickSalesOrderListMarginPercent(summary(), null), "60,00%");
+    assert.match(pickSalesOrderListMarginValue(summary(), null), /600,00/);
+  });
+});
+
+describe("salesOrderMargin UI", () => {
+  it("3. status OK aparece corretamente", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderMarginStatusBadge, {
+        label: "Margem calculada",
+        status: "OK",
+      })
+    );
+    assert.match(html, /Margem calculada/);
+    assert.ok(html.includes(salesOrderMarginSummaryStatusBadgeClass("OK")));
+  });
+
+  it("4. status SEM_CUSTO aparece corretamente", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderMarginStatusBadge, {
+        label: "Custo indisponível",
+        status: "SEM_CUSTO",
+      })
+    );
+    assert.match(html, /Custo indisponível/);
+    assert.ok(html.includes(salesOrderMarginSummaryStatusBadgeClass("SEM_CUSTO")));
+  });
+
+  it("5. status MARGEM_NEGATIVA aparece corretamente", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderMarginStatusBadge, {
+        label: "Margem negativa",
+        status: "MARGEM_NEGATIVA",
+      })
+    );
+    assert.match(html, /Margem negativa/);
+    assert.ok(html.includes(salesOrderMarginSummaryStatusBadgeClass("MARGEM_NEGATIVA")));
+  });
+
+  it("6. detalhe mostra cards de margem", () => {
+    const analysisSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.match(analysisSrc, /Análise de Margem/);
+    assert.match(analysisSrc, /Receita líquida/);
+    assert.match(analysisSrc, /Custo estimado/);
+    assert.match(analysisSrc, /Margem R\$/);
+    assert.match(analysisSrc, /Markup/);
+    assert.match(analysisSrc, /resolveSalesOrderMarginSupportText/);
+    assert.match(analysisSrc, /formatSalesOrderMarginMoney\(summary\.netRevenue\)/);
+  });
+
+  it("7. detalhe mostra margem por item", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderMarginStatusBadge, {
+        label: itemMargin().statusLabel,
+        severity: itemMargin().statusSeverity,
+      })
+    );
+    assert.match(html, /Margem calculada/);
+    const analysisSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.match(analysisSrc, /formatSalesOrderCostSourceLabel/);
+    assert.match(analysisSrc, /sales-order-item-margin-/);
+  });
+
+  it("8. detalhe mostra alerta de item sem custo", () => {
+    const alerts = buildSalesOrderMarginAlerts(summary({ hasMissingCost: true, status: "PARTIAL" }));
+    assert.ok(alerts.some((a) => a.includes("sem custo cadastrado")));
+    const analysisSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.match(analysisSrc, /buildSalesOrderMarginAlerts/);
+  });
+
+  it("9. detalhe mostra alerta de item sem produto", () => {
+    const alerts = buildSalesOrderMarginAlerts(
+      summary({ hasMissingProduct: true, status: "SEM_PRODUTO_VINCULADO" })
+    );
+    assert.ok(alerts.some((a) => a.includes("sem vínculo com produto local")));
+  });
+
+  it("11. tela não quebra com payload antigo sem marginSummary", () => {
+    const analysisSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.match(analysisSrc, /Margem ainda não calculada/);
+    const moduleSrc = readFileSync(
+      join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    assert.match(moduleSrc, /marginSummary \?/);
+  });
+});
+
+describe("salesOrderMargin UI — wiring e segurança", () => {
+  it("10. frontend não calcula margem diretamente", () => {
+    const moduleSrc = readFileSync(
+      join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    const analysisSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(moduleSrc, /calculateSalesOrderItemMargin/);
+    assert.doesNotMatch(moduleSrc, /calculateSalesOrderMarginSummary/);
+    assert.doesNotMatch(analysisSrc, /calculateSalesOrderItemMargin/);
+    assert.doesNotMatch(analysisSrc, /marginValue\s*=/);
+    assert.match(moduleSrc, /marginSummary/);
+    assert.match(moduleSrc, /SalesOrderMarginAnalysisSection/);
+  });
+
+  it("12. build não reintroduz Prisma no frontend de margem", () => {
+    for (const rel of [
+      "src/components/SalesOrdersModule.tsx",
+      "src/components/sales/SalesOrderMarginAnalysis.tsx",
+      "src/lib/salesOrderMarginDisplay.ts",
+    ]) {
+      const src = readFileSync(join(process.cwd(), rel), "utf8");
+      assert.doesNotMatch(src, /@prisma\/client/);
+      assert.doesNotMatch(src, /salesOrderMarginService\.server/);
+    }
+  });
+
+  it("lista usa helpers de exibição sem motor de margem", () => {
+    const moduleSrc = readFileSync(
+      join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    assert.match(moduleSrc, /pickSalesOrderListMarginPercent/);
+    assert.match(moduleSrc, /data-testid="sales-order-list-margin-percent"/);
+  });
+});
