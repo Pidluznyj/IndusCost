@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReportPresentation";
 import { EXECUTIVE_REPORT_AUTO_TARGET_SHORT } from "@/src/lib/financeExecutiveReportUxCopy";
@@ -25,6 +25,28 @@ export function ExecutiveChartShell({
   testId?: string;
   scenarioText?: string;
 }) {
+  const frameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (empty) return;
+    const node = frameRef.current;
+    if (!node) return;
+    node.removeAttribute("data-chart-ready");
+    let cancelled = false;
+    const markReady = () => {
+      if (!cancelled) node.setAttribute("data-chart-ready", "true");
+    };
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+      window.setTimeout(markReady, 300);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      node.removeAttribute("data-chart-ready");
+    };
+  }, [empty, height, title]);
+
   if (empty) {
     return (
       <div
@@ -45,6 +67,7 @@ export function ExecutiveChartShell({
       {scenarioText ? <ExecutiveChartScenario text={scenarioText} /> : null}
       <ExecutiveChartFrameContext.Provider value={height}>
         <div
+          ref={frameRef}
           className="executive-chart-body executive-report-chart-frame"
           data-report-chart
           style={{ height, minHeight: height }}

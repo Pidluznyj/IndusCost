@@ -40,15 +40,35 @@ export function resolveExecutiveReportPrintAction(input: {
   return "print";
 }
 
-/** Frames marcados como vazios não renderizam SVG — considerados prontos para impressão. */
+function frameHasExplicitHeight(chart: HTMLElement): boolean {
+  const raw = chart.style.height || chart.style.minHeight;
+  if (!raw) return false;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 40;
+}
+
+/** Frames marcados como vazios/prontos ou com SVG Recharts montado. */
 export function chartFrameIsReady(chart: Element): boolean {
   if (chart.getAttribute("data-chart-empty") === "true") return true;
-  const box = chart.getBoundingClientRect();
-  if (box.width <= 40 || box.height <= 40) return false;
+  if (chart.getAttribute("data-chart-ready") === "true") return true;
+
   const svg = chart.querySelector("svg");
   if (!svg) return false;
+
+  const widthAttr = Number.parseFloat(svg.getAttribute("width") ?? "");
+  const heightAttr = Number.parseFloat(svg.getAttribute("height") ?? "");
+  if (widthAttr > 20 && heightAttr > 20) return true;
+
+  const hasRechartsSurface = Boolean(
+    svg.querySelector(".recharts-surface, .recharts-layer, .recharts-cartesian-grid")
+  );
+  if (hasRechartsSurface && frameHasExplicitHeight(chart as HTMLElement)) {
+    return true;
+  }
+
+  const box = chart.getBoundingClientRect();
   const svgBox = svg.getBoundingClientRect();
-  return svgBox.width > 20 && svgBox.height > 20;
+  return box.width > 40 && box.height > 40 && svgBox.width > 10 && svgBox.height > 10;
 }
 
 export function areExecutiveReportChartsReady(charts: Element[]): boolean {
@@ -56,14 +76,33 @@ export function areExecutiveReportChartsReady(charts: Element[]): boolean {
   return charts.every(chartFrameIsReady);
 }
 
+/** Força layout do Recharts: rola cada frame para a viewport e dispara resize. */
+export async function prepareExecutiveReportChartsForPrint(): Promise<void> {
+  if (typeof document === "undefined") return;
+
+  const charts = Array.from(document.querySelectorAll("[data-report-chart]"));
+  for (const chart of charts) {
+    chart.scrollIntoView({ block: "center", behavior: "instant" });
+    await new Promise((resolve) => window.setTimeout(resolve, 40));
+  }
+
+  window.dispatchEvent(new Event("resize"));
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+  await new Promise((resolve) => window.setTimeout(resolve, 200));
+  window.dispatchEvent(new Event("resize"));
+}
+
 /**
- * Aguarda SVGs do Recharts antes de window.print() (PDF do navegador).
- * Não exige quantidade fixa de gráficos — apenas que todos os frames presentes
- * estejam prontos e estáveis (gráficos vazios ou sem pedidos de venda não bloqueiam).
+ * Prepara gráficos e aguarda estabilização curta antes de window.print().
+ * Não bloqueia a exportação indefinidamente — após o timeout imprime mesmo assim.
  */
 export async function waitForExecutiveReportChartsReady(
-  timeoutMs = 12_000,
-  pollMs = 100,
+  timeoutMs = 8_000,
+  pollMs = 80,
   stablePollsRequired = 2
 ): Promise<boolean> {
   if (typeof document === "undefined") return true;
@@ -74,7 +113,7 @@ export async function waitForExecutiveReportChartsReady(
     /* ignore */
   }
 
-  window.dispatchEvent(new Event("resize"));
+  await prepareExecutiveReportChartsForPrint();
 
   const deadline = Date.now() + timeoutMs;
   let lastCount = -1;
@@ -92,8 +131,7 @@ export async function waitForExecutiveReportChartsReady(
       }
 
       if (stableReadyPolls >= stablePollsRequired) {
-        window.dispatchEvent(new Event("resize"));
-        await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+        await prepareExecutiveReportChartsForPrint();
         return true;
       }
     } else {
@@ -104,6 +142,6 @@ export async function waitForExecutiveReportChartsReady(
     await new Promise((resolve) => window.setTimeout(resolve, pollMs));
   }
 
-  const charts = Array.from(document.querySelectorAll("[data-report-chart]"));
-  return areExecutiveReportChartsReady(charts);
+  await prepareExecutiveReportChartsForPrint();
+  return true;
 }

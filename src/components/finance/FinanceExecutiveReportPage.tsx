@@ -13,7 +13,6 @@ import {
   type FinanceExecutiveReportUiFilters,
 } from "@/src/lib/financeExecutiveReportViewModel";
 import {
-  EXECUTIVE_REPORT_CHARTS_LOADING_MESSAGE,
   EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE,
   resolveExecutiveReportPrintAction,
   waitForExecutiveReportChartsReady,
@@ -140,16 +139,7 @@ export function FinanceExecutiveReportPage() {
     if (printing) return;
     setPrinting(true);
     try {
-      document
-        .querySelector('[data-testid="executive-report-document"]')
-        ?.scrollIntoView({ block: "start" });
-      window.dispatchEvent(new Event("resize"));
-
-      const chartsReady = await waitForExecutiveReportChartsReady();
-      if (!chartsReady) {
-        window.alert(EXECUTIVE_REPORT_CHARTS_LOADING_MESSAGE);
-        return;
-      }
+      await waitForExecutiveReportChartsReady();
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => resolve());

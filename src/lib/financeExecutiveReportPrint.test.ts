@@ -279,7 +279,7 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(shell, /data-report-chart/);
-    assert.match(shell, /data-chart-empty/);
+    assert.match(shell, /data-chart-ready/);
     assert.match(shell, /executive-report-chart-frame/);
     assert.match(shell, /minHeight:\s*height/);
     assert.match(page, /waitForExecutiveReportChartsReady/);
@@ -333,5 +333,16 @@ describe("financeExecutiveReportPrint", () => {
     );
     assert.doesNotMatch(src, /MIN_CHART_FRAMES|>=\s*6/);
     assert.match(src, /areExecutiveReportChartsReady/);
+    assert.match(src, /return true;\s*\n\}/);
+    assert.match(src, /prepareExecutiveReportChartsForPrint/);
+  });
+
+  it("página não bloqueia impressão com alerta de gráficos", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceExecutiveReportPage.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(page, /EXECUTIVE_REPORT_CHARTS_LOADING_MESSAGE/);
+    assert.doesNotMatch(page, /chartsReady/);
   });
 });
