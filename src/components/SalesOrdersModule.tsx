@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Loader2, Package, Printer, Receipt, ShoppingBag, Sparkles, Ticket } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, Loader2, Package, Printer, Receipt, ShoppingBag, Sparkles, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
@@ -24,6 +24,11 @@ import {
   SALES_ORDER_MONTH_OPTIONS,
   buildSalesOrderYearOptions,
 } from "@/src/lib/salesOrderPeriodFilter";
+import {
+  downloadInternalMarginExport,
+  getSalesOrderListInternalMarginExportUrl,
+} from "@/src/lib/salesOrderInternalMarginExportUi";
+import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 
 type SalesOrderRow = {
   id: string;
@@ -131,6 +136,7 @@ function SalesOrderList() {
   // Busca inteligente: searchDraft é o input imediato; search é o valor com debounce.
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
+  const [exportingInternal, setExportingInternal] = useState(false);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
@@ -143,6 +149,33 @@ function SalesOrderList() {
     [status, customerId, responsible, startDate, endDate, year, month, search]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
+
+  const internalExportQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (customerId) params.set("customerId", customerId);
+    if (responsible.trim()) params.set("responsible", responsible.trim());
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (year) params.set("year", year);
+    if (month) params.set("month", month);
+    if (search) params.set("q", search);
+    return params.toString();
+  }, [status, customerId, responsible, startDate, endDate, year, month, search]);
+
+  const handleExportInternal = useCallback(async () => {
+    setExportingInternal(true);
+    try {
+      await downloadInternalMarginExport(
+        getSalesOrderListInternalMarginExportUrl(internalExportQuery),
+        "pedidos-venda-margem-interno-list.xlsx"
+      );
+    } catch {
+      alert("Não foi possível exportar o relatório interno de margem.");
+    } finally {
+      setExportingInternal(false);
+    }
+  }, [internalExportQuery]);
 
   const load = useCallback(
     async (page: number, signal?: AbortSignal) => {
@@ -343,6 +376,25 @@ function SalesOrderList() {
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          data-testid="sales-orders-export-internal-margin"
+          disabled={exportingInternal}
+          onClick={() => void handleExportInternal()}
+          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium hover:bg-primary/10 disabled:opacity-50"
+        >
+          {exportingInternal ? (
+            <>
+              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
+              Exportando…
+            </>
+          ) : (
+            <>
+              <Download className="inline h-4 w-4 mr-1" />
+              Excel interno (margem)
+            </>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => {

@@ -155,6 +155,7 @@ import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRanking
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import { registerSalesOrderMarginIndicatorsRoutes } from "./src/lib/salesOrderMarginIndicatorsRoutes.js";
+import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import {
   attachMarginToSalesOrderDetail,
   attachMarginsToSalesOrders,
@@ -12713,6 +12714,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerSalesOrderMarginIndicatorsRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+  });
+
+  registerSalesOrderInternalMarginExportRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
   });

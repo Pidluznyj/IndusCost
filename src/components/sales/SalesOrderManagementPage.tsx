@@ -11,6 +11,7 @@ import {
   Receipt,
   Scale,
   TrendingDown,
+  Download,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
@@ -75,6 +76,11 @@ import {
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
 } from "@/src/lib/salesOrderMarginDisplay";
+import {
+  downloadInternalMarginExport,
+  getSalesOrderManagementInternalMarginExportUrl,
+} from "@/src/lib/salesOrderInternalMarginExportUi";
+import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 
 const TABLE_COLSPAN = 21;
 
@@ -164,6 +170,7 @@ export function SalesOrderManagementPage() {
   );
   const [marginEconomics, setMarginEconomics] =
     useState<SalesOrderManagementMarginEconomics | null>(null);
+  const [exportingInternal, setExportingInternal] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<SalesOrderManagementRow | null>(null);
@@ -298,6 +305,20 @@ export function SalesOrderManagementPage() {
     return () => ac.abort();
   }, [load]);
 
+  const handleExportInternal = useCallback(async () => {
+    setExportingInternal(true);
+    try {
+      await downloadInternalMarginExport(
+        getSalesOrderManagementInternalMarginExportUrl(queryString),
+        "pedidos-venda-margem-interno-management.xlsx"
+      );
+    } catch {
+      setLoadError("Não foi possível exportar o relatório interno de margem.");
+    } finally {
+      setExportingInternal(false);
+    }
+  }, [queryString]);
+
   const openDrawer = useCallback(async (row: SalesOrderManagementRow) => {
     setSelectedRow(row);
     setDrawerOpen(true);
@@ -374,6 +395,12 @@ export function SalesOrderManagementPage() {
 
   return (
     <div className="space-y-6" data-testid="sales-order-management-page">
+      <div
+        className="rounded-lg border border-amber-300/80 bg-amber-50/80 px-4 py-2 text-xs text-amber-950 print:block"
+        data-testid="sales-order-internal-margin-disclaimer"
+      >
+        {SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER}
+      </div>
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
           <div>
@@ -760,6 +787,25 @@ export function SalesOrderManagementPage() {
             />
           </div>
         </div>
+        <button
+          type="button"
+          data-testid="sales-order-management-export-internal-margin"
+          disabled={exportingInternal || loading}
+          onClick={() => void handleExportInternal()}
+          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium hover:bg-primary/10 disabled:opacity-50"
+        >
+          {exportingInternal ? (
+            <>
+              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
+              Exportando…
+            </>
+          ) : (
+            <>
+              <Download className="inline h-4 w-4 mr-1" />
+              Excel interno (margem)
+            </>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => {

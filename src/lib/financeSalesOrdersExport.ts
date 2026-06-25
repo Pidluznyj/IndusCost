@@ -1,6 +1,7 @@
 import { fleetRowsToCsv } from "./fleetCsv.js";
 import type { FinanceSalesOrdersDashboardPayload } from "./financeSalesOrdersDashboardTypes.js";
 import { formatExecutivePercent } from "./executiveDashboardFormatters.js";
+import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "./salesOrderInternalMarginExport.js";
 
 function formatMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
@@ -42,5 +43,27 @@ export function buildFinanceSalesOrdersExportCsv(
     ["Pedidos", String(payload.summary.orderCount)],
     ["Itens", String(payload.summary.itemCount)],
   ];
-  return fleetRowsToCsv(headers, [...rows, ...summaryRows]);
+
+  const margin = payload.summary.marginPortfolio;
+  const marginRows = margin
+    ? [
+        [],
+        ["Margem consolidada (interno)"],
+        [SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER],
+        ["Receita líquida", formatMoney(margin.netRevenue)],
+        ["Custo estimado", formatMoney(margin.totalCost)],
+        ["Margem R$", formatMoney(margin.marginValue)],
+        [
+          "Margem %",
+          margin.marginPercent != null ? formatExecutivePercent(margin.marginPercent, 2) : "",
+        ],
+        ["Markup", margin.markup != null ? String(margin.markup) : ""],
+        ["Status margem", margin.statusLabel],
+        ["Itens sem custo", margin.hasMissingCost ? "Sim" : "Não"],
+        ["Itens sem produto", margin.hasMissingProduct ? "Sim" : "Não"],
+        ["Margem negativa", margin.hasNegativeMargin ? "Sim" : "Não"],
+      ]
+    : [];
+
+  return fleetRowsToCsv(headers, [...rows, ...summaryRows, ...marginRows]);
 }

@@ -9,6 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  Download,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
@@ -23,6 +24,11 @@ import {
   getSalesOrderMarginIndicatorsApiPath,
   type SalesOrderMarginIndicatorsPayload,
 } from "@/src/lib/salesOrderMarginIndicatorsTypes";
+import {
+  downloadInternalMarginExport,
+  getSalesOrderIndicatorsInternalMarginExportUrl,
+} from "@/src/lib/salesOrderInternalMarginExportUi";
+import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 import {
   buildSalesOrderYearOptions,
   SALES_ORDER_MONTH_OPTIONS,
@@ -96,6 +102,7 @@ export function SalesOrdersIndicatorsDashboard() {
   const [payload, setPayload] = useState<SalesOrderMarginIndicatorsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingInternal, setExportingInternal] = useState(false);
 
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear), [currentYear]);
 
@@ -131,6 +138,20 @@ export function SalesOrdersIndicatorsDashboard() {
     void load(ac.signal);
     return () => ac.abort();
   }, [load]);
+
+  const handleExportInternal = useCallback(async () => {
+    setExportingInternal(true);
+    try {
+      await downloadInternalMarginExport(
+        getSalesOrderIndicatorsInternalMarginExportUrl(queryString),
+        "pedidos-venda-margem-interno-indicators.xlsx"
+      );
+    } catch {
+      setError("Não foi possível exportar o relatório interno de margem.");
+    } finally {
+      setExportingInternal(false);
+    }
+  }, [queryString]);
 
   const summary = payload?.summary;
   const alerts = payload?.alerts;
@@ -201,6 +222,13 @@ export function SalesOrdersIndicatorsDashboard() {
         ) : null}
       </div>
 
+      <div
+        className="rounded-lg border border-amber-300/80 bg-amber-50/80 px-4 py-2 text-xs text-amber-950"
+        data-testid="sales-order-internal-margin-disclaimer"
+      >
+        {SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER}
+      </div>
+
       <div className="flex flex-wrap gap-3 items-end rounded-xl border border-border bg-card p-4">
         <label className="text-xs font-semibold">
           Ano
@@ -245,6 +273,25 @@ export function SalesOrdersIndicatorsDashboard() {
             placeholder="Nome do responsável"
           />
         </label>
+        <button
+          type="button"
+          data-testid="sales-order-indicators-export-internal-margin"
+          disabled={exportingInternal || loading}
+          onClick={() => void handleExportInternal()}
+          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium hover:bg-primary/10 disabled:opacity-50"
+        >
+          {exportingInternal ? (
+            <>
+              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
+              Exportando…
+            </>
+          ) : (
+            <>
+              <Download className="inline h-4 w-4 mr-1" />
+              Excel interno (margem)
+            </>
+          )}
+        </button>
       </div>
 
       {loading ? (
