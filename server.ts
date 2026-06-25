@@ -13,6 +13,7 @@ import {
   type MaintenanceStatus,
 } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
+import { resolveServerAppBuildInfo } from "./src/lib/appVersion.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
@@ -1252,6 +1253,10 @@ async function startServer() {
   // --- API: Test ---
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/app-version", (_req, res) => {
+    res.json(resolveServerAppBuildInfo());
   });
 
   app.get("/api/bootstrap-admin/status", (req, res) => {
@@ -13291,8 +13296,27 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+
+    const setSpaHtmlNoCacheHeaders = (res: express.Response) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
+    };
+
+    app.use(
+      express.static(distPath, {
+        setHeaders(res, filePath) {
+          const normalized = filePath.replace(/\\/g, "/");
+          if (normalized.endsWith("/index.html") || normalized.endsWith("index.html")) {
+            setSpaHtmlNoCacheHeaders(res);
+          } else if (normalized.includes("/assets/")) {
+            res.set("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      })
+    );
+    app.get("*", (_req, res) => {
+      setSpaHtmlNoCacheHeaders(res);
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

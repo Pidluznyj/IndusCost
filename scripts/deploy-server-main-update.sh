@@ -98,6 +98,14 @@ echo "=== 16) HEALTH CHECK ==="
 curl -sS http://127.0.0.1:3000/api/health || true
 
 echo ""
+echo "=== 16b) VERSÃO PUBLICADA ==="
+curl -sS http://127.0.0.1:3000/api/app-version || true
+if [ -f dist/build-info.json ]; then
+  echo "build-info.json:"
+  cat dist/build-info.json
+fi
+
+echo ""
 echo ""
 echo "=== 17) ASSET DE PRODUÇÃO SERVIDO ==="
 # Em produção deve servir /assets/index-*.js (bundle Vite buildado).
@@ -114,4 +122,4 @@ tail -60 /tmp/induscost-server.log || true
 
 echo ""
 echo "Deploy concluído. Commit: $(git rev-parse HEAD)"
-echo "No navegador, force recarregar sem cache: Ctrl+Shift+R (ou Cmd+Shift+R)."
+echo "Navegadores abertos detectam nova versão via /api/app-version e recarregam automaticamente."
