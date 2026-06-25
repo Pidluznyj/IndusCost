@@ -44,6 +44,7 @@ import { PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION } from "@/src/lib/projectsAd
 import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
 import { ProjectGuidedCostsTab } from "@/src/components/projects/ProjectGuidedCostsTab";
 import { ProjectExecutiveReportButton } from "@/src/components/projects/ProjectExecutiveReportButton";
+import { ProjectClientReportButton } from "@/src/components/projects/ProjectClientReportButton";
 import { ProjectIntakeActions } from "@/src/components/projects/ProjectIntakeActions";
 import { PROJECT_INTAKE_QUICK_BUTTON_LABEL } from "@/src/lib/projectsIntakeQuickForm";
 import { PROJECT_INTAKE_FORM_BLANK_PATH } from "@/src/lib/projectsIntakeForm";
@@ -822,6 +823,7 @@ function ProjectDetailView({
         <div className="flex flex-wrap gap-2">
           <ProjectIntakeActions projectId={projectId} />
           <ProjectExecutiveReportButton projectId={projectId} />
+          <ProjectClientReportButton projectId={projectId} />
           <button
             type="button"
             disabled

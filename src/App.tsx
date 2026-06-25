@@ -23,6 +23,7 @@ import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
+import { ProjectClientReportPage } from "./components/projects/ProjectClientReportPage";
 import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
@@ -294,6 +295,7 @@ export default function App() {
       <Route path="/projects/:projectId/intake-form/full" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/intake-form/full/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/report" element={<ProjectExecutiveReportPage />} />
+      <Route path="/projects/:projectId/client-report" element={<ProjectClientReportPage />} />
       <Route element={<Layout />}>
         <Route
           path="dashboard"

@@ -433,6 +433,39 @@ export function registerProjectsRoutes(
     }
   });
 
+  app.get("/api/projects/:id/client-report", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const { loadProjectClientReport } = await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(payload);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-report", e);
+      res.status(500).json({ error: "Erro ao gerar relatório comercial para cliente." });
+    }
+  });
+
+  app.get("/api/projects/:id/client-report.pdf", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const { loadProjectClientReport, buildProjectClientReportPdfBuffer, buildProjectClientReportPdfFilename } =
+        await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      const buffer = buildProjectClientReportPdfBuffer(payload);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${buildProjectClientReportPdfFilename(payload.project.code)}"`
+      );
+      res.send(buffer);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-report.pdf", e);
+      res.status(500).json({ error: "Erro ao gerar PDF comercial para cliente." });
+    }
+  });
+
   app.get("/api/projects/:id", ...view, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
