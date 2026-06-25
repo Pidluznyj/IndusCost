@@ -1,5 +1,4 @@
 import React, { useMemo } from "react";
-import { CalendarRange } from "lucide-react";
 import type {
   AccountsReceivableOpenHorizon,
 } from "@/src/lib/financeAccountsReceivableHorizon";
@@ -7,6 +6,7 @@ import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
+import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceArHorizonExportButtons";
 import { createDefaultFinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import { FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE } from "@/src/lib/financeAccountsReceivableHorizon";
 import type { FinanceAgingBucketCardSource } from "@/src/lib/financeAgingBucketDrilldownTypes";
@@ -71,18 +71,32 @@ export function FinanceArOpenHorizonSection({
   return (
     <section className={financeBiSectionClass}>
       <div className="px-5 py-4 border-b border-[#E5E7EB]">
-        <h2 className="text-sm font-bold text-[#111827]">
-          {horizon?.title ?? "Horizonte financeiro — carteira aberta"}
-        </h2>
-        <p className="text-[11px] text-[#6B7280] mt-0.5">
-          {horizon?.subtitle ?? "Próximos 60 dias a partir de hoje"}
-        </p>
-        {horizon?.scopeNote ? (
-          <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{horizon.scopeNote}</p>
-        ) : null}
-        {horizon?.overdueNote ? (
-          <p className="text-[10px] text-[#9CA3AF] mt-0.5 leading-snug">{horizon.overdueNote}</p>
-        ) : null}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-[#111827]">
+              {horizon?.title ?? "Horizonte financeiro — carteira aberta"}
+            </h2>
+            <p className="text-[11px] text-[#6B7280] mt-0.5">
+              {horizon?.subtitle ?? "Próximos 60 dias a partir de hoje"}
+            </p>
+            {horizon?.scopeNote ? (
+              <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{horizon.scopeNote}</p>
+            ) : null}
+            {horizon?.overdueNote ? (
+              <p className="text-[10px] text-[#9CA3AF] mt-0.5 leading-snug">{horizon.overdueNote}</p>
+            ) : null}
+          </div>
+          {horizon ? (
+            <FinanceArHorizonExportButtons
+              scope="full"
+              bucketLabel="Todas as faixas"
+              disabled={loading}
+              testIdPrefix="finance-ar-horizon-full"
+              excelLabel="Exportar Horizonte Excel"
+              pdfLabel="Exportar Horizonte PDF"
+            />
+          ) : null}
+        </div>
         {horizon?.insights.length ? (
           <ul className="mt-2 space-y-0.5">
             {horizon.insights.map((insight) => (

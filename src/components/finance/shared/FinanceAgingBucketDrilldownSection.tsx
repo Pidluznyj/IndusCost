@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceArHorizonExportButtons";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -193,14 +194,24 @@ export function FinanceAgingBucketDrilldownSection({
                 </p>
               ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedKey(null)}
-              className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
-            >
-              <X className="h-3.5 w-3.5" />
-              Limpar seleção
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {module === "ar" && horizonMode ? (
+                <FinanceArHorizonExportButtons
+                  agingBucket={selectedKey}
+                  bucketLabel={selectedCard.label}
+                  disabled={loading}
+                  testIdPrefix="finance-ar-horizon-bucket"
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setSelectedKey(null)}
+                className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+              >
+                <X className="h-3.5 w-3.5" />
+                Limpar seleção
+              </button>
+            </div>
           </div>
 
           {loading ? (
