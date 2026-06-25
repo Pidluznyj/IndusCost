@@ -104,6 +104,29 @@ export type CostCenterDetailListPayload = {
   };
 };
 
+export type CostCenterDetailAppliedFilterLine = {
+  label: string;
+  value: string;
+};
+
+export type CostCenterDetailExportPayload = {
+  generatedAt: string;
+  center: {
+    id: string;
+    code: string;
+    name: string;
+    parentCode: string | null;
+    parentName: string | null;
+  };
+  summary: CostCenterDetailSummary;
+  rows: CostCenterDetailAllocationRow[];
+  totals: CostCenterDetailListPayload["totals"];
+  sortBy: CostCenterDetailSortField;
+  sortDirection: CostCenterDetailSortDirection;
+  appliedFilters: CostCenterDetailAppliedFilterLine[];
+  userName: string | null;
+};
+
 export type CostCenterReallocationPreviewItem = {
   allocationId: string;
   accountsPayableId: number;

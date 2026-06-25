@@ -221,6 +221,35 @@ export function buildCostCenterExpenseMapAllocationsQuery(
   return qs.toString();
 }
 
+/** Query para exportação — mesmos filtros do grid, sem paginação. */
+export function buildCostCenterExpenseMapExportQuery(
+  pageFilters: FinanceCostCentersUiFilters,
+  drilldown: CostCenterExpenseMapDrilldownFilters
+): string {
+  const qs = new URLSearchParams(buildFinanceCostCentersDashboardQuery(pageFilters));
+
+  appendIfPresent(qs, "search", drilldown.search);
+  appendIfPresent(qs, "companyName", drilldown.companyName);
+  appendIfPresent(qs, "personName", drilldown.supplierName);
+  appendIfPresent(qs, "nomusClassification", drilldown.classification);
+  if (drilldown.status !== "all") qs.set("status", drilldown.status);
+  if (drilldown.timing !== "all") qs.set("timing", drilldown.timing);
+  if (drilldown.allocationSource !== "all") qs.set("allocationSource", drilldown.allocationSource);
+  if (drilldown.lockedOnly) qs.set("lockedOnly", "true");
+  appendIfPresent(qs, "minAmount", drilldown.minAmount);
+  appendIfPresent(qs, "maxAmount", drilldown.maxAmount);
+  appendIfPresent(qs, "dueDateFrom", drilldown.dueDateFrom);
+  appendIfPresent(qs, "dueDateTo", drilldown.dueDateTo);
+  appendIfPresent(qs, "competenceDateFrom", drilldown.competenceDateFrom);
+  appendIfPresent(qs, "competenceDateTo", drilldown.competenceDateTo);
+  appendIfPresent(qs, "paymentDateFrom", drilldown.paymentDateFrom);
+  appendIfPresent(qs, "paymentDateTo", drilldown.paymentDateTo);
+
+  qs.set("sortBy", drilldown.sortBy);
+  qs.set("sortDirection", drilldown.sortDirection);
+  return qs.toString();
+}
+
 export function expenseMapCategoryLabel(category: CostCenterExpenseMapCategory): string {
   switch (category) {
     case "administrative":

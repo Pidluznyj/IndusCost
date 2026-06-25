@@ -1,0 +1,173 @@
+#cc-detail-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.cc-detail-print-route #root {
+    visibility: hidden !important;
+  }
+
+  body.cc-detail-print-route #cc-detail-print-root {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+  }
+
+  body.cc-detail-print-route #cc-detail-print-root * {
+    visibility: visible !important;
+  }
+
+  .cc-detail-no-print,
+  button {
+    display: none !important;
+  }
+
+  body.cc-detail-print-route nav,
+  body.cc-detail-print-route aside,
+  body.cc-detail-print-route .flex.h-screen > aside,
+  body.cc-detail-print-route main > header {
+    display: none !important;
+  }
+
+  body.cc-detail-print-route .flex.h-screen,
+  body.cc-detail-print-route .flex.h-screen > main,
+  body.cc-detail-print-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #cc-detail-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  #cc-detail-print-root * {
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.5px;
+    line-height: 1.3;
+    color: #111;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-doc-header {
+    border-bottom: 2px solid #333;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-brand-main {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-brand-sub {
+    font-size: 8px;
+    color: #555;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-doc-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-meta-table,
+  #cc-detail-print-root .finance-cc-detail-print-kpi-table,
+  #cc-detail-print-root .finance-cc-detail-print-filter-table,
+  #cc-detail-print-root .finance-cc-detail-print-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6px;
+  }
+
+  #cc-detail-print-root th,
+  #cc-detail-print-root td {
+    border: 1px solid #ccc;
+    padding: 2px 4px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  #cc-detail-print-root th {
+    background: #f3f4f6;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    margin: 8px 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-data-table thead {
+    display: table-header-group;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-data-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #cc-detail-print-root .col-money {
+    text-align: right !important;
+    white-space: nowrap;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-total-row td {
+    font-weight: 700;
+    background: #f9fafb;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-doc-footer {
+    margin-top: 10px;
+    padding-top: 4px;
+    border-top: 1px solid #999;
+    font-size: 7px;
+    color: #555;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

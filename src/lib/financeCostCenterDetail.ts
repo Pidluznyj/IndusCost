@@ -20,6 +20,7 @@ import {
   FINANCE_CC_REALLOCATION_REASONS,
   type CostCenterAllocationSource,
   type CostCenterDetailAllocationRow,
+  type CostCenterDetailExportPayload,
   type CostCenterDetailListPayload,
   type CostCenterDetailSortDirection,
   type CostCenterDetailSortField,
@@ -693,11 +694,28 @@ async function loadCostCenterMeta(costCenterId: string) {
   };
 }
 
-export async function buildCostCenterDetailSummaryDefault(
+function sumCostCenterDetailRowTotals(rows: CostCenterDetailAllocationRow[]) {
+  return rows.reduce(
+    (acc, row) => {
+      acc.allocatedAmount += row.allocatedAmount;
+      acc.balancePayable += row.balancePayable;
+      acc.amountPayable += row.amountPayable;
+      return acc;
+    },
+    { allocatedAmount: 0, balancePayable: 0, amountPayable: 0 }
+  );
+}
+
+/** Linhas filtradas do detalhe (sem paginação) — base única para grid, resumo e exportação. */
+export async function resolveCostCenterDetailFilteredRows(
   costCenterId: string,
   filters: CostCenterDetailListFilters,
   referenceDate: Date = new Date()
-): Promise<CostCenterDetailSummary> {
+): Promise<{
+  center: Awaited<ReturnType<typeof loadCostCenterMeta>>;
+  rows: CostCenterDetailAllocationRow[];
+  totals: CostCenterDetailListPayload["totals"];
+}> {
   const center = await loadCostCenterMeta(costCenterId);
   const entries = await loadCostCenterDetailEntries(costCenterId);
   const apFilters: FinanceApDashboardFilters = { ...filters, status: filters.status ?? "all" };
@@ -714,6 +732,28 @@ export async function buildCostCenterDetailSummaryDefault(
     .map((entry) => buildCostCenterDetailAllocationRow(entry, referenceDate))
     .filter((row) => matchesCostCenterDetailFilters(row, filters, referenceDate));
 
+  const totals = sumCostCenterDetailRowTotals(rows);
+  return {
+    center,
+    rows,
+    totals: {
+      allocatedAmount: finiteMoney(totals.allocatedAmount),
+      balancePayable: finiteMoney(totals.balancePayable),
+      amountPayable: finiteMoney(totals.amountPayable),
+    },
+  };
+}
+
+export async function buildCostCenterDetailSummaryDefault(
+  costCenterId: string,
+  filters: CostCenterDetailListFilters,
+  referenceDate: Date = new Date()
+): Promise<CostCenterDetailSummary> {
+  const { center, rows } = await resolveCostCenterDetailFilteredRows(
+    costCenterId,
+    filters,
+    referenceDate
+  );
   return buildCostCenterDetailSummaryFromRows(center, rows);
 }
 
@@ -723,32 +763,14 @@ export async function listCostCenterDetailAllocationsDefault(
   referenceDate: Date = new Date()
 ): Promise<CostCenterDetailListPayload> {
   const { page, limit, sortBy, sortDirection, ...filters } = query;
-  const entries = await loadCostCenterDetailEntries(costCenterId);
-  const apFilters: FinanceApDashboardFilters = { ...filters, status: filters.status ?? "all" };
-  const allowedApIds = new Set(
-    filterFinanceApRows(
-      entries.map((e) => e.ap),
-      apFilters,
-      referenceDate
-    ).map((row) => row.externalId)
+  const { rows: allRows, totals } = await resolveCostCenterDetailFilteredRows(
+    costCenterId,
+    filters,
+    referenceDate
   );
-
-  const allRows = entries
-    .filter((entry) => allowedApIds.has(entry.ap.externalId))
-    .map((entry) => buildCostCenterDetailAllocationRow(entry, referenceDate))
-    .filter((row) => matchesCostCenterDetailFilters(row, filters, referenceDate));
 
   const sorted = sortCostCenterDetailRows(allRows, sortBy, sortDirection);
   const pageResult = paginateRows(sorted, page, limit);
-  const totals = allRows.reduce(
-    (acc, row) => {
-      acc.allocatedAmount += row.allocatedAmount;
-      acc.balancePayable += row.balancePayable;
-      acc.amountPayable += row.amountPayable;
-      return acc;
-    },
-    { allocatedAmount: 0, balancePayable: 0, amountPayable: 0 }
-  );
 
   return {
     items: pageResult.items,
@@ -756,11 +778,42 @@ export async function listCostCenterDetailAllocationsDefault(
     limit: pageResult.limit,
     totalItems: pageResult.totalItems,
     totalPages: pageResult.totalPages,
-    totals: {
-      allocatedAmount: finiteMoney(totals.allocatedAmount),
-      balancePayable: finiteMoney(totals.balancePayable),
-      amountPayable: finiteMoney(totals.amountPayable),
+    totals,
+  };
+}
+
+export async function buildCostCenterDetailExportPayloadDefault(
+  costCenterId: string,
+  query: ReturnType<typeof parseCostCenterDetailListQuery>,
+  userContext: CostCenterDetailUserContext,
+  referenceDate: Date = new Date(),
+  appliedFilters: CostCenterDetailExportPayload["appliedFilters"] = []
+): Promise<CostCenterDetailExportPayload> {
+  const { sortBy, sortDirection, ...filters } = query;
+  const { center, rows: unsorted, totals } = await resolveCostCenterDetailFilteredRows(
+    costCenterId,
+    filters,
+    referenceDate
+  );
+  const rows = sortCostCenterDetailRows(unsorted, sortBy, sortDirection);
+  const summary = buildCostCenterDetailSummaryFromRows(center, rows);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    center: {
+      id: center.id,
+      code: center.code,
+      name: center.name,
+      parentCode: center.parentCode,
+      parentName: center.parentName,
     },
+    summary,
+    rows,
+    totals,
+    sortBy,
+    sortDirection,
+    appliedFilters,
+    userName: userContext.userName,
   };
 }
 

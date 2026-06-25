@@ -3,6 +3,7 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   applyCostCenterReallocationDefault,
+  buildCostCenterDetailExportPayloadDefault,
   buildCostCenterDetailSummaryDefault,
   FinanceCostCenterDetailError,
   listCostCenterDetailAllocationsDefault,
@@ -10,6 +11,13 @@ import {
   parseCostCenterReallocationBody,
   previewCostCenterReallocationDefault,
 } from "@/src/lib/financeCostCenterDetail.js";
+import {
+  buildCostCenterDetailExportBuffer,
+} from "@/src/lib/financeCostCenterDetailExport.js";
+import {
+  buildCostCenterDetailAppliedFilterLinesFromQuery,
+  buildCostCenterDetailExportFilename,
+} from "@/src/lib/financeCostCenterDetailExportMeta.js";
 import { FinanceCostCenterValidationError } from "@/src/lib/financeCostCenters.js";
 import { FINANCE_COST_CENTERS_VIEW_PERMISSIONS } from "@/src/lib/financeCostCentersRoutes.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
@@ -161,6 +169,77 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       console.error("GET /api/finance/cost-centers/:id/allocations", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao listar alocações do centro de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/:id/detail/export-data", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const id = String(req.params.id ?? "").trim();
+      const rawQuery = req.query as Record<string, unknown>;
+      const query = parseCostCenterDetailListQuery(rawQuery);
+      const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);
+      const payload = await buildCostCenterDetailExportPayloadDefault(
+        id,
+        query,
+        { userId: user.id, userName: user.name },
+        new Date(),
+        appliedFilters
+      );
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/:id/detail/export-data", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar dados de exportação do centro de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/:id/detail/export.xlsx", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const id = String(req.params.id ?? "").trim();
+      const rawQuery = req.query as Record<string, unknown>;
+      const query = parseCostCenterDetailListQuery(rawQuery);
+      const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);
+      const payload = await buildCostCenterDetailExportPayloadDefault(
+        id,
+        query,
+        { userId: user.id, userName: user.name },
+        new Date(),
+        appliedFilters
+      );
+      const buffer = buildCostCenterDetailExportBuffer(payload);
+      const filename = buildCostCenterDetailExportFilename(payload.center.name);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/:id/detail/export.xlsx", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao exportar detalhe do centro de custo.", error)
       );
     }
   });

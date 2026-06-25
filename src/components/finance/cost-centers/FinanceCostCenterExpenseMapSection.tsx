@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, Loader2, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Download, Link, Loader2, Printer, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
@@ -8,6 +9,7 @@ import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPa
 import {
   buildCostCenterExpenseMapAllocationsQuery,
   buildCostCenterExpenseMapCards,
+  buildCostCenterExpenseMapExportQuery,
   DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
   expenseMapCategoryLabel,
   filterCostCenterExpenseMapCards,
@@ -17,10 +19,17 @@ import {
 } from "@/src/lib/financeCostCenterExpenseMap";
 import type {
   CostCenterDetailAllocationRow,
+  CostCenterDetailExportPayload,
   CostCenterDetailListPayload,
   CostCenterDetailSortField,
   CostCenterDetailSummary,
 } from "@/src/lib/financeCostCenterDetailShared";
+import {
+  buildCostCenterDetailExportFilename,
+  buildCostCenterDetailPdfFilename,
+} from "@/src/lib/financeCostCenterDetailExportMeta";
+import { FinanceCostCenterDetailPrintDocument } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPrintDocument";
+import "./finance-cc-detail-print.css";
 import { buildFinanceCostCenterDetailPath } from "@/src/lib/financeNavigation";
 import {
   displayFinanceText,
@@ -181,6 +190,9 @@ export function FinanceCostCenterExpenseMapSection({
   const [list, setList] = useState<CostCenterDetailListPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [printPayload, setPrintPayload] = useState<CostCenterDetailExportPayload | null>(null);
 
   const cards = useMemo(() => {
     const built = buildCostCenterExpenseMapCards(dashboard?.byCostCenter ?? [], centers);
@@ -254,10 +266,84 @@ export function FinanceCostCenterExpenseMapSection({
     }));
   };
 
+  const exportQuery = useMemo(
+    () => buildCostCenterExpenseMapExportQuery(appliedFilters, drilldown),
+    [appliedFilters, drilldown]
+  );
+
+  const handleExportExcel = async () => {
+    if (!selectedId || !selectedCard || exportingExcel) return;
+    setExportingExcel(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/finance/cost-centers/${selectedId}/detail/export.xlsx?${exportQuery}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Não foi possível exportar o Excel.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = buildCostCenterDetailExportFilename(selectedCard.name);
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Não foi possível exportar o Excel do detalhe."
+      );
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!selectedId || exportingPdf) return;
+    setExportingPdf(true);
+    setError(null);
+    try {
+      const payload = await fetchJsonOk<CostCenterDetailExportPayload>(
+        `/api/finance/cost-centers/${selectedId}/detail/export-data?${exportQuery}`,
+        { credentials: "include" }
+      );
+      setPrintPayload(payload);
+      document.body.classList.add("cc-detail-print-route");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              window.print();
+              resolve();
+            }, 200);
+          });
+        });
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível exportar o PDF do detalhe.");
+    } finally {
+      document.body.classList.remove("cc-detail-print-route");
+      setExportingPdf(false);
+    }
+  };
+
   if (!centers.length && !dashboardLoading) return null;
 
   return (
-    <section className="space-y-4 border-t border-border pt-6" data-testid="finance-cc-expense-map-section">
+    <>
+      {printPayload
+        ? createPortal(
+            <FinanceCostCenterDetailPrintDocument payload={printPayload} />,
+            document.body
+          )
+        : null}
+    <section
+      className="space-y-4 border-t border-border pt-6 cc-detail-no-print"
+      data-testid="finance-cc-expense-map-section"
+      aria-label="Mapa de Gastos por Centro de Custo"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold text-foreground">Mapa de Gastos por Centro de Custo</h3>
@@ -326,15 +412,46 @@ export function FinanceCostCenterExpenseMapSection({
                 Abrir página completa do centro
               </Link>
             </div>
-            <button
-              type="button"
-              data-testid="finance-cc-expense-map-close-drilldown"
-              onClick={() => setSelectedId(null)}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
-            >
-              <X className="h-3.5 w-3.5" />
-              Fechar detalhe
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="finance-cc-expense-map-export-excel"
+                disabled={exportingExcel || loading}
+                onClick={() => void handleExportExcel()}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40 disabled:opacity-60"
+              >
+                {exportingExcel ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                Exportar Excel
+              </button>
+              <button
+                type="button"
+                data-testid="finance-cc-expense-map-export-pdf"
+                disabled={exportingPdf || loading}
+                onClick={() => void handleExportPdf()}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40 disabled:opacity-60"
+                title={buildCostCenterDetailPdfFilename(selectedCard.name)}
+              >
+                {exportingPdf ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Printer className="h-3.5 w-3.5" />
+                )}
+                Exportar PDF
+              </button>
+              <button
+                type="button"
+                data-testid="finance-cc-expense-map-close-drilldown"
+                onClick={() => setSelectedId(null)}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
+              >
+                <X className="h-3.5 w-3.5" />
+                Fechar detalhe
+              </button>
+            </div>
           </div>
 
           {summary ? (
@@ -675,5 +792,6 @@ export function FinanceCostCenterExpenseMapSection({
         </div>
       ) : null}
     </section>
+    </>
   );
 }
