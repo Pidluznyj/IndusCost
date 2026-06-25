@@ -1,118 +1,189 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  DollarSign,
+  Loader2,
+  Package,
+  Percent,
+  Scale,
+  TrendingDown,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import {
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+  formatSalesOrderMarkup,
+} from "@/src/lib/salesOrderMarginDisplay";
+import {
+  getSalesOrderMarginIndicatorsApiPath,
+  type SalesOrderMarginIndicatorsPayload,
+} from "@/src/lib/salesOrderMarginIndicatorsTypes";
+import {
+  buildSalesOrderYearOptions,
+  SALES_ORDER_MONTH_OPTIONS,
+} from "@/src/lib/salesOrderPeriodFilter";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
-import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
-import { cn } from "@/src/lib/utils";
 
-type SalesOrderRow = {
-  id: string;
-  status: string;
-  totalItems: number;
-  totalNetValue: unknown;
-  totalMarginPerc: unknown;
-};
-
-type SalesOrderListResponse = {
-  data: SalesOrderRow[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Rascunho",
-  READY_TO_SEND: "Pronto para envio",
-  SENT_TO_NOMUS: "Enviado ao Nomus",
-  CANCELLED: "Cancelado",
-  ERROR: "Erro",
-};
-
-const STATUS_ORDER = ["DRAFT", "READY_TO_SEND", "SENT_TO_NOMUS", "CANCELLED", "ERROR"] as const;
-const BAR_TONE = ["bg-slate-700", "bg-slate-600", "bg-slate-500", "bg-slate-400", "bg-slate-300"];
-
-function safeNum(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-async function fetchAllSalesOrders(): Promise<SalesOrderRow[]> {
-  const rows: SalesOrderRow[] = [];
-  let page = 1;
-  let totalPages = 1;
-  do {
-    const data = await fetchJsonOk<SalesOrderListResponse>(`/api/sales-orders?page=${page}&pageSize=100`);
-    rows.push(...(Array.isArray(data.data) ? data.data : []));
-    totalPages = Math.max(1, Number(data.totalPages) || 1);
-    page += 1;
-  } while (page <= totalPages);
-  return rows;
+function RankingTable({
+  title,
+  testId,
+  headers,
+  rows,
+  emptyMessage,
+}: {
+  title: string;
+  testId: string;
+  headers: string[];
+  rows: React.ReactNode[][];
+  emptyMessage: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm"
+      data-testid={testId}
+    >
+      <div className="border-b border-border bg-accent/30 px-4 py-3">
+        <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[640px]">
+          <thead className="bg-muted/40 border-b border-border">
+            <tr>
+              {headers.map((h) => (
+                <th key={h} className="p-3 font-semibold text-xs uppercase tracking-wide">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={headers.length} className="p-6 text-center text-muted-foreground">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              rows.map((cells, i) => (
+                <tr key={i} className="hover:bg-accent/20">
+                  {cells.map((cell, j) => (
+                    <td key={j} className="p-3 align-middle">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export function SalesOrdersIndicatorsDashboard() {
-  const [rows, setRows] = useState<SalesOrderRow[] | null>(null);
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(String(currentYear));
+  const [month, setMonth] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [responsible, setResponsible] = useState("");
+  const [payload, setPayload] = useState<SalesOrderMarginIndicatorsPayload | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear), [currentYear]);
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (year) params.set("year", year);
+    if (month) params.set("month", month);
+    if (customerId.trim()) params.set("customerId", customerId.trim());
+    if (responsible.trim()) params.set("responsible", responsible.trim());
+    return params.toString();
+  }, [year, month, customerId, responsible]);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJsonOk<SalesOrderMarginIndicatorsPayload>(
+        getSalesOrderMarginIndicatorsApiPath(queryString),
+        { signal }
+      );
+      setPayload(data);
+    } catch (e) {
+      if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+      setError(e instanceof Error ? e.message : "Erro ao carregar indicadores de margem.");
+      setPayload(null);
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [queryString]);
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await fetchAllSalesOrders();
-        if (!cancelled) setRows(data);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Erro ao carregar pedidos de venda.");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const ac = new AbortController();
+    void load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
-  const metrics = useMemo(() => {
-    if (!rows) return null;
-    const total = rows.length;
-    const totalNet = rows.reduce((acc, r) => acc + safeNum(r.totalNetValue), 0);
-    const totalItems = rows.reduce((acc, r) => acc + (Number.isFinite(Number(r.totalItems)) ? Number(r.totalItems) : 0), 0);
-    const avgTicket = total > 0 ? totalNet / total : 0;
-    const withMargin = rows.filter((r) => Number.isFinite(Number(r.totalMarginPerc)));
-    const avgMarginPerc =
-      withMargin.length > 0 ? withMargin.reduce((acc, r) => acc + safeNum(r.totalMarginPerc), 0) / withMargin.length : 0;
-    return { total, totalNet, totalItems, avgTicket, avgMarginPerc };
-  }, [rows]);
+  const summary = payload?.summary;
+  const alerts = payload?.alerts;
 
-  const byStatus = useMemo(() => {
-    if (!rows) return [];
-    const total = Math.max(1, rows.length);
-    return STATUS_ORDER.map((status) => {
-      const list = rows.filter((r) => r.status === status);
-      const count = list.length;
-      const value = list.reduce((acc, r) => acc + safeNum(r.totalNetValue), 0);
-      return { status, count, pct: (count / total) * 100, value };
-    });
-  }, [rows]);
+  const customerRows = useMemo(
+    () =>
+      (payload?.byCustomer ?? []).map((row) => [
+        <span key="name" className="font-medium">{row.customerName}</span>,
+        <span key="rev" className="tabular-nums">{formatCurrency(row.netRevenue)}</span>,
+        <span key="cost" className="tabular-nums">{formatCurrency(row.totalCost)}</span>,
+        <span key="margin" className="tabular-nums font-medium">{formatCurrency(row.marginValue)}</span>,
+        <span key="pct" className="tabular-nums">{formatSalesOrderMarginPercent(row.marginPercent)}</span>,
+        <span key="orders" className="tabular-nums">{row.ordersCount}</span>,
+        <SalesOrderMarginStatusBadge key="status" label={row.statusLabel} status={row.status} />,
+      ]),
+    [payload?.byCustomer]
+  );
+
+  const sellerRows = useMemo(
+    () =>
+      (payload?.bySeller ?? []).map((row) => [
+        <span key="name" className="font-medium">{row.sellerName}</span>,
+        <span key="rev" className="tabular-nums">{formatCurrency(row.netRevenue)}</span>,
+        <span key="cost" className="tabular-nums">{formatCurrency(row.totalCost)}</span>,
+        <span key="margin" className="tabular-nums font-medium">{formatCurrency(row.marginValue)}</span>,
+        <span key="pct" className="tabular-nums">{formatSalesOrderMarginPercent(row.marginPercent)}</span>,
+        <span key="orders" className="tabular-nums">{row.ordersCount}</span>,
+        <span key="customers" className="tabular-nums">{row.customersCount}</span>,
+      ]),
+    [payload?.bySeller]
+  );
+
+  const productRows = useMemo(
+    () =>
+      (payload?.byProduct ?? []).map((row) => [
+        <div key="prod">
+          <div className="font-medium">{row.productName}</div>
+          <div className="text-xs text-muted-foreground font-mono">{row.sku}</div>
+        </div>,
+        <span key="qty" className="tabular-nums">{formatNumber(row.quantitySold, 2)}</span>,
+        <span key="rev" className="tabular-nums">{formatCurrency(row.netRevenue)}</span>,
+        <span key="margin" className="tabular-nums font-medium">{formatCurrency(row.marginValue)}</span>,
+        <span key="pct" className="tabular-nums">{formatSalesOrderMarginPercent(row.marginPercent)}</span>,
+        <span key="orders" className="tabular-nums">{row.ordersCount}</span>,
+        <SalesOrderMarginStatusBadge key="status" label={row.statusLabel} status={row.status} />,
+      ]),
+    [payload?.byProduct]
+  );
 
   if (error) {
     return (
       <ContextualDashboardLayout moduleLabel="Pedidos de venda — indicadores" backPath="/sales-orders">
-        <p className="text-sm text-destructive">{error}</p>
-      </ContextualDashboardLayout>
-    );
-  }
-
-  if (rows === null) {
-    return (
-      <ContextualDashboardLayout moduleLabel="Pedidos de venda — indicadores" backPath="/sales-orders">
-        <p className="text-sm text-muted-foreground">Carregando...</p>
-      </ContextualDashboardLayout>
-    );
-  }
-
-  if (rows.length === 0) {
-    return (
-      <ContextualDashboardLayout moduleLabel="Pedidos de venda — indicadores" backPath="/sales-orders">
-        <ContextualDashboardEmpty message="Não há pedidos de venda registrados para consolidar indicadores." />
+        <p className="text-sm text-destructive" data-testid="sales-order-indicators-error">{error}</p>
       </ContextualDashboardLayout>
     );
   }
@@ -120,41 +191,250 @@ export function SalesOrdersIndicatorsDashboard() {
   return (
     <ContextualDashboardLayout moduleLabel="Pedidos de venda — indicadores" backPath="/sales-orders">
       <div>
-        <h3 className="text-lg font-bold tracking-tight">Dashboard executivo de pedidos de venda</h3>
+        <h3 className="text-lg font-bold tracking-tight">Indicadores de margem</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Visão consolidada dos pedidos internos com foco em volume, valor líquido e qualidade de margem.
+          Análise consolidada por período, cliente, vendedor e produto. Margem % ponderada por receita
+          líquida.
         </p>
+        {payload?.scopeNote ? (
+          <p className="text-xs text-muted-foreground mt-2">{payload.scopeNote}</p>
+        ) : null}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <ContextualDashboardKpiCard label="Pedidos" value={String(metrics!.total)} />
-        <ContextualDashboardKpiCard label="Itens totais" value={formatNumber(metrics!.totalItems, 0)} />
-        <ContextualDashboardKpiCard label="Valor líquido total" value={formatCurrency(metrics!.totalNet)} />
-        <ContextualDashboardKpiCard label="Ticket médio" value={formatCurrency(metrics!.avgTicket)} />
-        <ContextualDashboardKpiCard label="Margem média (%)" value={`${formatNumber(metrics!.avgMarginPerc, 2)}%`} />
+      <div className="flex flex-wrap gap-3 items-end rounded-xl border border-border bg-card p-4">
+        <label className="text-xs font-semibold">
+          Ano
+          <select
+            className="mt-1 block rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={String(y)}>{y}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-semibold">
+          Mês
+          <select
+            className="mt-1 block rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+          >
+            <option value="">Todos</option>
+            {SALES_ORDER_MONTH_OPTIONS.map((m) => (
+              <option key={m.value} value={String(m.value)}>{m.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-semibold flex-1 min-w-[160px]">
+          Cliente (ID)
+          <input
+            className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            placeholder="UUID do cliente"
+          />
+        </label>
+        <label className="text-xs font-semibold flex-1 min-w-[160px]">
+          Vendedor
+          <input
+            className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            value={responsible}
+            onChange={(e) => setResponsible(e.target.value)}
+            placeholder="Nome do responsável"
+          />
+        </label>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-        <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Distribuição por status</h4>
-        <div className="space-y-3">
-          {byStatus.map((row, i) => (
-            <div key={row.status} className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span>{STATUS_LABELS[row.status] ?? row.status}</span>
-                <span className="font-semibold tabular-nums">
-                  {row.count} ({formatNumber(row.pct, 1)}%) · {formatCurrency(row.value)}
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full print:bg-slate-600", BAR_TONE[i % BAR_TONE.length])}
-                  style={{ width: `${Math.min(100, row.pct)}%` }}
-                />
-              </div>
-            </div>
-          ))}
+      {loading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-8">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Carregando indicadores…
         </div>
-      </div>
+      ) : !summary || summary.ordersCount === 0 ? (
+        <ContextualDashboardEmpty message="Não há pedidos no período/filtro para consolidar indicadores de margem." />
+      ) : (
+        <>
+          <div className="indus-kpi-grid" data-testid="sales-order-margin-indicator-summary">
+            <FinanceBiKpiCard
+              icon={DollarSign}
+              label="Valor vendido"
+              value={formatSalesOrderMarginMoney(summary.netRevenue)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={Scale}
+              label="Custo estimado"
+              value={formatSalesOrderMarginMoney(summary.totalCost)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={DollarSign}
+              label="Margem R$"
+              value={formatSalesOrderMarginMoney(summary.marginValue)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={Percent}
+              label="Margem %"
+              value={formatSalesOrderMarginPercent(summary.marginPercent)}
+              loading={false}
+              hint="Ponderada por receita líquida"
+            />
+            <FinanceBiKpiCard
+              icon={TrendingUp}
+              label="Markup"
+              value={formatSalesOrderMarkup(summary.markup)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={Package}
+              label="Pedidos"
+              value={String(summary.ordersCount)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={TrendingDown}
+              label="Itens margem negativa"
+              value={String(summary.itemsWithNegativeMargin)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={AlertTriangle}
+              label="Itens sem custo"
+              value={String(summary.itemsWithoutCost)}
+              loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={Users}
+              label="Itens sem produto"
+              value={String(summary.itemsWithoutProduct)}
+              loading={false}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <RankingTable
+              title="Ranking por cliente"
+              testId="sales-order-margin-ranking-customer"
+              headers={["Cliente", "Valor vendido", "Custo", "Margem R$", "Margem %", "Pedidos", "Status"]}
+              rows={customerRows}
+              emptyMessage="Nenhum cliente no filtro."
+            />
+            <RankingTable
+              title="Ranking por vendedor"
+              testId="sales-order-margin-ranking-seller"
+              headers={["Vendedor", "Valor vendido", "Custo", "Margem R$", "Margem %", "Pedidos", "Clientes"]}
+              rows={sellerRows}
+              emptyMessage="Nenhum vendedor no filtro."
+            />
+          </div>
+
+          <RankingTable
+            title="Ranking por produto"
+            testId="sales-order-margin-ranking-product"
+            headers={["Produto", "Qtd vendida", "Valor vendido", "Margem R$", "Margem %", "Pedidos", "Status"]}
+            rows={productRows}
+            emptyMessage="Nenhum produto no filtro."
+          />
+
+          <div
+            className="rounded-2xl border border-border bg-card p-4 space-y-4"
+            data-testid="sales-order-margin-alerts"
+          >
+            <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+              Alertas de revisão
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <AlertBlock
+                title="Margem negativa"
+                count={alerts?.negativeMarginItems.length ?? 0}
+                tone="danger"
+                items={alerts?.negativeMarginItems ?? []}
+              />
+              <AlertBlock
+                title="Sem custo"
+                count={alerts?.missingCostItems.length ?? 0}
+                tone="warning"
+                items={alerts?.missingCostItems ?? []}
+              />
+              <AlertBlock
+                title="Sem produto vinculado"
+                count={alerts?.missingProductItems.length ?? 0}
+                tone="warning"
+                items={alerts?.missingProductItems ?? []}
+              />
+            </div>
+            {(alerts?.lowMarginCustomers.length ?? 0) > 0 ? (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Clientes com margem baixa</p>
+                <ul className="text-sm space-y-1">
+                  {alerts!.lowMarginCustomers.map((row) => (
+                    <li key={row.key} className="flex justify-between gap-2">
+                      <span>{row.name}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatSalesOrderMarginPercent(row.marginPercent)} · {formatCurrency(row.netRevenue)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {(alerts?.lowMarginProducts.length ?? 0) > 0 ? (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Produtos com margem baixa</p>
+                <ul className="text-sm space-y-1">
+                  {alerts!.lowMarginProducts.map((row) => (
+                    <li key={row.key} className="flex justify-between gap-2">
+                      <span>{row.name}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatSalesOrderMarginPercent(row.marginPercent)} · {formatCurrency(row.netRevenue)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </>
+      )}
     </ContextualDashboardLayout>
+  );
+}
+
+function AlertBlock({
+  title,
+  count,
+  tone,
+  items,
+}: {
+  title: string;
+  count: number;
+  tone: "danger" | "warning";
+  items: Array<{ orderCode: string; productName: string; sku: string; statusLabel: string }>;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border p-3",
+        tone === "danger"
+          ? "border-red-200 bg-red-50/80 dark:border-red-900 dark:bg-red-950/20"
+          : "border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/20"
+      )}
+    >
+      <p className="font-semibold">{title}</p>
+      <p className="text-2xl font-bold tabular-nums mt-1">{count}</p>
+      {items.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-xs text-muted-foreground max-h-32 overflow-y-auto">
+          {items.slice(0, 5).map((item) => (
+            <li key={`${item.orderCode}-${item.sku}`}>
+              {item.orderCode} · {item.productName} ({item.sku})
+            </li>
+          ))}
+          {items.length > 5 ? <li>+{items.length - 5} item(ns)</li> : null}
+        </ul>
+      ) : null}
+    </div>
   );
 }
