@@ -24,6 +24,7 @@ import {
   FINANCE_AR_INVOICE_ISSUED_OPTIONS,
   FINANCE_AR_MONTH_OPTIONS,
   FINANCE_AR_STATUS_OPTIONS,
+  normalizeFinanceArAnalyticalUiFilters,
   type FinanceArAnalyticalUiFilters,
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
@@ -126,7 +127,9 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   }, [load]);
 
   const handleApplyFilters = () => {
-    setAppliedFilters(draftFilters);
+    const normalized = normalizeFinanceArAnalyticalUiFilters(draftFilters);
+    setDraftFilters(normalized);
+    setAppliedFilters(normalized);
     setPage(1);
   };
 
@@ -243,14 +246,29 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <CustomerAutocompleteFilter
             label="Cliente"
-            value={draftFilters.personName}
+            personName={draftFilters.personName}
+            personCnpj={draftFilters.personCnpj}
+            customerId={draftFilters.customerId}
             onChange={(selection) => {
               const fields = financePersonFieldsFromSelection(selection);
-              setDraftFilters((prev) => ({
-                ...prev,
-                personName: fields.personName,
-                personCnpj: fields.personCnpj,
-              }));
+              setDraftFilters((prev) =>
+                normalizeFinanceArAnalyticalUiFilters({
+                  ...prev,
+                  personName: fields.personName,
+                  personCnpj: fields.personCnpj,
+                  customerId: fields.customerId,
+                })
+              );
+            }}
+            onClear={() => {
+              setDraftFilters((prev) =>
+                normalizeFinanceArAnalyticalUiFilters({
+                  ...prev,
+                  personName: "",
+                  personCnpj: "",
+                  customerId: "",
+                })
+              );
             }}
           />
           <label className="space-y-1">

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { Customer } from "@prisma/client";
 import { buildCustomerSearchWhere } from "./customerListQuery.js";
+import { safeTrim } from "./safeTrim.js";
 
 export const CUSTOMER_SEARCH_DEFAULT_LIMIT = 20;
 export const CUSTOMER_SEARCH_MAX_LIMIT = 50;
@@ -152,12 +153,14 @@ export function selectionFromFinancePersonFields(
   personCnpj: string,
   customerId?: string
 ): EntityAutocompleteSelection | null {
-  const name = personName.trim();
-  if (!name && !personCnpj.trim() && !customerId) return null;
+  const name = safeTrim(personName);
+  const cnpj = safeTrim(personCnpj);
+  const id = safeTrim(customerId);
+  if (!name && !cnpj && !id) return null;
   return {
-    id: customerId,
-    name: name || personCnpj.trim() || "Cliente",
-    taxId: personCnpj.trim() || null,
+    id: id || undefined,
+    name: name || cnpj || "Cliente",
+    taxId: cnpj || null,
     source: "induscost",
   };
 }
@@ -167,9 +170,9 @@ export function financePersonFieldsFromSelection(
 ): { personName: string; personCnpj: string; customerId: string } {
   if (!selection) return { personName: "", personCnpj: "", customerId: "" };
   return {
-    personName: selection.name.trim(),
-    personCnpj: selection.taxId?.trim() ?? "",
-    customerId: selection.id ?? "",
+    personName: safeTrim(selection.name),
+    personCnpj: safeTrim(selection.taxId),
+    customerId: safeTrim(selection.id),
   };
 }
 

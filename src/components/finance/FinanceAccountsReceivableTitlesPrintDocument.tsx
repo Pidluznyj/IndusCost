@@ -1,5 +1,6 @@
 import React from "react";
 import type { FinanceArAnalyticalUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import { safeTrim } from "@/src/lib/safeTrim";
 import {
   displayFinanceText,
   formatFinanceCalculatedStatus,
@@ -17,17 +18,25 @@ function originLabel(origin: string): string {
 
 function filterLines(filters: FinanceArAnalyticalUiFilters): string[] {
   const lines: string[] = [];
-  if (filters.companyName.trim()) lines.push(`Empresa: ${filters.companyName.trim()}`);
-  if (filters.personName.trim()) lines.push(`Cliente: ${filters.personName.trim()}`);
-  if (filters.year.trim()) lines.push(`Ano vencimento: ${filters.year.trim()}`);
+  const companyName = safeTrim(filters.companyName);
+  const personName = safeTrim(filters.personName);
+  const year = safeTrim(filters.year);
+  const dueDateFrom = safeTrim(filters.dueDateFrom);
+  const dueDateTo = safeTrim(filters.dueDateTo);
+  const issueDateFrom = safeTrim(filters.issueDateFrom);
+  const issueDateTo = safeTrim(filters.issueDateTo);
+  const document = safeTrim(filters.document);
+  if (companyName) lines.push(`Empresa: ${companyName}`);
+  if (personName) lines.push(`Cliente: ${personName}`);
+  if (year) lines.push(`Ano vencimento: ${year}`);
   if (filters.status !== "all") lines.push(`Status: ${filters.status}`);
-  if (filters.dueDateFrom.trim() || filters.dueDateTo.trim()) {
-    lines.push(`Vencimento: ${filters.dueDateFrom || "…"} — ${filters.dueDateTo || "…"}`);
+  if (dueDateFrom || dueDateTo) {
+    lines.push(`Vencimento: ${dueDateFrom || "…"} — ${dueDateTo || "…"}`);
   }
-  if (filters.issueDateFrom.trim() || filters.issueDateTo.trim()) {
-    lines.push(`Emissão: ${filters.issueDateFrom || "…"} — ${filters.issueDateTo || "…"}`);
+  if (issueDateFrom || issueDateTo) {
+    lines.push(`Emissão: ${issueDateFrom || "…"} — ${issueDateTo || "…"}`);
   }
-  if (filters.document.trim()) lines.push(`Documento: ${filters.document.trim()}`);
+  if (document) lines.push(`Documento: ${document}`);
   if (filters.origin !== "all") lines.push(`Origem: ${filters.origin}`);
   if (filters.delaySituation !== "all") lines.push(`Situação: ${filters.delaySituation}`);
   return lines;

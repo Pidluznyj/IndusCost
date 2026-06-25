@@ -2,6 +2,7 @@
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
+import { safeTrim } from "./safeTrim.js";
 import {
   DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,
   type FinanceArOverdueUiFilters,
@@ -302,13 +303,25 @@ export const FINANCE_AR_MONTH_OPTIONS = [
 export function normalizeFinanceArUiFilters(
   filters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">
 ): FinanceArUiFilters {
-  const merged: FinanceArUiFilters = { ...EMPTY_FINANCE_AR_UI_FILTERS, ...filters };
-  const year = merged.year.trim();
-  const month = merged.month.trim();
-  if (month && !year) {
-    return { ...merged, year: String(new Date().getFullYear()), month };
+  const defaults = EMPTY_FINANCE_AR_UI_FILTERS;
+  const merged = { ...defaults, ...filters };
+  const sanitized: FinanceArUiFilters = {
+    companyName: safeTrim(merged.companyName),
+    personName: safeTrim(merged.personName),
+    personCnpj: safeTrim(merged.personCnpj),
+    status: safeTrim(merged.status) || defaults.status,
+    year: safeTrim(merged.year),
+    month: safeTrim(merged.month),
+    dueDateFrom: safeTrim(merged.dueDateFrom),
+    dueDateTo: safeTrim(merged.dueDateTo),
+    invoiceIssued: safeTrim(merged.invoiceIssued) || defaults.invoiceIssued,
+    paymentMethodName: safeTrim(merged.paymentMethodName),
+    bankAccountName: safeTrim(merged.bankAccountName),
+  };
+  if (sanitized.month && !sanitized.year) {
+    return { ...sanitized, year: String(new Date().getFullYear()) };
   }
-  return merged;
+  return sanitized;
 }
 
 export function buildFinanceArTitlesQuery(
@@ -333,17 +346,24 @@ export function buildFinanceArTitlesQuery(
   if (extras?.limit) q.set("limit", String(extras.limit));
   if (extras?.sortBy) q.set("sortBy", extras.sortBy);
   if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
-  if (extras?.search?.trim()) q.set("search", extras.search.trim());
+  if (extras?.search) {
+    const search = safeTrim(extras.search);
+    if (search) q.set("search", search);
+  }
   if (extras?.customerId != null && extras.customerId > 0) {
     q.set("customerId", String(extras.customerId));
   }
-  if (extras?.customerName?.trim()) q.set("customerName", extras.customerName.trim());
+  const customerName = safeTrim(extras?.customerName);
+  if (customerName) q.set("customerName", customerName);
   if (extras?.overdueOnly) q.set("overdueOnly", "1");
   if (extras?.qualityAlert) q.set("qualityAlert", extras.qualityAlert);
   if (extras?.localFilter && extras.localFilter !== "all") {
     q.set("localFilter", extras.localFilter);
   }
-  if (extras?.agingBucket?.trim()) q.set("agingBucket", extras.agingBucket.trim());
+  if (extras?.agingBucket) {
+    const bucket = safeTrim(extras.agingBucket);
+    if (bucket) q.set("agingBucket", bucket);
+  }
   return q.toString();
 }
 
@@ -383,6 +403,26 @@ export function createDefaultFinanceArAnalyticalUiFilters(
   };
 }
 
+/** Garante todos os campos string da aba Títulos — evita `.trim()` em undefined. */
+export function normalizeFinanceArAnalyticalUiFilters(
+  filters: Partial<FinanceArAnalyticalUiFilters> & Pick<FinanceArAnalyticalUiFilters, "status">
+): FinanceArAnalyticalUiFilters {
+  const defaults = createDefaultFinanceArAnalyticalUiFilters();
+  const base = normalizeFinanceArUiFilters({ ...defaults, ...filters });
+  const raw = { ...defaults, ...filters };
+  return {
+    ...base,
+    customerId: safeTrim(raw.customerId),
+    issueDateFrom: safeTrim(raw.issueDateFrom),
+    issueDateTo: safeTrim(raw.issueDateTo),
+    document: safeTrim(raw.document),
+    minValue: safeTrim(raw.minValue),
+    maxValue: safeTrim(raw.maxValue),
+    origin: safeTrim(raw.origin) || "all",
+    delaySituation: safeTrim(raw.delaySituation) || "all",
+  };
+}
+
 export function buildFinanceArAnalyticalTitlesQuery(
   filters: Partial<FinanceArAnalyticalUiFilters> & Pick<FinanceArAnalyticalUiFilters, "status">,
   extras?: {
@@ -393,25 +433,22 @@ export function buildFinanceArAnalyticalTitlesQuery(
     search?: string;
   }
 ): string {
-  const normalized = {
-    ...createDefaultFinanceArAnalyticalUiFilters(),
-    ...filters,
-    status: filters.status ?? "all",
-  };
+  const normalized = normalizeFinanceArAnalyticalUiFilters(filters);
   const q = new URLSearchParams(buildFinanceArDashboardQuery(normalized));
-  if (normalized.customerId.trim()) q.set("customerId", normalized.customerId.trim());
-  if (normalized.issueDateFrom.trim()) q.set("issueDateFrom", normalized.issueDateFrom.trim());
-  if (normalized.issueDateTo.trim()) q.set("issueDateTo", normalized.issueDateTo.trim());
-  if (normalized.document.trim()) q.set("document", normalized.document.trim());
-  if (normalized.minValue.trim()) q.set("minValue", normalized.minValue.trim());
-  if (normalized.maxValue.trim()) q.set("maxValue", normalized.maxValue.trim());
+  if (normalized.customerId) q.set("customerId", normalized.customerId);
+  if (normalized.issueDateFrom) q.set("issueDateFrom", normalized.issueDateFrom);
+  if (normalized.issueDateTo) q.set("issueDateTo", normalized.issueDateTo);
+  if (normalized.document) q.set("document", normalized.document);
+  if (normalized.minValue) q.set("minValue", normalized.minValue);
+  if (normalized.maxValue) q.set("maxValue", normalized.maxValue);
   if (normalized.origin !== "all") q.set("origin", normalized.origin);
   if (normalized.delaySituation !== "all") q.set("delaySituation", normalized.delaySituation);
   if (extras?.page) q.set("page", String(extras.page));
   if (extras?.pageSize) q.set("pageSize", String(extras.pageSize));
   if (extras?.sortBy) q.set("sortBy", extras.sortBy);
   if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
-  if (extras?.search?.trim()) q.set("search", extras.search.trim());
+  const search = safeTrim(extras?.search);
+  if (search) q.set("search", search);
   return q.toString();
 }
 
@@ -465,21 +502,17 @@ export function buildFinanceArDashboardQuery(
 ): string {
   const normalized = normalizeFinanceArUiFilters(filters);
   const q = new URLSearchParams();
-  if (normalized.companyName?.trim()) q.set("companyName", normalized.companyName.trim());
-  if (normalized.personName?.trim()) q.set("personName", normalized.personName.trim());
-  if (normalized.personCnpj?.trim()) q.set("personCnpj", normalized.personCnpj.trim());
+  if (normalized.companyName) q.set("companyName", normalized.companyName);
+  if (normalized.personName) q.set("personName", normalized.personName);
+  if (normalized.personCnpj) q.set("personCnpj", normalized.personCnpj);
   if (normalized.status !== "all") q.set("status", normalized.status);
-  if (normalized.year?.trim()) q.set("year", normalized.year.trim());
-  if (normalized.month?.trim()) q.set("month", normalized.month.trim());
-  if (normalized.dueDateFrom?.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
-  if (normalized.dueDateTo?.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
+  if (normalized.year) q.set("year", normalized.year);
+  if (normalized.month) q.set("month", normalized.month);
+  if (normalized.dueDateFrom) q.set("dueDateFrom", normalized.dueDateFrom);
+  if (normalized.dueDateTo) q.set("dueDateTo", normalized.dueDateTo);
   if (normalized.invoiceIssued !== "all") q.set("invoiceIssued", normalized.invoiceIssued);
-  if (normalized.paymentMethodName?.trim()) {
-    q.set("paymentMethodName", normalized.paymentMethodName.trim());
-  }
-  if (normalized.bankAccountName?.trim()) {
-    q.set("bankAccountName", normalized.bankAccountName.trim());
-  }
+  if (normalized.paymentMethodName) q.set("paymentMethodName", normalized.paymentMethodName);
+  if (normalized.bankAccountName) q.set("bankAccountName", normalized.bankAccountName);
   return q.toString();
 }
 
