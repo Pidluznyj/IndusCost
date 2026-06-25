@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  areExecutiveReportChartsReady,
   canPrintExecutiveReport,
+  chartFrameIsReady,
   executiveReportPrintNeedsQualityConfirm,
   resolveExecutiveReportPrintAction,
   waitForExecutiveReportChartsReady,
@@ -277,6 +279,7 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(shell, /data-report-chart/);
+    assert.match(shell, /data-chart-empty/);
     assert.match(shell, /executive-report-chart-frame/);
     assert.match(shell, /minHeight:\s*height/);
     assert.match(page, /waitForExecutiveReportChartsReady/);
@@ -299,14 +302,36 @@ describe("financeExecutiveReportPrint", () => {
       assert.match(src, /isAnimationActive=\{EXECUTIVE_CHART_IS_ANIMATION_ACTIVE\}/);
     }
     const cashFlow = readFileSync(
-      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
+      join(process.cwd(), "src", "components", "finance", "executive-report", "charts", "ExecutiveCashFlowChart.tsx"),
       "utf8"
     );
-    assert.match(cashFlow, /data-report-chart/);
-    assert.match(cashFlow, /EXECUTIVE_CHART_IS_ANIMATION_ACTIVE/);
+    assert.match(cashFlow, /ExecutiveChartShell/);
+    assert.doesNotMatch(
+      readFileSync(
+        join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
+        "utf8"
+      ),
+      /data-report-chart=\{isExecutive/
+    );
   });
 
   it("waitForExecutiveReportChartsReady retorna true sem document (SSR)", async () => {
     assert.equal(await waitForExecutiveReportChartsReady(), true);
+  });
+
+  it("não exige quantidade fixa de gráficos para considerar prontos", () => {
+    const empty = { getAttribute: () => "true", querySelector: () => null, getBoundingClientRect: () => ({ width: 0, height: 0 }) };
+    assert.equal(chartFrameIsReady(empty as unknown as Element), true);
+    assert.equal(areExecutiveReportChartsReady([]), true);
+    assert.equal(areExecutiveReportChartsReady([empty as unknown as Element]), true);
+  });
+
+  it("não bloqueia exportação por mínimo de 6 frames", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src", "lib", "financeExecutiveReportPrint.ts"),
+      "utf8"
+    );
+    assert.doesNotMatch(src, /MIN_CHART_FRAMES|>=\s*6/);
+    assert.match(src, /areExecutiveReportChartsReady/);
   });
 });

@@ -27,7 +27,12 @@ export function ExecutiveChartShell({
 }) {
   if (empty) {
     return (
-      <div className="executive-chart-shell executive-chart executive-chart-shell--empty" data-testid={testId}>
+      <div
+        className="executive-chart-shell executive-chart executive-chart-shell--empty"
+        data-testid={testId}
+        data-report-chart
+        data-chart-empty="true"
+      >
         <ExecutiveChartHeader title={title} subtitle={subtitle} />
         <p className="executive-chart-empty-message">{EXECUTIVE_REPORT_EMPTY_MESSAGE}</p>
       </div>
