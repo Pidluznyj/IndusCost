@@ -39,6 +39,12 @@ import {
   parseFinanceArTitlesLocalFilter,
   type FinanceArTitlesLocalFilter,
 } from "./financeAccountsReceivableTitlesLocalFilter.js";
+import {
+  financeCustomerCnpjMatches,
+  financeCustomerNameMatches,
+  parseFinanceCustomerNameParam,
+  parseNomusPersonIdCustomerParam,
+} from "./financeAccountsReceivableCustomerMatch.js";
 
 import type {
   FinanceTitlesBucketTotals,
@@ -56,6 +62,7 @@ export type FinanceArTitlesExtendedFilters = {
   origin?: FinanceArTitlesOriginFilter;
   customerId?: number;
   customerName?: string;
+  customerCnpj?: string;
   delaySituation?: FinanceArTitlesDelayFilter;
 };
 
@@ -177,10 +184,11 @@ export function parseFinanceArTitlesExtendedFilters(
   const maxValue = parseOptionalNumber(query.maxValue);
   const document = typeof query.document === "string" ? query.document.trim() : undefined;
   const origin = parseOriginFilter(query.origin);
-  const customerIdRaw = Number.parseInt(String(query.customerId ?? ""), 10);
-  const customerId = Number.isFinite(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : undefined;
-  const customerName =
-    typeof query.customerName === "string" ? query.customerName.trim() : undefined;
+  const customerId = parseNomusPersonIdCustomerParam(query.customerId);
+  const customerName = parseFinanceCustomerNameParam(query);
+  const customerCnpjRaw =
+    typeof query.personCnpj === "string" ? query.personCnpj.trim() : undefined;
+  const customerCnpj = customerName && customerCnpjRaw ? customerCnpjRaw : undefined;
   const delaySituation = parseDelayFilter(query.delaySituation);
   return {
     issueDateFrom,
@@ -191,6 +199,7 @@ export function parseFinanceArTitlesExtendedFilters(
     origin: origin === "all" ? undefined : origin,
     customerId,
     customerName: customerName || undefined,
+    customerCnpj,
     delaySituation: delaySituation === "all" ? undefined : delaySituation,
   };
 }
@@ -276,17 +285,35 @@ function rowMatchesDocument(row: FinanceArDashboardRow, document: string): boole
   return false;
 }
 
+function rowMatchesCustomerFilter(
+  row: FinanceArDashboardRow,
+  extended: FinanceArTitlesExtendedFilters
+): boolean {
+  if (extended.customerId != null) {
+    return row.personId === extended.customerId;
+  }
+  if (!extended.customerName && !extended.customerCnpj) return true;
+
+  const nameMatch = extended.customerName
+    ? financeCustomerNameMatches(row.personName, extended.customerName)
+    : false;
+  const cnpjMatch = extended.customerCnpj
+    ? financeCustomerCnpjMatches(row.personCnpj, extended.customerCnpj)
+    : false;
+
+  if (extended.customerName && extended.customerCnpj) {
+    return nameMatch || cnpjMatch;
+  }
+  if (extended.customerName) return nameMatch;
+  return cnpjMatch;
+}
+
 function rowMatchesExtendedFilters(
   row: FinanceArDashboardRow,
   extended: FinanceArTitlesExtendedFilters,
   referenceDate: Date
 ): boolean {
-  if (extended.customerId != null) {
-    if (row.personId !== extended.customerId) return false;
-  } else if (extended.customerName) {
-    const target = extended.customerName.trim().toLowerCase();
-    if ((row.personName ?? "").trim().toLowerCase() !== target) return false;
-  }
+  if (!rowMatchesCustomerFilter(row, extended)) return false;
 
   if (extended.issueDateFrom) {
     const from = startOfLocalDay(extended.issueDateFrom);
@@ -435,6 +462,17 @@ function rowMatchesArAgingBucketDrilldown(
   if (isFinanceArExcludedFromReports(row, effectiveCutoff)) return false;
   if (!isFinanceArAllowedInManagementReport(row, referenceDate)) return false;
   return rowMatchesFinanceHorizonDrilldownBucket(row.dueDate, bucketKey, referenceDate);
+}
+
+/** Filtros Prisma para títulos — evita personName literal quando há filtro de cliente estendido. */
+export function financeArTitlesPrismaFilters(
+  query: Pick<FinanceArTitlesQuery, "filters" | "extended">
+): FinanceArDashboardFilters {
+  const filters = { ...query.filters };
+  if (query.extended.customerId != null || query.extended.customerName) {
+    filters.personName = undefined;
+  }
+  return filters;
 }
 
 export function buildFinanceArTitlesPayload(

@@ -30,6 +30,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableHorizonExportXlsx.js";
 import {
   buildFinanceArTitlesPayload,
+  financeArTitlesPrismaFilters,
   isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "@/src/lib/financeAccountsReceivableTitles.js";
@@ -148,7 +149,7 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const referenceDate = new Date();
       const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
         ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
-        : await loadFinanceArManagementRowsFromPrisma(prisma, query.filters);
+        : await loadFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
       const payload = buildFinanceArTitlesPayload(rows, query, referenceDate, syncCutoff);
       return res.json(payload);
     } catch (error) {
@@ -190,7 +191,10 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const query = parseFinanceArTitlesOrRespond(res, rawQuery);
       if (!query) return;
       const referenceDate = new Date();
-      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(prisma, query.filters);
+      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(
+        prisma,
+        financeArTitlesPrismaFilters(query)
+      );
       const exportQuery = { ...query, page: 1, limit: 50_000 };
       const payload = buildFinanceArTitlesPayload(rows, exportQuery, referenceDate, syncCutoff);
       const allPayload = buildFinanceArTitlesPayload(

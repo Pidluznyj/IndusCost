@@ -19,7 +19,7 @@ function originLabel(origin: string): string {
 function filterLines(filters: FinanceArAnalyticalUiFilters): string[] {
   const lines: string[] = [];
   const companyName = safeTrim(filters.companyName);
-  const personName = safeTrim(filters.personName);
+  const customerName = safeTrim(filters.customerName) || safeTrim(filters.personName);
   const year = safeTrim(filters.year);
   const dueDateFrom = safeTrim(filters.dueDateFrom);
   const dueDateTo = safeTrim(filters.dueDateTo);
@@ -27,7 +27,7 @@ function filterLines(filters: FinanceArAnalyticalUiFilters): string[] {
   const issueDateTo = safeTrim(filters.issueDateTo);
   const document = safeTrim(filters.document);
   if (companyName) lines.push(`Empresa: ${companyName}`);
-  if (personName) lines.push(`Cliente: ${personName}`);
+  if (customerName) lines.push(`Cliente: ${customerName}`);
   if (year) lines.push(`Ano vencimento: ${year}`);
   if (filters.status !== "all") lines.push(`Status: ${filters.status}`);
   if (dueDateFrom || dueDateTo) {

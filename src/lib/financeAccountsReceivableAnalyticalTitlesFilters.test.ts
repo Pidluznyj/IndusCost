@@ -35,6 +35,7 @@ describe("financeAccountsReceivableAnalyticalTitlesFilters", () => {
     } as unknown as Parameters<typeof normalizeFinanceArAnalyticalUiFilters>[0]);
     assert.equal(typeof normalized.companyName, "string");
     assert.equal(typeof normalized.customerId, "string");
+    assert.equal(typeof normalized.customerName, "string");
     assert.equal(typeof normalized.document, "string");
     assert.equal(typeof normalized.minValue, "string");
     assert.equal(typeof normalized.maxValue, "string");
@@ -85,7 +86,8 @@ describe("financeAccountsReceivableAnalyticalTitlesFilters", () => {
     const tab = read("src/components/finance/FinanceArAnalyticalTitlesTab.tsx");
     assert.ok(tab.includes("normalizeFinanceArAnalyticalUiFilters"));
     assert.ok(tab.includes("personName={draftFilters.personName}"));
-    assert.ok(tab.includes("customerId={draftFilters.customerId}"));
+    assert.ok(tab.includes("financeArCustomerFieldsFromSelection"));
+    assert.ok(tab.includes("customerName: fields.customerName"));
     assert.doesNotMatch(tab, /value=\{draftFilters\.personName\}/);
   });
 

@@ -2,6 +2,7 @@
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
+import { isNomusPersonIdCustomerParam } from "./financeAccountsReceivableCustomerMatch.js";
 import { safeTrim } from "./safeTrim.js";
 import {
   DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,
@@ -378,6 +379,8 @@ export type FinanceArPageViewId = (typeof FINANCE_AR_PAGE_VIEWS)[number]["id"];
 /** Filtros estendidos da aba Grid Analítico de Títulos. */
 export type FinanceArAnalyticalUiFilters = FinanceArUiFilters & {
   customerId: string;
+  /** Nome do cliente para filtro analítico (não confundir com customerId Nomus). */
+  customerName: string;
   issueDateFrom: string;
   issueDateTo: string;
   document: string;
@@ -393,6 +396,7 @@ export function createDefaultFinanceArAnalyticalUiFilters(
   return {
     ...createDefaultFinanceArUiFilters(referenceDate),
     customerId: "",
+    customerName: "",
     issueDateFrom: "",
     issueDateTo: "",
     document: "",
@@ -413,6 +417,7 @@ export function normalizeFinanceArAnalyticalUiFilters(
   return {
     ...base,
     customerId: safeTrim(raw.customerId),
+    customerName: safeTrim(raw.customerName),
     issueDateFrom: safeTrim(raw.issueDateFrom),
     issueDateTo: safeTrim(raw.issueDateTo),
     document: safeTrim(raw.document),
@@ -434,8 +439,22 @@ export function buildFinanceArAnalyticalTitlesQuery(
   }
 ): string {
   const normalized = normalizeFinanceArAnalyticalUiFilters(filters);
-  const q = new URLSearchParams(buildFinanceArDashboardQuery(normalized));
-  if (normalized.customerId) q.set("customerId", normalized.customerId);
+  const customerName = safeTrim(normalized.customerName);
+  const hasNomusCustomerId = isNomusPersonIdCustomerParam(normalized.customerId);
+  const hasCustomerFilter = hasNomusCustomerId || Boolean(customerName);
+
+  const dashboardFilters = hasCustomerFilter
+    ? { ...normalized, personName: "", personCnpj: hasNomusCustomerId ? "" : normalized.personCnpj }
+    : normalized;
+
+  const q = new URLSearchParams(buildFinanceArDashboardQuery(dashboardFilters));
+  if (hasNomusCustomerId) {
+    q.set("customerId", safeTrim(normalized.customerId));
+  } else if (customerName) {
+    q.set("customerName", customerName);
+    const cnpj = safeTrim(normalized.personCnpj);
+    if (cnpj) q.set("personCnpj", cnpj);
+  }
   if (normalized.issueDateFrom) q.set("issueDateFrom", normalized.issueDateFrom);
   if (normalized.issueDateTo) q.set("issueDateTo", normalized.issueDateTo);
   if (normalized.document) q.set("document", normalized.document);

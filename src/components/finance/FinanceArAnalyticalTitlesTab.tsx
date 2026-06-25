@@ -15,7 +15,7 @@ import {
   FinanceArStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { FinanceAccountsReceivableTitlesPrintDocument } from "@/src/components/finance/FinanceAccountsReceivableTitlesPrintDocument";
-import { financePersonFieldsFromSelection } from "@/src/lib/customerSearch";
+import { financeArCustomerFieldsFromSelection } from "@/src/lib/customerSearch";
 import {
   buildFinanceArAnalyticalTitlesExportQuery,
   buildFinanceArAnalyticalTitlesQuery,
@@ -250,13 +250,14 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             personCnpj={draftFilters.personCnpj}
             customerId={draftFilters.customerId}
             onChange={(selection) => {
-              const fields = financePersonFieldsFromSelection(selection);
+              const fields = financeArCustomerFieldsFromSelection(selection);
               setDraftFilters((prev) =>
                 normalizeFinanceArAnalyticalUiFilters({
                   ...prev,
                   personName: fields.personName,
                   personCnpj: fields.personCnpj,
                   customerId: fields.customerId,
+                  customerName: fields.customerName,
                 })
               );
             }}
@@ -267,6 +268,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
                   personName: "",
                   personCnpj: "",
                   customerId: "",
+                  customerName: "",
                 })
               );
             }}

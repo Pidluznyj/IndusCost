@@ -165,6 +165,29 @@ export function selectionFromFinancePersonFields(
   };
 }
 
+export function financeArCustomerFieldsFromSelection(
+  selection: EntityAutocompleteSelection | null
+): {
+  personName: string;
+  personCnpj: string;
+  customerId: string;
+  customerName: string;
+} {
+  if (!selection) {
+    return { personName: "", personCnpj: "", customerId: "", customerName: "" };
+  }
+  const name = safeTrim(selection.name);
+  const taxId = safeTrim(selection.taxId);
+  const rawId = safeTrim(selection.id);
+  const isNomusPersonId = /^\d+$/.test(rawId) && Number.parseInt(rawId, 10) > 0;
+  return {
+    personName: name,
+    personCnpj: taxId,
+    customerId: isNomusPersonId ? rawId : "",
+    customerName: name,
+  };
+}
+
 export function financePersonFieldsFromSelection(
   selection: EntityAutocompleteSelection | null
 ): { personName: string; personCnpj: string; customerId: string } {
