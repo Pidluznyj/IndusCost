@@ -1,7 +1,14 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceArHorizonExportButtons";
+import {
+  FinanceArHorizonBucketCustomerFilter,
+  horizonCustomerLabelFromSelection,
+  horizonCustomerQueryFromSelection,
+} from "@/src/components/finance/FinanceArHorizonBucketCustomerFilter";
+import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
+import type { FinanceArHorizonBucketCustomer } from "@/src/lib/financeArHorizonBucketCustomers";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -89,12 +96,26 @@ export function FinanceAgingBucketDrilldownSection({
   const [data, setData] = useState<FinanceArTitlesPayload | FinanceApTitlesPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gridSearch, setGridSearch] = useState("");
+  const [gridSearchDraft, setGridSearchDraft] = useState("");
+  const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
+  const [bucketCustomers, setBucketCustomers] = useState<FinanceArHorizonBucketCustomer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
 
   const selectedCard = cards.find((c) => c.key === selectedKey) ?? null;
+  const horizonCustomerQuery = useMemo(
+    () => horizonCustomerQueryFromSelection(customerSelection),
+    [customerSelection]
+  );
+  const selectedCustomerLabel = horizonCustomerLabelFromSelection(customerSelection);
+  const hasHorizonGridFilters = Boolean(gridSearch.trim() || customerSelection);
 
   const handleCardClick = (key: string) => {
     setSelectedKey((current) => (current === key ? null : key));
     setPage(1);
+    setGridSearch("");
+    setGridSearchDraft("");
+    setCustomerSelection(null);
   };
 
   const load = useCallback(async () => {
@@ -114,6 +135,12 @@ export function FinanceAgingBucketDrilldownSection({
               sortBy: "dueDate",
               sortDirection: "desc",
               agingBucket: selectedKey,
+              ...(horizonMode
+                ? {
+                    search: gridSearch,
+                    ...horizonCustomerQuery,
+                  }
+                : {}),
             })
           : buildFinanceApTitlesQuery(filters as FinanceApUiFilters, {
               page,
@@ -138,15 +165,41 @@ export function FinanceAgingBucketDrilldownSection({
     } finally {
       setLoading(false);
     }
-  }, [filters, module, page, selectedKey]);
+  }, [filters, gridSearch, horizonCustomerQuery, horizonMode, module, page, selectedKey]);
+
+  const loadBucketCustomers = useCallback(async () => {
+    if (!selectedKey || module !== "ar" || !horizonMode) {
+      setBucketCustomers([]);
+      return;
+    }
+    setLoadingCustomers(true);
+    try {
+      const payload = await fetchJsonOk<{ items: FinanceArHorizonBucketCustomer[] }>(
+        `/api/finance/accounts-receivable/horizon/bucket-customers?agingBucket=${encodeURIComponent(selectedKey)}`
+      );
+      setBucketCustomers(payload.items ?? []);
+    } catch {
+      setBucketCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, [horizonMode, module, selectedKey]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
+    void loadBucketCustomers();
+  }, [loadBucketCustomers]);
+
+  useEffect(() => {
     setSelectedKey(null);
     setPage(1);
+    setGridSearch("");
+    setGridSearchDraft("");
+    setCustomerSelection(null);
+    setBucketCustomers([]);
   }, [filters, horizonMode]);
 
   if (!cards.length && !loadingCards) return null;
@@ -189,8 +242,17 @@ export function FinanceAgingBucketDrilldownSection({
               ) : null}
               {data?.bucketTotals ? (
                 <p className="text-[10px] text-[#9CA3AF] mt-1">
-                  Total: {formatFinanceCurrency(data.bucketTotals.openBalanceAmount)} ·{" "}
+                  {hasHorizonGridFilters && module === "ar" && horizonMode
+                    ? "Total filtrado"
+                    : "Total"}
+                  : {formatFinanceCurrency(data.bucketTotals.openBalanceAmount)} ·{" "}
                   {formatFinanceInteger(data.bucketTotals.titlesCount)} título(s)
+                  {selectedCustomerLabel && module === "ar" && horizonMode ? (
+                    <>
+                      {" "}
+                      · Cliente: {selectedCustomerLabel}
+                    </>
+                  ) : null}
                 </p>
               ) : null}
             </div>
@@ -201,6 +263,9 @@ export function FinanceAgingBucketDrilldownSection({
                   bucketLabel={selectedCard.label}
                   disabled={loading}
                   testIdPrefix="finance-ar-horizon-bucket"
+                  search={gridSearch}
+                  customerId={horizonCustomerQuery.customerId}
+                  customerName={horizonCustomerQuery.customerName}
                 />
               ) : null}
               <button
@@ -213,6 +278,52 @@ export function FinanceAgingBucketDrilldownSection({
               </button>
             </div>
           </div>
+
+          {module === "ar" && horizonMode ? (
+            <div
+              className="flex flex-wrap items-end gap-2 pt-1"
+              data-testid="finance-ar-horizon-bucket-grid-filters"
+            >
+              <label className="space-y-1 min-w-[180px] flex-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                  Busca geral
+                </span>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9CA3AF]" />
+                  <input
+                    type="search"
+                    value={gridSearchDraft}
+                    onChange={(e) => setGridSearchDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        setGridSearch(gridSearchDraft.trim());
+                        setPage(1);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (gridSearchDraft.trim() !== gridSearch.trim()) {
+                        setGridSearch(gridSearchDraft.trim());
+                        setPage(1);
+                      }
+                    }}
+                    placeholder="Documento, descrição, NF…"
+                    className="h-8 w-full rounded-md border border-[#E5E7EB] bg-white pl-8 pr-2 text-[11px] text-[#111827] placeholder:text-[#9CA3AF]"
+                    data-testid="finance-ar-horizon-bucket-search"
+                  />
+                </div>
+              </label>
+              <FinanceArHorizonBucketCustomerFilter
+                customers={bucketCustomers}
+                value={customerSelection}
+                loading={loadingCustomers}
+                disabled={loading}
+                onChange={(selection) => {
+                  setCustomerSelection(selection);
+                  setPage(1);
+                }}
+              />
+            </div>
+          ) : null}
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">

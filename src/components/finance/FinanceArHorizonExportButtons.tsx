@@ -21,6 +21,9 @@ type Props = {
   testIdPrefix?: string;
   excelLabel?: string;
   pdfLabel?: string;
+  search?: string;
+  customerId?: number;
+  customerName?: string;
 };
 
 export function FinanceArHorizonExportButtons({
@@ -31,6 +34,9 @@ export function FinanceArHorizonExportButtons({
   testIdPrefix = "finance-ar-horizon",
   excelLabel = "Exportar Excel",
   pdfLabel = "Exportar PDF",
+  search,
+  customerId,
+  customerName,
 }: Props) {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -40,6 +46,9 @@ export function FinanceArHorizonExportButtons({
   const exportQuery = buildFinanceArHorizonExportQueryString({
     agingBucket,
     scope,
+    search,
+    customerId,
+    customerName,
   });
 
   const handleExportExcel = async () => {

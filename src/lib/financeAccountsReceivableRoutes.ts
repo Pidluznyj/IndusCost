@@ -17,6 +17,8 @@ import {
 } from "@/src/lib/financeAccountsReceivableTitlesExport.js";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
 import { loadFinanceArOpenHorizonRowsFromPrisma } from "@/src/lib/financeAccountsReceivableHorizon.js";
+import { listFinanceArHorizonBucketCustomers } from "@/src/lib/financeArHorizonBucketCustomers.js";
+import { parseFinanceAgingBucketParam } from "@/src/lib/financeDashboardAgingBuckets.js";
 import {
   buildFinanceArHorizonExportPayloadDefault,
   FinanceArHorizonExportError,
@@ -152,6 +154,28 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/titles", error);
       return res.status(500).json({ error: "Erro ao listar títulos de contas a receber." });
+    }
+  });
+
+  app.get("/api/finance/accounts-receivable/horizon/bucket-customers", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+
+      const agingBucket = parseFinanceAgingBucketParam(req.query.agingBucket);
+      if (!agingBucket || !isFinanceArHorizonTitlesQuery({ agingBucket })) {
+        return res.status(400).json({ error: "Faixa do horizonte é obrigatória." });
+      }
+
+      const referenceDate = new Date();
+      const { rows, syncCutoff } = await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate);
+      const items = listFinanceArHorizonBucketCustomers(rows, agingBucket, referenceDate, syncCutoff);
+      return res.json({ items });
+    } catch (error) {
+      console.error("GET /api/finance/accounts-receivable/horizon/bucket-customers", error);
+      return res.status(500).json({ error: "Erro ao listar clientes da faixa do horizonte." });
     }
   });
 

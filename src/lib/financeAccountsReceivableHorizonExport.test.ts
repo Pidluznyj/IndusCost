@@ -192,6 +192,7 @@ describe("financeAccountsReceivableHorizonExport", () => {
       search: "",
     });
     assert.ok(lines.some((line) => line.label === "Faixa" && line.value === "8–15 dias"));
+    assert.ok(lines.some((line) => line.label === "Cliente"));
     assert.ok(lines.some((line) => line.label === "Busca" && line.value === "—"));
 
     const payload = mockPayload([], "8_15", "8–15 dias");

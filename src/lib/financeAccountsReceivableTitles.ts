@@ -55,6 +55,7 @@ export type FinanceArTitlesExtendedFilters = {
   document?: string;
   origin?: FinanceArTitlesOriginFilter;
   customerId?: number;
+  customerName?: string;
   delaySituation?: FinanceArTitlesDelayFilter;
 };
 
@@ -178,6 +179,8 @@ export function parseFinanceArTitlesExtendedFilters(
   const origin = parseOriginFilter(query.origin);
   const customerIdRaw = Number.parseInt(String(query.customerId ?? ""), 10);
   const customerId = Number.isFinite(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : undefined;
+  const customerName =
+    typeof query.customerName === "string" ? query.customerName.trim() : undefined;
   const delaySituation = parseDelayFilter(query.delaySituation);
   return {
     issueDateFrom,
@@ -187,6 +190,7 @@ export function parseFinanceArTitlesExtendedFilters(
     document: document || undefined,
     origin: origin === "all" ? undefined : origin,
     customerId,
+    customerName: customerName || undefined,
     delaySituation: delaySituation === "all" ? undefined : delaySituation,
   };
 }
@@ -277,7 +281,12 @@ function rowMatchesExtendedFilters(
   extended: FinanceArTitlesExtendedFilters,
   referenceDate: Date
 ): boolean {
-  if (extended.customerId != null && row.personId !== extended.customerId) return false;
+  if (extended.customerId != null) {
+    if (row.personId !== extended.customerId) return false;
+  } else if (extended.customerName) {
+    const target = extended.customerName.trim().toLowerCase();
+    if ((row.personName ?? "").trim().toLowerCase() !== target) return false;
+  }
 
   if (extended.issueDateFrom) {
     const from = startOfLocalDay(extended.issueDateFrom);

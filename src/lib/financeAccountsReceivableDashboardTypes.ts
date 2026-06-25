@@ -319,6 +319,8 @@ export function buildFinanceArTitlesQuery(
     sortBy?: string;
     sortDirection?: string;
     search?: string;
+    customerId?: number;
+    customerName?: string;
     overdueOnly?: boolean;
     qualityAlert?: FinanceArDataQualityAlertKey;
     localFilter?: string;
@@ -332,6 +334,10 @@ export function buildFinanceArTitlesQuery(
   if (extras?.sortBy) q.set("sortBy", extras.sortBy);
   if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
   if (extras?.search?.trim()) q.set("search", extras.search.trim());
+  if (extras?.customerId != null && extras.customerId > 0) {
+    q.set("customerId", String(extras.customerId));
+  }
+  if (extras?.customerName?.trim()) q.set("customerName", extras.customerName.trim());
   if (extras?.overdueOnly) q.set("overdueOnly", "1");
   if (extras?.qualityAlert) q.set("qualityAlert", extras.qualityAlert);
   if (extras?.localFilter && extras.localFilter !== "all") {

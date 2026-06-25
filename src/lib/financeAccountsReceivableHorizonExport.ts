@@ -157,11 +157,16 @@ export function buildFinanceArHorizonAppliedFilterLines(input: {
   scope: "bucket" | "full";
   bucket?: FinanceAgingBucketSelectionMeta;
   search?: string;
+  customerName?: string;
 }): FinanceArHorizonAppliedFilterLine[] {
   const lines: FinanceArHorizonAppliedFilterLine[] = [];
   lines.push({
     label: "Faixa",
     value: input.scope === "full" ? "Todas as faixas" : (input.bucket?.label ?? "—"),
+  });
+  lines.push({
+    label: "Cliente",
+    value: input.customerName?.trim() || "Todos",
   });
   lines.push({
     label: "Escopo",
@@ -216,10 +221,16 @@ export async function buildFinanceArHorizonExportPayloadDefault(
   }
 
   const summary = summarizeHorizonItems(items);
+  const customerName =
+    query.extended.customerName?.trim() ||
+    (typeof query.extended.customerId === "number"
+      ? items.find((item) => item.personId === query.extended.customerId)?.personName ?? undefined
+      : undefined);
   const appliedFilters = buildFinanceArHorizonAppliedFilterLines({
     scope: query.scope,
     bucket,
     search: query.search,
+    customerName,
   });
 
   return {
@@ -247,6 +258,8 @@ export function buildFinanceArHorizonExportQueryString(input: {
   agingBucket?: string;
   scope?: "bucket" | "full";
   search?: string;
+  customerId?: number;
+  customerName?: string;
 }): string {
   const qs = new URLSearchParams();
   if (input.scope === "full") {
@@ -255,5 +268,9 @@ export function buildFinanceArHorizonExportQueryString(input: {
     qs.set("agingBucket", input.agingBucket.trim());
   }
   if (input.search?.trim()) qs.set("search", input.search.trim());
+  if (input.customerId != null && input.customerId > 0) {
+    qs.set("customerId", String(input.customerId));
+  }
+  if (input.customerName?.trim()) qs.set("customerName", input.customerName.trim());
   return qs.toString();
 }
