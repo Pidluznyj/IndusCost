@@ -89,4 +89,11 @@ describe("inventory Prisma schema", () => {
     assert.match(SCHEMA, /balanceKey/);
     assert.match(SCHEMA, /model InventoryLocation/);
   });
+
+  it("tipos básicos frontend existem sem Prisma", () => {
+    const types = readFileSync(join(process.cwd(), "src/types/inventory.ts"), "utf8");
+    assert.match(types, /export type InventoryItemType/);
+    assert.match(types, /export type InventoryMovementType/);
+    assert.doesNotMatch(types, /from ["']@prisma\/client["']/);
+  });
 });
