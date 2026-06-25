@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { InventoryValidationError } from "./inventoryTypes.js";
-import { createInventoryMovement } from "./inventoryService.server.js";
+import { createInventoryMovement, cancelInventoryReservation } from "./inventoryService.server.js";
 import { mapBalanceRowToSnapshot } from "./inventoryRepository.server.js";
 import { validateMovementRequest } from "./inventoryMovementRules.js";
 import { snapshotFromBalance } from "./inventoryTypes.js";
@@ -154,6 +154,48 @@ describe("inventoryService", () => {
     assert.equal(result.balance.reservedQuantity, 4);
     assert.equal(result.balance.availableQuantity, 16);
     assert.equal(state.reservations.length, 1);
+  });
+
+  it("7. cancelamento de reserva libera saldo", async () => {
+    const { prisma, state } = createMockPrisma({
+      balances: [
+        {
+          id: "bal-1",
+          itemId: "item-1",
+          warehouseId: "wh-1",
+          locationId: null,
+          balanceKey: "wh-1",
+          physicalQuantity: new Prisma.Decimal(20),
+          reservedQuantity: new Prisma.Decimal(4),
+          blockedQuantity: new Prisma.Decimal(0),
+          quarantineQuantity: new Prisma.Decimal(0),
+          availableQuantity: new Prisma.Decimal(16),
+        },
+      ],
+      reservations: [
+        {
+          id: "res-1",
+          itemId: "item-1",
+          warehouseId: "wh-1",
+          locationId: null,
+          quantity: new Prisma.Decimal(4),
+          status: "ACTIVE",
+        },
+      ],
+    });
+
+    const result = await cancelInventoryReservation(
+      prisma as never,
+      "res-1",
+      { userId: "user-1" },
+      "Cancelamento manual"
+    );
+
+    assert.equal(result.balance.reservedQuantity, 0);
+    assert.equal(result.balance.availableQuantity, 20);
+    assert.equal(state.reservations[0].status, "CANCELED");
+    assert.equal(state.movements.length, 1);
+    assert.equal(state.movements[0].movementType, "CANCEL_RESERVATION");
   });
 
   it("8. bloqueio atualiza saldo bloqueado", async () => {
@@ -321,11 +363,23 @@ type MockBalance = {
   availableQuantity: Prisma.Decimal;
 };
 
-function createMockPrisma(options?: { balances?: MockBalance[] }) {
+type MockReservation = {
+  id: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: Prisma.Decimal;
+  status: "ACTIVE" | "CANCELED" | "CONSUMED";
+};
+
+function createMockPrisma(options?: {
+  balances?: MockBalance[];
+  reservations?: MockReservation[];
+}) {
   const state = {
     balances: [...(options?.balances ?? [])],
     movements: [] as Array<Record<string, unknown>>,
-    reservations: [] as Array<Record<string, unknown>>,
+    reservations: [...(options?.reservations ?? [])] as Array<Record<string, unknown>>,
     auditLogs: [] as Array<Record<string, unknown>>,
   };
 
@@ -390,8 +444,19 @@ function createMockPrisma(options?: { balances?: MockBalance[] }) {
         state.reservations.push(row);
         return row;
       },
-      findUnique: async () => null,
-      update: async () => ({}),
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        state.reservations.find((r) => r.id === where.id) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => {
+        const idx = state.reservations.findIndex((r) => r.id === where.id);
+        if (idx >= 0) state.reservations[idx] = { ...state.reservations[idx], ...data };
+        return state.reservations[idx];
+      },
     },
     inventoryAuditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
