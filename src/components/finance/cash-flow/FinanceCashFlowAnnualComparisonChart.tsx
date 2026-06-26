@@ -32,7 +32,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
       );
       setPayload(data);
     } catch (e: unknown) {
-      setError(buildFinanceTabLoadError(e, "Não foi possível carregar o comparativo anual."));
+      setError(buildFinanceTabLoadError(e, "Não foi possível carregar o fluxo anual."));
       setPayload(null);
     } finally {
       setLoading(false);
@@ -49,15 +49,12 @@ export function FinanceCashFlowAnnualComparisonChart() {
   );
   const labels = useMemo(
     () =>
-      payload
-        ? buildAnnualComparisonSeriesLabels(payload.year, payload.previousYear)
-        : buildAnnualComparisonSeriesLabels(new Date().getFullYear(), new Date().getFullYear() - 1),
-    [payload]
+      buildAnnualComparisonSeriesLabels(payload?.year ?? new Date().getFullYear()),
+    [payload?.year]
   );
   const empty = !payload || !annualComparisonHasChartData(payload);
-  const title = payload
-    ? `Comparativo anual — Receber, Pagar e Meta (${payload.year})`
-    : "Comparativo anual — Receber, Pagar e Meta";
+  const year = payload?.year ?? new Date().getFullYear();
+  const title = `Fluxo anual — Recebido, A Receber, Pago e A Pagar (${year})`;
 
   if (loading && !payload) {
     return (
@@ -66,7 +63,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
         data-testid="cash-flow-annual-comparison-loading"
       >
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-        Carregando comparativo anual…
+        Carregando fluxo anual…
       </div>
     );
   }
@@ -94,9 +91,9 @@ export function FinanceCashFlowAnnualComparisonChart() {
     <FinanceCashFlowChartShell
       testId="cash-flow-annual-comparison"
       title={title}
-      subtitle="Visão anual independente dos filtros da página, comparando valores a receber, valores a pagar e meta do ano corrente. Este gráfico sempre considera o ano corrente e não é afetado pelos filtros gerais da tela."
+      subtitle="Visão anual independente dos filtros da página, separando valores já realizados e valores ainda em aberto. Este gráfico sempre considera o ano corrente e não é afetado pelos filtros gerais da tela. Recebido e Pago seguem o motor do Fluxo de Caixa planejado (alocação por vencimento). A Receber e A Pagar usam vencimento dos títulos em aberto."
       empty={empty}
-      emptyDescription="Sem movimentações Nomus para montar o comparativo anual."
+      emptyDescription="Sem movimentações Nomus para montar o fluxo anual."
       chartHeight={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT}
     >
       <FinanceCashFlowAnnualComparisonChartView

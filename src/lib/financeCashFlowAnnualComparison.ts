@@ -1,8 +1,7 @@
 /**
  * Comparativo anual AR/AP do Fluxo de Caixa — independente dos filtros da página.
- * Reutiliza buildExecutiveMonthlyTimeline e saneamento gerencial padrão.
+ * Reutiliza buildExecutiveMonthlyTimeline (mesmo motor do fluxo planejado).
  */
-import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import { roundMoney } from "./financeAccountsReceivableDashboard.js";
 import type {
   FinanceCashFlowApRow,
@@ -12,7 +11,6 @@ import type {
 import {
   buildExecutiveMonthlyTimeline,
   filterApRowsForCashFlowExecutiveTimeline,
-  type FinanceCashFlowExecutiveMonthlyRow,
 } from "./financeCashFlowExecutiveSummary.js";
 import {
   buildYtdDashboardFilters,
@@ -21,6 +19,7 @@ import {
 import { computeGrowthTarget } from "./salesOrderDashboardRules.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 
 export class FinanceCashFlowAnnualComparisonParseError extends Error {
   constructor(message: string) {
@@ -47,22 +46,23 @@ const MONTH_LABELS = [
 export type FinanceCashFlowAnnualComparisonMonth = {
   month: number;
   monthLabel: string;
-  receivablePreviousYear: number;
-  payableCurrentYear: number;
-  receivableCurrentYear: number;
+  receivedAmount: number;
+  receivableOpenAmount: number;
+  paidAmount: number;
+  payableOpenAmount: number;
   receivableGoal: number | null;
 };
 
 export type FinanceCashFlowAnnualComparisonTotals = {
-  receivablePreviousYear: number;
-  payableCurrentYear: number;
-  receivableCurrentYear: number;
+  receivedAmount: number;
+  receivableOpenAmount: number;
+  paidAmount: number;
+  payableOpenAmount: number;
   receivableGoal: number | null;
 };
 
 export type FinanceCashFlowAnnualComparisonPayload = {
   year: number;
-  previousYear: number;
   months: FinanceCashFlowAnnualComparisonMonth[];
   totals: FinanceCashFlowAnnualComparisonTotals;
   hasReceivableGoal: boolean;
@@ -73,9 +73,10 @@ export type FinanceCashFlowAnnualComparisonPayload = {
 export type FinanceCashFlowAnnualComparisonChartRow = {
   name: string;
   month: number;
-  receivablePreviousYear: number;
-  payableCurrentYear: number;
-  receivableCurrentYear: number;
+  receivedAmount: number;
+  receivableOpenAmount: number;
+  paidAmount: number;
+  payableOpenAmount: number;
   receivableGoal: number | null;
 };
 
@@ -105,41 +106,30 @@ export function parseAnnualComparisonYear(
   return year;
 }
 
-function sumTimelineField(
-  rows: FinanceCashFlowExecutiveMonthlyRow[],
-  field: keyof Pick<
-    FinanceCashFlowExecutiveMonthlyRow,
-    "estimatedInflow" | "estimatedOutflow"
-  >
-): number {
-  return roundMoney(rows.reduce((acc, row) => acc + row[field], 0));
-}
-
-function filterArForAnnualComparison(
+function filterRowsForAnnualComparison(
   arRows: FinanceCashFlowArRow[],
-  referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
-): FinanceCashFlowArRow[] {
-  const base = createAnnualComparisonBaseFilters();
-  return filterArRowsForYtdReceived(arRows, base, referenceDate, syncCutoff);
-}
-
-function filterApForAnnualComparisonYear(
   apRows: FinanceCashFlowApRow[],
   year: number,
   referenceDate: Date,
-  syncCutoff?: NomusApReportSyncCutoff | null
-): FinanceCashFlowApRow[] {
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
+): {
+  arFiltered: FinanceCashFlowArRow[];
+  apFiltered: FinanceCashFlowApRow[];
+} {
   const filters = buildYtdDashboardFilters(
     { ...createAnnualComparisonBaseFilters(), year },
     referenceDate
   );
-  return filterApRowsForCashFlowExecutiveTimeline(
-    apRows,
-    filters,
-    referenceDate,
-    syncCutoff
-  );
+  return {
+    arFiltered: filterArRowsForYtdReceived(arRows, filters, referenceDate, arSyncCutoff),
+    apFiltered: filterApRowsForCashFlowExecutiveTimeline(
+      apRows,
+      filters,
+      referenceDate,
+      apSyncCutoff
+    ),
+  };
 }
 
 export function buildCashFlowAnnualComparison(
@@ -150,62 +140,66 @@ export function buildCashFlowAnnualComparison(
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowAnnualComparisonPayload {
-  const previousYear = year - 1;
-  const arBase = filterArForAnnualComparison(arRows, referenceDate, arSyncCutoff);
-  const apCurrentYear = filterApForAnnualComparisonYear(
+  const { arFiltered, apFiltered } = filterRowsForAnnualComparison(
+    arRows,
     apRows,
     year,
     referenceDate,
+    arSyncCutoff,
     apSyncCutoff
   );
 
-  const currentTimeline = buildExecutiveMonthlyTimeline(
-    arBase,
-    apCurrentYear,
+  const timeline = buildExecutiveMonthlyTimeline(
+    arFiltered,
+    apFiltered,
     year,
     referenceDate
   );
-  const previousReceivableTimeline = buildExecutiveMonthlyTimeline(
-    arBase,
+
+  const previousYear = year - 1;
+  const previousTimeline = buildExecutiveMonthlyTimeline(
+    arFiltered,
     [],
     previousYear,
     referenceDate
   );
 
-  const months: FinanceCashFlowAnnualComparisonMonth[] = MONTH_LABELS.map((monthLabel, idx) => {
-    const month = idx + 1;
-    const current = currentTimeline[idx];
-    const previous = previousReceivableTimeline[idx];
-    const receivablePreviousYear = previous?.estimatedInflow ?? 0;
-    const receivableGoal = computeGrowthTarget(receivablePreviousYear);
+  const months: FinanceCashFlowAnnualComparisonMonth[] = timeline.map((row, idx) => {
+    const previous = previousTimeline[idx];
+    const previousInflow = previous?.estimatedInflow ?? 0;
+    const receivableGoal =
+      previousInflow > 0 ? computeGrowthTarget(previousInflow) : null;
 
     return {
-      month,
-      monthLabel,
-      receivablePreviousYear,
-      payableCurrentYear: current?.estimatedOutflow ?? 0,
-      receivableCurrentYear: current?.estimatedInflow ?? 0,
+      month: row.month,
+      monthLabel: MONTH_LABELS[row.month - 1]!,
+      receivedAmount: row.received,
+      receivableOpenAmount: row.receivableOpenDue,
+      paidAmount: row.paid,
+      payableOpenAmount: row.payableOpenDue,
       receivableGoal,
     };
   });
 
-  const totalPreviousReceivable = sumTimelineField(previousReceivableTimeline, "estimatedInflow");
-  const hasReceivableGoal = totalPreviousReceivable > 0;
+  const totalPreviousInflow = roundMoney(
+    previousTimeline.reduce((acc, row) => acc + row.estimatedInflow, 0)
+  );
+  const hasReceivableGoal = totalPreviousInflow > 0;
 
   const totals: FinanceCashFlowAnnualComparisonTotals = {
-    receivablePreviousYear: totalPreviousReceivable,
-    payableCurrentYear: sumTimelineField(currentTimeline, "estimatedOutflow"),
-    receivableCurrentYear: sumTimelineField(currentTimeline, "estimatedInflow"),
+    receivedAmount: roundMoney(months.reduce((acc, m) => acc + m.receivedAmount, 0)),
+    receivableOpenAmount: roundMoney(
+      months.reduce((acc, m) => acc + m.receivableOpenAmount, 0)
+    ),
+    paidAmount: roundMoney(months.reduce((acc, m) => acc + m.paidAmount, 0)),
+    payableOpenAmount: roundMoney(months.reduce((acc, m) => acc + m.payableOpenAmount, 0)),
     receivableGoal: hasReceivableGoal
-      ? roundMoney(
-          months.reduce((acc, m) => acc + (m.receivableGoal ?? 0), 0)
-        )
+      ? roundMoney(months.reduce((acc, m) => acc + (m.receivableGoal ?? 0), 0))
       : null,
   };
 
   return {
     year,
-    previousYear,
     months,
     totals,
     hasReceivableGoal,
@@ -219,9 +213,10 @@ export function annualComparisonHasChartData(
 ): boolean {
   return payload.months.some(
     (m) =>
-      m.receivablePreviousYear > 0 ||
-      m.payableCurrentYear > 0 ||
-      m.receivableCurrentYear > 0 ||
+      m.receivedAmount > 0 ||
+      m.receivableOpenAmount > 0 ||
+      m.paidAmount > 0 ||
+      m.payableOpenAmount > 0 ||
       (m.receivableGoal != null && m.receivableGoal > 0)
   );
 }
@@ -232,26 +227,26 @@ export function mapAnnualComparisonChartRows(
   return payload.months.map((m) => ({
     name: m.monthLabel,
     month: m.month,
-    receivablePreviousYear: m.receivablePreviousYear,
-    payableCurrentYear: m.payableCurrentYear,
-    receivableCurrentYear: m.receivableCurrentYear,
+    receivedAmount: m.receivedAmount,
+    receivableOpenAmount: m.receivableOpenAmount,
+    paidAmount: m.paidAmount,
+    payableOpenAmount: m.payableOpenAmount,
     receivableGoal: payload.hasReceivableGoal ? m.receivableGoal : null,
   }));
 }
 
-export function buildAnnualComparisonSeriesLabels(
-  year: number,
-  previousYear: number
-): {
-  receivablePreviousYear: string;
-  payableCurrentYear: string;
-  receivableCurrentYear: string;
+export function buildAnnualComparisonSeriesLabels(year: number): {
+  receivedAmount: string;
+  receivableOpenAmount: string;
+  paidAmount: string;
+  payableOpenAmount: string;
   receivableGoal: string;
 } {
   return {
-    receivablePreviousYear: `Valor a receber ${previousYear}`,
-    payableCurrentYear: `Valor a pagar ${year}`,
-    receivableCurrentYear: `Valor a receber ${year}`,
+    receivedAmount: `Recebido ${year}`,
+    receivableOpenAmount: `A receber ${year}`,
+    paidAmount: `Pago ${year}`,
+    payableOpenAmount: `A pagar ${year}`,
     receivableGoal: `Meta recebimento ${year} (+30%)`,
   };
 }
