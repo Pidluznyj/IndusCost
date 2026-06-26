@@ -8,11 +8,26 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  INVENTORY_COUNT_MANAGE_PERMISSIONS,
   INVENTORY_MANAGE_PERMISSIONS,
   INVENTORY_MOVEMENT_CREATE_PERMISSIONS,
   INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
   INVENTORY_VIEW_PERMISSIONS,
 } from "@/src/lib/inventoryPermissions.js";
+import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
+import {
+  parseCreateCountSessionBody,
+  parseUpdateCountLineBody,
+} from "@/src/lib/inventory/inventoryCountValidation.js";
+import {
+  approveInventoryCountSession,
+  cancelInventoryCountSession,
+  createInventoryCountSession,
+  finalizeInventoryCountSession,
+  generateInventoryCountAdjustments,
+  startInventoryCountSession,
+  updateInventoryCountLine,
+} from "@/src/lib/inventory/inventoryCountService.server.js";
 import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
 import {
@@ -26,6 +41,9 @@ import {
   inventoryDecOrNull,
   serializeInventoryBalance,
   serializeInventoryBalanceWithRelations,
+  serializeInventoryCountLine,
+  serializeInventoryCountSession,
+  serializeInventoryCountSessionListRow,
   serializeInventoryItem,
   serializeInventoryMovement,
   serializeInventoryMovementEnriched,
@@ -68,9 +86,13 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
   const status =
     error.code === "ITEM_NOT_FOUND" ||
     error.code === "WAREHOUSE_NOT_FOUND" ||
-    error.code === "RESERVATION_NOT_FOUND"
+    error.code === "RESERVATION_NOT_FOUND" ||
+    error.code === "SESSION_NOT_FOUND" ||
+    error.code === "LINE_NOT_FOUND"
       ? 404
-      : 400;
+      : error.code === "NOT_AUTHORIZED"
+        ? 403
+        : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
@@ -211,6 +233,10 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   const reserveManage = [
     auth.requireAppAuth,
     auth.requireAnyPermission([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS]),
+  ] as const;
+  const countManage = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...INVENTORY_COUNT_MANAGE_PERMISSIONS]),
   ] as const;
 
   app.get("/api/inventory/dashboard", ...view, async (_req, res) => {
@@ -943,6 +969,225 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/reservations/:id/cancel", e);
       res.status(500).json(inventoryApiError("Erro ao cancelar reserva."));
+    }
+  });
+
+  app.get("/api/inventory/count-sessions", ...view, async (req, res) => {
+    try {
+      const statusQ = String(req.query.status ?? "").trim();
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(200, Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50));
+      const skip = (page - 1) * pageSize;
+
+      const where: Prisma.InventoryCountSessionWhereInput = {
+        ...(statusQ ? { status: statusQ as Prisma.InventoryCountSessionWhereInput["status"] } : {}),
+        ...(warehouseId && isUuid(warehouseId) ? { warehouseId } : {}),
+      };
+
+      const [sessions, total] = await Promise.all([
+        prisma.inventoryCountSession.findMany({
+          where,
+          include: {
+            warehouse: { select: { code: true, name: true } },
+            lines: { select: { differenceQuantity: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.inventoryCountSession.count({ where }),
+      ]);
+
+      res.json({
+        rows: sessions.map((s) => serializeInventoryCountSessionListRow(s)),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/count-sessions", e);
+      res.status(500).json(inventoryApiError("Erro ao listar conferências."));
+    }
+  });
+
+  app.get("/api/inventory/count-sessions/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const session = await prisma.inventoryCountSession.findUnique({
+        where: { id },
+        include: {
+          warehouse: { select: { code: true, name: true } },
+          lines: {
+            include: { item: { select: { code: true, description: true, unit: true } } },
+            orderBy: { item: { code: "asc" } },
+          },
+        },
+      });
+      if (!session) return res.status(404).json(inventoryApiError("Conferência não encontrada."));
+
+      res.json({
+        session: serializeInventoryCountSessionListRow(session),
+        lines: session.lines.map(serializeInventoryCountLine),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/count-sessions/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseCreateCountSessionBody(req.body);
+      const session = await createInventoryCountSession(
+        prisma,
+        input,
+        { userId: user.id, permissions: user.effectivePermissions }
+      );
+
+      res.status(201).json({ session: serializeInventoryCountSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions", e);
+      res.status(500).json(inventoryApiError("Erro ao criar conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions/:id/start", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const session = await startInventoryCountSession(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({ session: serializeInventoryCountSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions/:id/start", e);
+      res.status(500).json(inventoryApiError("Erro ao iniciar contagem."));
+    }
+  });
+
+  app.patch("/api/inventory/count-sessions/:id/lines/:lineId", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id, lineId } = req.params;
+      if (!isUuid(id) || !isUuid(lineId)) {
+        return res.status(400).json(inventoryApiError("ID inválido."));
+      }
+
+      const input = parseUpdateCountLineBody(req.body);
+      const line = await updateInventoryCountLine(prisma, id, lineId, input, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({ line: serializeInventoryCountLine(line) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("PATCH /api/inventory/count-sessions/:id/lines/:lineId", e);
+      res.status(500).json(inventoryApiError("Erro ao atualizar linha da conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions/:id/finalize", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const session = await finalizeInventoryCountSession(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({ session: serializeInventoryCountSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions/:id/finalize", e);
+      res.status(500).json(inventoryApiError("Erro ao finalizar conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions/:id/approve", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const session = await approveInventoryCountSession(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({ session: serializeInventoryCountSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions/:id/approve", e);
+      res.status(500).json(inventoryApiError("Erro ao aprovar conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions/:id/generate-adjustments", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const result = await generateInventoryCountAdjustments(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({
+        session: serializeInventoryCountSession(result.session),
+        movementsCreated: result.movementsCreated,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions/:id/generate-adjustments", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar ajustes da conferência."));
+    }
+  });
+
+  app.post("/api/inventory/count-sessions/:id/cancel", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const session = await cancelInventoryCountSession(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+
+      res.json({ session: serializeInventoryCountSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/count-sessions/:id/cancel", e);
+      res.status(500).json(inventoryApiError("Erro ao cancelar conferência."));
     }
   });
 }

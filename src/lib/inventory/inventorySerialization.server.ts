@@ -3,10 +3,13 @@
  */
 import type {
   InventoryBalance,
+  InventoryCountLine,
+  InventoryCountSession,
   InventoryItem,
   InventoryMovement,
   InventoryWarehouse,
 } from "@prisma/client";
+import { hasCountDivergence } from "./inventoryCountMath.js";
 
 export function inventoryDec(value: unknown): number {
   if (value == null) return 0;
@@ -193,5 +196,75 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       name: row.warehouse.name,
       status: row.warehouse.status,
     },
+  };
+}
+
+export function serializeInventoryCountSession(row: InventoryCountSession) {
+  return {
+    id: row.id,
+    code: row.code,
+    warehouseId: row.warehouseId,
+    status: row.status,
+    responsibleUserId: row.responsibleUserId,
+    approvedByUserId: row.approvedByUserId,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    approvedAt: row.approvedAt?.toISOString() ?? null,
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+type CountLineWithItem = InventoryCountLine & {
+  item?: { code: string; description: string; unit: string } | null;
+};
+
+export function serializeInventoryCountLine(row: CountLineWithItem) {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    itemId: row.itemId,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    itemUnit: row.item?.unit ?? null,
+    warehouseId: row.warehouseId,
+    locationId: row.locationId,
+    systemQuantity: inventoryDec(row.systemQuantity),
+    countedQuantity: inventoryDecOrNull(row.countedQuantity),
+    differenceQuantity: inventoryDecOrNull(row.differenceQuantity),
+    differencePercent: inventoryDecOrNull(row.differencePercent),
+    justification: row.justification,
+    generatedMovementId: row.generatedMovementId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+type CountSessionWithWarehouse = InventoryCountSession & {
+  warehouse?: { code: string; name: string } | null;
+  lines?: InventoryCountLine[];
+};
+
+export function serializeInventoryCountSessionListRow(
+  row: CountSessionWithWarehouse,
+  lines?: InventoryCountLine[]
+) {
+  const sessionLines = lines ?? row.lines ?? [];
+  let divergenceCount = 0;
+  let impactedQuantity = 0;
+  for (const line of sessionLines) {
+    const diff = inventoryDecOrNull(line.differenceQuantity);
+    if (diff != null && hasCountDivergence(diff)) {
+      divergenceCount += 1;
+      impactedQuantity += Math.abs(diff);
+    }
+  }
+  return {
+    ...serializeInventoryCountSession(row),
+    warehouseCode: row.warehouse?.code ?? null,
+    warehouseName: row.warehouse?.name ?? null,
+    divergenceCount,
+    impactedQuantity,
   };
 }

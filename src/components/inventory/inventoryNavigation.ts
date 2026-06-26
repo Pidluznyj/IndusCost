@@ -67,7 +67,6 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     description: "Sessões de inventário e ajustes rastreáveis.",
     showInNav: true,
     navOrder: 60,
-    comingSoon: true,
   },
   {
     id: "reservations",
@@ -102,5 +101,6 @@ export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/warehouses")) return "warehouses";
   if (pathname.includes("/inventory/movements")) return "movements";
   if (pathname.includes("/inventory/balances")) return "balances";
+  if (pathname.includes("/inventory/counts")) return "counts";
   return "overview";
 }

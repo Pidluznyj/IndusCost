@@ -432,6 +432,17 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/counts"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Controle de itens, saldos, movimentações e conferências."
+            >
+              <InventoryModule initialTab="counts" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="projects"
           element={
             <ModulePageShell

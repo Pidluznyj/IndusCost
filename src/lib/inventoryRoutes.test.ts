@@ -20,6 +20,7 @@ import { InventoryValidationError } from "./inventory/inventoryTypes.js";
 import {
   INVENTORY_MANAGE_PERMISSIONS,
   INVENTORY_MOVEMENT_CREATE_PERMISSIONS,
+  INVENTORY_COUNT_MANAGE_PERMISSIONS,
   INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
   INVENTORY_VIEW_PERMISSIONS,
 } from "./inventoryPermissions.js";
@@ -77,6 +78,19 @@ describe("inventoryRoutes", () => {
     assert.match(routes(), /cancelInventoryReservation/);
   });
 
+  it("count-sessions — listagem e fluxo de conferência", () => {
+    const src = routes();
+    assert.match(src, /GET.*\/api\/inventory\/count-sessions/);
+    assert.match(src, /POST.*\/api\/inventory\/count-sessions/);
+    assert.match(src, /\/api\/inventory\/count-sessions\/:id\/start/);
+    assert.match(src, /\/api\/inventory\/count-sessions\/:id\/finalize/);
+    assert.match(src, /\/api\/inventory\/count-sessions\/:id\/approve/);
+    assert.match(src, /\/api\/inventory\/count-sessions\/:id\/generate-adjustments/);
+    assert.match(src, /generateInventoryCountAdjustments/);
+    assert.match(src, /INVENTORY_COUNT_MANAGE_PERMISSIONS/);
+    assert.doesNotMatch(src, /inventoryCountLine[\s\S]*inventoryBalance\.update/);
+  });
+
   it("14. GET /api/inventory/dashboard", () => {
     assert.match(routes(), /\/api\/inventory\/dashboard/);
     assert.match(routes(), /buildInventoryDashboard/);
@@ -100,6 +114,7 @@ describe("inventoryRoutes", () => {
     assert.deepEqual([...INVENTORY_MANAGE_PERMISSIONS], ["inventory.manage"]);
     assert.deepEqual([...INVENTORY_MOVEMENT_CREATE_PERMISSIONS], ["inventory.movements.create"]);
     assert.deepEqual([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS], ["inventory.reservations.manage"]);
+    assert.ok(INVENTORY_COUNT_MANAGE_PERMISSIONS.includes("inventory.count.manage"));
   });
 });
 

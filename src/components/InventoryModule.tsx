@@ -10,6 +10,7 @@ import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab"
 import { InventoryWarehousesTab } from "@/src/components/inventory/InventoryWarehousesTab";
 import { InventoryMovementsTab } from "@/src/components/inventory/InventoryMovementsTab";
 import { InventoryBalancesTab } from "@/src/components/inventory/InventoryBalancesTab";
+import { InventoryCountsTab } from "@/src/components/inventory/InventoryCountsTab";
 import { normalizeInventoryDashboard } from "@/src/components/inventory/inventoryDashboardPresentation";
 import {
   getInventoryTabDef,
@@ -75,11 +76,13 @@ export function InventoryModule({ initialTab }: Props = {}) {
     else if (next === "warehouses") navigate("/inventory/warehouses");
     else if (next === "movements") navigate("/inventory/movements");
     else if (next === "balances") navigate("/inventory/balances");
+    else if (next === "counts") navigate("/inventory/counts");
     else if (
       location.pathname.includes("/inventory/items") ||
       location.pathname.includes("/inventory/warehouses") ||
       location.pathname.includes("/inventory/movements") ||
-      location.pathname.includes("/inventory/balances")
+      location.pathname.includes("/inventory/balances") ||
+      location.pathname.includes("/inventory/counts")
     ) {
       navigate("/inventory");
     }
@@ -141,6 +144,8 @@ export function InventoryModule({ initialTab }: Props = {}) {
         <InventoryMovementsTab />
       ) : tab === "balances" ? (
         <InventoryBalancesTab />
+      ) : tab === "counts" ? (
+        <InventoryCountsTab />
       ) : activeTabDef?.comingSoon ? (
         <InventoryComingSoonTab
           title={activeTabDef.label}

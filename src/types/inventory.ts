@@ -180,6 +180,44 @@ export type InventoryDashboardPayload = {
   finishedProductsAvailable: InventoryDashboardCriticalItem[];
 };
 
+export type InventoryCountSessionRow = {
+  id: string;
+  code: string;
+  warehouseId: string;
+  warehouseCode: string | null;
+  warehouseName: string | null;
+  status: InventoryCountSessionStatus;
+  responsibleUserId: string | null;
+  approvedByUserId: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  approvedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  divergenceCount: number;
+  impactedQuantity: number;
+};
+
+export type InventoryCountLineRow = {
+  id: string;
+  sessionId: string;
+  itemId: string;
+  itemCode: string | null;
+  itemDescription: string | null;
+  itemUnit: string | null;
+  warehouseId: string;
+  locationId: string | null;
+  systemQuantity: number;
+  countedQuantity: number | null;
+  differenceQuantity: number | null;
+  differencePercent: number | null;
+  justification: string | null;
+  generatedMovementId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type InventoryMovementRow = {
   id: string;
   itemId: string;
