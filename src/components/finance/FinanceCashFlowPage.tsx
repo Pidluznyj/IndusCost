@@ -38,6 +38,7 @@ import { FinanceCashFlowMonthlyPlannedChart } from "@/src/components/finance/cas
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
 import { FinanceCashFlowNumbersAuditSection } from "@/src/components/finance/cash-flow/FinanceCashFlowNumbersAuditSection";
+import { FinanceCashFlowAnnualComparisonChart } from "@/src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart";
 import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import {
   FINANCE_CF_HELP_CALENDAR,
@@ -539,6 +540,8 @@ export function FinanceCashFlowPage() {
           <FinanceCashFlowReconciliationPanel reconciliation={payload.reconciliation} />
 
           <FinanceCashFlowNumbersAuditSection appliedQuery={appliedQuery} payload={payload} />
+
+          <FinanceCashFlowAnnualComparisonChart />
 
           <FinanceCashFlowMonthlyPlannedChart
             year={payload.executiveSummary.metadata.year}

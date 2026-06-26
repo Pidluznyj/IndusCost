@@ -40,6 +40,11 @@ import {
   buildFinanceCashFlowDailyRadarExportBuffer,
   buildFinanceCashFlowDailyRadarExportFilename,
 } from "@/src/lib/financeCashFlowDailyRadarExportXlsx.js";
+import {
+  buildCashFlowAnnualComparison,
+  FinanceCashFlowAnnualComparisonParseError,
+  parseAnnualComparisonYear,
+} from "@/src/lib/financeCashFlowAnnualComparison.js";
 import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { buildFinanceArPrismaWhere } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
@@ -232,6 +237,36 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(csv);
+    }
+  );
+
+  app.get(
+    "/api/finance/cash-flow/annual-comparison",
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const referenceDate = new Date();
+        const year = parseAnnualComparisonYear(req.query.year, referenceDate);
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+          await loadDailyRadarPortfolioRows(referenceDate);
+        const payload = buildCashFlowAnnualComparison(
+          arRows,
+          apRows,
+          year,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff
+        );
+        res.json(payload);
+      } catch (error) {
+        if (error instanceof FinanceCashFlowAnnualComparisonParseError) {
+          res.status(400).json({ error: error.message });
+          return;
+        }
+        console.error("GET /api/finance/cash-flow/annual-comparison", error);
+        res.status(500).json({ error: "Erro ao carregar comparativo anual de fluxo de caixa." });
+      }
     }
   );
 
