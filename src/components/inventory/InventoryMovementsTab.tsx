@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Eye, Loader2, Plus } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryMovementFormSheet } from "@/src/components/inventory/InventoryMovementFormSheet";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
+import { appendQueryIfPresent, hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import {
   INVENTORY_FORM_MOVEMENT_TYPES,
   INVENTORY_ORIGIN_TYPE_OPTIONS,
@@ -15,7 +17,14 @@ import {
   formatInventoryDateTime,
   formatInventoryMovementType,
   formatInventoryQuantity,
+  InventoryCollapsibleFilters,
   InventoryEmptyState,
+  InventoryErrorBanner,
+  InventoryFilterField,
+  InventoryLoading,
+  InventorySectionIntro,
+  InventoryTableScroll,
+  inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryItemRow, InventoryMovementRow, InventoryWarehouseRow } from "@/src/types/inventory";
@@ -48,6 +57,20 @@ export function InventoryMovementsTab() {
   const [warehouses, setWarehouses] = useState<InventoryWarehouseRow[]>([]);
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
 
+  const filterValues = [
+    itemId,
+    movementType,
+    warehouseId,
+    startDate,
+    endDate,
+    responsibleUserId,
+    originType,
+    documentNumber,
+    costCenterId,
+  ];
+  const filtersActive = hasAnyFilter(filterValues);
+  const filterActiveCount = filterValues.filter((v) => hasAnyFilter([v])).length;
+
   useEffect(() => {
     void (async () => {
       try {
@@ -78,10 +101,10 @@ export function InventoryMovementsTab() {
       if (warehouseId) q.set("warehouseId", warehouseId);
       if (startDate) q.set("startDate", startDate);
       if (endDate) q.set("endDate", endDate);
-      if (responsibleUserId.trim()) q.set("responsibleUserId", responsibleUserId.trim());
+      appendQueryIfPresent(q, "responsibleUserId", responsibleUserId);
       if (originType) q.set("originType", originType);
-      if (documentNumber.trim()) q.set("documentNumber", documentNumber.trim());
-      if (costCenterId.trim()) q.set("costCenterId", costCenterId.trim());
+      appendQueryIfPresent(q, "documentNumber", documentNumber);
+      appendQueryIfPresent(q, "costCenterId", costCenterId);
 
       const raw = await fetchJsonOk<unknown>(`/api/inventory/movements?${q.toString()}`);
       const data = normalizeInventoryMovementListResponse(raw);
@@ -89,7 +112,7 @@ export function InventoryMovementsTab() {
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao listar movimentações."));
+      setError(formatInventoryApiError(e, "Não foi possível carregar as movimentações. Tente novamente."));
       setRows([]);
     } finally {
       setLoading(false);
@@ -137,164 +160,184 @@ export function InventoryMovementsTab() {
     setCostCenterId("");
   };
 
+  const emptyState = filtersActive
+    ? INVENTORY_EMPTY.noMovementsInPeriod
+    : INVENTORY_EMPTY.noMovementsRegistered;
+
   return (
     <div className="space-y-4" data-testid="inventory-movements-tab">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Movimentações de estoque</p>
-        <p className="mt-1">
-          Registre entradas, saídas, transferências, ajustes, bloqueios e reservas. O saldo nunca é
-          editado diretamente — toda alteração gera uma movimentação rastreável via{" "}
-          <code className="rounded bg-slate-200/80 px-1 text-xs">POST /api/inventory/movements</code>.
-        </p>
-      </div>
+      <InventorySectionIntro
+        title="Movimentações de estoque"
+        description="Registre entradas, saídas, transferências, ajustes, bloqueios e reservas. O saldo nunca é editado diretamente — toda alteração gera uma movimentação rastreável."
+      />
 
       {error ? (
-        <div
-          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-          data-testid="inventory-movements-error"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
+        <InventoryErrorBanner
+          message={error}
+          onDismiss={() => setError(null)}
+          testId="inventory-movements-error"
+        />
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="min-w-[160px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={itemId}
-          onChange={(e) => setItemId(e.target.value)}
-          data-testid="inventory-movements-filter-item"
-        >
-          <option value="">Todos os itens</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.code} — {item.description}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={movementType}
-          onChange={(e) => setMovementType(e.target.value)}
-          data-testid="inventory-movements-filter-type"
-        >
-          <option value="">Todos os tipos</option>
-          {INVENTORY_FORM_MOVEMENT_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="min-w-[140px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={warehouseId}
-          onChange={(e) => setWarehouseId(e.target.value)}
-          data-testid="inventory-movements-filter-warehouse"
-        >
-          <option value="">Todos almoxarifados</option>
-          {warehouses.map((wh) => (
-            <option key={wh.id} value={wh.id}>
-              {wh.code} — {wh.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          data-testid="inventory-movements-filter-start"
-          aria-label="Data inicial"
-        />
-        <input
-          type="date"
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          data-testid="inventory-movements-filter-end"
-          aria-label="Data final"
-        />
-        <input
-          className="min-w-[120px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Usuário (ID)"
-          value={responsibleUserId}
-          onChange={(e) => setResponsibleUserId(e.target.value)}
-          data-testid="inventory-movements-filter-user"
-        />
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={originType}
-          onChange={(e) => setOriginType(e.target.value)}
-          data-testid="inventory-movements-filter-origin"
-        >
-          <option value="">Todas origens</option>
-          {INVENTORY_ORIGIN_TYPE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <input
-          className="min-w-[120px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Documento"
-          value={documentNumber}
-          onChange={(e) => setDocumentNumber(e.target.value)}
-          data-testid="inventory-movements-filter-document"
-        />
-        <input
-          className="min-w-[120px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Centro de custo (ID)"
-          value={costCenterId}
-          onChange={(e) => setCostCenterId(e.target.value)}
-          data-testid="inventory-movements-filter-cost-center"
-        />
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-        >
-          Limpar
-        </button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {canCreateMovement ? (
           <button
             type="button"
             onClick={() => setSheet({ mode: "create" })}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
             data-testid="inventory-movements-new"
           >
             <Plus className="h-4 w-4" />
             Nova movimentação
           </button>
         ) : (
-          <p className="ml-auto text-xs text-slate-500" data-testid="inventory-movements-no-permission">
+          <p className="text-xs text-slate-500" data-testid="inventory-movements-no-permission">
             Sem permissão para registrar movimentações.
           </p>
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {loading ? (
-          <div
-            className="flex items-center justify-center gap-2 py-12 text-slate-500"
-            data-testid="inventory-movements-loading"
+      <InventoryCollapsibleFilters
+        activeCount={filterActiveCount}
+        onClear={filtersActive ? clearFilters : undefined}
+      >
+        <InventoryFilterField label="Item" className="min-w-[160px]">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            data-testid="inventory-movements-filter-item"
           >
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Carregando movimentações…
-          </div>
-        ) : rows.length === 0 ? (
-          <InventoryEmptyState message="Nenhuma movimentação encontrada." />
-        ) : (
+            <option value="">Todos os itens</option>
+            {items.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code} — {item.description}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Tipo">
+          <select
+            className={inventoryFilterInputClass}
+            value={movementType}
+            onChange={(e) => setMovementType(e.target.value)}
+            data-testid="inventory-movements-filter-type"
+          >
+            <option value="">Todos os tipos</option>
+            {INVENTORY_FORM_MOVEMENT_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Almoxarifado" className="min-w-[140px]">
+          <select
+            className={inventoryFilterInputClass}
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+            data-testid="inventory-movements-filter-warehouse"
+          >
+            <option value="">Todos almoxarifados</option>
+            {warehouses.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code} — {wh.name}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Data inicial">
+          <input
+            type="date"
+            className={inventoryFilterInputClass}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            data-testid="inventory-movements-filter-start"
+          />
+        </InventoryFilterField>
+        <InventoryFilterField label="Data final">
+          <input
+            type="date"
+            className={inventoryFilterInputClass}
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            data-testid="inventory-movements-filter-end"
+          />
+        </InventoryFilterField>
+        <InventoryFilterField label="Usuário (ID)">
+          <input
+            className={cn(inventoryFilterInputClass, "min-w-[120px]")}
+            placeholder="ID do responsável"
+            value={responsibleUserId}
+            onChange={(e) => setResponsibleUserId(e.target.value)}
+            data-testid="inventory-movements-filter-user"
+          />
+        </InventoryFilterField>
+        <InventoryFilterField label="Origem">
+          <select
+            className={inventoryFilterInputClass}
+            value={originType}
+            onChange={(e) => setOriginType(e.target.value)}
+            data-testid="inventory-movements-filter-origin"
+          >
+            <option value="">Todas origens</option>
+            {INVENTORY_ORIGIN_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Documento">
+          <input
+            className={cn(inventoryFilterInputClass, "min-w-[120px]")}
+            placeholder="Nº documento"
+            value={documentNumber}
+            onChange={(e) => setDocumentNumber(e.target.value)}
+            data-testid="inventory-movements-filter-document"
+          />
+        </InventoryFilterField>
+        <InventoryFilterField label="Centro de custo (ID)">
+          <input
+            className={cn(inventoryFilterInputClass, "min-w-[120px]")}
+            placeholder="ID"
+            value={costCenterId}
+            onChange={(e) => setCostCenterId(e.target.value)}
+            data-testid="inventory-movements-filter-cost-center"
+          />
+        </InventoryFilterField>
+      </InventoryCollapsibleFilters>
+
+      {loading ? (
+        <InventoryLoading label="Carregando movimentações…" />
+      ) : rows.length === 0 ? (
+        <InventoryEmptyState
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={emptyState.actionLabel}
+          onAction={
+            filtersActive
+              ? clearFilters
+              : canCreateMovement
+                ? () => setSheet({ mode: "create" })
+                : undefined
+          }
+        />
+      ) : (
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-movements-table">
             <thead>
               <tr>
-                <th>Data</th>
-                <th>Tipo</th>
-                <th>Item</th>
-                <th>Local</th>
-                <th>Quantidade</th>
-                <th>Saldo disp. antes/depois</th>
-                <th>Motivo</th>
-                <th />
+                <th scope="col">Data</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Item</th>
+                <th scope="col">Local</th>
+                <th scope="col">Quantidade</th>
+                <th scope="col">Saldo disp. antes/depois</th>
+                <th scope="col">Motivo</th>
+                <th scope="col">
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -308,7 +351,7 @@ export function InventoryMovementsTab() {
                     <div className="font-medium">{row.itemCode ?? "—"}</div>
                     <div className="text-xs text-slate-500">{row.itemDescription ?? ""}</div>
                     <Link
-                      to={`/inventory/items`}
+                      to="/inventory/items"
                       className="text-xs text-blue-600 hover:underline"
                       title="Ver item"
                     >
@@ -316,14 +359,12 @@ export function InventoryMovementsTab() {
                     </Link>
                   </td>
                   <td className="text-xs">
-                    {row.sourceWarehouseCode ? (
-                      <div>Origem: {row.sourceWarehouseCode}</div>
-                    ) : null}
+                    {row.sourceWarehouseCode ? <div>Origem: {row.sourceWarehouseCode}</div> : null}
                     {row.destinationWarehouseCode ? (
                       <div>Destino: {row.destinationWarehouseCode}</div>
                     ) : null}
                     {!row.sourceWarehouseCode && !row.destinationWarehouseCode
-                      ? row.warehouseCode ?? "—"
+                      ? (row.warehouseCode ?? "—")
                       : null}
                   </td>
                   <td className="tabular-nums">{formatInventoryQuantity(row.quantity, row.unit)}</td>
@@ -331,9 +372,7 @@ export function InventoryMovementsTab() {
                     {formatInventoryQuantity(row.previousAvailableBalance)} →{" "}
                     {formatInventoryQuantity(row.nextAvailableBalance)}
                   </td>
-                  <td className="max-w-[200px] truncate text-xs" title={row.reason}>
-                    {row.reason || "—"}
-                  </td>
+                  <td title={row.reason}>{row.reason || "—"}</td>
                   <td>
                     <button
                       type="button"
@@ -349,8 +388,8 @@ export function InventoryMovementsTab() {
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </InventoryTableScroll>
+      )}
 
       {totalPages > 1 ? (
         <div className="flex items-center justify-between text-sm text-slate-600">

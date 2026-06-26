@@ -11,12 +11,15 @@ import {
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
 import {
   formatInventoryDateTime,
   formatInventoryMovementType,
-  formatInventoryOperationalStatus,
   formatInventoryQuantity,
+  InventoryBalanceGlossary,
   InventoryEmptyState,
+  InventoryOperationalStatusBadge,
+  InventoryTableScroll,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type {
@@ -33,11 +36,11 @@ type Props = {
 function CriticalItemsTable({
   title,
   rows,
-  emptyMessage,
+  empty,
 }: {
   title: string;
   rows: InventoryDashboardCriticalItem[];
-  emptyMessage: string;
+  empty: { title: string; description: string };
 }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -45,58 +48,65 @@ function CriticalItemsTable({
         <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
       </div>
       {rows.length === 0 ? (
-        <InventoryEmptyState message={emptyMessage} />
+        <div className="p-4">
+          <InventoryEmptyState title={empty.title} description={empty.description} />
+        </div>
       ) : (
-        <div className="overflow-x-auto">
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-critical-table">
             <thead>
               <tr>
-                <th>Código</th>
-                <th>Descrição</th>
-                <th>Disponível</th>
-                <th>Mínimo</th>
-                <th>Status</th>
+                <th scope="col">Código</th>
+                <th scope="col">Descrição</th>
+                <th scope="col">Disponível</th>
+                <th scope="col">Mínimo</th>
+                <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.itemId}>
                   <td className="font-medium text-slate-900">{row.code || "—"}</td>
-                  <td>{row.description || "—"}</td>
+                  <td title={row.description ?? undefined}>{row.description || "—"}</td>
                   <td className="tabular-nums">{formatInventoryQuantity(row.availableQuantity)}</td>
                   <td className="tabular-nums">
                     {row.minimumStock != null ? formatInventoryQuantity(row.minimumStock) : "—"}
                   </td>
-                  <td>{formatInventoryOperationalStatus(row.operationalStatus)}</td>
+                  <td>
+                    <InventoryOperationalStatusBadge status={row.operationalStatus} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </InventoryTableScroll>
       )}
     </section>
   );
 }
 
 function RecentMovementsTable({ rows }: { rows: InventoryDashboardRecentMovement[] }) {
+  const empty = INVENTORY_EMPTY.noRecentMovements;
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">Últimas movimentações</h3>
       </div>
       {rows.length === 0 ? (
-        <InventoryEmptyState message="Nenhuma movimentação registrada ainda." />
+        <div className="p-4">
+          <InventoryEmptyState title={empty.title} description={empty.description} />
+        </div>
       ) : (
-        <div className="overflow-x-auto">
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-recent-movements">
             <thead>
               <tr>
-                <th>Data</th>
-                <th>Item</th>
-                <th>Tipo</th>
-                <th>Quantidade</th>
-                <th>Almoxarifado</th>
-                <th>Usuário</th>
+                <th scope="col">Data</th>
+                <th scope="col">Item</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Quantidade</th>
+                <th scope="col">Almoxarifado</th>
+                <th scope="col">Usuário</th>
               </tr>
             </thead>
             <tbody>
@@ -123,7 +133,7 @@ function RecentMovementsTable({ rows }: { rows: InventoryDashboardRecentMovement
               ))}
             </tbody>
           </table>
-        </div>
+        </InventoryTableScroll>
       )}
     </section>
   );
@@ -199,18 +209,26 @@ export function InventoryDashboardTab({ data, loading = false }: Props) {
         />
       </MetricCardGrid>
 
+      <InventoryBalanceGlossary compact />
+
       <RecentMovementsTable rows={data.recentMovements} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <CriticalItemsTable
           title="Matérias-primas críticas"
           rows={data.criticalRawMaterials}
-          emptyMessage="Nenhuma matéria-prima crítica no momento."
+          empty={{
+            title: "Nenhuma matéria-prima crítica",
+            description: "Itens abaixo do mínimo ou com saldo negativo aparecerão aqui.",
+          }}
         />
         <CriticalItemsTable
           title="Suprimentos críticos"
           rows={data.criticalSupplies}
-          emptyMessage="Nenhum suprimento crítico no momento."
+          empty={{
+            title: "Nenhum suprimento crítico",
+            description: "Itens de suprimento que precisam de atenção aparecerão aqui.",
+          }}
         />
       </div>
     </div>

@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Eye, Loader2, Plus, Search } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Plus, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryItemDetailSheet } from "@/src/components/inventory/InventoryItemDetailSheet";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
+import { appendQueryIfPresent, hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import {
   formatInventoryItemStatus,
   formatInventoryItemType,
@@ -12,7 +14,14 @@ import { normalizeInventoryItemListResponse } from "@/src/components/inventory/i
 import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
+  InventoryCollapsibleFilters,
   InventoryEmptyState,
+  InventoryErrorBanner,
+  InventoryFilterField,
+  InventoryLoading,
+  InventorySectionIntro,
+  InventoryTableScroll,
+  inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryItemRow } from "@/src/types/inventory";
@@ -40,6 +49,14 @@ export function InventoryItemsTab() {
 
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
 
+  const filterActiveCount = useMemo(
+    () =>
+      [search, itemType, status, family, belowMinimum, belowReorderPoint].filter((v) =>
+        typeof v === "boolean" ? v : hasAnyFilter([v])
+      ).length,
+    [search, itemType, status, family, belowMinimum, belowReorderPoint]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -47,10 +64,10 @@ export function InventoryItemsTab() {
       const q = new URLSearchParams();
       q.set("page", String(page));
       q.set("pageSize", "50");
-      if (search.trim()) q.set("search", search.trim());
+      appendQueryIfPresent(q, "search", search);
       if (itemType) q.set("itemType", itemType);
       if (status) q.set("status", status);
-      if (family.trim()) q.set("family", family.trim());
+      appendQueryIfPresent(q, "family", family);
       if (belowMinimum) q.set("belowMinimum", "true");
       if (belowReorderPoint) q.set("belowReorderPoint", "true");
 
@@ -60,7 +77,7 @@ export function InventoryItemsTab() {
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao listar itens de estoque."));
+      setError(formatInventoryApiError(e, "Não foi possível carregar os itens. Tente novamente em instantes."));
       setRows([]);
     } finally {
       setLoading(false);
@@ -84,89 +101,19 @@ export function InventoryItemsTab() {
     setBelowReorderPoint(false);
   };
 
+  const filtersActive = hasAnyFilter([search, itemType, status, family, belowMinimum, belowReorderPoint]);
+  const emptyState = filtersActive ? INVENTORY_EMPTY.noItemsForFilter : INVENTORY_EMPTY.noItemsRegistered;
+
   return (
     <div className="space-y-4" data-testid="inventory-items-tab">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Cadastro de itens</p>
-        <p className="mt-1">
-          Consulte, cadastre e inative itens de estoque. Alterações de quantidade devem ser feitas
-          via movimentações — o saldo não é editável nesta tela.
-        </p>
-      </div>
+      <InventorySectionIntro
+        title="Cadastro de itens"
+        description="Consulte, cadastre e inative itens de estoque. Alterações de quantidade devem ser feitas via movimentações — o saldo não é editável nesta tela."
+      />
 
-      {error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      ) : null}
+      {error ? <InventoryErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm"
-            placeholder="Buscar por código ou descrição…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="inventory-items-search"
-          />
-        </div>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={itemType}
-          onChange={(e) => setItemType(e.target.value)}
-          data-testid="inventory-items-filter-type"
-        >
-          <option value="">Tipo</option>
-          {INVENTORY_ITEM_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          data-testid="inventory-items-filter-status"
-        >
-          <option value="">Status</option>
-          <option value="ACTIVE">Ativo</option>
-          <option value="INACTIVE">Inativo</option>
-        </select>
-        <input
-          className="w-36 rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Família"
-          value={family}
-          onChange={(e) => setFamily(e.target.value)}
-          data-testid="inventory-items-filter-family"
-        />
-        <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={belowMinimum}
-            onChange={(e) => setBelowMinimum(e.target.checked)}
-            data-testid="inventory-items-filter-below-minimum"
-          />
-          Abaixo do mínimo
-        </label>
-        <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={belowReorderPoint}
-            onChange={(e) => setBelowReorderPoint(e.target.checked)}
-            data-testid="inventory-items-filter-below-reorder"
-          />
-          Abaixo reposição
-        </label>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          onClick={clearFilters}
-        >
-          Limpar
-        </button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {canManageItems ? (
           <button
             type="button"
@@ -184,41 +131,124 @@ export function InventoryItemsTab() {
         )}
       </div>
 
+      <InventoryCollapsibleFilters
+        activeCount={filterActiveCount}
+        onClear={filtersActive ? clearFilters : undefined}
+      >
+        <InventoryFilterField label="Busca" className="min-w-[200px] flex-1">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" aria-hidden />
+            <input
+              className={cn(inventoryFilterInputClass, "w-full pl-8")}
+              placeholder="Código ou descrição…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="inventory-items-search"
+            />
+          </div>
+        </InventoryFilterField>
+        <InventoryFilterField label="Tipo">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemType}
+            onChange={(e) => setItemType(e.target.value)}
+            data-testid="inventory-items-filter-type"
+          >
+            <option value="">Todos</option>
+            {INVENTORY_ITEM_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Status">
+          <select
+            className={inventoryFilterInputClass}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            data-testid="inventory-items-filter-status"
+          >
+            <option value="">Todos</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Família">
+          <input
+            className={cn(inventoryFilterInputClass, "w-36")}
+            placeholder="Família"
+            value={family}
+            onChange={(e) => setFamily(e.target.value)}
+            data-testid="inventory-items-filter-family"
+          />
+        </InventoryFilterField>
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={belowMinimum}
+            onChange={(e) => setBelowMinimum(e.target.checked)}
+            data-testid="inventory-items-filter-below-minimum"
+          />
+          Abaixo do mínimo
+        </label>
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={belowReorderPoint}
+            onChange={(e) => setBelowReorderPoint(e.target.checked)}
+            data-testid="inventory-items-filter-below-reorder"
+          />
+          Abaixo reposição
+        </label>
+      </InventoryCollapsibleFilters>
+
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" data-testid="inventory-items-loading" />
-        </div>
+        <InventoryLoading label="Carregando itens…" />
       ) : rows.length === 0 ? (
-        <InventoryEmptyState message="Nenhum item encontrado com os filtros atuais." />
+        <InventoryEmptyState
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={emptyState.actionLabel}
+          onAction={
+            filtersActive
+              ? clearFilters
+              : canManageItems
+                ? () => setSheet({ mode: "create" })
+                : undefined
+          }
+        />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-items-table">
             <thead>
               <tr>
-                <th>Código</th>
-                <th>Descrição</th>
-                <th>Tipo</th>
-                <th>Unidade</th>
-                <th>Família</th>
-                <th>Status</th>
-                <th className="w-16"></th>
+                <th scope="col">Código</th>
+                <th scope="col">Descrição</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Unidade</th>
+                <th scope="col">Família</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="w-16">
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td className="font-medium text-slate-900">{row.code}</td>
-                  <td>{row.description}</td>
+                  <td title={row.description}>{row.description}</td>
                   <td>{formatInventoryItemType(row.itemType)}</td>
                   <td>{row.unit}</td>
                   <td>{row.family ?? "—"}</td>
                   <td>
                     <span
                       className={cn(
-                        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
                         row.status === "ACTIVE"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-slate-200 text-slate-700"
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-slate-100 text-slate-700 ring-slate-200"
                       )}
                     >
                       {formatInventoryItemStatus(row.status)}
@@ -228,6 +258,7 @@ export function InventoryItemsTab() {
                     <button
                       type="button"
                       title="Abrir item"
+                      aria-label={`Abrir item ${row.code}`}
                       className="rounded p-1 hover:bg-slate-200"
                       onClick={() => setSheet({ mode: "view", itemId: row.id })}
                     >
@@ -262,7 +293,7 @@ export function InventoryItemsTab() {
               </button>
             </div>
           </div>
-        </div>
+        </InventoryTableScroll>
       )}
 
       {sheet.mode === "create" ? (

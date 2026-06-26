@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Eye, Loader2, Search } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryBalanceItemDetailSheet } from "@/src/components/inventory/InventoryBalanceItemDetailSheet";
@@ -10,14 +10,25 @@ import {
   type InventoryBalanceListRow,
   type InventoryBalanceListSummary,
 } from "@/src/components/inventory/inventoryBalancePresentation";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
+import { appendQueryIfPresent, hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import { INVENTORY_ITEM_TYPE_OPTIONS, formatInventoryItemType } from "@/src/components/inventory/inventoryItemLabels";
 import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
   formatInventoryDateTime,
   formatInventoryQuantity,
+  InventoryBalanceColumnHeader,
+  InventoryBalanceGlossary,
+  InventoryCollapsibleFilters,
   InventoryEmptyState,
+  InventoryErrorBanner,
+  InventoryFilterField,
+  InventoryLoading,
   InventoryOperationalStatusBadge,
+  InventorySectionIntro,
+  InventoryTableScroll,
+  inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryItemRow, InventoryWarehouseRow } from "@/src/types/inventory";
@@ -45,7 +56,7 @@ function SummaryCards({ summary }: { summary: InventoryBalanceListSummary }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" data-testid="inventory-balances-summary">
       {cards.map((c) => (
-        <div key={c.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div key={c.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{c.label}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{c.value}</p>
         </div>
@@ -82,6 +93,56 @@ export function InventoryBalancesTab() {
   const [warehouses, setWarehouses] = useState<InventoryWarehouseRow[]>([]);
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
 
+  const filterActiveCount = useMemo(
+    () =>
+      [
+        search,
+        itemId,
+        itemType,
+        family,
+        group,
+        warehouseId,
+        status,
+        belowMinimum,
+        belowReorderPoint,
+        hasReservation,
+        hasBlocked,
+        hasQuarantine,
+        negativeStock,
+      ].filter((v) => (typeof v === "boolean" ? v : hasAnyFilter([v]))).length,
+    [
+      search,
+      itemId,
+      itemType,
+      family,
+      group,
+      warehouseId,
+      status,
+      belowMinimum,
+      belowReorderPoint,
+      hasReservation,
+      hasBlocked,
+      hasQuarantine,
+      negativeStock,
+    ]
+  );
+
+  const filtersActive = hasAnyFilter([
+    search,
+    itemId,
+    itemType,
+    family,
+    group,
+    warehouseId,
+    status,
+    belowMinimum,
+    belowReorderPoint,
+    hasReservation,
+    hasBlocked,
+    hasQuarantine,
+    negativeStock,
+  ]);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -105,11 +166,11 @@ export function InventoryBalancesTab() {
       const q = new URLSearchParams();
       q.set("page", String(page));
       q.set("pageSize", "50");
-      if (search.trim()) q.set("search", search.trim());
+      appendQueryIfPresent(q, "search", search);
       if (itemId) q.set("itemId", itemId);
       if (itemType) q.set("itemType", itemType);
-      if (family.trim()) q.set("family", family.trim());
-      if (group.trim()) q.set("group", group.trim());
+      appendQueryIfPresent(q, "family", family);
+      appendQueryIfPresent(q, "group", group);
       if (warehouseId) q.set("warehouseId", warehouseId);
       if (status) q.set("status", status);
       if (belowMinimum) q.set("belowMinimum", "true");
@@ -126,7 +187,7 @@ export function InventoryBalancesTab() {
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao consultar saldos."));
+      setError(formatInventoryApiError(e, "Não foi possível consultar os saldos. Tente novamente."));
       setRows([]);
       setSummary(EMPTY_BALANCE_LIST_SUMMARY);
     } finally {
@@ -187,103 +248,119 @@ export function InventoryBalancesTab() {
     setNegativeStock(false);
   };
 
+  const emptyState = INVENTORY_EMPTY.noBalancesForFilter;
+
   return (
     <div className="space-y-4" data-testid="inventory-balances-tab">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Consulta de saldos</p>
-        <p className="mt-1">
-          Visualize saldo físico, reservado, bloqueado, em quarentena e disponível por item e almoxarifado.
-          Quantidades não são editáveis — use movimentações para alterar estoque.
-        </p>
-      </div>
+      <InventorySectionIntro
+        title="Consulta de saldos"
+        description="Visualize saldo físico, reservado, bloqueado, em quarentena e disponível por item e almoxarifado. Quantidades não são editáveis — use movimentações para alterar estoque."
+      />
+
+      <InventoryBalanceGlossary compact />
 
       {error ? (
-        <div
-          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-          data-testid="inventory-balances-error"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
+        <InventoryErrorBanner
+          message={error}
+          onDismiss={() => setError(null)}
+          testId="inventory-balances-error"
+        />
       ) : null}
 
       <SummaryCards summary={summary} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[180px] flex-1">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+      <InventoryCollapsibleFilters
+        activeCount={filterActiveCount}
+        onClear={filtersActive ? clearFilters : undefined}
+      >
+        <InventoryFilterField label="Busca" className="min-w-[180px] flex-1">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" aria-hidden />
+            <input
+              className={cn(inventoryFilterInputClass, "w-full pl-8")}
+              placeholder="Código ou descrição…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="inventory-balances-search"
+            />
+          </div>
+        </InventoryFilterField>
+        <InventoryFilterField label="Item" className="min-w-[140px]">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            data-testid="inventory-balances-filter-item"
+          >
+            <option value="">Todos os itens</option>
+            {items.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Tipo">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemType}
+            onChange={(e) => setItemType(e.target.value)}
+            data-testid="inventory-balances-filter-type"
+          >
+            <option value="">Todos os tipos</option>
+            {INVENTORY_ITEM_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Família">
           <input
-            className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm"
-            placeholder="Buscar código ou descrição…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="inventory-balances-search"
+            className={cn(inventoryFilterInputClass, "w-28")}
+            placeholder="Família"
+            value={family}
+            onChange={(e) => setFamily(e.target.value)}
+            data-testid="inventory-balances-filter-family"
           />
-        </div>
-        <select
-          className="min-w-[140px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={itemId}
-          onChange={(e) => setItemId(e.target.value)}
-          data-testid="inventory-balances-filter-item"
-        >
-          <option value="">Todos os itens</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.code}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={itemType}
-          onChange={(e) => setItemType(e.target.value)}
-          data-testid="inventory-balances-filter-type"
-        >
-          <option value="">Todos os tipos</option>
-          {INVENTORY_ITEM_TYPE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <input
-          className="w-28 rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Família"
-          value={family}
-          onChange={(e) => setFamily(e.target.value)}
-          data-testid="inventory-balances-filter-family"
-        />
-        <input
-          className="w-28 rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          placeholder="Grupo"
-          value={group}
-          onChange={(e) => setGroup(e.target.value)}
-          data-testid="inventory-balances-filter-group"
-        />
-        <select
-          className="min-w-[130px] rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={warehouseId}
-          onChange={(e) => setWarehouseId(e.target.value)}
-          data-testid="inventory-balances-filter-warehouse"
-        >
-          <option value="">Todos almoxarifados</option>
-          {warehouses.map((wh) => (
-            <option key={wh.id} value={wh.id}>
-              {wh.code}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          data-testid="inventory-balances-filter-status"
-        >
-          <option value="">Todos status</option>
-          <option value="ACTIVE">Ativo</option>
-          <option value="INACTIVE">Inativo</option>
-        </select>
-        <label className="flex items-center gap-1.5 text-sm">
+        </InventoryFilterField>
+        <InventoryFilterField label="Grupo">
+          <input
+            className={cn(inventoryFilterInputClass, "w-28")}
+            placeholder="Grupo"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            data-testid="inventory-balances-filter-group"
+          />
+        </InventoryFilterField>
+        <InventoryFilterField label="Almoxarifado" className="min-w-[130px]">
+          <select
+            className={inventoryFilterInputClass}
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+            data-testid="inventory-balances-filter-warehouse"
+          >
+            <option value="">Todos almoxarifados</option>
+            {warehouses.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Status item">
+          <select
+            className={inventoryFilterInputClass}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            data-testid="inventory-balances-filter-status"
+          >
+            <option value="">Todos status</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </InventoryFilterField>
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={belowMinimum}
@@ -292,7 +369,7 @@ export function InventoryBalancesTab() {
           />
           Abaixo mín.
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={belowReorderPoint}
@@ -301,7 +378,7 @@ export function InventoryBalancesTab() {
           />
           Abaixo repos.
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={hasReservation}
@@ -310,7 +387,7 @@ export function InventoryBalancesTab() {
           />
           Com reserva
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={hasBlocked}
@@ -319,7 +396,7 @@ export function InventoryBalancesTab() {
           />
           Bloqueado
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={hasQuarantine}
@@ -328,7 +405,7 @@ export function InventoryBalancesTab() {
           />
           Quarentena
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
           <input
             type="checkbox"
             checked={negativeStock}
@@ -337,54 +414,46 @@ export function InventoryBalancesTab() {
           />
           Negativo
         </label>
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-        >
-          Limpar
-        </button>
-      </div>
+      </InventoryCollapsibleFilters>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {loading ? (
-          <div
-            className="flex items-center justify-center gap-2 py-12 text-slate-500"
-            data-testid="inventory-balances-loading"
-          >
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Carregando saldos…
-          </div>
-        ) : rows.length === 0 ? (
-          <InventoryEmptyState message="Nenhum saldo encontrado para os filtros aplicados." />
-        ) : (
+      {loading ? (
+        <InventoryLoading label="Carregando saldos…" />
+      ) : rows.length === 0 ? (
+        <InventoryEmptyState
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={filtersActive ? emptyState.actionLabel : undefined}
+          onAction={filtersActive ? clearFilters : undefined}
+        />
+      ) : (
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-balances-table">
             <thead>
               <tr>
-                <th>Código</th>
-                <th>Descrição</th>
-                <th>Tipo</th>
-                <th>Un.</th>
-                <th>Almoxarifado</th>
-                <th>Físico</th>
-                <th>Reservado</th>
-                <th>Bloqueado</th>
-                <th>Quarentena</th>
-                <th>Disponível</th>
-                <th>Custo médio</th>
-                <th>Valor total</th>
-                <th>Último mov.</th>
-                <th>Status</th>
-                <th />
+                <th scope="col">Código</th>
+                <th scope="col">Descrição</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Un.</th>
+                <th scope="col">Almoxarifado</th>
+                <InventoryBalanceColumnHeader label="Físico" />
+                <InventoryBalanceColumnHeader label="Reservado" />
+                <InventoryBalanceColumnHeader label="Bloqueado" />
+                <InventoryBalanceColumnHeader label="Quarentena" />
+                <InventoryBalanceColumnHeader label="Disponível" />
+                <th scope="col">Custo médio</th>
+                <th scope="col">Valor total</th>
+                <th scope="col">Último mov.</th>
+                <th scope="col">Status</th>
+                <th scope="col">
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td className="font-medium">{row.itemCode}</td>
-                  <td className="max-w-[160px] truncate" title={row.itemDescription}>
-                    {row.itemDescription}
-                  </td>
+                  <td title={row.itemDescription}>{row.itemDescription}</td>
                   <td className="text-xs">{formatInventoryItemType(row.itemType)}</td>
                   <td className="text-xs">{row.unit}</td>
                   <td className="text-xs">
@@ -408,7 +477,7 @@ export function InventoryBalancesTab() {
                       ? row.totalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                       : "—"}
                   </td>
-                  <td className="text-xs whitespace-nowrap">
+                  <td className="whitespace-nowrap text-xs">
                     {formatInventoryDateTime(row.lastMovementAt)}
                   </td>
                   <td>
@@ -429,8 +498,8 @@ export function InventoryBalancesTab() {
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </InventoryTableScroll>
+      )}
 
       {totalPages > 1 ? (
         <div className="flex items-center justify-between text-sm text-slate-600">

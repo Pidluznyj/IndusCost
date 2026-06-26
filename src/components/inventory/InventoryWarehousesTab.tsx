@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Eye, Loader2, Plus, Search } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Plus, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryWarehouseDetailSheet } from "@/src/components/inventory/InventoryWarehouseDetailSheet";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
+import { appendQueryIfPresent, hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import {
   formatInventoryWarehouseStatus,
   SUGGESTED_INVENTORY_WAREHOUSES,
@@ -11,7 +13,14 @@ import { normalizeInventoryWarehouseListResponse } from "@/src/components/invent
 import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
+  InventoryCollapsibleFilters,
   InventoryEmptyState,
+  InventoryErrorBanner,
+  InventoryFilterField,
+  InventoryLoading,
+  InventorySectionIntro,
+  InventoryTableScroll,
+  inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryWarehouseRow } from "@/src/types/inventory";
@@ -37,6 +46,11 @@ export function InventoryWarehousesTab() {
 
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
 
+  const filterActiveCount = useMemo(
+    () => [search, status, allowsMovements].filter((v) => hasAnyFilter([v])).length,
+    [search, status, allowsMovements]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -44,7 +58,7 @@ export function InventoryWarehousesTab() {
       const q = new URLSearchParams();
       q.set("page", String(page));
       q.set("pageSize", "50");
-      if (search.trim()) q.set("search", search.trim());
+      appendQueryIfPresent(q, "search", search);
       if (status) q.set("status", status);
       if (allowsMovements) q.set("allowsMovements", allowsMovements);
 
@@ -54,7 +68,7 @@ export function InventoryWarehousesTab() {
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao listar almoxarifados."));
+      setError(formatInventoryApiError(e, "Não foi possível carregar os almoxarifados. Tente novamente."));
       setRows([]);
     } finally {
       setLoading(false);
@@ -75,15 +89,17 @@ export function InventoryWarehousesTab() {
     setAllowsMovements("");
   };
 
+  const filtersActive = hasAnyFilter([search, status, allowsMovements]);
+  const emptyState = filtersActive
+    ? INVENTORY_EMPTY.noWarehousesForFilter
+    : INVENTORY_EMPTY.noWarehousesRegistered;
+
   return (
     <div className="space-y-4" data-testid="inventory-warehouses-tab">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Almoxarifados e locais</p>
-        <p className="mt-1">
-          Todo saldo de estoque está associado a um item e a um almoxarifado. Locais inativos ou
-          bloqueados não aceitam novas movimentações, mas o histórico permanece consultável.
-        </p>
-      </div>
+      <InventorySectionIntro
+        title="Almoxarifados e locais"
+        description="Todo saldo de estoque está associado a um item e a um almoxarifado. Locais inativos ou bloqueados não aceitam novas movimentações, mas o histórico permanece consultável."
+      />
 
       <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -106,51 +122,9 @@ export function InventoryWarehousesTab() {
         </div>
       </div>
 
-      {error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      ) : null}
+      {error ? <InventoryErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm"
-            placeholder="Buscar por código ou nome…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="inventory-warehouses-search"
-          />
-        </div>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          data-testid="inventory-warehouses-filter-status"
-        >
-          <option value="">Status</option>
-          <option value="ACTIVE">Ativo</option>
-          <option value="INACTIVE">Inativo</option>
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={allowsMovements}
-          onChange={(e) => setAllowsMovements(e.target.value as "" | "true" | "false")}
-          data-testid="inventory-warehouses-filter-movements"
-        >
-          <option value="">Movimentações</option>
-          <option value="true">Permite movimentações</option>
-          <option value="false">Bloqueado</option>
-        </select>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          onClick={clearFilters}
-        >
-          Limpar
-        </button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {canManageWarehouses ? (
           <button
             type="button"
@@ -168,39 +142,89 @@ export function InventoryWarehousesTab() {
         )}
       </div>
 
+      <InventoryCollapsibleFilters
+        activeCount={filterActiveCount}
+        onClear={filtersActive ? clearFilters : undefined}
+      >
+        <InventoryFilterField label="Busca" className="min-w-[200px] flex-1">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" aria-hidden />
+            <input
+              className={cn(inventoryFilterInputClass, "w-full pl-8")}
+              placeholder="Código ou nome…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="inventory-warehouses-search"
+            />
+          </div>
+        </InventoryFilterField>
+        <InventoryFilterField label="Status">
+          <select
+            className={inventoryFilterInputClass}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            data-testid="inventory-warehouses-filter-status"
+          >
+            <option value="">Todos</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Movimentações">
+          <select
+            className={inventoryFilterInputClass}
+            value={allowsMovements}
+            onChange={(e) => setAllowsMovements(e.target.value as "" | "true" | "false")}
+            data-testid="inventory-warehouses-filter-movements"
+          >
+            <option value="">Todas</option>
+            <option value="true">Permite movimentações</option>
+            <option value="false">Bloqueado</option>
+          </select>
+        </InventoryFilterField>
+      </InventoryCollapsibleFilters>
+
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2
-            className="h-8 w-8 animate-spin text-slate-400"
-            data-testid="inventory-warehouses-loading"
-          />
-        </div>
+        <InventoryLoading label="Carregando almoxarifados…" />
       ) : rows.length === 0 ? (
-        <InventoryEmptyState message="Nenhum almoxarifado encontrado com os filtros atuais." />
+        <InventoryEmptyState
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={emptyState.actionLabel}
+          onAction={
+            filtersActive
+              ? clearFilters
+              : canManageWarehouses
+                ? () => setSheet({ mode: "create" })
+                : undefined
+          }
+        />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <InventoryTableScroll>
           <table className={inventoryTableClassName()} data-testid="inventory-warehouses-table">
             <thead>
               <tr>
-                <th>Código</th>
-                <th>Nome</th>
-                <th>Status</th>
-                <th>Movimentações</th>
-                <th className="w-16"></th>
+                <th scope="col">Código</th>
+                <th scope="col">Nome</th>
+                <th scope="col">Status</th>
+                <th scope="col">Movimentações</th>
+                <th scope="col" className="w-16">
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td className="font-medium text-slate-900">{row.code}</td>
-                  <td>{row.name}</td>
+                  <td title={row.name}>{row.name}</td>
                   <td>
                     <span
                       className={cn(
-                        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
                         row.status === "ACTIVE"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-slate-200 text-slate-700"
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-slate-100 text-slate-700 ring-slate-200"
                       )}
                     >
                       {formatInventoryWarehouseStatus(row.status)}
@@ -208,15 +232,20 @@ export function InventoryWarehousesTab() {
                   </td>
                   <td>
                     {row.allowsMovements ? (
-                      <span className="text-emerald-700">Permitidas</span>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200 ring-inset">
+                        Permitidas
+                      </span>
                     ) : (
-                      <span className="text-amber-700">Bloqueadas</span>
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200 ring-inset">
+                        Bloqueadas
+                      </span>
                     )}
                   </td>
                   <td>
                     <button
                       type="button"
                       title="Abrir almoxarifado"
+                      aria-label={`Abrir almoxarifado ${row.code}`}
                       className="rounded p-1 hover:bg-slate-200"
                       onClick={() => setSheet({ mode: "view", warehouseId: row.id })}
                     >
@@ -251,7 +280,7 @@ export function InventoryWarehousesTab() {
               </button>
             </div>
           </div>
-        </div>
+        </InventoryTableScroll>
       )}
 
       {sheet.mode === "create" ? (

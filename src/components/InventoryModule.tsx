@@ -18,6 +18,7 @@ import {
   resolveInventoryTabFromPath,
   type InventoryTabId,
 } from "@/src/components/inventory/inventoryNavigation";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
 import {
   formatInventoryApiError,
   InventoryComingSoonTab,
@@ -148,6 +149,16 @@ export function InventoryModule({ initialTab }: Props = {}) {
         <InventoryBalancesTab />
       ) : tab === "counts" ? (
         <InventoryCountsTab />
+      ) : tab === "reservations" ? (
+        <InventoryComingSoonTab
+          title={INVENTORY_EMPTY.noReservationsActive.title}
+          description={INVENTORY_EMPTY.noReservationsActive.description}
+        />
+      ) : tab === "audit" ? (
+        <InventoryComingSoonTab
+          title={INVENTORY_EMPTY.noAuditEntries.title}
+          description={INVENTORY_EMPTY.noAuditEntries.description}
+        />
       ) : activeTabDef?.comingSoon ? (
         <InventoryComingSoonTab
           title={activeTabDef.label}

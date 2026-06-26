@@ -240,7 +240,7 @@ describe("inventoryMovements UI", () => {
 
   it("13. não permite edição direta de saldo", () => {
     const tab = read("src/components/inventory/InventoryMovementsTab.tsx");
-    assert.match(tab, /POST \/api\/inventory\/movements/);
+    assert.match(tab, /saldo nunca é editado diretamente/i);
     assert.doesNotMatch(tab, /physicalQuantity/);
     const sheet = read("src/components/inventory/InventoryMovementFormSheet.tsx");
     assert.match(sheet, /\/api\/inventory\/movements/);

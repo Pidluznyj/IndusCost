@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Eye, Loader2, Plus } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { safeTrim } from "@/src/lib/safeTrim.js";
 import { cn } from "@/src/lib/utils";
 import { InventoryCountDetailSheet } from "@/src/components/inventory/InventoryCountDetailSheet";
 import {
@@ -9,12 +10,21 @@ import {
   INVENTORY_COUNT_STATUS_STYLES,
 } from "@/src/components/inventory/inventoryCountLabels";
 import { normalizeInventoryCountListResponse } from "@/src/components/inventory/inventoryCountPresentation";
+import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
+import { hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
   formatInventoryDateTime,
   formatInventoryQuantity,
+  InventoryCollapsibleFilters,
   InventoryEmptyState,
+  InventoryErrorBanner,
+  InventoryFilterField,
+  InventoryLoading,
+  InventorySectionIntro,
+  InventoryTableScroll,
+  inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import type {
@@ -55,6 +65,9 @@ export function InventoryCountsTab() {
   const [createNotes, setCreateNotes] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
+  const filtersActive = hasAnyFilter([status, warehouseId]);
+  const filterActiveCount = [status, warehouseId].filter((v) => hasAnyFilter([v])).length;
+
   useEffect(() => {
     void (async () => {
       try {
@@ -84,7 +97,7 @@ export function InventoryCountsTab() {
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao listar conferências."));
+      setError(formatInventoryApiError(e, "Não foi possível carregar as conferências. Tente novamente."));
       setRows([]);
     } finally {
       setLoading(false);
@@ -99,9 +112,14 @@ export function InventoryCountsTab() {
     void load();
   }, [load]);
 
+  const clearFilters = () => {
+    setStatus("");
+    setWarehouseId("");
+  };
+
   const createSession = async () => {
     if (!createWarehouseId) {
-      setError("Selecione um almoxarifado.");
+      setError("Selecione um almoxarifado para iniciar a conferência.");
       return;
     }
     setCreating(true);
@@ -112,7 +130,7 @@ export function InventoryCountsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           warehouseId: createWarehouseId,
-          notes: createNotes.trim() || null,
+          notes: safeTrim(createNotes) || null,
         }),
       });
       setShowCreate(false);
@@ -122,64 +140,29 @@ export function InventoryCountsTab() {
         setSheet({ mode: "detail", sessionId: res.session.id });
       }
     } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Erro ao criar conferência."));
+      setError(formatInventoryApiError(e, "Não foi possível criar a conferência. Verifique os dados e tente novamente."));
     } finally {
       setCreating(false);
     }
   };
 
+  const emptyState = filtersActive ? INVENTORY_EMPTY.noCountsForFilter : INVENTORY_EMPTY.noCountsOpen;
+
   return (
     <div className="space-y-4" data-testid="inventory-counts-tab">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Conferência física / inventário</p>
-        <p className="mt-1">
-          Abra uma conferência, informe saldos contados, justifique divergências e gere ajustes
-          rastreáveis por movimentação — o saldo do sistema nunca é alterado diretamente.
-        </p>
-      </div>
+      <InventorySectionIntro
+        title="Conferência física / inventário"
+        description="Abra uma conferência, informe saldos contados, justifique divergências e gere ajustes rastreáveis por movimentação — o saldo do sistema nunca é alterado diretamente."
+      />
 
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InventoryErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Status</span>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Todos</option>
-            {INVENTORY_COUNT_STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Almoxarifado</span>
-          <select
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-            className="min-w-[180px] rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Todos</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.code} — {w.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {canManageCounts ? (
           <button
             type="button"
             onClick={() => setShowCreate((v) => !v)}
-            className="ml-auto inline-flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
             data-testid="inventory-count-create-btn"
           >
             <Plus className="h-4 w-4" />
@@ -188,19 +171,52 @@ export function InventoryCountsTab() {
         ) : null}
       </div>
 
+      <InventoryCollapsibleFilters
+        activeCount={filterActiveCount}
+        onClear={filtersActive ? clearFilters : undefined}
+      >
+        <InventoryFilterField label="Status">
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={inventoryFilterInputClass}
+          >
+            <option value="">Todos</option>
+            {INVENTORY_COUNT_STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Almoxarifado" className="min-w-[180px]">
+          <select
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+            className={inventoryFilterInputClass}
+          >
+            <option value="">Todos</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.code} — {w.name}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+      </InventoryCollapsibleFilters>
+
       {showCreate && canManageCounts ? (
         <div
-          className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
           data-testid="inventory-count-create-form"
         >
           <p className="mb-3 text-sm font-medium text-slate-900">Criar conferência</p>
           <div className="flex flex-wrap gap-3">
-            <label className="text-sm">
-              <span className="mb-1 block text-xs text-slate-600">Almoxarifado *</span>
+            <InventoryFilterField label="Almoxarifado *" className="min-w-[220px]">
               <select
                 value={createWarehouseId}
                 onChange={(e) => setCreateWarehouseId(e.target.value)}
-                className="min-w-[220px] rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className={inventoryFilterInputClass}
               >
                 <option value="">Selecione…</option>
                 {warehouses.map((w) => (
@@ -209,30 +225,29 @@ export function InventoryCountsTab() {
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="flex-1 text-sm">
-              <span className="mb-1 block text-xs text-slate-600">Observação</span>
+            </InventoryFilterField>
+            <InventoryFilterField label="Observação" className="min-w-[200px] flex-1">
               <input
                 type="text"
                 value={createNotes}
                 onChange={(e) => setCreateNotes(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className={cn(inventoryFilterInputClass, "w-full")}
                 placeholder="Opcional"
               />
-            </label>
+            </InventoryFilterField>
             <div className="flex items-end gap-2">
               <button
                 type="button"
                 disabled={creating}
                 onClick={() => void createSession()}
-                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
               >
                 {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar"}
               </button>
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >
                 Cancelar
               </button>
@@ -242,29 +257,40 @@ export function InventoryCountsTab() {
       ) : null}
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-slate-500">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Carregando conferências…
-        </div>
+        <InventoryLoading label="Carregando conferências…" />
       ) : rows.length === 0 ? (
         <InventoryEmptyState
-          title="Nenhuma conferência"
-          description="Crie uma conferência física para iniciar o inventário."
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={filtersActive ? emptyState.actionLabel : emptyState.actionLabel}
+          onAction={
+            filtersActive
+              ? clearFilters
+              : canManageCounts
+                ? () => setShowCreate(true)
+                : undefined
+          }
         />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className={inventoryTableClassName}>
+          <InventoryTableScroll>
+            <table className={inventoryTableClassName()} data-testid="inventory-counts-table">
               <thead>
                 <tr>
-                  <th>Código</th>
-                  <th>Almoxarifado</th>
-                  <th>Status</th>
-                  <th>Responsável</th>
-                  <th>Data</th>
-                  <th className="text-right">Divergências</th>
-                  <th className="text-right">Qtd. impactada</th>
-                  <th />
+                  <th scope="col">Código</th>
+                  <th scope="col">Almoxarifado</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Responsável</th>
+                  <th scope="col">Data</th>
+                  <th scope="col" className="text-right">
+                    Divergências
+                  </th>
+                  <th scope="col" className="text-right">
+                    Qtd. impactada
+                  </th>
+                  <th scope="col">
+                    <span className="sr-only">Ações</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -300,7 +326,7 @@ export function InventoryCountsTab() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </InventoryTableScroll>
           <div className="flex items-center justify-between text-sm text-slate-600">
             <span>
               {total} conferência{total !== 1 ? "s" : ""}
