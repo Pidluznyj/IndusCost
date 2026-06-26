@@ -179,3 +179,37 @@ export type InventoryDashboardPayload = {
   criticalSupplies: InventoryDashboardCriticalItem[];
   finishedProductsAvailable: InventoryDashboardCriticalItem[];
 };
+
+export type InventoryMovementRow = {
+  id: string;
+  itemId: string;
+  itemCode: string | null;
+  itemDescription: string | null;
+  sourceWarehouseId: string | null;
+  destinationWarehouseId: string | null;
+  sourceWarehouseCode: string | null;
+  sourceWarehouseName: string | null;
+  destinationWarehouseCode: string | null;
+  destinationWarehouseName: string | null;
+  warehouseCode: string | null;
+  warehouseName: string | null;
+  movementType: InventoryMovementType;
+  quantity: number;
+  unit: string;
+  reason: string;
+  notes: string | null;
+  responsibleUserId: string | null;
+  movementDate: string;
+  originType: InventoryMovementOriginType | string;
+  originId: string | null;
+  documentNumber: string | null;
+  costCenterId: string | null;
+  financialCostCenterId: string | null;
+  reservationId: string | null;
+  reversedMovementId: string | null;
+  previousPhysicalBalance: number;
+  nextPhysicalBalance: number;
+  previousAvailableBalance: number;
+  nextAvailableBalance: number;
+  createdAt: string;
+};

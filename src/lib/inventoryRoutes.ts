@@ -4,7 +4,7 @@
  */
 import type express from "express";
 import type { RequestHandler } from "express";
-import { Prisma, type InventoryMovementType } from "@prisma/client";
+import { Prisma, type InventoryMovement, type InventoryMovementType } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -19,6 +19,7 @@ import {
   parseInventoryBalancesListQuery,
   parseInventoryItemsListQuery,
   parseInventoryMovementsListQuery,
+  type InventoryMovementsListQuery,
 } from "@/src/lib/inventory/inventoryListQuery.js";
 import {
   inventoryDec,
@@ -27,6 +28,7 @@ import {
   serializeInventoryBalanceWithRelations,
   serializeInventoryItem,
   serializeInventoryMovement,
+  serializeInventoryMovementEnriched,
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
 import {
@@ -75,6 +77,41 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
 function decimalOrNull(value: number | null | undefined): Prisma.Decimal | null {
   if (value == null) return null;
   return new Prisma.Decimal(value);
+}
+
+const MOVEMENT_LIST_INCLUDES = {
+  item: { select: { code: true, description: true } },
+  sourceWarehouse: { select: { code: true, name: true } },
+  destinationWarehouse: { select: { code: true, name: true } },
+} as const;
+
+function buildInventoryMovementsWhere(
+  q: InventoryMovementsListQuery,
+  fixedItemId?: string
+): Prisma.InventoryMovementWhereInput {
+  return {
+    ...(fixedItemId ? { itemId: fixedItemId } : q.itemId ? { itemId: q.itemId } : {}),
+    ...(q.movementType ? { movementType: q.movementType as InventoryMovementType } : {}),
+    ...(q.warehouseId
+      ? {
+          OR: [{ sourceWarehouseId: q.warehouseId }, { destinationWarehouseId: q.warehouseId }],
+        }
+      : {}),
+    ...(q.responsibleUserId ? { responsibleUserId: q.responsibleUserId } : {}),
+    ...(q.originType ? { originType: q.originType as InventoryMovement["originType"] } : {}),
+    ...(q.documentNumber
+      ? { documentNumber: { contains: q.documentNumber, mode: "insensitive" } }
+      : {}),
+    ...(q.costCenterId ? { costCenterId: q.costCenterId } : {}),
+    ...(q.startDate || q.endDate
+      ? {
+          movementDate: {
+            ...(q.startDate ? { gte: q.startDate } : {}),
+            ...(q.endDate ? { lte: q.endDate } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 async function sumAvailableForItem(itemId: string): Promise<number> {
@@ -648,27 +685,12 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!item) return res.status(404).json(inventoryApiError("Item não encontrado."));
 
       const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
-      const where: Prisma.InventoryMovementWhereInput = {
-        itemId: id,
-        ...(q.movementType ? { movementType: q.movementType as InventoryMovementType } : {}),
-        ...(q.warehouseId
-          ? {
-              OR: [{ sourceWarehouseId: q.warehouseId }, { destinationWarehouseId: q.warehouseId }],
-            }
-          : {}),
-        ...(q.startDate || q.endDate
-          ? {
-              movementDate: {
-                ...(q.startDate ? { gte: q.startDate } : {}),
-                ...(q.endDate ? { lte: q.endDate } : {}),
-              },
-            }
-          : {}),
-      };
+      const where = buildInventoryMovementsWhere(q, id);
 
       const [rows, total] = await Promise.all([
         prisma.inventoryMovement.findMany({
           where,
+          include: MOVEMENT_LIST_INCLUDES,
           orderBy: { movementDate: "desc" },
           skip: q.skip,
           take: q.pageSize,
@@ -677,7 +699,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       ]);
 
       res.json({
-        rows: rows.map(serializeInventoryMovement),
+        rows: rows.map(serializeInventoryMovementEnriched),
         total,
         page: q.page,
         pageSize: q.pageSize,
@@ -686,6 +708,53 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/items/:id/movements", e);
       res.status(500).json(inventoryApiError("Erro ao listar movimentações do item."));
+    }
+  });
+
+  app.get("/api/inventory/movements", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
+      const where = buildInventoryMovementsWhere(q);
+
+      const [rows, total] = await Promise.all([
+        prisma.inventoryMovement.findMany({
+          where,
+          include: MOVEMENT_LIST_INCLUDES,
+          orderBy: { movementDate: "desc" },
+          skip: q.skip,
+          take: q.pageSize,
+        }),
+        prisma.inventoryMovement.count({ where }),
+      ]);
+
+      res.json({
+        rows: rows.map(serializeInventoryMovementEnriched),
+        total,
+        page: q.page,
+        pageSize: q.pageSize,
+        totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/movements", e);
+      res.status(500).json(inventoryApiError("Erro ao listar movimentações."));
+    }
+  });
+
+  app.get("/api/inventory/movements/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const movement = await prisma.inventoryMovement.findUnique({
+        where: { id },
+        include: MOVEMENT_LIST_INCLUDES,
+      });
+      if (!movement) return res.status(404).json(inventoryApiError("Movimentação não encontrada."));
+
+      res.json({ movement: serializeInventoryMovementEnriched(movement) });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/movements/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar movimentação."));
     }
   });
 

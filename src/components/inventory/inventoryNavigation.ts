@@ -61,7 +61,6 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     description: "Histórico e registro de movimentações.",
     showInNav: true,
     navOrder: 50,
-    comingSoon: true,
   },
   {
     id: "counts",
@@ -102,5 +101,6 @@ export function getVisibleInventoryTabs(): InventoryTabDef[] {
 export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/items")) return "items";
   if (pathname.includes("/inventory/warehouses")) return "warehouses";
+  if (pathname.includes("/inventory/movements")) return "movements";
   return "overview";
 }

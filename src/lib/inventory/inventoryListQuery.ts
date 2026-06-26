@@ -43,8 +43,13 @@ export type InventoryMovementsListQuery = {
   page: number;
   pageSize: number;
   skip: number;
+  itemId: string | null;
   movementType: string | null;
   warehouseId: string | null;
+  responsibleUserId: string | null;
+  originType: string | null;
+  documentNumber: string | null;
+  costCenterId: string | null;
   startDate: Date | null;
   endDate: Date | null;
 };
@@ -145,8 +150,13 @@ export function parseInventoryMovementsListQuery(
     page,
     pageSize,
     skip: (page - 1) * pageSize,
+    itemId: optTrim(query.itemId),
     movementType: optTrim(query.movementType),
     warehouseId: optTrim(query.warehouseId),
+    responsibleUserId: optTrim(query.responsibleUserId ?? query.userId),
+    originType: optTrim(query.originType),
+    documentNumber: optTrim(query.documentNumber),
+    costCenterId: optTrim(query.costCenterId),
     startDate: parseDate(query.startDate ?? query.start),
     endDate: parseDate(query.endDate ?? query.end),
   };

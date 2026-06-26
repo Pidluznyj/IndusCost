@@ -104,11 +104,33 @@ export function serializeInventoryMovement(row: InventoryMovement) {
     costCenterId: row.costCenterId,
     financialCostCenterId: row.financialCostCenterId,
     reservationId: row.reservationId,
+    reversedMovementId: row.reversedMovementId,
     previousPhysicalBalance: inventoryDec(row.previousPhysicalBalance),
     nextPhysicalBalance: inventoryDec(row.nextPhysicalBalance),
     previousAvailableBalance: inventoryDec(row.previousAvailableBalance),
     nextAvailableBalance: inventoryDec(row.nextAvailableBalance),
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+type MovementWithRelations = InventoryMovement & {
+  item?: { code: string; description: string } | null;
+  sourceWarehouse?: { code: string; name: string } | null;
+  destinationWarehouse?: { code: string; name: string } | null;
+};
+
+export function serializeInventoryMovementEnriched(row: MovementWithRelations) {
+  const warehouse = row.destinationWarehouse ?? row.sourceWarehouse;
+  return {
+    ...serializeInventoryMovement(row),
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    sourceWarehouseCode: row.sourceWarehouse?.code ?? null,
+    sourceWarehouseName: row.sourceWarehouse?.name ?? null,
+    destinationWarehouseCode: row.destinationWarehouse?.code ?? null,
+    destinationWarehouseName: row.destinationWarehouse?.name ?? null,
+    warehouseCode: warehouse?.code ?? null,
+    warehouseName: warehouse?.name ?? null,
   };
 }
 

@@ -8,6 +8,7 @@ import { canAccessModule } from "@/src/lib/modulePermissions";
 import { InventoryDashboardTab } from "@/src/components/inventory/InventoryDashboardTab";
 import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab";
 import { InventoryWarehousesTab } from "@/src/components/inventory/InventoryWarehousesTab";
+import { InventoryMovementsTab } from "@/src/components/inventory/InventoryMovementsTab";
 import { normalizeInventoryDashboard } from "@/src/components/inventory/inventoryDashboardPresentation";
 import {
   getInventoryTabDef,
@@ -71,9 +72,11 @@ export function InventoryModule({ initialTab }: Props = {}) {
     setTab(next);
     if (next === "items") navigate("/inventory/items");
     else if (next === "warehouses") navigate("/inventory/warehouses");
+    else if (next === "movements") navigate("/inventory/movements");
     else if (
       location.pathname.includes("/inventory/items") ||
-      location.pathname.includes("/inventory/warehouses")
+      location.pathname.includes("/inventory/warehouses") ||
+      location.pathname.includes("/inventory/movements")
     ) {
       navigate("/inventory");
     }
@@ -131,6 +134,8 @@ export function InventoryModule({ initialTab }: Props = {}) {
         <InventoryItemsTab />
       ) : tab === "warehouses" ? (
         <InventoryWarehousesTab />
+      ) : tab === "movements" ? (
+        <InventoryMovementsTab />
       ) : activeTabDef?.comingSoon ? (
         <InventoryComingSoonTab
           title={activeTabDef.label}
