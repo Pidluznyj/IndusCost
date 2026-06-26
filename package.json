@@ -64,6 +64,8 @@
     "test:sales-orders-search": "tsx --test src/lib/salesOrderSmartSearch.test.ts src/lib/salesOrdersListSummary.test.ts",
     "test:sales-orders-metrics-engine": "tsx --test src/lib/salesOrderMetricsEngine.test.ts",
     "test:sales-orders-rules-engine": "tsx --test src/lib/salesOrderRulesEngine.test.ts src/lib/salesOrderRulesAdapter.test.ts src/lib/salesOrderRulesConsumptionAudit.test.ts",
+    "test:sales-margin-rules-engine": "tsx --test src/lib/salesMarginRulesEngine.test.ts src/lib/salesMarginRulesConsumptionAudit.test.ts",
+    "audit:sales-margin-rules-consumption": "tsx scripts/audit-sales-margin-rules-consumption.ts",
     "audit:sales-order-consumers-after-migration": "tsx scripts/audit-sales-order-consumers-after-migration.ts",
     "audit:sales-order-final-validation": "tsx scripts/audit-sales-order-final-validation.ts",
     "test:sales-order-final-validation": "tsx --test src/lib/salesOrderFinalValidation.test.ts src/lib/salesOrderMetricsEngine.test.ts src/lib/salesOrderManagementFulfillment.test.ts",

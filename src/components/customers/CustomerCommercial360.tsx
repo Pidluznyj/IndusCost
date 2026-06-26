@@ -27,6 +27,7 @@ import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
+import type { OfficialCommercial360MarginMetrics } from "@/src/lib/salesMarginRulesAdapter.js";
 import {
   COMMERCIAL_SALES_ORDER_BASIS_NOTE,
   computeCommercialPhase2FromSalesOrders,
@@ -114,6 +115,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const [officialOrderMetrics, setOfficialOrderMetrics] = useState<OfficialScopedOrderMetrics | null>(
     null
   );
+  const [officialMarginMetrics, setOfficialMarginMetrics] =
+    useState<OfficialCommercial360MarginMetrics | null>(null);
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       salesOrders: CommercialSalesOrder[];
       portfolioAbc: PortfolioAbcResult;
       officialOrderMetrics?: OfficialScopedOrderMetrics;
+      officialMarginMetrics?: OfficialCommercial360MarginMetrics;
     }>(`/api/customers/${customerId}/commercial-360`)
       .then((data) => {
         if (cancelled) return;
@@ -142,6 +146,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
         setSalesOrders(Array.isArray(data.salesOrders) ? data.salesOrders : []);
         setPortfolioAbc(data.portfolioAbc ?? null);
         setOfficialOrderMetrics(data.officialOrderMetrics ?? null);
+        setOfficialMarginMetrics(data.officialMarginMetrics ?? null);
       })
       .catch((e) => {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Erro ao carregar.");
@@ -244,11 +249,14 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const fo = filtered;
     const valid = fo.filter((o) => isCommercialMetricsSalesOrder(o.status));
     const useOfficial = filtersAreDefault && officialOrderMetrics != null;
+    const useOfficialMargin = filtersAreDefault && officialMarginMetrics != null;
     const totalNet = useOfficial
       ? officialOrderMetrics.soldAmount
       : valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
     const totalGross = valid.reduce((a, o) => a + safeCommercialNumber(o.totalGrossValue), 0);
-    const totalMargin = valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginValue), 0);
+    const totalMargin = useOfficialMargin
+      ? officialMarginMetrics.marginAmount
+      : valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginValue), 0);
     const count = fo.length;
     const validCount = useOfficial ? officialOrderMetrics.filteredOrders : valid.length;
     const invoicedCount = useOfficial
@@ -265,8 +273,11 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const maxDeal = nets.length ? Math.max(...nets) : 0;
     const totalItems = valid.reduce((a, o) => a + (o.totalItems || 0), 0);
     const avgItems = validCount > 0 ? totalItems / validCount : 0;
-    const marginAvg =
-      validCount > 0 ? valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginPerc), 0) / validCount : 0;
+    const marginAvg = useOfficialMargin
+      ? (officialMarginMetrics.marginPercent ?? 0)
+      : totalNet > 0
+        ? (totalMargin / totalNet) * 100
+        : 0;
 
     const validChrono = [...valid].sort(
       (a, b) => new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime()
@@ -311,8 +322,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       openNet,
       openCount: useOfficial ? officialOrderMetrics.openPortfolioCount : openOrders.length,
       usesOfficialOrderMetrics: useOfficial,
+      usesOfficialMarginMetrics: useOfficialMargin,
     };
-  }, [filtered, filtersAreDefault, officialOrderMetrics]);
+  }, [filtered, filtersAreDefault, officialOrderMetrics, officialMarginMetrics]);
 
   const mixRows = useMemo(() => {
     const m = new Map<

@@ -16,6 +16,7 @@ import {
   safeDivide,
   safeFiniteNumber,
 } from "@/src/lib/customerIntelligenceUtils.js";
+import { computeWeightedMarginPercent } from "@/src/lib/salesMarginRulesAdapter.js";
 
 const MONTH_NAMES_PT = [
   "Janeiro",
@@ -59,7 +60,6 @@ type YearAgg = {
   ordersCount: number;
   revenue: number;
   marginAmount: number;
-  marginPercSamples: number[];
 };
 
 type MonthAgg = {
@@ -68,16 +68,7 @@ type MonthAgg = {
   ordersCount: number;
   revenue: number;
   marginAmount: number;
-  marginPercSamples: number[];
 };
-
-function averageMarginPercent(samples: number[]): number | null {
-  const valid = samples.filter((v) => Number.isFinite(v));
-  if (valid.length === 0) return null;
-  const allZero = valid.every((v) => v === 0);
-  if (allZero) return null;
-  return roundMoney(valid.reduce((a, b) => a + b, 0) / valid.length);
-}
 
 function finalizeYearBucket(
   agg: YearAgg,
@@ -90,7 +81,7 @@ function finalizeYearBucket(
     revenue: roundMoney(agg.revenue) ?? 0,
     averageTicket: safeDivide(agg.revenue, agg.ordersCount),
     marginAmount: roundMoney(agg.marginAmount),
-    marginPercent: averageMarginPercent(agg.marginPercSamples),
+    marginPercent: computeWeightedMarginPercent(agg.marginAmount, agg.revenue),
     growthPercentVsPreviousYear: growth,
   };
 }
@@ -104,7 +95,7 @@ function finalizeMonthBucket(agg: MonthAgg): CustomerIntelligencePurchaseHistory
     revenue: roundMoney(agg.revenue) ?? 0,
     averageTicket: safeDivide(agg.revenue, agg.ordersCount),
     marginAmount: roundMoney(agg.marginAmount),
-    marginPercent: averageMarginPercent(agg.marginPercSamples),
+    marginPercent: computeWeightedMarginPercent(agg.marginAmount, agg.revenue),
   };
 }
 
@@ -200,19 +191,16 @@ export function buildCustomerIntelligenceHistory(
     const month = order.issueDate.getMonth() + 1;
     const net = safeCommercialNumber(order.totalNetValue);
     const marginVal = safeFiniteNumber(order.totalMarginValue) ?? 0;
-    const marginPerc = safeFiniteNumber(order.totalMarginPerc);
 
     const yearBucket = byYearMap.get(year) ?? {
       year,
       ordersCount: 0,
       revenue: 0,
       marginAmount: 0,
-      marginPercSamples: [],
     };
     yearBucket.ordersCount += 1;
     yearBucket.revenue += net;
     yearBucket.marginAmount += marginVal;
-    if (marginPerc != null) yearBucket.marginPercSamples.push(marginPerc);
     byYearMap.set(year, yearBucket);
 
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;
@@ -222,12 +210,10 @@ export function buildCustomerIntelligenceHistory(
       ordersCount: 0,
       revenue: 0,
       marginAmount: 0,
-      marginPercSamples: [],
     };
     monthBucket.ordersCount += 1;
     monthBucket.revenue += net;
     monthBucket.marginAmount += marginVal;
-    if (marginPerc != null) monthBucket.marginPercSamples.push(marginPerc);
     byMonthMap.set(monthKey, monthBucket);
 
     const cal = calendarMonthAgg.get(month) ?? {

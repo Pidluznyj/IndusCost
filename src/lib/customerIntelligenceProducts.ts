@@ -21,6 +21,7 @@ import {
   safeFiniteNumber,
   toIsoDateOnly,
 } from "@/src/lib/customerIntelligenceUtils.js";
+import { computeWeightedMarginPercent } from "@/src/lib/salesMarginRulesAdapter.js";
 
 /** Mix com até N produtos distintos para sinalizar baixa diversificação. */
 export const CUSTOMER_INTELLIGENCE_LOW_MIX_MAX_PRODUCTS = 3;
@@ -42,20 +43,12 @@ type ProductAgg = {
   quantity: number;
   revenue: number;
   marginAmount: number;
-  marginPercSamples: number[];
   orderIds: Set<string>;
   purchasePeriods: Set<string>;
   firstPurchaseDate: Date | null;
   lastPurchaseDate: Date | null;
   hasItemMargin: boolean;
 };
-
-function averageMarginPercent(samples: number[]): number | null {
-  const valid = samples.filter((v) => Number.isFinite(v));
-  if (valid.length === 0) return null;
-  if (valid.every((v) => v === 0)) return null;
-  return roundMoney(valid.reduce((a, b) => a + b, 0) / valid.length);
-}
 
 function resolveProductConfidence(
   ordersCount: number,
@@ -87,7 +80,9 @@ function finalizeProductRow(
         ? roundMoney(agg.marginAmount)
         : null;
 
-  const marginPercent = agg.hasItemMargin ? averageMarginPercent(agg.marginPercSamples) : null;
+  const marginPercent = agg.hasItemMargin
+    ? computeWeightedMarginPercent(agg.marginAmount, agg.revenue)
+    : null;
 
   const daysSinceLastPurchase =
     agg.lastPurchaseDate != null ? daysBetweenDates(agg.lastPurchaseDate, now) : null;
@@ -130,8 +125,7 @@ function aggregateProducts(
       const qty = safeCommercialNumber(item.quantity);
       const rev = safeCommercialNumber(item.totalNetValue);
       const itemMargin = safeFiniteNumber(item.marginValue);
-      const itemMarginPerc = safeFiniteNumber(item.marginPerc);
-      const hasItemMargin = itemMargin != null || itemMarginPerc != null;
+      const hasItemMargin = itemMargin != null;
 
       if (rev > 0 && !hasItemMargin) {
         missingItemMargin = true;
@@ -142,7 +136,6 @@ function aggregateProducts(
         prev.quantity += qty;
         prev.revenue += rev;
         if (itemMargin != null) prev.marginAmount += itemMargin;
-        if (itemMarginPerc != null) prev.marginPercSamples.push(itemMarginPerc);
         prev.hasItemMargin = prev.hasItemMargin || hasItemMargin;
         prev.orderIds.add(order.id);
         prev.purchasePeriods.add(periodKey);
@@ -161,7 +154,6 @@ function aggregateProducts(
           quantity: qty,
           revenue: rev,
           marginAmount: itemMargin ?? 0,
-          marginPercSamples: itemMarginPerc != null ? [itemMarginPerc] : [],
           orderIds: new Set([order.id]),
           purchasePeriods: new Set([periodKey]),
           firstPurchaseDate: order.issueDate,

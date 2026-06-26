@@ -5,27 +5,25 @@ import type { PrismaClient } from "@prisma/client";
 import {
   loadProductTaxPercentIndex,
   resolveDefaultSalesTaxPercent,
-  resolveItemSalesTaxPercent,
 } from "./averageSalesTaxEngine.js";
 import {
   buildSalesOrderMarginIndicatorWhere,
   parseSalesOrderMarginIndicatorFilters,
 } from "./salesOrderMarginIndicators.server.js";
 import {
-  calculateSalesOrderMarginsForOrders,
+  buildOfficialSalesMarginRulesResult,
+  buildOfficialSalesOrderResultMarginPayload,
+  mapMarginContextToRulesOrders,
+} from "./salesMarginRulesAdapter.js";
+import {
+  buildSalesOrderMarginContext,
   SALES_ORDER_ITEM_MARGIN_SELECT,
   type SalesOrderForMargin,
 } from "./salesOrderMarginService.server.js";
-import {
-  aggregateSalesOrderResultTotals,
-  buildSalesOrderResultMonthlyRows,
-  computeSalesOrderResultItem,
-} from "./salesOrderResultMath.js";
 import { buildSalesOrderResultRealizedVsProjected } from "./salesOrderResultProjection.js";
 import {
   buildOfficialSalesOrderResultSalesBundle,
   mapPrismaOrderToSalesOrderRulesInput,
-  OFFICIAL_SO_RULES_SOURCE,
 } from "./salesOrderRulesAdapter.js";
 import type {
   SalesOrderResultDashboardPayload,
@@ -132,9 +130,10 @@ export async function buildSalesOrderResultDashboard(
     productId: filters.productId,
   });
 
-  const marginByOrder = await calculateSalesOrderMarginsForOrders(
-    db,
-    orders as SalesOrderForMargin[]
+  const marginContext = await buildSalesOrderMarginContext(db, orders as SalesOrderForMargin[]);
+  const marginRulesOrders = mapMarginContextToRulesOrders(
+    orders as SalesOrderForMargin[],
+    marginContext.byOrderId
   );
 
   const productIds = orders.flatMap((order) =>
@@ -145,73 +144,32 @@ export async function buildSalesOrderResultDashboard(
     resolveDefaultSalesTaxPercent(db),
   ]);
 
-  const computedItems = [];
-
-  for (const order of orders) {
-    if (!order.issueDate) continue;
-    const issueMonth = order.issueDate.getMonth() + 1;
-    if (filters.month != null && issueMonth !== filters.month) continue;
-    if (order.issueDate.getFullYear() !== filters.year) continue;
-
-    const marginResult = marginByOrder.get(order.id);
-    if (!marginResult) continue;
-
-    for (const itemResult of marginResult.itemResults) {
-      if (itemResult.status === "ITEM_CANCELADO") continue;
-      if (filters.productId && itemResult.productId !== filters.productId) continue;
-      if (itemResult.netRevenue <= 0) continue;
-
-      const taxPercent = resolveItemSalesTaxPercent({
-        productId: itemResult.productId ?? null,
-        productTaxIndex,
-        defaultTaxPercent: defaultTax.percent,
-      });
-
-      computedItems.push(
-        computeSalesOrderResultItem({
-          salesOrderItemId: itemResult.salesOrderItemId ?? "",
-          orderId: order.id,
-          issueMonth,
-          productId: itemResult.productId ?? null,
-          quantity: itemResult.quantity,
-          marginStatus: itemResult.status,
-          salesAmount: itemResult.netRevenue,
-          costAmount: itemResult.totalCost ?? 0,
-          taxPercent,
-        })
-      );
-    }
-  }
-
-  let weightedTaxNumerator = 0;
-  let weightedTaxDenominator = 0;
-  for (const item of computedItems) {
-    weightedTaxNumerator += item.taxAmount;
-    weightedTaxDenominator += item.salesAmount;
-  }
-  const effectiveTaxPercent =
-    weightedTaxDenominator > 0
-      ? Math.round(((weightedTaxNumerator / weightedTaxDenominator) * 100 + Number.EPSILON) * 100) / 100
-      : defaultTax.percent;
-
-  const marginTotals = aggregateSalesOrderResultTotals(computedItems, {
-    taxPercentApplied: effectiveTaxPercent,
-    taxSourceLabel: defaultTax.label,
+  const rules = buildOfficialSalesMarginRulesResult(marginRulesOrders, {
+    taxMode: "deductFromGross",
+    taxContext: {
+      productTaxIndex,
+      defaultTaxPercent: defaultTax.percent,
+      defaultTaxLabel: defaultTax.label,
+    },
+    year: filters.year,
+    month: filters.month,
+    referenceDate,
+    filters: {
+      year: filters.year,
+      month: filters.month ?? null,
+      customerId: filters.customerId ?? null,
+      productId: filters.productId ?? null,
+      sellerId: filters.sellerId ?? null,
+      companyId: filters.companyId ?? null,
+    },
   });
 
-  const totals = filters.productId
-    ? {
-        ...marginTotals,
-        ordersCount: salesBundle.metrics.filteredOrders,
-      }
-    : {
-        ...marginTotals,
-        salesAmount: salesBundle.metrics.soldAmount,
-        ordersCount: salesBundle.metrics.filteredOrders,
-        itemsCount: salesBundle.metrics.totalItems,
-      };
+  const marginPayload = buildOfficialSalesOrderResultMarginPayload({
+    rules,
+    salesBundle,
+    filters,
+  });
 
-  const monthlyMargin = buildSalesOrderResultMonthlyRows(computedItems, filters.year);
   const monthlySales = salesBundle.monthlyTimeline.map((point) => ({
     month: point.month,
     amount: point.soldAmount,
@@ -228,21 +186,11 @@ export async function buildSalesOrderResultDashboard(
 
   return {
     filters,
-    totals,
-    monthlyMargin,
+    totals: marginPayload.totals,
+    monthlyMargin: marginPayload.monthlyMargin,
     realizedVsProjected,
     projection,
-    warnings: {
-      missingCostCount: totals.missingCostCount,
-      missingProductCount: totals.missingProductCount,
-      negativeMarginCount: totals.negativeMarginCount,
-    },
-    source: {
-      sales: OFFICIAL_SO_RULES_SOURCE,
-      margin: "official-sales-order-margin-engine",
-      cost: "official-product-cost-engine",
-      tax: "official-tax-rule-engine",
-      projection: OFFICIAL_SO_RULES_SOURCE,
-    },
+    warnings: marginPayload.warnings,
+    source: marginPayload.source,
   };
 }

@@ -90,12 +90,17 @@ describe("salesOrderManagementMargin", () => {
 describe("sales order management margin UI wiring", () => {
   it("Gestão renderiza colunas e seção econômica separada do status logístico", () => {
     const page = readFileSync(join(ROOT, "components/sales/SalesOrderManagementPage.tsx"), "utf8");
-    assert.match(page, /sales-order-management-economic-summary/);
+    const secondary = readFileSync(
+      join(ROOT, "components/sales/SalesOrderManagementKpiSecondaryPanel.tsx"),
+      "utf8"
+    );
+    assert.match(page, /marginEconomics/);
+    assert.match(secondary, /sales-order-management-economic-summary/);
     assert.match(page, /sales-order-logistic-status/);
     assert.match(page, /sales-order-management-margin-status/);
     assert.match(page, /Status logístico/);
     assert.match(page, /Status margem/);
-    assert.match(page, /Análise econômica/);
+    assert.match(secondary, /Análise econômica/);
     assert.match(page, /data-testid="sales-order-logistic-status"/);
     assert.match(page, /data-testid="sales-order-management-margin-status"/);
   });

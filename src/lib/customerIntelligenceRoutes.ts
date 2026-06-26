@@ -11,6 +11,7 @@ import {
   salesOrderHasInvoicing,
   salesOrderMatchesCustomer,
 } from "@/src/lib/customerCommercialSalesOrderView.js";
+import { enrichCustomerIntelligenceOrdersWithOfficialMargin } from "@/src/lib/salesMarginRulesAdapter.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "@/src/lib/customerIntelligencePermissions.js";
 
@@ -136,6 +137,7 @@ export async function loadCustomerIntelligenceData(customerId: string) {
       totalMarginPerc: order.totalMarginPerc,
       hasInvoicing: salesOrderHasInvoicing(order.nomusRawResponse),
       items: order.items.map((item) => ({
+        id: item.id,
         productId: item.productId,
         quantity: item.quantity,
         totalNetValue: item.totalNetValue,
@@ -179,9 +181,14 @@ export function registerCustomerIntelligenceRoutes(app: express.Express, auth: A
         return res.status(404).json({ error: "Cliente não encontrado." });
       }
 
+      const ordersWithOfficialMargin = await enrichCustomerIntelligenceOrdersWithOfficialMargin(
+        prisma,
+        loaded.orders
+      );
+
       const payload = buildCustomerIntelligenceReport({
         customer: loaded.customer,
-        orders: loaded.orders,
+        orders: ordersWithOfficialMargin,
         activities: loaded.activities,
         crmProfile: loaded.crmProfile,
         arRows: loaded.arRows,

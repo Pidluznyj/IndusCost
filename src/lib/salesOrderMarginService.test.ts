@@ -444,7 +444,7 @@ describe("salesOrderMarginService — rotas e segurança", () => {
       "utf8"
     );
     assert.match(server, /attachMarginToSalesOrderDetail/);
-    assert.match(mgmt, /calculateSalesOrderMarginsForOrders/);
+    assert.match(mgmt, /calculateOfficialSalesOrderMarginsForOrders|calculateSalesOrderMarginsForOrders/);
     assert.match(finance, /marginPortfolio/);
   });
 });

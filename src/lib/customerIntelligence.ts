@@ -50,6 +50,7 @@ import {
   resolveOfficialCustomerIntelligenceOrderMetrics,
   resolveOfficialScopedOrderMetrics,
 } from "@/src/lib/salesOrderRulesAdapter.js";
+import { computeWeightedMarginPercent } from "@/src/lib/salesMarginRulesAdapter.js";
 import type {
   CustomerIntelligenceBuildInput,
   CustomerIntelligenceOrderInput,
@@ -273,30 +274,27 @@ export function buildCustomerIntelligenceReport(
   const openPortfolioAmount = filteredOfficialMetrics.openPortfolioAmount;
   const averageTicket = filteredOfficialMetrics.averageTicket || safeDivide(revenue, validOrdersCount);
 
-  const marginPercSamples = filteredMetricsOrders
-    .map((o) => safeFiniteNumber(o.totalMarginPerc))
-    .filter((v): v is number => v != null);
-  const marginValueSamples = filteredMetricsOrders
-    .map((o) => safeFiniteNumber(o.totalMarginValue))
-    .filter((v): v is number => v != null);
 
   let averageMarginPercent: number | null = null;
   let totalMarginAmount: number | null = null;
 
-  if (marginPercSamples.length > 0 && marginPercSamples.some((v) => v !== 0)) {
-    averageMarginPercent = roundMoney(
-      marginPercSamples.reduce((a, b) => a + b, 0) / marginPercSamples.length
-    );
-  } else if (validOrdersCount > 0) {
-    warnings.push("Margem percentual média indisponível ou não confiável nos pedidos.");
-    averageMarginPercent = null;
-  }
-
+  const marginValueSamples = filteredMetricsOrders
+    .map((o) => safeFiniteNumber(o.totalMarginValue))
+    .filter((v): v is number => v != null);
+  const totalMarginRevenue = filteredMetricsOrders.reduce(
+    (sum, order) => sum + safeCommercialNumber(order.totalNetValue),
+    0
+  );
   if (marginValueSamples.length > 0) {
     totalMarginAmount = roundMoney(marginValueSamples.reduce((a, b) => a + b, 0));
+    averageMarginPercent = computeWeightedMarginPercent(
+      totalMarginAmount ?? 0,
+      totalMarginRevenue
+    );
   } else if (validOrdersCount > 0) {
     warnings.push("Margem total indisponível nos pedidos.");
     totalMarginAmount = null;
+    averageMarginPercent = null;
   }
 
 

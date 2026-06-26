@@ -302,8 +302,13 @@ export async function calculateSalesOrderMarginsForOrders(
   orders: SalesOrderForMargin[],
   options?: Parameters<typeof buildSalesOrderMarginContext>[2]
 ): Promise<Map<string, SalesOrderMarginOrderResult>> {
-  const context = await buildSalesOrderMarginContext(prisma, orders, options);
-  return context.byOrderId;
+  const { calculateOfficialSalesOrderMarginsForOrders } = await import(
+    "./salesMarginRulesAdapter.js"
+  );
+  return calculateOfficialSalesOrderMarginsForOrders(prisma, orders, {
+    ...options,
+    buildInput: { taxMode: "none" },
+  });
 }
 
 export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(

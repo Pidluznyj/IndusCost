@@ -500,6 +500,7 @@ export type CustomerIntelligenceOrderInput = {
   totalMarginPerc: unknown;
   hasInvoicing: boolean;
   items: Array<{
+    id?: string;
     productId: string;
     quantity: unknown;
     totalNetValue: unknown;
