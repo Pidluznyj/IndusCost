@@ -7,6 +7,7 @@ import {
   formatFinanceDateTime,
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
+import { formatDailyRadarPayableScheduledDisplay } from "@/src/lib/financeCashFlowDailyRadar";
 import { FINANCE_CASH_FLOW_DAILY_RADAR_EXPORT_TITLE } from "@/src/lib/financeCashFlowDailyRadarExportXlsx";
 import type { FinanceCashFlowDailyRadarExportPayload } from "@/src/lib/financeCashFlowDailyRadarExport";
 import { dailyRadarDayCardLabel } from "@/src/lib/financeCashFlowDailyRadar";
@@ -154,34 +155,38 @@ export function FinanceCashFlowDailyRadarPrintDocument({
               Nenhuma conta a pagar encontrada para este filtro.
             </p>
           ) : (
-            <table className="finance-cash-flow-daily-radar-print-data-table">
+            <table className="finance-cash-flow-daily-radar-print-data-table finance-cash-flow-daily-radar-print-payables-table">
               <thead>
                 <tr>
-                  <th>Fornecedor</th>
-                  <th>Documento</th>
+                  <th className="col-supplier">Fornecedor</th>
+                  <th className="col-company">Empresa</th>
+                  <th className="col-description">Descrição</th>
+                  <th className="col-document">Documento</th>
                   <th>Vencimento</th>
                   <th className="col-money">Valor</th>
-                  <th>Status</th>
-                  <th>Forma Pag.</th>
+                  <th>Agendado</th>
                 </tr>
               </thead>
               <tbody>
                 {payload.payables.rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{displayFinanceText(row.supplier)}</td>
-                    <td>{displayFinanceText(row.document)}</td>
+                    <td className="col-supplier">{displayFinanceText(row.supplier)}</td>
+                    <td className="col-company">{displayFinanceText(row.company)}</td>
+                    <td className="col-description" title={row.description ?? undefined}>
+                      {displayFinanceText(row.description)}
+                    </td>
+                    <td className="col-document">{displayFinanceText(row.document)}</td>
                     <td>{formatFinanceDate(row.operationalDate)}</td>
                     <td className="col-money">{formatFinanceCurrency(row.amount)}</td>
-                    <td>{formatFinanceCalculatedStatus(row.status)}</td>
-                    <td>{displayFinanceText(row.paymentMethod)}</td>
+                    <td>{formatDailyRadarPayableScheduledDisplay(row)}</td>
                   </tr>
                 ))}
                 <tr className="finance-cash-flow-daily-radar-print-total-row">
-                  <td colSpan={3}>
+                  <td colSpan={5}>
                     Total ({formatFinanceInteger(payload.payables.summary.count)} título(s))
                   </td>
                   <td className="col-money">{formatFinanceCurrency(payload.payables.summary.total)}</td>
-                  <td colSpan={2} />
+                  <td />
                 </tr>
               </tbody>
             </table>

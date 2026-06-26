@@ -47,10 +47,10 @@ const PAYABLE_COLUMNS = [
   "Documento",
   "Vencimento",
   "Valor",
-  "Status",
   "Agendado",
-  "Forma de pagamento",
 ] as const;
+
+export { PAYABLE_COLUMNS as DAILY_RADAR_PAYABLE_EXPORT_COLUMNS };
 
 const RECEIVABLE_COLUMNS = [
   "Cliente",
@@ -81,6 +81,7 @@ function applyGridSheetFormatting(
 }
 
 function mapPayableRow(row: FinanceCashFlowDailyRadarExportPayload["payables"]["rows"][number]) {
+  const scheduledKey = row.dataAgendada ?? row.scheduleDate;
   return {
     Fornecedor: row.supplier ?? "",
     Empresa: row.company ?? "",
@@ -88,9 +89,7 @@ function mapPayableRow(row: FinanceCashFlowDailyRadarExportPayload["payables"]["
     Documento: row.document ?? "",
     Vencimento: formatDateBr(row.operationalDate),
     Valor: row.amount,
-    Status: formatFinanceCalculatedStatus(row.status),
-    Agendado: row.rescheduled ? "Sim" : "—",
-    "Forma de pagamento": row.paymentMethod ?? "",
+    Agendado: scheduledKey ? formatDateBr(scheduledKey) : "—",
   };
 }
 
@@ -180,21 +179,17 @@ export function buildFinanceCashFlowDailyRadarExportWorkbook(
     Documento: "",
     Vencimento: "",
     Valor: payload.payables.summary.total,
-    Status: "",
     Agendado: "",
-    "Forma de pagamento": "",
   });
   const payableSheet = XLSX.utils.json_to_sheet(payableObjects, { header: [...PAYABLE_COLUMNS] });
   payableSheet["!cols"] = [
     { wch: 22 },
-    { wch: 16 },
-    { wch: 28 },
+    { wch: 14 },
+    { wch: 42 },
     { wch: 14 },
     { wch: 12 },
     { wch: 14 },
     { wch: 12 },
-    { wch: 10 },
-    { wch: 16 },
   ];
   const payableHeaderRow = 1;
   applyGridSheetFormatting(

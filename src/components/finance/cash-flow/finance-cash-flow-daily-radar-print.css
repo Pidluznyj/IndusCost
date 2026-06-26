@@ -135,6 +135,23 @@
     letter-spacing: 0.03em;
   }
 
+  #cash-flow-daily-radar-print-root .finance-cash-flow-daily-radar-print-payables-table .col-supplier {
+    width: 16%;
+  }
+
+  #cash-flow-daily-radar-print-root .finance-cash-flow-daily-radar-print-payables-table .col-company {
+    width: 9%;
+  }
+
+  #cash-flow-daily-radar-print-root .finance-cash-flow-daily-radar-print-payables-table .col-description {
+    width: 28%;
+    word-break: break-word;
+  }
+
+  #cash-flow-daily-radar-print-root .finance-cash-flow-daily-radar-print-payables-table .col-document {
+    width: 10%;
+  }
+
   #cash-flow-daily-radar-print-root .finance-cash-flow-daily-radar-print-data-table thead {
     display: table-header-group;
   }

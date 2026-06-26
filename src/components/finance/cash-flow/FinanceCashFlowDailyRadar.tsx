@@ -10,6 +10,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   buildDailyRadarQuery,
   dailyRadarDayCardLabel,
+  formatDailyRadarPayableScheduledDisplay,
   toggleSortState,
   type DailyRadarDetailGroup,
   type DailyRadarPayableRow,
@@ -28,6 +29,7 @@ import {
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { FinanceCashFlowDailyRadarExportButtons } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadarExportButtons";
+import "./finance-cash-flow-daily-radar-payables-grid.css";
 
 type PayableSortKey = "supplier" | "company" | "amount" | "status" | "operationalDate";
 type ReceivableSortKey = "customer" | "company" | "amount" | "status" | "operationalDate";
@@ -466,14 +468,27 @@ function PayablesGrid({
         </p>
       ) : (
         <FinanceCostCenterGridTableShell
+          tableClassName="cash-flow-radar-payables-grid min-w-[960px]"
           head={
             <tr>
-              <FinanceCostCenterSortableTh label="Fornecedor" sortKey="supplier" sort={sort} onSort={onSort} />
-              <FinanceCostCenterSortableTh label="Empresa" sortKey="company" sort={sort} onSort={onSort} />
-              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <FinanceCostCenterSortableTh
+                label="Fornecedor"
+                sortKey="supplier"
+                sort={sort}
+                onSort={onSort}
+                className="cash-flow-radar-payables-col-supplier"
+              />
+              <FinanceCostCenterSortableTh
+                label="Empresa"
+                sortKey="company"
+                sort={sort}
+                onSort={onSort}
+                className="cash-flow-radar-payables-col-company"
+              />
+              <th className="cash-flow-radar-payables-col-description px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 Descrição
               </th>
-              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <th className="cash-flow-radar-payables-col-document px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 Documento
               </th>
               <FinanceCostCenterSortableTh
@@ -481,14 +496,18 @@ function PayablesGrid({
                 sortKey="operationalDate"
                 sort={sort}
                 onSort={onSort}
+                className="cash-flow-radar-payables-col-due"
               />
-              <FinanceCostCenterSortableTh label="Valor" sortKey="amount" sort={sort} onSort={onSort} align="right" />
-              <FinanceCostCenterSortableTh label="Status" sortKey="status" sort={sort} onSort={onSort} />
-              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <FinanceCostCenterSortableTh
+                label="Valor"
+                sortKey="amount"
+                sort={sort}
+                onSort={onSort}
+                align="right"
+                className="cash-flow-radar-payables-col-value"
+              />
+              <th className="cash-flow-radar-payables-col-scheduled px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 Agendado
-              </th>
-              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                Forma pag.
               </th>
             </tr>
           }
@@ -504,25 +523,48 @@ function PayablesGrid({
             ) : null
           }
         >
-          {detail.rows.map((row) => (
-            <tr key={row.id} className="border-t border-border text-xs">
-              <td className="px-3 py-2 max-w-[140px] truncate">{displayFinanceText(row.supplier)}</td>
-              <td className="px-3 py-2 max-w-[120px] truncate">{displayFinanceText(row.company)}</td>
-              <td className="px-3 py-2 max-w-[160px] truncate">{displayFinanceText(row.description)}</td>
-              <td className="px-3 py-2 whitespace-nowrap">{displayFinanceText(row.document)}</td>
-              <td className="px-3 py-2 whitespace-nowrap">{formatFinanceDate(row.operationalDate)}</td>
-              <td className="px-3 py-2 text-right font-medium">{formatFinanceCurrency(row.amount)}</td>
-              <td className="px-3 py-2">{displayFinanceText(row.status)}</td>
-              <td className="px-3 py-2">{row.rescheduled ? "Sim" : "—"}</td>
-              <td className="px-3 py-2">{displayFinanceText(row.paymentMethod)}</td>
-            </tr>
-          ))}
+          {detail.rows.map((row) => {
+            const descriptionText = displayFinanceText(row.description);
+            return (
+              <tr key={row.id} className="border-t border-border text-xs">
+                <td className="cash-flow-radar-payables-col-supplier px-3 py-2">
+                  <span className="block truncate" title={row.supplier ?? undefined}>
+                    {displayFinanceText(row.supplier)}
+                  </span>
+                </td>
+                <td className="cash-flow-radar-payables-col-company px-3 py-2">
+                  <span className="block truncate" title={row.company ?? undefined}>
+                    {displayFinanceText(row.company)}
+                  </span>
+                </td>
+                <td className="cash-flow-radar-payables-col-description px-3 py-2">
+                  <span className="block truncate" title={row.description ?? undefined}>
+                    {descriptionText}
+                  </span>
+                </td>
+                <td className="cash-flow-radar-payables-col-document px-3 py-2 whitespace-nowrap">
+                  {displayFinanceText(row.document)}
+                </td>
+                <td className="cash-flow-radar-payables-col-due px-3 py-2 whitespace-nowrap">
+                  {formatFinanceDate(row.operationalDate)}
+                </td>
+                <td className="cash-flow-radar-payables-col-value px-3 py-2 text-right font-medium tabular-nums">
+                  {formatFinanceCurrency(row.amount)}
+                </td>
+                <td className="cash-flow-radar-payables-col-scheduled px-3 py-2 whitespace-nowrap">
+                  {formatDailyRadarPayableScheduledDisplay(row)}
+                </td>
+              </tr>
+            );
+          })}
           <tr className="border-t-2 border-border bg-[#F9FAFB] text-xs font-bold text-[#111827]">
             <td className="px-3 py-2" colSpan={5}>
               Total ({formatFinanceInteger(detail.summary.count)} título(s))
             </td>
-            <td className="px-3 py-2 text-right">{formatFinanceCurrency(detail.summary.total)}</td>
-            <td className="px-3 py-2" colSpan={3} />
+            <td className="cash-flow-radar-payables-col-value px-3 py-2 text-right tabular-nums">
+              {formatFinanceCurrency(detail.summary.total)}
+            </td>
+            <td className="px-3 py-2" />
           </tr>
         </FinanceCostCenterGridTableShell>
       )}

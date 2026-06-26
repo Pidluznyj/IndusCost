@@ -7,6 +7,7 @@ import { classifyFinanceApTitle } from "./financeAccountsPayableDashboard.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   civilDateToLocalDate,
+  formatCivilDate,
   startOfCivilDate,
   toCivilDateKey,
 } from "./financeCivilDate.js";
@@ -434,6 +435,27 @@ function buildDaysForRange(
   }
 
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export const DAILY_RADAR_PAYABLE_GRID_COLUMNS = [
+  "Fornecedor",
+  "Empresa",
+  "Descrição",
+  "Documento",
+  "Vencimento",
+  "Valor",
+  "Agendado",
+] as const;
+
+export type DailyRadarPayableGridColumn = (typeof DAILY_RADAR_PAYABLE_GRID_COLUMNS)[number];
+
+/** Exibição da coluna Agendado — apenas apresentação. */
+export function formatDailyRadarPayableScheduledDisplay(
+  row: Pick<DailyRadarPayableRow, "dataAgendada" | "scheduleDate">
+): string {
+  const key = row.dataAgendada ?? row.scheduleDate;
+  if (!key) return "—";
+  return formatCivilDate(key);
 }
 
 function normalizeSearch(term: string): string {
