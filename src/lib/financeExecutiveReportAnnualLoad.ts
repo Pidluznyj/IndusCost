@@ -5,7 +5,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { buildFinanceApPrismaWhere } from "./financeAccountsPayableDashboard.js";
 import { buildFinanceArPrismaWhere } from "./financeAccountsReceivableDashboard.js";
-import { createAnnualComparisonBaseFilters } from "./financeCashFlowAnnualComparison.js";
+import {
+  createAnnualComparisonBaseFilters,
+} from "./financeCashFlowAnnualComparison.js";
 import {
   FINANCE_CASH_FLOW_AP_SELECT,
   FINANCE_CASH_FLOW_AR_SELECT,
@@ -13,15 +15,17 @@ import {
   mapPrismaRowToFinanceCashFlowArRow,
   toCashFlowPortfolioApFilters,
   toCashFlowPortfolioArFilters,
+  type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 
 export async function loadAnnualComparisonPortfolioRows(
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable">,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  cashFlowFilters: FinanceCashFlowDashboardFilters = createAnnualComparisonBaseFilters()
 ) {
-  const filters = createAnnualComparisonBaseFilters();
+  const filters = cashFlowFilters;
   const [arSyncCutoff, apSyncCutoff] = await Promise.all([
     resolveNomusArReportSyncCutoffFromPrisma(db),
     resolveNomusApReportSyncCutoffFromPrisma(db),

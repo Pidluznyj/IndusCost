@@ -106,6 +106,35 @@ export function buildExecutiveReportArKpis(input: {
   const receivedYtdCurrent = sumAnnualMetricYtd(currentYear, month, (m) => m.receivedAmount);
   const receivedYtdPrevious = sumAnnualMetricYtd(previousYear, month, (m) => m.receivedAmount);
 
+  return buildExecutiveReportArKpisFromOfficial({
+    receivedMonthCurrent,
+    receivedMonthPrevious,
+    receivedYtdCurrent,
+    receivedYtdPrevious,
+    cards,
+    futureOpenAmount: currentYear.totals.receivableOpenAmount,
+  });
+}
+
+export type ExecutiveReportArSectionKpis = ReturnType<typeof buildExecutiveReportArKpisFromOfficial>;
+
+export function buildExecutiveReportArKpisFromOfficial(input: {
+  receivedMonthCurrent: number;
+  receivedMonthPrevious: number;
+  receivedYtdCurrent: number;
+  receivedYtdPrevious: number;
+  cards: FinanceArDashboardCards;
+  futureOpenAmount?: number;
+}) {
+  const {
+    receivedMonthCurrent,
+    receivedMonthPrevious,
+    receivedYtdCurrent,
+    receivedYtdPrevious,
+    cards,
+    futureOpenAmount,
+  } = input;
+
   return {
     receivedMonthCurrent,
     receivedMonthPrevious,
@@ -123,7 +152,7 @@ export function buildExecutiveReportArKpis(input: {
     ),
     openAmount: cards.totalOpenAmount,
     overdueAmount: cards.overdueAmount,
-    futureOpenAmount: currentYear.totals.receivableOpenAmount,
+    futureOpenAmount: futureOpenAmount ?? cards.upcomingAmount,
   };
 }
 
@@ -139,6 +168,35 @@ export function buildExecutiveReportApKpis(input: {
   const paidYtdCurrent = sumAnnualMetricYtd(currentYear, month, (m) => m.paidAmount);
   const paidYtdPrevious = sumAnnualMetricYtd(previousYear, month, (m) => m.paidAmount);
 
+  return buildExecutiveReportApKpisFromOfficial({
+    paidMonthCurrent,
+    paidMonthPrevious,
+    paidYtdCurrent,
+    paidYtdPrevious,
+    cards,
+    futureOpenAmount: currentYear.totals.payableOpenAmount,
+  });
+}
+
+export type ExecutiveReportApSectionKpis = ReturnType<typeof buildExecutiveReportApKpisFromOfficial>;
+
+export function buildExecutiveReportApKpisFromOfficial(input: {
+  paidMonthCurrent: number;
+  paidMonthPrevious: number;
+  paidYtdCurrent: number;
+  paidYtdPrevious: number;
+  cards: FinanceApDashboardCards;
+  futureOpenAmount?: number;
+}) {
+  const {
+    paidMonthCurrent,
+    paidMonthPrevious,
+    paidYtdCurrent,
+    paidYtdPrevious,
+    cards,
+    futureOpenAmount,
+  } = input;
+
   return {
     paidMonthCurrent,
     paidMonthPrevious,
@@ -148,7 +206,7 @@ export function buildExecutiveReportApKpis(input: {
     paidYtdVariation: computeExecutiveReportVariation(paidYtdCurrent, paidYtdPrevious, false),
     openAmount: cards.totalOpenAmount,
     overdueAmount: cards.overdueAmount,
-    futureOpenAmount: currentYear.totals.payableOpenAmount,
+    futureOpenAmount: futureOpenAmount ?? cards.upcomingAmount,
   };
 }
 

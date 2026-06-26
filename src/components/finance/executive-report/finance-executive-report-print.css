@@ -358,6 +358,27 @@
     grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   }
 
+  .finance-executive-kpi-grid.executive-kpi-grid--compact {
+    gap: 1.5mm !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
+    max-height: 22mm !important;
+    min-height: 18mm !important;
+    padding: 1.5mm 2mm !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .executive-kpi-card-value,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .commercial-kpi-value,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .indus-kpi-value {
+    font-size: 11pt !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-hint,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact [class*="financeBiKpiHint"] {
+    display: none !important;
+  }
+
   .finance-executive-kpi-card,
   .finance-executive-kpi-card.commercial-kpi-card {
     break-inside: avoid;
@@ -423,9 +444,9 @@
   .executive-chart-body {
     flex: 0 0 auto !important;
     width: 100% !important;
-    height: 105mm !important;
-    min-height: 105mm !important;
-    max-height: 105mm !important;
+    height: 112mm !important;
+    min-height: 112mm !important;
+    max-height: 112mm !important;
     overflow: visible !important;
     display: block !important;
   }
@@ -436,7 +457,7 @@
   .executive-chart-body .recharts-wrapper {
     width: 100% !important;
     height: 100% !important;
-    max-height: 105mm !important;
+    max-height: 112mm !important;
   }
 
   .executive-report-chart-frame svg,

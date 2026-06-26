@@ -1157,4 +1157,34 @@ export function buildFinanceAccountsReceivableDashboard(
   };
 }
 
+/** Soma recebimentos por data de baixa — mesma regra de `receivedThisMonthAmount` no dashboard. */
+export function sumFinanceArReceivedBySettlementInPeriod(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date,
+  syncCutoff: NomusArReportSyncCutoff | null | undefined,
+  periodStart: Date,
+  periodEnd: Date
+): number {
+  const filteredRows = filterFinanceArManagementReportRows(
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff
+  );
+  const startMs = periodStart.getTime();
+  const endMs = endOfLocalDay(periodEnd).getTime();
+  let total = 0;
+  for (const row of filteredRows) {
+    if (
+      row.settlementDate &&
+      row.settlementDate.getTime() >= startMs &&
+      row.settlementDate.getTime() <= endMs
+    ) {
+      total += row.amountReceived;
+    }
+  }
+  return roundMoney(total);
+}
+
 export type { AccountsReceivableOpenHorizon };

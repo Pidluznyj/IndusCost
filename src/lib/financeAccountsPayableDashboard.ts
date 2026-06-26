@@ -1138,3 +1138,32 @@ export function buildFinanceAccountsPayableDashboard(
     financialHorizon: buildFinanceApHorizonSummary(rows, filters, referenceDate, syncCutoff),
   };
 }
+
+/** Soma pagamentos por data efetiva — mesma regra de `paidThisMonthAmount` no dashboard. */
+export function sumFinanceApPaidInPaymentPeriod(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date,
+  syncCutoff: NomusApReportSyncCutoff | null | undefined,
+  periodStart: Date,
+  periodEnd: Date
+): number {
+  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const startMs = periodStart.getTime();
+  const endMs = endOfLocalDay(periodEnd).getTime();
+  let total = 0;
+  for (const row of filteredRows) {
+    if (isFinanceApCancelledTitle(row)) continue;
+    const paidAt = resolveFinanceApEffectivePaymentDate(row);
+    const realized = resolveFinanceApRealizedAmount(row);
+    if (
+      paidAt &&
+      realized > 0 &&
+      paidAt.getTime() >= startMs &&
+      paidAt.getTime() <= endMs
+    ) {
+      total += realized;
+    }
+  }
+  return roundMoney(total);
+}

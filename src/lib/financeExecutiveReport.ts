@@ -26,6 +26,7 @@ import {
 } from "./financeCashFlowRowFilters.js";
 import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
 import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
+import { loadFinanceArOpenHorizonRowsFromPrisma } from "./financeAccountsReceivableHorizon.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
@@ -40,6 +41,11 @@ import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNa
 import { buildExecutiveCashFlowAnnualChart } from "./financeExecutiveReportPresentation.js";
 import { buildCashFlowAnnualComparison } from "./financeCashFlowAnnualComparison.js";
 import { loadAnnualComparisonPortfolioRows } from "./financeExecutiveReportAnnualLoad.js";
+import {
+  buildExecutiveReportPayablesSection,
+  buildExecutiveReportReceivablesSection,
+  resolveExecutiveReportHighlightMonth,
+} from "./financeExecutiveReportDataSources.js";
 import {
   FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS,
   FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES,
@@ -508,6 +514,7 @@ export async function buildFinanceExecutiveReport(
   const [
     arLoad,
     apLoad,
+    arHorizonLoad,
     cashFlowLoad,
     cashFlowAnnualLoad,
     annualPortfolioLoad,
@@ -519,9 +526,10 @@ export async function buildFinanceExecutiveReport(
   ] = await Promise.all([
     loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
     loadApRows(db, apFilters),
+    loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate),
     loadCashFlowRows(db, cashFlowFilters, referenceDate),
     loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
-    loadAnnualComparisonPortfolioRows(db, referenceDate),
+    loadAnnualComparisonPortfolioRows(db, referenceDate, cashFlowFilters),
     buildFinanceBillingDashboard(
       { year: String(filters.year), billingSource: "nfe", dateBase: "processamento" },
       referenceDate
@@ -544,7 +552,8 @@ export async function buildFinanceExecutiveReport(
     arLoad.rows,
     arFilters,
     referenceDate,
-    arLoad.syncCutoff
+    arLoad.syncCutoff,
+    { horizonSourceRows: arHorizonLoad.rows }
   );
   const apPayload = buildFinanceAccountsPayableDashboard(
     apLoad.rows,
@@ -552,6 +561,25 @@ export async function buildFinanceExecutiveReport(
     referenceDate,
     apLoad.syncCutoff
   );
+  const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
+  const receivablesSection = buildExecutiveReportReceivablesSection({
+    rows: arLoad.rows,
+    filters: arFilters,
+    referenceDate,
+    syncCutoff: arLoad.syncCutoff,
+    year: filters.year,
+    month: highlightMonth,
+    cards: arPayload.cards,
+  });
+  const payablesSection = buildExecutiveReportPayablesSection({
+    rows: apLoad.rows,
+    filters: apFilters,
+    referenceDate,
+    syncCutoff: apLoad.syncCutoff,
+    year: filters.year,
+    month: highlightMonth,
+    cards: apPayload.cards,
+  });
   const cashFlowPayload = buildFinanceCashFlowDashboard(
     cashFlowLoad.arRows,
     cashFlowLoad.apRows,
@@ -568,11 +596,11 @@ export async function buildFinanceExecutiveReport(
     cashFlowAnnualLoad.arSyncCutoff,
     cashFlowAnnualLoad.apSyncCutoff
   );
-  const highlightMonth = filters.month ?? referenceDate.getMonth() + 1;
+  const highlightMonthForChart = highlightMonth;
   const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
     cashFlowAnnualPayload,
     filters.year,
-    highlightMonth
+    highlightMonthForChart
   );
 
   const annualComparisonCurrent = buildCashFlowAnnualComparison(
@@ -812,6 +840,8 @@ export async function buildFinanceExecutiveReport(
     },
     accountsReceivable: {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsReceivable,
+      metricsSource: receivablesSection.metricsSource,
+      kpis: receivablesSection.kpis,
       payload: {
         cards: arPayload.cards,
         agingBuckets: arPayload.agingBuckets,
@@ -825,6 +855,8 @@ export async function buildFinanceExecutiveReport(
     },
     accountsPayable: {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsPayable,
+      metricsSource: payablesSection.metricsSource,
+      kpis: payablesSection.kpis,
       payload: {
         cards: apPayload.cards,
         agingBuckets: apPayload.agingBuckets,

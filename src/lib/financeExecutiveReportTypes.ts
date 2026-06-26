@@ -19,6 +19,10 @@ import type {
 } from "./executiveDashboardTypes.js";
 import type { FinanceBillingSource } from "./financeBillingSourceTypes.js";
 import type { FinanceCashFlowAnnualComparisonPayload } from "./financeCashFlowAnnualComparison.js";
+import type {
+  ExecutiveReportApSectionKpis,
+  ExecutiveReportArSectionKpis,
+} from "./financeExecutiveReportSectionKpis.js";
 
 /** Modo de geração — snapshot reservado para persistência futura. */
 export type FinanceExecutiveReportMode = "live" | "snapshot";
@@ -251,6 +255,8 @@ export type FinanceExecutiveReportBillingProjection = {
 /** Seção 7: Contas a Receber — payload oficial completo ou subconjunto documentado. */
 export type FinanceExecutiveReportAccountsReceivable = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsReceivable;
+  metricsSource: "official-accounts-receivable-engine";
+  kpis: ExecutiveReportArSectionKpis;
   payload: Pick<
     FinanceArDashboardPayload,
     | "cards"
@@ -267,6 +273,8 @@ export type FinanceExecutiveReportAccountsReceivable = {
 /** Seção 8: Contas a Pagar — payload oficial. */
 export type FinanceExecutiveReportAccountsPayable = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsPayable;
+  metricsSource: "official-accounts-payable-engine";
+  kpis: ExecutiveReportApSectionKpis;
   payload: Pick<
     FinanceApDashboardPayload,
     | "cards"
@@ -324,7 +332,7 @@ export type FinanceExecutiveReportCalendarAgenda = {
   annualChart: FinanceExecutiveReportCashFlowAnnualChart;
 };
 
-/** Comparativo anual realizado/aberto — motor oficial do Fluxo de Caixa (independente de filtros da página). */
+/** Comparativo anual realizado/aberto — motor oficial do Fluxo de Caixa com filtros do relatório. */
 export type FinanceExecutiveReportAnnualComparison = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlow;
   currentYear: FinanceCashFlowAnnualComparisonPayload;

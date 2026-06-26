@@ -18,8 +18,6 @@ import {
 } from "@/src/lib/financeExecutiveReportPresentation";
 import type { ExecutiveAnnualFlowChartRow } from "@/src/lib/financeExecutiveReportPresentation";
 import {
-  buildExecutiveReportApKpis,
-  buildExecutiveReportArKpis,
   buildExecutiveReportBillingKpis,
   buildExecutiveReportCashFlowKpis,
   buildExecutiveReportSalesOrdersKpis,
@@ -157,18 +155,8 @@ export function ExecutiveReportDocument({
 
   const salesKpis = buildExecutiveReportSalesOrdersKpis(salesTab as SalesOrdersDashboardTab, month);
   const billingKpis = buildExecutiveReportBillingKpis(billingTab as BillingDashboardTab, month);
-  const arKpis = buildExecutiveReportArKpis({
-    currentYear: report.annualComparison.currentYear,
-    previousYear: report.annualComparison.previousYear,
-    cards: arCards,
-    month,
-  });
-  const apKpis = buildExecutiveReportApKpis({
-    currentYear: report.annualComparison.currentYear,
-    previousYear: report.annualComparison.previousYear,
-    cards: apCards,
-    month,
-  });
+  const arKpis = report.accountsReceivable.kpis;
+  const apKpis = report.accountsPayable.kpis;
   const cashFlowKpis = buildExecutiveReportCashFlowKpis(report.calendarAgenda.annualChart, report.year);
   const cashFlowPeriodCopy = buildExecutiveReportCashFlowPeriodCopy(report);
 
@@ -279,7 +267,7 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES.summary}
           intro={EXECUTIVE_REPORT_SECTION_INTROS.summary}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Pedidos mês"
               value={formatExecutiveReportPresentationCurrency(salesKpis.monthCurrent)}
@@ -360,7 +348,7 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Pedidos mês"
               value={formatExecutiveReportPresentationCurrency(salesKpis.monthCurrent)}
@@ -414,7 +402,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6 executive-chart-region">
+          <div className="mt-3 executive-chart-region">
             {salesTab.chartSeries ? (
               <ExecutiveSalesOrdersChart
                 title={`Pedidos de venda — ${report.year}`}
@@ -442,7 +430,7 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["billing-comparison"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-comparison"]}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Faturamento mês"
               value={formatExecutiveReportPresentationCurrency(billingKpis.monthCurrent)}
@@ -496,7 +484,7 @@ export function ExecutiveReportDocument({
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6 executive-chart-region">
+          <div className="mt-3 executive-chart-region">
             <ExecutiveBarComparisonChart
               title="Faturamento mês a mês"
               subtitle={formatExecutiveReportBillingYearsSubtitle(
@@ -524,54 +512,48 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-receivable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-receivable"]}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Recebido mês"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthCurrent)}
-              sub={`Ano ${report.year}`}
+              sub={`${String(month).padStart(2, "0")}/${report.year}`}
               hint={kpiHint("Recebido")}
-              tooltip={kpiHint("Recebido")}
               highlight
-            />
-            <ExecutiveKpiCard
-              label="Recebido mês — ano anterior"
-              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthPrevious)}
-              sub={`Ano ${previousYear}`}
-              hint={kpiHint("Recebido")}
-              tooltip={kpiHint("Recebido")}
             />
             <VariationKpiCard label="Variação mês" variation={arKpis.receivedMonthVariation} />
             <ExecutiveKpiCard
               label="Recebido YTD"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdCurrent)}
-              sub={`Ano ${report.year}`}
+              sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
-              tooltip={kpiHint("YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={arKpis.receivedYtdVariation} />
+            <ExecutiveKpiCard
+              label="Recebido mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthPrevious)}
+              sub={`${String(month).padStart(2, "0")}/${previousYear}`}
+              hint={kpiHint("Recebido")}
             />
             <ExecutiveKpiCard
               label="Recebido YTD — ano anterior"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdPrevious)}
-              sub={`Ano ${previousYear}`}
+              sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
-              tooltip={kpiHint("YTD")}
             />
-            <VariationKpiCard label="Variação YTD" variation={arKpis.receivedYtdVariation} />
             <ExecutiveKpiCard
               label="Em aberto"
               value={formatExecutiveReportPresentationCurrency(arKpis.openAmount)}
               hint={kpiHint("Em aberto")}
-              tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Atrasados"
               value={formatExecutiveReportPresentationCurrency(arKpis.overdueAmount)}
               hint={kpiHint("Atrasados")}
-              tooltip={kpiHint("Atrasados")}
               tone="negative"
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6 executive-chart-region">
+          <div className="mt-3 executive-chart-region">
             <ExecutiveReportReceivablesChart
               title="Recebimentos e saldo a receber — ano"
               subtitle={`Realizado e em aberto por mês — ${report.year}`}
@@ -596,54 +578,48 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-payable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-payable"]}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Pago mês"
               value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthCurrent)}
-              sub={`Ano ${report.year}`}
+              sub={`${String(month).padStart(2, "0")}/${report.year}`}
               hint={kpiHint("Pago")}
-              tooltip={kpiHint("Pago")}
               highlight
-            />
-            <ExecutiveKpiCard
-              label="Pago mês — ano anterior"
-              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthPrevious)}
-              sub={`Ano ${previousYear}`}
-              hint={kpiHint("Pago")}
-              tooltip={kpiHint("Pago")}
             />
             <VariationKpiCard label="Variação mês" variation={apKpis.paidMonthVariation} />
             <ExecutiveKpiCard
               label="Pago YTD"
               value={formatExecutiveReportPresentationCurrency(apKpis.paidYtdCurrent)}
-              sub={`Ano ${report.year}`}
+              sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
-              tooltip={kpiHint("YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={apKpis.paidYtdVariation} />
+            <ExecutiveKpiCard
+              label="Pago mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthPrevious)}
+              sub={`${String(month).padStart(2, "0")}/${previousYear}`}
+              hint={kpiHint("Pago")}
             />
             <ExecutiveKpiCard
               label="Pago YTD — ano anterior"
               value={formatExecutiveReportPresentationCurrency(apKpis.paidYtdPrevious)}
-              sub={`Ano ${previousYear}`}
+              sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
-              tooltip={kpiHint("YTD")}
             />
-            <VariationKpiCard label="Variação YTD" variation={apKpis.paidYtdVariation} />
             <ExecutiveKpiCard
               label="Em aberto"
               value={formatExecutiveReportPresentationCurrency(apKpis.openAmount)}
               hint={kpiHint("Em aberto")}
-              tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Vencidos"
               value={formatExecutiveReportPresentationCurrency(apKpis.overdueAmount)}
               hint={kpiHint("Vencidos")}
-              tooltip={kpiHint("Vencidos")}
               tone="negative"
             />
           </ExecutiveKpiGrid>
 
-          <div className="mt-6 executive-chart-region">
+          <div className="mt-3 executive-chart-region">
             <ExecutiveReportPayablesChart
               title="Pagamentos e saldo a pagar — ano"
               subtitle={`Realizado e em aberto por mês — ${report.year}`}
@@ -672,7 +648,7 @@ export function ExecutiveReportDocument({
             {cashFlowPeriodCopy.metadataLine}
           </ExecutiveReportPeriodMeta>
 
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
               label="Entradas previstas"
               value={formatExecutiveReportPresentationCurrency(cashFlowKpis.totalInflow)}
@@ -716,7 +692,7 @@ export function ExecutiveReportDocument({
             </div>
           ) : null}
 
-          <div className="mt-6 executive-chart-region">
+          <div className="mt-3 executive-chart-region">
             <ExecutiveCashFlowChart
               year={report.year}
               rows={cashFlowChart.rows}
