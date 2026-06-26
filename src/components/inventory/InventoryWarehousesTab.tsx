@@ -23,7 +23,7 @@ type SheetState =
   | { mode: "view"; warehouseId: string };
 
 export function InventoryWarehousesTab() {
-  const { canManage } = useInventoryPermissions();
+  const { canManageWarehouses } = useInventoryPermissions();
   const [rows, setRows] = useState<InventoryWarehouseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +94,7 @@ export function InventoryWarehousesTab() {
             <button
               key={s.code}
               type="button"
-              disabled={!canManage}
+              disabled={!canManageWarehouses}
               title={s.description}
               className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               onClick={() => setSheet({ mode: "create", template: s })}
@@ -151,7 +151,7 @@ export function InventoryWarehousesTab() {
         >
           Limpar
         </button>
-        {canManage ? (
+        {canManageWarehouses ? (
           <button
             type="button"
             onClick={() => setSheet({ mode: "create" })}
@@ -161,7 +161,11 @@ export function InventoryWarehousesTab() {
             <Plus className="h-4 w-4" />
             Novo almoxarifado
           </button>
-        ) : null}
+        ) : (
+          <p className="text-xs text-slate-500" data-testid="inventory-warehouses-no-permission">
+            Sem permissão para cadastrar almoxarifados.
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -257,7 +261,7 @@ export function InventoryWarehousesTab() {
           template={sheet.template}
           onClose={() => setSheet({ mode: "closed" })}
           onSaved={() => void load()}
-          canManage={canManage}
+          canManage={canManageWarehouses}
         />
       ) : null}
 
@@ -267,7 +271,7 @@ export function InventoryWarehousesTab() {
           mode="view"
           onClose={() => setSheet({ mode: "closed" })}
           onSaved={() => void load()}
-          canManage={canManage}
+          canManage={canManageWarehouses}
         />
       ) : null}
     </div>

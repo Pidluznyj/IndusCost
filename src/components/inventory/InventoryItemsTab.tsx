@@ -23,7 +23,7 @@ type SheetState =
   | { mode: "view"; itemId: string };
 
 export function InventoryItemsTab() {
-  const { canManage } = useInventoryPermissions();
+  const { canManageItems } = useInventoryPermissions();
   const [rows, setRows] = useState<InventoryItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +167,7 @@ export function InventoryItemsTab() {
         >
           Limpar
         </button>
-        {canManage ? (
+        {canManageItems ? (
           <button
             type="button"
             onClick={() => setSheet({ mode: "create" })}
@@ -177,7 +177,11 @@ export function InventoryItemsTab() {
             <Plus className="h-4 w-4" />
             Novo item
           </button>
-        ) : null}
+        ) : (
+          <p className="text-xs text-slate-500" data-testid="inventory-items-no-permission">
+            Sem permissão para cadastrar itens.
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -267,7 +271,7 @@ export function InventoryItemsTab() {
           mode="create"
           onClose={() => setSheet({ mode: "closed" })}
           onSaved={() => void load()}
-          canManage={canManage}
+          canManage={canManageItems}
         />
       ) : null}
 
@@ -277,7 +281,7 @@ export function InventoryItemsTab() {
           mode="view"
           onClose={() => setSheet({ mode: "closed" })}
           onSaved={() => void load()}
-          canManage={canManage}
+          canManage={canManageItems}
         />
       ) : null}
     </div>

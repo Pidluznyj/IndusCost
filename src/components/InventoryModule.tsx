@@ -89,7 +89,9 @@ export function InventoryModule({ initialTab }: Props = {}) {
   };
 
   if (!canView) {
-    return <InventoryPermissionDenied />;
+    return (
+      <InventoryPermissionDenied message="Você não tem permissão para acessar o módulo Estoque / Almoxarifado. Solicite a permissão inventory.view ao administrador." />
+    );
   }
 
   const visibleTabs = getVisibleInventoryTabs();

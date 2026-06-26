@@ -8,11 +8,14 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  INVENTORY_COUNT_APPROVE_PERMISSIONS,
   INVENTORY_COUNT_MANAGE_PERMISSIONS,
+  INVENTORY_ITEM_MANAGE_PERMISSIONS,
   INVENTORY_MANAGE_PERMISSIONS,
   INVENTORY_MOVEMENT_CREATE_PERMISSIONS,
   INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
   INVENTORY_VIEW_PERMISSIONS,
+  INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS,
 } from "@/src/lib/inventoryPermissions.js";
 import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
 import {
@@ -225,6 +228,14 @@ function buildBalancesListSummary(
 
 export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) {
   const view = [auth.requireAppAuth, auth.requireAnyPermission([...INVENTORY_VIEW_PERMISSIONS])] as const;
+  const itemManage = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...INVENTORY_ITEM_MANAGE_PERMISSIONS]),
+  ] as const;
+  const warehouseManage = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS]),
+  ] as const;
   const manage = [auth.requireAppAuth, auth.requireAnyPermission([...INVENTORY_MANAGE_PERMISSIONS])] as const;
   const moveCreate = [
     auth.requireAppAuth,
@@ -233,6 +244,10 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   const reserveManage = [
     auth.requireAppAuth,
     auth.requireAnyPermission([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS]),
+  ] as const;
+  const countApprove = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...INVENTORY_COUNT_APPROVE_PERMISSIONS]),
   ] as const;
   const countManage = [
     auth.requireAppAuth,
@@ -315,7 +330,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/items", ...manage, async (req, res) => {
+  app.post("/api/inventory/items", ...itemManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -384,7 +399,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.put("/api/inventory/items/:id", ...manage, async (req, res) => {
+  app.put("/api/inventory/items/:id", ...itemManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -452,7 +467,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.patch("/api/inventory/items/:id/status", ...manage, async (req, res) => {
+  app.patch("/api/inventory/items/:id/status", ...itemManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -534,7 +549,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/warehouses", ...manage, async (req, res) => {
+  app.post("/api/inventory/warehouses", ...warehouseManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -585,7 +600,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.put("/api/inventory/warehouses/:id", ...manage, async (req, res) => {
+  app.put("/api/inventory/warehouses/:id", ...warehouseManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -628,7 +643,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.patch("/api/inventory/warehouses/:id/status", ...manage, async (req, res) => {
+  app.patch("/api/inventory/warehouses/:id/status", ...warehouseManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1125,7 +1140,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/count-sessions/:id/approve", ...countManage, async (req, res) => {
+  app.post("/api/inventory/count-sessions/:id/approve", ...countApprove, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));

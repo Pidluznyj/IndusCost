@@ -87,7 +87,13 @@ export function InventoryOperationalStatusBadge({ status }: { status: string }) 
   );
 }
 
-export function InventoryPermissionDenied() {
+export function InventoryPermissionDenied({
+  permissionHint = "inventory.view",
+  message,
+}: {
+  permissionHint?: string;
+  message?: string;
+}) {
   return (
     <div
       className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center"
@@ -95,11 +101,19 @@ export function InventoryPermissionDenied() {
     >
       <p className="text-base font-semibold text-amber-900">Sem permissão</p>
       <p className="mt-2 text-sm text-amber-800">
-        Você não tem permissão para acessar o módulo Estoque / Almoxarifado. Solicite a permissão{" "}
-        <strong>inventory.view</strong> ao administrador.
+        {message ?? (
+          <>
+            Você não tem permissão para esta ação. Solicite a permissão{" "}
+            <strong>{permissionHint}</strong> ao administrador.
+          </>
+        )}
       </p>
     </div>
   );
+}
+
+export function inventoryActionDeniedTitle(action: string): string {
+  return `Sem permissão para ${action}. Solicite acesso ao gestor de estoque.`;
 }
 
 export function InventoryLoading({ label = "Carregando…" }: { label?: string }) {

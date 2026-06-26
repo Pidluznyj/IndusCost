@@ -18,11 +18,13 @@ import {
 } from "./inventory/inventoryValidation.js";
 import { InventoryValidationError } from "./inventory/inventoryTypes.js";
 import {
+  INVENTORY_COUNT_MANAGE_PERMISSIONS,
+  INVENTORY_ITEM_MANAGE_PERMISSIONS,
   INVENTORY_MANAGE_PERMISSIONS,
   INVENTORY_MOVEMENT_CREATE_PERMISSIONS,
-  INVENTORY_COUNT_MANAGE_PERMISSIONS,
   INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
   INVENTORY_VIEW_PERMISSIONS,
+  INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS,
 } from "./inventoryPermissions.js";
 
 function read(path: string): string {
@@ -112,9 +114,19 @@ describe("inventoryRoutes", () => {
   it("permissoes de view/manage/movement/reservation definidas", () => {
     assert.deepEqual([...INVENTORY_VIEW_PERMISSIONS], ["inventory.view"]);
     assert.deepEqual([...INVENTORY_MANAGE_PERMISSIONS], ["inventory.manage"]);
-    assert.deepEqual([...INVENTORY_MOVEMENT_CREATE_PERMISSIONS], ["inventory.movements.create"]);
-    assert.deepEqual([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS], ["inventory.reservations.manage"]);
+    assert.deepEqual([...INVENTORY_MOVEMENT_CREATE_PERMISSIONS], [
+      "inventory.movement.create",
+      "inventory.movements.create",
+      "inventory.manage",
+    ]);
+    assert.deepEqual([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS], [
+      "inventory.reservation.manage",
+      "inventory.reservations.manage",
+      "inventory.manage",
+    ]);
     assert.ok(INVENTORY_COUNT_MANAGE_PERMISSIONS.includes("inventory.count.manage"));
+    assert.ok(INVENTORY_ITEM_MANAGE_PERMISSIONS.includes("inventory.item.manage"));
+    assert.ok(INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS.includes("inventory.warehouse.manage"));
   });
 });
 
@@ -263,11 +275,14 @@ describe("inventoryRoutes — imutabilidade de movimentação", () => {
 });
 
 describe("permissionCatalog inventory", () => {
-  it("inventory.view registrado no catálogo", () => {
+  it("permissionCatalog inventory", () => {
     const catalog = read("src/lib/permissionCatalog.ts");
     assert.match(catalog, /inventory\.view/);
     assert.match(catalog, /inventory\.manage/);
     assert.match(catalog, /inventory\.movements\.create/);
+    assert.match(catalog, /inventory\.item\.manage/);
+    assert.match(catalog, /inventory\.count\.approve/);
+    assert.match(catalog, /inventory\.adjustment\.create/);
   });
 });
 

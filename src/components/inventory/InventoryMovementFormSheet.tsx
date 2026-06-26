@@ -30,6 +30,7 @@ import {
   normalizeInventoryBalanceSnapshot,
   normalizeInventoryMovementRow,
 } from "@/src/components/inventory/inventoryMovementPresentation";
+import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
   formatInventoryDateTime,
@@ -214,6 +215,15 @@ export function InventoryMovementFormSheet({
   onSaved,
   canCreate,
 }: Props) {
+  const { canCreateMovementType } = useInventoryPermissions();
+  const movementTypeOptions = useMemo(
+    () =>
+      INVENTORY_FORM_MOVEMENT_TYPES.map((t) => ({
+        ...t,
+        enabled: t.enabled && canCreateMovementType(t.value),
+      })),
+    [canCreateMovementType]
+  );
   const [form, setForm] = useState<InventoryMovementFormState>(() =>
     createEmptyInventoryMovementForm(initialItemId ? { itemId: initialItemId } : undefined)
   );
@@ -428,7 +438,7 @@ export function InventoryMovementFormSheet({
                   }
                   data-testid="inventory-movement-type"
                 >
-                  {INVENTORY_FORM_MOVEMENT_TYPES.map((t) => (
+                  {movementTypeOptions.map((t) => (
                     <option key={t.value} value={t.value} disabled={!t.enabled}>
                       {t.label}
                       {t.hint ? ` (${t.hint})` : ""}

@@ -9,6 +9,7 @@ import {
   applyTransferDestinationImpact,
 } from "./inventoryBalanceMath.js";
 import { validateMovementRequest } from "./inventoryMovementRules.js";
+import { assertInventoryMovementPermission } from "./inventoryPermissionChecks.js";
 import {
   decimalQuantity,
   getOrCreateInventoryBalanceForUpdate,
@@ -76,6 +77,24 @@ const SOURCE_WAREHOUSE_TYPES = new Set<InventoryMovementType>([
 
 function hasPermission(context: CreateInventoryMovementContext, key: string): boolean {
   return context.permissions?.includes(key) ?? false;
+}
+
+function assertMovementAuthorized(
+  context: CreateInventoryMovementContext,
+  movementType: InventoryMovementType
+): void {
+  try {
+    assertInventoryMovementPermission(context.permissions, movementType);
+  } catch (e: unknown) {
+    const code =
+      e && typeof e === "object" && "code" in e && typeof e.code === "string"
+        ? e.code
+        : "NOT_AUTHORIZED";
+    throw new InventoryValidationError(
+      "Sem permissão para registrar esta movimentação.",
+      code
+    );
+  }
 }
 
 function resolveAllowNegative(context: CreateInventoryMovementContext): boolean {
@@ -246,6 +265,29 @@ async function executeSimpleMovement(
     reason: input.reason,
   });
 
+  if (input.movementType === "RESERVE" && reservationId) {
+    await writeInventoryAuditLog(prisma, {
+      entityType: "InventoryReservation",
+      entityId: reservationId,
+      action: "CREATE",
+      afterJson: { itemId: input.itemId, quantity: input.quantity, warehouseId },
+      userId: context.userId,
+      reason: input.reason,
+    });
+  }
+
+  if (input.movementType === "BLOCK" || input.movementType === "UNBLOCK") {
+    await writeInventoryAuditLog(prisma, {
+      entityType: "InventoryBalance",
+      entityId: balanceRow.id,
+      action: input.movementType,
+      beforeJson: before,
+      afterJson: after,
+      userId: context.userId,
+      reason: input.reason,
+    });
+  }
+
   return { movement, balance: after, reservationId };
 }
 
@@ -325,6 +367,7 @@ export async function createInventoryMovement(
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
     throw new InventoryValidationError("Quantidade inválida.", "INVALID_QUANTITY");
   }
+  assertMovementAuthorized(context, input.movementType);
 
   return prisma.$transaction(async (tx) => {
     const item = await assertActiveItem(tx, input.itemId);
@@ -419,6 +462,14 @@ export async function cancelInventoryReservation(
         canceledAt: new Date(),
         canceledByUserId: context.userId,
       },
+    });
+
+    await writeInventoryAuditLog(prisma, {
+      entityType: "InventoryReservation",
+      entityId: reservationId,
+      action: "CANCEL",
+      userId: context.userId,
+      reason,
     });
 
     return result;

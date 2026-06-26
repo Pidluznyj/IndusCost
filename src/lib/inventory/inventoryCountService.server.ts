@@ -5,6 +5,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
 import { computeCountDifference, hasCountDivergence } from "./inventoryCountMath.js";
+import { canApproveInventoryCount } from "./inventoryPermissionChecks.js";
 import {
   COUNT_SESSION_LINE_EDITABLE_STATUSES,
   validateCountLineUpdate,
@@ -20,10 +21,7 @@ export type CountSessionContext = {
 };
 
 function assertCanApprove(permissions: readonly string[] | undefined): void {
-  const perms = permissions ?? [];
-  if (perms.includes("inventory.count.manage") || perms.includes("inventory.manage")) {
-    return;
-  }
+  if (canApproveInventoryCount(permissions ?? [])) return;
   throw new InventoryValidationError(
     "Sem permissão para aprovar conferência.",
     "NOT_AUTHORIZED"

@@ -265,7 +265,11 @@ export function InventoryMovementsTab() {
             <Plus className="h-4 w-4" />
             Nova movimentação
           </button>
-        ) : null}
+        ) : (
+          <p className="ml-auto text-xs text-slate-500" data-testid="inventory-movements-no-permission">
+            Sem permissão para registrar movimentações.
+          </p>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

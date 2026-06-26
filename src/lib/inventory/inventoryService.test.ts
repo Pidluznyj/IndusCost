@@ -9,6 +9,9 @@ import { mapBalanceRowToSnapshot } from "./inventoryRepository.server.js";
 import { validateMovementRequest } from "./inventoryMovementRules.js";
 import { snapshotFromBalance } from "./inventoryTypes.js";
 
+const MOVEMENT_CTX = { userId: "user-1", permissions: ["inventory.movements.create"] as const };
+const RESERVE_CTX = { userId: "user-1", permissions: ["inventory.reservations.manage"] as const };
+
 describe("inventoryService", () => {
   it("1. entrada cria movimento e atualiza saldo (mock transação)", async () => {
     const { prisma, state } = createMockPrisma();
@@ -25,7 +28,7 @@ describe("inventoryService", () => {
         unit: "UN",
         reason: "Entrada inicial",
       },
-      { userId: "user-1" }
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
     );
 
     assert.equal(result.balance.physicalQuantity, 10);
@@ -62,7 +65,7 @@ describe("inventoryService", () => {
         unit: "UN",
         reason: "Saída teste",
       },
-      { userId: "user-1" }
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
     );
 
     assert.equal(result.balance.physicalQuantity, 15);
@@ -99,7 +102,7 @@ describe("inventoryService", () => {
             unit: "UN",
             reason: "Excesso",
           },
-          { userId: "user-1" }
+          { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
         ),
       (e: unknown) => e instanceof InventoryValidationError
     );
@@ -148,7 +151,7 @@ describe("inventoryService", () => {
         unit: "UN",
         reason: "Reserva manual",
       },
-      { userId: "user-1" }
+      { userId: RESERVE_CTX.userId, permissions: [...RESERVE_CTX.permissions] }
     );
 
     assert.equal(result.balance.reservedQuantity, 4);
@@ -187,7 +190,7 @@ describe("inventoryService", () => {
     const result = await cancelInventoryReservation(
       prisma as never,
       "res-1",
-      { userId: "user-1" },
+      { userId: RESERVE_CTX.userId, permissions: [...RESERVE_CTX.permissions] },
       "Cancelamento manual"
     );
 
@@ -226,7 +229,7 @@ describe("inventoryService", () => {
         unit: "UN",
         reason: "Qualidade",
       },
-      { userId: "user-1" }
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
     );
 
     assert.equal(result.balance.blockedQuantity, 2);
@@ -262,7 +265,7 @@ describe("inventoryService", () => {
         unit: "UN",
         reason: "Transferência",
       },
-      { userId: "user-1" }
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
     );
 
     assert.equal((result as { sourceBalance: { physicalQuantity: number } }).sourceBalance.physicalQuantity, 22);
@@ -285,7 +288,7 @@ describe("inventoryService", () => {
         reason: "Motivo auditável",
         responsibleUserId: "resp-1",
       },
-      { userId: "user-9" }
+      { userId: "user-9", permissions: ["inventory.movements.create"] }
     );
 
     const m = state.movements[0];
@@ -329,7 +332,7 @@ describe("inventoryService", () => {
           unit: "UN",
           reason: "Falha",
         },
-        { userId: "user-1" }
+        { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
       )
     );
     assert.equal(Number(state.balances[0].physicalQuantity), 2);

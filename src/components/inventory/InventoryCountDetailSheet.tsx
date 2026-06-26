@@ -46,7 +46,7 @@ function InventoryCountStatusBadge({ status }: { status: InventoryCountSessionSt
 }
 
 export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated }: Props) {
-  const { canManageCounts } = useInventoryPermissions();
+  const { canManageCounts, canApproveCount } = useInventoryPermissions();
   const [data, setData] = useState<InventoryCountDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -196,7 +196,8 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
                 Ajustes de divergência são gerados por movimentação (
                 <code className="text-xs">POSITIVE_ADJUSTMENT</code> /{" "}
                 <code className="text-xs">NEGATIVE_ADJUSTMENT</code>) vinculada à conferência — o saldo
-                nunca é alterado diretamente. Aprovação exige permissão{" "}
+                nunca é alterado diretamente.                 Aprovação exige permissão{" "}
+                <code className="text-xs">inventory.count.approve</code>,{" "}
                 <code className="text-xs">inventory.count.manage</code> ou{" "}
                 <code className="text-xs">inventory.manage</code>.
               </div>
@@ -234,7 +235,7 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
                       Finalizar contagem
                     </button>
                   ) : null}
-                  {session.status === "WAITING_APPROVAL" ? (
+                  {session.status === "WAITING_APPROVAL" && canApproveCount ? (
                     <button
                       type="button"
                       disabled={!!actionLoading}
@@ -250,8 +251,12 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
                       )}
                       Aprovar
                     </button>
+                  ) : session.status === "WAITING_APPROVAL" && !canApproveCount ? (
+                    <p className="text-sm text-amber-700">
+                      Aguardando aprovação de um gestor com permissão de aprovação de conferência.
+                    </p>
                   ) : null}
-                  {session.status === "APPROVED" ? (
+                  {session.status === "APPROVED" && canManageCounts ? (
                     <button
                       type="button"
                       disabled={!!actionLoading}

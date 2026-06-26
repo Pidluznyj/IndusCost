@@ -216,7 +216,10 @@ describe("inventoryCountService", () => {
         },
       ],
     });
-    await generateInventoryCountAdjustments(prisma as never, "sess-1", { userId: "user-1" });
+    await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
     assert.equal(state.movements.length, 1);
     assert.equal(state.movements[0].originType, "COUNT_SESSION");
     assert.equal(state.movements[0].originId, "line-1");

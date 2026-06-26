@@ -60,6 +60,7 @@ export const INVENTORY_COST_CENTER_REQUIRED_ITEM_TYPES: ReadonlySet<InventoryIte
   "MAINTENANCE",
   "PPE",
   "PRODUCTION_SUPPLY",
+  "OTHER",
 ]);
 
 export type InventoryBalanceSnapshot = {
