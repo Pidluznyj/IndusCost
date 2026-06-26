@@ -73,6 +73,13 @@ describe("salesOrderMarginDisplay", () => {
     assert.equal(formatSalesOrderMarkup(0), "—");
   });
 
+  it("margem usa no máximo 2 casas decimais na listagem", () => {
+    assert.equal(formatSalesOrderMarginMoney(212.212678), "R$\u00a0212,21");
+    assert.equal(formatSalesOrderMarginMoney(40167.14423), "R$\u00a040.167,14");
+    assert.equal(formatSalesOrderMarginPercent(76.034567), "76,03%");
+    assert.doesNotMatch(formatSalesOrderMarginMoney(212.212678), /212,212678/);
+  });
+
   it("2. lista mostra — quando margem é null/ausente", () => {
     assert.equal(pickSalesOrderListMarginPercent(null, null), "—");
     assert.equal(pickSalesOrderListMarginValue(undefined, undefined), "—");

@@ -86,19 +86,31 @@
   white-space: nowrap;
 }
 
+.sales-order-margin-tooltip-wrap {
+  position: relative;
+}
+
+.sales-order-list-table tbody tr:has(.sales-order-margin-tooltip-wrap:hover),
+.sales-order-list-table tbody tr:has(.sales-order-margin-tooltip-wrap:focus-within) {
+  position: relative;
+  z-index: 60;
+}
+
 .sales-order-margin-tooltip-panel {
   display: none;
   position: absolute;
-  z-index: 40;
+  z-index: 80;
   right: 0;
   top: calc(100% + 0.35rem);
   width: min(20rem, 70vw);
   padding: 0.75rem 0.85rem;
   border-radius: 0.75rem;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--popover));
-  color: hsl(var(--popover-foreground));
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.12);
+  border: 1px solid var(--color-border, hsl(214.3 31.8% 91.4%));
+  background: var(--color-popover, hsl(0 0% 100%));
+  color: var(--color-popover-foreground, hsl(222.2 84% 4.9%));
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.14),
+    0 2px 8px rgb(0 0 0 / 0.08);
   font-size: 0.6875rem;
   line-height: 1.45;
   white-space: pre-wrap;

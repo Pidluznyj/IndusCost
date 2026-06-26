@@ -2,7 +2,7 @@
  * Formatação e labels de exibição de margem de Pedidos de Venda.
  * Sem cálculo de margem — apenas apresentação do payload do backend.
  */
-import { formatCurrency, formatNumber } from "./utils.js";
+import { formatNumber } from "./utils.js";
 import type {
   SalesOrderCostSource,
   SalesOrderItemMarginPayload,
@@ -12,18 +12,30 @@ import type {
 } from "./salesOrderMarginTypes.js";
 import { resolveSalesOrderMarginSummaryStatusMeta } from "./salesOrderMarginStatus.js";
 
+const marginMoneyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const marginPercentFormatter = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export function formatSalesOrderMarginMoney(value: unknown): string {
   if (value == null || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  return formatCurrency(n, 2);
+  return marginMoneyFormatter.format(n);
 }
 
 export function formatSalesOrderMarginPercent(value: unknown): string {
   if (value == null || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  return `${formatNumber(n, 2)}%`;
+  return `${marginPercentFormatter.format(n)}%`;
 }
 
 export function formatSalesOrderMarkup(value: unknown): string {

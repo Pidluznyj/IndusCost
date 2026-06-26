@@ -198,6 +198,14 @@ describe("salesOrderListGrid components", () => {
     assert.match(tableSrc, /title=\{customerName\}/);
     assert.match(tableSrc, /formatSalesOrderDisplayCode/);
   });
+
+  it("tooltip de margem fica acima das linhas da tabela", () => {
+    const css = read("components/sales/sales-order-list-table.css");
+    assert.match(css, /tr:has\(\.sales-order-margin-tooltip-wrap:hover\)/);
+    assert.match(css, /z-index:\s*60/);
+    assert.match(css, /\.sales-order-margin-tooltip-panel[\s\S]*z-index:\s*80/);
+    assert.match(css, /var\(--color-popover/);
+  });
 });
 
 describe("salesOrderListGrid wiring", () => {
