@@ -39,7 +39,6 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     description: "Cadastro e consulta de itens de estoque.",
     showInNav: true,
     navOrder: 20,
-    comingSoon: true,
   },
   {
     id: "warehouses",
@@ -99,4 +98,9 @@ export function getInventoryTabDef(id: InventoryTabId): InventoryTabDef | undefi
 
 export function getVisibleInventoryTabs(): InventoryTabDef[] {
   return INVENTORY_TAB_DEFS.filter((t) => t.showInNav).sort((a, b) => a.navOrder - b.navOrder);
+}
+
+export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
+  if (pathname.includes("/inventory/items")) return "items";
+  return "overview";
 }
