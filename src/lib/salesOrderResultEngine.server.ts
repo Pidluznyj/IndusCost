@@ -2,7 +2,6 @@
  * Motor server-side da aba Resultado — compõe margem oficial, imposto TaxRule e projeção.
  */
 import type { PrismaClient } from "@prisma/client";
-import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import {
   loadProductTaxPercentIndex,
   resolveDefaultSalesTaxPercent,
@@ -22,17 +21,16 @@ import {
   buildSalesOrderResultMonthlyRows,
   computeSalesOrderResultItem,
 } from "./salesOrderResultMath.js";
+import { buildSalesOrderResultRealizedVsProjected } from "./salesOrderResultProjection.js";
 import {
-  buildMonthlySalesFromOrders,
-  buildSalesOrderResultRealizedVsProjected,
-} from "./salesOrderResultProjection.js";
-import { Prisma } from "@prisma/client";
+  buildOfficialSalesOrderResultSalesBundle,
+  mapPrismaOrderToSalesOrderRulesInput,
+  OFFICIAL_SO_RULES_SOURCE,
+} from "./salesOrderRulesAdapter.js";
 import type {
   SalesOrderResultDashboardPayload,
   SalesOrderResultFilters,
 } from "./salesOrderResultTypes.js";
-
-const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 
 function parseAsOfDate(value: unknown, fallback: Date): Date {
   if (typeof value !== "string" || !value.trim()) return fallback;
@@ -65,29 +63,40 @@ export function parseSalesOrderResultFilters(
   };
 }
 
-async function queryPreviousYearMonthlySales(
-  db: Pick<PrismaClient, "$queryRaw">,
-  year: number
-): Promise<Map<number, number>> {
-  const from = new Date(year, 0, 1);
-  const to = new Date(year, 11, 31, 23, 59, 59, 999);
-  const rows = await db.$queryRaw<{ month: number; total: unknown }[]>(
-    Prisma.sql`
-      SELECT
-        EXTRACT(MONTH FROM so."issueDate")::int AS month,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      WHERE ${NOT_CANCELLED}
-        AND so."issueDate" >= ${from}
-        AND so."issueDate" <= ${to}
-      GROUP BY 1
-    `
-  );
-  const map = new Map<number, number>();
-  for (const row of rows) {
-    map.set(row.month, decimalToNumber(row.total) ?? 0);
-  }
-  return map;
+async function loadSalesOrderResultRulesOrders(
+  db: PrismaClient,
+  where: ReturnType<typeof buildSalesOrderMarginIndicatorWhere>
+) {
+  const rows = await db.salesOrder.findMany({
+    where,
+    select: {
+      id: true,
+      orderCode: true,
+      status: true,
+      customerId: true,
+      issueDate: true,
+      expectedDeliveryDate: true,
+      totalNetValue: true,
+      totalGrossValue: true,
+      totalItems: true,
+      responsible: true,
+      nomusRawResponse: true,
+      companyIssuer: true,
+      externalSalesOrderId: true,
+      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+      items: {
+        select: {
+          id: true,
+          externalProductId: true,
+          skuSnapshot: true,
+          productNameSnapshot: true,
+          quantity: true,
+          status: true,
+        },
+      },
+    },
+  });
+  return rows.map(mapPrismaOrderToSalesOrderRulesInput);
 }
 
 export async function buildSalesOrderResultDashboard(
@@ -111,6 +120,18 @@ export async function buildSalesOrderResultDashboard(
     },
   });
 
+  const rulesOrders = await loadSalesOrderResultRulesOrders(db, where);
+  const salesBundle = buildOfficialSalesOrderResultSalesBundle({
+    orders: rulesOrders,
+    year: filters.year,
+    month: filters.month,
+    referenceDate,
+    customerId: filters.customerId,
+    sellerId: filters.sellerId,
+    companyId: filters.companyId,
+    productId: filters.productId,
+  });
+
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
     db,
     orders as SalesOrderForMargin[]
@@ -125,18 +146,12 @@ export async function buildSalesOrderResultDashboard(
   ]);
 
   const computedItems = [];
-  const orderRowsForProjection: Array<{ issueMonth: number; totalNetValue: number }> = [];
 
   for (const order of orders) {
     if (!order.issueDate) continue;
     const issueMonth = order.issueDate.getMonth() + 1;
     if (filters.month != null && issueMonth !== filters.month) continue;
     if (order.issueDate.getFullYear() !== filters.year) continue;
-
-    orderRowsForProjection.push({
-      issueMonth,
-      totalNetValue: decimalToNumber(order.totalNetValue) ?? 0,
-    });
 
     const marginResult = marginByOrder.get(order.id);
     if (!marginResult) continue;
@@ -179,14 +194,31 @@ export async function buildSalesOrderResultDashboard(
       ? Math.round(((weightedTaxNumerator / weightedTaxDenominator) * 100 + Number.EPSILON) * 100) / 100
       : defaultTax.percent;
 
-  const totals = aggregateSalesOrderResultTotals(computedItems, {
+  const marginTotals = aggregateSalesOrderResultTotals(computedItems, {
     taxPercentApplied: effectiveTaxPercent,
     taxSourceLabel: defaultTax.label,
   });
 
+  const totals = filters.productId
+    ? {
+        ...marginTotals,
+        ordersCount: salesBundle.metrics.filteredOrders,
+      }
+    : {
+        ...marginTotals,
+        salesAmount: salesBundle.metrics.soldAmount,
+        ordersCount: salesBundle.metrics.filteredOrders,
+        itemsCount: salesBundle.metrics.totalItems,
+      };
+
   const monthlyMargin = buildSalesOrderResultMonthlyRows(computedItems, filters.year);
-  const monthlySales = buildMonthlySalesFromOrders(orderRowsForProjection);
-  const previousYearMonthly = await queryPreviousYearMonthlySales(db, filters.year - 1);
+  const monthlySales = salesBundle.monthlyTimeline.map((point) => ({
+    month: point.month,
+    amount: point.soldAmount,
+  }));
+  const previousYearMonthly = new Map(
+    salesBundle.previousYearTimeline.map((point) => [point.month, point.soldAmount])
+  );
   const { rows: realizedVsProjected, projection } = buildSalesOrderResultRealizedVsProjected({
     monthlySales,
     year: filters.year,
@@ -206,11 +238,11 @@ export async function buildSalesOrderResultDashboard(
       negativeMarginCount: totals.negativeMarginCount,
     },
     source: {
-      sales: "official-sales-order-engine",
+      sales: OFFICIAL_SO_RULES_SOURCE,
       margin: "official-sales-order-margin-engine",
       cost: "official-product-cost-engine",
       tax: "official-tax-rule-engine",
-      projection: "official-sales-order-dashboard-rules",
+      projection: OFFICIAL_SO_RULES_SOURCE,
     },
   };
 }

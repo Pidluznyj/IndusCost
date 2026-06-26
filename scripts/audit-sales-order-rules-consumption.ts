@@ -8,6 +8,7 @@
 import { prisma } from "../src/lib/prisma.js";
 import { resolveExecutiveDashboardYearContext } from "../src/lib/executiveDashboardYear.js";
 import { buildSalesOrdersDashboardTab } from "../src/lib/salesOrdersDashboardMetrics.js";
+import { buildFinanceSalesOrdersDashboard } from "../src/lib/financeSalesOrdersDashboard.js";
 import { loadSalesOrderManagementPage } from "../src/lib/salesOrderIntelligenceRoutes.js";
 import {
   buildOfficialSalesOrderListPayload,
@@ -35,6 +36,7 @@ type AuditRow = {
   listScreen: number | null;
   management: number | null;
   executiveReport: number | null;
+  financeDashboard: number | null;
   delta: number;
   status: string;
 };
@@ -113,9 +115,10 @@ async function main() {
     listVal: number | null,
     mgmtVal: number | null,
     reportVal: number | null,
+    financeVal: number | null = null,
     scopeNote?: string
   ) {
-    const refVal = listVal ?? engineVal;
+    const refVal = listVal ?? financeVal ?? engineVal;
     const delta = Math.round((engineVal - refVal) * 100) / 100;
     let status = nearlyEqual(engineVal, refVal) ? "OK" : "DIVERGENTE";
     if (scopeNote) status = `ESCOPO DIFERENTE — ${scopeNote}`;
@@ -125,10 +128,16 @@ async function main() {
       listScreen: listVal,
       management: mgmtVal,
       executiveReport: reportVal,
+      financeDashboard: financeVal,
       delta,
       status,
     });
   }
+
+  const financePayload = await buildFinanceSalesOrdersDashboard(
+    { year: String(year), month: String(month) },
+    ref
+  );
 
   const execMonthCard = execTab.summaryCards.find((c) => c.id === "realized-month");
   const execYtdCard = execTab.summaryCards.find((c) => c.id === "realized-ytd");
@@ -138,14 +147,16 @@ async function main() {
     engine.metrics.soldAmount,
     listPayload.summary.totalNetAmount,
     mgmtCore.fulfillmentKpis.totalSoldValue,
-    execMonthCard?.value ?? null
+    execMonthCard?.value ?? null,
+    financePayload.summary.totalOrdersAmount
   );
   addRow(
     "Pedidos filtrados",
     engine.metrics.filteredOrders,
     listPayload.summary.totalOrders,
     mgmtPage.summary?.totalOrders ?? null,
-    null
+    null,
+    financePayload.summary.orderCount
   );
   addRow(
     "Valor vendido YTD",
@@ -187,11 +198,11 @@ async function main() {
   console.log(
     `Auditoria consumo Pedidos — year=${year} month=${month} asOfDate=${asOfDate} source=${OFFICIAL_SO_RULES_SOURCE}\n`
   );
-  console.log("| Indicador | Motor | Tela Pedidos | Gestão | Relatório | Diferença | Status |");
-  console.log("| --- | ---: | ---: | ---: | ---: | ---: | --- |");
+  console.log("| Indicador | Motor | Tela Pedidos | Gestão | Relatório | Financeiro | Diferença | Status |");
+  console.log("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
   for (const r of rows) {
     console.log(
-      `| ${r.indicator} | ${fmt(r.engine)} | ${fmt(r.listScreen)} | ${fmt(r.management)} | ${fmt(r.executiveReport)} | ${fmt(r.delta)} | ${r.status} |`
+      `| ${r.indicator} | ${fmt(r.engine)} | ${fmt(r.listScreen)} | ${fmt(r.management)} | ${fmt(r.executiveReport)} | ${fmt(r.financeDashboard)} | ${fmt(r.delta)} | ${r.status} |`
     );
   }
 

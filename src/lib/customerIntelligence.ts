@@ -45,6 +45,10 @@ import {
   buildCustomerIntelligenceSeasonality,
 } from "@/src/lib/customerIntelligenceHistory.js";
 import { buildCustomerIntelligenceProducts } from "@/src/lib/customerIntelligenceProducts.js";
+import {
+  mapPrismaOrderToSalesOrderRulesInput,
+  resolveOfficialCustomerIntelligenceOrderMetrics,
+} from "@/src/lib/salesOrderRulesAdapter.js";
 import type {
   CustomerIntelligenceBuildInput,
   CustomerIntelligenceOrderInput,
@@ -70,17 +74,32 @@ function buildOrderScopeSummary(
   now: Date
 ): CustomerIntelligenceOrderScopeSummary {
   const { firstOrderDate, lastOrderDate } = computeOrderDateBounds(metricsOrders);
-  const revenue = metricsOrders.reduce(
-    (acc, o) => acc + safeCommercialNumber(o.totalNetValue),
-    0
-  );
-  const billedOrdersCount = metricsOrders.filter((o) => o.hasInvoicing).length;
+  const official = resolveOfficialCustomerIntelligenceOrderMetrics({
+    orders: metricsOrders.map((order) =>
+      mapPrismaOrderToSalesOrderRulesInput({
+        id: order.id,
+        orderCode: order.orderCode,
+        status: order.status,
+        issueDate: order.issueDate,
+        totalNetValue: order.totalNetValue,
+        totalItems: order.items.length,
+        responsible: order.responsible,
+        items: order.items.map((item) => ({
+          id: item.productId,
+          quantity: item.quantity,
+          skuSnapshot: item.Product?.sku ?? null,
+          productNameSnapshot: item.Product?.name ?? null,
+        })),
+      })
+    ),
+    referenceDate: now,
+  });
 
   return {
-    revenue: roundMoney(revenue) ?? 0,
+    revenue: roundMoney(official.revenue) ?? 0,
     ordersCount: allOrders.length,
-    validOrdersCount: metricsOrders.length,
-    billedOrdersCount,
+    validOrdersCount: official.validOrdersCount,
+    billedOrdersCount: official.billedOrdersCount,
     firstOrderDate: toIsoDateOnly(firstOrderDate),
     lastOrderDate: toIsoDateOnly(lastOrderDate),
     daysSinceLastOrder:

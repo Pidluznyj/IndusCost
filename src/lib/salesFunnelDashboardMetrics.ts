@@ -27,12 +27,18 @@ import {
   isOverdueSalesOrderInSelectedYear,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import {
-  aggregateSalesOrderMetrics,
   buildOperationalFunnelStages,
   loadSalesOrderEnrichedMetricsForIssueYear,
   type SalesOrderEnrichedMetrics,
   type SalesOperationalFunnelStage,
 } from "@/src/lib/salesOrderMetricsEngine.js";
+import {
+  buildOfficialSalesOrderRulesResult,
+  mapPrismaOrderToSalesOrderRulesInput,
+  OFFICIAL_SO_RULES_SOURCE,
+  SALES_ORDER_RULES_PRISMA_SELECT,
+} from "@/src/lib/salesOrderRulesAdapter.js";
+import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 import type {
   DashboardMetricCard,
   DashboardStatusBreakdownRow,
@@ -308,6 +314,34 @@ async function queryStatusBreakdown(yearStart: Date, yearEnd: Date): Promise<Das
   }));
 }
 
+async function loadFunnelOfficialRules(year: number, referenceDate: Date) {
+  const from = startOfYear(new Date(year, 0, 1));
+  const to = endOfYear(new Date(year, 0, 1));
+  const orders = await prisma.salesOrder.findMany({
+    where: { issueDate: { gte: from, lte: to } },
+    select: SALES_ORDER_RULES_PRISMA_SELECT,
+  });
+  const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+    orders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    })),
+    referenceDate
+  );
+  return buildOfficialSalesOrderRulesResult({
+    orders: orders.map(mapPrismaOrderToSalesOrderRulesInput),
+    referenceDate,
+    year,
+    month: referenceDate.getMonth() + 1,
+    linkedNfeContextMap: linkedMap,
+    managementFilters: { year },
+    scope: "management",
+  });
+}
+
 export async function buildSalesFunnelDashboardTab(
   yearCtx: ExecutiveDashboardYearContext
 ): Promise<SalesFunnelDashboardTab> {
@@ -317,8 +351,23 @@ export async function buildSalesFunnelDashboardTab(
   const operationalNow = new Date();
 
   const engineMetrics = await loadSalesOrderEnrichedMetricsForIssueYear(year, operationalNow);
+  const officialRules = await loadFunnelOfficialRules(year, yearCtx.referenceDate);
+  const fulfillment = officialRules.fulfillmentKpis;
+  const aggregate = {
+    totalSoldValue: fulfillment.totalSoldValue,
+    totalInvoicedValue: fulfillment.totalInvoicedValue,
+    soldInvoicedGap: fulfillment.soldInvoicedGap,
+    totalOrders: fulfillment.totalOrders,
+    withNfeCount: fulfillment.ordersWithNfe,
+    withoutNfeCount: fulfillment.ordersWithoutNfe,
+    deliveredOnTimeCount: fulfillment.deliveredOnTime,
+    deliveredLateCount: fulfillment.deliveredLate,
+    pendingOnTimeCount: fulfillment.pendingOnTime,
+    pendingLateCount: fulfillment.pendingLate,
+    partialCount: fulfillment.partialCount,
+    invoiceCoveragePercent: fulfillment.averageInvoicedPercent,
+  };
   const totals = buildYearFunnelTotalsFromEngine(engineMetrics);
-  const aggregate = aggregateSalesOrderMetrics(engineMetrics);
   const operationalFunnelRaw = buildOperationalFunnelStages(engineMetrics);
   const soldCount = operationalFunnelRaw.find((s) => s.id === "sold")?.count ?? totals.validCount;
 
@@ -511,7 +560,7 @@ export async function buildSalesFunnelDashboardTab(
 
   return {
     available: true,
-    source: "SalesOrder + motor único salesOrderMetricsEngine (NF vinculada, status logístico)",
+    source: `${OFFICIAL_SO_RULES_SOURCE} + salesOrderMetricsEngine (funil operacional)`,
     selectedYear: year,
     summaryCards,
     funnelStages,

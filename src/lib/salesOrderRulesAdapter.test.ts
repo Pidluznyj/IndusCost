@@ -6,6 +6,8 @@ import { summarizeSalesOrderListRows } from "./salesOrdersListSummary.js";
 import {
   buildOfficialSalesOrderListPayload,
   buildOfficialSalesOrderManagementCore,
+  buildOfficialSalesOrderResultSalesBundle,
+  mapOfficialFinancePortfolioFromManagementRows,
   OFFICIAL_SO_RULES_SOURCE,
 } from "./salesOrderRulesAdapter.js";
 import type { SalesOrderRulesOrderInput } from "./salesOrderRulesEngine.types.js";
@@ -85,5 +87,26 @@ describe("salesOrderRulesAdapter integration", () => {
     });
     const kpis = buildFulfillmentKpis(core.rows);
     assert.equal(core.fulfillmentKpis.totalSoldValue, kpis.totalSoldValue);
+  });
+
+  it("result sales bundle expõe timeline mensal do motor oficial", () => {
+    const rows = [order({ id: "1", issueDate: new Date(2026, 0, 15), totalNetValue: 2000 })];
+    const bundle = buildOfficialSalesOrderResultSalesBundle({
+      orders: rows,
+      year: 2026,
+      referenceDate: new Date(2026, 5, 20),
+    });
+    assert.equal(bundle.metricsSource, OFFICIAL_SO_RULES_SOURCE);
+    assert.equal(bundle.monthlyTimeline.find((p) => p.month === 1)?.soldAmount, 2000);
+  });
+
+  it("portfolio financeiro mapeia linhas de gestão sem recalcular regra", () => {
+    const core = buildOfficialSalesOrderManagementCore({
+      orders: [order({ id: "1" })],
+      managementFilters: { year: 2026 },
+      referenceDate: REF,
+    });
+    const portfolio = mapOfficialFinancePortfolioFromManagementRows(core.rows);
+    assert.equal(portfolio.open.count + portfolio.invoiced.count, core.rows.length);
   });
 });

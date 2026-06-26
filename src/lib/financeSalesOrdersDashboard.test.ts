@@ -23,10 +23,12 @@ import { buildFinanceSalesOrdersExportCsv } from "./financeSalesOrdersExport.js"
 import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboardTypes.js";
 
 describe("financeSalesOrdersDashboard", () => {
-  it("usa SalesOrder como fonte — prisma no service", () => {
+  it("usa motor oficial de regras — prisma apenas para carga", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
-    assert.match(src, /prisma\.salesOrder/);
+    assert.match(src, /buildOfficialSalesOrderRulesResult/);
+    assert.match(src, /OFFICIAL_SO_RULES_SOURCE/);
     assert.match(src, /buildSalesOrdersDashboardTab/);
+    assert.doesNotMatch(src, /prisma\.salesOrder\.aggregate/);
     assert.doesNotMatch(src, /prisma\.proposal/i);
     assert.doesNotMatch(src, /Proposal/);
   });
@@ -84,11 +86,11 @@ describe("financeSalesOrdersDashboard", () => {
     assert.equal(semNf.invoiceStatus, "without_invoice");
   });
 
-  it("queryPortfolioFiltered usa SQL de NF compartilhado", () => {
+  it("carteira NF/aberta usa motor oficial via mapOfficialFinancePortfolioFromManagementRows", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
-    assert.match(src, /orderIsInvoicedSql/);
-    assert.match(src, /orderNotInvoicedSql/);
-    assert.match(src, /salesOrderInvoicingSql/);
+    assert.match(src, /mapOfficialFinancePortfolioFromManagementRows/);
+    assert.doesNotMatch(src, /orderIsInvoicedSql/);
+    assert.doesNotMatch(src, /orderNotInvoicedSql/);
   });
 
   it("parseFinanceSalesOrdersFilters — status logístico BI", () => {

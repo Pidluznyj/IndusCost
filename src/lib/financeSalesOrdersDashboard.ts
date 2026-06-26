@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import {
   decimalToNumber,
-  safeMetricNumber,
   startOfMonth,
   endOfMonth,
 } from "./executiveDashboardHelpers.js";
@@ -12,11 +11,6 @@ import {
 } from "./executiveDashboardWorkdays.js";
 import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
 import { computeTicketAverage } from "./salesOrderDashboardRules.js";
-import {
-  orderIsInvoicedSql,
-  orderNotInvoicedSql,
-  toPgDateYmd,
-} from "./salesOrderInvoicingSql.js";
 import { buildSalesOrdersDashboardTab } from "./salesOrdersDashboardMetrics.js";
 import {
   parseExecutiveDashboardYear,
@@ -36,6 +30,18 @@ import {
   isBiLogisticStatusCardId,
   type BiLogisticStatusCardId,
 } from "./salesOrderLogisticStatus.js";
+import {
+  buildOfficialSalesOrderRulesResult,
+  buildOfficialTopCustomersFromRulesOrders,
+  mapFinanceSalesOrdersFiltersToRulesInput,
+  mapOfficialFinancePeriodAgg,
+  mapOfficialFinancePortfolioFromManagementRows,
+  mapPrismaOrderToSalesOrderRulesInput,
+  buildOfficialMonthlyAmountMaps,
+  OFFICIAL_SO_RULES_SOURCE,
+  SALES_ORDER_RULES_PRISMA_SELECT,
+  type OfficialFinancePortfolioSnapshot,
+} from "./salesOrderRulesAdapter.js";
 import type {
   FinanceSalesOrdersDashboardFilters,
   FinanceSalesOrdersDashboardPayload,
@@ -52,7 +58,93 @@ import {
 
 export { getSalesOrderNetValue as resolveSalesOrderNetAmount };
 
-const VALID_METRICS_WHERE = Prisma.sql`so.status NOT IN ('CANCELLED', 'ERROR')`;
+async function loadFinanceRulesOrders(
+  filters: FinanceSalesOrdersDashboardFilters,
+  years: number[]
+) {
+  const where: Prisma.SalesOrderWhereInput = {
+    issueDate: {
+      gte: startOfYear(new Date(Math.min(...years), 0, 1)),
+      lte: endOfYear(new Date(Math.max(...years), 0, 1)),
+    },
+    ...buildSalesOrderListWhere({
+      status: filters.status ?? undefined,
+      customerId: filters.customerId ?? undefined,
+      responsible: filters.sellerName ?? undefined,
+    }),
+    ...(filters.company
+      ? { companyIssuer: { contains: filters.company, mode: "insensitive" } }
+      : {}),
+    ...(filters.customerSearch
+      ? {
+          Customer: {
+            OR: [
+              { companyName: { contains: filters.customerSearch, mode: "insensitive" } },
+              { tradeName: { contains: filters.customerSearch, mode: "insensitive" } },
+            ],
+          },
+        }
+      : {}),
+  };
+
+  const rows = await prisma.salesOrder.findMany({
+    where,
+    select: SALES_ORDER_RULES_PRISMA_SELECT,
+    orderBy: { issueDate: "desc" },
+  });
+  return rows.map(mapPrismaOrderToSalesOrderRulesInput);
+}
+
+async function buildOfficialFinanceRulesBundle(
+  filters: FinanceSalesOrdersDashboardFilters,
+  now: Date
+) {
+  const rulesInput = mapFinanceSalesOrdersFiltersToRulesInput(filters);
+  const month = filters.month ?? now.getMonth() + 1;
+  const orders = await loadFinanceRulesOrders(filters, [filters.year, filters.year - 1]);
+  const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+    orders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    })),
+    now
+  );
+
+  const current = buildOfficialSalesOrderRulesResult({
+    orders,
+    ...rulesInput,
+    referenceDate: now,
+    year: filters.year,
+    month,
+    linkedNfeContextMap: linkedMap,
+    scope: "unified",
+  });
+
+  const prevRef = new Date(
+    filters.year - 1,
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+  const previous = buildOfficialSalesOrderRulesResult({
+    orders,
+    listFilters: { ...rulesInput.listFilters, year: filters.year - 1 },
+    managementFilters: { ...rulesInput.managementFilters, year: filters.year - 1 },
+    referenceDate: prevRef,
+    year: filters.year - 1,
+    month,
+    linkedNfeContextMap: linkedMap,
+    scope: "unified",
+  });
+
+  return { current, previous, linkedMap, orders };
+}
 
 function parseMonthParam(value: unknown): number | null {
   if (value == null || value === "") return null;
@@ -112,18 +204,6 @@ export function resolveFinanceSalesOrdersYearContext(
   };
 }
 
-function hasExtraDashboardFilters(filters: FinanceSalesOrdersDashboardFilters): boolean {
-  return Boolean(
-    filters.month ||
-      filters.company ||
-      filters.customerId ||
-      filters.customerSearch ||
-      filters.sellerName ||
-      filters.status ||
-      filters.invoiceStatus !== "all" ||
-      filters.logisticStatus
-  );
-}
 
 export function resolveFinanceSalesOrdersPeriodBounds(
   filters: FinanceSalesOrdersDashboardFilters
@@ -142,7 +222,6 @@ function buildPrismaPeriodWhere(
   to: Date
 ): Prisma.SalesOrderWhereInput {
   return {
-    status: { notIn: ["CANCELLED", "ERROR"] },
     issueDate: { gte: from, lte: to },
     ...buildSalesOrderListWhere({
       status: filters.status ?? undefined,
@@ -163,193 +242,6 @@ function buildPrismaPeriodWhere(
         }
       : {}),
   };
-}
-
-function buildSqlFilterFragments(filters: FinanceSalesOrdersDashboardFilters): Prisma.Sql[] {
-  const parts: Prisma.Sql[] = [VALID_METRICS_WHERE];
-  if (filters.status) {
-    parts.push(Prisma.sql`so.status::text = ${filters.status}`);
-  }
-  if (filters.customerId) {
-    parts.push(Prisma.sql`so."customerId" = ${filters.customerId}`);
-  }
-  if (filters.sellerName) {
-    parts.push(Prisma.sql`so.responsible ILIKE ${`%${filters.sellerName}%`}`);
-  }
-  if (filters.company) {
-    parts.push(Prisma.sql`so."companyIssuer" ILIKE ${`%${filters.company}%`}`);
-  }
-  if (filters.customerSearch) {
-    const term = `%${filters.customerSearch}%`;
-    parts.push(
-      Prisma.sql`(
-        c."companyName" ILIKE ${term}
-        OR c."tradeName" ILIKE ${term}
-      )`
-    );
-  }
-  if (filters.invoiceStatus === "with_invoice") {
-    parts.push(orderIsInvoicedSql("so"));
-  } else if (filters.invoiceStatus === "without_invoice") {
-    parts.push(orderNotInvoicedSql("so"));
-  }
-  return parts;
-}
-
-function sqlAnd(parts: Prisma.Sql[]): Prisma.Sql {
-  if (parts.length === 0) return Prisma.sql`TRUE`;
-  return Prisma.join(parts, " AND ");
-}
-
-async function aggregateFiltered(
-  filters: FinanceSalesOrdersDashboardFilters,
-  from: Date,
-  to: Date
-): Promise<{ count: number; net: number; items: number }> {
-  const where = buildPrismaPeriodWhere(filters, from, to);
-  const agg = await prisma.salesOrder.aggregate({
-    where,
-    _count: true,
-    _sum: { totalNetValue: true, totalItems: true },
-  });
-  return {
-    count: safeMetricNumber(agg._count) ?? 0,
-    net: decimalToNumber(agg._sum.totalNetValue) ?? 0,
-    items: safeMetricNumber(decimalToNumber(agg._sum.totalItems)) ?? 0,
-  };
-}
-
-async function queryMonthlyFiltered(
-  filters: FinanceSalesOrdersDashboardFilters,
-  year: number
-): Promise<Map<number, number>> {
-  const from = startOfYear(new Date(year, 0, 1));
-  const to = endOfYear(new Date(year, 0, 1));
-  const extra = buildSqlFilterFragments(filters);
-  const needsJoin = Boolean(filters.customerSearch);
-  const rows = await prisma.$queryRaw<{ month: number; total: unknown }[]>(
-  needsJoin
-    ? Prisma.sql`
-        SELECT EXTRACT(MONTH FROM so."issueDate")::int AS month,
-               COALESCE(SUM(so."totalNetValue"), 0) AS total
-        FROM "SalesOrder" so
-        INNER JOIN "Customer" c ON c.id = so."customerId"
-        WHERE so."issueDate" >= ${from} AND so."issueDate" <= ${to}
-          AND ${sqlAnd(extra)}
-        GROUP BY 1 ORDER BY 1
-      `
-    : Prisma.sql`
-        SELECT EXTRACT(MONTH FROM so."issueDate")::int AS month,
-               COALESCE(SUM(so."totalNetValue"), 0) AS total
-        FROM "SalesOrder" so
-        WHERE so."issueDate" >= ${from} AND so."issueDate" <= ${to}
-          AND ${sqlAnd(extra)}
-        GROUP BY 1 ORDER BY 1
-      `
-  );
-  const map = new Map<number, number>();
-  for (const row of rows) map.set(row.month, decimalToNumber(row.total) ?? 0);
-  return map;
-}
-
-async function queryPortfolioFiltered(
-  filters: FinanceSalesOrdersDashboardFilters,
-  year: number,
-  today: Date
-): Promise<{
-  open: { count: number; net: number };
-  invoiced: { count: number; net: number };
-  overdue: { count: number; net: number };
-}> {
-  const yearStart = startOfYear(new Date(year, 0, 1));
-  const yearEnd = endOfYear(new Date(year, 0, 1));
-  const todayYmd = toPgDateYmd(today);
-  const extra = buildSqlFilterFragments(filters);
-  const join = filters.customerSearch
-    ? Prisma.sql`INNER JOIN "Customer" c ON c.id = so."customerId"`
-    : Prisma.empty;
-
-  const [openRow] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
-    Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so ${join}
-      WHERE so."issueDate" >= ${yearStart} AND so."issueDate" <= ${yearEnd}
-        AND ${sqlAnd([...extra, orderNotInvoicedSql("so")])}
-    `
-  );
-  const [invoicedRow] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
-    Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so ${join}
-      WHERE so."issueDate" >= ${yearStart} AND so."issueDate" <= ${yearEnd}
-        AND ${sqlAnd([...extra, orderIsInvoicedSql("so")])}
-    `
-  );
-  const [overdueRow] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
-    Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so ${join}
-      WHERE so."issueDate" >= ${yearStart} AND so."issueDate" <= ${yearEnd}
-        AND ${sqlAnd([...extra, orderNotInvoicedSql("so")])}
-        AND so."expectedDeliveryDate" IS NOT NULL
-        AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-    `
-  );
-
-  return {
-    open: {
-      count: Number(openRow?.c ?? 0n),
-      net: decimalToNumber(openRow?.v) ?? 0,
-    },
-    invoiced: {
-      count: Number(invoicedRow?.c ?? 0n),
-      net: decimalToNumber(invoicedRow?.v) ?? 0,
-    },
-    overdue: {
-      count: Number(overdueRow?.c ?? 0n),
-      net: decimalToNumber(overdueRow?.v) ?? 0,
-    },
-  };
-}
-
-async function queryTopCustomersFiltered(
-  filters: FinanceSalesOrdersDashboardFilters,
-  year: number
-): Promise<FinanceSalesOrdersTopCustomerRow[]> {
-  const from = startOfYear(new Date(year, 0, 1));
-  const to = endOfYear(new Date(year, 0, 1));
-  const extra = buildSqlFilterFragments(filters);
-  const rows = await prisma.$queryRaw<
-    { customer_id: string; customer_name: string; cnt: bigint; total: unknown }[]
-  >(
-    Prisma.sql`
-      SELECT
-        c.id AS customer_id,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
-        COUNT(*)::bigint AS cnt,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE so."issueDate" >= ${from} AND so."issueDate" <= ${to}
-        AND ${sqlAnd(extra)}
-      GROUP BY c.id, customer_name
-      ORDER BY total DESC
-      LIMIT 10
-    `
-  );
-  const totalAll = rows.reduce((s, r) => s + (decimalToNumber(r.total) ?? 0), 0);
-  return rows.map((row) => {
-    const amount = decimalToNumber(row.total) ?? 0;
-    const orderCount = Number(row.cnt);
-    return {
-      customerId: row.customer_id,
-      customerName: row.customer_name,
-      amount,
-      orderCount,
-      averageTicketAmount: computeTicketAverage(amount, orderCount),
-      sharePercent: totalAll > 0 ? (amount / totalAll) * 100 : null,
-    };
-  });
 }
 
 function growthPercent(current: number, previous: number): number | null {
@@ -394,7 +286,7 @@ function buildSummaryFromTab(
   tab: Awaited<ReturnType<typeof buildSalesOrdersDashboardTab>>,
   filters: FinanceSalesOrdersDashboardFilters,
   periodAgg: { count: number; net: number; items: number },
-  portfolio: Awaited<ReturnType<typeof queryPortfolioFiltered>>
+  portfolio: OfficialFinancePortfolioSnapshot
 ): FinanceSalesOrdersDashboardSummary {
   const monthAgg = tab.targets.monthly.actual ?? 0;
   const prevMonth = tab.targets.monthly.previousPeriod ?? 0;
@@ -501,29 +393,25 @@ export async function buildFinanceSalesOrdersDashboard(
   const yearCtx = resolveFinanceSalesOrdersYearContext(filters, now);
   const tab = await buildSalesOrdersDashboardTab(yearCtx);
   const periodBounds = resolveFinanceSalesOrdersPeriodBounds(filters);
+  const rulesBundle = await buildOfficialFinanceRulesBundle(filters, now);
+  const rulesInput = mapFinanceSalesOrdersFiltersToRulesInput(filters);
 
-  let periodAgg: { count: number; net: number; items: number };
-  let currentMonthly: Map<number, number>;
-  let previousMonthly: Map<number, number>;
-  let portfolio: Awaited<ReturnType<typeof queryPortfolioFiltered>>;
-  let topCustomers: FinanceSalesOrdersTopCustomerRow[];
+  const periodAgg = mapOfficialFinancePeriodAgg(rulesBundle.current);
+  const monthlyMaps = buildOfficialMonthlyAmountMaps(
+    rulesBundle.current.monthlyTimeline,
+    rulesBundle.previous.monthlyTimeline
+  );
+  const currentMonthly = monthlyMaps.current;
+  const previousMonthly = monthlyMaps.previous;
 
-  if (hasExtraDashboardFilters(filters)) {
-    periodAgg = await aggregateFiltered(filters, periodBounds.from, periodBounds.to);
-    currentMonthly = await queryMonthlyFiltered(filters, filters.year);
-    previousMonthly = await queryMonthlyFiltered(filters, filters.year - 1);
-  } else {
-    periodAgg = await aggregateFiltered(filters, periodBounds.from, periodBounds.to);
-    currentMonthly = new Map(
-      tab.monthlySeries.map((p) => [p.month, p.currentYearValue ?? 0])
-    );
-    previousMonthly = new Map(
-      tab.monthlySeries.map((p) => [p.month, p.previousYearValue ?? 0])
-    );
-  }
-
-  portfolio = await queryPortfolioFiltered(filters, filters.year, now);
-  topCustomers = await queryTopCustomersFiltered(filters, filters.year);
+  const portfolio = mapOfficialFinancePortfolioFromManagementRows(
+    rulesBundle.current.managementBundle.rows
+  );
+  const topCustomers = buildOfficialTopCustomersFromRulesOrders(
+    rulesBundle.orders,
+    { ...rulesInput.listFilters, year: filters.year, month: filters.month ?? null },
+    10
+  );
 
   const dashboardOrders = await loadDashboardOrders(filters, periodBounds.from, periodBounds.to);
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
@@ -610,7 +498,7 @@ export async function buildFinanceSalesOrdersDashboard(
     tab,
     dataQuality: {
       warnings,
-      source: "SalesOrder/SalesOrderItem",
+      source: OFFICIAL_SO_RULES_SOURCE,
       excludedCancelledOrdersCount: excluded.cancelled,
       excludedErrorOrdersCount: excluded.error,
       missingIssueDateCount: excluded.missingIssueDate,
