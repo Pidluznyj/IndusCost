@@ -46,7 +46,6 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     description: "Cadastro de almoxarifados e locais.",
     showInNav: true,
     navOrder: 30,
-    comingSoon: true,
   },
   {
     id: "balances",
@@ -102,5 +101,6 @@ export function getVisibleInventoryTabs(): InventoryTabDef[] {
 
 export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/items")) return "items";
+  if (pathname.includes("/inventory/warehouses")) return "warehouses";
   return "overview";
 }

@@ -366,12 +366,15 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     try {
       const search = String(req.query.search ?? "").trim();
       const statusQ = String(req.query.status ?? "").trim();
+      const allowsMovementsQ = String(req.query.allowsMovements ?? "").trim();
       const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
       const pageSize = Math.min(200, Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50));
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.InventoryWarehouseWhereInput = {
         ...(statusQ === "ACTIVE" || statusQ === "INACTIVE" ? { status: statusQ } : {}),
+        ...(allowsMovementsQ === "true" ? { allowsMovements: true } : {}),
+        ...(allowsMovementsQ === "false" ? { allowsMovements: false } : {}),
         ...(search
           ? {
               OR: [

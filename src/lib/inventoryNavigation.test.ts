@@ -52,6 +52,7 @@ describe("inventoryNavigation", () => {
     const tabs = getVisibleInventoryTabs();
     assert.equal(tabs[0]?.id, "overview");
     assert.equal(tabs.some((t) => t.id === "items" && !t.comingSoon), true);
+    assert.equal(tabs.some((t) => t.id === "warehouses" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "audit" && t.comingSoon), true);
     assert.equal(INVENTORY_TAB_DEFS.length, 8);
   });
