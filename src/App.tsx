@@ -19,6 +19,7 @@ import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligenceP
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
+import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
@@ -52,7 +53,7 @@ import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView"
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, BarChart3, ClipboardList, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, BarChart3, ClipboardList, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -706,6 +707,25 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/result"
+          element={
+            <ModulePageShell
+              title="Resultado — Pedidos de Venda"
+              description="Visão executiva de venda, custo, margem gerencial e projeção comercial."
+              headerActions={
+                <Link
+                  to="/sales-orders"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  Lista de pedidos
+                </Link>
+              }
+            >
+              <SalesOrderResultPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -724,6 +744,13 @@ export default function App() {
               description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
               headerActions={
                 <>
+                  <Link
+                    to="/sales-orders/result"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Resultado
+                  </Link>
                   <Link
                     to="/sales-orders/management"
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
