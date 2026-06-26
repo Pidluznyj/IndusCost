@@ -25,6 +25,8 @@ describe("salesOrderManagementRoutes", () => {
     assert.match(read("server.ts"), /registerSalesOrderIntelligenceRoutes/);
     const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
     assert.match(routes, /app\.get\(\s*"\/?api\/sales-orders\/management"/);
+    assert.match(routes, /buildOfficialSalesOrderManagementCore/);
+    assert.match(read("server.ts"), /buildOfficialSalesOrderListPayload/);
     assert.match(routes, /loadSalesOrderManagementPage/);
     assert.equal(getSalesOrderManagementApiPath(), "/api/sales-orders/management");
     assert.equal(

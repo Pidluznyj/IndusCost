@@ -678,6 +678,13 @@ export function buildSalesOrderRulesResult(
     listSummary,
     fulfillmentKpis: management.fulfillmentKpis,
     managementSummary: management.summary,
+    managementBundle: {
+      rows: management.rows,
+      cards: management.cards,
+      cardAmounts: management.cardAmounts,
+      dashboardCards: management.dashboardCards,
+      fulfillmentCharts: management.fulfillmentCharts,
+    },
     monthlyTimeline,
     gridRows,
     metricDefinitions: listSalesOrderMetricDefinitions(),

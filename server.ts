@@ -167,9 +167,12 @@ import {
 } from "./src/lib/salesOrderMarginService.server.js";
 import { setSalesOrderMarginProductCostResolver } from "./src/lib/salesOrderMarginProductCostResolver.js";
 import {
-  buildSalesOrderListSummary,
   buildSalesOrderListWhere,
 } from "./src/lib/salesOrdersListSummary.js";
+import {
+  buildOfficialSalesOrderListPayload,
+  mapPrismaOrderToSalesOrderRulesInput,
+} from "./src/lib/salesOrderRulesAdapter.js";
 import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
@@ -12672,7 +12675,18 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const pageSize = Math.min(parsePositiveIntQuery(req.query.pageSize, 20), 100);
       const skip = (page - 1) * pageSize;
 
-      const [rows, total, aggregate] = await Promise.all([
+      const listFilters = {
+        status: status || undefined,
+        customerId: customerId || undefined,
+        responsible: responsible || undefined,
+        startDate,
+        endDate,
+        year,
+        month,
+        q: q || undefined,
+      };
+
+      const [rows, total, summaryOrders] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
           orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
@@ -12684,18 +12698,45 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
         }),
         prisma.salesOrder.count({ where }),
-        prisma.salesOrder.aggregate({
+        prisma.salesOrder.findMany({
           where,
-          _count: { _all: true },
-          _sum: { totalNetValue: true, totalItems: true },
+          select: {
+            id: true,
+            orderCode: true,
+            status: true,
+            issueDate: true,
+            expectedDeliveryDate: true,
+            totalNetValue: true,
+            totalGrossValue: true,
+            totalItems: true,
+            responsible: true,
+            nomusRawResponse: true,
+            companyIssuer: true,
+            externalSalesOrderId: true,
+            customerId: true,
+            Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+            items: {
+              select: {
+                id: true,
+                externalProductId: true,
+                skuSnapshot: true,
+                productNameSnapshot: true,
+                quantity: true,
+                status: true,
+              },
+            },
+          },
         }),
       ]);
 
-      const summary = buildSalesOrderListSummary({
-        totalOrders: aggregate._count._all,
-        totalNetAmount: aggregate._sum.totalNetValue,
-        totalItems: aggregate._sum.totalItems,
+      const officialList = buildOfficialSalesOrderListPayload({
+        orders: summaryOrders.map(mapPrismaOrderToSalesOrderRulesInput),
+        listFilters,
+        referenceDate: new Date(),
+        year: year ?? undefined,
+        month: month ?? undefined,
       });
+      const summary = officialList.summary;
 
       const data = await attachMarginsToSalesOrders(prisma, rows);
 
@@ -12706,6 +12747,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
         summary,
+        metricsSource: officialList.metricsSource,
+        rulesEngineVersion: officialList.rulesEngineVersion,
       });
     } catch (e: any) {
       console.error("GET /api/sales-orders", e);

@@ -12,6 +12,8 @@ export type ExecutiveSectionBase = {
   available: boolean;
   unavailableReason?: string;
   source?: string;
+  metricsSource?: string;
+  rulesEngineVersion?: string;
 };
 
 export type DashboardMetricCard = {

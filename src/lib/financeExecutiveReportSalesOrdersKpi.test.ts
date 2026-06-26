@@ -33,8 +33,8 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
       "utf8"
     );
     assert.ok(report.includes("buildSalesOrdersDashboardTab"));
-    assert.ok(metrics.includes("prisma.salesOrder.aggregate"));
-    assert.ok(metrics.includes('status: { not: "CANCELLED" }'));
+    assert.ok(metrics.includes("resolveOfficialSalesOrderExecutiveMetrics"));
+    assert.ok(metrics.includes("OFFICIAL_SO_RULES_SOURCE") || metrics.includes("salesOrderRulesAdapter"));
     assert.ok(!metrics.includes("nomusNfe"));
     assert.ok(!metrics.includes("proposal"));
   });
@@ -44,12 +44,12 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
       join(process.cwd(), "src/lib/salesOrdersDashboardMetrics.ts"),
       "utf8"
     );
-    assert.match(metrics, /aggregateByIssueDate\(monthStart, monthEnd\)/);
+    assert.match(metrics, /soldAmountMonth/);
     assert.match(metrics, /const monthlyTarget = buildTargetBlock\(monthAgg\.net/);
     assert.match(metrics, /target: monthlyTarget/);
     assert.match(metrics, /metricCard\("realized-ytd"/);
     assert.match(metrics, /metricCard\("realized-month"/);
-    assert.match(metrics, /ytdAgg\.net/);
+    assert.match(metrics, /soldAmountYtd/);
   });
 
   it("atingimento mensal usa vendido no mês ÷ meta mês — não YTD", () => {

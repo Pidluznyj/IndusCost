@@ -415,6 +415,8 @@ export type SalesOrderManagementResponse = {
   fulfillmentKpis?: SalesOrderFulfillmentKpis;
   fulfillmentCharts?: SalesOrderFulfillmentCharts;
   marginEconomics?: SalesOrderManagementMarginEconomics;
+  metricsSource?: string;
+  rulesEngineVersion?: string;
   rows: SalesOrderManagementRow[];
 };
 

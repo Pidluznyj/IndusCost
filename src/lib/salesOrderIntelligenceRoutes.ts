@@ -11,10 +11,14 @@ import {
 } from "./salesOrderManagementFulfillment.js";
 import {
   buildSalesOrderManagementWhere,
-  buildManagementRowsFromOrders,
   parseSalesOrderManagementFilters,
   type SalesOrderManagementResponse,
 } from "./salesOrderManagement.js";
+import {
+  buildOfficialSalesOrderManagementCore,
+  mapPrismaOrderToSalesOrderRulesInput,
+  SALES_ORDER_RULES_PRISMA_SELECT,
+} from "./salesOrderRulesAdapter.js";
 import {
   attachMarginsToSalesOrders,
   calculateSalesOrderMarginsForOrders,
@@ -104,23 +108,7 @@ export async function loadSalesOrderManagementPage(
   const orders = await prisma.salesOrder.findMany({
     where,
     orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-    include: {
-      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
-      items: {
-        select: {
-          id: true,
-          salesOrderId: true,
-          productId: true,
-          externalProductId: true,
-          skuSnapshot: true,
-          productNameSnapshot: true,
-          quantity: true,
-          negotiatedPrice: true,
-          totalNetValue: true,
-          unitCost: true,
-        },
-      },
-    },
+    select: SALES_ORDER_RULES_PRISMA_SELECT,
   });
 
   const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
@@ -133,13 +121,13 @@ export async function loadSalesOrderManagementPage(
     }))
   );
 
-  const { rows, cards, summary, cardAmounts, dashboardCards, fulfillmentKpis, fulfillmentCharts } =
-    buildManagementRowsFromOrders(
-    orders,
-    filters,
-    undefined,
-    linkedNfeContextMap
-  );
+  const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
+  const officialCore = buildOfficialSalesOrderManagementCore({
+    orders: rulesOrders,
+    managementFilters: filters,
+    referenceDate: undefined,
+    linkedNfeContextMap,
+  });
 
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
     prisma,
@@ -149,6 +137,8 @@ export async function loadSalesOrderManagementPage(
       items: order.items,
     }))
   );
+
+  const rows = officialCore.rows.map((row) => ({ ...row }));
 
   const itemResultsByOrderId = new Map<string, import("./salesOrderMarginTypes.js").SalesOrderMarginItemResult[]>();
   for (const row of rows) {
@@ -180,12 +170,14 @@ export async function loadSalesOrderManagementPage(
     pageSize,
     total,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    cards,
-    cardAmounts,
-    dashboardCards,
-    summary,
-    fulfillmentKpis,
-    fulfillmentCharts,
+    cards: officialCore.cards,
+    cardAmounts: officialCore.cardAmounts,
+    dashboardCards: officialCore.dashboardCards,
+    summary: officialCore.summary,
+    fulfillmentKpis: officialCore.fulfillmentKpis,
+    fulfillmentCharts: officialCore.fulfillmentCharts,
+    metricsSource: officialCore.metricsSource,
+    rulesEngineVersion: officialCore.rulesEngineVersion,
     marginEconomics,
     rows: pageRows,
   };
@@ -232,12 +224,13 @@ export async function loadSalesOrderFulfillmentAudit(
     }))
   );
 
-  const { rows } = buildManagementRowsFromOrders(
-    orders,
-    filters,
-    undefined,
-    linkedNfeContextMap
-  );
+  const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
+  const officialCore = buildOfficialSalesOrderManagementCore({
+    orders: rulesOrders,
+    managementFilters: filters,
+    linkedNfeContextMap,
+  });
+  const rows = officialCore.rows;
 
   const orderIds = orders.map((o) => o.id);
   const links =

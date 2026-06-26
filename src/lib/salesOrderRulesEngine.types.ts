@@ -4,11 +4,15 @@
 
 import type { SalesOrderListFilters, SalesOrderListSummary } from "./salesOrdersListSummary.js";
 import type { SalesOrderManagementFilters } from "./salesOrderManagement.js";
-import type { SalesOrderManagementSummary } from "./salesOrderManagementTypes.js";
-import type { SalesOrderFulfillmentKpis } from "./salesOrderManagementFulfillment.js";
+import type {
+  SalesOrderManagementCardAmounts,
+  SalesOrderManagementCards,
+  SalesOrderManagementSummary,
+} from "./salesOrderManagementTypes.js";
+import type { SalesOrderFulfillmentCharts, SalesOrderFulfillmentKpis } from "./salesOrderManagementFulfillment.js";
 import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
 import type { SalesOrderLinkedNfeContext } from "./salesOrderLinkedNfe.js";
-import type { ManagementStatusCardId } from "./salesOrderManagementStatus.js";
+import type { ManagementDashboardCard, ManagementStatusCardId } from "./salesOrderManagementStatus.js";
 import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 import type { BiLogisticStatusCardId } from "./salesOrderLogisticStatus.js";
 
@@ -204,6 +208,14 @@ export type SalesOrderRulesAuditResult = {
   managementParityOk: boolean;
 };
 
+export type SalesOrderRulesManagementBundle = {
+  rows: SalesOrderManagementRow[];
+  cards: SalesOrderManagementCards;
+  cardAmounts: SalesOrderManagementCardAmounts;
+  dashboardCards: ManagementDashboardCard[];
+  fulfillmentCharts: SalesOrderFulfillmentCharts;
+};
+
 export type SalesOrderRulesResult = {
   engineVersion: string;
   generatedAt: string;
@@ -213,6 +225,7 @@ export type SalesOrderRulesResult = {
   listSummary: SalesOrderListSummary;
   fulfillmentKpis: SalesOrderFulfillmentKpis;
   managementSummary: SalesOrderManagementSummary;
+  managementBundle: SalesOrderRulesManagementBundle;
   monthlyTimeline: SalesOrderMonthlyTimelinePoint[];
   gridRows: SalesOrderGridRow[];
   metricDefinitions: SalesOrderMetricDefinition[];

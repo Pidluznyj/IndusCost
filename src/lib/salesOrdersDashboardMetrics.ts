@@ -44,6 +44,12 @@ import {
   loadSalesOrderEnrichedMetricsFromDb,
 } from "@/src/lib/salesOrderMetricsEngine.js";
 import {
+  mapPrismaOrderToSalesOrderRulesInput,
+  resolveOfficialSalesOrderExecutiveMetrics,
+  SALES_ORDER_RULES_PRISMA_SELECT,
+} from "@/src/lib/salesOrderRulesAdapter.js";
+import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
+import {
   buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
   buildMonthlySeriesPoints,
@@ -107,19 +113,31 @@ function buildTargetBlock(
   };
 }
 
-async function aggregateByIssueDate(from: Date, to: Date): Promise<{ count: number | null; net: number | null }> {
-  const agg = await prisma.salesOrder.aggregate({
+async function loadOrdersForExecutiveYear(year: number) {
+  const from = startOfYear(new Date(year, 0, 1));
+  const to = endOfYear(new Date(year, 0, 1));
+  return prisma.salesOrder.findMany({
     where: {
-      status: { not: "CANCELLED" },
       issueDate: { gte: from, lte: to },
     },
-    _count: true,
-    _sum: { totalNetValue: true },
+    select: SALES_ORDER_RULES_PRISMA_SELECT,
   });
-  return {
-    count: safeMetricNumber(agg._count),
-    net: decimalToNumber(agg._sum.totalNetValue),
-  };
+}
+
+function resolveExecutiveRulesMetrics(
+  yearCtx: ExecutiveDashboardYearContext,
+  orders: Awaited<ReturnType<typeof loadOrdersForExecutiveYear>>,
+  linkedMap: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>
+) {
+  const ref = yearCtx.referenceDate;
+  const month = ref.getMonth() + 1;
+  return resolveOfficialSalesOrderExecutiveMetrics(
+    orders.map(mapPrismaOrderToSalesOrderRulesInput),
+    ref,
+    yearCtx.selectedYear,
+    month,
+    linkedMap
+  );
 }
 
 async function queryOpenPortfolio(referenceDate: Date): Promise<{ count: number | null; net: number | null }> {
@@ -174,28 +192,6 @@ async function queryOverdueList(selectedYear: number, now: Date): Promise<Overdu
     }));
 }
 
-async function queryMonthlyByIssueDate(year: number): Promise<Map<number, number>> {
-  const from = startOfYear(new Date(year, 0, 1));
-  const to = endOfYear(new Date(year, 0, 1));
-  const rows = await prisma.$queryRaw<{ month: number; total: unknown }[]>(
-    Prisma.sql`
-      SELECT
-        EXTRACT(MONTH FROM so."issueDate")::int AS month,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      WHERE ${NOT_CANCELLED}
-        AND so."issueDate" >= ${from}
-        AND so."issueDate" <= ${to}
-      GROUP BY 1
-      ORDER BY 1
-    `
-  );
-  const map = new Map<number, number>();
-  for (const row of rows) {
-    map.set(row.month, decimalToNumber(row.total) ?? 0);
-  }
-  return map;
-}
 
 async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
   const rows = await prisma.$queryRaw<{ status: string; count: bigint; total: unknown }[]>(
@@ -224,44 +220,69 @@ export async function buildSalesOrdersDashboardTab(
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
   const previousYear = yearCtx.previousYear;
-  const monthStart = startOfMonth(ref);
-  const monthEnd = endOfMonth(ref);
-  const yearStart = startOfYear(ref);
-  const yearEnd = endOfYear(ref);
-  const prevYearStart = startOfYear(new Date(previousYear, 0, 1));
-  const prevYearEnd = endOfYear(new Date(previousYear, 0, 1));
-  const prevYearSameMonthStart = startOfMonth(new Date(previousYear, ref.getMonth(), 1));
-  const prevYearSameMonthEnd = endOfMonth(new Date(previousYear, ref.getMonth(), 1));
   const operationalNow = new Date();
   const periodLabel = ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const monthCompareLabel = `${ref.toLocaleDateString("pt-BR", { month: "long" })}/${previousYear}`;
 
+  const [currentYearOrders, previousYearOrders] = await Promise.all([
+    loadOrdersForExecutiveYear(year),
+    loadOrdersForExecutiveYear(previousYear),
+  ]);
+
+  const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+    [...currentYearOrders, ...previousYearOrders].map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    })),
+    ref
+  );
+
+  const official = resolveExecutiveRulesMetrics(yearCtx, currentYearOrders, linkedMap);
+  const prevYearRef = new Date(previousYear, ref.getMonth(), ref.getDate(), 23, 59, 59, 999);
+  const prevOfficial = resolveOfficialSalesOrderExecutiveMetrics(
+    previousYearOrders.map(mapPrismaOrderToSalesOrderRulesInput),
+    prevYearRef,
+    previousYear,
+    ref.getMonth() + 1,
+    linkedMap
+  );
+
+  const monthAgg = { count: official.metrics.ordersMonth, net: official.metrics.soldAmountMonth };
+  const ytdAgg = { count: official.metrics.ordersYtd, net: official.metrics.soldAmountYtd };
+  const prevMonthAgg = {
+    count: null,
+    net: official.metrics.soldAmountPreviousYearMonth,
+  };
+  const prevYearTotalAgg = {
+    count: null,
+    net: prevOfficial.metrics.soldAmountYtd,
+  };
+  const yearAgg = {
+    count: currentYearOrders.filter((o) => o.status !== "CANCELLED").length,
+    net: official.monthlyTimeline.reduce((sum, p) => sum + p.soldAmount, 0),
+  };
+
   const [
-    yearAgg,
-    ytdAgg,
-    monthAgg,
-    prevMonthAgg,
-    prevYearTotalAgg,
     openPortfolio,
     overdueSummary,
     overdueList,
-    currentYearMonthly,
-    previousYearMonthly,
     statusBreakdown,
   ] = await Promise.all([
-    aggregateByIssueDate(yearStart, yearEnd),
-    aggregateByIssueDate(yearStart, ref),
-    aggregateByIssueDate(monthStart, monthEnd),
-    aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
-    aggregateByIssueDate(prevYearStart, prevYearEnd),
     queryOpenPortfolio(operationalNow),
     queryOverdueSummary(year, operationalNow),
     queryOverdueList(year, operationalNow),
-    queryMonthlyByIssueDate(year),
-    queryMonthlyByIssueDate(previousYear),
     queryStatusBreakdown(),
   ]);
 
+  const currentYearMonthly = new Map(
+    official.monthlyTimeline.map((p) => [p.month, p.soldAmount])
+  );
+  const previousYearMonthly = new Map(
+    prevOfficial.monthlyTimeline.map((p) => [p.month, p.soldAmount])
+  );
   const monthlyTarget = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
   const monthlyRealizedMinusTarget = computeRealizedMinusTarget(monthAgg.net, monthlyTarget.target);
   const annualBlock = buildTargetBlock(ytdAgg.net, prevYearTotalAgg.net);
@@ -291,7 +312,7 @@ export async function buildSalesOrdersDashboardTab(
   const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
   const workdaysInYear = countWorkdaysInYear(year);
   const dailyAvgYtd = computeYtdDailyAverageByWorkday(ytdAgg.net, yearWorkdaysElapsed);
-  const projectedMonth = computeMonthProjection(dailyAvgYtd, workdaysInMonth);
+  const projectedMonth = official.metrics.monthProjection ?? computeMonthProjection(dailyAvgYtd, workdaysInMonth);
   const projectedYear = computeYearProjection(dailyAvgYtd, workdaysInYear);
 
   const projection: SalesOrdersProjectionBlock = {
@@ -368,7 +389,9 @@ export async function buildSalesOrdersDashboardTab(
 
   return {
     available: true,
-    source: "SalesOrder.totalNetValue por issueDate; metas = ano/mês anterior × 1,30",
+    source: `${official.metricsSource} — SalesOrder.totalNetValue por issueDate; metas = ano/mês anterior × 1,30`,
+    metricsSource: official.metricsSource,
+    rulesEngineVersion: official.rulesEngineVersion,
     selectedYear: year,
     previousYear,
     currentMonth: ref.getMonth() + 1,
