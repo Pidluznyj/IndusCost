@@ -56,6 +56,7 @@ import {
   formatFinanceDaysOverdue,
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsPayableFormat";
+import { FinanceDueRadar } from "@/src/components/finance/due-radar/FinanceDueRadar";
 import {
   canExportFinanceAccountsPayable,
   canRunFinanceAccountsPayableSync,
@@ -1175,6 +1176,7 @@ export function FinanceAccountsPayablePage() {
           ) : null}
         </div>
       </section>
+      <FinanceDueRadar mode="payable" dashboardQuery={queryString} />
       </main>
     </FinanceBiDashboardShell>
   );

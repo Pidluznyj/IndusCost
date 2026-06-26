@@ -137,6 +137,10 @@ import {
 import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
 import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
 import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
+import {
+  registerFinanceArDueRadarRoutes,
+  registerFinanceApDueRadarRoutes,
+} from "./src/lib/financeDueRadarRoutes.js";
 import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
 import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
 import { registerFinanceSuppliersRoutes } from "./src/lib/financeSuppliersRoutes.js";
@@ -13187,7 +13191,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     getCurrentAppUser,
   });
 
+  registerFinanceArDueRadarRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
   registerFinanceAccountsPayableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceApDueRadarRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,

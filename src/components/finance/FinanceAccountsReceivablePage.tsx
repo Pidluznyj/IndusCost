@@ -53,6 +53,7 @@ import {
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
+import { FinanceDueRadar } from "@/src/components/finance/due-radar/FinanceDueRadar";
 import {
   canExportFinanceAccountsReceivable,
   canRunFinanceAccountsReceivableSync,
@@ -1131,6 +1132,7 @@ export function FinanceAccountsReceivablePage() {
       </div>
         </>
       )}
+      <FinanceDueRadar mode="receivable" dashboardQuery={queryString} />
       </main>
 
       <FinanceAccountsReceivableSyncPanel
