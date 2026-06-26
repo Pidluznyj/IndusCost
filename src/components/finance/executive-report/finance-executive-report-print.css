@@ -526,4 +526,18 @@
   .executive-report-screen-only {
     display: none !important;
   }
+
+  .recharts-tooltip-wrapper,
+  .executive-chart-tooltip,
+  .executive-report-pdf-mode .recharts-tooltip-wrapper {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}
+
+body.executive-report-pdf-mode .recharts-tooltip-wrapper,
+body.executive-report-pdf-mode .executive-chart-tooltip {
+  display: none !important;
 }

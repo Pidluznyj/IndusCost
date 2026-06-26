@@ -18,6 +18,7 @@ import type {
   SalesOrdersDashboardTab,
 } from "./executiveDashboardTypes.js";
 import type { FinanceBillingSource } from "./financeBillingSourceTypes.js";
+import type { FinanceCashFlowAnnualComparisonPayload } from "./financeCashFlowAnnualComparison.js";
 
 /** Modo de geração — snapshot reservado para persistência futura. */
 export type FinanceExecutiveReportMode = "live" | "snapshot";
@@ -323,6 +324,13 @@ export type FinanceExecutiveReportCalendarAgenda = {
   annualChart: FinanceExecutiveReportCashFlowAnnualChart;
 };
 
+/** Comparativo anual realizado/aberto — motor oficial do Fluxo de Caixa (independente de filtros da página). */
+export type FinanceExecutiveReportAnnualComparison = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlow;
+  currentYear: FinanceCashFlowAnnualComparisonPayload;
+  previousYear: FinanceCashFlowAnnualComparisonPayload;
+};
+
 /** Seção 10: Pedidos de venda — SalesOrder, não Propostas. */
 export type FinanceExecutiveReportSalesOrders = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.salesOrders;
@@ -374,6 +382,7 @@ export type FinanceExecutiveReport = {
   accountsPayable: FinanceExecutiveReportAccountsPayable;
   cashFlow: FinanceExecutiveReportCashFlow;
   calendarAgenda: FinanceExecutiveReportCalendarAgenda;
+  annualComparison: FinanceExecutiveReportAnnualComparison;
   salesOrders: FinanceExecutiveReportSalesOrders;
   executiveNarrative: FinanceExecutiveReportNarrative | null;
 };

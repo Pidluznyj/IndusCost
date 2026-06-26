@@ -7,6 +7,8 @@ import {
   buildAnnualComparisonSeriesLabels,
   buildCashFlowAnnualComparison,
   createAnnualComparisonBaseFilters,
+  filterApRowsForAnnualComparison,
+  filterArRowsForAnnualComparison,
   isApPaidByPaymentInPeriod,
   isArReceivedByRealizationInPeriod,
   mapAnnualComparisonChartRows,
@@ -115,7 +117,43 @@ describe("financeCashFlowAnnualComparison", () => {
 
     const routes = read("src/lib/financeCashFlowRoutes.ts");
     assert.ok(routes.includes("/api/finance/cash-flow/annual-comparison"));
+    assert.ok(routes.includes("loadAnnualComparisonPortfolioRows"));
+    assert.ok(routes.includes("createAnnualComparisonBaseFilters"));
     assert.doesNotMatch(routes, /annual-comparison[\s\S]*parseFiltersOrRespond/);
+    assert.match(routes, /annual-comparison[\s\S]*?loadAnnualComparisonPortfolioRows/);
+  });
+
+  it("2b. AR liquidado com amountReceived zerado usa amountReceivable", () => {
+    const arRows = [
+      arRow({
+        externalId: 1,
+        dueDate: new Date(2026, 0, 10),
+        settlementDate: new Date(2026, 0, 10),
+        amountReceivable: 950,
+        amountReceived: 0,
+        balanceReceivable: 0,
+      }),
+    ];
+    const filtered = filterArRowsForAnnualComparison(arRows, BASE);
+    assert.equal(filtered.length, 1);
+    const payload = buildCashFlowAnnualComparison(filtered, [], 2026, BASE);
+    assert.equal(payload.months[0]?.receivedAmount, 950);
+  });
+
+  it("2c. AP pago no ano aloca pelo pagamento mesmo com vencimento fora do ano", () => {
+    const apRows = [
+      apRow({
+        externalId: 1,
+        dueDate: new Date(2025, 11, 20),
+        paymentDate: new Date(2026, 0, 8),
+        amountPaid: 600,
+        balancePayable: 0,
+      }),
+    ];
+    const filtered = filterApRowsForAnnualComparison(apRows, BASE);
+    const payload = buildCashFlowAnnualComparison([], filtered, 2026, BASE);
+    assert.equal(payload.months[0]?.paidAmount, 600);
+    assert.equal(payload.months[11]?.paidAmount, 0);
   });
 
   it("3. AR recebido entra em receivedAmount pela data de baixa", () => {

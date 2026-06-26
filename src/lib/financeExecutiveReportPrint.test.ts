@@ -51,13 +51,19 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /executive-report-print-root/);
     assert.match(document, /pageId="cover"/);
     assert.match(document, /pageId="summary"/);
+    assert.match(document, /pageId="sales-orders"/);
     assert.match(document, /pageId="billing-comparison"/);
-    assert.match(document, /pageId="billing-projection"/);
     assert.match(document, /pageId="accounts-receivable"/);
     assert.match(document, /pageId="accounts-payable"/);
     assert.match(document, /pageId="cash-flow"/);
-    assert.match(document, /pageId="sales-orders"/);
     assert.match(document, /pageId="conclusion"/);
+    assert.doesNotMatch(document, /pageId="billing-projection"/);
+    const salesIdx = document.indexOf('pageId="sales-orders"');
+    const billingIdx = document.indexOf('pageId="billing-comparison"');
+    const arIdx = document.indexOf('pageId="accounts-receivable"');
+    const apIdx = document.indexOf('pageId="accounts-payable"');
+    const cfIdx = document.indexOf('pageId="cash-flow"');
+    assert.ok(salesIdx > 0 && billingIdx > salesIdx && arIdx > billingIdx && apIdx > arIdx && cfIdx > apIdx);
   });
 
   it("CSS contém A4 landscape", () => {
@@ -78,12 +84,12 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(css, /\.no-print/);
   });
 
-  it("capa contém RELATÓRIO PRESIDENCIAL", () => {
+  it("capa usa título executivo dinâmico", () => {
     const cover = readFileSync(
       join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportPrintCover.tsx"),
       "utf8"
     );
-    assert.match(cover, /RELATÓRIO PRESIDENCIAL/);
+    assert.match(cover, /cover\.title/);
     assert.match(cover, /resolvePrintCoverLogoSrc/);
     assert.match(cover, /EXECUTIVE_REPORT_PRINT_DATA_NOTE/);
   });
@@ -221,15 +227,15 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(document, /Resumo Executivo/);
-    assert.match(document, /Faturamento Comparativo/);
-    assert.match(document, /Realizado vs Projetado/);
+    assert.match(document, /Faturamento/);
     assert.match(document, /Contas a Receber/);
     assert.match(document, /Contas a Pagar/);
-    assert.match(document, /Fluxo de Caixa/);
+    assert.match(document, /Fluxo de Caixa Planejado/);
     assert.match(document, /Pedidos de Venda/);
-    assert.match(document, /Vendido no mês/);
-    assert.match(document, /Realizado YTD/);
+    assert.match(document, /Pedidos mês/);
+    assert.match(document, /Pedidos YTD/);
     assert.match(document, /Conclusão Executiva/);
+    assert.doesNotMatch(document, /pageId="billing-projection"/);
   });
 
   it("bloqueia impressão enquanto loading", () => {
@@ -288,8 +294,8 @@ describe("financeExecutiveReportPrint", () => {
   it("gráficos Recharts usam altura explícita e animação desativada", () => {
     const charts = [
       "ExecutiveBarComparisonChart.tsx",
-      "ExecutiveRealizedProjectedChart.tsx",
-      "ExecutiveScheduleChart.tsx",
+      "ExecutiveReportReceivablesChart.tsx",
+      "ExecutiveReportPayablesChart.tsx",
       "ExecutiveSalesOrdersChart.tsx",
     ];
     for (const file of charts) {
@@ -297,8 +303,7 @@ describe("financeExecutiveReportPrint", () => {
         join(process.cwd(), "src", "components", "finance", "executive-report", "charts", file),
         "utf8"
       );
-      assert.match(src, /useExecutiveChartFrameHeight/);
-      assert.match(src, /height=\{chartHeight\}/);
+      assert.match(src, /useExecutiveChartFrameDimensions/);
       assert.match(src, /isAnimationActive=\{EXECUTIVE_CHART_IS_ANIMATION_ACTIVE\}/);
     }
     const cashFlow = readFileSync(
@@ -319,22 +324,24 @@ describe("financeExecutiveReportPrint", () => {
     assert.equal(await waitForExecutiveReportChartsReady(), true);
   });
 
-  it("não exige quantidade fixa de gráficos para considerar prontos", () => {
+  it("exige gráficos principais renderizados antes do PDF", () => {
     const empty = { getAttribute: () => "true", querySelector: () => null, getBoundingClientRect: () => ({ width: 0, height: 0 }) };
     assert.equal(chartFrameIsReady(empty as unknown as Element), true);
-    assert.equal(areExecutiveReportChartsReady([]), true);
-    assert.equal(areExecutiveReportChartsReady([empty as unknown as Element]), true);
+    assert.equal(areExecutiveReportChartsReady([]), false);
+    assert.equal(areExecutiveReportChartsReady([empty as unknown as Element]), false);
+    const readyCharts = Array.from({ length: 5 }, () => empty);
+    assert.equal(areExecutiveReportChartsReady(readyCharts as unknown as Element[]), true);
   });
 
-  it("não bloqueia exportação por mínimo de 6 frames", () => {
+  it("aguarda mínimo de gráficos principais", () => {
     const src = readFileSync(
       join(process.cwd(), "src", "lib", "financeExecutiveReportPrint.ts"),
       "utf8"
     );
-    assert.doesNotMatch(src, /MIN_CHART_FRAMES|>=\s*6/);
+    assert.match(src, /EXECUTIVE_REPORT_MIN_CHARTS/);
     assert.match(src, /areExecutiveReportChartsReady/);
-    assert.match(src, /return true;\s*\n\}/);
     assert.match(src, /prepareExecutiveReportChartsForPrint/);
+    assert.match(src, /markExecutiveReportDocumentReady/);
   });
 
   it("página não bloqueia impressão com alerta de gráficos", () => {

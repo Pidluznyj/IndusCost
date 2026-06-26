@@ -10,6 +10,36 @@ export const EXECUTIVE_REPORT_PRINT_QUALITY_CONFIRM_MESSAGE =
 export const EXECUTIVE_REPORT_CHARTS_LOADING_MESSAGE =
   "Os gráficos ainda estão carregando. Aguarde alguns segundos e tente exportar novamente.";
 
+export const EXECUTIVE_REPORT_MIN_CHARTS = 5;
+export const EXECUTIVE_REPORT_MIN_CHART_WIDTH = 400;
+export const EXECUTIVE_REPORT_MIN_CHART_HEIGHT = 250;
+
+export function markExecutiveReportDocumentReady(ready: boolean): void {
+  if (typeof document === "undefined") return;
+  const root = document.querySelector(".executive-report-print-root");
+  if (root instanceof HTMLElement) {
+    root.dataset.reportReady = ready ? "true" : "false";
+  }
+  document.documentElement.dataset.reportReady = ready ? "true" : "false";
+  document.body.dataset.reportReady = ready ? "true" : "false";
+}
+
+export async function prepareExecutiveReportForPrint(): Promise<void> {
+  if (typeof document === "undefined") return;
+  document.body.classList.add("executive-report-pdf-mode");
+  try {
+    await document.fonts?.ready;
+  } catch {
+    /* ignore */
+  }
+  await prepareExecutiveReportChartsForPrint();
+}
+
+export function teardownExecutiveReportPrintMode(): void {
+  if (typeof document === "undefined") return;
+  document.body.classList.remove("executive-report-pdf-mode");
+}
+
 export function canPrintExecutiveReport(input: {
   loading: boolean;
   report: FinanceExecutiveReport | null;
@@ -68,11 +98,16 @@ export function chartFrameIsReady(chart: Element): boolean {
 
   const box = chart.getBoundingClientRect();
   const svgBox = svg.getBoundingClientRect();
-  return box.width > 40 && box.height > 40 && svgBox.width > 10 && svgBox.height > 10;
+  return (
+    box.width >= EXECUTIVE_REPORT_MIN_CHART_WIDTH &&
+    box.height >= EXECUTIVE_REPORT_MIN_CHART_HEIGHT &&
+    svgBox.width > 10 &&
+    svgBox.height > 10
+  );
 }
 
 export function areExecutiveReportChartsReady(charts: Element[]): boolean {
-  if (charts.length === 0) return true;
+  if (charts.length < EXECUTIVE_REPORT_MIN_CHARTS) return false;
   return charts.every(chartFrameIsReady);
 }
 
@@ -132,6 +167,7 @@ export async function waitForExecutiveReportChartsReady(
 
       if (stableReadyPolls >= stablePollsRequired) {
         await prepareExecutiveReportChartsForPrint();
+        markExecutiveReportDocumentReady(true);
         return true;
       }
     } else {
@@ -143,5 +179,6 @@ export async function waitForExecutiveReportChartsReady(
   }
 
   await prepareExecutiveReportChartsForPrint();
+  teardownExecutiveReportPrintMode();
   return true;
 }

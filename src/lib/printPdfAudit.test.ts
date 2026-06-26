@@ -199,16 +199,16 @@ describe("printPdfAudit — Relatório Presidencial", () => {
     assert.match(report, /cashFlowAnnualChart/);
   });
 
-  it("Pedidos mostra Vendido no mês", () => {
+  it("Pedidos mostra Pedidos mês", () => {
     const doc = read("src/components/finance/executive-report/ExecutiveReportDocument.tsx");
-    assert.match(doc, /Vendido no mês/);
+    assert.match(doc, /Pedidos mês/);
   });
 
   it("footer e gráfico com área segura e labels", () => {
     const css = read("src/components/finance/executive-report/finance-executive-report-print.css");
     assert.match(css, /executive-chart-body/);
     assert.match(css, /executive-chart-region/);
-    assert.match(css, /min-height:\s*80mm/);
+    assert.match(css, /height:\s*105mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
   });

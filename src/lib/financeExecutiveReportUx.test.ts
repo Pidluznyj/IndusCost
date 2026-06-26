@@ -106,9 +106,9 @@ describe("financeExecutiveReportUx — componentes", () => {
       join(process.cwd(), "src/components/finance/executive-report/ExecutiveKpiCard.tsx"),
       "utf8"
     );
-    assert.ok(card.includes("tooltip"));
-    assert.ok(card.includes("title={value}"));
-    assert.ok(card.includes("finance-executive-kpi-hint"));
+    assert.ok(card.includes("hint"));
+    assert.ok(card.includes("valueTitle={value}"));
+    assert.ok(card.includes("FinanceBiKpiCard"));
   });
 
   it("dataQuality alert traduz warnings", () => {

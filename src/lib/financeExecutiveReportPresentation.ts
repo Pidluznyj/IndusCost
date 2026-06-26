@@ -12,6 +12,7 @@ import type { BillingRealizedVsProjected } from "./executiveDashboardTypes.js";
 import type { DashboardMonthlySeriesPoint } from "./executiveDashboardTypes.js";
 import type { FinanceArMonthlyDue } from "./financeAccountsReceivableDashboardTypes.js";
 import type { FinanceApMonthlyDue } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceCashFlowAnnualComparisonPayload } from "./financeCashFlowAnnualComparison.js";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
 import { formatExecutivePercent } from "./executiveDashboardFormatters.js";
 import { formatFinanceKpiCurrency } from "./financeKpiFormat.js";
@@ -330,4 +331,50 @@ export function executiveChartRowsPreserveMonthOrder<T extends { month: number }
 
 export function executiveReportTargetMissing(target: number | null | undefined): boolean {
   return target == null || !Number.isFinite(target);
+}
+
+export type ExecutiveAnnualFlowChartRow = {
+  month: number;
+  monthLabel: string;
+  isCurrentMonth: boolean;
+  receivedAmount: number;
+  receivableOpenAmount: number;
+};
+
+export type ExecutiveAnnualPayablesChartRow = {
+  month: number;
+  monthLabel: string;
+  isCurrentMonth: boolean;
+  paidAmount: number;
+  payableOpenAmount: number;
+};
+
+export function mapAnnualComparisonToReceivablesChart(
+  payload: FinanceCashFlowAnnualComparisonPayload,
+  currentMonth: number
+): { rows: ExecutiveAnnualFlowChartRow[]; hasData: boolean } {
+  const rows = payload.months.map((m) => ({
+    month: m.month,
+    monthLabel: executiveReportMonthLabelPt(m.month),
+    isCurrentMonth: m.month === currentMonth,
+    receivedAmount: m.receivedAmount,
+    receivableOpenAmount: m.receivableOpenAmount,
+  }));
+  const hasData = rows.some((r) => r.receivedAmount !== 0 || r.receivableOpenAmount !== 0);
+  return { rows, hasData };
+}
+
+export function mapAnnualComparisonToPayablesChart(
+  payload: FinanceCashFlowAnnualComparisonPayload,
+  currentMonth: number
+): { rows: ExecutiveAnnualPayablesChartRow[]; hasData: boolean } {
+  const rows = payload.months.map((m) => ({
+    month: m.month,
+    monthLabel: executiveReportMonthLabelPt(m.month),
+    isCurrentMonth: m.month === currentMonth,
+    paidAmount: m.paidAmount,
+    payableOpenAmount: m.payableOpenAmount,
+  }));
+  const hasData = rows.some((r) => r.paidAmount !== 0 || r.payableOpenAmount !== 0);
+  return { rows, hasData };
 }

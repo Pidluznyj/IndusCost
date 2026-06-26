@@ -31,7 +31,7 @@ export function ExecutiveReportPrintCover({
           <p className="executive-print-cover-brand-fallback">Lazarios · Koppetel</p>
         )}
       </div>
-      <h1 className="executive-print-cover-title">RELATÓRIO PRESIDENCIAL</h1>
+      <h1 className="executive-print-cover-title">{cover.title}</h1>
       <p className="executive-print-cover-subtitle">{cover.subtitle}</p>
       <div className="executive-print-cover-grid">
         <div>

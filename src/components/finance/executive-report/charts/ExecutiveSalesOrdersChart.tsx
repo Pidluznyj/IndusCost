@@ -7,11 +7,11 @@ import {
   LabelList,
   Legend,
   Line,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
 import type { ExecutiveSalesOrdersChartRow } from "@/src/lib/financeExecutiveReportPresentation";
 import type { DashboardChartSeriesConfig } from "@/src/lib/executiveDashboardTypes";
 import {
@@ -32,7 +32,7 @@ import {
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
-import { useExecutiveChartFrameHeight } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
+import { useExecutiveChartFrameDimensions } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 function SalesTooltip({
   active,
@@ -85,7 +85,8 @@ export function ExecutiveSalesOrdersChart({
   targetMissing?: boolean;
   scenarioText?: string;
 }) {
-  const chartHeight = useExecutiveChartFrameHeight();
+  const { width: chartWidth, height: chartHeight } = useExecutiveChartFrameDimensions();
+  const pdfMode = useExecutiveReportPdfMode();
   const data = rows.map((row) => ({
     name: row.monthLabel,
     month: row.month,
@@ -106,8 +107,7 @@ export function ExecutiveSalesOrdersChart({
         testId="executive-sales-orders-chart"
         scenarioText={scenarioText}
       >
-        <ResponsiveContainer width="100%" height={chartHeight}>
-          <ComposedChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
+        <ComposedChart width={chartWidth} height={chartHeight} data={data} margin={EXECUTIVE_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
               dataKey="name"
@@ -123,7 +123,7 @@ export function ExecutiveSalesOrdersChart({
               axisLine={false}
               tickLine={false}
             />
-            <Tooltip content={<SalesTooltip config={config} />} />
+            {!pdfMode ? <Tooltip content={<SalesTooltip config={config} />} /> : null}
             <Legend wrapperStyle={EXECUTIVE_CHART_LEGEND} />
             <Bar
               dataKey="previousYear"
@@ -182,7 +182,6 @@ export function ExecutiveSalesOrdersChart({
               />
             ) : null}
           </ComposedChart>
-        </ResponsiveContainer>
       </ExecutiveChartShell>
     </div>
   );

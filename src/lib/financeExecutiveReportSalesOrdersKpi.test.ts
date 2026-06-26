@@ -14,17 +14,16 @@ import { mapSalesOrdersMonthlyToChart } from "./financeExecutiveReportPresentati
 import type { DashboardMonthlySeriesPoint } from "./executiveDashboardTypes.js";
 
 describe("financeExecutiveReportSalesOrdersKpi", () => {
-  it("documento expõe card Vendido no mês na seção Pedidos de Venda", () => {
+  it("documento expõe card Pedidos mês na seção Pedidos de Venda", () => {
     const document = readFileSync(
       join(process.cwd(), "src/components/finance/executive-report/ExecutiveReportDocument.tsx"),
       "utf8"
     );
-    assert.match(document, /label="Vendido no mês"/);
+    assert.match(document, /label="Pedidos mês"/);
     assert.match(document, /pageId="sales-orders"/);
     assert.match(document, /Pedidos de Venda/);
-    assert.match(document, /columns=\{5\}/);
-    assert.match(document, /salesTab\.target\?\.formatted\.actual/);
-    assert.match(document, /label="Realizado YTD"/);
+    assert.match(document, /salesTab\.target/);
+    assert.match(document, /label="Pedidos YTD"/);
   });
 
   it("pedidos usam buildSalesOrdersDashboardTab (SalesOrder) — não NF-e nem Proposta", () => {
@@ -109,7 +108,7 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
       join(process.cwd(), "src/components/finance/executive-report/ExecutiveKpiCard.tsx"),
       "utf8"
     );
-    assert.match(card, /finance-executive-kpi-value.*title=\{value\}/s);
+    assert.match(card, /valueTitle=\{value\}/);
   });
 
   it("hint de Vendido no mês explica regra sem propostas", () => {
@@ -127,7 +126,7 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
     );
     assert.match(document, /salesTargetMissing/);
     assert.match(document, /EXECUTIVE_REPORT_AUTO_TARGET_SHORT/);
-    assert.match(document, /Atingimento mês pedidos/);
+    assert.match(document, /label="Meta mês"/);
   });
 
   it("print/PDF inclui grid de 5 colunas para pedidos", () => {
@@ -148,9 +147,9 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
     );
     const billingSection = document.slice(
       document.indexOf('pageId="billing-comparison"'),
-      document.indexOf('pageId="billing-projection"')
+      document.indexOf('pageId="accounts-receivable"')
     );
-    assert.match(billingSection, /Realizado mês/);
-    assert.doesNotMatch(billingSection, /Vendido no mês/);
+    assert.match(billingSection, /Faturamento mês/);
+    assert.doesNotMatch(billingSection, /label="Pedidos mês"/);
   });
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "@/src/lib/utils";
 
@@ -57,8 +57,23 @@ export function ExecutiveChartShell({
 }) {
 
   const frameRef = useRef<HTMLDivElement>(null);
+  const [frameWidth, setFrameWidth] = useState(960);
 
+  useLayoutEffect(() => {
+    if (empty) return;
+    const node = frameRef.current;
+    if (!node) return;
 
+    const updateWidth = () => {
+      const next = Math.max(Math.floor(node.clientWidth), 480);
+      setFrameWidth(next);
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [empty, height, title]);
 
   useEffect(() => {
 
@@ -170,7 +185,7 @@ export function ExecutiveChartShell({
 
       {scenarioText ? <ExecutiveChartScenario text={scenarioText} /> : null}
 
-      <ExecutiveChartFrameContext.Provider value={height}>
+      <ExecutiveChartFrameContext.Provider value={{ width: frameWidth, height }}>
 
         <div
 

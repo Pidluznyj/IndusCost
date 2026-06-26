@@ -1,8 +1,24 @@
 import { createContext, useContext } from "react";
 import { EXECUTIVE_CHART_HEIGHT } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
-export const ExecutiveChartFrameContext = createContext(EXECUTIVE_CHART_HEIGHT);
+export type ExecutiveChartFrameDimensions = {
+  width: number;
+  height: number;
+};
+
+export const ExecutiveChartFrameContext = createContext<ExecutiveChartFrameDimensions>({
+  width: 960,
+  height: EXECUTIVE_CHART_HEIGHT,
+});
+
+export function useExecutiveChartFrameDimensions(): ExecutiveChartFrameDimensions {
+  return useContext(ExecutiveChartFrameContext);
+}
 
 export function useExecutiveChartFrameHeight(): number {
-  return useContext(ExecutiveChartFrameContext);
+  return useExecutiveChartFrameDimensions().height;
+}
+
+export function useExecutiveChartFrameWidth(): number {
+  return useExecutiveChartFrameDimensions().width;
 }

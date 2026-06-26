@@ -6,11 +6,12 @@ import {
   Cell,
   LabelList,
   Legend,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
+import { useExecutiveChartFrameDimensions } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 import type {
   ExecutiveBarComparisonRow,
   ExecutiveBarComparisonSeries,
@@ -77,6 +78,8 @@ export function ExecutiveBarComparisonChart({
   scenarioText?: string;
 }) {
   const chartHeight = useExecutiveChartFrameHeight();
+  const { width: chartWidth } = useExecutiveChartFrameDimensions();
+  const pdfMode = useExecutiveReportPdfMode();
   const data = useMemo(
     () =>
       rows.map((row) => {
@@ -101,8 +104,7 @@ export function ExecutiveBarComparisonChart({
       testId="executive-bar-comparison-chart"
       scenarioText={scenarioText}
     >
-      <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
+      <BarChart width={chartWidth} height={chartHeight} data={data} margin={EXECUTIVE_CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
             dataKey="name"
@@ -118,7 +120,7 @@ export function ExecutiveBarComparisonChart({
             axisLine={false}
             tickLine={false}
           />
-          <Tooltip content={<ComparisonTooltip years={years} />} />
+          {!pdfMode ? <Tooltip content={<ComparisonTooltip years={years} />} /> : null}
           <Legend wrapperStyle={EXECUTIVE_CHART_LEGEND} />
           {years.map((series) => (
             <Bar
@@ -146,7 +148,6 @@ export function ExecutiveBarComparisonChart({
             </Bar>
           ))}
         </BarChart>
-      </ResponsiveContainer>
     </ExecutiveChartShell>
   );
 }

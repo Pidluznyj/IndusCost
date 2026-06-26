@@ -29,7 +29,7 @@ export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
   billing: "Faturamento",
   "sales-orders": "Pedidos de Venda",
   "cost-centers": "Centros de Custo",
-  "executive-report": "Relatório Presidencial",
+  "executive-report": "Relatório Executivo",
 };
 
 export const FINANCE_MODULE_TAB_ENDPOINTS: Record<FinanceModuleTabId, string> = {

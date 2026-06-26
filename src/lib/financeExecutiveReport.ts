@@ -37,6 +37,8 @@ import {
 } from "./financeExecutiveReportUtils.js";
 import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNarrative.js";
 import { buildExecutiveCashFlowAnnualChart } from "./financeExecutiveReportPresentation.js";
+import { buildCashFlowAnnualComparison } from "./financeCashFlowAnnualComparison.js";
+import { loadAnnualComparisonPortfolioRows } from "./financeExecutiveReportAnnualLoad.js";
 import {
   FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS,
   FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES,
@@ -507,6 +509,7 @@ export async function buildFinanceExecutiveReport(
     apLoad,
     cashFlowLoad,
     cashFlowAnnualLoad,
+    annualPortfolioLoad,
     billingPayload,
     salesOrdersTab,
     arSyncStatus,
@@ -517,6 +520,7 @@ export async function buildFinanceExecutiveReport(
     loadApRows(db, apFilters),
     loadCashFlowRows(db, cashFlowFilters, referenceDate),
     loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
+    loadAnnualComparisonPortfolioRows(db, referenceDate),
     buildFinanceBillingDashboard(
       { year: String(filters.year), billingSource: "nfe", dateBase: "processamento" },
       referenceDate
@@ -570,6 +574,23 @@ export async function buildFinanceExecutiveReport(
     highlightMonth
   );
 
+  const annualComparisonCurrent = buildCashFlowAnnualComparison(
+    annualPortfolioLoad.arRows,
+    annualPortfolioLoad.apRows,
+    filters.year,
+    referenceDate,
+    annualPortfolioLoad.arSyncCutoff,
+    annualPortfolioLoad.apSyncCutoff
+  );
+  const annualComparisonPrevious = buildCashFlowAnnualComparison(
+    annualPortfolioLoad.arRows,
+    annualPortfolioLoad.apRows,
+    filters.year - 1,
+    referenceDate,
+    annualPortfolioLoad.arSyncCutoff,
+    annualPortfolioLoad.apSyncCutoff
+  );
+
   const billingTab = billingPayload?.tab ?? null;
   const billingTargetMissing =
     billingTab?.target.target == null || billingTab.target.achievementPercent == null;
@@ -610,8 +631,9 @@ export async function buildFinanceExecutiveReport(
       : String(filters.year);
 
   const cover = {
-    title: buildExecutiveReportCoverTitle(referenceDate),
-    subtitle: "Relatório Presidencial — visão consolidada financeira e comercial",
+    title: "Relatório Executivo Financeiro e Comercial",
+    subtitle:
+      "Visão consolidada de vendas, faturamento, recebíveis, pagamentos e fluxo de caixa",
     reportDateLabel: formatExecutiveReportCoverDate(referenceDate),
     periodLabel,
     companyLabel:
@@ -834,6 +856,11 @@ export async function buildFinanceExecutiveReport(
         net: cashFlowPayload.executiveSummary.net,
       },
       annualChart: cashFlowAnnualChart,
+    },
+    annualComparison: {
+      source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlow,
+      currentYear: annualComparisonCurrent,
+      previousYear: annualComparisonPrevious,
     },
     salesOrders: {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.salesOrders,

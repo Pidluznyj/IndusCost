@@ -1,20 +1,31 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
+import type {
+  BillingDashboardTab,
+  SalesOrdersDashboardTab,
+} from "@/src/lib/executiveDashboardTypes";
 import type { FinanceExecutiveReport } from "@/src/lib/financeExecutiveReportTypes";
 import {
   resolveExecutiveReportCriticalMonths,
-  resolveExecutiveSummaryBillingByYear,
   formatExecutiveReportPresentationCurrency,
-  formatExecutiveReportPresentationPercent,
 } from "@/src/lib/financeExecutiveReportViewModel";
 import {
-  mapApScheduleToChart,
-  mapArScheduleToChart,
+  mapAnnualComparisonToPayablesChart,
+  mapAnnualComparisonToReceivablesChart,
   mapBillingMultiYearToBarComparison,
-  mapRealizedProjectedChart,
   mapSalesOrdersMonthlyToChart,
   executiveReportTargetMissing,
 } from "@/src/lib/financeExecutiveReportPresentation";
+import type { ExecutiveAnnualFlowChartRow } from "@/src/lib/financeExecutiveReportPresentation";
+import {
+  buildExecutiveReportApKpis,
+  buildExecutiveReportArKpis,
+  buildExecutiveReportBillingKpis,
+  buildExecutiveReportCashFlowKpis,
+  buildExecutiveReportSalesOrdersKpis,
+  type ExecutiveReportVariation,
+  type ExecutiveReportVariationTone,
+} from "@/src/lib/financeExecutiveReportSectionKpis";
 import { buildExecutiveChartNarrative } from "@/src/lib/financeExecutiveChartNarratives";
 import { ExecutiveReportCover } from "@/src/components/finance/executive-report/ExecutiveReportCover";
 import { ExecutiveReportPrintCover } from "@/src/components/finance/executive-report/ExecutiveReportPrintCover";
@@ -25,10 +36,10 @@ import { ExecutiveKpiGrid } from "@/src/components/finance/executive-report/Exec
 import { ExecutiveNarrativeBox } from "@/src/components/finance/executive-report/ExecutiveNarrativeBox";
 import { ExecutiveNarrativeBullets } from "@/src/components/finance/executive-report/ExecutiveNarrativeBullets";
 import { ExecutiveBarComparisonChart } from "@/src/components/finance/executive-report/charts/ExecutiveBarComparisonChart";
-import { ExecutiveRealizedProjectedChart } from "@/src/components/finance/executive-report/charts/ExecutiveRealizedProjectedChart";
-import { ExecutiveScheduleChart } from "@/src/components/finance/executive-report/charts/ExecutiveScheduleChart";
 import { ExecutiveCashFlowChart } from "@/src/components/finance/executive-report/charts/ExecutiveCashFlowChart";
 import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-report/charts/ExecutiveSalesOrdersChart";
+import { ExecutiveReportReceivablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportReceivablesChart";
+import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportPayablesChart";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
 import {
   EXECUTIVE_REPORT_SECTION_INTROS,
@@ -38,6 +49,8 @@ import {
   formatExecutiveReportBillingYearsSubtitle,
   getExecutiveReportKpiHint,
   presentExecutiveReportNarrativeBullets,
+  simplifyExecutiveHighlight,
+  translateExecutiveReportWarning,
 } from "@/src/lib/financeExecutiveReportUxCopy";
 
 function printTargetHint(missing: boolean, fallback?: string): string | undefined {
@@ -49,6 +62,71 @@ function kpiHint(label: string): string | undefined {
   return getExecutiveReportKpiHint(label);
 }
 
+function mapVariationTone(
+  tone: ExecutiveReportVariationTone
+): "default" | "positive" | "negative" | "neutral" {
+  if (tone === "positive") return "positive";
+  if (tone === "negative") return "negative";
+  if (tone === "warning" || tone === "target" || tone === "reference" || tone === "accent") {
+    return "neutral";
+  }
+  return "neutral";
+}
+
+function VariationKpiCard({ label, variation }: { label: string; variation: ExecutiveReportVariation }) {
+  return (
+    <ExecutiveKpiCard
+      label={label}
+      value={variation.formattedAbsolute}
+      sub={variation.formattedPercent}
+      hint={kpiHint(label)}
+      tooltip={kpiHint(label)}
+      tone={mapVariationTone(variation.tone)}
+    />
+  );
+}
+
+function mapReceivablesRowsForNarrative(
+  rows: ExecutiveAnnualFlowChartRow[],
+  overdueAmount: number
+) {
+  return rows.map((row) => ({
+    month: row.month,
+    monthLabel: row.monthLabel,
+    isCurrentMonth: row.isCurrentMonth,
+    openAmount: row.receivableOpenAmount,
+    overdueAmount: row.isCurrentMonth ? overdueAmount : 0,
+    upcomingAmount: row.receivedAmount,
+  }));
+}
+
+function mapPayablesRowsForNarrative(
+  rows: ReturnType<typeof mapAnnualComparisonToPayablesChart>["rows"],
+  overdueAmount: number
+) {
+  return rows.map((row) => ({
+    month: row.month,
+    monthLabel: row.monthLabel,
+    isCurrentMonth: row.isCurrentMonth,
+    openAmount: row.payableOpenAmount,
+    overdueAmount: row.isCurrentMonth ? overdueAmount : 0,
+    upcomingAmount: row.paidAmount,
+  }));
+}
+
+function resolvePrincipalAlerta(report: FinanceExecutiveReport): string {
+  const warning = report.dataQuality.warnings[0];
+  if (warning) return translateExecutiveReportWarning(warning);
+
+  const highlight = report.executiveSummary.highlights[0];
+  if (highlight) return simplifyExecutiveHighlight(highlight);
+
+  const narrative = report.executiveNarrative?.sections[0]?.body;
+  if (narrative) return simplifyExecutiveHighlight(narrative);
+
+  return "Sem alertas relevantes para o período.";
+}
+
 export function ExecutiveReportDocument({
   report,
   branding,
@@ -58,12 +136,11 @@ export function ExecutiveReportDocument({
 }) {
   const billingTab = report.billingComparison.tab;
   const billingPayload = report.billingComparison.payload;
-  const projectionTab = report.billingProjection.tab;
   const arCards = report.accountsReceivable.payload.cards;
   const apCards = report.accountsPayable.payload.cards;
-  const cashCards = report.cashFlow.payload.cards;
   const salesTab = report.salesOrders.tab;
   const month = report.month ?? billingPayload.currentMonth;
+  const previousYear = report.year - 1;
   const targetsDerived = report.dataQuality.targetsDerived;
 
   const printHeader = {
@@ -73,11 +150,21 @@ export function ExecutiveReportDocument({
     companyLabel: report.cover.companyLabel ?? "Consolidado",
   };
 
-  const billingByYear = resolveExecutiveSummaryBillingByYear(
-    billingTab.multiYearMonthly,
+  const salesKpis = buildExecutiveReportSalesOrdersKpis(salesTab as SalesOrdersDashboardTab, month);
+  const billingKpis = buildExecutiveReportBillingKpis(billingTab as BillingDashboardTab, month);
+  const arKpis = buildExecutiveReportArKpis({
+    currentYear: report.annualComparison.currentYear,
+    previousYear: report.annualComparison.previousYear,
+    cards: arCards,
     month,
-    report.year
-  );
+  });
+  const apKpis = buildExecutiveReportApKpis({
+    currentYear: report.annualComparison.currentYear,
+    previousYear: report.annualComparison.previousYear,
+    cards: apCards,
+    month,
+  });
+  const cashFlowKpis = buildExecutiveReportCashFlowKpis(report.calendarAgenda.annualChart, report.year);
 
   const billingComparison = mapBillingMultiYearToBarComparison(
     billingTab.multiYearMonthly,
@@ -85,17 +172,13 @@ export function ExecutiveReportDocument({
     month
   );
 
-  const realizedProjected = mapRealizedProjectedChart(projectionTab.realizedVsProjected, month);
-
-  const arSchedule = mapArScheduleToChart(
-    report.accountsReceivable.payload.monthlyDueSchedule ?? [],
-    report.year,
+  const arReceivablesChart = mapAnnualComparisonToReceivablesChart(
+    report.annualComparison.currentYear,
     month
   );
 
-  const apSchedule = mapApScheduleToChart(
-    report.accountsPayable.payload.monthlyDueSchedule ?? [],
-    report.year,
+  const apPayablesChart = mapAnnualComparisonToPayablesChart(
+    report.annualComparison.currentYear,
     month
   );
 
@@ -122,6 +205,8 @@ export function ExecutiveReportDocument({
     narrative: report.executiveNarrative,
   });
 
+  const principalAlerta = resolvePrincipalAlerta(report);
+
   const billingChartNarrative = buildExecutiveChartNarrative("billing-comparison", {
     billingComparison: {
       rows: billingComparison.rows,
@@ -132,16 +217,12 @@ export function ExecutiveReportDocument({
     },
   });
 
-  const projectionChartNarrative = buildExecutiveChartNarrative("billing-projection", {
-    realizedProjected,
-  });
-
   const arChartNarrative = buildExecutiveChartNarrative("accounts-receivable", {
-    arSchedule: arSchedule.rows,
+    arSchedule: mapReceivablesRowsForNarrative(arReceivablesChart.rows, arKpis.overdueAmount),
   });
 
   const apChartNarrative = buildExecutiveChartNarrative("accounts-payable", {
-    apSchedule: apSchedule.rows,
+    apSchedule: mapPayablesRowsForNarrative(apPayablesChart.rows, apKpis.overdueAmount),
   });
 
   const cashFlowChartNarrative = buildExecutiveChartNarrative("cash-flow", {
@@ -161,6 +242,7 @@ export function ExecutiveReportDocument({
     <div
       className="executive-report-print-root finance-executive-report-document"
       data-testid="executive-report-document"
+      data-report-ready="false"
     >
       <ExecutivePrintPageShell pageId="cover" pageNumber={1} cover generatedAt={report.generatedAt}>
         <div className="executive-report-screen-cover">
@@ -187,29 +269,62 @@ export function ExecutiveReportDocument({
           intro={EXECUTIVE_REPORT_SECTION_INTROS.summary}
         >
           <ExecutiveKpiGrid columns={4}>
-            {billingByYear.map((row) => (
-                <ExecutiveKpiCard
-                  key={row.year}
-                  label={`Faturamento mês — ${row.year}`}
-                  value={row.formatted}
-                  sub={`Ano ${row.year}`}
-                  hint={kpiHint(`Faturamento mês — ${row.year}`)}
-                  tooltip={kpiHint(`Faturamento mês — ${row.year}`)}
-                  accent={row.year === report.year}
-                  highlight={row.year === report.year}
-                />
-            ))}
             <ExecutiveKpiCard
-              label="Atingimento meta mês"
-              value={billingTab.target.formatted.achievementPercent}
-              sub={
-                billingTargetMissing
-                  ? EXECUTIVE_REPORT_AUTO_TARGET_SHORT
-                  : `Meta: ${billingTab.target.formatted.target}`
-              }
-              hint={kpiHint("Atingimento meta mês")}
-              tooltip={kpiHint("Atingimento meta mês")}
+              label="Pedidos mês"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.monthCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("Vendido no mês")}
+              tooltip={kpiHint("Vendido no mês")}
+              highlight
+            />
+            <ExecutiveKpiCard
+              label="Pedidos YTD"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.ytdCurrent)}
+              sub={`Até mês ${month}`}
+              hint={kpiHint("Realizado YTD")}
+              tooltip={kpiHint("Realizado YTD")}
+            />
+            <ExecutiveKpiCard
+              label="Faturamento mês"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.monthCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("Faturamento mês")}
+              tooltip={kpiHint("Faturamento mês")}
               accent
+            />
+            <ExecutiveKpiCard
+              label="Faturamento YTD"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.ytdCurrent)}
+              sub={`Até mês ${month}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <ExecutiveKpiCard
+              label="AR aberto"
+              value={formatExecutiveReportPresentationCurrency(arCards.totalOpenAmount)}
+              hint={kpiHint("Em aberto")}
+              tooltip={kpiHint("Em aberto")}
+            />
+            <ExecutiveKpiCard
+              label="AP aberto"
+              value={formatExecutiveReportPresentationCurrency(apCards.totalOpenAmount)}
+              hint={kpiHint("Em aberto")}
+              tooltip={kpiHint("Em aberto")}
+            />
+            <ExecutiveKpiCard
+              label="Saldo planejado ano"
+              value={formatExecutiveReportPresentationCurrency(cashFlowKpis.finalAccumulated)}
+              sub={`Projeção ${report.year}`}
+              hint={kpiHint("Saldo acumulado")}
+              tooltip={kpiHint("Saldo acumulado")}
+              tone={cashFlowKpis.finalAccumulated < 0 ? "negative" : "positive"}
+            />
+            <ExecutiveKpiCard
+              label="Principal alerta"
+              value={principalAlerta}
+              hint="Leitura prioritária para decisão no período."
+              tooltip="Leitura prioritária para decisão no período."
+              tone="neutral"
             />
           </ExecutiveKpiGrid>
 
@@ -222,8 +337,90 @@ export function ExecutiveReportDocument({
       </ExecutivePrintPageShell>
 
       <ExecutivePrintPageShell
-        pageId="billing-comparison"
+        pageId="sales-orders"
         pageNumber={3}
+        header={printHeader}
+        generatedAt={report.generatedAt}
+      >
+        <ExecutiveReportSection
+          id="sales-orders"
+          eyebrow="Comercial"
+          title="Pedidos de Venda"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
+        >
+          <ExecutiveKpiGrid columns={4}>
+            <ExecutiveKpiCard
+              label="Pedidos mês"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.monthCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("Vendido no mês")}
+              tooltip={kpiHint("Vendido no mês")}
+              highlight
+            />
+            <ExecutiveKpiCard
+              label="Pedidos mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.monthPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("Vendido no mês")}
+              tooltip={kpiHint("Vendido no mês")}
+            />
+            <VariationKpiCard label="Variação mês" variation={salesKpis.monthVariation} />
+            <ExecutiveKpiCard
+              label="Pedidos YTD"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.ytdCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("Realizado YTD")}
+              tooltip={kpiHint("Realizado YTD")}
+            />
+            <ExecutiveKpiCard
+              label="Pedidos YTD — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(salesKpis.ytdPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("Realizado YTD")}
+              tooltip={kpiHint("Realizado YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={salesKpis.ytdVariation} />
+            <ExecutiveKpiCard
+              label="Meta mês"
+              value={
+                salesKpis.target != null
+                  ? formatExecutiveReportPresentationCurrency(salesKpis.target)
+                  : "—"
+              }
+              hint={printTargetHint(salesTargetMissing, kpiHint("Meta mês"))}
+              tooltip={kpiHint("Meta mês")}
+            />
+            <ExecutiveKpiCard
+              label="Projeção mês"
+              value={
+                salesKpis.projection != null
+                  ? formatExecutiveReportPresentationCurrency(salesKpis.projection)
+                  : "—"
+              }
+              hint={kpiHint("Projeção mês")}
+              tooltip={kpiHint("Projeção mês")}
+            />
+          </ExecutiveKpiGrid>
+
+          <div className="mt-6 executive-chart-region">
+            {salesTab.chartSeries ? (
+              <ExecutiveSalesOrdersChart
+                title={`Pedidos de venda — ${report.year}`}
+                rows={salesChart.rows}
+                config={salesTab.chartSeries}
+                empty={!salesChart.hasData}
+                targetMissing={salesTargetMissing}
+                scenarioText={salesChartNarrative}
+              />
+            ) : null}
+          </div>
+        </ExecutiveReportSection>
+      </ExecutivePrintPageShell>
+
+      <ExecutivePrintPageShell
+        pageId="billing-comparison"
+        pageNumber={4}
         header={printHeader}
         generatedAt={report.generatedAt}
       >
@@ -236,30 +433,55 @@ export function ExecutiveReportDocument({
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
-              label="Realizado mês"
-              value={formatExecutiveReportPresentationCurrency(billingTab.target.actual)}
-              hint={kpiHint("Realizado mês")}
-              tooltip={kpiHint("Realizado mês")}
+              label="Faturamento mês"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.monthCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("Faturamento mês")}
+              tooltip={kpiHint("Faturamento mês")}
               highlight
             />
             <ExecutiveKpiCard
-              label="Projetado mês"
-              value={formatExecutiveReportPresentationCurrency(projectionTab.projection.projectedMonth)}
-              hint={kpiHint("Projetado mês")}
-              tooltip={kpiHint("Projetado mês")}
+              label="Faturamento mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.monthPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("Faturamento mês")}
+              tooltip={kpiHint("Faturamento mês")}
+            />
+            <VariationKpiCard label="Variação mês" variation={billingKpis.monthVariation} />
+            <ExecutiveKpiCard
+              label="Faturamento YTD"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.ytdCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
             />
             <ExecutiveKpiCard
+              label="Faturamento YTD — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(billingKpis.ytdPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={billingKpis.ytdVariation} />
+            <ExecutiveKpiCard
               label="Meta mês"
-              value={billingTab.target.formatted.target}
+              value={
+                billingKpis.target != null
+                  ? formatExecutiveReportPresentationCurrency(billingKpis.target)
+                  : "—"
+              }
               hint={printTargetHint(billingTargetMissing, kpiHint("Meta mês"))}
               tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
-              label="YTD"
-              value={formatExecutiveReportPresentationCurrency(billingTab.yearComparison.yearToDateCurrent)}
-              sub={`Ano ${billingPayload.selectedYear}`}
-              hint={kpiHint("YTD")}
-              tooltip={kpiHint("YTD")}
+              label="Projeção mês"
+              value={
+                billingKpis.projection != null
+                  ? formatExecutiveReportPresentationCurrency(billingKpis.projection)
+                  : "—"
+              }
+              hint={kpiHint("Projetado mês")}
+              tooltip={kpiHint("Projetado mês")}
             />
           </ExecutiveKpiGrid>
 
@@ -273,68 +495,6 @@ export function ExecutiveReportDocument({
               rows={billingComparison.rows}
               empty={!billingComparison.hasData}
               scenarioText={billingChartNarrative}
-            />
-          </div>
-        </ExecutiveReportSection>
-      </ExecutivePrintPageShell>
-
-      <ExecutivePrintPageShell
-        pageId="billing-projection"
-        pageNumber={4}
-        header={printHeader}
-        generatedAt={report.generatedAt}
-      >
-        <ExecutiveReportSection
-          id="billing-projection"
-          eyebrow="Projeção"
-          title="Realizado vs Projetado"
-          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["billing-projection"]}
-          intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-projection"]}
-        >
-          <ExecutiveKpiGrid columns={5}>
-            <ExecutiveKpiCard
-              label="Média diária"
-              value={projectionTab.projection.formatted.dailyAverage}
-              hint={kpiHint("Média diária")}
-              tooltip={kpiHint("Média diária")}
-            />
-            <ExecutiveKpiCard
-              label="Faturado"
-              value={projectionTab.realizedVsProjected.formatted.realized}
-              hint={kpiHint("Faturado")}
-              tooltip={kpiHint("Faturado")}
-              highlight
-            />
-            <ExecutiveKpiCard
-              label="Projetado"
-              value={projectionTab.realizedVsProjected.formatted.projected}
-              hint={kpiHint("Projetado")}
-              tooltip={kpiHint("Projetado")}
-            />
-            <ExecutiveKpiCard
-              label="Meta do ano"
-              value={billingTab.yearComparison.formatted.annualTarget}
-              hint={printTargetHint(billingTargetMissing, kpiHint("Meta do ano"))}
-              tooltip={kpiHint("Meta do ano")}
-            />
-            <ExecutiveKpiCard
-              label="Atingimento"
-              value={
-                billingTab.target.achievementPercent != null
-                  ? formatExecutiveReportPresentationPercent(billingTab.target.achievementPercent, 2)
-                  : "—"
-              }
-              hint={kpiHint("Atingimento")}
-              tooltip={kpiHint("Atingimento")}
-            />
-          </ExecutiveKpiGrid>
-
-          <div className="mt-6 executive-chart-region">
-            <ExecutiveRealizedProjectedChart
-              title="Realizado × Projeção × Meta"
-              model={realizedProjected}
-              selectedYear={billingPayload.selectedYear}
-              scenarioText={projectionChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -355,27 +515,45 @@ export function ExecutiveReportDocument({
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
-              label="A receber"
-              value={formatExecutiveReportPresentationCurrency(arCards.totalAmountReceivable)}
-              hint={kpiHint("A receber")}
-              tooltip={kpiHint("A receber")}
-            />
-            <ExecutiveKpiCard
-              label="Recebido"
-              value={formatExecutiveReportPresentationCurrency(arCards.totalReceivedAmount)}
+              label="Recebido mês"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthCurrent)}
+              sub={`Ano ${report.year}`}
               hint={kpiHint("Recebido")}
               tooltip={kpiHint("Recebido")}
-              tone="positive"
+              highlight
             />
             <ExecutiveKpiCard
+              label="Recebido mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("Recebido")}
+              tooltip={kpiHint("Recebido")}
+            />
+            <VariationKpiCard label="Variação mês" variation={arKpis.receivedMonthVariation} />
+            <ExecutiveKpiCard
+              label="Recebido YTD"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <ExecutiveKpiCard
+              label="Recebido YTD — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={arKpis.receivedYtdVariation} />
+            <ExecutiveKpiCard
               label="Em aberto"
-              value={formatExecutiveReportPresentationCurrency(arCards.totalOpenAmount)}
+              value={formatExecutiveReportPresentationCurrency(arKpis.openAmount)}
               hint={kpiHint("Em aberto")}
               tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Atrasados"
-              value={formatExecutiveReportPresentationCurrency(arCards.overdueAmount)}
+              value={formatExecutiveReportPresentationCurrency(arKpis.overdueAmount)}
               hint={kpiHint("Atrasados")}
               tooltip={kpiHint("Atrasados")}
               tone="negative"
@@ -383,12 +561,11 @@ export function ExecutiveReportDocument({
           </ExecutiveKpiGrid>
 
           <div className="mt-6 executive-chart-region">
-            <ExecutiveScheduleChart
-              title="Agenda mensal — Contas a Receber"
-              subtitle="Em aberto, atrasado e a vencer por mês"
-              rows={arSchedule.rows}
-              empty={!arSchedule.hasData}
-              variant="receivable"
+            <ExecutiveReportReceivablesChart
+              title="Recebimentos e saldo a receber — ano"
+              subtitle={`Realizado e em aberto por mês — ${report.year}`}
+              rows={arReceivablesChart.rows}
+              empty={!arReceivablesChart.hasData}
               scenarioText={arChartNarrative}
             />
           </div>
@@ -410,29 +587,45 @@ export function ExecutiveReportDocument({
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
-              label="A pagar total"
-              value={formatExecutiveReportPresentationCurrency(apCards.totalPayableAmount)}
-              hint={kpiHint("A pagar total")}
-              tooltip={kpiHint("A pagar total")}
-            />
-            <ExecutiveKpiCard
-              label="Pago"
-              value={formatExecutiveReportPresentationCurrency(
-                apCards.totalPayableAmount - apCards.totalOpenAmount
-              )}
+              label="Pago mês"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthCurrent)}
+              sub={`Ano ${report.year}`}
               hint={kpiHint("Pago")}
               tooltip={kpiHint("Pago")}
-              tone="positive"
+              highlight
             />
             <ExecutiveKpiCard
+              label="Pago mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("Pago")}
+              tooltip={kpiHint("Pago")}
+            />
+            <VariationKpiCard label="Variação mês" variation={apKpis.paidMonthVariation} />
+            <ExecutiveKpiCard
+              label="Pago YTD"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidYtdCurrent)}
+              sub={`Ano ${report.year}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <ExecutiveKpiCard
+              label="Pago YTD — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidYtdPrevious)}
+              sub={`Ano ${previousYear}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
+            />
+            <VariationKpiCard label="Variação YTD" variation={apKpis.paidYtdVariation} />
+            <ExecutiveKpiCard
               label="Em aberto"
-              value={formatExecutiveReportPresentationCurrency(apCards.totalOpenAmount)}
+              value={formatExecutiveReportPresentationCurrency(apKpis.openAmount)}
               hint={kpiHint("Em aberto")}
               tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Vencidos"
-              value={formatExecutiveReportPresentationCurrency(apCards.overdueAmount)}
+              value={formatExecutiveReportPresentationCurrency(apKpis.overdueAmount)}
               hint={kpiHint("Vencidos")}
               tooltip={kpiHint("Vencidos")}
               tone="negative"
@@ -440,12 +633,11 @@ export function ExecutiveReportDocument({
           </ExecutiveKpiGrid>
 
           <div className="mt-6 executive-chart-region">
-            <ExecutiveScheduleChart
-              title="Agenda mensal — Contas a Pagar"
-              subtitle="Em aberto, vencido e a vencer por mês"
-              rows={apSchedule.rows}
-              empty={!apSchedule.hasData}
-              variant="payable"
+            <ExecutiveReportPayablesChart
+              title="Pagamentos e saldo a pagar — ano"
+              subtitle={`Realizado e em aberto por mês — ${report.year}`}
+              rows={apPayablesChart.rows}
+              empty={!apPayablesChart.hasData}
               scenarioText={apChartNarrative}
             />
           </div>
@@ -461,35 +653,39 @@ export function ExecutiveReportDocument({
         <ExecutiveReportSection
           id="cash-flow"
           eyebrow="Caixa"
-          title="Fluxo de Caixa / Agenda"
+          title="Fluxo de Caixa Planejado — Ano"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cash-flow"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["cash-flow"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="Entradas previstas"
-              value={formatExecutiveReportPresentationCurrency(cashCards.inflowAmount)}
+              value={formatExecutiveReportPresentationCurrency(cashFlowKpis.totalInflow)}
+              sub={`Ano ${report.year}`}
               hint={kpiHint("Entradas previstas")}
               tooltip={kpiHint("Entradas previstas")}
               tone="positive"
             />
             <ExecutiveKpiCard
               label="Saídas previstas"
-              value={formatExecutiveReportPresentationCurrency(cashCards.outflowAmount)}
+              value={formatExecutiveReportPresentationCurrency(cashFlowKpis.totalOutflow)}
+              sub={`Ano ${report.year}`}
               hint={kpiHint("Saídas previstas")}
               tooltip={kpiHint("Saídas previstas")}
               tone="negative"
             />
             <ExecutiveKpiCard
               label="Saldo líquido"
-              value={formatExecutiveReportPresentationCurrency(cashCards.netFlowAmount)}
+              value={formatExecutiveReportPresentationCurrency(cashFlowKpis.netTotal)}
+              sub={`Ano ${report.year}`}
               hint={kpiHint("Saldo líquido")}
               tooltip={kpiHint("Saldo líquido")}
-              tone={cashCards.netFlowAmount < 0 ? "negative" : "positive"}
+              tone={cashFlowKpis.netTotal < 0 ? "negative" : "positive"}
             />
             <ExecutiveKpiCard
               label="Saldo acumulado"
-              value={formatExecutiveReportPresentationCurrency(cashCards.accumulatedBalance)}
+              value={formatExecutiveReportPresentationCurrency(cashFlowKpis.finalAccumulated)}
+              sub={`Encerramento ${report.year}`}
               hint={kpiHint("Saldo acumulado")}
               tooltip={kpiHint("Saldo acumulado")}
               accent
@@ -517,82 +713,8 @@ export function ExecutiveReportDocument({
       </ExecutivePrintPageShell>
 
       <ExecutivePrintPageShell
-        pageId="sales-orders"
-        pageNumber={8}
-        header={printHeader}
-        generatedAt={report.generatedAt}
-      >
-        <ExecutiveReportSection
-          id="sales-orders"
-          eyebrow="Comercial"
-          title="Pedidos de Venda"
-          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
-          intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
-        >
-          <ExecutiveKpiGrid columns={5}>
-            <ExecutiveKpiCard
-              label="Vendido no mês"
-              value={salesTab.target?.formatted.actual ?? "—"}
-              sub={
-                salesTab.periodLabel
-                  ? `Pedidos registrados em ${salesTab.periodLabel}.`
-                  : "Total de pedidos registrados no mês."
-              }
-              hint={kpiHint("Vendido no mês")}
-              tooltip={kpiHint("Vendido no mês")}
-              highlight
-            />
-            <ExecutiveKpiCard
-              label="Meta mês"
-              value={salesTab.target?.formatted.target ?? "—"}
-              hint={printTargetHint(salesTargetMissing, kpiHint("Meta mês"))}
-              tooltip={kpiHint("Meta mês")}
-            />
-            <ExecutiveKpiCard
-              label="Atingimento"
-              value={
-                salesTargetMissing ? "—" : (salesTab.target?.formatted.achievementPercent ?? "—")
-              }
-              hint={printTargetHint(salesTargetMissing, kpiHint("Atingimento mês pedidos"))}
-              tooltip={
-                salesTargetMissing
-                  ? EXECUTIVE_REPORT_AUTO_TARGET_SHORT
-                  : kpiHint("Atingimento mês pedidos")
-              }
-            />
-            <ExecutiveKpiCard
-              label="Projeção mês"
-              value={salesTab.projection?.formatted.monthlyProjection ?? "—"}
-              hint={kpiHint("Projeção mês")}
-              tooltip={kpiHint("Projeção mês")}
-            />
-            <ExecutiveKpiCard
-              label="Realizado YTD"
-              value={salesTab.summaryCards.find((c) => c.id === "realized-ytd")?.formatted ?? "—"}
-              sub="Total de pedidos acumulado no ano."
-              hint={kpiHint("Realizado YTD")}
-              tooltip={kpiHint("Realizado YTD")}
-            />
-          </ExecutiveKpiGrid>
-
-          <div className="mt-6 executive-chart-region">
-            {salesTab.chartSeries ? (
-              <ExecutiveSalesOrdersChart
-                title={`Pedidos de venda — ${report.year}`}
-                rows={salesChart.rows}
-                config={salesTab.chartSeries}
-                empty={!salesChart.hasData}
-                targetMissing={salesTargetMissing}
-                scenarioText={salesChartNarrative}
-              />
-            ) : null}
-          </div>
-        </ExecutiveReportSection>
-      </ExecutivePrintPageShell>
-
-      <ExecutivePrintPageShell
         pageId="conclusion"
-        pageNumber={9}
+        pageNumber={8}
         header={printHeader}
         generatedAt={report.generatedAt}
       >

@@ -51,6 +51,7 @@ import {
   toCashFlowPortfolioApFilters,
   toCashFlowPortfolioArFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
+import { loadAnnualComparisonPortfolioRows } from "@/src/lib/financeExecutiveReportAnnualLoad.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
@@ -249,7 +250,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         const referenceDate = new Date();
         const year = parseAnnualComparisonYear(req.query.year, referenceDate);
         const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
-          await loadDailyRadarPortfolioRows(referenceDate);
+          await loadAnnualComparisonPortfolioRows(prisma, referenceDate);
         const payload = buildCashFlowAnnualComparison(
           arRows,
           apRows,

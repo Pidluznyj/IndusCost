@@ -7,7 +7,12 @@ import {
   roundMoney,
   startOfLocalDay,
   isFinanceArReceivedOrSettled,
+  matchesFinanceArDashboardFilters,
+  resolveFinanceArDueDateBounds,
+  isFinanceArAllowedInManagementReport,
+  type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
@@ -19,18 +24,20 @@ import type {
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
+import { isApOpenDueInPeriod } from "./financeCashFlowExecutiveSummary.js";
 import {
-  filterApRowsForCashFlowExecutiveTimeline,
-  isApOpenDueInPeriod,
-} from "./financeCashFlowExecutiveSummary.js";
-import {
-  buildYtdDashboardFilters,
-  filterArRowsForYtdReceived,
-} from "./financeCashFlowExecutiveYtd.js";
+  filterFinanceApManagementReportRows,
+  type FinanceApDashboardFilters,
+} from "./financeAccountsPayableDashboard.js";
+import { resolveEffectiveNomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import { computeGrowthTarget } from "./salesOrderDashboardRules.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
-import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
+import { DEFAULT_FINANCE_MANAGEMENT_SCOPE, isInternalGroupCounterparty } from "./financeInternalGroupExclusions.js";
+import {
+  isNomusArStaleForReports,
+  resolveEffectiveNomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
 
@@ -139,11 +146,22 @@ function isDateInPeriod(date: Date, startDate: Date, endDate: Date): boolean {
   return t >= start && t <= end;
 }
 
+/** Valor realizado AR — usa recebimento; se liquidado sem recebimento registrado, usa valor do título. */
+export function resolveAnnualComparisonArRealizedAmount(
+  row: FinanceCashFlowArRow
+): number {
+  if (isFinanceArReceivedOrSettled(row)) {
+    return row.amountReceived > 0 ? row.amountReceived : row.amountReceivable;
+  }
+  if (row.amountReceived > 0) return row.amountReceived;
+  return 0;
+}
+
 /** Data de realização AR — baixa/liquidação; fallback operacional para título baixado sem data. */
 export function resolveAnnualComparisonArRealizationDate(
   row: FinanceCashFlowArRow
 ): Date | null {
-  if (row.amountReceived <= 0) return null;
+  if (resolveAnnualComparisonArRealizedAmount(row) <= 0) return null;
   if (row.settlementDate) return row.settlementDate;
   if (isFinanceArReceivedOrSettled(row) && row.dueDate) return row.dueDate;
   return null;
@@ -180,7 +198,7 @@ export function sumArReceivedByRealizationInPeriod(
   let total = 0;
   for (const row of rows) {
     if (!isArReceivedByRealizationInPeriod(row, startDate, endDate)) continue;
-    total += row.amountReceived;
+    total += resolveAnnualComparisonArRealizedAmount(row);
   }
   return roundMoney(total);
 }
@@ -289,10 +307,66 @@ export function buildAnnualComparisonMonthlyTimeline(
   return months;
 }
 
+function toAnnualComparisonArLoadFilters(): FinanceArDashboardFilters {
+  return { status: "all" };
+}
+
+/** Carteira AR gerencial para comparativo anual — inclui liquidados sem amountReceived (fantasma Nomus). */
+export function filterArRowsForAnnualComparison(
+  rows: FinanceCashFlowArRow[],
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceCashFlowArRow[] {
+  const arFilters = toAnnualComparisonArLoadFilters();
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
+  const { empty } = resolveFinanceArDueDateBounds(arFilters);
+  if (empty) return [];
+
+  const matched = rows.filter((row) => {
+    if (!matchesFinanceArDashboardFilters(row, arFilters, referenceDate)) return false;
+    if (isInternalGroupCounterparty({ personName: row.personName, personCnpj: row.personCnpj })) {
+      return false;
+    }
+    if (isNomusArStaleForReports(row, effectiveCutoff)) return false;
+    return isFinanceArAllowedInManagementReport(row, referenceDate);
+  });
+  return deduplicateFinanceArRows(matched).rows as FinanceCashFlowArRow[];
+}
+
+function toAnnualComparisonApManagementFilters(
+  filters: FinanceCashFlowDashboardFilters
+): FinanceApDashboardFilters {
+  return {
+    companyName: filters.companyName,
+    personName: filters.supplierName,
+    personCnpj: filters.personCnpj,
+    status: "all",
+    year: undefined,
+    month: undefined,
+    paymentMethodName: filters.paymentMethodName,
+    bankAccountName: filters.bankAccountName,
+    managementScope: filters.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
+  };
+}
+
+export function filterApRowsForAnnualComparison(
+  rows: FinanceCashFlowApRow[],
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCashFlowApRow[] {
+  const apFilters = toAnnualComparisonApManagementFilters(createAnnualComparisonBaseFilters());
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
+  return filterFinanceApManagementReportRows(
+    rows,
+    apFilters,
+    referenceDate,
+    effectiveCutoff
+  ) as FinanceCashFlowApRow[];
+}
+
 function filterRowsForAnnualComparison(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
-  year: number,
   referenceDate: Date,
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null
@@ -300,18 +374,9 @@ function filterRowsForAnnualComparison(
   arFiltered: FinanceCashFlowArRow[];
   apFiltered: FinanceCashFlowApRow[];
 } {
-  const filters = buildYtdDashboardFilters(
-    { ...createAnnualComparisonBaseFilters(), year },
-    referenceDate
-  );
   return {
-    arFiltered: filterArRowsForYtdReceived(arRows, filters, referenceDate, arSyncCutoff),
-    apFiltered: filterApRowsForCashFlowExecutiveTimeline(
-      apRows,
-      filters,
-      referenceDate,
-      apSyncCutoff
-    ),
+    arFiltered: filterArRowsForAnnualComparison(arRows, referenceDate, arSyncCutoff),
+    apFiltered: filterApRowsForAnnualComparison(apRows, referenceDate, apSyncCutoff),
   };
 }
 
@@ -326,7 +391,6 @@ export function buildCashFlowAnnualComparison(
   const { arFiltered, apFiltered } = filterRowsForAnnualComparison(
     arRows,
     apRows,
-    year,
     referenceDate,
     arSyncCutoff,
     apSyncCutoff

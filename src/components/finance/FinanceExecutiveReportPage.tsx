@@ -14,10 +14,14 @@ import {
 } from "@/src/lib/financeExecutiveReportViewModel";
 import {
   EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE,
+  markExecutiveReportDocumentReady,
+  prepareExecutiveReportForPrint,
   resolveExecutiveReportPrintAction,
+  teardownExecutiveReportPrintMode,
   waitForExecutiveReportChartsReady,
 } from "@/src/lib/financeExecutiveReportPrint";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { ExecutiveReportPrintProvider } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
 import { ExecutiveReportFilters } from "@/src/components/finance/executive-report/ExecutiveReportFilters";
 import { ExecutiveReportDocument } from "@/src/components/finance/executive-report/ExecutiveReportDocument";
 import { ExecutiveDataQualityAlert } from "@/src/components/finance/executive-report/ExecutiveDataQualityAlert";
@@ -74,7 +78,7 @@ export function FinanceExecutiveReportPage() {
 
   useEffect(() => {
     document.body.classList.add(ROUTE_BODY_CLASS);
-    document.title = "Relatório Presidencial — Financeiro";
+    document.title = "Relatório Executivo Financeiro e Comercial";
     return () => {
       document.body.classList.remove(ROUTE_BODY_CLASS);
     };
@@ -102,7 +106,7 @@ export function FinanceExecutiveReportPage() {
     } catch (err) {
       setReport(null);
       setError(
-        buildFinanceTabLoadError("Não foi possível carregar o Relatório Presidencial.", err)
+        buildFinanceTabLoadError("Não foi possível carregar o Relatório Executivo.", err)
       );
     } finally {
       setLoading(false);
@@ -141,7 +145,9 @@ export function FinanceExecutiveReportPage() {
     if (printing) return;
     setPrinting(true);
     try {
-      await waitForExecutiveReportChartsReady();
+      await prepareExecutiveReportForPrint();
+      await waitForExecutiveReportChartsReady(20_000);
+      markExecutiveReportDocumentReady(true);
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => resolve());
@@ -149,6 +155,8 @@ export function FinanceExecutiveReportPage() {
       });
       window.print();
     } finally {
+      markExecutiveReportDocumentReady(false);
+      teardownExecutiveReportPrintMode();
       setPrinting(false);
     }
   };
@@ -227,7 +235,9 @@ export function FinanceExecutiveReportPage() {
           <div className="executive-report-screen-only">
             <ExecutiveDataQualityAlert dataQuality={report.dataQuality} />
           </div>
-          <ExecutiveReportDocument report={report} branding={branding} />
+          <ExecutiveReportPrintProvider pdfMode={printing}>
+            <ExecutiveReportDocument report={report} branding={branding} />
+          </ExecutiveReportPrintProvider>
         </>
       ) : null}
     </div>
