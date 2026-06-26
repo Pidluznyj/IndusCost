@@ -4,8 +4,8 @@ import {
   type FinanceArDashboardRow,
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { buildOfficialAccountsPayableDashboard } from "./financeAccountsPayableRulesAdapter.js";
 import {
-  buildFinanceAccountsPayableDashboard,
   type FinanceApDashboardRow,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
@@ -153,7 +153,11 @@ export function buildFinanceCrossModuleReconciliation(
     filters: arFilters,
     referenceDate,
   });
-  const apDash = buildFinanceAccountsPayableDashboard(apRows, apFilters, referenceDate);
+  const apDash = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: apFilters,
+    referenceDate,
+  });
   const cf = buildFinanceCashFlowDashboard(
     arRows as FinanceCashFlowArRow[],
     apRows as FinanceCashFlowApRow[],

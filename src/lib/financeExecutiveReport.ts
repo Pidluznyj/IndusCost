@@ -8,7 +8,10 @@ import {
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
 import {
-  buildFinanceAccountsPayableDashboard,
+  buildOfficialAccountsPayableDashboard,
+  type OfficialAccountsPayableDashboardPayload,
+} from "./financeAccountsPayableRulesAdapter.js";
+import {
   buildFinanceApPrismaWhere,
   mapPrismaRowToFinanceApDashboardRow,
   type FinanceApDashboardFilters,
@@ -390,7 +393,7 @@ export type ExecutiveReportOfficialPayloads = {
   filters: FinanceExecutiveReportFilters;
   referenceDate: Date;
   arPayload: OfficialAccountsReceivableDashboardPayload;
-  apPayload: ReturnType<typeof buildFinanceAccountsPayableDashboard>;
+  apPayload: OfficialAccountsPayableDashboardPayload;
   cashFlowPayload: ReturnType<typeof buildFinanceCashFlowDashboard>;
   billingTab: Awaited<ReturnType<typeof buildFinanceBillingDashboard>>["tab"] | null;
   salesOrdersTab: Awaited<ReturnType<typeof buildSalesOrdersDashboardTab>> | null;
@@ -576,12 +579,14 @@ export async function buildFinanceExecutiveReport(
     year: filters.year,
     month: highlightMonth,
   });
-  const apPayload = buildFinanceAccountsPayableDashboard(
-    apLoad.rows,
-    apPortfolioFilters,
+  const apPayload = buildOfficialAccountsPayableDashboard({
+    rows: apLoad.rows,
+    filters: apPortfolioFilters,
     referenceDate,
-    apLoad.syncCutoff
-  );
+    syncCutoff: apLoad.syncCutoff,
+    year: filters.year,
+    month: highlightMonth,
+  });
   const receivablesSection = buildExecutiveReportReceivablesSection({
     rows: arLoad.rows,
     filters: arPortfolioFilters,
@@ -597,8 +602,6 @@ export async function buildFinanceExecutiveReport(
     syncCutoff: apLoad.syncCutoff,
     year: filters.year,
     month: highlightMonth,
-    cards: apPayload.cards,
-    purchaseOrderScheduleAudit: apPayload.purchaseOrderScheduleAudit,
   });
   const cashFlowPayload = buildFinanceCashFlowDashboard(
     cashFlowLoad.arRows,

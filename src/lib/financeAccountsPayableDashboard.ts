@@ -661,6 +661,7 @@ export function filterFinanceApManagementReportRows(
   return filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
 }
 
+/** @deprecated Preferir buildOfficialAccountsPayableDashboard (financeAccountsPayableRulesAdapter). */
 export function buildFinanceAccountsPayableDashboard(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters = { status: "all" },

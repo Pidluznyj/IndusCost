@@ -13,7 +13,10 @@ import {
   buildFinanceAccountsReceivableOverdueRows,
 } from "./financeAccountsReceivableOverdue.js";
 import {
-  buildFinanceAccountsPayableDashboard,
+  buildOfficialAccountsPayableDashboard,
+  type OfficialAccountsPayableDashboardPayload,
+} from "./financeAccountsPayableRulesAdapter.js";
+import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
@@ -109,7 +112,7 @@ export function auditExecutiveReportArParity(
 
 export function auditExecutiveReportApParity(
   reportAp: ReturnType<typeof buildExecutiveReportModuleSections>["accountsPayable"]["payload"],
-  officialAp: ReturnType<typeof buildFinanceAccountsPayableDashboard>,
+  officialAp: OfficialAccountsPayableDashboardPayload,
   topN?: number
 ): FinanceExecutiveReportConsistencyResult {
   const mismatches: string[] = [];
@@ -207,7 +210,7 @@ export function auditExecutiveReportHeadlineParity(
   reportSummary: ReturnType<typeof buildExecutiveReportModuleSections>["executiveSummary"],
   official: {
     arCards: OfficialAccountsReceivableDashboardPayload["cards"];
-    apCards: ReturnType<typeof buildFinanceAccountsPayableDashboard>["cards"];
+    apCards: OfficialAccountsPayableDashboardPayload["cards"];
     cashFlowCards: ReturnType<typeof buildFinanceCashFlowDashboard>["cards"];
     billingTarget: BillingDashboardTab["target"] | null | undefined;
   }
@@ -341,7 +344,12 @@ export function auditExecutiveReportApOperationalRules(
   syncCutoff: NomusApReportSyncCutoff | null
 ): FinanceExecutiveReportConsistencyResult {
   const mismatches: string[] = [];
-  const dash = buildFinanceAccountsPayableDashboard(rows, filters, referenceDate, syncCutoff);
+  const dash = buildOfficialAccountsPayableDashboard({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+  });
 
   const poRows = rows.filter((r) => isAccountsPayablePurchaseOrderSchedule(r));
   if (poRows.length > 0) {
@@ -410,12 +418,14 @@ export function buildOfficialModulesForExecutiveReport(input: {
     year: input.filters.year,
     month: input.filters.month ?? undefined,
   });
-  const apPayload = buildFinanceAccountsPayableDashboard(
-    input.apRows,
-    apPortfolioFilters,
-    input.referenceDate,
-    input.apSyncCutoff
-  );
+  const apPayload = buildOfficialAccountsPayableDashboard({
+    rows: input.apRows,
+    filters: apPortfolioFilters,
+    referenceDate: input.referenceDate,
+    syncCutoff: input.apSyncCutoff,
+    year: input.filters.year,
+    month: input.filters.month ?? undefined,
+  });
   const cashFlowPayload = buildFinanceCashFlowDashboard(
     input.cashFlowArRows,
     input.cashFlowApRows,

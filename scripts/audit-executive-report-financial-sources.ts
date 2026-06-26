@@ -100,8 +100,6 @@ async function main() {
     syncCutoff: apSyncCutoff,
     year: filters.year,
     month: highlightMonth,
-    cards: officialAp.cards,
-    purchaseOrderScheduleAudit: officialAp.purchaseOrderScheduleAudit,
   });
 
   console.log(`Auditoria AR/AP — year=${year} month=${month} asOfDate=${asOfDate}\n`);

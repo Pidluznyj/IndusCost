@@ -1,8 +1,8 @@
 /**
  * Recálculo independente das métricas AP — prova consistência do dashboard.
  */
+import { buildOfficialAccountsPayableDashboard } from "./financeAccountsPayableRulesAdapter.js";
 import {
-  buildFinanceAccountsPayableDashboard,
   classifyFinanceApTitle,
   filterFinanceApRows,
   isFinanceApOpen,
@@ -174,7 +174,12 @@ export function auditFinanceApDashboardCalculations(
   filters: FinanceApDashboardFilters,
   referenceDate: Date = new Date()
 ): { ok: boolean; mismatches: string[] } {
-  const dash = buildFinanceAccountsPayableDashboard(rows, filters, referenceDate);
+  const dash = buildOfficialAccountsPayableDashboard({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff: null,
+  });
   const ind = computeFinanceApIndependentMetrics(rows, filters, referenceDate);
   const mismatches: string[] = [];
 

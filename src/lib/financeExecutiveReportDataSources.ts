@@ -12,12 +12,15 @@ import {
   sumOfficialArReceivedBySettlementInPeriod,
 } from "./financeAccountsReceivableRulesAdapter.js";
 import {
-  buildFinanceAccountsPayableDashboard,
-  sumFinanceApPaidInPaymentPeriod,
+  buildOfficialAccountsPayableDashboard,
+  buildOfficialAccountsPayableRulesResult,
+  sumOfficialApPaidInPaymentPeriod,
+} from "./financeAccountsPayableRulesAdapter.js";
+import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
-import type { FinanceApDashboardCards, FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
@@ -157,18 +160,23 @@ export function buildExecutiveReportPayablesSection(input: {
   syncCutoff: NomusApReportSyncCutoff | null;
   year: number;
   month: number;
-  cards: FinanceApDashboardCards;
-  purchaseOrderScheduleAudit: FinanceApPurchaseOrderScheduleAudit;
 }): ExecutiveReportPayablesSection {
-  const { rows, filters, referenceDate, syncCutoff, year, month, cards, purchaseOrderScheduleAudit } =
-    input;
+  const { rows, filters, referenceDate, syncCutoff, year, month } = input;
   const monthBounds = monthPeriodBounds(year, month);
   const prevMonthBounds = monthPeriodBounds(year - 1, month);
-  const ytdBounds = ytdPeriodBounds(year, month, referenceDate);
   const prevYtdStart = new Date(year - 1, 0, 1, 0, 0, 0, 0);
   const prevYtdEnd = previousYearComparableEnd(year, month, referenceDate);
 
-  const paidMonthCurrent = sumFinanceApPaidInPaymentPeriod(
+  const rulesCurrent = buildOfficialAccountsPayableRulesResult({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+    year,
+    month,
+  });
+
+  const paidMonthCurrent = sumOfficialApPaidInPaymentPeriod(
     rows,
     filters,
     referenceDate,
@@ -176,7 +184,7 @@ export function buildExecutiveReportPayablesSection(input: {
     monthBounds.start,
     monthBounds.end
   );
-  const paidMonthPrevious = sumFinanceApPaidInPaymentPeriod(
+  const paidMonthPrevious = sumOfficialApPaidInPaymentPeriod(
     rows,
     filters,
     referenceDate,
@@ -184,15 +192,8 @@ export function buildExecutiveReportPayablesSection(input: {
     prevMonthBounds.start,
     prevMonthBounds.end
   );
-  const paidYtdCurrent = sumFinanceApPaidInPaymentPeriod(
-    rows,
-    filters,
-    referenceDate,
-    syncCutoff,
-    ytdBounds.start,
-    ytdBounds.end
-  );
-  const paidYtdPrevious = sumFinanceApPaidInPaymentPeriod(
+  const paidYtdCurrent = rulesCurrent.metrics.paidYtd;
+  const paidYtdPrevious = sumOfficialApPaidInPaymentPeriod(
     rows,
     filters,
     referenceDate,
@@ -208,8 +209,8 @@ export function buildExecutiveReportPayablesSection(input: {
       paidMonthPrevious,
       paidYtdCurrent,
       paidYtdPrevious,
-      cards,
-      purchaseOrderScheduleAudit,
+      cards: rulesCurrent.cards,
+      purchaseOrderScheduleAudit: rulesCurrent.purchaseOrderScheduleAudit,
     }),
   };
 }
@@ -232,10 +233,5 @@ export function buildOfficialAccountsPayableDashboardForReport(input: {
   referenceDate: Date;
   syncCutoff: NomusApReportSyncCutoff | null;
 }) {
-  return buildFinanceAccountsPayableDashboard(
-    input.rows,
-    input.filters,
-    input.referenceDate,
-    input.syncCutoff
-  );
+  return buildOfficialAccountsPayableDashboard(input);
 }

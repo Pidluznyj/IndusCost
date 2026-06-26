@@ -6,7 +6,6 @@ import {
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
 import {
-  buildFinanceAccountsPayableDashboard,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
 import {
@@ -110,7 +109,8 @@ describe("financeExecutiveReportDataSources", () => {
   it("relatório usa motor oficial de Contas a Pagar", () => {
     const src = read("src/lib/financeExecutiveReportDataSources.ts");
     assert.match(src, /EXECUTIVE_REPORT_PAYABLES_SOURCE/);
-    assert.match(src, /sumFinanceApPaidInPaymentPeriod/);
+    assert.match(src, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(src, /sumOfficialApPaidInPaymentPeriod/);
   });
 
   it("AR aberto do relatório = AR aberto da tela oficial (filtros de carteira)", () => {
@@ -162,8 +162,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: official.cards,
-      purchaseOrderScheduleAudit: official.purchaseOrderScheduleAudit,
     });
     assert.equal(section.metricsSource, EXECUTIVE_REPORT_PAYABLES_SOURCE);
     assert.equal(section.kpis.openAmount, official.cards.totalOpenAmount);
@@ -218,8 +216,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: officialScreen.cards,
-      purchaseOrderScheduleAudit: officialScreen.purchaseOrderScheduleAudit,
     });
     assert.equal(section.kpis.openAmount, officialScreen.cards.totalOpenAmount);
     assert.notEqual(section.kpis.openAmount, monthScoped.cards.totalOpenAmount);
@@ -250,7 +246,12 @@ describe("financeExecutiveReportDataSources", () => {
     const filters = reportFilters();
     const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
     const rows = [apRow({ paymentDate: new Date(2026, 5, 18), amountPaid: 500, balancePayable: 0 })];
-    const official = buildFinanceAccountsPayableDashboard(rows, apPortfolioFilters, REF, null);
+    const official = buildOfficialAccountsPayableDashboardForReport({
+      rows,
+      filters: apPortfolioFilters,
+      referenceDate: REF,
+      syncCutoff: null,
+    });
     const section = buildExecutiveReportPayablesSection({
       rows,
       filters: apPortfolioFilters,
@@ -258,8 +259,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: official.cards,
-      purchaseOrderScheduleAudit: official.purchaseOrderScheduleAudit,
     });
     assert.equal(section.kpis.paidMonthCurrent, official.cards.paidThisMonthAmount);
     assert.equal(section.kpis.paidThisMonthAmount, official.cards.paidThisMonthAmount);

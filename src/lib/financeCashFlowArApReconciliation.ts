@@ -12,7 +12,9 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
 import {
-  buildFinanceAccountsPayableDashboard,
+  buildOfficialAccountsPayableDashboard,
+} from "./financeAccountsPayableRulesAdapter.js";
+import {
   filterFinanceApManagementReportRows,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
@@ -235,12 +237,12 @@ export function auditCashFlowPortfolioOpenParityWithArAp(
     referenceDate,
     syncCutoff: arSyncCutoff,
   });
-  const apDash = buildFinanceAccountsPayableDashboard(
-    apRows,
-    portfolioApFilters,
+  const apDash = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: portfolioApFilters,
     referenceDate,
-    apSyncCutoff
-  );
+    syncCutoff: apSyncCutoff,
+  });
 
   if (!nearlyEqual(cf.cards.totalReceivableOpen, arDash.cards.totalOpenAmount)) {
     mismatches.push(
@@ -263,12 +265,14 @@ export function auditCashFlowPortfolioOpenParityWithArAp(
     year: cfFilters.year,
     month: cfFilters.month,
   });
-  const apDashPeriod = buildFinanceAccountsPayableDashboard(
-    apRows,
-    periodApFilters,
+  const apDashPeriod = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: periodApFilters,
     referenceDate,
-    apSyncCutoff
-  );
+    syncCutoff: apSyncCutoff,
+    year: cfFilters.year,
+    month: cfFilters.month,
+  });
   if (!nearlyEqual(cf.reconciliation.receivable.arDashboardOpen, arDashPeriod.cards.totalOpenAmount)) {
     mismatches.push(
       `reconciliation.arDashboardOpen ${cf.reconciliation.receivable.arDashboardOpen} != ar período ${arDashPeriod.cards.totalOpenAmount}`

@@ -16,7 +16,11 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
-import { toArLoadFilters } from "./financeCashFlowDashboard.js";
+import {
+  resolveOfficialApCashFlowExecutiveMetrics,
+  sumOfficialApPaidInPaymentPeriod,
+} from "./financeAccountsPayableRulesAdapter.js";
+import { toApLoadFilters, toArLoadFilters } from "./financeCashFlowDashboard.js";
 import type { NetCashPositionStatus } from "./financeCashFlowDashboardTypes.js";
 import {
   buildYtdDashboardFilters,
@@ -297,9 +301,10 @@ export function buildExecutiveMonthlyTimeline(
   apRows: FinanceCashFlowApRow[],
   year: number,
   referenceDate: Date,
-  arOfficialContext?: {
+  officialContext?: {
     filters: FinanceCashFlowDashboardFilters;
-    syncCutoff?: NomusArReportSyncCutoff | null;
+    arSyncCutoff?: NomusArReportSyncCutoff | null;
+    apSyncCutoff?: NomusApReportSyncCutoff | null;
   }
 ): FinanceCashFlowExecutiveMonthlyRow[] {
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
@@ -309,18 +314,28 @@ export function buildExecutiveMonthlyTimeline(
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
     const received =
-      arOfficialContext != null
+      officialContext != null
         ? sumOfficialArReceivedBySettlementInPeriod(
             arRows,
-            toArLoadFilters(arOfficialContext.filters),
+            toArLoadFilters(officialContext.filters),
             referenceDate,
-            arOfficialContext.syncCutoff,
+            officialContext.arSyncCutoff,
             monthStart,
             monthEndDate
           )
         : sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
-    const paid = sumApPaidInPeriod(apRows, monthStart, monthEndDate);
+    const paid =
+      officialContext != null
+        ? sumOfficialApPaidInPaymentPeriod(
+            apRows,
+            toApLoadFilters(officialContext.filters),
+            referenceDate,
+            officialContext.apSyncCutoff,
+            monthStart,
+            monthEndDate
+          )
+        : sumApPaidInPeriod(apRows, monthStart, monthEndDate);
     const payableOpenDue = sumApOpenDueInPeriod(apRows, monthStart, monthEndDate);
     const estimatedInflow = roundMoney(received + receivableOpenDue);
     const estimatedOutflow = roundMoney(paid + payableOpenDue);
@@ -398,22 +413,29 @@ export function buildFinanceCashFlowExecutiveSummary(
     syncCutoff,
     year
   );
+  const apOfficialFilters = toApLoadFilters(ytdFilters);
+  const apOfficial = resolveOfficialApCashFlowExecutiveMetrics(
+    allApRows,
+    apOfficialFilters,
+    referenceDate,
+    apSyncCutoff,
+    year
+  );
   const receivedYtd = arOfficial.receivedYtd;
-  const paidYtd = sumApPaidInPeriod(apYtd, startDate, endDate);
+  const paidYtd = apOfficial.paidYtd;
   const openArForward = arOfficial.openUntilYearEnd;
-  const openApForward = forward.isActive
-    ? sumApOpenDueInPeriod(apYtd, forward.fromDate, forward.toDate)
-    : 0;
+  const openApForward = apOfficial.openUntilYearEnd;
 
   const estimatedArYear = arOfficial.estimatedYearTotal;
-  const estimatedApYear = roundMoney(paidYtd + openApForward);
+  const estimatedApYear = apOfficial.estimatedYearTotal;
   const realizedYtd = roundMoney(receivedYtd - paidYtd);
   const projectedRemaining = roundMoney(openArForward - openApForward);
   const estimatedYearNet = roundMoney(estimatedArYear - estimatedApYear);
 
   const monthlyTimeline = buildExecutiveMonthlyTimeline(arYtd, apYtd, year, referenceDate, {
     filters: ytdFilters,
-    syncCutoff,
+    arSyncCutoff: syncCutoff,
+    apSyncCutoff,
   });
 
   return {
@@ -451,7 +473,7 @@ export function buildFinanceCashFlowExecutiveSummary(
       forwardRangeActive: forward.isActive,
       receivableOrigin: resolveReceivableOriginLabel(filters.invoiceIssued),
       viewMode: filters.viewMode,
-      ytdScopeLabel: `${scopeLabel} — recebido AR por data de baixa (motor oficial)`,
+      ytdScopeLabel: `${scopeLabel} — AR por data de baixa e AP por data efetiva (motor oficial)`,
       periodScopeLabel: resolvePeriodLabel(filters, referenceDate),
     },
   };

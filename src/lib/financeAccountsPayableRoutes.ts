@@ -2,7 +2,9 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
-  buildFinanceAccountsPayableDashboard,
+  buildOfficialAccountsPayableDashboard,
+} from "@/src/lib/financeAccountsPayableRulesAdapter.js";
+import {
   buildFinanceApPrismaWhere,
   filterFinanceApRows,
   FinanceApFilterParseError,
@@ -138,7 +140,13 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
       const { rows, syncCutoff } = await loadFinanceApRows(filters);
-      const payload = buildFinanceAccountsPayableDashboard(rows, filters, new Date(), syncCutoff);
+      const referenceDate = new Date();
+      const payload = buildOfficialAccountsPayableDashboard({
+        rows,
+        filters,
+        referenceDate,
+        syncCutoff,
+      });
       const integrationDeps = createDefaultApCostCenterIntegrationDeps();
       const ctx = await buildApCostCenterIntegrationContext(
         rows.map((row) => row.externalId),

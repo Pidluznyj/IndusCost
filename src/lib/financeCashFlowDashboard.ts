@@ -20,7 +20,9 @@ import {
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import {
-  buildFinanceAccountsPayableDashboard,
+  buildOfficialAccountsPayableDashboard,
+} from "./financeAccountsPayableRulesAdapter.js";
+import {
   countFinanceApSanitizationInScope,
   filterFinanceApManagementReportRows,
   filterFinanceApRows,
@@ -823,12 +825,12 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate,
     syncCutoff: arSyncCutoff,
   });
-  const apDashPortfolio = buildFinanceAccountsPayableDashboard(
-    apRows,
-    toCashFlowPortfolioApFilters(filters),
+  const apDashPortfolio = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: toCashFlowPortfolioApFilters(filters),
     referenceDate,
-    apSyncCutoff
-  );
+    syncCutoff: apSyncCutoff,
+  });
   const arDashPeriod = buildOfficialAccountsReceivableDashboard({
     rows: arRows,
     filters: toArLoadFilters(filters),
@@ -837,12 +839,14 @@ export function buildFinanceCashFlowDashboardFromDataset(
     year: filters.year,
     month: filters.month,
   });
-  const apDashPeriod = buildFinanceAccountsPayableDashboard(
-    apRows,
-    toApLoadFilters(filters),
+  const apDashPeriod = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: toApLoadFilters(filters),
     referenceDate,
-    apSyncCutoff
-  );
+    syncCutoff: apSyncCutoff,
+    year: filters.year,
+    month: filters.month,
+  });
   const ledgerPeriod = computeCashFlowLedgerPeriodTotals(
     filteredAr,
     filteredAp,
