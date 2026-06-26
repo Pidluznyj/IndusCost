@@ -54,6 +54,7 @@ describe("inventoryNavigation", () => {
     assert.equal(tabs.some((t) => t.id === "items" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "warehouses" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "movements" && !t.comingSoon), true);
+    assert.equal(tabs.some((t) => t.id === "balances" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "audit" && t.comingSoon), true);
     assert.equal(INVENTORY_TAB_DEFS.length, 8);
   });

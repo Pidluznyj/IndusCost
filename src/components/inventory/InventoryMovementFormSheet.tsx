@@ -44,6 +44,7 @@ type Props = {
   movementId: string | null;
   items: InventoryItemRow[];
   warehouses: InventoryWarehouseRow[];
+  initialItemId?: string;
   onClose: () => void;
   onSaved: () => void;
   canCreate: boolean;
@@ -208,11 +209,14 @@ export function InventoryMovementFormSheet({
   movementId,
   items,
   warehouses,
+  initialItemId,
   onClose,
   onSaved,
   canCreate,
 }: Props) {
-  const [form, setForm] = useState<InventoryMovementFormState>(createEmptyInventoryMovementForm());
+  const [form, setForm] = useState<InventoryMovementFormState>(() =>
+    createEmptyInventoryMovementForm(initialItemId ? { itemId: initialItemId } : undefined)
+  );
   const [formErrors, setFormErrors] = useState<ReturnType<typeof validateInventoryMovementForm>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

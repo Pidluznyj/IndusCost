@@ -58,6 +58,35 @@ export function formatInventoryQuantity(value: number | null | undefined, unit?:
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+const OPERATIONAL_STATUS_STYLES: Record<string, string> = {
+  OK: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  ATTENTION: "bg-amber-50 text-amber-800 ring-amber-200",
+  CRITICAL: "bg-orange-50 text-orange-800 ring-orange-200",
+  OUT_OF_STOCK: "bg-red-50 text-red-800 ring-red-200",
+  NEGATIVE: "bg-red-100 text-red-900 ring-red-300 font-semibold",
+  BLOCKED: "bg-slate-100 text-slate-700 ring-slate-300",
+  QUARANTINE: "bg-violet-50 text-violet-800 ring-violet-200",
+  INACTIVE: "bg-slate-50 text-slate-500 ring-slate-200",
+};
+
+export function inventoryOperationalStatusClassName(status: string): string {
+  return OPERATIONAL_STATUS_STYLES[status] ?? "bg-slate-50 text-slate-700 ring-slate-200";
+}
+
+export function InventoryOperationalStatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+        inventoryOperationalStatusClassName(status)
+      )}
+      data-testid={`inventory-status-${status}`}
+    >
+      {formatInventoryOperationalStatus(status)}
+    </span>
+  );
+}
+
 export function InventoryPermissionDenied() {
   return (
     <div

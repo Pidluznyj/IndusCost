@@ -31,6 +31,8 @@ export type InventoryBalancesListQuery = {
   warehouseId: string | null;
   itemType: InventoryItemType | null;
   status: "ACTIVE" | "INACTIVE" | null;
+  family: string | null;
+  group: string | null;
   belowMinimum: boolean;
   belowReorderPoint: boolean;
   hasReservation: boolean;
@@ -132,6 +134,8 @@ export function parseInventoryBalancesListQuery(
     warehouseId: optTrim(query.warehouseId),
     itemType: parseItemType(query.itemType),
     status: parseItemStatus(query.status),
+    family: optTrim(query.family),
+    group: optTrim(query.group),
     belowMinimum: parseBool(query.belowMinimum),
     belowReorderPoint: parseBool(query.belowReorderPoint),
     hasReservation: parseBool(query.hasReservation),

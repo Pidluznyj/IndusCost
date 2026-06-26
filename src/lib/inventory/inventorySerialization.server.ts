@@ -159,7 +159,18 @@ export function serializeInventoryDashboardMovement(row: DashboardMovementRow) {
 }
 
 export type InventoryBalanceWithItem = InventoryBalance & {
-  item: Pick<InventoryItem, "code" | "description" | "itemType" | "status" | "minimumStock" | "reorderPoint" | "unit">;
+  item: Pick<
+    InventoryItem,
+    | "code"
+    | "description"
+    | "itemType"
+    | "status"
+    | "minimumStock"
+    | "reorderPoint"
+    | "unit"
+    | "family"
+    | "group"
+  >;
   warehouse: Pick<InventoryWarehouse, "code" | "name" | "status">;
 };
 
@@ -174,6 +185,8 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       minimumStock: inventoryDecOrNull(row.item.minimumStock),
       reorderPoint: inventoryDecOrNull(row.item.reorderPoint),
       unit: row.item.unit,
+      family: row.item.family,
+      group: row.item.group,
     },
     warehouse: {
       code: row.warehouse.code,

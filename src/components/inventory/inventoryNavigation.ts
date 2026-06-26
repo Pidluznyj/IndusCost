@@ -53,7 +53,6 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     description: "Consulta de saldos por item e local.",
     showInNav: true,
     navOrder: 40,
-    comingSoon: true,
   },
   {
     id: "movements",
@@ -102,5 +101,6 @@ export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/items")) return "items";
   if (pathname.includes("/inventory/warehouses")) return "warehouses";
   if (pathname.includes("/inventory/movements")) return "movements";
+  if (pathname.includes("/inventory/balances")) return "balances";
   return "overview";
 }

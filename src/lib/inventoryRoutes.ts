@@ -13,7 +13,7 @@ import {
   INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
   INVENTORY_VIEW_PERMISSIONS,
 } from "@/src/lib/inventoryPermissions.js";
-import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
+import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
 import {
   parseInventoryBalancesListQuery,
@@ -136,6 +136,69 @@ function itemMatchesStockFilters(
     if (reorder == null || available >= reorder) return false;
   }
   return true;
+}
+
+function buildBalancesListSummary(
+  rows: Array<{
+    itemId: string;
+    physicalQuantity: unknown;
+    reservedQuantity: unknown;
+    blockedQuantity: unknown;
+    quarantineQuantity: unknown;
+    availableQuantity: unknown;
+    totalValue: unknown;
+    item: {
+      minimumStock: unknown;
+      reorderPoint: unknown;
+      status: string;
+    };
+  }>
+) {
+  const itemIds = new Set<string>();
+  let totalValue = 0;
+  let criticalCount = 0;
+  let belowMinimumCount = 0;
+  let negativeCount = 0;
+
+  for (const row of rows) {
+    itemIds.add(row.itemId);
+    totalValue += inventoryDec(row.totalValue);
+
+    const physical = inventoryDec(row.physicalQuantity);
+    const available = inventoryDec(row.availableQuantity);
+    const minimum = inventoryDecOrNull(row.item.minimumStock);
+    const reorder = inventoryDecOrNull(row.item.reorderPoint);
+
+    if (physical < 0 || available < 0) negativeCount += 1;
+    if (minimum != null && available < minimum) belowMinimumCount += 1;
+
+    const status = calculateInventoryStatus(
+      {
+        physicalQuantity: physical,
+        reservedQuantity: inventoryDec(row.reservedQuantity),
+        blockedQuantity: inventoryDec(row.blockedQuantity),
+        quarantineQuantity: inventoryDec(row.quarantineQuantity),
+        availableQuantity: available,
+      },
+      {
+        status: row.item.status as "ACTIVE" | "INACTIVE",
+        minimumStock: minimum,
+        reorderPoint: reorder,
+      }
+    );
+    if (status === "CRITICAL" || status === "OUT_OF_STOCK" || status === "NEGATIVE") {
+      criticalCount += 1;
+    }
+  }
+
+  return {
+    filteredItemsCount: itemIds.size,
+    filteredRowsCount: rows.length,
+    totalInventoryValue: totalValue,
+    criticalCount,
+    belowMinimumCount,
+    negativeCount,
+  };
 }
 
 export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) {
@@ -581,6 +644,8 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const itemWhere: Prisma.InventoryItemWhereInput = {
         ...(q.itemType ? { itemType: q.itemType } : {}),
         ...(q.status ? { status: q.status } : {}),
+        ...(q.family ? { family: { contains: q.family, mode: "insensitive" } } : {}),
+        ...(q.group ? { group: { contains: q.group, mode: "insensitive" } } : {}),
         ...(q.search
           ? {
               OR: [
@@ -617,6 +682,8 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
               minimumStock: true,
               reorderPoint: true,
               unit: true,
+              family: true,
+              group: true,
             },
           },
           warehouse: { select: { code: true, name: true, status: true } },
@@ -642,6 +709,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
 
       const total = filtered.length;
       const pageRows = filtered.slice(q.skip, q.skip + q.pageSize);
+      const summary = buildBalancesListSummary(filtered);
 
       res.json({
         rows: pageRows.map(serializeInventoryBalanceWithRelations),
@@ -649,6 +717,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         page: q.page,
         pageSize: q.pageSize,
         totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+        summary,
       });
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances", e);
