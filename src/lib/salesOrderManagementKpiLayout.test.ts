@@ -36,7 +36,7 @@ describe("salesOrderManagementKpiLayout", () => {
       dashboard.indexOf('testId="sales-order-management-overview"'),
       dashboard.indexOf("<SalesOrderManagementMarginOverview")
     );
-    const metricCardsInOverview = (overviewBlock.match(/<MetricCard/g) ?? []).length;
+    const metricCardsInOverview = (overviewBlock.match(/<MetricCard[\s\n/>]/g) ?? []).length;
     assert.equal(metricCardsInOverview, 5);
   });
 
