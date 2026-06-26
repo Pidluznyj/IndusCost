@@ -59,7 +59,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
   const year = payload?.year ?? new Date().getFullYear();
   const title = `Fluxo anual — Entradas, Saídas e Saldo (${year})`;
   const subtitle =
-    "Visão anual independente dos filtros da página. Entradas somam Recebido + A Receber; Saídas somam Pago + A Pagar. O saldo mostra a diferença entre entradas e saídas do mês.";
+    "Mesma base do fluxo de caixa planejado. Entradas mostram Recebido + A Receber; Saídas mostram Pago + A Pagar; o saldo é a diferença mensal.";
 
   if (loading && !payload) {
     return (
@@ -129,6 +129,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
         <MetricCard
           label="Saldo anual"
           formattedValue={formatFinanceCurrency(totals.netCashAmount)}
+          subtitle="Entradas − Saídas"
           variant={totals.netCashAmount >= 0 ? "success" : "danger"}
         />
       </MetricCardGrid>

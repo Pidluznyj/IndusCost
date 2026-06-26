@@ -121,6 +121,9 @@ function AnnualComparisonTooltip({
       <p className="font-semibold mt-2" style={{ color: netColor }}>
         {labels.netCashAmount}: {formatFinanceCurrency(row.netCashAmount)}
       </p>
+      <p className="text-[#374151] mt-1">
+        Saldo acumulado: {formatFinanceCurrency(row.accumulatedCashAmount)}
+      </p>
       {row.receivableGoal != null ? (
         <p className="text-[#7C3AED] mt-1">
           {labels.receivableGoal}: {formatFinanceCurrency(row.receivableGoal)}

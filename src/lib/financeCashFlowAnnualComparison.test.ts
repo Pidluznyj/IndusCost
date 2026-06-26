@@ -6,9 +6,11 @@ import {
   annualComparisonHasChartData,
   buildAnnualComparisonSeriesLabels,
   buildCashFlowAnnualComparison,
+  CASH_FLOW_ANNUAL_COMPARISON_SOURCE,
   createAnnualComparisonBaseFilters,
   filterApRowsForAnnualComparison,
   filterArRowsForAnnualComparison,
+  filterRowsForPlannedAnnualComparison,
   isApPaidByPaymentInPeriod,
   isArReceivedByRealizationInPeriod,
   mapAnnualComparisonChartRows,
@@ -19,6 +21,7 @@ import {
   type FinanceCashFlowApRow,
   type FinanceCashFlowArRow,
 } from "./financeCashFlowDashboard.js";
+import { buildExecutiveMonthlyPlannedChartRows } from "./financeCashFlowExecutiveChart.js";
 
 const BASE = new Date(2026, 5, 15);
 
@@ -118,12 +121,12 @@ describe("financeCashFlowAnnualComparison", () => {
     const routes = read("src/lib/financeCashFlowRoutes.ts");
     assert.ok(routes.includes("/api/finance/cash-flow/annual-comparison"));
     assert.ok(routes.includes("loadAnnualComparisonPortfolioRows"));
-    assert.ok(routes.includes("createAnnualComparisonBaseFilters"));
+    assert.ok(routes.includes("buildCashFlowAnnualComparison"));
     assert.doesNotMatch(routes, /annual-comparison[\s\S]*parseFiltersOrRespond/);
     assert.match(routes, /annual-comparison[\s\S]*?loadAnnualComparisonPortfolioRows/);
   });
 
-  it("2b. AR liquidado com amountReceived zerado usa amountReceivable", () => {
+  it("2b. AR liquidado com amountReceived zerado não entra em Recebido (motor planejado)", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -134,13 +137,12 @@ describe("financeCashFlowAnnualComparison", () => {
         balanceReceivable: 0,
       }),
     ];
-    const filtered = filterArRowsForAnnualComparison(arRows, BASE);
-    assert.equal(filtered.length, 1);
-    const payload = buildCashFlowAnnualComparison(filtered, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivedAmount, 950);
+    const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
+    assert.equal(payload.months[0]?.receivedAmount, 0);
+    assert.equal(payload.source, CASH_FLOW_ANNUAL_COMPARISON_SOURCE);
   });
 
-  it("2c. AP pago no ano aloca pelo pagamento mesmo com vencimento fora do ano", () => {
+  it("2c. AP pago fora do vencimento aloca pelo vencimento operacional", () => {
     const apRows = [
       apRow({
         externalId: 1,
@@ -150,13 +152,13 @@ describe("financeCashFlowAnnualComparison", () => {
         balancePayable: 0,
       }),
     ];
-    const filtered = filterApRowsForAnnualComparison(apRows, BASE);
+    const filtered = filterRowsForPlannedAnnualComparison([], apRows, 2026, BASE).apFiltered;
     const payload = buildCashFlowAnnualComparison([], filtered, 2026, BASE);
-    assert.equal(payload.months[0]?.paidAmount, 600);
+    assert.equal(payload.months[0]?.paidAmount, 0);
     assert.equal(payload.months[11]?.paidAmount, 0);
   });
 
-  it("3. AR recebido entra em receivedAmount pela data de baixa", () => {
+  it("3. AR recebido entra em receivedAmount pelo vencimento", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -167,8 +169,8 @@ describe("financeCashFlowAnnualComparison", () => {
       }),
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivedAmount, 800);
-    assert.equal(payload.months[2]?.receivedAmount, 0);
+    assert.equal(payload.months[0]?.receivedAmount, 0);
+    assert.equal(payload.months[2]?.receivedAmount, 800);
     assert.equal(payload.months[0]?.receivableOpenAmount, 0);
   });
 
@@ -186,7 +188,7 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[0]?.receivedAmount, 0);
   });
 
-  it("5. AP pago entra em paidAmount pela data de pagamento", () => {
+  it("5. AP pago entra em paidAmount pelo vencimento", () => {
     const apRows = [
       apRow({
         externalId: 1,
@@ -197,8 +199,8 @@ describe("financeCashFlowAnnualComparison", () => {
       }),
     ];
     const payload = buildCashFlowAnnualComparison([], apRows, 2026, BASE);
-    assert.equal(payload.months[0]?.paidAmount, 450);
-    assert.equal(payload.months[2]?.paidAmount, 0);
+    assert.equal(payload.months[0]?.paidAmount, 0);
+    assert.equal(payload.months[2]?.paidAmount, 450);
     assert.equal(payload.months[0]?.payableOpenAmount, 0);
   });
 
@@ -219,7 +221,7 @@ describe("financeCashFlowAnnualComparison", () => {
     const arRows = [
       arRow({
         externalId: 1,
-        settlementDate: new Date(2026, 0, 5),
+        dueDate: new Date(2026, 0, 5),
         amountReceived: 500,
         balanceReceivable: 0,
       }),
@@ -239,7 +241,7 @@ describe("financeCashFlowAnnualComparison", () => {
     const apRows = [
       apRow({
         externalId: 1,
-        paymentDate: new Date(2026, 0, 3),
+        dueDate: new Date(2026, 0, 3),
         amountPaid: 200,
         balancePayable: 0,
       }),
@@ -259,7 +261,7 @@ describe("financeCashFlowAnnualComparison", () => {
     const arRows = [
       arRow({
         externalId: 1,
-        settlementDate: new Date(2026, 0, 5),
+        dueDate: new Date(2026, 0, 5),
         amountReceived: 1000,
         balanceReceivable: 0,
       }),
@@ -267,7 +269,7 @@ describe("financeCashFlowAnnualComparison", () => {
     const apRows = [
       apRow({
         externalId: 2,
-        paymentDate: new Date(2026, 0, 6),
+        dueDate: new Date(2026, 0, 6),
         amountPaid: 400,
         balancePayable: 0,
       }),
@@ -367,7 +369,6 @@ describe("financeCashFlowAnnualComparison", () => {
       arRow({
         externalId: 1,
         dueDate: new Date(2025, 0, 10),
-        settlementDate: new Date(2025, 0, 10),
         amountReceived: 1000,
         balanceReceivable: 0,
       }),
@@ -375,6 +376,68 @@ describe("financeCashFlowAnnualComparison", () => {
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
     assert.equal(payload.hasReceivableGoal, true);
     assert.equal(payload.months[0]?.receivableGoal, 1300);
+  });
+
+  it("7b. netCashAmount bate com saldo líquido do gráfico planejado", () => {
+    const arRows = [
+      arRow({
+        externalId: 1,
+        dueDate: new Date(2026, 0, 10),
+        amountReceived: 1000,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        externalId: 2,
+        dueDate: new Date(2026, 5, 15),
+        balanceReceivable: 500,
+      }),
+    ];
+    const apRows = [
+      apRow({
+        externalId: 3,
+        dueDate: new Date(2026, 0, 20),
+        amountPaid: 400,
+        balancePayable: 0,
+      }),
+    ];
+    const dashboard = buildFinanceCashFlowDashboard(
+      arRows,
+      apRows,
+      createAnnualComparisonBaseFilters(),
+      BASE
+    );
+    const plannedRows = buildExecutiveMonthlyPlannedChartRows(
+      dashboard.executiveSummary.monthlyTimeline
+    );
+    const annual = buildCashFlowAnnualComparison(arRows, apRows, 2026, BASE);
+
+    for (let i = 0; i < 12; i += 1) {
+      const planned = plannedRows[i]!;
+      const month = annual.months[i]!;
+      assert.equal(month.netCashAmount, planned.netBalance);
+      assert.equal(month.differenceAgainstPlanned, 0);
+      assert.equal(month.cashInTotalAmount, planned.estimatedInflow);
+      assert.equal(month.cashOutTotalAmount, planned.estimatedOutflow);
+      assert.equal(month.accumulatedCashAmount, planned.accumulatedBalance);
+    }
+  });
+
+  it("totais anuais batem com soma dos meses", () => {
+    const arRows = [
+      arRow({ externalId: 1, dueDate: new Date(2026, 0, 5), amountReceived: 100, balanceReceivable: 0 }),
+      arRow({ externalId: 2, dueDate: new Date(2026, 1, 5), balanceReceivable: 200 }),
+    ];
+    const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
+    const sumIn = payload.months.reduce((a, m) => a + m.cashInTotalAmount, 0);
+    const sumOut = payload.months.reduce((a, m) => a + m.cashOutTotalAmount, 0);
+    const sumNet = payload.months.reduce((a, m) => a + m.netCashAmount, 0);
+    assert.equal(payload.totals.cashInTotalAmount, Math.round(sumIn * 100) / 100);
+    assert.equal(payload.totals.cashOutTotalAmount, Math.round(sumOut * 100) / 100);
+    assert.equal(payload.totals.netCashAmount, Math.round(sumNet * 100) / 100);
+    assert.equal(
+      payload.totals.netCashAmount,
+      Math.round((payload.totals.cashInTotalAmount - payload.totals.cashOutTotalAmount) * 100) / 100
+    );
   });
 
   it("meta oculta quando ano anterior zerado", () => {
@@ -419,11 +482,12 @@ describe("financeCashFlowAnnualComparison UI", () => {
     assert.ok(chart.includes("<Line"));
   });
 
-  it("17. tooltip mostra recebido, a receber, pago, a pagar e saldo", () => {
+  it("17. tooltip mostra recebido, a receber, pago, a pagar, saldo e acumulado", () => {
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
     assert.ok(chart.includes("Total de entradas"));
     assert.ok(chart.includes("Total de saídas"));
     assert.ok(chart.includes("netCashAmount"));
+    assert.ok(chart.includes("accumulatedCashAmount"));
     assert.ok(chart.includes("receivedAmount"));
     assert.ok(chart.includes("receivableOpenAmount"));
     assert.ok(chart.includes("paidAmount"));
@@ -479,9 +543,10 @@ describe("financeCashFlowAnnualComparison UI", () => {
     assert.equal(labels.netCashAmount, "Saldo mensal");
   });
 
-  it("título atualizado no componente", () => {
+  it("título e subtítulo atualizados no componente", () => {
     const wrapper = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx");
     assert.ok(wrapper.includes("Fluxo anual — Entradas, Saídas e Saldo"));
+    assert.ok(wrapper.includes("Mesma base do fluxo de caixa planejado"));
   });
 
   it("resumo anual com MetricCardGrid", () => {

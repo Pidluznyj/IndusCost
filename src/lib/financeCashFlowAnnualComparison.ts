@@ -1,7 +1,6 @@
 /**
  * Comparativo anual AR/AP do Fluxo de Caixa — independente dos filtros da página.
- * Realizado: data de baixa/recebimento (AR) e pagamento (AP).
- * Em aberto: vencimento operacional.
+ * Reutiliza o motor oficial do gráfico "Fluxo de caixa planejado" (`buildExecutiveMonthlyTimeline`).
  */
 import {
   roundMoney,
@@ -24,7 +23,11 @@ import type {
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
-import { isApOpenDueInPeriod } from "./financeCashFlowExecutiveSummary.js";
+import {
+  buildExecutiveMonthlyTimeline,
+  filterApRowsForCashFlowExecutiveTimeline,
+  type FinanceCashFlowExecutiveMonthlyRow,
+} from "./financeCashFlowExecutiveSummary.js";
 import {
   filterFinanceApManagementReportRows,
   type FinanceApDashboardFilters,
@@ -40,6 +43,10 @@ import {
 } from "./financeNomusArReportFreshness.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
+import {
+  buildYtdDashboardFilters,
+  filterArRowsForYtdReceived,
+} from "./financeCashFlowExecutiveYtd.js";
 
 export class FinanceCashFlowAnnualComparisonParseError extends Error {
   constructor(message: string) {
@@ -73,6 +80,9 @@ export type FinanceCashFlowAnnualComparisonMonth = {
   payableOpenAmount: number;
   cashOutTotalAmount: number;
   netCashAmount: number;
+  accumulatedCashAmount: number;
+  plannedNetCashAmount: number;
+  differenceAgainstPlanned: number;
   receivableGoal: number | null;
 };
 
@@ -84,6 +94,7 @@ export type FinanceCashFlowAnnualComparisonTotals = {
   payableOpenAmount: number;
   cashOutTotalAmount: number;
   netCashAmount: number;
+  accumulatedCashAmount: number;
   receivableGoal: number | null;
 };
 
@@ -93,6 +104,7 @@ export type FinanceCashFlowAnnualComparisonPayload = {
   totals: FinanceCashFlowAnnualComparisonTotals;
   hasReceivableGoal: boolean;
   filterIndependent: true;
+  source: "cash-flow-planned-engine";
   generatedAt: string;
 };
 
@@ -106,8 +118,11 @@ export type FinanceCashFlowAnnualComparisonChartRow = {
   payableOpenAmount: number;
   cashOutTotalAmount: number;
   netCashAmount: number;
+  accumulatedCashAmount: number;
   receivableGoal: number | null;
 };
+
+export const CASH_FLOW_ANNUAL_COMPARISON_SOURCE = "cash-flow-planned-engine" as const;
 
 /** Filtros mínimos — sem recorte de página (mês, cliente, empresa, etc.). */
 export function createAnnualComparisonBaseFilters(): FinanceCashFlowDashboardFilters {
@@ -273,12 +288,19 @@ export function sumApOpenDueInAnnualPeriod(
   return roundMoney(total);
 }
 
+/** @deprecated Motor legado por data de baixa/pagamento — mantido para testes de regressão. */
 export function buildAnnualComparisonMonthlyTimeline(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
   year: number
-): Omit<FinanceCashFlowAnnualComparisonMonth, "receivableGoal">[] {
-  const months: Omit<FinanceCashFlowAnnualComparisonMonth, "receivableGoal">[] = [];
+): Omit<
+  FinanceCashFlowAnnualComparisonMonth,
+  "receivableGoal" | "accumulatedCashAmount" | "plannedNetCashAmount" | "differenceAgainstPlanned"
+>[] {
+  const months: Omit<
+    FinanceCashFlowAnnualComparisonMonth,
+    "receivableGoal" | "accumulatedCashAmount" | "plannedNetCashAmount" | "differenceAgainstPlanned"
+  >[] = [];
 
   for (let m = 1; m <= 12; m += 1) {
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
@@ -305,6 +327,55 @@ export function buildAnnualComparisonMonthlyTimeline(
   }
 
   return months;
+}
+
+/** Filtra carteira AR/AP com os mesmos filtros YTD do gráfico planejado (sem mês da página). */
+export function filterRowsForPlannedAnnualComparison(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  year: number,
+  referenceDate: Date,
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
+): {
+  arFiltered: FinanceCashFlowArRow[];
+  apFiltered: FinanceCashFlowApRow[];
+} {
+  const filters = buildYtdDashboardFilters(
+    { ...createAnnualComparisonBaseFilters(), year },
+    referenceDate
+  );
+  return {
+    arFiltered: filterArRowsForYtdReceived(arRows, filters, referenceDate, arSyncCutoff),
+    apFiltered: filterApRowsForCashFlowExecutiveTimeline(
+      apRows,
+      filters,
+      referenceDate,
+      apSyncCutoff
+    ),
+  };
+}
+
+/** Mapeia linha da timeline executiva para o payload do comparativo anual — sem recálculo. */
+export function mapExecutiveMonthlyRowToAnnualComparisonMonth(
+  row: FinanceCashFlowExecutiveMonthlyRow
+): Omit<FinanceCashFlowAnnualComparisonMonth, "receivableGoal"> {
+  const plannedNetCashAmount = row.netFlow;
+  const netCashAmount = row.netFlow;
+  return {
+    month: row.month,
+    monthLabel: MONTH_LABELS[row.month - 1]!,
+    receivedAmount: row.received,
+    receivableOpenAmount: row.receivableOpenDue,
+    cashInTotalAmount: row.estimatedInflow,
+    paidAmount: row.paid,
+    payableOpenAmount: row.payableOpenDue,
+    cashOutTotalAmount: row.estimatedOutflow,
+    netCashAmount,
+    accumulatedCashAmount: row.accumulatedNet,
+    plannedNetCashAmount,
+    differenceAgainstPlanned: roundMoney(netCashAmount - plannedNetCashAmount),
+  };
 }
 
 function toAnnualComparisonArLoadFilters(): FinanceArDashboardFilters {
@@ -364,22 +435,6 @@ export function filterApRowsForAnnualComparison(
   ) as FinanceCashFlowApRow[];
 }
 
-function filterRowsForAnnualComparison(
-  arRows: FinanceCashFlowArRow[],
-  apRows: FinanceCashFlowApRow[],
-  referenceDate: Date,
-  arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
-): {
-  arFiltered: FinanceCashFlowArRow[];
-  apFiltered: FinanceCashFlowApRow[];
-} {
-  return {
-    arFiltered: filterArRowsForAnnualComparison(arRows, referenceDate, arSyncCutoff),
-    apFiltered: filterApRowsForAnnualComparison(apRows, referenceDate, apSyncCutoff),
-  };
-}
-
 export function buildCashFlowAnnualComparison(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -388,39 +443,48 @@ export function buildCashFlowAnnualComparison(
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowAnnualComparisonPayload {
-  const { arFiltered, apFiltered } = filterRowsForAnnualComparison(
+  const { arFiltered, apFiltered } = filterRowsForPlannedAnnualComparison(
     arRows,
     apRows,
+    year,
     referenceDate,
     arSyncCutoff,
     apSyncCutoff
   );
 
-  const timeline = buildAnnualComparisonMonthlyTimeline(arFiltered, apFiltered, year);
-
-  const previousYear = year - 1;
-  const previousTimeline = buildAnnualComparisonMonthlyTimeline(
+  const timeline = buildExecutiveMonthlyTimeline(
     arFiltered,
     apFiltered,
-    previousYear
+    year,
+    referenceDate
+  );
+
+  const previousYear = year - 1;
+  const previousTimeline = buildExecutiveMonthlyTimeline(
+    arFiltered,
+    apFiltered,
+    previousYear,
+    referenceDate
   );
 
   const months: FinanceCashFlowAnnualComparisonMonth[] = timeline.map((row, idx) => {
     const previous = previousTimeline[idx];
-    const previousInflow = previous?.cashInTotalAmount ?? 0;
+    const previousInflow = previous?.estimatedInflow ?? 0;
     const receivableGoal =
       previousInflow > 0 ? computeGrowthTarget(previousInflow) : null;
 
     return {
-      ...row,
+      ...mapExecutiveMonthlyRowToAnnualComparisonMonth(row),
       receivableGoal,
     };
   });
 
   const totalPreviousInflow = roundMoney(
-    previousTimeline.reduce((acc, row) => acc + row.cashInTotalAmount, 0)
+    previousTimeline.reduce((acc, row) => acc + row.estimatedInflow, 0)
   );
   const hasReceivableGoal = totalPreviousInflow > 0;
+
+  const lastMonth = months[months.length - 1];
 
   const totals: FinanceCashFlowAnnualComparisonTotals = {
     receivedAmount: roundMoney(months.reduce((acc, m) => acc + m.receivedAmount, 0)),
@@ -432,6 +496,7 @@ export function buildCashFlowAnnualComparison(
     payableOpenAmount: roundMoney(months.reduce((acc, m) => acc + m.payableOpenAmount, 0)),
     cashOutTotalAmount: roundMoney(months.reduce((acc, m) => acc + m.cashOutTotalAmount, 0)),
     netCashAmount: roundMoney(months.reduce((acc, m) => acc + m.netCashAmount, 0)),
+    accumulatedCashAmount: lastMonth?.accumulatedCashAmount ?? 0,
     receivableGoal: hasReceivableGoal
       ? roundMoney(months.reduce((acc, m) => acc + (m.receivableGoal ?? 0), 0))
       : null,
@@ -443,6 +508,7 @@ export function buildCashFlowAnnualComparison(
     totals,
     hasReceivableGoal,
     filterIndependent: true,
+    source: CASH_FLOW_ANNUAL_COMPARISON_SOURCE,
     generatedAt: referenceDate.toISOString(),
   };
 }
@@ -475,6 +541,7 @@ export function mapAnnualComparisonChartRows(
     payableOpenAmount: m.payableOpenAmount,
     cashOutTotalAmount: m.cashOutTotalAmount,
     netCashAmount: m.netCashAmount,
+    accumulatedCashAmount: m.accumulatedCashAmount,
     receivableGoal: payload.hasReceivableGoal ? m.receivableGoal : null,
   }));
 }
