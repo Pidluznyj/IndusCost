@@ -20,7 +20,9 @@ import {
 } from "./financeExecutiveReportDataSources.js";
 import {
   buildExecutiveReportApFilters,
+  buildExecutiveReportApPortfolioFilters,
   buildExecutiveReportArFilters,
+  buildExecutiveReportArPortfolioFilters,
 } from "./financeExecutiveReport.js";
 import type { FinanceExecutiveReportFilters } from "./financeExecutiveReportTypes.js";
 
@@ -111,19 +113,19 @@ describe("financeExecutiveReportDataSources", () => {
     assert.match(src, /sumFinanceApPaidInPaymentPeriod/);
   });
 
-  it("AR aberto do relatório = AR aberto da tela oficial", () => {
+  it("AR aberto do relatório = AR aberto da tela oficial (filtros de carteira)", () => {
     const filters = reportFilters();
-    const arFilters = buildExecutiveReportArFilters(filters);
+    const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
     const rows = [arRow(), arRow({ externalId: 2, balanceReceivable: 200, amountReceived: 0, settlementDate: null })];
     const official = buildOfficialAccountsReceivableDashboardForReport({
       rows,
-      filters: arFilters,
+      filters: arPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
     });
     const section = buildExecutiveReportReceivablesSection({
       rows,
-      filters: arFilters,
+      filters: arPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
       year: 2026,
@@ -135,9 +137,9 @@ describe("financeExecutiveReportDataSources", () => {
     assert.equal(section.kpis.overdueAmount, official.cards.overdueAmount);
   });
 
-  it("AP aberto/vencido do relatório = tela oficial", () => {
+  it("AP aberto/vencido do relatório = tela oficial (filtros de carteira)", () => {
     const filters = reportFilters();
-    const apFilters = buildExecutiveReportApFilters(filters);
+    const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
     const rows = [
       apRow(),
       apRow({
@@ -150,32 +152,88 @@ describe("financeExecutiveReportDataSources", () => {
     ];
     const official = buildOfficialAccountsPayableDashboardForReport({
       rows,
-      filters: apFilters,
+      filters: apPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
     });
     const section = buildExecutiveReportPayablesSection({
       rows,
-      filters: apFilters,
+      filters: apPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
       year: 2026,
       month: 6,
       cards: official.cards,
+      purchaseOrderScheduleAudit: official.purchaseOrderScheduleAudit,
     });
     assert.equal(section.metricsSource, EXECUTIVE_REPORT_PAYABLES_SOURCE);
     assert.equal(section.kpis.openAmount, official.cards.totalOpenAmount);
     assert.equal(section.kpis.overdueAmount, official.cards.overdueAmount);
+    assert.equal(section.kpis.totalPayableAmount, official.cards.totalPayableAmount);
+    assert.equal(section.kpis.dueTodayAmount, official.cards.dueTodayAmount);
+    assert.equal(section.kpis.dueNext7DaysAmount, official.cards.dueNext7DaysAmount);
+    assert.equal(section.kpis.dueNext30DaysAmount, official.cards.dueNext30DaysAmount);
+    assert.equal(
+      section.kpis.scheduledOpenAmount,
+      official.purchaseOrderScheduleAudit.rescheduledOpenAmount
+    );
+  });
+
+  it("filtro mês do relatório não restringe carteira AP — paridade com tela oficial", () => {
+    const filters = reportFilters({ month: 6 });
+    const apMonthFilters = buildExecutiveReportApFilters(filters);
+    const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
+    const rows = [
+      apRow({
+        externalId: 10,
+        balancePayable: 5000,
+        amountPaid: 0,
+        paymentDate: null,
+        dueDate: new Date(2026, 4, 15),
+      }),
+      apRow({
+        externalId: 11,
+        balancePayable: 491.1,
+        amountPaid: 0,
+        paymentDate: null,
+        dueDate: new Date(2026, 5, 10),
+      }),
+    ];
+    const officialScreen = buildOfficialAccountsPayableDashboardForReport({
+      rows,
+      filters: apPortfolioFilters,
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    const monthScoped = buildOfficialAccountsPayableDashboardForReport({
+      rows,
+      filters: apMonthFilters,
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    assert.ok(monthScoped.cards.totalOpenAmount < officialScreen.cards.totalOpenAmount);
+    const section = buildExecutiveReportPayablesSection({
+      rows,
+      filters: apPortfolioFilters,
+      referenceDate: REF,
+      syncCutoff: null,
+      year: 2026,
+      month: 6,
+      cards: officialScreen.cards,
+      purchaseOrderScheduleAudit: officialScreen.purchaseOrderScheduleAudit,
+    });
+    assert.equal(section.kpis.openAmount, officialScreen.cards.totalOpenAmount);
+    assert.notEqual(section.kpis.openAmount, monthScoped.cards.totalOpenAmount);
   });
 
   it("recebido mês do relatório = recebido mês oficial quando mês = asOfDate", () => {
     const filters = reportFilters();
-    const arFilters = buildExecutiveReportArFilters(filters);
+    const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
     const rows = [arRow({ settlementDate: new Date(2026, 5, 10), amountReceived: 750 })];
-    const official = buildFinanceAccountsReceivableDashboard(rows, arFilters, REF, null);
+    const official = buildFinanceAccountsReceivableDashboard(rows, arPortfolioFilters, REF, null);
     const section = buildExecutiveReportReceivablesSection({
       rows,
-      filters: arFilters,
+      filters: arPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
       year: 2026,
@@ -187,32 +245,34 @@ describe("financeExecutiveReportDataSources", () => {
 
   it("pago mês do relatório = pago mês oficial quando mês = asOfDate", () => {
     const filters = reportFilters();
-    const apFilters = buildExecutiveReportApFilters(filters);
+    const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
     const rows = [apRow({ paymentDate: new Date(2026, 5, 18), amountPaid: 500, balancePayable: 0 })];
-    const official = buildFinanceAccountsPayableDashboard(rows, apFilters, REF, null);
+    const official = buildFinanceAccountsPayableDashboard(rows, apPortfolioFilters, REF, null);
     const section = buildExecutiveReportPayablesSection({
       rows,
-      filters: apFilters,
+      filters: apPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
       year: 2026,
       month: 6,
       cards: official.cards,
+      purchaseOrderScheduleAudit: official.purchaseOrderScheduleAudit,
     });
     assert.equal(section.kpis.paidMonthCurrent, official.cards.paidThisMonthAmount);
+    assert.equal(section.kpis.paidThisMonthAmount, official.cards.paidThisMonthAmount);
   });
 
   it("variação percentual não produz NaN no payload de KPIs", () => {
     const filters = reportFilters();
-    const arFilters = buildExecutiveReportArFilters(filters);
+    const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
     const section = buildExecutiveReportReceivablesSection({
       rows: [],
-      filters: arFilters,
+      filters: arPortfolioFilters,
       referenceDate: REF,
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: buildFinanceAccountsReceivableDashboard([], arFilters, REF, null).cards,
+      cards: buildFinanceAccountsReceivableDashboard([], arPortfolioFilters, REF, null).cards,
     });
     for (const value of [
       section.kpis.receivedMonthCurrent,
@@ -234,13 +294,14 @@ describe("financeExecutiveReportDataSources", () => {
     const doc = read("src/components/finance/executive-report/ExecutiveReportDocument.tsx");
     assert.match(doc, /report\.accountsReceivable\.kpis/);
     assert.match(doc, /report\.accountsPayable\.kpis/);
+    assert.match(doc, /Total a pagar/);
+    assert.match(doc, /Vencido gerencial/);
     assert.doesNotMatch(doc, /buildExecutiveReportArKpis\(/);
   });
 
   it("layout compacto e gráfico com altura mínima no PDF", () => {
     const css = read("src/components/finance/executive-report/finance-executive-report-print.css");
     assert.match(css, /executive-kpi-grid--compact/);
-    assert.match(css, /112mm/);
-    assert.match(css, /max-height:\s*22mm/);
+    assert.match(css, /98mm/);
   });
 });

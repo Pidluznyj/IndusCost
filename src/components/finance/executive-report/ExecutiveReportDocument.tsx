@@ -347,6 +347,7 @@ export function ExecutiveReportDocument({
           title="Pedidos de Venda"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
+          withChart
         >
           <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
@@ -429,6 +430,7 @@ export function ExecutiveReportDocument({
           title="Faturamento Comparativo"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["billing-comparison"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-comparison"]}
+          withChart
         >
           <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
@@ -511,6 +513,7 @@ export function ExecutiveReportDocument({
           title="Contas a Receber"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-receivable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-receivable"]}
+          withChart
         >
           <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
@@ -577,14 +580,66 @@ export function ExecutiveReportDocument({
           title="Contas a Pagar"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-payable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-payable"]}
+          withChart
         >
           <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
-              label="Pago mês"
+              label="Total a pagar"
+              value={formatExecutiveReportPresentationCurrency(apKpis.totalPayableAmount)}
+              hint={kpiHint("Total a pagar")}
+            />
+            <ExecutiveKpiCard
+              label="Pago no mês"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidThisMonthAmount)}
+              sub={`Mês de ${String(month).padStart(2, "0")}/${report.year}`}
+              hint={kpiHint("Pago")}
+              highlight
+            />
+            <ExecutiveKpiCard
+              label="Em aberto"
+              value={formatExecutiveReportPresentationCurrency(apKpis.openAmount)}
+              hint={kpiHint("Em aberto")}
+            />
+            <ExecutiveKpiCard
+              label="Vencido gerencial"
+              value={formatExecutiveReportPresentationCurrency(apKpis.overdueAmount)}
+              hint={kpiHint("Vencido gerencial")}
+              tone="negative"
+            />
+            <ExecutiveKpiCard
+              label="Vence hoje"
+              value={formatExecutiveReportPresentationCurrency(apKpis.dueTodayAmount)}
+              hint={kpiHint("Vence hoje")}
+            />
+            <ExecutiveKpiCard
+              label="Próx. 7 dias"
+              value={formatExecutiveReportPresentationCurrency(apKpis.dueNext7DaysAmount)}
+              hint={kpiHint("Próx. 7 dias")}
+            />
+            <ExecutiveKpiCard
+              label="Próx. 30 dias"
+              value={formatExecutiveReportPresentationCurrency(apKpis.dueNext30DaysAmount)}
+              hint={kpiHint("Próx. 30 dias")}
+            />
+            <ExecutiveKpiCard
+              label="Agendados"
+              value={formatExecutiveReportPresentationCurrency(apKpis.scheduledOpenAmount)}
+              hint={kpiHint("Agendados")}
+            />
+          </ExecutiveKpiGrid>
+
+          <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact mt-2">
+            <ExecutiveKpiCard
+              label="Pago mês atual"
               value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthCurrent)}
               sub={`${String(month).padStart(2, "0")}/${report.year}`}
               hint={kpiHint("Pago")}
-              highlight
+            />
+            <ExecutiveKpiCard
+              label="Pago mês — ano anterior"
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthPrevious)}
+              sub={`${String(month).padStart(2, "0")}/${previousYear}`}
+              hint={kpiHint("Pago")}
             />
             <VariationKpiCard label="Variação mês" variation={apKpis.paidMonthVariation} />
             <ExecutiveKpiCard
@@ -593,30 +648,13 @@ export function ExecutiveReportDocument({
               sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
             />
-            <VariationKpiCard label="Variação YTD" variation={apKpis.paidYtdVariation} />
-            <ExecutiveKpiCard
-              label="Pago mês — ano anterior"
-              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthPrevious)}
-              sub={`${String(month).padStart(2, "0")}/${previousYear}`}
-              hint={kpiHint("Pago")}
-            />
             <ExecutiveKpiCard
               label="Pago YTD — ano anterior"
               value={formatExecutiveReportPresentationCurrency(apKpis.paidYtdPrevious)}
               sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}
             />
-            <ExecutiveKpiCard
-              label="Em aberto"
-              value={formatExecutiveReportPresentationCurrency(apKpis.openAmount)}
-              hint={kpiHint("Em aberto")}
-            />
-            <ExecutiveKpiCard
-              label="Vencidos"
-              value={formatExecutiveReportPresentationCurrency(apKpis.overdueAmount)}
-              hint={kpiHint("Vencidos")}
-              tone="negative"
-            />
+            <VariationKpiCard label="Variação YTD" variation={apKpis.paidYtdVariation} />
           </ExecutiveKpiGrid>
 
           <div className="mt-3 executive-chart-region">
@@ -643,6 +681,7 @@ export function ExecutiveReportDocument({
           title="Fluxo de Caixa / Agenda"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cash-flow"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["cash-flow"]}
+          withChart
         >
           <ExecutiveReportPeriodMeta testId="executive-report-cash-flow-period-meta">
             {cashFlowPeriodCopy.metadataLine}

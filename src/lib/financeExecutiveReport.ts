@@ -209,6 +209,13 @@ export function buildExecutiveReportArFilters(
   };
 }
 
+/** Filtros de carteira AR — espelha a tela oficial (ano, sem mês de vencimento). */
+export function buildExecutiveReportArPortfolioFilters(
+  filters: FinanceExecutiveReportFilters
+): FinanceArDashboardFilters {
+  return buildExecutiveReportArFilters({ ...filters, month: null });
+}
+
 export function buildExecutiveReportApFilters(
   filters: FinanceExecutiveReportFilters
 ): FinanceApDashboardFilters {
@@ -223,6 +230,13 @@ export function buildExecutiveReportApFilters(
       filters.customerType === "all" ? "all" : "company"
     ),
   };
+}
+
+/** Filtros de carteira AP — espelha a tela oficial (ano, sem mês de vencimento). */
+export function buildExecutiveReportApPortfolioFilters(
+  filters: FinanceExecutiveReportFilters
+): FinanceApDashboardFilters {
+  return buildExecutiveReportApFilters({ ...filters, month: null });
 }
 
 export function buildExecutiveReportCashFlowFilters(
@@ -441,6 +455,7 @@ export function buildExecutiveReportModuleSections(input: ExecutiveReportOfficia
         criticalTitles: sliceExecutiveReportTopN(apPayload.criticalTitles, topN),
         dataSanitization: mergeFinanceDataSanitization(apPayload.dataSanitization),
         financialHorizon: apPayload.financialHorizon,
+        purchaseOrderScheduleAudit: apPayload.purchaseOrderScheduleAudit,
       },
     },
     cashFlow: {
@@ -503,8 +518,8 @@ export async function buildFinanceExecutiveReport(
   const filters = parseFinanceExecutiveReportQuery(query);
   const referenceDate = resolveExecutiveReportReferenceDate(filters);
   const yearCtx = resolveExecutiveDashboardYearContext(filters.year, referenceDate);
-  const arFilters = buildExecutiveReportArFilters(filters);
-  const apFilters = buildExecutiveReportApFilters(filters);
+  const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
+  const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(filters);
   const cashFlowAnnualFilters = buildExecutiveReportCashFlowAnnualFilters(filters);
   const topN = filters.topN;
@@ -524,8 +539,8 @@ export async function buildFinanceExecutiveReport(
     apSyncStatus,
     nfeSyncStatus,
   ] = await Promise.all([
-    loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
-    loadApRows(db, apFilters),
+    loadFinanceArManagementRowsFromPrisma(db, arPortfolioFilters, referenceDate),
+    loadApRows(db, apPortfolioFilters),
     loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate),
     loadCashFlowRows(db, cashFlowFilters, referenceDate),
     loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
@@ -550,21 +565,21 @@ export async function buildFinanceExecutiveReport(
 
   const arPayload = buildFinanceAccountsReceivableDashboard(
     arLoad.rows,
-    arFilters,
+    arPortfolioFilters,
     referenceDate,
     arLoad.syncCutoff,
     { horizonSourceRows: arHorizonLoad.rows }
   );
   const apPayload = buildFinanceAccountsPayableDashboard(
     apLoad.rows,
-    apFilters,
+    apPortfolioFilters,
     referenceDate,
     apLoad.syncCutoff
   );
   const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
   const receivablesSection = buildExecutiveReportReceivablesSection({
     rows: arLoad.rows,
-    filters: arFilters,
+    filters: arPortfolioFilters,
     referenceDate,
     syncCutoff: arLoad.syncCutoff,
     year: filters.year,
@@ -573,12 +588,13 @@ export async function buildFinanceExecutiveReport(
   });
   const payablesSection = buildExecutiveReportPayablesSection({
     rows: apLoad.rows,
-    filters: apFilters,
+    filters: apPortfolioFilters,
     referenceDate,
     syncCutoff: apLoad.syncCutoff,
     year: filters.year,
     month: highlightMonth,
     cards: apPayload.cards,
+    purchaseOrderScheduleAudit: apPayload.purchaseOrderScheduleAudit,
   });
   const cashFlowPayload = buildFinanceCashFlowDashboard(
     cashFlowLoad.arRows,
@@ -865,6 +881,7 @@ export async function buildFinanceExecutiveReport(
         criticalTitles: sliceExecutiveReportTopN(apPayload.criticalTitles, topN),
         dataSanitization: mergeFinanceDataSanitization(apPayload.dataSanitization),
         financialHorizon: apPayload.financialHorizon,
+        purchaseOrderScheduleAudit: apPayload.purchaseOrderScheduleAudit,
       },
     },
     cashFlow: {

@@ -4,7 +4,7 @@
 import type { FinanceCashFlowAnnualComparisonPayload } from "./financeCashFlowAnnualComparison.js";
 import type { BillingDashboardTab, SalesOrdersDashboardTab } from "./executiveDashboardTypes.js";
 import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
-import type { FinanceApDashboardCards } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceApDashboardCards, FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
 import {
   formatExecutiveReportPresentationCurrency,
   formatExecutiveReportPresentationPercent,
@@ -186,6 +186,7 @@ export function buildExecutiveReportApKpisFromOfficial(input: {
   paidYtdCurrent: number;
   paidYtdPrevious: number;
   cards: FinanceApDashboardCards;
+  purchaseOrderScheduleAudit?: FinanceApPurchaseOrderScheduleAudit;
   futureOpenAmount?: number;
 }) {
   const {
@@ -194,6 +195,7 @@ export function buildExecutiveReportApKpisFromOfficial(input: {
     paidYtdCurrent,
     paidYtdPrevious,
     cards,
+    purchaseOrderScheduleAudit,
     futureOpenAmount,
   } = input;
 
@@ -204,8 +206,14 @@ export function buildExecutiveReportApKpisFromOfficial(input: {
     paidYtdCurrent,
     paidYtdPrevious,
     paidYtdVariation: computeExecutiveReportVariation(paidYtdCurrent, paidYtdPrevious, false),
+    totalPayableAmount: cards.totalPayableAmount,
+    paidThisMonthAmount: cards.paidThisMonthAmount,
     openAmount: cards.totalOpenAmount,
     overdueAmount: cards.overdueAmount,
+    dueTodayAmount: cards.dueTodayAmount,
+    dueNext7DaysAmount: cards.dueNext7DaysAmount,
+    dueNext30DaysAmount: cards.dueNext30DaysAmount,
+    scheduledOpenAmount: purchaseOrderScheduleAudit?.rescheduledOpenAmount ?? 0,
     futureOpenAmount: futureOpenAmount ?? cards.upcomingAmount,
   };
 }

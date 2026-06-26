@@ -284,6 +284,7 @@ export type FinanceExecutiveReportAccountsPayable = {
     | "criticalTitles"
     | "dataSanitization"
     | "financialHorizon"
+    | "purchaseOrderScheduleAudit"
   >;
 };
 

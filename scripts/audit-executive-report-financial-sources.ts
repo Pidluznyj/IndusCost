@@ -7,8 +7,8 @@
  */
 import { prisma } from "../src/lib/prisma.js";
 import {
-  buildExecutiveReportApFilters,
-  buildExecutiveReportArFilters,
+  buildExecutiveReportApPortfolioFilters,
+  buildExecutiveReportArPortfolioFilters,
   parseFinanceExecutiveReportQuery,
   resolveExecutiveReportReferenceDate,
 } from "../src/lib/financeExecutiveReport.js";
@@ -51,17 +51,17 @@ async function main() {
 
   const filters = parseFinanceExecutiveReportQuery({ year, month, asOfDate });
   const referenceDate = resolveExecutiveReportReferenceDate(filters);
-  const arFilters = buildExecutiveReportArFilters(filters);
-  const apFilters = buildExecutiveReportApFilters(filters);
+  const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
+  const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
   const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
 
   const [arLoad, arHorizon, apSyncCutoff] = await Promise.all([
-    loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate),
+    loadFinanceArManagementRowsFromPrisma(prisma, arPortfolioFilters, referenceDate),
     loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate),
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
 
-  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
+  const apWhere = buildFinanceApPrismaWhere(apPortfolioFilters, apSyncCutoff);
   const apPrisma = await prisma.nomusAccountsPayable.findMany({
     where: apWhere,
     select: FINANCE_AP_TITLE_SELECT,
@@ -71,7 +71,7 @@ async function main() {
 
   const officialAr = buildOfficialAccountsReceivableDashboardForReport({
     rows: arLoad.rows,
-    filters: arFilters,
+    filters: arPortfolioFilters,
     referenceDate,
     syncCutoff: arLoad.syncCutoff,
     horizonSourceRows: arHorizon.rows,
@@ -79,14 +79,14 @@ async function main() {
 
   const officialAp = buildOfficialAccountsPayableDashboardForReport({
     rows: apRows,
-    filters: apFilters,
+    filters: apPortfolioFilters,
     referenceDate,
     syncCutoff: apSyncCutoff,
   });
 
   const reportAr = buildExecutiveReportReceivablesSection({
     rows: arLoad.rows,
-    filters: arFilters,
+    filters: arPortfolioFilters,
     referenceDate,
     syncCutoff: arLoad.syncCutoff,
     year: filters.year,
@@ -96,12 +96,13 @@ async function main() {
 
   const reportAp = buildExecutiveReportPayablesSection({
     rows: apRows,
-    filters: apFilters,
+    filters: apPortfolioFilters,
     referenceDate,
     syncCutoff: apSyncCutoff,
     year: filters.year,
     month: highlightMonth,
     cards: officialAp.cards,
+    purchaseOrderScheduleAudit: officialAp.purchaseOrderScheduleAudit,
   });
 
   console.log(`Auditoria AR/AP — year=${year} month=${month} asOfDate=${asOfDate}\n`);

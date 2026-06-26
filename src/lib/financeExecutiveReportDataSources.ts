@@ -15,7 +15,7 @@ import {
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
 import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
-import type { FinanceApDashboardCards } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceApDashboardCards, FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
@@ -156,8 +156,10 @@ export function buildExecutiveReportPayablesSection(input: {
   year: number;
   month: number;
   cards: FinanceApDashboardCards;
+  purchaseOrderScheduleAudit: FinanceApPurchaseOrderScheduleAudit;
 }): ExecutiveReportPayablesSection {
-  const { rows, filters, referenceDate, syncCutoff, year, month, cards } = input;
+  const { rows, filters, referenceDate, syncCutoff, year, month, cards, purchaseOrderScheduleAudit } =
+    input;
   const monthBounds = monthPeriodBounds(year, month);
   const prevMonthBounds = monthPeriodBounds(year - 1, month);
   const ytdBounds = ytdPeriodBounds(year, month, referenceDate);
@@ -205,6 +207,7 @@ export function buildExecutiveReportPayablesSection(input: {
       paidYtdCurrent,
       paidYtdPrevious,
       cards,
+      purchaseOrderScheduleAudit,
     }),
   };
 }

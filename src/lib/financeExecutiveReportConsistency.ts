@@ -29,7 +29,9 @@ import {
 } from "./financeDashboardConsistencyAudit.js";
 import {
   buildExecutiveReportApFilters,
+  buildExecutiveReportApPortfolioFilters,
   buildExecutiveReportArFilters,
+  buildExecutiveReportArPortfolioFilters,
   buildExecutiveReportCashFlowFilters,
   buildExecutiveReportModuleSections,
   type ExecutiveReportOfficialPayloads,
@@ -393,19 +395,19 @@ export function buildOfficialModulesForExecutiveReport(input: {
   billingTab?: BillingDashboardTab | null;
   salesOrdersTab?: ExecutiveReportOfficialPayloads["salesOrdersTab"];
 }) {
-  const arFilters = buildExecutiveReportArFilters(input.filters);
-  const apFilters = buildExecutiveReportApFilters(input.filters);
+  const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(input.filters);
+  const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(input.filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(input.filters);
 
   const arPayload = buildFinanceAccountsReceivableDashboard(
     input.arRows,
-    arFilters,
+    arPortfolioFilters,
     input.referenceDate,
     input.arSyncCutoff
   );
   const apPayload = buildFinanceAccountsPayableDashboard(
     input.apRows,
-    apFilters,
+    apPortfolioFilters,
     input.referenceDate,
     input.apSyncCutoff
   );
@@ -426,8 +428,8 @@ export function buildOfficialModulesForExecutiveReport(input: {
     cashFlowPayload,
     billingTab: input.billingTab ?? null,
     salesOrdersTab: input.salesOrdersTab ?? null,
-    arFilters,
-    apFilters,
+    arFilters: arPortfolioFilters,
+    apFilters: apPortfolioFilters,
     cashFlowFilters,
   };
 }
