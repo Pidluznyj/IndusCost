@@ -1,12 +1,7 @@
 import React from "react";
-import { AlertTriangle, DollarSign, Percent, Scale, TrendingUp, Wallet } from "lucide-react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { AlertTriangle } from "lucide-react";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
-import {
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-  formatSalesOrderMarkup,
-} from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginMetricGrid } from "@/src/components/sales/SalesOrderMarginMetricGrid";
 import type { SalesOrderManagementMarginItemCounts } from "@/src/lib/salesOrderManagementMargin";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 
@@ -48,44 +43,7 @@ export function SalesOrderEconomicAnalysisPanel({
         )}
       </div>
 
-      <div className="indus-kpi-grid">
-        <FinanceBiKpiCard
-          icon={Wallet}
-          label="Valor vendido"
-          value={
-            summary
-              ? formatSalesOrderMarginMoney(summary.netRevenue)
-              : loading
-                ? "—"
-                : "—"
-          }
-          loading={loading}
-        />
-        <FinanceBiKpiCard
-          icon={Scale}
-          label="Custo estimado"
-          value={summary ? formatSalesOrderMarginMoney(summary.totalCost) : "—"}
-          loading={loading}
-        />
-        <FinanceBiKpiCard
-          icon={DollarSign}
-          label="Margem R$"
-          value={summary ? formatSalesOrderMarginMoney(summary.marginValue) : "—"}
-          loading={loading}
-        />
-        <FinanceBiKpiCard
-          icon={Percent}
-          label="Margem %"
-          value={summary ? formatSalesOrderMarginPercent(summary.marginPercent) : "—"}
-          loading={loading}
-        />
-        <FinanceBiKpiCard
-          icon={TrendingUp}
-          label="Markup"
-          value={summary ? formatSalesOrderMarkup(summary.markup) : "—"}
-          loading={loading}
-        />
-      </div>
+      <SalesOrderMarginMetricGrid summary={summary} loading={loading} />
 
       {(counts.itemsWithoutCost > 0 ||
         counts.itemsWithoutProduct > 0 ||

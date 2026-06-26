@@ -21,7 +21,13 @@ import {
   Receipt,
   TrendingUp,
 } from "lucide-react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
+import {
+  resolveFulfillmentKpiVariant,
+  toFiniteMetricNumber,
+} from "@/src/lib/salesOrderManagementMetricCards";
 import type {
   SalesOrderFulfillmentCharts,
   SalesOrderFulfillmentKpis,
@@ -59,9 +65,148 @@ function ChartCard({
   );
 }
 
-function formatPct(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return `${value.toFixed(1)}%`;
+type FulfillmentCardConfig = {
+  key: string;
+  icon: React.ElementType;
+  label: string;
+  amount?: number | null;
+  amountFormat?: "currency" | "number" | "percent";
+  formattedValue?: string;
+  hint?: string;
+  variant?: MetricCardVariant;
+};
+
+function buildFulfillmentCards(kpis: SalesOrderFulfillmentKpis | null): FulfillmentCardConfig[] {
+  const n = (value: number | null | undefined) => toFiniteMetricNumber(value);
+
+  return [
+    {
+      key: "totalOrders",
+      icon: FileText,
+      label: "Total pedidos",
+      amount: n(kpis?.totalOrders),
+      amountFormat: "number",
+      hint: "Pedidos únicos no filtro (sem duplicar por NF).",
+    },
+    {
+      key: "totalSold",
+      icon: DollarSign,
+      label: "Valor vendido",
+      amount: n(kpis?.totalSoldValue),
+      amountFormat: "currency",
+      hint: "Soma de totalNetValue dos pedidos.",
+    },
+    {
+      key: "totalInvoiced",
+      icon: Receipt,
+      label: "Valor faturado (NF)",
+      amount: n(kpis?.totalInvoicedValue),
+      amountFormat: "currency",
+      hint: "Soma das NF-es vinculadas.",
+    },
+    {
+      key: "gap",
+      icon: TrendingUp,
+      label: "Gap vendido × faturado",
+      amount: n(kpis?.soldInvoicedGap),
+      amountFormat: "currency",
+      hint: "Diferença entre vendido e faturado.",
+    },
+    {
+      key: "withNfe",
+      icon: CheckCircle2,
+      label: "Com NF",
+      amount: n(kpis?.ordersWithNfe),
+      amountFormat: "number",
+    },
+    {
+      key: "withoutNfe",
+      icon: FileText,
+      label: "Sem NF",
+      amount: n(kpis?.ordersWithoutNfe),
+      amountFormat: "number",
+    },
+    {
+      key: "onTime",
+      icon: CheckCircle2,
+      label: "Entregues/faturados no prazo",
+      amount: n(kpis?.deliveredOnTime),
+      amountFormat: "number",
+    },
+    {
+      key: "late",
+      icon: AlertTriangle,
+      label: "Entregues/faturados com atraso",
+      amount: n(kpis?.deliveredLate),
+      amountFormat: "number",
+    },
+    {
+      key: "pendingOnTime",
+      icon: Clock,
+      label: "Pendentes no prazo",
+      amount: n(kpis?.pendingOnTime),
+      amountFormat: "number",
+    },
+    {
+      key: "pendingLate",
+      icon: AlertTriangle,
+      label: "Pendentes atrasados",
+      amount: n(kpis?.pendingLate),
+      amountFormat: "number",
+    },
+    {
+      key: "partial",
+      icon: Percent,
+      label: "Parciais",
+      amount: n(kpis?.partialCount),
+      amountFormat: "number",
+    },
+    {
+      key: "cut",
+      icon: AlertTriangle,
+      label: "Com corte",
+      amount: n(kpis?.withCutCount),
+      amountFormat: "number",
+    },
+    {
+      key: "review",
+      icon: AlertTriangle,
+      label: "Revisar dados",
+      amount: n(kpis?.needsReviewCount),
+      amountFormat: "number",
+    },
+    {
+      key: "sla",
+      icon: Clock,
+      label: "SLA médio (dias)",
+      formattedValue:
+        kpis?.averageSlaDays != null && Number.isFinite(kpis.averageSlaDays)
+          ? kpis.averageSlaDays.toFixed(1)
+          : "—",
+      hint: "Média de dias entre emissão do pedido e NF.",
+    },
+    {
+      key: "onTimePct",
+      icon: Percent,
+      label: "% no prazo",
+      amount: n(kpis?.onTimePercent),
+      amountFormat: "percent",
+    },
+    {
+      key: "avgFulfillment",
+      icon: Percent,
+      label: "% atendimento médio",
+      amount: n(kpis?.averageFulfilledPercent),
+      amountFormat: "percent",
+    },
+    {
+      key: "avgInvoiced",
+      icon: Percent,
+      label: "% faturamento médio",
+      amount: n(kpis?.averageInvoicedPercent),
+      amountFormat: "percent",
+    },
+  ];
 }
 
 export function SalesOrderManagementFulfillmentKpis({
@@ -71,134 +216,39 @@ export function SalesOrderManagementFulfillmentKpis({
   kpis: SalesOrderFulfillmentKpis | null;
   loading: boolean;
 }) {
-  const cards = [
-    {
-      key: "totalOrders",
-      icon: FileText,
-      label: "Total pedidos",
-      value: kpis ? String(kpis.totalOrders) : "—",
-      hint: "Pedidos únicos no filtro (sem duplicar por NF).",
-    },
-    {
-      key: "totalSold",
-      icon: DollarSign,
-      label: "Valor vendido",
-      value: kpis ? formatCurrency(kpis.totalSoldValue) : "—",
-      hint: "Soma de totalNetValue dos pedidos.",
-    },
-    {
-      key: "totalInvoiced",
-      icon: Receipt,
-      label: "Valor faturado (NF)",
-      value: kpis ? formatCurrency(kpis.totalInvoicedValue) : "—",
-      hint: "Soma das NF-es vinculadas.",
-    },
-    {
-      key: "gap",
-      icon: TrendingUp,
-      label: "Gap vendido × faturado",
-      value: kpis ? formatCurrency(kpis.soldInvoicedGap) : "—",
-      hint: "Diferença entre vendido e faturado.",
-    },
-    {
-      key: "withNfe",
-      icon: CheckCircle2,
-      label: "Com NF",
-      value: kpis ? String(kpis.ordersWithNfe) : "—",
-    },
-    {
-      key: "withoutNfe",
-      icon: FileText,
-      label: "Sem NF",
-      value: kpis ? String(kpis.ordersWithoutNfe) : "—",
-    },
-    {
-      key: "onTime",
-      icon: CheckCircle2,
-      label: "Entregues/faturados no prazo",
-      value: kpis ? String(kpis.deliveredOnTime) : "—",
-    },
-    {
-      key: "late",
-      icon: AlertTriangle,
-      label: "Entregues/faturados com atraso",
-      value: kpis ? String(kpis.deliveredLate) : "—",
-    },
-    {
-      key: "pendingOnTime",
-      icon: Clock,
-      label: "Pendentes no prazo",
-      value: kpis ? String(kpis.pendingOnTime) : "—",
-    },
-    {
-      key: "pendingLate",
-      icon: AlertTriangle,
-      label: "Pendentes atrasados",
-      value: kpis ? String(kpis.pendingLate) : "—",
-    },
-    {
-      key: "partial",
-      icon: Percent,
-      label: "Parciais",
-      value: kpis ? String(kpis.partialCount) : "—",
-    },
-    {
-      key: "cut",
-      icon: AlertTriangle,
-      label: "Com corte",
-      value: kpis ? String(kpis.withCutCount) : "—",
-    },
-    {
-      key: "review",
-      icon: AlertTriangle,
-      label: "Revisar dados",
-      value: kpis ? String(kpis.needsReviewCount) : "—",
-    },
-    {
-      key: "sla",
-      icon: Clock,
-      label: "SLA médio (dias)",
-      value: kpis?.averageSlaDays != null ? kpis.averageSlaDays.toFixed(1) : "—",
-      hint: "Média de dias entre emissão do pedido e NF.",
-    },
-    {
-      key: "onTimePct",
-      icon: Percent,
-      label: "% no prazo",
-      value: formatPct(kpis?.onTimePercent),
-    },
-    {
-      key: "avgFulfillment",
-      icon: Percent,
-      label: "% atendimento médio",
-      value: formatPct(kpis?.averageFulfilledPercent),
-    },
-    {
-      key: "avgInvoiced",
-      icon: Percent,
-      label: "% faturamento médio",
-      value: formatPct(kpis?.averageInvoicedPercent),
-    },
-  ];
+  const cards = buildFulfillmentCards(kpis);
 
   return (
     <div data-testid="sales-order-fulfillment-kpis">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Indicadores de fulfillment (NF-e)
       </p>
-      <div className="indus-kpi-grid mt-2">
-        {cards.map((card) => (
-          <div key={card.key}>
-            <FinanceBiKpiCard
-              icon={card.icon}
+      <MetricCardGrid className="mt-2">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          const numericForVariant =
+            card.amountFormat === "number" || card.amountFormat === "currency"
+              ? card.amount ?? null
+              : card.amount ?? null;
+          const variant =
+            card.variant ??
+            resolveFulfillmentKpiVariant(card.key, numericForVariant);
+
+          return (
+            <MetricCard
+              key={card.key}
               label={card.label}
-              value={loading ? "—" : card.value}
+              amount={card.amount}
+              amountFormat={card.amountFormat}
+              formattedValue={card.formattedValue}
+              helperText={card.hint}
+              variant={variant}
+              icon={<Icon className="h-4 w-4" />}
               loading={loading}
-              hint={card.hint}
             />
-          </div>
-        ))}
-      </div>
+          );
+        })}
+      </MetricCardGrid>
     </div>
   );
 }

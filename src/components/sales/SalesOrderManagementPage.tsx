@@ -17,7 +17,19 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
+import {
+  formatOrderCountLabel,
+  metricCurrencySubtitle,
+  resolveAlertCountVariant,
+  resolveLogisticStatusCardVariant,
+  resolveMarginMoneyVariant,
+  resolveMarginPercentVariant,
+  resolveNegativeMarginCountVariant,
+  toFiniteMetricNumber,
+} from "@/src/lib/salesOrderManagementMetricCards";
 import type {
   SalesOrderManagementCardAmounts,
   SalesOrderManagementCards,
@@ -68,11 +80,8 @@ import {
 } from "@/src/components/sales/SalesOrderManagementFulfillmentPanel";
 import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
-import { SalesOrderEconomicAnalysisPanel } from "@/src/components/sales/SalesOrderEconomicAnalysisPanel";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import {
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
 } from "@/src/lib/salesOrderMarginDisplay";
@@ -854,18 +863,25 @@ export function SalesOrderManagementPage() {
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Status Logístico
         </p>
-        <div className="indus-kpi-grid mt-2">
+        <MetricCardGrid className="mt-2">
           {displayDashboardCards.map((card) => {
             const Icon = kpiIcons[card.key] ?? FileText;
             const isTotal = card.isTotal === true;
             const isActive = isTotal
               ? selectedManagementStatus === ""
               : selectedManagementStatus === card.logisticStatus;
-            const countLabel = `${card.count} pedido${card.count === 1 ? "" : "s"}`;
+            const countLabel = formatOrderCountLabel(card.count);
             const percentHint =
               card.percentOfTotal != null && !isTotal
                 ? `${card.tooltip} (${card.percentOfTotal}% do total no filtro)`
                 : card.tooltip;
+            const currencyFull = metricCurrencySubtitle(card.totalNetValue);
+            const footnote =
+              !loading && !loadError
+                ? [formatCompactCurrency(card.totalNetValue), percentHint]
+                    .filter(Boolean)
+                    .join(" · ")
+                : undefined;
             return (
               <button
                 key={card.key}
@@ -885,18 +901,20 @@ export function SalesOrderManagementPage() {
                   isActive && "ring-2 ring-primary shadow-md"
                 )}
               >
-                <FinanceBiKpiCard
-                  icon={Icon}
+                <MetricCard
                   label={card.label}
-                  value={loading || loadError ? "—" : countLabel}
-                  sub={loading || loadError ? undefined : formatCurrency(card.totalNetValue)}
+                  formattedValue={loading || loadError ? "—" : countLabel}
+                  fullValue={currencyFull}
+                  subtitle={footnote}
+                  variant={resolveLogisticStatusCardVariant(card.key)}
+                  icon={<Icon className="h-4 w-4" />}
                   loading={loading}
-                  hint={percentHint}
+                  className="h-full"
                 />
               </button>
             );
           })}
-        </div>
+        </MetricCardGrid>
         {!loading && !loadError && validPortfolioCount != null ? (
           <p className="mt-2 text-xs text-muted-foreground">
             Carteira válida no filtro:{" "}
@@ -922,77 +940,74 @@ export function SalesOrderManagementPage() {
         {marginEconomics?.scopeNote ? (
           <p className="mt-1 text-[10px] text-muted-foreground">{marginEconomics.scopeNote}</p>
         ) : null}
-        <div className="indus-kpi-grid mt-2">
-          <FinanceBiKpiCard
-            icon={DollarSign}
+        <MetricCardGrid className="mt-2">
+          <MetricCard
             label="Valor vendido"
-            value={
-              loading || loadError
-                ? "—"
-                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.netRevenue)
-            }
+            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.netRevenue)}
+            amountFormat="currency"
+            variant="info"
+            icon={<DollarSign className="h-4 w-4" />}
             loading={loading}
           />
-          <FinanceBiKpiCard
-            icon={Scale}
+          <MetricCard
             label="Custo estimado"
-            value={
-              loading || loadError
-                ? "—"
-                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.totalCost)
-            }
+            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.totalCost)}
+            amountFormat="currency"
+            variant="neutral"
+            icon={<Scale className="h-4 w-4" />}
             loading={loading}
           />
-          <FinanceBiKpiCard
-            icon={DollarSign}
+          <MetricCard
             label="Margem R$"
-            value={
-              loading || loadError
-                ? "—"
-                : formatSalesOrderMarginMoney(marginEconomics?.consolidated?.marginValue)
-            }
+            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginValue)}
+            amountFormat="currency"
+            variant={resolveMarginMoneyVariant(marginEconomics?.consolidated?.marginValue)}
+            icon={<DollarSign className="h-4 w-4" />}
             loading={loading}
           />
-          <FinanceBiKpiCard
-            icon={Percent}
+          <MetricCard
             label="Margem %"
-            value={
-              loading || loadError
-                ? "—"
-                : formatSalesOrderMarginPercent(marginEconomics?.consolidated?.marginPercent)
-            }
+            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginPercent)}
+            amountFormat="percent"
+            variant={resolveMarginPercentVariant(marginEconomics?.consolidated?.marginPercent)}
+            icon={<Percent className="h-4 w-4" />}
+            helperText="Ponderada por receita líquida do filtro"
             loading={loading}
-            hint="Ponderada por receita líquida do filtro"
           />
-          <FinanceBiKpiCard
-            icon={TrendingDown}
+          <MetricCard
             label="Margem negativa"
-            value={
+            formattedValue={
               loading || loadError
                 ? "—"
-                : `${marginEconomics?.ordersWithNegativeMargin ?? 0} pedido(s)`
+                : formatOrderCountLabel(marginEconomics?.ordersWithNegativeMargin)
             }
+            variant={resolveNegativeMarginCountVariant(marginEconomics?.ordersWithNegativeMargin)}
+            icon={<TrendingDown className="h-4 w-4" />}
             loading={loading}
           />
-          <FinanceBiKpiCard
-            icon={AlertTriangle}
+          <MetricCard
             label="Sem custo"
-            value={
-              loading || loadError ? "—" : `${marginEconomics?.ordersWithoutCost ?? 0} pedido(s)`
-            }
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={Package}
-            label="Sem produto"
-            value={
+            formattedValue={
               loading || loadError
                 ? "—"
-                : `${marginEconomics?.ordersWithoutProduct ?? 0} pedido(s)`
+                : formatOrderCountLabel(marginEconomics?.ordersWithoutCost)
             }
+            variant={resolveAlertCountVariant(marginEconomics?.ordersWithoutCost)}
+            icon={<AlertTriangle className="h-4 w-4" />}
             loading={loading}
           />
-        </div>
+          <MetricCard
+            label="Sem produto"
+            formattedValue={
+              loading || loadError
+                ? "—"
+                : formatOrderCountLabel(marginEconomics?.ordersWithoutProduct)
+            }
+            variant={resolveAlertCountVariant(marginEconomics?.ordersWithoutProduct)}
+            icon={<Package className="h-4 w-4" />}
+            loading={loading}
+          />
+        </MetricCardGrid>
       </div>
 
       <SalesOrderManagementFulfillmentKpis kpis={fulfillmentKpis} loading={loading || !!loadError} />

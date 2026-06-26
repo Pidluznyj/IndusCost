@@ -144,7 +144,7 @@ describe("salesOrderManagementPage", () => {
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(logistic, /Total no filtro/);
     assert.match(page, /management-status-card-total/);
-    assert.match(page, /formatCurrency\(card\.totalNetValue\)/);
+    assert.match(page, /formatCompactCurrency\(card\.totalNetValue\)/);
     assert.match(page, /pedido/);
   });
 
@@ -152,6 +152,14 @@ describe("salesOrderManagementPage", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /clearManagementStatusCardFilter/);
     assert.match(page, /isTotal/);
+  });
+
+  it("cards KPI usam MetricCard do design system", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /MetricCardGrid/);
+    assert.match(page, /MetricCard/);
+    assert.doesNotMatch(page, /FinanceBiKpiCard/);
+    assert.doesNotMatch(page, /indus-kpi-grid/);
   });
 
   it("não há import de Prisma no frontend", () => {

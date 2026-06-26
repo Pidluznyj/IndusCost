@@ -1,13 +1,11 @@
 import React from "react";
-import { AlertTriangle, DollarSign, Percent, Scale, TrendingUp, Wallet } from "lucide-react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { AlertTriangle } from "lucide-react";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import { SalesOrderMarginMetricGrid } from "@/src/components/sales/SalesOrderMarginMetricGrid";
 import {
   buildSalesOrderMarginAlerts,
   formatSalesOrderCostSourceLabel,
   formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-  formatSalesOrderMarkup,
   resolveSalesOrderMarginSupportText,
 } from "@/src/lib/salesOrderMarginDisplay";
 import type {
@@ -63,38 +61,11 @@ export function SalesOrderMarginAnalysisSection({
         </div>
 
         {summary ? (
-          <div className="indus-kpi-grid">
-            <FinanceBiKpiCard
-              icon={Wallet}
-              label="Receita líquida"
-              value={formatSalesOrderMarginMoney(summary.netRevenue)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={Scale}
-              label="Custo estimado"
-              value={formatSalesOrderMarginMoney(summary.totalCost)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={DollarSign}
-              label="Margem R$"
-              value={formatSalesOrderMarginMoney(summary.marginValue)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={Percent}
-              label="Margem %"
-              value={formatSalesOrderMarginPercent(summary.marginPercent)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={TrendingUp}
-              label="Markup"
-              value={formatSalesOrderMarkup(summary.markup)}
-              loading={false}
-            />
-          </div>
+          <SalesOrderMarginMetricGrid
+            summary={summary}
+            revenueLabel="Receita líquida"
+            testId="sales-order-margin-metric-grid"
+          />
         ) : (
           <p className="text-sm text-muted-foreground">
             Margem ainda não calculada para este pedido. Os dados comerciais abaixo permanecem
