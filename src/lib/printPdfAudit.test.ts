@@ -208,7 +208,7 @@ describe("printPdfAudit — Relatório Presidencial", () => {
     const css = read("src/components/finance/executive-report/finance-executive-report-print.css");
     assert.match(css, /executive-chart-body/);
     assert.match(css, /executive-chart-region/);
-    assert.match(css, /height:\s*105mm/);
+    assert.match(css, /height:\s*112mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
   });
