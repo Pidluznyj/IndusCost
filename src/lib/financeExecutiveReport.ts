@@ -33,6 +33,7 @@ import { buildSalesOrdersDashboardTab } from "./salesOrdersDashboardMetrics.js";
 import { formatExecutiveReportCurrency } from "./financeExecutiveReportUtils.js";
 import {
   buildExecutiveReportCoverTitle,
+  EXECUTIVE_REPORT_DOCUMENT_TITLE,
   formatExecutiveReportCoverDate,
 } from "./financeExecutiveReportUtils.js";
 import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNarrative.js";
@@ -631,7 +632,7 @@ export async function buildFinanceExecutiveReport(
       : String(filters.year);
 
   const cover = {
-    title: "Relatório Executivo Financeiro e Comercial",
+    title: EXECUTIVE_REPORT_DOCUMENT_TITLE,
     subtitle:
       "Visão consolidada de vendas, faturamento, recebíveis, pagamentos e fluxo de caixa",
     reportDateLabel: formatExecutiveReportCoverDate(referenceDate),

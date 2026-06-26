@@ -94,6 +94,10 @@ export function formatExecutiveReportCoverDate(asOfDate: Date): string {
   return `${d}/${m}/${y}`;
 }
 
+/** Título exibido no PDF e na capa do relatório executivo. */
+export const EXECUTIVE_REPORT_DOCUMENT_TITLE =
+  "Relatório Executivo Financeiro e Comercial";
+
 /** Título de capa padronizado. */
 export function buildExecutiveReportCoverTitle(asOfDate: Date): string {
   return `REPORT ${formatExecutiveReportCoverDate(asOfDate)}`;

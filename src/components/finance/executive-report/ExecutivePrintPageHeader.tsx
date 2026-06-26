@@ -1,6 +1,7 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
+import { EXECUTIVE_REPORT_DOCUMENT_TITLE } from "@/src/lib/financeExecutiveReportUtils";
 import { EXECUTIVE_REPORT_PRINT_DATA_NOTE } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutivePrintPageHeader({
@@ -26,7 +27,7 @@ export function ExecutivePrintPageHeader({
         )}
       </div>
       <div className="executive-print-page-header-title">
-        <p className="executive-print-page-header-doc">Relatório Presidencial</p>
+        <p className="executive-print-page-header-doc">{EXECUTIVE_REPORT_DOCUMENT_TITLE}</p>
         <p className="executive-print-page-header-meta">
           {companyLabel} · {periodLabel} · Base {reportDateLabel}
         </p>
