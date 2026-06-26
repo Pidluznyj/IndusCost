@@ -254,7 +254,7 @@ describe("salesOrdersListSummary", () => {
       "utf8"
     );
     assert.ok(page.includes("SalesOrderListSummaryCards"));
-    assert.ok(cards.includes("Total de pedidos"));
+    assert.ok(cards.includes("Pedidos filtrados"));
     assert.ok(cards.includes("Valor vendido"));
     assert.ok(cards.includes("Ticket médio"));
     assert.ok(page.includes("summary"));

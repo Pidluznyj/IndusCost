@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Package, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
@@ -6,7 +6,7 @@ import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSectio
 import { SALES_ORDER_LIST_KPI_SECTION } from "@/src/lib/salesOrderManagementKpiLabels";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary";
 
-export function SalesOrderListSummaryCards({
+export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCards({
   summary,
   loading,
 }: {
@@ -19,9 +19,9 @@ export function SalesOrderListSummaryCards({
       title={SALES_ORDER_LIST_KPI_SECTION.title}
       subtitle={SALES_ORDER_LIST_KPI_SECTION.subtitle}
     >
-      <MetricCardGrid minColumnWidth={220}>
+      <MetricCardGrid minColumnWidth={180}>
         <MetricCard
-          label="Total de pedidos"
+          label="Pedidos filtrados"
           amount={loading ? null : summary.totalOrders}
           amountFormat="number"
           variant="info"
@@ -33,13 +33,11 @@ export function SalesOrderListSummaryCards({
           label="Valor vendido"
           amount={loading ? null : summary.totalNetAmount}
           amountFormat="currency"
-          variant="info"
+          variant="money"
           icon={<Receipt className="h-4 w-4" />}
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
-      </MetricCardGrid>
-      <MetricCardGrid className="mt-4" minColumnWidth={160}>
         <MetricCard
           label="Itens"
           amount={loading ? null : summary.totalItems}
@@ -62,4 +60,4 @@ export function SalesOrderListSummaryCards({
       </MetricCardGrid>
     </SalesOrderKpiSection>
   );
-}
+});

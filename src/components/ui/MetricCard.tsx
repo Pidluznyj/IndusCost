@@ -30,7 +30,10 @@ export type MetricCardVariant =
   | "danger"
   | "warning"
   | "info"
-  | "neutral";
+  | "neutral"
+  | "money"
+  | "margin"
+  | "internal";
 
 export type MetricCardProps = {
   label: string;

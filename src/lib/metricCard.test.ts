@@ -48,7 +48,9 @@ describe("formatFinancialMetric", () => {
 describe("MetricCard design system", () => {
   it("MetricCard renderiza fundo neutro por padrão", () => {
     const css = readFileSync(metricCssPath, "utf8");
-    assert.match(css, /background:\s*hsl\(var\(--card\)\)/);
+    assert.match(css, /background:\s*var\(--color-card/);
+    assert.match(css, /border:\s*1px solid var\(--color-border/);
+    assert.match(css, /box-shadow:/);
     assert.doesNotMatch(css, /bg-emerald-50/);
     assert.doesNotMatch(css, /bg-red-50/);
     assert.doesNotMatch(css, /bg-blue-50/);

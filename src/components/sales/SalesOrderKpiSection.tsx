@@ -9,6 +9,7 @@ export function SalesOrderKpiSection({
   testId,
   collapsible = false,
   defaultOpen = true,
+  panel = true,
   className,
 }: {
   title: string;
@@ -17,19 +18,26 @@ export function SalesOrderKpiSection({
   testId?: string;
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /** Superfície sólida com borda — evita cards “soltos” no fundo da página. */
+  panel?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
+  const panelClass = panel
+    ? "rounded-xl border border-border bg-card shadow-sm"
+    : undefined;
+
   if (collapsible) {
     return (
       <section
-        className={cn("rounded-xl border border-border/80 bg-card/30", className)}
+        className={cn(panelClass, className)}
         data-testid={testId}
+        data-panel={panel ? "true" : "false"}
       >
         <button
           type="button"
-          className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-muted/30 rounded-xl"
+          className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 rounded-xl transition-colors"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
         >
@@ -47,14 +55,18 @@ export function SalesOrderKpiSection({
             aria-hidden
           />
         </button>
-        {open ? <div className="px-4 pb-4">{children}</div> : null}
+        {open ? <div className="px-4 pb-4 pt-1">{children}</div> : null}
       </section>
     );
   }
 
   return (
-    <section className={className} data-testid={testId}>
-      <div className="mb-2">
+    <section
+      className={cn(panelClass, panel && "p-4", className)}
+      data-testid={testId}
+      data-panel={panel ? "true" : "false"}
+    >
+      <div className={cn(panel ? "mb-3" : "mb-2")}>
         <h2 className="text-sm font-bold text-foreground">{title}</h2>
         {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p> : null}
       </div>

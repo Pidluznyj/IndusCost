@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
@@ -40,9 +40,20 @@ import type {
   SalesOrderFulfillmentKpis,
   SalesOrderManagementSortKey,
 } from "@/src/lib/salesOrderManagementFulfillment";
-import {
-  SalesOrderManagementFulfillmentCharts,
-} from "@/src/components/sales/SalesOrderManagementFulfillmentPanel";
+const SalesOrderManagementFulfillmentChartsLazy = lazy(async () => {
+  const mod = await import("@/src/components/sales/SalesOrderManagementFulfillmentPanel");
+  return { default: mod.SalesOrderManagementFulfillmentCharts };
+});
+
+function FulfillmentChartsSkeleton() {
+  return (
+    <div
+      className="rounded-xl border border-border bg-card shadow-sm p-4 min-h-[280px] animate-pulse"
+      data-testid="sales-order-fulfillment-charts-skeleton"
+      aria-hidden
+    />
+  );
+}
 import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
@@ -719,7 +730,13 @@ export function SalesOrderManagementPage() {
         validPortfolioValue={validPortfolioValue}
       />
 
-      <SalesOrderManagementFulfillmentCharts charts={fulfillmentCharts} />
+      {!loading && fulfillmentCharts ? (
+        <Suspense fallback={<FulfillmentChartsSkeleton />}>
+          <SalesOrderManagementFulfillmentChartsLazy charts={fulfillmentCharts} />
+        </Suspense>
+      ) : loading ? (
+        <FulfillmentChartsSkeleton />
+      ) : null}
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

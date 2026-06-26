@@ -14,17 +14,13 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(page, /SalesOrderManagementKpiDashboard/);
     const overviewIdx = dashboard.indexOf('testId="sales-order-management-overview"');
     const alertsIdx = dashboard.indexOf('testId="sales-order-management-alerts"');
-    const logisticsIdx = dashboard.indexOf('testId="sales-order-management-logistics"');
-    const economicsIdx = dashboard.indexOf('testId="sales-order-management-economic-summary"');
-    const fulfillmentIdx = dashboard.indexOf('testId="sales-order-management-fulfillment"');
+    const secondaryIdx = dashboard.indexOf("SalesOrderManagementKpiSecondaryPanel");
     assert.ok(overviewIdx >= 0);
     assert.ok(alertsIdx > overviewIdx);
-    assert.ok(logisticsIdx > alertsIdx);
-    assert.ok(economicsIdx > logisticsIdx);
-    assert.ok(fulfillmentIdx > economicsIdx);
+    assert.ok(secondaryIdx > alertsIdx);
   });
 
-  it("2. bloco Visão Geral aparece primeiro", () => {
+  it("2. bloco Visão Geral aparece primeiro com no máximo 5 cards principais", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const labels = read("src/lib/salesOrderManagementKpiLabels.ts");
     assert.match(labels, /Visão Geral/);
@@ -34,29 +30,39 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(dashboard, /Valor faturado/);
     assert.match(dashboard, /Gap vendido × faturado/);
     assert.match(dashboard, /% no prazo/);
+    const overviewBlock = dashboard.slice(
+      dashboard.indexOf('testId="sales-order-management-overview"'),
+      dashboard.indexOf('testId="sales-order-management-alerts"')
+    );
+    const metricCardsInOverview = (overviewBlock.match(/<MetricCard/g) ?? []).length;
+    assert.equal(metricCardsInOverview, 5);
   });
 
   it("3. bloco Alertas aparece antes dos blocos secundários", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const alertsIdx = dashboard.indexOf('testId="sales-order-management-alerts"');
-    const logisticsIdx = dashboard.indexOf('testId="sales-order-management-logistics"');
-    assert.ok(alertsIdx < logisticsIdx);
+    const secondaryIdx = dashboard.indexOf("SalesOrderManagementKpiSecondaryPanel");
+    assert.ok(alertsIdx < secondaryIdx);
   });
 
-  it("4. logística separada de análise econômica", () => {
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    const logisticsIdx = dashboard.indexOf('testId="sales-order-management-logistics"');
-    const economicsIdx = dashboard.indexOf('testId="sales-order-management-economic-summary"');
-    assert.ok(logisticsIdx >= 0 && economicsIdx > logisticsIdx);
-    assert.match(dashboard, /management-status-card-total/);
-    assert.match(dashboard, /Margem R\$/);
+  it("4. logística separada de margem via abas secundárias", () => {
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
+    assert.match(secondary, /sales-order-management-logistics/);
+    assert.match(secondary, /sales-order-management-economic-summary/);
+    assert.match(secondary, /sales-order-management-fulfillment/);
+    assert.match(secondary, /sales-order-secondary-tab-logistics/);
+    assert.match(secondary, /sales-order-secondary-tab-economics/);
+    assert.match(secondary, /mountedTabs/);
+    assert.match(secondary, /Margem R\$/);
   });
 
-  it("5. cards principais usam MetricCard oficial", () => {
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    assert.match(dashboard, /MetricCard/);
-    assert.match(dashboard, /MetricCardGrid/);
-    assert.doesNotMatch(dashboard, /FinanceBiKpiCard/);
+  it("5. cards principais usam MetricCard oficial com superfície visível", () => {
+    const css = read("src/components/ui/metric-card.css");
+    const section = read("src/components/sales/SalesOrderKpiSection.tsx");
+    assert.match(css, /background:\s*var\(--color-card/);
+    assert.match(css, /box-shadow:/);
+    assert.match(section, /data-panel/);
+    assert.match(section, /bg-card shadow-sm/);
   });
 
   it("6. cards de alerta usam compact e variantes semânticas", () => {
@@ -75,19 +81,22 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(dashboard, /onToggleCutFilter/);
     assert.match(page, /onToggleOverdueOnly/);
     assert.match(dashboard, /data-filter-disabled/);
+    assert.match(dashboard, /Filtro dedicado ainda não disponível/);
   });
 
-  it("8. diagnóstico UX documentado", () => {
-    const doc = read("docs/sales-order-cards-ux-diagnosis.md");
-    assert.match(doc, /Pedidos de Venda/);
-    assert.match(doc, /Gestão de Pedidos/);
-    assert.match(doc, /Visão Geral/);
+  it("8. diagnóstico UX e performance documentado", () => {
+    const ux = read("docs/sales-order-cards-ux-diagnosis.md");
+    const perf = read("docs/sales-order-dashboard-ux-performance-diagnosis.md");
+    assert.match(ux, /Pedidos de Venda/);
+    assert.match(perf, /transparentes/);
+    assert.match(perf, /lazy/);
   });
 
   it("9. listagem usa seção Visão Geral com MetricCard", () => {
     const list = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(list, /sales-order-list-overview/);
+    assert.match(list, /Pedidos filtrados/);
     assert.match(list, /Valor vendido/);
     assert.match(module, /SalesOrderListSummaryCards/);
     assert.doesNotMatch(module, /FinanceBiKpiCard/);
@@ -100,7 +109,34 @@ describe("salesOrderManagementKpiLayout", () => {
   });
 });
 
-describe("salesOrderManagementKpiLayout — regressão", () => {
+describe("salesOrderManagementKpiLayout — performance e regressão", () => {
+  it("dashboard e listagem memoizados", () => {
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    const list = read("src/components/sales/SalesOrderListSummaryCards.tsx");
+    assert.match(dashboard, /memo\(function SalesOrderManagementKpiDashboard/);
+    assert.match(list, /memo\(function SalesOrderListSummaryCards/);
+    assert.match(read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx"), /memo\(/);
+  });
+
+  it("gráficos fulfillment carregados com lazy + suspense", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /lazy\(/);
+    assert.match(page, /Suspense/);
+    assert.match(page, /sales-order-fulfillment-charts-skeleton/);
+  });
+
+  it("margem só aparece na aba quando consolidated existe", () => {
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
+    assert.match(secondary, /showEconomics/);
+    assert.match(secondary, /marginEconomics\?\.consolidated/);
+  });
+
+  it("MetricCard loading usa skeleton, não valor zero", () => {
+    const card = read("src/components/ui/MetricCard.tsx");
+    assert.match(card, /metric-card-loading/);
+    assert.match(card, /loading \?/);
+  });
+
   it("filtros, busca e paginação preservados na gestão", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /params\.set\("q", search\)/);
@@ -112,5 +148,16 @@ describe("salesOrderManagementKpiLayout — regressão", () => {
     const helpers = read("src/lib/salesOrderManagementMetricCards.ts");
     assert.doesNotMatch(helpers, /buildSalesOrderManagement/);
     assert.doesNotMatch(helpers, /marginValue\s*=/);
+  });
+
+  it("cards não importam Prisma", () => {
+    for (const file of [
+      "src/components/ui/MetricCard.tsx",
+      "src/components/sales/SalesOrderManagementKpiDashboard.tsx",
+      "src/components/sales/SalesOrderListSummaryCards.tsx",
+    ]) {
+      const src = read(file);
+      assert.doesNotMatch(src, /@prisma\/client/);
+    }
   });
 });

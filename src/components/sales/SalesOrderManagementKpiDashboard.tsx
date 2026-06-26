@@ -1,30 +1,20 @@
-import React, { useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import {
   AlertTriangle,
-  Clock,
   DollarSign,
-  FileText,
   LayoutGrid,
-  Package,
   Percent,
   Receipt,
-  Scale,
   TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
-import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
-import { formatCurrency } from "@/src/lib/utils";
-import { cn } from "@/src/lib/utils";
+import { SalesOrderManagementKpiSecondaryPanel } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
 import {
   formatOrderCountLabel,
-  metricCurrencySubtitle,
   resolveAlertCountVariant,
   resolveFulfillmentKpiVariant,
-  resolveLogisticStatusCardVariant,
-  resolveMarginMoneyVariant,
-  resolveMarginPercentVariant,
   resolveNegativeMarginCountVariant,
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
@@ -39,16 +29,7 @@ import type {
   ManagementDashboardCard,
   ManagementStatusCardId,
 } from "@/src/lib/salesOrderManagementStatus";
-
-const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  total: LayoutGrid,
-  deliveredOnTime: Receipt,
-  deliveredLate: Clock,
-  overduePending: AlertTriangle,
-  onTimePending: Package,
-  finishedOrCancelled: AlertTriangle,
-  reviewData: FileText,
-};
+import { cn } from "@/src/lib/utils";
 
 type AlertFilterKey =
   | "withoutNfe"
@@ -103,8 +84,9 @@ function AlertCardButton({
       onClick={onClick}
       className={cn(
         "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary w-full",
+        !disabled && "cursor-pointer",
         active && "ring-2 ring-primary shadow-md",
-        disabled && "cursor-default opacity-90"
+        disabled && "cursor-default"
       )}
     >
       {children}
@@ -112,7 +94,7 @@ function AlertCardButton({
   );
 }
 
-export function SalesOrderManagementKpiDashboard({
+export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManagementKpiDashboard({
   loading,
   loadError,
   fulfillmentKpis,
@@ -197,7 +179,7 @@ export function SalesOrderManagementKpiDashboard({
       },
       {
         key: "negativeMargin" as AlertFilterKey,
-        label: "Pedidos com margem negativa",
+        label: "Margem negativa",
         count: negativeMargin,
         variant: resolveNegativeMarginCountVariant(negativeMargin),
         filterable: false,
@@ -205,7 +187,7 @@ export function SalesOrderManagementKpiDashboard({
       },
       {
         key: "withoutCost" as AlertFilterKey,
-        label: "Pedidos com item sem custo",
+        label: "Sem custo",
         count: withoutCost,
         variant: resolveAlertCountVariant(withoutCost),
         filterable: false,
@@ -213,7 +195,7 @@ export function SalesOrderManagementKpiDashboard({
       },
       {
         key: "withoutProduct" as AlertFilterKey,
-        label: "Itens sem produto vinculado",
+        label: "Sem produto",
         count: withoutProduct,
         variant: resolveAlertCountVariant(withoutProduct),
         filterable: false,
@@ -227,7 +209,7 @@ export function SalesOrderManagementKpiDashboard({
         filterable: true,
         active: filterState.overdueOnly,
         onClick: () => filterHandlers.onToggleOverdueOnly(!filterState.overdueOnly),
-        helperText: "Pedidos com prazo vencido ou conclusão com atraso.",
+        helperText: "Prazo vencido ou conclusão com atraso.",
       },
       {
         key: "partialOrCut" as const,
@@ -257,13 +239,13 @@ export function SalesOrderManagementKpiDashboard({
     toFiniteMetricNumber(managementSummary?.totalOrdersCount);
 
   return (
-    <div className="space-y-8" data-testid="sales-order-management-kpi-dashboard">
+    <div className="space-y-5" data-testid="sales-order-management-kpi-dashboard">
       <SalesOrderKpiSection
         testId="sales-order-management-overview"
         title={SALES_ORDER_MGMT_KPI_SECTIONS.overview.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.overview.subtitle}
       >
-        <MetricCardGrid minColumnWidth={240}>
+        <MetricCardGrid minColumnWidth={200}>
           <MetricCard
             label="Total de pedidos"
             amount={totalOrders}
@@ -277,7 +259,7 @@ export function SalesOrderManagementKpiDashboard({
             label="Valor vendido"
             amount={toFiniteMetricNumber(fulfillmentKpis?.totalSoldValue)}
             amountFormat="currency"
-            variant="info"
+            variant="money"
             icon={<DollarSign className="h-4 w-4" />}
             loading={loading}
           />
@@ -320,7 +302,7 @@ export function SalesOrderManagementKpiDashboard({
         title={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.subtitle}
       >
-        <MetricCardGrid minColumnWidth={160}>
+        <MetricCardGrid minColumnWidth={150}>
           {alertCards.map((alert) => (
             <AlertCardButton
               key={alert.key}
@@ -334,7 +316,7 @@ export function SalesOrderManagementKpiDashboard({
                 formattedValue={busy ? "—" : formatOrderCountLabel(alert.count)}
                 helperText={
                   alert.filterable
-                    ? alert.helperText ?? "Clique para filtrar a lista."
+                    ? alert.helperText ?? "Clique para filtrar."
                     : "Filtro dedicado ainda não disponível."
                 }
                 variant={alert.variant}
@@ -348,199 +330,17 @@ export function SalesOrderManagementKpiDashboard({
         </MetricCardGrid>
       </SalesOrderKpiSection>
 
-      <SalesOrderKpiSection
-        testId="sales-order-management-logistics"
-        title={SALES_ORDER_MGMT_KPI_SECTIONS.logistics.title}
-        subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.logistics.subtitle}
-      >
-        <MetricCardGrid>
-          {displayDashboardCards.map((card) => {
-            const Icon = kpiIcons[card.key] ?? FileText;
-            const isTotal = card.isTotal === true;
-            const isActive = isTotal
-              ? filterState.selectedLogisticStatus === ""
-              : filterState.selectedLogisticStatus === card.logisticStatus;
-            const countLabel = formatOrderCountLabel(card.count);
-            const percentHint =
-              card.percentOfTotal != null && !isTotal
-                ? `${card.tooltip} (${card.percentOfTotal}% do total no filtro)`
-                : card.tooltip;
-            const footnote =
-              !busy
-                ? [formatCompactCurrency(card.totalNetValue), percentHint]
-                    .filter(Boolean)
-                    .join(" · ")
-                : undefined;
-
-            return (
-              <button
-                key={card.key}
-                type="button"
-                data-testid={
-                  isTotal
-                    ? "management-status-card-total"
-                    : `management-status-card-${card.key}`
-                }
-                data-active={isActive ? "true" : "false"}
-                onClick={() => {
-                  if (isTotal) filterHandlers.onClearLogisticStatus();
-                  else if (card.logisticStatus)
-                    filterHandlers.onToggleLogisticStatus(card.logisticStatus);
-                }}
-                className={cn(
-                  "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                  isActive && "ring-2 ring-primary shadow-md"
-                )}
-              >
-                <MetricCard
-                  label={card.label}
-                  formattedValue={busy ? "—" : countLabel}
-                  fullValue={metricCurrencySubtitle(card.totalNetValue)}
-                  subtitle={footnote}
-                  variant={resolveLogisticStatusCardVariant(card.key)}
-                  icon={<Icon className="h-4 w-4" />}
-                  loading={loading}
-                  className="h-full"
-                />
-              </button>
-            );
-          })}
-        </MetricCardGrid>
-
-        <MetricCardGrid className="mt-4" minColumnWidth={160}>
-          <MetricCard
-            label="SLA médio"
-            formattedValue={
-              busy ||
-              fulfillmentKpis?.averageSlaDays == null ||
-              !Number.isFinite(fulfillmentKpis.averageSlaDays)
-                ? "—"
-                : `${fulfillmentKpis.averageSlaDays.toFixed(1)} dias`
-            }
-            helperText="Média de dias entre emissão do pedido e NF."
-            variant="neutral"
-            icon={<Clock className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-          <MetricCard
-            label="% atendimento médio"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.averageFulfilledPercent)}
-            amountFormat="percent"
-            variant="neutral"
-            icon={<Percent className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-        </MetricCardGrid>
-
-        {!loading && !loadError && validPortfolioCount != null ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Carteira válida no filtro:{" "}
-            <span className="font-semibold text-foreground">{validPortfolioCount}</span> pedido(s)
-            {validPortfolioValue != null ? (
-              <>
-                {" "}
-                ·{" "}
-                <span className="font-semibold text-foreground">
-                  {formatCurrency(validPortfolioValue)}
-                </span>
-              </>
-            ) : null}{" "}
-            não finalizados/cancelados (BI)
-          </p>
-        ) : null}
-      </SalesOrderKpiSection>
-
-      <SalesOrderKpiSection
-        testId="sales-order-management-economic-summary"
-        title={SALES_ORDER_MGMT_KPI_SECTIONS.economics.title}
-        subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.economics.subtitle}
-      >
-        {marginEconomics?.scopeNote ? (
-          <p className="mb-2 text-[10px] text-muted-foreground">{marginEconomics.scopeNote}</p>
-        ) : null}
-        <MetricCardGrid minColumnWidth={200}>
-          <MetricCard
-            label="Custo estimado"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.totalCost)}
-            amountFormat="currency"
-            variant="neutral"
-            icon={<Scale className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Margem R$"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginValue)}
-            amountFormat="currency"
-            variant={resolveMarginMoneyVariant(marginEconomics?.consolidated?.marginValue)}
-            icon={<DollarSign className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Margem %"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginPercent)}
-            amountFormat="percent"
-            variant={resolveMarginPercentVariant(marginEconomics?.consolidated?.marginPercent)}
-            icon={<Percent className="h-4 w-4" />}
-            helperText="Ponderada por receita líquida do filtro"
-            loading={loading}
-          />
-        </MetricCardGrid>
-      </SalesOrderKpiSection>
-
-      <SalesOrderKpiSection
-        testId="sales-order-management-fulfillment"
-        title={SALES_ORDER_MGMT_KPI_SECTIONS.fulfillment.title}
-        subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.fulfillment.subtitle}
-        collapsible
-        defaultOpen={false}
-      >
-        <MetricCardGrid minColumnWidth={160}>
-          <MetricCard
-            label="Com NF"
-            formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithNfe)}
-            variant={resolveFulfillmentKpiVariant(
-              "withNfe",
-              toFiniteMetricNumber(fulfillmentKpis?.ordersWithNfe)
-            )}
-            icon={<Receipt className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-          <MetricCard
-            label="Sem NF"
-            formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithoutNfe)}
-            variant={resolveFulfillmentKpiVariant(
-              "withoutNfe",
-              toFiniteMetricNumber(fulfillmentKpis?.ordersWithoutNfe)
-            )}
-            icon={<FileText className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-          <MetricCard
-            label="% faturamento médio"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.averageInvoicedPercent)}
-            amountFormat="percent"
-            variant="neutral"
-            icon={<Percent className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-          <MetricCard
-            label="Entregues/faturados no prazo"
-            formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.deliveredOnTime)}
-            variant={resolveFulfillmentKpiVariant(
-              "onTime",
-              toFiniteMetricNumber(fulfillmentKpis?.deliveredOnTime)
-            )}
-            icon={<Receipt className="h-4 w-4" />}
-            compact
-            loading={loading}
-          />
-        </MetricCardGrid>
-      </SalesOrderKpiSection>
+      <SalesOrderManagementKpiSecondaryPanel
+        loading={loading}
+        loadError={loadError}
+        fulfillmentKpis={fulfillmentKpis}
+        marginEconomics={marginEconomics}
+        displayDashboardCards={displayDashboardCards}
+        selectedLogisticStatus={filterState.selectedLogisticStatus}
+        filterHandlers={filterHandlers}
+        validPortfolioCount={validPortfolioCount}
+        validPortfolioValue={validPortfolioValue}
+      />
     </div>
   );
-}
+});
