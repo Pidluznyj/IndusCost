@@ -7,6 +7,8 @@ import {
   buildAnnualComparisonSeriesLabels,
   buildCashFlowAnnualComparison,
   createAnnualComparisonBaseFilters,
+  isApPaidByPaymentInPeriod,
+  isArReceivedByRealizationInPeriod,
   mapAnnualComparisonChartRows,
   parseAnnualComparisonYear,
 } from "./financeCashFlowAnnualComparison.js";
@@ -116,21 +118,23 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.doesNotMatch(routes, /annual-comparison[\s\S]*parseFiltersOrRespond/);
   });
 
-  it("3. janeiro com AR recebido aparece em receivedAmount", () => {
+  it("3. AR recebido entra em receivedAmount pela data de baixa", () => {
     const arRows = [
       arRow({
         externalId: 1,
-        dueDate: new Date(2026, 0, 10),
+        dueDate: new Date(2026, 2, 10),
+        settlementDate: new Date(2026, 0, 8),
         amountReceived: 800,
         balanceReceivable: 0,
       }),
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
     assert.equal(payload.months[0]?.receivedAmount, 800);
+    assert.equal(payload.months[2]?.receivedAmount, 0);
     assert.equal(payload.months[0]?.receivableOpenAmount, 0);
   });
 
-  it("4. janeiro com AR aberto aparece em receivableOpenAmount", () => {
+  it("4. AR aberto entra em receivableOpenAmount pela data de vencimento", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -144,21 +148,23 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[0]?.receivedAmount, 0);
   });
 
-  it("5. janeiro com AP pago aparece em paidAmount", () => {
+  it("5. AP pago entra em paidAmount pela data de pagamento", () => {
     const apRows = [
       apRow({
         externalId: 1,
-        dueDate: new Date(2026, 0, 8),
+        dueDate: new Date(2026, 2, 10),
+        paymentDate: new Date(2026, 0, 5),
         amountPaid: 450,
         balancePayable: 0,
       }),
     ];
     const payload = buildCashFlowAnnualComparison([], apRows, 2026, BASE);
     assert.equal(payload.months[0]?.paidAmount, 450);
+    assert.equal(payload.months[2]?.paidAmount, 0);
     assert.equal(payload.months[0]?.payableOpenAmount, 0);
   });
 
-  it("6. janeiro com AP aberto aparece em payableOpenAmount", () => {
+  it("6. AP aberto entra em payableOpenAmount pela data de vencimento", () => {
     const apRows = [
       apRow({
         externalId: 1,
@@ -171,63 +177,85 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[0]?.paidAmount, 0);
   });
 
-  it("7. AR liquidado alocado pelo vencimento (motor executivo)", () => {
+  it("7. cashInTotalAmount = receivedAmount + receivableOpenAmount", () => {
     const arRows = [
       arRow({
         externalId: 1,
-        dueDate: new Date(2026, 2, 10),
         settlementDate: new Date(2026, 0, 5),
         amountReceived: 500,
         balanceReceivable: 0,
       }),
-    ];
-    const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivedAmount, 0);
-    assert.equal(payload.months[2]?.receivedAmount, 500);
-  });
-
-  it("8. AP pago alocado pelo vencimento (motor executivo)", () => {
-    const apRows = [
-      apRow({
-        externalId: 1,
-        dueDate: new Date(2026, 2, 10),
-        paymentDate: new Date(2026, 0, 5),
-        amountPaid: 400,
-        balancePayable: 0,
-      }),
-    ];
-    const payload = buildCashFlowAnnualComparison([], apRows, 2026, BASE);
-    assert.equal(payload.months[0]?.paidAmount, 0);
-    assert.equal(payload.months[2]?.paidAmount, 400);
-  });
-
-  it("9. AR aberto usa data de vencimento", () => {
-    const arRows = [
       arRow({
-        externalId: 1,
-        dueDate: new Date(2026, 4, 25),
+        externalId: 2,
+        dueDate: new Date(2026, 0, 20),
         balanceReceivable: 150,
       }),
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivableOpenAmount, 0);
-    assert.equal(payload.months[4]?.receivableOpenAmount, 150);
+    const jan = payload.months[0]!;
+    assert.equal(jan.cashInTotalAmount, jan.receivedAmount + jan.receivableOpenAmount);
+    assert.equal(jan.cashInTotalAmount, 650);
   });
 
-  it("10. AP aberto usa data de vencimento operacional", () => {
+  it("8. cashOutTotalAmount = paidAmount + payableOpenAmount", () => {
     const apRows = [
       apRow({
         externalId: 1,
-        dueDate: new Date(2026, 7, 15),
-        balancePayable: 600,
+        paymentDate: new Date(2026, 0, 3),
+        amountPaid: 200,
+        balancePayable: 0,
+      }),
+      apRow({
+        externalId: 2,
+        dueDate: new Date(2026, 0, 25),
+        balancePayable: 100,
       }),
     ];
     const payload = buildCashFlowAnnualComparison([], apRows, 2026, BASE);
-    assert.equal(payload.months[6]?.payableOpenAmount, 0);
-    assert.equal(payload.months[7]?.payableOpenAmount, 600);
+    const jan = payload.months[0]!;
+    assert.equal(jan.cashOutTotalAmount, jan.paidAmount + jan.payableOpenAmount);
+    assert.equal(jan.cashOutTotalAmount, 300);
   });
 
-  it("11. título vencido e aberto aparece no mês do vencimento", () => {
+  it("9. netCashAmount = cashInTotalAmount - cashOutTotalAmount", () => {
+    const arRows = [
+      arRow({
+        externalId: 1,
+        settlementDate: new Date(2026, 0, 5),
+        amountReceived: 1000,
+        balanceReceivable: 0,
+      }),
+    ];
+    const apRows = [
+      apRow({
+        externalId: 2,
+        paymentDate: new Date(2026, 0, 6),
+        amountPaid: 400,
+        balancePayable: 0,
+      }),
+    ];
+    const payload = buildCashFlowAnnualComparison(arRows, apRows, 2026, BASE);
+    const jan = payload.months[0]!;
+    assert.equal(jan.netCashAmount, jan.cashInTotalAmount - jan.cashOutTotalAmount);
+    assert.equal(jan.netCashAmount, 600);
+  });
+
+  it("10. título liquidado não entra também como aberto", () => {
+    const arRows = [
+      arRow({
+        externalId: 1,
+        dueDate: new Date(2026, 0, 10),
+        settlementDate: new Date(2026, 0, 10),
+        amountReceived: 800,
+        balanceReceivable: 0,
+      }),
+    ];
+    const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
+    assert.equal(payload.months[0]?.receivedAmount, 800);
+    assert.equal(payload.months[0]?.receivableOpenAmount, 0);
+  });
+
+  it("11. título aberto vencido aparece no mês do vencimento", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -266,11 +294,42 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[11]?.paidAmount, 0);
   });
 
+  it("realização AR usa settlementDate, não vencimento", () => {
+    const row = arRow({
+      dueDate: new Date(2026, 4, 1),
+      settlementDate: new Date(2026, 0, 15),
+      amountReceived: 500,
+      balanceReceivable: 0,
+    });
+    const monthStart = new Date(2026, 0, 1);
+    const monthEnd = new Date(2026, 0, 31);
+    assert.equal(isArReceivedByRealizationInPeriod(row, monthStart, monthEnd), true);
+    const marchStart = new Date(2026, 4, 1);
+    const marchEnd = new Date(2026, 4, 30);
+    assert.equal(isArReceivedByRealizationInPeriod(row, marchStart, marchEnd), false);
+  });
+
+  it("pagamento AP usa paymentDate, não vencimento", () => {
+    const row = apRow({
+      dueDate: new Date(2026, 4, 1),
+      paymentDate: new Date(2026, 0, 12),
+      amountPaid: 400,
+      balancePayable: 0,
+    });
+    const monthStart = new Date(2026, 0, 1);
+    const monthEnd = new Date(2026, 0, 31);
+    assert.equal(isApPaidByPaymentInPeriod(row, monthStart, monthEnd), true);
+    const mayStart = new Date(2026, 4, 1);
+    const mayEnd = new Date(2026, 4, 31);
+    assert.equal(isApPaidByPaymentInPeriod(row, mayStart, mayEnd), false);
+  });
+
   it("meta aparece quando há base do ano anterior", () => {
     const arRows = [
       arRow({
         externalId: 1,
         dueDate: new Date(2025, 0, 10),
+        settlementDate: new Date(2025, 0, 10),
         amountReceived: 1000,
         balanceReceivable: 0,
       }),
@@ -302,44 +361,55 @@ describe("financeCashFlowAnnualComparison", () => {
 });
 
 describe("financeCashFlowAnnualComparison UI", () => {
-  it("14. gráfico renderiza quatro barras por mês", () => {
+  it("14. gráfico renderiza barras empilhadas de Entradas", () => {
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
+    assert.ok(chart.includes('stackId="entradas"'));
     assert.ok(chart.includes('dataKey="receivedAmount"'));
     assert.ok(chart.includes('dataKey="receivableOpenAmount"'));
-    assert.ok(chart.includes('dataKey="paidAmount"'));
-    assert.ok(chart.includes('dataKey="payableOpenAmount"'));
-    assert.ok(chart.includes("ComposedChart"));
   });
 
-  it("15. tooltip mostra as quatro séries e subtotais", () => {
+  it("15. gráfico renderiza barras empilhadas de Saídas", () => {
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
-    assert.ok(chart.includes("Total entradas"));
-    assert.ok(chart.includes("Total saídas"));
-    assert.ok(chart.includes("Saldo potencial"));
+    assert.ok(chart.includes('stackId="saidas"'));
+    assert.ok(chart.includes('dataKey="paidAmount"'));
+    assert.ok(chart.includes('dataKey="payableOpenAmount"'));
+  });
+
+  it("16. gráfico renderiza linha de saldo", () => {
+    const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
+    assert.ok(chart.includes('dataKey="netCashAmount"'));
+    assert.ok(chart.includes("<Line"));
+  });
+
+  it("17. tooltip mostra recebido, a receber, pago, a pagar e saldo", () => {
+    const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
+    assert.ok(chart.includes("Total de entradas"));
+    assert.ok(chart.includes("Total de saídas"));
+    assert.ok(chart.includes("netCashAmount"));
     assert.ok(chart.includes("receivedAmount"));
     assert.ok(chart.includes("receivableOpenAmount"));
     assert.ok(chart.includes("paidAmount"));
     assert.ok(chart.includes("payableOpenAmount"));
   });
 
-  it("16. labels aparecem nas barras", () => {
+  it("18. labels mostram total de entradas e total de saídas", () => {
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
-    assert.ok(chart.includes("LabelList"));
-    assert.ok(chart.includes("ChartBarValueLabel"));
+    assert.ok(chart.includes("StackedBarTotalLabel"));
+    assert.ok(chart.includes('totalKey="cashInTotalAmount"'));
+    assert.ok(chart.includes('totalKey="cashOutTotalAmount"'));
   });
 
-  it("17. linha de meta não quebra quando meta for null", () => {
+  it("19. meta null não quebra o gráfico", () => {
     const wrapper = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx");
-    assert.ok(wrapper.includes("hasReceivableGoal"));
-    assert.ok(wrapper.includes("showGoal"));
+    assert.ok(wrapper.includes("showGoal={false}"));
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
     assert.ok(chart.includes("showGoal ?"));
-    assert.ok(chart.includes("connectNulls={false}"));
+    assert.ok(chart.includes("receivableGoal != null"));
   });
 
   it("container com altura explícita", () => {
     const view = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
-    assert.ok(view.includes("FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT = 420"));
+    assert.ok(view.includes("FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT = 440"));
     assert.ok(view.includes("minHeight: height"));
     assert.ok(view.includes("ResponsiveContainer"));
     assert.ok(view.includes("ANNUAL_CHART_MIN_WIDTH = 960"));
@@ -364,14 +434,22 @@ describe("financeCashFlowAnnualComparison UI", () => {
 
   it("labels claros por série", () => {
     const labels = buildAnnualComparisonSeriesLabels(2026);
-    assert.equal(labels.receivedAmount, "Recebido 2026");
-    assert.equal(labels.receivableOpenAmount, "A receber 2026");
-    assert.equal(labels.paidAmount, "Pago 2026");
-    assert.equal(labels.payableOpenAmount, "A pagar 2026");
+    assert.equal(labels.receivedAmount, "Recebido");
+    assert.equal(labels.receivableOpenAmount, "A Receber");
+    assert.equal(labels.paidAmount, "Pago");
+    assert.equal(labels.payableOpenAmount, "A Pagar");
+    assert.equal(labels.netCashAmount, "Saldo mensal");
   });
 
   it("título atualizado no componente", () => {
     const wrapper = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx");
-    assert.ok(wrapper.includes("Fluxo anual — Recebido, A Receber, Pago e A Pagar"));
+    assert.ok(wrapper.includes("Fluxo anual — Entradas, Saídas e Saldo"));
+  });
+
+  it("resumo anual com MetricCardGrid", () => {
+    const wrapper = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx");
+    assert.ok(wrapper.includes("MetricCardGrid"));
+    assert.ok(wrapper.includes("cashInTotalAmount"));
+    assert.ok(wrapper.includes("netCashAmount"));
   });
 });

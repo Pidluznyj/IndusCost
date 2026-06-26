@@ -8,12 +8,16 @@ import {
   mapAnnualComparisonChartRows,
   type FinanceCashFlowAnnualComparisonPayload,
 } from "@/src/lib/financeCashFlowAnnualComparison";
-import { FinanceCashFlowChartShell } from "@/src/components/finance/cash-flow/FinanceCashFlowChartShell";
+import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT,
   FinanceCashFlowAnnualComparisonChartView,
 } from "@/src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
+import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 
 /**
  * Gráfico anual independente dos filtros da página — busca endpoint dedicado.
@@ -48,13 +52,14 @@ export function FinanceCashFlowAnnualComparisonChart() {
     [payload]
   );
   const labels = useMemo(
-    () =>
-      buildAnnualComparisonSeriesLabels(payload?.year ?? new Date().getFullYear()),
+    () => buildAnnualComparisonSeriesLabels(payload?.year ?? new Date().getFullYear()),
     [payload?.year]
   );
   const empty = !payload || !annualComparisonHasChartData(payload);
   const year = payload?.year ?? new Date().getFullYear();
-  const title = `Fluxo anual — Recebido, A Receber, Pago e A Pagar (${year})`;
+  const title = `Fluxo anual — Entradas, Saídas e Saldo (${year})`;
+  const subtitle =
+    "Visão anual independente dos filtros da página. Entradas somam Recebido + A Receber; Saídas somam Pago + A Pagar. O saldo mostra a diferença entre entradas e saídas do mês.";
 
   if (loading && !payload) {
     return (
@@ -87,21 +92,55 @@ export function FinanceCashFlowAnnualComparisonChart() {
     );
   }
 
-  return (
-    <FinanceCashFlowChartShell
-      testId="cash-flow-annual-comparison"
-      title={title}
-      subtitle="Visão anual independente dos filtros da página, separando valores já realizados e valores ainda em aberto. Este gráfico sempre considera o ano corrente e não é afetado pelos filtros gerais da tela. Recebido e Pago seguem o motor do Fluxo de Caixa planejado (alocação por vencimento). A Receber e A Pagar usam vencimento dos títulos em aberto."
-      empty={empty}
-      emptyDescription="Sem movimentações Nomus para montar o fluxo anual."
-      chartHeight={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT}
-    >
-      <FinanceCashFlowAnnualComparisonChartView
-        data={chartData}
-        labels={labels}
-        showGoal={payload?.hasReceivableGoal ?? false}
-        height={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT}
+  if (empty) {
+    return (
+      <FinanceBiEmptyState
+        title={title}
+        description="Sem movimentações Nomus para montar o fluxo anual."
       />
-    </FinanceCashFlowChartShell>
+    );
+  }
+
+  const totals = payload!.totals;
+
+  return (
+    <div
+      data-testid="cash-flow-annual-comparison"
+      className={`${financeBiCardClass} p-5 space-y-3 flex flex-col`}
+    >
+      <FinanceCashFlowBlockTitle
+        title={title}
+        subtitle={subtitle}
+        testId="cash-flow-annual-comparison"
+      />
+      <MetricCardGrid data-testid="cash-flow-annual-comparison-summary">
+        <MetricCard
+          label="Total entradas no ano"
+          formattedValue={formatFinanceCurrency(totals.cashInTotalAmount)}
+          subtitle={`Recebido ${formatFinanceCurrency(totals.receivedAmount)} · A receber ${formatFinanceCurrency(totals.receivableOpenAmount)}`}
+          variant="success"
+        />
+        <MetricCard
+          label="Total saídas no ano"
+          formattedValue={formatFinanceCurrency(totals.cashOutTotalAmount)}
+          subtitle={`Pago ${formatFinanceCurrency(totals.paidAmount)} · A pagar ${formatFinanceCurrency(totals.payableOpenAmount)}`}
+          variant="danger"
+        />
+        <MetricCard
+          label="Saldo anual"
+          formattedValue={formatFinanceCurrency(totals.netCashAmount)}
+          variant={totals.netCashAmount >= 0 ? "success" : "danger"}
+        />
+      </MetricCardGrid>
+      <div style={{ width: "100%", height: FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT }}>
+        <FinanceCashFlowAnnualComparisonChartView
+          data={chartData}
+          labels={labels}
+          year={year}
+          showGoal={false}
+          height={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT}
+        />
+      </div>
+    </div>
   );
 }
