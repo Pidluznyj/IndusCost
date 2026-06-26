@@ -6,7 +6,7 @@ import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { SalesOrderListSummaryCards } from "@/src/components/sales/SalesOrderListSummaryCards";
 import {
   SalesOrderMarginAnalysisSection,
   SalesOrderMarginStatusBadge,
@@ -436,44 +436,7 @@ function SalesOrderList() {
         )}
       </p>
 
-      <div className="indus-kpi-grid">
-        <FinanceBiKpiCard
-          icon={ShoppingBag}
-          label="Pedidos filtrados"
-          value="—"
-          amount={loading ? undefined : summary.totalOrders}
-          amountFormat="number"
-          loading={loading}
-          hint="Quantidade total de pedidos que atendem aos filtros aplicados (não apenas a página atual)."
-        />
-        <FinanceBiKpiCard
-          icon={Receipt}
-          label="Valor líquido"
-          value="—"
-          amount={loading ? undefined : summary.totalNetAmount}
-          amountFormat="currency"
-          loading={loading}
-          hint="Soma do valor líquido de todos os pedidos filtrados."
-        />
-        <FinanceBiKpiCard
-          icon={Package}
-          label="Itens"
-          value="—"
-          amount={loading ? undefined : summary.totalItems}
-          amountFormat="number"
-          loading={loading}
-          hint="Soma da quantidade de itens de todos os pedidos filtrados."
-        />
-        <FinanceBiKpiCard
-          icon={Ticket}
-          label="Ticket médio"
-          value="—"
-          amount={loading || summary.totalOrders <= 0 ? undefined : summary.averageTicket}
-          amountFormat="currency"
-          loading={loading}
-          hint="Valor líquido total ÷ quantidade de pedidos filtrados."
-        />
-      </div>
+      <SalesOrderListSummaryCards summary={summary} loading={loading} />
 
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">

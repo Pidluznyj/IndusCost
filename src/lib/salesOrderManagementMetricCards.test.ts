@@ -21,12 +21,11 @@ function read(rel: string): string {
 describe("salesOrderManagementMetricCards", () => {
   it("1. Gestão de Pedidos renderiza cards com MetricCard oficial", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const fulfillment = read("src/components/sales/SalesOrderManagementFulfillmentPanel.tsx");
-    assert.match(page, /MetricCard/);
-    assert.match(page, /MetricCardGrid/);
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    assert.match(page, /SalesOrderManagementKpiDashboard/);
+    assert.match(dashboard, /MetricCard/);
+    assert.match(dashboard, /MetricCardGrid/);
     assert.doesNotMatch(page, /FinanceBiKpiCard/);
-    assert.match(fulfillment, /MetricCard/);
-    assert.doesNotMatch(fulfillment, /FinanceBiKpiCard/);
   });
 
   it("2. valor grande não é truncado com reticências", () => {
@@ -85,20 +84,22 @@ describe("salesOrderManagementMetricCards", () => {
   });
 
   it("11. status logístico separado de margem na página", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const statusIdx = page.indexOf("Status Logístico");
-    const marginIdx = page.indexOf("sales-order-management-economic-summary");
-    assert.ok(statusIdx >= 0 && marginIdx > statusIdx);
-    assert.match(page, /resolveLogisticStatusCardVariant/);
-    assert.match(page, /resolveMarginMoneyVariant/);
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    const logisticsIdx = dashboard.indexOf("sales-order-management-logistics");
+    const marginIdx = dashboard.indexOf("sales-order-management-economic-summary");
+    assert.ok(logisticsIdx >= 0 && marginIdx > logisticsIdx);
+    assert.match(dashboard, /resolveLogisticStatusCardVariant/);
+    assert.match(dashboard, /resolveMarginMoneyVariant/);
   });
 
   it("12–14. filtros, busca e paginação preservados", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /toggleManagementStatusCard/);
+    const bar = read("src/components/sales/SalesOrderManagementFiltersBar.tsx");
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    assert.match(dashboard, /onToggleLogisticStatus/);
     assert.match(page, /setSearch\(/);
     assert.match(page, /setPage\(/);
-    assert.match(page, /CustomerAutocompleteFilter/);
+    assert.match(bar, /CustomerAutocompleteFilter/);
   });
 
   it("15. nenhuma regra de negócio alterada nos helpers", () => {

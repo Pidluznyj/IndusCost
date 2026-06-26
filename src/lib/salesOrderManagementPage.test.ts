@@ -15,20 +15,21 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /data-testid="sales-order-management-page"/);
   });
 
-  it("cards Status Logístico BI no topo com clique para filtrar", () => {
+  it("cards Status Logístico BI com clique para filtrar", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(page, /displayDashboardCards/);
-    assert.match(page, /toggleManagementStatusCard/);
-    assert.match(page, /management-status-card-/);
+    assert.match(dashboard, /onToggleLogisticStatus/);
+    assert.match(dashboard, /management-status-card-/);
     assert.match(logistic, /Total no filtro/);
     assert.match(page, /logisticStatus/);
-    assert.doesNotMatch(page, /Pedidos em aberto/);
   });
 
   it("card ativo e limpar filtro do card", () => {
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /data-active=/);
+    assert.match(dashboard, /data-active=/);
     assert.match(page, /clear-management-status-filter/);
     assert.match(page, /Limpar filtro do card/);
   });
@@ -43,9 +44,9 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /noProductionOrder/);
   });
 
-  it("tabela mostra coluna Status Logístico", () => {
+  it("tabela mostra coluna Status logístico", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Status Logístico/);
+    assert.match(page, /Status logístico/);
     assert.match(page, /logisticStatusLabel/);
   });
 
@@ -118,7 +119,7 @@ describe("salesOrderManagementPage", () => {
 
   it("UI contém os 7 cards Status Logístico BI obrigatórios", () => {
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const required = [
       "Total no filtro",
       "Entregue no Prazo",
@@ -131,8 +132,8 @@ describe("salesOrderManagementPage", () => {
     for (const label of required) {
       assert.match(logistic, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
-    assert.match(page, /management-status-card-total/);
-    assert.match(page, /management-status-card-\$\{card\.key\}/);
+    assert.match(dashboard, /management-status-card-total/);
+    assert.match(dashboard, /management-status-card-\$\{card\.key\}/);
     assert.match(logistic, /deliveredOnTime/);
     assert.match(logistic, /deliveredLate/);
     assert.match(logistic, /overduePending/);
@@ -142,26 +143,26 @@ describe("salesOrderManagementPage", () => {
   });
 
   it("primeiro card é Total no filtro com quantidade e valor", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(logistic, /Total no filtro/);
-    assert.match(page, /management-status-card-total/);
-    assert.match(page, /formatCompactCurrency\(card\.totalNetValue\)/);
-    assert.match(page, /pedido/);
+    assert.match(dashboard, /management-status-card-total/);
+    assert.match(dashboard, /formatCompactCurrency\(card\.totalNetValue\)/);
+    assert.match(dashboard, /pedido/);
   });
 
   it("clique no card total limpa filtro de status", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /clearManagementStatusCardFilter/);
-    assert.match(page, /isTotal/);
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    assert.match(dashboard, /onClearLogisticStatus/);
+    assert.match(dashboard, /isTotal/);
   });
 
   it("cards KPI usam MetricCard do design system", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /MetricCardGrid/);
-    assert.match(page, /MetricCard/);
-    assert.doesNotMatch(page, /FinanceBiKpiCard/);
-    assert.doesNotMatch(page, /indus-kpi-grid/);
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    assert.match(dashboard, /MetricCardGrid/);
+    assert.match(dashboard, /MetricCard/);
+    assert.doesNotMatch(dashboard, /FinanceBiKpiCard/);
+    assert.doesNotMatch(dashboard, /indus-kpi-grid/);
   });
 
   it("não há import de Prisma no frontend", () => {

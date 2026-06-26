@@ -249,10 +249,14 @@ describe("salesOrdersListSummary", () => {
       join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("FinanceBiKpiCard"));
-    assert.ok(page.includes("Pedidos filtrados"));
-    assert.ok(page.includes("Valor líquido"));
-    assert.ok(page.includes("Ticket médio"));
+    const cards = readFileSync(
+      join(process.cwd(), "src/components/sales/SalesOrderListSummaryCards.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("SalesOrderListSummaryCards"));
+    assert.ok(cards.includes("Total de pedidos"));
+    assert.ok(cards.includes("Valor vendido"));
+    assert.ok(cards.includes("Ticket médio"));
     assert.ok(page.includes("summary"));
   });
 });

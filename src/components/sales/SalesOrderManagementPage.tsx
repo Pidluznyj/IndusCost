@@ -1,33 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  Clock,
-  DollarSign,
-  FileText,
-  LayoutGrid,
-  Loader2,
-  Package,
-  Percent,
-  Receipt,
-  Scale,
-  TrendingDown,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
-import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
-import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import {
-  formatOrderCountLabel,
-  metricCurrencySubtitle,
-  resolveAlertCountVariant,
-  resolveLogisticStatusCardVariant,
-  resolveMarginMoneyVariant,
-  resolveMarginPercentVariant,
-  resolveNegativeMarginCountVariant,
-  toFiniteMetricNumber,
-} from "@/src/lib/salesOrderManagementMetricCards";
+  SalesOrderManagementKpiDashboard,
+  type SalesOrderManagementKpiFilterHandlers,
+} from "@/src/components/sales/SalesOrderManagementKpiDashboard";
 import type {
   SalesOrderManagementCardAmounts,
   SalesOrderManagementCards,
@@ -63,7 +42,6 @@ import type {
 } from "@/src/lib/salesOrderManagementFulfillment";
 import {
   SalesOrderManagementFulfillmentCharts,
-  SalesOrderManagementFulfillmentKpis,
 } from "@/src/components/sales/SalesOrderManagementFulfillmentPanel";
 import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
@@ -346,25 +324,57 @@ export function SalesOrderManagementPage() {
     return years;
   }, [currentYear]);
 
-  const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-    total: LayoutGrid,
-    deliveredOnTime: Receipt,
-    deliveredLate: Clock,
-    overduePending: AlertTriangle,
-    onTimePending: Package,
-    finishedOrCancelled: AlertTriangle,
-    reviewData: FileText,
-  };
-
-  const toggleManagementStatusCard = useCallback((cardId: ManagementStatusCardId) => {
-    setSelectedManagementStatus((current) => (current === cardId ? "" : cardId));
-    setPage(1);
+  const kpiFilterHandlers = useMemo((): SalesOrderManagementKpiFilterHandlers => {
+    return {
+      onToggleLogisticStatus: (status) => {
+        setSelectedManagementStatus((current) => (current === status ? "" : status));
+        setPage(1);
+      },
+      onClearLogisticStatus: () => {
+        setSelectedManagementStatus("");
+        setPage(1);
+      },
+      onToggleInvoiceFilter: (value) => {
+        setInvoiceFilter(value);
+        setPage(1);
+      },
+      onToggleReviewDataFilter: (value) => {
+        setReviewDataFilter(value);
+        setPage(1);
+      },
+      onToggleCutFilter: (value) => {
+        setCutFilter(value);
+        setPage(1);
+      },
+      onToggleOverdueOnly: (value) => {
+        setOverdueOnly(value);
+        setPage(1);
+      },
+      onTogglePartialOrCut: (value) => {
+        setPartialOrCut(value);
+        setPage(1);
+      },
+    };
   }, []);
 
-  const clearManagementStatusCardFilter = useCallback(() => {
-    setSelectedManagementStatus("");
-    setPage(1);
-  }, []);
+  const kpiFilterState = useMemo(
+    () => ({
+      selectedLogisticStatus: selectedManagementStatus,
+      invoiceFilter,
+      reviewDataFilter,
+      cutFilter,
+      overdueOnly,
+      partialOrCut,
+    }),
+    [
+      selectedManagementStatus,
+      invoiceFilter,
+      reviewDataFilter,
+      cutFilter,
+      overdueOnly,
+      partialOrCut,
+    ]
+  );
 
   const displayDashboardCards = useMemo((): ManagementDashboardCard[] => {
     if (dashboardCards.length > 0) return dashboardCards;
@@ -695,158 +705,20 @@ export function SalesOrderManagementPage() {
         }}
       />
 
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Status Logístico
-        </p>
-        <MetricCardGrid className="mt-2">
-          {displayDashboardCards.map((card) => {
-            const Icon = kpiIcons[card.key] ?? FileText;
-            const isTotal = card.isTotal === true;
-            const isActive = isTotal
-              ? selectedManagementStatus === ""
-              : selectedManagementStatus === card.logisticStatus;
-            const countLabel = formatOrderCountLabel(card.count);
-            const percentHint =
-              card.percentOfTotal != null && !isTotal
-                ? `${card.tooltip} (${card.percentOfTotal}% do total no filtro)`
-                : card.tooltip;
-            const currencyFull = metricCurrencySubtitle(card.totalNetValue);
-            const footnote =
-              !loading && !loadError
-                ? [formatCompactCurrency(card.totalNetValue), percentHint]
-                    .filter(Boolean)
-                    .join(" · ")
-                : undefined;
-            return (
-              <button
-                key={card.key}
-                type="button"
-                data-testid={
-                  isTotal
-                    ? "management-status-card-total"
-                    : `management-status-card-${card.key}`
-                }
-                data-active={isActive ? "true" : "false"}
-                onClick={() => {
-                  if (isTotal) clearManagementStatusCardFilter();
-                  else if (card.logisticStatus) toggleManagementStatusCard(card.logisticStatus);
-                }}
-                className={cn(
-                  "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                  isActive && "ring-2 ring-primary shadow-md"
-                )}
-              >
-                <MetricCard
-                  label={card.label}
-                  formattedValue={loading || loadError ? "—" : countLabel}
-                  fullValue={currencyFull}
-                  subtitle={footnote}
-                  variant={resolveLogisticStatusCardVariant(card.key)}
-                  icon={<Icon className="h-4 w-4" />}
-                  loading={loading}
-                  className="h-full"
-                />
-              </button>
-            );
-          })}
-        </MetricCardGrid>
-        {!loading && !loadError && validPortfolioCount != null ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Carteira válida no filtro:{" "}
-            <span className="font-semibold text-foreground">{validPortfolioCount}</span> pedido(s)
-            {validPortfolioValue != null ? (
-              <>
-                {" "}
-                ·{" "}
-                <span className="font-semibold text-foreground">
-                  {formatCurrency(validPortfolioValue)}
-                </span>
-              </>
-            ) : null}{" "}
-            não finalizados/cancelados (BI)
-          </p>
-        ) : null}
-      </div>
+      <SalesOrderManagementKpiDashboard
+        loading={loading}
+        loadError={loadError}
+        fulfillmentKpis={fulfillmentKpis}
+        marginEconomics={marginEconomics}
+        managementSummary={managementSummary}
+        displayDashboardCards={displayDashboardCards}
+        logisticCards={cards}
+        filterState={kpiFilterState}
+        filterHandlers={kpiFilterHandlers}
+        validPortfolioCount={validPortfolioCount}
+        validPortfolioValue={validPortfolioValue}
+      />
 
-      <div data-testid="sales-order-management-economic-summary">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Análise econômica
-        </p>
-        {marginEconomics?.scopeNote ? (
-          <p className="mt-1 text-[10px] text-muted-foreground">{marginEconomics.scopeNote}</p>
-        ) : null}
-        <MetricCardGrid className="mt-2">
-          <MetricCard
-            label="Valor vendido"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.netRevenue)}
-            amountFormat="currency"
-            variant="info"
-            icon={<DollarSign className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Custo estimado"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.totalCost)}
-            amountFormat="currency"
-            variant="neutral"
-            icon={<Scale className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Margem R$"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginValue)}
-            amountFormat="currency"
-            variant={resolveMarginMoneyVariant(marginEconomics?.consolidated?.marginValue)}
-            icon={<DollarSign className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Margem %"
-            amount={toFiniteMetricNumber(marginEconomics?.consolidated?.marginPercent)}
-            amountFormat="percent"
-            variant={resolveMarginPercentVariant(marginEconomics?.consolidated?.marginPercent)}
-            icon={<Percent className="h-4 w-4" />}
-            helperText="Ponderada por receita líquida do filtro"
-            loading={loading}
-          />
-          <MetricCard
-            label="Margem negativa"
-            formattedValue={
-              loading || loadError
-                ? "—"
-                : formatOrderCountLabel(marginEconomics?.ordersWithNegativeMargin)
-            }
-            variant={resolveNegativeMarginCountVariant(marginEconomics?.ordersWithNegativeMargin)}
-            icon={<TrendingDown className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Sem custo"
-            formattedValue={
-              loading || loadError
-                ? "—"
-                : formatOrderCountLabel(marginEconomics?.ordersWithoutCost)
-            }
-            variant={resolveAlertCountVariant(marginEconomics?.ordersWithoutCost)}
-            icon={<AlertTriangle className="h-4 w-4" />}
-            loading={loading}
-          />
-          <MetricCard
-            label="Sem produto"
-            formattedValue={
-              loading || loadError
-                ? "—"
-                : formatOrderCountLabel(marginEconomics?.ordersWithoutProduct)
-            }
-            variant={resolveAlertCountVariant(marginEconomics?.ordersWithoutProduct)}
-            icon={<Package className="h-4 w-4" />}
-            loading={loading}
-          />
-        </MetricCardGrid>
-      </div>
-
-      <SalesOrderManagementFulfillmentKpis kpis={fulfillmentKpis} loading={loading || !!loadError} />
       <SalesOrderManagementFulfillmentCharts charts={fulfillmentCharts} />
 
       <div>
