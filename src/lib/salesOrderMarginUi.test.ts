@@ -123,13 +123,18 @@ describe("salesOrderMargin UI", () => {
       join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
       "utf8"
     );
+    const metricGridSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderMarginMetricGrid.tsx"),
+      "utf8"
+    );
     assert.match(analysisSrc, /Análise de Margem/);
-    assert.match(analysisSrc, /Receita líquida/);
-    assert.match(analysisSrc, /Custo estimado/);
-    assert.match(analysisSrc, /Margem R\$/);
-    assert.match(analysisSrc, /Markup/);
+    assert.match(analysisSrc, /SalesOrderMarginMetricGrid/);
+    assert.match(analysisSrc, /revenueLabel="Receita líquida"/);
+    assert.match(metricGridSrc, /Custo estimado/);
+    assert.match(metricGridSrc, /Margem R\$/);
+    assert.match(metricGridSrc, /Markup/);
     assert.match(analysisSrc, /resolveSalesOrderMarginSupportText/);
-    assert.match(analysisSrc, /formatSalesOrderMarginMoney\(summary\.netRevenue\)/);
+    assert.match(metricGridSrc, /toFiniteMetricNumber\(summary\?\.netRevenue\)/);
   });
 
   it("7. detalhe mostra margem por item", () => {
@@ -171,11 +176,12 @@ describe("salesOrderMargin UI", () => {
       "utf8"
     );
     assert.match(analysisSrc, /Margem ainda não calculada/);
-    const moduleSrc = readFileSync(
-      join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+    const marginCellSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderListMarginCell.tsx"),
       "utf8"
     );
-    assert.match(moduleSrc, /marginSummary \?/);
+    assert.match(marginCellSrc, /Margem não calculada/);
+    assert.match(marginCellSrc, /pickSalesOrderListMarginPercent/);
   });
 });
 
@@ -210,11 +216,16 @@ describe("salesOrderMargin UI — wiring e segurança", () => {
   });
 
   it("lista usa helpers de exibição sem motor de margem", () => {
-    const moduleSrc = readFileSync(
-      join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+    const tableSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderListTable.tsx"),
       "utf8"
     );
-    assert.match(moduleSrc, /pickSalesOrderListMarginPercent/);
-    assert.match(moduleSrc, /data-testid="sales-order-list-margin-percent"/);
+    const marginCellSrc = readFileSync(
+      join(process.cwd(), "src", "components", "sales", "SalesOrderListMarginCell.tsx"),
+      "utf8"
+    );
+    assert.match(tableSrc, /SalesOrderListMarginCell/);
+    assert.match(marginCellSrc, /pickSalesOrderListMarginPercent/);
+    assert.match(marginCellSrc, /data-testid="sales-order-list-margin-cell"/);
   });
 });

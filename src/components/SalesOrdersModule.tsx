@@ -1,25 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Download, Loader2, Package, Printer, Receipt, ShoppingBag, Sparkles, Ticket } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
-import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { SalesOrderListSummaryCards } from "@/src/components/sales/SalesOrderListSummaryCards";
+import { SalesOrderListTable } from "@/src/components/sales/SalesOrderListTable";
 import {
-  SalesOrderMarginAnalysisSection,
-  SalesOrderMarginStatusBadge,
-} from "@/src/components/sales/SalesOrderMarginAnalysis";
+  SalesOrderQuickSummaryDrawer,
+  type SalesOrderListRowSnapshot,
+} from "@/src/components/sales/SalesOrderQuickSummaryDrawer";
+import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
-import {
-  pickSalesOrderListMarginPercent,
-  pickSalesOrderListMarginValue,
-} from "@/src/lib/salesOrderMarginDisplay";
-import type {
-  SalesOrderItemMarginPayload,
-  SalesOrderMarginSummaryPayload,
-} from "@/src/lib/salesOrderMarginTypes";
+import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
+import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
 import {
   SALES_ORDER_MONTH_OPTIONS,
   buildSalesOrderYearOptions,
@@ -30,21 +26,7 @@ import {
 } from "@/src/lib/salesOrderInternalMarginExportUi";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 
-type SalesOrderRow = {
-  id: string;
-  customerId: string | null;
-  orderCode: string;
-  status: string;
-  issueDate: string;
-  responsible: string | null;
-  totalItems: number;
-  totalNetValue: unknown;
-  totalMarginPerc: unknown;
-  totalMarginValue?: unknown;
-  marginSummary?: SalesOrderMarginSummaryPayload;
-  Customer?: { companyName?: string; tradeName?: string };
-  Proposal?: { number: number; externalProposalCode?: string | null; title?: string | null };
-};
+type SalesOrderRow = SalesOrderListRowSnapshot;
 
 type SalesOrderDetail = SalesOrderRow & {
   expectedDeliveryDate: string | null;
@@ -117,6 +99,11 @@ function money(v: unknown, decimals = 2): string {
 
 function SalesOrderList() {
   const navigate = useNavigate();
+  const auth = useAuth();
+  const showMarginEconomics = useMemo(
+    () => canViewSalesOrderMarginEconomics(auth),
+    [auth]
+  );
   const [rows, setRows] = useState<SalesOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -137,6 +124,8 @@ function SalesOrderList() {
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [exportingInternal, setExportingInternal] = useState(false);
+  const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
+  const [summaryRow, setSummaryRow] = useState<SalesOrderRow | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
@@ -438,101 +427,31 @@ function SalesOrderList() {
 
       <SalesOrderListSummaryCards summary={summary} loading={loading} />
 
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-accent/50 border-b border-border">
-              <tr>
-                <th className="p-3 font-semibold">Pedido</th>
-                <th className="p-3 font-semibold">Proposta</th>
-                <th className="p-3 font-semibold">Cliente</th>
-                <th className="p-3 font-semibold">Responsável</th>
-                <th className="p-3 font-semibold">Emissão</th>
-                <th className="p-3 font-semibold">Status</th>
-                <th className="p-3 font-semibold text-right">Valor líquido</th>
-                <th className="p-3 font-semibold text-right">Margem %</th>
-                <th className="p-3 font-semibold text-right hidden lg:table-cell">Margem R$</th>
-                <th className="p-3 font-semibold">Status margem</th>
-                <th className="p-3 font-semibold text-right">Itens</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={11} className="p-8 text-center text-muted-foreground">
-                    <Loader2 className="h-6 w-6 animate-spin inline text-primary" />
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="p-8 text-center text-muted-foreground">
-                    Nenhum pedido de venda encontrado.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="hover:bg-accent/30 cursor-pointer"
-                    onClick={() => navigate(`/sales-orders/${r.id}`)}
-                    data-testid={`sales-order-row-${r.id}`}
-                  >
-                    <td className="p-3 font-mono font-semibold">{r.orderCode}</td>
-                    <td className="p-3">
-                      #{r.Proposal?.number ?? "—"}
-                      {r.Proposal?.externalProposalCode ? (
-                        <span className="block text-[10px] text-muted-foreground">Nomus: {r.Proposal.externalProposalCode}</span>
-                      ) : null}
-                    </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                      {r.customerId ? (
-                        <Link
-                          to={buildCustomerIntelligencePath(r.customerId)}
-                          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                          title="Inteligência do Cliente"
-                        >
-                          {r.Customer?.companyName ?? "—"}
-                          <Sparkles className="h-3 w-3 shrink-0 opacity-70" />
-                        </Link>
-                      ) : (
-                        r.Customer?.companyName ?? "—"
-                      )}
-                    </td>
-                    <td className="p-3 text-muted-foreground">{r.responsible || "—"}</td>
-                    <td className="p-3 text-xs">{new Date(r.issueDate).toLocaleDateString("pt-BR")}</td>
-                    <td className="p-3">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase">
-                        {STATUS_LABELS[r.status] ?? r.status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right font-mono font-medium">{money(r.totalNetValue, 2)}</td>
-                    <td
-                      className="p-3 text-right font-mono"
-                      data-testid="sales-order-list-margin-percent"
-                    >
-                      {pickSalesOrderListMarginPercent(r.marginSummary, r.totalMarginPerc)}
-                    </td>
-                    <td className="p-3 text-right font-mono hidden lg:table-cell">
-                      {pickSalesOrderListMarginValue(r.marginSummary, r.totalMarginValue)}
-                    </td>
-                    <td className="p-3">
-                      {r.marginSummary ? (
-                        <SalesOrderMarginStatusBadge
-                          label={r.marginSummary.statusLabel}
-                          status={r.marginSummary.status}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right">{r.totalItems}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <SalesOrderListTable
+        rows={rows}
+        loading={loading}
+        selectedOrderId={summaryDrawerOpen ? summaryRow?.id ?? null : null}
+        showMarginEconomics={showMarginEconomics}
+        onRowOpenSummary={(row) => {
+          setSummaryRow(row);
+          setSummaryDrawerOpen(true);
+        }}
+        onOpenDetail={(orderId) => navigate(`/sales-orders/${orderId}`)}
+      />
+
+      <SalesOrderQuickSummaryDrawer
+        open={summaryDrawerOpen}
+        row={summaryRow}
+        showMarginEconomics={showMarginEconomics}
+        onClose={() => {
+          setSummaryDrawerOpen(false);
+          setSummaryRow(null);
+        }}
+        onOpenDetail={(orderId) => {
+          setSummaryDrawerOpen(false);
+          navigate(`/sales-orders/${orderId}`);
+        }}
+      />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
         <p className="text-sm text-muted-foreground">
