@@ -18,7 +18,9 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { FINANCE_BI_COLORS } from "@/src/lib/financeBiDashboardTheme";
 import type { FinanceCashFlowAnnualComparisonChartRow } from "@/src/lib/financeCashFlowAnnualComparison";
-import { buildChartBarLabelProps } from "@/src/lib/chartValueLabels";
+import {
+  ChartLineValueLabel,
+} from "@/src/components/finance/shared/ChartValueLabel";
 
 export const FINANCE_CASH_FLOW_ANNUAL_COMPARISON_CHART_HEIGHT = 440;
 
@@ -33,34 +35,100 @@ export const FINANCE_CASH_FLOW_ANNUAL_COMPARISON_COLORS = {
 } as const;
 
 const ANNUAL_CHART_MIN_WIDTH = 960;
+const ANNUAL_CHART_BAR_LABEL_MIN_HEIGHT = 14;
 
-function StackedBarTotalLabel({
-  totalKey,
-  ...props
-}: LabelProps & {
-  totalKey: "cashInTotalAmount" | "cashOutTotalAmount";
-}) {
-  const row = props.payload as FinanceCashFlowAnnualComparisonChartRow | undefined;
-  const value = row?.[totalKey] ?? 0;
-  if (!value || value <= 0) return null;
-  const built = buildChartBarLabelProps({
-    x: props.x as number,
-    y: props.y as number,
-    width: props.width as number,
-    value,
-  });
-  if (!built) return null;
+/** Rótulo dentro do segmento empilhado — oculta quando o trecho é estreito demais. */
+function StackedSegmentValueLabel(
+  props: LabelProps & { fill?: string; minHeight?: number }
+) {
+  const height = Number(props.height ?? 0);
+  const minHeight = props.minHeight ?? ANNUAL_CHART_BAR_LABEL_MIN_HEIGHT;
+  if (height < minHeight) return null;
+
+  const x = Number(props.x ?? 0);
+  const y = Number(props.y ?? 0);
+  const width = Number(props.width ?? 0);
+  const value = Number(props.value ?? 0);
+  if (!Number.isFinite(value) || value === 0) return null;
+
+  const text = formatFinanceCurrencyCompact(value);
+  if (!text) return null;
+
   return (
     <text
-      x={built.x}
-      y={built.y}
-      fill={built.fill}
-      fontSize={9}
+      x={x + width / 2}
+      y={y + height / 2 + 3}
+      fill={props.fill ?? "#FFFFFF"}
+      fontSize={8}
       fontWeight={600}
       textAnchor="middle"
     >
-      {built.text}
+      {text}
     </text>
+  );
+}
+
+function StackTopTotalLabel(props: LabelProps & { total?: number }) {
+  const total = props.total ?? 0;
+  if (!Number.isFinite(total) || total === 0) return null;
+  const x = Number(props.x ?? 0);
+  const y = Number(props.y ?? 0);
+  const width = Number(props.width ?? 0);
+  const text = formatFinanceCurrencyCompact(total);
+  if (!text) return null;
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      fill="#334155"
+      fontSize={9}
+      fontWeight={700}
+      textAnchor="middle"
+    >
+      {text}
+    </text>
+  );
+}
+
+function InflowReceivedLabel(props: LabelProps) {
+  const row = props.payload as FinanceCashFlowAnnualComparisonChartRow | undefined;
+  const open = row?.receivableOpenAmount ?? 0;
+  return (
+    <>
+      <StackedSegmentValueLabel {...props} fill="#FFFFFF" />
+      {open <= 0 ? <StackTopTotalLabel {...props} total={row?.cashInTotalAmount} /> : null}
+    </>
+  );
+}
+
+function InflowOpenLabel(props: LabelProps) {
+  const row = props.payload as FinanceCashFlowAnnualComparisonChartRow | undefined;
+  return (
+    <>
+      <StackedSegmentValueLabel {...props} fill="#065F46" />
+      <StackTopTotalLabel {...props} total={row?.cashInTotalAmount} />
+    </>
+  );
+}
+
+function OutflowPaidLabel(props: LabelProps) {
+  const row = props.payload as FinanceCashFlowAnnualComparisonChartRow | undefined;
+  const open = row?.payableOpenAmount ?? 0;
+  return (
+    <>
+      <StackedSegmentValueLabel {...props} fill="#FFFFFF" />
+      {open <= 0 ? <StackTopTotalLabel {...props} total={row?.cashOutTotalAmount} /> : null}
+    </>
+  );
+}
+
+function OutflowOpenLabel(props: LabelProps) {
+  const row = props.payload as FinanceCashFlowAnnualComparisonChartRow | undefined;
+  return (
+    <>
+      <StackedSegmentValueLabel {...props} fill="#9A3412" />
+      <StackTopTotalLabel {...props} total={row?.cashOutTotalAmount} />
+    </>
   );
 }
 
@@ -165,7 +233,7 @@ export function FinanceCashFlowAnnualComparisonChartView({
         <ResponsiveContainer width="100%" height={height}>
           <ComposedChart
             data={data}
-            margin={{ top: 36, right: 16, left: 4, bottom: 4 }}
+            margin={{ top: 44, right: 16, left: 4, bottom: 4 }}
             barCategoryGap="18%"
             barGap={4}
           >
@@ -192,7 +260,9 @@ export function FinanceCashFlowAnnualComparisonChartView({
               stackId="entradas"
               fill={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_COLORS.receivedAmount}
               maxBarSize={28}
-            />
+            >
+              <LabelList dataKey="receivedAmount" content={<InflowReceivedLabel />} />
+            </Bar>
             <Bar
               dataKey="receivableOpenAmount"
               name={labels.receivableOpenAmount}
@@ -201,9 +271,7 @@ export function FinanceCashFlowAnnualComparisonChartView({
               maxBarSize={28}
               radius={[3, 3, 0, 0]}
             >
-              <LabelList
-                content={<StackedBarTotalLabel totalKey="cashInTotalAmount" />}
-              />
+              <LabelList dataKey="receivableOpenAmount" content={<InflowOpenLabel />} />
             </Bar>
             <Bar
               dataKey="paidAmount"
@@ -211,7 +279,9 @@ export function FinanceCashFlowAnnualComparisonChartView({
               stackId="saidas"
               fill={FINANCE_CASH_FLOW_ANNUAL_COMPARISON_COLORS.paidAmount}
               maxBarSize={28}
-            />
+            >
+              <LabelList dataKey="paidAmount" content={<OutflowPaidLabel />} />
+            </Bar>
             <Bar
               dataKey="payableOpenAmount"
               name={labels.payableOpenAmount}
@@ -220,9 +290,7 @@ export function FinanceCashFlowAnnualComparisonChartView({
               maxBarSize={28}
               radius={[3, 3, 0, 0]}
             >
-              <LabelList
-                content={<StackedBarTotalLabel totalKey="cashOutTotalAmount" />}
-              />
+              <LabelList dataKey="payableOpenAmount" content={<OutflowOpenLabel />} />
             </Bar>
             <Line
               type="monotone"
@@ -232,7 +300,12 @@ export function FinanceCashFlowAnnualComparisonChartView({
               strokeWidth={2.5}
               dot={{ r: 3, fill: FINANCE_CASH_FLOW_ANNUAL_COMPARISON_COLORS.netCashAmount }}
               activeDot={{ r: 5 }}
-            />
+            >
+              <LabelList
+                dataKey="netCashAmount"
+                content={<ChartLineValueLabel fontSize={8} />}
+              />
+            </Line>
             {showGoal ? (
               <Line
                 type="monotone"

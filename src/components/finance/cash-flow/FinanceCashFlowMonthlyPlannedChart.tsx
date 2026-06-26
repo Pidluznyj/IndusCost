@@ -31,7 +31,12 @@ export function FinanceCashFlowMonthlyPlannedChart({
       emptyDescription="Sem dados para montar o fluxo planejado do período filtrado."
       chartHeight={FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT}
     >
-      <FinanceCashFlowPlannedChart data={data} height={FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT} />
+      <FinanceCashFlowPlannedChart
+        data={data}
+        height={FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT}
+        showValueLabels
+        showLineValueLabels
+      />
     </FinanceCashFlowChartShell>
   );
 }

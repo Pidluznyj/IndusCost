@@ -27,7 +27,7 @@ import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
   EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
-  EXECUTIVE_CHART_MARGIN,
+  resolveExecutiveChartMargin,
   EXECUTIVE_CHART_X_TICK,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
@@ -107,7 +107,7 @@ export function ExecutiveSalesOrdersChart({
         testId="executive-sales-orders-chart"
         scenarioText={scenarioText}
       >
-        <ComposedChart width={chartWidth} height={chartHeight} data={data} margin={EXECUTIVE_CHART_MARGIN}>
+        <ComposedChart width={chartWidth} height={chartHeight} data={data} margin={resolveExecutiveChartMargin(pdfMode)}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
               dataKey="name"

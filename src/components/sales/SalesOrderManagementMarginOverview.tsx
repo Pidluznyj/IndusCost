@@ -11,10 +11,6 @@ import {
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
 import type { SalesOrderManagementMarginEconomics } from "@/src/lib/salesOrderManagementTypes";
-import {
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-} from "@/src/lib/salesOrderMarginDisplay";
 import { cn } from "@/src/lib/utils";
 
 function DrillCardButton({
@@ -32,7 +28,7 @@ function DrillCardButton({
       data-testid={testId}
       onClick={onClick}
       className={cn(
-        "text-left rounded-xl w-full transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        "min-w-0 w-full text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
         "cursor-pointer hover:shadow-md"
       )}
     >
@@ -65,16 +61,15 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
       title={SALES_ORDER_MGMT_KPI_SECTIONS.margin.title}
       subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.margin.subtitle}
     >
-      <MetricCardGrid minColumnWidth={180}>
+      <MetricCardGrid minColumnWidth={200}>
         <DrillCardButton
           testId="sales-order-management-margin-percent-card"
           onClick={onOpenEconomicsDetail}
         >
           <MetricCard
             label="Margem %"
-            formattedValue={
-              loading || marginPercent == null ? undefined : formatSalesOrderMarginPercent(marginPercent)
-            }
+            amount={marginPercent}
+            amountFormat="percent"
             variant={resolveMarginPercentVariant(marginPercent)}
             icon={<Percent className="h-4 w-4" />}
             helperText="Ponderada por receita · clique para detalhar"
@@ -88,9 +83,8 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
         >
           <MetricCard
             label="Margem R$"
-            formattedValue={
-              loading || marginValue == null ? undefined : formatSalesOrderMarginMoney(marginValue)
-            }
+            amount={marginValue}
+            amountFormat="currency"
             variant={resolveMarginMoneyVariant(marginValue)}
             icon={<DollarSign className="h-4 w-4" />}
             helperText="Receita líquida − custo estimado"
@@ -100,9 +94,8 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
         </DrillCardButton>
         <MetricCard
           label="Receita líquida"
-          formattedValue={
-            loading || netRevenue == null ? undefined : formatSalesOrderMarginMoney(netRevenue)
-          }
+          amount={netRevenue}
+          amountFormat="currency"
           variant="money"
           icon={<TrendingUp className="h-4 w-4" />}
           helperText="Base da margem consolidada"
@@ -110,9 +103,8 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
         />
         <MetricCard
           label="Custo estimado"
-          formattedValue={
-            loading || totalCost == null ? undefined : formatSalesOrderMarginMoney(totalCost)
-          }
+          amount={totalCost}
+          amountFormat="currency"
           variant="internal"
           icon={<Scale className="h-4 w-4" />}
           loading={loading}

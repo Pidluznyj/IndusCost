@@ -157,9 +157,10 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(css, /executive-report-chart-frame/);
     assert.match(css, /executive-chart-body/);
     assert.match(css, /executive-chart-region/);
-    assert.match(css, /\.executive-report-chart-frame[\s\S]*height:\s*112mm/);
-    assert.match(css, /executive-kpi-grid--compact/);
-    assert.match(css, /max-height:\s*22mm/);
+    assert.match(css, /\.executive-report-chart-frame[\s\S]*height:\s*98mm/);
+    assert.match(css, /executive-section--with-chart/);
+    assert.match(css, /max-height:\s*18mm/);
+    assert.match(css, /max-height:\s*11mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
     assert.match(css, /margin-top:\s*auto/);
@@ -229,6 +230,7 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(document, /Resumo Executivo/);
+    assert.match(document, /withChart/);
     assert.match(document, /Faturamento/);
     assert.match(document, /Contas a Receber/);
     assert.match(document, /Contas a Pagar/);
@@ -290,7 +292,8 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(shell, /data-report-chart/);
     assert.match(shell, /data-chart-ready/);
     assert.match(shell, /executive-report-chart-frame/);
-    assert.match(shell, /minHeight:\s*height/);
+    assert.match(shell, /minHeight:\s*frameHeight/);
+    assert.match(shell, /EXECUTIVE_CHART_PRINT_HEIGHT_PX/);
     assert.match(page, /waitForExecutiveReportChartsReady/);
   });
 

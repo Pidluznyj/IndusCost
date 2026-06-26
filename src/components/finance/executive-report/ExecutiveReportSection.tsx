@@ -12,6 +12,7 @@ export function ExecutiveReportSection({
   children,
   className,
   pageBreakBefore,
+  withChart = false,
 }: {
   id?: string;
   title: string;
@@ -21,6 +22,8 @@ export function ExecutiveReportSection({
   children: React.ReactNode;
   className?: string;
   pageBreakBefore?: boolean;
+  /** Página com gráfico principal — layout mais compacto na impressão. */
+  withChart?: boolean;
 }) {
   return (
     <section
@@ -28,6 +31,7 @@ export function ExecutiveReportSection({
       className={cn(
         financeBiCardClass,
         "finance-executive-report-section executive-section p-6 space-y-4",
+        withChart && "executive-section--with-chart",
         pageBreakBefore && "finance-executive-report-section--page-break",
         className
       )}

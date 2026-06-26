@@ -17,10 +17,6 @@ import { formatCurrency } from "@/src/lib/utils";
 import { cn } from "@/src/lib/utils";
 import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
 import {
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-} from "@/src/lib/salesOrderMarginDisplay";
-import {
   formatOrderCountLabel,
   metricCurrencySubtitle,
   resolveAlertCountVariant,
@@ -121,7 +117,7 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
                   filterHandlers.onToggleLogisticStatus(card.logisticStatus);
               }}
               className={cn(
-                "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary w-full",
+                "min-w-0 w-full text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                 isActive && "ring-2 ring-primary shadow-md"
               )}
             >
@@ -254,14 +250,16 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
       <MetricCardGrid minColumnWidth={200}>
         <MetricCard
           label="Margem R$"
-          formattedValue={formatSalesOrderMarginMoney(consolidated.marginValue)}
+          amount={toFiniteMetricNumber(consolidated.marginValue)}
+          amountFormat="currency"
           variant={resolveMarginMoneyVariant(consolidated.marginValue)}
           icon={<DollarSign className="h-4 w-4" />}
           loading={loading}
         />
         <MetricCard
           label="Margem %"
-          formattedValue={formatSalesOrderMarginPercent(consolidated.marginPercent)}
+          amount={toFiniteMetricNumber(consolidated.marginPercent)}
+          amountFormat="percent"
           variant={resolveMarginPercentVariant(consolidated.marginPercent)}
           icon={<Percent className="h-4 w-4" />}
           helperText="Ponderada por receita líquida do filtro"
@@ -269,14 +267,16 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
         />
         <MetricCard
           label="Custo estimado"
-          formattedValue={formatSalesOrderMarginMoney(consolidated.totalCost)}
+          amount={toFiniteMetricNumber(consolidated.totalCost)}
+          amountFormat="currency"
           variant="internal"
           icon={<Scale className="h-4 w-4" />}
           loading={loading}
         />
         <MetricCard
           label="Receita líquida"
-          formattedValue={formatSalesOrderMarginMoney(consolidated.netRevenue)}
+          amount={toFiniteMetricNumber(consolidated.netRevenue)}
+          amountFormat="currency"
           variant="money"
           icon={<TrendingUp className="h-4 w-4" />}
           loading={loading}
@@ -297,7 +297,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
               data-active={active ? "true" : "false"}
               onClick={() => onToggleMarginStatusFilter(active ? "" : card.key)}
               className={cn(
-                "text-left rounded-xl w-full transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                "min-w-0 w-full text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                 active && "ring-2 ring-primary shadow-md"
               )}
             >

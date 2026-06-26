@@ -88,7 +88,7 @@ function AlertCardButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary w-full",
+        "min-w-0 w-full text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
         !disabled && "cursor-pointer",
         active && "ring-2 ring-primary shadow-md",
         disabled && "cursor-default"
@@ -352,7 +352,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         title={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.subtitle}
       >
-        <MetricCardGrid minColumnWidth={150}>
+        <MetricCardGrid minColumnWidth={160}>
           {alertCards.map((alert) => (
             <AlertCardButton
               key={alert.key}

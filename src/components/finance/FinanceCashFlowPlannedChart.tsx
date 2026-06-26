@@ -28,11 +28,12 @@ import {
   EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
   EXECUTIVE_CHART_LINE_LABEL_SIZE,
-  EXECUTIVE_CHART_MARGIN,
+  resolveExecutiveChartMargin,
   EXECUTIVE_CHART_X_TICK,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
 
 export const FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT = 340;
 
@@ -92,11 +93,12 @@ export function FinanceCashFlowPlannedChart({
   presentation?: "default" | "executive";
 }) {
   const isExecutive = presentation === "executive";
+  const pdfMode = useExecutiveReportPdfMode();
   const showAccumulatedLabels = showLineValueLabels ?? showValueLabels;
   const margin =
     showValueLabels || isExecutive
       ? isExecutive
-        ? EXECUTIVE_CHART_MARGIN
+        ? resolveExecutiveChartMargin(pdfMode)
         : { top: 28, right: 12, left: 0, bottom: 4 }
       : { top: 8, right: 12, left: 0, bottom: 4 };
 

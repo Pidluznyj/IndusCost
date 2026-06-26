@@ -53,14 +53,16 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(secondary, /sales-order-management-logistics/);
     assert.match(secondary, /sales-order-management-economic-summary/);
     assert.match(secondary, /sales-order-margin-drill-/);
-    assert.match(marginOverview, /Margem %/);
-    assert.match(marginOverview, /Margem R\$/);
+    assert.match(marginOverview, /amountFormat="currency"/);
+    assert.match(marginOverview, /amountFormat="percent"/);
   });
 
   it("5. cards principais usam MetricCard oficial com superfície visível", () => {
     const css = read("src/components/ui/metric-card.css");
     const section = read("src/components/sales/SalesOrderKpiSection.tsx");
     assert.match(css, /background:\s*var\(--color-card/);
+    assert.match(css, /metric-card-grid > \*/);
+    assert.match(css, /overflow:\s*hidden/);
     assert.match(css, /box-shadow:/);
     assert.match(section, /data-panel/);
     assert.match(section, /bg-card shadow-sm/);

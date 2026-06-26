@@ -6,6 +6,8 @@ import {
   buildSalesOrderMarginAlerts,
   formatSalesOrderCostSourceLabel,
   formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+  formatSalesOrderMarkup,
   resolveSalesOrderMarginSupportText,
 } from "@/src/lib/salesOrderMarginDisplay";
 import type {
@@ -127,7 +129,9 @@ export function SalesOrderMarginAnalysisSection({
                         <div className="font-mono text-xs text-muted-foreground">{it.skuSnapshot}</div>
                         <div className="max-w-[220px]">{it.productNameSnapshot}</div>
                       </td>
-                      <td className="p-3 text-right font-mono">{formatNumber(it.quantity, 4)}</td>
+                      <td className="p-3 text-right font-mono">
+                        {formatNumber(Number(it.quantity), 4)}
+                      </td>
                       <td className="p-3 text-right font-mono">
                         {formatSalesOrderMarginMoney(it.negotiatedPrice)}
                       </td>

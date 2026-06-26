@@ -494,11 +494,13 @@ describe("financeCashFlowAnnualComparison UI", () => {
     assert.ok(chart.includes("payableOpenAmount"));
   });
 
-  it("18. labels mostram total de entradas e total de saídas", () => {
+  it("18. labels mostram valores por segmento e totais das pilhas", () => {
     const chart = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChartView.tsx");
-    assert.ok(chart.includes("StackedBarTotalLabel"));
-    assert.ok(chart.includes('totalKey="cashInTotalAmount"'));
-    assert.ok(chart.includes('totalKey="cashOutTotalAmount"'));
+    assert.ok(chart.includes("StackedSegmentValueLabel"));
+    assert.ok(chart.includes("StackTopTotalLabel"));
+    assert.ok(chart.includes("InflowReceivedLabel"));
+    assert.ok(chart.includes("OutflowOpenLabel"));
+    assert.ok(chart.includes("ChartLineValueLabel"));
   });
 
   it("19. meta null não quebra o gráfico", () => {

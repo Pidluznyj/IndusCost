@@ -3,7 +3,10 @@
 export const EXECUTIVE_CHART_HEIGHT = 440;
 
 /** Altura mínima do frame em impressão/PDF (A4 paisagem). */
-export const EXECUTIVE_CHART_PRINT_FRAME_HEIGHT = "112mm";
+export const EXECUTIVE_CHART_PRINT_FRAME_HEIGHT = "98mm";
+
+/** Altura do SVG Recharts em px — deve caber no frame de impressão com margens internas. */
+export const EXECUTIVE_CHART_PRINT_HEIGHT_PX = 350;
 
 /** Recharts: desativar animação em relatório executivo (impressão/PDF). */
 export const EXECUTIVE_CHART_IS_ANIMATION_ACTIVE = false;
@@ -14,6 +17,18 @@ export const EXECUTIVE_CHART_MARGIN = {
   left: 12,
   bottom: 16,
 } as const;
+
+/** Margens maiores na base para eixo X + legenda no PDF. */
+export const EXECUTIVE_CHART_PRINT_MARGIN = {
+  top: 22,
+  right: 14,
+  left: 6,
+  bottom: 34,
+} as const;
+
+export function resolveExecutiveChartMargin(pdfMode: boolean) {
+  return pdfMode ? EXECUTIVE_CHART_PRINT_MARGIN : EXECUTIVE_CHART_MARGIN;
+}
 
 export const EXECUTIVE_CHART_X_TICK = {
   fontSize: 13,

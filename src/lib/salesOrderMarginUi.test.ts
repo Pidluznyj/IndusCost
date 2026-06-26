@@ -157,6 +157,8 @@ describe("salesOrderMargin UI", () => {
       "utf8"
     );
     assert.match(analysisSrc, /formatSalesOrderCostSourceLabel/);
+    assert.match(analysisSrc, /formatSalesOrderMarginPercent/);
+    assert.match(analysisSrc, /formatSalesOrderMarkup/);
     assert.match(analysisSrc, /sales-order-item-margin-/);
   });
 

@@ -363,15 +363,131 @@
   }
 
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
-    max-height: 22mm !important;
-    min-height: 18mm !important;
-    padding: 1.5mm 2mm !important;
+    max-height: 18mm !important;
+    min-height: 15mm !important;
+    padding: 1.2mm 1.8mm !important;
   }
 
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .executive-kpi-card-value,
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .commercial-kpi-value,
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .indus-kpi-value {
+    font-size: 10pt !important;
+  }
+
+  /* Páginas com gráfico: KPIs densos + gráfico prioritário */
+  .executive-section--with-chart {
+    padding: 2mm 2.5mm !important;
+    gap: 1mm !important;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .executive-section--with-chart .executive-section-intro,
+  .executive-section--with-chart .finance-executive-report-section-subtitle {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-section-header {
+    margin-bottom: 0.5mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-report-section-title {
     font-size: 11pt !important;
+    margin-bottom: 0 !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-grid.executive-kpi-grid--compact {
+    gap: 1mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card.commercial-kpi-card,
+  .executive-section--with-chart .finance-executive-kpi-card.indus-kpi-card {
+    min-height: 0 !important;
+    max-height: 11mm !important;
+    padding: 0.7mm 1.4mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card button[aria-label] {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card .commercial-kpi-value,
+  .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-value,
+  .executive-section--with-chart .finance-executive-kpi-card .indus-kpi-value {
+    font-size: 8.5pt !important;
+    line-height: 1.05 !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card .text-[11px] {
+    font-size: 5.5pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-label,
+  .executive-section--with-chart .finance-executive-kpi-card [class*="financeBiKpiLabel"] {
+    font-size: 5.5pt !important;
+    line-height: 1.05 !important;
+  }
+
+  .executive-section--with-chart .executive-report-period-meta,
+  .executive-section--with-chart .mt-4 {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .executive-chart-region {
+    margin-top: 0 !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-section--with-chart .executive-chart-region > .executive-chart-shell,
+  .executive-section--with-chart .executive-chart-region > .space-y-2 {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-section--with-chart .executive-chart-title {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .executive-chart-subtitle {
+    font-size: 7pt !important;
+    margin-top: 0 !important;
+    line-height: 1.25 !important;
+  }
+
+  .executive-section--with-chart .executive-chart-shell {
+    padding: 1.5mm 2mm !important;
+    gap: 0.5mm !important;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .executive-section--with-chart .executive-chart-header {
+    margin-bottom: 0.3mm !important;
+  }
+
+  .executive-section--with-chart .executive-chart-scenario {
+    font-size: 6.5pt !important;
+    padding: 1mm 1.5mm !important;
+    margin: 0.3mm 0 !important;
+    line-height: 1.3 !important;
+  }
+
+  .executive-section--with-chart .executive-target-hint {
+    font-size: 6pt !important;
+    margin: 0 0 0.5mm !important;
+  }
+
+  .executive-print-page-body > .executive-section--with-chart {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-hint,
@@ -442,11 +558,11 @@
    */
   .executive-report-chart-frame,
   .executive-chart-body {
-    flex: 0 0 auto !important;
+    flex: 1 1 auto !important;
     width: 100% !important;
-    height: 112mm !important;
-    min-height: 112mm !important;
-    max-height: 112mm !important;
+    height: 98mm !important;
+    min-height: 98mm !important;
+    max-height: 98mm !important;
     overflow: visible !important;
     display: block !important;
   }
@@ -457,7 +573,7 @@
   .executive-chart-body .recharts-wrapper {
     width: 100% !important;
     height: 100% !important;
-    max-height: 112mm !important;
+    max-height: 98mm !important;
   }
 
   .executive-report-chart-frame svg,
@@ -469,7 +585,7 @@
 
   .executive-chart-body .recharts-cartesian-axis-tick text,
   .executive-chart-body .recharts-legend-item-text {
-    font-size: 9pt !important;
+    font-size: 8pt !important;
   }
 
   .executive-chart-scenario {

@@ -10,7 +10,12 @@ import { EXECUTIVE_REPORT_AUTO_TARGET_SHORT } from "@/src/lib/financeExecutiveRe
 
 import { ExecutiveChartScenario } from "@/src/components/finance/executive-report/charts/ExecutiveChartScenario";
 
-import { EXECUTIVE_CHART_HEIGHT } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
+import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
+
+import {
+  EXECUTIVE_CHART_HEIGHT,
+  EXECUTIVE_CHART_PRINT_HEIGHT_PX,
+} from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
 import { ExecutiveChartFrameContext } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
@@ -56,6 +61,9 @@ export function ExecutiveChartShell({
 
 }) {
 
+  const pdfMode = useExecutiveReportPdfMode();
+  const frameHeight = pdfMode ? EXECUTIVE_CHART_PRINT_HEIGHT_PX : height;
+
   const frameRef = useRef<HTMLDivElement>(null);
   const [frameWidth, setFrameWidth] = useState(960);
 
@@ -73,7 +81,7 @@ export function ExecutiveChartShell({
     const observer = new ResizeObserver(updateWidth);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [empty, height, title]);
+  }, [empty, frameHeight, title]);
 
   useEffect(() => {
 
@@ -111,7 +119,7 @@ export function ExecutiveChartShell({
 
     };
 
-  }, [empty, height, title]);
+  }, [empty, frameHeight, title]);
 
 
 
@@ -185,7 +193,7 @@ export function ExecutiveChartShell({
 
       {scenarioText ? <ExecutiveChartScenario text={scenarioText} /> : null}
 
-      <ExecutiveChartFrameContext.Provider value={{ width: frameWidth, height }}>
+      <ExecutiveChartFrameContext.Provider value={{ width: frameWidth, height: frameHeight }}>
 
         <div
 
@@ -195,7 +203,7 @@ export function ExecutiveChartShell({
 
           data-report-chart
 
-          style={{ height, minHeight: height }}
+          style={{ height: frameHeight, minHeight: frameHeight }}
 
         >
 

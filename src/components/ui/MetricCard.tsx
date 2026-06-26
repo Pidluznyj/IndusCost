@@ -91,7 +91,7 @@ export function MetricCard({
       data-variant={variant}
       aria-label={label}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="metric-card-label">{label}</span>
         {icon ? (
           <span className="metric-card-icon-wrap" aria-hidden="true">
@@ -104,7 +104,10 @@ export function MetricCard({
         <div className="metric-card-loading" aria-hidden data-testid="metric-card-loading" />
       ) : (
         <p
-          className={cn("metric-card-value", isCompactDisplay && "metric-card-value--compact")}
+          className={cn(
+            "metric-card-value min-w-0 w-full",
+            isCompactDisplay && "metric-card-value--compact"
+          )}
           title={displayTitle}
           data-testid="metric-card-value"
         >

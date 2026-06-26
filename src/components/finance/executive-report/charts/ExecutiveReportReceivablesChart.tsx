@@ -13,11 +13,12 @@ import { formatExecutiveReportAxisCurrency } from "@/src/lib/financeExecutiveRep
 import { ExecutiveChartShell } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import { useExecutiveChartFrameDimensions } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
+import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
 import {
   EXECUTIVE_CHART_BAR_LABEL_SIZE,
   EXECUTIVE_CHART_IS_ANIMATION_ACTIVE,
   EXECUTIVE_CHART_LEGEND,
-  EXECUTIVE_CHART_MARGIN,
+  resolveExecutiveChartMargin,
   EXECUTIVE_CHART_X_TICK,
   EXECUTIVE_CHART_Y_AXIS_WIDTH,
   EXECUTIVE_CHART_Y_TICK,
@@ -37,6 +38,7 @@ export function ExecutiveReportReceivablesChart({
   scenarioText?: string;
 }) {
   const { width, height } = useExecutiveChartFrameDimensions();
+  const pdfMode = useExecutiveReportPdfMode();
   const data = rows.map((row) => ({
     name: row.monthLabel,
     receivedAmount: row.receivedAmount,
@@ -51,7 +53,7 @@ export function ExecutiveReportReceivablesChart({
       testId="executive-report-receivables-chart"
       scenarioText={scenarioText}
     >
-      <BarChart width={width} height={height} data={data} margin={EXECUTIVE_CHART_MARGIN}>
+      <BarChart width={width} height={height} data={data} margin={resolveExecutiveChartMargin(pdfMode)}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
         <XAxis dataKey="name" interval={0} tick={EXECUTIVE_CHART_X_TICK} axisLine={false} tickLine={false} />
         <YAxis

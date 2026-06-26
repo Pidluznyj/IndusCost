@@ -62,7 +62,7 @@ export function SalesOrderKpiSection({
 
   return (
     <section
-      className={cn(panelClass, panel && "p-4", className)}
+      className={cn(panelClass, panel && "p-4 min-w-0 overflow-hidden", className)}
       data-testid={testId}
       data-panel={panel ? "true" : "false"}
     >
