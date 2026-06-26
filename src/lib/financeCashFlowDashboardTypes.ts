@@ -152,8 +152,9 @@ export type FinanceCashFlowDashboardPayload = {
   referenceDate: string;
   filtersApplied: FinanceCashFlowDashboardFiltersApplied;
   sources: {
-    inflows: "NomusAccountsReceivable";
-    outflows: "NomusAccountsPayable";
+    inflows: typeof import("./financeAccountsReceivableRulesAdapter.js").OFFICIAL_AR_RULES_SOURCE;
+    outflows: typeof import("./financeAccountsPayableRulesAdapter.js").OFFICIAL_AP_RULES_SOURCE;
+    orchestrator: typeof import("./financeCashFlowRulesAdapter.js").OFFICIAL_CF_RULES_SOURCE;
   };
   cards: FinanceCashFlowDashboardCards;
   /** Frases determinísticas para leitura gerencial do caixa (período filtrado). */

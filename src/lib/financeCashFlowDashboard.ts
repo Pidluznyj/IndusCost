@@ -1,7 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import {
-  buildOfficialAccountsReceivableDashboard,
-} from "./financeAccountsReceivableRulesAdapter.js";
+  buildOfficialCashFlowArApDashboardBundle,
+  resolveOfficialCashFlowSources,
+} from "./financeCashFlowRulesAdapter.js";
 import {
   countFinanceArSanitizationInScope,
   decimalFieldToNumber,
@@ -19,9 +20,6 @@ import {
   resolveFinanceApOpenAmount,
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
-import {
-  buildOfficialAccountsPayableDashboard,
-} from "./financeAccountsPayableRulesAdapter.js";
 import {
   countFinanceApSanitizationInScope,
   filterFinanceApManagementReportRows,
@@ -722,10 +720,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate: referenceDate.toISOString(),
     filtersApplied,
     dataSanitization,
-    sources: {
-      inflows: "NomusAccountsReceivable" as const,
-      outflows: "NomusAccountsPayable" as const,
-    },
+    sources: resolveOfficialCashFlowSources(),
     cards: {
       totalReceivableOpen: totalReceivableRounded,
       totalPayableOpen: totalPayableRounded,
@@ -819,34 +814,18 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate
   );
 
-  const arDashPortfolio = buildOfficialAccountsReceivableDashboard({
-    rows: arRows,
-    filters: toCashFlowPortfolioArFilters(filters),
+  const officialDash = buildOfficialCashFlowArApDashboardBundle({
+    arRows,
+    apRows,
+    filters,
     referenceDate,
-    syncCutoff: arSyncCutoff,
+    arSyncCutoff,
+    apSyncCutoff,
   });
-  const apDashPortfolio = buildOfficialAccountsPayableDashboard({
-    rows: apRows,
-    filters: toCashFlowPortfolioApFilters(filters),
-    referenceDate,
-    syncCutoff: apSyncCutoff,
-  });
-  const arDashPeriod = buildOfficialAccountsReceivableDashboard({
-    rows: arRows,
-    filters: toArLoadFilters(filters),
-    referenceDate,
-    syncCutoff: arSyncCutoff,
-    year: filters.year,
-    month: filters.month,
-  });
-  const apDashPeriod = buildOfficialAccountsPayableDashboard({
-    rows: apRows,
-    filters: toApLoadFilters(filters),
-    referenceDate,
-    syncCutoff: apSyncCutoff,
-    year: filters.year,
-    month: filters.month,
-  });
+  const arDashPortfolio = officialDash.arPortfolio;
+  const apDashPortfolio = officialDash.apPortfolio;
+  const arDashPeriod = officialDash.arPeriod;
+  const apDashPeriod = officialDash.apPeriod;
   const ledgerPeriod = computeCashFlowLedgerPeriodTotals(
     filteredAr,
     filteredAp,
