@@ -230,7 +230,8 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Faturamento/);
     assert.match(document, /Contas a Receber/);
     assert.match(document, /Contas a Pagar/);
-    assert.match(document, /Fluxo de Caixa Planejado/);
+    assert.match(document, /Fluxo de Caixa \/ Agenda/);
+    assert.match(document, /executive-report-cash-flow-period-meta/);
     assert.match(document, /Pedidos de Venda/);
     assert.match(document, /Pedidos mês/);
     assert.match(document, /Pedidos YTD/);

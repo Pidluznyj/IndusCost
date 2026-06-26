@@ -221,9 +221,8 @@ function roundExecutiveCashFlowMoney(value: number): number {
 }
 
 /**
- * Gráfico anual de fluxo de caixa no Relatório Presidencial.
- * Cards da seção respeitam o mês filtrado; este gráfico ignora o filtro de mês
- * e sempre monta Jan–Dez do ano selecionado (exceção intencional, como YTD).
+ * Gráfico anual de fluxo de caixa no Relatório Executivo.
+ * Cards e gráfico usam calendarAgenda.annualChart (Jan–Dez do ano; carga anual ignora filtro de mês).
  */
 export function buildExecutiveCashFlowAnnualChart(
   timeline: FinanceCashFlowExecutiveMonthlyRow[],

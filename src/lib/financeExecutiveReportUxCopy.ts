@@ -30,7 +30,7 @@ export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
   "billing-projection": "Compara o que já aconteceu com a previsão até o fim do período.",
   "accounts-receivable": "Mostra os valores que os clientes ainda devem pagar.",
   "accounts-payable": "Mostra as obrigações da empresa com fornecedores.",
-  "cash-flow": "Mostra se o caixa tende a ficar positivo ou negativo.",
+  "cash-flow": "Mostra se o caixa tende a ficar positivo ou negativo no ano selecionado.",
   "sales-orders": "Mostra o volume de pedidos registrados.",
   conclusion: "Principais pontos de atenção para decisão.",
 };
@@ -41,7 +41,7 @@ export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
   "billing-projection": "Realizado, projeção e meta do período.",
   "accounts-receivable": "Valores a receber dos clientes.",
   "accounts-payable": "Valores a pagar a fornecedores.",
-  "cash-flow": "Entradas, saídas e saldo previsto.",
+  "cash-flow": "Entradas, saídas e saldo previsto no ano (jan–dez).",
   "sales-orders": "Pedidos registrados no período.",
   conclusion: "Leitura rápida para apoiar a decisão.",
 };

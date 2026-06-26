@@ -16,19 +16,23 @@ export function ExecutiveCashFlowChart({
   rows,
   empty,
   scenarioText,
+  title,
+  subtitle,
 }: {
   year: number;
   rows: ExecutiveCashFlowChartRow[];
   empty?: boolean;
   scenarioText?: string;
+  title?: string;
+  subtitle?: string;
 }) {
   const data = mapExecutiveCashFlowRowsToPlannedChart(rows);
   const chartHeight = Math.max(EXECUTIVE_CHART_HEIGHT, FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT);
 
   return (
     <ExecutiveChartShell
-      title={`Fluxo de caixa planejado — ${year}`}
-      subtitle={EXECUTIVE_CASH_FLOW_PLANNED_SUBTITLE}
+      title={title ?? `Fluxo de caixa planejado — ${year}`}
+      subtitle={subtitle ?? EXECUTIVE_CASH_FLOW_PLANNED_SUBTITLE}
       empty={empty ?? rows.length === 0}
       testId="executive-cash-flow-chart"
       height={chartHeight}

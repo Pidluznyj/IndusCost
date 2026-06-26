@@ -200,6 +200,19 @@
     line-height: 1.45 !important;
   }
 
+  .executive-report-period-meta {
+    font-size: 7pt !important;
+    color: #64748b !important;
+    margin: 0 0 2.5mm !important;
+    line-height: 1.35 !important;
+    page-break-inside: avoid;
+  }
+
+  .executive-report-period-meta svg {
+    width: 3mm !important;
+    height: 3mm !important;
+  }
+
   .executive-print-cover {
     min-height: 0;
     height: 100%;

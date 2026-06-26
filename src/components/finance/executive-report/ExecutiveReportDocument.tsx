@@ -41,6 +41,11 @@ import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-re
 import { ExecutiveReportReceivablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportReceivablesChart";
 import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportPayablesChart";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
+import { ExecutiveReportPeriodMeta } from "@/src/components/finance/executive-report/ExecutiveReportPeriodMeta";
+import {
+  buildExecutiveReportCashFlowPeriodCopy,
+  buildExecutiveReportCashFlowScenarioReading,
+} from "@/src/lib/financeExecutiveReportCashFlowPeriodCopy";
 import {
   EXECUTIVE_REPORT_SECTION_INTROS,
   EXECUTIVE_REPORT_SECTION_SUBTITLES,
@@ -165,6 +170,7 @@ export function ExecutiveReportDocument({
     month,
   });
   const cashFlowKpis = buildExecutiveReportCashFlowKpis(report.calendarAgenda.annualChart, report.year);
+  const cashFlowPeriodCopy = buildExecutiveReportCashFlowPeriodCopy(report);
 
   const billingComparison = mapBillingMultiYearToBarComparison(
     billingTab.multiYearMonthly,
@@ -227,6 +233,11 @@ export function ExecutiveReportDocument({
 
   const cashFlowChartNarrative = buildExecutiveChartNarrative("cash-flow", {
     cashFlow: cashFlowChart.rows,
+  });
+  const cashFlowScenarioReading = buildExecutiveReportCashFlowScenarioReading({
+    periodCopy: cashFlowPeriodCopy,
+    netTotal: cashFlowKpis.netTotal,
+    chartNarrative: cashFlowChartNarrative,
   });
 
   const salesChartNarrative = buildExecutiveChartNarrative("sales-orders", {
@@ -653,41 +664,45 @@ export function ExecutiveReportDocument({
         <ExecutiveReportSection
           id="cash-flow"
           eyebrow="Caixa"
-          title="Fluxo de Caixa Planejado — Ano"
+          title="Fluxo de Caixa / Agenda"
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cash-flow"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["cash-flow"]}
         >
+          <ExecutiveReportPeriodMeta testId="executive-report-cash-flow-period-meta">
+            {cashFlowPeriodCopy.metadataLine}
+          </ExecutiveReportPeriodMeta>
+
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="Entradas previstas"
               value={formatExecutiveReportPresentationCurrency(cashFlowKpis.totalInflow)}
-              sub={`Ano ${report.year}`}
-              hint={kpiHint("Entradas previstas")}
-              tooltip={kpiHint("Entradas previstas")}
+              sub={cashFlowPeriodCopy.cardSubs.inflow}
+              hint={cashFlowPeriodCopy.cardHints.inflow}
+              tooltip={cashFlowPeriodCopy.cardHints.inflow}
               tone="positive"
             />
             <ExecutiveKpiCard
               label="Saídas previstas"
               value={formatExecutiveReportPresentationCurrency(cashFlowKpis.totalOutflow)}
-              sub={`Ano ${report.year}`}
-              hint={kpiHint("Saídas previstas")}
-              tooltip={kpiHint("Saídas previstas")}
+              sub={cashFlowPeriodCopy.cardSubs.outflow}
+              hint={cashFlowPeriodCopy.cardHints.outflow}
+              tooltip={cashFlowPeriodCopy.cardHints.outflow}
               tone="negative"
             />
             <ExecutiveKpiCard
               label="Saldo líquido"
               value={formatExecutiveReportPresentationCurrency(cashFlowKpis.netTotal)}
-              sub={`Ano ${report.year}`}
-              hint={kpiHint("Saldo líquido")}
-              tooltip={kpiHint("Saldo líquido")}
+              sub={cashFlowPeriodCopy.cardSubs.net}
+              hint={cashFlowPeriodCopy.cardHints.net}
+              tooltip={cashFlowPeriodCopy.cardHints.net}
               tone={cashFlowKpis.netTotal < 0 ? "negative" : "positive"}
             />
             <ExecutiveKpiCard
               label="Saldo acumulado"
               value={formatExecutiveReportPresentationCurrency(cashFlowKpis.finalAccumulated)}
-              sub={`Encerramento ${report.year}`}
-              hint={kpiHint("Saldo acumulado")}
-              tooltip={kpiHint("Saldo acumulado")}
+              sub={cashFlowPeriodCopy.cardSubs.accumulated}
+              hint={cashFlowPeriodCopy.cardHints.accumulated}
+              tooltip={cashFlowPeriodCopy.cardHints.accumulated}
               accent
             />
           </ExecutiveKpiGrid>
@@ -706,7 +721,9 @@ export function ExecutiveReportDocument({
               year={report.year}
               rows={cashFlowChart.rows}
               empty={!cashFlowChart.hasData}
-              scenarioText={cashFlowChartNarrative}
+              title={cashFlowPeriodCopy.chartTitle}
+              subtitle={cashFlowPeriodCopy.chartSubtitle}
+              scenarioText={cashFlowScenarioReading}
             />
           </div>
         </ExecutiveReportSection>
