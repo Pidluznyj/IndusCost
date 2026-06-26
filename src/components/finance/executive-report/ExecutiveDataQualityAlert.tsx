@@ -1,6 +1,8 @@
 import React from "react";
 import type { FinanceExecutiveReportDataQuality } from "@/src/lib/financeExecutiveReportTypes";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { cn } from "@/src/lib/utils";
 import {
   buildExecutiveReportStaleSyncNotices,
   EXECUTIVE_DATA_QUALITY_TITLE,
@@ -28,7 +30,10 @@ export function ExecutiveDataQualityAlert({
 
   return (
     <div
-      className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 space-y-3"
+      className={cn(
+        financeBiCardClass,
+        "border-amber-200 bg-amber-50/90 p-5 text-sm text-amber-950 space-y-3"
+      )}
       data-testid="executive-report-data-quality"
     >
       <p className="font-semibold">{EXECUTIVE_DATA_QUALITY_TITLE}</p>

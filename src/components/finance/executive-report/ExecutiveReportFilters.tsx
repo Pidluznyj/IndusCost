@@ -22,6 +22,8 @@ import {
   financeBiButtonOutlineClass,
   financeBiButtonPrimaryClass,
   financeBiSectionClass,
+  financeBiSubtitleClass,
+  financeBiTitleClass,
 } from "@/src/lib/financeBiDashboardTheme";
 import { Filter } from "lucide-react";
 import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
@@ -68,8 +70,8 @@ export function ExecutiveReportFilters({
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
             {buildFinanceModuleEyebrow("executive-report")}
           </p>
-          <h1 className="text-2xl font-bold text-[#111827]">Relatório Presidencial</h1>
-          <p className="text-sm text-[#6B7280]">{FINANCE_EXECUTIVE_REPORT_SUBTITLE}</p>
+          <h1 className={financeBiTitleClass}>Relatório Presidencial</h1>
+          <p className={financeBiSubtitleClass}>{FINANCE_EXECUTIVE_REPORT_SUBTITLE}</p>
         </div>
         <div className="print-actions flex flex-wrap gap-2 shrink-0">
           <button

@@ -188,8 +188,8 @@ export function ExecutiveReportDocument({
         >
           <ExecutiveKpiGrid columns={4}>
             {billingByYear.map((row) => (
-              <div key={row.year}>
                 <ExecutiveKpiCard
+                  key={row.year}
                   label={`Faturamento mês — ${row.year}`}
                   value={row.formatted}
                   sub={`Ano ${row.year}`}
@@ -198,7 +198,6 @@ export function ExecutiveReportDocument({
                   accent={row.year === report.year}
                   highlight={row.year === report.year}
                 />
-              </div>
             ))}
             <ExecutiveKpiCard
               label="Atingimento meta mês"

@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
+import "@/src/styles/indus-kpi-grid.css";
 
 export function ExecutiveKpiGrid({
   children,
@@ -12,7 +13,10 @@ export function ExecutiveKpiGrid({
 }) {
   return (
     <div
-      className={cn("finance-executive-kpi-grid executive-kpi-grid", className)}
+      className={cn(
+        "indus-kpi-grid finance-executive-kpi-grid executive-kpi-grid",
+        className
+      )}
       data-columns={columns}
     >
       {children}

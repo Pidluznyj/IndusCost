@@ -333,6 +333,7 @@
   }
 
   .executive-kpi-grid,
+  .indus-kpi-grid.finance-executive-kpi-grid,
   .finance-executive-kpi-grid {
     break-inside: avoid;
     page-break-inside: avoid;
@@ -344,7 +345,8 @@
     grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   }
 
-  .finance-executive-kpi-card {
+  .finance-executive-kpi-card,
+  .finance-executive-kpi-card.commercial-kpi-card {
     break-inside: avoid;
     page-break-inside: avoid;
     min-height: auto !important;
@@ -352,9 +354,15 @@
     border-radius: 1.5mm !important;
   }
 
-  .finance-executive-kpi-value {
+  .finance-executive-kpi-card .commercial-kpi-value,
+  .finance-executive-kpi-card .indus-kpi-value {
     font-size: 13pt !important;
     white-space: nowrap;
+  }
+
+  .finance-executive-kpi-card .finance-bi-kpi-label,
+  .finance-executive-kpi-card [class*="financeBiKpiLabel"] {
+    font-size: 6.5pt !important;
   }
 
   .finance-executive-kpi-label {

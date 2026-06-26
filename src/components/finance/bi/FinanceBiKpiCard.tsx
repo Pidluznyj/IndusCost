@@ -30,6 +30,7 @@ export function FinanceBiKpiCard({
   colorClass = "text-[#111827]",
   valueClassName,
   labelClassName,
+  className,
   loading = false,
 }: {
   icon?: React.ElementType;
@@ -48,6 +49,7 @@ export function FinanceBiKpiCard({
   colorClass?: string;
   valueClassName?: string;
   labelClassName?: string;
+  className?: string;
   loading?: boolean;
 }) {
   let displayValue = value;
@@ -69,7 +71,8 @@ export function FinanceBiKpiCard({
     <div
       className={cn(
         financeBiCardClass,
-        "indus-kpi-card commercial-kpi-card p-5 space-y-3 min-h-[9.5rem]"
+        "indus-kpi-card commercial-kpi-card p-5 space-y-3 min-h-[9.5rem]",
+        className
       )}
     >
       <div className="flex items-start justify-between gap-2">

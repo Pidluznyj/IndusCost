@@ -1,5 +1,13 @@
 import React from "react";
+import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { cn } from "@/src/lib/utils";
+
+const TONE_COLOR_CLASS = {
+  default: "text-[#111827]",
+  neutral: "text-[#111827]",
+  positive: "text-[#059669]",
+  negative: "text-[#DC2626]",
+} as const;
 
 export function ExecutiveKpiCard({
   label,
@@ -15,43 +23,35 @@ export function ExecutiveKpiCard({
   label: string;
   value: string;
   sub?: string;
-  /** Texto explicativo visível abaixo do valor */
+  /** Texto explicativo — exibido no tooltip de cálculo */
   hint?: string;
-  /** Tooltip ao passar o mouse — “O que é isso?” */
+  /** Alias de hint para compatibilidade */
   tooltip?: string;
   className?: string;
   accent?: boolean;
   highlight?: boolean;
   tone?: "default" | "positive" | "negative" | "neutral";
 }) {
-  const title = tooltip ?? hint;
+  const calcHint = hint ?? tooltip;
+
   return (
-    <div
+    <FinanceBiKpiCard
+      label={label}
+      value={value}
+      valueTitle={value}
+      sub={sub}
+      hint={calcHint}
+      colorClass={TONE_COLOR_CLASS[tone]}
+      labelClassName="normal-case tracking-normal font-semibold text-[11px]"
+      valueClassName="text-xl font-semibold sm:text-2xl"
       className={cn(
         "finance-executive-kpi-card",
-        accent && "finance-executive-kpi-card--accent",
-        highlight && "finance-executive-kpi-card--highlight",
-        tone === "positive" && "finance-executive-kpi-card--positive",
-        tone === "negative" && "finance-executive-kpi-card--negative",
+        accent && "border-[#2563EB]/35 bg-[#2563EB]/[0.03]",
+        highlight && "ring-1 ring-[#111827]/10",
+        tone === "positive" && !accent && "border-[#059669]/25",
+        tone === "negative" && !accent && "border-[#DC2626]/25",
         className
       )}
-    >
-      <span className="finance-executive-kpi-label" title={title}>
-        {label}
-      </span>
-      <span className="finance-executive-kpi-value" title={value}>
-        {value}
-      </span>
-      {sub ? <span className="finance-executive-kpi-sub">{sub}</span> : null}
-      {hint ? (
-        <span className="finance-executive-kpi-hint" title={tooltip}>
-          {hint}
-        </span>
-      ) : tooltip ? (
-        <span className="finance-executive-kpi-hint finance-executive-kpi-hint--tooltip-only" title={tooltip}>
-          {tooltip}
-        </span>
-      ) : null}
-    </div>
+    />
   );
 }

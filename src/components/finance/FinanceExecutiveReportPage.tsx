@@ -29,6 +29,8 @@ import {
   FinanceModulePageLoading,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { financeBiCardClass, financeBiShellClass } from "@/src/lib/financeBiDashboardTheme";
+import { cn } from "@/src/lib/utils";
 
 const ROUTE_BODY_CLASS = "finance-executive-report-route";
 
@@ -171,7 +173,10 @@ export function FinanceExecutiveReportPage() {
   }
 
   return (
-    <div className="finance-executive-report-page space-y-6" data-testid="executive-report-page">
+    <div
+      className={cn("finance-executive-report-page", financeBiShellClass, "space-y-6")}
+      data-testid="executive-report-page"
+    >
       <ExecutiveReportFilters
         draft={draftFilters}
         onChange={setDraftFilters}
@@ -206,7 +211,10 @@ export function FinanceExecutiveReportPage() {
 
       {loading && report ? (
         <div
-          className="executive-report-loading-banner executive-report-screen-only finance-executive-report-print-no-print"
+          className={cn(
+            financeBiCardClass,
+            "executive-report-loading-banner executive-report-screen-only finance-executive-report-print-no-print border-[#2563EB]/25 bg-[#2563EB]/5 px-4 py-3 text-sm font-semibold text-[#2563EB]"
+          )}
           data-testid="executive-report-loading-banner"
           role="status"
         >
