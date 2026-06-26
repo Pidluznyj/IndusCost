@@ -8,6 +8,11 @@ export const SALES_ORDER_MGMT_KPI_SECTIONS = {
     title: "Visão Geral",
     subtitle: "Indicadores principais do filtro atual.",
   },
+  margin: {
+    title: "Margem do filtro",
+    subtitle:
+      "Consolidado econômico dos pedidos filtrados (dados internos). Clique em Margem % ou R$ para detalhar.",
+  },
   alerts: {
     title: "Alertas",
     subtitle: "Pedidos que precisam de ação ou revisão. Clique para filtrar quando disponível.",

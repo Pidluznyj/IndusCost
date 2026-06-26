@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   DollarSign,
@@ -11,6 +11,9 @@ import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { SalesOrderManagementKpiSecondaryPanel } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
+import type { SalesOrderManagementSecondaryTab } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
+import { SalesOrderManagementMarginOverview } from "@/src/components/sales/SalesOrderManagementMarginOverview";
+import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
 import {
   formatOrderCountLabel,
   resolveAlertCountVariant,
@@ -50,6 +53,7 @@ export type SalesOrderManagementKpiFilterHandlers = {
   onToggleCutFilter: (value: "true" | "") => void;
   onToggleOverdueOnly: (value: boolean) => void;
   onTogglePartialOrCut: (value: boolean) => void;
+  onToggleMarginStatusFilter: (status: SalesOrderMarginStatusFilter) => void;
 };
 
 export type SalesOrderManagementKpiFilterState = {
@@ -59,6 +63,7 @@ export type SalesOrderManagementKpiFilterState = {
   cutFilter: string;
   overdueOnly: boolean;
   partialOrCut: boolean;
+  marginStatusFilter: SalesOrderMarginStatusFilter;
 };
 
 function AlertCardButton({
@@ -120,6 +125,27 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
   validPortfolioValue: number | null;
 }) {
   const busy = loading || !!loadError;
+  const secondaryPanelRef = useRef<HTMLElement>(null);
+  const [secondaryTab, setSecondaryTab] = useState<SalesOrderManagementSecondaryTab>("logistics");
+  const showMarginOverview = Boolean(marginEconomics?.consolidated) || loading;
+
+  const openEconomicsDetail = useCallback(() => {
+    setSecondaryTab("economics");
+    requestAnimationFrame(() => {
+      secondaryPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
+  const openMarginStatusDrillDown = useCallback(
+    (status: SalesOrderMarginStatusFilter) => {
+      setSecondaryTab("economics");
+      filterHandlers.onToggleMarginStatusFilter(status);
+      requestAnimationFrame(() => {
+        secondaryPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [filterHandlers]
+  );
 
   const alertCards = useMemo(() => {
     const pendingLate = toFiniteMetricNumber(fulfillmentKpis?.pendingLate);
@@ -182,24 +208,38 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         label: "Margem negativa",
         count: negativeMargin,
         variant: resolveNegativeMarginCountVariant(negativeMargin),
-        filterable: false,
-        active: false,
+        filterable: true,
+        active: filterState.marginStatusFilter === "MARGEM_NEGATIVA",
+        onClick: () =>
+          openMarginStatusDrillDown(
+            filterState.marginStatusFilter === "MARGEM_NEGATIVA" ? "" : "MARGEM_NEGATIVA"
+          ),
       },
       {
         key: "withoutCost" as AlertFilterKey,
         label: "Sem custo",
         count: withoutCost,
         variant: resolveAlertCountVariant(withoutCost),
-        filterable: false,
-        active: false,
+        filterable: true,
+        active: filterState.marginStatusFilter === "SEM_CUSTO",
+        onClick: () =>
+          openMarginStatusDrillDown(
+            filterState.marginStatusFilter === "SEM_CUSTO" ? "" : "SEM_CUSTO"
+          ),
       },
       {
         key: "withoutProduct" as AlertFilterKey,
         label: "Sem produto",
         count: withoutProduct,
         variant: resolveAlertCountVariant(withoutProduct),
-        filterable: false,
-        active: false,
+        filterable: true,
+        active: filterState.marginStatusFilter === "SEM_PRODUTO_VINCULADO",
+        onClick: () =>
+          openMarginStatusDrillDown(
+            filterState.marginStatusFilter === "SEM_PRODUTO_VINCULADO"
+              ? ""
+              : "SEM_PRODUTO_VINCULADO"
+          ),
       },
       {
         key: "overdueOnly" as const,
@@ -229,6 +269,8 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
     filterState.partialOrCut,
     filterState.reviewDataFilter,
     filterState.selectedLogisticStatus,
+    filterState.marginStatusFilter,
+    openMarginStatusDrillDown,
     logisticCards,
     fulfillmentKpis,
     marginEconomics,
@@ -297,6 +339,14 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         </MetricCardGrid>
       </SalesOrderKpiSection>
 
+      {showMarginOverview ? (
+        <SalesOrderManagementMarginOverview
+          marginEconomics={marginEconomics}
+          loading={loading}
+          onOpenEconomicsDetail={openEconomicsDetail}
+        />
+      ) : null}
+
       <SalesOrderKpiSection
         testId="sales-order-management-alerts"
         title={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.title}
@@ -337,9 +387,13 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         marginEconomics={marginEconomics}
         displayDashboardCards={displayDashboardCards}
         selectedLogisticStatus={filterState.selectedLogisticStatus}
+        marginStatusFilter={filterState.marginStatusFilter}
         filterHandlers={filterHandlers}
         validPortfolioCount={validPortfolioCount}
         validPortfolioValue={validPortfolioValue}
+        activeTab={secondaryTab}
+        onActiveTabChange={setSecondaryTab}
+        sectionRef={secondaryPanelRef}
       />
     </div>
   );

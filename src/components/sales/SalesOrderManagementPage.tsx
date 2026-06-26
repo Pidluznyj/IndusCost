@@ -67,6 +67,8 @@ import {
 } from "@/src/lib/salesOrderInternalMarginExportUi";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 import { SalesOrderManagementFiltersBar } from "@/src/components/sales/SalesOrderManagementFiltersBar";
+import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
+import { SALES_ORDER_MARGIN_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementMargin";
 import {
   buildAdvancedFilterChips,
   countActiveAdvancedFilters,
@@ -150,6 +152,7 @@ export function SalesOrderManagementPage() {
   const [invoiceCoverage, setInvoiceCoverage] = useState("");
   const [reviewDataFilter, setReviewDataFilter] = useState("");
   const [cutFilter, setCutFilter] = useState("");
+  const [marginStatusFilter, setMarginStatusFilter] = useState<SalesOrderMarginStatusFilter>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
@@ -214,6 +217,7 @@ export function SalesOrderManagementPage() {
     if (reviewDataFilter === "false") params.set("needsDataReview", "false");
     if (cutFilter === "true") params.set("hasCut", "true");
     if (cutFilter === "false") params.set("hasCut", "false");
+    if (marginStatusFilter) params.set("marginStatus", marginStatusFilter);
     if (invoiceNumber.trim()) params.set("invoiceNumber", invoiceNumber.trim());
     if (search) params.set("q", search);
     if (sortBy) params.set("sortBy", sortBy);
@@ -248,6 +252,7 @@ export function SalesOrderManagementPage() {
     invoiceCoverage,
     reviewDataFilter,
     cutFilter,
+    marginStatusFilter,
     invoiceNumber,
     search,
     sortBy,
@@ -365,6 +370,10 @@ export function SalesOrderManagementPage() {
         setPartialOrCut(value);
         setPage(1);
       },
+      onToggleMarginStatusFilter: (status) => {
+        setMarginStatusFilter(status);
+        setPage(1);
+      },
     };
   }, []);
 
@@ -376,6 +385,7 @@ export function SalesOrderManagementPage() {
       cutFilter,
       overdueOnly,
       partialOrCut,
+      marginStatusFilter,
     }),
     [
       selectedManagementStatus,
@@ -384,6 +394,7 @@ export function SalesOrderManagementPage() {
       cutFilter,
       overdueOnly,
       partialOrCut,
+      marginStatusFilter,
     ]
   );
 
@@ -830,6 +841,32 @@ export function SalesOrderManagementPage() {
             className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium hover:bg-muted"
           >
             Limpar filtro do card
+          </button>
+        </div>
+      ) : null}
+
+      {marginStatusFilter ? (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-violet-300/50 bg-violet-50/80 px-4 py-2 text-sm"
+          data-testid="sales-order-management-margin-status-filter-chip"
+        >
+          <span>
+            Exibindo pedidos com status de margem:{" "}
+            <span className="font-semibold">
+              {SALES_ORDER_MARGIN_STATUS_FILTER_OPTIONS.find((o) => o.value === marginStatusFilter)
+                ?.label ?? marginStatusFilter}
+            </span>
+          </span>
+          <button
+            type="button"
+            data-testid="clear-management-margin-status-filter"
+            onClick={() => {
+              setMarginStatusFilter("");
+              setPage(1);
+            }}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium hover:bg-muted"
+          >
+            Limpar filtro de margem
           </button>
         </div>
       ) : null}

@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useState, type RefObject } from "react";
 import {
   AlertTriangle,
   Clock,
@@ -8,19 +8,27 @@ import {
   Percent,
   Receipt,
   Scale,
+  TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import { formatCurrency } from "@/src/lib/utils";
 import { cn } from "@/src/lib/utils";
+import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
+import {
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+} from "@/src/lib/salesOrderMarginDisplay";
 import {
   formatOrderCountLabel,
   metricCurrencySubtitle,
+  resolveAlertCountVariant,
   resolveFulfillmentKpiVariant,
   resolveLogisticStatusCardVariant,
   resolveMarginMoneyVariant,
   resolveMarginPercentVariant,
+  resolveNegativeMarginCountVariant,
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
 import { SALES_ORDER_MGMT_KPI_SECTIONS } from "@/src/lib/salesOrderManagementKpiLabels";
@@ -35,6 +43,8 @@ import type {
 } from "@/src/lib/salesOrderManagementStatus";
 import type { SalesOrderManagementKpiFilterHandlers } from "@/src/components/sales/SalesOrderManagementKpiDashboard";
 
+export type SalesOrderManagementSecondaryTab = "logistics" | "economics" | "fulfillment";
+
 const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   total: Package,
   deliveredOnTime: Receipt,
@@ -45,7 +55,7 @@ const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   reviewData: FileText,
 };
 
-type SecondaryTab = "logistics" | "economics" | "fulfillment";
+type SecondaryTab = SalesOrderManagementSecondaryTab;
 
 const TAB_LABELS: Record<SecondaryTab, string> = {
   logistics: "Logística",
@@ -193,11 +203,15 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
 type EconomicsBlockProps = {
   marginEconomics: SalesOrderManagementMarginEconomics | null;
   loading: boolean;
+  marginStatusFilter: SalesOrderMarginStatusFilter;
+  onToggleMarginStatusFilter: (status: SalesOrderMarginStatusFilter) => void;
 };
 
 const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
   marginEconomics,
   loading,
+  marginStatusFilter,
+  onToggleMarginStatusFilter,
 }: EconomicsBlockProps) {
   if (!marginEconomics?.consolidated) {
     return (
@@ -207,6 +221,31 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
     );
   }
 
+  const consolidated = marginEconomics.consolidated;
+  const drillCards = [
+    {
+      key: "MARGEM_NEGATIVA" as const,
+      label: "Margem negativa",
+      count: marginEconomics.ordersWithNegativeMargin,
+      variant: resolveNegativeMarginCountVariant(marginEconomics.ordersWithNegativeMargin),
+      helper: "Filtrar pedidos com margem negativa",
+    },
+    {
+      key: "SEM_CUSTO" as const,
+      label: "Sem custo",
+      count: marginEconomics.ordersWithoutCost,
+      variant: resolveAlertCountVariant(marginEconomics.ordersWithoutCost),
+      helper: "Filtrar pedidos com item sem custo",
+    },
+    {
+      key: "SEM_PRODUTO_VINCULADO" as const,
+      label: "Sem produto",
+      count: marginEconomics.ordersWithoutProduct,
+      variant: resolveAlertCountVariant(marginEconomics.ordersWithoutProduct),
+      helper: "Filtrar pedidos com item sem produto",
+    },
+  ];
+
   return (
     <div data-testid="sales-order-management-economic-summary">
       {marginEconomics.scopeNote ? (
@@ -215,30 +254,95 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
       <MetricCardGrid minColumnWidth={200}>
         <MetricCard
           label="Margem R$"
-          amount={toFiniteMetricNumber(marginEconomics.consolidated.marginValue)}
-          amountFormat="currency"
-          variant={resolveMarginMoneyVariant(marginEconomics.consolidated.marginValue)}
+          formattedValue={formatSalesOrderMarginMoney(consolidated.marginValue)}
+          variant={resolveMarginMoneyVariant(consolidated.marginValue)}
           icon={<DollarSign className="h-4 w-4" />}
           loading={loading}
         />
         <MetricCard
           label="Margem %"
-          amount={toFiniteMetricNumber(marginEconomics.consolidated.marginPercent)}
-          amountFormat="percent"
-          variant={resolveMarginPercentVariant(marginEconomics.consolidated.marginPercent)}
+          formattedValue={formatSalesOrderMarginPercent(consolidated.marginPercent)}
+          variant={resolveMarginPercentVariant(consolidated.marginPercent)}
           icon={<Percent className="h-4 w-4" />}
           helperText="Ponderada por receita líquida do filtro"
           loading={loading}
         />
         <MetricCard
           label="Custo estimado"
-          amount={toFiniteMetricNumber(marginEconomics.consolidated.totalCost)}
-          amountFormat="currency"
+          formattedValue={formatSalesOrderMarginMoney(consolidated.totalCost)}
           variant="internal"
           icon={<Scale className="h-4 w-4" />}
           loading={loading}
         />
+        <MetricCard
+          label="Receita líquida"
+          formattedValue={formatSalesOrderMarginMoney(consolidated.netRevenue)}
+          variant="money"
+          icon={<TrendingUp className="h-4 w-4" />}
+          loading={loading}
+        />
       </MetricCardGrid>
+
+      <p className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Drill-down por status de margem
+      </p>
+      <MetricCardGrid minColumnWidth={150}>
+        {drillCards.map((card) => {
+          const active = marginStatusFilter === card.key;
+          return (
+            <button
+              key={card.key}
+              type="button"
+              data-testid={`sales-order-margin-drill-${card.key.toLowerCase()}`}
+              data-active={active ? "true" : "false"}
+              onClick={() => onToggleMarginStatusFilter(active ? "" : card.key)}
+              className={cn(
+                "text-left rounded-xl w-full transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                active && "ring-2 ring-primary shadow-md"
+              )}
+            >
+              <MetricCard
+                label={card.label}
+                formattedValue={formatOrderCountLabel(card.count)}
+                helperText={card.helper}
+                variant={card.variant}
+                icon={<AlertTriangle className="h-4 w-4" />}
+                compact
+                loading={loading}
+                className="h-full"
+              />
+            </button>
+          );
+        })}
+      </MetricCardGrid>
+
+      {marginEconomics.itemCounts.itemsWithoutCost > 0 ||
+      marginEconomics.itemCounts.itemsWithoutProduct > 0 ||
+      marginEconomics.itemCounts.itemsWithNegativeMargin > 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Itens no filtro:{" "}
+          {marginEconomics.itemCounts.itemsWithNegativeMargin > 0 ? (
+            <span className="font-medium text-foreground">
+              {marginEconomics.itemCounts.itemsWithNegativeMargin} com margem negativa
+            </span>
+          ) : null}
+          {marginEconomics.itemCounts.itemsWithoutCost > 0 ? (
+            <span className="font-medium text-foreground">
+              {marginEconomics.itemCounts.itemsWithNegativeMargin > 0 ? " · " : ""}
+              {marginEconomics.itemCounts.itemsWithoutCost} sem custo
+            </span>
+          ) : null}
+          {marginEconomics.itemCounts.itemsWithoutProduct > 0 ? (
+            <span className="font-medium text-foreground">
+              {(marginEconomics.itemCounts.itemsWithNegativeMargin > 0 ||
+                marginEconomics.itemCounts.itemsWithoutCost > 0)
+                ? " · "
+                : ""}
+              {marginEconomics.itemCounts.itemsWithoutProduct} sem produto
+            </span>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 });
@@ -311,9 +415,13 @@ export const SalesOrderManagementKpiSecondaryPanel = memo(function SalesOrderMan
   marginEconomics,
   displayDashboardCards,
   selectedLogisticStatus,
+  marginStatusFilter,
   filterHandlers,
   validPortfolioCount,
   validPortfolioValue,
+  activeTab: controlledTab,
+  onActiveTabChange,
+  sectionRef,
 }: {
   loading: boolean;
   loadError: string | null;
@@ -321,17 +429,23 @@ export const SalesOrderManagementKpiSecondaryPanel = memo(function SalesOrderMan
   marginEconomics: SalesOrderManagementMarginEconomics | null;
   displayDashboardCards: ManagementDashboardCard[];
   selectedLogisticStatus: ManagementStatusCardId | "";
+  marginStatusFilter: SalesOrderMarginStatusFilter;
   filterHandlers: SalesOrderManagementKpiFilterHandlers;
   validPortfolioCount: number | null;
   validPortfolioValue: number | null;
+  activeTab?: SecondaryTab;
+  onActiveTabChange?: (tab: SecondaryTab) => void;
+  sectionRef?: RefObject<HTMLElement | null>;
 }) {
-  const [activeTab, setActiveTab] = useState<SecondaryTab>("logistics");
+  const [internalTab, setInternalTab] = useState<SecondaryTab>("logistics");
   const [mountedTabs, setMountedTabs] = useState<Set<SecondaryTab>>(() => new Set(["logistics"]));
+  const activeTab = controlledTab ?? internalTab;
   const busy = loading || !!loadError;
   const showEconomics = Boolean(marginEconomics?.consolidated);
 
   const selectTab = (tab: SecondaryTab) => {
-    setActiveTab(tab);
+    if (onActiveTabChange) onActiveTabChange(tab);
+    else setInternalTab(tab);
     setMountedTabs((prev) => {
       if (prev.has(tab)) return prev;
       const next = new Set(prev);
@@ -340,8 +454,20 @@ export const SalesOrderManagementKpiSecondaryPanel = memo(function SalesOrderMan
     });
   };
 
+  useEffect(() => {
+    if (controlledTab) {
+      setMountedTabs((prev) => {
+        if (prev.has(controlledTab)) return prev;
+        const next = new Set(prev);
+        next.add(controlledTab);
+        return next;
+      });
+    }
+  }, [controlledTab]);
+
   return (
     <section
+      ref={sectionRef}
       data-testid="sales-order-management-secondary"
       className="rounded-xl border border-border bg-card shadow-sm p-4"
     >
@@ -395,7 +521,12 @@ export const SalesOrderManagementKpiSecondaryPanel = memo(function SalesOrderMan
           />
         ) : null}
         {mountedTabs.has("economics") && activeTab === "economics" && showEconomics ? (
-          <EconomicsKpiBlock marginEconomics={marginEconomics} loading={loading} />
+          <EconomicsKpiBlock
+            marginEconomics={marginEconomics}
+            loading={loading}
+            marginStatusFilter={marginStatusFilter}
+            onToggleMarginStatusFilter={filterHandlers.onToggleMarginStatusFilter}
+          />
         ) : null}
         {mountedTabs.has("fulfillment") && activeTab === "fulfillment" ? (
           <FulfillmentKpiBlock busy={busy} fulfillmentKpis={fulfillmentKpis} loading={loading} />
