@@ -76,16 +76,18 @@ describe("salesOrderManagementPage", () => {
 
   it("filtros existem incluindo NF e OP", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const bar = read("src/components/sales/SalesOrderManagementFiltersBar.tsx");
     assert.match(page, /operationalStatus/);
     assert.match(page, /deadlineStatus/);
     assert.match(page, /completionStatus/);
     assert.match(page, /billingStatus/);
     assert.match(page, /productionFilter/);
     assert.match(page, /withRisk/);
-    assert.match(page, /CustomerAutocompleteFilter/);
+    assert.match(bar, /CustomerAutocompleteFilter/);
     assert.match(page, /invoiceAfterDeadline/);
     assert.match(page, /partialOrCut/);
     assert.match(page, /noProductionOrder/);
+    assert.match(page, /SalesOrderManagementFiltersBar/);
   });
 
   it("tabela não exibe colunas de alertas nem ação sugerida", () => {
@@ -176,8 +178,9 @@ describe("salesOrderManagementPage", () => {
 
   it("renderiza Busca inteligente com debounce e q na API", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Busca inteligente/);
-    assert.match(page, /sales-order-management-smart-search/);
+    const bar = read("src/components/sales/SalesOrderManagementFiltersBar.tsx");
+    assert.match(bar, /Busca inteligente/);
+    assert.match(bar, /sales-order-management-smart-search/);
     assert.match(page, /params\.set\("q", search\)/);
     assert.match(page, /setSearchDraft\(""\)/);
   });

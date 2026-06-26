@@ -11,11 +11,9 @@ import {
   Receipt,
   Scale,
   TrendingDown,
-  Download,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
-import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
@@ -51,23 +49,12 @@ import {
   type ManagementStatusCardId,
 } from "@/src/lib/salesOrderManagementStatus";
 import {
-  BILLING_STATUS_FILTER_OPTIONS,
-  COMPLETION_STATUS_FILTER_OPTIONS,
   COMPLETION_STATUS_LABELS,
-  CUT_FILTER_OPTIONS,
-  DEADLINE_STATUS_FILTER_OPTIONS,
-  FULFILLMENT_FILTER_OPTIONS,
   formatDeadlineBadge,
   formatInvoiceBadge,
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
-  INVOICE_COVERAGE_FILTER_OPTIONS,
-  INVOICE_FILTER_OPTIONS,
-  OPERATIONAL_STATUS_FILTER_OPTIONS,
-  PRAZO_FILTER_OPTIONS,
-  PRODUCTION_ORDER_FILTER_OPTIONS,
-  REVIEW_DATA_FILTER_OPTIONS,
 } from "@/src/lib/salesOrderManagementUi";
 import type {
   SalesOrderFulfillmentCharts,
@@ -90,6 +77,12 @@ import {
   getSalesOrderManagementInternalMarginExportUrl,
 } from "@/src/lib/salesOrderInternalMarginExportUi";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
+import { SalesOrderManagementFiltersBar } from "@/src/components/sales/SalesOrderManagementFiltersBar";
+import {
+  buildAdvancedFilterChips,
+  countActiveAdvancedFilters,
+  type SalesOrderManagementAdvancedFilterChip,
+} from "@/src/lib/salesOrderManagementFilterUx";
 
 const TABLE_COLSPAN = 21;
 
@@ -180,6 +173,7 @@ export function SalesOrderManagementPage() {
   const [marginEconomics, setMarginEconomics] =
     useState<SalesOrderManagementMarginEconomics | null>(null);
   const [exportingInternal, setExportingInternal] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<SalesOrderManagementRow | null>(null);
@@ -402,6 +396,171 @@ export function SalesOrderManagementPage() {
   const sortIndicator = (key: SalesOrderManagementSortKey) =>
     sortBy === key ? (sortDir === "asc" ? " ↑" : " ↓") : "";
 
+  const advancedFilterState = useMemo(
+    () => ({
+      customerId,
+      customerLabel: customerSelection?.label ?? null,
+      responsible,
+      companyIssuer,
+      operationalStatus,
+      deadlineStatus,
+      completionStatus,
+      billingStatus,
+      invoiceFilter,
+      productionFilter,
+      deliveryYear,
+      deliveryMonth,
+      nfeYear,
+      nfeMonth,
+      prazoFilter,
+      fulfillmentFilter,
+      invoiceCoverage,
+      reviewDataFilter,
+      cutFilter,
+      invoiceNumber,
+    }),
+    [
+      customerId,
+      customerSelection?.label,
+      responsible,
+      companyIssuer,
+      operationalStatus,
+      deadlineStatus,
+      completionStatus,
+      billingStatus,
+      invoiceFilter,
+      productionFilter,
+      deliveryYear,
+      deliveryMonth,
+      nfeYear,
+      nfeMonth,
+      prazoFilter,
+      fulfillmentFilter,
+      invoiceCoverage,
+      reviewDataFilter,
+      cutFilter,
+      invoiceNumber,
+    ]
+  );
+
+  const advancedActiveCount = useMemo(
+    () => countActiveAdvancedFilters(advancedFilterState),
+    [advancedFilterState]
+  );
+
+  const advancedFilterChips = useMemo(
+    () => buildAdvancedFilterChips(advancedFilterState),
+    [advancedFilterState]
+  );
+
+  const resetPage = useCallback(() => setPage(1), []);
+
+  const clearAllFilters = useCallback(() => {
+    setYear(String(currentYear));
+    setMonth("");
+    setCustomerId("");
+    setCustomerSelection(null);
+    setResponsible("");
+    setCompanyIssuer("");
+    setOperationalStatus("");
+    setDeadlineStatus("");
+    setCompletionStatus("");
+    setBillingStatus("");
+    setInvoiceFilter("");
+    setProductionFilter("");
+    setWithRisk(false);
+    setOverdueOnly(false);
+    setInvoiceAfterDeadline(false);
+    setPartialOrCut(false);
+    setNoProductionOrder(false);
+    setProductionLate(false);
+    setSelectedManagementStatus("");
+    setDeliveryYear("");
+    setDeliveryMonth("");
+    setNfeYear("");
+    setNfeMonth("");
+    setPrazoFilter("");
+    setFulfillmentFilter("");
+    setInvoiceCoverage("");
+    setReviewDataFilter("");
+    setCutFilter("");
+    setInvoiceNumber("");
+    setSearchDraft("");
+    setSearch("");
+    setSortBy("issueDate");
+    setSortDir("desc");
+    setPage(1);
+  }, [currentYear]);
+
+  const clearAdvancedFilterChip = useCallback(
+    (id: SalesOrderManagementAdvancedFilterChip["id"]) => {
+      switch (id) {
+        case "customerId":
+          setCustomerId("");
+          setCustomerSelection(null);
+          break;
+        case "responsible":
+          setResponsible("");
+          break;
+        case "companyIssuer":
+          setCompanyIssuer("");
+          break;
+        case "operationalStatus":
+          setOperationalStatus("");
+          break;
+        case "deadlineStatus":
+          setDeadlineStatus("");
+          break;
+        case "completionStatus":
+          setCompletionStatus("");
+          break;
+        case "billingStatus":
+          setBillingStatus("");
+          break;
+        case "invoiceFilter":
+          setInvoiceFilter("");
+          break;
+        case "productionFilter":
+          setProductionFilter("");
+          break;
+        case "deliveryYear":
+          setDeliveryYear("");
+          break;
+        case "deliveryMonth":
+          setDeliveryMonth("");
+          break;
+        case "nfeYear":
+          setNfeYear("");
+          break;
+        case "nfeMonth":
+          setNfeMonth("");
+          break;
+        case "prazoFilter":
+          setPrazoFilter("");
+          break;
+        case "fulfillmentFilter":
+          setFulfillmentFilter("");
+          break;
+        case "invoiceCoverage":
+          setInvoiceCoverage("");
+          break;
+        case "reviewDataFilter":
+          setReviewDataFilter("");
+          break;
+        case "cutFilter":
+          setCutFilter("");
+          break;
+        case "invoiceNumber":
+          setInvoiceNumber("");
+          break;
+        default:
+          break;
+      }
+      setPage(1);
+    },
+    []
+  );
+
   return (
     <div className="space-y-6" data-testid="sales-order-management-page">
       <div
@@ -410,454 +569,131 @@ export function SalesOrderManagementPage() {
       >
         {SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER}
       </div>
-      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Ano</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={year}
-              onChange={(e) => {
-                setYear(e.target.value);
-                setPage(1);
-              }}
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={String(y)}>
-                  {y}
-                </option>
-              ))}
-              <option value="all">Todos os anos</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Mês</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={month}
-              onChange={(e) => {
-                setMonth(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Todos</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={String(m)}>
-                  {String(m).padStart(2, "0")}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Busca inteligente
-            </label>
-            <input
-              type="search"
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              placeholder="Buscar por pedido, NF, cliente, vendedor ou documento..."
-              value={searchDraft}
-              onChange={(e) => setSearchDraft(e.target.value)}
-              aria-label="Busca inteligente de pedidos"
-              data-testid="sales-order-management-smart-search"
-            />
-          </div>
-          <div>
-            <CustomerAutocompleteFilter
-              label="Cliente"
-              value={customerSelection}
-              placeholder="Todos os clientes"
-              onChange={(sel) => {
-                setCustomerSelection(sel);
-                setCustomerId(sel?.id ?? "");
-                setPage(1);
-              }}
-              onClear={() => {
-                setCustomerSelection(null);
-                setCustomerId("");
-                setPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Vendedor / responsável
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={responsible}
-              onChange={(e) => {
-                setResponsible(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Empresa</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={companyIssuer}
-              onChange={(e) => {
-                setCompanyIssuer(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Status gerencial
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={operationalStatus}
-              onChange={(e) => {
-                setOperationalStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              {OPERATIONAL_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Prazo</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={deadlineStatus}
-              onChange={(e) => {
-                setDeadlineStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              {DEADLINE_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Completeza
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={completionStatus}
-              onChange={(e) => {
-                setCompletionStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              {COMPLETION_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">NF</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={billingStatus}
-              onChange={(e) => {
-                setBillingStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              {BILLING_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Vínculo NF
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={invoiceFilter}
-              onChange={(e) => {
-                setInvoiceFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {INVOICE_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">OP</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={productionFilter}
-              onChange={(e) => {
-                setProductionFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {PRODUCTION_ORDER_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Entrega — ano
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={deliveryYear}
-              onChange={(e) => {
-                setDeliveryYear(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Todos</option>
-              {yearOptions.map((y) => (
-                <option key={`d-${y}`} value={String(y)}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Entrega — mês
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={deliveryMonth}
-              onChange={(e) => {
-                setDeliveryMonth(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Todos</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={`dm-${m}`} value={String(m)}>
-                  {String(m).padStart(2, "0")}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">NF — ano</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={nfeYear}
-              onChange={(e) => {
-                setNfeYear(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Todos</option>
-              {yearOptions.map((y) => (
-                <option key={`n-${y}`} value={String(y)}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">NF — mês</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={nfeMonth}
-              onChange={(e) => {
-                setNfeMonth(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Todos</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={`nm-${m}`} value={String(m)}>
-                  {String(m).padStart(2, "0")}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Prazo (BI)
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={prazoFilter}
-              onChange={(e) => {
-                setPrazoFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {PRAZO_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Atendimento
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={fulfillmentFilter}
-              onChange={(e) => {
-                setFulfillmentFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {FULFILLMENT_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              % faturado
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={invoiceCoverage}
-              onChange={(e) => {
-                setInvoiceCoverage(e.target.value);
-                setPage(1);
-              }}
-            >
-              {INVOICE_COVERAGE_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Corte</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={cutFilter}
-              onChange={(e) => {
-                setCutFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {CUT_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Revisar dados
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={reviewDataFilter}
-              onChange={(e) => {
-                setReviewDataFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              {REVIEW_DATA_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Número NF</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              value={invoiceNumber}
-              onChange={(e) => {
-                setInvoiceNumber(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Ex.: 12345"
-            />
-          </div>
-        </div>
-        <button
-          type="button"
-          data-testid="sales-order-management-export-internal-margin"
-          disabled={exportingInternal || loading}
-          onClick={() => void handleExportInternal()}
-          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium hover:bg-primary/10 disabled:opacity-50"
-        >
-          {exportingInternal ? (
-            <>
-              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
-              Exportando…
-            </>
-          ) : (
-            <>
-              <Download className="inline h-4 w-4 mr-1" />
-              Excel interno (margem)
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setYear(String(currentYear));
-            setMonth("");
-            setCustomerId("");
-            setCustomerSelection(null);
-            setResponsible("");
-            setCompanyIssuer("");
-            setOperationalStatus("");
-            setDeadlineStatus("");
-            setCompletionStatus("");
-            setBillingStatus("");
-            setInvoiceFilter("");
-            setProductionFilter("");
-            setWithRisk(false);
-            setOverdueOnly(false);
-            setInvoiceAfterDeadline(false);
-            setPartialOrCut(false);
-            setNoProductionOrder(false);
-            setProductionLate(false);
-            setSelectedManagementStatus("");
-            setDeliveryYear("");
-            setDeliveryMonth("");
-            setNfeYear("");
-            setNfeMonth("");
-            setPrazoFilter("");
-            setFulfillmentFilter("");
-            setInvoiceCoverage("");
-            setReviewDataFilter("");
-            setCutFilter("");
-            setInvoiceNumber("");
-            setSearchDraft("");
-            setSearch("");
-            setSortBy("issueDate");
-            setSortDir("desc");
-            setPage(1);
-          }}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          Limpar filtros
-        </button>
-      </div>
+      <SalesOrderManagementFiltersBar
+        year={year}
+        month={month}
+        yearOptions={yearOptions}
+        searchDraft={searchDraft}
+        advancedOpen={advancedFiltersOpen}
+        advancedActiveCount={advancedActiveCount}
+        activeChips={advancedFilterChips}
+        exportingInternal={exportingInternal}
+        loading={loading}
+        customerSelection={customerSelection}
+        responsible={responsible}
+        companyIssuer={companyIssuer}
+        operationalStatus={operationalStatus}
+        deadlineStatus={deadlineStatus}
+        completionStatus={completionStatus}
+        billingStatus={billingStatus}
+        invoiceFilter={invoiceFilter}
+        productionFilter={productionFilter}
+        deliveryYear={deliveryYear}
+        deliveryMonth={deliveryMonth}
+        nfeYear={nfeYear}
+        nfeMonth={nfeMonth}
+        prazoFilter={prazoFilter}
+        fulfillmentFilter={fulfillmentFilter}
+        invoiceCoverage={invoiceCoverage}
+        reviewDataFilter={reviewDataFilter}
+        cutFilter={cutFilter}
+        invoiceNumber={invoiceNumber}
+        onYearChange={(value) => {
+          setYear(value);
+          resetPage();
+        }}
+        onMonthChange={(value) => {
+          setMonth(value);
+          resetPage();
+        }}
+        onSearchDraftChange={setSearchDraft}
+        onToggleAdvanced={() => setAdvancedFiltersOpen((open) => !open)}
+        onExportInternal={() => void handleExportInternal()}
+        onClearAll={clearAllFilters}
+        onClearAdvancedChip={clearAdvancedFilterChip}
+        onCustomerChange={(sel) => {
+          setCustomerSelection(sel);
+          setCustomerId(sel?.id ?? "");
+          resetPage();
+        }}
+        onCustomerClear={() => {
+          setCustomerSelection(null);
+          setCustomerId("");
+          resetPage();
+        }}
+        onResponsibleChange={(value) => {
+          setResponsible(value);
+          resetPage();
+        }}
+        onCompanyIssuerChange={(value) => {
+          setCompanyIssuer(value);
+          resetPage();
+        }}
+        onOperationalStatusChange={(value) => {
+          setOperationalStatus(value);
+          resetPage();
+        }}
+        onDeadlineStatusChange={(value) => {
+          setDeadlineStatus(value);
+          resetPage();
+        }}
+        onCompletionStatusChange={(value) => {
+          setCompletionStatus(value);
+          resetPage();
+        }}
+        onBillingStatusChange={(value) => {
+          setBillingStatus(value);
+          resetPage();
+        }}
+        onInvoiceFilterChange={(value) => {
+          setInvoiceFilter(value);
+          resetPage();
+        }}
+        onProductionFilterChange={(value) => {
+          setProductionFilter(value);
+          resetPage();
+        }}
+        onDeliveryYearChange={(value) => {
+          setDeliveryYear(value);
+          resetPage();
+        }}
+        onDeliveryMonthChange={(value) => {
+          setDeliveryMonth(value);
+          resetPage();
+        }}
+        onNfeYearChange={(value) => {
+          setNfeYear(value);
+          resetPage();
+        }}
+        onNfeMonthChange={(value) => {
+          setNfeMonth(value);
+          resetPage();
+        }}
+        onPrazoFilterChange={(value) => {
+          setPrazoFilter(value);
+          resetPage();
+        }}
+        onFulfillmentFilterChange={(value) => {
+          setFulfillmentFilter(value);
+          resetPage();
+        }}
+        onInvoiceCoverageChange={(value) => {
+          setInvoiceCoverage(value);
+          resetPage();
+        }}
+        onReviewDataFilterChange={(value) => {
+          setReviewDataFilter(value);
+          resetPage();
+        }}
+        onCutFilterChange={(value) => {
+          setCutFilter(value);
+          resetPage();
+        }}
+        onInvoiceNumberChange={(value) => {
+          setInvoiceNumber(value);
+          resetPage();
+        }}
+      />
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
