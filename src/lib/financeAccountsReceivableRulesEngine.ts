@@ -62,6 +62,7 @@ export type {
   FinanceAccountsReceivableRulesContext,
   FinanceAccountsReceivableRulesFilters,
   FinanceAccountsReceivableRulesResult,
+  FinanceAccountsReceivableDashboardPayload,
   FinanceArEffectiveStatus,
   FinanceArRulesDateRole,
   FinanceArRulesInput,
@@ -712,6 +713,7 @@ export function buildFinanceAccountsReceivableRulesResult(
     dataSanitization: dashboard.dataSanitization,
     metricDefinitions: listAccountsReceivableMetricDefinitions(),
     audit: { isFinite: true, warnings: [], metricsDocumented: 0, filteredTitlesCount: 0, openTitlesCount: 0, settledTitlesCount: 0 },
+    fullDashboard: dashboard,
   };
 
   result.audit = auditAccountsReceivableRules(result);

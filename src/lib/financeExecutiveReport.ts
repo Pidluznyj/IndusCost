@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 import { buildFinanceBillingDashboard } from "./financeBillingDashboard.js";
 import {
-  buildFinanceAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableDashboard,
+  type OfficialAccountsReceivableDashboardPayload,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
 import {
@@ -386,7 +389,7 @@ export function buildFinanceExecutiveReportDataQuality(input: {
 export type ExecutiveReportOfficialPayloads = {
   filters: FinanceExecutiveReportFilters;
   referenceDate: Date;
-  arPayload: ReturnType<typeof buildFinanceAccountsReceivableDashboard>;
+  arPayload: OfficialAccountsReceivableDashboardPayload;
   apPayload: ReturnType<typeof buildFinanceAccountsPayableDashboard>;
   cashFlowPayload: ReturnType<typeof buildFinanceCashFlowDashboard>;
   billingTab: Awaited<ReturnType<typeof buildFinanceBillingDashboard>>["tab"] | null;
@@ -563,20 +566,22 @@ export async function buildFinanceExecutiveReport(
     getNomusNfesSyncStatus().catch(() => null),
   ]);
 
-  const arPayload = buildFinanceAccountsReceivableDashboard(
-    arLoad.rows,
-    arPortfolioFilters,
+  const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
+  const arPayload = buildOfficialAccountsReceivableDashboard({
+    rows: arLoad.rows,
+    filters: arPortfolioFilters,
     referenceDate,
-    arLoad.syncCutoff,
-    { horizonSourceRows: arHorizonLoad.rows }
-  );
+    syncCutoff: arLoad.syncCutoff,
+    horizonSourceRows: arHorizonLoad.rows,
+    year: filters.year,
+    month: highlightMonth,
+  });
   const apPayload = buildFinanceAccountsPayableDashboard(
     apLoad.rows,
     apPortfolioFilters,
     referenceDate,
     apLoad.syncCutoff
   );
-  const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
   const receivablesSection = buildExecutiveReportReceivablesSection({
     rows: arLoad.rows,
     filters: arPortfolioFilters,
@@ -584,7 +589,6 @@ export async function buildFinanceExecutiveReport(
     syncCutoff: arLoad.syncCutoff,
     year: filters.year,
     month: highlightMonth,
-    cards: arPayload.cards,
   });
   const payablesSection = buildExecutiveReportPayablesSection({
     rows: apLoad.rows,

@@ -3,10 +3,11 @@
  * Usa as mesmas bases saneadas e filtros equivalentes (portfolio vs período).
  */
 import {
-  buildFinanceAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableDashboard,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   isFinanceArOverdueWithoutFiscalDocument,
   roundMoney,
-  type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
 import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
@@ -228,12 +229,12 @@ export function auditCashFlowPortfolioOpenParityWithArAp(
     arSyncCutoff,
     apSyncCutoff
   );
-  const arDash = buildFinanceAccountsReceivableDashboard(
-    arRows,
-    portfolioArFilters,
+  const arDash = buildOfficialAccountsReceivableDashboard({
+    rows: arRows,
+    filters: portfolioArFilters,
     referenceDate,
-    arSyncCutoff
-  );
+    syncCutoff: arSyncCutoff,
+  });
   const apDash = buildFinanceAccountsPayableDashboard(
     apRows,
     portfolioApFilters,
@@ -254,12 +255,14 @@ export function auditCashFlowPortfolioOpenParityWithArAp(
 
   const periodArFilters = toArLoadFilters(cfFilters);
   const periodApFilters = toApLoadFilters(cfFilters);
-  const arDashPeriod = buildFinanceAccountsReceivableDashboard(
-    arRows,
-    periodArFilters,
+  const arDashPeriod = buildOfficialAccountsReceivableDashboard({
+    rows: arRows,
+    filters: periodArFilters,
     referenceDate,
-    arSyncCutoff
-  );
+    syncCutoff: arSyncCutoff,
+    year: cfFilters.year,
+    month: cfFilters.month,
+  });
   const apDashPeriod = buildFinanceAccountsPayableDashboard(
     apRows,
     periodApFilters,

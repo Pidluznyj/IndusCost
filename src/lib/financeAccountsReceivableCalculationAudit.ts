@@ -2,8 +2,8 @@
  * Recálculo independente das métricas AR — prova consistência do dashboard.
  * Não altera regras de produção; espelha fórmulas para auditoria.
  */
+import { buildOfficialAccountsReceivableDashboard } from "./financeAccountsReceivableRulesAdapter.js";
 import {
-  buildFinanceAccountsReceivableDashboard,
   classifyFinanceArTitle,
   computeDaysOverdue,
   hasFinanceArSourceInvoice,
@@ -147,7 +147,12 @@ export function auditFinanceArDashboardCalculations(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardAuditResult {
-  const dash = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate, syncCutoff);
+  const dash = buildOfficialAccountsReceivableDashboard({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+  });
   const ind = computeFinanceArIndependentMetrics(rows, filters, referenceDate, syncCutoff);
   const mismatches: string[] = [];
 

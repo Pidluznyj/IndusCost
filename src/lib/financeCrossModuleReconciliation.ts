@@ -1,5 +1,5 @@
+import { buildOfficialAccountsReceivableDashboard } from "./financeAccountsReceivableRulesAdapter.js";
 import {
-  buildFinanceAccountsReceivableDashboard,
   roundMoney,
   type FinanceArDashboardRow,
   type FinanceArDashboardFilters,
@@ -148,7 +148,11 @@ export function buildFinanceCrossModuleReconciliation(
   apFilters: FinanceApDashboardFilters,
   referenceDate: Date = new Date()
 ): FinanceCrossModuleReconciliation {
-  const arDash = buildFinanceAccountsReceivableDashboard(arRows, arFilters, referenceDate);
+  const arDash = buildOfficialAccountsReceivableDashboard({
+    rows: arRows,
+    filters: arFilters,
+    referenceDate,
+  });
   const apDash = buildFinanceAccountsPayableDashboard(apRows, apFilters, referenceDate);
   const cf = buildFinanceCashFlowDashboard(
     arRows as FinanceCashFlowArRow[],

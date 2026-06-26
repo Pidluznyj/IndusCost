@@ -2,19 +2,21 @@
  * Orquestração de KPIs AR/AP do Relatório Executivo — apenas delega aos motores oficiais.
  */
 import {
-  buildFinanceAccountsReceivableDashboard,
   endOfLocalDay,
-  sumFinanceArReceivedBySettlementInPeriod,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import {
+  buildOfficialAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableRulesResult,
+  sumOfficialArReceivedBySettlementInPeriod,
+} from "./financeAccountsReceivableRulesAdapter.js";
 import {
   buildFinanceAccountsPayableDashboard,
   sumFinanceApPaidInPaymentPeriod,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
-import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
 import type { FinanceApDashboardCards, FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
@@ -93,16 +95,23 @@ export function buildExecutiveReportReceivablesSection(input: {
   syncCutoff: NomusArReportSyncCutoff | null;
   year: number;
   month: number;
-  cards: FinanceArDashboardCards;
 }): ExecutiveReportReceivablesSection {
-  const { rows, filters, referenceDate, syncCutoff, year, month, cards } = input;
+  const { rows, filters, referenceDate, syncCutoff, year, month } = input;
   const monthBounds = monthPeriodBounds(year, month);
   const prevMonthBounds = monthPeriodBounds(year - 1, month);
-  const ytdBounds = ytdPeriodBounds(year, month, referenceDate);
   const prevYtdStart = new Date(year - 1, 0, 1, 0, 0, 0, 0);
   const prevYtdEnd = previousYearComparableEnd(year, month, referenceDate);
 
-  const receivedMonthCurrent = sumFinanceArReceivedBySettlementInPeriod(
+  const rulesCurrent = buildOfficialAccountsReceivableRulesResult({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+    year,
+    month,
+  });
+
+  const receivedMonthCurrent = sumOfficialArReceivedBySettlementInPeriod(
     rows,
     filters,
     referenceDate,
@@ -110,7 +119,7 @@ export function buildExecutiveReportReceivablesSection(input: {
     monthBounds.start,
     monthBounds.end
   );
-  const receivedMonthPrevious = sumFinanceArReceivedBySettlementInPeriod(
+  const receivedMonthPrevious = sumOfficialArReceivedBySettlementInPeriod(
     rows,
     filters,
     referenceDate,
@@ -118,15 +127,8 @@ export function buildExecutiveReportReceivablesSection(input: {
     prevMonthBounds.start,
     prevMonthBounds.end
   );
-  const receivedYtdCurrent = sumFinanceArReceivedBySettlementInPeriod(
-    rows,
-    filters,
-    referenceDate,
-    syncCutoff,
-    ytdBounds.start,
-    ytdBounds.end
-  );
-  const receivedYtdPrevious = sumFinanceArReceivedBySettlementInPeriod(
+  const receivedYtdCurrent = rulesCurrent.metrics.receivedYtd;
+  const receivedYtdPrevious = sumOfficialArReceivedBySettlementInPeriod(
     rows,
     filters,
     referenceDate,
@@ -142,7 +144,7 @@ export function buildExecutiveReportReceivablesSection(input: {
       receivedMonthPrevious,
       receivedYtdCurrent,
       receivedYtdPrevious,
-      cards,
+      cards: rulesCurrent.cards,
     }),
   };
 }
@@ -220,13 +222,7 @@ export function buildOfficialAccountsReceivableDashboardForReport(input: {
   syncCutoff: NomusArReportSyncCutoff | null;
   horizonSourceRows?: FinanceArDashboardRow[];
 }) {
-  return buildFinanceAccountsReceivableDashboard(
-    input.rows,
-    input.filters,
-    input.referenceDate,
-    input.syncCutoff,
-    input.horizonSourceRows ? { horizonSourceRows: input.horizonSourceRows } : undefined
-  );
+  return buildOfficialAccountsReceivableDashboard(input);
 }
 
 /** Payload oficial AP — espelha GET /api/finance/accounts-payable/dashboard com mesmos filtros/data-base. */

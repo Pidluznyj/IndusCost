@@ -2,7 +2,10 @@
  * Auditoria de paridade entre Relatório Presidencial e módulos oficiais (AR/AP/Fluxo/Faturamento/Pedidos).
  */
 import {
-  buildFinanceAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableDashboard,
+  type OfficialAccountsReceivableDashboardPayload,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
@@ -71,7 +74,7 @@ function compareJsonSection(
 
 export function auditExecutiveReportArParity(
   reportAr: ReturnType<typeof buildExecutiveReportModuleSections>["accountsReceivable"]["payload"],
-  officialAr: ReturnType<typeof buildFinanceAccountsReceivableDashboard>,
+  officialAr: OfficialAccountsReceivableDashboardPayload,
   topN?: number
 ): FinanceExecutiveReportConsistencyResult {
   const mismatches: string[] = [];
@@ -203,7 +206,7 @@ export function auditExecutiveReportCalendarParity(
 export function auditExecutiveReportHeadlineParity(
   reportSummary: ReturnType<typeof buildExecutiveReportModuleSections>["executiveSummary"],
   official: {
-    arCards: ReturnType<typeof buildFinanceAccountsReceivableDashboard>["cards"];
+    arCards: OfficialAccountsReceivableDashboardPayload["cards"];
     apCards: ReturnType<typeof buildFinanceAccountsPayableDashboard>["cards"];
     cashFlowCards: ReturnType<typeof buildFinanceCashFlowDashboard>["cards"];
     billingTarget: BillingDashboardTab["target"] | null | undefined;
@@ -399,12 +402,14 @@ export function buildOfficialModulesForExecutiveReport(input: {
   const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(input.filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(input.filters);
 
-  const arPayload = buildFinanceAccountsReceivableDashboard(
-    input.arRows,
-    arPortfolioFilters,
-    input.referenceDate,
-    input.arSyncCutoff
-  );
+  const arPayload = buildOfficialAccountsReceivableDashboard({
+    rows: input.arRows,
+    filters: arPortfolioFilters,
+    referenceDate: input.referenceDate,
+    syncCutoff: input.arSyncCutoff,
+    year: input.filters.year,
+    month: input.filters.month ?? undefined,
+  });
   const apPayload = buildFinanceAccountsPayableDashboard(
     input.apRows,
     apPortfolioFilters,

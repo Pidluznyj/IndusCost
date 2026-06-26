@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
-  buildFinanceAccountsReceivableDashboard,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
 import {
@@ -103,7 +102,8 @@ describe("financeExecutiveReportDataSources", () => {
   it("relatório usa motor oficial de Contas a Receber", () => {
     const src = read("src/lib/financeExecutiveReportDataSources.ts");
     assert.match(src, /EXECUTIVE_REPORT_RECEIVABLES_SOURCE/);
-    assert.match(src, /sumFinanceArReceivedBySettlementInPeriod/);
+    assert.match(src, /buildOfficialAccountsReceivableRulesResult/);
+    assert.match(src, /sumOfficialArReceivedBySettlementInPeriod/);
     assert.match(src, /buildExecutiveReportArKpisFromOfficial/);
   });
 
@@ -130,7 +130,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: official.cards,
     });
     assert.equal(section.metricsSource, EXECUTIVE_REPORT_RECEIVABLES_SOURCE);
     assert.equal(section.kpis.openAmount, official.cards.totalOpenAmount);
@@ -230,7 +229,12 @@ describe("financeExecutiveReportDataSources", () => {
     const filters = reportFilters();
     const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
     const rows = [arRow({ settlementDate: new Date(2026, 5, 10), amountReceived: 750 })];
-    const official = buildFinanceAccountsReceivableDashboard(rows, arPortfolioFilters, REF, null);
+    const official = buildOfficialAccountsReceivableDashboardForReport({
+      rows,
+      filters: arPortfolioFilters,
+      referenceDate: REF,
+      syncCutoff: null,
+    });
     const section = buildExecutiveReportReceivablesSection({
       rows,
       filters: arPortfolioFilters,
@@ -238,7 +242,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: official.cards,
     });
     assert.equal(section.kpis.receivedMonthCurrent, official.cards.receivedThisMonthAmount);
   });
@@ -272,7 +275,6 @@ describe("financeExecutiveReportDataSources", () => {
       syncCutoff: null,
       year: 2026,
       month: 6,
-      cards: buildFinanceAccountsReceivableDashboard([], arPortfolioFilters, REF, null).cards,
     });
     for (const value of [
       section.kpis.receivedMonthCurrent,

@@ -1,12 +1,14 @@
 import type { FinanceArTitleListItem, FinanceArTitlesQuery } from "./financeAccountsReceivableTitles.js";
 import {
+  buildOfficialAccountsReceivableRulesResult,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   buildFinanceArTitlesPayload,
   isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "./financeAccountsReceivableTitles.js";
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 import {
-  buildAccountsReceivableOpenHorizon,
   loadFinanceArOpenHorizonRowsFromPrisma,
   type AccountsReceivableOpenHorizon,
   type AccountsReceivableOpenHorizonBucketKey,
@@ -183,7 +185,12 @@ export async function buildFinanceArHorizonExportPayloadDefault(
   referenceDate: Date = new Date()
 ): Promise<FinanceArHorizonExportPayload> {
   const { rows, syncCutoff } = await loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate);
-  const horizon = buildAccountsReceivableOpenHorizon(rows, referenceDate, syncCutoff);
+  const horizon = buildOfficialAccountsReceivableRulesResult({
+    rows,
+    referenceDate,
+    syncCutoff,
+    horizonSourceRows: rows,
+  }).horizon;
   const rowsByExternalId = new Map(rows.map((row) => [row.externalId, row]));
 
   let items: FinanceArHorizonExportTitleRow[];

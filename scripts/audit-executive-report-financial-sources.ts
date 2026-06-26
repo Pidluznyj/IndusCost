@@ -91,7 +91,6 @@ async function main() {
     syncCutoff: arLoad.syncCutoff,
     year: filters.year,
     month: highlightMonth,
-    cards: officialAr.cards,
   });
 
   const reportAp = buildExecutiveReportPayablesSection({

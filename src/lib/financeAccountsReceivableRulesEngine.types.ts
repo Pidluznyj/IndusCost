@@ -6,6 +6,7 @@
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import type {
+  buildFinanceAccountsReceivableDashboard,
   FinanceArDashboardFilters,
   FinanceArDashboardRow,
   FinanceArTitleStatus,
@@ -170,6 +171,10 @@ export type FinanceAccountsReceivableRulesAuditResult = {
   settledTitlesCount: number;
 };
 
+export type FinanceAccountsReceivableDashboardPayload = ReturnType<
+  typeof buildFinanceAccountsReceivableDashboard
+>;
+
 export type FinanceAccountsReceivableRulesResult = {
   engineVersion: string;
   generatedAt: string;
@@ -184,6 +189,8 @@ export type FinanceAccountsReceivableRulesResult = {
   dataSanitization: FinanceDataSanitization;
   metricDefinitions: FinanceAccountsReceivableMetricDefinition[];
   audit: FinanceAccountsReceivableRulesAuditResult;
+  /** Payload completo da tela AR — reutilizado pelo adapter sem recalcular regras. */
+  fullDashboard: FinanceAccountsReceivableDashboardPayload;
 };
 
 export type FinanceAccountsReceivableRulesBuildInput = {

@@ -7,15 +7,16 @@ import {
 } from "./financeAccountsPayableDashboard.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
-  filterFinanceArRows,
-  type FinanceArDashboardFilters,
-} from "./financeAccountsReceivableDashboard.js";
+  resolveOfficialArCashFlowExecutiveMetrics,
+  sumOfficialArReceivedBySettlementInPeriod,
+} from "./financeAccountsReceivableRulesAdapter.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import { toArLoadFilters } from "./financeCashFlowDashboard.js";
 import type { NetCashPositionStatus } from "./financeCashFlowDashboardTypes.js";
 import {
   buildYtdDashboardFilters,
@@ -295,7 +296,11 @@ export function buildExecutiveMonthlyTimeline(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
   year: number,
-  referenceDate: Date
+  referenceDate: Date,
+  arOfficialContext?: {
+    filters: FinanceCashFlowDashboardFilters;
+    syncCutoff?: NomusArReportSyncCutoff | null;
+  }
 ): FinanceCashFlowExecutiveMonthlyRow[] {
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;
@@ -303,7 +308,17 @@ export function buildExecutiveMonthlyTimeline(
   for (let m = 1; m <= 12; m += 1) {
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
-    const received = sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
+    const received =
+      arOfficialContext != null
+        ? sumOfficialArReceivedBySettlementInPeriod(
+            arRows,
+            toArLoadFilters(arOfficialContext.filters),
+            referenceDate,
+            arOfficialContext.syncCutoff,
+            monthStart,
+            monthEndDate
+          )
+        : sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
     const paid = sumApPaidInPeriod(apRows, monthStart, monthEndDate);
     const payableOpenDue = sumApOpenDueInPeriod(apRows, monthStart, monthEndDate);
@@ -375,22 +390,31 @@ export function buildFinanceCashFlowExecutiveSummary(
     apSyncCutoff
   );
 
-  const receivedYtd = sumArReceivedInPeriod(arYtd, startDate, endDate);
+  const arOfficialFilters = toArLoadFilters(ytdFilters);
+  const arOfficial = resolveOfficialArCashFlowExecutiveMetrics(
+    allArRows,
+    arOfficialFilters,
+    referenceDate,
+    syncCutoff,
+    year
+  );
+  const receivedYtd = arOfficial.receivedYtd;
   const paidYtd = sumApPaidInPeriod(apYtd, startDate, endDate);
-  const openArForward = forward.isActive
-    ? sumArOpenDueInPeriod(arYtd, forward.fromDate, forward.toDate)
-    : 0;
+  const openArForward = arOfficial.openUntilYearEnd;
   const openApForward = forward.isActive
     ? sumApOpenDueInPeriod(apYtd, forward.fromDate, forward.toDate)
     : 0;
 
-  const estimatedArYear = roundMoney(receivedYtd + openArForward);
+  const estimatedArYear = arOfficial.estimatedYearTotal;
   const estimatedApYear = roundMoney(paidYtd + openApForward);
   const realizedYtd = roundMoney(receivedYtd - paidYtd);
   const projectedRemaining = roundMoney(openArForward - openApForward);
   const estimatedYearNet = roundMoney(estimatedArYear - estimatedApYear);
 
-  const monthlyTimeline = buildExecutiveMonthlyTimeline(arYtd, apYtd, year, referenceDate);
+  const monthlyTimeline = buildExecutiveMonthlyTimeline(arYtd, apYtd, year, referenceDate, {
+    filters: ytdFilters,
+    syncCutoff,
+  });
 
   return {
     receivable: {
@@ -427,7 +451,7 @@ export function buildFinanceCashFlowExecutiveSummary(
       forwardRangeActive: forward.isActive,
       receivableOrigin: resolveReceivableOriginLabel(filters.invoiceIssued),
       viewMode: filters.viewMode,
-      ytdScopeLabel: scopeLabel,
+      ytdScopeLabel: `${scopeLabel} — recebido AR por data de baixa (motor oficial)`,
       periodScopeLabel: resolvePeriodLabel(filters, referenceDate),
     },
   };

@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import {
-  buildFinanceAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableDashboard,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   countFinanceArSanitizationInScope,
   decimalFieldToNumber,
   filterFinanceArRows,
@@ -815,24 +817,26 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate
   );
 
-  const arDashPortfolio = buildFinanceAccountsReceivableDashboard(
-    arRows,
-    toCashFlowPortfolioArFilters(filters),
+  const arDashPortfolio = buildOfficialAccountsReceivableDashboard({
+    rows: arRows,
+    filters: toCashFlowPortfolioArFilters(filters),
     referenceDate,
-    arSyncCutoff
-  );
+    syncCutoff: arSyncCutoff,
+  });
   const apDashPortfolio = buildFinanceAccountsPayableDashboard(
     apRows,
     toCashFlowPortfolioApFilters(filters),
     referenceDate,
     apSyncCutoff
   );
-  const arDashPeriod = buildFinanceAccountsReceivableDashboard(
-    arRows,
-    toArLoadFilters(filters),
+  const arDashPeriod = buildOfficialAccountsReceivableDashboard({
+    rows: arRows,
+    filters: toArLoadFilters(filters),
     referenceDate,
-    arSyncCutoff
-  );
+    syncCutoff: arSyncCutoff,
+    year: filters.year,
+    month: filters.month,
+  });
   const apDashPeriod = buildFinanceAccountsPayableDashboard(
     apRows,
     toApLoadFilters(filters),

@@ -2,7 +2,9 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
-  buildFinanceAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableDashboard,
+} from "@/src/lib/financeAccountsReceivableRulesAdapter.js";
+import {
   FinanceArFilterParseError,
   parseFinanceArDashboardFilters,
   type FinanceArDashboardFilters,
@@ -127,7 +129,11 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         prisma,
         referenceDate
       );
-      const payload = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate, syncCutoff, {
+      const payload = buildOfficialAccountsReceivableDashboard({
+        rows,
+        filters,
+        referenceDate,
+        syncCutoff,
         horizonSourceRows,
       });
       return res.json(payload);

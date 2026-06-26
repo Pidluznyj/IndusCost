@@ -666,6 +666,7 @@ export function filterFinanceArManagementReportRows(
   return base.filter((row) => isFinanceArAllowedInManagementReport(row, referenceDate));
 }
 
+/** @deprecated Preferir buildOfficialAccountsReceivableDashboard (financeAccountsReceivableRulesAdapter). */
 export function buildFinanceAccountsReceivableDashboard(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters = { status: "all" },

@@ -2,8 +2,8 @@
  * Auditoria de paridade entre visões financeiras AR/AP.
  * Usado pelos testes de consistência e por diagnósticos internos.
  */
+import { buildOfficialAccountsReceivableDashboard } from "./financeAccountsReceivableRulesAdapter.js";
 import {
-  buildFinanceAccountsReceivableDashboard,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
@@ -85,7 +85,12 @@ export function auditFinanceArOverdueParityWithDashboard(
   referenceDate: Date,
   syncCutoff: NomusArReportSyncCutoff | null
 ): FinanceArCrossViewConsistencyResult {
-  const dash = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate, syncCutoff);
+  const dash = buildOfficialAccountsReceivableDashboard({
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+  });
   const overdueTotal = sumFinanceArOverdueOpenAmount(rows, filters, referenceDate, syncCutoff);
   const mismatches: string[] = [];
   if (dash.cards.overdueAmount !== overdueTotal) {
