@@ -8,7 +8,9 @@ import {
 import {
   buildFinanceApPrismaWhere,
   filterFinanceApRows,
+  mapPrismaRowToFinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
 import {
   buildFinanceArDueRadar,
   buildFinanceApDueRadar,
@@ -22,10 +24,6 @@ import {
   DueRadarExportError,
   parseDueRadarExportQuery,
 } from "./financeDueRadarExport.js";
-import {
-  FINANCE_AP_DASHBOARD_SELECT,
-  mapPrismaRowToFinanceApDashboardRow,
-} from "./financeAccountsPayableTitles.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { prisma } from "./prisma.js";
 
@@ -74,7 +72,7 @@ async function loadApDueRadarRows(query: Record<string, unknown>, referenceDate:
   const where = buildFinanceApPrismaWhere(filters, syncCutoff);
   const rows = await prisma.nomusAccountsPayable.findMany({
     where,
-    select: FINANCE_AP_DASHBOARD_SELECT,
+    select: FINANCE_AP_TITLE_SELECT,
     orderBy: { dueDate: "asc" },
   });
   const mapped = rows.map(mapPrismaRowToFinanceApDashboardRow);
