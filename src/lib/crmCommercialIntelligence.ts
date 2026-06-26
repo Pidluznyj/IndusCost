@@ -16,6 +16,11 @@ import {
 } from "@/src/lib/crmCommercialOrderRules";
 import { orderHasFollowUpAfterCutoff } from "@/src/lib/crmOrderFollowUp";
 import { safeCommercialNumber } from "@/src/lib/customerCommercialSalesOrderView";
+import {
+  mapCrmCommercialOrderToRulesInput,
+  resolveOfficialScopedOrderMetrics,
+} from "@/src/lib/salesOrderRulesAdapter.js";
+import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 
 export const OPEN_NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
 
@@ -190,6 +195,7 @@ export function buildCrmCommercialIntelligenceResponse(input: {
   salesOrders: CrmCommercialOrderRow[];
   negotiationProposals?: CrmNegotiationProposalRow[];
   now?: Date;
+  linkedNfeContextMap?: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>;
 }): CrmCommercialIntelResponse {
   const now = input.now ?? new Date();
   const twelveMonthsAgo = new Date(now);
@@ -215,8 +221,25 @@ export function buildCrmCommercialIntelligenceResponse(input: {
 
   const latestOpenOrders = openPortfolioRows.slice(0, 5).map(mapOrderIntel);
 
-  const openOrdersCount = openPortfolioRows.length;
-  const openOrdersValue = openPortfolioRows.reduce((acc, o) => acc + getSalesOrderNetValue(o), 0);
+  const rulesOrders = metricsOrders.map(mapCrmCommercialOrderToRulesInput);
+  const openOfficial = resolveOfficialScopedOrderMetrics({
+    orders: rulesOrders,
+    referenceDate: now,
+    managementFilters: { allYears: true },
+    linkedNfeContextMap: input.linkedNfeContextMap,
+  });
+  const openOrdersCount = openOfficial.openPortfolioCount;
+  const openOrdersValue = openOfficial.openPortfolioAmount;
+
+  const orders12mRules = resolveOfficialScopedOrderMetrics({
+    orders: rulesOrders,
+    referenceDate: now,
+    listFilters: { startDate: twelveMonthsAgo, endDate: now },
+    managementFilters: { allYears: true, startDate: twelveMonthsAgo, endDate: now },
+    linkedNfeContextMap: input.linkedNfeContextMap,
+  });
+  const orders12m = purchaseOrders.filter((o) => o.issueDate >= twelveMonthsAgo);
+  const totalPurchasedLast12Months = orders12mRules.soldAmount;
 
   const withoutFollowUpAll = openPortfolioRows.filter(
     (o) => !orderHasFollowUpAfterCutoff(o.id, orderFollowUpCutoff(o), input.activities)
@@ -244,12 +267,6 @@ export function buildCrmCommercialIntelligenceResponse(input: {
   const daysSinceLastPurchase = lastPurchaseRow
     ? daysSince(lastPurchaseRow.issueDate, now)
     : null;
-
-  const orders12m = purchaseOrders.filter((o) => o.issueDate >= twelveMonthsAgo);
-  const totalPurchasedLast12Months = orders12m.reduce(
-    (acc, o) => acc + getSalesOrderNetValue(o),
-    0
-  );
 
   const prior12Start = new Date(twelveMonthsAgo);
   prior12Start.setUTCDate(prior12Start.getUTCDate() - 365);

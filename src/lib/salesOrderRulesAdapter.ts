@@ -434,24 +434,155 @@ export function resolveOfficialCustomerIntelligenceOrderMetrics(input: {
   referenceDate: Date;
   year?: number;
   month?: number;
+  listFilters?: Partial<SalesOrderListFilters>;
+  managementFilters?: Partial<SalesOrderManagementFilters>;
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>;
 }): {
   revenue: number;
   validOrdersCount: number;
   billedOrdersCount: number;
+  openPortfolioAmount: number;
+  openPortfolioCount: number;
   metricsSource: typeof OFFICIAL_SO_RULES_SOURCE;
 } {
-  const rules = buildOfficialSalesOrderRulesResult({
-    orders: input.orders,
-    referenceDate: input.referenceDate,
-    year: input.year,
-    month: input.month,
-    scope: "unified",
-  });
+  const scoped = resolveOfficialScopedOrderMetrics(input);
   return {
-    revenue: rules.metrics.soldAmount,
-    validOrdersCount: rules.metrics.filteredOrders,
-    billedOrdersCount: rules.metrics.withNfeCount,
+    revenue: scoped.soldAmount,
+    validOrdersCount: scoped.filteredOrders,
+    billedOrdersCount: scoped.withNfeCount,
+    openPortfolioAmount: scoped.openPortfolioAmount,
+    openPortfolioCount: scoped.openPortfolioCount,
     metricsSource: OFFICIAL_SO_RULES_SOURCE,
+  };
+}
+
+export type OfficialScopedOrderMetrics = {
+  soldAmount: number;
+  filteredOrders: number;
+  uniqueOrders: number;
+  totalItems: number;
+  averageTicket: number;
+  invoicedAmount: number;
+  soldInvoicedGap: number;
+  withNfeCount: number;
+  withoutNfeCount: number;
+  openPortfolioAmount: number;
+  openPortfolioCount: number;
+  invoicedPortfolioAmount: number;
+  invoicedPortfolioCount: number;
+  metricsSource: typeof OFFICIAL_SO_RULES_SOURCE;
+  rulesEngineVersion: string;
+};
+
+/** Métricas completas de pedidos para escopos CRM/seller/relatórios — motor oficial. */
+export function resolveOfficialScopedOrderMetrics(
+  input: OfficialSalesOrderRulesBuildInput
+): OfficialScopedOrderMetrics {
+  const rules = buildOfficialSalesOrderRulesResult({
+    ...input,
+    scope: input.scope ?? "unified",
+  });
+  const portfolio = mapOfficialFinancePortfolioFromManagementRows(rules.managementBundle.rows);
+  return {
+    soldAmount: rules.metrics.soldAmount,
+    filteredOrders: rules.metrics.filteredOrders,
+    uniqueOrders: rules.metrics.uniqueOrders,
+    totalItems: rules.metrics.totalItems,
+    averageTicket: rules.metrics.averageTicket,
+    invoicedAmount: rules.metrics.invoicedAmount,
+    soldInvoicedGap: rules.metrics.soldInvoicedGap,
+    withNfeCount: rules.metrics.withNfeCount,
+    withoutNfeCount: rules.metrics.withoutNfeCount,
+    openPortfolioAmount: portfolio.open.net,
+    openPortfolioCount: portfolio.open.count,
+    invoicedPortfolioAmount: portfolio.invoiced.net,
+    invoicedPortfolioCount: portfolio.invoiced.count,
+    metricsSource: OFFICIAL_SO_RULES_SOURCE,
+    rulesEngineVersion: rules.rulesEngineVersion,
+  };
+}
+
+export type OfficialSellerBreakdownRow = {
+  sellerKey: string;
+  sellerLabel: string;
+  ordersCount: number;
+  ordersValue: number;
+  invoicedOrdersCount: number;
+  invoicedOrdersValue: number;
+  openOrdersCount: number;
+  openOrdersValue: number;
+};
+
+function sellerRowKey(row: SalesOrderManagementRow): string {
+  const name = row.sellerName?.trim() || row.responsible?.trim() || "";
+  return name ? name.toLowerCase() : "—";
+}
+
+/** Breakdown por vendedor — agrega linhas de gestão já classificadas pelo motor. */
+export function buildOfficialSellerBreakdownFromManagementRows(
+  rows: SalesOrderManagementRow[]
+): OfficialSellerBreakdownRow[] {
+  const bySeller = new Map<string, OfficialSellerBreakdownRow>();
+
+  for (const row of rows) {
+    const sellerKey = sellerRowKey(row);
+    const sellerLabel = row.sellerName?.trim() || row.responsible?.trim() || "—";
+    const current = bySeller.get(sellerKey) ?? {
+      sellerKey,
+      sellerLabel,
+      ordersCount: 0,
+      ordersValue: 0,
+      invoicedOrdersCount: 0,
+      invoicedOrdersValue: 0,
+      openOrdersCount: 0,
+      openOrdersValue: 0,
+    };
+    const val = row.totalNetValue ?? 0;
+    current.ordersCount += 1;
+    current.ordersValue += val;
+    if (row.hasInvoice) {
+      current.invoicedOrdersCount += 1;
+      current.invoicedOrdersValue += val;
+    } else {
+      current.openOrdersCount += 1;
+      current.openOrdersValue += val;
+    }
+    bySeller.set(sellerKey, current);
+  }
+
+  return [...bySeller.values()]
+    .map((row) => ({
+      ...row,
+      ordersValue: roundMoney(row.ordersValue),
+      invoicedOrdersValue: roundMoney(row.invoicedOrdersValue),
+      openOrdersValue: roundMoney(row.openOrdersValue),
+    }))
+    .sort((a, b) => b.ordersCount - a.ordersCount);
+}
+
+/** Mapeia pedido CRM comercial mínimo para entrada do motor. */
+export function mapCrmCommercialOrderToRulesInput(order: {
+  id: string;
+  orderCode: string;
+  status: string;
+  issueDate: Date;
+  totalNetValue: unknown;
+  responsible?: string | null;
+  expectedDeliveryDate?: Date | null;
+  nomusRawResponse?: unknown;
+  totalItems?: number;
+}): SalesOrderRulesOrderInput {
+  return {
+    id: order.id,
+    orderCode: order.orderCode,
+    status: order.status,
+    issueDate: order.issueDate,
+    expectedDeliveryDate: order.expectedDeliveryDate ?? null,
+    totalNetValue: order.totalNetValue,
+    totalItems: order.totalItems ?? 0,
+    responsible: order.responsible ?? null,
+    nomusRawResponse: order.nomusRawResponse ?? null,
+    items: [],
   };
 }
 

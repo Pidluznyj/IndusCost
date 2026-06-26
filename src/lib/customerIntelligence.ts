@@ -48,6 +48,7 @@ import { buildCustomerIntelligenceProducts } from "@/src/lib/customerIntelligenc
 import {
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialCustomerIntelligenceOrderMetrics,
+  resolveOfficialScopedOrderMetrics,
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import type {
   CustomerIntelligenceBuildInput,
@@ -93,6 +94,7 @@ function buildOrderScopeSummary(
       })
     ),
     referenceDate: now,
+    managementFilters: { allYears: true },
   });
 
   return {
@@ -236,14 +238,40 @@ export function buildCustomerIntelligenceReport(
   const revenue = filteredSummary.revenue;
   const validOrdersCount = filteredSummary.validOrdersCount;
   const billedOrdersCount = filteredSummary.billedOrdersCount;
-  const openPortfolioAmount = filteredMetricsOrders
-    .filter((o) =>
-      isCommercialOpenSalesOrder({
-        status: o.status as SalesOrderLinkStatus,
-        hasInvoicing: o.hasInvoicing,
+
+  const filteredOfficialMetrics = resolveOfficialScopedOrderMetrics({
+    orders: filteredMetricsOrders.map((order) =>
+      mapPrismaOrderToSalesOrderRulesInput({
+        id: order.id,
+        orderCode: order.orderCode,
+        status: order.status,
+        issueDate: order.issueDate,
+        totalNetValue: order.totalNetValue,
+        totalItems: order.items.length,
+        responsible: order.responsible,
+        items: order.items.map((item) => ({
+          id: item.productId,
+          quantity: item.quantity,
+          skuSnapshot: item.Product?.sku ?? null,
+          productNameSnapshot: item.Product?.name ?? null,
+        })),
       })
-    )
-    .reduce((acc, o) => acc + safeCommercialNumber(o.totalNetValue), 0);
+    ),
+    referenceDate: now,
+    listFilters: {
+      year: input.filters.year ?? null,
+      month: input.filters.month ?? null,
+      startDate: input.filters.startDate ? new Date(input.filters.startDate) : null,
+      endDate: input.filters.endDate ? new Date(input.filters.endDate) : null,
+    },
+    managementFilters: {
+      allYears: input.filters.year == null && input.filters.month == null,
+      year: input.filters.year ?? undefined,
+      month: input.filters.month ?? undefined,
+    },
+  });
+  const openPortfolioAmount = filteredOfficialMetrics.openPortfolioAmount;
+  const averageTicket = filteredOfficialMetrics.averageTicket || safeDivide(revenue, validOrdersCount);
 
   const marginPercSamples = filteredMetricsOrders
     .map((o) => safeFiniteNumber(o.totalMarginPerc))
@@ -271,7 +299,7 @@ export function buildCustomerIntelligenceReport(
     totalMarginAmount = null;
   }
 
-  const averageTicket = safeDivide(revenue, validOrdersCount);
+
   const daysSinceLastOrder =
     filteredLastOrderDate != null ? daysBetweenDates(filteredLastOrderDate, now) : null;
 

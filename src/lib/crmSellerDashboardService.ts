@@ -16,6 +16,13 @@ import {
   consolidatedOptionToSellerOption,
   normalizeSellerIdentityName,
 } from "@/src/lib/crmSellerIdentityConsolidation";
+import {
+  mapPrismaOrderToSalesOrderRulesInput,
+  resolveOfficialScopedOrderMetrics,
+  SALES_ORDER_RULES_PRISMA_SELECT,
+  OFFICIAL_SO_RULES_SOURCE,
+} from "@/src/lib/salesOrderRulesAdapter.js";
+import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql";
 
 const LIST_LIMIT = 20;
@@ -419,9 +426,43 @@ export async function buildCrmSellerDashboardResponse(
     ),
   ]);
 
+  const sellerOrderIds = await prisma.$queryRaw<{ id: string }[]>(
+    Prisma.sql`SELECT so.id FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}`
+  );
+  const sellerIdSet = new Set(sellerOrderIds.map((row) => row.id));
+  const rulesOrdersRaw =
+    sellerIdSet.size > 0
+      ? await prisma.salesOrder.findMany({
+          where: { id: { in: [...sellerIdSet] } },
+          select: SALES_ORDER_RULES_PRISMA_SELECT,
+        })
+      : [];
+  const rulesOrders = rulesOrdersRaw.map(mapPrismaOrderToSalesOrderRulesInput);
+  const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+    rulesOrdersRaw.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    })),
+    now
+  );
+  const officialSummary = resolveOfficialScopedOrderMetrics({
+    orders: rulesOrders,
+    referenceDate: now,
+    managementFilters: {
+      allYears: true,
+      startDate: periodDateFromStart,
+      endDate: periodDateToEnd,
+      responsible: filterResponsible ?? undefined,
+    },
+    linkedNfeContextMap: linkedMap,
+  });
+
   const summary = summaryRow[0];
-  const ordersCount = summary?.orders_count ?? 0;
-  const ordersValue = sellerDashToNumber(summary?.orders_value);
+  const ordersCount = officialSummary.filteredOrders;
+  const ordersValue = officialSummary.soldAmount;
   const topProduct = topProductRows[0];
 
   const consolidatedOptions = consolidateSellerRowFragments(sellerOptionsRows);
@@ -468,13 +509,16 @@ export async function buildCrmSellerDashboardResponse(
     summary: {
       ordersCount,
       ordersValue,
-      invoicedOrdersCount: summary?.invoiced_orders_count ?? 0,
-      invoicedOrdersValue: sellerDashToNumber(summary?.invoiced_orders_value),
-      openOrdersCount: summary?.open_orders_count ?? 0,
-      openOrdersValue: sellerDashToNumber(summary?.open_orders_value),
+      invoicedOrdersCount: officialSummary.invoicedPortfolioCount,
+      invoicedOrdersValue: officialSummary.invoicedPortfolioAmount,
+      openOrdersCount: officialSummary.openPortfolioCount,
+      openOrdersValue: officialSummary.openPortfolioAmount,
       cancelledOrdersCount: summary?.cancelled_orders_count ?? 0,
-      uniqueCustomersCount: summary?.unique_customers_count ?? 0,
-      ticketAverage: computeSellerTicketAverage(ordersValue, ordersCount),
+      uniqueCustomersCount:
+        summary?.unique_customers_count ??
+        new Set(rulesOrders.map((o) => o.customerId).filter(Boolean)).size,
+      ticketAverage: officialSummary.averageTicket,
+      metricsSource: OFFICIAL_SO_RULES_SOURCE,
       topProduct: topProduct
         ? {
             productId: topProduct.product_id,

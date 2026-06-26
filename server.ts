@@ -172,7 +172,9 @@ import {
 import {
   buildOfficialSalesOrderListPayload,
   mapPrismaOrderToSalesOrderRulesInput,
+  resolveOfficialScopedOrderMetrics,
 } from "./src/lib/salesOrderRulesAdapter.js";
+import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
@@ -11089,7 +11091,46 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       }));
       const portfolioAbc = buildPortfolioAbcFromSalesOrders(abcRows, id);
 
-      res.json({ customer, salesOrders, portfolioAbc });
+      const rulesOrders = salesOrders.map((order) =>
+        mapPrismaOrderToSalesOrderRulesInput({
+          id: order.id,
+          orderCode: order.orderCode,
+          status: order.status,
+          customerId: order.customerId,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          totalNetValue: order.totalNetValue,
+          totalGrossValue: order.totalGrossValue,
+          totalItems: order.totalItems,
+          responsible: order.responsible,
+          nomusRawResponse: order.nomusRawResponse,
+          items: order.items.map((item) => ({
+            id: item.id,
+            externalProductId: item.externalProductId,
+            skuSnapshot: item.skuSnapshot,
+            productNameSnapshot: item.productNameSnapshot,
+            quantity: item.quantity,
+            status: item.status,
+          })),
+        })
+      );
+      const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+        salesOrders.map((order) => ({
+          id: order.id,
+          totalNetValue: order.totalNetValue,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        }))
+      );
+      const officialOrderMetrics = resolveOfficialScopedOrderMetrics({
+        orders: rulesOrders,
+        referenceDate: new Date(),
+        managementFilters: { allYears: true },
+        linkedNfeContextMap: linkedMap,
+      });
+
+      res.json({ customer, salesOrders, portfolioAbc, officialOrderMetrics });
     } catch (error) {
       console.error("commercial-360 error:", error);
       res.status(500).json({ error: "Erro ao montar visão comercial do cliente." });
@@ -12007,12 +12048,23 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           nomusRawResponse: order.nomusRawResponse,
         }));
 
+      const linkedMap = await loadSalesOrderLinkedNfeContextMap(
+        salesOrders.map((order) => ({
+          id: order.id,
+          totalNetValue: order.totalNetValue,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        }))
+      );
+
       res.json(
         buildCrmCommercialIntelligenceResponse({
           customer: customerRow,
           activities: activityRows,
           salesOrders,
           negotiationProposals,
+          linkedNfeContextMap: linkedMap,
         })
       );
     } catch (error) {

@@ -192,18 +192,7 @@ function SalesOrderList() {
           setTotal(data.length);
           setTotalPages(1);
           setCurrentPage(1);
-          let totalNetAmount = 0;
-          let totalItems = 0;
-          for (const row of data) {
-            totalNetAmount += Number(row.totalNetValue) || 0;
-            totalItems += row.totalItems ?? 0;
-          }
-          setSummary({
-            totalOrders: data.length,
-            totalNetAmount,
-            totalItems,
-            averageTicket: data.length > 0 ? totalNetAmount / data.length : 0,
-          });
+          setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
         } else if (isPaginatedSalesOrderList(data)) {
           setRows(data.data);
           setTotal(Number.isFinite(Number(data.total)) ? Number(data.total) : 0);

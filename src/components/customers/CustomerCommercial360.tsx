@@ -26,6 +26,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
+import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
   COMMERCIAL_SALES_ORDER_BASIS_NOTE,
   computeCommercialPhase2FromSalesOrders,
@@ -110,6 +111,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [salesOrders, setSalesOrders] = useState<CommercialSalesOrder[]>([]);
   const [portfolioAbc, setPortfolioAbc] = useState<PortfolioAbcResult | null>(null);
+  const [officialOrderMetrics, setOfficialOrderMetrics] = useState<OfficialScopedOrderMetrics | null>(
+    null
+  );
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
@@ -130,12 +134,14 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       customer: Customer;
       salesOrders: CommercialSalesOrder[];
       portfolioAbc: PortfolioAbcResult;
+      officialOrderMetrics?: OfficialScopedOrderMetrics;
     }>(`/api/customers/${customerId}/commercial-360`)
       .then((data) => {
         if (cancelled) return;
         setCustomer(data.customer);
         setSalesOrders(Array.isArray(data.salesOrders) ? data.salesOrders : []);
         setPortfolioAbc(data.portfolioAbc ?? null);
+        setOfficialOrderMetrics(data.officialOrderMetrics ?? null);
       })
       .catch((e) => {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Erro ao carregar.");
@@ -224,17 +230,36 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     });
   }, [salesOrders, dateFrom, dateTo, statusF, respF, productF, minNet, maxNet, dealScope]);
 
+  const filtersAreDefault =
+    !dateFrom &&
+    !dateTo &&
+    !statusF &&
+    !respF &&
+    !productF &&
+    !minNet &&
+    !maxNet &&
+    dealScope === "all";
+
   const metrics = useMemo(() => {
     const fo = filtered;
     const valid = fo.filter((o) => isCommercialMetricsSalesOrder(o.status));
-    const totalNet = valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
+    const useOfficial = filtersAreDefault && officialOrderMetrics != null;
+    const totalNet = useOfficial
+      ? officialOrderMetrics.soldAmount
+      : valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
     const totalGross = valid.reduce((a, o) => a + safeCommercialNumber(o.totalGrossValue), 0);
     const totalMargin = valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginValue), 0);
     const count = fo.length;
-    const validCount = valid.length;
-    const invoicedCount = valid.filter((o) => o.hasInvoicing).length;
+    const validCount = useOfficial ? officialOrderMetrics.filteredOrders : valid.length;
+    const invoicedCount = useOfficial
+      ? officialOrderMetrics.invoicedPortfolioCount
+      : valid.filter((o) => o.hasInvoicing).length;
     const cancelledCount = fo.filter((o) => o.status === "CANCELLED").length;
-    const ticket = validCount > 0 ? totalNet / validCount : 0;
+    const ticket = useOfficial
+      ? officialOrderMetrics.averageTicket
+      : validCount > 0
+        ? totalNet / validCount
+        : 0;
     const nets = valid.map((o) => safeCommercialNumber(o.totalNetValue)).filter((v) => v > 0);
     const minDeal = nets.length ? Math.min(...nets) : 0;
     const maxDeal = nets.length ? Math.max(...nets) : 0;
@@ -262,7 +287,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       : null;
 
     const openOrders = valid.filter((o) => isCommercialOpenSalesOrder(o));
-    const openNet = openOrders.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
+    const openNet = useOfficial
+      ? officialOrderMetrics.openPortfolioAmount
+      : openOrders.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
 
     return {
       totalNet,
@@ -282,9 +309,10 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       lastOrderDate: lastOrder?.issueDate,
       lastMovement: lastAny,
       openNet,
-      openCount: openOrders.length,
+      openCount: useOfficial ? officialOrderMetrics.openPortfolioCount : openOrders.length,
+      usesOfficialOrderMetrics: useOfficial,
     };
-  }, [filtered]);
+  }, [filtered, filtersAreDefault, officialOrderMetrics]);
 
   const mixRows = useMemo(() => {
     const m = new Map<
@@ -739,7 +767,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
               </div>
 
               <div className="indus-kpi-grid indus-kpi-grid--wide">
-                <MiniCard label="Receita de pedidos (filtro)" value={formatCurrency(metrics.totalNet)} />
+                <MiniCard label="Receita de pedidos (filtro)" value={formatCurrency(metrics.totalNet)} hint={metrics.usesOfficialOrderMetrics ? "Motor oficial de Pedidos de Venda" : "Escopo filtrado localmente"} />
                 <MiniCard label="Pedidos (filtro)" value={String(metrics.count)} />
                 <MiniCard label="Pedidos válidos (filtro)" value={String(metrics.validCount)} />
                 <MiniCard label="Faturados (filtro)" value={String(metrics.invoicedCount)} />
