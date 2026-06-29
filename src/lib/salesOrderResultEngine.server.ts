@@ -24,6 +24,7 @@ import { buildSalesOrderResultRealizedVsProjected } from "./salesOrderResultProj
 import {
   buildOfficialSalesOrderResultSalesBundle,
   mapPrismaOrderToSalesOrderRulesInput,
+  SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./salesOrderRulesAdapter.js";
 import type {
   SalesOrderResultDashboardPayload,
@@ -67,32 +68,7 @@ async function loadSalesOrderResultRulesOrders(
 ) {
   const rows = await db.salesOrder.findMany({
     where,
-    select: {
-      id: true,
-      orderCode: true,
-      status: true,
-      customerId: true,
-      issueDate: true,
-      expectedDeliveryDate: true,
-      totalNetValue: true,
-      totalGrossValue: true,
-      totalItems: true,
-      responsible: true,
-      nomusRawResponse: true,
-      companyIssuer: true,
-      externalSalesOrderId: true,
-      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
-      items: {
-        select: {
-          id: true,
-          externalProductId: true,
-          skuSnapshot: true,
-          productNameSnapshot: true,
-          quantity: true,
-          status: true,
-        },
-      },
-    },
+    select: SALES_ORDER_RULES_PRISMA_SELECT,
   });
   return rows.map(mapPrismaOrderToSalesOrderRulesInput);
 }

@@ -21,6 +21,7 @@ import { buildOfficialSalesOrderRulesResult } from "../src/lib/salesOrderRulesAd
 import { buildSalesOrderListWhere } from "../src/lib/salesOrdersListSummary.js";
 import { buildSalesOrderManagementWhere } from "../src/lib/salesOrderManagement.js";
 import { loadSalesOrderLinkedNfeContextMap } from "../src/lib/salesOrderLinkedNfe.js";
+import { registerOfficialServerResolversForAuditScripts } from "../src/lib/registerServerResolvers.js";
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -101,6 +102,18 @@ async function main() {
     referenceDate: ref,
     linkedNfeContextMap: linkedMap,
   });
+
+  const productIds =
+    mgmtOrders.length === 0
+      ? []
+      : (
+          await prisma.salesOrderItem.findMany({
+            where: { salesOrderId: { in: mgmtOrders.map((order) => order.id) } },
+            select: { productId: true },
+            distinct: ["productId"],
+          })
+        ).map((row) => row.productId);
+  await registerOfficialServerResolversForAuditScripts(prisma, productIds);
 
   const [mgmtPage, execTab] = await Promise.all([
     loadSalesOrderManagementPage({ year: String(year), month: String(month), pageSize: "10000" }),

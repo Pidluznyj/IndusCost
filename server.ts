@@ -173,6 +173,7 @@ import {
   buildOfficialSalesOrderListPayload,
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialScopedOrderMetrics,
+  SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./src/lib/salesOrderRulesAdapter.js";
 import { resolveOfficialCommercial360MarginMetrics } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
@@ -12759,32 +12760,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         prisma.salesOrder.count({ where }),
         prisma.salesOrder.findMany({
           where,
-          select: {
-            id: true,
-            orderCode: true,
-            status: true,
-            issueDate: true,
-            expectedDeliveryDate: true,
-            totalNetValue: true,
-            totalGrossValue: true,
-            totalItems: true,
-            responsible: true,
-            nomusRawResponse: true,
-            companyIssuer: true,
-            externalSalesOrderId: true,
-            customerId: true,
-            Customer: { select: { companyName: true, tradeName: true, taxId: true } },
-            items: {
-              select: {
-                id: true,
-                externalProductId: true,
-                skuSnapshot: true,
-                productNameSnapshot: true,
-                quantity: true,
-                status: true,
-              },
-            },
-          },
+          select: SALES_ORDER_RULES_PRISMA_SELECT,
         }),
       ]);
 

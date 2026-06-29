@@ -51,4 +51,29 @@ describe("salesOrderRulesConsumptionAudit", () => {
     assert.match(adapter, /SALES_ORDER_RULES_PRISMA_SELECT/);
     assert.doesNotMatch(adapter, /items:\s*\{[\s\S]*status:\s*true/);
   });
+
+  it("salesOrderResultEngine usa select central sem items.status", () => {
+    const resultEngine = read("src/lib/salesOrderResultEngine.server.ts");
+    assert.match(resultEngine, /SALES_ORDER_RULES_PRISMA_SELECT/);
+    assert.doesNotMatch(resultEngine, /items:\s*\{[\s\S]*status:\s*true/);
+  });
+
+  it("auditoria de Pedidos registra resolver de margem antes da gestão", () => {
+    const script = read("scripts/audit-sales-order-rules-consumption.ts");
+    const mainBody = script.slice(script.indexOf("async function main"));
+    assert.match(mainBody, /await registerOfficialServerResolversForAuditScripts/);
+    assert.match(mainBody, /loadSalesOrderManagementPage/);
+    const registerAt = mainBody.indexOf("await registerOfficialServerResolversForAuditScripts");
+    const managementAt = mainBody.indexOf("loadSalesOrderManagementPage");
+    assert.ok(registerAt >= 0 && managementAt > registerAt);
+  });
+
+  it("auditoria de Margem registra resolver antes do contexto de margem", () => {
+    const script = read("scripts/audit-sales-margin-rules-consumption.ts");
+    const mainBody = script.slice(script.indexOf("async function main"));
+    assert.match(mainBody, /await registerOfficialServerResolversForAuditScripts/);
+    const registerAt = mainBody.indexOf("await registerOfficialServerResolversForAuditScripts");
+    const contextAt = mainBody.indexOf("buildSalesOrderMarginContext");
+    assert.ok(registerAt >= 0 && contextAt > registerAt);
+  });
 });
