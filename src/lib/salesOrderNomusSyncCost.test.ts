@@ -10,6 +10,7 @@ import {
   formatNomusSyncUnitCostDecimal,
   parseNomusSyncStoredUnitCost,
   recordUnitCostSnapshotApplyStats,
+  resolveBackfillSalesOrderItemUnitCost,
   resolveSalesOrderItemUnitCostSnapshot,
   type NomusSyncLineUnitCostResult,
 } from "./salesOrderNomusSyncCost.server.js";
@@ -175,5 +176,20 @@ describe("salesOrderNomusSyncCost", () => {
     assert.match(sync, /resolveSalesOrderItemUnitCostSnapshot/);
     assert.match(sync, /unit-cost-summary/);
     assert.doesNotMatch(sync, /unitCost:\s*decimalString\(0\)/);
+  });
+
+  it("resolveBackfillSalesOrderItemUnitCost usa índice oficial", () => {
+    const index = makeIndex({ p1: 33 });
+    const resolved = resolveBackfillSalesOrderItemUnitCost({ productId: "p1", unitCostIndex: index });
+    assert.equal(resolved.outcome, "resolved");
+    assert.equal(resolved.unitCost, 33);
+  });
+
+  it("resolveBackfillSalesOrderItemUnitCost sinaliza produto ausente", () => {
+    const resolved = resolveBackfillSalesOrderItemUnitCost({
+      productId: "",
+      unitCostIndex: new Map(),
+    });
+    assert.equal(resolved.outcome, "no_product");
   });
 });

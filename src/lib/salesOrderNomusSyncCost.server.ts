@@ -324,3 +324,89 @@ export function mergeNomusSyncUnitCostSummary(input: {
     durationMs: input.durationMs,
   };
 }
+
+export function isSalesOrderItemProductIdMissing(productId: string | null | undefined): boolean {
+  if (typeof productId !== "string") return true;
+  const trimmed = productId.trim();
+  if (!trimmed) return true;
+  return trimmed === "00000000-0000-0000-0000-000000000000";
+}
+
+/** Resolve custo para backfill de linhas legadas (sem mapa de preservação Nomus). */
+export function resolveBackfillSalesOrderItemUnitCost(input: {
+  productId: string | null | undefined;
+  unitCostIndex: Map<string, NomusSyncLineUnitCostResult>;
+}): UnitCostSnapshotResult {
+  const productId = typeof input.productId === "string" && input.productId.trim() ? input.productId : null;
+
+  if (!productId || isSalesOrderItemProductIdMissing(productId)) {
+    return {
+      unitCost: null,
+      outcome: "no_product",
+      warning: "Linha sem productId confiável — custo não resolvido.",
+    };
+  }
+
+  const indexed = input.unitCostIndex.get(productId);
+  if (indexed?.unitCost != null && indexed.unitCost > 0) {
+    return {
+      unitCost: indexed.unitCost,
+      outcome: "resolved",
+      warning: null,
+      costSource: indexed.costSource,
+    };
+  }
+
+  return {
+    unitCost: null,
+    outcome: "unresolved",
+    warning:
+      indexed?.warning ??
+      "Custo indisponível no backfill — unitCost não gravado (fallback legado na margem).",
+    costSource: indexed?.costSource ?? "MISSING_COST",
+  };
+}
+
+export type BackfillUnitCostSummary = {
+  mode: "preview" | "apply";
+  scanned: number;
+  eligible: number;
+  updated: number;
+  preservedExisting: number;
+  unresolvedNoProduct: number;
+  unresolvedNoCost: number;
+  fromCache: number;
+  errors: string[];
+  durationMs: number;
+  approximateCostImpact: number;
+  approximateNetRevenueEligible: number;
+  resolverStats: OfficialProductCostAnalysisResolverStats;
+  examples: Array<{
+    orderCode: string;
+    itemId: string;
+    sku: string;
+    productId: string | null;
+    resolvedUnitCost: number | null;
+    netValue: number;
+    action: "would_update" | "preserved" | "skip_no_product" | "skip_no_cost" | "updated";
+  }>;
+};
+
+export function createBackfillUnitCostSummary(mode: "preview" | "apply"): BackfillUnitCostSummary {
+  return {
+    mode,
+    scanned: 0,
+    eligible: 0,
+    updated: 0,
+    preservedExisting: 0,
+    unresolvedNoProduct: 0,
+    unresolvedNoCost: 0,
+    fromCache: 0,
+    errors: [],
+    durationMs: 0,
+    approximateCostImpact: 0,
+    approximateNetRevenueEligible: 0,
+    resolverStats: { engineCalls: 0, cacheHits: 0 },
+    examples: [],
+  };
+}
