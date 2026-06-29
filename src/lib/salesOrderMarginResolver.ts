@@ -11,6 +11,7 @@ import {
 import type {
   SalesOrderCostConfidence,
   SalesOrderCostSource,
+  SalesOrderMarginCostMode,
   SalesOrderMarginItemInput,
 } from "./salesOrderMarginTypes.js";
 
@@ -37,6 +38,7 @@ export type CostResolution = {
   unitCost: number | null;
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
+  marginCostMode: SalesOrderMarginCostMode;
   calculatedAt?: string;
   notes: string[];
 };
@@ -93,6 +95,35 @@ function safeFinite(value: unknown): number | null {
   if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Custo congelado persistido em SalesOrderItem.unitCost (> 0). */
+export function parseSalesOrderItemStoredUnitCost(value: unknown): number | null {
+  const n = safeFinite(value);
+  return n != null && n > 0 ? n : null;
+}
+
+export function hasSalesOrderItemUnitCostSnapshot(storedUnitCost: unknown): boolean {
+  return parseSalesOrderItemStoredUnitCost(storedUnitCost) != null;
+}
+
+export function resolveSalesOrderMarginCostMode(
+  costSource: SalesOrderCostSource
+): SalesOrderMarginCostMode {
+  switch (costSource) {
+    case "SALES_ORDER_ITEM_SNAPSHOT":
+    case "HISTORICAL_SNAPSHOT":
+    case "MANUAL_COST":
+      return "HISTORICAL_FROZEN";
+    case "LIVE_PRODUCT_COST":
+    case "RECALCULATED_CURRENT_COST":
+    case "OFFICIAL_FINAL_COST":
+    case "CURRENT_ENGINEERING_COST":
+    case "CURRENT_COST":
+      return "LIVE_ESTIMATE";
+    default:
+      return "MISSING";
+  }
 }
 
 function asString(value: unknown): string | null {
@@ -342,6 +373,7 @@ export function resolveSalesOrderItemCost(input: {
     unitCost: null,
     costSource: "MISSING_COST",
     costConfidence: "MISSING",
+    marginCostMode: "MISSING",
     notes,
   };
 
@@ -350,14 +382,15 @@ export function resolveSalesOrderItemCost(input: {
     return base;
   }
 
-  const stored = safeFinite(input.storedUnitCost);
-  if (stored != null && stored > 0) {
-    notes.push("Custo unitário histórico da linha SalesOrderItem.unitCost.");
+  const storedSnapshot = parseSalesOrderItemStoredUnitCost(input.storedUnitCost);
+  if (storedSnapshot != null) {
+    notes.push("Custo unitário congelado de SalesOrderItem.unitCost (snapshot histórico da linha).");
     return {
       ...base,
-      unitCost: stored,
-      costSource: "HISTORICAL_SNAPSHOT",
+      unitCost: storedSnapshot,
+      costSource: "SALES_ORDER_ITEM_SNAPSHOT",
       costConfidence: "HIGH",
+      marginCostMode: "HISTORICAL_FROZEN",
       notes,
     };
   }
@@ -369,6 +402,7 @@ export function resolveSalesOrderItemCost(input: {
       unitCost: input.costLog.totalCiu,
       costSource: "HISTORICAL_SNAPSHOT",
       costConfidence: "MEDIUM",
+      marginCostMode: "HISTORICAL_FROZEN",
       calculatedAt: input.costLog.calculatedAt,
       notes,
     };
@@ -380,14 +414,15 @@ export function resolveSalesOrderItemCost(input: {
       const partial = resolved.costAnalysisPartial;
       notes.push(
         partial
-          ? "Custo oficial parcial via getProductCostAnalysis (totalIndustrialCost)."
-          : "Custo oficial via getProductCostAnalysis (totalIndustrialCost)."
+          ? "Custo atual parcial via getProductCostAnalysis — estimativa recalculada, não histórica."
+          : "Custo atual via getProductCostAnalysis — estimativa viva, não histórica."
       );
       return {
         ...base,
         unitCost: resolved.finalUnitCost,
-        costSource: partial ? "CURRENT_ENGINEERING_COST" : "OFFICIAL_FINAL_COST",
+        costSource: partial ? "RECALCULATED_CURRENT_COST" : "LIVE_PRODUCT_COST",
         costConfidence: partial ? "MEDIUM" : "HIGH",
+        marginCostMode: "LIVE_ESTIMATE",
         notes,
       };
     }
@@ -409,8 +444,9 @@ export async function resolveSalesOrderItemCosts(
 ): Promise<Map<string, CostResolution>> {
   const uniqueProductIds = [
     ...new Set(
-      [...productResolutions.values()]
-        .map((row) => row.productId)
+      items
+        .filter((item) => !hasSalesOrderItemUnitCostSnapshot(item.unitCost))
+        .map((item) => productResolutions.get(item.salesOrderItemId)?.productId)
         .filter((id): id is string => Boolean(id))
     ),
   ];
@@ -463,6 +499,7 @@ export function assembleSalesOrderMarginItemInput(
     unitCost: cost.unitCost,
     costSource: cost.costSource,
     costConfidence: cost.costConfidence,
+    marginCostMode: cost.marginCostMode,
   };
 }
 
@@ -489,6 +526,7 @@ export function buildSalesOrderMarginInputsFromResolutions(
         unitCost: null,
         costSource: "MISSING_COST",
         costConfidence: "MISSING",
+        marginCostMode: "MISSING",
         notes: [],
       }
     )

@@ -20,12 +20,14 @@ import {
 import type {
   SalesOrderCostConfidence,
   SalesOrderCostSource,
+  SalesOrderMarginCostMode,
   SalesOrderMarginItemInput,
   SalesOrderMarginItemResult,
   SalesOrderMarginStatus,
   SalesOrderMarginSummary,
   SalesOrderMarginSummaryStatus,
 } from "./salesOrderMarginTypes.js";
+import { resolveSalesOrderMarginCostMode } from "./salesOrderMarginResolver.js";
 
 function safeFinite(value: unknown): number | null {
   if (value == null || value === "") return null;
@@ -93,6 +95,7 @@ function resolveCostFields(input: SalesOrderMarginItemInput): {
   totalCost: number | null;
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
+  marginCostMode: SalesOrderMarginCostMode;
 } {
   const quantity = safeFinite(input.quantity) ?? 0;
   const unitCost = safeFinite(input.unitCost);
@@ -100,12 +103,15 @@ function resolveCostFields(input: SalesOrderMarginItemInput): {
     unitCost == null ? "MISSING_COST" : (input.costSource ?? "MISSING_COST");
   const costConfidence: SalesOrderCostConfidence =
     unitCost == null ? "MISSING" : (input.costConfidence ?? "MISSING");
+  const marginCostMode =
+    input.marginCostMode ?? resolveSalesOrderMarginCostMode(costSource);
 
   return {
     unitCost,
     totalCost: unitCost != null ? roundPricingMoney(quantity * unitCost) : null,
     costSource,
     costConfidence,
+    marginCostMode,
   };
 }
 
@@ -141,6 +147,7 @@ export function calculateSalesOrderItemMargin(
       markup: null,
       costSource: costFields.costSource,
       costConfidence: costFields.costConfidence,
+      marginCostMode: costFields.marginCostMode,
       notes: [...notes, "Item cancelado — excluído da margem consolidada."],
     });
   }
@@ -158,6 +165,7 @@ export function calculateSalesOrderItemMargin(
       markup: null,
       costSource: costFields.costSource,
       costConfidence: costFields.costConfidence,
+      marginCostMode: costFields.marginCostMode,
       notes: [...notes, "Produto não identificado para resolução de custo."],
     });
   }
@@ -176,6 +184,7 @@ export function calculateSalesOrderItemMargin(
       markup: null,
       costSource: costFields.costSource,
       costConfidence: costFields.costConfidence,
+      marginCostMode: costFields.marginCostMode,
       notes: [...revenueNotes, "Receita líquida deve ser maior que zero."],
     });
   }
@@ -192,6 +201,7 @@ export function calculateSalesOrderItemMargin(
       markup: null,
       costSource: "MISSING_COST",
       costConfidence: "MISSING",
+      marginCostMode: "MISSING",
       notes: [...revenueNotes, "Custo unitário não informado ou indisponível."],
     });
   }
@@ -208,6 +218,7 @@ export function calculateSalesOrderItemMargin(
       markup: null,
       costSource: costFields.costSource,
       costConfidence: costFields.costConfidence,
+      marginCostMode: costFields.marginCostMode,
       notes: [...revenueNotes, "Custo unitário zerado ou negativo."],
     });
   }
@@ -229,6 +240,7 @@ export function calculateSalesOrderItemMargin(
       markup,
       costSource: costFields.costSource,
       costConfidence: costFields.costConfidence,
+      marginCostMode: costFields.marginCostMode,
       notes: [
         ...revenueNotes,
         "Margem negativa: receita líquida inferior ao custo total da linha.",
@@ -247,6 +259,7 @@ export function calculateSalesOrderItemMargin(
     markup,
     costSource: costFields.costSource,
     costConfidence: costFields.costConfidence,
+    marginCostMode: costFields.marginCostMode,
     notes: revenueNotes,
   });
 }

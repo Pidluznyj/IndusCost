@@ -133,6 +133,7 @@ function formatItemMarginPayload(
     statusSeverity: meta.statusSeverity,
     costSource: result.costSource,
     costConfidence: result.costConfidence,
+    marginCostMode: result.marginCostMode,
     productResolutionSource: productResolution.resolutionSource,
     notes: [...productResolution.notes, ...result.notes],
   };

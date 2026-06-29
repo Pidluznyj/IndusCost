@@ -16,12 +16,18 @@ export type SalesOrderMarginStatus =
 export type SalesOrderMarginSummaryStatus = SalesOrderMarginStatus | "PARTIAL" | "OK";
 
 export type SalesOrderCostSource =
+  | "SALES_ORDER_ITEM_SNAPSHOT"
   | "HISTORICAL_SNAPSHOT"
+  | "LIVE_PRODUCT_COST"
+  | "RECALCULATED_CURRENT_COST"
   | "OFFICIAL_FINAL_COST"
   | "CURRENT_ENGINEERING_COST"
   | "CURRENT_COST"
   | "MANUAL_COST"
   | "MISSING_COST";
+
+/** Classificação interna da margem quanto ao congelamento do custo (payload/API). */
+export type SalesOrderMarginCostMode = "HISTORICAL_FROZEN" | "LIVE_ESTIMATE" | "MISSING";
 
 export type SalesOrderCostConfidence = "HIGH" | "MEDIUM" | "LOW" | "MISSING";
 
@@ -45,6 +51,7 @@ export type SalesOrderMarginItemInput = {
   unitCost?: number | null;
   costSource?: SalesOrderCostSource;
   costConfidence?: SalesOrderCostConfidence;
+  marginCostMode?: SalesOrderMarginCostMode;
 };
 
 export type SalesOrderMarginItemResult = {
@@ -71,6 +78,8 @@ export type SalesOrderMarginItemResult = {
 
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
+  /** Indica se a margem usa custo congelado da linha ou estimativa atual. */
+  marginCostMode?: SalesOrderMarginCostMode;
 
   notes: string[];
 };
@@ -107,6 +116,8 @@ export type SalesOrderItemMarginPayload = {
   statusSeverity: SalesOrderMarginStatusSeverity;
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
+  /** Indica se a margem usa custo congelado da linha ou estimativa atual. */
+  marginCostMode?: SalesOrderMarginCostMode;
   productResolutionSource:
     | "LOCAL_PRODUCT_ID"
     | "EXTERNAL_PRODUCT_ID"

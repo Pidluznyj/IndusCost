@@ -88,14 +88,15 @@ describe("salesOrderMarginResolver — produto", () => {
 });
 
 describe("salesOrderMarginResolver — custo", () => {
-  it("6. produto encontrado com custo oficial retorna custo", () => {
+  it("6. produto encontrado com custo oficial retorna custo vivo estimado", () => {
     const cost = resolveSalesOrderItemCost({
       salesOrderItemId: "item-1",
       productId: "prod-a",
       analysis: { summary: { totalIndustrialCost: 42.5 } },
     });
     assert.equal(cost.unitCost, 42.5);
-    assert.equal(cost.costSource, "OFFICIAL_FINAL_COST");
+    assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
+    assert.equal(cost.marginCostMode, "LIVE_ESTIMATE");
     assert.equal(cost.costConfidence, "HIGH");
   });
 
@@ -107,6 +108,46 @@ describe("salesOrderMarginResolver — custo", () => {
     });
     assert.equal(cost.unitCost, null);
     assert.equal(cost.costSource, "MISSING_COST");
+    assert.equal(cost.marginCostMode, "MISSING");
+  });
+
+  it("6b. unitCost > 0 da linha tem precedência sobre análise viva", () => {
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: "item-1",
+      productId: "prod-a",
+      storedUnitCost: 77,
+      analysis: { summary: { totalIndustrialCost: 999 } },
+    });
+    assert.equal(cost.unitCost, 77);
+    assert.equal(cost.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
+    assert.equal(cost.marginCostMode, "HISTORICAL_FROZEN");
+  });
+
+  it("6c. unitCost = 0 usa fallback vivo", () => {
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: "item-1",
+      productId: "prod-a",
+      storedUnitCost: 0,
+      analysis: { summary: { totalIndustrialCost: 42.5 } },
+    });
+    assert.equal(cost.unitCost, 42.5);
+    assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
+    assert.equal(cost.marginCostMode, "LIVE_ESTIMATE");
+  });
+
+  it("6d. custo zero não gera margem OK silenciosa", () => {
+    const index = buildIndex();
+    const row = item({ productId: "prod-a", unitCost: 0, totalNetValue: 1000 });
+    const product = resolveSalesOrderItemProduct(row, index);
+    const cost = resolveSalesOrderItemCost({
+      salesOrderItemId: row.salesOrderItemId,
+      productId: product.productId,
+    });
+    const input = assembleSalesOrderMarginItemInput(row, product, cost);
+    const margin = calculateSalesOrderItemMargin(input);
+    assert.notEqual(margin.status, "OK");
+    assert.equal(margin.status, "SEM_CUSTO");
+    assert.equal(margin.marginPercent, null);
   });
 });
 
@@ -131,7 +172,27 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
     });
     assert.equal(calls, 2);
     assert.equal(costs.get("i1")?.unitCost, 10);
+    assert.equal(costs.get("i1")?.costSource, "LIVE_PRODUCT_COST");
     assert.equal(costs.get("i3")?.unitCost, 20);
+  });
+
+  it("8b. linha com unitCost congelado não dispara resolver vivo", async () => {
+    const items = [
+      item({ salesOrderItemId: "i1", productId: "prod-a", unitCost: 55 }),
+      item({ salesOrderItemId: "i2", productId: "prod-a", unitCost: 0 }),
+    ];
+    const index = buildIndex();
+    const products = resolveSalesOrderItemProducts(items, index);
+    let calls = 0;
+    const costs = await resolveSalesOrderItemCosts(items, products, async () => {
+      calls += 1;
+      return { analysis: { summary: { totalIndustrialCost: 999 } } };
+    });
+    assert.equal(calls, 1);
+    assert.equal(costs.get("i1")?.unitCost, 55);
+    assert.equal(costs.get("i1")?.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
+    assert.equal(costs.get("i2")?.unitCost, 999);
+    assert.equal(costs.get("i2")?.costSource, "LIVE_PRODUCT_COST");
   });
 
   it("9. monta input de margem com receita líquida correta", () => {
@@ -159,7 +220,8 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
     });
     const input = assembleSalesOrderMarginItemInput(row, product, cost);
     assert.equal(input.unitCost, 55);
-    assert.equal(input.costSource, "OFFICIAL_FINAL_COST");
+    assert.equal(input.costSource, "LIVE_PRODUCT_COST");
+    assert.equal(input.marginCostMode, "LIVE_ESTIMATE");
   });
 
   it("11. item sem produto vira status SEM_PRODUTO_VINCULADO", () => {

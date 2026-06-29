@@ -24,7 +24,7 @@ function makeIndex(entries: Record<string, number | null>): Map<string, NomusSyn
   for (const [productId, unitCost] of Object.entries(entries)) {
     index.set(productId, {
       unitCost,
-      costSource: unitCost != null && unitCost > 0 ? "OFFICIAL_FINAL_COST" : "MISSING_COST",
+      costSource: unitCost != null && unitCost > 0 ? "LIVE_PRODUCT_COST" : "MISSING_COST",
       warning: unitCost == null || unitCost <= 0 ? "Custo indisponível no sync Nomus — unitCost não gravado." : null,
     });
   }
@@ -57,7 +57,7 @@ describe("salesOrderNomusSyncCost", () => {
       analysis: { totalIndustrialCost: 99 },
     });
     assert.equal(stored.unitCost, 55);
-    assert.equal(stored.costSource, "HISTORICAL_SNAPSHOT");
+    assert.equal(stored.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
   });
 
   it("linha com unitCost = 0 usa fallback do motor oficial", () => {
@@ -68,7 +68,7 @@ describe("salesOrderNomusSyncCost", () => {
       analysis: { totalIndustrialCost: 88, costAnalysisPartial: false },
     });
     assert.equal(live.unitCost, 88);
-    assert.equal(live.costSource, "OFFICIAL_FINAL_COST");
+    assert.equal(live.costSource, "LIVE_PRODUCT_COST");
   });
 
   it("custo indisponível permanece MISSING_COST", () => {
@@ -101,7 +101,7 @@ describe("salesOrderNomusSyncCost", () => {
 
     assert.equal(snapshot.outcome, "preserved");
     assert.equal(snapshot.unitCost, 77);
-    assert.equal(snapshot.costSource, "HISTORICAL_SNAPSHOT");
+    assert.equal(snapshot.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
   });
 
   it("resolveSalesOrderItemUnitCostSnapshot resolve linha nova com índice oficial", () => {

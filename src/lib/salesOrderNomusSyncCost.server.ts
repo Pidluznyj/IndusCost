@@ -151,7 +151,7 @@ export function resolveSalesOrderItemUnitCostSnapshot(input: {
       unitCost: preserved,
       outcome: "preserved",
       warning: null,
-      costSource: "HISTORICAL_SNAPSHOT",
+      costSource: "SALES_ORDER_ITEM_SNAPSHOT",
     };
   }
 

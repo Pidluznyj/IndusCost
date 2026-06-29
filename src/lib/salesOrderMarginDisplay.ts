@@ -45,10 +45,13 @@ export function formatSalesOrderMarkup(value: unknown): string {
 }
 
 export const SALES_ORDER_COST_SOURCE_LABEL: Record<SalesOrderCostSource, string> = {
+  SALES_ORDER_ITEM_SNAPSHOT: "Custo congelado da linha do pedido",
+  HISTORICAL_SNAPSHOT: "Snapshot histórico de custo",
+  LIVE_PRODUCT_COST: "Custo atual estimado (motor vivo)",
+  RECALCULATED_CURRENT_COST: "Custo atual parcial recalculado",
   OFFICIAL_FINAL_COST: "Custo oficial da engenharia",
   CURRENT_ENGINEERING_COST: "Custo parcial da engenharia",
   CURRENT_COST: "Custo atual do cadastro",
-  HISTORICAL_SNAPSHOT: "Snapshot histórico de custo",
   MANUAL_COST: "Custo manual",
   MISSING_COST: "Custo indisponível",
 };
@@ -70,14 +73,21 @@ export function resolveSalesOrderMarginSupportText(
       .filter((s): s is SalesOrderCostSource => Boolean(s))
   );
 
-  if (sources.has("HISTORICAL_SNAPSHOT")) {
-    return "Margem calculada com base em snapshot histórico de custo do produto.";
+  if (sources.has("SALES_ORDER_ITEM_SNAPSHOT") || sources.has("HISTORICAL_SNAPSHOT")) {
+    return "Margem calculada com base em custo congelado/histórico do item ou do motor.";
   }
-  if (sources.has("CURRENT_ENGINEERING_COST")) {
-    return "Margem calculada com custo parcial da engenharia de produtos (BOM incompleta).";
+  if (
+    sources.has("RECALCULATED_CURRENT_COST") ||
+    sources.has("CURRENT_ENGINEERING_COST")
+  ) {
+    return "Margem calculada com custo atual parcial recalculado — estimativa, não histórica.";
   }
-  if (sources.has("OFFICIAL_FINAL_COST") || sources.size === 0) {
-    return "Margem calculada com base no custo oficial atual do produto no IndusCost.";
+  if (
+    sources.has("LIVE_PRODUCT_COST") ||
+    sources.has("OFFICIAL_FINAL_COST") ||
+    sources.size === 0
+  ) {
+    return "Margem calculada com base no custo atual do produto no IndusCost — estimativa viva.";
   }
   if (sources.has("CURRENT_COST")) {
     return "Margem calculada com base no custo atual do cadastro do produto.";
@@ -85,7 +95,7 @@ export function resolveSalesOrderMarginSupportText(
   if (summary?.status === "SEM_CUSTO" || sources.has("MISSING_COST")) {
     return "Margem incompleta: há itens sem custo oficial disponível.";
   }
-  return "Margem calculada com base no custo oficial atual do produto no IndusCost.";
+  return "Margem calculada com base no custo atual do produto no IndusCost — estimativa viva.";
 }
 
 export function salesOrderMarginSeverityBadgeClass(
