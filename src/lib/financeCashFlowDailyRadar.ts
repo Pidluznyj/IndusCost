@@ -7,6 +7,8 @@ import { classifyFinanceApTitle } from "./financeAccountsPayableDashboard.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   civilDateToLocalDate,
+  compareCivilDates,
+  diffCivilDays,
   formatCivilDate,
   startOfCivilDate,
   toCivilDateKey,
@@ -51,6 +53,13 @@ export const DAILY_RADAR_RANGE_KEYS = [
 
 export type DailyRadarRangeKey = (typeof DAILY_RADAR_RANGE_KEYS)[number];
 
+/** Seleção de drill-down do período personalizado (independente das faixas fixas). */
+export const DAILY_RADAR_CUSTOM_RANGE_KEY = "custom" as const;
+
+export type DailyRadarCustomRangeKey = typeof DAILY_RADAR_CUSTOM_RANGE_KEY;
+
+export type DailyRadarSelectionKey = DailyRadarRangeKey | DailyRadarCustomRangeKey;
+
 export type DailyRadarRangeDef = {
   key: DailyRadarRangeKey;
   label: string;
@@ -81,7 +90,9 @@ export const DAILY_RADAR_EXPORT_PAGE_SIZE = 50_000;
 
 export type DailyRadarQuery = {
   baseDate: Date;
-  rangeKey?: DailyRadarRangeKey;
+  rangeKey?: DailyRadarSelectionKey;
+  customStartDate?: string;
+  customEndDate?: string;
   day?: string;
   search?: string;
   sortBy?: string;
@@ -101,6 +112,18 @@ export type DailyRadarRangeSummary = {
   label: string;
   dateFrom: string | null;
   dateTo: string | null;
+  payableTotal: number;
+  receivableTotal: number;
+  netTotal: number;
+  payableCount: number;
+  receivableCount: number;
+};
+
+export type DailyRadarCustomRangeSummary = {
+  key: DailyRadarCustomRangeKey;
+  label: string;
+  dateFrom: string;
+  dateTo: string;
   payableTotal: number;
   receivableTotal: number;
   netTotal: number;
@@ -186,7 +209,7 @@ export type DailyRadarDetailLevel = "range" | "day";
 /** Detalhe progressivo do drill-down (faixa ou dia) com grids AP/AR. */
 export type DailyRadarSelectedDetail = {
   level: DailyRadarDetailLevel;
-  rangeKey: DailyRadarRangeKey;
+  rangeKey: DailyRadarSelectionKey;
   rangeLabel: string;
   date: string | null;
   entriesTotal: number;
@@ -199,8 +222,16 @@ export type DailyRadarSelectedDetail = {
 export type DailyRadarPayload = {
   baseDate: string;
   ranges: DailyRadarRangeSummary[];
+  customRange?: DailyRadarCustomRangeSummary | null;
+  customRangeError?: string | null;
   selectedRange?: {
     key: DailyRadarRangeKey;
+    days: DailyRadarDaySummary[];
+  };
+  selectedCustomRange?: {
+    key: DailyRadarCustomRangeKey;
+    dateFrom: string;
+    dateTo: string;
     days: DailyRadarDaySummary[];
   };
   selectedDetail?: DailyRadarSelectedDetail;
@@ -269,6 +300,144 @@ function matchesRange(dayOffset: number, def: DailyRadarRangeDef): boolean {
 
 function findRangeDef(key: string | undefined): DailyRadarRangeDef | undefined {
   return DAILY_RADAR_RANGES.find((r) => r.key === key);
+}
+
+export type DailyRadarCustomPeriodValidation =
+  | { ok: true; startDate: Date; endDate: Date; startKey: string; endKey: string }
+  | { ok: false; error: string };
+
+export function validateDailyRadarCustomPeriod(
+  startRaw: string | undefined,
+  endRaw: string | undefined
+): DailyRadarCustomPeriodValidation {
+  const startTrim = typeof startRaw === "string" ? startRaw.trim() : "";
+  const endTrim = typeof endRaw === "string" ? endRaw.trim() : "";
+  if (!startTrim) {
+    return { ok: false, error: "Data inicial é obrigatória." };
+  }
+  if (!endTrim) {
+    return { ok: false, error: "Data final é obrigatória." };
+  }
+  const startKey = toCivilDateKey(startTrim);
+  const endKey = toCivilDateKey(endTrim);
+  if (!startKey || !endKey) {
+    return { ok: false, error: "Datas inválidas. Use o formato AAAA-MM-DD." };
+  }
+  if (compareCivilDates(startKey, endKey) > 0) {
+    return { ok: false, error: "Data final não pode ser menor que a data inicial." };
+  }
+  const startDate = civilDateToLocalDate(startKey);
+  const endDate = civilDateToLocalDate(endKey);
+  return { ok: true, startDate, endDate, startKey, endKey };
+}
+
+export function buildDailyRadarCustomRangeLabel(startKey: string, endKey: string): string {
+  return `Período personalizado: ${formatCivilDate(startKey)} a ${formatCivilDate(endKey)}`;
+}
+
+function matchesCustomDateRange(operationalDate: Date, startKey: string, endKey: string): boolean {
+  const key = toIsoDate(operationalDate);
+  return key >= startKey && key <= endKey;
+}
+
+function summarizeCustomRange(
+  movements: InternalMovement[],
+  startKey: string,
+  endKey: string
+): Omit<DailyRadarCustomRangeSummary, "key" | "label"> & { label: string } {
+  const inRange = movements.filter((m) =>
+    matchesCustomDateRange(m.operationalDate, startKey, endKey)
+  );
+  let payableTotal = 0;
+  let receivableTotal = 0;
+  let payableCount = 0;
+  let receivableCount = 0;
+
+  for (const m of inRange) {
+    if (m.type === "AP") {
+      payableTotal += m.amount;
+      payableCount += 1;
+    } else {
+      receivableTotal += m.amount;
+      receivableCount += 1;
+    }
+  }
+
+  return {
+    label: buildDailyRadarCustomRangeLabel(startKey, endKey),
+    dateFrom: startKey,
+    dateTo: endKey,
+    payableTotal: finiteMoney(payableTotal),
+    receivableTotal: finiteMoney(receivableTotal),
+    netTotal: finiteMoney(receivableTotal - payableTotal),
+    payableCount,
+    receivableCount,
+  };
+}
+
+function buildDaysForCustomRange(
+  movements: InternalMovement[],
+  startDate: Date,
+  endDate: Date,
+  baseDate: Date
+): DailyRadarDaySummary[] {
+  const startKey = toIsoDate(startDate);
+  const endKey = toIsoDate(endDate);
+  const byDate = new Map<string, DailyRadarDaySummary>();
+
+  for (const m of movements) {
+    if (!matchesCustomDateRange(m.operationalDate, startKey, endKey)) continue;
+    const dateKey = toIsoDate(m.operationalDate);
+    const row =
+      byDate.get(dateKey) ??
+      ({
+        date: dateKey,
+        dayOffset: computeDaysFromToday(m.operationalDate, baseDate),
+        weekday: weekdayLabel(m.operationalDate),
+        payableTotal: 0,
+        receivableTotal: 0,
+        netTotal: 0,
+        payableCount: 0,
+        receivableCount: 0,
+        timing: dayTiming(computeDaysFromToday(m.operationalDate, baseDate)),
+      } satisfies DailyRadarDaySummary);
+    if (m.type === "AP") {
+      row.payableTotal += m.amount;
+      row.payableCount += 1;
+    } else {
+      row.receivableTotal += m.amount;
+      row.receivableCount += 1;
+    }
+    row.netTotal = finiteMoney(row.receivableTotal - row.payableTotal);
+    byDate.set(dateKey, row);
+  }
+
+  const totalDays = diffCivilDays(startDate, endDate);
+  const days: DailyRadarDaySummary[] = [];
+  for (let offset = 0; offset <= totalDays; offset += 1) {
+    const d = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate() + offset
+    );
+    const dateKey = toIsoDate(d);
+    const dayOffset = computeDaysFromToday(d, baseDate);
+    const existing = byDate.get(dateKey);
+    days.push(
+      existing ?? {
+        date: dateKey,
+        dayOffset,
+        weekday: weekdayLabel(d),
+        payableTotal: 0,
+        receivableTotal: 0,
+        netTotal: 0,
+        payableCount: 0,
+        receivableCount: 0,
+        timing: dayTiming(dayOffset),
+      }
+    );
+  }
+  return days;
 }
 
 export function collectDailyRadarMovements(
@@ -691,7 +860,9 @@ function buildDayDetail(
 
 export function buildDailyRadarQuery(params: {
   baseDate?: string;
-  range?: DailyRadarRangeKey;
+  range?: DailyRadarSelectionKey;
+  customStartDate?: string;
+  customEndDate?: string;
   day?: string;
   search?: string;
   sortBy?: string;
@@ -706,6 +877,8 @@ export function buildDailyRadarQuery(params: {
   const qs = new URLSearchParams();
   if (params.baseDate) qs.set("baseDate", params.baseDate);
   if (params.range) qs.set("range", params.range);
+  if (params.customStartDate) qs.set("customStartDate", params.customStartDate);
+  if (params.customEndDate) qs.set("customEndDate", params.customEndDate);
   if (params.day) qs.set("day", params.day);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.sortBy) qs.set("sortBy", params.sortBy);
@@ -723,9 +896,20 @@ export function parseDailyRadarQuery(query: Record<string, unknown>): DailyRadar
   const baseRaw = typeof query.baseDate === "string" ? query.baseDate.trim() : "";
   const baseDate = parseIsoDate(baseRaw) ?? startOfLocalDay(new Date());
   const rangeRaw = typeof query.range === "string" ? query.range.trim() : "";
-  const rangeKey = DAILY_RADAR_RANGE_KEYS.includes(rangeRaw as DailyRadarRangeKey)
-    ? (rangeRaw as DailyRadarRangeKey)
-    : undefined;
+  const rangeKey: DailyRadarSelectionKey | undefined =
+    rangeRaw === DAILY_RADAR_CUSTOM_RANGE_KEY
+      ? DAILY_RADAR_CUSTOM_RANGE_KEY
+      : DAILY_RADAR_RANGE_KEYS.includes(rangeRaw as DailyRadarRangeKey)
+        ? (rangeRaw as DailyRadarRangeKey)
+        : undefined;
+  const customStartDate =
+    typeof query.customStartDate === "string" && query.customStartDate.trim()
+      ? query.customStartDate.trim()
+      : undefined;
+  const customEndDate =
+    typeof query.customEndDate === "string" && query.customEndDate.trim()
+      ? query.customEndDate.trim()
+      : undefined;
   const day = typeof query.day === "string" && query.day.trim() ? query.day.trim() : undefined;
   const search = typeof query.search === "string" ? query.search : undefined;
   const sortBy = typeof query.sortBy === "string" ? query.sortBy : undefined;
@@ -739,6 +923,8 @@ export function parseDailyRadarQuery(query: Record<string, unknown>): DailyRadar
   return {
     baseDate,
     rangeKey,
+    customStartDate,
+    customEndDate,
     day,
     search,
     sortBy,
@@ -766,9 +952,25 @@ export function buildFinanceCashFlowDailyRadar(
   const payload: DailyRadarPayload = {
     baseDate: toIsoDate(baseDate),
     ranges,
+    customRange: null,
+    customRangeError: null,
   };
 
-  const rangeDef = findRangeDef(query.rangeKey);
+  const hasCustomDates = Boolean(query.customStartDate && query.customEndDate);
+  if (hasCustomDates) {
+    const validation = validateDailyRadarCustomPeriod(query.customStartDate, query.customEndDate);
+    if (!validation.ok) {
+      payload.customRangeError = validation.error;
+    } else {
+      const summary = summarizeCustomRange(movements, validation.startKey, validation.endKey);
+      payload.customRange = {
+        key: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        ...summary,
+      };
+    }
+  }
+
+  const rangeDef = query.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY ? undefined : findRangeDef(query.rangeKey);
   if (rangeDef) {
     payload.selectedRange = {
       key: rangeDef.key,
@@ -804,7 +1006,52 @@ export function buildFinanceCashFlowDailyRadar(
     };
   }
 
-  if (query.day) {
+  if (query.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY && hasCustomDates) {
+    const validation = validateDailyRadarCustomPeriod(query.customStartDate, query.customEndDate);
+    if (validation.ok) {
+      const { startDate, endDate, startKey, endKey } = validation;
+      const customDays = buildDaysForCustomRange(movements, startDate, endDate, baseDate);
+      payload.selectedCustomRange = {
+        key: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        dateFrom: startKey,
+        dateTo: endKey,
+        days: customDays,
+      };
+
+      const customMovements = movements.filter((m) =>
+        matchesCustomDateRange(m.operationalDate, startKey, endKey)
+      );
+      let scopeMovements = customMovements;
+      let level: DailyRadarDetailLevel = "range";
+      let dateIso: string | null = null;
+      if (query.day) {
+        const parsedDay = parseIsoDate(query.day);
+        if (parsedDay) {
+          const dayKey = toIsoDate(parsedDay);
+          if (compareCivilDates(dayKey, startKey) >= 0 && compareCivilDates(dayKey, endKey) <= 0) {
+            scopeMovements = customMovements.filter((m) => toIsoDate(m.operationalDate) === dayKey);
+            level = "day";
+            dateIso = dayKey;
+          }
+        }
+      }
+
+      const scoped = buildScopedDetail(scopeMovements, query, referenceDate);
+      payload.selectedDetail = {
+        level,
+        rangeKey: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        rangeLabel: buildDailyRadarCustomRangeLabel(startKey, endKey),
+        date: dateIso,
+        entriesTotal: scoped.entriesTotal,
+        exitsTotal: scoped.exitsTotal,
+        netTotal: scoped.netTotal,
+        payables: scoped.payables,
+        receivables: scoped.receivables,
+      };
+    }
+  }
+
+  if (query.day && query.rangeKey !== DAILY_RADAR_CUSTOM_RANGE_KEY) {
     const dayIso = parseIsoDate(query.day);
     if (dayIso) {
       payload.selectedDay = buildDayDetail(movements, toIsoDate(dayIso), query, referenceDate);

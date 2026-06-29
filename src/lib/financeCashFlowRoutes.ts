@@ -28,8 +28,10 @@ import {
 import {
   buildFinanceCashFlowDailyRadar,
   createDailyRadarDashboardFilters,
+  DAILY_RADAR_CUSTOM_RANGE_KEY,
   parseDailyRadarQuery,
   filterDailyRadarPortfolioRows,
+  validateDailyRadarCustomPeriod,
 } from "@/src/lib/financeCashFlowDailyRadar.js";
 import {
   buildFinanceCashFlowDailyRadarExportPayload,
@@ -277,6 +279,19 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
     auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
     async (req, res) => {
       const query = parseDailyRadarQuery(req.query as Record<string, unknown>);
+      if (
+        query.customStartDate &&
+        query.customEndDate &&
+        query.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY
+      ) {
+        const validation = validateDailyRadarCustomPeriod(
+          query.customStartDate,
+          query.customEndDate
+        );
+        if (!validation.ok) {
+          return res.status(400).json({ error: validation.error });
+        }
+      }
       const referenceDate = new Date();
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
         await loadDailyRadarPortfolioRows(referenceDate);

@@ -10,8 +10,10 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   buildDailyRadarQuery,
   dailyRadarDayCardLabel,
+  DAILY_RADAR_CUSTOM_RANGE_KEY,
   formatDailyRadarPayableScheduledDisplay,
   toggleSortState,
+  type DailyRadarCustomRangeSummary,
   type DailyRadarDetailGroup,
   type DailyRadarPayableRow,
   type DailyRadarPayload,
@@ -20,6 +22,7 @@ import {
   type DailyRadarReceivableRow,
   type SortState,
 } from "@/src/lib/financeCashFlowDailyRadar";
+import { civilDateToLocalDate, toCivilDateKey } from "@/src/lib/financeCivilDate";
 import {
   displayFinanceText,
   formatFinanceCurrency,
@@ -44,6 +47,18 @@ function timingBadge(timing: "overdue" | "today" | "future"): string {
   if (timing === "overdue") return "Vencido";
   if (timing === "today") return "Hoje";
   return "Futuro";
+}
+
+function addDaysToCivilKey(baseKey: string, days: number): string {
+  const d = civilDateToLocalDate(baseKey);
+  d.setDate(d.getDate() + days);
+  return toCivilDateKey(d) ?? baseKey;
+}
+
+function lastDayOfMonthCivilKey(baseKey: string): string {
+  const d = civilDateToLocalDate(baseKey);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return toCivilDateKey(last) ?? baseKey;
 }
 
 function RangeCard({
@@ -87,6 +102,164 @@ function RangeCard({
         </div>
       </div>
     </button>
+  );
+}
+
+function CustomPeriodCard({
+  appliedRange,
+  active,
+  startDraft,
+  endDraft,
+  baseDateKey,
+  onStartChange,
+  onEndChange,
+  onApply,
+  onSelect,
+  onShortcut,
+  applyError,
+  applying,
+}: {
+  appliedRange: DailyRadarCustomRangeSummary | null | undefined;
+  active: boolean;
+  startDraft: string;
+  endDraft: string;
+  baseDateKey: string | null;
+  onStartChange: (v: string) => void;
+  onEndChange: (v: string) => void;
+  onApply: () => void;
+  onSelect: () => void;
+  onShortcut: (start: string, end: string) => void;
+  applyError: string | null;
+  applying: boolean;
+}) {
+  const hasApplied = appliedRange != null;
+
+  return (
+    <div
+      className={cn(
+        financeBiCardClass,
+        "p-4 transition-shadow",
+        active && hasApplied && "ring-2 ring-[#2563EB] shadow-sm"
+      )}
+      data-testid="cash-flow-radar-custom-period"
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+        Período personalizado
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor="radar-custom-start" className="text-[10px] font-medium text-[#9CA3AF]">
+            Data inicial
+          </label>
+          <input
+            id="radar-custom-start"
+            type="date"
+            value={startDraft}
+            onChange={(e) => onStartChange(e.target.value)}
+            className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[#2563EB]/30"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="radar-custom-end" className="text-[10px] font-medium text-[#9CA3AF]">
+            Data final
+          </label>
+          <input
+            id="radar-custom-end"
+            type="date"
+            value={endDraft}
+            onChange={(e) => onEndChange(e.target.value)}
+            className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[#2563EB]/30"
+          />
+        </div>
+      </div>
+
+      {baseDateKey ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            className="rounded-md border border-[#E5E7EB] px-2 py-1 text-[10px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+            onClick={() => onShortcut(baseDateKey, addDaysToCivilKey(baseDateKey, 15))}
+          >
+            0 a 15 dias
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[#E5E7EB] px-2 py-1 text-[10px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+            onClick={() => onShortcut(baseDateKey, addDaysToCivilKey(baseDateKey, 44))}
+          >
+            Próximos 45 dias
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[#E5E7EB] px-2 py-1 text-[10px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+            onClick={() => onShortcut(baseDateKey, lastDayOfMonthCivilKey(baseDateKey))}
+          >
+            Restante do mês
+          </button>
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={applying}
+          data-testid="cash-flow-radar-custom-apply"
+          className="inline-flex items-center gap-1 rounded-lg bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Aplicar
+        </button>
+      </div>
+
+      {applyError ? (
+        <p className="mt-2 text-[11px] text-destructive" data-testid="cash-flow-radar-custom-error">
+          {applyError}
+        </p>
+      ) : null}
+
+      {hasApplied ? (
+        <button
+          type="button"
+          onClick={onSelect}
+          className="mt-4 w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 rounded-lg"
+          aria-pressed={active}
+          data-testid="cash-flow-radar-custom-select"
+        >
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-medium text-[#9CA3AF]">Entradas</p>
+              <p className="text-sm font-bold text-[#059669]">
+                {formatFinanceCurrency(appliedRange.receivableTotal)}
+              </p>
+              <p className="text-[10px] text-[#9CA3AF]">
+                {formatFinanceInteger(appliedRange.receivableCount)} título(s)
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-[#9CA3AF]">Saídas</p>
+              <p className="text-sm font-bold text-[#DC2626]">
+                {formatFinanceCurrency(appliedRange.payableTotal)}
+              </p>
+              <p className="text-[10px] text-[#9CA3AF]">
+                {formatFinanceInteger(appliedRange.payableCount)} título(s)
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-[#9CA3AF]">Saldo líquido</p>
+              <p className={cn("text-sm font-bold", netTone(appliedRange.netTotal))}>
+                {formatFinanceCurrency(appliedRange.netTotal)}
+              </p>
+            </div>
+          </div>
+        </button>
+      ) : (
+        <p className="mt-3 text-[11px] text-[#9CA3AF]">
+          Informe as datas e clique em Aplicar para calcular o período.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -142,6 +315,12 @@ export function FinanceCashFlowDailyRadar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<DailyRadarRangeKey | null>(null);
+  const [selectedCustom, setSelectedCustom] = useState(false);
+  const [customStartDraft, setCustomStartDraft] = useState("");
+  const [customEndDraft, setCustomEndDraft] = useState("");
+  const [appliedCustomStart, setAppliedCustomStart] = useState<string | null>(null);
+  const [appliedCustomEnd, setAppliedCustomEnd] = useState<string | null>(null);
+  const [customApplyError, setCustomApplyError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
@@ -161,7 +340,9 @@ export function FinanceCashFlowDailyRadar() {
     setError(null);
     try {
       const qs = buildDailyRadarQuery({
-        range: selectedRange ?? undefined,
+        range: selectedCustom ? DAILY_RADAR_CUSTOM_RANGE_KEY : selectedRange ?? undefined,
+        customStartDate: appliedCustomStart ?? undefined,
+        customEndDate: appliedCustomEnd ?? undefined,
         day: selectedDay ?? undefined,
         search: search || undefined,
         payableSortBy: payableSort.key,
@@ -175,13 +356,29 @@ export function FinanceCashFlowDailyRadar() {
         `/api/finance/cash-flow/daily-radar?${qs}`
       );
       setPayload(data);
+      if (data.customRangeError) {
+        setCustomApplyError(data.customRangeError);
+      } else if (appliedCustomStart && appliedCustomEnd) {
+        setCustomApplyError(null);
+      }
     } catch (e) {
       setPayload(null);
       setError(e instanceof Error ? e.message : "Não foi possível carregar o Radar Diário de Caixa.");
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, payableSort, receivableSort, search, selectedDay, selectedRange]);
+  }, [
+    appliedCustomEnd,
+    appliedCustomStart,
+    page,
+    pageSize,
+    payableSort,
+    receivableSort,
+    search,
+    selectedCustom,
+    selectedDay,
+    selectedRange,
+  ]);
 
   useEffect(() => {
     void load();
@@ -201,9 +398,37 @@ export function FinanceCashFlowDailyRadar() {
   );
 
   const handleRangeClick = (key: DailyRadarRangeKey) => {
+    setSelectedCustom(false);
     setSelectedRange((current) => (current === key ? null : key));
     setSelectedDay(null);
     setPage(1);
+  };
+
+  const handleCustomSelect = () => {
+    if (!payload?.customRange) return;
+    setSelectedCustom((current) => !current);
+    setSelectedRange(null);
+    setSelectedDay(null);
+    setPage(1);
+  };
+
+  const handleCustomApply = () => {
+    if (!customStartDraft.trim() || !customEndDraft.trim()) {
+      setCustomApplyError("Data inicial e data final são obrigatórias.");
+      return;
+    }
+    setAppliedCustomStart(customStartDraft.trim());
+    setAppliedCustomEnd(customEndDraft.trim());
+    setSelectedCustom(false);
+    setSelectedRange(null);
+    setSelectedDay(null);
+    setPage(1);
+    setCustomApplyError(null);
+  };
+
+  const handleCustomShortcut = (start: string, end: string) => {
+    setCustomStartDraft(start);
+    setCustomEndDraft(end);
   };
 
   const handleDayClick = (date: string) => {
@@ -223,6 +448,8 @@ export function FinanceCashFlowDailyRadar() {
 
   const detail = payload?.selectedDetail;
   const isDayLevel = detail?.level === "day";
+  const isCustomDetail = detail?.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY;
+  const customDays = payload?.selectedCustomRange?.days;
 
   return (
     <section
@@ -263,6 +490,21 @@ export function FinanceCashFlowDailyRadar() {
             ))}
           </div>
 
+          <CustomPeriodCard
+            appliedRange={payload.customRange}
+            active={selectedCustom}
+            startDraft={customStartDraft}
+            endDraft={customEndDraft}
+            baseDateKey={payload.baseDate ?? null}
+            onStartChange={setCustomStartDraft}
+            onEndChange={setCustomEndDraft}
+            onApply={handleCustomApply}
+            onSelect={handleCustomSelect}
+            onShortcut={handleCustomShortcut}
+            applyError={customApplyError}
+            applying={loading}
+          />
+
           {selectedRangeSummary && payload.selectedRange ? (
             <div className={cn(financeBiCardClass, "p-4 space-y-3")}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -299,6 +541,45 @@ export function FinanceCashFlowDailyRadar() {
             </div>
           ) : null}
 
+          {selectedCustom && customDays && customDays.length > 0 ? (
+            <div className={cn(financeBiCardClass, "p-4 space-y-3")}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-[#111827]">
+                    Dias do período personalizado
+                  </h3>
+                  <p className="text-[11px] text-[#6B7280] mt-0.5">
+                    {payload.customRange?.label ?? "Período personalizado"}
+                  </p>
+                  <p className="text-[11px] text-[#6B7280] mt-0.5">
+                    Clique em um dia para ver contas a pagar e receber.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCustom(false);
+                    setSelectedDay(null);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Limpar período
+                </button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {customDays.map((day) => (
+                  <DayCard
+                    key={day.date}
+                    day={day}
+                    active={selectedDay === day.date}
+                    onSelect={() => handleDayClick(day.date)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {detail ? (
             <div className={cn(financeBiCardClass, "p-4 space-y-4")} data-testid="cash-flow-radar-day-detail">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -306,7 +587,9 @@ export function FinanceCashFlowDailyRadar() {
                   <h3 className="text-sm font-bold text-[#111827]">
                     {isDayLevel && detail.date
                       ? `Detalhe do dia — ${formatFinanceDate(detail.date)}`
-                      : `Detalhe da faixa — ${detail.rangeLabel}`}
+                      : isCustomDetail
+                        ? detail.rangeLabel
+                        : `Detalhe da faixa — ${detail.rangeLabel}`}
                   </h3>
                   <div className="mt-2 flex flex-wrap gap-4 text-[11px]">
                     <span className="text-[#059669]">
@@ -325,6 +608,16 @@ export function FinanceCashFlowDailyRadar() {
                     rangeKey={detail.rangeKey}
                     rangeLabel={detail.rangeLabel}
                     baseDate={payload.baseDate}
+                    customStartDate={
+                      detail.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY
+                        ? appliedCustomStart ?? undefined
+                        : undefined
+                    }
+                    customEndDate={
+                      detail.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY
+                        ? appliedCustomEnd ?? undefined
+                        : undefined
+                    }
                     selectedDate={detail.date}
                     search={search || undefined}
                     payableSortBy={payableSort.key}
@@ -341,6 +634,18 @@ export function FinanceCashFlowDailyRadar() {
                     >
                       <X className="h-3.5 w-3.5" />
                       Limpar dia
+                    </button>
+                  ) : isCustomDetail ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustom(false);
+                        setSelectedDay(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-2.5 py-1.5 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Limpar período
                     </button>
                   ) : (
                     <button

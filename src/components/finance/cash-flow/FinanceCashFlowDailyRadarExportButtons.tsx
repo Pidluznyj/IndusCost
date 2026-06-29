@@ -10,14 +10,16 @@ import {
   buildFinanceCashFlowDailyRadarExportFilename,
   sanitizeDailyRadarExportSlug,
 } from "@/src/lib/financeCashFlowDailyRadarExportXlsx";
-import type { DailyRadarRangeKey } from "@/src/lib/financeCashFlowDailyRadar";
+import type { DailyRadarSelectionKey } from "@/src/lib/financeCashFlowDailyRadar";
 import { FinanceCashFlowDailyRadarPrintDocument } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadarPrintDocument";
 import "./finance-cash-flow-daily-radar-print.css";
 
 type Props = {
-  rangeKey: DailyRadarRangeKey;
+  rangeKey: DailyRadarSelectionKey;
   rangeLabel: string;
   baseDate?: string;
+  customStartDate?: string;
+  customEndDate?: string;
   selectedDate?: string | null;
   search?: string;
   payableSortBy?: string;
@@ -31,6 +33,8 @@ export function FinanceCashFlowDailyRadarExportButtons({
   rangeKey,
   rangeLabel,
   baseDate,
+  customStartDate,
+  customEndDate,
   selectedDate,
   search,
   payableSortBy,
@@ -49,6 +53,8 @@ export function FinanceCashFlowDailyRadarExportButtons({
   const exportQuery = buildDailyRadarExportQueryString({
     baseDate,
     range: rangeKey,
+    customStartDate,
+    customEndDate,
     day: selectedDate ?? undefined,
     search,
     payableSortBy,

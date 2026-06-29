@@ -326,4 +326,35 @@ describe("financeCashFlowDailyRadarExport", () => {
       assert.doesNotMatch(src, /lib\/prisma/);
     }
   });
+
+  it("exportação aceita período personalizado", () => {
+    const arRows = [arRow({ balanceReceivable: 100, dueDate: new Date(2026, 5, 10) })];
+    const parsed = parseDailyRadarExportQuery({
+      baseDate: "2026-06-09",
+      range: "custom",
+      customStartDate: "2026-06-09",
+      customEndDate: "2026-06-15",
+    });
+    const payload = buildFinanceCashFlowDailyRadarExportPayload(
+      arRows,
+      [],
+      parsed,
+      { userName: "Teste" },
+      BASE
+    );
+    assert.equal(payload.rangeKey, "custom");
+    assert.equal(payload.entriesTotal, 100);
+  });
+
+  it("exportação rejeita período personalizado inválido", () => {
+    assert.throws(
+      () =>
+        parseDailyRadarExportQuery({
+          range: "custom",
+          customStartDate: "2026-06-20",
+          customEndDate: "2026-06-10",
+        }),
+      (err: unknown) => err instanceof FinanceCashFlowDailyRadarExportError
+    );
+  });
 });

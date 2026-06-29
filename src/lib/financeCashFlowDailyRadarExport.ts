@@ -1,13 +1,16 @@
 import {
   buildFinanceCashFlowDailyRadar,
+  DAILY_RADAR_CUSTOM_RANGE_KEY,
   DAILY_RADAR_EXPORT_PAGE_SIZE,
   parseDailyRadarQuery,
+  validateDailyRadarCustomPeriod,
   type DailyRadarDaySummary,
   type DailyRadarDetailLevel,
   type DailyRadarGridSummary,
   type DailyRadarPayableRow,
   type DailyRadarRangeKey,
   type DailyRadarReceivableRow,
+  type DailyRadarSelectionKey,
 } from "./financeCashFlowDailyRadar.js";
 import type { FinanceCashFlowApRow, FinanceCashFlowArRow } from "./financeCashFlowDashboard.js";
 import { formatFinanceDate } from "./financeAccountsReceivableFormat.js";
@@ -21,7 +24,7 @@ export type FinanceCashFlowDailyRadarExportPayload = {
   generatedAt: string;
   operationalBaseDate: string;
   level: DailyRadarDetailLevel;
-  rangeKey: DailyRadarRangeKey;
+  rangeKey: DailyRadarSelectionKey;
   rangeLabel: string;
   selectedDate: string | null;
   entriesTotal: number;
@@ -66,6 +69,15 @@ export function parseDailyRadarExportQuery(
       "Faixa do radar diário é obrigatória para exportação."
     );
   }
+  if (parsed.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY) {
+    const validation = validateDailyRadarCustomPeriod(
+      parsed.customStartDate,
+      parsed.customEndDate
+    );
+    if (!validation.ok) {
+      throw new FinanceCashFlowDailyRadarExportError("INVALID_CUSTOM_PERIOD", validation.error);
+    }
+  }
   return {
     ...parsed,
     page: 1,
@@ -76,7 +88,9 @@ export function parseDailyRadarExportQuery(
 
 export function buildDailyRadarExportQueryString(params: {
   baseDate?: string;
-  range: DailyRadarRangeKey;
+  range: DailyRadarSelectionKey;
+  customStartDate?: string;
+  customEndDate?: string;
   day?: string;
   search?: string;
   payableSortBy?: string;
@@ -87,6 +101,8 @@ export function buildDailyRadarExportQueryString(params: {
   const qs = new URLSearchParams();
   if (params.baseDate) qs.set("baseDate", params.baseDate);
   qs.set("range", params.range);
+  if (params.customStartDate) qs.set("customStartDate", params.customStartDate);
+  if (params.customEndDate) qs.set("customEndDate", params.customEndDate);
   if (params.day) qs.set("day", params.day);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.payableSortBy) qs.set("payableSortBy", params.payableSortBy);
@@ -154,7 +170,7 @@ export function buildFinanceCashFlowDailyRadarExportPayload(
       summary: detail.receivables.summary,
       rows: detail.receivables.rows,
     },
-    daySummaries: radar.selectedRange?.days ?? [],
+    daySummaries: radar.selectedRange?.days ?? radar.selectedCustomRange?.days ?? [],
     appliedFilters: buildFinanceCashFlowDailyRadarAppliedFilterLines({
       rangeLabel: detail.rangeLabel,
       selectedDate: detail.date,

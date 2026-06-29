@@ -11,7 +11,9 @@ import {
   buildFinanceCashFlowDailyRadar,
   createDailyRadarDashboardFilters,
   dailyRadarDayCardLabel,
+  DAILY_RADAR_CUSTOM_RANGE_KEY,
   DAILY_RADAR_RANGES,
+  validateDailyRadarCustomPeriod,
 } from "./financeCashFlowDailyRadar.js";
 
 const BASE = new Date(2026, 5, 9);
@@ -384,5 +386,129 @@ describe("financeCashFlowDailyRadar", () => {
     );
     assert.ok(routes.includes("/api/finance/cash-flow/daily-radar"));
     assert.ok(routes.includes("loadDailyRadarPortfolioRows"));
+  });
+
+  it("validateDailyRadarCustomPeriod rejeita data final menor que inicial", () => {
+    const result = validateDailyRadarCustomPeriod("2026-06-15", "2026-06-10");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /final/i);
+    }
+  });
+
+  it("período personalizado calcula entradas, saídas e saldo sem alterar faixas fixas", () => {
+    const arRows = [
+      arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 10) }),
+      arRow({ externalId: 2, balanceReceivable: 250, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const apRows = [
+      apRow({ externalId: 10, balancePayable: 40, dueDate: new Date(2026, 5, 12) }),
+      apRow({ externalId: 11, balancePayable: 60, dueDate: new Date(2026, 6, 1) }),
+    ];
+
+    const baseline = buildFinanceCashFlowDailyRadar(arRows, apRows, { baseDate: BASE }, BASE);
+    assert.equal(baseline.ranges.length, DAILY_RADAR_RANGES.length);
+
+    const withCustom = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      {
+        baseDate: BASE,
+        customStartDate: "2026-06-09",
+        customEndDate: "2026-06-15",
+      },
+      BASE
+    );
+
+    assert.deepEqual(withCustom.ranges, baseline.ranges);
+    assert.ok(withCustom.customRange);
+    assert.equal(withCustom.customRange!.receivableTotal, 100);
+    assert.equal(withCustom.customRange!.payableTotal, 40);
+    assert.equal(withCustom.customRange!.netTotal, 60);
+    assert.equal(withCustom.customRange!.receivableCount, 1);
+    assert.equal(withCustom.customRange!.payableCount, 1);
+  });
+
+  it("drilldown do período personalizado bate com totais do card e suporta dia", () => {
+    const arRows = [
+      arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 10) }),
+      arRow({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 12) }),
+    ];
+    const apRows = [apRow({ externalId: 10, balancePayable: 40, dueDate: new Date(2026, 5, 11) })];
+
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      {
+        baseDate: BASE,
+        rangeKey: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        customStartDate: "2026-06-09",
+        customEndDate: "2026-06-15",
+      },
+      BASE
+    );
+
+    assert.ok(payload.customRange);
+    assert.ok(payload.selectedDetail);
+    const detail = payload.selectedDetail!;
+    assert.equal(detail.rangeKey, DAILY_RADAR_CUSTOM_RANGE_KEY);
+    assert.equal(detail.entriesTotal, payload.customRange!.receivableTotal);
+    assert.equal(detail.exitsTotal, payload.customRange!.payableTotal);
+    assert.equal(detail.netTotal, payload.customRange!.netTotal);
+    assert.ok(payload.selectedCustomRange);
+    assert.equal(payload.selectedCustomRange!.days.length, 7);
+
+    const dayPayload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      {
+        baseDate: BASE,
+        rangeKey: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        customStartDate: "2026-06-09",
+        customEndDate: "2026-06-15",
+        day: "2026-06-10",
+      },
+      BASE
+    );
+    assert.equal(dayPayload.selectedDetail!.level, "day");
+    assert.equal(dayPayload.selectedDetail!.receivables.summary.total, 100);
+    assert.equal(dayPayload.selectedDetail!.payables.summary.total, 0);
+  });
+
+  it("período personalizado vazio retorna zeros sem erro", () => {
+    const payload = buildFinanceCashFlowDailyRadar(
+      [],
+      [],
+      {
+        baseDate: BASE,
+        customStartDate: "2026-06-09",
+        customEndDate: "2026-06-20",
+      },
+      BASE
+    );
+    assert.ok(payload.customRange);
+    assert.equal(payload.customRange!.receivableTotal, 0);
+    assert.equal(payload.customRange!.payableTotal, 0);
+    assert.equal(payload.customRange!.netTotal, 0);
+    assert.equal(payload.customRange!.receivableCount, 0);
+    assert.equal(payload.customRange!.payableCount, 0);
+  });
+
+  it("FinanceCashFlowDailyRadar inclui card de período personalizado", () => {
+    const radar = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowDailyRadar.tsx"
+      ),
+      "utf8"
+    );
+    assert.ok(radar.includes("Período personalizado"));
+    assert.ok(radar.includes("cash-flow-radar-custom-period"));
+    assert.ok(radar.includes("DAILY_RADAR_CUSTOM_RANGE_KEY"));
+    assert.ok(radar.includes("customStartDate"));
   });
 });
