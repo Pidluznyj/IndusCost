@@ -3,7 +3,6 @@ import {
   buildFinanceApPrismaWhere,
   classifyFinanceApTitle,
   decimalFieldToNumber,
-  filterFinanceApRows,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
   roundMoney,
@@ -11,6 +10,7 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { filterOfficialApTitlesForCostCenter } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
 import {
   isCostCenterTitleInScope,
@@ -302,7 +302,7 @@ export function filterCostCenterDashboardRows(
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApDashboardRow[] {
   const apScope = resolveFinanceCostCenterDashboardApScope(filters);
-  return filterFinanceApRows(rows, filters, referenceDate, syncCutoff).filter((row) =>
+  return filterOfficialApTitlesForCostCenter(rows, filters, referenceDate, syncCutoff).filter((row) =>
     isCostCenterTitleInScope(row, apScope)
   );
 }
@@ -398,7 +398,7 @@ export function buildFinanceCostCenterDashboard(
 ): FinanceCostCenterDashboardPayload {
   const apScope = resolveFinanceCostCenterDashboardApScope(filters);
   const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
-  const allInFilterRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const allInFilterRows = filterOfficialApTitlesForCostCenter(rows, filters, referenceDate, syncCutoff);
   const ccMeta = new Map(costCenters.map((row) => [row.id, row]));
 
   const allocationsByPayable = new Map<number, AllocationDashboardRow[]>();

@@ -3,11 +3,12 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildOfficialAccountsPayableDashboard,
+  filterOfficialApTitlesForCostCenter,
 } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import {
   buildFinanceApPrismaWhere,
-  filterFinanceApRows,
   FinanceApFilterParseError,
+  loadFinanceApManagementRowsFromPrisma,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
   resolveFinanceApDashboardFiltersForLoad,
@@ -66,19 +67,8 @@ export const FINANCE_AP_CLASSIFICATION_READ_PERMISSIONS = [
   ...FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS,
 ] as const;
 
-const FINANCE_AP_DASHBOARD_SELECT = {
-  ...FINANCE_AP_TITLE_SELECT,
-} as const;
-
 async function loadFinanceApRows(filters: FinanceApDashboardFilters) {
-  const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(prisma);
-  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
-  const rows = await prisma.nomusAccountsPayable.findMany({
-    where,
-    select: FINANCE_AP_DASHBOARD_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-  return { rows: rows.map(mapPrismaRowToFinanceApDashboardRow), syncCutoff };
+  return loadFinanceApManagementRowsFromPrisma(prisma, filters);
 }
 
 function resolveFinanceApLoadFilters(
@@ -152,7 +142,12 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         rows.map((row) => row.externalId),
         integrationDeps
       );
-      const filteredForSummary = filterFinanceApRows(rows, filters, new Date(), syncCutoff);
+      const filteredForSummary = filterOfficialApTitlesForCostCenter(
+        rows,
+        filters,
+        new Date(),
+        syncCutoff
+      );
       const [costCenters, suppliers] = await Promise.all([
         integrationDeps.loadCostCenters(),
         integrationDeps.loadSuppliers(),

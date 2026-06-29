@@ -2,13 +2,13 @@ import type { Prisma } from "@prisma/client";
 import {
   classifyFinanceApTitle,
   decimalFieldToNumber,
-  filterFinanceApRows,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
   roundMoney,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { filterOfficialApTitlesForCostCenter } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
 import {
   resolveCostCenterTitleAmount,
@@ -746,7 +746,7 @@ export async function resolveCostCenterDetailFilteredRows(
   const entries = await loadCostCenterDetailEntries(costCenterId);
   const apFilters: FinanceApDashboardFilters = { ...filters, status: filters.status ?? "all" };
   const allowedApIds = new Set(
-    filterFinanceApRows(
+    filterOfficialApTitlesForCostCenter(
       entries.map((e) => e.ap),
       apFilters,
       referenceDate

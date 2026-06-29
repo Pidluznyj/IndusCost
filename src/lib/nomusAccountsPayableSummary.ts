@@ -61,6 +61,7 @@ function isDueInRange(dueDate: Date, from: Date, to: Date): boolean {
   return due >= from.getTime() && due <= to.getTime();
 }
 
+/** @deprecated Use {@link buildOfficialNomusAccountsPayableSummaryResponse} — resumo gerencial oficial. */
 export function buildAccountsPayableSummary(
   rows: AccountsPayableSummaryRow[],
   referenceDate: Date = new Date()

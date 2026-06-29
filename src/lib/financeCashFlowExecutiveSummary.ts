@@ -21,6 +21,7 @@ import {
   resolveOfficialApCashFlowExecutiveMetrics,
   sumOfficialApPaidInPaymentPeriod,
 } from "./financeAccountsPayableRulesAdapter.js";
+import { sumOfficialApOpenDueInPeriod } from "./financeAccountsPayableRulesEngine.js";
 import { toApLoadFilters, toArLoadFilters } from "./financeCashFlowDashboard.js";
 import type { NetCashPositionStatus } from "./financeCashFlowDashboardTypes.js";
 import {
@@ -281,12 +282,7 @@ export function sumApOpenDueInPeriod(
   startDate: Date,
   endDate: Date
 ): number {
-  let total = 0;
-  for (const row of rows) {
-    if (!isApOpenDueInPeriod(row, startDate, endDate)) continue;
-    total += resolveFinanceApOpenAmount(row);
-  }
-  return roundMoney(total);
+  return sumOfficialApOpenDueInPeriod(rows, startDate, endDate);
 }
 
 function calendarMonthEnd(year: number, month: number): Date {

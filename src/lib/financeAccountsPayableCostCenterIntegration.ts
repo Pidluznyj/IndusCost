@@ -1,12 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import {
   decimalFieldToNumber,
-  filterFinanceApRows,
   roundMoney,
   safeRatio,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { filterOfficialApTitlesForCostCenter } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import type { FinanceApTitleListItem, FinanceApTitlesPayload } from "@/src/lib/financeAccountsPayableTitles.js";
 import {
   buildFinanceApExportCsv,
@@ -607,7 +607,7 @@ export function buildFinanceApExportCsvWithClassification(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): string {
-  const filtered = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const filtered = filterOfficialApTitlesForCostCenter(rows, filters, referenceDate, syncCutoff);
   const headers = [...FINANCE_AP_EXPORT_HEADERS, ...FINANCE_AP_CLASSIFICATION_EXPORT_HEADERS];
   const dataRows = filtered.map((row) => {
     const base = mapFinanceApRowToExportCells(row, referenceDate);

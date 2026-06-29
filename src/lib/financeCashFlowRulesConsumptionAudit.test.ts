@@ -25,6 +25,10 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
     const dashboard = read("src/lib/financeCashFlowDashboard.ts");
     assert.match(dashboard, /buildOfficialCashFlowArApDashboardBundle/);
     assert.match(dashboard, /resolveOfficialCashFlowSources/);
+    assert.match(dashboard, /buildOfficialAccountsReceivableRulesResult/);
+    assert.match(dashboard, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(dashboard, /officialArBlockTotals/);
+    assert.match(dashboard, /officialApBlockTotals/);
     assert.doesNotMatch(dashboard, /NomusAccountsReceivable/);
   });
 
@@ -33,6 +37,7 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
     assert.match(summary, /resolveOfficialArCashFlowExecutiveMetrics/);
     assert.match(summary, /resolveOfficialApCashFlowExecutiveMetrics/);
     assert.match(summary, /sumOfficialArOpenDueInPeriod/);
+    assert.match(summary, /sumOfficialApOpenDueInPeriod/);
   });
 
   it("radar diário usa ledger oficial AR/AP", () => {

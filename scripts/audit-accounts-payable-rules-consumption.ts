@@ -19,6 +19,7 @@ import {
 } from "../src/lib/financeExecutiveReportDataSources.js";
 import {
   buildOfficialAccountsPayableRulesResult,
+  buildOfficialApDueRadarPayload,
   OFFICIAL_AP_RULES_SOURCE,
   resolveOfficialApCashFlowExecutiveMetrics,
 } from "../src/lib/financeAccountsPayableRulesAdapter.js";
@@ -260,6 +261,19 @@ async function main() {
     apScreen.cards.dueNext30DaysAmount,
     null,
     null
+  );
+
+  const dueRadarPayload = buildOfficialApDueRadarPayload(
+    apRows,
+    { baseDate: referenceDate, page: 1, pageSize: 5000, exportAll: true },
+    referenceDate
+  );
+  addRow(
+    "Due-radar AP (total faixas)",
+    engine.metrics.openAmount,
+    apScreen.cards.totalOpenAmount,
+    null,
+    dueRadarPayload.summary.totalAmount
   );
 
   console.log(

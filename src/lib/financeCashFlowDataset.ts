@@ -246,10 +246,16 @@ function buildBlocksFromPortfolio(
   arPortfolioRows: FinanceCashFlowArRow[],
   apPortfolioRows: FinanceCashFlowApRow[],
   referenceDate: Date,
-  officialArTotals?: Pick<
-    FinanceCashFlowDatasetBlocks,
-    "totalReceivableOpen" | "overdueReceivableAmount"
-  >
+  officialTotals?: {
+    ar?: Pick<
+      FinanceCashFlowDatasetBlocks,
+      "totalReceivableOpen" | "overdueReceivableAmount"
+    >;
+    ap?: Pick<
+      FinanceCashFlowDatasetBlocks,
+      "totalPayableOpen" | "overduePayableAmount"
+    >;
+  }
 ): FinanceCashFlowDatasetBlocks {
   const ref = startOfLocalDay(referenceDate);
   const projectedInflows: FinanceCashFlowCriticalMovement[] = [];
@@ -356,11 +362,15 @@ function buildBlocksFromPortfolio(
     topReceivableCustomers: buildPartySummaries(customerRows, 10),
     topPayableSuppliers: buildPartySummaries(supplierRows, 10),
     overdueReceivableAmount: roundMoney(
-      officialArTotals?.overdueReceivableAmount ?? overdueReceivableAmount
+      officialTotals?.ar?.overdueReceivableAmount ?? overdueReceivableAmount
     ),
-    overduePayableAmount: roundMoney(overduePayableAmount),
-    totalReceivableOpen: roundMoney(officialArTotals?.totalReceivableOpen ?? totalReceivableOpen),
-    totalPayableOpen: roundMoney(totalPayableOpen),
+    overduePayableAmount: roundMoney(
+      officialTotals?.ap?.overduePayableAmount ?? overduePayableAmount
+    ),
+    totalReceivableOpen: roundMoney(
+      officialTotals?.ar?.totalReceivableOpen ?? totalReceivableOpen
+    ),
+    totalPayableOpen: roundMoney(officialTotals?.ap?.totalPayableOpen ?? totalPayableOpen),
   };
 }
 
@@ -512,6 +522,11 @@ export type FinanceCashFlowDatasetOptions = {
     FinanceCashFlowDatasetBlocks,
     "totalReceivableOpen" | "overdueReceivableAmount"
   >;
+  /** Totais AP oficiais do motor — sobrescreve somatório do loop de blocos. */
+  officialApBlockTotals?: Pick<
+    FinanceCashFlowDatasetBlocks,
+    "totalPayableOpen" | "overduePayableAmount"
+  >;
 };
 
 export function buildFinanceCashFlowDataset(
@@ -554,14 +569,10 @@ export function buildFinanceCashFlowDataset(
     apSyncCutoff
   );
 
-  const officialArMetrics = options?.officialArBlockTotals;
-
-  const blocks = buildBlocksFromPortfolio(
-    arPortfolioRows,
-    apPortfolioRows,
-    referenceDate,
-    officialArMetrics
-  );
+  const blocks = buildBlocksFromPortfolio(arPortfolioRows, apPortfolioRows, referenceDate, {
+    ar: options?.officialArBlockTotals,
+    ap: options?.officialApBlockTotals,
+  });
 
   const arPortfolioIds = new Set(arPortfolioRows.map((r) => r.externalId));
   const arPeriodIds = new Set(arRowsSanitized.map((r) => r.externalId));

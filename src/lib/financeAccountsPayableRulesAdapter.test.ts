@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   buildOfficialAccountsPayableDashboard,
   buildOfficialAccountsPayableRulesResult,
+  buildOfficialApDueRadarPayload,
+  buildOfficialNomusAccountsPayableSummaryResponse,
   OFFICIAL_AP_RULES_SOURCE,
   resolveOfficialApCashFlowExecutiveMetrics,
 } from "./financeAccountsPayableRulesAdapter.js";
@@ -132,5 +134,39 @@ describe("financeAccountsPayableRulesAdapter integration", () => {
     assert.equal(cf.paidYtd, engine.metrics.paidYtd);
     assert.equal(cf.openUntilYearEnd, engine.metrics.openUntilYearEnd);
     assert.equal(cf.estimatedYearTotal, engine.metrics.estimatedYearTotal);
+  });
+
+  it("resumo Nomus oficial expõe metricsSource e paridade de saldos", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balancePayable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const engine = buildOfficialAccountsPayableRulesResult({
+      rows,
+      filters: { status: "all" },
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    const nomus = buildOfficialNomusAccountsPayableSummaryResponse({
+      rows,
+      filters: { status: "all" },
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    assert.equal(nomus.source, OFFICIAL_AP_RULES_SOURCE);
+    assert.equal(nomus.summary.totalOpenAmount, engine.metrics.openAmount);
+    assert.equal(nomus.summary.overdueAmount, engine.metrics.overdueAmount);
+  });
+
+  it("due-radar oficial expõe metricsSource", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 10) }),
+    ];
+    const payload = buildOfficialApDueRadarPayload(
+      rows,
+      { baseDate: REF, page: 1, pageSize: 50 },
+      REF
+    );
+    assert.equal(payload.metricsSource, OFFICIAL_AP_RULES_SOURCE);
   });
 });

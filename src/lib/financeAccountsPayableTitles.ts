@@ -4,7 +4,6 @@ import {
 } from "./financeAccountsPayableDataQuality.js";
 import {
   classifyFinanceApTitle,
-  filterFinanceApRows,
   matchesFinanceApDashboardFilters,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
@@ -13,6 +12,7 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import { filterOfficialApManagementTitles } from "./financeAccountsPayableRulesAdapter.js";
 import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
 import {
   isNomusApStaleForReports,
@@ -244,7 +244,7 @@ function filterRowsForTitlesGrid(
     query.localFilter === "excluded" || query.localFilter === "purchaseOrder";
 
   if (!includeExcluded) {
-    const filtered = filterFinanceApRows(rows, query.filters, referenceDate, syncCutoff);
+    const filtered = filterOfficialApManagementTitles(rows, query.filters, referenceDate, syncCutoff);
     return filterApTitleRowsByLocalFilter(filtered, query.localFilter, referenceDate);
   }
 

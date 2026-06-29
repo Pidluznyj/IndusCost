@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import {
   buildFinanceApDataQualitySummary,
   createFinanceApDataQualityAccumulator,
@@ -24,6 +25,9 @@ import {
   FINANCE_AP_SUPPLIER_RANKING_LIMIT,
 } from "./financeAccountsPayableDashboardTypes.js";
 import {
+  FINANCE_AP_TITLE_SELECT,
+} from "./financeAccountsPayableTitles.js";
+import {
   buildFinanceApHorizonSummary,
 } from "./financeHorizonAggregation.js";
 import { assignFinanceDashboardAgingBucketKey } from "./financeDashboardAgingBuckets.js";
@@ -32,6 +36,7 @@ import {
   isNomusApStaleForReports,
   mergeFinanceApPrismaWhereWithSyncCutoff,
   resolveEffectiveNomusApReportSyncCutoff,
+  resolveNomusApReportSyncCutoffFromPrisma,
   type NomusApReportSyncCutoff,
 } from "./financeNomusApReportFreshness.js";
 import {
@@ -1167,4 +1172,28 @@ export function sumFinanceApPaidInPaymentPeriod(
     }
   }
   return roundMoney(total);
+}
+
+export type FinanceApManagementRowsLoadResult = {
+  rows: FinanceApDashboardRow[];
+  syncCutoff: NomusApReportSyncCutoff | null;
+};
+
+/** Carga gerencial AP — Prisma where + map; filtros em memória via motor oficial. */
+export async function loadFinanceApManagementRowsFromPrisma(
+  db: Pick<PrismaClient, "nomusAccountsPayable">,
+  filters: FinanceApDashboardFilters,
+  _referenceDate: Date = new Date()
+): Promise<FinanceApManagementRowsLoadResult> {
+  const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(db);
+  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
+  const rows = await db.nomusAccountsPayable.findMany({
+    where,
+    select: FINANCE_AP_TITLE_SELECT,
+    orderBy: { dueDate: "asc" },
+  });
+  return {
+    rows: rows.map(mapPrismaRowToFinanceApDashboardRow),
+    syncCutoff,
+  };
 }

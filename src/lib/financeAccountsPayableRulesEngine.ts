@@ -32,6 +32,7 @@ import {
   isFinanceApCancelledTitle,
   resolveFinanceApOpenAmount,
 } from "./financeAccountsPayableRules.js";
+import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
 import type {
@@ -281,6 +282,63 @@ function sumOpenOperationalDueInPeriod(
     }
   }
   return roundMoney(total);
+}
+
+export type OfficialApMetricScope = {
+  filters?: FinanceApDashboardFilters;
+  referenceDate?: Date;
+  syncCutoff?: NomusApReportSyncCutoff | null;
+};
+
+function scopeRowsForOfficialApMetric(
+  rows: FinanceApDashboardRow[],
+  scope?: OfficialApMetricScope
+): FinanceApDashboardRow[] {
+  if (!scope?.filters || !scope.referenceDate) return rows;
+  return filterFinanceApRows(
+    rows,
+    scope.filters,
+    scope.referenceDate,
+    scope.syncCutoff
+  );
+}
+
+/** Carteira gerencial AP — mesma regra do motor/dashboard oficial. */
+export function filterOfficialApManagementTitles(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceApDashboardRow[] {
+  return filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+}
+
+/** Timeline / Fluxo — saldo aberto por vencimento operacional no período. */
+export function sumOfficialApOpenDueInPeriod(
+  rows: FinanceApDashboardRow[],
+  startDate: Date,
+  endDate: Date,
+  scope?: OfficialApMetricScope
+): number {
+  return sumOpenOperationalDueInPeriod(
+    scopeRowsForOfficialApMetric(rows, scope),
+    startDate,
+    endDate
+  );
+}
+
+/** Contagem de títulos abertos com vencimento operacional no período. */
+export function countOfficialApOpenDueInPeriod(
+  rows: FinanceApDashboardRow[],
+  startDate: Date,
+  endDate: Date,
+  scope?: OfficialApMetricScope
+): number {
+  let count = 0;
+  for (const row of scopeRowsForOfficialApMetric(rows, scope)) {
+    if (isOpenOperationalDueInPeriod(row, startDate, endDate)) count += 1;
+  }
+  return count;
 }
 
 function sumScheduledOpenAmount(rows: FinanceApDashboardRow[]): number {

@@ -6,14 +6,12 @@ import {
   loadFinanceArManagementRowsFromPrisma,
 } from "./financeAccountsReceivableManagement.js";
 import {
-  buildFinanceApPrismaWhere,
-  filterFinanceApRows,
-  mapPrismaRowToFinanceApDashboardRow,
-} from "./financeAccountsPayableDashboard.js";
-import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
+  buildOfficialApDueRadarPayload,
+  filterOfficialApManagementTitles,
+} from "./financeAccountsPayableRulesAdapter.js";
+import { loadFinanceApManagementRowsFromPrisma } from "./financeAccountsPayableDashboard.js";
 import {
   buildFinanceArDueRadar,
-  buildFinanceApDueRadar,
   parseDueRadarQuery,
   type DueRadarPayload,
 } from "./financeDueRadar.js";
@@ -24,7 +22,6 @@ import {
   DueRadarExportError,
   parseDueRadarExportQuery,
 } from "./financeDueRadarExport.js";
-import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { prisma } from "./prisma.js";
 
 const FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS = [
@@ -68,15 +65,12 @@ async function loadArDueRadarRows(query: Record<string, unknown>, referenceDate:
 
 async function loadApDueRadarRows(query: Record<string, unknown>, referenceDate: Date) {
   const filters = parseDueRadarPageFilters(query, "payable");
-  const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(prisma);
-  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
-  const rows = await prisma.nomusAccountsPayable.findMany({
-    where,
-    select: FINANCE_AP_TITLE_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-  const mapped = rows.map(mapPrismaRowToFinanceApDashboardRow);
-  const filtered = filterFinanceApRows(mapped, filters, referenceDate, syncCutoff);
+  const { rows, syncCutoff } = await loadFinanceApManagementRowsFromPrisma(
+    prisma,
+    filters,
+    referenceDate
+  );
+  const filtered = filterOfficialApManagementTitles(rows, filters, referenceDate, syncCutoff);
   return { filtered, filtersApplied: filters as Record<string, unknown> };
 }
 
@@ -167,7 +161,7 @@ export function registerFinanceApDueRadarRoutes(app: express.Express, auth: Auth
     try {
       const referenceDate = new Date();
       const { filtered } = await loadApDueRadarRows(req.query as Record<string, unknown>, referenceDate);
-      const payload = buildFinanceApDueRadar(
+      const payload = buildOfficialApDueRadarPayload(
         filtered,
         parseDueRadarQuery(req.query as Record<string, unknown>),
         referenceDate
@@ -184,7 +178,7 @@ export function registerFinanceApDueRadarRoutes(app: express.Express, auth: Auth
       const user = await getCurrentAppUser(req);
       const referenceDate = new Date();
       const { filtered, filtersApplied } = await loadApDueRadarRows(req.query as Record<string, unknown>, referenceDate);
-      const payload = buildFinanceApDueRadar(
+      const payload = buildOfficialApDueRadarPayload(
         filtered,
         parseDueRadarExportQuery(req.query as Record<string, unknown>),
         referenceDate
@@ -207,7 +201,7 @@ export function registerFinanceApDueRadarRoutes(app: express.Express, auth: Auth
       const user = await getCurrentAppUser(req);
       const referenceDate = new Date();
       const { filtered, filtersApplied } = await loadApDueRadarRows(req.query as Record<string, unknown>, referenceDate);
-      const payload = buildFinanceApDueRadar(
+      const payload = buildOfficialApDueRadarPayload(
         filtered,
         parseDueRadarExportQuery(req.query as Record<string, unknown>),
         referenceDate

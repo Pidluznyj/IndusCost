@@ -1,11 +1,11 @@
 import { fleetCsvEscape, fleetRowsToCsv } from "./fleetCsv.js";
 import {
   classifyFinanceApTitle,
-  filterFinanceApRows,
   roundMoney,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import { filterOfficialApManagementTitles } from "./financeAccountsPayableRulesAdapter.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
   computeFinanceApDaysOverdue,
@@ -112,7 +112,7 @@ export function buildFinanceApExportCsv(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): string {
-  const filtered = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const filtered = filterOfficialApManagementTitles(rows, filters, referenceDate, syncCutoff);
   const dataRows = filtered.map((row) => mapFinanceApRowToExportCells(row, referenceDate));
   return fleetRowsToCsv([...FINANCE_AP_EXPORT_HEADERS], dataRows);
 }

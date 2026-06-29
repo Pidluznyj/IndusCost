@@ -6,6 +6,7 @@ import {
   buildAccountsPayableRulesContext,
   buildFinanceAccountsPayableRulesResult,
   listAccountsPayableMetricDefinitions,
+  sumOfficialApOpenDueInPeriod,
 } from "./financeAccountsPayableRulesEngine.js";
 import {
   buildFinanceAccountsPayableDashboard,
@@ -118,5 +119,15 @@ describe("financeAccountsPayableRulesEngine", () => {
     const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
     assert.equal(metrics.openAmount, dash.cards.totalOpenAmount);
     assert.equal(metrics.overdueAmount, dash.cards.overdueAmount);
+  });
+
+  it("sumOfficialApOpenDueInPeriod — timeline por vencimento operacional", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 2, balancePayable: 200, dueDate: new Date(2026, 6, 5) }),
+    ];
+    const juneStart = new Date(2026, 5, 1);
+    const juneEnd = new Date(2026, 5, 30);
+    assert.equal(sumOfficialApOpenDueInPeriod(rows, juneStart, juneEnd), 100);
   });
 });

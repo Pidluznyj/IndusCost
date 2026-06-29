@@ -1,7 +1,8 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { buildAccountsPayableSummary } from "@/src/lib/nomusAccountsPayableSummary.js";
+import { buildOfficialNomusAccountsPayableSummaryResponse } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
+import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -24,25 +25,16 @@ export function registerNomusAccountsPayableRoutes(app: express.Express, auth: A
           return res.status(401).json({ error: "Não autenticado." });
         }
 
-        const rows = await prisma.nomusAccountsPayable.findMany({
-          select: {
-            balancePayable: true,
-            amountPaid: true,
-            amountPayable: true,
-            status: true,
-            dueDate: true,
-            settlementDate: true,
-            paymentDate: true,
-            syncedAt: true,
-          },
+        const { rows, syncCutoff } = await loadFinanceApManagementRowsFromPrisma(prisma, {
+          status: "all",
         });
-
-        const summary = buildAccountsPayableSummary(rows);
-        return res.json({
-          generatedAt: new Date().toISOString(),
-          source: "NomusAccountsPayable (sync local read-only)",
-          summary,
+        const response = buildOfficialNomusAccountsPayableSummaryResponse({
+          rows,
+          filters: { status: "all" },
+          referenceDate: new Date(),
+          syncCutoff,
         });
+        return res.json(response);
       } catch (error) {
         console.error("GET /api/nomus/accounts-payable/summary", error);
         return res.status(500).json({ error: "Erro ao montar resumo de contas a pagar." });
