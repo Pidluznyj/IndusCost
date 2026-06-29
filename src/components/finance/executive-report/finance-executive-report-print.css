@@ -363,9 +363,11 @@
   }
 
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
-    max-height: 18mm !important;
-    min-height: 15mm !important;
+    max-height: none !important;
+    min-height: 16mm !important;
+    height: auto !important;
     padding: 1.2mm 1.8mm !important;
+    overflow: visible !important;
   }
 
   .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .executive-kpi-card-value,
@@ -404,10 +406,10 @@
 
   .executive-section--with-chart .finance-executive-kpi-card.commercial-kpi-card,
   .executive-section--with-chart .finance-executive-kpi-card.indus-kpi-card {
-    min-height: 13mm !important;
+    min-height: 17mm !important;
     max-height: none !important;
     height: auto !important;
-    padding: 1mm 1.5mm !important;
+    padding: 1.2mm 1.6mm !important;
     overflow: visible !important;
   }
 
@@ -428,14 +430,17 @@
   .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-value,
   .executive-section--with-chart .finance-executive-kpi-card .indus-kpi-value {
     font-size: 8.5pt !important;
-    line-height: 1.15 !important;
+    line-height: 1.25 !important;
     overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: normal !important;
+    word-break: break-word !important;
     padding-bottom: 0.2mm !important;
   }
 
-  .executive-section--with-chart .finance-executive-kpi-card .text-[11px] {
+  .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-label {
     font-size: 5.5pt !important;
-    line-height: 1.1 !important;
+    line-height: 1.2 !important;
   }
 
   .executive-section--with-chart .finance-executive-kpi-label,
@@ -515,14 +520,22 @@
     break-inside: avoid;
     page-break-inside: avoid;
     min-height: auto !important;
+    max-height: none !important;
+    height: auto !important;
     padding: 2mm 2.5mm !important;
     border-radius: 1.5mm !important;
+    overflow: visible !important;
   }
 
   .finance-executive-kpi-card .commercial-kpi-value,
-  .finance-executive-kpi-card .indus-kpi-value {
+  .finance-executive-kpi-card .indus-kpi-value,
+  .finance-executive-kpi-card .executive-kpi-card-value {
     font-size: 13pt !important;
-    white-space: nowrap;
+    line-height: 1.25 !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: normal !important;
+    word-break: break-word !important;
   }
 
   .finance-executive-kpi-card .finance-bi-kpi-label,

@@ -42,14 +42,15 @@ export function ExecutiveKpiCard({
       sub={sub}
       hint={calcHint}
       colorClass={TONE_COLOR_CLASS[tone]}
-      labelClassName="normal-case tracking-normal font-semibold text-[11px]"
-      valueClassName="text-lg font-semibold sm:text-xl executive-kpi-card-value"
+      labelClassName="executive-kpi-card-label normal-case tracking-normal font-semibold text-[11px]"
+      valueClassName="text-lg font-semibold sm:text-xl leading-snug executive-kpi-card-value"
       className={cn(
         "finance-executive-kpi-card",
         accent && "border-[#2563EB]/35 bg-[#2563EB]/[0.03]",
         highlight && "ring-1 ring-[#111827]/10",
         tone === "positive" && !accent && "border-[#059669]/25",
         tone === "negative" && !accent && "border-[#DC2626]/25",
+        "!min-h-0",
         className
       )}
     />

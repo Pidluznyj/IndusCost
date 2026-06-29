@@ -95,3 +95,34 @@
   text-align: center;
   padding: 1.5rem 0 0.5rem;
 }
+
+/*
+ * KPIs do relatório — valores completos (sem ellipsis/clip do indus-kpi-grid global).
+ * Não altera gráficos nem outros módulos que reutilizam FinanceBiKpiCard.
+ */
+.finance-executive-report-document .finance-executive-kpi-card.indus-kpi-card,
+.finance-executive-report-document .finance-executive-kpi-card.commercial-kpi-card {
+  overflow: visible;
+  min-height: auto;
+}
+
+.finance-executive-report-document .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
+  min-height: 5.5rem;
+  padding: 0.875rem 1rem;
+}
+
+.finance-executive-report-document .finance-executive-kpi-card .commercial-kpi-value,
+.finance-executive-report-document .finance-executive-kpi-card .indus-kpi-value,
+.finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-value {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+  font-size: clamp(0.9375rem, 1.05vw, 1.125rem);
+  max-width: 100%;
+}
+
+.finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-label {
+  line-height: 1.25;
+}
