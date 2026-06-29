@@ -397,14 +397,27 @@
   }
 
   .executive-section--with-chart .finance-executive-kpi-grid.executive-kpi-grid--compact {
-    gap: 1mm !important;
+    gap: 1.2mm !important;
+    flex-shrink: 0;
+    overflow: visible !important;
   }
 
   .executive-section--with-chart .finance-executive-kpi-card.commercial-kpi-card,
   .executive-section--with-chart .finance-executive-kpi-card.indus-kpi-card {
-    min-height: 0 !important;
-    max-height: 11mm !important;
-    padding: 0.7mm 1.4mm !important;
+    min-height: 13mm !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 1mm 1.5mm !important;
+    overflow: visible !important;
+  }
+
+  /* Sub/trend abaixo do valor — oculto no PDF para priorizar label + valor legível */
+  .executive-section--with-chart .finance-executive-kpi-card > div:last-child {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card > * + * {
+    margin-top: 0.6mm !important;
   }
 
   .executive-section--with-chart .finance-executive-kpi-card button[aria-label] {
@@ -415,7 +428,9 @@
   .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-value,
   .executive-section--with-chart .finance-executive-kpi-card .indus-kpi-value {
     font-size: 8.5pt !important;
-    line-height: 1.05 !important;
+    line-height: 1.15 !important;
+    overflow: visible !important;
+    padding-bottom: 0.2mm !important;
   }
 
   .executive-section--with-chart .finance-executive-kpi-card .text-[11px] {

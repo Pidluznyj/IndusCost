@@ -160,7 +160,8 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(css, /\.executive-report-chart-frame[\s\S]*height:\s*98mm/);
     assert.match(css, /executive-section--with-chart/);
     assert.match(css, /max-height:\s*18mm/);
-    assert.match(css, /max-height:\s*11mm/);
+    assert.match(css, /min-height:\s*13mm/);
+    assert.doesNotMatch(css, /executive-section--with-chart[\s\S]*max-height:\s*11mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
     assert.match(css, /margin-top:\s*auto/);
