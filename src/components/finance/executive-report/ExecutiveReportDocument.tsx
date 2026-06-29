@@ -39,6 +39,7 @@ import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-re
 import { ExecutiveReportReceivablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportReceivablesChart";
 import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportPayablesChart";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
+import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { ExecutiveReportPeriodMeta } from "@/src/components/finance/executive-report/ExecutiveReportPeriodMeta";
 import {
   buildExecutiveReportCashFlowPeriodCopy,
@@ -180,6 +181,8 @@ export function ExecutiveReportDocument({
     rows: report.calendarAgenda.annualChart.points,
     hasData: report.calendarAgenda.annualChart.hasData,
   };
+
+  const cashFlowMonthlyTimeline = report.calendarAgenda.executiveSummary?.monthlyTimeline ?? [];
 
   const salesChart = mapSalesOrdersMonthlyToChart(salesTab.monthlySeries ?? [], month);
 
@@ -765,6 +768,17 @@ export function ExecutiveReportDocument({
 
           <p className="executive-print-conclusion-note">{EXECUTIVE_REPORT_PRINT_DATA_NOTE}</p>
         </ExecutiveReportSection>
+      </ExecutivePrintPageShell>
+
+      <ExecutivePrintPageShell
+        pageId="cash-flow-monthly-timeline"
+        pageNumber={9}
+        header={printHeader}
+        generatedAt={report.generatedAt}
+      >
+        <div className="executive-print-monthly-timeline" data-testid="executive-report-monthly-timeline">
+          <FinanceCashFlowMonthlyTimelineTable rows={cashFlowMonthlyTimeline} year={report.year} />
+        </div>
       </ExecutivePrintPageShell>
 
       <ExecutiveReportDocumentFooter generatedAt={report.generatedAt} />

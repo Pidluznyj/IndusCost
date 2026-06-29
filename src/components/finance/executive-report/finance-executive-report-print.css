@@ -658,6 +658,32 @@
     text-align: center;
   }
 
+  .executive-print-monthly-timeline {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-print-monthly-timeline [data-testid$="-tooltip"] {
+    display: none !important;
+  }
+
+  .executive-print-monthly-timeline table {
+    font-size: 7pt !important;
+  }
+
+  .executive-print-monthly-timeline th,
+  .executive-print-monthly-timeline td {
+    padding: 1.2mm 1.5mm !important;
+  }
+
+  .executive-print-monthly-timeline h3 {
+    font-size: 11pt !important;
+  }
+
+  .executive-print-monthly-timeline p {
+    font-size: 7pt !important;
+  }
+
   .finance-executive-page-break,
   .finance-executive-report-section--page-break {
     break-before: auto !important;

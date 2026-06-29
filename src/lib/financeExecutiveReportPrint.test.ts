@@ -57,13 +57,24 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /pageId="accounts-payable"/);
     assert.match(document, /pageId="cash-flow"/);
     assert.match(document, /pageId="conclusion"/);
+    assert.match(document, /pageId="cash-flow-monthly-timeline"/);
     assert.doesNotMatch(document, /pageId="billing-projection"/);
     const salesIdx = document.indexOf('pageId="sales-orders"');
     const billingIdx = document.indexOf('pageId="billing-comparison"');
     const arIdx = document.indexOf('pageId="accounts-receivable"');
     const apIdx = document.indexOf('pageId="accounts-payable"');
     const cfIdx = document.indexOf('pageId="cash-flow"');
-    assert.ok(salesIdx > 0 && billingIdx > salesIdx && arIdx > billingIdx && apIdx > arIdx && cfIdx > apIdx);
+    const conclusionIdx = document.indexOf('pageId="conclusion"');
+    const timelineIdx = document.indexOf('pageId="cash-flow-monthly-timeline"');
+    assert.ok(
+      salesIdx > 0 &&
+        billingIdx > salesIdx &&
+        arIdx > billingIdx &&
+        apIdx > arIdx &&
+        cfIdx > apIdx &&
+        conclusionIdx > cfIdx &&
+        timelineIdx > conclusionIdx
+    );
   });
 
   it("CSS contém A4 landscape", () => {
@@ -241,6 +252,8 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Pedidos mês/);
     assert.match(document, /Pedidos YTD/);
     assert.match(document, /Conclusão Executiva/);
+    assert.match(document, /FinanceCashFlowMonthlyTimelineTable/);
+    assert.match(document, /executive-report-monthly-timeline/);
     assert.doesNotMatch(document, /pageId="billing-projection"/);
   });
 
