@@ -153,28 +153,20 @@ export function buildSalesOrderMarginAlerts(
 }
 
 export function pickSalesOrderListMarginPercent(
-  summary?: SalesOrderMarginSummaryPayload | null,
-  legacyPercent?: unknown
+  summary?: SalesOrderMarginSummaryPayload | null
 ): string {
   if (summary?.marginPercent != null && Number.isFinite(summary.marginPercent)) {
     return formatSalesOrderMarginPercent(summary.marginPercent);
   }
-  if (legacyPercent == null || legacyPercent === "") return "—";
-  const legacy = Number(legacyPercent);
-  if (Number.isFinite(legacy)) return formatSalesOrderMarginPercent(legacy);
   return "—";
 }
 
 export function pickSalesOrderListMarginValue(
-  summary?: SalesOrderMarginSummaryPayload | null,
-  legacyValue?: unknown
+  summary?: SalesOrderMarginSummaryPayload | null
 ): string {
   if (summary && Number.isFinite(summary.marginValue)) {
     return formatSalesOrderMarginMoney(summary.marginValue);
   }
-  if (legacyValue == null || legacyValue === "") return "—";
-  const legacy = Number(legacyValue);
-  if (Number.isFinite(legacy)) return formatSalesOrderMarginMoney(legacy);
   return "—";
 }
 

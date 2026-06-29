@@ -27,7 +27,11 @@ import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
-import type { OfficialCommercial360MarginMetrics } from "@/src/lib/salesMarginRulesAdapter.js";
+import {
+  aggregateSalesOrderMarginSummaries,
+  formatSalesOrderMarginPercent,
+} from "@/src/lib/salesOrderMarginDisplay";
+import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import {
   COMMERCIAL_SALES_ORDER_BASIS_NOTE,
   computeCommercialPhase2FromSalesOrders,
@@ -47,9 +51,11 @@ type SalesOrderItemRow = {
   productId: string;
   quantity: unknown;
   totalNetValue: unknown;
+  /** Legado Nomus — diagnóstico; não usar para KPI de margem. */
   marginValue: unknown;
   negotiatedPrice: unknown;
   Product?: ProductLite;
+  officialMargin?: SalesOrderItemMarginPayload | null;
 };
 
 export type CommercialSalesOrder = {
@@ -61,8 +67,11 @@ export type CommercialSalesOrder = {
   responsible: string | null;
   totalNetValue: unknown;
   totalGrossValue: unknown;
+  /** Legado Nomus — diagnóstico; não usar para KPI de margem. */
   totalMarginValue: unknown;
+  /** Legado Nomus — diagnóstico; não usar para KPI de margem. */
   totalMarginPerc: unknown;
+  marginSummary?: SalesOrderMarginSummaryPayload | null;
   totalItems: number;
   paymentTerms: string | null;
   freightCondition: string | null;
@@ -75,6 +84,13 @@ function daysBetween(a: string | Date, b: string | Date): number {
   const t1 = typeof a === "string" ? new Date(a).getTime() : a.getTime();
   const t2 = typeof b === "string" ? new Date(b).getTime() : b.getTime();
   return Math.floor((t2 - t1) / 86400000);
+}
+
+function officialItemMarginValue(item: SalesOrderItemRow): number {
+  if (item.officialMargin?.marginValue != null && Number.isFinite(item.officialMargin.marginValue)) {
+    return item.officialMargin.marginValue;
+  }
+  return 0;
 }
 
 function inRange(iso: string, from: string | null, to: string | null): boolean {
@@ -115,8 +131,6 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const [officialOrderMetrics, setOfficialOrderMetrics] = useState<OfficialScopedOrderMetrics | null>(
     null
   );
-  const [officialMarginMetrics, setOfficialMarginMetrics] =
-    useState<OfficialCommercial360MarginMetrics | null>(null);
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
@@ -138,7 +152,6 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       salesOrders: CommercialSalesOrder[];
       portfolioAbc: PortfolioAbcResult;
       officialOrderMetrics?: OfficialScopedOrderMetrics;
-      officialMarginMetrics?: OfficialCommercial360MarginMetrics;
     }>(`/api/customers/${customerId}/commercial-360`)
       .then((data) => {
         if (cancelled) return;
@@ -146,7 +159,6 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
         setSalesOrders(Array.isArray(data.salesOrders) ? data.salesOrders : []);
         setPortfolioAbc(data.portfolioAbc ?? null);
         setOfficialOrderMetrics(data.officialOrderMetrics ?? null);
-        setOfficialMarginMetrics(data.officialMarginMetrics ?? null);
       })
       .catch((e) => {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Erro ao carregar.");
@@ -196,7 +208,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
         const id = it.productId;
         const qty = safeCommercialNumber(it.quantity);
         const lineRev = safeCommercialNumber(it.totalNetValue);
-        const lineMg = safeCommercialNumber(it.marginValue);
+        const lineMg = officialItemMarginValue(it);
         const prev = m.get(id);
         const sku = pr?.sku || "—";
         const name = pr?.name || "Produto";
@@ -249,14 +261,16 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const fo = filtered;
     const valid = fo.filter((o) => isCommercialMetricsSalesOrder(o.status));
     const useOfficial = filtersAreDefault && officialOrderMetrics != null;
-    const useOfficialMargin = filtersAreDefault && officialMarginMetrics != null;
+    const marginSummaries = valid
+      .map((o) => o.marginSummary)
+      .filter((s): s is SalesOrderMarginSummaryPayload => Boolean(s));
+    const filteredMarginAgg = aggregateSalesOrderMarginSummaries(marginSummaries);
+    const usesOfficialMarginMetrics = marginSummaries.length > 0 && filteredMarginAgg != null;
     const totalNet = useOfficial
       ? officialOrderMetrics.soldAmount
       : valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
     const totalGross = valid.reduce((a, o) => a + safeCommercialNumber(o.totalGrossValue), 0);
-    const totalMargin = useOfficialMargin
-      ? officialMarginMetrics.marginAmount
-      : valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginValue), 0);
+    const totalMargin = usesOfficialMarginMetrics ? filteredMarginAgg!.marginValue : 0;
     const count = fo.length;
     const validCount = useOfficial ? officialOrderMetrics.filteredOrders : valid.length;
     const invoicedCount = useOfficial
@@ -273,10 +287,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const maxDeal = nets.length ? Math.max(...nets) : 0;
     const totalItems = valid.reduce((a, o) => a + (o.totalItems || 0), 0);
     const avgItems = validCount > 0 ? totalItems / validCount : 0;
-    const marginAvg = useOfficialMargin
-      ? (officialMarginMetrics.marginPercent ?? 0)
-      : totalNet > 0
-        ? (totalMargin / totalNet) * 100
+    const marginAvg =
+      usesOfficialMarginMetrics && filteredMarginAgg?.marginPercent != null
+        ? filteredMarginAgg.marginPercent
         : 0;
 
     const validChrono = [...valid].sort(
@@ -322,9 +335,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       openNet,
       openCount: useOfficial ? officialOrderMetrics.openPortfolioCount : openOrders.length,
       usesOfficialOrderMetrics: useOfficial,
-      usesOfficialMarginMetrics: useOfficialMargin,
+      usesOfficialMarginMetrics,
     };
-  }, [filtered, filtersAreDefault, officialOrderMetrics, officialMarginMetrics]);
+  }, [filtered, filtersAreDefault, officialOrderMetrics]);
 
   const mixRows = useMemo(() => {
     const m = new Map<
@@ -338,7 +351,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
         const id = it.productId;
         const qty = safeCommercialNumber(it.quantity);
         const lineRev = safeCommercialNumber(it.totalNetValue);
-        const lineMg = safeCommercialNumber(it.marginValue);
+        const lineMg = officialItemMarginValue(it);
         const prev = m.get(id);
         const sku = pr?.sku || "—";
         const name = pr?.name || "Produto";
@@ -432,7 +445,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       issueDate: o.issueDate,
       updatedAt: o.updatedAt,
       totalNetValue: o.totalNetValue,
-      totalMarginPerc: o.totalMarginPerc,
+      marginSummary: o.marginSummary,
       responsible: o.responsible,
       hasInvoicing: o.hasInvoicing,
     }));
@@ -784,8 +797,32 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 <MiniCard label="Pedidos válidos (filtro)" value={String(metrics.validCount)} />
                 <MiniCard label="Faturados (filtro)" value={String(metrics.invoicedCount)} />
                 <MiniCard label="Ticket médio (filtro)" value={formatCurrency(metrics.ticket)} />
-                <MiniCard label="Margem média %" value={`${formatNumber(metrics.marginAvg, 2)}%`} />
-                <MiniCard label="Margem R$ total" value={formatCurrency(metrics.totalMargin)} />
+                <MiniCard
+                  label="Margem média %"
+                  value={
+                    metrics.usesOfficialMarginMetrics
+                      ? formatSalesOrderMarginPercent(metrics.marginAvg)
+                      : "—"
+                  }
+                  hint={
+                    metrics.usesOfficialMarginMetrics
+                      ? "Motor oficial de Margem de Venda (% ponderada)"
+                      : "Margem indisponível para o filtro atual"
+                  }
+                />
+                <MiniCard
+                  label="Margem R$ total"
+                  value={
+                    metrics.usesOfficialMarginMetrics
+                      ? formatCurrency(metrics.totalMargin)
+                      : "—"
+                  }
+                  hint={
+                    metrics.usesOfficialMarginMetrics
+                      ? "Motor oficial de Margem de Venda"
+                      : "Margem indisponível para o filtro atual"
+                  }
+                />
                 <MiniCard
                   label="Maior / menor pedido (líq.)"
                   value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`}
@@ -918,7 +955,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                             </td>
                             <td className="p-2 text-right">{formatCurrency(safeCommercialNumber(o.totalNetValue))}</td>
                             <td className="p-2 text-right">
-                              {formatNumber(safeCommercialNumber(o.totalMarginPerc), 2)}%
+                              {o.marginSummary?.marginPercent != null
+                                ? formatSalesOrderMarginPercent(o.marginSummary.marginPercent)
+                                : "—"}
                             </td>
                             <td className="p-2 max-w-[100px] truncate">{(o.responsible || "—").trim()}</td>
                             <td className="p-2">{o.hasInvoicing ? "Sim" : "Não"}</td>

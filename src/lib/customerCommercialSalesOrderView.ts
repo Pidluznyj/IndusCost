@@ -21,6 +21,9 @@ import {
   isOpenPortfolioOrder,
 } from "@/src/lib/salesOrderDashboardRules";
 
+import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
+
 export const COMMERCIAL_SALES_ORDER_BASIS_NOTE =
   "Indicadores calculados com base nos Pedidos de Venda do cliente. Pedidos cancelados e com erro são desconsiderados dos indicadores comerciais principais.";
 
@@ -52,7 +55,9 @@ export type SalesOrderIntelSlice = {
   issueDate: string;
   updatedAt: string;
   totalNetValue: unknown;
-  totalMarginPerc: unknown;
+  marginSummary?: SalesOrderMarginSummaryPayload | null;
+  /** Legado Nomus — diagnóstico; não usar para KPI de margem. */
+  totalMarginPerc?: unknown;
   responsible?: string | null;
   hasInvoicing: boolean;
 };
@@ -197,11 +202,11 @@ export function computeCommercialPhase2FromSalesOrders(
   const openNet = openOrders.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
   const ordersNetTotal = valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
 
-  const marginSamples = valid.map((o) => safeCommercialNumber(o.totalMarginPerc));
-  const marginAvg =
-    marginSamples.length > 0
-      ? marginSamples.reduce((x, y) => x + y, 0) / marginSamples.length
-      : 0;
+  const marginSummaries = valid
+    .map((o) => o.marginSummary)
+    .filter((s): s is SalesOrderMarginSummaryPayload => Boolean(s));
+  const marginAgg = aggregateSalesOrderMarginSummaries(marginSummaries);
+  const marginAvg = marginAgg?.marginPercent ?? 0;
 
   const t180 = new Date(now);
   t180.setDate(t180.getDate() - 180);

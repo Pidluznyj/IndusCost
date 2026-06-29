@@ -14,19 +14,15 @@ import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMa
 
 export function SalesOrderListMarginCell({
   marginSummary,
-  legacyPercent,
-  legacyValue,
 }: {
   marginSummary?: SalesOrderMarginSummaryPayload | null;
-  legacyPercent?: unknown;
-  legacyValue?: unknown;
 }) {
-  const percentLabel = pickSalesOrderListMarginPercent(marginSummary, legacyPercent);
-  const valueLabel = pickSalesOrderListMarginValue(marginSummary, legacyValue);
+  const percentLabel = pickSalesOrderListMarginPercent(marginSummary);
+  const valueLabel = pickSalesOrderListMarginValue(marginSummary);
   const tooltip = buildSalesOrderMarginTooltipText(marginSummary);
   const toneClass = resolveSalesOrderListMarginTextClass(marginSummary);
 
-  if (!marginSummary && percentLabel === "—" && valueLabel === "—") {
+  if (!marginSummary) {
     return (
       <div className="text-right text-muted-foreground text-xs" data-testid="sales-order-list-margin-cell">
         Margem não calculada

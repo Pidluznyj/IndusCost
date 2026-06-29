@@ -18,7 +18,6 @@ import {
   type SalesMarginRulesResult,
   type SalesMarginTaxMode,
 } from "./salesMarginRulesEngine.js";
-import type { SalesOrderItemMarginPayload } from "./salesOrderMarginTypes.js";
 import {
   refineSalesOrderMarginSummaryStatus,
   resolveSalesOrderMarginStatusMeta,
@@ -30,6 +29,7 @@ import {
   type SalesOrderMarginOrderResult,
 } from "./salesOrderMarginService.server.js";
 import type {
+  SalesOrderItemMarginPayload,
   SalesOrderMarginItemResult,
   SalesOrderMarginSummaryPayload,
 } from "./salesOrderMarginTypes.js";
@@ -487,21 +487,25 @@ export type OfficialCommercial360MarginMetrics = OfficialScopedMarginMetrics & {
   }>;
 };
 
-/** Métricas de margem oficial para Cliente 360 (escopo: todos os pedidos do cliente). */
-export async function resolveOfficialCommercial360MarginMetrics(
-  db: PrismaClient,
-  orders: Array<{
+export type Commercial360SalesOrderForOfficialMargin = {
+  id: string;
+  status: string;
+  nomusRawResponse?: unknown;
+  items?: Array<{
     id: string;
-    status: string;
-    nomusRawResponse?: unknown;
-    items?: Array<{
-      id: string;
-      productId?: string | null;
-      quantity: unknown;
-      totalNetValue?: unknown;
-    }>;
-  }>
-): Promise<OfficialCommercial360MarginMetrics> {
+    productId?: string | null;
+    quantity: unknown;
+    totalNetValue?: unknown;
+    [key: string]: unknown;
+  }>;
+};
+
+function mapCommercial360OrdersToMarginInput(
+  orders: Commercial360SalesOrderForOfficialMargin[]
+): {
+  forMargin: SalesOrderForMargin[];
+  itemsByOrderId: Map<string, SalesOrderForMargin["items"]>;
+} {
   const forMargin: SalesOrderForMargin[] = orders.map((order) => ({
     id: order.id,
     nomusRawResponse: order.nomusRawResponse,
@@ -512,20 +516,106 @@ export async function resolveOfficialCommercial360MarginMetrics(
       totalNetValue: item.totalNetValue,
     })),
   }));
+  const itemsByOrderId = new Map(
+    forMargin.map((order) => [order.id, order.items ?? []] as const)
+  );
+  return { forMargin, itemsByOrderId };
+}
 
-  const marginContext = await buildSalesOrderMarginContext(db, forMargin);
+/** Enriquece pedidos do Cliente 360 com margem oficial e métricas agregadas (motor único). */
+export async function loadOfficialCommercial360MarginBundle<
+  T extends Commercial360SalesOrderForOfficialMargin,
+>(
+  db: PrismaClient,
+  orders: T[]
+): Promise<{
+  salesOrders: Array<
+    T & {
+      marginSummary?: SalesOrderMarginSummaryPayload;
+      items: Array<
+        (T["items"] extends Array<infer I> ? I : never) & {
+          officialMargin?: SalesOrderItemMarginPayload;
+        }
+      >;
+    }
+  >;
+  officialMarginMetrics: OfficialCommercial360MarginMetrics;
+}> {
+  if (orders.length === 0) {
+    return {
+      salesOrders: [],
+      officialMarginMetrics: {
+        grossSalesAmount: 0,
+        taxAmount: 0,
+        netSalesAmount: 0,
+        totalCost: 0,
+        marginAmount: 0,
+        marginPercent: null,
+        missingCostCount: 0,
+        missingProductCount: 0,
+        negativeMarginCount: 0,
+        metricsSource: OFFICIAL_SM_RULES_SOURCE,
+        rulesEngineVersion: SALES_MARGIN_RULES_ENGINE_VERSION,
+        scopeNote: "Margem de pedidos agregada (% ponderada por receita vendida).",
+        orderMargins: [],
+      },
+    };
+  }
+
+  const { forMargin, itemsByOrderId } = mapCommercial360OrdersToMarginInput(orders);
+  const marginContext = await buildSalesOrderMarginContext(db, forMargin, { itemsByOrderId });
   const rulesOrders = mapMarginContextToRulesOrders(orders, marginContext.byOrderId);
   const rules = buildOfficialSalesMarginRulesResult(rulesOrders, { taxMode: "none" });
   const scoped = resolveOfficialScopedMarginMetrics(rules);
 
+  const salesOrders = orders.map((order) => {
+    const result = marginContext.byOrderId.get(order.id);
+    if (!result) {
+      return {
+        ...order,
+        marginSummary: undefined,
+        items: (order.items ?? []).map((item) => ({ ...item })),
+      };
+    }
+    return {
+      ...order,
+      marginSummary: result.marginSummary,
+      items: (order.items ?? []).map((item) => ({
+        ...item,
+        officialMargin: result.itemMargins.get(item.id),
+      })),
+    };
+  }) as Array<
+    T & {
+      marginSummary?: SalesOrderMarginSummaryPayload;
+      items: Array<
+        (T["items"] extends Array<infer I> ? I : never) & {
+          officialMargin?: SalesOrderItemMarginPayload;
+        }
+      >;
+    }
+  >;
+
   return {
-    ...scoped,
-    orderMargins: rules.orderResults.map((order) => ({
-      orderId: order.orderId,
-      marginValue: order.marginAmount,
-      marginPercent: order.marginPercent,
-    })),
+    salesOrders,
+    officialMarginMetrics: {
+      ...scoped,
+      orderMargins: rules.orderResults.map((order) => ({
+        orderId: order.orderId,
+        marginValue: order.marginAmount,
+        marginPercent: order.marginPercent,
+      })),
+    },
   };
+}
+
+/** Métricas de margem oficial para Cliente 360 (escopo: todos os pedidos do cliente). */
+export async function resolveOfficialCommercial360MarginMetrics(
+  db: PrismaClient,
+  orders: Commercial360SalesOrderForOfficialMargin[]
+): Promise<OfficialCommercial360MarginMetrics> {
+  const { officialMarginMetrics } = await loadOfficialCommercial360MarginBundle(db, orders);
+  return officialMarginMetrics;
 }
 
 export function buildOfficialSalesOrderResultMarginPayload(input: {

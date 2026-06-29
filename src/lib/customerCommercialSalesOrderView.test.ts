@@ -15,9 +15,34 @@ import {
   safeCommercialNumber,
 } from "./customerCommercialSalesOrderView.js";
 import type { SalesOrderLinkStatus } from "@/src/types/commercial.js";
+import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 
 const BRITANIA_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_CUSTOMER_ID = "22222222-2222-4222-8222-222222222222";
+
+function testMarginSummary(input: {
+  netRevenue: number;
+  marginPercent: number;
+}): SalesOrderMarginSummaryPayload {
+  const marginValue = (input.netRevenue * input.marginPercent) / 100;
+  return {
+    netRevenue: input.netRevenue,
+    totalCost: input.netRevenue - marginValue,
+    marginValue,
+    marginPercent: input.marginPercent,
+    markup: input.netRevenue / (input.netRevenue - marginValue),
+    itemsCount: 1,
+    validItemsCount: 1,
+    ignoredItemsCount: 0,
+    hasMissingCost: false,
+    hasMissingProduct: false,
+    hasNegativeMargin: false,
+    hasInvalidRevenue: false,
+    status: "OK",
+    statusLabel: "Calculada",
+    statusSeverity: "success",
+  };
+}
 
 function britaniaOrders() {
   return [
@@ -28,7 +53,7 @@ function britaniaOrders() {
       issueDate: "2025-01-15T00:00:00.000Z",
       updatedAt: "2025-01-16T00:00:00.000Z",
       totalNetValue: 125000,
-      totalMarginPerc: 18,
+      marginSummary: testMarginSummary({ netRevenue: 125000, marginPercent: 18 }),
       responsible: "Carlos",
       hasInvoicing: true,
     },
@@ -39,7 +64,7 @@ function britaniaOrders() {
       issueDate: "2025-06-20T00:00:00.000Z",
       updatedAt: "2025-06-21T00:00:00.000Z",
       totalNetValue: 87500,
-      totalMarginPerc: 16,
+      marginSummary: testMarginSummary({ netRevenue: 87500, marginPercent: 16 }),
       responsible: "Carlos",
       hasInvoicing: false,
     },
@@ -139,7 +164,7 @@ describe("customerCommercialSalesOrderView", () => {
         issueDate: "2026-05-01T00:00:00.000Z",
         updatedAt: "2026-05-01T00:00:00.000Z",
         totalNetValue: 50000,
-        totalMarginPerc: 10,
+        marginSummary: testMarginSummary({ netRevenue: 50000, marginPercent: 10 }),
         hasInvoicing: true,
       },
       {
@@ -149,7 +174,7 @@ describe("customerCommercialSalesOrderView", () => {
         issueDate: "2025-08-01T00:00:00.000Z",
         updatedAt: "2025-08-01T00:00:00.000Z",
         totalNetValue: 200000,
-        totalMarginPerc: 10,
+        marginSummary: testMarginSummary({ netRevenue: 200000, marginPercent: 10 }),
         hasInvoicing: true,
       },
     ];
@@ -217,6 +242,7 @@ describe("customerCommercialSalesOrderView", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     assert.match(server, /salesOrder\.findMany/);
     assert.match(server, /buildPortfolioAbcFromSalesOrders/);
+    assert.match(server, /loadOfficialCommercial360MarginBundle/);
     assert.equal(server.includes("proposal.findMany({\n        where: { customerId: id }"), false);
   });
 

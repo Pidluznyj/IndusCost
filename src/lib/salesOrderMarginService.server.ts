@@ -317,10 +317,15 @@ export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
 ): Promise<Array<T & { marginSummary?: SalesOrderMarginSummaryPayload }>> {
   if (orders.length === 0) return [];
 
-  const context = await buildSalesOrderMarginContext(prisma, orders);
+  const { calculateOfficialSalesOrderMarginsForOrders } = await import(
+    "./salesMarginRulesAdapter.js"
+  );
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, orders, {
+    buildInput: { taxMode: "none" },
+  });
   return orders.map((order) => ({
     ...order,
-    marginSummary: context.byOrderId.get(order.id)?.marginSummary,
+    marginSummary: marginByOrder.get(order.id)?.marginSummary,
   }));
 }
 
@@ -332,10 +337,14 @@ export async function attachMarginToSalesOrderDetail<
     items: Array<T["items"][number] & { margin?: SalesOrderItemMarginPayload }>;
   }
 > {
-  const context = await buildSalesOrderMarginContext(prisma, [order], {
+  const { calculateOfficialSalesOrderMarginsForOrders } = await import(
+    "./salesMarginRulesAdapter.js"
+  );
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, [order], {
     itemsByOrderId: new Map([[order.id, order.items]]),
+    buildInput: { taxMode: "none" },
   });
-  const result = context.byOrderId.get(order.id);
+  const result = marginByOrder.get(order.id);
   if (!result) {
     return { ...order, items: order.items.map((item) => ({ ...item })) };
   }

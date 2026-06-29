@@ -174,7 +174,7 @@ import {
   resolveOfficialScopedOrderMetrics,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./src/lib/salesOrderRulesAdapter.js";
-import { resolveOfficialCommercial360MarginMetrics } from "./src/lib/salesMarginRulesAdapter.js";
+import { loadOfficialCommercial360MarginBundle } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import {
   parseSalesOrderMonthParam,
@@ -10656,12 +10656,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         managementFilters: { allYears: true },
         linkedNfeContextMap: linkedMap,
       });
-      const officialMarginMetrics = await resolveOfficialCommercial360MarginMetrics(
-        prisma,
-        salesOrders
-      );
+      const { salesOrders: salesOrdersWithOfficialMargin, officialMarginMetrics } =
+        await loadOfficialCommercial360MarginBundle(prisma, salesOrders);
 
-      res.json({ customer, salesOrders, portfolioAbc, officialOrderMetrics, officialMarginMetrics });
+      res.json({
+        customer,
+        salesOrders: salesOrdersWithOfficialMargin,
+        portfolioAbc,
+        officialOrderMetrics,
+        officialMarginMetrics,
+      });
     } catch (error) {
       console.error("commercial-360 error:", error);
       res.status(500).json({ error: "Erro ao montar visão comercial do cliente." });

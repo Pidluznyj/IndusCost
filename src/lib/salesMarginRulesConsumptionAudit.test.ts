@@ -16,9 +16,14 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(adapter, /computeWeightedMarginPercent/);
   });
 
-  it("margin service delega para adapter oficial", () => {
+  it("margin service delega attach* para adapter oficial", () => {
     const service = read("src/lib/salesOrderMarginService.server.ts");
     assert.match(service, /calculateOfficialSalesOrderMarginsForOrders/);
+    const attachBlock = service.slice(
+      service.indexOf("export async function attachMarginsToSalesOrders"),
+      service.indexOf("export async function attachMarginToSalesOrderDetail")
+    );
+    assert.doesNotMatch(attachBlock, /buildSalesOrderMarginContext\(/);
   });
 
   it("aba Resultado usa motor oficial de margem", () => {
@@ -45,13 +50,27 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.doesNotMatch(products, /marginPercSamples/);
   });
 
-  it("Cliente 360 consome officialMarginMetrics da API", () => {
+  it("Cliente 360 consome margem oficial da API sem fallback Nomus", () => {
     const server = read("server.ts");
-    assert.match(server, /resolveOfficialCommercial360MarginMetrics/);
+    assert.match(server, /loadOfficialCommercial360MarginBundle/);
     const page = read("src/components/customers/CustomerCommercial360.tsx");
-    assert.match(page, /officialMarginMetrics/);
+    assert.match(page, /marginSummary/);
+    assert.match(page, /aggregateSalesOrderMarginSummaries/);
     assert.match(page, /usesOfficialMarginMetrics/);
+    assert.doesNotMatch(page, /totalMarginValue\), 0\)/);
     assert.doesNotMatch(page, /totalMarginPerc\), 0\) \/ validCount/);
+    assert.doesNotMatch(page, /legacyPercent/);
+  });
+
+  it("listagem de pedidos usa apenas marginSummary oficial", () => {
+    const table = read("src/components/sales/SalesOrderListTable.tsx");
+    const cell = read("src/components/sales/SalesOrderListMarginCell.tsx");
+    const display = read("src/lib/salesOrderMarginDisplay.ts");
+    assert.match(table, /marginSummary=\{row\.marginSummary\}/);
+    assert.doesNotMatch(table, /legacyPercent/);
+    assert.doesNotMatch(table, /totalMarginPerc/);
+    assert.doesNotMatch(cell, /legacyPercent/);
+    assert.doesNotMatch(display, /legacyPercent/);
   });
 
   it("script de auditoria de consumo de margem existe", () => {

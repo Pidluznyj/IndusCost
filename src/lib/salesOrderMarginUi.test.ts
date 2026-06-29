@@ -81,13 +81,13 @@ describe("salesOrderMarginDisplay", () => {
   });
 
   it("2. lista mostra — quando margem é null/ausente", () => {
-    assert.equal(pickSalesOrderListMarginPercent(null, null), "—");
-    assert.equal(pickSalesOrderListMarginValue(undefined, undefined), "—");
+    assert.equal(pickSalesOrderListMarginPercent(null), "—");
+    assert.equal(pickSalesOrderListMarginValue(undefined), "—");
   });
 
   it("1. lista renderiza margem do pedido a partir de marginSummary", () => {
-    assert.equal(pickSalesOrderListMarginPercent(summary(), null), "60,00%");
-    assert.match(pickSalesOrderListMarginValue(summary(), null), /600,00/);
+    assert.equal(pickSalesOrderListMarginPercent(summary()), "60,00%");
+    assert.match(pickSalesOrderListMarginValue(summary()), /600,00/);
   });
 });
 
