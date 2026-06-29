@@ -32,6 +32,7 @@ import {
   loadProductTaxPercentIndex,
   resolveDefaultSalesTaxPercent,
 } from "../src/lib/averageSalesTaxEngine.js";
+import { registerOfficialServerResolversForAuditScripts } from "../src/lib/registerServerResolvers.js";
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -98,12 +99,14 @@ async function main() {
     }),
   ]);
 
-  const marginContext = await buildSalesOrderMarginContext(prisma, mgmtOrders);
-  const rulesOrders = mapMarginContextToRulesOrders(mgmtOrders, marginContext.byOrderId);
-
   const productIds = mgmtOrders.flatMap((order) =>
     order.items.map((item) => item.productId).filter((id): id is string => Boolean(id))
   );
+  await registerOfficialServerResolversForAuditScripts(prisma, productIds);
+
+  const marginContext = await buildSalesOrderMarginContext(prisma, mgmtOrders);
+  const rulesOrders = mapMarginContextToRulesOrders(mgmtOrders, marginContext.byOrderId);
+
   const [productTaxIndex, defaultTax] = await Promise.all([
     loadProductTaxPercentIndex(prisma, productIds),
     resolveDefaultSalesTaxPercent(prisma),

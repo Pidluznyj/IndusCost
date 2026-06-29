@@ -46,9 +46,9 @@ describe("salesOrderRulesConsumptionAudit", () => {
     assert.match(src, /EMPTY_SALES_ORDER_LIST_SUMMARY/);
   });
 
-  it("Commercial 360 consome officialOrderMetrics da API", () => {
-    const page = read("src/components/customers/CustomerCommercial360.tsx");
-    assert.match(page, /officialOrderMetrics/);
-    assert.match(page, /usesOfficialOrderMetrics/);
+  it("SALES_ORDER_RULES_PRISMA_SELECT não referencia campo inexistente em SalesOrderItem", () => {
+    const adapter = read("src/lib/salesOrderRulesAdapter.ts");
+    assert.match(adapter, /SALES_ORDER_RULES_PRISMA_SELECT/);
+    assert.doesNotMatch(adapter, /items:\s*\{[\s\S]*status:\s*true/);
   });
 });

@@ -165,7 +165,7 @@ import {
   attachMarginToSalesOrderDetail,
   attachMarginsToSalesOrders,
 } from "./src/lib/salesOrderMarginService.server.js";
-import { setSalesOrderMarginProductCostResolver } from "./src/lib/salesOrderMarginProductCostResolver.js";
+import { registerOfficialServerResolvers } from "./src/lib/registerServerResolvers.js";
 import {
   buildSalesOrderListWhere,
 } from "./src/lib/salesOrdersListSummary.js";
@@ -12699,9 +12699,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   //   itensPedido: [{ item, idProduto, quantidade, valorUnitario, dataEntrega? }] }
   // Preencher nomusRawResponse / sentToNomusAt após resposta; não implementar nesta etapa.
 
-  setSalesOrderMarginProductCostResolver(async (productId) => {
-    const cache = await initAnalysisCache();
-    return getProductCostAnalysis(productId, cache, false);
+  registerOfficialServerResolvers({
+    resolveProductCostAnalysis: async (productId) => {
+      const cache = await initAnalysisCache();
+      return getProductCostAnalysis(productId, cache, false);
+    },
   });
 
   app.get("/api/sales-orders", requireAppAuth, requirePermission("sales_orders.view"), async (req, res) => {

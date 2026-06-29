@@ -153,7 +153,6 @@ export function mapPrismaOrderToSalesOrderRulesInput(order: {
     skuSnapshot?: string | null;
     productNameSnapshot?: string | null;
     quantity: unknown;
-    status?: string | null;
   }>;
   marginSummary?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload | null;
 }): SalesOrderRulesOrderInput {
@@ -178,7 +177,6 @@ export function mapPrismaOrderToSalesOrderRulesInput(order: {
       skuSnapshot: item.skuSnapshot,
       productNameSnapshot: item.productNameSnapshot,
       quantity: item.quantity,
-      status: item.status,
     })),
     marginSummary: order.marginSummary ?? null,
   };
@@ -608,7 +606,6 @@ export const SALES_ORDER_RULES_PRISMA_SELECT = {
       skuSnapshot: true,
       productNameSnapshot: true,
       quantity: true,
-      status: true,
     },
   },
 } as const;
