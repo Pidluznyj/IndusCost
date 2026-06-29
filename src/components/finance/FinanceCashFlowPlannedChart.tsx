@@ -34,6 +34,7 @@ import {
   EXECUTIVE_CHART_Y_TICK,
 } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
+import { useExecutiveChartFrameDimensions } from "@/src/components/finance/executive-report/charts/executiveChartFrameContext";
 
 export const FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT = 340;
 
@@ -94,6 +95,9 @@ export function FinanceCashFlowPlannedChart({
 }) {
   const isExecutive = presentation === "executive";
   const pdfMode = useExecutiveReportPdfMode();
+  const { width: frameWidth, height: frameHeight } = useExecutiveChartFrameDimensions();
+  const chartWidth = isExecutive ? frameWidth : undefined;
+  const chartHeight = isExecutive ? frameHeight : height;
   const showAccumulatedLabels = showLineValueLabels ?? showValueLabels;
   const margin =
     showValueLabels || isExecutive
@@ -113,67 +117,85 @@ export function FinanceCashFlowPlannedChart({
   const barLabelSize = isExecutive ? EXECUTIVE_CHART_BAR_LABEL_SIZE : undefined;
   const lineLabelSize = isExecutive ? EXECUTIVE_CHART_LINE_LABEL_SIZE : undefined;
 
-  return (
-    <div data-testid={testId} style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={data} margin={margin}>
-          <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
-          <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1.5} />
-          <XAxis
-            dataKey="name"
-            interval={0}
-            tick={xTick}
-            axisLine={false}
-            tickLine={false}
+  const chartBody = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
+      <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1.5} />
+      <XAxis
+        dataKey="name"
+        interval={0}
+        tick={xTick}
+        axisLine={false}
+        tickLine={false}
+      />
+      <YAxis
+        tick={yTick}
+        tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
+        width={yAxisWidth}
+        axisLine={false}
+        tickLine={false}
+      />
+      {!(isExecutive && pdfMode) ? <Tooltip content={<PlannedMonthlyTooltip />} /> : null}
+      <Legend wrapperStyle={legendStyle} />
+      <Bar
+        dataKey="netBalance"
+        name="Saldo líquido mensal"
+        maxBarSize={36}
+        radius={[3, 3, 0, 0]}
+        isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
+      >
+        {data.map((entry) => (
+          <Cell
+            key={`planned-net-${entry.name}`}
+            fill={entry.netBalance >= 0 ? FINANCE_BI_COLORS.success : FINANCE_BI_COLORS.risk}
           />
-          <YAxis
-            tick={yTick}
-            tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
-            width={yAxisWidth}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip content={<PlannedMonthlyTooltip />} />
-          <Legend wrapperStyle={legendStyle} />
-          <Bar
+        ))}
+        {showValueLabels ? (
+          <LabelList
             dataKey="netBalance"
-            name="Saldo líquido mensal"
-            maxBarSize={36}
-            radius={[3, 3, 0, 0]}
-            isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
-          >
-            {data.map((entry) => (
-              <Cell
-                key={`planned-net-${entry.name}`}
-                fill={entry.netBalance >= 0 ? FINANCE_BI_COLORS.success : FINANCE_BI_COLORS.risk}
-              />
-            ))}
-            {showValueLabels ? (
-              <LabelList
-                dataKey="netBalance"
-                content={<ChartBarValueLabel fontSize={barLabelSize} />}
-              />
-            ) : null}
-          </Bar>
-          <Line
-            type="monotone"
+            content={<ChartBarValueLabel fontSize={barLabelSize} />}
+          />
+        ) : null}
+      </Bar>
+      <Line
+        type="monotone"
+        dataKey="accumulatedBalance"
+        name="Saldo acumulado"
+        stroke={FINANCE_BI_COLORS.primary}
+        strokeWidth={2}
+        dot={{ r: 2, fill: FINANCE_BI_COLORS.primary }}
+        connectNulls={false}
+        isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
+      >
+        {showAccumulatedLabels ? (
+          <LabelList
             dataKey="accumulatedBalance"
-            name="Saldo acumulado"
-            stroke={FINANCE_BI_COLORS.primary}
-            strokeWidth={2}
-            dot={{ r: 2, fill: FINANCE_BI_COLORS.primary }}
-            connectNulls={false}
-            isAnimationActive={isExecutive ? EXECUTIVE_CHART_IS_ANIMATION_ACTIVE : true}
-          >
-            {showAccumulatedLabels ? (
-              <LabelList
-                dataKey="accumulatedBalance"
-                content={<ChartLineValueLabel fontSize={lineLabelSize} />}
-              />
-            ) : null}
-          </Line>
+            content={<ChartLineValueLabel fontSize={lineLabelSize} />}
+          />
+        ) : null}
+      </Line>
+    </>
+  );
+
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        width: isExecutive ? chartWidth : "100%",
+        height: chartHeight,
+      }}
+    >
+      {isExecutive ? (
+        <ComposedChart width={chartWidth} height={chartHeight} data={data} margin={margin}>
+          {chartBody}
         </ComposedChart>
-      </ResponsiveContainer>
+      ) : (
+        <ResponsiveContainer width="100%" height={height}>
+          <ComposedChart data={data} margin={margin}>
+            {chartBody}
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }

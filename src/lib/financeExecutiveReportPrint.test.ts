@@ -318,13 +318,12 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(cashFlow, /ExecutiveChartShell/);
-    assert.doesNotMatch(
-      readFileSync(
-        join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
-        "utf8"
-      ),
-      /data-report-chart=\{isExecutive/
+    const plannedChart = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
+      "utf8"
     );
+    assert.match(plannedChart, /useExecutiveChartFrameDimensions/);
+    assert.match(plannedChart, /width=\{chartWidth\} height=\{chartHeight\}/);
   });
 
   it("waitForExecutiveReportChartsReady retorna true sem document (SSR)", async () => {
