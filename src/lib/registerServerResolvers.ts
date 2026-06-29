@@ -7,6 +7,7 @@ import {
   type SalesOrderMarginProductCostAnalysisResolver,
 } from "./salesOrderMarginProductCostResolver.js";
 import { createCachedSalesOrderMarginCostResolver } from "./salesOrderMarginResolver.server.js";
+import { createOfficialProductCostAnalysisResolver } from "./productCostAnalysisResolver.server.js";
 
 /** Registra o resolver oficial de custo usado pelo motor de margem (server HTTP). */
 export function registerOfficialServerResolvers(input: {
@@ -44,6 +45,13 @@ async function loadLatestCostLogsForProducts(
  * Bootstrap para scripts de auditoria sem subir HTTP.
  * Usa CostCalculationLog (mesma prioridade secundária do motor após unitCost da linha).
  */
+export async function registerOfficialServerResolversForNomusSyncScript(
+  prisma: PrismaClient
+): Promise<void> {
+  const resolveProductCostAnalysis = await createOfficialProductCostAnalysisResolver(prisma);
+  setSalesOrderMarginProductCostResolver(resolveProductCostAnalysis);
+}
+
 export async function registerOfficialServerResolversForAuditScripts(
   prisma: PrismaClient,
   productIds: string[]

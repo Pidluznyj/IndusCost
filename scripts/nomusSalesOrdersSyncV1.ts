@@ -2,6 +2,12 @@ import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
+import {
+  buildNomusSyncOfficialUnitCostIndex,
+  computeNomusSyncLineTotalCost,
+  formatNomusSyncUnitCostDecimal,
+  type NomusSyncLineUnitCostResult,
+} from "../src/lib/salesOrderNomusSyncCost.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -853,10 +859,14 @@ async function runDry(eligible: EligibleSalesOrderPlan[]): Promise<Pick<DryRunRe
 }
 
 
-async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: number; updated: number; itemsCreated: number }> {
+async function runApply(
+  eligible: EligibleSalesOrderPlan[],
+  unitCostIndex: Map<string, NomusSyncLineUnitCostResult>
+): Promise<{ created: number; updated: number; itemsCreated: number; missingCostLines: number }> {
   let created = 0;
   let updated = 0;
   let itemsCreated = 0;
+  let missingCostLines = 0;
 
   for (const plan of eligible) {
     await prisma.$transaction(async (tx) => {
@@ -955,23 +965,40 @@ async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: 
 
       if (plan.lines.length > 0) {
         await tx.salesOrderItem.createMany({
-          data: plan.lines.map((line) => ({
-            salesOrderId,
-            proposalItemId: line.proposalItemId,
-            productId: line.productId,
-            externalProductId: line.externalProductId,
-            skuSnapshot: line.skuSnapshot,
-            productNameSnapshot: line.productNameSnapshot,
-            quantity: decimalString(line.quantity),
-            unit: line.unit,
-            unitCost: decimalString(0),
-            negotiatedPrice: decimalString(line.negotiatedPrice),
-            totalNetValue: decimalString(line.totalNetValue),
-            totalCost: decimalString(0),
-            marginValue: decimalString(line.totalNetValue),
-            marginPerc: decimalString(line.totalNetValue > 0 ? 100 : 0),
-            notes: line.notes,
-          })),
+          data: plan.lines.map((line) => {
+            const costResolved = unitCostIndex.get(line.productId);
+            const unitCost = costResolved?.unitCost ?? null;
+            if (unitCost == null || unitCost <= 0) {
+              missingCostLines += 1;
+              if (costResolved?.warning) {
+                console.warn(
+                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: ${costResolved.warning}`
+                );
+              } else {
+                console.warn(
+                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: custo indisponível — unitCost não gravado.`
+                );
+              }
+            }
+            const lineTotalCost = computeNomusSyncLineTotalCost(line.quantity, unitCost);
+            return {
+              salesOrderId,
+              proposalItemId: line.proposalItemId,
+              productId: line.productId,
+              externalProductId: line.externalProductId,
+              skuSnapshot: line.skuSnapshot,
+              productNameSnapshot: line.productNameSnapshot,
+              quantity: decimalString(line.quantity),
+              unit: line.unit,
+              unitCost: formatNomusSyncUnitCostDecimal(unitCost),
+              negotiatedPrice: decimalString(line.negotiatedPrice),
+              totalNetValue: decimalString(line.totalNetValue),
+              totalCost: decimalString(lineTotalCost),
+              marginValue: decimalString(line.totalNetValue),
+              marginPerc: decimalString(line.totalNetValue > 0 ? 100 : 0),
+              notes: line.notes,
+            };
+          }),
         });
         itemsCreated += plan.lines.length;
       }
@@ -989,7 +1016,7 @@ async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: 
     });
   }
 
-  return { created, updated, itemsCreated };
+  return { created, updated, itemsCreated, missingCostLines };
 }
 
 async function main(): Promise<void> {
@@ -1177,7 +1204,14 @@ async function main(): Promise<void> {
   };
 
   timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
-  const applied = isApply ? await runApply(eligible) : null;
+  let unitCostIndex = new Map<string, NomusSyncLineUnitCostResult>();
+  if (isApply && eligible.length > 0) {
+    const productIds = eligible.flatMap((plan) => plan.lines.map((line) => line.productId));
+    timeLog(`INICIO buildNomusSyncOfficialUnitCostIndex products=${productIds.length}`);
+    unitCostIndex = await buildNomusSyncOfficialUnitCostIndex(prisma, productIds);
+    timeLog(`FIM buildNomusSyncOfficialUnitCostIndex resolved=${unitCostIndex.size}`);
+  }
+  const applied = isApply ? await runApply(eligible, unitCostIndex) : null;
   timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 
   console.log(
