@@ -4,9 +4,16 @@ import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
 import {
   buildNomusSyncOfficialUnitCostIndex,
+  buildPreservationMapFromExistingItems,
   computeNomusSyncLineTotalCost,
+  createNomusSyncUnitCostApplyStats,
   formatNomusSyncUnitCostDecimal,
+  mergeNomusSyncUnitCostSummary,
+  recordUnitCostSnapshotApplyStats,
+  resolveSalesOrderItemUnitCostSnapshot,
   type NomusSyncLineUnitCostResult,
+  type NomusSyncUnitCostApplyStats,
+  type NomusSyncUnitCostIndexBuildResult,
 } from "../src/lib/salesOrderNomusSyncCost.server.ts";
 
 const prisma = new PrismaClient();
@@ -862,11 +869,19 @@ async function runDry(eligible: EligibleSalesOrderPlan[]): Promise<Pick<DryRunRe
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
   unitCostIndex: Map<string, NomusSyncLineUnitCostResult>
-): Promise<{ created: number; updated: number; itemsCreated: number; missingCostLines: number }> {
+): Promise<{
+  created: number;
+  updated: number;
+  itemsCreated: number;
+  missingCostLines: number;
+  unitCostStats: NomusSyncUnitCostApplyStats;
+}> {
   let created = 0;
   let updated = 0;
   let itemsCreated = 0;
   let missingCostLines = 0;
+  const unitCostStats = createNomusSyncUnitCostApplyStats();
+  const resolvedProductIdsSeen = new Set<string>();
 
   for (const plan of eligible) {
     await prisma.$transaction(async (tx) => {
@@ -944,8 +959,20 @@ async function runApply(
       };
 
       let salesOrderId: string;
+      let preservationMap = new Map<string, number>();
 
       if (existing) {
+        const existingItems = await tx.salesOrderItem.findMany({
+          where: { salesOrderId: existing.id },
+          select: {
+            productId: true,
+            externalProductId: true,
+            proposalItemId: true,
+            unitCost: true,
+          },
+        });
+        preservationMap = buildPreservationMapFromExistingItems(existingItems);
+
         const updatedOrder = await tx.salesOrder.update({
           where: { id: existing.id },
           data: baseData,
@@ -966,20 +993,35 @@ async function runApply(
       if (plan.lines.length > 0) {
         await tx.salesOrderItem.createMany({
           data: plan.lines.map((line) => {
-            const costResolved = unitCostIndex.get(line.productId);
-            const unitCost = costResolved?.unitCost ?? null;
+            const snapshot = resolveSalesOrderItemUnitCostSnapshot({
+              productId: line.productId,
+              externalProductId: line.externalProductId,
+              proposalItemId: line.proposalItemId,
+              preservationMap,
+              unitCostIndex,
+            });
+            const unitCost = snapshot.unitCost;
+
+            recordUnitCostSnapshotApplyStats(
+              unitCostStats,
+              snapshot,
+              {
+                orderCode: plan.codigoPedido,
+                productId: line.productId,
+                sku: line.skuSnapshot,
+              },
+              resolvedProductIdsSeen
+            );
+
             if (unitCost == null || unitCost <= 0) {
               missingCostLines += 1;
-              if (costResolved?.warning) {
+              if (snapshot.warning) {
                 console.warn(
-                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: ${costResolved.warning}`
-                );
-              } else {
-                console.warn(
-                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: custo indisponível — unitCost não gravado.`
+                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: ${snapshot.warning}`
                 );
               }
             }
+
             const lineTotalCost = computeNomusSyncLineTotalCost(line.quantity, unitCost);
             return {
               salesOrderId,
@@ -1016,7 +1058,7 @@ async function runApply(
     });
   }
 
-  return { created, updated, itemsCreated, missingCostLines };
+  return { created, updated, itemsCreated, missingCostLines, unitCostStats };
 }
 
 async function main(): Promise<void> {
@@ -1204,14 +1246,36 @@ async function main(): Promise<void> {
   };
 
   timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
-  let unitCostIndex = new Map<string, NomusSyncLineUnitCostResult>();
+  const syncCostStartedAt = Date.now();
+  let indexBuild: NomusSyncUnitCostIndexBuildResult = {
+    index: new Map(),
+    resolverStats: { engineCalls: 0, cacheHits: 0 },
+    uniqueProducts: 0,
+    productsResolved: 0,
+    productsUnresolved: 0,
+  };
   if (isApply && eligible.length > 0) {
     const productIds = eligible.flatMap((plan) => plan.lines.map((line) => line.productId));
     timeLog(`INICIO buildNomusSyncOfficialUnitCostIndex products=${productIds.length}`);
-    unitCostIndex = await buildNomusSyncOfficialUnitCostIndex(prisma, productIds);
-    timeLog(`FIM buildNomusSyncOfficialUnitCostIndex resolved=${unitCostIndex.size}`);
+    indexBuild = await buildNomusSyncOfficialUnitCostIndex(prisma, productIds);
+    timeLog(
+      `FIM buildNomusSyncOfficialUnitCostIndex unique=${indexBuild.uniqueProducts} resolved=${indexBuild.productsResolved} engineCalls=${indexBuild.resolverStats.engineCalls} cacheHits=${indexBuild.resolverStats.cacheHits}`
+    );
   }
-  const applied = isApply ? await runApply(eligible, unitCostIndex) : null;
+  const applied = isApply ? await runApply(eligible, indexBuild.index) : null;
+  const unitCostSummary =
+    isApply && applied
+      ? mergeNomusSyncUnitCostSummary({
+          applyStats: applied.unitCostStats,
+          indexBuild,
+          durationMs: Date.now() - syncCostStartedAt,
+        })
+      : null;
+  if (unitCostSummary) {
+    console.log(
+      `[nomus-sales-orders-v1][unit-cost-summary] ${JSON.stringify(unitCostSummary)}`
+    );
+  }
   timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 
   console.log(
@@ -1220,6 +1284,7 @@ async function main(): Promise<void> {
         mode: isApply ? "apply" : "dry-run",
         summary: result,
         applied,
+        unitCostSummary,
       },
       null,
       2

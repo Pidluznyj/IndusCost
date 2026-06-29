@@ -48,7 +48,9 @@ async function loadLatestCostLogsForProducts(
 export async function registerOfficialServerResolversForNomusSyncScript(
   prisma: PrismaClient
 ): Promise<void> {
-  const resolveProductCostAnalysis = await createOfficialProductCostAnalysisResolver(prisma);
+  const resolveProductCostAnalysis = (
+    await createOfficialProductCostAnalysisResolver(prisma)
+  ).resolve;
   setSalesOrderMarginProductCostResolver(resolveProductCostAnalysis);
 }
 

@@ -3,13 +3,32 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildNomusSyncLineMatchKey,
+  buildPreservationMapFromExistingItems,
   computeNomusSyncLineTotalCost,
+  createNomusSyncUnitCostApplyStats,
   formatNomusSyncUnitCostDecimal,
+  parseNomusSyncStoredUnitCost,
+  recordUnitCostSnapshotApplyStats,
+  resolveSalesOrderItemUnitCostSnapshot,
+  type NomusSyncLineUnitCostResult,
 } from "./salesOrderNomusSyncCost.server.js";
 import { resolveSalesOrderItemCost } from "./salesOrderMarginResolver.js";
 
 function read(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");
+}
+
+function makeIndex(entries: Record<string, number | null>): Map<string, NomusSyncLineUnitCostResult> {
+  const index = new Map<string, NomusSyncLineUnitCostResult>();
+  for (const [productId, unitCost] of Object.entries(entries)) {
+    index.set(productId, {
+      unitCost,
+      costSource: unitCost != null && unitCost > 0 ? "OFFICIAL_FINAL_COST" : "MISSING_COST",
+      warning: unitCost == null || unitCost <= 0 ? "Custo indisponível no sync Nomus — unitCost não gravado." : null,
+    });
+  }
+  return index;
 }
 
 describe("salesOrderNomusSyncCost", () => {
@@ -22,6 +41,12 @@ describe("salesOrderNomusSyncCost", () => {
   it("computeNomusSyncLineTotalCost multiplica quantidade × unitCost", () => {
     assert.equal(computeNomusSyncLineTotalCost(10, 4.5), 45);
     assert.equal(computeNomusSyncLineTotalCost(10, null), 0);
+  });
+
+  it("parseNomusSyncStoredUnitCost ignora zero e inválidos", () => {
+    assert.equal(parseNomusSyncStoredUnitCost(0), null);
+    assert.equal(parseNomusSyncStoredUnitCost("0"), null);
+    assert.equal(parseNomusSyncStoredUnitCost(12.5), 12.5);
   });
 
   it("linha com unitCost > 0 usa snapshot histórico na margem", () => {
@@ -57,10 +82,98 @@ describe("salesOrderNomusSyncCost", () => {
     assert.equal(missing.costSource, "MISSING_COST");
   });
 
-  it("sync Nomus não grava unitCost = 0 silencioso quando custo existe", () => {
+  it("resolveSalesOrderItemUnitCostSnapshot preserva unitCost histórico no re-sync", () => {
+    const key = buildNomusSyncLineMatchKey({
+      productId: "p1",
+      externalProductId: 100,
+      proposalItemId: "pi1",
+    });
+    const preservationMap = new Map([[key, 77]]);
+    const index = makeIndex({ p1: 99 });
+
+    const snapshot = resolveSalesOrderItemUnitCostSnapshot({
+      productId: "p1",
+      externalProductId: 100,
+      proposalItemId: "pi1",
+      preservationMap,
+      unitCostIndex: index,
+    });
+
+    assert.equal(snapshot.outcome, "preserved");
+    assert.equal(snapshot.unitCost, 77);
+    assert.equal(snapshot.costSource, "HISTORICAL_SNAPSHOT");
+  });
+
+  it("resolveSalesOrderItemUnitCostSnapshot resolve linha nova com índice oficial", () => {
+    const snapshot = resolveSalesOrderItemUnitCostSnapshot({
+      productId: "p2",
+      externalProductId: 200,
+      proposalItemId: null,
+      preservationMap: new Map(),
+      unitCostIndex: makeIndex({ p2: 42 }),
+    });
+
+    assert.equal(snapshot.outcome, "resolved");
+    assert.equal(snapshot.unitCost, 42);
+  });
+
+  it("resolveSalesOrderItemUnitCostSnapshot tenta resolver linha legada sem snapshot", () => {
+    const snapshot = resolveSalesOrderItemUnitCostSnapshot({
+      productId: "p3",
+      externalProductId: 300,
+      proposalItemId: null,
+      preservationMap: new Map(),
+      unitCostIndex: makeIndex({ p3: null }),
+    });
+
+    assert.equal(snapshot.outcome, "unresolved");
+    assert.equal(snapshot.unitCost, null);
+    assert.match(snapshot.warning ?? "", /Custo indisponível/);
+  });
+
+  it("buildPreservationMapFromExistingItems só indexa unitCost > 0", () => {
+    const map = buildPreservationMapFromExistingItems([
+      {
+        productId: "p1",
+        externalProductId: 10,
+        proposalItemId: null,
+        unitCost: "25.500000",
+      },
+      {
+        productId: "p2",
+        externalProductId: 20,
+        proposalItemId: null,
+        unitCost: "0.000000",
+      },
+    ]);
+    assert.equal(map.get("10|p1|"), 25.5);
+    assert.equal(map.has("20|p2|"), false);
+  });
+
+  it("recordUnitCostSnapshotApplyStats distingue primeira resolução e cache por productId", () => {
+    const stats = createNomusSyncUnitCostApplyStats();
+    const seen = new Set<string>();
+    const resolved = resolveSalesOrderItemUnitCostSnapshot({
+      productId: "p1",
+      externalProductId: 1,
+      proposalItemId: null,
+      preservationMap: new Map(),
+      unitCostIndex: makeIndex({ p1: 10 }),
+    });
+
+    recordUnitCostSnapshotApplyStats(stats, resolved, { orderCode: "PV-1", productId: "p1", sku: "SKU" }, seen);
+    recordUnitCostSnapshotApplyStats(stats, resolved, { orderCode: "PV-1", productId: "p1", sku: "SKU" }, seen);
+
+    assert.equal(stats.costsNewlyResolved, 1);
+    assert.equal(stats.costsFromProductIndexCache, 1);
+  });
+
+  it("sync Nomus preserva unitCost histórico antes do deleteMany", () => {
     const sync = read("scripts/nomusSalesOrdersSyncV1.ts");
     assert.match(sync, /buildNomusSyncOfficialUnitCostIndex/);
-    assert.match(sync, /formatNomusSyncUnitCostDecimal/);
+    assert.match(sync, /buildPreservationMapFromExistingItems/);
+    assert.match(sync, /resolveSalesOrderItemUnitCostSnapshot/);
+    assert.match(sync, /unit-cost-summary/);
     assert.doesNotMatch(sync, /unitCost:\s*decimalString\(0\)/);
   });
 });
