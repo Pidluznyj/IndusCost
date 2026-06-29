@@ -32,10 +32,12 @@ import {
 } from "./salesOrderLogisticStatus.js";
 import {
   buildOfficialSalesOrderRulesResult,
+  buildOfficialSellerBreakdownFromManagementRows,
   buildOfficialTopCustomersFromRulesOrders,
   mapFinanceSalesOrdersFiltersToRulesInput,
   mapOfficialFinancePeriodAgg,
   mapOfficialFinancePortfolioFromManagementRows,
+  mapOfficialSellerBreakdownToFinanceTopSellers,
   mapPrismaOrderToSalesOrderRulesInput,
   buildOfficialMonthlyAmountMaps,
   OFFICIAL_SO_RULES_SOURCE,
@@ -473,7 +475,9 @@ export async function buildFinanceSalesOrdersDashboard(
     monthlyComparison,
     realizedProjected: buildRealizedProjectedRows(tab),
     topCustomers,
-    topSellers: extended.topSellers,
+    topSellers: mapOfficialSellerBreakdownToFinanceTopSellers(
+      buildOfficialSellerBreakdownFromManagementRows(rulesBundle.current.managementBundle.rows)
+    ),
     statusBreakdown: tab.statusBreakdown.map((row) => ({
       status: row.status,
       label: row.label,

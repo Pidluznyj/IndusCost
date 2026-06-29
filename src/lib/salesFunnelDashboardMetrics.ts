@@ -1,8 +1,4 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
-import {
-  decimalToNumber,
-} from "@/src/lib/executiveDashboardHelpers.js";
 import {
   endOfYear,
   startOfYear,
@@ -34,6 +30,7 @@ import {
 } from "@/src/lib/salesOrderMetricsEngine.js";
 import {
   buildOfficialSalesOrderRulesResult,
+  buildOfficialStatusBreakdownFromOrders,
   mapPrismaOrderToSalesOrderRulesInput,
   OFFICIAL_SO_RULES_SOURCE,
   SALES_ORDER_RULES_PRISMA_SELECT,
@@ -55,8 +52,6 @@ const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Se
 const TOP_CUSTOMERS_LIMIT = 10;
 const CRITICAL_ORDERS_LIMIT = 15;
 const OPEN_DAYS_THRESHOLD = 30;
-
-const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 
 function formatOperationalStage(stage: SalesOperationalFunnelStage, soldCount: number): SalesFunnelOperationalStage {
   const percentOfSold = computeFunnelPercent(stage.count, soldCount);
@@ -292,28 +287,6 @@ function buildStage(
   };
 }
 
-async function queryStatusBreakdown(yearStart: Date, yearEnd: Date): Promise<DashboardStatusBreakdownRow[]> {
-  const rows = await prisma.$queryRaw<{ status: string; count: bigint; total: unknown }[]>(
-    Prisma.sql`
-      SELECT
-        so.status::text AS status,
-        COUNT(*)::bigint AS count,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      WHERE so."issueDate" >= ${yearStart}
-        AND so."issueDate" <= ${yearEnd}
-      GROUP BY so.status
-      ORDER BY count DESC
-    `
-  );
-  return rows.map((row) => ({
-    status: row.status,
-    label: SALES_ORDER_STATUS_LABELS[row.status] ?? row.status,
-    count: Number(row.count),
-    value: decimalToNumber(row.total),
-  }));
-}
-
 async function loadFunnelOfficialRules(year: number, referenceDate: Date) {
   const from = startOfYear(new Date(year, 0, 1));
   const to = endOfYear(new Date(year, 0, 1));
@@ -331,8 +304,9 @@ async function loadFunnelOfficialRules(year: number, referenceDate: Date) {
     })),
     referenceDate
   );
-  return buildOfficialSalesOrderRulesResult({
-    orders: orders.map(mapPrismaOrderToSalesOrderRulesInput),
+  const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
+  const rules = buildOfficialSalesOrderRulesResult({
+    orders: rulesOrders,
     referenceDate,
     year,
     month: referenceDate.getMonth() + 1,
@@ -340,6 +314,7 @@ async function loadFunnelOfficialRules(year: number, referenceDate: Date) {
     managementFilters: { year },
     scope: "management",
   });
+  return { rules, rulesOrders };
 }
 
 export async function buildSalesFunnelDashboardTab(
@@ -351,7 +326,10 @@ export async function buildSalesFunnelDashboardTab(
   const operationalNow = new Date();
 
   const engineMetrics = await loadSalesOrderEnrichedMetricsForIssueYear(year, operationalNow);
-  const officialRules = await loadFunnelOfficialRules(year, yearCtx.referenceDate);
+  const { rules: officialRules, rulesOrders: funnelYearOrders } = await loadFunnelOfficialRules(
+    year,
+    yearCtx.referenceDate
+  );
   const fulfillment = officialRules.fulfillmentKpis;
   const aggregate = {
     totalSoldValue: fulfillment.totalSoldValue,
@@ -373,7 +351,9 @@ export async function buildSalesFunnelDashboardTab(
 
   const [monthlyMap, statusBreakdown, openPortfolioByCustomer, criticalOrders] = await Promise.all([
     Promise.resolve(buildMonthlyFunnelFromEngine(engineMetrics, year)),
-    queryStatusBreakdown(yearStart, yearEnd),
+    Promise.resolve(
+      buildOfficialStatusBreakdownFromOrders(funnelYearOrders, SALES_ORDER_STATUS_LABELS)
+    ),
     Promise.resolve(buildOpenPortfolioByCustomerFromEngine(engineMetrics, operationalNow)),
     Promise.resolve(buildCriticalOrdersFromEngine(engineMetrics, year, operationalNow)),
   ]);

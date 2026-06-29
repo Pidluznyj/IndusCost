@@ -58,6 +58,35 @@ describe("salesOrderRulesConsumptionAudit", () => {
     assert.doesNotMatch(resultEngine, /items:\s*\{[\s\S]*status:\s*true/);
   });
 
+  it("GET /api/reports/data consome motor oficial", () => {
+    const server = read("server.ts");
+    assert.match(server, /buildReportsDataPayload/);
+    const service = read("src/lib/reportsDataService.ts");
+    assert.match(service, /buildOfficialReportsCommercialPayload/);
+    assert.match(service, /OFFICIAL_SO_RULES_SOURCE/);
+  });
+
+  it("ABC Cliente 360 usa motor oficial sem groupBy Prisma", () => {
+    const server = read("server.ts");
+    assert.match(server, /loadOfficialPortfolioAbcRevenueRows/);
+    assert.doesNotMatch(server, /salesOrder\.groupBy/);
+    const loader = read("src/lib/officialSalesOrderPortfolioLoaders.server.ts");
+    assert.match(loader, /buildOfficialCustomerRevenueByCustomer/);
+  });
+
+  it("Financeiro Pedidos usa top sellers do motor oficial", () => {
+    const finance = read("src/lib/financeSalesOrdersDashboard.ts");
+    assert.match(finance, /mapOfficialSellerBreakdownToFinanceTopSellers/);
+    assert.match(finance, /buildOfficialSellerBreakdownFromManagementRows/);
+    assert.doesNotMatch(finance, /topSellers: extended\.topSellers/);
+  });
+
+  it("Funil comercial usa status breakdown oficial", () => {
+    const funnel = read("src/lib/salesFunnelDashboardMetrics.ts");
+    assert.match(funnel, /buildOfficialStatusBreakdownFromOrders/);
+    assert.doesNotMatch(funnel, /\$queryRaw/);
+  });
+
   it("auditoria de Pedidos registra resolver de margem antes da gestão", () => {
     const script = read("scripts/audit-sales-order-rules-consumption.ts");
     const mainBody = script.slice(script.indexOf("async function main"));

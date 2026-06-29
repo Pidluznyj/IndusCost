@@ -9,7 +9,10 @@ import {
 } from "./salesOrderDashboardRules.js";
 import type { FinanceSalesOrdersDashboardFilters } from "./financeSalesOrdersDashboardTypes.js";
 import type { FinanceSalesOrdersTopCustomerRow } from "./financeSalesOrdersDashboardTypes.js";
-import type { SalesOrderListFilters } from "./salesOrdersListSummary.js";
+import {
+  summarizeSalesOrderListRows,
+  type SalesOrderListFilters,
+} from "./salesOrdersListSummary.js";
 import type { SalesOrderManagementFilters } from "./salesOrderManagement.js";
 import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
 import {
@@ -556,6 +559,336 @@ export function buildOfficialSellerBreakdownFromManagementRows(
       openOrdersValue: roundMoney(row.openOrdersValue),
     }))
     .sort((a, b) => b.ordersCount - a.ordersCount);
+}
+
+export type OfficialStatusBreakdownRow = {
+  status: string;
+  label: string;
+  count: number;
+  value: number;
+};
+
+/** Quebra por status Nomus — agrega pedidos já carregados (sem SQL paralelo). */
+export function buildOfficialStatusBreakdownFromOrders(
+  orders: Array<{ status: string; totalNetValue: unknown }>,
+  statusLabels: Record<string, string> = {}
+): OfficialStatusBreakdownRow[] {
+  const byStatus = new Map<string, { count: number; netSum: number }>();
+  for (const order of orders) {
+    const net = safeOrderNet(order.totalNetValue);
+    const current = byStatus.get(order.status) ?? { count: 0, netSum: 0 };
+    current.count += 1;
+    current.netSum += net;
+    byStatus.set(order.status, current);
+  }
+  return [...byStatus.entries()]
+    .map(([status, v]) => ({
+      status,
+      label: statusLabels[status] ?? status,
+      count: v.count,
+      value: roundMoney(v.netSum),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export function isOfficialAbcEligibleOrderStatus(status: string): boolean {
+  return !isCancelledSalesOrderStatus(status) && status !== "ERROR";
+}
+
+export type OfficialCustomerRevenueRow = {
+  customerId: string;
+  revenue: number;
+  orderCount: number;
+  lastIssueDate: Date;
+};
+
+/** Receita por cliente — soma header totalNetValue; base para ABC oficial. */
+export function buildOfficialCustomerRevenueByCustomer(
+  orders: SalesOrderRulesOrderInput[],
+  options?: { abcEligibleOnly?: boolean }
+): OfficialCustomerRevenueRow[] {
+  const byCustomer = new Map<string, OfficialCustomerRevenueRow>();
+  for (const order of orders) {
+    if (options?.abcEligibleOnly && !isOfficialAbcEligibleOrderStatus(order.status)) continue;
+    const customerId = order.customerId?.trim() || order.id;
+    const net = safeOrderNet(order.totalNetValue);
+    const current = byCustomer.get(customerId) ?? {
+      customerId,
+      revenue: 0,
+      orderCount: 0,
+      lastIssueDate: new Date(0),
+    };
+    current.revenue += net;
+    current.orderCount += 1;
+    if (order.issueDate > current.lastIssueDate) current.lastIssueDate = order.issueDate;
+    byCustomer.set(customerId, current);
+  }
+  return [...byCustomer.values()].map((row) => ({
+    ...row,
+    revenue: roundMoney(row.revenue),
+  }));
+}
+
+export type OfficialReportsCommercialPayload = {
+  metricsSource: typeof OFFICIAL_SO_RULES_SOURCE;
+  orderCount: number;
+  totalNet: number;
+  sentToNomusNet: number;
+  openOrdersNet: number;
+  cancelledCount: number;
+  sentToNomusCount: number;
+  openOrdersCount: number;
+  ticketAvg: number;
+  byStatus: Record<string, { count: number; netSum: number }>;
+  byResponsible: Array<{ responsible: string; count: number; netSum: number }>;
+  byMonth: Array<{ month: string; count: number; netSum: number; sentToNomusNet: number }>;
+  topCustomersByNet: Array<{
+    customerId: string;
+    companyName: string;
+    netSum: number;
+    orderCount: number;
+  }>;
+  topCustomersByCount: Array<{
+    customerId: string;
+    companyName: string;
+    orderCount: number;
+    netSum: number;
+  }>;
+};
+
+function isLegacyOpenWorkflowStatus(status: string): boolean {
+  return status === "DRAFT" || status === "READY_TO_SEND";
+}
+
+/** Seção comercial de Relatórios — cards e agregados do motor oficial. */
+export function buildOfficialReportsCommercialPayload(input: {
+  orders: SalesOrderRulesOrderInput[];
+  listFilters: SalesOrderListFilters;
+  referenceDate: Date;
+  customerNames: Map<string, string>;
+}): OfficialReportsCommercialPayload {
+  const filtered = filterSalesOrderListRows(input.orders, input.listFilters);
+  const summary = summarizeSalesOrderListRows(filtered);
+  const rules = buildOfficialSalesOrderRulesResult({
+    orders: input.orders,
+    listFilters: input.listFilters,
+    referenceDate: input.referenceDate,
+    scope: "list",
+  });
+
+  const byStatus: Record<string, { count: number; netSum: number }> = {};
+  const byResponsible = new Map<string, { count: number; netSum: number }>();
+  const byMonth = new Map<
+    string,
+    { month: string; count: number; netSum: number; sentToNomusNet: number }
+  >();
+
+  let sentToNomusNet = 0;
+  let openOrdersNet = 0;
+  let cancelledCount = 0;
+  let sentToNomusCount = 0;
+  let openOrdersCount = 0;
+
+  for (const order of filtered) {
+    const net = safeOrderNet(order.totalNetValue);
+    const st = order.status;
+    if (isLegacyOpenWorkflowStatus(st)) {
+      openOrdersNet += net;
+      openOrdersCount += 1;
+    }
+    if (st === "SENT_TO_NOMUS") {
+      sentToNomusNet += net;
+      sentToNomusCount += 1;
+    }
+    if (isCancelledSalesOrderStatus(st)) cancelledCount += 1;
+
+    if (!byStatus[st]) byStatus[st] = { count: 0, netSum: 0 };
+    byStatus[st]!.count += 1;
+    byStatus[st]!.netSum += net;
+
+    const resp = (order.responsible || "").trim() || "(sem responsável)";
+    const br = byResponsible.get(resp) ?? { count: 0, netSum: 0 };
+    br.count += 1;
+    br.netSum += net;
+    byResponsible.set(resp, br);
+
+    const c = order.issueDate;
+    const key = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}`;
+    const m = byMonth.get(key) ?? { month: key, count: 0, netSum: 0, sentToNomusNet: 0 };
+    m.count += 1;
+    m.netSum += net;
+    if (st === "SENT_TO_NOMUS") m.sentToNomusNet += net;
+    byMonth.set(key, m);
+  }
+
+  const customerAgg = buildOfficialCustomerRevenueByCustomer(filtered);
+  const topCustomersByNet = [...customerAgg]
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 25)
+    .map((row) => ({
+      customerId: row.customerId,
+      companyName: input.customerNames.get(row.customerId) || "—",
+      netSum: row.revenue,
+      orderCount: row.orderCount,
+    }));
+  const topCustomersByCount = [...customerAgg]
+    .sort((a, b) => b.orderCount - a.orderCount)
+    .slice(0, 25)
+    .map((row) => ({
+      customerId: row.customerId,
+      companyName: input.customerNames.get(row.customerId) || "—",
+      orderCount: row.orderCount,
+      netSum: row.revenue,
+    }));
+
+  return {
+    metricsSource: OFFICIAL_SO_RULES_SOURCE,
+    orderCount: summary.totalOrders,
+    totalNet: rules.metrics.soldAmount,
+    sentToNomusNet: roundMoney(sentToNomusNet),
+    openOrdersNet: roundMoney(openOrdersNet),
+    cancelledCount,
+    sentToNomusCount,
+    openOrdersCount,
+    ticketAvg: rules.metrics.averageTicket,
+    byStatus,
+    byResponsible: [...byResponsible.entries()]
+      .map(([responsible, v]) => ({ responsible, ...v, netSum: roundMoney(v.netSum) }))
+      .sort((a, b) => b.netSum - a.netSum),
+    byMonth: [...byMonth.values()]
+      .map((row) => ({ ...row, netSum: roundMoney(row.netSum), sentToNomusNet: roundMoney(row.sentToNomusNet) }))
+      .sort((a, b) => a.month.localeCompare(b.month)),
+    topCustomersByNet,
+    topCustomersByCount,
+  };
+}
+
+export type OfficialReportsPreviousPeriodPayload = {
+  orderCount: number;
+  totalNet: number;
+  sentToNomusNet: number;
+};
+
+/** Período anterior simétrico — mesmas regras oficiais de listagem. */
+export function buildOfficialReportsPreviousPeriodPayload(input: {
+  orders: SalesOrderRulesOrderInput[];
+  listFilters: SalesOrderListFilters;
+}): OfficialReportsPreviousPeriodPayload {
+  const filtered = filterSalesOrderListRows(input.orders, input.listFilters);
+  const summary = summarizeSalesOrderListRows(filtered);
+  let sentToNomusNet = 0;
+  for (const order of filtered) {
+    if (order.status === "SENT_TO_NOMUS") {
+      sentToNomusNet += safeOrderNet(order.totalNetValue);
+    }
+  }
+  return {
+    orderCount: summary.totalOrders,
+    totalNet: summary.totalNetAmount,
+    sentToNomusNet: roundMoney(sentToNomusNet),
+  };
+}
+
+export type OfficialReportsProductMixRow = {
+  productId: string;
+  sku: string;
+  name: string;
+  type: string;
+  qty: number;
+  revenue: number;
+  marginSum: number;
+  lines: number;
+  orders: number;
+};
+
+/** Mix por produto — agrega linhas de pedidos já filtrados pelo motor (apresentação). */
+export function buildOfficialReportsProductMixFromOrders(
+  orders: Array<
+    SalesOrderRulesOrderInput & {
+      items: Array<{
+        productId?: string;
+        skuSnapshot?: string | null;
+        productNameSnapshot?: string | null;
+        quantity: unknown;
+        totalNetValue?: unknown;
+        marginValue?: unknown;
+        Product?: { sku?: string | null; name?: string | null; type?: string | null } | null;
+      }>;
+    }
+  >,
+  listFilters: SalesOrderListFilters
+): OfficialReportsProductMixRow[] {
+  const filtered = filterSalesOrderListRows(orders, listFilters);
+  const mixMap = new Map<
+    string,
+    {
+      productId: string;
+      sku: string;
+      name: string;
+      type: string;
+      qty: number;
+      revenue: number;
+      marginSum: number;
+      lines: number;
+      orderIds: Set<string>;
+    }
+  >();
+
+  for (const order of filtered) {
+    for (const it of order.items) {
+      const pid = it.productId ?? it.id;
+      const qty = safeOrderNet(it.quantity);
+      const rev = safeOrderNet(it.totalNetValue);
+      const mg = safeOrderNet(it.marginValue);
+      const prev = mixMap.get(pid);
+      const sku = it.Product?.sku || it.skuSnapshot || "—";
+      const name = it.Product?.name || it.productNameSnapshot || "Produto";
+      const type = String(it.Product?.type || "—");
+      if (prev) {
+        prev.qty += qty;
+        prev.revenue += rev;
+        prev.marginSum += mg;
+        prev.lines += 1;
+        prev.orderIds.add(order.id);
+      } else {
+        mixMap.set(pid, {
+          productId: pid,
+          sku,
+          name,
+          type,
+          qty,
+          revenue: rev,
+          marginSum: mg,
+          lines: 1,
+          orderIds: new Set([order.id]),
+        });
+      }
+    }
+  }
+
+  return [...mixMap.values()]
+    .map(({ orderIds, ...row }) => ({
+      ...row,
+      revenue: roundMoney(row.revenue),
+      marginSum: roundMoney(row.marginSum),
+      orders: orderIds.size,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+/** Top vendedores financeiro — adapter fino sobre breakdown oficial de gestão. */
+export function mapOfficialSellerBreakdownToFinanceTopSellers(
+  rows: OfficialSellerBreakdownRow[],
+  limit = 10
+): import("./financeSalesOrdersDashboardTypes.js").FinanceSalesOrdersTopSellerRow[] {
+  const totalAmount = rows.reduce((sum, row) => sum + row.ordersValue, 0);
+  return rows.slice(0, limit).map((row) => ({
+    sellerName: row.sellerLabel,
+    amount: row.ordersValue,
+    orderCount: row.ordersCount,
+    averageTicketAmount: computeTicketAverage(row.ordersValue, row.ordersCount),
+    sharePercent: totalAmount > 0 ? roundMoney((row.ordersValue / totalAmount) * 100) : null,
+  }));
 }
 
 /** Mapeia pedido CRM comercial mínimo para entrada do motor. */

@@ -1,8 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  decimalToNumber,
-  endOfMonth,
   safeMetricNumber,
   startOfMonth,
 } from "@/src/lib/executiveDashboardHelpers.js";
@@ -46,6 +43,7 @@ import {
 import {
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialSalesOrderExecutiveMetrics,
+  buildOfficialStatusBreakdownFromOrders,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
@@ -66,8 +64,6 @@ import type {
 } from "@/src/lib/executiveDashboardTypes.js";
 
 const OVERDUE_LIST_LIMIT = 15;
-
-const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 
 function metricCard(
   id: string,
@@ -194,24 +190,11 @@ async function queryOverdueList(selectedYear: number, now: Date): Promise<Overdu
 
 
 async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
-  const rows = await prisma.$queryRaw<{ status: string; count: bigint; total: unknown }[]>(
-    Prisma.sql`
-      SELECT
-        so.status::text AS status,
-        COUNT(*)::bigint AS count,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      WHERE ${NOT_CANCELLED}
-      GROUP BY so.status
-      ORDER BY count DESC
-    `
-  );
-  return rows.map((row) => ({
-    status: row.status,
-    label: SALES_ORDER_STATUS_LABELS[row.status] ?? row.status,
-    count: Number(row.count),
-    value: decimalToNumber(row.total),
-  }));
+  const rows = await prisma.salesOrder.findMany({
+    where: { status: { not: "CANCELLED" } },
+    select: { status: true, totalNetValue: true },
+  });
+  return buildOfficialStatusBreakdownFromOrders(rows, SALES_ORDER_STATUS_LABELS);
 }
 
 export async function buildSalesOrdersDashboardTab(

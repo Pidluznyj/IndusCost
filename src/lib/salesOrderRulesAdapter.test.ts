@@ -4,6 +4,8 @@ import { buildFulfillmentKpis } from "./salesOrderManagementFulfillment.js";
 import { buildManagementRowsFromOrders } from "./salesOrderManagement.js";
 import { summarizeSalesOrderListRows } from "./salesOrdersListSummary.js";
 import {
+  buildOfficialReportsCommercialPayload,
+  buildOfficialCustomerRevenueByCustomer,
   buildOfficialSalesOrderListPayload,
   buildOfficialSalesOrderManagementCore,
   buildOfficialSalesOrderResultSalesBundle,
@@ -108,5 +110,27 @@ describe("salesOrderRulesAdapter integration", () => {
     });
     const portfolio = mapOfficialFinancePortfolioFromManagementRows(core.rows);
     assert.equal(portfolio.open.count + portfolio.invoiced.count, core.rows.length);
+  });
+
+  it("reports commercial payload usa motor oficial para totais", () => {
+    const rows = [
+      order({ id: "1", customerId: "c1", totalNetValue: 1000 }),
+      order({ id: "2", customerId: "c2", totalNetValue: 500, status: "CANCELLED" }),
+    ];
+    const payload = buildOfficialReportsCommercialPayload({
+      orders: rows,
+      listFilters: { status: "all" },
+      referenceDate: REF,
+      customerNames: new Map([
+        ["c1", "Cliente A"],
+        ["c2", "Cliente B"],
+      ]),
+    });
+    assert.equal(payload.metricsSource, OFFICIAL_SO_RULES_SOURCE);
+    assert.equal(payload.orderCount, 2);
+    assert.equal(payload.totalNet, 1500);
+    const abc = buildOfficialCustomerRevenueByCustomer(rows, { abcEligibleOnly: true });
+    assert.equal(abc.length, 1);
+    assert.equal(abc[0]!.revenue, 1000);
   });
 });
