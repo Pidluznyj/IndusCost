@@ -50,6 +50,7 @@ export function isAccountsReceivableSettled(row: Pick<AccountsReceivableSummaryR
   return row.status === true;
 }
 
+/** @deprecated Use {@link buildOfficialNomusAccountsReceivableSummaryResponse} — resumo gerencial oficial. */
 export function buildAccountsReceivableSummary(
   rows: AccountsReceivableSummaryRow[],
   referenceDate: Date = new Date()

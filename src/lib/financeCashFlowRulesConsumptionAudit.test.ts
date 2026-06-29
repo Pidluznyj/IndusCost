@@ -32,6 +32,7 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
     const summary = read("src/lib/financeCashFlowExecutiveSummary.ts");
     assert.match(summary, /resolveOfficialArCashFlowExecutiveMetrics/);
     assert.match(summary, /resolveOfficialApCashFlowExecutiveMetrics/);
+    assert.match(summary, /sumOfficialArOpenDueInPeriod/);
   });
 
   it("radar diário usa ledger oficial AR/AP", () => {

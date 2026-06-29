@@ -1,5 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import {
+  buildOfficialAccountsReceivableRulesResult,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   buildOfficialCashFlowArApDashboardBundle,
   resolveOfficialCashFlowSources,
 } from "./financeCashFlowRulesAdapter.js";
@@ -99,6 +102,7 @@ import {
 import {
   filterCashFlowArRowsScoped,
   filterCashFlowApRowsScoped,
+  filterCashFlowArPortfolioRows,
 } from "./financeCashFlowRowFilters.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
@@ -615,6 +619,19 @@ export function buildFinanceCashFlowDashboard(
 ): FinanceCashFlowDashboardPayload {
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
+  const arPortfolioRows = filterCashFlowArPortfolioRows(
+    arRows,
+    filters,
+    arFilters,
+    referenceDate,
+    arSyncCutoff
+  );
+  const officialArPortfolio = buildOfficialAccountsReceivableRulesResult({
+    rows: arPortfolioRows,
+    filters: toCashFlowPortfolioArFilters(filters),
+    referenceDate,
+    syncCutoff: arSyncCutoff,
+  });
   const dataset = buildFinanceCashFlowDataset(
     arRows,
     apRows,
@@ -623,7 +640,13 @@ export function buildFinanceCashFlowDashboard(
     apFilters,
     referenceDate,
     arSyncCutoff,
-    apSyncCutoff
+    apSyncCutoff,
+    {
+      officialArBlockTotals: {
+        totalReceivableOpen: officialArPortfolio.metrics.openAmount,
+        overdueReceivableAmount: officialArPortfolio.metrics.overdueAmount,
+      },
+    }
   );
   return buildFinanceCashFlowDashboardFromDataset(dataset, arRows, apRows, filters, referenceDate, arSyncCutoff, apSyncCutoff);
 }

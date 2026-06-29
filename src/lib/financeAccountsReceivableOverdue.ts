@@ -2,8 +2,6 @@ import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   hasFinanceArSourceInvoice,
-  isFinanceArOverdueWithoutFiscalDocument,
-  isFinanceArReceivedOrSettled,
   parseFinanceArDashboardFilters,
   roundMoney,
   safeRatio,
@@ -13,6 +11,11 @@ import {
   FinanceArFilterParseError,
 } from "./financeAccountsReceivableDashboard.js";
 import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
+import {
+  filterOfficialArOverdueTitles,
+  isOfficialArOverdueTitle,
+  sumOfficialArOverdueAmount,
+} from "./financeAccountsReceivableRulesEngine.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import {
   FINANCE_AR_OVERDUE_AGING_BUCKETS,
@@ -86,20 +89,11 @@ export function parseFinanceArOverdueFilters(
   };
 }
 
-export function isFinanceArOverdueRow(
-  row: FinanceArDashboardRow,
-  referenceDate: Date
-): boolean {
-  if (row.suspendCollection === true) return false;
-  if (isFinanceArReceivedOrSettled(row)) return false;
-  if (!row.dueDate) return false;
-  if (classifyFinanceArTitle(row, referenceDate) !== "overdue") return false;
-  if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) return false;
-  return true;
-}
+/** Regra oficial de atrasado gerencial — delegada ao motor. */
+export const isFinanceArOverdueRow = isOfficialArOverdueTitle;
 
 /** @deprecated Use {@link isFinanceArOverdueRow}. */
-export const isFinanceArOverdueOpenTitle = isFinanceArOverdueRow;
+export const isFinanceArOverdueOpenTitle = isOfficialArOverdueTitle;
 
 export function resolveOverdueAgingKey(daysOverdue: number): FinanceArOverdueAgingBucketKey {
   if (daysOverdue <= 7) return "overdue1to7";
@@ -443,26 +437,8 @@ export function buildFinanceArOverduePayload(
   };
 }
 
-export function filterFinanceArOverdueBaseRows(
-  rows: FinanceArDashboardRow[],
-  filters: FinanceArDashboardFilters,
-  referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
-): FinanceArDashboardRow[] {
-  const base = filterFinanceArManagementReportRows(rows, { ...filters, status: "all" }, referenceDate, syncCutoff);
-  return base.filter((row) => isFinanceArOverdueRow(row, referenceDate));
-}
+/** Base de títulos atrasados — motor oficial. */
+export const filterFinanceArOverdueBaseRows = filterOfficialArOverdueTitles;
 
-export function sumFinanceArOverdueOpenAmount(
-  rows: FinanceArDashboardRow[],
-  filters: FinanceArDashboardFilters,
-  referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
-): number {
-  return roundMoney(
-    filterFinanceArOverdueBaseRows(rows, filters, referenceDate, syncCutoff).reduce(
-      (sum, row) => sum + row.balanceReceivable,
-      0
-    )
-  );
-}
+/** Total vencido gerencial — motor oficial. */
+export const sumFinanceArOverdueOpenAmount = sumOfficialArOverdueAmount;

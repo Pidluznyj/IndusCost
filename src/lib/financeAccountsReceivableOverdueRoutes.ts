@@ -6,7 +6,9 @@ import {
   financeArOverdueWorkbookToBytes,
 } from "./financeAccountsReceivableOverdueExport.js";
 import {
-  buildFinanceArOverduePayload,
+  buildOfficialAccountsReceivableOverduePayload,
+} from "./financeAccountsReceivableRulesAdapter.js";
+import {
   FinanceArOverdueFilterParseError,
   parseFinanceArOverdueFilters,
 } from "./financeAccountsReceivableOverdue.js";
@@ -66,7 +68,7 @@ export function registerFinanceAccountsReceivableOverdueRoutes(
       const filters = parseOverdueFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
       const { rows, syncCutoff } = await loadFinanceArOverdueRows(filters);
-      const payload = buildFinanceArOverduePayload(rows, filters, new Date(), syncCutoff);
+      const payload = buildOfficialAccountsReceivableOverduePayload(rows, filters, new Date(), syncCutoff);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/overdue", error);
@@ -82,7 +84,7 @@ export function registerFinanceAccountsReceivableOverdueRoutes(
         const filters = parseOverdueFiltersOrRespond(res, req.query as Record<string, unknown>);
         if (!filters) return;
         const { rows, syncCutoff } = await loadFinanceArOverdueRows(filters);
-        const fullPayload = buildFinanceArOverduePayload(
+        const fullPayload = buildOfficialAccountsReceivableOverduePayload(
           rows,
           { ...filters, page: 1, limit: 5000 },
           new Date(),

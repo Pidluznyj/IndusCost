@@ -13,8 +13,11 @@ import {
   explainAccountsReceivableMetric,
   getAccountsReceivableValue,
   isAccountsReceivableTitleAllowedInManagement,
+  isOfficialArOverdueTitle,
   listAccountsReceivableMetricDefinitions,
   normalizeAccountsReceivableTitle,
+  sumOfficialArOpenDueInPeriod,
+  sumOfficialArOverdueAmount,
 } from "./financeAccountsReceivableRulesEngine.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 
@@ -365,5 +368,34 @@ describe("financeAccountsReceivableRulesEngine", () => {
     const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
     assert.equal(metrics.openAmount, dash.cards.totalOpenAmount);
     assert.equal(metrics.overdueAmount, dash.cards.overdueAmount);
+  });
+
+  it("isOfficialArOverdueTitle e sumOfficialArOverdueAmount alinham com overdueAmount", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    assert.equal(isOfficialArOverdueTitle(rows[0]!, REF), true);
+    assert.equal(isOfficialArOverdueTitle(rows[1]!, REF), false);
+    assert.equal(sumOfficialArOverdueAmount(rows, { status: "all" }, REF, null), 100);
+    const result = buildFinanceAccountsReceivableRulesResult(rows, { referenceDate: REF });
+    assert.equal(result.metrics.overdueAmount, 100);
+  });
+
+  it("sumOfficialArOpenDueInPeriod — timeline por vencimento", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 6, 5) }),
+      row({
+        externalId: 3,
+        balanceReceivable: 0,
+        amountReceived: 50,
+        settlementDate: new Date(2026, 5, 2),
+        dueDate: new Date(2026, 5, 15),
+      }),
+    ];
+    const juneStart = new Date(2026, 5, 1);
+    const juneEnd = new Date(2026, 5, 30);
+    assert.equal(sumOfficialArOpenDueInPeriod(rows, juneStart, juneEnd), 100);
   });
 });

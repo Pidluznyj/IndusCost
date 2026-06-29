@@ -30,6 +30,8 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
+import { isFinanceArOverdueWithoutFiscalDocument } from "./financeAccountsReceivableManagement.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type {
   FinanceAccountsReceivableDayBucket,
   FinanceAccountsReceivableGridRow,
@@ -506,6 +508,95 @@ function sumOpenDueInPeriod(
     }
   }
   return roundMoney(total);
+}
+
+export type OfficialArMetricScope = {
+  filters?: FinanceArDashboardFilters;
+  referenceDate?: Date;
+  syncCutoff?: NomusArReportSyncCutoff | null;
+};
+
+function scopeRowsForOfficialArMetric(
+  rows: FinanceArDashboardRow[],
+  scope?: OfficialArMetricScope
+): FinanceArDashboardRow[] {
+  if (!scope?.filters || !scope.referenceDate) return rows;
+  return filterFinanceArManagementReportRows(
+    rows,
+    scope.filters,
+    scope.referenceDate,
+    scope.syncCutoff
+  );
+}
+
+/** Carteira gerencial — título vencido (dueDate) com lastro fiscal quando exigido. */
+export function isOfficialArOverdueTitle(
+  row: FinanceArDashboardRow,
+  referenceDate: Date
+): boolean {
+  if (row.suspendCollection === true) return false;
+  if (isFinanceArReceivedOrSettled(row)) return false;
+  if (!row.dueDate) return false;
+  if (classifyFinanceArTitle(row, referenceDate) !== "overdue") return false;
+  if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) return false;
+  return true;
+}
+
+/** Títulos atrasados gerenciais após saneamento e freshness. */
+export function filterOfficialArOverdueTitles(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceArDashboardRow[] {
+  const base = filterFinanceArManagementReportRows(
+    rows,
+    { ...filters, status: "all" },
+    referenceDate,
+    syncCutoff
+  );
+  return base.filter((row) => isOfficialArOverdueTitle(row, referenceDate));
+}
+
+/** Saldo vencido gerencial — mesma regra de overdueAmount no motor. */
+export function sumOfficialArOverdueAmount(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): number {
+  return roundMoney(
+    filterOfficialArOverdueTitles(rows, filters, referenceDate, syncCutoff).reduce(
+      (sum, row) => sum + row.balanceReceivable,
+      0
+    )
+  );
+}
+
+/** Timeline / Fluxo — saldo aberto com vencimento no período (dueDate, datas civis). */
+export function sumOfficialArOpenDueInPeriod(
+  rows: FinanceArDashboardRow[],
+  startDate: Date,
+  endDate: Date,
+  scope?: OfficialArMetricScope
+): number {
+  return sumOpenDueInPeriod(scopeRowsForOfficialArMetric(rows, scope), startDate, endDate);
+}
+
+/** Contagem de títulos abertos com vencimento no período (dueDate). */
+export function countOfficialArOpenDueInPeriod(
+  rows: FinanceArDashboardRow[],
+  startDate: Date,
+  endDate: Date,
+  scope?: OfficialArMetricScope
+): number {
+  let count = 0;
+  for (const row of scopeRowsForOfficialArMetric(rows, scope)) {
+    if (!isFinanceArReceivedOrSettled(row) && isOpenDueInPeriod(row, startDate, endDate)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 export function buildAccountsReceivableMetrics(

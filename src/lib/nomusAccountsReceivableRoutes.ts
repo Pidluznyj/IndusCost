@@ -1,7 +1,8 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { buildAccountsReceivableSummary } from "@/src/lib/nomusAccountsReceivableSummary.js";
+import { buildOfficialNomusAccountsReceivableSummaryResponse } from "@/src/lib/financeAccountsReceivableRulesAdapter.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -24,23 +25,16 @@ export function registerNomusAccountsReceivableRoutes(app: express.Express, auth
           return res.status(401).json({ error: "Não autenticado." });
         }
 
-        const rows = await prisma.nomusAccountsReceivable.findMany({
-          select: {
-            balanceReceivable: true,
-            amountReceived: true,
-            amountReceivable: true,
-            status: true,
-            dueDate: true,
-            syncedAt: true,
-          },
+        const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(prisma, {
+          status: "all",
         });
-
-        const summary = buildAccountsReceivableSummary(rows);
-        return res.json({
-          generatedAt: new Date().toISOString(),
-          source: "NomusAccountsReceivable (sync local read-only)",
-          summary,
+        const response = buildOfficialNomusAccountsReceivableSummaryResponse({
+          rows,
+          filters: { status: "all" },
+          referenceDate: new Date(),
+          syncCutoff,
         });
+        return res.json(response);
       } catch (error) {
         console.error("GET /api/nomus/accounts-receivable/summary", error);
         return res.status(500).json({ error: "Erro ao montar resumo de contas a receber." });

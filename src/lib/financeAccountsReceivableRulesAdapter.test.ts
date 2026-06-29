@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildOfficialAccountsReceivableDashboard,
+  buildOfficialAccountsReceivableOverduePayload,
   buildOfficialAccountsReceivableRulesResult,
+  buildOfficialNomusAccountsReceivableSummaryResponse,
   OFFICIAL_AR_RULES_SOURCE,
   resolveOfficialArCashFlowExecutiveMetrics,
 } from "./financeAccountsReceivableRulesAdapter.js";
@@ -132,5 +134,43 @@ describe("financeAccountsReceivableRulesAdapter integration", () => {
     assert.equal(cf.receivedYtd, engine.metrics.receivedYtd);
     assert.equal(cf.openUntilYearEnd, engine.metrics.openUntilYearEnd);
     assert.equal(cf.estimatedYearTotal, engine.metrics.estimatedYearTotal);
+  });
+
+  it("resumo Nomus oficial expõe metricsSource e paridade de saldos", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const engine = buildOfficialAccountsReceivableRulesResult({
+      rows,
+      filters: { status: "all" },
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    const nomus = buildOfficialNomusAccountsReceivableSummaryResponse({
+      rows,
+      filters: { status: "all" },
+      referenceDate: REF,
+      syncCutoff: null,
+    });
+    assert.equal(nomus.source, OFFICIAL_AR_RULES_SOURCE);
+    assert.equal(nomus.summary.totalBalanceReceivable, engine.metrics.openAmount);
+    assert.equal(nomus.summary.overdueBalance, engine.metrics.overdueAmount);
+  });
+
+  it("overdue oficial expõe metricsSource e total alinhado ao motor", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const payload = buildOfficialAccountsReceivableOverduePayload(
+      rows,
+      { status: "all" },
+      REF,
+      null,
+      { paginate: false }
+    );
+    assert.equal(payload.metricsSource, OFFICIAL_AR_RULES_SOURCE);
+    assert.equal(payload.summary.totalOverdueAmount, 100);
   });
 });

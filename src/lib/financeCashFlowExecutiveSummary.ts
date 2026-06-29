@@ -10,6 +10,7 @@ import {
   resolveOfficialArCashFlowExecutiveMetrics,
   sumOfficialArReceivedBySettlementInPeriod,
 } from "./financeAccountsReceivableRulesAdapter.js";
+import { sumOfficialArOpenDueInPeriod } from "./financeAccountsReceivableRulesEngine.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
@@ -266,17 +267,13 @@ export function isApOpenDueInPeriod(
   return due >= start && due <= end;
 }
 
+/** Timeline mensal — saldo aberto por vencimento (dueDate); delega ao motor oficial. */
 export function sumArOpenDueInPeriod(
   rows: FinanceCashFlowArRow[],
   startDate: Date,
   endDate: Date
 ): number {
-  let total = 0;
-  for (const row of rows) {
-    if (!isArOpenDueInPeriod(row, startDate, endDate)) continue;
-    total += row.balanceReceivable;
-  }
-  return roundMoney(total);
+  return sumOfficialArOpenDueInPeriod(rows, startDate, endDate);
 }
 
 export function sumApOpenDueInPeriod(

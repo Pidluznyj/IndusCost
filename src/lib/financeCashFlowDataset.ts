@@ -245,7 +245,11 @@ function computeApDaysOverdue(row: FinanceCashFlowApRow, referenceDate: Date): n
 function buildBlocksFromPortfolio(
   arPortfolioRows: FinanceCashFlowArRow[],
   apPortfolioRows: FinanceCashFlowApRow[],
-  referenceDate: Date
+  referenceDate: Date,
+  officialArTotals?: Pick<
+    FinanceCashFlowDatasetBlocks,
+    "totalReceivableOpen" | "overdueReceivableAmount"
+  >
 ): FinanceCashFlowDatasetBlocks {
   const ref = startOfLocalDay(referenceDate);
   const projectedInflows: FinanceCashFlowCriticalMovement[] = [];
@@ -351,9 +355,11 @@ function buildBlocksFromPortfolio(
     overduePayables: overduePayables.sort(sortDesc).slice(0, 10),
     topReceivableCustomers: buildPartySummaries(customerRows, 10),
     topPayableSuppliers: buildPartySummaries(supplierRows, 10),
-    overdueReceivableAmount: roundMoney(overdueReceivableAmount),
+    overdueReceivableAmount: roundMoney(
+      officialArTotals?.overdueReceivableAmount ?? overdueReceivableAmount
+    ),
     overduePayableAmount: roundMoney(overduePayableAmount),
-    totalReceivableOpen: roundMoney(totalReceivableOpen),
+    totalReceivableOpen: roundMoney(officialArTotals?.totalReceivableOpen ?? totalReceivableOpen),
     totalPayableOpen: roundMoney(totalPayableOpen),
   };
 }
@@ -500,6 +506,14 @@ function traceForApRow(
   };
 }
 
+export type FinanceCashFlowDatasetOptions = {
+  /** Totais AR oficiais do motor — sobrescreve somatório do loop de blocos. */
+  officialArBlockTotals?: Pick<
+    FinanceCashFlowDatasetBlocks,
+    "totalReceivableOpen" | "overdueReceivableAmount"
+  >;
+};
+
 export function buildFinanceCashFlowDataset(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -508,7 +522,8 @@ export function buildFinanceCashFlowDataset(
   apFilters: FinanceApDashboardFilters,
   referenceDate: Date = new Date(),
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  options?: FinanceCashFlowDatasetOptions
 ): FinanceCashFlowDataset {
   const arPortfolioRows = filterCashFlowArPortfolioRows(
     arRows,
@@ -539,7 +554,14 @@ export function buildFinanceCashFlowDataset(
     apSyncCutoff
   );
 
-  const blocks = buildBlocksFromPortfolio(arPortfolioRows, apPortfolioRows, referenceDate);
+  const officialArMetrics = options?.officialArBlockTotals;
+
+  const blocks = buildBlocksFromPortfolio(
+    arPortfolioRows,
+    apPortfolioRows,
+    referenceDate,
+    officialArMetrics
+  );
 
   const arPortfolioIds = new Set(arPortfolioRows.map((r) => r.externalId));
   const arPeriodIds = new Set(arRowsSanitized.map((r) => r.externalId));

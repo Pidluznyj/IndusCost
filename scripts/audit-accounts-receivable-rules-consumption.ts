@@ -18,6 +18,7 @@ import {
   resolveExecutiveReportHighlightMonth,
 } from "../src/lib/financeExecutiveReportDataSources.js";
 import {
+  buildOfficialAccountsReceivableOverduePayload,
   buildOfficialAccountsReceivableRulesResult,
   OFFICIAL_AR_RULES_SOURCE,
   resolveOfficialArCashFlowExecutiveMetrics,
@@ -259,6 +260,21 @@ async function main() {
     arScreen.cards.openWithoutInvoiceAmount,
     null,
     null
+  );
+
+  const overduePayload = buildOfficialAccountsReceivableOverduePayload(
+    arLoad.rows,
+    { status: "all" },
+    referenceDate,
+    arLoad.syncCutoff,
+    { paginate: false }
+  );
+  addRow(
+    "Overdue detalhado (total)",
+    engine.metrics.overdueAmount,
+    arScreen.cards.overdueAmount,
+    null,
+    overduePayload.summary.totalOverdueAmount
   );
 
   console.log(

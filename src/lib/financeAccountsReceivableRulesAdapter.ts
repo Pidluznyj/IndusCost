@@ -3,18 +3,30 @@
  * Sem regra de negócio: apenas mapeamento, renomeação e compatibilidade de payload.
  */
 import {
+  addLocalDays,
   sumFinanceArReceivedBySettlementInPeriod,
+  startOfLocalDay,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
 import {
   buildFinanceAccountsReceivableRulesResult,
+  countOfficialArOpenDueInPeriod,
+  filterOfficialArOverdueTitles,
   FINANCE_AR_RULES_ENGINE_VERSION,
+  sumOfficialArOpenDueInPeriod,
   type FinanceAccountsReceivableDashboardPayload,
   type FinanceAccountsReceivableMetrics,
   type FinanceAccountsReceivableRulesBuildInput,
   type FinanceAccountsReceivableRulesResult,
+  type OfficialArMetricScope,
 } from "./financeAccountsReceivableRulesEngine.js";
+import {
+  buildFinanceArOverduePayload,
+  type FinanceArOverdueFilters,
+} from "./financeAccountsReceivableOverdue.js";
+import type { AccountsReceivableSummary } from "./nomusAccountsReceivableSummary.js";
+import type { FinanceArOverduePayload } from "./financeAccountsReceivableOverdueTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export const OFFICIAL_AR_RULES_SOURCE = "official-accounts-receivable-rules-engine" as const;
@@ -119,6 +131,97 @@ export function resolveOfficialArCashFlowExecutiveMetrics(
     estimatedYearTotal: result.metrics.estimatedYearTotal,
     receivedThisMonth: result.metrics.receivedThisMonth,
     openAmount: result.metrics.openAmount,
+  };
+}
+
+export { sumOfficialArOpenDueInPeriod, type OfficialArMetricScope };
+
+export type OfficialNomusAccountsReceivableSummaryResponse = {
+  generatedAt: string;
+  source: typeof OFFICIAL_AR_RULES_SOURCE;
+  rulesEngineVersion: string;
+  scopeLabel: string;
+  summary: AccountsReceivableSummary;
+};
+
+function resolveOfficialArLastSyncedAt(
+  rows: FinanceArDashboardRow[],
+  syncCutoff: NomusArReportSyncCutoff | null | undefined
+): string | null {
+  if (syncCutoff?.maxSyncedAt) return syncCutoff.maxSyncedAt.toISOString();
+  let last: Date | null = null;
+  for (const row of rows) {
+    if (last == null || row.syncedAt > last) last = row.syncedAt;
+  }
+  return last?.toISOString() ?? null;
+}
+
+/**
+ * Resumo Nomus compatível — métricas gerenciais oficiais (não Prisma bruto).
+ * Escopo: carteira gerencial com saneamento, freshness e regras de NF.
+ */
+export function buildOfficialNomusAccountsReceivableSummaryResponse(
+  input: OfficialAccountsReceivableBuildInput
+): OfficialNomusAccountsReceivableSummaryResponse {
+  const referenceDate = input.referenceDate ?? new Date();
+  const filters = input.filters ?? { status: "all" as const };
+  const result = buildOfficialAccountsReceivableRulesResult(input);
+  const today = startOfLocalDay(referenceDate);
+  const in30Days = addLocalDays(today, 30);
+  const scope: OfficialArMetricScope = {
+    filters,
+    referenceDate,
+    syncCutoff: input.syncCutoff,
+  };
+  const overdueRows = filterOfficialArOverdueTitles(
+    input.rows,
+    filters,
+    referenceDate,
+    input.syncCutoff
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: OFFICIAL_AR_RULES_SOURCE,
+    rulesEngineVersion: result.engineVersion,
+    scopeLabel:
+      "Carteira gerencial oficial — saneamento, freshness Nomus e vencidos com regra de NF",
+    summary: {
+      totalRecords: result.cards.totalRecords,
+      openCount: result.cards.openTitlesCount,
+      settledCount: result.cards.settledTitlesCount,
+      totalBalanceReceivable: result.metrics.openAmount,
+      totalAmountReceived: result.cards.totalReceivedAmount,
+      totalAmountReceivable: result.metrics.totalReceivable,
+      overdueCount: overdueRows.length,
+      overdueBalance: result.metrics.overdueAmount,
+      dueNext30DaysCount: countOfficialArOpenDueInPeriod(input.rows, today, in30Days, scope),
+      dueNext30DaysBalance: result.metrics.dueNext30DaysAmount,
+      lastSyncedAt: resolveOfficialArLastSyncedAt(input.rows, input.syncCutoff),
+    },
+  };
+}
+
+export type OfficialAccountsReceivableOverduePayload = FinanceArOverduePayload & {
+  metricsSource: typeof OFFICIAL_AR_RULES_SOURCE;
+  rulesEngineVersion: string;
+  scopeLabel: string;
+};
+
+/** Atrasados gerenciais — seleção pelo motor; apresentação (aging, paginação) no helper legado. */
+export function buildOfficialAccountsReceivableOverduePayload(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArOverdueFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: { paginate?: boolean }
+): OfficialAccountsReceivableOverduePayload {
+  const payload = buildFinanceArOverduePayload(rows, filters, referenceDate, syncCutoff, options);
+  return {
+    ...payload,
+    metricsSource: OFFICIAL_AR_RULES_SOURCE,
+    rulesEngineVersion: FINANCE_AR_RULES_ENGINE_VERSION,
+    scopeLabel: "Atrasados gerenciais — vencidos com regra oficial de NF e saneamento",
   };
 }
 
