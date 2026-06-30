@@ -58,8 +58,11 @@ export async function registerOfficialServerResolversForAuditScripts(
   prisma: PrismaClient,
   productIds: string[]
 ): Promise<void> {
-  const costLogs = await loadLatestCostLogsForProducts(prisma, productIds);
+  const [costLogs, officialResolver] = await Promise.all([
+    loadLatestCostLogsForProducts(prisma, productIds),
+    createOfficialProductCostAnalysisResolver(prisma),
+  ]);
   setSalesOrderMarginProductCostResolver(
-    createCachedSalesOrderMarginCostResolver(async () => null, costLogs)
+    createCachedSalesOrderMarginCostResolver(officialResolver.resolve, costLogs)
   );
 }

@@ -77,5 +77,8 @@ describe("salesMarginRulesConsumptionAudit", () => {
     const script = read("scripts/audit-sales-margin-rules-consumption.ts");
     assert.match(script, /OFFICIAL_SM_RULES_SOURCE/);
     assert.match(script, /buildOfficialSalesMarginRulesResult/);
+    assert.match(script, /salesOrdersLoaded/);
+    assert.match(script, /itemsWithUnitCostSnapshot/);
+    assert.match(script, /buildSalesOrderListWhere/);
   });
 });

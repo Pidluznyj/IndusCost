@@ -18,6 +18,7 @@ import {
   resolveItemSalesTaxPercent,
 } from "./averageSalesTaxEngine.js";
 import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
+import { resolveSalesOrderIssueDateRange } from "./salesOrderPeriodFilter.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
 import {
@@ -650,12 +651,26 @@ function orderMatchesFilters(
   if (filters.sellerId && order.sellerId !== filters.sellerId) return false;
   if (filters.companyId && order.companyId !== filters.companyId) return false;
   if (!filters.includeCanceled && order.status === "CANCELLED") return false;
-  if (order.issueDate) {
-    if (filters.year != null && order.issueDate.getFullYear() !== filters.year) return false;
-    if (filters.month != null && order.issueDate.getMonth() + 1 !== filters.month) return false;
-    if (filters.startDate && order.issueDate.getTime() < filters.startDate.getTime()) return false;
-    if (filters.endDate && order.issueDate.getTime() > filters.endDate.getTime()) return false;
+
+  const hasPeriodFilter =
+    filters.year != null ||
+    filters.month != null ||
+    filters.startDate != null ||
+    filters.endDate != null;
+
+  if (!order.issueDate) {
+    return !hasPeriodFilter;
   }
+
+  if (filters.startDate && order.issueDate.getTime() < filters.startDate.getTime()) return false;
+  if (filters.endDate && order.issueDate.getTime() > filters.endDate.getTime()) return false;
+
+  const periodRange = resolveSalesOrderIssueDateRange(filters.year, filters.month);
+  if (periodRange) {
+    const t = order.issueDate.getTime();
+    if (t < periodRange.gte.getTime() || t >= periodRange.lt.getTime()) return false;
+  }
+
   return true;
 }
 

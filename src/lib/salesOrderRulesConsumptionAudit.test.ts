@@ -92,6 +92,7 @@ describe("salesOrderRulesConsumptionAudit", () => {
     const mainBody = script.slice(script.indexOf("async function main"));
     assert.match(mainBody, /await registerOfficialServerResolversForAuditScripts/);
     assert.match(mainBody, /loadSalesOrderManagementPage/);
+    assert.match(mainBody, /"YTD exclui cancelados — escopo executivo"/);
     const registerAt = mainBody.indexOf("await registerOfficialServerResolversForAuditScripts");
     const managementAt = mainBody.indexOf("loadSalesOrderManagementPage");
     assert.ok(registerAt >= 0 && managementAt > registerAt);

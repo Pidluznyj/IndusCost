@@ -19,15 +19,15 @@ import {
 import {
   buildSalesOrderMarginContext,
   SALES_ORDER_ITEM_MARGIN_SELECT,
+  type SalesOrderMarginContext,
 } from "../src/lib/salesOrderMarginService.server.js";
+import type { SalesMarginRulesOrderInput } from "../src/lib/salesMarginRulesEngine.types.js";
+import type { SalesOrderCostSource } from "../src/lib/salesOrderMarginTypes.js";
 import {
   buildSalesOrderManagementWhere,
   parseSalesOrderManagementFilters,
 } from "../src/lib/salesOrderManagement.js";
-import {
-  buildSalesOrderMarginIndicatorWhere,
-  parseSalesOrderMarginIndicatorFilters,
-} from "../src/lib/salesOrderMarginIndicators.server.js";
+import { buildSalesOrderListWhere } from "../src/lib/salesOrdersListSummary.js";
 import {
   loadProductTaxPercentIndex,
   resolveDefaultSalesTaxPercent,
@@ -59,9 +59,79 @@ function nearlyEqual(a: number | null, b: number | null, epsilon = 0.02): boolea
   return Math.abs(a - b) <= epsilon;
 }
 
-function fmt(n: number | null): string {
+function fmt(n: unknown): string {
   if (n == null) return "—";
-  return n.toFixed(2);
+  if (typeof n === "number" && Number.isFinite(n)) return n.toFixed(2);
+  if (typeof n === "string" && n.trim() !== "") {
+    const parsed = Number(n);
+    if (Number.isFinite(parsed)) return parsed.toFixed(2);
+  }
+  return "INVÁLIDO";
+}
+
+const LIVE_MARGIN_COST_SOURCES = new Set<SalesOrderCostSource>([
+  "LIVE_PRODUCT_COST",
+  "RECALCULATED_CURRENT_COST",
+  "OFFICIAL_FINAL_COST",
+  "CURRENT_ENGINEERING_COST",
+  "CURRENT_COST",
+  "MANUAL_COST",
+  "HISTORICAL_SNAPSHOT",
+]);
+
+function buildMarginAuditDiagnostics(input: {
+  listOrdersCount: number;
+  mgmtOrdersCount: number;
+  rulesOrders: SalesMarginRulesOrderInput[];
+  marginContext: SalesOrderMarginContext;
+  engineOrdersAfterFilter: number;
+  soldScoped: ReturnType<typeof resolveOfficialScopedMarginMetrics>;
+}) {
+  let itemsLoaded = 0;
+  let itemsWithUnitCostSnapshot = 0;
+
+  for (const order of input.rulesOrders) {
+    for (const item of order.items) {
+      itemsLoaded += 1;
+      const unitCost = Number(item.unitCost);
+      if (Number.isFinite(unitCost) && unitCost > 0) {
+        itemsWithUnitCostSnapshot += 1;
+      }
+    }
+  }
+
+  let itemsUsingLiveFallback = 0;
+  let itemsWithoutCost = 0;
+  for (const result of input.marginContext.byOrderId.values()) {
+    for (const item of result.itemResults) {
+      if (item.status === "SEM_CUSTO") itemsWithoutCost += 1;
+      if (item.costSource && LIVE_MARGIN_COST_SOURCES.has(item.costSource)) {
+        if (item.costSource !== "SALES_ORDER_ITEM_SNAPSHOT") {
+          itemsUsingLiveFallback += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    salesOrdersLoaded: input.listOrdersCount,
+    managementOrdersLoaded: input.mgmtOrdersCount,
+    engineOrdersAfterFilter: input.engineOrdersAfterFilter,
+    itemsLoaded,
+    itemsWithUnitCostSnapshot,
+    itemsUsingLiveFallback,
+    itemsWithoutCost,
+    revenueLoaded: input.soldScoped.netSalesAmount,
+    costLoaded: input.soldScoped.totalCost,
+    marginValue: input.soldScoped.marginAmount,
+    weightedMarginPerc: input.soldScoped.marginPercent,
+    scopeNote:
+      input.itemsLoaded > 0 && itemsWithoutCost === input.itemsLoaded
+        ? "Todas as linhas SEM_CUSTO — margem consolidada exclui receita até custo ser resolvido (Pedidos usa totalNetValue do cabeçalho)."
+        : input.listOrdersCount !== input.mgmtOrdersCount
+          ? "Escopo lista (issueDate) e gestão diferem — motor usa lista alinhada à auditoria de Pedidos."
+          : null,
+  };
 }
 
 async function main() {
@@ -71,41 +141,31 @@ async function main() {
   const ref = new Date(asOfDate + "T23:59:59");
 
   const mgmtFilters = parseSalesOrderManagementFilters({ year: String(year), month: String(month) });
+  const listWhere = buildSalesOrderListWhere({ year, month });
   const mgmtWhere = buildSalesOrderManagementWhere(mgmtFilters);
-  const indicatorFilters = parseSalesOrderMarginIndicatorFilters(
-    { year: String(year), month: String(month), asOfDate },
-    ref
-  );
-  const resultWhere = buildSalesOrderMarginIndicatorWhere(indicatorFilters);
 
-  const [mgmtOrders, resultOrders] = await Promise.all([
-    prisma.salesOrder.findMany({
-      where: mgmtWhere,
-      select: {
-        id: true,
-        issueDate: true,
-        nomusRawResponse: true,
-        items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
-      },
-    }),
-    prisma.salesOrder.findMany({
-      where: resultWhere,
-      select: {
-        id: true,
-        issueDate: true,
-        nomusRawResponse: true,
-        items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
-      },
-    }),
+  const marginOrderSelect = {
+    id: true,
+    issueDate: true,
+    status: true,
+    totalNetValue: true,
+    nomusRawResponse: true,
+    items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
+  } as const;
+
+  const [listOrders, mgmtOrders] = await Promise.all([
+    prisma.salesOrder.findMany({ where: listWhere, select: marginOrderSelect }),
+    prisma.salesOrder.findMany({ where: mgmtWhere, select: marginOrderSelect }),
   ]);
 
-  const productIds = mgmtOrders.flatMap((order) =>
+  const marginOrders = listOrders;
+  const productIds = marginOrders.flatMap((order) =>
     order.items.map((item) => item.productId).filter((id): id is string => Boolean(id))
   );
   await registerOfficialServerResolversForAuditScripts(prisma, productIds);
 
-  const marginContext = await buildSalesOrderMarginContext(prisma, mgmtOrders);
-  const rulesOrders = mapMarginContextToRulesOrders(mgmtOrders, marginContext.byOrderId);
+  const marginContext = await buildSalesOrderMarginContext(prisma, marginOrders);
+  const rulesOrders = mapMarginContextToRulesOrders(marginOrders, marginContext.byOrderId);
 
   const [productTaxIndex, defaultTax] = await Promise.all([
     loadProductTaxPercentIndex(prisma, productIds),
@@ -132,7 +192,7 @@ async function main() {
     filters: { year, month },
   });
 
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, mgmtOrders);
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, marginOrders);
   let ordersMarginAmount = 0;
   let ordersNetRevenue = 0;
   for (const result of marginByOrder.values()) {
@@ -188,6 +248,19 @@ async function main() {
 
   const soldScoped = resolveOfficialScopedMarginMetrics(engineSold);
   const gerencialScoped = resolveOfficialScopedMarginMetrics(engineGerencial);
+  const diagnostics = buildMarginAuditDiagnostics({
+    listOrdersCount: listOrders.length,
+    mgmtOrdersCount: mgmtOrders.length,
+    rulesOrders,
+    marginContext,
+    engineOrdersAfterFilter: engineSold.orderResults.length,
+    soldScoped,
+  });
+
+  const pedidosSoldHeaderTotal = listOrders.reduce(
+    (sum, order) => sum + (Number.isFinite(Number(order.totalNetValue)) ? Number(order.totalNetValue) : 0),
+    0
+  );
 
   addRow(
     "Margem R$ (pedido, taxMode none)",
@@ -252,6 +325,23 @@ async function main() {
   console.log(
     `Auditoria consumo Margem — year=${year} month=${month} asOfDate=${asOfDate} source=${OFFICIAL_SM_RULES_SOURCE}\n`
   );
+  console.log("### Diagnóstico de escopo");
+  console.log(`- salesOrdersLoaded (lista Pedidos): ${diagnostics.salesOrdersLoaded}`);
+  console.log(`- managementOrdersLoaded: ${diagnostics.managementOrdersLoaded}`);
+  console.log(`- engineOrdersAfterFilter: ${diagnostics.engineOrdersAfterFilter}`);
+  console.log(`- itemsLoaded: ${diagnostics.itemsLoaded}`);
+  console.log(`- itemsWithUnitCostSnapshot: ${diagnostics.itemsWithUnitCostSnapshot}`);
+  console.log(`- itemsUsingLiveFallback: ${diagnostics.itemsUsingLiveFallback}`);
+  console.log(`- itemsWithoutCost: ${diagnostics.itemsWithoutCost}`);
+  console.log(`- revenueLoaded (margem consolidada): ${fmt(diagnostics.revenueLoaded)}`);
+  console.log(`- pedidosSoldHeaderTotal (escopo Pedidos): ${fmt(pedidosSoldHeaderTotal)}`);
+  console.log(`- costLoaded: ${fmt(diagnostics.costLoaded)}`);
+  console.log(`- marginValue: ${fmt(diagnostics.marginValue)}`);
+  console.log(`- weightedMarginPerc: ${diagnostics.weightedMarginPerc == null ? "—" : `${fmt(diagnostics.weightedMarginPerc)}%`}`);
+  if (diagnostics.scopeNote) {
+    console.log(`- scopeNote: ${diagnostics.scopeNote}`);
+  }
+  console.log("");
   console.log(
     "| Indicador | Motor Margem | Pedidos | Gestão | Resultado | Financeiro | Diferença | Status |"
   );

@@ -23,6 +23,7 @@ import {
   OFFICIAL_AP_RULES_SOURCE,
   resolveOfficialApCashFlowExecutiveMetrics,
 } from "../src/lib/financeAccountsPayableRulesAdapter.js";
+import type { DueRadarPayload } from "../src/lib/financeDueRadar.js";
 import {
   buildFinanceApPrismaWhere,
   mapPrismaRowToFinanceApDashboardRow,
@@ -68,9 +69,22 @@ function nearlyEqual(a: number, b: number, epsilon = 0.01): boolean {
   return Math.abs(a - b) <= epsilon;
 }
 
-function fmt(n: number | null): string {
+function fmt(n: unknown): string {
   if (n == null) return "—";
-  return n.toFixed(2);
+  if (typeof n === "number" && Number.isFinite(n)) return n.toFixed(2);
+  if (typeof n === "string" && n.trim() !== "") {
+    const parsed = Number(n);
+    if (Number.isFinite(parsed)) return parsed.toFixed(2);
+  }
+  return "INVÁLIDO";
+}
+
+function resolveDueRadarApRangesTotal(payload: DueRadarPayload): number | null {
+  if (!Array.isArray(payload.ranges)) return null;
+  return payload.ranges.reduce(
+    (sum, range) => sum + (Number.isFinite(range.totalAmount) ? range.totalAmount : 0),
+    0
+  );
 }
 
 async function loadCashFlowRowsForAudit(
@@ -268,12 +282,16 @@ async function main() {
     { baseDate: referenceDate, page: 1, pageSize: 5000, exportAll: true },
     referenceDate
   );
+  const dueRadarRangesTotal = resolveDueRadarApRangesTotal(dueRadarPayload);
   addRow(
     "Due-radar AP (total faixas)",
     engine.metrics.openAmount,
     apScreen.cards.totalOpenAmount,
     null,
-    dueRadarPayload.summary.totalAmount
+    dueRadarRangesTotal,
+    dueRadarRangesTotal == null
+      ? "due-radar sem faixas — métrica ausente no payload oficial"
+      : "soma das faixas do radar (escopo vencimento operacional, não carteira AP)"
   );
 
   console.log(

@@ -46,9 +46,15 @@ function nearlyEqual(a: number, b: number, epsilon = 0.01): boolean {
   return Math.abs(a - b) <= epsilon;
 }
 
-function fmt(n: number | null): string {
+function fmt(n: unknown, field?: string): string {
   if (n == null) return "—";
-  return n.toFixed(2);
+  if (typeof n === "number" && Number.isFinite(n)) return n.toFixed(2);
+  if (typeof n === "string" && n.trim() !== "") {
+    const parsed = Number(n);
+    if (Number.isFinite(parsed)) return parsed.toFixed(2);
+  }
+  const label = field ? ` (${field})` : "";
+  return `INVÁLIDO${label}: ${typeof n}`;
 }
 
 async function main() {
@@ -177,6 +183,7 @@ async function main() {
     null,
     null,
     execYtdCard?.value ?? null,
+    null,
     "YTD exclui cancelados — escopo executivo"
   );
   addRow(
@@ -215,7 +222,7 @@ async function main() {
   console.log("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
   for (const r of rows) {
     console.log(
-      `| ${r.indicator} | ${fmt(r.engine)} | ${fmt(r.listScreen)} | ${fmt(r.management)} | ${fmt(r.executiveReport)} | ${fmt(r.financeDashboard)} | ${fmt(r.delta)} | ${r.status} |`
+      `| ${r.indicator} | ${fmt(r.engine, "motor")} | ${fmt(r.listScreen, "tela")} | ${fmt(r.management, "gestão")} | ${fmt(r.executiveReport, "relatório")} | ${fmt(r.financeDashboard, "financeiro")} | ${fmt(r.delta, "diferença")} | ${r.status} |`
     );
   }
 

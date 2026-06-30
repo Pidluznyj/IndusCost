@@ -66,5 +66,7 @@ describe("financeAccountsPayableRulesConsumptionAudit", () => {
     const script = read("scripts/audit-accounts-payable-rules-consumption.ts");
     assert.match(script, /OFFICIAL_AP_RULES_SOURCE/);
     assert.match(script, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(script, /resolveDueRadarApRangesTotal/);
+    assert.doesNotMatch(script, /dueRadarPayload\.summary\.totalAmount/);
   });
 });
