@@ -24,6 +24,8 @@ import {
   canViewFinanceCostCenterAudit,
   canViewFinanceCostCenterRules,
   canViewFinanceSuppliers,
+  canManageFinanceSuppliers,
+  canDeleteFinanceSupplier,
 } from "@/src/lib/financeCostCentersPermissions";
 import {
   buildFinanceModuleEyebrow,
@@ -140,6 +142,8 @@ export function FinanceCostCentersPage() {
 
   const canManageCenters = canManageFinanceCostCenters(auth);
   const canViewSuppliers = canViewFinanceSuppliers(auth);
+  const canManageSuppliers = canManageFinanceSuppliers(auth);
+  const canDeleteSupplier = canDeleteFinanceSupplier(auth);
   const canManageRules = canManageFinanceCostCenterRules(auth);
   const canViewRules = canViewFinanceCostCenterRules(auth);
   const canApplyBatch = canApplyFinanceApAllocationsBatch(auth);
@@ -328,7 +332,10 @@ export function FinanceCostCentersPage() {
         <FinanceSuppliersTab
           dashboard={data}
           canViewSuppliers={canViewSuppliers}
+          canManageSuppliers={canManageSuppliers}
+          canDeleteSupplier={canDeleteSupplier}
           onNavigateTab={setActiveTab}
+          onSuppliersChanged={() => void load()}
         />
       ) : null}
       {activeTab === "rules" && (canViewRules || canManageRules) ? (

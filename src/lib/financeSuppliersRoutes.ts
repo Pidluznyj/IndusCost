@@ -8,6 +8,15 @@ import {
   FinanceSupplierRebuildError,
 } from "@/src/lib/financeSupplierRebuild.js";
 import { searchFinancialSuppliersForRulesDefault } from "@/src/lib/financeSupplierCostCenterRules.js";
+import {
+  applyCompanyIntelligenceToSupplierDefault,
+  assertSuperAdminCanDeleteSupplier,
+  buildFinanceSupplierCompanyIntelligencePayloadDefault,
+  deactivateFinancialSupplierDefault,
+  FinanceSupplierProfileError,
+  getFinancialSupplierProfileDefault,
+  updateFinancialSupplierProfileDefault,
+} from "@/src/lib/financeSupplierProfile.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
@@ -19,6 +28,21 @@ type AuthGuards = {
 export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = ["finance.suppliers.view", "finance.view"] as const;
 
 export const FINANCE_SUPPLIERS_APPLY_PERMISSIONS = ["finance.suppliers.manage"] as const;
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function handleSupplierProfileError(res: express.Response, error: unknown) {
+  if (error instanceof FinanceSupplierProfileError) {
+    return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+  }
+  console.error("finance supplier profile", error);
+  return res.status(500).json(financeApiErrorJson("Erro ao processar cadastro de fornecedor.", error));
+}
 
 export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
@@ -89,6 +113,138 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
       return res.status(500).json(
         financeApiErrorJson("Erro ao aplicar rebuild de fornecedores a partir de AP.", error)
       );
+    }
+  });
+
+  app.get("/api/finance/suppliers/:id", ...previewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const profile = await getFinancialSupplierProfileDefault(id);
+      return res.json(profile);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.patch("/api/finance/suppliers/:id", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const body = req.body ?? {};
+      const profile = await updateFinancialSupplierProfileDefault(
+        id,
+        {
+          displayName: typeof body.displayName === "string" ? body.displayName : undefined,
+          legalName: body.legalName === null || typeof body.legalName === "string" ? body.legalName : undefined,
+          tradeName: body.tradeName === null || typeof body.tradeName === "string" ? body.tradeName : undefined,
+          document: body.document === null || typeof body.document === "string" ? body.document : undefined,
+        },
+        user
+      );
+      return res.json(profile);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.get("/api/finance/suppliers/:id/company-intelligence", ...previewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const cnpjOverride =
+        typeof req.query.cnpj === "string" ? req.query.cnpj : undefined;
+      const forceRefresh = req.query.refresh === "true";
+
+      const payload = await buildFinanceSupplierCompanyIntelligencePayloadDefault({
+        supplierId: id,
+        cnpjOverride,
+        forceRefresh,
+        userId: user.id ?? user.email ?? null,
+      });
+      return res.json(payload);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.post("/api/finance/suppliers/:id/company-intelligence/refresh", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const cnpjOverride =
+        typeof req.body?.cnpj === "string" ? req.body.cnpj : undefined;
+
+      const payload = await buildFinanceSupplierCompanyIntelligencePayloadDefault({
+        supplierId: id,
+        cnpjOverride,
+        forceRefresh: true,
+        userId: user.id ?? user.email ?? null,
+      });
+      return res.json(payload);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.post("/api/finance/suppliers/:id/apply-company-intelligence", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const lookupId = req.body?.lookupId;
+      const selectedFields = Array.isArray(req.body?.selectedFields)
+        ? req.body.selectedFields.map(String)
+        : [];
+      if (!isUuid(lookupId)) {
+        return res.status(400).json({ error: "lookupId inválido." });
+      }
+
+      const result = await applyCompanyIntelligenceToSupplierDefault({
+        supplierId: id,
+        lookupId,
+        selectedFields,
+        userId: user.id ?? user.email ?? null,
+        userName: user.name ?? user.email ?? null,
+      });
+      return res.json(result);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.delete("/api/finance/suppliers/:id", requireAppAuth, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      assertSuperAdminCanDeleteSupplier(user.role);
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const result = await deactivateFinancialSupplierDefault({
+        supplierId: id,
+        userId: user.id ?? user.email ?? null,
+        userName: user.name ?? user.email ?? null,
+      });
+      return res.json(result);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
     }
   });
 }

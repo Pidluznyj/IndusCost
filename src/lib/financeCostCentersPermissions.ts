@@ -2,6 +2,8 @@
 
 export type FinanceCostCentersPermissionCheck = {
   hasPermission: (key: string) => boolean;
+  role?: string;
+  isSuperAdmin?: () => boolean;
 };
 
 export function canViewFinanceCostCenters(auth: FinanceCostCentersPermissionCheck): boolean {
@@ -33,6 +35,15 @@ export function canViewFinanceSuppliers(auth: FinanceCostCentersPermissionCheck)
     auth.hasPermission("finance.cost_centers.view") ||
     auth.hasPermission("finance.view")
   );
+}
+
+export function canManageFinanceSuppliers(auth: FinanceCostCentersPermissionCheck): boolean {
+  return auth.hasPermission("finance.suppliers.manage");
+}
+
+export function canDeleteFinanceSupplier(auth: FinanceCostCentersPermissionCheck): boolean {
+  if (auth.isSuperAdmin?.()) return true;
+  return auth.role === "SUPER_ADMIN";
 }
 
 export function canViewFinanceApAllocations(auth: FinanceCostCentersPermissionCheck): boolean {

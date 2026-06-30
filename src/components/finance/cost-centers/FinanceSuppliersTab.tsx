@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, RefreshCw, Settings2 } from "lucide-react";
+import { Eye, FileText, RefreshCw, Settings2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -44,20 +44,32 @@ import {
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
 import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTypes";
+import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-centers/FinanceSupplierCadastroDrawer";
 
 type Props = {
   dashboard: FinanceCostCenterDashboardPayload | null;
   canViewSuppliers: boolean;
+  canManageSuppliers: boolean;
+  canDeleteSupplier: boolean;
   onNavigateTab: (tab: FinanceCostCentersTabId) => void;
+  onSuppliersChanged?: () => void;
 };
 
-export function FinanceSuppliersTab({ dashboard, canViewSuppliers, onNavigateTab }: Props) {
+export function FinanceSuppliersTab({
+  dashboard,
+  canViewSuppliers,
+  canManageSuppliers,
+  canDeleteSupplier,
+  onNavigateTab,
+  onSuppliersChanged,
+}: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [preview, setPreview] = useState<FinanceSupplierRebuildPreviewPayload | null>(null);
   const [rules, setRules] = useState<SupplierCostCenterRuleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aliasesSupplier, setAliasesSupplier] = useState<SupplierGridRow | null>(null);
+  const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
 
   const search = readFinanceGridUrlString(searchParams, "sup_q");
   const ruleFilter = (readFinanceGridUrlString(searchParams, "sup_rule", "all") ||
@@ -307,7 +319,25 @@ export function FinanceSuppliersTab({ dashboard, canViewSuppliers, onNavigateTab
                 <td className="px-3 py-2">{row.costCenterName}</td>
                 <td className="px-3 py-2">{row.ruleStatus}</td>
                 <td className="px-3 py-2">
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {row.supplierId ? (
+                      <button
+                        type="button"
+                        data-testid="finance-suppliers-open-cadastro-button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                        onClick={() => setCadastroSupplierId(row.supplierId!)}
+                      >
+                        <FileText className="h-3 w-3" />
+                        Abrir cadastro
+                      </button>
+                    ) : (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title="Reconstrua fornecedores a partir de AP para obter cadastro consolidado"
+                      >
+                        Sem cadastro
+                      </span>
+                    )}
                     <button
                       type="button"
                       data-testid="finance-suppliers-define-rule-button"
@@ -355,6 +385,15 @@ export function FinanceSuppliersTab({ dashboard, canViewSuppliers, onNavigateTab
           </div>
         </div>
       ) : null}
+
+      <FinanceSupplierCadastroDrawer
+        open={Boolean(cadastroSupplierId)}
+        supplierId={cadastroSupplierId}
+        onClose={() => setCadastroSupplierId(null)}
+        onChanged={onSuppliersChanged}
+        canManage={canManageSuppliers}
+        canDelete={canDeleteSupplier}
+      />
     </div>
   );
 }

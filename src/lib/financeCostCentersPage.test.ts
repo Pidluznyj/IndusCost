@@ -48,6 +48,8 @@ describe("financeCostCentersPage", () => {
     assert.match(mod, /canViewFinanceCostCenters/);
     assert.match(perms, /finance\.cost_centers\.view/);
     assert.match(perms, /canViewFinanceCostCenters/);
+    assert.match(perms, /canManageFinanceSuppliers/);
+    assert.match(perms, /canDeleteFinanceSupplier/);
   });
 
   it("estados vazios existem", () => {
@@ -111,6 +113,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx",
       "src/components/finance/cost-centers/FinanceSuppliersTab.tsx",
+      "src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx",
       "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx",
       "src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx",
