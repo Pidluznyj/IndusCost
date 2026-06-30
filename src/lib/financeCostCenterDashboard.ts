@@ -10,7 +10,12 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
-import { filterOfficialApTitlesForCostCenter } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
+import {
+  filterOfficialApTitlesForCostCenter,
+  OFFICIAL_AP_RULES_SOURCE,
+  resolveOfficialApPortfolioFinancialMetrics,
+  type OfficialApPortfolioFinancialMetrics,
+} from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
 import {
   isCostCenterTitleInScope,
@@ -166,6 +171,10 @@ export type FinanceCostCenterDashboardDiagnostics = {
   titlesNoSupplier: number;
   amountSupplierNoRuleGap: number;
   amountNoSupplierGap: number;
+  officialApTotalPayable: number | null;
+  officialApSource: string | null;
+  partitionTotal: number;
+  reconciliationDelta: number;
 };
 
 export type FinanceCostCenterDashboardAudit = {
@@ -385,6 +394,25 @@ function primaryCostCenterName(shares: Map<string, number>, ccMeta: Map<string, 
   return ccMeta.get(costCenterId)?.name ?? costCenterId;
 }
 
+/** Filtros exclusivos da visão CC (não existem na tela Contas a Pagar). */
+export function hasCostCenterClassificationViewFilters(
+  filters: FinanceCostCenterDashboardFilters
+): boolean {
+  return Boolean(
+    filters.costCenterId ||
+      filters.supplierId ||
+      (filters.classification && filters.classification !== "all")
+  );
+}
+
+export function toApPortfolioFiltersFromCostCenter(
+  filters: FinanceCostCenterDashboardFilters
+): FinanceApDashboardFilters {
+  const { costCenterId: _cc, supplierId: _sup, classification: _cls, apScope: _scope, ...apFilters } =
+    filters;
+  return apFilters;
+}
+
 export function buildFinanceCostCenterDashboard(
   rows: FinanceApDashboardRow[],
   allocations: AllocationDashboardRow[],
@@ -394,7 +422,8 @@ export function buildFinanceCostCenterDashboard(
   filters: FinanceCostCenterDashboardFilters,
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null,
-  supplierScopeSourceRows?: FinanceApDashboardRow[]
+  supplierScopeSourceRows?: FinanceApDashboardRow[],
+  officialApFinancial?: OfficialApPortfolioFinancialMetrics | null
 ): FinanceCostCenterDashboardPayload {
   const apScope = resolveFinanceCostCenterDashboardApScope(filters);
   const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
@@ -440,8 +469,9 @@ export function buildFinanceCostCenterDashboard(
     if (titleAmount <= 0) continue;
 
     const allocatedAmount = resolveTitleAllocatedAmount(rowAllocations, titleAmount);
-    const unallocatedGap = resolveTitleUnallocatedGap(rowAllocations, titleAmount);
-    const fullyAllocated = isTitleRealAllocated(rowAllocations, titleAmount);
+    const cappedClassified = finiteMoney(Math.min(allocatedAmount, titleAmount));
+    const unallocatedGap = finiteMoney(Math.max(0, titleAmount - cappedClassified));
+    const fullyAllocated = unallocatedGap <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE;
 
     if (!matchesSupplierFilter(row, rowAllocations, filters.supplierId, suppliers)) continue;
     if (!matchesClassificationFilter(fullyAllocated, filters.classification)) continue;
@@ -462,7 +492,7 @@ export function buildFinanceCostCenterDashboard(
     diagTotalUnallocatedGap += unallocatedGap;
     if (row.balancePayable > 0) diagTitlesOpen += 1;
 
-    classifiedAmount += allocatedAmount;
+    classifiedAmount += cappedClassified;
     if (unallocatedGap > 0) {
       unclassifiedAmount += unallocatedGap;
       unclassifiedTitlesCount += 1;
@@ -551,7 +581,7 @@ export function buildFinanceCostCenterDashboard(
         unclassifiedAmount: 0,
       };
       monthly.totalAmount += titleAmount;
-      monthly.classifiedAmount += allocatedAmount;
+      monthly.classifiedAmount += cappedClassified;
       monthly.unclassifiedAmount += unallocatedGap;
       monthlyTotals.set(month, monthly);
     }
@@ -566,7 +596,24 @@ export function buildFinanceCostCenterDashboard(
     }
   }
 
-  const totalAmount = finiteMoney(classifiedAmount + unclassifiedAmount);
+  const partitionTotal = finiteMoney(classifiedAmount + unclassifiedAmount);
+  let totalAmount = finiteMoney(diagTotalAmountBase);
+  let summaryOpenAmount = finiteMoney(openAmount);
+  let summaryOverdueAmount = finiteMoney(overdueAmount);
+  let summaryPaidAmount = finiteMoney(paidAmount);
+
+  if (hasCostCenterClassificationViewFilters(filters)) {
+    totalAmount = partitionTotal;
+  } else if (officialApFinancial) {
+    totalAmount = officialApFinancial.totalPayable;
+    summaryOpenAmount = officialApFinancial.openAmount;
+    summaryOverdueAmount = officialApFinancial.overdueAmount;
+    summaryPaidAmount = officialApFinancial.paidThisMonth;
+  }
+
+  const reconciliationDelta = officialApFinancial
+    ? finiteMoney(partitionTotal - officialApFinancial.totalPayable)
+    : finiteMoney(diagTotalAmountBase - partitionTotal);
   const activeSuppliers = suppliers.filter((supplier) => supplier.status === "ACTIVE");
   const withRules = activeSuppliers.filter((supplier) => supplierIdsWithRules.has(supplier.id)).length;
   const withoutRules = Math.max(0, activeSuppliers.length - withRules);
@@ -647,9 +694,9 @@ export function buildFinanceCostCenterDashboard(
       classifiedAmount: finiteMoney(classifiedAmount),
       unclassifiedAmount: finiteMoney(unclassifiedAmount),
       classifiedPercentage: safePercent(classifiedAmount, totalAmount),
-      openAmount: finiteMoney(openAmount),
-      overdueAmount: finiteMoney(overdueAmount),
-      paidAmount: finiteMoney(paidAmount),
+      openAmount: summaryOpenAmount,
+      overdueAmount: summaryOverdueAmount,
+      paidAmount: summaryPaidAmount,
       costCentersCount: byCostCenterRows.length,
       suppliersWithRules: withRules,
       suppliersWithoutRules: withoutRules,
@@ -677,7 +724,9 @@ export function buildFinanceCostCenterDashboard(
       })),
     },
     audit: {
-      dataSources: ["NomusAccountsPayable", "AccountsPayableCostCenterAllocation"],
+      dataSources: officialApFinancial
+        ? ["NomusAccountsPayable", "AccountsPayableCostCenterAllocation", OFFICIAL_AP_RULES_SOURCE]
+        : ["NomusAccountsPayable", "AccountsPayableCostCenterAllocation"],
       filtersApplied: filters,
       titlesConsidered: filteredRows.length,
       allocationsConsidered,
@@ -695,6 +744,10 @@ export function buildFinanceCostCenterDashboard(
         titlesNoSupplier: diagTitlesNoSupplier,
         amountSupplierNoRuleGap: finiteMoney(diagAmountSupplierNoRuleGap),
         amountNoSupplierGap: finiteMoney(diagAmountNoSupplierGap),
+        officialApTotalPayable: officialApFinancial?.totalPayable ?? null,
+        officialApSource: officialApFinancial?.source ?? null,
+        partitionTotal,
+        reconciliationDelta,
       },
     },
   };
@@ -779,6 +832,12 @@ export async function buildFinanceCostCenterDashboardDefault(
   const supplierIdsWithRules = new Set(
     (await deps.loadSupplierIdsWithActiveRules()).map((row) => row.supplierId)
   );
+  const officialApFinancial = resolveOfficialApPortfolioFinancialMetrics({
+    rows,
+    filters: toApPortfolioFiltersFromCostCenter(filters),
+    referenceDate,
+    syncCutoff,
+  });
   return buildFinanceCostCenterDashboard(
     rows,
     allocations,
@@ -788,6 +847,7 @@ export async function buildFinanceCostCenterDashboardDefault(
     filters,
     referenceDate,
     syncCutoff,
-    supplierScopeSourceRows
+    supplierScopeSourceRows,
+    officialApFinancial
   );
 }

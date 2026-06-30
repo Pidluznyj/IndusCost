@@ -79,6 +79,12 @@ function fmt(n: unknown): string {
   return "INVÁLIDO";
 }
 
+function readMetric(value: unknown, label: string): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  console.warn(`MÉTRICA AUSENTE: ${label}`);
+  return Number.NaN;
+}
+
 function resolveDueRadarApRangesTotal(payload: DueRadarPayload): number | null {
   if (!Array.isArray(payload.ranges)) return null;
   return payload.ranges.reduce(
@@ -198,9 +204,16 @@ async function main() {
     scopeNote?: string
   ) {
     const ref = screenVal;
-    const delta = Math.round((engineVal - ref) * 100) / 100;
-    let status = nearlyEqual(engineVal, ref) ? "OK" : "DIVERGENTE";
-    if (scopeNote) status = `ESCOPO DIFERENTE — ${scopeNote}`;
+    const engineOk = Number.isFinite(engineVal);
+    const screenOk = Number.isFinite(ref);
+    const delta =
+      engineOk && screenOk ? Math.round((engineVal - ref) * 100) / 100 : Number.NaN;
+    let status = "MÉTRICA AUSENTE";
+    if (scopeNote) {
+      status = `ESCOPO DIFERENTE — ${scopeNote}`;
+    } else if (engineOk && screenOk) {
+      status = nearlyEqual(engineVal, ref) ? "OK" : "DIVERGENTE";
+    }
     rows.push({
       indicator,
       engine: engineVal,
@@ -212,67 +225,77 @@ async function main() {
     });
   }
 
+  const apCards = apScreen?.cards;
+  const scheduleAudit = engine.purchaseOrderScheduleAudit;
+
+  addRow(
+    "Total a pagar",
+    readMetric(engine.metrics.totalPayable, "engine.metrics.totalPayable"),
+    readMetric(apCards?.totalPayableAmount, "apScreen.cards.totalPayableAmount"),
+    null,
+    null
+  );
   addRow(
     "Em aberto",
-    engine.metrics.openAmount,
-    apScreen.cards.totalOpenAmount,
-    cashFlowPayload.cards.totalPayableOpen,
-    executiveSection.kpis.openAmount
+    readMetric(engine.metrics.openAmount, "engine.metrics.openAmount"),
+    readMetric(apCards?.totalOpenAmount, "apScreen.cards.totalOpenAmount"),
+    readMetric(cashFlowPayload?.cards?.totalPayableOpen, "cashFlow.cards.totalPayableOpen"),
+    readMetric(executiveSection?.kpis?.openAmount, "executiveSection.kpis.openAmount")
   );
   addRow(
     "Vencido gerencial",
-    engine.metrics.overdueAmount,
-    apScreen.cards.overdueAmount,
+    readMetric(engine.metrics.overdueAmount, "engine.metrics.overdueAmount"),
+    readMetric(apCards?.overdueAmount, "apScreen.cards.overdueAmount"),
     null,
-    executiveSection.kpis.overdueAmount
+    readMetric(executiveSection?.kpis?.overdueAmount, "executiveSection.kpis.overdueAmount")
   );
   addRow(
     "Pago no mês",
-    engine.metrics.paidThisMonth,
-    apScreen.cards.paidThisMonthAmount,
+    readMetric(engine.metrics.paidThisMonth, "engine.metrics.paidThisMonth"),
+    readMetric(apCards?.paidThisMonthAmount, "apScreen.cards.paidThisMonthAmount"),
     null,
-    executiveSection.kpis.paidMonthCurrent,
+    readMetric(executiveSection?.kpis?.paidMonthCurrent, "executiveSection.kpis.paidMonthCurrent"),
     "mês calendário da data-base vs mês destacado no relatório"
   );
   addRow(
     "Pago YTD",
-    engine.metrics.paidYtd,
-    engine.metrics.paidYtd,
-    cfApExecutive.paidYtd,
-    executiveSection.kpis.paidYtdCurrent
+    readMetric(engine.metrics.paidYtd, "engine.metrics.paidYtd"),
+    readMetric(engine.metrics.paidYtd, "engine.metrics.paidYtd"),
+    readMetric(cfApExecutive?.paidYtd, "cfApExecutive.paidYtd"),
+    readMetric(executiveSection?.kpis?.paidYtdCurrent, "executiveSection.kpis.paidYtdCurrent")
   );
   addRow(
     "A pagar até 31/12",
-    engine.metrics.openUntilYearEnd,
-    engine.metrics.openUntilYearEnd,
-    cfApExecutive.openUntilYearEnd,
+    readMetric(engine.metrics.openUntilYearEnd, "engine.metrics.openUntilYearEnd"),
+    readMetric(engine.metrics.openUntilYearEnd, "engine.metrics.openUntilYearEnd"),
+    readMetric(cfApExecutive?.openUntilYearEnd, "cfApExecutive.openUntilYearEnd"),
     null
   );
   addRow(
     "Estimativa AP do ano",
-    engine.metrics.estimatedYearTotal,
-    engine.metrics.estimatedYearTotal,
-    cfApExecutive.estimatedYearTotal,
+    readMetric(engine.metrics.estimatedYearTotal, "engine.metrics.estimatedYearTotal"),
+    readMetric(engine.metrics.estimatedYearTotal, "engine.metrics.estimatedYearTotal"),
+    readMetric(cfApExecutive?.estimatedYearTotal, "cfApExecutive.estimatedYearTotal"),
     null
   );
   addRow(
     "Agendados",
-    engine.metrics.scheduledOpenAmount,
-    engine.purchaseOrderScheduleAudit.rescheduledOpenAmount,
+    readMetric(engine.metrics.scheduledOpenAmount, "engine.metrics.scheduledOpenAmount"),
+    readMetric(scheduleAudit?.rescheduledOpenAmount, "purchaseOrderScheduleAudit.rescheduledOpenAmount"),
     null,
-    executiveSection.kpis.scheduledOpenAmount
+    readMetric(executiveSection?.kpis?.scheduledOpenAmount, "executiveSection.kpis.scheduledOpenAmount")
   );
   addRow(
     "Próx. 7 dias",
-    engine.metrics.dueNext7DaysAmount,
-    apScreen.cards.dueNext7DaysAmount,
+    readMetric(engine.metrics.dueNext7DaysAmount, "engine.metrics.dueNext7DaysAmount"),
+    readMetric(apCards?.dueNext7DaysAmount, "apScreen.cards.dueNext7DaysAmount"),
     null,
     null
   );
   addRow(
     "Próx. 30 dias",
-    engine.metrics.dueNext30DaysAmount,
-    apScreen.cards.dueNext30DaysAmount,
+    readMetric(engine.metrics.dueNext30DaysAmount, "engine.metrics.dueNext30DaysAmount"),
+    readMetric(apCards?.dueNext30DaysAmount, "apScreen.cards.dueNext30DaysAmount"),
     null,
     null
   );
@@ -285,10 +308,10 @@ async function main() {
   const dueRadarRangesTotal = resolveDueRadarApRangesTotal(dueRadarPayload);
   addRow(
     "Due-radar AP (total faixas)",
-    engine.metrics.openAmount,
-    apScreen.cards.totalOpenAmount,
+    readMetric(engine.metrics.openAmount, "engine.metrics.openAmount"),
+    readMetric(apCards?.totalOpenAmount, "apScreen.cards.totalOpenAmount"),
     null,
-    dueRadarRangesTotal,
+    dueRadarRangesTotal ?? Number.NaN,
     dueRadarRangesTotal == null
       ? "due-radar sem faixas — métrica ausente no payload oficial"
       : "soma das faixas do radar (escopo vencimento operacional, não carteira AP)"
@@ -307,7 +330,7 @@ async function main() {
     );
   }
 
-  const failures = rows.filter((r) => r.status === "DIVERGENTE");
+  const failures = rows.filter((r) => r.status === "DIVERGENTE" || r.status === "MÉTRICA AUSENTE");
   if (failures.length > 0) {
     process.exitCode = 1;
   }

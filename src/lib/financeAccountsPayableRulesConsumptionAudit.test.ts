@@ -57,6 +57,7 @@ describe("financeAccountsPayableRulesConsumptionAudit", () => {
     assert.doesNotMatch(cc, /filterFinanceApRows/);
     const ccDash = read("src/lib/financeCostCenterDashboard.ts");
     assert.match(ccDash, /filterOfficialApTitlesForCostCenter/);
+    assert.match(ccDash, /resolveOfficialApPortfolioFinancialMetrics/);
     const ccDetail = read("src/lib/financeCostCenterDetail.ts");
     assert.match(ccDetail, /filterOfficialApTitlesForCostCenter/);
     assert.doesNotMatch(ccDetail, /filterFinanceApRows/);
@@ -67,6 +68,13 @@ describe("financeAccountsPayableRulesConsumptionAudit", () => {
     assert.match(script, /OFFICIAL_AP_RULES_SOURCE/);
     assert.match(script, /buildOfficialAccountsPayableRulesResult/);
     assert.match(script, /resolveDueRadarApRangesTotal/);
+    assert.match(script, /readMetric/);
     assert.doesNotMatch(script, /dueRadarPayload\.summary\.totalAmount/);
+  });
+
+  it("script reconciliação AP x Centro de Custo existe", () => {
+    const script = read("scripts/audit-cost-center-ap-reconciliation.ts");
+    assert.match(script, /resolveOfficialApPortfolioFinancialMetrics/);
+    assert.match(script, /buildFinanceCostCenterDashboard/);
   });
 });

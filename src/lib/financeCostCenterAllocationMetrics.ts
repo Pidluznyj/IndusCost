@@ -78,7 +78,7 @@ export function resolveCostCenterClassificationScopeLabel(
 /**
  * Valor base do título para métricas de centro de custo.
  * - open_only: saldo em aberto (balancePayable), coerente com visão “em aberto”.
- * - all_in_filter: amountPayable (alinha com Total a pagar do dashboard AP no período).
+ * - all_in_filter: amountPayable nominal — mesma base do card Total a pagar AP.
  */
 export function resolveCostCenterTitleAmount(
   row: Pick<FinanceApDashboardRow, "balancePayable" | "amountPayable" | "amountPaid">,
@@ -86,11 +86,7 @@ export function resolveCostCenterTitleAmount(
 ): number {
   const balance = Math.abs(row.balancePayable);
   if (scope === "open_only") return finiteMoney(balance);
-  const payable = Math.abs(row.amountPayable);
-  if (payable > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) return finiteMoney(payable);
-  if (balance > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) return finiteMoney(balance);
-  const paid = Math.abs(row.amountPaid ?? 0);
-  return finiteMoney(paid);
+  return finiteMoney(Math.abs(row.amountPayable ?? 0));
 }
 
 export function isCostCenterTitleInScope(

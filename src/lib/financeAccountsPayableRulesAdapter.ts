@@ -128,6 +128,28 @@ export function resolveOfficialApCashFlowExecutiveMetrics(
   };
 }
 
+export type OfficialApPortfolioFinancialMetrics = {
+  source: typeof OFFICIAL_AP_RULES_SOURCE;
+  totalPayable: number;
+  openAmount: number;
+  overdueAmount: number;
+  paidThisMonth: number;
+};
+
+/** Carteira AP oficial para cards financeiros (Total a pagar, em aberto, vencido, pago no mês). */
+export function resolveOfficialApPortfolioFinancialMetrics(
+  input: OfficialAccountsPayableBuildInput
+): OfficialApPortfolioFinancialMetrics {
+  const result = buildOfficialAccountsPayableRulesResult(input);
+  return {
+    source: OFFICIAL_AP_RULES_SOURCE,
+    totalPayable: result.metrics.totalPayable,
+    openAmount: result.metrics.openAmount,
+    overdueAmount: result.metrics.overdueAmount,
+    paidThisMonth: result.metrics.paidThisMonth,
+  };
+}
+
 export {
   filterOfficialApManagementTitles,
   sumOfficialApOpenDueInPeriod,

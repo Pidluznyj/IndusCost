@@ -264,6 +264,73 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.bySupplier[0]!.amount, 800);
   });
 
+  it("3i. over-alocação não infla Total AP no filtro", () => {
+    const state: MockState = {
+      apRows: [apRow({ externalId: 50, balancePayable: 1000, amountPayable: 1000 })],
+      allocations: [
+        {
+          id: "a50a",
+          accountsPayableId: 50,
+          supplierId: "sup-1",
+          costCenterId: "cc-1",
+          amount: new Prisma.Decimal(600),
+          percentage: new Prisma.Decimal(60),
+        },
+        {
+          id: "a50b",
+          accountsPayableId: 50,
+          supplierId: "sup-1",
+          costCenterId: "cc-2",
+          amount: new Prisma.Decimal(500),
+          percentage: new Prisma.Decimal(50),
+        },
+      ],
+      costCenters: [
+        { id: "cc-1", code: "ADM", name: "Administrativo", status: "ACTIVE" },
+        { id: "cc-2", code: "OP", name: "Operações", status: "ACTIVE" },
+      ],
+      suppliers: [supplierActive()],
+      supplierIdsWithRules: ["sup-1"],
+    };
+    const payload = buildDashboard(state);
+    assert.equal(payload.summary.totalAmount, 1000);
+    assert.equal(payload.summary.classifiedAmount, 1000);
+    assert.equal(payload.summary.unclassifiedAmount, 0);
+    assert.ok(Math.abs(payload.audit.diagnostics.partitionTotal - 1000) <= 0.01);
+  });
+
+  it("3j. métricas financeiras usam motor AP oficial quando disponível", () => {
+    const state: MockState = {
+      apRows: [apRow({ externalId: 51, balancePayable: 800, amountPayable: 800 })],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const officialApFinancial = {
+      source: "official-accounts-payable-rules-engine" as const,
+      totalPayable: 1_320_000,
+      openAmount: 274_600,
+      overdueAmount: 93_100,
+      paidThisMonth: 1_040_000,
+    };
+    const payload = buildFinanceCostCenterDashboard(
+      state.apRows,
+      state.allocations,
+      state.costCenters,
+      state.suppliers,
+      new Set(state.supplierIdsWithRules),
+      parseFinanceCostCenterDashboardFilters({ status: "all" }),
+      REF,
+      null,
+      undefined,
+      officialApFinancial
+    );
+    assert.equal(payload.summary.totalAmount, 1_320_000);
+    assert.equal(payload.summary.openAmount, 274_600);
+    assert.equal(payload.audit.diagnostics.officialApTotalPayable, 1_320_000);
+  });
+
   it("3c. título alocado 100% não entra em sem classificação sem regra de fornecedor", () => {
     const state: MockState = {
       apRows: [apRow({ externalId: 31, balancePayable: 2000, personName: "CONTA ADMINISTRATIVA" })],
