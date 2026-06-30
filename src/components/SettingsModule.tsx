@@ -28,6 +28,7 @@ import { AccessProfilesModule } from "@/src/components/AccessProfilesModule";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
+import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
   canAccessSettingsSection,
@@ -1673,6 +1674,8 @@ export const SettingsModule = () => {
                   Salvar Parâmetros
                 </button>
               </div>
+
+              <SalesMarginNomusConfigPanel />
 
               <div className="mt-8 pt-6 border-t border-border space-y-5">
                 <div className="space-y-1">

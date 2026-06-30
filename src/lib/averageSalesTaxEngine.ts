@@ -6,6 +6,106 @@ import { roundPricingMoney, roundPricingPercent, sumTaxRuleComponentPercents } f
 
 export type ProductTaxPercentIndex = Map<string, number>;
 
+export type ResolvedSalesTaxRule = {
+  id: string;
+  name: string;
+  status: string | null;
+  operation: string;
+  totalPercent: number;
+  components: Array<{
+    id: string;
+    name: string;
+    percentage: number;
+    isRecoverable: boolean | null;
+    baseType: string | null;
+  }>;
+};
+
+/** Carrega TaxRule por ID com composição — usado na configuração Nomus. */
+export async function resolveSalesTaxRuleById(
+  db: Pick<PrismaClient, "taxRule">,
+  taxRuleId: string
+): Promise<ResolvedSalesTaxRule | null> {
+  const rule = await db.taxRule.findUnique({
+    where: { id: taxRuleId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      operation: true,
+      TaxComponent: {
+        select: {
+          id: true,
+          name: true,
+          percentage: true,
+          isRecoverable: true,
+          baseType: true,
+        },
+        orderBy: { name: "asc" },
+      },
+    },
+  });
+  if (!rule) return null;
+  const components = rule.TaxComponent.map((c) => ({
+    id: c.id,
+    name: c.name,
+    percentage: Number(c.percentage),
+    isRecoverable: c.isRecoverable,
+    baseType: c.baseType,
+  }));
+  return {
+    id: rule.id,
+    name: rule.name,
+    status: rule.status,
+    operation: rule.operation,
+    totalPercent: sumTaxRuleComponentPercents(components),
+    components,
+  };
+}
+
+/** Lista TaxRules ativas para seleção na configuração de margem Nomus. */
+export async function listActiveSalesTaxRules(
+  db: Pick<PrismaClient, "taxRule">
+): Promise<ResolvedSalesTaxRule[]> {
+  const rows = await db.taxRule.findMany({
+    where: { status: "ACTIVE" },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      operation: true,
+      TaxComponent: {
+        select: {
+          id: true,
+          name: true,
+          percentage: true,
+          isRecoverable: true,
+          baseType: true,
+        },
+        orderBy: { name: "asc" },
+      },
+    },
+  });
+  return rows.map((rule) => {
+    const components = rule.TaxComponent.map((c) => ({
+      id: c.id,
+      name: c.name,
+      percentage: Number(c.percentage),
+      isRecoverable: c.isRecoverable,
+      baseType: c.baseType,
+    }));
+    return {
+      id: rule.id,
+      name: rule.name,
+      status: rule.status,
+      operation: rule.operation,
+      totalPercent: sumTaxRuleComponentPercents(components),
+      components,
+    };
+  });
+}
+
 export function computeSalesTaxAmount(salesAmount: number, taxPercent: number): number {
   if (!Number.isFinite(salesAmount) || salesAmount <= 0) return 0;
   if (!Number.isFinite(taxPercent) || taxPercent <= 0) return 0;

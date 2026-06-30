@@ -12,8 +12,10 @@ import type {
   SalesOrderCostConfidence,
   SalesOrderCostSource,
   SalesOrderMarginCostMode,
+  SalesOrderMarginCostPolicy,
   SalesOrderMarginItemInput,
 } from "./salesOrderMarginTypes.js";
+import { DEFAULT_SALES_ORDER_MARGIN_COST_POLICY } from "./salesOrderMarginTypes.js";
 
 export type ProductResolutionSource =
   | "LOCAL_PRODUCT_ID"
@@ -365,7 +367,9 @@ export function resolveSalesOrderItemCost(input: {
   storedUnitCost?: unknown | null;
   costLog?: SalesOrderMarginCostLogSnapshot | null;
   analysis?: unknown;
+  costPolicy?: SalesOrderMarginCostPolicy;
 }): CostResolution {
+  const costPolicy = input.costPolicy ?? DEFAULT_SALES_ORDER_MARGIN_COST_POLICY;
   const notes: string[] = [];
   const base: CostResolution = {
     salesOrderItemId: input.salesOrderItemId,
@@ -383,7 +387,7 @@ export function resolveSalesOrderItemCost(input: {
   }
 
   const storedSnapshot = parseSalesOrderItemStoredUnitCost(input.storedUnitCost);
-  if (storedSnapshot != null) {
+  if (costPolicy.useFrozenUnitCostFirst && storedSnapshot != null) {
     notes.push("Custo unitário congelado de SalesOrderItem.unitCost (snapshot histórico da linha).");
     return {
       ...base,
@@ -393,6 +397,11 @@ export function resolveSalesOrderItemCost(input: {
       marginCostMode: "HISTORICAL_FROZEN",
       notes,
     };
+  }
+
+  if (!costPolicy.allowLiveCostFallback) {
+    notes.push("Fallback de custo estimado desabilitado pela configuração de margem Nomus.");
+    return base;
   }
 
   if (input.costLog && safeFinite(input.costLog.totalCiu) != null && input.costLog.totalCiu > 0) {
@@ -440,16 +449,29 @@ export async function resolveSalesOrderItemCosts(
   items: SalesOrderMarginResolverItem[],
   productResolutions: Map<string, ProductResolution>,
   resolveProductCost: SalesOrderMarginProductCostResolver,
-  cache: Map<string, SalesOrderMarginProductCostPayload> = new Map()
+  cache: Map<string, SalesOrderMarginProductCostPayload> = new Map(),
+  costPolicy: SalesOrderMarginCostPolicy = DEFAULT_SALES_ORDER_MARGIN_COST_POLICY
 ): Promise<Map<string, CostResolution>> {
-  const uniqueProductIds = [
-    ...new Set(
-      items
-        .filter((item) => !hasSalesOrderItemUnitCostSnapshot(item.unitCost))
-        .map((item) => productResolutions.get(item.salesOrderItemId)?.productId)
-        .filter((id): id is string => Boolean(id))
-    ),
-  ];
+  const allowLive = costPolicy.allowLiveCostFallback !== false;
+  const uniqueProductIds = allowLive
+    ? [
+        ...new Set(
+          items
+            .filter((item) => {
+              if (!allowLive) return false;
+              if (
+                costPolicy.useFrozenUnitCostFirst &&
+                hasSalesOrderItemUnitCostSnapshot(item.unitCost)
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .map((item) => productResolutions.get(item.salesOrderItemId)?.productId)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ]
+    : [];
 
   await Promise.all(
     uniqueProductIds.map(async (productId) => {
@@ -471,6 +493,7 @@ export async function resolveSalesOrderItemCosts(
         storedUnitCost: item.unitCost,
         costLog: payload.costLog ?? null,
         analysis: payload.analysis,
+        costPolicy,
       })
     );
   }

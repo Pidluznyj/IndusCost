@@ -3,9 +3,10 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import {
-  loadProductTaxPercentIndex,
-  resolveDefaultSalesTaxPercent,
-} from "./averageSalesTaxEngine.js";
+  loadSalesMarginNomusConfig,
+  salesMarginNomusConfigToCostPolicy,
+} from "./salesMarginNomusConfig.js";
+import { resolveOfficialSalesMarginTaxContext } from "./salesMarginNomusTaxContext.server.js";
 import {
   buildSalesOrderMarginIndicatorWhere,
   parseSalesOrderMarginIndicatorFilters,
@@ -106,7 +107,10 @@ export async function buildSalesOrderResultDashboard(
     productId: filters.productId,
   });
 
-  const marginContext = await buildSalesOrderMarginContext(db, orders as SalesOrderForMargin[]);
+  const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
+  const marginContext = await buildSalesOrderMarginContext(db, orders as SalesOrderForMargin[], {
+    costPolicy: salesMarginNomusConfigToCostPolicy(nomusConfig),
+  });
   const marginRulesOrders = mapMarginContextToRulesOrders(
     orders as SalesOrderForMargin[],
     marginContext.byOrderId
@@ -115,18 +119,11 @@ export async function buildSalesOrderResultDashboard(
   const productIds = orders.flatMap((order) =>
     order.items.map((item) => item.productId).filter((id): id is string => Boolean(id))
   );
-  const [productTaxIndex, defaultTax] = await Promise.all([
-    loadProductTaxPercentIndex(db, productIds),
-    resolveDefaultSalesTaxPercent(db),
-  ]);
+  const taxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
 
   const rules = buildOfficialSalesMarginRulesResult(marginRulesOrders, {
-    taxMode: "deductFromGross",
-    taxContext: {
-      productTaxIndex,
-      defaultTaxPercent: defaultTax.percent,
-      defaultTaxLabel: defaultTax.label,
-    },
+    taxMode: nomusConfig.taxMode === "none" ? "none" : "deductFromGross",
+    taxContext,
     year: filters.year,
     month: filters.month,
     referenceDate,

@@ -26,10 +26,12 @@ import {
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
 
 export { aggregateSalesOrderMarginSummaries };
-import type {
-  SalesOrderItemMarginPayload,
-  SalesOrderMarginItemResult,
-  SalesOrderMarginSummaryPayload,
+import {
+  DEFAULT_SALES_ORDER_MARGIN_COST_POLICY,
+  type SalesOrderItemMarginPayload,
+  type SalesOrderMarginCostPolicy,
+  type SalesOrderMarginItemResult,
+  type SalesOrderMarginSummaryPayload,
 } from "./salesOrderMarginTypes.js";
 import {
   extractNomusRawItems,
@@ -199,6 +201,7 @@ export async function buildSalesOrderMarginContext(
   options?: {
     itemsByOrderId?: Map<string, SalesOrderItemForMargin[]>;
     costCache?: Map<string, { analysis?: unknown; costLog?: { totalCiu: number; calculatedAt: string } | null }>;
+    costPolicy?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostPolicy;
   }
 ): Promise<SalesOrderMarginContext> {
   const itemsByOrderId =
@@ -240,6 +243,7 @@ export async function buildSalesOrderMarginContext(
   let costAnalysisCalls = 0;
   const resolveAnalysis = getSalesOrderMarginProductCostResolver();
   const costCache = options?.costCache ?? new Map();
+  const costPolicy = options?.costPolicy ?? DEFAULT_SALES_ORDER_MARGIN_COST_POLICY;
   const costResolutions = await resolveSalesOrderItemCosts(
     resolverItems,
     productResolutions,
@@ -250,7 +254,8 @@ export async function buildSalesOrderMarginContext(
       }
       return costCache.get(productId) ?? {};
     },
-    costCache
+    costCache,
+    costPolicy
   );
 
   const marginInputs = buildSalesOrderMarginInputsFromResolutions(

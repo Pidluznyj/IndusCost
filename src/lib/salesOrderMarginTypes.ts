@@ -29,6 +29,17 @@ export type SalesOrderMarginCoveragePayload = {
   costCoverageStatus: SalesOrderMarginCostCoverageStatus;
 };
 
+/** Política de resolução de custo na margem — configurável via Parâmetros Globais Nomus. */
+export type SalesOrderMarginCostPolicy = {
+  useFrozenUnitCostFirst: boolean;
+  allowLiveCostFallback: boolean;
+};
+
+export const DEFAULT_SALES_ORDER_MARGIN_COST_POLICY: SalesOrderMarginCostPolicy = {
+  useFrozenUnitCostFirst: true,
+  allowLiveCostFallback: true,
+};
+
 export type SalesOrderCostSource =
   | "SALES_ORDER_ITEM_SNAPSHOT"
   | "HISTORICAL_SNAPSHOT"

@@ -3,10 +3,6 @@
  * Sem regra de negócio: resolução de custo (margin service) + mapeamento de payload.
  */
 import type { PrismaClient } from "@prisma/client";
-import {
-  loadProductTaxPercentIndex,
-  resolveDefaultSalesTaxPercent,
-} from "./averageSalesTaxEngine.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
 import {
@@ -45,6 +41,11 @@ import type {
 } from "./salesOrderResultTypes.js";
 import type { OfficialSalesOrderResultSalesBundle } from "./salesOrderRulesAdapter.js";
 import type { CustomerIntelligenceOrderInput } from "./customerIntelligenceTypes.js";
+import {
+  loadSalesMarginNomusConfig,
+  salesMarginNomusConfigToCostPolicy,
+} from "./salesMarginNomusConfig.js";
+import { resolveOfficialSalesMarginTaxContext } from "./salesMarginNomusTaxContext.server.js";
 
 export const OFFICIAL_SM_RULES_SOURCE = "official-sales-margin-rules-engine" as const;
 
@@ -322,13 +323,21 @@ export async function calculateOfficialSalesOrderMarginsForOrders(
   orders: SalesOrderForMargin[],
   options?: Parameters<typeof buildSalesOrderMarginContext>[2] & {
     buildInput?: OfficialSalesMarginRulesBuildInput;
+    costPolicy?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostPolicy;
   }
 ): Promise<Map<string, SalesOrderMarginOrderResult>> {
   if (orders.length === 0) return new Map();
 
-  const marginContext = await buildSalesOrderMarginContext(db, orders, options);
+  const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
+  const costPolicy =
+    options?.costPolicy ?? salesMarginNomusConfigToCostPolicy(nomusConfig);
+
+  const marginContext = await buildSalesOrderMarginContext(db, orders, {
+    ...options,
+    costPolicy,
+  });
   const rulesOrders = mapMarginContextToRulesOrders(orders, marginContext.byOrderId);
-  const taxMode = options?.buildInput?.taxMode ?? "none";
+  const taxMode = options?.buildInput?.taxMode ?? nomusConfig.taxMode;
 
   let taxContext = options?.buildInput?.taxContext;
   if (taxMode === "deductFromGross" && !taxContext) {
@@ -337,15 +346,7 @@ export async function calculateOfficialSalesOrderMarginsForOrders(
         .map((item) => item.productId)
         .filter((id): id is string => Boolean(id))
     );
-    const [productTaxIndex, defaultTax] = await Promise.all([
-      loadProductTaxPercentIndex(db, productIds),
-      resolveDefaultSalesTaxPercent(db),
-    ]);
-    taxContext = {
-      productTaxIndex,
-      defaultTaxPercent: defaultTax.percent,
-      defaultTaxLabel: defaultTax.label,
-    };
+    taxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
   }
 
   const rules = buildOfficialSalesMarginRulesResult(rulesOrders, {

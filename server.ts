@@ -156,6 +156,7 @@ import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRo
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
+import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
 import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
@@ -11525,6 +11526,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     },
     { initAnalysisCache }
   );
+
+  registerSettingsSalesMarginNomusRoutes(app, {
+    requireAppAuth,
+    requireBootstrapOrAnyPermission,
+  });
 
   registerSettingsNomusSyncRoutes(
     app,

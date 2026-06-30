@@ -29,7 +29,8 @@ describe("salesMarginRulesConsumptionAudit", () => {
   it("aba Resultado usa motor oficial de margem", () => {
     const result = read("src/lib/salesOrderResultEngine.server.ts");
     assert.match(result, /buildOfficialSalesMarginRulesResult/);
-    assert.match(result, /buildOfficialSalesOrderResultMarginPayload/);
+    assert.match(result, /resolveOfficialSalesMarginTaxContext/);
+    assert.match(result, /loadSalesMarginNomusConfig/);
     assert.doesNotMatch(result, /computeSalesOrderResultItem\(/);
   });
 
