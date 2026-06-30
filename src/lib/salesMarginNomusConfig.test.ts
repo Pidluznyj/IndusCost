@@ -21,7 +21,7 @@ describe("salesMarginNomusConfig", () => {
     assert.equal(config.defaultTaxRuleId, "abc-123");
     assert.equal(config.taxMode, "none");
     assert.equal(config.allowLiveCostFallback, false);
-    assert.equal(config.useFrozenUnitCostFirst, true);
+    assert.equal(config.useFrozenUnitCostFirst, false);
   });
 
   it("serializa e reparseia config", () => {
@@ -33,11 +33,11 @@ describe("salesMarginNomusConfig", () => {
     assert.equal(parsed.defaultTaxRuleId, "rule-1");
   });
 
-  it("cost policy reflete flags da config", () => {
+  it("cost policy ignora useFrozenUnitCostFirst legado", () => {
     const policy = salesMarginNomusConfigToCostPolicy({
       ...DEFAULT_SALES_MARGIN_NOMUS_CONFIG,
       allowLiveCostFallback: false,
-      useFrozenUnitCostFirst: false,
+      useFrozenUnitCostFirst: true,
     });
     assert.equal(policy.allowLiveCostFallback, false);
     assert.equal(policy.useFrozenUnitCostFirst, false);
@@ -109,15 +109,15 @@ describe("salesMarginNomus cost policy resolver", () => {
     assert.match(result.notes.join(" "), /desabilitado/i);
   });
 
-  it("usa snapshot congelado quando useFrozenUnitCostFirst", () => {
+  it("ignora storedUnitCost comercial mesmo com flag legada useFrozenUnitCostFirst", () => {
     const result = resolveSalesOrderItemCost({
       salesOrderItemId: "item-1",
       productId: "prod-1",
       storedUnitCost: 12.5,
-      analysis: { ok: true, finalUnitCost: 99 },
+      analysis: { summary: { totalIndustrialCost: 99 } },
       costPolicy: { useFrozenUnitCostFirst: true, allowLiveCostFallback: true },
     });
-    assert.equal(result.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
-    assert.equal(result.unitCost, 12.5);
+    assert.equal(result.costSource, "LIVE_PRODUCT_COST");
+    assert.equal(result.unitCost, 99);
   });
 });

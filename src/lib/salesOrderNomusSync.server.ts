@@ -4,10 +4,6 @@
  */
 import {
   buildNomusSyncLineMatchKey,
-  computeNomusSyncLineTotalCost,
-  formatNomusSyncUnitCostDecimal,
-  parseNomusSyncStoredUnitCost,
-  type UnitCostSnapshotResult,
 } from "./salesOrderNomusSyncCost.server.js";
 
 export const NOMUS_SALES_ORDER_SOURCE = "NOMUS";
@@ -241,24 +237,13 @@ export function mergeNomusSyncHeaderPreservingHistoricalCosts<T extends Record<s
   };
 }
 
-function computeLineEconomics(
-  quantity: number,
-  totalNetValue: number,
-  unitCost: number | null
-): { totalCost: number; marginValue: number; marginPerc: number } {
-  const resolvedUnitCost = unitCost != null && unitCost > 0 ? unitCost : null;
-  if (resolvedUnitCost != null) {
-    const totalCost = computeNomusSyncLineTotalCost(quantity, resolvedUnitCost);
-    const marginValue = totalNetValue - totalCost;
-    const marginPerc = totalNetValue > 0 ? (marginValue / totalNetValue) * 100 : 0;
-    return { totalCost, marginValue, marginPerc };
-  }
+function formatCommercialUnitCostDecimal(unitPrice: number): string {
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) return "0.000000";
+  return unitPrice.toFixed(6);
+}
 
-  return {
-    totalCost: 0,
-    marginValue: totalNetValue,
-    marginPerc: totalNetValue > 0 ? 100 : 0,
-  };
+function commercialLineEconomics(): { totalCost: number; marginValue: number; marginPerc: number } {
+  return { totalCost: 0, marginValue: 0, marginPerc: 0 };
 }
 
 function appendStaleNote(notes: string | null): string {
@@ -305,7 +290,6 @@ export function buildNomusSyncItemWritePlan(input: {
   salesOrderId: string;
   plannedLines: NomusSyncPlannedLine[];
   existingItems: NomusSyncExistingItem[];
-  resolveUnitCost: (line: NomusSyncPlannedLine) => UnitCostSnapshotResult;
 }): {
   upserts: NomusSyncItemWriteRow[];
   creates: NomusSyncItemWriteRow[];
@@ -337,9 +321,7 @@ export function buildNomusSyncItemWritePlan(input: {
       matched = takeExistingItem(pool, altKey);
     }
 
-    const snapshot = input.resolveUnitCost(line);
-    const unitCost = snapshot.unitCost;
-    const economics = computeLineEconomics(line.quantity, line.totalNetValue, unitCost);
+    const economics = commercialLineEconomics();
 
     const row: NomusSyncItemWriteRow = {
       id: matched?.id,
@@ -351,7 +333,7 @@ export function buildNomusSyncItemWritePlan(input: {
       productNameSnapshot: line.productNameSnapshot,
       quantity: decimalString(line.quantity),
       unit: line.unit,
-      unitCost: formatNomusSyncUnitCostDecimal(unitCost),
+      unitCost: formatCommercialUnitCostDecimal(line.negotiatedPrice),
       negotiatedPrice: decimalString(line.negotiatedPrice),
       totalNetValue: decimalString(line.totalNetValue),
       totalCost: decimalString(economics.totalCost),
@@ -368,7 +350,7 @@ export function buildNomusSyncItemWritePlan(input: {
   for (const leftovers of pool.values()) {
     for (const item of leftovers) {
       if (item.externalProductId == null) continue;
-      const unitCost = parseNomusSyncStoredUnitCost(item.unitCost);
+      const unitCost = 0;
       staleUpdates.push({
         id: item.id,
         salesOrderId: input.salesOrderId,
@@ -379,7 +361,7 @@ export function buildNomusSyncItemWritePlan(input: {
         productNameSnapshot: item.productNameSnapshot,
         quantity: decimalString(0),
         unit: item.unit,
-        unitCost: formatNomusSyncUnitCostDecimal(unitCost),
+        unitCost: formatCommercialUnitCostDecimal(unitCost),
         negotiatedPrice: decimalString(0),
         totalNetValue: decimalString(0),
         totalCost: decimalString(0),

@@ -117,15 +117,17 @@ export async function buildSalesMarginNomusPreview(
     costPolicy: salesMarginNomusConfigToCostPolicy(config),
   });
 
-  let itemsWithFrozenSnapshot = 0;
+  let itemsWithProductionCost = 0;
   let itemsUsingLiveFallback = 0;
   let itemsWithoutCost = 0;
   for (const result of marginContext.byOrderId.values()) {
     for (const item of result.itemResults) {
       if (item.status === "SEM_CUSTO") itemsWithoutCost += 1;
-      if (item.costSource === "SALES_ORDER_ITEM_SNAPSHOT") itemsWithFrozenSnapshot += 1;
-      else if (item.costSource && LIVE_FALLBACK_SOURCES.has(item.costSource)) {
+      if (item.costSource && LIVE_FALLBACK_SOURCES.has(item.costSource)) {
         itemsUsingLiveFallback += 1;
+        itemsWithProductionCost += 1;
+      } else if (item.costSource === "HISTORICAL_SNAPSHOT") {
+        itemsWithProductionCost += 1;
       }
     }
   }
@@ -194,7 +196,7 @@ export async function buildSalesMarginNomusPreview(
     rulesEngineVersion: SALES_MARGIN_RULES_ENGINE_VERSION,
     ordersCount: orders.length,
     itemsTotal: scoped.itemsTotal,
-    itemsWithFrozenSnapshot,
+    itemsWithFrozenSnapshot: itemsWithProductionCost,
     itemsUsingLiveFallback,
     itemsWithoutCost,
     totalSalesRevenueInScope: scoped.totalSalesRevenueInScope,
@@ -212,15 +214,13 @@ export async function buildSalesMarginNomusPreview(
     calculationSources: [
       { label: "Receita", value: "Pedidos Nomus / SalesOrder + SalesOrderItem" },
       {
-        label: "Custo",
-        value: config.useFrozenUnitCostFirst
-          ? "SalesOrderItem.unitCost (congelado) → fallback estimado se permitido"
-          : "Custo estimado vivo (snapshot despriorizado)",
+        label: "Custo de produção",
+        value: "Motor industrial IndusCost (getProductCostAnalysis) — SalesOrderItem.unitCost NÃO é custo",
       },
       {
         label: "Fallback de custo",
         value: config.allowLiveCostFallback
-          ? "getProductCostAnalysis — somente estimado"
+          ? "getProductCostAnalysis / CostCalculationLog"
           : "Desabilitado pela configuração",
       },
       {

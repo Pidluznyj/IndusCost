@@ -63,7 +63,7 @@ export type SalesOrderMarginResolverItem = {
   negotiatedPrice?: unknown;
   /** Receita líquida da linha (`SalesOrderItem.totalNetValue`). */
   totalNetValue?: unknown;
-  /** Custo unitário já persistido na linha (`SalesOrderItem.unitCost`), se houver. */
+  /** Preço unitário comercial persistido (`SalesOrderItem.unitCost`) — espelho Nomus; não usar como custo de produção na margem. */
   unitCost?: unknown | null;
   itemStatus?: string | number | null;
   isCanceled?: boolean;
@@ -99,12 +99,13 @@ function safeFinite(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Custo congelado persistido em SalesOrderItem.unitCost (> 0). */
+/** Valor numérico > 0 em SalesOrderItem.unitCost (campo comercial Nomus — não custo industrial). */
 export function parseSalesOrderItemStoredUnitCost(value: unknown): number | null {
   const n = safeFinite(value);
   return n != null && n > 0 ? n : null;
 }
 
+/** @deprecated SalesOrderItem.unitCost não indica snapshot de custo de produção. */
 export function hasSalesOrderItemUnitCostSnapshot(storedUnitCost: unknown): boolean {
   return parseSalesOrderItemStoredUnitCost(storedUnitCost) != null;
 }
@@ -113,7 +114,6 @@ export function resolveSalesOrderMarginCostMode(
   costSource: SalesOrderCostSource
 ): SalesOrderMarginCostMode {
   switch (costSource) {
-    case "SALES_ORDER_ITEM_SNAPSHOT":
     case "HISTORICAL_SNAPSHOT":
     case "MANUAL_COST":
       return "HISTORICAL_FROZEN";
@@ -386,19 +386,6 @@ export function resolveSalesOrderItemCost(input: {
     return base;
   }
 
-  const storedSnapshot = parseSalesOrderItemStoredUnitCost(input.storedUnitCost);
-  if (costPolicy.useFrozenUnitCostFirst && storedSnapshot != null) {
-    notes.push("Custo unitário congelado de SalesOrderItem.unitCost (snapshot histórico da linha).");
-    return {
-      ...base,
-      unitCost: storedSnapshot,
-      costSource: "SALES_ORDER_ITEM_SNAPSHOT",
-      costConfidence: "HIGH",
-      marginCostMode: "HISTORICAL_FROZEN",
-      notes,
-    };
-  }
-
   if (!costPolicy.allowLiveCostFallback) {
     notes.push("Fallback de custo estimado desabilitado pela configuração de margem Nomus.");
     return base;
@@ -457,16 +444,6 @@ export async function resolveSalesOrderItemCosts(
     ? [
         ...new Set(
           items
-            .filter((item) => {
-              if (!allowLive) return false;
-              if (
-                costPolicy.useFrozenUnitCostFirst &&
-                hasSalesOrderItemUnitCostSnapshot(item.unitCost)
-              ) {
-                return false;
-              }
-              return true;
-            })
             .map((item) => productResolutions.get(item.salesOrderItemId)?.productId)
             .filter((id): id is string => Boolean(id))
         ),
@@ -490,7 +467,7 @@ export async function resolveSalesOrderItemCosts(
       resolveSalesOrderItemCost({
         salesOrderItemId: item.salesOrderItemId,
         productId,
-        storedUnitCost: item.unitCost,
+        storedUnitCost: null,
         costLog: payload.costLog ?? null,
         analysis: payload.analysis,
         costPolicy,

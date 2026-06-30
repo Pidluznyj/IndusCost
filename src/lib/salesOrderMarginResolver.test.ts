@@ -111,16 +111,16 @@ describe("salesOrderMarginResolver — custo", () => {
     assert.equal(cost.marginCostMode, "MISSING");
   });
 
-  it("6b. unitCost > 0 da linha tem precedência sobre análise viva", () => {
+  it("6b. SalesOrderItem.unitCost comercial não substitui custo de produção", () => {
     const cost = resolveSalesOrderItemCost({
       salesOrderItemId: "item-1",
       productId: "prod-a",
       storedUnitCost: 77,
       analysis: { summary: { totalIndustrialCost: 999 } },
     });
-    assert.equal(cost.unitCost, 77);
-    assert.equal(cost.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
-    assert.equal(cost.marginCostMode, "HISTORICAL_FROZEN");
+    assert.equal(cost.unitCost, 999);
+    assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
+    assert.equal(cost.marginCostMode, "LIVE_ESTIMATE");
   });
 
   it("6c. unitCost = 0 usa fallback vivo", () => {
@@ -176,7 +176,7 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
     assert.equal(costs.get("i3")?.unitCost, 20);
   });
 
-  it("8b. linha com unitCost congelado não dispara resolver vivo", async () => {
+  it("8b. linha com unitCost comercial Nomus ainda resolve custo de produção", async () => {
     const items = [
       item({ salesOrderItemId: "i1", productId: "prod-a", unitCost: 55 }),
       item({ salesOrderItemId: "i2", productId: "prod-a", unitCost: 0 }),
@@ -189,8 +189,8 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
       return { analysis: { summary: { totalIndustrialCost: 999 } } };
     });
     assert.equal(calls, 1);
-    assert.equal(costs.get("i1")?.unitCost, 55);
-    assert.equal(costs.get("i1")?.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
+    assert.equal(costs.get("i1")?.unitCost, 999);
+    assert.equal(costs.get("i1")?.costSource, "LIVE_PRODUCT_COST");
     assert.equal(costs.get("i2")?.unitCost, 999);
     assert.equal(costs.get("i2")?.costSource, "LIVE_PRODUCT_COST");
   });

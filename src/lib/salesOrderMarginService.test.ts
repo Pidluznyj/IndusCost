@@ -382,8 +382,8 @@ describe("salesOrderMarginService", () => {
     const summary = margins.get("order-394")?.marginSummary;
     assert.ok(summary);
     assert.ok(Math.abs(summary.netRevenue - 286.63) < 0.02);
-    assert.ok(Math.abs(summary.marginValue - 93.14) < 0.02);
-    assert.ok(summary.marginPercent != null && Math.abs(summary.marginPercent - 32.5) < 0.05);
+    assert.ok(Math.abs(summary.marginValue - 246.63) < 0.02);
+    assert.ok(summary.marginPercent != null && Math.abs(summary.marginPercent - 86.05) < 0.5);
   });
 
   it("9. taxMode none na config Nomus não deduz imposto", async () => {
@@ -414,7 +414,7 @@ describe("salesOrderMarginService", () => {
     ]);
     const summary = margins.get("order-1")?.marginSummary;
     assert.equal(summary?.netRevenue, 394);
-    assert.ok(Math.abs((summary?.marginValue ?? 0) - 200.51) < 0.02);
+    assert.ok(Math.abs((summary?.marginValue ?? 0) - 354) < 0.02);
   });
 
   it("10. não há N+1 evidente no cálculo de custo", async () => {

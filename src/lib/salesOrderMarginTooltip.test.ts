@@ -47,8 +47,8 @@ function summary(
     taxRuleName: "Imposto médio sobre venda",
     taxRulePercent: 27.25,
     fiscalConfigComplete: true,
-    costSourceSummary: "Custo congelado",
-    hasFrozenCost: true,
+    costSourceSummary: "Custo de produção IndusCost (motor vivo)",
+    hasFrozenCost: false,
     ...partial,
   };
 }
@@ -61,7 +61,8 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Imposto estimado: R\$\s*107,37/);
     assert.match(text, /Imposto médio sobre venda \(27,25%\)/);
     assert.match(text, /Receita líquida gerencial: R\$\s*286,63/);
-    assert.match(text, /Custo: R\$\s*193,49 — Custo congelado/);
+    assert.match(text, /Custo de produção IndusCost: R\$\s*193,49/);
+    assert.match(text, /Fonte do custo: motor de custo \/ getProductCostAnalysis/);
     assert.match(text, /Margem R\$: R\$\s*93,14/);
     assert.match(text, /32,50%/);
     assert.match(text, /Cobertura: FULL/);
@@ -128,10 +129,10 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Custo não resolvido/);
   });
 
-  it("fonte de custo congelado, estimado e misto", () => {
-    assert.equal(
+  it("fonte de custo legado, estimado e misto", () => {
+    assert.match(
       resolveSalesOrderMarginCostSourceSummary([{ costSource: "SALES_ORDER_ITEM_SNAPSHOT" }]),
-      SALES_ORDER_MARGIN_DISPLAY_LABELS.costFrozen
+      /Legado/
     );
     assert.equal(
       resolveSalesOrderMarginCostSourceSummary([{ costSource: "LIVE_PRODUCT_COST" }]),
@@ -139,7 +140,7 @@ describe("salesOrderMarginTooltip", () => {
     );
     assert.equal(
       resolveSalesOrderMarginCostSourceSummary([
-        { costSource: "SALES_ORDER_ITEM_SNAPSHOT" },
+        { costSource: "HISTORICAL_SNAPSHOT" },
         { costSource: "OFFICIAL_FINAL_COST" },
       ]),
       SALES_ORDER_MARGIN_DISPLAY_LABELS.costMixed

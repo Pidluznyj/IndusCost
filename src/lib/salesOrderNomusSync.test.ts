@@ -12,7 +12,6 @@ import {
   normalizeNomusOrderCodeForStorage,
   type NomusSyncExistingSalesOrder,
 } from "./salesOrderNomusSync.server.js";
-import { resolveSalesOrderItemUnitCostSnapshot } from "./salesOrderNomusSyncCost.server.js";
 
 describe("salesOrderNomusSync", () => {
   it("canonicalNomusOrderCodeKey normaliza variantes PD 02339", () => {
@@ -103,8 +102,7 @@ describe("salesOrderNomusSync", () => {
     assert.equal(preview.totalNetValueAfter, 158_000);
   });
 
-  it("buildNomusSyncItemWritePlan preserva unitCost histórico ao mudar valor comercial", () => {
-    const preservationMap = new Map([["100|p1|", 77]]);
+  it("buildNomusSyncItemWritePlan espelha preço comercial Nomus em unitCost", () => {
     const plan = buildNomusSyncItemWritePlan({
       salesOrderId: "so-1",
       plannedLines: [
@@ -131,7 +129,7 @@ describe("salesOrderNomusSync", () => {
           skuSnapshot: "SKU-1",
           productNameSnapshot: "Produto 1",
           unit: "UN",
-          unitCost: "77.000000",
+          unitCost: "30500.000000",
           totalCost: "770.000000",
           marginValue: "274660.000000",
           marginPerc: "99.721773",
@@ -141,22 +139,14 @@ describe("salesOrderNomusSync", () => {
           notes: null,
         },
       ],
-      resolveUnitCost: (line) =>
-        resolveSalesOrderItemUnitCostSnapshot({
-          productId: line.productId,
-          externalProductId: line.externalProductId,
-          proposalItemId: line.proposalItemId,
-          preservationMap,
-          unitCostIndex: new Map(),
-        }),
     });
 
     assert.equal(plan.upserts.length, 1);
     assert.equal(plan.creates.length, 0);
-    assert.equal(plan.upserts[0]?.unitCost, "77.000000");
+    assert.equal(plan.upserts[0]?.unitCost, "50000.000000");
     assert.equal(plan.upserts[0]?.negotiatedPrice, "50000.000000");
     assert.equal(plan.upserts[0]?.totalNetValue, "100000.000000");
-    assert.equal(plan.upserts[0]?.totalCost, "154.000000");
+    assert.equal(plan.upserts[0]?.totalCost, "0.000000");
   });
 
   it("buildNomusSyncItemWritePlan marca linha removida no Nomus sem delete físico", () => {
@@ -182,12 +172,11 @@ describe("salesOrderNomusSync", () => {
           notes: null,
         },
       ],
-      resolveUnitCost: () => ({ unitCost: null, outcome: "unresolved", warning: null }),
     });
 
     assert.equal(plan.staleUpdates.length, 1);
     assert.equal(plan.staleUpdates[0]?.quantity, "0.000000");
-    assert.equal(plan.staleUpdates[0]?.unitCost, "12.000000");
+    assert.equal(plan.staleUpdates[0]?.unitCost, "0.000000");
     assert.match(plan.staleUpdates[0]?.notes ?? "", /removida ou substituída no Nomus/);
   });
 

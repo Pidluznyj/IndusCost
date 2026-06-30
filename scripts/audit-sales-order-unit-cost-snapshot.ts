@@ -1,14 +1,8 @@
 #!/usr/bin/env npx tsx
 /**
- * Auditoria read-only da cobertura de SalesOrderItem.unitCost (custo congelado).
+ * Auditoria read-only do campo SalesOrderItem.unitCost (preço unitário comercial Nomus).
  *
- * Uso:
- *   npx tsx scripts/audit-sales-order-unit-cost-snapshot.ts --year=2026 --month=6 --asOfDate=2026-06-29
- *   npx tsx scripts/audit-sales-order-unit-cost-snapshot.ts --year=2026 --limit=20
- *   npm run audit:sales-order-unit-cost-snapshot
- *
- * Não altera dados. Foco em cobertura de unitCost — sem cálculo de margem.
- */
+ * Nota: unitCost NÃO é custo de produção. Para margem, use motor IndusCost / audit-sales-order-cost-semantics.ts.
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { parseNomusSyncStoredUnitCost } from "../src/lib/salesOrderNomusSyncCost.server.ts";

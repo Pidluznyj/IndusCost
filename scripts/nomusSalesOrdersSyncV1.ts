@@ -3,17 +3,6 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
 import {
-  buildNomusSyncOfficialUnitCostIndex,
-  buildPreservationMapFromExistingItems,
-  createNomusSyncUnitCostApplyStats,
-  mergeNomusSyncUnitCostSummary,
-  recordUnitCostSnapshotApplyStats,
-  resolveSalesOrderItemUnitCostSnapshot,
-  type NomusSyncLineUnitCostResult,
-  type NomusSyncUnitCostApplyStats,
-  type NomusSyncUnitCostIndexBuildResult,
-} from "../src/lib/salesOrderNomusSyncCost.server.ts";
-import {
   buildNomusSyncItemWritePlan,
   buildNomusSyncUpdatePreview,
   extractNomusLineExternalId,
@@ -974,7 +963,6 @@ async function applyNomusSyncItemWritePlan(
 
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
-  unitCostIndex: Map<string, NomusSyncLineUnitCostResult>,
   existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>
 ): Promise<{
   created: number;
@@ -982,17 +970,12 @@ async function runApply(
   itemsCreated: number;
   itemsUpdated: number;
   itemsStale: number;
-  missingCostLines: number;
-  unitCostStats: NomusSyncUnitCostApplyStats;
 }> {
   let created = 0;
   let updated = 0;
   let itemsCreated = 0;
   let itemsUpdated = 0;
   let itemsStale = 0;
-  let missingCostLines = 0;
-  const unitCostStats = createNomusSyncUnitCostApplyStats();
-  const resolvedProductIdsSeen = new Set<string>();
 
   for (const plan of eligible) {
     await prisma.$transaction(async (tx) => {
@@ -1063,8 +1046,21 @@ async function runApply(
         nomusRawResponse: jsonInput(pedido),
       };
 
+      const plannedLines = plan.lines.map((line) => ({
+        externalLineId: line.externalLineId,
+        productId: line.productId,
+        externalProductId: line.externalProductId,
+        proposalItemId: line.proposalItemId,
+        skuSnapshot: line.skuSnapshot,
+        productNameSnapshot: line.productNameSnapshot,
+        unit: line.unit,
+        quantity: line.quantity,
+        negotiatedPrice: line.negotiatedPrice,
+        totalNetValue: line.totalNetValue,
+        notes: line.notes,
+      }));
+
       let salesOrderId: string;
-      let preservationMap = new Map<string, number>();
       let existingForHeader: NomusSyncExistingSalesOrder | null = existingMatch;
 
       if (existingMatch) {
@@ -1105,7 +1101,6 @@ async function runApply(
             notes: true,
           },
         });
-        preservationMap = buildPreservationMapFromExistingItems(existingItems);
 
         const headerData = mergeNomusSyncHeaderPreservingHistoricalCosts(
           nomusHeader,
@@ -1123,55 +1118,14 @@ async function runApply(
 
         const itemPlan = buildNomusSyncItemWritePlan({
           salesOrderId,
-          plannedLines: plan.lines.map((line) => ({
-            externalLineId: line.externalLineId,
-            productId: line.productId,
-            externalProductId: line.externalProductId,
-            proposalItemId: line.proposalItemId,
-            skuSnapshot: line.skuSnapshot,
-            productNameSnapshot: line.productNameSnapshot,
-            unit: line.unit,
-            quantity: line.quantity,
-            negotiatedPrice: line.negotiatedPrice,
-            totalNetValue: line.totalNetValue,
-            notes: line.notes,
-          })),
+          plannedLines,
           existingItems,
-          resolveUnitCost: (line) => {
-            const snapshot = resolveSalesOrderItemUnitCostSnapshot({
-              productId: line.productId,
-              externalProductId: line.externalProductId,
-              proposalItemId: line.proposalItemId,
-              preservationMap,
-              unitCostIndex,
-            });
-            recordUnitCostSnapshotApplyStats(
-              unitCostStats,
-              snapshot,
-              {
-                orderCode: plan.codigoPedido,
-                productId: line.productId,
-                sku: line.skuSnapshot,
-              },
-              resolvedProductIdsSeen
-            );
-            if (snapshot.unitCost == null || snapshot.unitCost <= 0) {
-              missingCostLines += 1;
-              if (snapshot.warning) {
-                console.warn(
-                  `[nomus-sales-orders-v1][unit-cost-missing] pedido=${plan.codigoPedido} produto=${line.productId} sku=${line.skuSnapshot}: ${snapshot.warning}`
-                );
-              }
-            }
-            return snapshot;
-          },
         });
 
-        const touched = await applyNomusSyncItemWritePlan(tx, itemPlan);
+        await applyNomusSyncItemWritePlan(tx, itemPlan);
         itemsUpdated += itemPlan.upserts.length + itemPlan.staleUpdates.length;
         itemsCreated += itemPlan.creates.length;
         itemsStale += itemPlan.staleUpdates.length;
-        void touched;
       } else {
         const createdOrder = await tx.salesOrder.create({
           data: nomusHeader,
@@ -1183,43 +1137,8 @@ async function runApply(
         if (plan.lines.length > 0) {
           const itemPlan = buildNomusSyncItemWritePlan({
             salesOrderId,
-            plannedLines: plan.lines.map((line) => ({
-              externalLineId: line.externalLineId,
-              productId: line.productId,
-              externalProductId: line.externalProductId,
-              proposalItemId: line.proposalItemId,
-              skuSnapshot: line.skuSnapshot,
-              productNameSnapshot: line.productNameSnapshot,
-              unit: line.unit,
-              quantity: line.quantity,
-              negotiatedPrice: line.negotiatedPrice,
-              totalNetValue: line.totalNetValue,
-              notes: line.notes,
-            })),
+            plannedLines,
             existingItems: [],
-            resolveUnitCost: (line) => {
-              const snapshot = resolveSalesOrderItemUnitCostSnapshot({
-                productId: line.productId,
-                externalProductId: line.externalProductId,
-                proposalItemId: line.proposalItemId,
-                preservationMap,
-                unitCostIndex,
-              });
-              recordUnitCostSnapshotApplyStats(
-                unitCostStats,
-                snapshot,
-                {
-                  orderCode: plan.codigoPedido,
-                  productId: line.productId,
-                  sku: line.skuSnapshot,
-                },
-                resolvedProductIdsSeen
-              );
-              if (snapshot.unitCost == null || snapshot.unitCost <= 0) {
-                missingCostLines += 1;
-              }
-              return snapshot;
-            },
           });
           await applyNomusSyncItemWritePlan(tx, itemPlan);
           itemsCreated += itemPlan.creates.length;
@@ -1251,7 +1170,7 @@ async function runApply(
     });
   }
 
-  return { created, updated, itemsCreated, itemsUpdated, itemsStale, missingCostLines, unitCostStats };
+  return { created, updated, itemsCreated, itemsUpdated, itemsStale };
 }
 
 async function main(): Promise<void> {
@@ -1442,38 +1361,9 @@ async function main(): Promise<void> {
   };
 
   timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
-  const syncCostStartedAt = Date.now();
-  let indexBuild: NomusSyncUnitCostIndexBuildResult = {
-    index: new Map(),
-    resolverStats: { engineCalls: 0, cacheHits: 0 },
-    uniqueProducts: 0,
-    productsResolved: 0,
-    productsUnresolved: 0,
-  };
   const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
   const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
-  if (isApply && eligible.length > 0) {
-    const productIds = eligible.flatMap((plan) => plan.lines.map((line) => line.productId));
-    timeLog(`INICIO buildNomusSyncOfficialUnitCostIndex products=${productIds.length}`);
-    indexBuild = await buildNomusSyncOfficialUnitCostIndex(prisma, productIds);
-    timeLog(
-      `FIM buildNomusSyncOfficialUnitCostIndex unique=${indexBuild.uniqueProducts} resolved=${indexBuild.productsResolved} engineCalls=${indexBuild.resolverStats.engineCalls} cacheHits=${indexBuild.resolverStats.cacheHits}`
-    );
-  }
-  const applied = isApply ? await runApply(eligible, indexBuild.index, existingIndexes) : null;
-  const unitCostSummary =
-    isApply && applied
-      ? mergeNomusSyncUnitCostSummary({
-          applyStats: applied.unitCostStats,
-          indexBuild,
-          durationMs: Date.now() - syncCostStartedAt,
-        })
-      : null;
-  if (unitCostSummary) {
-    console.log(
-      `[nomus-sales-orders-v1][unit-cost-summary] ${JSON.stringify(unitCostSummary)}`
-    );
-  }
+  const applied = isApply ? await runApply(eligible, existingIndexes) : null;
   timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 
   console.log(
@@ -1482,7 +1372,8 @@ async function main(): Promise<void> {
         mode: isApply ? "apply" : "dry-run",
         summary: result,
         applied,
-        unitCostSummary,
+        commercialNote:
+          "SalesOrderItem.unitCost recebe preço unitário comercial Nomus — custo de produção é calculado apenas pelo motor de margem IndusCost.",
       },
       null,
       2

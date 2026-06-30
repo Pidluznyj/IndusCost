@@ -18,7 +18,7 @@ export type SalesMarginNomusConfig = {
 export const DEFAULT_SALES_MARGIN_NOMUS_CONFIG: SalesMarginNomusConfig = {
   defaultTaxRuleId: null,
   taxMode: "deductFromGross",
-  useFrozenUnitCostFirst: true,
+  useFrozenUnitCostFirst: false,
   allowLiveCostFallback: true,
   showPartialCoverageWarning: true,
 };
@@ -133,7 +133,7 @@ export function salesMarginNomusConfigToCostPolicy(
   config: SalesMarginNomusConfig
 ): SalesOrderMarginCostPolicy {
   return {
-    useFrozenUnitCostFirst: config.useFrozenUnitCostFirst,
+    useFrozenUnitCostFirst: false,
     allowLiveCostFallback: config.allowLiveCostFallback,
   };
 }
@@ -161,7 +161,7 @@ export function parseSalesMarginNomusConfigJson(raw: unknown): SalesMarginNomusC
   return {
     defaultTaxRuleId: taxRuleId,
     taxMode: parseTaxMode(obj.taxMode),
-    useFrozenUnitCostFirst: parseBoolean(obj.useFrozenUnitCostFirst, true),
+    useFrozenUnitCostFirst: false,
     allowLiveCostFallback: parseBoolean(obj.allowLiveCostFallback, true),
     showPartialCoverageWarning: parseBoolean(obj.showPartialCoverageWarning, true),
   };
@@ -171,7 +171,7 @@ export function serializeSalesMarginNomusConfig(config: SalesMarginNomusConfig):
   return JSON.stringify({
     defaultTaxRuleId: config.defaultTaxRuleId,
     taxMode: config.taxMode,
-    useFrozenUnitCostFirst: config.useFrozenUnitCostFirst,
+    useFrozenUnitCostFirst: false,
     allowLiveCostFallback: config.allowLiveCostFallback,
     showPartialCoverageWarning: config.showPartialCoverageWarning,
   });

@@ -181,10 +181,7 @@ function deriveCostSourceSummaryFromItems(
   SalesOrderMarginSummaryPayload,
   "costSourceSummary" | "hasFrozenCost" | "hasEstimatedCost" | "hasMixedCost"
 > {
-  const frozenSources = new Set<SalesOrderCostSource>([
-    "SALES_ORDER_ITEM_SNAPSHOT",
-    "HISTORICAL_SNAPSHOT",
-  ]);
+  const frozenSources = new Set<SalesOrderCostSource>(["HISTORICAL_SNAPSHOT"]);
   const estimatedSources = new Set<SalesOrderCostSource>([
     "LIVE_PRODUCT_COST",
     "RECALCULATED_CURRENT_COST",
@@ -204,7 +201,7 @@ function deriveCostSourceSummaryFromItems(
 
   let costSourceSummary = "Custo oficial resolvido";
   if (hasFrozenCost && hasEstimatedCost) costSourceSummary = "Custo misto";
-  else if (hasFrozenCost) costSourceSummary = "Custo congelado";
+  else if (hasFrozenCost) costSourceSummary = "Custo histórico congelado";
   else if (hasEstimatedCost) costSourceSummary = "Custo estimado atual";
 
   return {

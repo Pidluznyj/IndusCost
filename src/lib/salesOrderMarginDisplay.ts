@@ -46,15 +46,15 @@ export function formatSalesOrderMarkup(value: unknown): string {
 }
 
 export const SALES_ORDER_COST_SOURCE_LABEL: Record<SalesOrderCostSource, string> = {
-  SALES_ORDER_ITEM_SNAPSHOT: "Custo congelado da linha do pedido",
-  HISTORICAL_SNAPSHOT: "Snapshot histórico de custo",
-  LIVE_PRODUCT_COST: "Custo atual estimado (motor vivo)",
-  RECALCULATED_CURRENT_COST: "Custo atual parcial recalculado",
+  SALES_ORDER_ITEM_SNAPSHOT: "Legado — não usar como custo de produção",
+  HISTORICAL_SNAPSHOT: "Snapshot histórico do motor de custo",
+  LIVE_PRODUCT_COST: "Custo de produção IndusCost (motor vivo)",
+  RECALCULATED_CURRENT_COST: "Custo de produção parcial recalculado",
   OFFICIAL_FINAL_COST: "Custo oficial da engenharia",
   CURRENT_ENGINEERING_COST: "Custo parcial da engenharia",
   CURRENT_COST: "Custo atual do cadastro",
   MANUAL_COST: "Custo manual",
-  MISSING_COST: "Custo indisponível",
+  MISSING_COST: "Custo de produção não resolvido",
 };
 
 export function formatSalesOrderCostSourceLabel(
@@ -74,8 +74,8 @@ export function resolveSalesOrderMarginSupportText(
       .filter((s): s is SalesOrderCostSource => Boolean(s))
   );
 
-  if (sources.has("SALES_ORDER_ITEM_SNAPSHOT") || sources.has("HISTORICAL_SNAPSHOT")) {
-    return "Margem calculada com base em custo congelado/histórico do item ou do motor.";
+  if (sources.has("HISTORICAL_SNAPSHOT")) {
+    return "Margem calculada com snapshot histórico do motor de custo IndusCost.";
   }
   if (
     sources.has("RECALCULATED_CURRENT_COST") ||
@@ -194,13 +194,14 @@ export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
   grossSales: "Valor vendido",
   taxEstimated: "Imposto estimado",
   netManagerial: "Receita líquida gerencial",
-  cost: "Custo",
+  cost: "Custo de produção IndusCost",
+  costSource: "Fonte do custo",
   marginValue: "Margem R$",
   marginPercent: "Margem %",
   coverage: "Cobertura",
   itemsWithCost: "Itens com custo",
   itemsWithoutCost: "Itens sem custo",
-  costFrozen: "Custo congelado",
+  costFrozen: "Custo histórico congelado",
   costEstimated: "Custo estimado atual",
   costMixed: "Custo misto",
   managerialTitle: "Margem gerencial do pedido",
@@ -242,10 +243,7 @@ export function resolveSalesOrderMarginCostSourceSummary(
   if (summary?.hasEstimatedCost) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costEstimated;
   if (summary?.hasMissingCost) return "Custo indisponível";
 
-  const frozenSources = new Set<SalesOrderCostSource>([
-    "SALES_ORDER_ITEM_SNAPSHOT",
-    "HISTORICAL_SNAPSHOT",
-  ]);
+  const frozenSources = new Set<SalesOrderCostSource>(["HISTORICAL_SNAPSHOT"]);
   const estimatedSources = new Set<SalesOrderCostSource>([
     "LIVE_PRODUCT_COST",
     "RECALCULATED_CURRENT_COST",
@@ -258,13 +256,16 @@ export function resolveSalesOrderMarginCostSourceSummary(
   let hasFrozen = false;
   let hasEstimated = false;
   let hasMissing = false;
+  let hasLegacyNomusField = false;
   for (const row of itemMargins ?? []) {
     const source = row?.costSource;
     if (!source) continue;
-    if (source === "MISSING_COST") hasMissing = true;
+    if (source === "SALES_ORDER_ITEM_SNAPSHOT") hasLegacyNomusField = true;
+    else if (source === "MISSING_COST") hasMissing = true;
     else if (frozenSources.has(source)) hasFrozen = true;
     else if (estimatedSources.has(source)) hasEstimated = true;
   }
+  if (hasLegacyNomusField) return SALES_ORDER_COST_SOURCE_LABEL.SALES_ORDER_ITEM_SNAPSHOT;
   if (hasMissing && !hasFrozen && !hasEstimated) return "Custo indisponível";
   if (hasFrozen && hasEstimated) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costMixed;
   if (hasFrozen) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costFrozen;
@@ -344,7 +345,10 @@ export function buildOfficialSalesOrderMarginTooltipText(
     lines.push("Imposto: não deduzido neste modo");
   }
 
-  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`);
+  lines.push(
+    `${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`
+  );
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: motor de custo / getProductCostAnalysis`);
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
 
   const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
@@ -504,7 +508,7 @@ export function aggregateSalesOrderMarginSummaries(
   const hasMixedCost = hasFrozenCost && hasEstimatedCost;
   let costSourceSummary = "Custo oficial resolvido";
   if (hasMixedCost) costSourceSummary = "Custo misto";
-  else if (hasFrozenCost) costSourceSummary = "Custo congelado";
+  else if (hasFrozenCost) costSourceSummary = "Custo histórico congelado";
   else if (hasEstimatedCost) costSourceSummary = "Custo estimado atual";
 
   return {

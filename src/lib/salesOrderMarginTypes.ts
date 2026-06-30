@@ -31,12 +31,13 @@ export type SalesOrderMarginCoveragePayload = {
 
 /** Política de resolução de custo na margem — configurável via Parâmetros Globais Nomus. */
 export type SalesOrderMarginCostPolicy = {
+  /** @deprecated Ignorado — SalesOrderItem.unitCost é preço comercial Nomus, não custo industrial. */
   useFrozenUnitCostFirst: boolean;
   allowLiveCostFallback: boolean;
 };
 
 export const DEFAULT_SALES_ORDER_MARGIN_COST_POLICY: SalesOrderMarginCostPolicy = {
-  useFrozenUnitCostFirst: true,
+  useFrozenUnitCostFirst: false,
   allowLiveCostFallback: true,
 };
 

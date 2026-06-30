@@ -301,20 +301,16 @@ export function SalesMarginNomusConfigPanel() {
             <input
               type="checkbox"
               disabled={!canEdit}
-              checked={form.useFrozenUnitCostFirst}
-              onChange={(e) => setForm({ ...form, useFrozenUnitCostFirst: e.target.checked })}
-            />
-            Priorizar SalesOrderItem.unitCost (custo congelado)
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              disabled={!canEdit}
               checked={form.allowLiveCostFallback}
               onChange={(e) => setForm({ ...form, allowLiveCostFallback: e.target.checked })}
             />
-            Permitir fallback de custo estimado (getProductCostAnalysis)
+            Permitir fallback de custo de produção via motor IndusCost (getProductCostAnalysis)
           </label>
+          <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-3">
+            O custo de produção vem exclusivamente do motor de custo industrial IndusCost.
+            <strong> SalesOrderItem.unitCost</strong> espelha preço unitário comercial Nomus — não entra na margem como custo.
+            Itens sem custo de produção resolvido ficam como SEM_CUSTO e reduzem a cobertura.
+          </p>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -449,8 +445,8 @@ export function SalesMarginNomusConfigPanel() {
               )}
             </p>
             <p className="text-xs text-muted-foreground">
-              {preview.ordersCount} pedidos · {preview.itemsTotal} itens · {preview.itemsWithFrozenSnapshot} com
-              snapshot · {preview.itemsUsingLiveFallback} fallback · {preview.itemsWithoutCost} sem custo
+              {preview.ordersCount} pedidos · {preview.itemsTotal} itens · {preview.itemsUsingLiveFallback}{" "}
+              com custo IndusCost · {preview.itemsWithoutCost} sem custo de produção
             </p>
             <div>
               <h5 className="text-xs font-bold uppercase text-muted-foreground mb-2">Fontes do cálculo</h5>

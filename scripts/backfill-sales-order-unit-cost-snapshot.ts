@@ -2,16 +2,11 @@
 /**
  * Backfill controlado de SalesOrderItem.unitCost em pedidos legados sem custo congelado.
  *
- * Preview (padrão — não grava):
- *   npx tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --year=2026 --month=6 --mode=preview --limit=20
- *   npm run backfill:sales-order-unit-cost-snapshot:preview
+ * @deprecated BLOQUEADO — SalesOrderItem.unitCost espelha preço comercial Nomus, não custo de produção.
+ * Use apenas preview/auditoria. Apply foi desabilitado permanentemente.
  *
- * Apply (gravação explícita):
- *   npx tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --year=2026 --month=6 --mode=apply
- *   npm run backfill:sales-order-unit-cost-snapshot:apply
- *
- * Aviso: backfill usa custo resolvido no momento da execução; para histórico perfeito
- * seria necessário snapshot/log da época.
+ * Preview (read-only):
+ *   npx tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --year=2026 --month=6 --mode=preview
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
@@ -368,13 +363,22 @@ function printHumanSummary(args: CliArgs, period: ReturnType<typeof buildPeriodF
   console.log(JSON.stringify(summary, null, 2));
 
   if (summary.mode === "preview") {
-    console.log("\nNenhum dado alterado (preview). Use --mode=apply para gravar.");
+    console.log("\nNenhum dado alterado (preview). Apply está permanentemente bloqueado — veja audit-sales-order-cost-semantics.ts.");
   }
 }
 
 async function main(): Promise<void> {
   assertDatabaseUrl();
   const args = parseCliArgs();
+  if (args.mode === "apply") {
+    console.error(
+      "[backfill-sales-order-unit-cost-snapshot] BLOQUEADO: apply desabilitado.\n" +
+        "SalesOrderItem.unitCost espelha preço comercial Nomus — não preencher como custo de produção.\n" +
+        "Use scripts/audit-sales-order-cost-semantics.ts e o motor de margem IndusCost."
+    );
+    process.exitCode = 1;
+    return;
+  }
   const period = buildPeriodFilter(args);
 
   await prisma.$connect();

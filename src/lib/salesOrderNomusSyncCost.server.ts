@@ -1,6 +1,7 @@
 /**
- * Snapshot de custo unitário oficial na importação Nomus de Pedidos de Venda.
- * Usa getProductCostAnalysis (CIU = MP + HH + HM) via resolver compartilhado.
+ * @deprecated Utilitários legados de snapshot em SalesOrderItem.unitCost.
+ * REGRA P0: unitCost Nomus = preço comercial; custo de produção vem de getProductCostAnalysis na margem.
+ * Não usar buildPreservationMap / resolveSalesOrderItemUnitCostSnapshot / backfill apply.
  */
 import type { PrismaClient } from "@prisma/client";
 import {
@@ -270,6 +271,7 @@ export async function buildNomusSyncOfficialUnitCostIndex(
       storedUnitCost: null,
       costLog: costLogs.get(productId) ?? null,
       analysis,
+      costPolicy: { useFrozenUnitCostFirst: false, allowLiveCostFallback: true },
     });
 
     const unavailable =
