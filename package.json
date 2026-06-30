@@ -76,6 +76,8 @@
     "audit:sales-order-fulfillment": "tsx scripts/audit-sales-order-fulfillment.ts",
     "audit:sales-order-margins": "tsx scripts/audit-sales-order-margins.ts",
     "audit:sales-order-unit-cost-snapshot": "tsx scripts/audit-sales-order-unit-cost-snapshot.ts",
+    "audit:nomus-sales-order-sync-drift": "tsx scripts/audit-nomus-sales-order-sync-drift.ts",
+    "audit:nomus-sales-orders-month-reconciliation": "tsx scripts/audit-nomus-sales-orders-month-reconciliation.ts",
     "backfill:sales-order-unit-cost-snapshot:preview": "tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --mode=preview",
     "backfill:sales-order-unit-cost-snapshot:apply": "tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --mode=apply",
     "test:sales-orders-margins": "tsx --test src/lib/salesOrderMarginMath.test.ts src/lib/salesOrderMarginResolver.test.ts src/lib/salesOrderMarginService.test.ts src/lib/salesOrderMarginUi.test.ts src/lib/salesOrderMarginIndicators.test.ts src/lib/salesOrderManagementMargin.test.ts src/lib/salesOrderInternalMarginExport.test.ts",

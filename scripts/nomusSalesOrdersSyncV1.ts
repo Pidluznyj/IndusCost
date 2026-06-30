@@ -5,9 +5,7 @@ import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.t
 import {
   buildNomusSyncOfficialUnitCostIndex,
   buildPreservationMapFromExistingItems,
-  computeNomusSyncLineTotalCost,
   createNomusSyncUnitCostApplyStats,
-  formatNomusSyncUnitCostDecimal,
   mergeNomusSyncUnitCostSummary,
   recordUnitCostSnapshotApplyStats,
   resolveSalesOrderItemUnitCostSnapshot,
@@ -15,10 +13,24 @@ import {
   type NomusSyncUnitCostApplyStats,
   type NomusSyncUnitCostIndexBuildResult,
 } from "../src/lib/salesOrderNomusSyncCost.server.ts";
+import {
+  buildNomusSyncItemWritePlan,
+  buildNomusSyncUpdatePreview,
+  extractNomusLineExternalId,
+  expandNomusOrderCodeLookupVariants,
+  findExistingSalesOrderForNomusSync,
+  indexExistingSalesOrdersByNomusKey,
+  mergeNomusSyncHeaderPreservingHistoricalCosts,
+  normalizeNomusOrderCodeForStorage,
+  NOMUS_SALES_ORDER_SOURCE,
+  type NomusSyncExistingSalesOrder,
+  type NomusSyncItemWriteRow,
+  type NomusSyncUpdatePreview,
+} from "../src/lib/salesOrderNomusSync.server.ts";
 
 const prisma = new PrismaClient();
 
-const SOURCE_SYSTEM = "NOMUS";
+const SOURCE_SYSTEM = NOMUS_SALES_ORDER_SOURCE;
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_MAX_RETRIES = 6;
 const DEFAULT_RETRY_BASE_MS = 700;
@@ -44,6 +56,7 @@ type BlockedSalesOrder = {
 
 type EligibleSalesOrderLine = {
   item: JsonObject;
+  externalLineId: number | null;
   proposalItemId: string | null;
   proposalId: string | null;
   productId: string;
@@ -77,7 +90,10 @@ type DryRunResult = {
   blockedReasons: Record<string, number>;
   nomusItemStatusDistribution: Record<string, number>;
   createsPreview: Array<{ externalSalesOrderId: number; codigoPedido: string; proposalId: string | null }>;
-  updatesPreview: Array<{ externalSalesOrderId: number; codigoPedido: string; id: string }>;
+  updatesPreview: Array<NomusSyncUpdatePreview>;
+  changedOrders: NomusSyncUpdatePreview[];
+  changedHeaderTotals: NomusSyncUpdatePreview[];
+  changedItems: NomusSyncUpdatePreview[];
   blockedPreview: BlockedSalesOrder[];
   criticalSchemaNote: string;
 };
@@ -685,6 +701,7 @@ function analyzeOrder(
 
       resolvedLines.push({
         item,
+        externalLineId: extractNomusLineExternalId(item),
         proposalItemId: candidates[0].id,
         proposalId: candidates[0].proposalId,
         productId: candidates[0].productId,
@@ -721,6 +738,7 @@ function analyzeOrder(
 
       resolvedLines.push({
         item,
+        externalLineId: extractNomusLineExternalId(item),
         proposalItemId: null,
         proposalId: null,
         productId: localProduct.id,
@@ -740,6 +758,7 @@ function analyzeOrder(
     if (localProduct) {
       resolvedLines.push({
         item,
+        externalLineId: extractNomusLineExternalId(item),
         proposalItemId: null,
         proposalId: null,
         productId: localProduct.id,
@@ -790,7 +809,9 @@ function analyzeOrder(
     eligible: {
       pedido,
       externalSalesOrderId,
-      codigoPedido: codigoPedido ?? `NOMUS-ORDER-${externalSalesOrderId}`,
+      codigoPedido: codigoPedido
+        ? normalizeNomusOrderCodeForStorage(codigoPedido)
+        : `NOMUS-ORDER-${externalSalesOrderId}`,
       proposalId: singleProposalId,
       customerId: customerId!,
       externalCustomerId: idPessoaCliente,
@@ -820,65 +841,155 @@ function collectNomusItemStatuses(pedidos: JsonObject[]): Record<string, number>
   return dist;
 }
 
-async function runDry(eligible: EligibleSalesOrderPlan[]): Promise<Pick<DryRunResult, "createsPreview" | "updatesPreview">> {
-  const extIds = eligible.map((e) => e.externalSalesOrderId);
-  const existing =
-    extIds.length === 0
-      ? []
-      : await prisma.salesOrder.findMany({
-          where: {
-            sourceSystem: SOURCE_SYSTEM,
-            externalSalesOrderId: { in: extIds },
-          },
-          select: { id: true, externalSalesOrderId: true, orderCode: true },
-        });
+async function loadExistingSalesOrdersForNomusSync(
+  eligible: EligibleSalesOrderPlan[]
+): Promise<NomusSyncExistingSalesOrder[]> {
+  const extIds = [...new Set(eligible.map((e) => e.externalSalesOrderId))];
+  const codeVariants = [
+    ...new Set(eligible.flatMap((e) => expandNomusOrderCodeLookupVariants(e.codigoPedido))),
+  ];
 
-  const byExt = new Map<number, { id: string; orderCode: string }>();
-  for (const row of existing) {
-    if (row.externalSalesOrderId == null) continue;
-    byExt.set(row.externalSalesOrderId, { id: row.id, orderCode: row.orderCode });
+  if (extIds.length === 0 && codeVariants.length === 0) return [];
+
+  const orClauses: Prisma.SalesOrderWhereInput[] = [];
+  if (extIds.length > 0) {
+    orClauses.push({ externalSalesOrderId: { in: extIds } });
+  }
+  for (const code of codeVariants) {
+    orClauses.push({ orderCode: code });
+    orClauses.push({ externalSalesOrderCode: code });
   }
 
+  const rows = await prisma.salesOrder.findMany({
+    where: { OR: orClauses },
+    select: {
+      id: true,
+      orderCode: true,
+      externalSalesOrderId: true,
+      externalSalesOrderCode: true,
+      sourceSystem: true,
+      totalNetValue: true,
+      totalItems: true,
+      totalCost: true,
+      totalMarginValue: true,
+      totalMarginPerc: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows;
+}
+
+async function runDry(
+  eligible: EligibleSalesOrderPlan[]
+): Promise<
+  Pick<
+    DryRunResult,
+    "createsPreview" | "updatesPreview" | "changedOrders" | "changedHeaderTotals" | "changedItems"
+  >
+> {
+  const existingRows = await loadExistingSalesOrdersForNomusSync(eligible);
+  const indexes = indexExistingSalesOrdersByNomusKey(existingRows);
+
   const createsPreview: DryRunResult["createsPreview"] = [];
-  const updatesPreview: DryRunResult["updatesPreview"] = [];
+  const updatesPreview: NomusSyncUpdatePreview[] = [];
 
   for (const plan of eligible) {
-    const cur = byExt.get(plan.externalSalesOrderId);
-    if (!cur) {
+    const pedido = plan.pedido;
+    const totalNetValue = moneyNumber(pedido.valorTotal);
+    const existing = findExistingSalesOrderForNomusSync(indexes, plan);
+    if (!existing) {
       createsPreview.push({
         externalSalesOrderId: plan.externalSalesOrderId,
         codigoPedido: plan.codigoPedido,
         proposalId: plan.proposalId,
       });
     } else {
-      updatesPreview.push({
-        externalSalesOrderId: plan.externalSalesOrderId,
-        codigoPedido: plan.codigoPedido,
-        id: cur.id,
-      });
+      updatesPreview.push(
+        buildNomusSyncUpdatePreview(existing, {
+          externalSalesOrderId: plan.externalSalesOrderId,
+          codigoPedido: plan.codigoPedido,
+          totalNetValue,
+          lineCount: plan.lines.length,
+        })
+      );
     }
   }
+
+  const changedOrders = updatesPreview.filter((row) => row.changedHeaderTotals || row.changedItems);
+  const changedHeaderTotals = updatesPreview.filter((row) => row.changedHeaderTotals);
+  const changedItems = updatesPreview.filter((row) => row.changedItems);
 
   return {
     createsPreview: createsPreview.slice(0, 50),
     updatesPreview: updatesPreview.slice(0, 50),
+    changedOrders: changedOrders.slice(0, 50),
+    changedHeaderTotals: changedHeaderTotals.slice(0, 50),
+    changedItems: changedItems.slice(0, 50),
   };
+}
+
+function mapItemWriteRowToCreateData(row: NomusSyncItemWriteRow): Prisma.SalesOrderItemCreateManyInput {
+  return {
+    salesOrderId: row.salesOrderId,
+    proposalItemId: row.proposalItemId,
+    productId: row.productId,
+    externalProductId: row.externalProductId,
+    skuSnapshot: row.skuSnapshot,
+    productNameSnapshot: row.productNameSnapshot,
+    quantity: row.quantity,
+    unit: row.unit,
+    unitCost: row.unitCost,
+    negotiatedPrice: row.negotiatedPrice,
+    totalNetValue: row.totalNetValue,
+    totalCost: row.totalCost,
+    marginValue: row.marginValue,
+    marginPerc: row.marginPerc,
+    notes: row.notes,
+  };
+}
+
+async function applyNomusSyncItemWritePlan(
+  tx: Prisma.TransactionClient,
+  plan: ReturnType<typeof buildNomusSyncItemWritePlan>
+): Promise<number> {
+  let touched = 0;
+  for (const row of [...plan.upserts, ...plan.staleUpdates]) {
+    if (!row.id) continue;
+    await tx.salesOrderItem.update({
+      where: { id: row.id },
+      data: mapItemWriteRowToCreateData(row),
+    });
+    touched += 1;
+  }
+  if (plan.creates.length > 0) {
+    await tx.salesOrderItem.createMany({
+      data: plan.creates.map(mapItemWriteRowToCreateData),
+    });
+    touched += plan.creates.length;
+  }
+  return touched;
 }
 
 
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
-  unitCostIndex: Map<string, NomusSyncLineUnitCostResult>
+  unitCostIndex: Map<string, NomusSyncLineUnitCostResult>,
+  existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>
 ): Promise<{
   created: number;
   updated: number;
   itemsCreated: number;
+  itemsUpdated: number;
+  itemsStale: number;
   missingCostLines: number;
   unitCostStats: NomusSyncUnitCostApplyStats;
 }> {
   let created = 0;
   let updated = 0;
   let itemsCreated = 0;
+  let itemsUpdated = 0;
+  let itemsStale = 0;
   let missingCostLines = 0;
   const unitCostStats = createNomusSyncUnitCostApplyStats();
   const resolvedProductIdsSeen = new Set<string>();
@@ -897,15 +1008,7 @@ async function runApply(
       const externalSellerId = plan.externalSellerId ?? toInt(pedido.idPessoaVendedor);
       const externalCompanyId = toInt(pedido.idEmpresa);
 
-      const existing = await tx.salesOrder.findFirst({
-        where: {
-          OR: [
-            { sourceSystem: SOURCE_SYSTEM, externalSalesOrderId: plan.externalSalesOrderId },
-            { orderCode: plan.codigoPedido },
-          ],
-        },
-        select: { id: true },
-      });
+      const existingMatch = findExistingSalesOrderForNomusSync(existingIndexes, plan);
 
       let safeProposalId = plan.proposalId;
 
@@ -915,7 +1018,7 @@ async function runApply(
           select: { id: true, externalSalesOrderId: true, orderCode: true },
         });
 
-        if (salesOrderUsingProposal && (!existing || salesOrderUsingProposal.id !== existing.id)) {
+        if (salesOrderUsingProposal && (!existingMatch || salesOrderUsingProposal.id !== existingMatch.id)) {
           console.warn(
             `[nomus-sales-orders-v1] proposalId ${safeProposalId} já está vinculado ao pedido ${salesOrderUsingProposal.orderCode ?? salesOrderUsingProposal.externalSalesOrderId}; ` +
               `pedido ${plan.codigoPedido} será espelhado sem vínculo direto com proposalId.`,
@@ -924,7 +1027,7 @@ async function runApply(
         }
       }
 
-      const baseData = {
+      const nomusHeader = {
         proposalId: safeProposalId,
         sourceSystem: SOURCE_SYSTEM,
         externalSalesOrderId: plan.externalSalesOrderId,
@@ -936,12 +1039,14 @@ async function runApply(
         externalSellerId,
         companyIssuer: externalCompanyId != null ? String(externalCompanyId) : null,
         externalCompanyId,
-        status: "SENT_TO_NOMUS" as any,
+        status: "SENT_TO_NOMUS" as const,
         issueDate,
         expectedDeliveryDate,
         paymentTerms: asString(pedido.condicaoPagamentoTexto),
         paymentMethod: toInt(pedido.idFormaPagamento) != null ? String(toInt(pedido.idFormaPagamento)) : null,
-        freightCondition: asString(pedido.modalidadeTransporte) ?? (toInt(pedido.modalidadeTransporte) != null ? String(toInt(pedido.modalidadeTransporte)) : null),
+        freightCondition:
+          asString(pedido.modalidadeTransporte) ??
+          (toInt(pedido.modalidadeTransporte) != null ? String(toInt(pedido.modalidadeTransporte)) : null),
         deliveryLocation: null,
         notes: asString(pedido.observacoes),
         internalNotes: asString(pedido.observacoesInternas),
@@ -960,39 +1065,79 @@ async function runApply(
 
       let salesOrderId: string;
       let preservationMap = new Map<string, number>();
+      let existingForHeader: NomusSyncExistingSalesOrder | null = existingMatch;
 
-      if (existing) {
-        const existingItems = await tx.salesOrderItem.findMany({
-          where: { salesOrderId: existing.id },
+      if (existingMatch) {
+        const existingFull = await tx.salesOrder.findUnique({
+          where: { id: existingMatch.id },
           select: {
+            id: true,
+            orderCode: true,
+            externalSalesOrderId: true,
+            externalSalesOrderCode: true,
+            sourceSystem: true,
+            totalNetValue: true,
+            totalItems: true,
+            totalCost: true,
+            totalMarginValue: true,
+            totalMarginPerc: true,
+          },
+        });
+        existingForHeader = existingFull;
+
+        const existingItems = await tx.salesOrderItem.findMany({
+          where: { salesOrderId: existingMatch.id },
+          select: {
+            id: true,
             productId: true,
             externalProductId: true,
             proposalItemId: true,
+            skuSnapshot: true,
+            productNameSnapshot: true,
+            unit: true,
             unitCost: true,
+            totalCost: true,
+            marginValue: true,
+            marginPerc: true,
+            quantity: true,
+            negotiatedPrice: true,
+            totalNetValue: true,
+            notes: true,
           },
         });
         preservationMap = buildPreservationMapFromExistingItems(existingItems);
 
+        const headerData = mergeNomusSyncHeaderPreservingHistoricalCosts(
+          nomusHeader,
+          existingFull ?? existingMatch,
+          true
+        );
+
         const updatedOrder = await tx.salesOrder.update({
-          where: { id: existing.id },
-          data: baseData,
+          where: { id: existingMatch.id },
+          data: headerData,
           select: { id: true },
         });
         salesOrderId = updatedOrder.id;
-        await tx.salesOrderItem.deleteMany({ where: { salesOrderId } });
         updated += 1;
-      } else {
-        const createdOrder = await tx.salesOrder.create({
-          data: baseData,
-          select: { id: true },
-        });
-        salesOrderId = createdOrder.id;
-        created += 1;
-      }
 
-      if (plan.lines.length > 0) {
-        await tx.salesOrderItem.createMany({
-          data: plan.lines.map((line) => {
+        const itemPlan = buildNomusSyncItemWritePlan({
+          salesOrderId,
+          plannedLines: plan.lines.map((line) => ({
+            externalLineId: line.externalLineId,
+            productId: line.productId,
+            externalProductId: line.externalProductId,
+            proposalItemId: line.proposalItemId,
+            skuSnapshot: line.skuSnapshot,
+            productNameSnapshot: line.productNameSnapshot,
+            unit: line.unit,
+            quantity: line.quantity,
+            negotiatedPrice: line.negotiatedPrice,
+            totalNetValue: line.totalNetValue,
+            notes: line.notes,
+          })),
+          existingItems,
+          resolveUnitCost: (line) => {
             const snapshot = resolveSalesOrderItemUnitCostSnapshot({
               productId: line.productId,
               externalProductId: line.externalProductId,
@@ -1000,8 +1145,6 @@ async function runApply(
               preservationMap,
               unitCostIndex,
             });
-            const unitCost = snapshot.unitCost;
-
             recordUnitCostSnapshotApplyStats(
               unitCostStats,
               snapshot,
@@ -1012,8 +1155,7 @@ async function runApply(
               },
               resolvedProductIdsSeen
             );
-
-            if (unitCost == null || unitCost <= 0) {
+            if (snapshot.unitCost == null || snapshot.unitCost <= 0) {
               missingCostLines += 1;
               if (snapshot.warning) {
                 console.warn(
@@ -1021,28 +1163,79 @@ async function runApply(
                 );
               }
             }
+            return snapshot;
+          },
+        });
 
-            const lineTotalCost = computeNomusSyncLineTotalCost(line.quantity, unitCost);
-            return {
-              salesOrderId,
-              proposalItemId: line.proposalItemId,
+        const touched = await applyNomusSyncItemWritePlan(tx, itemPlan);
+        itemsUpdated += itemPlan.upserts.length + itemPlan.staleUpdates.length;
+        itemsCreated += itemPlan.creates.length;
+        itemsStale += itemPlan.staleUpdates.length;
+        void touched;
+      } else {
+        const createdOrder = await tx.salesOrder.create({
+          data: nomusHeader,
+          select: { id: true },
+        });
+        salesOrderId = createdOrder.id;
+        created += 1;
+
+        if (plan.lines.length > 0) {
+          const itemPlan = buildNomusSyncItemWritePlan({
+            salesOrderId,
+            plannedLines: plan.lines.map((line) => ({
+              externalLineId: line.externalLineId,
               productId: line.productId,
               externalProductId: line.externalProductId,
+              proposalItemId: line.proposalItemId,
               skuSnapshot: line.skuSnapshot,
               productNameSnapshot: line.productNameSnapshot,
-              quantity: decimalString(line.quantity),
               unit: line.unit,
-              unitCost: formatNomusSyncUnitCostDecimal(unitCost),
-              negotiatedPrice: decimalString(line.negotiatedPrice),
-              totalNetValue: decimalString(line.totalNetValue),
-              totalCost: decimalString(lineTotalCost),
-              marginValue: decimalString(line.totalNetValue),
-              marginPerc: decimalString(line.totalNetValue > 0 ? 100 : 0),
+              quantity: line.quantity,
+              negotiatedPrice: line.negotiatedPrice,
+              totalNetValue: line.totalNetValue,
               notes: line.notes,
-            };
-          }),
+            })),
+            existingItems: [],
+            resolveUnitCost: (line) => {
+              const snapshot = resolveSalesOrderItemUnitCostSnapshot({
+                productId: line.productId,
+                externalProductId: line.externalProductId,
+                proposalItemId: line.proposalItemId,
+                preservationMap,
+                unitCostIndex,
+              });
+              recordUnitCostSnapshotApplyStats(
+                unitCostStats,
+                snapshot,
+                {
+                  orderCode: plan.codigoPedido,
+                  productId: line.productId,
+                  sku: line.skuSnapshot,
+                },
+                resolvedProductIdsSeen
+              );
+              if (snapshot.unitCost == null || snapshot.unitCost <= 0) {
+                missingCostLines += 1;
+              }
+              return snapshot;
+            },
+          });
+          await applyNomusSyncItemWritePlan(tx, itemPlan);
+          itemsCreated += itemPlan.creates.length;
+        }
+      }
+
+      if (existingForHeader) {
+        existingIndexes.byExternalId.set(plan.externalSalesOrderId, {
+          ...existingForHeader,
+          orderCode: plan.codigoPedido,
+          externalSalesOrderId: plan.externalSalesOrderId,
+          externalSalesOrderCode: plan.codigoPedido,
+          sourceSystem: SOURCE_SYSTEM,
+          totalNetValue: decimalString(totalNetValue),
+          totalItems: plan.lines.length,
         });
-        itemsCreated += plan.lines.length;
       }
 
       await upsertSalesOrderNfeLinksForOrder(
@@ -1058,7 +1251,7 @@ async function runApply(
     });
   }
 
-  return { created, updated, itemsCreated, missingCostLines, unitCostStats };
+  return { created, updated, itemsCreated, itemsUpdated, itemsStale, missingCostLines, unitCostStats };
 }
 
 async function main(): Promise<void> {
@@ -1241,6 +1434,9 @@ async function main(): Promise<void> {
     nomusItemStatusDistribution: itemStatusDistribution,
     createsPreview: preview.createsPreview,
     updatesPreview: preview.updatesPreview,
+    changedOrders: preview.changedOrders,
+    changedHeaderTotals: preview.changedHeaderTotals,
+    changedItems: preview.changedItems,
     blockedPreview: blocked.slice(0, 50),
     criticalSchemaNote,
   };
@@ -1254,6 +1450,8 @@ async function main(): Promise<void> {
     productsResolved: 0,
     productsUnresolved: 0,
   };
+  const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
+  const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
   if (isApply && eligible.length > 0) {
     const productIds = eligible.flatMap((plan) => plan.lines.map((line) => line.productId));
     timeLog(`INICIO buildNomusSyncOfficialUnitCostIndex products=${productIds.length}`);
@@ -1262,7 +1460,7 @@ async function main(): Promise<void> {
       `FIM buildNomusSyncOfficialUnitCostIndex unique=${indexBuild.uniqueProducts} resolved=${indexBuild.productsResolved} engineCalls=${indexBuild.resolverStats.engineCalls} cacheHits=${indexBuild.resolverStats.cacheHits}`
     );
   }
-  const applied = isApply ? await runApply(eligible, indexBuild.index) : null;
+  const applied = isApply ? await runApply(eligible, indexBuild.index, existingIndexes) : null;
   const unitCostSummary =
     isApply && applied
       ? mergeNomusSyncUnitCostSummary({

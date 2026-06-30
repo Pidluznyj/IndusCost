@@ -169,13 +169,15 @@ describe("salesOrderNomusSyncCost", () => {
     assert.equal(stats.costsFromProductIndexCache, 1);
   });
 
-  it("sync Nomus preserva unitCost histórico antes do deleteMany", () => {
+  it("sync Nomus reconcilia itens sem deleteMany cego", () => {
     const sync = read("scripts/nomusSalesOrdersSyncV1.ts");
     assert.match(sync, /buildNomusSyncOfficialUnitCostIndex/);
     assert.match(sync, /buildPreservationMapFromExistingItems/);
     assert.match(sync, /resolveSalesOrderItemUnitCostSnapshot/);
-    assert.match(sync, /unit-cost-summary/);
-    assert.doesNotMatch(sync, /unitCost:\s*decimalString\(0\)/);
+    assert.match(sync, /buildNomusSyncItemWritePlan/);
+    assert.match(sync, /applyNomusSyncItemWritePlan/);
+    assert.match(sync, /changedHeaderTotals/);
+    assert.doesNotMatch(sync, /salesOrderItem\.deleteMany/);
   });
 
   it("resolveBackfillSalesOrderItemUnitCost usa índice oficial", () => {
