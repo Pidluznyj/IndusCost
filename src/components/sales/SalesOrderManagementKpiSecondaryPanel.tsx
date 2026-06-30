@@ -33,6 +33,7 @@ import {
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type {
   SalesOrderManagementCards,
   SalesOrderManagementMarginEconomics,
@@ -253,6 +254,15 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
       {marginEconomics.scopeNote ? (
         <p className="mb-3 text-[10px] text-muted-foreground">{marginEconomics.scopeNote}</p>
       ) : null}
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          Margem gerencial (filtro)
+        </span>
+        <SalesOrderMarginInfoTooltip
+          summary={consolidated}
+          testId="sales-order-management-economic-margin-tooltip"
+        />
+      </div>
       <MetricCardGrid minColumnWidth={200}>
         <MetricCard
           label={resolveSalesOrderMarginMoneyLabel(consolidated)}

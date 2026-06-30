@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import { SalesOrderMarginMetricGrid } from "@/src/components/sales/SalesOrderMarginMetricGrid";
 import type { SalesOrderManagementMarginItemCounts } from "@/src/lib/salesOrderManagementMargin";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
@@ -25,12 +26,20 @@ export function SalesOrderEconomicAnalysisPanel({
   return (
     <div className="space-y-3" data-testid="sales-order-economic-analysis">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            Análise econômica
-          </h3>
-          {scopeNote ? (
-            <p className="mt-1 text-[10px] text-muted-foreground max-w-2xl">{scopeNote}</p>
+        <div className="flex items-start gap-2 min-w-0">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Análise econômica
+            </h3>
+            {scopeNote ? (
+              <p className="mt-1 text-[10px] text-muted-foreground max-w-2xl">{scopeNote}</p>
+            ) : null}
+          </div>
+          {summary ? (
+            <SalesOrderMarginInfoTooltip
+              summary={summary}
+              testId="sales-order-economic-analysis-margin-tooltip"
+            />
           ) : null}
         </div>
         {summary ? (
