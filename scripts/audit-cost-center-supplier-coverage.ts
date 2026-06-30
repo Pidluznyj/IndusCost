@@ -24,6 +24,7 @@ import { buildFinanceApPrismaWhere } from "../src/lib/financeAccountsPayableDash
 import { resolveOpenOnlyFromApStatus } from "../src/lib/financeCostCenterAllocationMetrics.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "../src/lib/financeNomusApReportFreshness.js";
 import { groupUnclassifiedPayablesBySupplier } from "../src/lib/financeUnclassifiedPayablesGrouping.js";
+import { searchOfficialFinancialSuppliersDefault } from "../src/lib/financeSupplierEngine.js";
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -154,6 +155,20 @@ async function main() {
   } else {
     console.log("\nOK: todos os fornecedores de títulos sem classificação aparecem na aba Fornecedores.");
   }
+
+  let searchGaps = 0;
+  for (const row of dashboard.bySupplier.slice(0, 50)) {
+    const term = row.name.trim().slice(0, Math.min(6, row.name.trim().length));
+    if (term.length < 2) continue;
+    const { suppliers } = await searchOfficialFinancialSuppliersDefault({ search: term, limit: 30 });
+    const hit = suppliers.some((s) => s.name.toLowerCase().includes(term.toLowerCase()));
+    if (!hit) {
+      searchGaps += 1;
+      console.warn(`Busca oficial não encontrou: ${row.name} (termo "${term}")`);
+    }
+  }
+  console.log(`\nMotor oficial — amostra aba vs busca: ${searchGaps} divergência(s) em ${Math.min(50, dashboard.bySupplier.length)} fornecedores.`);
+  if (searchGaps > 0) process.exitCode = 1;
 }
 
 main()

@@ -165,7 +165,7 @@ function decimalToNumber(value: Prisma.Decimal | number | null | undefined): num
   return decimalFieldToNumber(value);
 }
 
-function pickDisplayName(group: FinanceSupplierApGroup): string {
+export function pickDisplayName(group: FinanceSupplierApGroup): string {
   const fromRecords = group.records
     .map((r) => (r.personName ?? "").trim())
     .filter(Boolean)

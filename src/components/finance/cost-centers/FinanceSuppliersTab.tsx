@@ -3,6 +3,7 @@ import { Eye, FileText, RefreshCw, Settings2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
+import type { EnsureSupplierFromApIdentityResponse } from "@/src/lib/financeSupplierSearchClient";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
 import type { FinanceSupplierRebuildPreviewPayload } from "@/src/lib/financeSupplierRebuild";
 import type { SupplierCostCenterRuleDto } from "@/src/lib/financeSupplierCostCenterRules";
@@ -70,6 +71,7 @@ export function FinanceSuppliersTab({
   const [error, setError] = useState<string | null>(null);
   const [aliasesSupplier, setAliasesSupplier] = useState<SupplierGridRow | null>(null);
   const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
+  const [creatingCadastroFor, setCreatingCadastroFor] = useState<string | null>(null);
 
   const search = readFinanceGridUrlString(searchParams, "sup_q");
   const ruleFilter = (readFinanceGridUrlString(searchParams, "sup_rule", "all") ||
@@ -204,6 +206,31 @@ export function FinanceSuppliersTab({
     );
   }
 
+  const openCadastroFromApRow = async (row: SupplierGridRow) => {
+    if (row.supplierId) {
+      setCadastroSupplierId(row.supplierId);
+      return;
+    }
+    setCreatingCadastroFor(row.name);
+    try {
+      const result = await fetchJsonOk<EnsureSupplierFromApIdentityResponse>(
+        "/api/finance/suppliers/ensure-from-ap-identity",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ personName: row.name, personDocument: row.document }),
+        }
+      );
+      setCadastroSupplierId(result.supplierId);
+      onSuppliersChanged?.();
+    } catch (e) {
+      setError(buildFinanceTabLoadError("Não foi possível criar cadastro gerencial a partir da origem AP.", e));
+    } finally {
+      setCreatingCadastroFor(null);
+    }
+  };
+
   const filterChips = [
     ...(ruleFilter !== "all"
       ? [
@@ -331,12 +358,16 @@ export function FinanceSuppliersTab({
                         Abrir cadastro
                       </button>
                     ) : (
-                      <span
-                        className="text-xs text-muted-foreground"
-                        title="Reconstrua fornecedores a partir de AP para obter cadastro consolidado"
+                      <button
+                        type="button"
+                        data-testid="finance-suppliers-create-cadastro-button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary disabled:opacity-50"
+                        disabled={!canManageSuppliers || creatingCadastroFor === row.name}
+                        onClick={() => void openCadastroFromApRow(row)}
                       >
-                        Sem cadastro
-                      </span>
+                        <FileText className="h-3 w-3" />
+                        {creatingCadastroFor === row.name ? "Criando…" : "Criar cadastro"}
+                      </button>
                     )}
                     <button
                       type="button"

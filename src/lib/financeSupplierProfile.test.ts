@@ -137,5 +137,6 @@ describe("finance supplier cadastro UI", () => {
     assert.match(drawer, /finance-supplier-apply-cnpj-button/);
     assert.match(drawer, /finance-supplier-delete-button/);
     assert.match(tab, /finance-suppliers-open-cadastro-button/);
+    assert.match(tab, /finance-suppliers-create-cadastro-button/);
   });
 });

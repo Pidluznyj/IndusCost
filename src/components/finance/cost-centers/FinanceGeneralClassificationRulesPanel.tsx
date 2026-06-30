@@ -26,6 +26,9 @@ import {
   financeModuleFilterFieldClass,
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
+import { FinanceSupplierAutocomplete } from "@/src/components/finance/cost-centers/FinanceSupplierAutocomplete";
+import type { FinanceSupplierSearchResult } from "@/src/lib/financeSupplierCostCenterRules";
+import { ensureFinanceSupplierSearchResult } from "@/src/lib/financeSupplierSearchClient";
 
 type Props = {
   canManage: boolean;
@@ -54,6 +57,7 @@ function emptyForm() {
     financialNature: "",
     accountsPayableId: "",
     notes: "",
+    supplierId: "",
   };
 }
 
@@ -68,6 +72,7 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
   const [saving, setSaving] = useState(false);
   const [applyConfirm, setApplyConfirm] = useState("");
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<FinanceSupplierSearchResult | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,6 +106,8 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
     return null;
   }, [form.ruleType]);
 
+  const supplierRequired = form.ruleType === "SUPPLIER";
+
   const buildPayload = useCallback(() => {
     const keywords = form.keywords
       .split(/[,;\n]/)
@@ -121,13 +128,26 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
         ? Number(form.accountsPayableId)
         : null,
       notes: form.notes.trim() || null,
+      supplierId:
+        form.ruleType === "SUPPLIER" || form.ruleType === "COMPOSITE"
+          ? (selectedSupplier?.id ?? (form.supplierId.trim() || null))
+          : null,
     };
-  }, [form]);
+  }, [form, selectedSupplier]);
 
   const runPreview = useCallback(async (ruleId?: string) => {
+    if (supplierRequired && !selectedSupplier && !ruleId) {
+      setError("Selecione o fornecedor para preview de regra por fornecedor.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      let payloadBody = buildPayload();
+      if (!ruleId && selectedSupplier) {
+        const supplierId = await ensureFinanceSupplierSearchResult(selectedSupplier);
+        payloadBody = { ...payloadBody, supplierId };
+      }
       const payload = ruleId
         ? await fetchJsonOk<ClassificationRulePreviewPayload>(
             `/api/finance/classification-rules/${ruleId}/preview`,
@@ -139,7 +159,7 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(buildPayload()),
+              body: JSON.stringify(payloadBody),
             }
           );
       setPreview(payload);
@@ -150,27 +170,36 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [buildPayload]);
+  }, [buildPayload, selectedSupplier, supplierRequired]);
 
   const saveRule = useCallback(async () => {
+    if (supplierRequired && !selectedSupplier) {
+      setError("Selecione o fornecedor para regras do tipo Fornecedor.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      let supplierId = buildPayload().supplierId;
+      if (selectedSupplier) {
+        supplierId = await ensureFinanceSupplierSearchResult(selectedSupplier);
+      }
       await fetchJsonOk("/api/finance/classification-rules", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify({ ...buildPayload(), supplierId }),
       });
       setFormOpen(false);
       setForm(emptyForm());
+      setSelectedSupplier(null);
       await load();
     } catch (e) {
       setError(buildFinanceTabLoadError("Não foi possível salvar a regra.", e));
     } finally {
       setSaving(false);
     }
-  }, [buildPayload, load]);
+  }, [buildPayload, load, selectedSupplier, supplierRequired]);
 
   const applyRule = useCallback(async () => {
     if (!selectedRuleId) return;
@@ -238,6 +267,7 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
           onClick={() => {
             setFormOpen(true);
             setPreview(null);
+            setSelectedSupplier(null);
           }}
         >
           <Plus className="h-4 w-4" />
@@ -341,6 +371,19 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
                 ))}
               </select>
             </label>
+            {supplierRequired ? (
+              <label className="block space-y-1.5 md:col-span-2" data-testid="finance-classification-supplier-field">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>
+                  Fornecedor <span className="text-destructive">*</span>
+                </span>
+                <FinanceSupplierAutocomplete
+                  selected={selectedSupplier}
+                  onSelect={setSelectedSupplier}
+                  disabled={saving}
+                  testIdPrefix="finance-classification-supplier"
+                />
+              </label>
+            ) : null}
             <label className="block space-y-1.5 md:col-span-2">
               <span className={cn(financeModuleFilterLabelClass(), "block")}>Centro de custo destino</span>
               <select

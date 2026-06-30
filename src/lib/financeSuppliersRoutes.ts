@@ -7,7 +7,11 @@ import {
   buildFinancialSuppliersFromAccountsPayablePreviewDefault,
   FinanceSupplierRebuildError,
 } from "@/src/lib/financeSupplierRebuild.js";
-import { searchFinancialSuppliersForRulesDefault } from "@/src/lib/financeSupplierCostCenterRules.js";
+import {
+  ensureFinancialSupplierFromApIdentityDefault,
+  FinanceSupplierEngineError,
+  searchOfficialFinancialSuppliersDefault,
+} from "@/src/lib/financeSupplierEngine.js";
 import {
   applyCompanyIntelligenceToSupplierDefault,
   assertSuperAdminCanDeleteSupplier,
@@ -40,6 +44,9 @@ function handleSupplierProfileError(res: express.Response, error: unknown) {
   if (error instanceof FinanceSupplierProfileError) {
     return res.status(error.httpStatus).json({ error: error.message, code: error.code });
   }
+  if (error instanceof FinanceSupplierEngineError) {
+    return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+  }
   console.error("finance supplier profile", error);
   return res.status(500).json(financeApiErrorJson("Erro ao processar cadastro de fornecedor.", error));
 }
@@ -63,11 +70,59 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
       const search = typeof req.query.search === "string" ? req.query.search : "";
       const limitRaw =
         typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
-      const payload = await searchFinancialSuppliersForRulesDefault({ search, limit: limitRaw });
+      const payload = await searchOfficialFinancialSuppliersDefault({ search, limit: limitRaw });
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/suppliers/search", error);
       return res.status(500).json(financeApiErrorJson("Erro ao buscar fornecedores.", error));
+    }
+  });
+
+  app.post("/api/finance/suppliers/ensure-from-ap-identity", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const body = req.body ?? {};
+      const identityKey =
+        typeof body.identityKey === "string" ? body.identityKey.trim() : undefined;
+      const personName =
+        typeof body.personName === "string" ? body.personName.trim() : undefined;
+      const personDocument =
+        body.personDocument === null || typeof body.personDocument === "string"
+          ? body.personDocument
+          : undefined;
+      const accountsPayableId =
+        typeof body.accountsPayableId === "number"
+          ? body.accountsPayableId
+          : typeof body.accountsPayableId === "string"
+            ? Number.parseInt(body.accountsPayableId, 10)
+            : undefined;
+
+      if (!identityKey && !personName && accountsPayableId == null) {
+        return res.status(400).json({
+          error: "Informe identityKey, personName ou accountsPayableId.",
+          code: "MISSING_IDENTITY",
+        });
+      }
+
+      const result = await ensureFinancialSupplierFromApIdentityDefault(
+        {
+          identityKey,
+          personName,
+          personDocument,
+          accountsPayableId: Number.isFinite(accountsPayableId)
+            ? accountsPayableId
+            : undefined,
+        },
+        {
+          userId: user.id ?? user.email ?? null,
+          userName: user.name ?? user.email ?? null,
+        }
+      );
+      return res.status(result.created ? 201 : 200).json(result);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
     }
   });
 

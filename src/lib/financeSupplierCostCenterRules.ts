@@ -44,15 +44,23 @@ export type SupplierCostCenterRuleDto = {
   supplierFound?: boolean;
 };
 
-/** Resultado do autocomplete de fornecedores financeiros. */
+/** Resultado do autocomplete de fornecedores financeiros (motor oficial). */
 export type FinanceSupplierSearchResult = {
-  id: string;
+  /** UUID do cadastro gerencial; null = origem AP ainda não materializada. */
+  id: string | null;
+  /** Chave estável da identidade AP (quando source = AP_ONLY). */
+  identityKey: string | null;
   name: string;
   document: string | null;
   externalCode: string | null;
   titlesCount: number;
   lastTitleDate: string | null;
   totalValue: number | null;
+  /** Casado com cadastro gerencial ACTIVE. */
+  matched: boolean;
+  source: "MASTER" | "AP_ONLY";
+  status: string | null;
+  hasActiveRule: boolean;
 };
 
 /** Linha bruta (fonte consolidada FinancialSupplier) usada pelo autocomplete. */
@@ -328,12 +336,17 @@ export function serializeFinancialSupplierSearchRow(
     .find((id): id is number => id != null);
   return {
     id: row.id,
+    identityKey: null,
     name: row.displayName,
     document: row.document ?? row.normalizedDocument ?? null,
     externalCode: externalCode != null ? String(externalCode) : null,
     titlesCount: row.titlesCount ?? 0,
     lastTitleDate: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
     totalValue: row.totalAmountSeen != null ? decimalToNumber(row.totalAmountSeen) : null,
+    matched: true,
+    source: "MASTER",
+    status: row.status,
+    hasActiveRule: false,
   };
 }
 
@@ -1125,10 +1138,10 @@ export async function previewSupplierCostCenterRuleImpactDefault(
 export async function searchFinancialSuppliersForRulesDefault(
   input: { search?: string; limit?: number } = {}
 ): Promise<{ suppliers: FinanceSupplierSearchResult[] }> {
-  return searchFinancialSuppliersForRules(
-    createDefaultFinanceSupplierCostCenterRulesDeps(),
-    input
+  const { searchOfficialFinancialSuppliersDefault } = await import(
+    "@/src/lib/financeSupplierEngine.js"
   );
+  return searchOfficialFinancialSuppliersDefault(input);
 }
 
 // Re-export helpers used in tests for supplier document/name normalization paths

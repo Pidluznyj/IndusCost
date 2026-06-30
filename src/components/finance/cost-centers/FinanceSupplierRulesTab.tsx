@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { FinanceSupplierAutocomplete } from "@/src/components/finance/cost-centers/FinanceSupplierAutocomplete";
+import { ensureFinanceSupplierSearchResult } from "@/src/lib/financeSupplierSearchClient";
 import { useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -54,15 +56,10 @@ type Props = {
 
 const PERCENTAGE_TOLERANCE = 0.01;
 
-function formatSupplierMeta(supplier: FinanceSupplierSearchResult): string {
-  const parts: string[] = [];
-  if (supplier.document) parts.push(supplier.document);
-  parts.push(`${formatFinanceInteger(supplier.titlesCount)} título(s)`);
-  if (supplier.lastTitleDate) {
-    parts.push(`último ${new Date(supplier.lastTitleDate).toLocaleDateString("pt-BR")}`);
-  }
-  if (supplier.externalCode) parts.push(`código ${supplier.externalCode}`);
-  return parts.join(" · ");
+async function resolveSelectedSupplierId(
+  supplier: FinanceSupplierSearchResult
+): Promise<string> {
+  return ensureFinanceSupplierSearchResult(supplier);
 }
 
 export function FinanceSupplierRulesTab({ canManage }: Props) {
@@ -76,13 +73,8 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
   const [lines, setLines] = useState([{ costCenterId: "", percentage: "100" }]);
   const [saving, setSaving] = useState(false);
 
-  // Autocomplete de fornecedor
+  // Autocomplete de fornecedor (motor oficial)
   const [selectedSupplier, setSelectedSupplier] = useState<FinanceSupplierSearchResult | null>(null);
-  const [supplierQuery, setSupplierQuery] = useState("");
-  const [supplierResults, setSupplierResults] = useState<FinanceSupplierSearchResult[]>([]);
-  const [supplierSearching, setSupplierSearching] = useState(false);
-  const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
-  const searchSeq = useRef(0);
 
   const search = readFinanceGridUrlString(searchParams, "rule_q");
   const statusFilter = (readFinanceGridUrlString(searchParams, "rule_status", "all") ||
@@ -130,38 +122,6 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Busca de fornecedores com debounce, somente com o modal aberto e sem fornecedor selecionado.
-  useEffect(() => {
-    if (!formOpen || selectedSupplier) return;
-    const term = supplierQuery.trim();
-    if (term.length < 2) {
-      setSupplierResults([]);
-      setSupplierSearching(false);
-      return;
-    }
-    setSupplierSearching(true);
-    const seq = ++searchSeq.current;
-    const handle = window.setTimeout(async () => {
-      try {
-        const payload = await fetchJsonOk<{ suppliers: FinanceSupplierSearchResult[] }>(
-          `/api/finance/supplier-cost-center-rules/suppliers/search?search=${encodeURIComponent(
-            term
-          )}&limit=20`,
-          { credentials: "include" }
-        );
-        if (seq !== searchSeq.current) return;
-        setSupplierResults(payload.suppliers);
-        setSupplierDropdownOpen(true);
-      } catch {
-        if (seq !== searchSeq.current) return;
-        setSupplierResults([]);
-      } finally {
-        if (seq === searchSeq.current) setSupplierSearching(false);
-      }
-    }, 300);
-    return () => window.clearTimeout(handle);
-  }, [supplierQuery, formOpen, selectedSupplier]);
 
   const supplierById = useMemo(() => {
     const map = new Map<string, { name: string | null; document: string | null; found: boolean }>();
@@ -261,8 +221,6 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
 
   const openForm = () => {
     setSelectedSupplier(null);
-    setSupplierQuery("");
-    setSupplierResults([]);
     setLines([{ costCenterId: "", percentage: "100" }]);
     setPreview(null);
     setFormOpen(true);
@@ -270,9 +228,6 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
 
   const clearSupplier = () => {
     setSelectedSupplier(null);
-    setSupplierQuery("");
-    setSupplierResults([]);
-    setSupplierDropdownOpen(false);
     setPreview(null);
   };
 
@@ -283,6 +238,7 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
       return;
     }
     try {
+      const supplierId = await resolveSelectedSupplierId(selectedSupplier);
       const payload = await fetchJsonOk<SupplierCostCenterRulePreviewPayload>(
         "/api/finance/supplier-cost-center-rules/preview",
         {
@@ -290,7 +246,7 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            supplierId: selectedSupplier.id,
+            supplierId,
             rules: lines.map((line) => ({
               costCenterId: line.costCenterId,
               percentage: Number(line.percentage),
@@ -308,12 +264,13 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
     if (!canManage || !selectedSupplier || !canSubmit) return;
     setSaving(true);
     try {
+      const supplierId = await resolveSelectedSupplierId(selectedSupplier);
       await fetchJsonOk("/api/finance/supplier-cost-center-rules", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplierId: selectedSupplier.id,
+          supplierId,
           replaceExisting: true,
           rules: lines.map((line) => ({
             costCenterId: line.costCenterId,
@@ -514,96 +471,15 @@ export function FinanceSupplierRulesTab({ canManage }: Props) {
 
             <div className="space-y-1 text-sm">
               <span className="font-semibold">Fornecedor</span>
-              {selectedSupplier ? (
-                <div
-                  className="rounded-lg border border-primary/40 bg-primary/5 p-3"
-                  data-testid="finance-rules-selected-supplier"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-0.5">
-                      <p className="text-xs font-semibold uppercase text-muted-foreground">
-                        Fornecedor selecionado
-                      </p>
-                      <p className="font-semibold">{selectedSupplier.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {selectedSupplier.document ?? "Sem documento"}
-                        {selectedSupplier.externalCode
-                          ? ` · código ${selectedSupplier.externalCode}`
-                          : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatFinanceInteger(selectedSupplier.titlesCount)} título(s) encontrados
-                        {selectedSupplier.totalValue != null
-                          ? ` · ${formatFinanceCurrency(selectedSupplier.totalValue)}`
-                          : ""}
-                      </p>
-                      <p className="font-mono text-[10px] text-muted-foreground/70">
-                        ID técnico: {selectedSupplier.id}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid="finance-rules-clear-supplier"
-                      className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold"
-                      onClick={clearSupplier}
-                    >
-                      <X className="h-3 w-3" />
-                      Limpar
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <input
-                      data-testid="finance-rules-supplier-search"
-                      className="w-full bg-transparent text-sm outline-none"
-                      value={supplierQuery}
-                      onChange={(e) => {
-                        setSupplierQuery(e.target.value);
-                        setSupplierDropdownOpen(true);
-                      }}
-                      onFocus={() => setSupplierDropdownOpen(true)}
-                      placeholder="Buscar fornecedor por nome, CNPJ, documento ou código..."
-                    />
-                  </div>
-                  {supplierDropdownOpen && supplierQuery.trim().length >= 2 ? (
-                    <div className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-background shadow-lg">
-                      {supplierSearching ? (
-                        <p className="px-3 py-2 text-xs text-muted-foreground">Buscando fornecedores…</p>
-                      ) : supplierResults.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-muted-foreground">
-                          Nenhum fornecedor encontrado para “{supplierQuery.trim()}”.
-                        </p>
-                      ) : (
-                        supplierResults.map((supplier) => (
-                          <button
-                            key={supplier.id}
-                            type="button"
-                            data-testid="finance-rules-supplier-option"
-                            className="block w-full border-b border-border/40 px-3 py-2 text-left hover:bg-muted/50"
-                            onClick={() => {
-                              setSelectedSupplier(supplier);
-                              setSupplierDropdownOpen(false);
-                              setPreview(null);
-                            }}
-                          >
-                            <p className="text-sm font-semibold">{supplier.name}</p>
-                            <p className="text-xs text-muted-foreground">{formatSupplierMeta(supplier)}</p>
-                            <p className="font-mono text-[10px] text-muted-foreground/70">
-                              ID técnico: {supplier.id.slice(0, 8)}…
-                            </p>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  ) : null}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Digite ao menos 2 caracteres para buscar.
-                  </p>
-                </div>
-              )}
+              <FinanceSupplierAutocomplete
+                selected={selectedSupplier}
+                onSelect={(supplier) => {
+                  setSelectedSupplier(supplier);
+                  setPreview(null);
+                }}
+                disabled={saving}
+                testIdPrefix="finance-rules-supplier"
+              />
             </div>
 
             {lines.map((line, index) => (

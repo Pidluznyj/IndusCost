@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
@@ -6,7 +6,6 @@ import {
   Eye,
   Play,
   RefreshCw,
-  Search,
   Settings2,
   Upload,
   X,
@@ -24,6 +23,11 @@ import type {
   FinanceSupplierSearchResult,
   SupplierCostCenterRulePreviewPayload,
 } from "@/src/lib/financeSupplierCostCenterRules";
+import { FinanceSupplierAutocomplete } from "@/src/components/finance/cost-centers/FinanceSupplierAutocomplete";
+import {
+  ensureFinanceSupplierSearchResult,
+  type EnsureSupplierFromApIdentityResponse,
+} from "@/src/lib/financeSupplierSearchClient";
 import {
   formatFinanceCurrency,
   formatFinanceInteger,
@@ -183,11 +187,8 @@ export function FinanceUnclassifiedPayablesTab({
   const [modalConfirmChecked, setModalConfirmChecked] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
-  const [supplierQuery, setSupplierQuery] = useState("");
-  const [supplierResults, setSupplierResults] = useState<FinanceSupplierSearchResult[]>([]);
-  const [supplierSearching, setSupplierSearching] = useState(false);
-  const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
-  const searchSeq = useRef(0);
+  const [ensuredSupplierId, setEnsuredSupplierId] = useState<string | null>(null);
+  const [ensuringApOrigin, setEnsuringApOrigin] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -350,39 +351,55 @@ export function FinanceUnclassifiedPayablesTab({
     }
   }, [centersLoaded]);
 
-  const effectiveSupplierId = classifyGroup?.supplierId ?? modalSupplier?.id ?? null;
-  const needsSupplierLink = Boolean(classifyGroup) && !classifyGroup?.supplierId;
+  const effectiveSupplierId =
+    classifyGroup?.supplierId ?? ensuredSupplierId ?? modalSupplier?.id ?? null;
+  const needsSupplierLink = Boolean(classifyGroup) && !classifyGroup?.supplierId && !ensuredSupplierId;
 
-  useEffect(() => {
-    if (!classifyGroup || !needsSupplierLink || modalSupplier) return;
-    const term = supplierQuery.trim();
-    if (term.length < 2) {
-      setSupplierResults([]);
-      setSupplierSearching(false);
-      return;
+  const resolveModalSupplierId = useCallback(async (): Promise<string | null> => {
+    if (classifyGroup?.supplierId) return classifyGroup.supplierId;
+    if (ensuredSupplierId) return ensuredSupplierId;
+    if (modalSupplier) return ensureFinanceSupplierSearchResult(modalSupplier);
+    return null;
+  }, [classifyGroup, ensuredSupplierId, modalSupplier]);
+
+  const useApOriginAsSupplier = useCallback(async () => {
+    if (!classifyGroup || modalSaving) return;
+    setEnsuringApOrigin(true);
+    setModalError(null);
+    try {
+      const result = await fetchJsonOk<EnsureSupplierFromApIdentityResponse>(
+        "/api/finance/suppliers/ensure-from-ap-identity",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ personName: classifyGroup.name }),
+        }
+      );
+      setEnsuredSupplierId(result.supplierId);
+      setModalSupplier({
+        id: result.supplierId,
+        identityKey: result.identityKey,
+        name: result.displayName,
+        document: result.document,
+        externalCode: null,
+        titlesCount: classifyGroup.titlesCount,
+        lastTitleDate: null,
+        totalValue: classifyGroup.amount,
+        matched: true,
+        source: "MASTER",
+        status: "ACTIVE",
+        hasActiveRule: false,
+      });
+      setModalPreview(null);
+    } catch (e) {
+      setModalError(
+        buildFinanceTabLoadError("Não foi possível vincular a origem AP ao cadastro gerencial.", e)
+      );
+    } finally {
+      setEnsuringApOrigin(false);
     }
-    setSupplierSearching(true);
-    const seq = ++searchSeq.current;
-    const handle = window.setTimeout(async () => {
-      try {
-        const payload = await fetchJsonOk<{ suppliers: FinanceSupplierSearchResult[] }>(
-          `/api/finance/supplier-cost-center-rules/suppliers/search?search=${encodeURIComponent(
-            term
-          )}&limit=20`,
-          { credentials: "include" }
-        );
-        if (seq !== searchSeq.current) return;
-        setSupplierResults(payload.suppliers);
-        setSupplierDropdownOpen(true);
-      } catch {
-        if (seq !== searchSeq.current) return;
-        setSupplierResults([]);
-      } finally {
-        if (seq === searchSeq.current) setSupplierSearching(false);
-      }
-    }, 300);
-    return () => window.clearTimeout(handle);
-  }, [supplierQuery, classifyGroup, needsSupplierLink, modalSupplier]);
+  }, [classifyGroup, modalSaving]);
 
   const openClassifyModal = (row: GroupedRow) => {
     if (!canManageRules) {
@@ -395,9 +412,7 @@ export function FinanceUnclassifiedPayablesTab({
     setModalPreview(null);
     setModalConfirmChecked(false);
     setModalError(null);
-    setSupplierQuery("");
-    setSupplierResults([]);
-    setSupplierDropdownOpen(false);
+    setEnsuredSupplierId(null);
     void ensureCenters();
   };
 
@@ -409,9 +424,11 @@ export function FinanceUnclassifiedPayablesTab({
   };
 
   const runModalPreview = async () => {
-    if (!effectiveSupplierId || !modalCostCenterId) return;
+    if (!modalCostCenterId) return;
     setModalError(null);
     try {
+      const supplierId = await resolveModalSupplierId();
+      if (!supplierId) return;
       const payload = await fetchJsonOk<SupplierCostCenterRulePreviewPayload>(
         "/api/finance/supplier-cost-center-rules/preview",
         {
@@ -419,7 +436,7 @@ export function FinanceUnclassifiedPayablesTab({
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            supplierId: effectiveSupplierId,
+            supplierId,
             rules: [{ costCenterId: modalCostCenterId, percentage: 100 }],
           }),
         }
@@ -431,18 +448,23 @@ export function FinanceUnclassifiedPayablesTab({
   };
 
   const confirmClassify = async () => {
-    if (!canManageRules || !effectiveSupplierId || !modalCostCenterId || !modalConfirmChecked || modalSaving) {
+    if (!canManageRules || !modalCostCenterId || !modalConfirmChecked || modalSaving) {
       return;
     }
     setModalSaving(true);
     setModalError(null);
     try {
+      const supplierId = await resolveModalSupplierId();
+      if (!supplierId) {
+        setModalError("Selecione ou vincule um fornecedor antes de classificar.");
+        return;
+      }
       await fetchJsonOk("/api/finance/supplier-cost-center-rules", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplierId: effectiveSupplierId,
+          supplierId,
           replaceExisting: true,
           autoApply: true,
           rules: [{ costCenterId: modalCostCenterId, percentage: 100 }],
@@ -458,7 +480,7 @@ export function FinanceUnclassifiedPayablesTab({
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              filters: { unclassifiedOnly: true, supplierId: effectiveSupplierId },
+              filters: { unclassifiedOnly: true, supplierId },
               confirmationText: FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT,
             }),
           }
@@ -489,7 +511,10 @@ export function FinanceUnclassifiedPayablesTab({
   };
 
   const modalCanConfirm =
-    Boolean(effectiveSupplierId) && Boolean(modalCostCenterId) && modalConfirmChecked && !modalSaving;
+    Boolean(classifyGroup?.supplierId || ensuredSupplierId || modalSupplier) &&
+    Boolean(modalCostCenterId) &&
+    modalConfirmChecked &&
+    !modalSaving;
 
   const handleExport = async () => {
     setExporting(true);
@@ -937,81 +962,34 @@ export function FinanceUnclassifiedPayablesTab({
             </section>
 
             {needsSupplierLink ? (
-              <section className="space-y-2">
+              <section className="space-y-3">
                 <h4 className="text-sm font-semibold">Fornecedor gerencial</h4>
-                {modalSupplier ? (
-                  <div
-                    className="rounded-xl border border-primary/30 bg-primary/5 p-3"
-                    data-testid="finance-unclassified-selected-supplier"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-0.5">
-                        <p className="font-semibold">{modalSupplier.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {modalSupplier.document ?? "Sem documento"}
-                          {modalSupplier.externalCode ? ` · código ${modalSupplier.externalCode}` : ""}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-lg border px-2 py-1 text-xs font-semibold"
-                        disabled={modalSaving}
-                        onClick={() => {
-                          setModalSupplier(null);
-                          setModalPreview(null);
-                        }}
-                      >
-                        Trocar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative space-y-1">
-                    <div className="flex items-center gap-2 rounded-xl border px-3 py-2.5">
-                      <Search className="h-4 w-4 text-muted-foreground" />
-                      <input
-                        data-testid="finance-unclassified-supplier-search"
-                        className="w-full bg-transparent text-sm outline-none"
-                        value={supplierQuery}
-                        disabled={modalSaving}
-                        onChange={(e) => {
-                          setSupplierQuery(e.target.value);
-                          setSupplierDropdownOpen(true);
-                        }}
-                        onFocus={() => setSupplierDropdownOpen(true)}
-                        placeholder="Buscar por nome, CNPJ ou código…"
-                      />
-                    </div>
-                    {supplierDropdownOpen && supplierQuery.trim().length >= 2 ? (
-                      <div className="absolute z-10 mt-1 max-h-52 w-full overflow-auto rounded-xl border bg-background shadow-lg">
-                        {supplierSearching ? (
-                          <p className="px-3 py-2 text-xs text-muted-foreground">Buscando…</p>
-                        ) : supplierResults.length === 0 ? (
-                          <p className="px-3 py-2 text-xs text-muted-foreground">
-                            Nenhum fornecedor encontrado.
-                          </p>
-                        ) : (
-                          supplierResults.map((supplier) => (
-                            <button
-                              key={supplier.id}
-                              type="button"
-                              data-testid="finance-unclassified-supplier-option"
-                              className="block w-full border-b px-3 py-2 text-left hover:bg-muted/50"
-                              onClick={() => {
-                                setModalSupplier(supplier);
-                                setSupplierDropdownOpen(false);
-                                setModalPreview(null);
-                              }}
-                            >
-                              <p className="text-sm font-semibold">{supplier.name}</p>
-                              <p className="text-xs text-muted-foreground">{supplier.document ?? "—"}</p>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs leading-relaxed text-amber-900">
+                  Esta origem AP ainda não possui cadastro gerencial casado. Você pode usar a
+                  própria origem do título ou buscar/vincular outro fornecedor.
+                </div>
+                <button
+                  type="button"
+                  data-testid="finance-unclassified-use-ap-origin"
+                  className="w-full rounded-lg border border-primary bg-primary/5 px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50"
+                  disabled={modalSaving || ensuringApOrigin}
+                  onClick={() => void useApOriginAsSupplier()}
+                >
+                  {ensuringApOrigin
+                    ? "Criando cadastro gerencial…"
+                    : "Usar esta origem AP / criar fornecedor gerencial"}
+                </button>
+                <FinanceSupplierAutocomplete
+                  selected={modalSupplier}
+                  onSelect={(supplier) => {
+                    setModalSupplier(supplier);
+                    setEnsuredSupplierId(null);
+                    setModalPreview(null);
+                  }}
+                  disabled={modalSaving}
+                  initialQuery={classifyGroup.name}
+                  testIdPrefix="finance-unclassified-supplier"
+                />
               </section>
             ) : (
               <section className="rounded-xl border border-border bg-muted/15 px-3 py-2 text-sm">
@@ -1046,7 +1024,7 @@ export function FinanceUnclassifiedPayablesTab({
               type="button"
               data-testid="finance-unclassified-modal-preview-button"
               className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-              disabled={!effectiveSupplierId || !modalCostCenterId || modalSaving}
+              disabled={!(classifyGroup?.supplierId || ensuredSupplierId || modalSupplier) || !modalCostCenterId || modalSaving}
               onClick={() => void runModalPreview()}
             >
               <Eye className="h-4 w-4" />

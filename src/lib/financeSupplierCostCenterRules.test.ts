@@ -516,17 +516,22 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
     assert.equal(orphan.supplierFound, false);
   });
 
-  it("11. modal usa autocomplete (sem UUID como campo principal) e rota de busca existe", () => {
+  it("11. modal usa autocomplete compartilhado (motor oficial) e rotas de busca existem", () => {
     const tab = readFileSync(
       join(process.cwd(), "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx"),
       "utf8"
     );
     assert.doesNotMatch(tab, /UUID do fornecedor financeiro/);
-    assert.match(tab, /Buscar fornecedor por nome, CNPJ, documento ou código/);
-    assert.match(tab, /finance-rules-supplier-search/);
-    assert.match(tab, /finance-rules-selected-supplier/);
+    assert.match(tab, /FinanceSupplierAutocomplete/);
+    assert.match(tab, /ensureFinanceSupplierSearchResult/);
+    assert.match(tab, /finance-rules-supplier/);
     assert.match(tab, /supplierName/);
-    assert.match(tab, /Fornecedor não encontrado/);
+
+    const autocomplete = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceSupplierAutocomplete.tsx"),
+      "utf8"
+    );
+    assert.match(autocomplete, /\/api\/finance\/suppliers\/search/);
 
     const routes = readFileSync(
       join(process.cwd(), "src/lib/financeSupplierCostCenterRulesRoutes.ts"),
@@ -539,7 +544,8 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
       "utf8"
     );
     assert.match(suppliersRoutes, /\/api\/finance\/suppliers\/search/);
-    assert.match(suppliersRoutes, /searchFinancialSuppliersForRulesDefault/);
+    assert.match(suppliersRoutes, /searchOfficialFinancialSuppliersDefault/);
+    assert.match(suppliersRoutes, /ensure-from-ap-identity/);
   });
 
   it("importação de classificações reutiliza a criação de regra e o rebuild de fornecedor", () => {
