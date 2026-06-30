@@ -31,6 +31,14 @@ import {
   type NomusApReportSyncCutoff,
 } from "@/src/lib/financeNomusApReportFreshness.js";
 import { normalizeAccountsPayableTitle } from "@/src/lib/financeAccountsPayableRules.js";
+import {
+  buildCostCenterConsolidatedSuppliers,
+  costCenterDashboardHasPeriodFilter,
+  filterCostCenterSupplierScopeRows,
+  resolveCostCenterSupplierConsolidationKey,
+  resolveCostCenterSupplierDisplay,
+  stripCostCenterDashboardPeriodFilters,
+} from "@/src/lib/financeCostCenterSupplierConsolidation.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 export class FinanceCostCenterDashboardError extends Error {
@@ -205,15 +213,6 @@ type MutableCcRow = {
   overdueAmount: number;
   paidAmount: number;
   titleIds: Set<number>;
-};
-
-type MutableSupplierRow = {
-  supplierId: string | null;
-  name: string;
-  document: string | null;
-  amount: number;
-  titleIds: Set<number>;
-  costCenterShares: Map<string, number>;
 };
 
 const AP_DASHBOARD_SELECT = {
@@ -394,7 +393,8 @@ export function buildFinanceCostCenterDashboard(
   supplierIdsWithRules: Set<string>,
   filters: FinanceCostCenterDashboardFilters,
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusApReportSyncCutoff | null
+  syncCutoff?: NomusApReportSyncCutoff | null,
+  supplierScopeSourceRows?: FinanceApDashboardRow[]
 ): FinanceCostCenterDashboardPayload {
   const apScope = resolveFinanceCostCenterDashboardApScope(filters);
   const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
@@ -409,7 +409,6 @@ export function buildFinanceCostCenterDashboard(
   }
 
   const byCostCenter = new Map<string, MutableCcRow>();
-  const bySupplier = new Map<string, MutableSupplierRow>();
   const unclassifiedSuppliers = new Map<
     string,
     { name: string; document: string | null; titlesCount: number; amount: number }
@@ -457,8 +456,6 @@ export function buildFinanceCostCenterDashboard(
 
     const metrics = computeTitleMetrics(row, referenceDate, apScope);
     const supplier = resolveFinancialSupplier(row, suppliers);
-    const supplierKey = supplier?.id ?? `ap:${row.personName ?? row.externalId}`;
-    const month = monthKey(row.dueDate);
 
     diagTotalAmountBase += titleAmount;
     diagTotalAllocatedReal += allocatedAmount;
@@ -471,9 +468,11 @@ export function buildFinanceCostCenterDashboard(
       unclassifiedTitlesCount += 1;
       unclassifiedAmountTotal += unallocatedGap;
 
-      const supplierName = supplier?.displayName ?? row.personName ?? "Fornecedor não identificado";
-      const supplierDocument = supplier?.normalizedDocument ?? row.personCnpj ?? null;
-      const unclassifiedKey = supplier?.id ?? `ap:${supplierName}:${supplierDocument ?? ""}`;
+      const { name: supplierName, document: supplierDocument } = resolveCostCenterSupplierDisplay(
+        row,
+        supplier
+      );
+      const unclassifiedKey = resolveCostCenterSupplierConsolidationKey(row, supplier);
       const unclassifiedRow = unclassifiedSuppliers.get(unclassifiedKey) ?? {
         name: supplierName,
         document: supplierDocument,
@@ -497,6 +496,7 @@ export function buildFinanceCostCenterDashboard(
     overdueAmount += metrics.overdueAmount;
     paidAmount += metrics.paidAmount;
 
+    const month = monthKey(row.dueDate);
     const applicableAllocations = costCenterFilter
       ? rowAllocations.filter((allocation) => allocation.costCenterId === costCenterFilter)
       : rowAllocations;
@@ -527,22 +527,6 @@ export function buildFinanceCostCenterDashboard(
       ccRow.titleIds.add(row.externalId);
       byCostCenter.set(allocation.costCenterId, ccRow);
 
-      const supplierRow = bySupplier.get(supplierKey) ?? {
-        supplierId: supplier?.id ?? null,
-        name: supplier?.displayName ?? row.personName ?? "Fornecedor não identificado",
-        document: supplier?.normalizedDocument ?? row.personCnpj ?? null,
-        amount: 0,
-        titleIds: new Set<number>(),
-        costCenterShares: new Map<string, number>(),
-      };
-      supplierRow.amount += lineAmount;
-      supplierRow.titleIds.add(row.externalId);
-      supplierRow.costCenterShares.set(
-        allocation.costCenterId,
-        (supplierRow.costCenterShares.get(allocation.costCenterId) ?? 0) + lineAmount
-      );
-      bySupplier.set(supplierKey, supplierRow);
-
       if (month) {
         const monthlyCcKey = `${month}:${allocation.costCenterId}`;
         const monthlyCc = monthlyByCc.get(monthlyCcKey) ?? {
@@ -556,22 +540,6 @@ export function buildFinanceCostCenterDashboard(
         monthlyCc.amount += lineAmount;
         monthlyByCc.set(monthlyCcKey, monthlyCc);
       }
-    }
-
-    if (!fullyAllocated && applicableAllocations.length === 0) {
-      const supplierName = supplier?.displayName ?? row.personName ?? "Fornecedor não identificado";
-      const supplierDocument = supplier?.normalizedDocument ?? row.personCnpj ?? null;
-      const supplierRow = bySupplier.get(supplierKey) ?? {
-        supplierId: supplier?.id ?? null,
-        name: supplierName,
-        document: supplierDocument,
-        amount: 0,
-        titleIds: new Set<number>(),
-        costCenterShares: new Map<string, number>(),
-      };
-      supplierRow.amount += unallocatedGap;
-      supplierRow.titleIds.add(row.externalId);
-      bySupplier.set(supplierKey, supplierRow);
     }
 
     if (month) {
@@ -617,7 +585,22 @@ export function buildFinanceCostCenterDashboard(
     }))
     .sort((a, b) => b.amount - a.amount);
 
-  const bySupplierRows = [...bySupplier.values()]
+  const supplierScopeRows = filterCostCenterSupplierScopeRows(
+    supplierScopeSourceRows ?? rows,
+    filters,
+    referenceDate,
+    syncCutoff,
+    apScope
+  );
+  const consolidatedSuppliers = buildCostCenterConsolidatedSuppliers(
+    supplierScopeRows,
+    allocationsByPayable,
+    suppliers,
+    filters,
+    apScope
+  );
+
+  const bySupplierRows = [...consolidatedSuppliers.values()]
     .map((row) => ({
       supplierId: row.supplierId,
       name: row.name,
@@ -780,7 +763,17 @@ export async function buildFinanceCostCenterDashboardDefault(
   const syncCutoff = await deps.resolveSyncCutoff();
   const where = buildFinanceApPrismaWhere(filters, syncCutoff);
   const rows = await deps.loadApRows(where);
-  const allocations = await deps.loadAllocations(rows.map((row) => row.externalId));
+  const supplierFilters = stripCostCenterDashboardPeriodFilters(filters);
+  const supplierWhere = buildFinanceApPrismaWhere(supplierFilters, syncCutoff);
+  const supplierScopeSourceRows = !costCenterDashboardHasPeriodFilter(filters)
+    ? rows
+    : supplierWhere.externalId === -1
+      ? []
+      : await deps.loadApRows(supplierWhere);
+  const allocationIds = [
+    ...new Set([...rows, ...supplierScopeSourceRows].map((row) => row.externalId)),
+  ];
+  const allocations = await deps.loadAllocations(allocationIds);
   const costCenters = await deps.loadCostCenters();
   const suppliers = await deps.loadSuppliers();
   const supplierIdsWithRules = new Set(
@@ -794,6 +787,7 @@ export async function buildFinanceCostCenterDashboardDefault(
     supplierIdsWithRules,
     filters,
     referenceDate,
-    syncCutoff
+    syncCutoff,
+    supplierScopeSourceRows
   );
 }

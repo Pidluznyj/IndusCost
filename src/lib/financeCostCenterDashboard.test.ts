@@ -117,6 +117,9 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.summary.unclassifiedAmount, 500);
     assert.equal(payload.unclassified.titlesCount, 1);
     assert.equal(payload.byCostCenter.length, 0);
+    assert.equal(payload.bySupplier.length, 1);
+    assert.equal(payload.bySupplier[0]!.supplierId, "sup-1");
+    assert.equal(payload.bySupplier[0]!.amount, 500);
   });
 
   it("2. dashboard com alocações soma valores", () => {
@@ -181,7 +184,7 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.unclassified.amount, 600);
   });
 
-  it("3b. alocação parcial soma só o gap em sem classificação", () => {
+  it("3b. alocação parcial inclui fornecedor com valor integral na aba Fornecedores", () => {
     const state: MockState = {
       apRows: [apRow({ externalId: 30, balancePayable: 1000 })],
       allocations: [
@@ -202,6 +205,63 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.summary.classifiedAmount, 600);
     assert.equal(payload.summary.unclassifiedAmount, 400);
     assert.equal(payload.summary.totalAmount, 1000);
+    assert.equal(payload.bySupplier.length, 1);
+    assert.equal(payload.bySupplier[0]!.amount, 1000);
+  });
+
+  it("3b2. fornecedor sem classificação aparece em bySupplier", () => {
+    const state: MockState = {
+      apRows: [
+        apRow({
+          externalId: 34,
+          balancePayable: 600,
+          amountPayable: 600,
+          personName: "Outro Fornecedor",
+          personCnpj: "98.765.432/0001-10",
+        }),
+      ],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildDashboard(state);
+    assert.equal(payload.unclassified.titlesCount, 1);
+    assert.equal(payload.bySupplier.length, 1);
+    assert.equal(payload.bySupplier[0]!.name, "Outro Fornecedor");
+    assert.equal(payload.bySupplier[0]!.amount, 600);
+  });
+
+  it("3b3. fornecedor fora do ano filtrado entra em bySupplier via escopo ampliado", () => {
+    const priorYearRow = apRow({
+      externalId: 35,
+      dueDate: new Date(2025, 10, 15),
+      balancePayable: 800,
+      amountPayable: 800,
+      personName: "Fornecedor Ano Anterior",
+    });
+    const state: MockState = {
+      apRows: [priorYearRow],
+      allocations: [],
+      costCenters: [],
+      suppliers: [],
+      supplierIdsWithRules: [],
+    };
+    const payload = buildFinanceCostCenterDashboard(
+      [],
+      state.allocations,
+      state.costCenters,
+      state.suppliers,
+      new Set(state.supplierIdsWithRules),
+      parseFinanceCostCenterDashboardFilters({ status: "all", year: 2026 }),
+      REF,
+      null,
+      state.apRows
+    );
+    assert.equal(payload.summary.totalAmount, 0);
+    assert.equal(payload.bySupplier.length, 1);
+    assert.equal(payload.bySupplier[0]!.name, "Fornecedor Ano Anterior");
+    assert.equal(payload.bySupplier[0]!.amount, 800);
   });
 
   it("3c. título alocado 100% não entra em sem classificação sem regra de fornecedor", () => {
