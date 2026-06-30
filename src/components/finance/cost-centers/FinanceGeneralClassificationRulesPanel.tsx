@@ -305,21 +305,27 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
       )}
 
       {formOpen ? (
-        <div className={cn(financeBiCardClass, "p-4 space-y-3")}>
-          <h4 className="text-sm font-semibold">Cadastrar regra gerencial</h4>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className={financeModuleFilterLabelClass}>Nome da regra</span>
+        <div className={cn(financeBiCardClass, "space-y-5 p-5")} data-testid="finance-classification-rule-form">
+          <div>
+            <h4 className="text-base font-semibold text-foreground">Cadastrar regra gerencial</h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Preencha os campos abaixo. A prioridade define a ordem de aplicação (menor número = maior precedência).
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="block space-y-1.5">
+              <span className={cn(financeModuleFilterLabelClass(), "block")}>Nome da regra</span>
               <input
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 value={form.name}
+                placeholder="Ex.: Estornos e devoluções"
                 onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
               />
             </label>
-            <label className="space-y-1">
-              <span className={financeModuleFilterLabelClass}>Tipo da regra</span>
+            <label className="block space-y-1.5">
+              <span className={cn(financeModuleFilterLabelClass(), "block")}>Tipo da regra</span>
               <select
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 value={form.ruleType}
                 onChange={(e) =>
                   setForm((prev) => ({
@@ -335,10 +341,10 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
                 ))}
               </select>
             </label>
-            <label className="space-y-1 md:col-span-2">
-              <span className={financeModuleFilterLabelClass}>Centro de custo destino</span>
+            <label className="block space-y-1.5 md:col-span-2">
+              <span className={cn(financeModuleFilterLabelClass(), "block")}>Centro de custo destino</span>
               <select
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 value={form.costCenterId}
                 onChange={(e) => setForm((prev) => ({ ...prev, costCenterId: e.target.value }))}
               >
@@ -350,31 +356,35 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className={financeModuleFilterLabelClass}>Prioridade</span>
+            <label className="block space-y-1.5">
+              <span className={cn(financeModuleFilterLabelClass(), "block")}>Prioridade</span>
               <input
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 type="number"
+                min={1}
                 value={form.priority}
                 onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
               />
             </label>
             {form.ruleType === "KEYWORDS" || form.ruleType === "COMPOSITE" ? (
-              <label className="space-y-1 md:col-span-2">
-                <span className={financeModuleFilterLabelClass}>Palavras-chave (vírgula ou linha)</span>
+              <label className="block space-y-1.5 md:col-span-2">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>
+                  Palavras-chave (vírgula ou linha)
+                </span>
                 <textarea
-                  className={cn(financeModuleFilterFieldClass, "min-h-20")}
+                  className={cn(financeModuleFilterFieldClass(), "min-h-28 resize-y")}
                   value={form.keywords}
                   onChange={(e) => setForm((prev) => ({ ...prev, keywords: e.target.value }))}
                   placeholder="estorno, ressarcimento, devolução cliente"
+                  rows={4}
                 />
               </label>
             ) : null}
             {form.ruleType === "DESCRIPTION_CONTAINS" || form.ruleType === "COMPOSITE" ? (
-              <label className="space-y-1 md:col-span-2">
-                <span className={financeModuleFilterLabelClass}>Descrição contém</span>
+              <label className="block space-y-1.5 md:col-span-2">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>Descrição contém</span>
                 <input
-                  className={financeModuleFilterFieldClass}
+                  className={financeModuleFilterFieldClass()}
                   value={form.descriptionContains}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, descriptionContains: e.target.value }))
@@ -383,10 +393,10 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
               </label>
             ) : null}
             {form.ruleType === "DOCUMENT_CONTAINS" ? (
-              <label className="space-y-1 md:col-span-2">
-                <span className={financeModuleFilterLabelClass}>Documento contém</span>
+              <label className="block space-y-1.5 md:col-span-2">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>Documento contém</span>
                 <input
-                  className={financeModuleFilterFieldClass}
+                  className={financeModuleFilterFieldClass()}
                   value={form.documentContains}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, documentContains: e.target.value }))
@@ -395,10 +405,10 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
               </label>
             ) : null}
             {form.ruleType === "NOMUS_CLASSIFICATION" || form.ruleType === "COMPOSITE" ? (
-              <label className="space-y-1 md:col-span-2">
-                <span className={financeModuleFilterLabelClass}>Classificação Nomus</span>
+              <label className="block space-y-1.5 md:col-span-2">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>Classificação Nomus</span>
                 <input
-                  className={financeModuleFilterFieldClass}
+                  className={financeModuleFilterFieldClass()}
                   value={form.nomusClassification}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, nomusClassification: e.target.value }))
@@ -407,10 +417,10 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
               </label>
             ) : null}
             {form.ruleType === "FINANCIAL_NATURE" ? (
-              <label className="space-y-1 md:col-span-2">
-                <span className={financeModuleFilterLabelClass}>Natureza financeira</span>
+              <label className="block space-y-1.5 md:col-span-2">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>Natureza financeira</span>
                 <input
-                  className={financeModuleFilterFieldClass}
+                  className={financeModuleFilterFieldClass()}
                   value={form.financialNature}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, financialNature: e.target.value }))
@@ -419,10 +429,10 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
               </label>
             ) : null}
             {form.ruleType === "MANUAL" ? (
-              <label className="space-y-1">
-                <span className={financeModuleFilterLabelClass}>ID do título AP</span>
+              <label className="block space-y-1.5">
+                <span className={cn(financeModuleFilterLabelClass(), "block")}>ID do título AP</span>
                 <input
-                  className={financeModuleFilterFieldClass}
+                  className={financeModuleFilterFieldClass()}
                   value={form.accountsPayableId}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, accountsPayableId: e.target.value }))
@@ -430,21 +440,23 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
                 />
               </label>
             ) : null}
-            <label className="space-y-1 md:col-span-2">
-              <span className={financeModuleFilterLabelClass}>Observação</span>
+            <label className="block space-y-1.5 md:col-span-2">
+              <span className={cn(financeModuleFilterLabelClass(), "block")}>Observação</span>
               <textarea
-                className={cn(financeModuleFilterFieldClass, "min-h-16")}
+                className={cn(financeModuleFilterFieldClass(), "min-h-24 resize-y")}
                 value={form.notes}
                 onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Notas internas sobre esta regra (opcional)"
+                rows={3}
               />
             </label>
           </div>
           {supplierOptionalHint ? (
-            <p className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+            <p className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs leading-relaxed text-primary">
               {supplierOptionalHint}
             </p>
           ) : null}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
             <button
               type="button"
               className="rounded-lg border px-3 py-2 text-xs font-semibold"
@@ -524,7 +536,7 @@ export function FinanceGeneralClassificationRulesPanel({ canManage }: Props) {
                 <code>{FINANCE_CLASSIFICATION_RULE_APPLY_CONFIRMATION_TEXT}</code>
               </p>
               <input
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 value={applyConfirm}
                 onChange={(e) => setApplyConfirm(e.target.value)}
               />
