@@ -26,6 +26,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import {
   DEFAULT_PRICING_BATCH_ITEM_SCOPE,
   filterProductsForPricingBatchScope,
+  filterProductsForPricingBatchSearch,
   PRICING_BATCH_ITEM_SCOPE_OPTIONS,
   pricingBatchItemTypeLabel,
   pruneSelectedIdsForPricingBatchScope,
@@ -324,15 +325,10 @@ export const PricingModule = () => {
     [products, batchItemScope]
   );
 
-  const batchFilteredProducts = useMemo(() => {
-    const term = searchTermBatch.trim().toLowerCase();
-    if (!term) return batchScopeProducts;
-    return batchScopeProducts.filter(
-      (product) =>
-        String(product.name ?? "").toLowerCase().includes(term) ||
-        String(product.sku ?? "").toLowerCase().includes(term)
-    );
-  }, [batchScopeProducts, searchTermBatch]);
+  const batchFilteredProducts = useMemo(
+    () => filterProductsForPricingBatchSearch(batchScopeProducts, searchTermBatch),
+    [batchScopeProducts, searchTermBatch]
+  );
 
   useEffect(() => {
     setSelectedProductIds((prev) => {
@@ -1508,7 +1504,7 @@ export const PricingModule = () => {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
-                      type="text" placeholder="Filtrar itens por SKU ou nome..."
+                      type="text" placeholder="Filtrar por SKU, código ou nome..."
                       className="w-full pl-9 pr-3 py-2 rounded-lg bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
                       value={searchTermBatch} onChange={(e) => setSearchTermBatch(e.target.value)}
                     />

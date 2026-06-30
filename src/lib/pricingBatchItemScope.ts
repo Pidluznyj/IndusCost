@@ -76,3 +76,31 @@ export function pruneSelectedIdsForPricingBatchScope(
   );
   return selectedIds.filter((id) => allowed.has(id));
 }
+
+export type PricingBatchProductListRow = {
+  sku?: string | null;
+  name?: string | null;
+  sourceExternalId?: string | null;
+};
+
+/** Busca local da lista em lote — SKU, código externo (Nomus) ou nome. */
+export function matchesPricingBatchProductSearch(
+  product: PricingBatchProductListRow,
+  rawTerm: string
+): boolean {
+  const term = rawTerm.trim().toLowerCase();
+  if (!term) return true;
+  const haystack = [product.sku, product.name, product.sourceExternalId]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  return haystack.some((value) => value.includes(term));
+}
+
+export function filterProductsForPricingBatchSearch<T extends PricingBatchProductListRow>(
+  products: T[],
+  rawTerm: string
+): T[] {
+  const term = rawTerm.trim();
+  if (!term) return products;
+  return products.filter((product) => matchesPricingBatchProductSearch(product, term));
+}

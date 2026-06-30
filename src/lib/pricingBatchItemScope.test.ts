@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_PRICING_BATCH_ITEM_SCOPE,
   filterProductsForPricingBatchScope,
+  filterProductsForPricingBatchSearch,
   matchesPricingBatchItemScope,
+  matchesPricingBatchProductSearch,
   parsePricingBatchItemScope,
   pricingBatchItemTypeLabel,
   pruneSelectedIdsForPricingBatchScope,
@@ -60,6 +62,18 @@ describe("pricingBatchItemScope", () => {
     assert.equal(matchesPricingBatchItemScope("COMPONENT", "components"), true);
     assert.equal(matchesPricingBatchItemScope("PRODUCT", "components"), false);
   });
+
+  it("busca por SKU, código externo ou nome", () => {
+    const rows = [
+      { id: "1", sku: "100.01", name: "Produto A", sourceExternalId: "NOM-100" },
+      { id: "2", sku: "200.01", name: "Componente B", sourceExternalId: null },
+    ];
+    assert.equal(filterProductsForPricingBatchSearch(rows, "nom-100").length, 1);
+    assert.equal(filterProductsForPricingBatchSearch(rows, "200.01").length, 1);
+    assert.equal(filterProductsForPricingBatchSearch(rows, "componente").length, 1);
+    assert.ok(matchesPricingBatchProductSearch(rows[0]!, "100.01"));
+    assert.equal(filterProductsForPricingBatchSearch(rows, "inexistente").length, 0);
+  });
 });
 
 describe("pricingBatchSimulation", () => {
@@ -109,7 +123,8 @@ describe("pricing batch UI wiring", () => {
     assert.match(moduleSrc, /itemScope: batchItemScope/);
     assert.match(moduleSrc, /PRICING_BATCH_ITEM_SCOPE_OPTIONS/);
     assert.match(moduleSrc, /DEFAULT_PRICING_BATCH_ITEM_SCOPE/);
-    assert.doesNotMatch(moduleSrc, /Filtrar produtos por SKU ou nome/);
+    assert.match(moduleSrc, /Filtrar por SKU, código ou nome/);
+    assert.match(moduleSrc, /filterProductsForPricingBatchSearch/);
   });
 
   it("server usa motor server-side de lote", async () => {
