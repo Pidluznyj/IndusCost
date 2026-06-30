@@ -37,7 +37,8 @@ describe("salesMarginRulesConsumptionAudit", () => {
     const routes = read("src/lib/customerIntelligenceRoutes.ts");
     assert.match(routes, /enrichCustomerIntelligenceOrdersWithOfficialMargin/);
     const ci = read("src/lib/customerIntelligence.ts");
-    assert.match(ci, /computeWeightedMarginPercent/);
+    assert.match(ci, /aggregateSalesOrderMarginSummaries/);
+    assert.match(ci, /marginCoverage/);
     assert.doesNotMatch(ci, /marginPercSamples\.reduce/);
   });
 
@@ -82,6 +83,17 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(script, /costCoverageStatus/);
     assert.match(script, /marginRevenueCovered/);
     assert.match(script, /buildSalesOrderListWhere/);
+    assert.match(script, /Auditoria por tela/);
+    assert.match(script, /buildScreenMarginAuditRows/);
+  });
+
+  it("relatórios expõem margem oficial com cobertura", () => {
+    const reports = read("src/lib/reportsDataService.ts");
+    assert.match(reports, /calculateOfficialSalesOrderMarginsForOrders/);
+    assert.match(reports, /officialMarginValue/);
+    assert.match(reports, /marginPortfolio/);
+    const ui = read("src/components/ReportsModule.tsx");
+    assert.match(ui, /resolveSalesOrderMarginMoneyLabel/);
   });
 
   it("motor expõe cobertura de margem parcial", () => {

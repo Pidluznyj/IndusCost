@@ -7,6 +7,10 @@ import {
   formatKpiDisplayValue,
 } from "@/src/lib/kpiDisplayFormat";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
+import {
+  buildSalesOrderMarginCoverageHint,
+  resolveSalesOrderMarginPercentLabel,
+} from "@/src/lib/salesOrderMarginDisplay";
 
 type KpiItem = {
   label: string;
@@ -58,7 +62,17 @@ export function buildCustomerIntelligenceKpiItems(
     "Pedidos válidos"
   );
   const ticket = formatOptionalCurrency(s.averageTicket);
-  const margin = formatOptionalPercent(s.averageMarginPercent);
+  const marginCoverage = s.marginCoverage;
+  const margin =
+    marginCoverage?.costCoverageStatus === "NONE" || s.averageMarginPercent == null
+      ? { label: "", value: "Não informado" }
+      : formatOptionalPercent(s.averageMarginPercent);
+  const marginHint =
+    marginCoverage != null
+      ? buildSalesOrderMarginCoverageHint(marginCoverage, (v) =>
+          v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+        )
+      : undefined;
   const openPortfolio = formatKpiDisplayValue(
     formatKpiCompactCurrency(s.openPortfolioAmount),
     "Carteira comercial em aberto"
@@ -97,9 +111,10 @@ export function buildCustomerIntelligenceKpiItems(
       valueTitle: ticket.valueTitle,
     },
     {
-      label: "Margem média",
+      label: resolveSalesOrderMarginPercentLabel(marginCoverage),
       value: margin.value,
       valueTitle: margin.valueTitle,
+      hint: marginHint,
     },
     {
       label: "Carteira em aberto (AR)",

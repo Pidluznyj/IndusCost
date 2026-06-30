@@ -149,6 +149,241 @@ function buildMarginAuditDiagnostics(input: {
   };
 }
 
+type ScreenMarginAuditRow = {
+  screen: string;
+  endpoint: string;
+  officialEngine: string;
+  exposesMargin: string;
+  totalRevenue: number | null;
+  coveredRevenue: number | null;
+  uncoveredRevenue: number | null;
+  marginValue: number | null;
+  marginPercent: number | null;
+  coverageStatus: string;
+  divergence: string;
+  legacyFallback: string;
+};
+
+function fileUsesOfficialMarginEngine(rel: string): boolean {
+  const src = readSrc(rel);
+  return (
+    src.includes("calculateOfficialSalesOrderMarginsForOrders") ||
+    src.includes("buildOfficialSalesMarginRulesResult") ||
+    src.includes("attachMarginsToSalesOrders") ||
+    src.includes("attachMarginToSalesOrderDetail") ||
+    src.includes("marginSummary") ||
+    src.includes("enrichCustomerIntelligenceOrdersWithOfficialMargin") ||
+    src.includes("loadOfficialCommercial360MarginBundle") ||
+    src.includes("officialMarginValue") ||
+    src.includes("resolveSalesOrderMarginMoneyLabel") ||
+    src.includes("resolveSalesOrderMarginPercentLabel")
+  );
+}
+
+function fileUsesLegacyMarginFallback(rel: string): boolean {
+  const src = readSrc(rel);
+  if (src.includes("officialMarginValue") || src.includes("marginSummary")) {
+    if (src.includes("safeOrderNet(it.marginValue)")) return true;
+  }
+  if (src.includes("totalMarginValue") && src.includes("validCount")) return true;
+  if (src.includes("legacyPercent")) return true;
+  if (src.includes("marginPercSamples")) return true;
+  return false;
+}
+
+function buildScreenMarginAuditRows(input: {
+  soldScoped: ReturnType<typeof resolveOfficialScopedMarginMetrics>;
+  ordersMarginAmount: number;
+  mgmtConsolidated:
+    | {
+        marginValue: number;
+        marginPercent: number | null;
+        totalSalesRevenueInScope?: number;
+        marginRevenueCovered?: number;
+        marginRevenueUncovered?: number;
+        costCoverageStatus?: string;
+      }
+    | null
+    | undefined;
+  resultTotals: { marginAmount: number; marginPercent: number | null };
+  financeMargin:
+    | {
+        marginValue: number;
+        marginPercent: number | null;
+        totalSalesRevenueInScope?: number;
+        marginRevenueCovered?: number;
+        marginRevenueUncovered?: number;
+        costCoverageStatus?: string;
+      }
+    | null
+    | undefined;
+  engineRef: number | null;
+}): ScreenMarginAuditRow[] {
+  const ref = input.engineRef;
+
+  function divergence(actual: number | null | undefined): string {
+    if (ref == null || actual == null) return "—";
+    const delta = Math.round((ref - actual) * 100) / 100;
+    return nearlyEqual(ref, actual) ? "OK" : String(delta);
+  }
+
+  const staticScreens: Array<{
+    screen: string;
+    endpoint: string;
+    file: string;
+    exposesMargin: boolean;
+    metrics?: {
+      totalRevenue: number | null;
+      coveredRevenue: number | null;
+      uncoveredRevenue: number | null;
+      marginValue: number | null;
+      marginPercent: number | null;
+      coverageStatus: string;
+      divergence: string;
+    };
+  }> = [
+    {
+      screen: "Pedidos de Venda — lista",
+      endpoint: "GET /api/sales-orders + attachMarginsToSalesOrders",
+      file: "src/components/sales/SalesOrderListTable.tsx",
+      exposesMargin: true,
+      metrics: {
+        totalRevenue: input.soldScoped.totalSalesRevenueInScope,
+        coveredRevenue: input.soldScoped.marginRevenueCovered,
+        uncoveredRevenue: input.soldScoped.marginRevenueUncovered,
+        marginValue: input.ordersMarginAmount,
+        marginPercent:
+          input.soldScoped.marginRevenueCovered > 0
+            ? (input.ordersMarginAmount / input.soldScoped.marginRevenueCovered) * 100
+            : null,
+        coverageStatus: input.soldScoped.costCoverageStatus,
+        divergence: divergence(input.ordersMarginAmount),
+      },
+    },
+    {
+      screen: "Pedidos de Venda — detalhe",
+      endpoint: "GET /api/sales-orders/:id + attachMarginToSalesOrderDetail",
+      file: "src/components/SalesOrdersModule.tsx",
+      exposesMargin: true,
+    },
+    {
+      screen: "Gestão de Pedidos",
+      endpoint: "GET /api/sales-orders/management",
+      file: "src/components/sales/SalesOrderManagementMarginOverview.tsx",
+      exposesMargin: true,
+      metrics: {
+        totalRevenue: input.mgmtConsolidated?.totalSalesRevenueInScope ?? null,
+        coveredRevenue: input.mgmtConsolidated?.marginRevenueCovered ?? null,
+        uncoveredRevenue: input.mgmtConsolidated?.marginRevenueUncovered ?? null,
+        marginValue: input.mgmtConsolidated?.marginValue ?? null,
+        marginPercent: input.mgmtConsolidated?.marginPercent ?? null,
+        coverageStatus: input.mgmtConsolidated?.costCoverageStatus ?? "—",
+        divergence: divergence(input.mgmtConsolidated?.marginValue),
+      },
+    },
+    {
+      screen: "Aba Resultado",
+      endpoint: "GET /api/sales-orders/result",
+      file: "src/components/sales/SalesOrderResultPage.tsx",
+      exposesMargin: true,
+      metrics: {
+        totalRevenue: null,
+        coveredRevenue: null,
+        uncoveredRevenue: null,
+        marginValue: input.resultTotals.marginAmount,
+        marginPercent: input.resultTotals.marginPercent,
+        coverageStatus: "GERENCIAL",
+        divergence: "ESCOPO DIFERENTE",
+      },
+    },
+    {
+      screen: "Financeiro > Pedidos de Venda",
+      endpoint: "GET /api/finance/sales-orders/dashboard",
+      file: "src/lib/financeSalesOrdersDashboard.ts",
+      exposesMargin: true,
+      metrics: {
+        totalRevenue: input.financeMargin?.totalSalesRevenueInScope ?? null,
+        coveredRevenue: input.financeMargin?.marginRevenueCovered ?? null,
+        uncoveredRevenue: input.financeMargin?.marginRevenueUncovered ?? null,
+        marginValue: input.financeMargin?.marginValue ?? null,
+        marginPercent: input.financeMargin?.marginPercent ?? null,
+        coverageStatus: input.financeMargin?.costCoverageStatus ?? "—",
+        divergence: divergence(input.financeMargin?.marginValue),
+      },
+    },
+    {
+      screen: "CRM Comercial / Inteligência",
+      endpoint: "GET /api/crm/customers/:id/intelligence",
+      file: "src/components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.tsx",
+      exposesMargin: true,
+    },
+    {
+      screen: "Cliente 360",
+      endpoint: "GET /api/customers/:id/commercial-360",
+      file: "src/components/customers/CustomerCommercial360.tsx",
+      exposesMargin: true,
+    },
+    {
+      screen: "Produtos vendidos (Indicadores)",
+      endpoint: "GET /api/sales-orders/margin-indicators",
+      file: "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
+      exposesMargin: true,
+    },
+    {
+      screen: "Relatório Executivo / Presidencial",
+      endpoint: "GET /api/reports/data",
+      file: "src/components/ReportsModule.tsx",
+      exposesMargin: true,
+      metrics: {
+        totalRevenue: input.soldScoped.totalSalesRevenueInScope,
+        coveredRevenue: input.soldScoped.marginRevenueCovered,
+        uncoveredRevenue: input.soldScoped.marginRevenueUncovered,
+        marginValue: input.soldScoped.marginAmount,
+        marginPercent: input.soldScoped.marginPercent,
+        coverageStatus: input.soldScoped.costCoverageStatus,
+        divergence: "OK",
+      },
+    },
+    {
+      screen: "Exportação margem interna",
+      endpoint: "GET /api/sales-orders/margin-indicators/export",
+      file: "src/lib/salesOrderInternalMarginExport.server.ts",
+      exposesMargin: true,
+    },
+    {
+      screen: "Exportação Financeiro Pedidos",
+      endpoint: "GET /api/finance/sales-orders/export",
+      file: "src/lib/financeSalesOrdersExport.ts",
+      exposesMargin: true,
+    },
+    {
+      screen: "Propostas comerciais",
+      endpoint: "ProposalModule (domínio separado)",
+      file: "src/components/ProposalModule.tsx",
+      exposesMargin: false,
+    },
+  ];
+
+  return staticScreens.map((row) => {
+    const usesEngine = fileUsesOfficialMarginEngine(row.file);
+    const legacy = fileUsesLegacyMarginFallback(row.file);
+    return {
+      screen: row.screen,
+      endpoint: row.endpoint,
+      officialEngine: row.exposesMargin ? (usesEngine ? "SIM" : "NÃO") : "NÃO APLICÁVEL",
+      exposesMargin: row.exposesMargin ? "SIM" : "NÃO APLICÁVEL",
+      totalRevenue: row.metrics?.totalRevenue ?? null,
+      coveredRevenue: row.metrics?.coveredRevenue ?? null,
+      uncoveredRevenue: row.metrics?.uncoveredRevenue ?? null,
+      marginValue: row.metrics?.marginValue ?? null,
+      marginPercent: row.metrics?.marginPercent ?? null,
+      coverageStatus: row.metrics?.coverageStatus ?? "—",
+      divergence: row.metrics?.divergence ?? "—",
+      legacyFallback: legacy ? "SIM" : "NÃO",
+    };
+  });
+}
+
 async function main() {
   const year = Number(parseArg("year") ?? "2026");
   const month = Number(parseArg("month") ?? "6");
@@ -407,7 +642,30 @@ async function main() {
     );
   }
 
+  const screenRows = buildScreenMarginAuditRows({
+    soldScoped,
+    ordersMarginAmount,
+    mgmtConsolidated,
+    resultTotals: resultPayload.totals,
+    financeMargin,
+    engineRef: soldScoped.marginAmount,
+  });
+
+  console.log("\n### Auditoria por tela / fonte");
+  console.log(
+    "| Tela | Endpoint | Motor oficial | Expõe margem | Receita total | Receita coberta | Receita descoberta | Margem R$ | Margem % | Cobertura | Divergência | Fallback legado |"
+  );
+  console.log("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |");
+  for (const r of screenRows) {
+    console.log(
+      `| ${r.screen} | ${r.endpoint} | ${r.officialEngine} | ${r.exposesMargin} | ${fmt(r.totalRevenue)} | ${fmt(r.coveredRevenue)} | ${fmt(r.uncoveredRevenue)} | ${fmt(r.marginValue)} | ${r.marginPercent == null ? "—" : `${fmt(r.marginPercent)}%`} | ${r.coverageStatus} | ${r.divergence} | ${r.legacyFallback} |`
+    );
+  }
+
   const failures = rows.filter((r) => r.status === "DIFERENÇA");
+  const screenFailures = screenRows.filter(
+    (r) => r.exposesMargin === "SIM" && (r.officialEngine === "NÃO" || r.legacyFallback === "SIM")
+  );
   const alerts: string[] = [];
 
   if (
@@ -436,6 +694,13 @@ async function main() {
     if (reportsMix.includes("safeOrderNet(it.marginValue)")) {
       alerts.push("ALERTA: mix de produtos em Relatórios ainda usa marginValue legado do banco.");
     }
+    const reportsUi = readSrc("src/components/ReportsModule.tsx");
+    if (
+      reportsUi.includes('"Margem R$"') &&
+      !reportsUi.includes("resolveSalesOrderMarginMoneyLabel")
+    ) {
+      alerts.push("ALERTA: ReportsModule usa label genérico Margem R$ sem distinção parcial/total.");
+    }
   }
 
   if (marginLabelLooksLikeTotal("Margem R$ total")) {
@@ -445,6 +710,14 @@ async function main() {
   if (alerts.length > 0) {
     console.log("\n### Alertas de semântica de margem");
     for (const alert of alerts) console.log(`- ${alert}`);
+    process.exitCode = 1;
+  }
+
+  if (screenFailures.length > 0) {
+    console.log("\n### Telas com consumo não oficial ou fallback legado");
+    for (const row of screenFailures) {
+      console.log(`- ${row.screen}: motor=${row.officialEngine}, fallback=${row.legacyFallback}`);
+    }
     process.exitCode = 1;
   }
 

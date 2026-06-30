@@ -82,6 +82,8 @@ export type CustomerIntelligenceCommercialSummary = {
   averageTicket: number | null;
   averageMarginPercent: number | null;
   totalMarginAmount: number | null;
+  /** Cobertura agregada do motor oficial — distingue margem total vs parcial. */
+  marginCoverage?: import("./salesOrderMarginTypes.js").SalesOrderMarginCoveragePayload | null;
   lastOrderDate: string | null;
   daysSinceLastOrder: number | null;
   leadingProduct: {
@@ -498,6 +500,9 @@ export type CustomerIntelligenceOrderInput = {
   totalNetValue: unknown;
   totalMarginValue: unknown;
   totalMarginPerc: unknown;
+  marginRevenueCovered?: unknown;
+  totalSalesRevenueInScope?: unknown;
+  costCoverageStatus?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostCoverageStatus;
   hasInvoicing: boolean;
   items: Array<{
     id?: string;

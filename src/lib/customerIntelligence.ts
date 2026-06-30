@@ -50,7 +50,9 @@ import {
   resolveOfficialCustomerIntelligenceOrderMetrics,
   resolveOfficialScopedOrderMetrics,
 } from "@/src/lib/salesOrderRulesAdapter.js";
-import { computeWeightedMarginPercent } from "@/src/lib/salesMarginRulesAdapter.js";
+import { aggregateSalesOrderMarginSummaries } from "@/src/lib/salesOrderMarginDisplay.js";
+import { resolveSalesOrderMarginSummaryStatusMeta } from "@/src/lib/salesOrderMarginStatus.js";
+import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes.js";
 import type {
   CustomerIntelligenceBuildInput,
   CustomerIntelligenceOrderInput,
@@ -277,31 +279,61 @@ export function buildCustomerIntelligenceReport(
 
   let averageMarginPercent: number | null = null;
   let totalMarginAmount: number | null = null;
+  let marginCoverage: SalesOrderMarginSummaryPayload | null = null;
 
-  const marginValueSamples = filteredMetricsOrders
-    .map((o) => safeFiniteNumber(o.totalMarginValue))
-    .filter((v): v is number => v != null);
-  let totalMarginRevenue = filteredMetricsOrders.reduce((sum, order) => {
-    const covered = safeFiniteNumber(
-      (order as { marginRevenueCovered?: unknown }).marginRevenueCovered
-    );
-    return sum + (covered ?? 0);
-  }, 0);
-  if (marginValueSamples.length > 0) {
-    totalMarginAmount = roundMoney(marginValueSamples.reduce((a, b) => a + b, 0));
-    if (totalMarginRevenue <= 0) {
-      totalMarginRevenue = filteredMetricsOrders.reduce(
-        (sum, order) => sum + safeCommercialNumber(order.totalNetValue),
-        0
-      );
+  const marginSummaries: SalesOrderMarginSummaryPayload[] = [];
+  for (const order of filteredMetricsOrders) {
+    const marginValue = safeFiniteNumber(order.totalMarginValue);
+    if (marginValue == null) continue;
+    const marginRevenueCovered =
+      safeFiniteNumber(order.marginRevenueCovered) ?? safeCommercialNumber(order.totalNetValue);
+    const totalSalesRevenueInScope =
+      safeFiniteNumber(order.totalSalesRevenueInScope) ?? safeCommercialNumber(order.totalNetValue);
+    const marginRevenueUncovered = Math.max(0, totalSalesRevenueInScope - marginRevenueCovered);
+    const statusMeta = resolveSalesOrderMarginSummaryStatusMeta("OK");
+    marginSummaries.push({
+      netRevenue: marginRevenueCovered,
+      totalCost: 0,
+      marginValue,
+      marginPercent: safeFiniteNumber(order.totalMarginPerc),
+      markup: null,
+      itemsCount: order.items.length,
+      validItemsCount: order.items.length,
+      ignoredItemsCount: 0,
+      hasMissingCost: order.costCoverageStatus === "PARTIAL" || order.costCoverageStatus === "NONE",
+      hasMissingProduct: false,
+      hasNegativeMargin: marginValue < 0,
+      hasInvalidRevenue: false,
+      status: order.costCoverageStatus === "NONE" ? "SEM_CUSTO" : "OK",
+      statusLabel: statusMeta.statusLabel,
+      statusSeverity: statusMeta.statusSeverity,
+      totalSalesRevenueInScope,
+      marginRevenueCovered,
+      marginRevenueUncovered,
+      marginCoveragePercent:
+        totalSalesRevenueInScope > 0
+          ? roundMoney((marginRevenueCovered / totalSalesRevenueInScope) * 100)
+          : null,
+      itemsTotal: order.items.length,
+      itemsWithCost: order.costCoverageStatus === "NONE" ? 0 : order.items.length,
+      itemsWithoutCost: order.costCoverageStatus === "FULL" ? 0 : order.items.length,
+      costCoverageStatus: order.costCoverageStatus ?? "NONE",
+    });
+  }
+
+  if (marginSummaries.length > 0) {
+    marginCoverage = aggregateSalesOrderMarginSummaries(marginSummaries) ?? null;
+    totalMarginAmount = marginCoverage?.marginValue ?? null;
+    averageMarginPercent = marginCoverage?.marginPercent ?? null;
+    if (marginCoverage?.costCoverageStatus === "PARTIAL") {
       warnings.push(
-        "Margem parcial: percentual calculado sobre receita total do pedido por falta de cobertura detalhada."
+        `Margem parcial: calculada sobre ${marginCoverage.marginRevenueCovered.toFixed(2)} de ${marginCoverage.totalSalesRevenueInScope.toFixed(2)} vendidos (${marginCoverage.marginCoveragePercent ?? 0}% da receita).`
       );
+    } else if (marginCoverage?.costCoverageStatus === "NONE") {
+      warnings.push("Margem indisponível — nenhuma linha com custo no filtro.");
+      totalMarginAmount = null;
+      averageMarginPercent = null;
     }
-    averageMarginPercent = computeWeightedMarginPercent(
-      totalMarginAmount ?? 0,
-      totalMarginRevenue
-    );
   } else if (validOrdersCount > 0) {
     warnings.push("Margem indisponível nos pedidos do filtro.");
     totalMarginAmount = null;
@@ -340,6 +372,7 @@ export function buildCustomerIntelligenceReport(
     averageTicket: averageTicket != null ? roundMoney(averageTicket) : null,
     averageMarginPercent,
     totalMarginAmount,
+    marginCoverage,
     lastOrderDate: toIsoDateOnly(filteredLastOrderDate),
     daysSinceLastOrder,
     leadingProduct,

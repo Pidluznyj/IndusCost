@@ -2,6 +2,10 @@ import { fleetRowsToCsv } from "./fleetCsv.js";
 import type { FinanceSalesOrdersDashboardPayload } from "./financeSalesOrdersDashboardTypes.js";
 import { formatExecutivePercent } from "./executiveDashboardFormatters.js";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "./salesOrderInternalMarginExport.js";
+import {
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
+} from "./salesOrderMarginCoverage.js";
 
 function formatMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
@@ -52,11 +56,18 @@ export function buildFinanceSalesOrdersExportCsv(
         [SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER],
         ["Receita líquida", formatMoney(margin.netRevenue)],
         ["Custo estimado", formatMoney(margin.totalCost)],
-        ["Margem R$", formatMoney(margin.marginValue)],
+        [resolveSalesOrderMarginMoneyLabel(margin), formatMoney(margin.marginValue)],
         [
-          "Margem %",
+          resolveSalesOrderMarginPercentLabel(margin),
           margin.marginPercent != null ? formatExecutivePercent(margin.marginPercent, 2) : "",
         ],
+        ["Cobertura receita", margin.costCoverageStatus],
+        [
+          "Receita vendida (escopo)",
+          formatMoney(margin.totalSalesRevenueInScope),
+        ],
+        ["Receita coberta", formatMoney(margin.marginRevenueCovered)],
+        ["Receita sem custo", formatMoney(margin.marginRevenueUncovered)],
         ["Markup", margin.markup != null ? String(margin.markup) : ""],
         ["Status margem", margin.statusLabel],
         ["Itens sem custo", margin.hasMissingCost ? "Sim" : "Não"],

@@ -13,11 +13,13 @@ import {
   type OfficialReportsProductMixRow,
 } from "./salesOrderRulesAdapter.js";
 import { calculateOfficialSalesOrderMarginsForOrders } from "./salesMarginRulesAdapter.js";
+import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 import type { SalesOrderListFilters } from "./salesOrdersListSummary.js";
 import {
   extractOfficialProductFinalUnitCost,
 } from "./productOfficialFinalCost.js";
 import { isCostAnalysisFailure } from "./productCostSnapshot.js";
+import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
 
 export type ReportsDataQuery = {
   dateFrom: string | null;
@@ -84,6 +86,7 @@ export type ReportsDataPayload = {
   executive: {
     previousPeriod: ReturnType<typeof buildOfficialReportsPreviousPeriodPayload> | null;
   };
+  marginPortfolio: SalesOrderMarginSummaryPayload | null;
 };
 
 const STALE_DAYS = 14;
@@ -327,6 +330,10 @@ export async function buildReportsDataPayload(
 
   const mixByProduct = buildOfficialReportsProductMixFromOrders(rulesOrders, listFilters);
 
+  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+    [...marginByOrder.values()].map((row) => row.marginSummary)
+  ) ?? null;
+
   const allOrdersForRepurchase = await db.salesOrder.findMany({
     where: { status: { not: "CANCELLED" } },
     select: { customerId: true, issueDate: true },
@@ -511,5 +518,6 @@ export async function buildReportsDataPayload(
       totalDistinctProductsInFilter: uniqueProductIds.length,
     },
     executive: { previousPeriod },
+    marginPortfolio,
   };
 }

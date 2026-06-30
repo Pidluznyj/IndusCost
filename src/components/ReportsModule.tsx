@@ -27,6 +27,11 @@ import {
 } from "recharts";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import {
+  buildSalesOrderMarginCoverageHint,
+  resolveSalesOrderMarginMoneyLabel,
+} from "@/src/lib/salesOrderMarginDisplay";
+import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
+import {
   formatKpiCompactCurrency,
   formatKpiCompactNumber,
   formatKpiDisplayValue,
@@ -119,6 +124,7 @@ type ReportsData = {
       orders: number;
     }>;
   };
+  marginPortfolio: SalesOrderMarginSummaryPayload | null;
   costing: {
     productsAnalyzed: Array<{
       sku: string;
@@ -271,6 +277,16 @@ export const ReportsModule = () => {
       label: m.month,
     }));
   }, [data]);
+
+  const reportsMarginColumnLabel = useMemo(
+    () => resolveSalesOrderMarginMoneyLabel(data?.marginPortfolio ?? null),
+    [data?.marginPortfolio]
+  );
+
+  const reportsMarginCoverageHint = useMemo(() => {
+    if (!data?.marginPortfolio) return null;
+    return buildSalesOrderMarginCoverageHint(data.marginPortfolio, formatCurrency);
+  }, [data?.marginPortfolio]);
 
   const handlePrint = () => window.print();
 
@@ -573,8 +589,11 @@ export const ReportsModule = () => {
                 </div>
                 <div className="rounded-xl border border-border p-4 reports-print-break">
                   <h3 className="text-sm font-bold mb-4">Top produtos — valor vendido (período)</h3>
+                  {reportsMarginCoverageHint && (
+                    <p className="text-xs text-muted-foreground mb-3">{reportsMarginCoverageHint}</p>
+                  )}
                   <Table
-                    cols={["SKU", "Valor vendido", "Margem R$"]}
+                    cols={["SKU", "Valor vendido", reportsMarginColumnLabel]}
                     rows={data.products.mixByProduct.slice(0, 10).map((r) => [
                       r.sku,
                       formatCurrency(r.revenue),
@@ -719,8 +738,11 @@ export const ReportsModule = () => {
             <div className="space-y-6">
               <div className="rounded-xl border border-border p-4 overflow-x-auto reports-print-break">
                 <h3 className="text-sm font-bold mb-2">Mix por produto (itens dos pedidos filtrados)</h3>
+                {reportsMarginCoverageHint && (
+                  <p className="text-xs text-muted-foreground mb-3">{reportsMarginCoverageHint}</p>
+                )}
                 <Table
-                  cols={["SKU", "Nome", "Tipo", "Qtd", "Valor vendido", "Margem R$", "Pedidos", "Linhas"]}
+                  cols={["SKU", "Nome", "Tipo", "Qtd", "Valor vendido", reportsMarginColumnLabel, "Pedidos", "Linhas"]}
                   rows={data.products.mixByProduct.map((r) => [
                     r.sku,
                     r.name,
