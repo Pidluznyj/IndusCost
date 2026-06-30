@@ -254,7 +254,14 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Conclusão Executiva/);
     assert.match(document, /FinanceCashFlowMonthlyTimelineTable/);
     assert.match(document, /executive-report-monthly-timeline/);
+    assert.match(document, /calendarAgenda\.executiveSummary/);
     assert.doesNotMatch(document, /pageId="billing-projection"/);
+  });
+
+  it("linha do tempo mensal do PDF consome payload anual oficial do backend", () => {
+    const service = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
+    assert.match(service, /resolveExecutiveReportCashFlowMonthlyTimeline/);
+    assert.match(service, /cashFlowAnnualPayload\.executiveSummary\.monthlyTimeline/);
   });
 
   it("bloqueia impressão enquanto loading", () => {

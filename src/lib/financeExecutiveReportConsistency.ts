@@ -38,6 +38,7 @@ import {
   buildExecutiveReportApPortfolioFilters,
   buildExecutiveReportArFilters,
   buildExecutiveReportArPortfolioFilters,
+  buildExecutiveReportCashFlowAnnualFilters,
   buildExecutiveReportCashFlowFilters,
   buildExecutiveReportModuleSections,
   type ExecutiveReportOfficialPayloads,
@@ -181,7 +182,8 @@ export function auditExecutiveReportCashFlowParity(
 
 export function auditExecutiveReportCalendarParity(
   reportCalendar: ReturnType<typeof buildExecutiveReportModuleSections>["calendarAgenda"],
-  officialCashFlow: ReturnType<typeof buildFinanceCashFlowDashboard>
+  officialCashFlow: ReturnType<typeof buildFinanceCashFlowDashboard>,
+  officialCashFlowAnnual: ReturnType<typeof buildFinanceCashFlowDashboard>
 ): FinanceExecutiveReportConsistencyResult {
   const mismatches: string[] = [];
   compareJsonSection(mismatches, "Calendário calendar", reportCalendar.calendar, officialCashFlow.calendar);
@@ -189,7 +191,7 @@ export function auditExecutiveReportCalendarParity(
     mismatches,
     "Calendário monthlyTimeline",
     reportCalendar.executiveSummary.monthlyTimeline,
-    officialCashFlow.executiveSummary.monthlyTimeline
+    officialCashFlowAnnual.executiveSummary.monthlyTimeline
   );
   compareJsonSection(
     mismatches,
@@ -291,7 +293,11 @@ export function auditExecutiveReportFullParity(
     auditExecutiveReportArParity(sections.accountsReceivable.payload, official.arPayload, official.filters.topN),
     auditExecutiveReportApParity(sections.accountsPayable.payload, official.apPayload, official.filters.topN),
     auditExecutiveReportCashFlowParity(sections.cashFlow.payload, official.cashFlowPayload),
-    auditExecutiveReportCalendarParity(sections.calendarAgenda, official.cashFlowPayload),
+    auditExecutiveReportCalendarParity(
+      sections.calendarAgenda,
+      official.cashFlowPayload,
+      official.cashFlowAnnualPayload
+    ),
     auditExecutiveReportHeadlineParity(sections.executiveSummary, {
       arCards: official.arPayload.cards,
       apCards: official.apPayload.cards,
@@ -409,6 +415,7 @@ export function buildOfficialModulesForExecutiveReport(input: {
   const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(input.filters);
   const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(input.filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(input.filters);
+  const cashFlowAnnualFilters = buildExecutiveReportCashFlowAnnualFilters(input.filters);
 
   const arPayload = buildOfficialAccountsReceivableDashboard({
     rows: input.arRows,
@@ -434,6 +441,14 @@ export function buildOfficialModulesForExecutiveReport(input: {
     input.arSyncCutoff,
     input.apSyncCutoff
   );
+  const cashFlowAnnualPayload = buildFinanceCashFlowDashboard(
+    input.cashFlowArRows,
+    input.cashFlowApRows,
+    cashFlowAnnualFilters,
+    input.referenceDate,
+    input.arSyncCutoff,
+    input.apSyncCutoff
+  );
 
   return {
     filters: input.filters,
@@ -441,6 +456,7 @@ export function buildOfficialModulesForExecutiveReport(input: {
     arPayload,
     apPayload,
     cashFlowPayload,
+    cashFlowAnnualPayload,
     billingTab: input.billingTab ?? null,
     salesOrdersTab: input.salesOrdersTab ?? null,
     arFilters: arPortfolioFilters,

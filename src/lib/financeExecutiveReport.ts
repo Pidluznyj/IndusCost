@@ -26,6 +26,7 @@ import {
   toArLoadFilters,
   type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
 import {
   buildCashFlowArPrismaWhere,
   buildCashFlowApPrismaWhere,
@@ -273,6 +274,16 @@ export function buildExecutiveReportCashFlowAnnualFilters(
   return buildExecutiveReportCashFlowFilters({ ...filters, month: undefined });
 }
 
+/**
+ * Linha do tempo mensal Jan–Dez para o Relatório Presidencial.
+ * Mesma fonte da tabela Fluxo de Caixa (`executiveSummary.monthlyTimeline` com carga anual).
+ */
+export function resolveExecutiveReportCashFlowMonthlyTimeline(
+  cashFlowAnnualPayload: ReturnType<typeof buildFinanceCashFlowDashboard>
+): FinanceCashFlowExecutiveMonthlyRow[] {
+  return cashFlowAnnualPayload.executiveSummary.monthlyTimeline;
+}
+
 export function buildExecutiveReportCashFlowAnnualChart(
   cashFlowAnnualPayload: ReturnType<typeof buildFinanceCashFlowDashboard>,
   year: number,
@@ -395,13 +406,15 @@ export type ExecutiveReportOfficialPayloads = {
   arPayload: OfficialAccountsReceivableDashboardPayload;
   apPayload: OfficialAccountsPayableDashboardPayload;
   cashFlowPayload: ReturnType<typeof buildFinanceCashFlowDashboard>;
+  cashFlowAnnualPayload: ReturnType<typeof buildFinanceCashFlowDashboard>;
   billingTab: Awaited<ReturnType<typeof buildFinanceBillingDashboard>>["tab"] | null;
   salesOrdersTab: Awaited<ReturnType<typeof buildSalesOrdersDashboardTab>> | null;
 };
 
 /** Monta seções do relatório a partir dos payloads oficiais — usado em auditoria de paridade. */
 export function buildExecutiveReportModuleSections(input: ExecutiveReportOfficialPayloads) {
-  const { filters, arPayload, apPayload, cashFlowPayload, billingTab, salesOrdersTab } = input;
+  const { filters, arPayload, apPayload, cashFlowPayload, cashFlowAnnualPayload, billingTab, salesOrdersTab } =
+    input;
   const topN = filters.topN;
 
   const executiveSummary = {
@@ -479,7 +492,7 @@ export function buildExecutiveReportModuleSections(input: ExecutiveReportOfficia
     calendarAgenda: {
       calendar: cashFlowPayload.calendar,
       executiveSummary: {
-        monthlyTimeline: cashFlowPayload.executiveSummary.monthlyTimeline,
+        monthlyTimeline: resolveExecutiveReportCashFlowMonthlyTimeline(cashFlowAnnualPayload),
         period: cashFlowPayload.executiveSummary.period,
         net: cashFlowPayload.executiveSummary.net,
       },
@@ -908,7 +921,7 @@ export async function buildFinanceExecutiveReport(
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlowCalendar,
       calendar: cashFlowPayload.calendar,
       executiveSummary: {
-        monthlyTimeline: cashFlowPayload.executiveSummary.monthlyTimeline,
+        monthlyTimeline: resolveExecutiveReportCashFlowMonthlyTimeline(cashFlowAnnualPayload),
         period: cashFlowPayload.executiveSummary.period,
         net: cashFlowPayload.executiveSummary.net,
       },

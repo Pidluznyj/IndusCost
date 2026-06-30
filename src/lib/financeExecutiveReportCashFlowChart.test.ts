@@ -8,6 +8,7 @@ import {
   buildExecutiveReportCashFlowAnnualChart,
   buildExecutiveReportCashFlowAnnualFilters,
   buildExecutiveReportCashFlowFilters,
+  resolveExecutiveReportCashFlowMonthlyTimeline,
 } from "./financeExecutiveReport.js";
 import { parseFinanceExecutiveReportQuery } from "./financeExecutiveReport.js";
 import {
@@ -228,6 +229,54 @@ describe("financeExecutiveReportCashFlowChart", () => {
     assert.ok((julInChart?.inflow ?? 0) > 0, "jul deve aparecer no gráfico anual");
   });
 
+  it("resolveExecutiveReportCashFlowMonthlyTimeline usa carga anual e bate com Fluxo de Caixa", () => {
+    const julAr = arRow({
+      externalId: 2,
+      dueDate: new Date(2026, 6, 10),
+      amountReceivable: 3000,
+      balanceReceivable: 3000,
+    });
+    const junAr = arRow({
+      externalId: 3,
+      dueDate: new Date(2026, 5, 10),
+      amountReceivable: 2000,
+      balanceReceivable: 2000,
+    });
+    const junAp = apRow({ dueDate: new Date(2026, 5, 20), balancePayable: 800 });
+
+    const periodPayload = buildFinanceCashFlowDashboard(
+      [junAr],
+      [junAp],
+      { year: 2026, month: 6, ...baseFilters },
+      REF
+    );
+    const annualPayload = buildFinanceCashFlowDashboard(
+      [julAr, junAr],
+      [junAp],
+      { year: 2026, ...baseFilters },
+      REF
+    );
+
+    const timeline = resolveExecutiveReportCashFlowMonthlyTimeline(annualPayload);
+    assert.equal(timeline.length, 12);
+    assert.deepEqual(
+      timeline.map((row) => row.month),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    );
+
+    const julInTimeline = timeline.find((row) => row.month === 7);
+    assert.ok((julInTimeline?.estimatedInflow ?? 0) > 0, "jul não deve ser zerado na timeline anual");
+
+    const julInPeriod = periodPayload.executiveSummary.monthlyTimeline.find((row) => row.month === 7);
+    assert.equal(julInPeriod?.estimatedInflow ?? 0, 0, "carga mensal zera meses fora do filtro");
+
+    assert.deepEqual(
+      timeline,
+      annualPayload.executiveSummary.monthlyTimeline,
+      "timeline do relatório = executiveSummary.monthlyTimeline da carga anual"
+    );
+  });
+
   it("buildExecutiveReportCashFlowAnnualChart retorna months 1–12 sem NaN", () => {
     const payload = buildFinanceCashFlowDashboard([], [], { year: 2026, ...baseFilters }, REF);
     const chart = buildExecutiveReportCashFlowAnnualChart(payload, 2026, 6);
@@ -274,6 +323,7 @@ describe("financeExecutiveReportCashFlowChart", () => {
     assert.match(src, /cashFlowAnnualLoad/);
     assert.match(src, /buildExecutiveReportCashFlowAnnualFilters/);
     assert.match(src, /annualChart:\s*cashFlowAnnualChart/);
+    assert.match(src, /resolveExecutiveReportCashFlowMonthlyTimeline\(cashFlowAnnualPayload\)/);
   });
 
   it("componente compartilhado alinha com Fluxo de Caixa (barras, linha, tooltip)", () => {

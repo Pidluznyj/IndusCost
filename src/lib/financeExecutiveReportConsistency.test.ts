@@ -344,7 +344,11 @@ describe("financeExecutiveReportConsistency — Fluxo e Calendário", () => {
       apSyncCutoff: null,
     });
     const sections = buildExecutiveReportModuleSections(official);
-    const calParity = auditExecutiveReportCalendarParity(sections.calendarAgenda, official.cashFlowPayload);
+    const calParity = auditExecutiveReportCalendarParity(
+      sections.calendarAgenda,
+      official.cashFlowPayload,
+      official.cashFlowAnnualPayload
+    );
     assert.equal(calParity.ok, true, calParity.mismatches.join("; "));
   });
 

@@ -38,7 +38,7 @@ function buildYearRangeLabel(year: number): string {
 }
 
 /**
- * Cards e gráfico usam calendarAgenda.annualChart (carga anual Jan–Dez, ignora filtro de mês).
+ * Cards, gráfico e linha do tempo mensal usam carga anual Jan–Dez (ignora filtro de mês do relatório).
  * Data-base: cover.reportDateLabel (referenceDate do relatório).
  */
 export function buildExecutiveReportCashFlowPeriodCopy(
