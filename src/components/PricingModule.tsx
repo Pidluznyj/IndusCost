@@ -23,6 +23,15 @@ import {
   type PricingSortKey,
 } from "@/src/lib/pricingListFilters";
 import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  DEFAULT_PRICING_BATCH_ITEM_SCOPE,
+  filterProductsForPricingBatchScope,
+  PRICING_BATCH_ITEM_SCOPE_OPTIONS,
+  pricingBatchItemTypeLabel,
+  pruneSelectedIdsForPricingBatchScope,
+  resolvePricingBatchItemType,
+  type PricingBatchItemScope,
+} from "@/src/lib/pricingBatchItemScope";
 
 type PriceTableLite = {
   id: string;
@@ -160,6 +169,9 @@ export const PricingModule = () => {
     freightOut: 0,
     otherVariables: 0,
   });
+  const [batchItemScope, setBatchItemScope] = useState<PricingBatchItemScope>(
+    DEFAULT_PRICING_BATCH_ITEM_SCOPE
+  );
 
   const [priceTables, setPriceTables] = useState<PriceTableLite[]>([]);
   const [commercialGenOpen, setCommercialGenOpen] = useState(false);
@@ -307,6 +319,33 @@ export const PricingModule = () => {
     setPricingSortBy("NAME_ASC");
   };
 
+  const batchScopeProducts = useMemo(
+    () => filterProductsForPricingBatchScope(products, batchItemScope),
+    [products, batchItemScope]
+  );
+
+  const batchFilteredProducts = useMemo(() => {
+    const term = searchTermBatch.trim().toLowerCase();
+    if (!term) return batchScopeProducts;
+    return batchScopeProducts.filter(
+      (product) =>
+        String(product.name ?? "").toLowerCase().includes(term) ||
+        String(product.sku ?? "").toLowerCase().includes(term)
+    );
+  }, [batchScopeProducts, searchTermBatch]);
+
+  useEffect(() => {
+    setSelectedProductIds((prev) => {
+      const next = pruneSelectedIdsForPricingBatchScope(prev, products, batchItemScope);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [batchItemScope, products]);
+
+  const handleBatchItemScopeChange = (scope: PricingBatchItemScope) => {
+    setBatchItemScope(scope);
+    setBatchResults(null);
+  };
+
   // --- UNITARY LOGIC ---
   const handleCalculateUnit = async (productId: string, taxRuleId: string) => {
     setCalculating(true);
@@ -397,11 +436,12 @@ export const PricingModule = () => {
 
   // --- BATCH LOGIC ---
   const handleToggleSelectAll = () => {
-    const filteredIds = products
-      .filter(p => p.name.toLowerCase().includes(searchTermBatch.toLowerCase()) || p.sku.toLowerCase().includes(searchTermBatch.toLowerCase()))
-      .map(p => p.id);
+    const filteredIds = batchFilteredProducts.map((product) => product.id);
 
-    if (selectedProductIds.length === filteredIds.length) {
+    if (
+      filteredIds.length > 0 &&
+      filteredIds.every((id) => selectedProductIds.includes(id))
+    ) {
       setSelectedProductIds([]);
     } else {
       setSelectedProductIds(filteredIds);
@@ -409,7 +449,7 @@ export const PricingModule = () => {
   };
 
   const handleSimulateBatch = async () => {
-    if (selectedProductIds.length === 0) return alert("Selecione ao menos 1 produto.");
+    if (selectedProductIds.length === 0) return alert("Selecione ao menos 1 item.");
     if (!batchFormData.taxRuleId) return alert("Selecione uma Regra Fiscal.");
 
     setSimulatingBatch(true);
@@ -419,7 +459,8 @@ export const PricingModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productIds: selectedProductIds,
-          ...batchFormData
+          itemScope: batchItemScope,
+          ...batchFormData,
         }),
       });
       setBatchResults(data.results ?? []);
@@ -433,12 +474,17 @@ export const PricingModule = () => {
 
   const handleApplyBatch = async () => {
     if (!batchResults) return;
-    
-    // Pega apenas os resultados verdes (SUCCESS)
-    const validResults = batchResults.filter(r => r.status === "SUCCESS");
+
+    const validResults = batchResults.filter((row) => row.status === "SUCCESS");
     if (validResults.length === 0) return alert("Nenhum item válido para aplicar.");
 
-    if (!window.confirm(`Tem certeza que deseja gravar as premissas de preço para ${validResults.length} produtos?`)) return;
+    if (
+      !window.confirm(
+        `Tem certeza que deseja gravar as premissas de preço para ${validResults.length} item(ns)?`
+      )
+    ) {
+      return;
+    }
 
     try {
       const data = await fetchJsonOk<{ appliedCount?: number }>("/api/pricing/apply-batch", {
@@ -446,14 +492,14 @@ export const PricingModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           validResults,
-          ...batchFormData
-        })
+          itemScope: batchItemScope,
+          ...batchFormData,
+        }),
       });
-      alert(`${data.appliedCount ?? 0} produtos atualizados com sucesso!`);
-      // Limpa para voltar à tabela com seleção vazia
+      alert(`${data.appliedCount ?? 0} item(ns) atualizado(s) com sucesso!`);
       setBatchResults(null);
       setSelectedProductIds([]);
-      fetchData(); // para aparecer na aba de unitário caso voltem lá
+      fetchData();
     } catch (err) {
       console.error("Apply batch error", err);
       alert(err instanceof Error ? err.message : "Falha ao aplicar lote.");
@@ -1462,13 +1508,14 @@ export const PricingModule = () => {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
-                      type="text" placeholder="Filtrar produtos por SKU ou nome..."
+                      type="text" placeholder="Filtrar itens por SKU ou nome..."
                       className="w-full pl-9 pr-3 py-2 rounded-lg bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
                       value={searchTermBatch} onChange={(e) => setSearchTermBatch(e.target.value)}
                     />
                   </div>
                   <div className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                    Selecionados: <span className="font-bold text-primary">{selectedProductIds.length}</span>
+                    Selecionados: <span className="font-bold text-primary">{selectedProductIds.length}</span>{" "}
+                    {selectedProductIds.length === 1 ? "item" : "itens"}
                   </div>
                 </div>
 
@@ -1479,29 +1526,54 @@ export const PricingModule = () => {
                         <th className="p-3 w-10 text-center">
                           <input 
                             type="checkbox" className="rounded accent-primary w-4 h-4"
-                            checked={products.length > 0 && selectedProductIds.length === products.filter(p => p.name.toLowerCase().includes(searchTermBatch.toLowerCase()) || p.sku.toLowerCase().includes(searchTermBatch.toLowerCase())).length}
+                            checked={
+                              batchFilteredProducts.length > 0 &&
+                              batchFilteredProducts.every((product) =>
+                                selectedProductIds.includes(product.id)
+                              )
+                            }
                             onChange={handleToggleSelectAll}
                           />
                         </th>
                         <th className="p-3 font-bold text-xs uppercase text-muted-foreground">SKU</th>
-                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">Produto</th>
+                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">Item</th>
+                        {batchItemScope === "all" ? (
+                          <th className="p-3 font-bold text-xs uppercase text-muted-foreground w-28">Tipo</th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {products.filter(p => p.name.toLowerCase().includes(searchTermBatch.toLowerCase()) || p.sku.toLowerCase().includes(searchTermBatch.toLowerCase())).map(p => (
-                        <tr key={p.id} className="hover:bg-accent/20 cursor-pointer" onClick={() => {
-                          setSelectedProductIds(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id] )
+                      {batchFilteredProducts.map((product) => (
+                        <tr key={product.id} className="hover:bg-accent/20 cursor-pointer" onClick={() => {
+                          setSelectedProductIds(prev => prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id] )
                         }}>
                           <td className="p-3 text-center">
                             <input 
                               type="checkbox" className="rounded accent-primary w-4 h-4 pointer-events-none"
-                              checked={selectedProductIds.includes(p.id)} readOnly
+                              checked={selectedProductIds.includes(product.id)} readOnly
                             />
                           </td>
-                          <td className="p-3 font-mono text-[10px] sm:text-xs text-muted-foreground">{p.sku}</td>
-                          <td className="p-3 font-bold text-xs sm:text-sm">{p.name}</td>
+                          <td className="p-3 font-mono text-[10px] sm:text-xs text-muted-foreground">{product.sku}</td>
+                          <td className="p-3 font-bold text-xs sm:text-sm">{product.name}</td>
+                          {batchItemScope === "all" ? (
+                            <td className="p-3">
+                              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {pricingBatchItemTypeLabel(resolvePricingBatchItemType(product.type))}
+                              </span>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
+                      {batchFilteredProducts.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={batchItemScope === "all" ? 4 : 3}
+                            className="p-8 text-center text-sm text-muted-foreground"
+                          >
+                            Nenhum item encontrado para o escopo e filtro atuais.
+                          </td>
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 </div>
@@ -1540,7 +1612,10 @@ export const PricingModule = () => {
                                 <CheckCircle2 className="h-4 w-4" />
                                 <div>
                                   <p className="font-bold text-xs text-foreground">{r.name}</p>
-                                  <p className="text-[10px] opacity-80">{r.sku}</p>
+                                  <p className="text-[10px] opacity-80">
+                                    {r.sku}
+                                    {r.itemType ? ` · ${pricingBatchItemTypeLabel(r.itemType)}` : ""}
+                                  </p>
                                 </div>
                               </div>
                             ) : (
@@ -1548,7 +1623,10 @@ export const PricingModule = () => {
                                 <AlertCircle className="h-4 w-4" />
                                 <div>
                                   <p className="font-bold text-xs text-red-800">{r.name || r.productId}</p>
-                                  <p className="text-[10px] leading-tight">Erro: {r.message}</p>
+                                  <p className="text-[10px] leading-tight">
+                                    {r.itemType ? `${pricingBatchItemTypeLabel(r.itemType)} · ` : ""}
+                                    Erro: {r.message}
+                                  </p>
                                 </div>
                               </div>
                             )}
@@ -1589,6 +1667,32 @@ export const PricingModule = () => {
                 </div>
 
                 <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Simular</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {PRICING_BATCH_ITEM_SCOPE_OPTIONS.map((option) => {
+                        const active = batchItemScope === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            data-testid={`pricing-batch-scope-${option.value}`}
+                            onClick={() => handleBatchItemScopeChange(option.value)}
+                            className={cn(
+                              "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                              active
+                                ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                                : "border-border bg-background hover:bg-accent/40"
+                            )}
+                          >
+                            <p className="text-sm font-semibold">{option.label}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">Canal Fiscal</label>
                     <SearchableSelect
@@ -1654,7 +1758,7 @@ export const PricingModule = () => {
                     className="w-full mt-2 py-3 rounded-xl font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {simulatingBatch ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />} 
-                    Simular {selectedProductIds.length > 0 ? selectedProductIds.length : ''} Itens
+                    Simular {selectedProductIds.length > 0 ? selectedProductIds.length : ""} {selectedProductIds.length === 1 ? "Item" : "Itens"}
                   </button>
                 )}
              </div>
