@@ -95,15 +95,27 @@ export function buildSalesOrderManagementMarginEconomics(
     }
   }
 
+  const consolidated = aggregateSalesOrderMarginSummaries(summaries) ?? null;
+
   return {
-    consolidated: aggregateSalesOrderMarginSummaries(summaries) ?? null,
+    consolidated,
     ordersWithMarginData: summaries.length,
     ordersWithNegativeMargin,
     ordersWithoutCost,
     ordersWithoutProduct,
     itemCounts,
-    scopeNote:
-      "Totais econômicos consolidados de todos os pedidos do filtro atual (margem % ponderada por receita).",
+    scopeNote: (() => {
+      if (!consolidated) {
+        return "Totais econômicos consolidados de todos os pedidos do filtro atual (margem % ponderada por receita).";
+      }
+      if (consolidated.costCoverageStatus === "FULL") {
+        return "Margem do período — calculada sobre 100% da receita vendida no filtro (% ponderada por receita).";
+      }
+      if (consolidated.costCoverageStatus === "PARTIAL") {
+        return `Margem parcial — calculada sobre receita com custo disponível (${consolidated.marginCoveragePercent ?? 0}% da receita vendida no filtro).`;
+      }
+      return "Margem indisponível — nenhuma linha com custo no filtro atual.";
+    })(),
   };
 }
 

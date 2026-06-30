@@ -161,6 +161,14 @@ function formatSummaryPayload(
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,
+    totalSalesRevenueInScope: summary.totalSalesRevenueInScope,
+    marginRevenueCovered: summary.marginRevenueCovered,
+    marginRevenueUncovered: summary.marginRevenueUncovered,
+    marginCoveragePercent: summary.marginCoveragePercent,
+    itemsTotal: summary.itemsTotal,
+    itemsWithCost: summary.itemsWithCost,
+    itemsWithoutCost: summary.itemsWithoutCost,
+    costCoverageStatus: summary.costCoverageStatus,
   };
 }
 

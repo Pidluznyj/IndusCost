@@ -28,6 +28,7 @@ import type {
   SalesOrderMarginSummaryStatus,
 } from "./salesOrderMarginTypes.js";
 import { resolveSalesOrderMarginCostMode } from "./salesOrderMarginResolver.js";
+import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
 
 function safeFinite(value: unknown): number | null {
   if (value == null || value === "") return null;
@@ -337,6 +338,8 @@ export function calculateSalesOrderMarginSummary(
     validItemsCount,
   });
 
+  const coverage = computeSalesOrderMarginCoverageFromItems(items);
+
   return {
     itemsCount,
     validItemsCount,
@@ -351,6 +354,7 @@ export function calculateSalesOrderMarginSummary(
     hasNegativeMargin,
     hasInvalidRevenue,
     status,
+    ...coverage,
   };
 }
 

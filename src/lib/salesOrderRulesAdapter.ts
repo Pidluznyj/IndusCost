@@ -801,7 +801,7 @@ export type OfficialReportsProductMixRow = {
   orders: number;
 };
 
-/** Mix por produto — agrega linhas de pedidos já filtrados pelo motor (apresentação). */
+/** Mix por produto — agrega linhas com margem oficial (nunca campo legado do banco). */
 export function buildOfficialReportsProductMixFromOrders(
   orders: Array<
     SalesOrderRulesOrderInput & {
@@ -811,7 +811,8 @@ export function buildOfficialReportsProductMixFromOrders(
         productNameSnapshot?: string | null;
         quantity: unknown;
         totalNetValue?: unknown;
-        marginValue?: unknown;
+        /** Margem oficial do motor — única fonte válida para marginSum. */
+        officialMarginValue?: number | null;
         Product?: { sku?: string | null; name?: string | null; type?: string | null } | null;
       }>;
     }
@@ -839,7 +840,10 @@ export function buildOfficialReportsProductMixFromOrders(
       const pid = it.productId ?? it.id;
       const qty = safeOrderNet(it.quantity);
       const rev = safeOrderNet(it.totalNetValue);
-      const mg = safeOrderNet(it.marginValue);
+      const mg =
+        it.officialMarginValue != null && Number.isFinite(Number(it.officialMarginValue))
+          ? safeOrderNet(it.officialMarginValue)
+          : 0;
       const prev = mixMap.get(pid);
       const sku = it.Product?.sku || it.skuSnapshot || "—";
       const name = it.Product?.name || it.productNameSnapshot || "Produto";

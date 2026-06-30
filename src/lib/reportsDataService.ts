@@ -12,6 +12,7 @@ import {
   OFFICIAL_SO_RULES_SOURCE,
   type OfficialReportsProductMixRow,
 } from "./salesOrderRulesAdapter.js";
+import { calculateOfficialSalesOrderMarginsForOrders } from "./salesMarginRulesAdapter.js";
 import type { SalesOrderListFilters } from "./salesOrdersListSummary.js";
 import {
   extractOfficialProductFinalUnitCost,
@@ -101,6 +102,7 @@ type ReportsOrderRow = {
   updatedAt: Date;
   totalNetValue: unknown;
   responsible: string | null;
+  nomusRawResponse: unknown;
   Customer: { id: string; companyName: string } | null;
   items: Array<{
     id: string;
@@ -208,7 +210,7 @@ function mapReportsOrderToRulesInput(order: ReportsOrderRow) {
       productNameSnapshot: item.productNameSnapshot,
       quantity: item.quantity,
       totalNetValue: item.totalNetValue,
-      marginValue: item.marginValue,
+      officialMarginValue: null as number | null,
       Product: item.Product,
     })),
   };
@@ -252,7 +254,34 @@ export async function buildReportsDataPayload(
     orderBy: { issueDate: "desc" },
   })) as ReportsOrderRow[];
 
-  const rulesOrders = orders.map(mapReportsOrderToRulesInput);
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(
+    db as PrismaClient,
+    orders.map((order) => ({
+      id: order.id,
+      nomusRawResponse: order.nomusRawResponse,
+      items: order.items,
+    }))
+  );
+
+  const rulesOrders = orders.map((order) => {
+    const base = mapReportsOrderToRulesInput(order);
+    const marginResult = marginByOrder.get(order.id);
+    const itemOfficialById = new Map(
+      (marginResult?.itemResults ?? [])
+        .filter((row) => row.salesOrderItemId)
+        .map((row) => [row.salesOrderItemId!, row.marginValue])
+    );
+    return {
+      ...base,
+      items: base.items.map((item) => ({
+        ...item,
+        officialMarginValue:
+          item.id != null && itemOfficialById.has(item.id)
+            ? itemOfficialById.get(item.id)!
+            : null,
+      })),
+    };
+  });
   const nameMap = new Map<string, string>();
   for (const order of orders) {
     if (order.customerId) {

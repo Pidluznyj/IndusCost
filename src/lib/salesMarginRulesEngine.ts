@@ -21,6 +21,7 @@ import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { resolveSalesOrderIssueDateRange } from "./salesOrderPeriodFilter.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
 import {
   calculateSalesOrderItemMargin,
   calculateSalesOrderMarginSummary,
@@ -413,6 +414,41 @@ function emptyAggregate(): SalesMarginAggregateResult {
     negativeMarginCount: 0,
     taxPercentApplied: null,
     taxSourceLabel: null,
+    totalSalesRevenueInScope: 0,
+    marginRevenueCovered: 0,
+    marginRevenueUncovered: 0,
+    marginCoveragePercent: null,
+    itemsWithCost: 0,
+    itemsWithoutCost: 0,
+    costCoverageStatus: "NONE",
+  };
+}
+
+function mapEngineItemForCoverage(
+  item: SalesMarginItemResult,
+  taxMode: SalesMarginTaxMode
+): import("./salesOrderMarginTypes.js").SalesOrderMarginItemResult {
+  const meta = resolveSalesOrderMarginStatusMeta(item.status);
+  const netRevenue = taxMode === "deductFromGross" ? item.netSalesAmount : item.grossSalesAmount;
+  return {
+    salesOrderItemId: item.salesOrderItemId,
+    productId: item.productId,
+    productSku: item.productSku,
+    productName: item.productName,
+    quantity: item.quantity,
+    netUnitRevenue: item.quantity > 0 ? netRevenue / item.quantity : null,
+    netRevenue,
+    unitCost: item.unitCost,
+    totalCost: item.totalCost,
+    marginValue: item.marginAmount,
+    marginPercent: item.marginPercent,
+    markup: item.markup,
+    status: item.status,
+    statusLabel: meta.statusLabel,
+    statusSeverity: meta.statusSeverity,
+    costSource: item.costSource,
+    costConfidence: item.costConfidence,
+    notes: [...item.notes],
   };
 }
 
@@ -422,23 +458,29 @@ export function aggregateSalesMargins(
 ): SalesMarginAggregateResult {
   if (orderResults.length === 0) return emptyAggregate();
 
-  const marginPayloads: SalesOrderMarginSummaryPayload[] = orderResults.map((order) => ({
-    netRevenue: order.netSalesAmount,
-    totalCost: order.totalCost,
-    marginValue: order.marginAmount,
-    marginPercent: order.marginPercent,
-    markup: order.markup,
-    itemsCount: order.itemsCount,
-    validItemsCount: order.validItemsCount,
-    ignoredItemsCount: order.ignoredItemsCount,
-    hasMissingCost: order.hasMissingCost,
-    hasMissingProduct: order.hasMissingProduct,
-    hasNegativeMargin: order.hasNegativeMargin,
-    hasInvalidRevenue: order.hasInvalidRevenue,
-    status: order.status,
-    statusLabel: "",
-    statusSeverity: "neutral",
-  }));
+  const marginPayloads: SalesOrderMarginSummaryPayload[] = orderResults.map((order) => {
+    const orderCoverage = computeSalesOrderMarginCoverageFromItems(
+      order.items.map((item) => mapEngineItemForCoverage(item, context.taxMode))
+    );
+    return {
+      netRevenue: order.netSalesAmount,
+      totalCost: order.totalCost,
+      marginValue: order.marginAmount,
+      marginPercent: order.marginPercent,
+      markup: order.markup,
+      itemsCount: order.itemsCount,
+      validItemsCount: order.validItemsCount,
+      ignoredItemsCount: order.ignoredItemsCount,
+      hasMissingCost: order.hasMissingCost,
+      hasMissingProduct: order.hasMissingProduct,
+      hasNegativeMargin: order.hasNegativeMargin,
+      hasInvalidRevenue: order.hasInvalidRevenue,
+      status: order.status,
+      statusLabel: "",
+      statusSeverity: "neutral",
+      ...orderCoverage,
+    };
+  });
 
   const consolidated = aggregateSalesOrderMarginSummaries(marginPayloads);
 
@@ -469,6 +511,26 @@ export function aggregateSalesMargins(
       ? roundPricingPercent((taxAmount / grossSalesAmount) * 100)
       : context.taxContext?.defaultTaxPercent ?? null;
 
+  const coverage = consolidated
+    ? {
+        totalSalesRevenueInScope: consolidated.totalSalesRevenueInScope,
+        marginRevenueCovered: consolidated.marginRevenueCovered,
+        marginRevenueUncovered: consolidated.marginRevenueUncovered,
+        marginCoveragePercent: consolidated.marginCoveragePercent,
+        itemsWithCost: consolidated.itemsWithCost,
+        itemsWithoutCost: consolidated.itemsWithoutCost,
+        costCoverageStatus: consolidated.costCoverageStatus,
+      }
+    : {
+        totalSalesRevenueInScope: 0,
+        marginRevenueCovered: 0,
+        marginRevenueUncovered: 0,
+        marginCoveragePercent: null,
+        itemsWithCost: 0,
+        itemsWithoutCost: 0,
+        costCoverageStatus: "NONE" as const,
+      };
+
   return {
     grossSalesAmount: roundPricingMoney(grossSalesAmount),
     taxAmount: roundPricingMoney(taxAmount),
@@ -488,6 +550,7 @@ export function aggregateSalesMargins(
     negativeMarginCount,
     taxPercentApplied,
     taxSourceLabel: context.taxContext?.defaultTaxLabel ?? null,
+    ...coverage,
   };
 }
 

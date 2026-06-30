@@ -175,6 +175,13 @@ export type SalesMarginAggregateResult = {
   negativeMarginCount: number;
   taxPercentApplied: number | null;
   taxSourceLabel: string | null;
+  totalSalesRevenueInScope: number;
+  marginRevenueCovered: number;
+  marginRevenueUncovered: number;
+  marginCoveragePercent: number | null;
+  itemsWithCost: number;
+  itemsWithoutCost: number;
+  costCoverageStatus: import("./salesOrderMarginTypes.js").SalesOrderMarginCostCoverageStatus;
 };
 
 export type SalesMarginMonthlyTimelinePoint = {

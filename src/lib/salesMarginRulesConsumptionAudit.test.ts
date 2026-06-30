@@ -79,6 +79,17 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(script, /buildOfficialSalesMarginRulesResult/);
     assert.match(script, /salesOrdersLoaded/);
     assert.match(script, /itemsWithUnitCostSnapshot/);
+    assert.match(script, /costCoverageStatus/);
+    assert.match(script, /marginRevenueCovered/);
     assert.match(script, /buildSalesOrderListWhere/);
+  });
+
+  it("motor expõe cobertura de margem parcial", () => {
+    const types = read("src/lib/salesOrderMarginTypes.ts");
+    assert.match(types, /costCoverageStatus/);
+    assert.match(types, /totalSalesRevenueInScope/);
+    const coverage = read("src/lib/salesOrderMarginCoverage.ts");
+    assert.match(coverage, /resolveSalesOrderMarginMoneyLabel/);
+    assert.match(read("src/lib/salesOrderRulesAdapter.ts"), /officialMarginValue/);
   });
 });

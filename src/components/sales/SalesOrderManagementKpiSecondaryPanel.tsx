@@ -28,6 +28,11 @@ import {
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
 import { SALES_ORDER_MGMT_KPI_SECTIONS } from "@/src/lib/salesOrderManagementKpiLabels";
+import {
+  buildSalesOrderMarginCoverageHint,
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
+} from "@/src/lib/salesOrderMarginDisplay";
 import type {
   SalesOrderManagementCards,
   SalesOrderManagementMarginEconomics,
@@ -218,6 +223,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
   }
 
   const consolidated = marginEconomics.consolidated;
+  const coverageHint = buildSalesOrderMarginCoverageHint(consolidated, formatCurrency);
   const drillCards = [
     {
       key: "MARGEM_NEGATIVA" as const,
@@ -249,20 +255,21 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
       ) : null}
       <MetricCardGrid minColumnWidth={200}>
         <MetricCard
-          label="Margem R$"
+          label={resolveSalesOrderMarginMoneyLabel(consolidated)}
           amount={toFiniteMetricNumber(consolidated.marginValue)}
           amountFormat="currency"
           variant={resolveMarginMoneyVariant(consolidated.marginValue)}
           icon={<DollarSign className="h-4 w-4" />}
+          helperText={coverageHint}
           loading={loading}
         />
         <MetricCard
-          label="Margem %"
+          label={resolveSalesOrderMarginPercentLabel(consolidated)}
           amount={toFiniteMetricNumber(consolidated.marginPercent)}
           amountFormat="percent"
           variant={resolveMarginPercentVariant(consolidated.marginPercent)}
           icon={<Percent className="h-4 w-4" />}
-          helperText="Ponderada por receita líquida do filtro"
+          helperText={coverageHint ?? "Ponderada por receita com custo"}
           loading={loading}
         />
         <MetricCard

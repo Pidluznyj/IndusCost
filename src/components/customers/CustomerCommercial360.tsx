@@ -29,7 +29,10 @@ import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
   aggregateSalesOrderMarginSummaries,
+  buildSalesOrderMarginCoverageHint,
   formatSalesOrderMarginPercent,
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
 import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import {
@@ -266,6 +269,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       .filter((s): s is SalesOrderMarginSummaryPayload => Boolean(s));
     const filteredMarginAgg = aggregateSalesOrderMarginSummaries(marginSummaries);
     const usesOfficialMarginMetrics = marginSummaries.length > 0 && filteredMarginAgg != null;
+    const marginCoverage = filteredMarginAgg ?? null;
     const totalNet = useOfficial
       ? officialOrderMetrics.soldAmount
       : valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
@@ -336,6 +340,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       openCount: useOfficial ? officialOrderMetrics.openPortfolioCount : openOrders.length,
       usesOfficialOrderMetrics: useOfficial,
       usesOfficialMarginMetrics,
+      marginCoverage,
     };
   }, [filtered, filtersAreDefault, officialOrderMetrics]);
 
@@ -798,28 +803,28 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 <MiniCard label="Faturados (filtro)" value={String(metrics.invoicedCount)} />
                 <MiniCard label="Ticket médio (filtro)" value={formatCurrency(metrics.ticket)} />
                 <MiniCard
-                  label="Margem média %"
+                  label={resolveSalesOrderMarginPercentLabel(metrics.marginCoverage)}
                   value={
                     metrics.usesOfficialMarginMetrics
                       ? formatSalesOrderMarginPercent(metrics.marginAvg)
                       : "—"
                   }
                   hint={
-                    metrics.usesOfficialMarginMetrics
-                      ? "Motor oficial de Margem de Venda (% ponderada)"
+                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                      ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
                       : "Margem indisponível para o filtro atual"
                   }
                 />
                 <MiniCard
-                  label="Margem R$ total"
+                  label={resolveSalesOrderMarginMoneyLabel(metrics.marginCoverage)}
                   value={
                     metrics.usesOfficialMarginMetrics
                       ? formatCurrency(metrics.totalMargin)
                       : "—"
                   }
                   hint={
-                    metrics.usesOfficialMarginMetrics
-                      ? "Motor oficial de Margem de Venda"
+                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                      ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
                       : "Margem indisponível para o filtro atual"
                   }
                 />

@@ -8,6 +8,11 @@ import {
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
+import {
+  buildSalesOrderMarginCoverageHint,
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
+} from "@/src/lib/salesOrderMarginDisplay";
 
 type SalesOrderMarginMetricGridProps = {
   summary?: SalesOrderMarginSummaryPayload | null;
@@ -24,9 +29,16 @@ export function SalesOrderMarginMetricGrid({
   summary,
   loading = false,
   showMarkup = true,
-  revenueLabel = "Valor vendido",
+  revenueLabel = "Receita com custo",
   testId,
 }: SalesOrderMarginMetricGridProps) {
+  const coverageHint =
+    summary != null
+      ? buildSalesOrderMarginCoverageHint(summary, (value) =>
+          value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+        )
+      : undefined;
+
   return (
     <div data-testid={testId}>
       <MetricCardGrid>
@@ -47,19 +59,21 @@ export function SalesOrderMarginMetricGrid({
         loading={loading}
       />
       <MetricCard
-        label="Margem R$"
+        label={resolveSalesOrderMarginMoneyLabel(summary)}
         amount={toFiniteMetricNumber(summary?.marginValue)}
         amountFormat="currency"
         variant={resolveMarginMoneyVariant(summary?.marginValue)}
         icon={<DollarSign className="h-4 w-4" />}
+        helperText={coverageHint}
         loading={loading}
       />
       <MetricCard
-        label="Margem %"
+        label={resolveSalesOrderMarginPercentLabel(summary)}
         amount={toFiniteMetricNumber(summary?.marginPercent)}
         amountFormat="percent"
         variant={resolveMarginPercentVariant(summary?.marginPercent)}
         icon={<Percent className="h-4 w-4" />}
+        helperText={coverageHint ?? "Ponderada por receita com custo"}
         loading={loading}
       />
       {showMarkup ? (

@@ -281,18 +281,29 @@ export function buildCustomerIntelligenceReport(
   const marginValueSamples = filteredMetricsOrders
     .map((o) => safeFiniteNumber(o.totalMarginValue))
     .filter((v): v is number => v != null);
-  const totalMarginRevenue = filteredMetricsOrders.reduce(
-    (sum, order) => sum + safeCommercialNumber(order.totalNetValue),
-    0
-  );
+  let totalMarginRevenue = filteredMetricsOrders.reduce((sum, order) => {
+    const covered = safeFiniteNumber(
+      (order as { marginRevenueCovered?: unknown }).marginRevenueCovered
+    );
+    return sum + (covered ?? 0);
+  }, 0);
   if (marginValueSamples.length > 0) {
     totalMarginAmount = roundMoney(marginValueSamples.reduce((a, b) => a + b, 0));
+    if (totalMarginRevenue <= 0) {
+      totalMarginRevenue = filteredMetricsOrders.reduce(
+        (sum, order) => sum + safeCommercialNumber(order.totalNetValue),
+        0
+      );
+      warnings.push(
+        "Margem parcial: percentual calculado sobre receita total do pedido por falta de cobertura detalhada."
+      );
+    }
     averageMarginPercent = computeWeightedMarginPercent(
       totalMarginAmount ?? 0,
       totalMarginRevenue
     );
   } else if (validOrdersCount > 0) {
-    warnings.push("Margem total indisponível nos pedidos.");
+    warnings.push("Margem indisponível nos pedidos do filtro.");
     totalMarginAmount = null;
     averageMarginPercent = null;
   }

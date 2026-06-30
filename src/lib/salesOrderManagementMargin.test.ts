@@ -34,6 +34,14 @@ function summary(
     status: "OK",
     statusLabel: "Margem OK",
     statusSeverity: "success",
+    totalSalesRevenueInScope: 1000,
+    marginRevenueCovered: 1000,
+    marginRevenueUncovered: 0,
+    marginCoveragePercent: 100,
+    itemsTotal: 1,
+    itemsWithCost: 1,
+    itemsWithoutCost: 0,
+    costCoverageStatus: "FULL",
     ...partial,
   };
 }
@@ -62,7 +70,7 @@ describe("salesOrderManagementMargin", () => {
     assert.equal(economics.ordersWithoutCost, 1);
     assert.equal(economics.ordersWithoutProduct, 1);
     assert.ok(economics.consolidated);
-    assert.match(economics.scopeNote, /filtro atual/i);
+    assert.match(economics.scopeNote, /período|parcial|filtro/i);
   });
 
   it("countMarginItemStatuses conta alertas por item", () => {

@@ -27,7 +27,7 @@ import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
-import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
+import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
 import type {
   SalesOrderMarginIndicatorAlerts,
   SalesOrderMarginIndicatorCustomerRow,
@@ -307,6 +307,7 @@ export function buildSalesOrderMarginPeriodSummary(
   const bucket = createBucket();
   for (const row of items) addItemToBucket(bucket, row);
   const { marginPercent, markup } = weightedMetrics(bucket);
+  const coverage = computeSalesOrderMarginCoverageFromItems(items.map((row) => row.item));
   return {
     netRevenue: bucket.netRevenue,
     totalCost: bucket.totalCost,
@@ -318,6 +319,7 @@ export function buildSalesOrderMarginPeriodSummary(
     itemsWithoutCost: bucket.itemsWithoutCost,
     itemsWithoutProduct: bucket.itemsWithoutProduct,
     itemsWithNegativeMargin: bucket.itemsWithNegativeMargin,
+    ...coverage,
   };
 }
 
@@ -529,6 +531,7 @@ export async function buildSalesOrderMarginIndicatorsPayload(
   filters: SalesOrderMarginIndicatorFilters
 ): Promise<SalesOrderMarginIndicatorsPayload> {
   const items = await loadEnrichedMarginItems(prisma, filters);
+  const summary = buildSalesOrderMarginPeriodSummary(items);
 
   return {
     filters: {
@@ -544,9 +547,16 @@ export async function buildSalesOrderMarginIndicatorsPayload(
       itemMarginStatus: filters.itemMarginStatus,
       marginStatus: filters.marginStatus,
     },
-    scopeNote:
-      "Indicadores consolidados do período/filtro com margem % ponderada por receita líquida (não média simples).",
-    summary: buildSalesOrderMarginPeriodSummary(items),
+    scopeNote: (() => {
+      if (summary.costCoverageStatus === "FULL") {
+        return "Margem do período — indicadores consolidados com % ponderada por receita líquida.";
+      }
+      if (summary.costCoverageStatus === "PARTIAL") {
+        return `Margem parcial — calculada sobre ${summary.marginCoveragePercent ?? 0}% da receita vendida no filtro (${summary.itemsWithoutCost} linha(s) sem custo).`;
+      }
+      return "Margem indisponível — nenhuma linha com custo no filtro.";
+    })(),
+    summary,
     byCustomer: buildSalesOrderMarginByCustomer(items),
     bySeller: buildSalesOrderMarginBySeller(items),
     byProduct: buildSalesOrderMarginByProduct(items),

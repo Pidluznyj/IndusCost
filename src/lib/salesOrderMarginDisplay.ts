@@ -11,6 +11,7 @@ import type {
   SalesOrderMarginSummaryStatus,
 } from "./salesOrderMarginTypes.js";
 import { resolveSalesOrderMarginSummaryStatusMeta } from "./salesOrderMarginStatus.js";
+import { mergeSalesOrderMarginCoveragePayloads } from "./salesOrderMarginCoverage.js";
 
 const marginMoneyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -136,6 +137,12 @@ export function salesOrderMarginSummaryStatusBadgeClass(
   }
 }
 
+export {
+  buildSalesOrderMarginCoverageHint,
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
+} from "./salesOrderMarginCoverage.js";
+
 export function buildSalesOrderMarginAlerts(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string[] {
@@ -220,6 +227,18 @@ export function aggregateSalesOrderMarginSummaries(
   }
 
   const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
+  const coverage = mergeSalesOrderMarginCoveragePayloads(
+    summaries.map((row) => ({
+      totalSalesRevenueInScope: row.totalSalesRevenueInScope,
+      marginRevenueCovered: row.marginRevenueCovered,
+      marginRevenueUncovered: row.marginRevenueUncovered,
+      marginCoveragePercent: row.marginCoveragePercent,
+      itemsTotal: row.itemsTotal,
+      itemsWithCost: row.itemsWithCost,
+      itemsWithoutCost: row.itemsWithoutCost,
+      costCoverageStatus: row.costCoverageStatus,
+    }))
+  );
   return {
     netRevenue,
     totalCost,
@@ -233,5 +252,6 @@ export function aggregateSalesOrderMarginSummaries(
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,
+    ...coverage,
   };
 }

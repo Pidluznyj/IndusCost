@@ -2,6 +2,7 @@ import type { SalesOrderMarginStatusFilter } from "./salesOrderManagementMargin.
 import type {
   SalesOrderMarginStatus,
   SalesOrderMarginSummaryPayload,
+  SalesOrderMarginCoveragePayload,
 } from "./salesOrderMarginTypes.js";
 
 export type SalesOrderMarginIndicatorFilters = {
@@ -18,7 +19,7 @@ export type SalesOrderMarginIndicatorFilters = {
   marginStatus?: SalesOrderMarginStatusFilter;
 };
 
-export type SalesOrderMarginIndicatorSummary = {
+export type SalesOrderMarginIndicatorSummary = SalesOrderMarginCoveragePayload & {
   netRevenue: number;
   totalCost: number;
   marginValue: number;

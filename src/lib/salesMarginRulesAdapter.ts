@@ -8,6 +8,7 @@ import {
   resolveDefaultSalesTaxPercent,
 } from "./averageSalesTaxEngine.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
+import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
 import {
   buildSalesMarginRulesResult,
   SALES_MARGIN_RULES_ENGINE_VERSION,
@@ -80,12 +81,26 @@ export type OfficialScopedMarginMetrics = {
   metricsSource: typeof OFFICIAL_SM_RULES_SOURCE;
   rulesEngineVersion: string;
   scopeNote: string;
+  totalSalesRevenueInScope: number;
+  marginRevenueCovered: number;
+  marginRevenueUncovered: number;
+  marginCoveragePercent: number | null;
+  itemsTotal: number;
+  itemsWithCost: number;
+  itemsWithoutCost: number;
+  costCoverageStatus: import("./salesOrderMarginTypes.js").SalesOrderMarginCostCoverageStatus;
 };
 
 export function resolveOfficialScopedMarginMetrics(
   rules: SalesMarginRulesResult
 ): OfficialScopedMarginMetrics {
   const m = rules.metrics;
+  const coverageHint =
+    m.costCoverageStatus === "PARTIAL"
+      ? ` Margem parcial: calculada sobre ${m.marginRevenueCovered.toFixed(2)} de ${m.totalSalesRevenueInScope.toFixed(2)} vendidos (${m.marginCoveragePercent ?? 0}% da receita).`
+      : m.costCoverageStatus === "NONE"
+        ? " Nenhuma linha com custo — margem indisponível."
+        : "";
   return {
     grossSalesAmount: m.grossSalesAmount,
     taxAmount: m.taxAmount,
@@ -99,9 +114,17 @@ export function resolveOfficialScopedMarginMetrics(
     metricsSource: OFFICIAL_SM_RULES_SOURCE,
     rulesEngineVersion: rules.engineVersion,
     scopeNote:
-      rules.context.taxMode === "deductFromGross"
+      (rules.context.taxMode === "deductFromGross"
         ? "Margem gerencial agregada (receita líquida − custo; % ponderada por receita líquida)."
-        : "Margem de pedidos agregada (% ponderada por receita vendida).",
+        : "Margem de pedidos agregada (% ponderada por receita vendida).") + coverageHint,
+    totalSalesRevenueInScope: m.totalSalesRevenueInScope,
+    marginRevenueCovered: m.marginRevenueCovered,
+    marginRevenueUncovered: m.marginRevenueUncovered,
+    marginCoveragePercent: m.marginCoveragePercent,
+    itemsTotal: m.itemsCount,
+    itemsWithCost: m.itemsWithCost,
+    itemsWithoutCost: m.itemsWithoutCost,
+    costCoverageStatus: m.costCoverageStatus,
   };
 }
 
@@ -176,6 +199,8 @@ export function mapEngineOrderResultToMarginSummary(
     order.items.map((item) => mapEngineItemToMarginItemResult(item))
   );
   const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
+  const mappedItems = order.items.map((item) => mapEngineItemToMarginItemResult(item));
+  const coverage = computeSalesOrderMarginCoverageFromItems(mappedItems);
   return {
     netRevenue,
     totalCost: order.totalCost,
@@ -192,6 +217,7 @@ export function mapEngineOrderResultToMarginSummary(
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,
+    ...coverage,
   };
 }
 
@@ -466,6 +492,9 @@ export async function enrichCustomerIntelligenceOrdersWithOfficialMargin(
       ...order,
       totalMarginValue: summary.marginValue,
       totalMarginPerc: summary.marginPercent,
+      marginRevenueCovered: summary.marginRevenueCovered,
+      totalSalesRevenueInScope: summary.totalSalesRevenueInScope,
+      costCoverageStatus: summary.costCoverageStatus,
       items: order.items.map((item) => {
         const official = item.id ? itemsByItemId.get(item.id) : undefined;
         if (!official) return item;
@@ -558,6 +587,14 @@ export async function loadOfficialCommercial360MarginBundle<
         rulesEngineVersion: SALES_MARGIN_RULES_ENGINE_VERSION,
         scopeNote: "Margem de pedidos agregada (% ponderada por receita vendida).",
         orderMargins: [],
+        totalSalesRevenueInScope: 0,
+        marginRevenueCovered: 0,
+        marginRevenueUncovered: 0,
+        marginCoveragePercent: null,
+        itemsTotal: 0,
+        itemsWithCost: 0,
+        itemsWithoutCost: 0,
+        costCoverageStatus: "NONE",
       },
     };
   }

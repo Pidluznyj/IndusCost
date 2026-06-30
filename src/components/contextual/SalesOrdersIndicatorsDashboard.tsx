@@ -10,15 +10,19 @@ import {
   TrendingUp,
   Users,
   Download,
+  Wallet,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import {
+  buildSalesOrderMarginCoverageHint,
   formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
   formatSalesOrderMarkup,
+  resolveSalesOrderMarginMoneyLabel,
+  resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
 import {
   getSalesOrderMarginIndicatorsApiPath,
@@ -306,9 +310,20 @@ export function SalesOrdersIndicatorsDashboard() {
           <div className="indus-kpi-grid" data-testid="sales-order-margin-indicator-summary">
             <FinanceBiKpiCard
               icon={DollarSign}
-              label="Valor vendido"
-              value={formatSalesOrderMarginMoney(summary.netRevenue)}
+              label="Valor vendido (total)"
+              value={formatSalesOrderMarginMoney(summary.totalSalesRevenueInScope)}
               loading={false}
+            />
+            <FinanceBiKpiCard
+              icon={Wallet}
+              label="Receita com custo"
+              value={formatSalesOrderMarginMoney(summary.marginRevenueCovered)}
+              loading={false}
+              hint={
+                summary.costCoverageStatus === "PARTIAL"
+                  ? `${summary.marginCoveragePercent ?? 0}% da receita vendida`
+                  : undefined
+              }
             />
             <FinanceBiKpiCard
               icon={Scale}
@@ -318,16 +333,17 @@ export function SalesOrdersIndicatorsDashboard() {
             />
             <FinanceBiKpiCard
               icon={DollarSign}
-              label="Margem R$"
+              label={resolveSalesOrderMarginMoneyLabel(summary)}
               value={formatSalesOrderMarginMoney(summary.marginValue)}
               loading={false}
+              hint={buildSalesOrderMarginCoverageHint(summary, formatCurrency)}
             />
             <FinanceBiKpiCard
               icon={Percent}
-              label="Margem %"
+              label={resolveSalesOrderMarginPercentLabel(summary)}
               value={formatSalesOrderMarginPercent(summary.marginPercent)}
               loading={false}
-              hint="Ponderada por receita líquida"
+              hint="Ponderada por receita com custo"
             />
             <FinanceBiKpiCard
               icon={TrendingUp}

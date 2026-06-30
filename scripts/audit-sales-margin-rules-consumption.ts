@@ -33,6 +33,13 @@ import {
   resolveDefaultSalesTaxPercent,
 } from "../src/lib/averageSalesTaxEngine.js";
 import { registerOfficialServerResolversForAuditScripts } from "../src/lib/registerServerResolvers.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { marginLabelLooksLikeTotal } from "../src/lib/salesOrderMarginCoverage.js";
+
+function readSrc(rel: string): string {
+  return readFileSync(join(process.cwd(), rel), "utf8");
+}
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -122,15 +129,23 @@ function buildMarginAuditDiagnostics(input: {
     itemsUsingLiveFallback,
     itemsWithoutCost,
     revenueLoaded: input.soldScoped.netSalesAmount,
+    revenueTotalInScope: input.soldScoped.totalSalesRevenueInScope,
+    revenueCovered: input.soldScoped.marginRevenueCovered,
+    revenueUncovered: input.soldScoped.marginRevenueUncovered,
+    revenueCoveragePercent: input.soldScoped.marginCoveragePercent,
+    costCoverageStatus: input.soldScoped.costCoverageStatus,
+    itemsWithCost: input.soldScoped.itemsWithCost,
     costLoaded: input.soldScoped.totalCost,
     marginValue: input.soldScoped.marginAmount,
     weightedMarginPerc: input.soldScoped.marginPercent,
     scopeNote:
-      input.itemsLoaded > 0 && itemsWithoutCost === input.itemsLoaded
-        ? "Todas as linhas SEM_CUSTO — margem consolidada exclui receita até custo ser resolvido (Pedidos usa totalNetValue do cabeçalho)."
-        : input.listOrdersCount !== input.mgmtOrdersCount
-          ? "Escopo lista (issueDate) e gestão diferem — motor usa lista alinhada à auditoria de Pedidos."
-          : null,
+      input.soldScoped.costCoverageStatus === "PARTIAL"
+        ? `Margem PARCIAL — cobre ${input.soldScoped.marginCoveragePercent ?? 0}% da receita vendida; não comparar margem R$ com valor vendido total sem contexto.`
+        : input.itemsLoaded > 0 && itemsWithoutCost === input.itemsLoaded
+          ? "Todas as linhas SEM_CUSTO — margem consolidada exclui receita até custo ser resolvido (Pedidos usa totalNetValue do cabeçalho)."
+          : input.listOrdersCount !== input.mgmtOrdersCount
+            ? "Escopo lista (issueDate) e gestão diferem — motor usa lista alinhada à auditoria de Pedidos."
+            : null,
   };
 }
 
@@ -279,7 +294,39 @@ async function main() {
     financeMargin?.marginPercent ?? null
   );
   addRow(
-    "Receita vendida (escopo margem pedido)",
+    "Receita vendida total (escopo pedidos)",
+    soldScoped.totalSalesRevenueInScope,
+    null,
+    mgmtConsolidated?.totalSalesRevenueInScope ?? null,
+    null,
+    financeMargin?.totalSalesRevenueInScope ?? null
+  );
+  addRow(
+    "Receita coberta pela margem",
+    soldScoped.marginRevenueCovered,
+    ordersNetRevenue,
+    mgmtConsolidated?.marginRevenueCovered ?? null,
+    null,
+    financeMargin?.marginRevenueCovered ?? null
+  );
+  addRow(
+    "Receita sem custo",
+    soldScoped.marginRevenueUncovered,
+    null,
+    mgmtConsolidated?.marginRevenueUncovered ?? null,
+    null,
+    financeMargin?.marginRevenueUncovered ?? null
+  );
+  addRow(
+    "Cobertura % receita",
+    soldScoped.marginCoveragePercent,
+    null,
+    mgmtConsolidated?.marginCoveragePercent ?? null,
+    null,
+    financeMargin?.marginCoveragePercent ?? null
+  );
+  addRow(
+    "Receita líquida usada na margem (legado netSalesAmount)",
     soldScoped.netSalesAmount,
     ordersNetRevenue,
     mgmtConsolidated?.netRevenue ?? null,
@@ -333,7 +380,15 @@ async function main() {
   console.log(`- itemsWithUnitCostSnapshot: ${diagnostics.itemsWithUnitCostSnapshot}`);
   console.log(`- itemsUsingLiveFallback: ${diagnostics.itemsUsingLiveFallback}`);
   console.log(`- itemsWithoutCost: ${diagnostics.itemsWithoutCost}`);
-  console.log(`- revenueLoaded (margem consolidada): ${fmt(diagnostics.revenueLoaded)}`);
+  console.log(`- revenueLoaded (receita com custo): ${fmt(diagnostics.revenueLoaded)}`);
+  console.log(`- totalSalesRevenueInScope: ${fmt(diagnostics.revenueTotalInScope)}`);
+  console.log(`- marginRevenueCovered: ${fmt(diagnostics.revenueCovered)}`);
+  console.log(`- marginRevenueUncovered: ${fmt(diagnostics.revenueUncovered)}`);
+  console.log(
+    `- marginCoveragePercent: ${diagnostics.revenueCoveragePercent == null ? "—" : `${fmt(diagnostics.revenueCoveragePercent)}%`}`
+  );
+  console.log(`- costCoverageStatus: ${diagnostics.costCoverageStatus}`);
+  console.log(`- itemsWithCost: ${diagnostics.itemsWithCost}`);
   console.log(`- pedidosSoldHeaderTotal (escopo Pedidos): ${fmt(pedidosSoldHeaderTotal)}`);
   console.log(`- costLoaded: ${fmt(diagnostics.costLoaded)}`);
   console.log(`- marginValue: ${fmt(diagnostics.marginValue)}`);
@@ -353,6 +408,46 @@ async function main() {
   }
 
   const failures = rows.filter((r) => r.status === "DIFERENÇA");
+  const alerts: string[] = [];
+
+  if (
+    diagnostics.costCoverageStatus === "PARTIAL" &&
+    diagnostics.revenueTotalInScope > diagnostics.revenueCovered + 0.02
+  ) {
+    const uiFiles = [
+      "src/components/sales/SalesOrderManagementMarginOverview.tsx",
+      "src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx",
+      "src/components/customers/CustomerCommercial360.tsx",
+      "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
+    ];
+    for (const file of uiFiles) {
+      const src = readSrc(file);
+      if (src.includes('label="Margem R$ total"') || src.includes('label="Margem total"')) {
+        alerts.push(`ALERTA: ${file} rotula margem como total com cobertura PARTIAL.`);
+      }
+      if (
+        src.includes('label="Margem R$"') &&
+        !src.includes("resolveSalesOrderMarginMoneyLabel")
+      ) {
+        alerts.push(`ALERTA: ${file} usa label genérico "Margem R$" sem distinção parcial/total.`);
+      }
+    }
+    const reportsMix = readSrc("src/lib/salesOrderRulesAdapter.ts");
+    if (reportsMix.includes("safeOrderNet(it.marginValue)")) {
+      alerts.push("ALERTA: mix de produtos em Relatórios ainda usa marginValue legado do banco.");
+    }
+  }
+
+  if (marginLabelLooksLikeTotal("Margem R$ total")) {
+    alerts.push("ALERTA: helper marginLabelLooksLikeTotal detectou label enganoso.");
+  }
+
+  if (alerts.length > 0) {
+    console.log("\n### Alertas de semântica de margem");
+    for (const alert of alerts) console.log(`- ${alert}`);
+    process.exitCode = 1;
+  }
+
   if (failures.length > 0) process.exitCode = 1;
 }
 

@@ -15,6 +15,20 @@ export type SalesOrderMarginStatus =
 
 export type SalesOrderMarginSummaryStatus = SalesOrderMarginStatus | "PARTIAL" | "OK";
 
+export type SalesOrderMarginCostCoverageStatus = "FULL" | "PARTIAL" | "NONE";
+
+/** Cobertura da receita vendida usada no cálculo de margem agregada. */
+export type SalesOrderMarginCoveragePayload = {
+  totalSalesRevenueInScope: number;
+  marginRevenueCovered: number;
+  marginRevenueUncovered: number;
+  marginCoveragePercent: number | null;
+  itemsTotal: number;
+  itemsWithCost: number;
+  itemsWithoutCost: number;
+  costCoverageStatus: SalesOrderMarginCostCoverageStatus;
+};
+
 export type SalesOrderCostSource =
   | "SALES_ORDER_ITEM_SNAPSHOT"
   | "HISTORICAL_SNAPSHOT"
@@ -84,7 +98,7 @@ export type SalesOrderMarginItemResult = {
   notes: string[];
 };
 
-export type SalesOrderMarginSummary = {
+export type SalesOrderMarginSummary = SalesOrderMarginCoveragePayload & {
   itemsCount: number;
   validItemsCount: number;
   ignoredItemsCount: number;
@@ -128,7 +142,7 @@ export type SalesOrderItemMarginPayload = {
 };
 
 /** Payload consolidado de margem por pedido nos endpoints internos. */
-export type SalesOrderMarginSummaryPayload = {
+export type SalesOrderMarginSummaryPayload = SalesOrderMarginCoveragePayload & {
   netRevenue: number;
   totalCost: number;
   marginValue: number;
