@@ -121,6 +121,43 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
     }
   });
 
+  app.get(
+    "/api/finance/cost-centers/annual-spending-by-cost-center",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const filters = parseFinanceCostCenterDashboardFilters(req.query as Record<string, unknown>);
+        const payload = await buildFinanceCostCenterDashboardDefault(filters);
+        return res.json({
+          chart: payload.annualSpendingChart,
+          byCostCenter: payload.byCostCenter,
+          summary: {
+            classifiedAmount: payload.summary.classifiedAmount,
+            totalAmount: payload.summary.totalAmount,
+          },
+          audit: {
+            filtersApplied: payload.audit.filtersApplied,
+            dataSources: payload.audit.dataSources,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof FinanceCostCenterDashboardError ||
+          error instanceof FinanceApFilterParseError
+        ) {
+          return handleDashboardError(res, error);
+        }
+        console.error("GET /api/finance/cost-centers/annual-spending-by-cost-center", error);
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao montar gastos por centro de custo.", error)
+        );
+      }
+    }
+  );
+
   app.get("/api/finance/cost-centers/:id", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);

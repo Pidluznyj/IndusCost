@@ -31,6 +31,8 @@ export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
   "accounts-receivable": "Mostra os valores que os clientes ainda devem pagar.",
   "accounts-payable": "Mostra as obrigações da empresa com fornecedores.",
   "cash-flow": "Mostra se o caixa tende a ficar positivo ou negativo no ano selecionado.",
+  "cost-center-spending":
+    "Mostra quanto foi gasto por centro de custo com base nas contas a pagar classificadas.",
   "sales-orders": "Mostra o volume de pedidos registrados.",
   conclusion: "Principais pontos de atenção para decisão.",
 };
@@ -42,6 +44,8 @@ export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
   "accounts-receivable": "Valores a receber dos clientes.",
   "accounts-payable": "Valores a pagar a fornecedores.",
   "cash-flow": "Entradas, saídas e saldo previsto no ano (jan–dez).",
+  "cost-center-spending":
+    "Distribuição do AP gerencial por centro de custo no ano/filtro selecionado.",
   "sales-orders": "Pedidos registrados no período.",
   conclusion: "Leitura rápida para apoiar a decisão.",
 };

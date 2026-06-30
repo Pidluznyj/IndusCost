@@ -112,6 +112,12 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
     builder: "computeAchievementPercent, computeMonthProjection, computeGrowthTarget, …",
     description: "Regras puras compartilhadas entre faturamento e pedidos (metas +30%).",
   },
+  costCenterDashboard: {
+    module: "financeCostCenterDashboard.ts",
+    builder: "buildFinanceCostCenterDashboardDefault → buildCostCenterAnnualSpendingChart",
+    description:
+      "AP gerencial alocado por centro de custo — mesma base da Visão Gerencial de Centro de Custo.",
+  },
   executiveSummary: {
     module: "executiveDashboardService.ts",
     builder: "buildExecutiveDashboardSummary",
@@ -358,6 +364,12 @@ export type FinanceExecutiveReportSalesOrders = {
   >;
 };
 
+/** Gastos por centro de custo — Visão Gerencial CC / alocação AP oficial. */
+export type FinanceExecutiveReportCostCenterSpending = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard;
+  chart: import("./financeCostCenterAnnualSpendingChart.js").CostCenterAnnualSpendingChartPayload;
+};
+
 /** Narrativa executiva — reservada; preenchimento futuro (manual ou assistida). */
 export type FinanceExecutiveReportNarrative = {
   sections: Array<{
@@ -393,5 +405,6 @@ export type FinanceExecutiveReport = {
   calendarAgenda: FinanceExecutiveReportCalendarAgenda;
   annualComparison: FinanceExecutiveReportAnnualComparison;
   salesOrders: FinanceExecutiveReportSalesOrders;
+  costCenterSpending: FinanceExecutiveReportCostCenterSpending;
   executiveNarrative: FinanceExecutiveReportNarrative | null;
 };

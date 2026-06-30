@@ -93,6 +93,8 @@ describe("financeCostCentersPage", () => {
     assert.match(overview, /Títulos sem alocação completa no escopo filtrado/);
     assert.match(overview, /Fornecedor sem regra/);
     assert.match(overview, /Indicador auxiliar/);
+    assert.match(overview, /FinanceCostCenterAnnualSpendingChart/);
+    assert.match(overview, /annualSpendingChart/);
     assert.match(page, /Diagnóstico de classificação/);
   });
 
@@ -118,6 +120,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx",
+      "src/components/finance/cost-centers/FinanceCostCenterAnnualSpendingChart.tsx",
     ];
     for (const file of files) {
       const src = read(file);

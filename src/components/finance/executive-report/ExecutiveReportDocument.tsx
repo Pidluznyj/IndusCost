@@ -38,6 +38,7 @@ import { ExecutiveCashFlowChart } from "@/src/components/finance/executive-repor
 import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-report/charts/ExecutiveSalesOrdersChart";
 import { ExecutiveReportReceivablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportReceivablesChart";
 import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportPayablesChart";
+import { ExecutiveCostCenterAnnualSpendingChart } from "@/src/components/finance/executive-report/charts/ExecutiveCostCenterAnnualSpendingChart";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { ExecutiveReportPeriodMeta } from "@/src/components/finance/executive-report/ExecutiveReportPeriodMeta";
@@ -748,8 +749,28 @@ export function ExecutiveReportDocument({
       </ExecutivePrintPageShell>
 
       <ExecutivePrintPageShell
-        pageId="conclusion"
+        pageId="cost-center-spending"
         pageNumber={8}
+        header={printHeader}
+        generatedAt={report.generatedAt}
+      >
+        <ExecutiveReportSection
+          id="cost-center-spending"
+          eyebrow="Centro de Custo"
+          title="Gastos por Centro de Custo"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cost-center-spending"]}
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["cost-center-spending"]}
+          withChart
+        >
+          <div className="mt-3 executive-chart-region">
+            <ExecutiveCostCenterAnnualSpendingChart chart={report.costCenterSpending.chart} />
+          </div>
+        </ExecutiveReportSection>
+      </ExecutivePrintPageShell>
+
+      <ExecutivePrintPageShell
+        pageId="conclusion"
+        pageNumber={9}
         header={printHeader}
         generatedAt={report.generatedAt}
       >
@@ -772,7 +793,7 @@ export function ExecutiveReportDocument({
 
       <ExecutivePrintPageShell
         pageId="cash-flow-monthly-timeline"
-        pageNumber={9}
+        pageNumber={10}
         header={printHeader}
         generatedAt={report.generatedAt}
       >

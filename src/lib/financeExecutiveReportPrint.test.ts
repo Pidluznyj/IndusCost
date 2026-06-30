@@ -247,6 +247,9 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Contas a Receber/);
     assert.match(document, /Contas a Pagar/);
     assert.match(document, /Fluxo de Caixa \/ Agenda/);
+    assert.match(document, /Gastos por Centro de Custo/);
+    assert.match(document, /ExecutiveCostCenterAnnualSpendingChart/);
+    assert.match(document, /pageId="cost-center-spending"/);
     assert.match(document, /executive-report-cash-flow-period-meta/);
     assert.match(document, /Pedidos de Venda/);
     assert.match(document, /Pedidos mês/);
@@ -355,7 +358,7 @@ describe("financeExecutiveReportPrint", () => {
     assert.equal(chartFrameIsReady(empty as unknown as Element), true);
     assert.equal(areExecutiveReportChartsReady([]), false);
     assert.equal(areExecutiveReportChartsReady([empty as unknown as Element]), false);
-    const readyCharts = Array.from({ length: 5 }, () => empty);
+    const readyCharts = Array.from({ length: 6 }, () => empty);
     assert.equal(areExecutiveReportChartsReady(readyCharts as unknown as Element[]), true);
   });
 

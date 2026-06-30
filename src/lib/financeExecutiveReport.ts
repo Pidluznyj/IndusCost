@@ -67,6 +67,14 @@ import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReport
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
+import { buildFinanceCostCenterDashboardDefault } from "./financeCostCenterDashboard.js";
+import {
+  buildCostCenterAnnualSpendingChart,
+  buildExecutiveReportCostCenterDashboardFilters,
+  type CostCenterAnnualSpendingChartPayload,
+} from "./financeCostCenterAnnualSpendingChart.js";
+
+export const EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N = 10;
 
 export class FinanceExecutiveReportParseError extends Error {
   constructor(message: string) {
@@ -530,6 +538,29 @@ export function buildExecutiveReportModuleSections(input: ExecutiveReportOfficia
   };
 }
 
+export function buildExecutiveReportCostCenterSpendingFilters(
+  filters: FinanceExecutiveReportFilters
+): ReturnType<typeof buildExecutiveReportCostCenterDashboardFilters> {
+  return buildExecutiveReportCostCenterDashboardFilters({
+    year: filters.year,
+    month: filters.month,
+    companyName: mapExecutiveReportCompanyToFilter(
+      (filters.company as FinanceExecutiveReportCompany | undefined) ?? "all"
+    ),
+  });
+}
+
+export async function loadExecutiveReportCostCenterSpendingChart(
+  filters: FinanceExecutiveReportFilters,
+  referenceDate: Date
+): Promise<CostCenterAnnualSpendingChartPayload> {
+  const ccFilters = buildExecutiveReportCostCenterSpendingFilters(filters);
+  const dashboard = await buildFinanceCostCenterDashboardDefault(ccFilters, referenceDate);
+  return buildCostCenterAnnualSpendingChart(dashboard.byCostCenter, ccFilters, {
+    topN: EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N,
+  });
+}
+
 export async function buildFinanceExecutiveReport(
   query: Record<string, unknown>,
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable"> = defaultPrisma
@@ -655,6 +686,22 @@ export async function buildFinanceExecutiveReport(
     annualPortfolioLoad.arSyncCutoff,
     annualPortfolioLoad.apSyncCutoff
   );
+
+  let costCenterSpendingChart: CostCenterAnnualSpendingChartPayload;
+  try {
+    costCenterSpendingChart = await loadExecutiveReportCostCenterSpendingChart(
+      filters,
+      referenceDate
+    );
+  } catch (error) {
+    console.error("executive-report costCenterSpending", error);
+    unavailableSections.push("costCenterSpending");
+    const ccFilters = buildExecutiveReportCostCenterSpendingFilters(filters);
+    costCenterSpendingChart = buildCostCenterAnnualSpendingChart([], ccFilters, {
+      topN: EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N,
+    });
+    warnings.push("Gastos por centro de custo indisponíveis nesta geração.");
+  }
 
   const billingTab = billingPayload?.tab ?? null;
   const billingTargetMissing =
@@ -966,6 +1013,10 @@ export async function buildFinanceExecutiveReport(
             },
             periodLabel: periodLabel,
           },
+    },
+    costCenterSpending: {
+      source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
+      chart: costCenterSpendingChart,
     },
     executiveNarrative: narrative,
   };

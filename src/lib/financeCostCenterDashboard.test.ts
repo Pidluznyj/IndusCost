@@ -95,6 +95,7 @@ function assertPayloadShape(payload: FinanceCostCenterDashboardPayload) {
   assert.ok(Array.isArray(payload.bySupplier));
   assert.ok(payload.unclassified);
   assert.ok(payload.monthlySeries);
+  assert.ok(payload.annualSpendingChart);
   assert.ok(payload.audit);
   assert.equal(typeof payload.summary.totalAmount, "number");
   assert.equal(typeof payload.summary.classifiedPercentage, "number");

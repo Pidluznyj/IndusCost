@@ -10,7 +10,7 @@ export const EXECUTIVE_REPORT_PRINT_QUALITY_CONFIRM_MESSAGE =
 export const EXECUTIVE_REPORT_CHARTS_LOADING_MESSAGE =
   "Os gráficos ainda estão carregando. Aguarde alguns segundos e tente exportar novamente.";
 
-export const EXECUTIVE_REPORT_MIN_CHARTS = 5;
+export const EXECUTIVE_REPORT_MIN_CHARTS = 6;
 export const EXECUTIVE_REPORT_MIN_CHART_WIDTH = 400;
 export const EXECUTIVE_REPORT_MIN_CHART_HEIGHT = 250;
 

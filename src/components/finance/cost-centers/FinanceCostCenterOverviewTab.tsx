@@ -25,6 +25,7 @@ import {
   FinanceBillingChartShell,
   FINANCE_BILLING_CHART_HEIGHT,
 } from "@/src/components/finance/billing/FinanceBillingChartShell";
+import { FinanceCostCenterAnnualSpendingChart } from "@/src/components/finance/cost-centers/FinanceCostCenterAnnualSpendingChart";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
@@ -214,6 +215,11 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
           </ComposedChart>
         </ResponsiveContainer>
       </FinanceBillingChartShell>
+
+      <FinanceCostCenterAnnualSpendingChart
+        chart={data?.annualSpendingChart}
+        loading={loading}
+      />
 
       {summary && summary.totalAmount === 0 && !loading ? (
         <div className={cn(financeBiCardClass)}>

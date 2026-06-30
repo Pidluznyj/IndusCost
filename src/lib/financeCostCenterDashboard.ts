@@ -44,6 +44,10 @@ import {
   resolveCostCenterSupplierDisplay,
   stripCostCenterDashboardPeriodFilters,
 } from "@/src/lib/financeCostCenterSupplierConsolidation.js";
+import {
+  buildCostCenterAnnualSpendingChart,
+  type CostCenterAnnualSpendingChartPayload,
+} from "@/src/lib/financeCostCenterAnnualSpendingChart.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 export class FinanceCostCenterDashboardError extends Error {
@@ -192,6 +196,8 @@ export type FinanceCostCenterDashboardPayload = {
   bySupplier: FinanceCostCenterDashboardBySupplierRow[];
   unclassified: FinanceCostCenterDashboardUnclassified;
   monthlySeries: FinanceCostCenterDashboardMonthlySeries;
+  /** Série oficial para gráfico de gastos por centro de custo (Visão Gerencial / Relatório). */
+  annualSpendingChart: CostCenterAnnualSpendingChartPayload;
   audit: FinanceCostCenterDashboardAudit;
 };
 
@@ -688,6 +694,8 @@ export function buildFinanceCostCenterDashboard(
     lastApSyncAt = syncCutoff.maxSyncedAt.toISOString();
   }
 
+  const annualSpendingChart = buildCostCenterAnnualSpendingChart(byCostCenterRows, filters);
+
   return {
     summary: {
       totalAmount,
@@ -702,6 +710,7 @@ export function buildFinanceCostCenterDashboard(
       suppliersWithoutRules: withoutRules,
     },
     byCostCenter: byCostCenterRows,
+    annualSpendingChart,
     bySupplier: bySupplierRows,
     unclassified: {
       suppliersCount: unclassifiedSuppliers.size,

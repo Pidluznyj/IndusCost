@@ -183,6 +183,7 @@ describe("financeExecutiveReport", () => {
       "cashFlow",
       "calendarAgenda",
       "salesOrders",
+      "costCenterSpending",
       "executiveNarrative",
       "dataQuality",
     ]) {
