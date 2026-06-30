@@ -75,6 +75,25 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.doesNotMatch(display, /legacyPercent/);
   });
 
+  it("fluxos operacionais não forçam taxMode none", () => {
+    const operational = [
+      "src/lib/salesOrderMarginService.server.ts",
+      "src/lib/salesMarginRulesAdapter.ts",
+    ];
+    for (const file of operational) {
+      const src = read(file);
+      assert.doesNotMatch(src, /buildInput:\s*\{\s*taxMode:\s*["']none["']/);
+      assert.doesNotMatch(src, /buildOfficialSalesMarginRulesResult\([^)]*\{\s*taxMode:\s*["']none["']/);
+    }
+  });
+
+  it("calculateOfficialSalesOrderMarginsForOrders usa config Nomus por padrão", () => {
+    const adapter = read("src/lib/salesMarginRulesAdapter.ts");
+    assert.match(adapter, /loadSalesMarginNomusConfig/);
+    assert.match(adapter, /nomusConfig\.taxMode/);
+    assert.match(adapter, /resolveOfficialSalesMarginTaxContext/);
+  });
+
   it("script de auditoria de consumo de margem existe", () => {
     const script = read("scripts/audit-sales-margin-rules-consumption.ts");
     assert.match(script, /OFFICIAL_SM_RULES_SOURCE/);
@@ -85,7 +104,10 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(script, /marginRevenueCovered/);
     assert.match(script, /buildSalesOrderListWhere/);
     assert.match(script, /Auditoria por tela/);
-    assert.match(script, /buildScreenMarginAuditRows/);
+    assert.match(script, /loadSalesMarginNomusConfig/);
+    assert.match(script, /taxModeEffective/);
+    assert.match(script, /OPERATIONAL_MARGIN_SOURCE_FILES/);
+    assert.match(script, /operationalFileForcesTaxModeNone/);
   });
 
   it("relatórios expõem margem oficial com cobertura", () => {

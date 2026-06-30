@@ -29,9 +29,11 @@ import {
 } from "../src/lib/salesOrderManagement.js";
 import { buildSalesOrderListWhere } from "../src/lib/salesOrdersListSummary.js";
 import {
-  loadProductTaxPercentIndex,
-  resolveDefaultSalesTaxPercent,
-} from "../src/lib/averageSalesTaxEngine.js";
+  assessSalesMarginNomusFiscalConfig,
+  loadSalesMarginNomusConfig,
+} from "../src/lib/salesMarginNomusConfig.js";
+import { resolveOfficialSalesMarginTaxContext } from "../src/lib/salesMarginNomusTaxContext.server.js";
+import { resolveSalesTaxRuleById } from "../src/lib/averageSalesTaxEngine.js";
 import { registerOfficialServerResolversForAuditScripts } from "../src/lib/registerServerResolvers.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -154,15 +156,40 @@ type ScreenMarginAuditRow = {
   endpoint: string;
   officialEngine: string;
   exposesMargin: string;
+  taxModeEffective: string;
+  taxRuleLabel: string;
+  taxPercent: number | null;
+  taxAmount: number | null;
   totalRevenue: number | null;
+  netRevenue: number | null;
   coveredRevenue: number | null;
   uncoveredRevenue: number | null;
+  totalCost: number | null;
   marginValue: number | null;
   marginPercent: number | null;
   coverageStatus: string;
+  costSourceNote: string;
   divergence: string;
   legacyFallback: string;
+  fiscalStatus: string;
 };
+
+const OPERATIONAL_MARGIN_SOURCE_FILES = [
+  "src/lib/salesOrderMarginService.server.ts",
+  "src/lib/salesMarginRulesAdapter.ts",
+  "src/lib/financeSalesOrdersDashboard.ts",
+  "src/lib/financeSalesOrdersExport.ts",
+  "src/lib/salesOrderInternalMarginExport.server.ts",
+  "src/lib/salesOrderMarginIndicators.server.ts",
+  "src/lib/salesOrderIntelligenceRoutes.ts",
+  "src/lib/customerIntelligenceRoutes.ts",
+] as const;
+
+function operationalFileForcesTaxModeNone(rel: string): boolean {
+  const src = readSrc(rel);
+  return /buildInput:\s*\{\s*taxMode:\s*["']none["']/.test(src)
+    || /buildOfficialSalesMarginRulesResult\([^)]*\{\s*taxMode:\s*["']none["']/.test(src);
+}
 
 function fileUsesOfficialMarginEngine(rel: string): boolean {
   const src = readSrc(rel);
@@ -192,7 +219,11 @@ function fileUsesLegacyMarginFallback(rel: string): boolean {
 }
 
 function buildScreenMarginAuditRows(input: {
-  soldScoped: ReturnType<typeof resolveOfficialScopedMarginMetrics>;
+  nomusTaxMode: string;
+  taxRuleLabel: string;
+  taxPercent: number | null;
+  fiscalStatus: string;
+  officialScoped: ReturnType<typeof resolveOfficialScopedMarginMetrics>;
   ordersMarginAmount: number;
   mgmtConsolidated:
     | {
@@ -202,10 +233,19 @@ function buildScreenMarginAuditRows(input: {
         marginRevenueCovered?: number;
         marginRevenueUncovered?: number;
         costCoverageStatus?: string;
+        totalCost?: number;
+        netRevenue?: number;
       }
     | null
     | undefined;
-  resultTotals: { marginAmount: number; marginPercent: number | null };
+  resultTotals: {
+    marginAmount: number;
+    marginPercent: number | null;
+    taxAmount: number;
+    netSalesAmount: number;
+    salesAmount: number;
+    costAmount: number;
+  };
   financeMargin:
     | {
         marginValue: number;
@@ -214,12 +254,21 @@ function buildScreenMarginAuditRows(input: {
         marginRevenueCovered?: number;
         marginRevenueUncovered?: number;
         costCoverageStatus?: string;
+        totalCost?: number;
+        netRevenue?: number;
       }
     | null
     | undefined;
   engineRef: number | null;
 }): ScreenMarginAuditRow[] {
   const ref = input.engineRef;
+  const baseTax = {
+    taxModeEffective: input.nomusTaxMode,
+    taxRuleLabel: input.taxRuleLabel,
+    taxPercent: input.taxPercent,
+    fiscalStatus: input.fiscalStatus,
+    costSourceNote: "SalesOrderItem.unitCost → getProductCostAnalysis se configurado",
+  };
 
   function divergence(actual: number | null | undefined): string {
     if (ref == null || actual == null) return "—";
@@ -227,140 +276,165 @@ function buildScreenMarginAuditRows(input: {
     return nearlyEqual(ref, actual) ? "OK" : String(delta);
   }
 
+  function rowMetrics(
+    scoped: {
+      totalSalesRevenueInScope?: number;
+      marginRevenueCovered?: number;
+      marginRevenueUncovered?: number;
+      marginValue?: number;
+      marginPercent?: number | null;
+      costCoverageStatus?: string;
+      totalCost?: number;
+      netRevenue?: number;
+      taxAmount?: number;
+      netSalesAmount?: number;
+    } | null | undefined,
+    divergenceVal: string
+  ) {
+    return {
+      taxAmount: scoped?.taxAmount ?? (input.officialScoped.taxAmount ?? null),
+      totalRevenue: scoped?.totalSalesRevenueInScope ?? null,
+      netRevenue: scoped?.netSalesAmount ?? scoped?.netRevenue ?? null,
+      coveredRevenue: scoped?.marginRevenueCovered ?? null,
+      uncoveredRevenue: scoped?.marginRevenueUncovered ?? null,
+      totalCost: scoped?.totalCost ?? null,
+      marginValue: scoped?.marginValue ?? (scoped as { marginAmount?: number })?.marginAmount ?? null,
+      marginPercent: scoped?.marginPercent ?? null,
+      coverageStatus: scoped?.costCoverageStatus ?? "—",
+      divergence: divergenceVal,
+    };
+  }
+
   const staticScreens: Array<{
     screen: string;
     endpoint: string;
     file: string;
     exposesMargin: boolean;
-    metrics?: {
-      totalRevenue: number | null;
-      coveredRevenue: number | null;
-      uncoveredRevenue: number | null;
-      marginValue: number | null;
-      marginPercent: number | null;
-      coverageStatus: string;
-      divergence: string;
-    };
+    operational: boolean;
+    metrics?: ReturnType<typeof rowMetrics>;
   }> = [
     {
       screen: "Pedidos de Venda — lista",
       endpoint: "GET /api/sales-orders + attachMarginsToSalesOrders",
       file: "src/components/sales/SalesOrderListTable.tsx",
       exposesMargin: true,
-      metrics: {
-        totalRevenue: input.soldScoped.totalSalesRevenueInScope,
-        coveredRevenue: input.soldScoped.marginRevenueCovered,
-        uncoveredRevenue: input.soldScoped.marginRevenueUncovered,
-        marginValue: input.ordersMarginAmount,
-        marginPercent:
-          input.soldScoped.marginRevenueCovered > 0
-            ? (input.ordersMarginAmount / input.soldScoped.marginRevenueCovered) * 100
-            : null,
-        coverageStatus: input.soldScoped.costCoverageStatus,
-        divergence: divergence(input.ordersMarginAmount),
-      },
+      operational: true,
+      metrics: rowMetrics(
+        {
+          totalSalesRevenueInScope: input.officialScoped.totalSalesRevenueInScope,
+          marginRevenueCovered: input.officialScoped.marginRevenueCovered,
+          marginRevenueUncovered: input.officialScoped.marginRevenueUncovered,
+          marginValue: input.ordersMarginAmount,
+          marginPercent:
+            input.officialScoped.marginRevenueCovered > 0
+              ? (input.ordersMarginAmount / input.officialScoped.marginRevenueCovered) * 100
+              : null,
+          costCoverageStatus: input.officialScoped.costCoverageStatus,
+          totalCost: input.officialScoped.totalCost,
+          netSalesAmount: input.officialScoped.netSalesAmount,
+          taxAmount: input.officialScoped.taxAmount,
+        },
+        divergence(input.ordersMarginAmount)
+      ),
     },
     {
       screen: "Pedidos de Venda — detalhe",
       endpoint: "GET /api/sales-orders/:id + attachMarginToSalesOrderDetail",
       file: "src/components/SalesOrdersModule.tsx",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Gestão de Pedidos",
       endpoint: "GET /api/sales-orders/management",
       file: "src/components/sales/SalesOrderManagementMarginOverview.tsx",
       exposesMargin: true,
-      metrics: {
-        totalRevenue: input.mgmtConsolidated?.totalSalesRevenueInScope ?? null,
-        coveredRevenue: input.mgmtConsolidated?.marginRevenueCovered ?? null,
-        uncoveredRevenue: input.mgmtConsolidated?.marginRevenueUncovered ?? null,
-        marginValue: input.mgmtConsolidated?.marginValue ?? null,
-        marginPercent: input.mgmtConsolidated?.marginPercent ?? null,
-        coverageStatus: input.mgmtConsolidated?.costCoverageStatus ?? "—",
-        divergence: divergence(input.mgmtConsolidated?.marginValue),
-      },
+      operational: true,
+      metrics: rowMetrics(input.mgmtConsolidated ?? undefined, divergence(input.mgmtConsolidated?.marginValue)),
     },
     {
       screen: "Aba Resultado",
       endpoint: "GET /api/sales-orders/result",
       file: "src/components/sales/SalesOrderResultPage.tsx",
       exposesMargin: true,
-      metrics: {
-        totalRevenue: null,
-        coveredRevenue: null,
-        uncoveredRevenue: null,
-        marginValue: input.resultTotals.marginAmount,
-        marginPercent: input.resultTotals.marginPercent,
-        coverageStatus: "GERENCIAL",
-        divergence: "ESCOPO DIFERENTE",
-      },
+      operational: false,
+      metrics: rowMetrics(
+        {
+          totalSalesRevenueInScope: input.resultTotals.salesAmount,
+          marginRevenueCovered: input.resultTotals.netSalesAmount,
+          marginValue: input.resultTotals.marginAmount,
+          marginPercent: input.resultTotals.marginPercent,
+          totalCost: input.resultTotals.costAmount,
+          netSalesAmount: input.resultTotals.netSalesAmount,
+          taxAmount: input.resultTotals.taxAmount,
+          costCoverageStatus: "GERENCIAL",
+        },
+        "ESCOPO DIFERENTE"
+      ),
     },
     {
       screen: "Financeiro > Pedidos de Venda",
       endpoint: "GET /api/finance/sales-orders/dashboard",
       file: "src/lib/financeSalesOrdersDashboard.ts",
       exposesMargin: true,
-      metrics: {
-        totalRevenue: input.financeMargin?.totalSalesRevenueInScope ?? null,
-        coveredRevenue: input.financeMargin?.marginRevenueCovered ?? null,
-        uncoveredRevenue: input.financeMargin?.marginRevenueUncovered ?? null,
-        marginValue: input.financeMargin?.marginValue ?? null,
-        marginPercent: input.financeMargin?.marginPercent ?? null,
-        coverageStatus: input.financeMargin?.costCoverageStatus ?? "—",
-        divergence: divergence(input.financeMargin?.marginValue),
-      },
+      operational: true,
+      metrics: rowMetrics(input.financeMargin ?? undefined, divergence(input.financeMargin?.marginValue)),
     },
     {
       screen: "CRM Comercial / Inteligência",
       endpoint: "GET /api/crm/customers/:id/intelligence",
       file: "src/components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.tsx",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Cliente 360",
       endpoint: "GET /api/customers/:id/commercial-360",
       file: "src/components/customers/CustomerCommercial360.tsx",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Produtos vendidos (Indicadores)",
       endpoint: "GET /api/sales-orders/margin-indicators",
       file: "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Relatório Executivo / Presidencial",
       endpoint: "GET /api/reports/data",
       file: "src/components/ReportsModule.tsx",
       exposesMargin: true,
-      metrics: {
-        totalRevenue: input.soldScoped.totalSalesRevenueInScope,
-        coveredRevenue: input.soldScoped.marginRevenueCovered,
-        uncoveredRevenue: input.soldScoped.marginRevenueUncovered,
-        marginValue: input.soldScoped.marginAmount,
-        marginPercent: input.soldScoped.marginPercent,
-        coverageStatus: input.soldScoped.costCoverageStatus,
-        divergence: "OK",
-      },
+      operational: false,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Exportação margem interna",
       endpoint: "GET /api/sales-orders/margin-indicators/export",
       file: "src/lib/salesOrderInternalMarginExport.server.ts",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Exportação Financeiro Pedidos",
       endpoint: "GET /api/finance/sales-orders/export",
       file: "src/lib/financeSalesOrdersExport.ts",
       exposesMargin: true,
+      operational: true,
+      metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
       screen: "Propostas comerciais",
       endpoint: "ProposalModule (domínio separado)",
       file: "src/components/ProposalModule.tsx",
       exposesMargin: false,
+      operational: false,
     },
   ];
 
@@ -372,13 +446,19 @@ function buildScreenMarginAuditRows(input: {
       endpoint: row.endpoint,
       officialEngine: row.exposesMargin ? (usesEngine ? "SIM" : "NÃO") : "NÃO APLICÁVEL",
       exposesMargin: row.exposesMargin ? "SIM" : "NÃO APLICÁVEL",
-      totalRevenue: row.metrics?.totalRevenue ?? null,
-      coveredRevenue: row.metrics?.coveredRevenue ?? null,
-      uncoveredRevenue: row.metrics?.uncoveredRevenue ?? null,
-      marginValue: row.metrics?.marginValue ?? null,
-      marginPercent: row.metrics?.marginPercent ?? null,
-      coverageStatus: row.metrics?.coverageStatus ?? "—",
-      divergence: row.metrics?.divergence ?? "—",
+      ...baseTax,
+      ...(row.metrics ?? {
+        taxAmount: null,
+        totalRevenue: null,
+        netRevenue: null,
+        coveredRevenue: null,
+        uncoveredRevenue: null,
+        totalCost: null,
+        marginValue: null,
+        marginPercent: null,
+        coverageStatus: "—",
+        divergence: "—",
+      }),
       legacyFallback: legacy ? "SIM" : "NÃO",
     };
   });
@@ -414,28 +494,27 @@ async function main() {
   );
   await registerOfficialServerResolversForAuditScripts(prisma, productIds);
 
+  const { config: nomusConfig } = await loadSalesMarginNomusConfig(prisma);
+  const taxRule = nomusConfig.defaultTaxRuleId
+    ? await resolveSalesTaxRuleById(prisma, nomusConfig.defaultTaxRuleId)
+    : null;
+  const fiscalAssessment = assessSalesMarginNomusFiscalConfig(
+    nomusConfig,
+    taxRule,
+    null
+  );
+  const taxContext = await resolveOfficialSalesMarginTaxContext(
+    prisma,
+    productIds,
+    nomusConfig
+  );
+
   const marginContext = await buildSalesOrderMarginContext(prisma, marginOrders);
   const rulesOrders = mapMarginContextToRulesOrders(marginOrders, marginContext.byOrderId);
 
-  const [productTaxIndex, defaultTax] = await Promise.all([
-    loadProductTaxPercentIndex(prisma, productIds),
-    resolveDefaultSalesTaxPercent(prisma),
-  ]);
-
-  const engineSold = buildOfficialSalesMarginRulesResult(rulesOrders, {
-    taxMode: "none",
-    year,
-    month,
-    referenceDate: ref,
-    filters: { year, month },
-  });
-  const engineGerencial = buildOfficialSalesMarginRulesResult(rulesOrders, {
-    taxMode: "deductFromGross",
-    taxContext: {
-      productTaxIndex,
-      defaultTaxPercent: defaultTax.percent,
-      defaultTaxLabel: defaultTax.label,
-    },
+  const engineOfficial = buildOfficialSalesMarginRulesResult(rulesOrders, {
+    taxMode: nomusConfig.taxMode,
+    taxContext: nomusConfig.taxMode === "deductFromGross" ? taxContext : undefined,
     year,
     month,
     referenceDate: ref,
@@ -496,15 +575,14 @@ async function main() {
     });
   }
 
-  const soldScoped = resolveOfficialScopedMarginMetrics(engineSold);
-  const gerencialScoped = resolveOfficialScopedMarginMetrics(engineGerencial);
+  const officialScoped = resolveOfficialScopedMarginMetrics(engineOfficial);
   const diagnostics = buildMarginAuditDiagnostics({
     listOrdersCount: listOrders.length,
     mgmtOrdersCount: mgmtOrders.length,
     rulesOrders,
     marginContext,
-    engineOrdersAfterFilter: engineSold.orderResults.length,
-    soldScoped,
+    engineOrdersAfterFilter: engineOfficial.orderResults.length,
+    soldScoped: officialScoped,
   });
 
   const pedidosSoldHeaderTotal = listOrders.reduce(
@@ -513,24 +591,32 @@ async function main() {
   );
 
   addRow(
-    "Margem R$ (pedido, taxMode none)",
-    soldScoped.marginAmount,
+    "Margem R$ gerencial (config Nomus)",
+    officialScoped.marginAmount,
     ordersMarginAmount,
     mgmtConsolidated?.marginValue ?? null,
-    null,
+    resultPayload.totals.marginAmount,
     financeMargin?.marginValue ?? null
   );
   addRow(
-    "Margem % ponderada (pedido)",
-    soldScoped.marginPercent,
+    "Margem % ponderada gerencial",
+    officialScoped.marginPercent,
     ordersNetRevenue > 0 ? (ordersMarginAmount / ordersNetRevenue) * 100 : null,
     mgmtConsolidated?.marginPercent ?? null,
-    null,
+    resultPayload.totals.marginPercent,
     financeMargin?.marginPercent ?? null
   );
   addRow(
+    "Imposto estimado (TaxRule Nomus)",
+    officialScoped.taxAmount,
+    null,
+    null,
+    resultPayload.totals.taxAmount,
+    null
+  );
+  addRow(
     "Receita vendida total (escopo pedidos)",
-    soldScoped.totalSalesRevenueInScope,
+    officialScoped.totalSalesRevenueInScope,
     null,
     mgmtConsolidated?.totalSalesRevenueInScope ?? null,
     null,
@@ -538,7 +624,7 @@ async function main() {
   );
   addRow(
     "Receita coberta pela margem",
-    soldScoped.marginRevenueCovered,
+    officialScoped.marginRevenueCovered,
     ordersNetRevenue,
     mgmtConsolidated?.marginRevenueCovered ?? null,
     null,
@@ -546,7 +632,7 @@ async function main() {
   );
   addRow(
     "Receita sem custo",
-    soldScoped.marginRevenueUncovered,
+    officialScoped.marginRevenueUncovered,
     null,
     mgmtConsolidated?.marginRevenueUncovered ?? null,
     null,
@@ -554,15 +640,15 @@ async function main() {
   );
   addRow(
     "Cobertura % receita",
-    soldScoped.marginCoveragePercent,
+    officialScoped.marginCoveragePercent,
     null,
     mgmtConsolidated?.marginCoveragePercent ?? null,
     null,
     financeMargin?.marginCoveragePercent ?? null
   );
   addRow(
-    "Receita líquida usada na margem (legado netSalesAmount)",
-    soldScoped.netSalesAmount,
+    "Receita líquida gerencial",
+    officialScoped.netSalesAmount,
     ordersNetRevenue,
     mgmtConsolidated?.netRevenue ?? null,
     null,
@@ -570,43 +656,22 @@ async function main() {
   );
   addRow(
     "Custo total",
-    soldScoped.totalCost,
+    officialScoped.totalCost,
     null,
     mgmtConsolidated?.totalCost ?? null,
     null,
     financeMargin?.totalCost ?? null
   );
-  addRow(
-    "Margem R$ gerencial (aba Resultado)",
-    gerencialScoped.marginAmount,
-    null,
-    null,
-    resultPayload.totals.marginAmount,
-    null,
-    "Resultado usa receita líquida gerencial com imposto"
-  );
-  addRow(
-    "Margem % gerencial (aba Resultado)",
-    gerencialScoped.marginPercent,
-    null,
-    null,
-    resultPayload.totals.marginPercent,
-    null,
-    "Resultado usa receita líquida gerencial com imposto"
-  );
-  addRow(
-    "Imposto estimado (aba Resultado)",
-    gerencialScoped.taxAmount,
-    null,
-    null,
-    resultPayload.totals.taxAmount,
-    null,
-    "Camada fiscal só na aba Resultado"
-  );
-
   console.log(
     `Auditoria consumo Margem — year=${year} month=${month} asOfDate=${asOfDate} source=${OFFICIAL_SM_RULES_SOURCE}\n`
   );
+  console.log("### Configuração fiscal Nomus");
+  console.log(`- taxMode: ${nomusConfig.taxMode}`);
+  console.log(`- defaultTaxRuleId: ${nomusConfig.defaultTaxRuleId ?? "—"}`);
+  console.log(`- TaxRule: ${taxRule?.name ?? taxContext.defaultTaxLabel}`);
+  console.log(`- percentual imposto: ${taxContext.defaultTaxPercent}%`);
+  console.log(`- fiscalConfigComplete: ${taxContext.fiscalConfigComplete ? "sim" : "não"}`);
+  console.log(`- resultado fiscal: ${fiscalAssessment.status}`);
   console.log("### Diagnóstico de escopo");
   console.log(`- salesOrdersLoaded (lista Pedidos): ${diagnostics.salesOrdersLoaded}`);
   console.log(`- managementOrdersLoaded: ${diagnostics.managementOrdersLoaded}`);
@@ -643,23 +708,43 @@ async function main() {
   }
 
   const screenRows = buildScreenMarginAuditRows({
-    soldScoped,
+    nomusTaxMode: nomusConfig.taxMode,
+    taxRuleLabel: taxRule?.name ?? taxContext.defaultTaxLabel,
+    taxPercent: taxContext.defaultTaxPercent,
+    fiscalStatus: fiscalAssessment.status,
+    officialScoped,
     ordersMarginAmount,
     mgmtConsolidated,
     resultTotals: resultPayload.totals,
     financeMargin,
-    engineRef: soldScoped.marginAmount,
+    engineRef: officialScoped.marginAmount,
   });
 
   console.log("\n### Auditoria por tela / fonte");
   console.log(
-    "| Tela | Endpoint | Motor oficial | Expõe margem | Receita total | Receita coberta | Receita descoberta | Margem R$ | Margem % | Cobertura | Divergência | Fallback legado |"
+    "| Tela | Endpoint | taxMode | TaxRule | % imposto | Imposto R$ | Venda | Receita líq. | Custo | Margem R$ | Margem % | Cobertura | Fiscal | Divergência |"
   );
-  console.log("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |");
+  console.log("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |");
   for (const r of screenRows) {
     console.log(
-      `| ${r.screen} | ${r.endpoint} | ${r.officialEngine} | ${r.exposesMargin} | ${fmt(r.totalRevenue)} | ${fmt(r.coveredRevenue)} | ${fmt(r.uncoveredRevenue)} | ${fmt(r.marginValue)} | ${r.marginPercent == null ? "—" : `${fmt(r.marginPercent)}%`} | ${r.coverageStatus} | ${r.divergence} | ${r.legacyFallback} |`
+      `| ${r.screen} | ${r.endpoint} | ${r.taxModeEffective} | ${r.taxRuleLabel} | ${r.taxPercent == null ? "—" : `${fmt(r.taxPercent)}%`} | ${fmt(r.taxAmount)} | ${fmt(r.totalRevenue)} | ${fmt(r.netRevenue)} | ${fmt(r.totalCost)} | ${fmt(r.marginValue)} | ${r.marginPercent == null ? "—" : `${fmt(r.marginPercent)}%`} | ${r.coverageStatus} | ${r.fiscalStatus} | ${r.divergence} |`
     );
+  }
+
+  const operationalForcesNone = OPERATIONAL_MARGIN_SOURCE_FILES.filter((file) =>
+    operationalFileForcesTaxModeNone(file)
+  );
+  if (operationalForcesNone.length > 0) {
+    console.error("\nBLOQUEANTE: fluxos operacionais ainda forçam taxMode none:");
+    for (const file of operationalForcesNone) console.error(`- ${file}`);
+    process.exitCode = 1;
+  }
+
+  if (nomusConfig.taxMode === "deductFromGross" && fiscalAssessment.status === "BLOQUEANTE") {
+    console.error(
+      "\nBLOQUEANTE: configuração fiscal incompleta — margem gerencial operacional não deve usar 0% silencioso."
+    );
+    process.exitCode = 1;
   }
 
   const failures = rows.filter((r) => r.status === "DIFERENÇA");

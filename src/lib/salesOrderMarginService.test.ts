@@ -36,6 +36,7 @@ function createMockPrisma(options?: {
     totalNetValue: number;
     unitCost?: number;
   }>;
+  nomusConfigJson?: Record<string, unknown> | null;
 }): PrismaClient {
   const products = options?.products ?? [PRODUCT];
   const salesOrderItems = options?.salesOrderItems ?? [];
@@ -56,6 +57,21 @@ function createMockPrisma(options?: {
     nomusProductCatalog: { findMany: async () => [] },
     proposalItem: { findMany: async () => [] },
     costCalculationLog: { findMany: async () => [] },
+    indirectCost: {
+      findFirst: async () =>
+        options?.nomusConfigJson
+          ? {
+              id: "nomus-config-1",
+              allocationCriteria: JSON.stringify(options.nomusConfigJson),
+            }
+          : null,
+    },
+    taxRule: {
+      findMany: async () => [],
+      findFirst: async () => null,
+      findUnique: async () => null,
+    },
+    productPricing: { findMany: async () => [] },
     salesOrderItem: {
       findMany: async (args: { where?: { salesOrderId?: { in: string[] } } }) => {
         const ids = args.where?.salesOrderId?.in ?? [];
@@ -324,6 +340,81 @@ describe("salesOrderMarginService", () => {
     setSalesOrderMarginProductCostResolver(async () => ({
       summary: { totalIndustrialCost: 40 },
     }));
+  });
+
+  it("8. deductFromGross com TaxRule deduz imposto da margem gerencial", async () => {
+    const taxRuleId = "tax-rule-avg";
+    const prisma = createMockPrisma({
+      nomusConfigJson: {
+        defaultTaxRuleId: taxRuleId,
+        taxMode: "deductFromGross",
+        useFrozenUnitCostFirst: true,
+        allowLiveCostFallback: true,
+        showPartialCoverageWarning: true,
+      },
+      salesOrderItems: [
+        {
+          id: "item-394",
+          salesOrderId: "order-394",
+          productId: "prod-1",
+          skuSnapshot: "100.01AA",
+          productNameSnapshot: "Produto Teste",
+          quantity: 1,
+          negotiatedPrice: 394,
+          totalNetValue: 394,
+          unitCost: 193.49,
+        },
+      ],
+    }) as PrismaClient & {
+      taxRule: { findUnique: (args: unknown) => Promise<unknown> };
+    };
+    prisma.taxRule.findUnique = async () => ({
+      id: taxRuleId,
+      name: "Imposto médio sobre venda",
+      status: "ACTIVE",
+      operation: "SALE",
+      TaxComponent: [{ id: "c1", name: "Total", percentage: 27.25, isRecoverable: false, baseType: "GROSS" }],
+    });
+
+    const margins = await calculateSalesOrderMarginsForOrders(prisma, [
+      { id: "order-394", nomusRawResponse: null },
+    ]);
+    const summary = margins.get("order-394")?.marginSummary;
+    assert.ok(summary);
+    assert.ok(Math.abs(summary.netRevenue - 286.63) < 0.02);
+    assert.ok(Math.abs(summary.marginValue - 93.14) < 0.02);
+    assert.ok(summary.marginPercent != null && Math.abs(summary.marginPercent - 32.5) < 0.05);
+  });
+
+  it("9. taxMode none na config Nomus não deduz imposto", async () => {
+    const prisma = createMockPrisma({
+      nomusConfigJson: {
+        defaultTaxRuleId: null,
+        taxMode: "none",
+        useFrozenUnitCostFirst: true,
+        allowLiveCostFallback: true,
+        showPartialCoverageWarning: true,
+      },
+      salesOrderItems: [
+        {
+          id: "item-1",
+          salesOrderId: "order-1",
+          productId: "prod-1",
+          skuSnapshot: "100.01AA",
+          productNameSnapshot: "Produto Teste",
+          quantity: 1,
+          negotiatedPrice: 394,
+          totalNetValue: 394,
+          unitCost: 193.49,
+        },
+      ],
+    });
+    const margins = await calculateSalesOrderMarginsForOrders(prisma, [
+      { id: "order-1", nomusRawResponse: null },
+    ]);
+    const summary = margins.get("order-1")?.marginSummary;
+    assert.equal(summary?.netRevenue, 394);
+    assert.ok(Math.abs((summary?.marginValue ?? 0) - 200.51) < 0.02);
   });
 
   it("10. não há N+1 evidente no cálculo de custo", async () => {

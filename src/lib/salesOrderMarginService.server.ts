@@ -319,10 +319,7 @@ export async function calculateSalesOrderMarginsForOrders(
   const { calculateOfficialSalesOrderMarginsForOrders } = await import(
     "./salesMarginRulesAdapter.js"
   );
-  return calculateOfficialSalesOrderMarginsForOrders(prisma, orders, {
-    ...options,
-    buildInput: { taxMode: "none" },
-  });
+  return calculateOfficialSalesOrderMarginsForOrders(prisma, orders, options);
 }
 
 export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
@@ -334,9 +331,7 @@ export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
   const { calculateOfficialSalesOrderMarginsForOrders } = await import(
     "./salesMarginRulesAdapter.js"
   );
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, orders, {
-    buildInput: { taxMode: "none" },
-  });
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, orders);
   return orders.map((order) => ({
     ...order,
     marginSummary: marginByOrder.get(order.id)?.marginSummary,
@@ -356,7 +351,6 @@ export async function attachMarginToSalesOrderDetail<
   );
   const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, [order], {
     itemsByOrderId: new Map([[order.id, order.items]]),
-    buildInput: { taxMode: "none" },
   });
   const result = marginByOrder.get(order.id);
   if (!result) {

@@ -317,17 +317,19 @@ export function buildOfficialSalesMarginRulesResult(
   };
 }
 
-/** Carrega custos, executa motor oficial e retorna mapa por pedido (paridade com margin service). */
-export async function calculateOfficialSalesOrderMarginsForOrders(
+/** Carrega custos + config Nomus, executa motor oficial e retorna rules + margem por pedido. */
+async function buildOfficialSalesMarginRulesForOrders(
   db: PrismaClient,
   orders: SalesOrderForMargin[],
   options?: Parameters<typeof buildSalesOrderMarginContext>[2] & {
     buildInput?: OfficialSalesMarginRulesBuildInput;
     costPolicy?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostPolicy;
   }
-): Promise<Map<string, SalesOrderMarginOrderResult>> {
-  if (orders.length === 0) return new Map();
-
+): Promise<{
+  rules: ReturnType<typeof buildOfficialSalesMarginRulesResult>;
+  marginByOrder: Map<string, SalesOrderMarginOrderResult>;
+  nomusConfig: Awaited<ReturnType<typeof loadSalesMarginNomusConfig>>["config"];
+}> {
   const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
   const costPolicy =
     options?.costPolicy ?? salesMarginNomusConfigToCostPolicy(nomusConfig);
@@ -355,7 +357,22 @@ export async function calculateOfficialSalesOrderMarginsForOrders(
     taxContext,
   });
 
-  return mapRulesResultToMarginByOrder(rules, taxMode);
+  return {
+    rules,
+    marginByOrder: mapRulesResultToMarginByOrder(rules, taxMode),
+    nomusConfig,
+  };
+}
+
+/** Carrega custos, executa motor oficial e retorna mapa por pedido (paridade com margin service). */
+export async function calculateOfficialSalesOrderMarginsForOrders(
+  db: PrismaClient,
+  orders: SalesOrderForMargin[],
+  options?: Parameters<typeof buildOfficialSalesMarginRulesForOrders>[2]
+): Promise<Map<string, SalesOrderMarginOrderResult>> {
+  if (orders.length === 0) return new Map();
+  const { marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, orders, options);
+  return marginByOrder;
 }
 
 export function mapRulesResultToResultComputedItems(
@@ -477,9 +494,7 @@ export async function enrichCustomerIntelligenceOrdersWithOfficialMargin(
     },
   });
 
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(db, dbOrders, {
-    buildInput: { taxMode: "none" },
-  });
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(db, dbOrders);
 
   return orders.map((order) => {
     const margin = marginByOrder.get(order.id);
@@ -601,13 +616,13 @@ export async function loadOfficialCommercial360MarginBundle<
   }
 
   const { forMargin, itemsByOrderId } = mapCommercial360OrdersToMarginInput(orders);
-  const marginContext = await buildSalesOrderMarginContext(db, forMargin, { itemsByOrderId });
-  const rulesOrders = mapMarginContextToRulesOrders(orders, marginContext.byOrderId);
-  const rules = buildOfficialSalesMarginRulesResult(rulesOrders, { taxMode: "none" });
+  const { rules, marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, forMargin, {
+    itemsByOrderId,
+  });
   const scoped = resolveOfficialScopedMarginMetrics(rules);
 
   const salesOrders = orders.map((order) => {
-    const result = marginContext.byOrderId.get(order.id);
+    const result = marginByOrder.get(order.id);
     if (!result) {
       return {
         ...order,
