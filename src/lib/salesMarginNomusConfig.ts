@@ -23,6 +23,112 @@ export const DEFAULT_SALES_MARGIN_NOMUS_CONFIG: SalesMarginNomusConfig = {
   showPartialCoverageWarning: true,
 };
 
+export const SALES_MARGIN_NOMUS_TAX_RULE_REQUIRED_MESSAGE =
+  "Selecione uma regra fiscal ativa para calcular a margem gerencial com imposto." as const;
+
+export type SalesMarginNomusFiscalConfigStatus = "OK" | "ALERTA" | "BLOQUEANTE";
+
+export type SalesMarginNomusFiscalConfigAssessment = {
+  status: SalesMarginNomusFiscalConfigStatus;
+  reasons: string[];
+  usesFallback: boolean;
+  requiresTaxRule: boolean;
+};
+
+export type SalesMarginNomusConfigValidationResult =
+  | { ok: true }
+  | { ok: false; error: string; code: string };
+
+export type SalesMarginNomusTaxRuleRef = {
+  status: string | null;
+  totalPercent: number;
+} | null;
+
+export function salesMarginNomusRequiresDefaultTaxRule(config: SalesMarginNomusConfig): boolean {
+  return config.taxMode === "deductFromGross";
+}
+
+export function validateSalesMarginNomusConfigForSave(
+  config: SalesMarginNomusConfig,
+  resolvedTaxRule?: SalesMarginNomusTaxRuleRef
+): SalesMarginNomusConfigValidationResult {
+  if (!salesMarginNomusRequiresDefaultTaxRule(config)) {
+    return { ok: true };
+  }
+  if (!config.defaultTaxRuleId?.trim()) {
+    return {
+      ok: false,
+      code: "TAX_RULE_REQUIRED",
+      error: SALES_MARGIN_NOMUS_TAX_RULE_REQUIRED_MESSAGE,
+    };
+  }
+  if (!resolvedTaxRule) {
+    return {
+      ok: false,
+      code: "TAX_RULE_NOT_FOUND",
+      error: "TaxRule selecionada não existe ou não está ativa.",
+    };
+  }
+  if (resolvedTaxRule.status !== "ACTIVE") {
+    return {
+      ok: false,
+      code: "TAX_RULE_INACTIVE",
+      error: "TaxRule selecionada não está ativa. Escolha uma regra ACTIVE em Tributos.",
+    };
+  }
+  if (!Number.isFinite(resolvedTaxRule.totalPercent) || resolvedTaxRule.totalPercent <= 0) {
+    return {
+      ok: false,
+      code: "TAX_RULE_ZERO_PERCENT",
+      error: "TaxRule selecionada possui percentual total 0% — configure os componentes fiscais.",
+    };
+  }
+  return { ok: true };
+}
+
+export function assessSalesMarginNomusFiscalConfig(
+  config: SalesMarginNomusConfig,
+  resolvedTaxRule?: SalesMarginNomusTaxRuleRef,
+  taxRuleSource?: string | null
+): SalesMarginNomusFiscalConfigAssessment {
+  const reasons: string[] = [];
+  const requiresTaxRule = salesMarginNomusRequiresDefaultTaxRule(config);
+  const usesFallback = Boolean(
+    taxRuleSource?.includes("fallback") || taxRuleSource?.includes("primeira TaxRule ACTIVE")
+  );
+
+  if (!requiresTaxRule) {
+    return { status: "OK", reasons: [], usesFallback: false, requiresTaxRule: false };
+  }
+
+  if (!config.defaultTaxRuleId?.trim()) {
+    reasons.push("Modo gerencial com imposto exige TaxRule padrão configurada.");
+    return { status: "BLOQUEANTE", reasons, usesFallback: false, requiresTaxRule: true };
+  }
+
+  if (!resolvedTaxRule) {
+    reasons.push("TaxRule salva não encontrada ou inativa.");
+    return { status: "BLOQUEANTE", reasons, usesFallback: false, requiresTaxRule: true };
+  }
+
+  if (resolvedTaxRule.status !== "ACTIVE") {
+    reasons.push(`TaxRule salva com status ${resolvedTaxRule.status ?? "—"} (esperado ACTIVE).`);
+    return { status: "BLOQUEANTE", reasons, usesFallback: false, requiresTaxRule: true };
+  }
+
+  if (!Number.isFinite(resolvedTaxRule.totalPercent) || resolvedTaxRule.totalPercent <= 0) {
+    reasons.push("TaxRule salva possui percentual total 0%.");
+    return { status: "BLOQUEANTE", reasons, usesFallback: false, requiresTaxRule: true };
+  }
+
+  if (usesFallback) {
+    reasons.push("Motor está usando fallback fiscal em vez da TaxRule configurada.");
+    return { status: "ALERTA", reasons, usesFallback: true, requiresTaxRule: true };
+  }
+
+  return { status: "OK", reasons: [], usesFallback: false, requiresTaxRule: true };
+}
+
 export function salesMarginNomusConfigToCostPolicy(
   config: SalesMarginNomusConfig
 ): SalesOrderMarginCostPolicy {

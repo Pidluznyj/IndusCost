@@ -15,9 +15,11 @@ import {
 } from "./salesMarginRulesAdapter.js";
 import { resolveOfficialSalesMarginTaxContext } from "./salesMarginNomusTaxContext.server.js";
 import {
+  assessSalesMarginNomusFiscalConfig,
   loadSalesMarginNomusConfig,
   type SalesMarginNomusConfig,
   salesMarginNomusConfigToCostPolicy,
+  salesMarginNomusRequiresDefaultTaxRule,
 } from "./salesMarginNomusConfig.js";
 import {
   buildSalesOrderMarginContext,
@@ -134,12 +136,27 @@ export async function buildSalesMarginNomusPreview(
     ? await resolveSalesTaxRuleById(db, config.defaultTaxRuleId)
     : null;
 
-  if (!config.defaultTaxRuleId) {
+  const fiscalAssessment = assessSalesMarginNomusFiscalConfig(
+    config,
+    taxRule,
+    taxContext.taxRuleSource
+  );
+
+  if (fiscalAssessment.status === "BLOQUEANTE") {
+    warnings.push("Configuração fiscal incompleta.");
+    for (const reason of fiscalAssessment.reasons) warnings.push(reason);
+  } else if (fiscalAssessment.status === "ALERTA") {
+    for (const reason of fiscalAssessment.reasons) warnings.push(reason);
+  }
+
+  if (!taxContext.fiscalConfigComplete && salesMarginNomusRequiresDefaultTaxRule(config)) {
     warnings.push(
-      "Nenhuma TaxRule padrão configurada — usando primeira regra ACTIVE ou 0% como fallback."
+      "Motor operando com configuração fiscal incompleta — imposto gerencial não será deduzido até corrigir a TaxRule."
     );
-  } else if (!taxRule) {
-    warnings.push("TaxRule configurada não encontrada ou inativa — verifique Tributos.");
+  }
+
+  if (taxContext.usesTaxRuleFallback || fiscalAssessment.usesFallback) {
+    warnings.push("Fallback fiscal detectado — revise Parâmetros Globais > Margem Nomus.");
   }
 
   const rules = buildOfficialSalesMarginRulesResult(rulesOrders, {

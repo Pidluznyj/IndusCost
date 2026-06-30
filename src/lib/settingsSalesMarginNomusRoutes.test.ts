@@ -34,4 +34,19 @@ describe("settingsSalesMarginNomusRoutes", () => {
     assert.doesNotMatch(panel, /computeWeightedMarginPercent/);
     assert.doesNotMatch(panel, /buildOfficialSalesMarginRulesResult/);
   });
+
+  it("PUT valida TaxRule e retorna payload completo com taxRules", () => {
+    const routes = read("src/lib/settingsSalesMarginNomusRoutes.ts");
+    assert.match(routes, /validateSalesMarginNomusConfigForSave/);
+    assert.match(routes, /buildSalesMarginNomusSettingsPayload/);
+    assert.match(routes, /listActiveSalesTaxRules/);
+    assert.match(routes, /taxRules/);
+  });
+
+  it("UI valida TaxRule antes de salvar", () => {
+    const panel = read("src/components/settings/SalesMarginNomusConfigPanel.tsx");
+    assert.match(panel, /validateSalesMarginNomusConfigForSave/);
+    assert.match(panel, /SALES_MARGIN_NOMUS_TAX_RULE_REQUIRED_MESSAGE/);
+    assert.match(panel, /Configuração fiscal incompleta/);
+  });
 });

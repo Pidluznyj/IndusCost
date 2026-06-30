@@ -8,7 +8,13 @@ import {
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
-import type { SalesMarginNomusConfig } from "@/src/lib/salesMarginNomusConfig";
+import {
+  assessSalesMarginNomusFiscalConfig,
+  SALES_MARGIN_NOMUS_TAX_RULE_REQUIRED_MESSAGE,
+  salesMarginNomusRequiresDefaultTaxRule,
+  validateSalesMarginNomusConfigForSave,
+  type SalesMarginNomusConfig,
+} from "@/src/lib/salesMarginNomusConfig";
 import type { ResolvedSalesTaxRule } from "@/src/lib/averageSalesTaxEngine";
 import type { SalesMarginNomusPreviewPayload } from "@/src/lib/salesMarginNomusConfig.server";
 
@@ -57,9 +63,17 @@ export function SalesMarginNomusConfigPanel() {
   });
 
   const selectedRule = useMemo(() => {
-    if (!form?.defaultTaxRuleId || !payload?.taxRules) return null;
-    return payload.taxRules.find((r) => r.id === form.defaultTaxRuleId) ?? payload.selectedTaxRule;
+    if (!form?.defaultTaxRuleId) return null;
+    const fromList = payload?.taxRules?.find((r) => r.id === form.defaultTaxRuleId);
+    if (fromList) return fromList;
+    if (payload?.selectedTaxRule?.id === form.defaultTaxRuleId) return payload.selectedTaxRule;
+    return null;
   }, [form?.defaultTaxRuleId, payload]);
+
+  const fiscalAssessment = useMemo(() => {
+    if (!form) return null;
+    return assessSalesMarginNomusFiscalConfig(form, selectedRule);
+  }, [form, selectedRule]);
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -102,17 +116,40 @@ export function SalesMarginNomusConfigPanel() {
 
   const handleSave = async () => {
     if (!form || !canEdit) return;
-    setSaving(true);
     setSaveMessage(null);
     setError(null);
+
+    const clientValidation = validateSalesMarginNomusConfigForSave(form, selectedRule);
+    if (!clientValidation.ok) {
+      setError(clientValidation.error);
+      return;
+    }
+
+    setSaving(true);
     try {
       const data = await fetchJsonOk<Payload>("/api/settings/sales-margin-nomus", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      setPayload(data);
-      setForm(data.config);
+      const mergedPayload: Payload = {
+        ...data,
+        taxRules: data.taxRules?.length ? data.taxRules : (payload?.taxRules ?? []),
+      };
+      setPayload(mergedPayload);
+      setForm(mergedPayload.config);
+
+      const postSaveAssessment = assessSalesMarginNomusFiscalConfig(
+        mergedPayload.config,
+        mergedPayload.selectedTaxRule ??
+          mergedPayload.taxRules.find((r) => r.id === mergedPayload.config.defaultTaxRuleId) ??
+          null
+      );
+      if (postSaveAssessment.status !== "OK" && salesMarginNomusRequiresDefaultTaxRule(mergedPayload.config)) {
+        setError("Configuração fiscal incompleta — a TaxRule não foi persistida corretamente.");
+        return;
+      }
+
       setSaveMessage("Configuração salva. O motor oficial de margem passará a usar estes parâmetros.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar.");
@@ -188,7 +225,22 @@ export function SalesMarginNomusConfigPanel() {
           </select>
           <p className="text-xs text-muted-foreground">{payload?.productTaxPriorityNote}</p>
 
-          {selectedRule ? (
+          {fiscalAssessment && fiscalAssessment.status !== "OK" && salesMarginNomusRequiresDefaultTaxRule(form) ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive space-y-1">
+              <p className="font-semibold flex items-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Configuração fiscal incompleta
+              </p>
+              {fiscalAssessment.reasons.map((reason) => (
+                <p key={reason} className="text-xs">
+                  {reason}
+                </p>
+              ))}
+              {!form.defaultTaxRuleId ? (
+                <p className="text-xs">{SALES_MARGIN_NOMUS_TAX_RULE_REQUIRED_MESSAGE}</p>
+              ) : null}
+            </div>
+          ) : selectedRule ? (
             <div className="rounded-xl bg-muted/40 p-3 text-sm space-y-2">
               <p className="font-semibold">{selectedRule.name}</p>
               <p className="text-xs text-muted-foreground">
@@ -217,12 +269,11 @@ export function SalesMarginNomusConfigPanel() {
                 </tfoot>
               </table>
             </div>
-          ) : (
-            <p className="text-xs text-amber-700 flex items-center gap-1">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Sem TaxRule padrão — o motor usa a primeira regra ACTIVE ou 0%.
+          ) : form.taxMode === "none" ? (
+            <p className="text-xs text-muted-foreground">
+              Modo sem imposto — TaxRule padrão não é obrigatória neste modo.
             </p>
-          )}
+          ) : null}
         </div>
 
         <div className="space-y-3 rounded-2xl border border-border p-4">

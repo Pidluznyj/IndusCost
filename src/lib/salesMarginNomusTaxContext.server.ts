@@ -4,7 +4,6 @@
 import type { PrismaClient } from "@prisma/client";
 import {
   loadProductTaxPercentIndex,
-  resolveDefaultSalesTaxPercent,
   resolveSalesTaxRuleById,
 } from "./averageSalesTaxEngine.js";
 import type { SalesMarginNomusConfig } from "./salesMarginNomusConfig.js";
@@ -14,6 +13,8 @@ import type { SalesMarginTaxContext } from "./salesMarginRulesEngine.types.js";
 export type OfficialSalesMarginTaxContext = SalesMarginTaxContext & {
   defaultTaxRuleId: string | null;
   taxRuleSource: string;
+  fiscalConfigComplete: boolean;
+  usesTaxRuleFallback: boolean;
 };
 
 export async function resolveOfficialSalesMarginTaxContext(
@@ -24,25 +25,41 @@ export async function resolveOfficialSalesMarginTaxContext(
   const loaded = config ?? (await loadSalesMarginNomusConfig(db)).config;
   const productTaxIndex = await loadProductTaxPercentIndex(db, productIds);
 
+  if (loaded.taxMode === "none") {
+    return {
+      productTaxIndex,
+      defaultTaxPercent: 0,
+      defaultTaxLabel: "Sem imposto (taxMode none)",
+      defaultTaxRuleId: loaded.defaultTaxRuleId,
+      taxRuleSource: "taxMode none — imposto não deduzido",
+      fiscalConfigComplete: true,
+      usesTaxRuleFallback: false,
+    };
+  }
+
   if (loaded.defaultTaxRuleId) {
     const rule = await resolveSalesTaxRuleById(db, loaded.defaultTaxRuleId);
-    if (rule) {
+    if (rule && rule.status === "ACTIVE" && rule.totalPercent > 0) {
       return {
         productTaxIndex,
         defaultTaxPercent: rule.totalPercent,
         defaultTaxLabel: rule.name,
         defaultTaxRuleId: rule.id,
         taxRuleSource: "salesMargin.nomus.defaultTaxRuleId (Parâmetros Globais)",
+        fiscalConfigComplete: true,
+        usesTaxRuleFallback: false,
       };
     }
   }
 
-  const fallback = await resolveDefaultSalesTaxPercent(db);
   return {
     productTaxIndex,
-    defaultTaxPercent: fallback.percent,
-    defaultTaxLabel: fallback.label,
-    defaultTaxRuleId: null,
-    taxRuleSource: "primeira TaxRule ACTIVE (fallback automático)",
+    defaultTaxPercent: 0,
+    defaultTaxLabel: "Configuração fiscal incompleta",
+    defaultTaxRuleId: loaded.defaultTaxRuleId,
+    taxRuleSource:
+      "CONFIGURAÇÃO FISCAL INCOMPLETA — TaxRule padrão obrigatória não configurada ou inválida",
+    fiscalConfigComplete: false,
+    usesTaxRuleFallback: false,
   };
 }

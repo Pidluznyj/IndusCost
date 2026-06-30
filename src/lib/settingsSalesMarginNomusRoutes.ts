@@ -1,7 +1,11 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
-import { listActiveSalesTaxRules, resolveSalesTaxRuleById } from "@/src/lib/averageSalesTaxEngine.js";
+import {
+  listActiveSalesTaxRules,
+  resolveSalesTaxRuleById,
+  type ResolvedSalesTaxRule,
+} from "@/src/lib/averageSalesTaxEngine.js";
 import {
   buildSalesMarginNomusPreview,
   type SalesMarginNomusPreviewQuery,
@@ -10,6 +14,8 @@ import {
   loadSalesMarginNomusConfig,
   normalizeSalesMarginNomusConfigInput,
   saveSalesMarginNomusConfig,
+  type SalesMarginNomusConfig,
+  validateSalesMarginNomusConfigForSave,
 } from "@/src/lib/salesMarginNomusConfig.js";
 import {
   SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS,
@@ -29,6 +35,37 @@ export const SETTINGS_SALES_MARGIN_NOMUS_VIEW_PERMISSIONS = [
 export const SETTINGS_SALES_MARGIN_NOMUS_EDIT_PERMISSIONS = [
   ...SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS,
 ] as const;
+
+export const SALES_MARGIN_NOMUS_PRODUCT_TAX_PRIORITY_NOTE =
+  "Produtos com ProductPricing → TaxRule específica têm prioridade sobre a regra padrão Nomus.";
+
+export type SalesMarginNomusSettingsPayload = {
+  config: SalesMarginNomusConfig;
+  configRowId: string | null;
+  taxRules: ResolvedSalesTaxRule[];
+  selectedTaxRule: ResolvedSalesTaxRule | null;
+  metricsSource: typeof OFFICIAL_SM_RULES_SOURCE;
+  productTaxPriorityNote: string;
+};
+
+export async function buildSalesMarginNomusSettingsPayload(input: {
+  config: SalesMarginNomusConfig;
+  configRowId: string | null;
+  taxRules?: ResolvedSalesTaxRule[];
+}): Promise<SalesMarginNomusSettingsPayload> {
+  const taxRules = input.taxRules ?? (await listActiveSalesTaxRules(prisma));
+  const selectedTaxRule = input.config.defaultTaxRuleId
+    ? await resolveSalesTaxRuleById(prisma, input.config.defaultTaxRuleId)
+    : null;
+  return {
+    config: input.config,
+    configRowId: input.configRowId,
+    taxRules,
+    selectedTaxRule,
+    metricsSource: OFFICIAL_SM_RULES_SOURCE,
+    productTaxPriorityNote: SALES_MARGIN_NOMUS_PRODUCT_TAX_PRIORITY_NOTE,
+  };
+}
 
 function parsePreviewQuery(q: Record<string, unknown>): SalesMarginNomusPreviewQuery {
   const year = Number(q.year ?? new Date().getFullYear());
@@ -62,18 +99,12 @@ export function registerSettingsSalesMarginNomusRoutes(
         loadSalesMarginNomusConfig(prisma),
         listActiveSalesTaxRules(prisma),
       ]);
-      const selectedTaxRule = config.defaultTaxRuleId
-        ? await resolveSalesTaxRuleById(prisma, config.defaultTaxRuleId)
-        : null;
-      return res.json({
+      const payload = await buildSalesMarginNomusSettingsPayload({
         config,
         configRowId,
         taxRules,
-        selectedTaxRule,
-        metricsSource: OFFICIAL_SM_RULES_SOURCE,
-        productTaxPriorityNote:
-          "Produtos com ProductPricing → TaxRule específica têm prioridade sobre a regra padrão Nomus.",
       });
+      return res.json(payload);
     } catch (error) {
       console.error("GET /api/settings/sales-margin-nomus", error);
       return res.status(500).json({ error: "Erro ao carregar configuração de margem Nomus." });
@@ -84,23 +115,28 @@ export function registerSettingsSalesMarginNomusRoutes(
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const config = normalizeSalesMarginNomusConfigInput(body);
-      if (config.defaultTaxRuleId) {
-        const rule = await resolveSalesTaxRuleById(prisma, config.defaultTaxRuleId);
-        if (!rule || rule.status !== "ACTIVE") {
-          return res.status(400).json({ error: "TaxRule selecionada não existe ou não está ativa." });
-        }
+
+      const selectedTaxRule = config.defaultTaxRuleId
+        ? await resolveSalesTaxRuleById(prisma, config.defaultTaxRuleId)
+        : null;
+
+      const validation = validateSalesMarginNomusConfigForSave(config, selectedTaxRule);
+      if (!validation.ok) {
+        return res.status(400).json({ error: validation.error, code: validation.code });
       }
+
       const { configRowId: existingId } = await loadSalesMarginNomusConfig(prisma);
       const saved = await saveSalesMarginNomusConfig(prisma, config, existingId);
-      const selectedTaxRule = saved.config.defaultTaxRuleId
-        ? await resolveSalesTaxRuleById(prisma, saved.config.defaultTaxRuleId)
-        : null;
-      return res.json({
-        config: saved.config,
+
+      const { config: reloaded } = await loadSalesMarginNomusConfig(prisma);
+      const taxRules = await listActiveSalesTaxRules(prisma);
+      const payload = await buildSalesMarginNomusSettingsPayload({
+        config: reloaded,
         configRowId: saved.configRowId,
-        selectedTaxRule,
-        metricsSource: OFFICIAL_SM_RULES_SOURCE,
+        taxRules,
       });
+
+      return res.json(payload);
     } catch (error) {
       console.error("PUT /api/settings/sales-margin-nomus", error);
       return res.status(500).json({ error: "Erro ao salvar configuração de margem Nomus." });

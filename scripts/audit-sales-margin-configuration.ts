@@ -8,7 +8,10 @@
 import { prisma } from "../src/lib/prisma.js";
 import { resolveSalesTaxRuleById } from "../src/lib/averageSalesTaxEngine.js";
 import { buildSalesMarginNomusPreview } from "../src/lib/salesMarginNomusConfig.server.js";
-import { loadSalesMarginNomusConfig } from "../src/lib/salesMarginNomusConfig.js";
+import {
+  assessSalesMarginNomusFiscalConfig,
+  loadSalesMarginNomusConfig,
+} from "../src/lib/salesMarginNomusConfig.js";
 import { OFFICIAL_SM_RULES_SOURCE } from "../src/lib/salesMarginRulesAdapter.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,18 +44,40 @@ async function main() {
     ? await resolveSalesTaxRuleById(prisma, config.defaultTaxRuleId)
     : null;
 
+  const fiscalAssessment = assessSalesMarginNomusFiscalConfig(
+    config,
+    taxRule,
+    preview.taxRuleSource
+  );
+
+  const configOrigin = configRowId
+    ? `IndirectCost/GLOBAL_PARAM (${configRowId})`
+    : "IndirectCost/GLOBAL_PARAM — linha não encontrada (defaults em memória)";
+
   console.log(`Auditoria config margem Nomus — year=${year} month=${month} asOfDate=${asOfDate}\n`);
-  console.log("### Configuração persistida");
+  console.log("### Configuração fiscal");
   console.log(`- configRowId: ${configRowId ?? "—"}`);
-  console.log(`- defaultTaxRuleId: ${config.defaultTaxRuleId ?? "—"}`);
+  console.log(`- origem: ${configOrigin}`);
   console.log(`- taxMode: ${config.taxMode}`);
+  console.log(`- defaultTaxRuleId: ${config.defaultTaxRuleId ?? "—"}`);
+  console.log(`- TaxRule encontrada: ${taxRule?.name ?? preview.taxRule?.name ?? "—"}`);
+  console.log(`- TaxRule status: ${taxRule?.status ?? preview.taxRule?.status ?? "—"}`);
+  console.log(
+    `- percentual total: ${taxRule?.totalPercent ?? preview.taxRule?.totalPercent ?? "—"}`
+  );
+  console.log(`- taxRuleSource (motor): ${preview.taxRuleSource}`);
+  console.log(`- usa fallback: ${fiscalAssessment.usesFallback || preview.taxRuleSource.includes("fallback") ? "sim" : "não"}`);
+  console.log(`- fiscalConfigComplete: ${preview.taxRuleSource.includes("INCOMPLETA") ? "não" : fiscalAssessment.status === "OK" || config.taxMode === "none" ? "sim" : "não"}`);
+  console.log(`- resultado: ${fiscalAssessment.status}`);
+  if (fiscalAssessment.reasons.length > 0) {
+    for (const reason of fiscalAssessment.reasons) console.log(`  · ${reason}`);
+  }
+  console.log(`- metricsSource: ${OFFICIAL_SM_RULES_SOURCE}`);
+
+  console.log("\n### Comportamento");
   console.log(`- useFrozenUnitCostFirst: ${config.useFrozenUnitCostFirst}`);
   console.log(`- allowLiveCostFallback: ${config.allowLiveCostFallback}`);
   console.log(`- showPartialCoverageWarning: ${config.showPartialCoverageWarning}`);
-  console.log(`- taxRuleSource: ${preview.taxRuleSource}`);
-  console.log(`- TaxRule nome: ${taxRule?.name ?? preview.taxRule?.name ?? "—"}`);
-  console.log(`- TaxRule % total: ${taxRule?.totalPercent ?? preview.taxRule?.totalPercent ?? "—"}`);
-  console.log(`- metricsSource: ${OFFICIAL_SM_RULES_SOURCE}`);
 
   console.log("\n### Preview motor oficial");
   console.log(`- pedidos: ${preview.ordersCount}`);
@@ -69,7 +94,7 @@ async function main() {
   console.log(`- itemsWithoutCost: ${preview.itemsWithoutCost}`);
 
   if (preview.warnings.length > 0) {
-    console.log("\n### Avisos");
+    console.log("\n### Avisos preview");
     for (const w of preview.warnings) console.log(`- ${w}`);
   }
 
@@ -88,6 +113,11 @@ async function main() {
   );
   if (panelSrc.includes("marginValue / netRevenue") || panelSrc.match(/marginPercent\s*=.*\/\s*preview/)) {
     console.error("\nERRO: frontend calcula margem localmente.");
+    process.exitCode = 1;
+  }
+
+  if (fiscalAssessment.status === "BLOQUEANTE") {
+    console.error("\nBLOQUEANTE: configuração fiscal incompleta — corrija antes de confiar na margem gerencial.");
     process.exitCode = 1;
   }
 }
