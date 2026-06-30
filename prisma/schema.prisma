@@ -159,6 +159,7 @@ model Product {
   ProposalItem         ProposalItem[]
   SalesOrderItem       SalesOrderItem[]
   PriceTableItem       PriceTableItem[]
+  ProductionCostTableItem ProductionCostTableItem[]
   ProjectStructureLine ProjectStructureLine[]
   InventoryItem        InventoryItem[]
 
@@ -644,6 +645,61 @@ model PriceTableItem {
   @@index([sku])
 }
 
+/// Versão oficial de tabela de custo de produção industrial (governança — separada de formação de preço comercial).
+model ProductionCostTableVersion {
+  id                  String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                String
+  name                String
+  effectiveDate       DateTime                         @db.Date
+  status              ProductionCostTableVersionStatus @default(DRAFT)
+  revision            Int
+  supersedesVersionId String?                          @db.Uuid
+  source              String?
+  notes               String?
+  publishedAt         DateTime?                        @db.Timestamptz(6)
+  publishedBy         String?
+  createdBy           String?
+  createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  supersedesVersion   ProductionCostTableVersion?      @relation("ProductionCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersededBy        ProductionCostTableVersion[]     @relation("ProductionCostTableVersionSupersedes")
+  items               ProductionCostTableItem[]
+
+  @@unique([code, revision])
+  @@index([code])
+  @@index([status])
+  @@index([effectiveDate])
+  @@index([publishedAt])
+}
+
+/// Linha de custo de produção por produto dentro de uma versão.
+model ProductionCostTableItem {
+  id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  costTableVersionId  String                     @db.Uuid
+  productId           String                     @db.Uuid
+  productCodeSnapshot String
+  productNameSnapshot String
+  unitProductionCost  Decimal                    @db.Decimal(20, 6)
+  materialCost        Decimal                    @default(0) @db.Decimal(20, 6)
+  processCost         Decimal                    @default(0) @db.Decimal(20, 6)
+  laborCost           Decimal                    @default(0) @db.Decimal(20, 6)
+  machineCost         Decimal                    @default(0) @db.Decimal(20, 6)
+  overheadCost        Decimal                    @default(0) @db.Decimal(20, 6)
+  otherCost           Decimal                    @default(0) @db.Decimal(20, 6)
+  currency            String                     @default("BRL")
+  calculationHash     String?
+  calculationSnapshot Json?
+  createdAt           DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  costTableVersion    ProductionCostTableVersion @relation(fields: [costTableVersionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Product             Product                    @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([costTableVersionId, productId])
+  @@index([costTableVersionId])
+  @@index([productId])
+  @@index([productCodeSnapshot])
+}
+
 model CostCalculationLog {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId      String    @db.Uuid
@@ -1112,6 +1168,13 @@ enum ProductCostingMode {
   OWN_PROCESS
   BOM_ONLY
   FINISHING_SERVICE
+}
+
+enum ProductionCostTableVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
 }
 
 enum ProposalStatus {
