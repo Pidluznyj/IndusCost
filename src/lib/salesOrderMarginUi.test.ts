@@ -138,7 +138,9 @@ describe("salesOrderMargin UI", () => {
     assert.match(analysisSrc, /SalesOrderMarginMetricGrid/);
     assert.match(analysisSrc, /revenueLabel="Receita líquida"/);
     assert.match(metricGridSrc, /Custo estimado/);
-    assert.match(metricGridSrc, /Margem R\$/);
+    assert.match(metricGridSrc, /resolveSalesOrderMarginMoneyLabel\(summary\)/);
+    assert.match(metricGridSrc, /resolveSalesOrderMarginPercentLabel\(summary\)/);
+    assert.match(metricGridSrc, /buildSalesOrderMarginCoverageHint/);
     assert.match(metricGridSrc, /Markup/);
     assert.match(analysisSrc, /resolveSalesOrderMarginSupportText/);
     assert.match(metricGridSrc, /toFiniteMetricNumber\(summary\?\.netRevenue\)/);
