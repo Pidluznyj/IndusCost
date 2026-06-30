@@ -104,7 +104,7 @@ export type SalesOrderMarginItemResult = {
 
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
-  /** Indica se a margem usa custo congelado da linha ou estimativa atual. */
+  /** Modo de resolução do custo de produção IndusCost (histórico congelado vs estimativa viva). */
   marginCostMode?: SalesOrderMarginCostMode;
 
   notes: string[];
@@ -142,7 +142,7 @@ export type SalesOrderItemMarginPayload = {
   statusSeverity: SalesOrderMarginStatusSeverity;
   costSource: SalesOrderCostSource;
   costConfidence: SalesOrderCostConfidence;
-  /** Indica se a margem usa custo congelado da linha ou estimativa atual. */
+  /** Modo de resolução do custo de produção IndusCost (histórico congelado vs estimativa viva). */
   marginCostMode?: SalesOrderMarginCostMode;
   productResolutionSource:
     | "LOCAL_PRODUCT_ID"

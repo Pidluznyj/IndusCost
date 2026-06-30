@@ -85,5 +85,18 @@ describe("salesOrderCostSemantics", () => {
   it("backfill apply está bloqueado", () => {
     const src = readFileSync("scripts/backfill-sales-order-unit-cost-snapshot.ts", "utf8");
     assert.match(src, /BLOQUEADO.*apply desabilitado/i);
+    assert.match(src, /unitCost do Nomus é preço de venda, não custo de produção/i);
+  });
+
+  it("config margem Nomus não oferece priorizar unitCost como custo", () => {
+    const src = readFileSync("src/components/settings/SalesMarginNomusConfigPanel.tsx", "utf8");
+    assert.doesNotMatch(src, /useFrozenUnitCostFirst/i);
+    assert.doesNotMatch(src, /custo congelado/i);
+    assert.doesNotMatch(src, /Priorizar SalesOrderItem\.unitCost/i);
+  });
+
+  it("labels do motor não chamam unitCost Nomus de custo de produção", () => {
+    const engineNote = readFileSync("src/lib/salesMarginRulesEngine.ts", "utf8");
+    assert.match(engineNote, /nunca SalesOrderItem\.unitCost Nomus/);
   });
 });

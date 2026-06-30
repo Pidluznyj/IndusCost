@@ -5,8 +5,8 @@
  *   npx tsx scripts/audit-sales-order-margins.ts --year=2026 --limit=50
  *   npm run audit:sales-order-margins
  *
- * Não altera dados. Usa o motor `salesOrderMarginService` com resolução de custo
- * via CostCalculationLog em lote (mesma prioridade após unitCost da linha).
+ * Não altera dados. Usa o motor `salesOrderMarginService` com getProductCostAnalysis —
+ * SalesOrderItem.unitCost Nomus não entra como custo de produção.
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
@@ -198,7 +198,9 @@ async function main() {
       .slice(0, 15),
   }, null, 2));
 
-  console.log("\nNota: script usa CostCalculationLog em lote; API interna usa getProductCostAnalysis ao vivo.");
+  console.log(
+    "\nNota: custo de produção via getProductCostAnalysis — SalesOrderItem.unitCost Nomus (preço de venda) não entra na margem."
+  );
 }
 
 main()

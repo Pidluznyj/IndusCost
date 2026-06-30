@@ -1,9 +1,9 @@
 #!/usr/bin/env npx tsx
 /**
- * Backfill controlado de SalesOrderItem.unitCost em pedidos legados sem custo congelado.
+ * Auditoria read-only de SalesOrderItem.unitCost (preço unitário comercial Nomus).
  *
- * @deprecated BLOQUEADO — SalesOrderItem.unitCost espelha preço comercial Nomus, não custo de produção.
- * Use apenas preview/auditoria. Apply foi desabilitado permanentemente.
+ * @deprecated BLOQUEADO para apply — unitCost do Nomus é preço de venda, não custo de produção.
+ * Este script não pode ser usado como backfill de custo industrial.
  *
  * Preview (read-only):
  *   npx tsx scripts/backfill-sales-order-unit-cost-snapshot.ts --year=2026 --month=6 --mode=preview
@@ -373,7 +373,7 @@ async function main(): Promise<void> {
   if (args.mode === "apply") {
     console.error(
       "[backfill-sales-order-unit-cost-snapshot] BLOQUEADO: apply desabilitado.\n" +
-        "SalesOrderItem.unitCost espelha preço comercial Nomus — não preencher como custo de produção.\n" +
+        "unitCost do Nomus é preço de venda, não custo de produção. Este script não pode ser usado como backfill de custo.\n" +
         "Use scripts/audit-sales-order-cost-semantics.ts e o motor de margem IndusCost."
     );
     process.exitCode = 1;

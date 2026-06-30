@@ -3,6 +3,10 @@
  * Auditoria read-only do campo SalesOrderItem.unitCost (preço unitário comercial Nomus).
  *
  * Nota: unitCost NÃO é custo de produção. Para margem, use motor IndusCost / audit-sales-order-cost-semantics.ts.
+ *
+ * Uso:
+ *   npx tsx scripts/audit-sales-order-unit-cost-snapshot.ts --year=2026 --month=6
+ */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { parseNomusSyncStoredUnitCost } from "../src/lib/salesOrderNomusSyncCost.server.ts";
@@ -27,7 +31,8 @@ type ItemRow = {
   externalProductId: number | null;
   unitCost: number;
   netValue: number;
-  hasFrozenCost: boolean;
+  /** true quando unitCost > 0 (preço unitário comercial preenchido — não custo de produção). */
+  hasCommercialUnitPrice: boolean;
   productIdMissing: boolean;
   productLinkedZeroCost: boolean;
 };
@@ -53,8 +58,8 @@ type RecentOrderGap = {
   orderCode: string;
   issueDate: string;
   itemsTotal: number;
-  itemsWithoutFrozenCost: number;
-  netValueWithoutFrozenCost: number;
+  itemsWithoutCommercialUnitPrice: number;
+  netValueWithoutCommercialUnitPrice: number;
   sampleSkus: string[];
 };
 
@@ -262,7 +267,7 @@ async function main(): Promise<void> {
         externalProductId: item.externalProductId,
         unitCost: unitCostNum,
         netValue: toNumber(item.totalNetValue),
-        hasFrozenCost: frozen,
+        hasCommercialUnitPrice: frozen,
         productIdMissing,
         productLinkedZeroCost,
       });
@@ -271,16 +276,19 @@ async function main(): Promise<void> {
 
   const totalOrders = orders.length;
   const totalItems = rows.length;
-  const itemsWithFrozenCost = rows.filter((r) => r.hasFrozenCost).length;
-  const itemsWithZeroCost = rows.filter((r) => !r.hasFrozenCost && r.unitCost === 0).length;
-  const itemsWithInvalidCost = rows.filter((r) => !r.hasFrozenCost && r.unitCost !== 0).length;
+  const itemsWithCommercialPrice = rows.filter((r) => r.hasCommercialUnitPrice).length;
+  const itemsWithZeroCost = rows.filter((r) => !r.hasCommercialUnitPrice && r.unitCost === 0).length;
+  const itemsWithInvalidCost = rows.filter((r) => !r.hasCommercialUnitPrice && r.unitCost !== 0).length;
 
   const totalNetValue = rows.reduce((s, r) => s + r.netValue, 0);
-  const netValueWithFrozen = rows.filter((r) => r.hasFrozenCost).reduce((s, r) => s + r.netValue, 0);
-  const netValueWithoutFrozen = totalNetValue - netValueWithFrozen;
+  const netValueWithCommercialPrice = rows
+    .filter((r) => r.hasCommercialUnitPrice)
+    .reduce((s, r) => s + r.netValue, 0);
+  const netValueWithoutCommercialPrice = totalNetValue - netValueWithCommercialPrice;
 
-  const coverageByItems = totalItems > 0 ? (itemsWithFrozenCost / totalItems) * 100 : null;
-  const coverageByValue = totalNetValue > 0 ? (netValueWithFrozen / totalNetValue) * 100 : null;
+  const coverageByItems = totalItems > 0 ? (itemsWithCommercialPrice / totalItems) * 100 : null;
+  const coverageByValue =
+    totalNetValue > 0 ? (netValueWithCommercialPrice / totalNetValue) * 100 : null;
 
   const productIdMissingRows = rows.filter((r) => r.productIdMissing);
   const productLinkedZeroRows = rows.filter((r) => r.productLinkedZeroCost);
@@ -289,7 +297,7 @@ async function main(): Promise<void> {
   const customerAgg = new Map<string, RankCustomer>();
 
   for (const row of rows) {
-    if (row.hasFrozenCost) continue;
+    if (row.hasCommercialUnitPrice) continue;
 
     let p = productAgg.get(row.productId);
     if (!p) {
@@ -332,21 +340,21 @@ async function main(): Promise<void> {
 
   const orderGapMap = new Map<string, RecentOrderGap>();
   for (const row of rows) {
-    if (row.hasFrozenCost) continue;
+    if (row.hasCommercialUnitPrice) continue;
     let gap = orderGapMap.get(row.orderId);
     if (!gap) {
       gap = {
         orderCode: row.orderCode,
         issueDate: fmtDate(row.issueDate),
         itemsTotal: 0,
-        itemsWithoutFrozenCost: 0,
-        netValueWithoutFrozenCost: 0,
+        itemsWithoutCommercialUnitPrice: 0,
+        netValueWithoutCommercialUnitPrice: 0,
         sampleSkus: [],
       };
       orderGapMap.set(row.orderId, gap);
     }
-    gap.itemsWithoutFrozenCost += 1;
-    gap.netValueWithoutFrozenCost += row.netValue;
+    gap.itemsWithoutCommercialUnitPrice += 1;
+    gap.netValueWithoutCommercialUnitPrice += row.netValue;
     if (gap.sampleSkus.length < 5 && !gap.sampleSkus.includes(row.productSku)) {
       gap.sampleSkus.push(row.productSku);
     }
@@ -355,21 +363,27 @@ async function main(): Promise<void> {
     const gap = orderGapMap.get(order.id);
     if (gap) gap.itemsTotal = order.items.length;
   }
-  const recentOrdersWithoutFrozen = [...orderGapMap.values()].sort((a, b) =>
+  const recentOrdersWithoutCommercialPrice = [...orderGapMap.values()].sort((a, b) =>
     b.issueDate.localeCompare(a.issueDate)
   );
 
   console.log("--- Resumo geral ---");
   console.log(`Pedidos analisados:              ${totalOrders.toLocaleString("pt-BR")}`);
   console.log(`Itens analisados:                ${totalItems.toLocaleString("pt-BR")}`);
-  console.log(`Itens com unitCost > 0:          ${itemsWithFrozenCost.toLocaleString("pt-BR")}`);
+  console.log(
+    `Itens com preço unitário comercial (unitCost > 0): ${itemsWithCommercialPrice.toLocaleString("pt-BR")}`
+  );
   console.log(`Itens com unitCost = 0:          ${itemsWithZeroCost.toLocaleString("pt-BR")}`);
   console.log(`Itens com unitCost inválido*:    ${itemsWithInvalidCost.toLocaleString("pt-BR")}`);
   console.log(`Cobertura por quantidade:        ${fmtPct(coverageByItems)}`);
   console.log("");
   console.log(`Receita líquida total:           R$ ${fmtMoney(totalNetValue)}`);
-  console.log(`Receita com custo congelado:     R$ ${fmtMoney(netValueWithFrozen)}`);
-  console.log(`Receita sem custo congelado:     R$ ${fmtMoney(netValueWithoutFrozen)}`);
+  console.log(
+    `Receita com preço unitário comercial: R$ ${fmtMoney(netValueWithCommercialPrice)}`
+  );
+  console.log(
+    `Receita sem preço unitário comercial: R$ ${fmtMoney(netValueWithoutCommercialPrice)}`
+  );
   console.log(`Cobertura por valor:             ${fmtPct(coverageByValue)}`);
   console.log("");
   console.log("* unitCost inválido: valor não numérico ou negativo (schema exige Decimal; null não aplicável via Prisma).");
@@ -397,37 +411,39 @@ async function main(): Promise<void> {
   }
 
   printRankProducts(
-    `--- Top ${args.limit} produtos sem custo congelado (por receita líquida afetada) ---`,
+    `--- Top ${args.limit} produtos sem preço unitário comercial (por receita líquida afetada) ---`,
     topProducts,
     args.limit
   );
 
   printRankCustomers(
-    `--- Top ${args.limit} clientes com maior receita sem custo congelado ---`,
+    `--- Top ${args.limit} clientes com maior receita sem preço unitário comercial ---`,
     topCustomers,
     args.limit
   );
 
-  console.log(`\n--- Pedidos mais recentes ainda com linhas sem custo congelado (top ${args.limit}) ---`);
-  if (recentOrdersWithoutFrozen.length === 0) {
+  console.log(
+    `\n--- Pedidos mais recentes com linhas sem preço unitário comercial (top ${args.limit}) ---`
+  );
+  if (recentOrdersWithoutCommercialPrice.length === 0) {
     console.log("  (nenhum — cobertura total no período)");
   } else {
     console.log(
       "  " +
-        ["Pedido", "Emissão", "Itens s/ custo", "Total itens", "Receita s/ custo", "SKUs exemplo"]
+        ["Pedido", "Emissão", "Itens s/ preço", "Total itens", "Receita s/ preço", "SKUs exemplo"]
           .map((h) => h.padEnd(18))
           .join("")
     );
     console.log("  " + "-".repeat(108));
-    for (const row of recentOrdersWithoutFrozen.slice(0, args.limit)) {
+    for (const row of recentOrdersWithoutCommercialPrice.slice(0, args.limit)) {
       console.log(
         "  " +
           [
             row.orderCode.slice(0, 16),
             row.issueDate,
-            String(row.itemsWithoutFrozenCost),
+            String(row.itemsWithoutCommercialUnitPrice),
             String(row.itemsTotal),
-            fmtMoney(row.netValueWithoutFrozenCost),
+            fmtMoney(row.netValueWithoutCommercialUnitPrice),
             row.sampleSkus.join(", "),
           ]
             .map((c) => c.padEnd(18))
@@ -451,13 +467,13 @@ async function main(): Promise<void> {
         totals: {
           orders: totalOrders,
           items: totalItems,
-          itemsWithFrozenCost,
+          itemsWithCommercialUnitPrice: itemsWithCommercialPrice,
           itemsWithZeroCost,
           itemsWithInvalidCost,
           coverageByItemsPct: coverageByItems,
           totalNetValue,
-          netValueWithFrozenCost: netValueWithFrozen,
-          netValueWithoutFrozenCost: netValueWithoutFrozen,
+          netValueWithCommercialUnitPrice: netValueWithCommercialPrice,
+          netValueWithoutCommercialUnitPrice: netValueWithoutCommercialPrice,
           coverageByValuePct: coverageByValue,
         },
         productIdMissing: {
@@ -478,9 +494,9 @@ async function main(): Promise<void> {
             netValue: r.netValue,
           })),
         },
-        topProductsWithoutFrozenCost: topProducts.slice(0, args.limit),
-        topCustomersWithoutFrozenCost: topCustomers.slice(0, args.limit),
-        recentOrdersWithGaps: recentOrdersWithoutFrozen.slice(0, args.limit),
+        topProductsWithoutCommercialUnitPrice: topProducts.slice(0, args.limit),
+        topCustomersWithoutCommercialUnitPrice: topCustomers.slice(0, args.limit),
+        recentOrdersWithCommercialPriceGaps: recentOrdersWithoutCommercialPrice.slice(0, args.limit),
       },
       null,
       2

@@ -43,7 +43,7 @@ async function loadLatestCostLogsForProducts(
 
 /**
  * Bootstrap para scripts de auditoria sem subir HTTP.
- * Usa CostCalculationLog (mesma prioridade secundária do motor após unitCost da linha).
+ * Usa getProductCostAnalysis + CostCalculationLog opcional — SalesOrderItem.unitCost Nomus não entra como custo.
  */
 export async function registerOfficialServerResolversForNomusSyncScript(
   prisma: PrismaClient

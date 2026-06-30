@@ -307,8 +307,8 @@ export function SalesMarginNomusConfigPanel() {
             Permitir fallback de custo de produção via motor IndusCost (getProductCostAnalysis)
           </label>
           <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-3">
-            O custo de produção vem exclusivamente do motor de custo industrial IndusCost.
-            <strong> SalesOrderItem.unitCost</strong> espelha preço unitário comercial Nomus — não entra na margem como custo.
+            O custo de produção vem exclusivamente do motor de custo industrial IndusCost (custo vigente por produto — futura tabela publicada).
+            <strong> SalesOrderItem.unitCost</strong> espelha preço unitário de venda Nomus — não entra na margem como custo de produção.
             Itens sem custo de produção resolvido ficam como SEM_CUSTO e reduzem a cobertura.
           </p>
           <label className="flex items-center gap-2 text-sm">

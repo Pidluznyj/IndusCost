@@ -1,6 +1,8 @@
 /**
- * Semântica oficial: SalesOrderItem.unitCost reflete preço/custo comercial Nomus (venda),
- * NÃO custo de produção industrial Lazarios. Margem usa getProductCostAnalysis.
+ * Semântica oficial: SalesOrderItem.unitCost = preço unitário de venda Nomus (valor comercial do pedido).
+ * NÃO é custo de produção industrial. Margem usa getProductCostAnalysis / tabela vigente (futuro).
+ *
+ * Dívida técnica: coluna Prisma ainda se chama `unitCost` — renomear exige migration autorizada.
  */
 
 export const SALES_ORDER_ITEM_UNIT_COST_IS_SALE_PRICE =

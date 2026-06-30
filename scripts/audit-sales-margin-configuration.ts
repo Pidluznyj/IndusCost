@@ -82,7 +82,7 @@ async function main() {
   console.log(`- metricsSource: ${OFFICIAL_SM_RULES_SOURCE}`);
 
   console.log("\n### Comportamento");
-  console.log(`- useFrozenUnitCostFirst: ${config.useFrozenUnitCostFirst}`);
+  console.log(`- frozenUnitCostFirst (legado, ignorado): ${config.useFrozenUnitCostFirst}`);
   console.log(`- allowLiveCostFallback: ${config.allowLiveCostFallback}`);
   console.log(`- showPartialCoverageWarning: ${config.showPartialCoverageWarning}`);
 
