@@ -61,3 +61,14 @@ test("server.ts: respostas /api com no-store (sem cache de auth)", () => {
   const src = read("server.ts");
   assert.match(src, /app\.use\("\/api",[\s\S]*?Cache-Control[\s\S]*?no-store/);
 });
+
+test("server.ts: rotas Nomus sync registradas", () => {
+  const routes = read("src/lib/settingsNomusSyncRoutes.ts");
+  const server = read("server.ts");
+  assert.match(routes, /\/api\/integrations\/nomus\/health/);
+  assert.match(routes, /\/api\/settings\/nomus-sync\/logs/);
+  assert.match(routes, /\/api\/settings\/nomus-sync\/daily-status/);
+  assert.match(routes, /\/api\/settings\/nomus-sync\/accounts-receivable-status/);
+  assert.match(routes, /\/api\/settings\/nomus-sync\/accounts-payable-status/);
+  assert.match(server, /registerSettingsNomusSyncRoutes/);
+});

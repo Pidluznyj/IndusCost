@@ -156,6 +156,7 @@ import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRo
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
+import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
@@ -11563,6 +11564,23 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       requireBootstrapOrAnyPermission,
     },
     { initAnalysisCache }
+  );
+
+  registerSettingsNomusSyncRoutes(
+    app,
+    { requireBootstrapOrAnyPermission },
+    {
+      listNomusSyncLogEntries,
+      buildNomusSummary,
+      mergeNomusSummaryWithIntegrationRun,
+      loadNomusIntegrationRunByBasename,
+      readNomusSyncLogSafe,
+      buildNomusIntegrationHealthPayload,
+      findNomusIntegrationRunForLog,
+      sanitizeLogContent,
+      nomusSyncTargets: NOMUS_SYNC_TARGETS,
+      maxNomusLogFilesScan: MAX_NOMUS_LOG_FILES_SCAN,
+    }
   );
 
   // API fallback: garante resposta JSON para rotas /api não registradas
