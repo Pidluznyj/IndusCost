@@ -48,3 +48,51 @@ export function formatFinanceSupplierSearchMeta(supplier: FinanceSupplierSearchR
 export function financeSupplierSearchOptionKey(supplier: FinanceSupplierSearchResult): string {
   return supplier.id ?? supplier.identityKey ?? supplier.name;
 }
+
+export type FinanceSupplierSearchBadge = {
+  key: string;
+  label: string;
+  className: string;
+};
+
+export function buildFinanceSupplierSearchBadges(
+  supplier: FinanceSupplierSearchResult
+): FinanceSupplierSearchBadge[] {
+  const badges: FinanceSupplierSearchBadge[] = [];
+  if (supplier.source === "MASTER" && supplier.matched) {
+    badges.push({
+      key: "master",
+      label: "Cadastro gerencial",
+      className: "bg-emerald-100 text-emerald-800",
+    });
+  }
+  if (supplier.source === "AP_ONLY") {
+    badges.push({
+      key: "ap",
+      label: "Origem AP",
+      className: "bg-amber-100 text-amber-800",
+    });
+  }
+  if (!supplier.document) {
+    badges.push({
+      key: "no-doc",
+      label: "Sem documento",
+      className: "bg-slate-100 text-slate-700",
+    });
+  }
+  if (!supplier.matched) {
+    badges.push({
+      key: "unmatched",
+      label: "Não casado",
+      className: "bg-muted text-muted-foreground",
+    });
+  }
+  if (supplier.status === "INACTIVE") {
+    badges.push({
+      key: "inactive",
+      label: "Inativo",
+      className: "bg-red-100 text-red-800",
+    });
+  }
+  return badges;
+}

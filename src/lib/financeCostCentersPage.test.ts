@@ -171,9 +171,11 @@ describe("financeCostCentersPage", () => {
 
     it("fornecedor não casado: autocomplete antes de escolher o centro de custo", () => {
       const src = tab();
+      const autocomplete = read("src/components/finance/cost-centers/FinanceSupplierAutocomplete.tsx");
       assert.match(src, /needsSupplierLink/);
-      assert.match(src, /data-testid="finance-unclassified-supplier-search"/);
-      assert.match(src, /\/api\/finance\/supplier-cost-center-rules\/suppliers\/search/);
+      assert.match(src, /FinanceSupplierAutocomplete/);
+      assert.match(src, /testIdPrefix="finance-unclassified-supplier"/);
+      assert.match(autocomplete, /\/api\/finance\/suppliers\/search/);
     });
 
     it("confirmar cria a regra e aplica por fornecedor com confirmação", () => {
@@ -183,7 +185,7 @@ describe("financeCostCentersPage", () => {
       assert.match(src, /replaceExisting: true/);
       assert.match(src, /autoApply: true/);
       assert.match(src, /classify-batch-apply/);
-      assert.match(src, /supplierId: effectiveSupplierId/);
+      assert.match(src, /filters: \{ unclassifiedOnly: true, supplierId \}/);
       assert.match(src, /FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT/);
       // exige confirmação explícita (checkbox) antes de aplicar
       assert.match(src, /modalConfirmChecked/);

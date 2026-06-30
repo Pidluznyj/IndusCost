@@ -3,6 +3,7 @@ import { Search, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { FinanceSupplierSearchResult } from "@/src/lib/financeSupplierCostCenterRules";
 import {
+  buildFinanceSupplierSearchBadges,
   financeSupplierSearchOptionKey,
   formatFinanceSupplierSearchMeta,
 } from "@/src/lib/financeSupplierSearchClient";
@@ -46,7 +47,7 @@ export function FinanceSupplierAutocomplete({
     const handle = window.setTimeout(async () => {
       try {
         const payload = await fetchJsonOk<{ suppliers: FinanceSupplierSearchResult[] }>(
-          `/api/finance/suppliers/search?search=${encodeURIComponent(term)}&limit=20`,
+          `/api/finance/suppliers/search?search=${encodeURIComponent(term)}&limit=30`,
           { credentials: "include" }
         );
         if (seq !== searchSeq.current) return;
@@ -71,6 +72,19 @@ export function FinanceSupplierAutocomplete({
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-0.5">
             <p className="font-semibold">{selected.name}</p>
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {buildFinanceSupplierSearchBadges(selected).map((badge) => (
+                <span
+                  key={badge.key}
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                    badge.className
+                  )}
+                >
+                  {badge.label}
+                </span>
+              ))}
+            </div>
             <p className="text-xs text-muted-foreground">{formatFinanceSupplierSearchMeta(selected)}</p>
           </div>
           <button
@@ -130,18 +144,19 @@ export function FinanceSupplierAutocomplete({
                   setOpen(false);
                 }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{supplier.name}</p>
-                  {supplier.source === "AP_ONLY" ? (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                      origem AP
+                  {buildFinanceSupplierSearchBadges(supplier).map((badge) => (
+                    <span
+                      key={badge.key}
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                        badge.className
+                      )}
+                    >
+                      {badge.label}
                     </span>
-                  ) : null}
-                  {!supplier.matched ? (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      não casado
-                    </span>
-                  ) : null}
+                  ))}
                 </div>
                 <p className="text-xs text-muted-foreground">{formatFinanceSupplierSearchMeta(supplier)}</p>
               </button>

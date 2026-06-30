@@ -100,6 +100,8 @@ type UnclassifiedItem = {
   titleAmount: number;
   companyName: string | null;
   personName: string | null;
+  personDocument?: string | null;
+  identityKey?: string | null;
   cause?: UnclassifiedCause;
   supplierId?: string | null;
   supplierName?: string | null;
@@ -113,6 +115,9 @@ type GroupedRow = {
   cause: UnclassifiedCause | null;
   supplierId: string | null;
   supplierName: string | null;
+  identityKey: string;
+  personDocument: string | null;
+  sampleExternalId: number;
 };
 
 type ImportPreviewLine = {
@@ -373,7 +378,12 @@ export function FinanceUnclassifiedPayablesTab({
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ personName: classifyGroup.name }),
+          body: JSON.stringify({
+            identityKey: classifyGroup.identityKey,
+            personName: classifyGroup.name,
+            personDocument: classifyGroup.personDocument,
+            accountsPayableId: classifyGroup.sampleExternalId,
+          }),
         }
       );
       setEnsuredSupplierId(result.supplierId);

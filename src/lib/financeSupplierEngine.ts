@@ -72,6 +72,37 @@ function decimalToNumber(value: Prisma.Decimal | number | null | undefined): num
   return decimalFieldToNumber(value);
 }
 
+/** Pontua relevância de um hit de busca (prefixo/exato antes de volume de títulos). */
+export function scoreSupplierSearchRelevance(
+  row: Pick<FinanceSupplierSearchResult, "name" | "document" | "externalCode">,
+  rawSearch: string
+): number {
+  const search = (rawSearch ?? "").trim();
+  if (!search) return 0;
+
+  const lower = search.toLowerCase();
+  const name = row.name.toLowerCase();
+  const normalizedSearch = normalizeSupplierName(search);
+  const normalizedName = normalizeSupplierName(row.name);
+
+  if (normalizedSearch && normalizedName === normalizedSearch) return 1000;
+  if (name === lower) return 990;
+  if (name.startsWith(lower)) return 900;
+  if (name.split(/\s+/).some((word) => word.startsWith(lower))) return 850;
+  if (name.includes(lower)) return 800;
+  if (normalizedSearch && normalizedName?.includes(normalizedSearch)) return 750;
+
+  const digits = search.replace(/\D/g, "");
+  if (digits.length >= 2) {
+    const doc = (row.document ?? "").replace(/\D/g, "");
+    if (doc.includes(digits)) return 700;
+  }
+
+  if (/^\d+$/.test(search) && row.externalCode?.includes(search)) return 650;
+
+  return 100;
+}
+
 /** Verifica se um grupo AP corresponde ao termo de busca (nome, documento, código). */
 export function apGroupMatchesSearchTerm(group: FinanceSupplierApGroup, rawSearch: string): boolean {
   const search = (rawSearch ?? "").trim();
@@ -332,6 +363,11 @@ export async function searchOfficialFinancialSuppliers(
   }
 
   results.sort((a, b) => {
+    if (search.length > 0) {
+      const relDiff =
+        scoreSupplierSearchRelevance(b, search) - scoreSupplierSearchRelevance(a, search);
+      if (relDiff !== 0) return relDiff;
+    }
     const countDiff = (b.titlesCount ?? 0) - (a.titlesCount ?? 0);
     if (countDiff !== 0) return countDiff;
     return a.name.localeCompare(b.name, "pt-BR");
@@ -432,6 +468,7 @@ export async function buildOfficialSupplierEngineAuditSnapshot(input: {
         status: true,
         document: true,
         normalizedDocument: true,
+        displayName: true,
       },
     }),
     loadApGroups(),
@@ -489,8 +526,8 @@ export async function buildOfficialSupplierEngineAuditSnapshot(input: {
     searchableNames.add(pickDisplayName(group).toLowerCase());
   }
   for (const master of masters) {
-    if (master.status !== "INACTIVE") {
-      // displayName loaded separately if needed — count AP + masters
+    if (master.displayName.trim()) {
+      searchableNames.add(master.displayName.trim().toLowerCase());
     }
   }
 

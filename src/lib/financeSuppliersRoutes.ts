@@ -29,9 +29,21 @@ type AuthGuards = {
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
-export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = ["finance.suppliers.view", "finance.view"] as const;
+export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = [
+  "finance.suppliers.view",
+  "finance.cost_centers.view",
+  "finance.cost_center_rules.view",
+  "finance.view",
+] as const;
 
 export const FINANCE_SUPPLIERS_APPLY_PERMISSIONS = ["finance.suppliers.manage"] as const;
+
+/** Materializar origem AP exige cadastro ou gestão de regras CC. */
+export const FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS = [
+  "finance.suppliers.manage",
+  "finance.cost_centers.manage",
+  "finance.cost_center_rules.manage",
+] as const;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -61,6 +73,10 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
     requireAppAuth,
     requireAnyPermission([...FINANCE_SUPPLIERS_APPLY_PERMISSIONS]),
   ] as const;
+  const ensureFromApGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS]),
+  ] as const;
 
   app.get("/api/finance/suppliers/search", ...previewGuard, async (req, res) => {
     try {
@@ -78,7 +94,7 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/finance/suppliers/ensure-from-ap-identity", ...applyGuard, async (req, res) => {
+  app.post("/api/finance/suppliers/ensure-from-ap-identity", ...ensureFromApGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });

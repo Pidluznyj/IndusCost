@@ -17,7 +17,7 @@ import {
   isTitleRealAllocated,
   resolveTitleUnallocatedGap,
 } from "@/src/lib/financeCostCenterAllocationMetrics.js";
-import { extractSupplierFromAccountsPayable } from "@/src/lib/financeSupplierIdentity.js";
+import { buildSupplierIdentityKey, extractSupplierFromAccountsPayable } from "@/src/lib/financeSupplierIdentity.js";
 import {
   resolveBestClassificationMatch,
   type ClassificationApRow,
@@ -881,6 +881,8 @@ export type UnclassifiedItem = {
   titleAmount: number;
   companyName: string | null;
   personName: string | null;
+  personDocument: string | null;
+  identityKey: string;
   cause: UnclassifiedCause;
   supplierId: string | null;
   supplierName: string | null;
@@ -976,11 +978,14 @@ export async function listUnclassifiedAccountsPayable(
     });
     causeSummary[cause] += 1;
 
+    const extracted = extractSupplierFromAccountsPayable(ap);
     items.push({
       externalId: ap.externalId,
       titleAmount: unallocatedGap,
       companyName: ap.companyName ?? null,
       personName: ap.personName ?? null,
+      personDocument: ap.personCnpj ?? null,
+      identityKey: buildSupplierIdentityKey(extracted, ap.externalId),
       cause,
       supplierId: supplier?.id ?? null,
       supplierName: supplier?.displayName ?? null,

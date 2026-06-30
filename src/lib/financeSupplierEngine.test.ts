@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   apGroupMatchesSearchTerm,
   resolveApIdentityKeyFromPerson,
+  scoreSupplierSearchRelevance,
 } from "./financeSupplierEngine.js";
 import { extractSupplierFromAccountsPayable, groupAccountsPayableSuppliers } from "./financeSupplierIdentity.js";
 import { serializeFinancialSupplierSearchRow } from "./financeSupplierCostCenterRules.js";
@@ -75,6 +76,13 @@ describe("financeSupplierEngine", () => {
     assert.equal(extracted.normalizedDocument, null);
     assert.ok(extracted.normalizedName);
   });
+
+  it("scoreSupplierSearchRelevance prioriza prefixo exato (SGF) sobre volume de títulos", () => {
+    const sgf = scoreSupplierSearchRelevance({ name: "SGF SERVIÇOS DE CAPATAZIA LTDA", document: null, externalCode: null }, "sgf");
+    const other = scoreSupplierSearchRelevance({ name: "OUTRA EMPRESA COM MUITOS TITULOS", document: null, externalCode: null }, "sgf");
+    assert.ok(sgf > other);
+    assert.ok(sgf >= 850);
+  });
 });
 
 describe("FinanceGeneralClassificationRulesPanel contract", () => {
@@ -101,5 +109,34 @@ describe("FinanceUnclassifiedPayablesTab classify modal", () => {
     );
     assert.match(source, /finance-unclassified-use-ap-origin/);
     assert.match(source, /ensure-from-ap-identity/);
+    assert.match(source, /identityKey: classifyGroup\.identityKey/);
+    assert.match(source, /accountsPayableId: classifyGroup\.sampleExternalId/);
+  });
+});
+
+describe("financeSuppliersRoutes permissions", () => {
+  it("ensure-from-ap aceita gestão de regras CC", async () => {
+    const source = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("./financeSuppliersRoutes.ts", import.meta.url), "utf8")
+    );
+    assert.match(source, /FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS/);
+    assert.match(source, /finance\.cost_center_rules\.manage/);
+  });
+});
+
+describe("FinanceSupplierAutocomplete badges", () => {
+  it("expõe badges oficiais na busca", async () => {
+    const autocomplete = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../components/finance/cost-centers/FinanceSupplierAutocomplete.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    const client = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("./financeSupplierSearchClient.ts", import.meta.url), "utf8")
+    );
+    assert.match(autocomplete, /buildFinanceSupplierSearchBadges/);
+    assert.match(client, /Cadastro gerencial/);
+    assert.match(client, /Sem documento/);
   });
 });
