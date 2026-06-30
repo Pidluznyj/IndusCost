@@ -155,6 +155,7 @@ import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js"
 import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
+import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
@@ -11554,6 +11555,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAnyPermission,
     getCurrentAppUser,
   });
+
+  registerSettingsGlobalsRoutes(
+    app,
+    {
+      requireAppAuth,
+      requireBootstrapOrAnyPermission,
+    },
+    { initAnalysisCache }
+  );
 
   // API fallback: garante resposta JSON para rotas /api não registradas
   // e evita cair no fallback HTML da SPA (Vite/index.html).

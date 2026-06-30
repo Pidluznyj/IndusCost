@@ -360,6 +360,7 @@ export const SettingsModule = () => {
     hhSource: "AUTO"
   });
   const [loading, setLoading] = useState(true);
+  const [globalsLoadError, setGlobalsLoadError] = useState<string | null>(null);
   const [activeHubSection, setActiveHubSection] = useState<HubSection>("globals");
 
   const visibleHubSections = React.useMemo(
@@ -468,6 +469,7 @@ export const SettingsModule = () => {
   const fetchData = async () => {
     setLoading(true);
     setSimulationsLoading(true);
+    setGlobalsLoadError(null);
     try {
       const [rolesData, componentsData, config, simulationsData] = await Promise.all([
         fetchJsonOk<Role[]>("/api/roles"),
@@ -525,7 +527,9 @@ export const SettingsModule = () => {
       setSavedSimulations(Array.isArray(simulationsData) ? simulationsData : []);
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível carregar configurações.");
+      setGlobalsLoadError(
+        error instanceof Error ? error.message : "Não foi possível carregar configurações."
+      );
     } finally {
       setLoading(false);
       setSimulationsLoading(false);
@@ -1579,6 +1583,11 @@ export const SettingsModule = () => {
                   Configurações reais já conectadas ao backend atual para cálculo industrial e gerencial.
                 </p>
               </div>
+              {globalsLoadError ? (
+                <AppAlert variant="destructive" title="Não foi possível carregar parâmetros globais">
+                  {globalsLoadError}
+                </AppAlert>
+              ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
