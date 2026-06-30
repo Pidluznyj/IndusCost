@@ -136,7 +136,7 @@ describe("salesOrderMargin UI", () => {
     );
     assert.match(analysisSrc, /Análise de Margem/);
     assert.match(analysisSrc, /SalesOrderMarginMetricGrid/);
-    assert.match(analysisSrc, /revenueLabel="Receita líquida"/);
+    assert.match(analysisSrc, /resolveSalesOrderMarginRevenueLabel\(summary\)/);
     assert.match(metricGridSrc, /Custo estimado/);
     assert.match(metricGridSrc, /resolveSalesOrderMarginMoneyLabel\(summary\)/);
     assert.match(metricGridSrc, /resolveSalesOrderMarginPercentLabel\(summary\)/);

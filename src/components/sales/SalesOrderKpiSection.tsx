@@ -12,7 +12,7 @@ export function SalesOrderKpiSection({
   panel = true,
   className,
 }: {
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   children: React.ReactNode;
   testId?: string;

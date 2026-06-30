@@ -8,8 +8,10 @@ import {
   formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
   formatSalesOrderMarkup,
+  resolveSalesOrderMarginRevenueLabel,
   resolveSalesOrderMarginSupportText,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type {
   SalesOrderItemMarginPayload,
   SalesOrderMarginSummaryPayload,
@@ -47,9 +49,16 @@ export function SalesOrderMarginAnalysisSection({
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-              Análise de Margem
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                Análise de Margem
+              </h3>
+              <SalesOrderMarginInfoTooltip
+                summary={summary}
+                itemMargins={items.map((it) => it.margin)}
+                testId="sales-order-detail-margin-tooltip"
+              />
+            </div>
             <p className="mt-1 text-xs text-muted-foreground max-w-3xl">{supportText}</p>
           </div>
           {summary ? (
@@ -65,7 +74,7 @@ export function SalesOrderMarginAnalysisSection({
         {summary ? (
           <SalesOrderMarginMetricGrid
             summary={summary}
-            revenueLabel="Receita líquida"
+            revenueLabel={resolveSalesOrderMarginRevenueLabel(summary)}
             testId="sales-order-margin-metric-grid"
           />
         ) : (

@@ -1,16 +1,13 @@
 import React from "react";
-import { Info } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import {
-  buildSalesOrderMarginTooltipText,
-  resolveSalesOrderListMarginTextClass,
-} from "@/src/lib/salesOrderListUi";
+import { resolveSalesOrderListMarginTextClass } from "@/src/lib/salesOrderListUi";
 import {
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
 } from "@/src/lib/salesOrderMarginDisplay";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 
 export function SalesOrderListMarginCell({
   marginSummary,
@@ -19,7 +16,6 @@ export function SalesOrderListMarginCell({
 }) {
   const percentLabel = pickSalesOrderListMarginPercent(marginSummary);
   const valueLabel = pickSalesOrderListMarginValue(marginSummary);
-  const tooltip = buildSalesOrderMarginTooltipText(marginSummary);
   const toneClass = resolveSalesOrderListMarginTextClass(marginSummary);
 
   if (!marginSummary) {
@@ -48,21 +44,7 @@ export function SalesOrderListMarginCell({
             />
           ) : null}
         </div>
-        <button
-          type="button"
-          className="mt-0.5 inline-flex shrink-0 cursor-help rounded-sm border-0 bg-transparent p-0 text-muted-foreground hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          aria-label="Como a margem é calculada"
-          data-testid="sales-order-list-margin-tooltip-trigger"
-        >
-          <Info className="h-3.5 w-3.5" aria-hidden />
-        </button>
-        <div
-          className="sales-order-margin-tooltip-panel text-left"
-          role="tooltip"
-          data-testid="sales-order-list-margin-tooltip"
-        >
-          {tooltip}
-        </div>
+        <SalesOrderMarginInfoTooltip summary={marginSummary} testId="sales-order-list-margin-tooltip" />
       </div>
     </div>
   );

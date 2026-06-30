@@ -11,10 +11,13 @@ import {
 } from "@/src/lib/salesOrderPeriodFilter";
 import {
   getSalesOrderResultApiPath,
-  SALES_ORDER_RESULT_MARGIN_TOOLTIP,
 } from "@/src/lib/salesOrderResultApi";
 import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
-import { formatSalesOrderMarginMoney, formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
+import {
+  buildSalesOrderResultTotalsMarginTooltipText,
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+} from "@/src/lib/salesOrderMarginDisplay";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import { SalesOrderResultMonthlyMarginChart } from "@/src/components/sales/SalesOrderResultMonthlyMarginChart";
@@ -68,6 +71,12 @@ export function SalesOrderResultPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const marginTooltipText = useMemo(() => {
+    const totals = payload?.totals;
+    if (!totals) return null;
+    return buildSalesOrderResultTotalsMarginTooltipText(totals, payload?.warnings);
+  }, [payload]);
 
   if (!canView) {
     return (
@@ -214,17 +223,9 @@ export function SalesOrderResultPage() {
             </button>
           </div>
 
-          {showTooltip ? (
+          {showTooltip && marginTooltipText ? (
             <div className={`${financeBiCardClass} p-4 text-sm text-[#374151]`} data-testid="sales-order-result-margin-tooltip">
-              <p className="font-semibold text-[#111827] mb-2">{SALES_ORDER_RESULT_MARGIN_TOOLTIP.title}</p>
-              <ul className="list-disc pl-5 space-y-1">
-                {SALES_ORDER_RESULT_MARGIN_TOOLTIP.lines.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-              <p className="text-[11px] text-[#6B7280] mt-2">
-                Imposto aplicado: {totals.taxPercentApplied}% ({totals.taxSourceLabel})
-              </p>
+              <pre className="whitespace-pre-line font-sans text-sm">{marginTooltipText}</pre>
             </div>
           ) : null}
 

@@ -141,6 +141,7 @@ export {
   buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
+  resolveSalesOrderMarginRevenueLabel,
 } from "./salesOrderMarginCoverage.js";
 
 export function buildSalesOrderMarginAlerts(
@@ -172,6 +173,7 @@ export function buildSalesOrderMarginAlerts(
 export function pickSalesOrderListMarginPercent(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
+  if (isSalesOrderMarginDisplayUnavailable(summary)) return "—";
   if (summary?.marginPercent != null && Number.isFinite(summary.marginPercent)) {
     return formatSalesOrderMarginPercent(summary.marginPercent);
   }
@@ -181,10 +183,261 @@ export function pickSalesOrderListMarginPercent(
 export function pickSalesOrderListMarginValue(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
+  if (isSalesOrderMarginDisplayUnavailable(summary)) return "—";
   if (summary && Number.isFinite(summary.marginValue)) {
     return formatSalesOrderMarginMoney(summary.marginValue);
   }
   return "—";
+}
+
+export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
+  grossSales: "Valor vendido",
+  taxEstimated: "Imposto estimado",
+  netManagerial: "Receita líquida gerencial",
+  cost: "Custo",
+  marginValue: "Margem R$",
+  marginPercent: "Margem %",
+  coverage: "Cobertura",
+  itemsWithCost: "Itens com custo",
+  itemsWithoutCost: "Itens sem custo",
+  costFrozen: "Custo congelado",
+  costEstimated: "Custo estimado atual",
+  costMixed: "Custo misto",
+  managerialTitle: "Margem gerencial do pedido",
+  soldTitle: "Margem vendida sem imposto",
+  partialTitle: "Margem parcial do pedido",
+  unavailableTitle: "Margem indisponível",
+} as const;
+
+export type SalesOrderMarginTooltipInput = {
+  summary?: SalesOrderMarginSummaryPayload | null;
+  itemMargins?: Array<Pick<SalesOrderItemMarginPayload, "costSource"> | null | undefined>;
+};
+
+export function isSalesOrderMarginDisplayUnavailable(
+  summary?: SalesOrderMarginSummaryPayload | null
+): boolean {
+  if (!summary) return true;
+  if (summary.costCoverageStatus === "NONE" && summary.itemsWithCost === 0) return true;
+  if (
+    summary.taxMode === "deductFromGross" &&
+    summary.fiscalConfigComplete === false
+  ) {
+    return true;
+  }
+  if (summary.hasInvalidRevenue && summary.validItemsCount === 0) return true;
+  return false;
+}
+
+export function resolveSalesOrderMarginCostSourceSummary(
+  itemMargins?: Array<Pick<SalesOrderItemMarginPayload, "costSource"> | null | undefined>,
+  summary?: Pick<
+    SalesOrderMarginSummaryPayload,
+    "costSourceSummary" | "hasMissingCost" | "hasFrozenCost" | "hasEstimatedCost" | "hasMixedCost"
+  > | null
+): string {
+  if (summary?.costSourceSummary) return summary.costSourceSummary;
+  if (summary?.hasMixedCost) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costMixed;
+  if (summary?.hasFrozenCost) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costFrozen;
+  if (summary?.hasEstimatedCost) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costEstimated;
+  if (summary?.hasMissingCost) return "Custo indisponível";
+
+  const frozenSources = new Set<SalesOrderCostSource>([
+    "SALES_ORDER_ITEM_SNAPSHOT",
+    "HISTORICAL_SNAPSHOT",
+  ]);
+  const estimatedSources = new Set<SalesOrderCostSource>([
+    "LIVE_PRODUCT_COST",
+    "RECALCULATED_CURRENT_COST",
+    "OFFICIAL_FINAL_COST",
+    "CURRENT_ENGINEERING_COST",
+    "CURRENT_COST",
+    "MANUAL_COST",
+  ]);
+
+  let hasFrozen = false;
+  let hasEstimated = false;
+  let hasMissing = false;
+  for (const row of itemMargins ?? []) {
+    const source = row?.costSource;
+    if (!source) continue;
+    if (source === "MISSING_COST") hasMissing = true;
+    else if (frozenSources.has(source)) hasFrozen = true;
+    else if (estimatedSources.has(source)) hasEstimated = true;
+  }
+  if (hasMissing && !hasFrozen && !hasEstimated) return "Custo indisponível";
+  if (hasFrozen && hasEstimated) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costMixed;
+  if (hasFrozen) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costFrozen;
+  if (hasEstimated) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costEstimated;
+  return "Custo oficial resolvido";
+}
+
+function buildSalesOrderMarginUnavailableTooltip(
+  summary: SalesOrderMarginSummaryPayload | null | undefined
+): string {
+  const lines = [SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle, "", "Motivo:"];
+  if (!summary) {
+    lines.push("• Margem não calculada para este pedido.");
+    return lines.join("\n");
+  }
+  if (summary.taxMode === "deductFromGross" && summary.fiscalConfigComplete === false) {
+    lines.push("• TaxRule não configurada ou inválida para margem gerencial.");
+  }
+  if (summary.costCoverageStatus === "NONE" && summary.itemsWithCost === 0) {
+    lines.push("• Custo não resolvido para nenhuma linha do pedido.");
+  }
+  if (summary.hasInvalidRevenue && summary.validItemsCount === 0) {
+    lines.push("• Sem receita válida no escopo.");
+  }
+  if (summary.hasMissingProduct) {
+    lines.push("• Itens sem produto vinculado no IndusCost.");
+  }
+  if (lines.length === 3) {
+    lines.push("• Dados insuficientes para calcular a margem.");
+  }
+  return lines.join("\n");
+}
+
+/** Tooltip oficial — exibe o cálculo gerencial (imposto + custo + cobertura). */
+export function buildOfficialSalesOrderMarginTooltipText(
+  input: SalesOrderMarginTooltipInput
+): string {
+  const { summary, itemMargins } = input;
+  if (!summary || isSalesOrderMarginDisplayUnavailable(summary)) {
+    return buildSalesOrderMarginUnavailableTooltip(summary);
+  }
+
+  const taxMode = summary.taxMode ?? "deductFromGross";
+  const isPartial = summary.costCoverageStatus === "PARTIAL";
+  const grossSales =
+    summary.grossSalesAmount ?? summary.totalSalesRevenueInScope ?? summary.netRevenue;
+  const netManagerial = summary.netSalesAmountAfterTax ?? summary.netRevenue;
+  const taxAmount =
+    summary.taxAmount != null && Number.isFinite(summary.taxAmount)
+      ? summary.taxAmount
+      : Math.max(0, grossSales - netManagerial);
+  const costLabel = resolveSalesOrderMarginCostSourceSummary(itemMargins, summary);
+
+  const title = isPartial
+    ? SALES_ORDER_MARGIN_DISPLAY_LABELS.partialTitle
+    : taxMode === "none"
+      ? SALES_ORDER_MARGIN_DISPLAY_LABELS.soldTitle
+      : SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle;
+
+  const lines: string[] = [title, ""];
+
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.grossSales}: ${formatSalesOrderMarginMoney(grossSales)}`);
+
+  if (taxMode === "deductFromGross") {
+    const ruleLabel = summary.taxRuleName ?? "TaxRule configurada";
+    const rulePercent =
+      summary.taxRulePercent != null && Number.isFinite(summary.taxRulePercent)
+        ? formatSalesOrderMarginPercent(summary.taxRulePercent)
+        : "—";
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.taxEstimated}: ${formatSalesOrderMarginMoney(taxAmount)} — ${ruleLabel} (${rulePercent})`
+    );
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.netManagerial}: ${formatSalesOrderMarginMoney(netManagerial)}`
+    );
+  } else {
+    lines.push("Imposto: não deduzido neste modo");
+  }
+
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`);
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
+
+  const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
+  if (percentDenominator > 0 && summary.marginPercent != null) {
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: ${formatSalesOrderMarginMoney(summary.marginValue)} ÷ ${formatSalesOrderMarginMoney(percentDenominator)} = ${formatSalesOrderMarginPercent(summary.marginPercent)}`
+    );
+  } else {
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: —`);
+  }
+
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.coverage}: ${summary.costCoverageStatus ?? "—"}`);
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithCost}: ${summary.itemsWithCost ?? 0}`);
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithoutCost}: ${summary.itemsWithoutCost ?? 0}`);
+
+  if (isPartial) {
+    lines.push("");
+    lines.push(`Receita coberta: ${formatSalesOrderMarginMoney(summary.marginRevenueCovered)}`);
+    lines.push(`Receita descoberta: ${formatSalesOrderMarginMoney(summary.marginRevenueUncovered)}`);
+    lines.push(
+      "Parte da venda não entrou na margem por falta de custo resolvido."
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/** Alias retrocompatível — preferir buildOfficialSalesOrderMarginTooltipText. */
+export function buildSalesOrderMarginTooltipText(
+  summary: SalesOrderMarginSummaryPayload | null | undefined,
+  itemMargins?: SalesOrderMarginTooltipInput["itemMargins"]
+): string {
+  return buildOfficialSalesOrderMarginTooltipText({ summary, itemMargins });
+}
+
+type SalesOrderResultTotalsForTooltip = {
+  salesAmount: number;
+  taxAmount: number;
+  netSalesAmount: number;
+  costAmount: number;
+  marginAmount: number;
+  marginPercent: number | null;
+  itemsCount: number;
+  missingCostCount: number;
+  taxPercentApplied: number;
+  taxSourceLabel: string;
+};
+
+/** Monta tooltip oficial a partir dos totais da aba Resultado de Pedidos. */
+export function buildSalesOrderResultTotalsMarginTooltipText(
+  totals: SalesOrderResultTotalsForTooltip,
+  warnings?: { missingCostCount?: number } | null
+): string {
+  const itemsWithoutCost = warnings?.missingCostCount ?? totals.missingCostCount;
+  const itemsWithCost = Math.max(0, totals.itemsCount - itemsWithoutCost);
+  let costCoverageStatus: SalesOrderMarginSummaryPayload["costCoverageStatus"] = "FULL";
+  if (itemsWithCost === 0) costCoverageStatus = "NONE";
+  else if (itemsWithoutCost > 0) costCoverageStatus = "PARTIAL";
+
+  return buildOfficialSalesOrderMarginTooltipText({
+    summary: {
+      netRevenue: totals.netSalesAmount,
+      totalCost: totals.costAmount,
+      marginValue: totals.marginAmount,
+      marginPercent: totals.marginPercent,
+      markup: totals.costAmount > 0 ? totals.netSalesAmount / totals.costAmount : null,
+      itemsCount: totals.itemsCount,
+      validItemsCount: itemsWithCost,
+      ignoredItemsCount: 0,
+      hasMissingCost: itemsWithoutCost > 0,
+      hasMissingProduct: false,
+      hasNegativeMargin: false,
+      hasInvalidRevenue: false,
+      status: itemsWithoutCost > 0 ? "PARTIAL" : "OK",
+      statusLabel: "Calculada",
+      statusSeverity: "success",
+      taxMode: "deductFromGross",
+      grossSalesAmount: totals.salesAmount,
+      taxAmount: totals.taxAmount,
+      netSalesAmountAfterTax: totals.netSalesAmount,
+      taxRuleName: totals.taxSourceLabel,
+      taxRulePercent: totals.taxPercentApplied,
+      fiscalConfigComplete: true,
+      totalSalesRevenueInScope: totals.salesAmount,
+      marginRevenueCovered: totals.netSalesAmount,
+      marginRevenueUncovered: 0,
+      marginCoveragePercent: 100,
+      itemsTotal: totals.itemsCount,
+      itemsWithCost,
+      itemsWithoutCost,
+      costCoverageStatus,
+    },
+  });
 }
 
 /**
@@ -239,6 +492,21 @@ export function aggregateSalesOrderMarginSummaries(
       costCoverageStatus: row.costCoverageStatus,
     }))
   );
+
+  const grossSalesAmount = summaries.reduce(
+    (sum, row) => sum + (row.grossSalesAmount ?? row.totalSalesRevenueInScope ?? 0),
+    0
+  );
+  const taxAmount = summaries.reduce((sum, row) => sum + (row.taxAmount ?? 0), 0);
+  const firstFiscal = summaries.find((row) => row.taxMode != null) ?? summaries[0];
+  const hasFrozenCost = summaries.some((row) => row.hasFrozenCost);
+  const hasEstimatedCost = summaries.some((row) => row.hasEstimatedCost);
+  const hasMixedCost = hasFrozenCost && hasEstimatedCost;
+  let costSourceSummary = "Custo oficial resolvido";
+  if (hasMixedCost) costSourceSummary = "Custo misto";
+  else if (hasFrozenCost) costSourceSummary = "Custo congelado";
+  else if (hasEstimatedCost) costSourceSummary = "Custo estimado atual";
+
   return {
     netRevenue,
     totalCost,
@@ -252,6 +520,18 @@ export function aggregateSalesOrderMarginSummaries(
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,
+    taxMode: firstFiscal?.taxMode,
+    grossSalesAmount,
+    taxAmount,
+    netSalesAmountAfterTax: netRevenue,
+    taxRuleId: firstFiscal?.taxRuleId ?? null,
+    taxRuleName: firstFiscal?.taxRuleName ?? null,
+    taxRulePercent: firstFiscal?.taxRulePercent ?? null,
+    fiscalConfigComplete: summaries.every((row) => row.fiscalConfigComplete !== false),
+    costSourceSummary,
+    hasFrozenCost,
+    hasEstimatedCost,
+    hasMixedCost,
     ...coverage,
   };
 }

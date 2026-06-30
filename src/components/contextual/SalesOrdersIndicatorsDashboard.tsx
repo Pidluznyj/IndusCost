@@ -17,6 +17,7 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import {
+  buildOfficialSalesOrderMarginTooltipText,
   buildSalesOrderMarginCoverageHint,
   formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
@@ -24,6 +25,7 @@ import {
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import {
   getSalesOrderMarginIndicatorsApiPath,
   type SalesOrderMarginIndicatorsPayload,
@@ -307,6 +309,15 @@ export function SalesOrdersIndicatorsDashboard() {
         <ContextualDashboardEmpty message="Não há pedidos no período/filtro para consolidar indicadores de margem." />
       ) : (
         <>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Margem gerencial consolidada
+            </p>
+            <SalesOrderMarginInfoTooltip
+              summary={summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload}
+              testId="sales-order-indicators-margin-tooltip"
+            />
+          </div>
           <div className="indus-kpi-grid" data-testid="sales-order-margin-indicator-summary">
             <FinanceBiKpiCard
               icon={DollarSign}
@@ -336,6 +347,9 @@ export function SalesOrdersIndicatorsDashboard() {
               label={resolveSalesOrderMarginMoneyLabel(summary)}
               value={formatSalesOrderMarginMoney(summary.marginValue)}
               loading={false}
+              valueTitle={buildOfficialSalesOrderMarginTooltipText({
+                summary: summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload,
+              })}
               hint={buildSalesOrderMarginCoverageHint(summary, formatCurrency)}
             />
             <FinanceBiKpiCard

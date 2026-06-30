@@ -3,9 +3,11 @@ import type { FinanceSalesOrdersDashboardPayload } from "./financeSalesOrdersDas
 import { formatExecutivePercent } from "./executiveDashboardFormatters.js";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "./salesOrderInternalMarginExport.js";
 import {
+  buildOfficialSalesOrderMarginTooltipText,
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
-} from "./salesOrderMarginCoverage.js";
+  resolveSalesOrderMarginRevenueLabel,
+} from "./salesOrderMarginDisplay.js";
 
 function formatMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
@@ -54,17 +56,21 @@ export function buildFinanceSalesOrdersExportCsv(
         [],
         ["Margem consolidada (interno)"],
         [SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER],
-        ["Receita líquida", formatMoney(margin.netRevenue)],
-        ["Custo estimado", formatMoney(margin.totalCost)],
+        ...buildOfficialSalesOrderMarginTooltipText({ summary: margin })
+          .split("\n")
+          .map((line) => [line]),
+        [],
+        [resolveSalesOrderMarginRevenueLabel(margin), formatMoney(margin.netRevenue)],
+        ["Custo", formatMoney(margin.totalCost)],
         [resolveSalesOrderMarginMoneyLabel(margin), formatMoney(margin.marginValue)],
         [
           resolveSalesOrderMarginPercentLabel(margin),
           margin.marginPercent != null ? formatExecutivePercent(margin.marginPercent, 2) : "",
         ],
-        ["Cobertura receita", margin.costCoverageStatus],
+        ["Cobertura receita", margin.costCoverageStatus ?? ""],
         [
-          "Receita vendida (escopo)",
-          formatMoney(margin.totalSalesRevenueInScope),
+          "Valor vendido (escopo)",
+          formatMoney(margin.grossSalesAmount ?? margin.totalSalesRevenueInScope),
         ],
         ["Receita coberta", formatMoney(margin.marginRevenueCovered)],
         ["Receita sem custo", formatMoney(margin.marginRevenueUncovered)],

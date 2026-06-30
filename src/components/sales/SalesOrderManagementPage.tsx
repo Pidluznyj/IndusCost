@@ -57,6 +57,7 @@ function FulfillmentChartsSkeleton() {
 import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import {
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
@@ -1078,7 +1079,13 @@ export function SalesOrderManagementPage() {
                       )}
                       data-testid="sales-order-management-margin-percent"
                     >
-                      {pickSalesOrderListMarginPercent(row.marginSummary)}
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {pickSalesOrderListMarginPercent(row.marginSummary)}
+                        <SalesOrderMarginInfoTooltip
+                          summary={row.marginSummary}
+                          testId="sales-order-management-row-margin-tooltip"
+                        />
+                      </span>
                     </td>
                     <td
                       className={cn(

@@ -15,6 +15,7 @@ import {
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import { cn } from "@/src/lib/utils";
 
 function DrillCardButton({
@@ -68,7 +69,17 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
   return (
     <SalesOrderKpiSection
       testId="sales-order-management-margin-overview"
-      title={SALES_ORDER_MGMT_KPI_SECTIONS.margin.title}
+      title={
+        <span className="inline-flex items-center gap-2">
+          {SALES_ORDER_MGMT_KPI_SECTIONS.margin.title}
+          {consolidated ? (
+            <SalesOrderMarginInfoTooltip
+              summary={consolidated}
+              testId="sales-order-management-margin-tooltip"
+            />
+          ) : null}
+        </span>
+      }
       subtitle={marginEconomics?.scopeNote ?? SALES_ORDER_MGMT_KPI_SECTIONS.margin.subtitle}
     >
       <MetricCardGrid minColumnWidth={200}>
@@ -82,7 +93,7 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
             amountFormat="percent"
             variant={resolveMarginPercentVariant(marginPercent)}
             icon={<Percent className="h-4 w-4" />}
-            helperText={coverageHint ?? "Ponderada por receita · clique para detalhar"}
+            helperText={coverageHint ?? "Margem gerencial · clique para detalhar"}
             loading={loading}
             className="h-full"
           />
@@ -97,7 +108,7 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
             amountFormat="currency"
             variant={resolveMarginMoneyVariant(marginValue)}
             icon={<DollarSign className="h-4 w-4" />}
-            helperText={coverageHint ?? "Receita líquida − custo estimado"}
+            helperText={coverageHint ?? "Margem gerencial consolidada"}
             loading={loading}
             className="h-full"
           />

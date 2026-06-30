@@ -39,6 +39,22 @@ function summary(
     status: "OK",
     statusLabel: "Calculada",
     statusSeverity: "success",
+    totalSalesRevenueInScope: 5301.8,
+    marginRevenueCovered: 5301.8,
+    marginRevenueUncovered: 0,
+    itemsTotal: 15,
+    itemsWithCost: 15,
+    itemsWithoutCost: 0,
+    costCoverageStatus: "FULL",
+    taxMode: "deductFromGross",
+    grossSalesAmount: 5301.8,
+    taxAmount: 0,
+    netSalesAmountAfterTax: 5301.8,
+    taxRuleName: "Imposto médio sobre venda",
+    taxRulePercent: 0,
+    fiscalConfigComplete: true,
+    costSourceSummary: "Custo estimado atual",
+    hasEstimatedCost: true,
     ...partial,
   };
 }
@@ -76,24 +92,37 @@ describe("salesOrderListUi formatters", () => {
 
   it("7–11. tooltip de margem usa valores reais e alertas", () => {
     const ok = buildSalesOrderMarginTooltipText(summary());
-    assert.match(ok, /Receita líquida:.*5\.301/);
-    assert.match(ok, /Custo estimado:.*1\.321/);
+    assert.match(ok, /Margem gerencial do pedido/);
+    assert.match(ok, /Valor vendido:.*5\.301/);
+    assert.match(ok, /Receita líquida gerencial:.*5\.301/);
+    assert.match(ok, /Custo:.*1\.321/);
     assert.match(ok, /Margem R\$:.*3\.980/);
-    assert.match(ok, /Margem %:.*75,08%/);
-    assert.match(ok, /Fórmula:/);
+    assert.match(ok, /75,08%/);
+    assert.match(ok, /Cobertura: FULL/);
 
-    const noCost = buildSalesOrderMarginTooltipText(summary({ hasMissingCost: true, status: "SEM_CUSTO" }));
-    assert.match(noCost, /sem custo cadastrado/i);
+    const noCost = buildSalesOrderMarginTooltipText(
+      summary({
+        hasMissingCost: true,
+        status: "SEM_CUSTO",
+        costCoverageStatus: "NONE",
+        itemsWithCost: 0,
+        itemsWithoutCost: 15,
+        fiscalConfigComplete: true,
+      })
+    );
+    assert.match(noCost, /Margem indisponível/);
+    assert.match(noCost, /Custo não resolvido/i);
 
     const noProduct = buildSalesOrderMarginTooltipText(
       summary({ hasMissingProduct: true, status: "SEM_PRODUTO_VINCULADO" })
     );
-    assert.match(noProduct, /sem vínculo com produto local/i);
+    assert.match(noProduct, /Margem gerencial do pedido/);
 
     const negative = buildSalesOrderMarginTooltipText(
       summary({ hasNegativeMargin: true, status: "MARGEM_NEGATIVA" })
     );
-    assert.match(negative, /custo estimado é maior que a receita/i);
+    assert.match(negative, /Margem gerencial do pedido/);
+    assert.match(negative, /Margem R\$:/);
   });
 
   it("15. permissão de margem usa products.tab.cost ou costs.view", () => {
@@ -168,7 +197,7 @@ describe("salesOrderListGrid components", () => {
     assert.match(drawerSrc, /Comercial/);
     assert.match(drawerSrc, /Valor líquido/);
     assert.match(drawerSrc, /sales-order-quick-summary-margin/);
-    assert.match(drawerSrc, /Receita líquida/);
+    assert.match(drawerSrc, /resolveSalesOrderMarginRevenueLabel/);
     assert.match(drawerSrc, /Custo estimado/);
   });
 
@@ -225,7 +254,7 @@ describe("salesOrderListGrid wiring", () => {
     assert.doesNotMatch(marginCell, /calculateSalesOrderMargin/);
     assert.doesNotMatch(listUi, /calculateSalesOrderMargin/);
     assert.match(marginCell, /pickSalesOrderListMarginPercent/);
-    assert.match(marginCell, /buildSalesOrderMarginTooltipText/);
+    assert.match(marginCell, /SalesOrderMarginInfoTooltip/);
   });
 
   it("21. build não reintroduz Prisma no frontend da listagem", () => {

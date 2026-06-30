@@ -29,6 +29,7 @@ import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
   aggregateSalesOrderMarginSummaries,
+  buildOfficialSalesOrderMarginTooltipText,
   buildSalesOrderMarginCoverageHint,
   formatSalesOrderMarginPercent,
   resolveSalesOrderMarginMoneyLabel,
@@ -809,6 +810,11 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                       ? formatSalesOrderMarginPercent(metrics.marginAvg)
                       : "—"
                   }
+                  valueTitle={
+                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                      ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
+                      : undefined
+                  }
                   hint={
                     metrics.usesOfficialMarginMetrics && metrics.marginCoverage
                       ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
@@ -821,6 +827,11 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                     metrics.usesOfficialMarginMetrics
                       ? formatCurrency(metrics.totalMargin)
                       : "—"
+                  }
+                  valueTitle={
+                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                      ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
+                      : undefined
                   }
                   hint={
                     metrics.usesOfficialMarginMetrics && metrics.marginCoverage
@@ -1021,11 +1032,21 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   );
 };
 
-function MiniCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function MiniCard({
+  label,
+  value,
+  hint,
+  valueTitle,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  valueTitle?: string;
+}) {
   return (
     <div className="indus-kpi-card rounded-xl border border-border bg-card p-3 min-w-0">
       <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight truncate">{label}</p>
-      <p className="indus-kpi-value text-sm font-black mt-1" title={value}>
+      <p className="indus-kpi-value text-sm font-black mt-1" title={valueTitle ?? value}>
         {value}
       </p>
       {hint && <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{hint}</p>}

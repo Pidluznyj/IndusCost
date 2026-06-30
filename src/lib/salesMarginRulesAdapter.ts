@@ -26,6 +26,7 @@ import {
   type SalesOrderMarginOrderResult,
 } from "./salesOrderMarginService.server.js";
 import type {
+  SalesOrderCostSource,
   SalesOrderItemMarginPayload,
   SalesOrderMarginItemResult,
   SalesOrderMarginSummaryPayload,
@@ -174,9 +175,55 @@ function mapEngineItemToItemMarginPayload(item: SalesMarginItemResult): SalesOrd
   };
 }
 
+function deriveCostSourceSummaryFromItems(
+  items: SalesOrderMarginItemResult[]
+): Pick<
+  SalesOrderMarginSummaryPayload,
+  "costSourceSummary" | "hasFrozenCost" | "hasEstimatedCost" | "hasMixedCost"
+> {
+  const frozenSources = new Set<SalesOrderCostSource>([
+    "SALES_ORDER_ITEM_SNAPSHOT",
+    "HISTORICAL_SNAPSHOT",
+  ]);
+  const estimatedSources = new Set<SalesOrderCostSource>([
+    "LIVE_PRODUCT_COST",
+    "RECALCULATED_CURRENT_COST",
+    "OFFICIAL_FINAL_COST",
+    "CURRENT_ENGINEERING_COST",
+    "CURRENT_COST",
+    "MANUAL_COST",
+  ]);
+
+  let hasFrozenCost = false;
+  let hasEstimatedCost = false;
+
+  for (const item of items) {
+    if (frozenSources.has(item.costSource)) hasFrozenCost = true;
+    if (estimatedSources.has(item.costSource)) hasEstimatedCost = true;
+  }
+
+  let costSourceSummary = "Custo oficial resolvido";
+  if (hasFrozenCost && hasEstimatedCost) costSourceSummary = "Custo misto";
+  else if (hasFrozenCost) costSourceSummary = "Custo congelado";
+  else if (hasEstimatedCost) costSourceSummary = "Custo estimado atual";
+
+  return {
+    costSourceSummary,
+    hasFrozenCost,
+    hasEstimatedCost,
+    hasMixedCost: hasFrozenCost && hasEstimatedCost,
+  };
+}
+
 export function mapEngineOrderResultToMarginSummary(
   order: SalesMarginOrderResult,
-  taxMode: SalesMarginTaxMode
+  taxMode: SalesMarginTaxMode,
+  fiscalMeta?: {
+    taxRuleId?: string | null;
+    taxRuleName?: string | null;
+    taxRulePercent?: number | null;
+    fiscalConfigComplete?: boolean;
+  }
 ): SalesOrderMarginSummaryPayload {
   const netRevenue = taxMode === "deductFromGross" ? order.netSalesAmount : order.grossSalesAmount;
   const marginValue = order.marginAmount;
@@ -202,6 +249,7 @@ export function mapEngineOrderResultToMarginSummary(
   const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
   const mappedItems = order.items.map((item) => mapEngineItemToMarginItemResult(item));
   const coverage = computeSalesOrderMarginCoverageFromItems(mappedItems);
+  const costMeta = deriveCostSourceSummaryFromItems(mappedItems);
   return {
     netRevenue,
     totalCost: order.totalCost,
@@ -218,6 +266,17 @@ export function mapEngineOrderResultToMarginSummary(
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,
+    taxMode,
+    grossSalesAmount: order.grossSalesAmount,
+    taxAmount: order.taxAmount,
+    netSalesAmountAfterTax: order.netSalesAmount,
+    taxRuleId: fiscalMeta?.taxRuleId ?? null,
+    taxRuleName: fiscalMeta?.taxRuleName ?? null,
+    taxRulePercent: fiscalMeta?.taxRulePercent ?? null,
+    fiscalConfigComplete:
+      fiscalMeta?.fiscalConfigComplete ??
+      (taxMode === "none" || (order.taxAmount > 0 && (fiscalMeta?.taxRulePercent ?? 0) > 0)),
+    ...costMeta,
     ...coverage,
   };
 }
@@ -268,8 +327,24 @@ export function mapMarginContextToRulesOrders(
 
 function mapRulesResultToMarginByOrder(
   rules: SalesMarginRulesResult,
-  taxMode: SalesMarginTaxMode
+  taxMode: SalesMarginTaxMode,
+  extraFiscalMeta?: {
+    taxRuleId?: string | null;
+    taxRuleName?: string | null;
+    taxRulePercent?: number | null;
+    fiscalConfigComplete?: boolean;
+  }
 ): Map<string, SalesOrderMarginOrderResult> {
+  const taxCtx = rules.context.taxContext;
+  const fiscalMeta = {
+    taxRuleId: extraFiscalMeta?.taxRuleId ?? null,
+    taxRuleName: extraFiscalMeta?.taxRuleName ?? taxCtx?.defaultTaxLabel ?? null,
+    taxRulePercent: extraFiscalMeta?.taxRulePercent ?? taxCtx?.defaultTaxPercent ?? null,
+    fiscalConfigComplete:
+      extraFiscalMeta?.fiscalConfigComplete ??
+      (taxMode === "none" ||
+        !taxCtx?.defaultTaxLabel?.toLowerCase().includes("incompleta")),
+  };
   const byOrderId = new Map<string, SalesOrderMarginOrderResult>();
   for (const order of rules.orderResults) {
     const itemResults = order.items.map((item) => {
@@ -293,7 +368,7 @@ function mapRulesResultToMarginByOrder(
       itemMargins.set(item.salesOrderItemId, payload);
     }
     byOrderId.set(order.orderId, {
-      marginSummary: mapEngineOrderResultToMarginSummary(order, taxMode),
+      marginSummary: mapEngineOrderResultToMarginSummary(order, taxMode, fiscalMeta),
       itemMargins,
       itemResults,
     });
@@ -342,13 +417,15 @@ async function buildOfficialSalesMarginRulesForOrders(
   const taxMode = options?.buildInput?.taxMode ?? nomusConfig.taxMode;
 
   let taxContext = options?.buildInput?.taxContext;
+  let officialTaxContext: Awaited<ReturnType<typeof resolveOfficialSalesMarginTaxContext>> | undefined;
   if (taxMode === "deductFromGross" && !taxContext) {
     const productIds = orders.flatMap((order) =>
       (order.items ?? [])
         .map((item) => item.productId)
         .filter((id): id is string => Boolean(id))
     );
-    taxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
+    officialTaxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
+    taxContext = officialTaxContext;
   }
 
   const rules = buildOfficialSalesMarginRulesResult(rulesOrders, {
@@ -359,7 +436,16 @@ async function buildOfficialSalesMarginRulesForOrders(
 
   return {
     rules,
-    marginByOrder: mapRulesResultToMarginByOrder(rules, taxMode),
+    marginByOrder: mapRulesResultToMarginByOrder(rules, taxMode, {
+      taxRuleId: nomusConfig.defaultTaxRuleId,
+      taxRuleName: taxContext?.defaultTaxLabel,
+      taxRulePercent: taxContext?.defaultTaxPercent,
+      fiscalConfigComplete:
+        taxMode === "none" ||
+        (officialTaxContext?.fiscalConfigComplete ??
+          (taxContext != null &&
+            !taxContext.defaultTaxLabel?.toLowerCase().includes("incompleta"))),
+    }),
     nomusConfig,
   };
 }

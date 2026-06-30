@@ -153,7 +153,24 @@ export type SalesOrderItemMarginPayload = {
 };
 
 /** Payload consolidado de margem por pedido nos endpoints internos. */
-export type SalesOrderMarginSummaryPayload = SalesOrderMarginCoveragePayload & {
+export type SalesOrderMarginFiscalDisplay = {
+  /** Modo fiscal da config Nomus usado no cálculo. */
+  taxMode?: import("./salesMarginRulesEngine.types.js").SalesMarginTaxMode;
+  grossSalesAmount?: number;
+  taxAmount?: number;
+  netSalesAmountAfterTax?: number;
+  taxRuleId?: string | null;
+  taxRuleName?: string | null;
+  taxRulePercent?: number | null;
+  fiscalConfigComplete?: boolean;
+  costSourceSummary?: string;
+  hasFrozenCost?: boolean;
+  hasEstimatedCost?: boolean;
+  hasMixedCost?: boolean;
+};
+
+export type SalesOrderMarginSummaryPayload = SalesOrderMarginCoveragePayload &
+  SalesOrderMarginFiscalDisplay & {
   netRevenue: number;
   totalCost: number;
   marginValue: number;

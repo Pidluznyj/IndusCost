@@ -24,7 +24,9 @@ import {
   formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
   resolveSalesOrderMarginSupportText,
+  resolveSalesOrderMarginRevenueLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 
@@ -202,14 +204,22 @@ export function SalesOrderQuickSummaryDrawer({
 
           {showMarginEconomics ? (
           <section data-testid="sales-order-quick-summary-margin">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">
-              Margem
-            </h3>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Margem
+              </h3>
+              {margin ? (
+                <SalesOrderMarginInfoTooltip
+                  summary={margin}
+                  testId="sales-order-quick-summary-margin-tooltip"
+                />
+              ) : null}
+            </div>
             {margin ? (
               <div className="rounded-xl border border-border bg-card p-3 space-y-2">
                 <div className="grid grid-cols-2 gap-3">
                   <SummaryField
-                    label="Receita líquida"
+                    label={resolveSalesOrderMarginRevenueLabel(margin)}
                     value={formatSalesOrderMarginMoney(margin.netRevenue)}
                   />
                   <SummaryField

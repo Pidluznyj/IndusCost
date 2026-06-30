@@ -157,7 +157,7 @@ export function resolveSalesOrderMarginMoneyLabel(
       return "Margem indisponível";
     case "FULL":
     default:
-      return "Margem do período (R$)";
+      return "Margem gerencial (R$)";
   }
 }
 
@@ -171,8 +171,14 @@ export function resolveSalesOrderMarginPercentLabel(
       return "Margem % indisponível";
     case "FULL":
     default:
-      return "Margem do período (%)";
+      return "Margem gerencial (%)";
   }
+}
+
+export function resolveSalesOrderMarginRevenueLabel(
+  summary?: Pick<SalesOrderMarginSummaryPayload, "taxMode"> | null
+): string {
+  return summary?.taxMode === "none" ? "Valor vendido" : "Receita líquida gerencial";
 }
 
 export function buildSalesOrderMarginCoverageHint(

@@ -80,7 +80,7 @@ describe("salesOrderMarginCoverage", () => {
 
   it("labels distinguem margem parcial de total", () => {
     assert.match(resolveSalesOrderMarginMoneyLabel({ costCoverageStatus: "PARTIAL" }), /parcial/i);
-    assert.match(resolveSalesOrderMarginMoneyLabel({ costCoverageStatus: "FULL" }), /período/i);
+    assert.match(resolveSalesOrderMarginMoneyLabel({ costCoverageStatus: "FULL" }), /gerencial/i);
     assert.equal(marginLabelLooksLikeTotal("Margem R$ total"), true);
     assert.equal(marginLabelLooksLikeTotal("Margem parcial (R$)"), false);
   });

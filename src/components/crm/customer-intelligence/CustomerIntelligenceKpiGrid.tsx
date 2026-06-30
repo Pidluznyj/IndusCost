@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/kpiDisplayFormat";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 import {
+  buildOfficialSalesOrderMarginTooltipText,
   buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
@@ -113,7 +114,10 @@ export function buildCustomerIntelligenceKpiItems(
     {
       label: resolveSalesOrderMarginPercentLabel(marginCoverage),
       value: margin.value,
-      valueTitle: margin.valueTitle,
+      valueTitle:
+        marginCoverage != null
+          ? buildOfficialSalesOrderMarginTooltipText({ summary: marginCoverage })
+          : margin.valueTitle,
       hint: marginHint,
     },
     {

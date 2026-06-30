@@ -27,6 +27,7 @@ import {
 } from "recharts";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import {
+  buildOfficialSalesOrderMarginTooltipText,
   buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginMoneyLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
@@ -286,6 +287,11 @@ export const ReportsModule = () => {
   const reportsMarginCoverageHint = useMemo(() => {
     if (!data?.marginPortfolio) return null;
     return buildSalesOrderMarginCoverageHint(data.marginPortfolio, formatCurrency);
+  }, [data?.marginPortfolio]);
+
+  const reportsMarginTooltip = useMemo(() => {
+    if (!data?.marginPortfolio) return null;
+    return buildOfficialSalesOrderMarginTooltipText({ summary: data.marginPortfolio });
   }, [data?.marginPortfolio]);
 
   const handlePrint = () => window.print();
@@ -592,6 +598,11 @@ export const ReportsModule = () => {
                   {reportsMarginCoverageHint && (
                     <p className="text-xs text-muted-foreground mb-3">{reportsMarginCoverageHint}</p>
                   )}
+                  {reportsMarginTooltip && (
+                    <p className="text-xs text-muted-foreground mb-3 whitespace-pre-line" title={reportsMarginTooltip}>
+                      {reportsMarginTooltip}
+                    </p>
+                  )}
                   <Table
                     cols={["SKU", "Valor vendido", reportsMarginColumnLabel]}
                     rows={data.products.mixByProduct.slice(0, 10).map((r) => [
@@ -740,6 +751,9 @@ export const ReportsModule = () => {
                 <h3 className="text-sm font-bold mb-2">Mix por produto (itens dos pedidos filtrados)</h3>
                 {reportsMarginCoverageHint && (
                   <p className="text-xs text-muted-foreground mb-3">{reportsMarginCoverageHint}</p>
+                )}
+                {reportsMarginTooltip && (
+                  <p className="text-xs text-muted-foreground mb-3 whitespace-pre-line">{reportsMarginTooltip}</p>
                 )}
                 <Table
                   cols={["SKU", "Nome", "Tipo", "Qtd", "Valor vendido", reportsMarginColumnLabel, "Pedidos", "Linhas"]}

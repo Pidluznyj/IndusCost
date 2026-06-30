@@ -3,13 +3,11 @@
  */
 import type { PermissionChecker } from "./modulePermissions.js";
 import { formatCompactCurrency, formatFullCurrency } from "./formatFinancialMetric.js";
-import {
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-} from "./salesOrderMarginDisplay.js";
-import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 
-/** Permissões que liberam margem/custo na listagem (dados internos de engenharia). */
+import type {
+  SalesOrderItemMarginPayload,
+  SalesOrderMarginSummaryPayload,
+} from "./salesOrderMarginTypes.js";
 export const SALES_ORDER_MARGIN_ECONOMICS_PERMISSIONS = [
   "products.tab.cost",
   "costs.view",
@@ -97,56 +95,6 @@ export function buildSalesOrderListCustomerMeta(input: {
   return parts.join(" · ");
 }
 
-export function buildSalesOrderMarginTooltipText(
-  summary: SalesOrderMarginSummaryPayload | null | undefined
-): string {
-  if (!summary) {
-    return "Margem do pedido\n\nMargem não calculada para este pedido.";
-  }
-
-  const lines: string[] = [
-    "Margem do pedido",
-    "",
-    "Receita líquida: valor líquido vendido do pedido.",
-    "Custo estimado: soma do custo oficial atual dos produtos vinculados aos itens.",
-    "Margem R$: Receita líquida − Custo estimado.",
-    "Margem %: Margem R$ ÷ Receita líquida.",
-    "",
-    "A margem percentual do pedido é ponderada pelo valor da receita, não é média simples das margens dos itens.",
-    "",
-    `Receita líquida: ${formatSalesOrderMarginMoney(summary.netRevenue)}`,
-    `Custo estimado: ${formatSalesOrderMarginMoney(summary.totalCost)}`,
-    `Margem R$: ${formatSalesOrderMarginMoney(summary.marginValue)}`,
-    `Margem %: ${formatSalesOrderMarginPercent(summary.marginPercent)}`,
-  ];
-
-  if (
-    Number.isFinite(summary.netRevenue) &&
-    Number.isFinite(summary.totalCost) &&
-    summary.netRevenue > 0
-  ) {
-    lines.push(
-      "",
-      `Fórmula: (${formatSalesOrderMarginMoney(summary.netRevenue)} − ${formatSalesOrderMarginMoney(summary.totalCost)}) ÷ ${formatSalesOrderMarginMoney(summary.netRevenue)}`
-    );
-  }
-
-  if (summary.hasMissingCost) {
-    lines.push("", "Este pedido possui itens sem custo cadastrado. A margem pode estar incompleta.");
-  }
-  if (summary.hasMissingProduct) {
-    lines.push(
-      "",
-      "Existem itens sem vínculo com produto local. Revise o cadastro para calcular a margem corretamente."
-    );
-  }
-  if (summary.hasNegativeMargin) {
-    lines.push("", "Atenção: o custo estimado é maior que a receita líquida do pedido.");
-  }
-
-  return lines.join("\n");
-}
-
 export function resolveSalesOrderListMarginTextClass(
   summary: SalesOrderMarginSummaryPayload | null | undefined
 ): string {
@@ -168,3 +116,13 @@ export function resolveSalesOrderListMarginTextClass(
   }
   return "text-foreground font-medium";
 }
+
+export type SalesOrderMarginTooltipProps = {
+  summary?: SalesOrderMarginSummaryPayload | null;
+  itemMargins?: Array<Pick<SalesOrderItemMarginPayload, "costSource"> | null | undefined>;
+};
+
+export {
+  buildOfficialSalesOrderMarginTooltipText,
+  buildSalesOrderMarginTooltipText,
+} from "./salesOrderMarginDisplay.js";
