@@ -94,6 +94,15 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(adapter, /resolveOfficialSalesMarginTaxContext/);
   });
 
+  it("script de auditoria de política oficial de margem existe", () => {
+    const script = read("scripts/audit-sales-margin-official-policy.ts");
+    assert.match(script, /audit-sales-margin-official-policy/);
+    assert.match(script, /BLOQUEANTE/);
+    assert.match(script, /taxMode.*none/);
+    assert.match(script, /buildOfficialSalesOrderMarginTooltipText/);
+    assert.match(script, /OPERATIONAL_NEVER_TAX_MODE_NONE/);
+  });
+
   it("script de auditoria de consumo de margem existe", () => {
     const script = read("scripts/audit-sales-margin-rules-consumption.ts");
     assert.match(script, /OFFICIAL_SM_RULES_SOURCE/);

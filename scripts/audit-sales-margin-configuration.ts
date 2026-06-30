@@ -35,6 +35,13 @@ async function main() {
   const month = Number(parseArg("month") ?? "6");
   const asOfDate = parseArg("asOfDate") ?? "2026-06-29";
 
+  if (!process.env.DATABASE_URL?.trim()) {
+    console.warn("DATABASE_URL ausente — auditoria de configuração requer banco.");
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
   const [{ config, configRowId }, preview] = await Promise.all([
     loadSalesMarginNomusConfig(prisma),
     buildSalesMarginNomusPreview(prisma, { year, month, asOfDate }),
@@ -118,6 +125,13 @@ async function main() {
 
   if (fiscalAssessment.status === "BLOQUEANTE") {
     console.error("\nBLOQUEANTE: configuração fiscal incompleta — corrija antes de confiar na margem gerencial.");
+    console.error("Execute também: npm run check:sales-margin-policy");
+    process.exitCode = 1;
+  }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("\nFalha de conexão ou consulta ao banco:", message.split("\n")[0]);
+    console.error("Verifique DATABASE_URL e se o PostgreSQL está ativo.");
     process.exitCode = 1;
   }
 }

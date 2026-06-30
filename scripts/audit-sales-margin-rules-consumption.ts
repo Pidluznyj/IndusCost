@@ -470,6 +470,14 @@ async function main() {
   const asOfDate = parseArg("asOfDate") ?? "2026-06-26";
   const ref = new Date(asOfDate + "T23:59:59");
 
+  if (!process.env.DATABASE_URL?.trim()) {
+    console.warn("DATABASE_URL ausente — auditoria de consumo requer banco.");
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+
   const mgmtFilters = parseSalesOrderManagementFilters({ year: String(year), month: String(month) });
   const listWhere = buildSalesOrderListWhere({ year, month });
   const mgmtWhere = buildSalesOrderManagementWhere(mgmtFilters);
@@ -737,6 +745,7 @@ async function main() {
   if (operationalForcesNone.length > 0) {
     console.error("\nBLOQUEANTE: fluxos operacionais ainda forçam taxMode none:");
     for (const file of operationalForcesNone) console.error(`- ${file}`);
+    console.error("Execute: npm run check:sales-margin-policy");
     process.exitCode = 1;
   }
 
@@ -807,6 +816,12 @@ async function main() {
   }
 
   if (failures.length > 0) process.exitCode = 1;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("\nFalha de conexão ou consulta ao banco:", message.split("\n")[0]);
+    console.error("Verifique DATABASE_URL e se o PostgreSQL está ativo.");
+    process.exitCode = 1;
+  }
 }
 
 main()
