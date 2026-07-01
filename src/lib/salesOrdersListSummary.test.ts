@@ -257,6 +257,7 @@ describe("salesOrdersListSummary", () => {
     assert.ok(cards.includes("Pedidos filtrados"));
     assert.ok(cards.includes("Valor vendido"));
     assert.ok(cards.includes("Ticket médio"));
-    assert.ok(page.includes("summary"));
+    assert.ok(cards.includes("Margem geral"));
+    assert.ok(page.includes("marginSummary"));
   });
 });

@@ -112,6 +112,7 @@ const OPERATIONAL_NEVER_TAX_MODE_NONE = new Set([
   "src/lib/salesOrderResultEngine.server.ts",
   "src/lib/salesOrderRulesAdapter.ts",
   "src/components/sales/SalesOrderListMarginCell.tsx",
+  "src/components/sales/SalesOrderListSummaryCards.tsx",
   "src/components/sales/SalesOrderListTable.tsx",
   "src/components/sales/SalesOrderMarginAnalysis.tsx",
   "src/components/sales/SalesOrderQuickSummaryDrawer.tsx",

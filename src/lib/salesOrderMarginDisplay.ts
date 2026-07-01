@@ -222,6 +222,8 @@ export type SalesOrderMarginTooltipInput = {
     Pick<SalesOrderItemMarginPayload, "costSource" | "productionCost" | "unitCost" | "totalCost"> | null | undefined
   >;
   orderIssueDate?: string | null;
+  /** Substitui o título padrão do tooltip (ex.: margem geral da listagem). */
+  titleOverride?: string | null;
 };
 
 function formatCivilDatePtBr(iso: string | null | undefined): string {
@@ -356,7 +358,7 @@ function buildSalesOrderMarginUnavailableTooltip(
 export function buildOfficialSalesOrderMarginTooltipText(
   input: SalesOrderMarginTooltipInput
 ): string {
-  const { summary, itemMargins, orderIssueDate } = input;
+  const { summary, itemMargins, orderIssueDate, titleOverride } = input;
   if (!summary || isSalesOrderMarginDisplayUnavailable(summary)) {
     return buildSalesOrderMarginUnavailableTooltip(summary);
   }
@@ -389,7 +391,7 @@ export function buildOfficialSalesOrderMarginTooltipText(
         ? SALES_ORDER_MARGIN_DISPLAY_LABELS.soldTitle
         : SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle;
 
-  const lines: string[] = [title, ""];
+  const lines: string[] = [titleOverride?.trim() || title, ""];
 
   if (hasUnresolvedCost) {
     lines.push("Custo de produção não resolvido para um ou mais itens.");

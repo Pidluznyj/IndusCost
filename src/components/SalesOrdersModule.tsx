@@ -14,6 +14,7 @@ import {
 } from "@/src/components/sales/SalesOrderQuickSummaryDrawer";
 import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
+import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
 import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
 import {
@@ -68,6 +69,7 @@ type SalesOrderListResponse = {
   total: number;
   totalPages: number;
   summary?: SalesOrderListSummary;
+  marginSummary?: SalesOrderListMarginSummary;
 };
 
 const EMPTY_SALES_ORDER_LIST_SUMMARY: SalesOrderListSummary = {
@@ -110,6 +112,7 @@ function SalesOrderList() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
+  const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
@@ -193,17 +196,20 @@ function SalesOrderList() {
           setTotalPages(1);
           setCurrentPage(1);
           setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
+          setMarginSummary(null);
         } else if (isPaginatedSalesOrderList(data)) {
           setRows(data.data);
           setTotal(Number.isFinite(Number(data.total)) ? Number(data.total) : 0);
           setTotalPages(Number.isFinite(Number(data.totalPages)) ? Math.max(1, Number(data.totalPages)) : 1);
           setCurrentPage(Number.isFinite(Number(data.page)) ? Number(data.page) : page);
           setSummary(data.summary ?? EMPTY_SALES_ORDER_LIST_SUMMARY);
+          setMarginSummary(data.marginSummary ?? null);
         } else {
           setRows([]);
           setTotal(0);
           setTotalPages(1);
           setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
+          setMarginSummary(null);
         }
       } catch (e) {
         if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
@@ -213,6 +219,7 @@ function SalesOrderList() {
         setTotal(0);
         setTotalPages(1);
         setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
+        setMarginSummary(null);
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -414,7 +421,12 @@ function SalesOrderList() {
         )}
       </p>
 
-      <SalesOrderListSummaryCards summary={summary} loading={loading} />
+      <SalesOrderListSummaryCards
+        summary={summary}
+        marginSummary={marginSummary}
+        showMarginCard={showMarginEconomics}
+        loading={loading}
+      />
 
       <SalesOrderListTable
         rows={rows}

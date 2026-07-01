@@ -179,6 +179,7 @@ import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrd
 import {
   attachMarginToSalesOrderDetail,
   attachMarginsToSalesOrders,
+  SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
 } from "./src/lib/salesOrderMarginService.server.js";
 import { registerOfficialServerResolvers } from "./src/lib/registerServerResolvers.js";
 import {
@@ -190,7 +191,7 @@ import {
   resolveOfficialScopedOrderMetrics,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./src/lib/salesOrderRulesAdapter.js";
-import { loadOfficialCommercial360MarginBundle } from "./src/lib/salesMarginRulesAdapter.js";
+import { loadOfficialCommercial360MarginBundle, buildOfficialSalesOrderListMarginSummary } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import {
   parseSalesOrderMonthParam,
@@ -11076,6 +11077,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   app.get("/api/sales-orders", requireAppAuth, requirePermission("sales_orders.view"), async (req, res) => {
     try {
+      const auth = await readAppSession(req);
+      const canViewMarginEconomics =
+        auth != null &&
+        (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"));
+
       const status = String(req.query.status ?? "").trim();
       const customerId = String(req.query.customerId ?? "").trim();
       const responsible = String(req.query.responsible ?? "").trim();
@@ -11113,7 +11119,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         q: q || undefined,
       };
 
-      const [rows, total, summaryOrders] = await Promise.all([
+      const [rows, total, summaryOrders, marginOrders] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
           orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
@@ -11129,6 +11135,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           where,
           select: SALES_ORDER_RULES_PRISMA_SELECT,
         }),
+        canViewMarginEconomics
+          ? prisma.salesOrder.findMany({
+              where,
+              select: SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
+            })
+          : Promise.resolve([]),
       ]);
 
       const officialList = buildOfficialSalesOrderListPayload({
@@ -11142,6 +11154,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       const data = await attachMarginsToSalesOrders(prisma, rows);
 
+      const marginSummary = canViewMarginEconomics
+        ? await buildOfficialSalesOrderListMarginSummary(prisma, marginOrders)
+        : undefined;
+
       res.json({
         data,
         page,
@@ -11149,6 +11165,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
         summary,
+        marginSummary,
         metricsSource: officialList.metricsSource,
         rulesEngineVersion: officialList.rulesEngineVersion,
       });

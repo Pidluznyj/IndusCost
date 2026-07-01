@@ -15,11 +15,17 @@ export function SalesOrderMarginInfoTooltip({
   summary,
   itemMargins,
   orderIssueDate,
+  titleOverride,
   className,
   testId = "sales-order-margin-tooltip",
   panelClassName,
 }: SalesOrderMarginInfoTooltipProps) {
-  const text = buildOfficialSalesOrderMarginTooltipText({ summary, itemMargins, orderIssueDate });
+  const text = buildOfficialSalesOrderMarginTooltipText({
+    summary,
+    itemMargins,
+    orderIssueDate,
+    titleOverride,
+  });
 
   return (
     <span

@@ -19,6 +19,7 @@ describe("salesOrderCostSemantics", () => {
       productId: "p1",
       storedUnitCost: 500,
       analysis: { summary: { totalIndustrialCost: 40 } },
+      costPolicy: { allowLiveCostFallback: true, useFrozenUnitCostFirst: false },
     });
     assert.equal(cost.unitCost, 40);
     assert.notEqual(cost.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
@@ -97,6 +98,7 @@ describe("salesOrderCostSemantics", () => {
 
   it("labels do motor não chamam unitCost Nomus de custo de produção", () => {
     const engineNote = readFileSync("src/lib/salesMarginRulesEngine.ts", "utf8");
-    assert.match(engineNote, /nunca SalesOrderItem\.unitCost Nomus/);
+    assert.match(engineNote, /tabela oficial de produção vigente/);
+    assert.doesNotMatch(engineNote, /SalesOrderItem\.unitCost Nomus como custo/);
   });
 });

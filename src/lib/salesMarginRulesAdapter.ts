@@ -16,6 +16,13 @@ import {
   type SalesMarginTaxMode,
 } from "./salesMarginRulesEngine.js";
 import {
+  aggregateSalesOrderMarginSummaries,
+} from "./salesOrderMarginDisplay.js";
+import {
+  EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY,
+  type SalesOrderListMarginSummary,
+} from "./salesOrderListMarginSummary.js";
+import {
   refineSalesOrderMarginSummaryStatus,
   resolveSalesOrderMarginStatusMeta,
   resolveSalesOrderMarginSummaryStatusMeta,
@@ -806,5 +813,67 @@ export function buildOfficialSalesOrderResultMarginPayload(input: {
       tax: "official-tax-rule-engine",
       projection: input.salesBundle.metricsSource,
     },
+  };
+}
+
+/** Margem geral ponderada de todos os pedidos filtrados na listagem (não paginados). */
+export async function buildOfficialSalesOrderListMarginSummary(
+  db: PrismaClient,
+  orders: SalesOrderForMargin[]
+): Promise<SalesOrderListMarginSummary> {
+  if (orders.length === 0) {
+    return { ...EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY };
+  }
+
+  const { rules, marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, orders);
+  const scoped = resolveOfficialScopedMarginMetrics(rules);
+  const perOrderSummaries = [...marginByOrder.values()].map((row) => row.marginSummary);
+  const consolidated =
+    aggregateSalesOrderMarginSummaries(perOrderSummaries) ??
+    EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY.tooltipSummary;
+
+  const tooltipSummary: SalesOrderMarginSummaryPayload = {
+    ...consolidated,
+    taxMode: rules.context.taxMode,
+    grossSalesAmount: scoped.grossSalesAmount,
+    taxAmount: scoped.taxAmount,
+    netSalesAmountAfterTax: scoped.netSalesAmount,
+    taxRuleName: rules.context.taxContext?.defaultTaxLabel ?? scoped.taxSourceLabel,
+    taxRulePercent: scoped.taxPercentApplied ?? rules.context.taxContext?.defaultTaxPercent ?? null,
+    fiscalConfigComplete:
+      rules.context.taxMode === "none" ||
+      Boolean(rules.context.taxContext && scoped.taxSourceLabel),
+    totalSalesRevenueInScope: scoped.totalSalesRevenueInScope,
+    marginRevenueCovered: scoped.marginRevenueCovered,
+    marginRevenueUncovered: scoped.marginRevenueUncovered,
+    marginCoveragePercent: scoped.marginCoveragePercent,
+    itemsTotal: scoped.itemsTotal,
+    itemsWithCost: scoped.itemsWithCost,
+    itemsWithoutCost: scoped.itemsWithoutCost,
+    costCoverageStatus: scoped.costCoverageStatus,
+  };
+
+  const ordersWithoutFullMargin = perOrderSummaries.filter(
+    (row) => row.status !== "OK" || row.hasMissingCost || row.hasMissingProduct
+  ).length;
+
+  const available = scoped.costCoverageStatus !== "NONE";
+
+  return {
+    totalOrdersCount: orders.length,
+    totalMarginValue: scoped.marginAmount,
+    totalMarginPercentage: available ? scoped.marginPercent : null,
+    totalManagerialNetRevenue: scoped.netSalesAmount,
+    grossSalesAmount: scoped.grossSalesAmount,
+    taxAmount: scoped.taxAmount,
+    totalCost: scoped.totalCost,
+    marginCoverage: scoped.costCoverageStatus,
+    itemsWithoutCost: scoped.itemsWithoutCost,
+    ordersWithoutFullMargin,
+    taxMode: rules.context.taxMode,
+    taxRuleName: tooltipSummary.taxRuleName ?? scoped.taxSourceLabel,
+    taxRate: tooltipSummary.taxRulePercent ?? scoped.taxPercentApplied,
+    available,
+    tooltipSummary,
   };
 }

@@ -136,4 +136,13 @@ describe("salesMarginRulesConsumptionAudit", () => {
     assert.match(coverage, /resolveSalesOrderMarginMoneyLabel/);
     assert.match(read("src/lib/salesOrderRulesAdapter.ts"), /officialMarginValue/);
   });
+
+  it("listagem Pedidos exibe margem geral ponderada do motor oficial", () => {
+    const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
+    const server = read("server.ts");
+    assert.match(cards, /Margem geral/);
+    assert.match(cards, /SalesOrderMarginInfoTooltip/);
+    assert.match(server, /buildOfficialSalesOrderListMarginSummary/);
+    assert.doesNotMatch(cards, /naiveAverageMarginPercent/);
+  });
 });

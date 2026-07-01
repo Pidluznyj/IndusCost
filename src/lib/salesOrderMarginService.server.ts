@@ -47,6 +47,14 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   unitCost: true,
 } as const;
 
+/** Select mínimo para margem agregada da listagem (todos os pedidos filtrados). */
+export const SALES_ORDER_LIST_MARGIN_PRISMA_SELECT = {
+  id: true,
+  issueDate: true,
+  nomusRawResponse: true,
+  items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
+} as const;
+
 export type SalesOrderItemForMargin = {
   id: string;
   salesOrderId?: string;
