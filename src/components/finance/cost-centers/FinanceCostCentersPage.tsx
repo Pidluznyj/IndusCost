@@ -331,6 +331,7 @@ export function FinanceCostCentersPage() {
       {activeTab === "suppliers" ? (
         <FinanceSuppliersTab
           dashboard={data}
+          appliedFilters={appliedFilters}
           canViewSuppliers={canViewSuppliers}
           canManageSuppliers={canManageSuppliers}
           canDeleteSupplier={canDeleteSupplier}

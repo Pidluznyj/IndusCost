@@ -45,10 +45,13 @@ import {
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
 import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTypes";
+import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-centers/FinanceSupplierCadastroDrawer";
+import { FinanceSupplierPaymentDrilldownSection } from "@/src/components/finance/cost-centers/FinanceSupplierPaymentDrilldownSection";
 
 type Props = {
   dashboard: FinanceCostCenterDashboardPayload | null;
+  appliedFilters: FinanceCostCentersUiFilters;
   canViewSuppliers: boolean;
   canManageSuppliers: boolean;
   canDeleteSupplier: boolean;
@@ -58,6 +61,7 @@ type Props = {
 
 export function FinanceSuppliersTab({
   dashboard,
+  appliedFilters,
   canViewSuppliers,
   canManageSuppliers,
   canDeleteSupplier,
@@ -425,6 +429,8 @@ export function FinanceSuppliersTab({
         canManage={canManageSuppliers}
         canDelete={canDeleteSupplier}
       />
+
+      <FinanceSupplierPaymentDrilldownSection filters={appliedFilters} />
     </div>
   );
 }
