@@ -510,5 +510,40 @@ describe("financeCashFlowDailyRadar", () => {
     assert.ok(radar.includes("cash-flow-radar-custom-period"));
     assert.ok(radar.includes("DAILY_RADAR_CUSTOM_RANGE_KEY"));
     assert.ok(radar.includes("customStartDate"));
+    assert.ok(radar.includes("setSelectedCustom(true)"));
+    assert.ok(radar.includes("applyCustomPeriod"));
+    assert.ok(radar.includes("cash-flow-radar-payables"));
+    assert.ok(radar.includes("cash-flow-radar-receivables"));
+  });
+
+  it("soma dos dias do período personalizado bate com total do período", () => {
+    const arRows = [
+      arRow({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 10) }),
+      arRow({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 12) }),
+    ];
+    const apRows = [apRow({ externalId: 10, balancePayable: 40, dueDate: new Date(2026, 5, 11) })];
+
+    const payload = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      {
+        baseDate: BASE,
+        rangeKey: DAILY_RADAR_CUSTOM_RANGE_KEY,
+        customStartDate: "2026-06-09",
+        customEndDate: "2026-06-15",
+      },
+      BASE
+    );
+
+    const days = payload.selectedCustomRange?.days ?? [];
+    const sumReceivable = days.reduce((sum, day) => sum + day.receivableTotal, 0);
+    const sumPayable = days.reduce((sum, day) => sum + day.payableTotal, 0);
+    assert.equal(sumReceivable, payload.customRange!.receivableTotal);
+    assert.equal(sumPayable, payload.customRange!.payableTotal);
+    assert.equal(
+      payload.selectedDetail!.receivables.summary.total,
+      payload.selectedDetail!.entriesTotal
+    );
+    assert.equal(payload.selectedDetail!.payables.summary.total, payload.selectedDetail!.exitsTotal);
   });
 });
