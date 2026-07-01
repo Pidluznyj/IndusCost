@@ -373,7 +373,7 @@ describe("projectsPricing — integração", () => {
   it("preço sugerido é calculado sobre custo final com amortização", () => {
     const detail = buildMangoteDetailFixture();
     const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
-    const withAmort = computeProjectPricingItem(
+    const item = computeProjectPricingItem(
       {
         targetItemId: "a",
         targetItemType: "SIMULATION",
@@ -389,14 +389,34 @@ describe("projectsPricing — integração", () => {
         targetMarginPercent: 35,
       }
     );
-    const baseOnly = computeProjectPricingItem(
+    const withoutExpected = calculateSalePriceFromCost({
+      cost: rollup.baseUnitCost,
+      taxPercent: 27.25,
+      targetMarginPercent: 35,
+    });
+    const withExpected = calculateSalePriceFromCost({
+      cost: rollup.finalUnitCost,
+      taxPercent: 27.25,
+      targetMarginPercent: 35,
+    });
+    assert.equal(withoutExpected.ok, true);
+    assert.equal(withExpected.ok, true);
+    if (!withoutExpected.ok || !withExpected.ok) return;
+    assert.equal(item.suggestedPriceWithoutAmortization, withoutExpected.suggestedPrice);
+    assert.equal(item.suggestedPriceWithAmortization, withExpected.suggestedPrice);
+    assert.equal(item.suggestedPrice, withExpected.suggestedPrice);
+    assert.ok(item.suggestedPriceWithAmortization! > item.suggestedPriceWithoutAmortization!);
+  });
+
+  it("amortização zero deixa os dois preços iguais", () => {
+    const item = computeProjectPricingItem(
       {
         targetItemId: "a",
         targetItemType: "SIMULATION",
-        displayName: "Mangote mini Iris",
-        baseUnitCost: rollup.baseUnitCost,
+        displayName: "Item",
+        baseUnitCost: 1.30901,
         unitAmortizedCost: 0,
-        finalUnitCost: rollup.baseUnitCost,
+        finalUnitCost: 1.30901,
       },
       {
         fiscalRuleId: "tax-1",
@@ -405,8 +425,30 @@ describe("projectsPricing — integração", () => {
         targetMarginPercent: 35,
       }
     );
-    assert.ok(withAmort.suggestedPrice != null && baseOnly.suggestedPrice != null);
-    assert.ok(withAmort.suggestedPrice! > baseOnly.suggestedPrice!);
+    assert.equal(item.suggestedPriceWithoutAmortization, item.suggestedPriceWithAmortization);
+  });
+
+  it("ProjectPricingSection exibe preço s/ e c/ amortização", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /Preço s\/ amortização/);
+    assert.match(section, /Preço c\/ amortização/);
+    assert.match(section, /suggestedPriceWithoutAmortization/);
+    assert.match(section, /suggestedPriceWithAmortization/);
+    assert.match(section, /Cenário sem amortização/);
+    assert.match(section, /Cenário com amortização/);
+  });
+
+  it("snapshot salvo persiste preço sem e com amortização", () => {
+    const service = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsPricingService.ts"),
+      "utf8"
+    );
+    assert.match(service, /suggestedPriceWithoutAmortization/);
+    assert.match(service, /taxAmountWithoutAmortization/);
+    assert.match(service, /marginAmountWithoutAmortization/);
   });
 
   it("consome detail.costAmortizations quando savedAmortizations não é passado", () => {

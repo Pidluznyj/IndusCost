@@ -33,7 +33,12 @@ export type ProjectPricingItemView = {
   fiscalRuleName: string | null;
   taxPercent: number;
   targetMarginPercent: number;
+  /** Preço com amortização (= suggestedPriceWithAmortization). */
   suggestedPrice: number | null;
+  suggestedPriceWithoutAmortization: number | null;
+  suggestedPriceWithAmortization: number | null;
+  taxAmountWithoutAmortization: number | null;
+  marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
   marginAmount: number | null;
   status: ProjectPricingItemStatus;
@@ -65,6 +70,10 @@ export type SavedProjectPricingItem = {
   taxPercentSnapshot: number;
   targetMarginPercent: number;
   suggestedPrice: number | null;
+  suggestedPriceWithoutAmortization: number | null;
+  suggestedPriceWithAmortization: number | null;
+  taxAmountWithoutAmortization: number | null;
+  marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
   marginAmount: number | null;
   status: ProjectPricingItemStatus;
@@ -138,6 +147,60 @@ export function resolveProjectPricingItemCosts(
   };
 }
 
+function emptyPricingAmounts() {
+  return {
+    suggestedPrice: null,
+    suggestedPriceWithoutAmortization: null,
+    suggestedPriceWithAmortization: null,
+    taxAmountWithoutAmortization: null,
+    marginAmountWithoutAmortization: null,
+    taxAmount: null,
+    marginAmount: null,
+  };
+}
+
+function buildPricingItemBase(
+  target: {
+    targetItemId: string;
+    targetItemType: ProjectCostAmortizationTargetType;
+    displayName: string;
+    baseUnitCost: number;
+    unitAmortizedCost: number;
+    finalUnitCost: number;
+  },
+  options: {
+    fiscalRuleId: string | null;
+    fiscalRuleName: string | null;
+    taxPercent: number;
+    targetMarginPercent: number;
+  }
+): Omit<ProjectPricingItemView, "status" | "statusLabel" | "errorMessage"> & {
+  suggestedPrice: number | null;
+  suggestedPriceWithoutAmortization: number | null;
+  suggestedPriceWithAmortization: number | null;
+  taxAmountWithoutAmortization: number | null;
+  marginAmountWithoutAmortization: number | null;
+  taxAmount: number | null;
+  marginAmount: number | null;
+} {
+  const costBaseUnit = roundPricingMoney(target.baseUnitCost);
+  const amortizationUnitCost = roundPricingMoney(target.unitAmortizedCost);
+  const finalUnitCost = roundPricingMoney(target.finalUnitCost);
+  return {
+    targetItemId: target.targetItemId,
+    targetItemType: target.targetItemType,
+    displayName: target.displayName,
+    costBaseUnit,
+    amortizationUnitCost,
+    finalUnitCost,
+    fiscalRuleId: options.fiscalRuleId,
+    fiscalRuleName: options.fiscalRuleName,
+    taxPercent: options.taxPercent,
+    targetMarginPercent: options.targetMarginPercent,
+    ...emptyPricingAmounts(),
+  };
+}
+
 export function computeProjectPricingItem(
   target: {
     targetItemId: string;
@@ -154,26 +217,15 @@ export function computeProjectPricingItem(
     targetMarginPercent: number | null;
   }
 ): ProjectPricingItemView {
-  const costBaseUnit = roundPricingMoney(target.baseUnitCost);
-  const amortizationUnitCost = roundPricingMoney(target.unitAmortizedCost);
-  const finalUnitCost = roundPricingMoney(target.finalUnitCost);
   const margin = options.targetMarginPercent;
+  const base = buildPricingItemBase(target, {
+    ...options,
+    targetMarginPercent: margin ?? 0,
+  });
 
-  if (finalUnitCost <= 0) {
+  if (base.finalUnitCost <= 0) {
     return {
-      targetItemId: target.targetItemId,
-      targetItemType: target.targetItemType,
-      displayName: target.displayName,
-      costBaseUnit,
-      amortizationUnitCost,
-      finalUnitCost,
-      fiscalRuleId: options.fiscalRuleId,
-      fiscalRuleName: options.fiscalRuleName,
-      taxPercent: options.taxPercent,
-      targetMarginPercent: margin ?? 0,
-      suggestedPrice: null,
-      taxAmount: null,
-      marginAmount: null,
+      ...base,
       status: "NO_COST",
       statusLabel: STATUS_LABEL.NO_COST,
       errorMessage: null,
@@ -182,19 +234,8 @@ export function computeProjectPricingItem(
 
   if (!options.fiscalRuleId) {
     return {
-      targetItemId: target.targetItemId,
-      targetItemType: target.targetItemType,
-      displayName: target.displayName,
-      costBaseUnit,
-      amortizationUnitCost,
-      finalUnitCost,
-      fiscalRuleId: null,
-      fiscalRuleName: null,
-      taxPercent: options.taxPercent,
+      ...base,
       targetMarginPercent: margin ?? 0,
-      suggestedPrice: null,
-      taxAmount: null,
-      marginAmount: null,
       status: "PENDING",
       statusLabel: STATUS_LABEL.PENDING,
       errorMessage: null,
@@ -203,69 +244,63 @@ export function computeProjectPricingItem(
 
   if (margin == null || !Number.isFinite(margin)) {
     return {
-      targetItemId: target.targetItemId,
-      targetItemType: target.targetItemType,
-      displayName: target.displayName,
-      costBaseUnit,
-      amortizationUnitCost,
-      finalUnitCost,
-      fiscalRuleId: options.fiscalRuleId,
-      fiscalRuleName: options.fiscalRuleName,
-      taxPercent: options.taxPercent,
+      ...base,
       targetMarginPercent: 0,
-      suggestedPrice: null,
-      taxAmount: null,
-      marginAmount: null,
       status: "PENDING",
       statusLabel: STATUS_LABEL.PENDING,
       errorMessage: null,
     };
   }
 
-  const result = calculateSalePriceFromCost({
-    cost: finalUnitCost,
+  const pricingInput = {
     taxPercent: options.taxPercent,
     targetMarginPercent: margin,
+  };
+
+  const withoutAmortization =
+    base.costBaseUnit > 0
+      ? calculateSalePriceFromCost({ cost: base.costBaseUnit, ...pricingInput })
+      : ({ ok: false, error: "Custo base inválido." } as const);
+
+  const withAmortization = calculateSalePriceFromCost({
+    cost: base.finalUnitCost,
+    ...pricingInput,
   });
 
-  if (result.ok === false) {
+  if (withAmortization.ok === false) {
     return {
-      targetItemId: target.targetItemId,
-      targetItemType: target.targetItemType,
-      displayName: target.displayName,
-      costBaseUnit,
-      amortizationUnitCost,
-      finalUnitCost,
-      fiscalRuleId: options.fiscalRuleId,
-      fiscalRuleName: options.fiscalRuleName,
-      taxPercent: options.taxPercent,
+      ...base,
       targetMarginPercent: margin,
-      suggestedPrice: null,
-      taxAmount: null,
-      marginAmount: null,
       status: "ERROR",
       statusLabel: STATUS_LABEL.ERROR,
-      errorMessage: result.error,
+      errorMessage: withAmortization.error,
     };
   }
 
+  const withoutValues =
+    withoutAmortization.ok === true
+      ? {
+          suggestedPriceWithoutAmortization: withoutAmortization.suggestedPrice,
+          taxAmountWithoutAmortization: withoutAmortization.taxAmount,
+          marginAmountWithoutAmortization: withoutAmortization.marginAmount,
+        }
+      : {
+          suggestedPriceWithoutAmortization: null,
+          taxAmountWithoutAmortization: null,
+          marginAmountWithoutAmortization: null,
+        };
+
   return {
-    targetItemId: target.targetItemId,
-    targetItemType: target.targetItemType,
-    displayName: target.displayName,
-    costBaseUnit,
-    amortizationUnitCost,
-    finalUnitCost,
-    fiscalRuleId: options.fiscalRuleId,
-    fiscalRuleName: options.fiscalRuleName,
-    taxPercent: options.taxPercent,
+    ...base,
     targetMarginPercent: margin,
-    suggestedPrice: result.suggestedPrice,
-    taxAmount: result.taxAmount,
-    marginAmount: result.marginAmount,
+    ...withoutValues,
+    suggestedPriceWithAmortization: withAmortization.suggestedPrice,
+    suggestedPrice: withAmortization.suggestedPrice,
+    taxAmount: withAmortization.taxAmount,
+    marginAmount: withAmortization.marginAmount,
     status: "CALCULATED",
     statusLabel: STATUS_LABEL.CALCULATED,
-    errorMessage: null,
+    errorMessage: withoutAmortization.ok === false ? withoutAmortization.error : null,
   };
 }
 

@@ -41,44 +41,112 @@ async function fetchJsonOk<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
+function pricingPriceDelta(
+  withoutAmort: number | null | undefined,
+  withAmort: number | null | undefined
+): number | null {
+  if (
+    withoutAmort == null ||
+    withAmort == null ||
+    !Number.isFinite(withoutAmort) ||
+    !Number.isFinite(withAmort)
+  ) {
+    return null;
+  }
+  return withAmort - withoutAmort;
+}
+
+function PriceWithAmortCell({
+  withoutAmort,
+  withAmort,
+}: {
+  withoutAmort: number | null;
+  withAmort: number | null;
+}) {
+  const delta = pricingPriceDelta(withoutAmort, withAmort);
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+    <div className="space-y-0.5">
+      <span className="font-semibold text-primary">{formatMoney(withAmort, 4)}</span>
+      {delta != null && Math.abs(delta) > 0.000001 ? (
+        <div className="text-[10px] text-muted-foreground">+{formatMoney(delta, 4)}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
+  const delta = pricingPriceDelta(
+    item.suggestedPriceWithoutAmortization,
+    item.suggestedPriceWithAmortization
+  );
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm space-y-4">
       <p className="font-medium">Composição detalhada do preço — {item.displayName}</p>
-      <dl className="mt-2 grid gap-1 sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Custo base de produção</dt>
-          <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-md border border-border/70 bg-background/80 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Cenário sem amortização
+          </p>
+          <dl className="mt-2 grid gap-1">
+            <div>
+              <dt className="text-muted-foreground">Custo usado</dt>
+              <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Impostos ({formatPercent(item.taxPercent)})</dt>
+              <dd className="font-medium">{formatMoney(item.taxAmountWithoutAmortization)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Margem ({formatPercent(item.targetMarginPercent)})</dt>
+              <dd className="font-medium">{formatMoney(item.marginAmountWithoutAmortization)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Preço s/ amortização</dt>
+              <dd className="font-semibold">{formatMoney(item.suggestedPriceWithoutAmortization)}</dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Amortização unitária</dt>
-          <dd className="font-medium">{formatMoney(item.amortizationUnitCost)}</dd>
+
+        <div className="rounded-md border border-border/70 bg-background/80 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Cenário com amortização
+          </p>
+          <dl className="mt-2 grid gap-1">
+            <div>
+              <dt className="text-muted-foreground">Custo base unit.</dt>
+              <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Amortização unit.</dt>
+              <dd className="font-medium">{formatMoney(item.amortizationUnitCost)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Custo final unit.</dt>
+              <dd className="font-medium">{formatMoney(item.finalUnitCost)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Impostos ({formatPercent(item.taxPercent)})</dt>
+              <dd className="font-medium">{formatMoney(item.taxAmount)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Margem ({formatPercent(item.targetMarginPercent)})</dt>
+              <dd className="font-medium">{formatMoney(item.marginAmount)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Preço c/ amortização</dt>
+              <dd className="font-semibold text-primary">{formatMoney(item.suggestedPriceWithAmortization)}</dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Custo final para produzir</dt>
-          <dd className="font-medium">{formatMoney(item.finalUnitCost)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Percentual de impostos</dt>
-          <dd className="font-medium">{formatPercent(item.taxPercent)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Valor dos impostos embutidos</dt>
-          <dd className="font-medium">{formatMoney(item.taxAmount)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Percentual de margem</dt>
-          <dd className="font-medium">{formatPercent(item.targetMarginPercent)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Valor da margem planejada</dt>
-          <dd className="font-medium">{formatMoney(item.marginAmount)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Preço sugerido final</dt>
-          <dd className="font-semibold text-primary">{formatMoney(item.suggestedPrice)}</dd>
-        </div>
-      </dl>
+      </div>
+
+      {delta != null && Math.abs(delta) > 0.000001 ? (
+        <p className="text-xs text-muted-foreground">
+          Diferença entre os cenários: {formatMoney(delta)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -258,8 +326,8 @@ export function ProjectPricingSection({
       <div>
         <h5 className="font-medium">Precificação comercial</h5>
         <p className="mt-1 text-sm text-muted-foreground">
-          Use o custo final do projeto com amortização para calcular o preço sugerido de venda,
-          com a mesma regra da Calculadora de Preço de Venda.
+          Compare o preço sugerido sem amortizar o projeto e com a amortização repassada ao produto,
+          usando a mesma regra da Calculadora de Preço de Venda.
         </p>
       </div>
 
@@ -328,16 +396,19 @@ export function ProjectPricingSection({
           Nenhum produto/item simulado elegível para precificação neste projeto.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="min-w-[1100px] w-full text-sm">
             <thead className="border-b bg-muted/40 text-left">
               <tr>
                 <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2">Custo base unit.</th>
+                <th className="px-3 py-2">Amortização unit.</th>
                 <th className="px-3 py-2">Custo final unit.</th>
                 <th className="px-3 py-2">Regra fiscal</th>
                 <th className="px-3 py-2">Impostos %</th>
                 <th className="px-3 py-2">Margem %</th>
-                <th className="px-3 py-2">Preço sugerido</th>
+                <th className="px-3 py-2">Preço s/ amortização</th>
+                <th className="px-3 py-2">Preço c/ amortização</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -347,6 +418,8 @@ export function ProjectPricingSection({
                 <React.Fragment key={item.targetItemId}>
                   <tr className="border-b border-border/60">
                     <td className="px-3 py-2">{item.displayName}</td>
+                    <td className="px-3 py-2">{formatMoney(item.costBaseUnit)}</td>
+                    <td className="px-3 py-2">{formatMoney(item.amortizationUnitCost)}</td>
                     <td className="px-3 py-2">{formatMoney(item.finalUnitCost)}</td>
                     <td className="px-3 py-2">
                       {canManage ? (
@@ -391,7 +464,13 @@ export function ProjectPricingSection({
                         formatPercent(item.targetMarginPercent)
                       )}
                     </td>
-                    <td className="px-3 py-2 font-semibold">{formatMoney(item.suggestedPrice)}</td>
+                    <td className="px-3 py-2 font-medium">{formatMoney(item.suggestedPriceWithoutAmortization, 4)}</td>
+                    <td className="px-3 py-2">
+                      <PriceWithAmortCell
+                        withoutAmort={item.suggestedPriceWithoutAmortization}
+                        withAmort={item.suggestedPriceWithAmortization}
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={cn(
@@ -426,7 +505,7 @@ export function ProjectPricingSection({
                   </tr>
                   {expandedItemId === item.targetItemId ? (
                     <tr className="border-b border-border/60 bg-muted/20">
-                      <td colSpan={8} className="px-3 py-3">
+                      <td colSpan={11} className="px-3 py-3">
                         <CompositionPanel item={item} />
                         {item.errorMessage ? (
                           <p className="mt-2 text-xs text-red-600">{item.errorMessage}</p>

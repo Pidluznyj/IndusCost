@@ -306,6 +306,10 @@ export type ProjectPricingItemView = {
   taxPercent: number;
   targetMarginPercent: number;
   suggestedPrice: number | null;
+  suggestedPriceWithoutAmortization: number | null;
+  suggestedPriceWithAmortization: number | null;
+  taxAmountWithoutAmortization: number | null;
+  marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
   marginAmount: number | null;
   status: string;
