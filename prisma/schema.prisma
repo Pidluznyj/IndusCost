@@ -3625,3 +3625,392 @@ model InventoryAuditLog {
   @@index([createdAt])
   @@index([action])
 }
+
+// ---------------------------------------------------------------------------
+// Módulo Comissões — camada aditiva isolada (referências Nomus por ID externo).
+// ---------------------------------------------------------------------------
+
+enum CommissionPersonType {
+  SELLER
+  REPRESENTATIVE
+  MANAGER
+  OTHER
+}
+
+enum CommissionPersonSource {
+  NOMUS
+  MANUAL
+}
+
+enum CommissionRuleBeneficiaryType {
+  SELLER
+  REPRESENTATIVE
+  FIXED_PERSON
+}
+
+enum CommissionRuleBaseType {
+  SALES_ORDER_ITEM_NET
+  OUTPUT_DOCUMENT_ITEM_NET
+  RECEIVABLE_AMOUNT
+}
+
+enum CommissionReleaseRule {
+  SALES_ORDER_CREATED
+  OUTPUT_DOCUMENT_CREATED
+  FIRST_RECEIVABLE_PAID
+  EACH_RECEIVABLE_PAID
+}
+
+enum CommissionCalculationRunMode {
+  FORECAST
+  CONFIRMATION
+  RELEASE
+  FULL_RECALC
+}
+
+enum CommissionCalculationRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum CommissionRecordSource {
+  INDUSCOST_CALCULATED
+}
+
+enum CommissionRecordOriginStage {
+  SALES_ORDER
+  OUTPUT_DOCUMENT
+}
+
+enum CommissionRecordStatus {
+  FORECAST_FROM_ORDER
+  WAITING_NFE
+  SUPERSEDED_BY_OUTPUT_DOCUMENT
+  CONFIRMED_BY_OUTPUT_DOCUMENT
+  WAITING_RECEIVABLE
+  WAITING_PAYMENT
+  PARTIALLY_RELEASED
+  RELEASED
+  PAID_PARTIAL
+  PAID_TOTAL
+  CANCELLED
+  REVERSED
+  ERROR
+}
+
+enum CommissionPaymentScheduleSource {
+  SALES_ORDER_INSTALLMENT
+  ACCOUNTS_RECEIVABLE
+}
+
+enum CommissionPaymentScheduleStatus {
+  FORECAST
+  ACTIVE
+  SUPERSEDED
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+  REVIEW
+}
+
+enum CommissionPaymentBatchStatus {
+  DRAFT
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum CommissionPaymentBatchItemStatus {
+  DRAFT
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum CommissionAuditIssueSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum CommissionAuditIssueType {
+  ORDER_WITHOUT_SELLER
+  ORDER_WITHOUT_REPRESENTATIVE
+  NO_COMMISSION_RULE
+  ORDER_WITHOUT_NFE
+  NFE_WITHOUT_OUTPUT_DOCUMENT
+  NFE_WITHOUT_RECEIVABLE
+  OUTPUT_DOCUMENT_WITHOUT_ORDER_MATCH
+  RECEIVABLE_WITHOUT_NFE
+  CANCELLED_NFE_WITH_ACTIVE_COMMISSION
+  RECEIVED_WITHOUT_RELEASE
+  PAID_WITHOUT_RELEASE
+  DIVERGENT_AMOUNT
+  MANUAL_REVIEW_REQUIRED
+}
+
+model CommissionPerson {
+  id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nomusPersonId Int?
+  name          String
+  type          CommissionPersonType
+  source        CommissionPersonSource @default(MANUAL)
+  email         String?
+  document      String?
+  active        Boolean                @default(true)
+  notes         String?
+  createdAt     DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+
+  fixedCommissionRules CommissionRule[]           @relation("CommissionRuleFixedPerson")
+  commissionRecords    CommissionRecord[]
+  paymentBatches       CommissionPaymentBatch[]
+
+  @@index([nomusPersonId])
+  @@index([type])
+  @@index([active])
+  @@index([name])
+}
+
+model CommissionRule {
+  id                      String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                    String
+  description             String?
+  active                  Boolean                       @default(true)
+  priority                Int                           @default(100)
+  beneficiaryType         CommissionRuleBeneficiaryType
+  fixedCommissionPersonId String?                       @db.Uuid
+  ratePercent             Decimal                       @db.Decimal(10, 4)
+  baseType                CommissionRuleBaseType
+  releaseRule             CommissionReleaseRule
+  validFrom               DateTime?                     @db.Timestamptz(6)
+  validTo                 DateTime?                     @db.Timestamptz(6)
+  createdAt               DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  fixedCommissionPerson CommissionPerson?       @relation("CommissionRuleFixedPerson", fields: [fixedCommissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  conditions            CommissionRuleCondition[]
+
+  @@index([active])
+  @@index([priority])
+  @@index([beneficiaryType])
+  @@index([validFrom, validTo])
+}
+
+model CommissionRuleCondition {
+  id                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ruleId                     String   @db.Uuid
+  companyExternalId          Int?
+  customerExternalId         Int?
+  customerUf                 String?
+  nomusSellerId              Int?
+  nomusRepresentativeId      Int?
+  productExternalId          Int?
+  productGroupExternalId     Int?
+  priceTableExternalId       Int?
+  paymentConditionExternalId Int?
+  movementTypeExternalId     Int?
+  minOrderAmount             Decimal? @db.Decimal(20, 2)
+  maxOrderAmount             Decimal? @db.Decimal(20, 2)
+  minDiscountPercent         Decimal? @db.Decimal(10, 4)
+  maxDiscountPercent         Decimal? @db.Decimal(10, 4)
+  createdAt                  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  rule CommissionRule @relation(fields: [ruleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ruleId])
+  @@index([nomusSellerId])
+  @@index([customerExternalId])
+  @@index([productExternalId])
+}
+
+model CommissionCalculationRun {
+  id                       String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  periodStart              DateTime                       @db.Timestamptz(6)
+  periodEnd                DateTime                       @db.Timestamptz(6)
+  mode                     CommissionCalculationRunMode
+  status                   CommissionCalculationRunStatus @default(RUNNING)
+  ordersEvaluated          Int                            @default(0)
+  nfeEvaluated             Int                            @default(0)
+  outputDocumentsEvaluated Int                            @default(0)
+  receivablesEvaluated     Int                            @default(0)
+  commissionsCreated       Int                            @default(0)
+  commissionsUpdated       Int                            @default(0)
+  commissionsSuperseded    Int                            @default(0)
+  errorsCount              Int                            @default(0)
+  summaryJson              Json?
+  startedAt                DateTime                       @default(now()) @db.Timestamptz(6)
+  finishedAt               DateTime?                      @db.Timestamptz(6)
+  createdAt                DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+
+  commissionRecords CommissionRecord[]
+
+  @@index([status])
+  @@index([mode])
+  @@index([periodStart, periodEnd])
+  @@index([startedAt])
+}
+
+model CommissionRecord {
+  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  calculationRunId          String?                     @db.Uuid
+  source                    CommissionRecordSource      @default(INDUSCOST_CALCULATED)
+  originStage               CommissionRecordOriginStage
+  status                    CommissionRecordStatus
+  nomusOrderId              Int?
+  orderCode                 String?
+  nomusOrderItemId          Int?
+  nomusProductId            Int?
+  productCode               String?
+  productName               String?
+  nomusNfeId                Int?
+  nfeNumber                 String?
+  nomusOutputDocumentId     Int?
+  nomusOutputDocumentItemId Int?
+  commissionPersonId        String                      @db.Uuid
+  nomusSellerId             Int?
+  nomusRepresentativeId     Int?
+  customerExternalId        Int?
+  customerName              String?
+  companyExternalId         Int?
+  baseAmount                Decimal                     @db.Decimal(20, 2)
+  ratePercent               Decimal                     @db.Decimal(10, 4)
+  commissionAmount          Decimal                     @db.Decimal(20, 2)
+  releasedAmount            Decimal                     @default(0) @db.Decimal(20, 2)
+  paidAmount                Decimal                     @default(0) @db.Decimal(20, 2)
+  balanceAmount             Decimal                     @default(0) @db.Decimal(20, 2)
+  releaseRule               CommissionReleaseRule
+  calculationHash           String                      @unique
+  metadataJson              Json?
+  calculatedAt              DateTime                    @default(now()) @db.Timestamptz(6)
+  confirmedAt               DateTime?                   @db.Timestamptz(6)
+  releasedAt                DateTime?                   @db.Timestamptz(6)
+  paidAt                    DateTime?                   @db.Timestamptz(6)
+  createdAt                 DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  calculationRun    CommissionCalculationRun?  @relation(fields: [calculationRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionPerson  CommissionPerson           @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  paymentSchedules  CommissionPaymentSchedule[]
+  paymentBatchItems CommissionPaymentBatchItem[]
+
+  @@index([orderCode])
+  @@index([nomusOrderId])
+  @@index([nomusNfeId])
+  @@index([commissionPersonId])
+  @@index([status])
+  @@index([originStage])
+  @@index([calculatedAt])
+  @@index([nomusSellerId])
+  @@index([customerExternalId])
+}
+
+model CommissionPaymentSchedule {
+  id                       String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commissionRecordId       String                          @db.Uuid
+  source                   CommissionPaymentScheduleSource
+  status                   CommissionPaymentScheduleStatus @default(FORECAST)
+  nomusOrderId             Int?
+  nomusNfeId               Int?
+  nomusReceivableId        Int?
+  installmentNumber        Int?
+  dueDate                  DateTime?                       @db.Timestamptz(6)
+  expectedAmount           Decimal?                        @db.Decimal(20, 2)
+  receivableAmount         Decimal?                        @db.Decimal(20, 2)
+  receivedAmount           Decimal?                        @db.Decimal(20, 2)
+  openBalance              Decimal?                        @db.Decimal(20, 2)
+  allocationPercent        Decimal?                        @db.Decimal(10, 4)
+  commissionExpectedAmount Decimal                         @default(0) @db.Decimal(20, 2)
+  commissionReleasedAmount Decimal                         @default(0) @db.Decimal(20, 2)
+  createdAt                DateTime                        @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  commissionRecord  CommissionRecord             @relation(fields: [commissionRecordId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  paymentBatchItems CommissionPaymentBatchItem[]
+
+  @@index([commissionRecordId])
+  @@index([nomusReceivableId])
+  @@index([nomusNfeId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model CommissionPaymentBatch {
+  id                 String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  periodStart        DateTime                     @db.Timestamptz(6)
+  periodEnd          DateTime                     @db.Timestamptz(6)
+  commissionPersonId String                       @db.Uuid
+  status             CommissionPaymentBatchStatus @default(DRAFT)
+  totalReleased      Decimal                      @default(0) @db.Decimal(20, 2)
+  totalSelected      Decimal                      @default(0) @db.Decimal(20, 2)
+  totalPaid          Decimal                      @default(0) @db.Decimal(20, 2)
+  paymentDate        DateTime?                    @db.Timestamptz(6)
+  notes              String?
+  createdBy          String?
+  approvedBy         String?
+  paidBy             String?
+  createdAt          DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+
+  commissionPerson CommissionPerson           @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items            CommissionPaymentBatchItem[]
+
+  @@index([commissionPersonId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@index([paymentDate])
+}
+
+model CommissionPaymentBatchItem {
+  id                          String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId                     String                           @db.Uuid
+  commissionRecordId          String                           @db.Uuid
+  commissionPaymentScheduleId String?                          @db.Uuid
+  amountToPay                 Decimal                          @db.Decimal(20, 2)
+  amountPaid                  Decimal                          @default(0) @db.Decimal(20, 2)
+  status                      CommissionPaymentBatchItemStatus @default(DRAFT)
+  notes                       String?
+  createdAt                   DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  batch                     CommissionPaymentBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  commissionRecord          CommissionRecord           @relation(fields: [commissionRecordId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  commissionPaymentSchedule CommissionPaymentSchedule? @relation(fields: [commissionPaymentScheduleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([batchId])
+  @@index([commissionRecordId])
+  @@index([commissionPaymentScheduleId])
+  @@index([status])
+}
+
+model CommissionAuditIssue {
+  id           String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  severity     CommissionAuditIssueSeverity
+  type         CommissionAuditIssueType
+  entityType   String
+  entityId     String?
+  message      String
+  metadataJson Json?
+  resolved     Boolean                      @default(false)
+  resolvedAt   DateTime?                    @db.Timestamptz(6)
+  createdAt    DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([resolved])
+  @@index([severity])
+  @@index([type])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model CommissionSettings {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique
+  valueJson   Json
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
