@@ -199,6 +199,8 @@ export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
   taxEstimated: "Imposto estimado",
   netManagerial: "Receita líquida gerencial",
   cost: "Custo de produção IndusCost",
+  productionUnitCost: "Custo unitário de produção",
+  productionTotalCost: "Custo total de produção",
   costSource: "Fonte do custo",
   marginValue: "Margem R$",
   marginPercent: "Margem %",
@@ -246,7 +248,8 @@ function pickProductionCostTooltipLines(
   if (unique.size === 1) {
     const meta = [...unique.values()][0]!;
     lines.push(`Tabela de custo: ${meta.versionCode} (rev. ${meta.revision})`);
-    lines.push(`Fonte: Tabela de Custo vigente`);
+    lines.push(`Revisão: ${meta.revision}`);
+    lines.push(`Fonte: Tabela de custo vigente`);
     lines.push(`Vigência: ${formatCivilDatePtBr(meta.effectiveDate)}`);
     if (meta.orderIssueDate) {
       lines.push(`Data do pedido: ${formatCivilDatePtBr(meta.orderIssueDate)}`);
@@ -254,7 +257,7 @@ function pickProductionCostTooltipLines(
     if (meta.warning) lines.push(`Aviso: ${meta.warning}`);
   } else {
     lines.push(`Tabelas de custo: ${unique.size} versões distintas nos itens`);
-    lines.push(`Fonte: Tabela de Custo vigente`);
+    lines.push(`Fonte: Tabela de custo vigente`);
   }
   return lines;
 }
@@ -360,6 +363,13 @@ export function buildOfficialSalesOrderMarginTooltipText(
 
   const taxMode = summary.taxMode ?? "deductFromGross";
   const isPartial = summary.costCoverageStatus === "PARTIAL";
+  const isSemCusto =
+    summary.status === "SEM_CUSTO" ||
+    (summary.costCoverageStatus === "NONE" && (summary.itemsWithCost ?? 0) === 0);
+  const hasUnresolvedCost =
+    isSemCusto ||
+    summary.hasMissingCost ||
+    (itemMargins ?? []).some((row) => row?.costSource === "MISSING_COST");
   const grossSales =
     summary.grossSalesAmount ?? summary.totalSalesRevenueInScope ?? summary.netRevenue;
   const netManagerial = summary.netSalesAmountAfterTax ?? summary.netRevenue;
@@ -367,15 +377,25 @@ export function buildOfficialSalesOrderMarginTooltipText(
     summary.taxAmount != null && Number.isFinite(summary.taxAmount)
       ? summary.taxAmount
       : Math.max(0, grossSales - netManagerial);
-  const costLabel = resolveSalesOrderMarginCostSourceSummary(itemMargins, summary);
+  const costLabel = hasUnresolvedCost
+    ? "Custo de produção não resolvido"
+    : resolveSalesOrderMarginCostSourceSummary(itemMargins, summary);
 
-  const title = isPartial
-    ? SALES_ORDER_MARGIN_DISPLAY_LABELS.partialTitle
-    : taxMode === "none"
-      ? SALES_ORDER_MARGIN_DISPLAY_LABELS.soldTitle
-      : SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle;
+  const title = hasUnresolvedCost
+    ? SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle
+    : isPartial
+      ? SALES_ORDER_MARGIN_DISPLAY_LABELS.partialTitle
+      : taxMode === "none"
+        ? SALES_ORDER_MARGIN_DISPLAY_LABELS.soldTitle
+        : SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle;
 
   const lines: string[] = [title, ""];
+
+  if (hasUnresolvedCost) {
+    lines.push("Custo de produção não resolvido para um ou mais itens.");
+    lines.push("A margem abaixo não deve ser interpretada como oficial.");
+    lines.push("");
+  }
 
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.grossSales}: ${formatSalesOrderMarginMoney(grossSales)}`);
 
@@ -395,35 +415,52 @@ export function buildOfficialSalesOrderMarginTooltipText(
     lines.push("Imposto: não deduzido neste modo");
   }
 
-  lines.push(
-    `${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`
-  );
-  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: Tabela de Custo vigente`);
+  if (hasUnresolvedCost) {
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: Custo não resolvido`);
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: —`);
+  } else {
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`
+    );
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: Tabela de custo vigente`);
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.productionTotalCost}: ${formatSalesOrderMarginMoney(summary.totalCost)}`
+    );
+  }
 
   const versionedItems = (itemMargins ?? []).filter(
     (row) => row?.costSource === "VERSIONED_PRODUCTION_COST" && row.unitCost != null
   );
-  if (versionedItems.length === 1 && versionedItems[0]?.unitCost != null) {
+  if (!hasUnresolvedCost && versionedItems.length === 1 && versionedItems[0]?.unitCost != null) {
     lines.push(
-      `Custo unitário de produção: ${formatSalesOrderMarginMoney(versionedItems[0].unitCost)}`
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.productionUnitCost}: ${formatSalesOrderMarginMoney(versionedItems[0].unitCost)}`
     );
   }
 
-  for (const extra of pickProductionCostTooltipLines(itemMargins)) {
+  const productionMetaLines = pickProductionCostTooltipLines(itemMargins);
+  for (const extra of productionMetaLines) {
     lines.push(extra);
   }
-  if (orderIssueDate && !pickProductionCostTooltipLines(itemMargins).some((l) => l.startsWith("Data do pedido"))) {
+  if (
+    orderIssueDate &&
+    !productionMetaLines.some((l) => l.startsWith("Data do pedido"))
+  ) {
     lines.push(`Data do pedido: ${formatCivilDatePtBr(orderIssueDate)}`);
   }
 
-  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
+  if (!hasUnresolvedCost) {
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
 
-  const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
-  if (percentDenominator > 0 && summary.marginPercent != null) {
-    lines.push(
-      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: ${formatSalesOrderMarginMoney(summary.marginValue)} ÷ ${formatSalesOrderMarginMoney(percentDenominator)} = ${formatSalesOrderMarginPercent(summary.marginPercent)}`
-    );
+    const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
+    if (percentDenominator > 0 && summary.marginPercent != null) {
+      lines.push(
+        `${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: ${formatSalesOrderMarginMoney(summary.marginValue)} ÷ ${formatSalesOrderMarginMoney(percentDenominator)} = ${formatSalesOrderMarginPercent(summary.marginPercent)}`
+      );
+    } else {
+      lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: —`);
+    }
   } else {
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: —`);
     lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: —`);
   }
 
@@ -431,11 +468,11 @@ export function buildOfficialSalesOrderMarginTooltipText(
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithCost}: ${summary.itemsWithCost ?? 0}`);
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithoutCost}: ${summary.itemsWithoutCost ?? 0}`);
 
-  if ((summary.itemsWithoutCost ?? 0) > 0) {
+  if ((summary.itemsWithoutCost ?? 0) > 0 || hasUnresolvedCost) {
     lines.push("Itens sem custo: linhas SEM_CUSTO — não entram na margem agregada.");
   }
 
-  if (isPartial) {
+  if (isPartial && !hasUnresolvedCost) {
     lines.push("");
     lines.push(`Receita coberta: ${formatSalesOrderMarginMoney(summary.marginRevenueCovered)}`);
     lines.push(`Receita descoberta: ${formatSalesOrderMarginMoney(summary.marginRevenueUncovered)}`);

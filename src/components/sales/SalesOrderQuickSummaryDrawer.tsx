@@ -25,6 +25,7 @@ import {
   formatSalesOrderMarginPercent,
   resolveSalesOrderMarginSupportText,
   resolveSalesOrderMarginRevenueLabel,
+  SALES_ORDER_MARGIN_DISPLAY_LABELS,
 } from "@/src/lib/salesOrderMarginDisplay";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
@@ -211,6 +212,7 @@ export function SalesOrderQuickSummaryDrawer({
               {margin ? (
                 <SalesOrderMarginInfoTooltip
                   summary={margin}
+                  orderIssueDate={row.issueDate}
                   testId="sales-order-quick-summary-margin-tooltip"
                 />
               ) : null}
@@ -223,8 +225,12 @@ export function SalesOrderQuickSummaryDrawer({
                     value={formatSalesOrderMarginMoney(margin.netRevenue)}
                   />
                   <SummaryField
-                    label="Custo estimado"
-                    value={formatSalesOrderMarginMoney(margin.totalCost)}
+                    label={SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}
+                    value={
+                      margin.hasMissingCost || margin.status === "SEM_CUSTO"
+                        ? "Custo não resolvido"
+                        : formatSalesOrderMarginMoney(margin.totalCost)
+                    }
                   />
                   <SummaryField
                     label="Margem R$"

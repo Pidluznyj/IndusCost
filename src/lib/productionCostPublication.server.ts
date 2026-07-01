@@ -246,7 +246,12 @@ export async function listProductionCostTableVersions(
     },
     orderBy: [{ effectiveDate: "desc" }, { revision: "desc" }, { createdAt: "desc" }],
     take: limit,
-    include: { _count: { select: { items: true } } },
+    include: {
+      _count: { select: { items: true } },
+      supersedesVersion: {
+        select: { id: true, code: true, revision: true, status: true },
+      },
+    },
   });
 }
 

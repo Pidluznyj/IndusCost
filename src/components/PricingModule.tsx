@@ -14,6 +14,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
 import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab";
 import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingDetailedCompositionTab";
+import { ProductionCostTablesPanel } from "@/src/components/pricing/ProductionCostTablesPanel";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 import {
   filterAndSortPricingRows,
@@ -146,6 +147,11 @@ export const PricingModule = () => {
   const allowSimulate = auth.hasPermission("pricing.simulate");
   const allowGenerateTables = auth.hasPermission("pricing.generate_tables");
   const allowPublishTables = auth.hasPermission("pricing.publish_tables");
+  const canViewProductionCostTables =
+    auth.hasPermission("pricing.view") ||
+    auth.hasPermission("costs.view") ||
+    auth.hasPermission("products.tab.cost") ||
+    allowGenerateTables;
   const [tourOpen, setTourOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
@@ -1444,7 +1450,7 @@ export const PricingModule = () => {
         </div>
         ) : null}
 
-        {allowGenerateTables ? (
+        {canViewProductionCostTables ? (
         <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
           <button
             type="button"
@@ -1458,7 +1464,9 @@ export const PricingModule = () => {
                 <ShieldCheck className="h-4 w-4 text-primary" /> Custo oficial de produção (versionado)
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Gera DRAFT revisável a partir do motor industrial (MP + HH + HM). Publicação explícita — versões publicadas são imutáveis.
+                {allowGenerateTables
+                  ? "Gera DRAFT revisável a partir do motor industrial (MP + HH + HM). Publicação explícita — versões publicadas são imutáveis."
+                  : "Consulte tabelas publicadas, itens por versão e custo vigente por produto e data."}
               </p>
             </div>
             <ChevronRight
@@ -1471,6 +1479,8 @@ export const PricingModule = () => {
 
           {productionCostOpen && (
             <div id="pricing-production-cost-body" className="mt-5 space-y-5">
+              {allowGenerateTables ? (
+              <>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                 Publicado não é editado. Correção gera nova revisão por produto. Esta seção não altera preço comercial — apenas registra custo de produção vigente.
               </div>
@@ -1597,65 +1607,17 @@ export const PricingModule = () => {
                 </div>
               )}
 
-              <div className="border-t border-border pt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold">Versões recentes</h4>
-                  <button
-                    type="button"
-                    onClick={() => void fetchProductionCostVersions()}
-                    disabled={productionCostVersionsLoading}
-                    className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  >
-                    Atualizar
-                  </button>
-                </div>
-                {productionCostVersionsLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                ) : productionCostVersions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Nenhuma versão cadastrada ainda.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {productionCostVersions.map((v) => (
-                      <div
-                        key={v.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-accent/10 px-3 py-2 text-xs"
-                      >
-                        <div>
-                          <span className="font-bold">{v.code}</span> rev.{v.revision}{" "}
-                          <span className="uppercase text-[10px] font-bold text-muted-foreground">{v.status}</span>
-                          <span className="ml-2 text-muted-foreground">
-                            vig. {String(v.effectiveDate).slice(0, 10)} · {v.itemsCount} produto(s)
-                          </span>
-                          {v.publishedAt && (
-                            <span className="ml-2 text-muted-foreground">
-                              pub. {new Date(v.publishedAt).toLocaleString("pt-BR")}
-                            </span>
-                          )}
-                        </div>
-                        {allowPublishTables && v.status === "DRAFT" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void handlePublishProductionCostVersion({
-                                versionId: v.id,
-                                code: v.code,
-                                revision: v.revision,
-                              })
-                            }
-                            disabled={publishingProductionCostVersionId !== null}
-                            className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground"
-                          >
-                            Publicar
-                          </button>
-                        )}
-                        {v.status === "PUBLISHED" && (
-                          <span className="text-[10px] text-muted-foreground italic">Imutável</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              </>
+              ) : null}
+
+              <ProductionCostTablesPanel
+                products={products.map((p: { id: string; sku: string; name: string }) => ({
+                  id: p.id,
+                  sku: p.sku,
+                  name: p.name,
+                }))}
+                canManage={allowGenerateTables}
+              />
             </div>
           )}
         </div>

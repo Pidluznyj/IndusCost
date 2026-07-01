@@ -62,7 +62,8 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Imposto médio sobre venda \(27,25%\)/);
     assert.match(text, /Receita líquida gerencial: R\$\s*286,63/);
     assert.match(text, /Custo de produção IndusCost: R\$\s*193,49/);
-    assert.match(text, /Fonte do custo: Tabela de Custo vigente/);
+    assert.match(text, /Fonte do custo: Tabela de custo vigente/);
+    assert.match(text, /Custo total de produção: R\$\s*193,49/);
     assert.doesNotMatch(text, /getProductCostAnalysis/);
     assert.match(text, /Margem R\$: R\$\s*93,14/);
     assert.match(text, /32,50%/);
@@ -181,6 +182,47 @@ describe("salesOrderMarginTooltip", () => {
     );
     assert.match(mgmt, /SalesOrderMarginInfoTooltip/);
     assert.match(page, /SalesOrderMarginInfoTooltip/);
+  });
+
+  it("tooltip SEM_CUSTO não apresenta margem como oficial", () => {
+    const text = buildOfficialSalesOrderMarginTooltipText({
+      summary: summary({
+        status: "PARTIAL",
+        statusLabel: "Parcial",
+        hasMissingCost: true,
+        costCoverageStatus: "PARTIAL",
+        itemsWithCost: 1,
+        itemsWithoutCost: 1,
+        itemsTotal: 2,
+      }),
+      itemMargins: [
+        { costSource: "VERSIONED_PRODUCTION_COST", unitCost: 10, totalCost: 20 },
+        { costSource: "MISSING_COST", unitCost: null, totalCost: null },
+      ],
+    });
+    assert.match(text, /Custo de produção não resolvido/);
+    assert.match(text, /Margem R\$: —/);
+    assert.match(text, /Margem %: —/);
+    assert.match(text, /Itens sem custo/);
+  });
+
+  it("análise de margem usa labels oficiais", () => {
+    const analysis = readFileSync(
+      join(process.cwd(), "src/components/sales/SalesOrderMarginAnalysis.tsx"),
+      "utf8"
+    );
+    assert.match(analysis, /Preço unitário de venda/);
+    assert.match(analysis, /PRODUCTION_COST_DISPLAY_LABELS\.productionUnitCost/);
+    assert.match(analysis, /costUnresolved/);
+  });
+
+  it("painel de tabelas de custo no módulo de precificação", () => {
+    const pricing = readFileSync(
+      join(process.cwd(), "src/components/PricingModule.tsx"),
+      "utf8"
+    );
+    assert.match(pricing, /ProductionCostTablesPanel/);
+    assert.match(pricing, /canViewProductionCostTables/);
   });
 
   it("isSalesOrderMarginDisplayUnavailable detecta fiscal incompleta", () => {

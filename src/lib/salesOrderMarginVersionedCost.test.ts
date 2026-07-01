@@ -230,7 +230,7 @@ describe("salesOrderMarginVersionedCost", () => {
         },
       ],
     });
-    assert.match(text, /Tabela de Custo vigente/);
+    assert.match(text, /Tabela de custo vigente/);
     assert.match(text, /2026-06 \(rev\. 2\)/);
     assert.match(text, /Vigência: 01\/06\/2026/);
     assert.match(text, /Data do pedido: 10\/06\/2026/);

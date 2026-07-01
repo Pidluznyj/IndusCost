@@ -21,6 +21,11 @@ import {
   listProductionCostTableVersions,
   publishProductionCostVersionFromDraft,
 } from "./src/lib/productionCostPublication.server.js";
+import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
+import {
+  formatEffectiveProductionCostSummary,
+  PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
+} from "./src/lib/productionCostTablesUi.js";
 import { resolveServerAppBuildInfo } from "./src/lib/appVersion.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
@@ -6757,7 +6762,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   // --- API: Tabela oficial versionada de custo de produção industrial ---
-  app.get("/api/production-cost-tables/versions", requireAppAuth, requireAnyPermission(["pricing.view", "pricing.generate_tables", "settings.price_tables.view"]), async (req, res) => {
+  app.get("/api/production-cost-tables/versions", requireAppAuth, requireAnyPermission([...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : null;
@@ -6774,10 +6779,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           revision: v.revision,
           publishedAt: v.publishedAt,
           publishedBy: v.publishedBy,
+          createdBy: v.createdBy,
           createdAt: v.createdAt,
           itemsCount: v._count.items,
           source: v.source,
           notes: v.notes,
+          supersedesVersionId: v.supersedesVersionId,
+          supersedesVersion: v.supersedesVersion,
         }))
       );
     } catch (e) {
@@ -6786,11 +6794,83 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  app.get("/api/production-cost-table-versions/:id", requireAppAuth, requireAnyPermission(["pricing.view", "pricing.generate_tables", "settings.price_tables.view"]), async (req, res) => {
+  app.get("/api/production-cost-tables/effective-cost", requireAppAuth, requireAnyPermission([...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
+    const productId = typeof req.query.productId === "string" ? req.query.productId.trim() : "";
+    const referenceDateRaw =
+      typeof req.query.referenceDate === "string" ? req.query.referenceDate.trim() : "";
+    if (!productId) {
+      return res.status(400).json({ error: "productId é obrigatório." });
+    }
+    if (!referenceDateRaw) {
+      return res.status(400).json({ error: "referenceDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const referenceDate = civilDateToLocalDate(referenceDateRaw);
+    if (Number.isNaN(referenceDate.getTime())) {
+      return res.status(400).json({ error: "referenceDate inválida." });
+    }
+    try {
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        select: { id: true, sku: true, name: true },
+      });
+      if (!product) {
+        return res.status(404).json({ error: "Produto não encontrado." });
+      }
+      const result = await getEffectiveProductProductionCost(prisma, productId, referenceDate);
+      const summaryText = formatEffectiveProductionCostSummary({
+        productCode: product.sku,
+        referenceDate: referenceDateRaw,
+        result,
+      });
+      return res.json({
+        ...result,
+        referenceDate: referenceDateRaw,
+        product,
+        summaryText,
+      });
+    } catch (e) {
+      console.error("GET /api/production-cost-tables/effective-cost", e);
+      return res.status(500).json({ error: "Erro ao consultar custo vigente." });
+    }
+  });
+
+  app.get("/api/production-cost-table-versions/:id", requireAppAuth, requireAnyPermission([...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
     try {
       const version = await getProductionCostTableVersionById(prisma, req.params.id);
       if (!version) return res.status(404).json({ error: "Versão não encontrada." });
-      return res.json(version);
+      return res.json({
+        id: version.id,
+        code: version.code,
+        name: version.name,
+        effectiveDate: version.effectiveDate,
+        status: version.status,
+        revision: version.revision,
+        publishedAt: version.publishedAt,
+        publishedBy: version.publishedBy,
+        createdBy: version.createdBy,
+        createdAt: version.createdAt,
+        source: version.source,
+        notes: version.notes,
+        supersedesVersionId: version.supersedesVersionId,
+        supersedesVersion: version.supersedesVersion,
+        itemsCount: version.items.length,
+        items: version.items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          productCodeSnapshot: item.productCodeSnapshot,
+          productNameSnapshot: item.productNameSnapshot,
+          unitProductionCost: item.unitProductionCost,
+          materialCost: item.materialCost,
+          processCost: item.processCost,
+          laborCost: item.laborCost,
+          machineCost: item.machineCost,
+          overheadCost: item.overheadCost,
+          otherCost: item.otherCost,
+          currency: item.currency,
+          calculationHash: item.calculationHash,
+          calculationSnapshot: item.calculationSnapshot,
+        })),
+      });
     } catch (e) {
       console.error("GET /api/production-cost-table-versions/:id", e);
       return res.status(500).json({ error: "Erro ao consultar versão de custo de produção." });

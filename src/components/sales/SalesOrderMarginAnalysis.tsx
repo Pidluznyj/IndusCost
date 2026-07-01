@@ -11,6 +11,7 @@ import {
   resolveSalesOrderMarginRevenueLabel,
   resolveSalesOrderMarginSupportText,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { PRODUCTION_COST_DISPLAY_LABELS } from "@/src/lib/productionCostTablesUi";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type {
   SalesOrderItemMarginPayload,
@@ -114,10 +115,14 @@ export function SalesOrderMarginAnalysisSection({
               <tr>
                 <th className="p-3 font-semibold">Produto</th>
                 <th className="p-3 font-semibold text-right">Qtd</th>
-                <th className="p-3 font-semibold text-right">Preço líquido unit.</th>
+                <th className="p-3 font-semibold text-right">Preço unitário de venda</th>
                 <th className="p-3 font-semibold text-right">Valor líquido</th>
-                <th className="p-3 font-semibold text-right">Custo unit.</th>
-                <th className="p-3 font-semibold text-right">Custo total</th>
+                <th className="p-3 font-semibold text-right">
+                  {PRODUCTION_COST_DISPLAY_LABELS.productionUnitCost}
+                </th>
+                <th className="p-3 font-semibold text-right">
+                  {PRODUCTION_COST_DISPLAY_LABELS.productionTotalCost}
+                </th>
                 <th className="p-3 font-semibold text-right">Margem R$</th>
                 <th className="p-3 font-semibold text-right">Margem %</th>
                 <th className="p-3 font-semibold text-right">Markup</th>
@@ -153,16 +158,24 @@ export function SalesOrderMarginAnalysisSection({
                           : formatSalesOrderMarginMoney(it.totalNetValue)}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarginMoney(margin?.unitCost)}
+                        {margin?.costSource === "MISSING_COST" || margin?.status === "SEM_CUSTO"
+                          ? PRODUCTION_COST_DISPLAY_LABELS.costUnresolved
+                          : formatSalesOrderMarginMoney(margin?.unitCost)}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarginMoney(margin?.totalCost)}
+                        {margin?.costSource === "MISSING_COST" || margin?.status === "SEM_CUSTO"
+                          ? PRODUCTION_COST_DISPLAY_LABELS.costUnresolved
+                          : formatSalesOrderMarginMoney(margin?.totalCost)}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarginMoney(margin?.marginValue)}
+                        {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
+                          ? "—"
+                          : formatSalesOrderMarginMoney(margin?.marginValue)}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarginPercent(margin?.marginPercent)}
+                        {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
+                          ? "—"
+                          : formatSalesOrderMarginPercent(margin?.marginPercent)}
                       </td>
                       <td className="p-3 text-right font-mono">
                         {formatSalesOrderMarkup(margin?.markup)}
