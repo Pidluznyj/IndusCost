@@ -419,6 +419,19 @@ export function parseMarkPaidBody(body: unknown): { paymentDate: Date } {
   return { paymentDate: parseIsoDateRequired(raw.paymentDate ?? raw.paidAt, "paymentDate") };
 }
 
+export function parseCommissionAuditRerunBody(body: unknown): { from: Date; to: Date } {
+  if (!body || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const raw = body as Record<string, unknown>;
+  const from = parseIsoDateRequired(raw.from, "from");
+  const to = parseIsoDateRequired(raw.to, "to");
+  if (from > to) {
+    throw new CommissionValidationError("INVALID_FIELD", "from não pode ser posterior a to.");
+  }
+  return { from, to };
+}
+
 export function parseAuditListQuery(query: Record<string, unknown>): {
   page: number;
   pageSize: number;

@@ -480,11 +480,46 @@ export type CommissionsAuditItem = {
   resolved: boolean;
   resolvedAt: string | null;
   createdAt: string;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  customerName: string | null;
+  commissionPersonId: string | null;
+  commissionPersonName: string | null;
+  involvedAmount: number | null;
+  suggestedAction: string;
+};
+
+export type CommissionsAuditCards = {
+  criticalOpenCount: number;
+  warningOpenCount: number;
+  infoOpenCount: number;
+  resolvedInPeriodCount: number;
+  ordersWithoutRuleCount: number;
+  nfesWithoutOutputDocumentCount: number;
+  nfesWithoutReceivableCount: number;
 };
 
 export type CommissionsAuditPayload = {
+  cards: CommissionsAuditCards;
+  rows: CommissionsAuditItem[];
   items: CommissionsAuditItem[];
   pagination: CommissionsPagination;
+};
+
+export type CommissionsAuditRerunResult = {
+  runId: string;
+  summary: {
+    ordersEvaluated: number;
+    nfeEvaluated: number;
+    outputDocumentsEvaluated: number;
+    receivablesEvaluated: number;
+    commissionsCreated: number;
+    commissionsUpdated: number;
+    commissionsSuperseded: number;
+    errorsCount: number;
+    issuesCreated: number;
+    errors: string[];
+  };
 };
 
 export type CommissionsSettingsPayload = {

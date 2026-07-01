@@ -728,6 +728,96 @@ export function parseCommissionPaymentsQuery(
   };
 }
 
+const AUDIT_SEVERITY_SET = new Set<string>(["INFO", "WARNING", "CRITICAL"]);
+
+const AUDIT_TYPE_SET = new Set<string>([
+  "ORDER_WITHOUT_SELLER",
+  "ORDER_WITHOUT_REPRESENTATIVE",
+  "NO_COMMISSION_RULE",
+  "ORDER_WITHOUT_NFE",
+  "NFE_WITHOUT_OUTPUT_DOCUMENT",
+  "NFE_WITHOUT_RECEIVABLE",
+  "OUTPUT_DOCUMENT_WITHOUT_ORDER_MATCH",
+  "RECEIVABLE_WITHOUT_NFE",
+  "CANCELLED_NFE_WITH_ACTIVE_COMMISSION",
+  "RECEIVED_WITHOUT_RELEASE",
+  "PAID_WITHOUT_RELEASE",
+  "DIVERGENT_AMOUNT",
+  "MANUAL_REVIEW_REQUIRED",
+]);
+
+export type CommissionAuditQuery = CommissionPeriodQuery & {
+  page: number;
+  pageSize: number;
+  resolved?: boolean;
+  severity?: string;
+  type?: string;
+  commissionPersonId?: string;
+  orderCode?: string;
+  nfeNumber?: string;
+  customer?: string;
+};
+
+export function parseCommissionAuditQuery(
+  query: Record<string, unknown>
+): CommissionAuditQuery {
+  const period = parsePeriodQuery(query);
+  const { page, pageSize } = parsePagination(query);
+
+  const resolved =
+    query.resolved === "true" ? true : query.resolved === "false" ? false : undefined;
+
+  const severityRaw =
+    typeof query.severity === "string" && query.severity.trim()
+      ? query.severity.trim().toUpperCase()
+      : undefined;
+  const severity =
+    severityRaw && AUDIT_SEVERITY_SET.has(severityRaw) ? severityRaw : undefined;
+  if (severityRaw && !severity) {
+    throw new CommissionQueryParseError("severity inválido.");
+  }
+
+  const typeRaw =
+    typeof query.type === "string" && query.type.trim()
+      ? query.type.trim().toUpperCase()
+      : undefined;
+  const type = typeRaw && AUDIT_TYPE_SET.has(typeRaw) ? typeRaw : undefined;
+  if (typeRaw && !type) {
+    throw new CommissionQueryParseError("type inválido.");
+  }
+
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+
+  const orderCode =
+    typeof query.orderCode === "string" && query.orderCode.trim()
+      ? query.orderCode.trim()
+      : undefined;
+  const nfeNumber =
+    typeof query.nfeNumber === "string" && query.nfeNumber.trim()
+      ? query.nfeNumber.trim()
+      : undefined;
+  const customer =
+    typeof query.customer === "string" && query.customer.trim()
+      ? query.customer.trim()
+      : undefined;
+
+  return {
+    ...period,
+    page,
+    pageSize,
+    resolved,
+    severity,
+    type,
+    commissionPersonId: commissionPersonId ?? undefined,
+    orderCode,
+    nfeNumber,
+    customer,
+  };
+}
+
 export function parseUnpaidReleasedCommissionsQuery(
   query: Record<string, unknown>
 ): {

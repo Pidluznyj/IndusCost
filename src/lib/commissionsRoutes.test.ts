@@ -7,6 +7,7 @@ import {
   COMMISSION_CONFIRMED_STATUSES,
   COMMISSION_FORECAST_STATUSES,
   CommissionQueryParseError,
+  parseCommissionAuditQuery,
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
@@ -89,6 +90,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/rules/:id/duplicate",
       "/api/commissions/recalculate",
       "/api/commissions/audit",
+      "/api/commissions/audit/rerun",
       "/api/commissions/settings",
       "/api/commissions/payment-batches",
       "/api/commissions/payment-batches/unpaid-released",
@@ -100,6 +102,11 @@ describe("commissionsRoutes", () => {
 
   it("POST recalculate delega calculateCommissions", () => {
     assert.match(routes(), /calculateCommissions\(prisma/);
+  });
+
+  it("POST audit/rerun delega rerunCommissionAudit", () => {
+    assert.match(routes(), /rerunCommissionAudit/);
+    assert.match(routes(), /\/api\/commissions\/audit\/rerun/);
   });
 
   it("payment-batches mark-paid usa markCommissionPaymentBatchPaid", () => {
@@ -184,6 +191,29 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.beneficiaryType, "SELLER");
     assert.equal(q.baseType, "SALES_ORDER_ITEM_NET");
     assert.equal(q.releaseRule, "EACH_RECEIVABLE_PAID");
+  });
+
+  it("parseCommissionAuditQuery aceita filtros de auditoria", () => {
+    const q = parseCommissionAuditQuery({
+      year: "2026",
+      month: "6",
+      severity: "CRITICAL",
+      type: "NO_COMMISSION_RULE",
+      resolved: "false",
+      orderCode: "PV-100",
+      nfeNumber: "12345",
+      customer: "Cliente X",
+      commissionPersonId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+    assert.equal(q.year, 2026);
+    assert.equal(q.month, 6);
+    assert.equal(q.severity, "CRITICAL");
+    assert.equal(q.type, "NO_COMMISSION_RULE");
+    assert.equal(q.resolved, false);
+    assert.equal(q.orderCode, "PV-100");
+    assert.equal(q.nfeNumber, "12345");
+    assert.equal(q.customer, "Cliente X");
+    assert.equal(q.commissionPersonId, "550e8400-e29b-41d4-a716-446655440000");
   });
 
   it("parseCommissionPaymentsQuery aceita filtros de lote", () => {

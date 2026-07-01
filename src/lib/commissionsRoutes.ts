@@ -19,12 +19,15 @@ import {
 } from "@/src/lib/commissionsPermissions.js";
 import {
   getCommissionSettingsPayload,
-  listCommissionAuditIssues,
-  reopenCommissionAuditIssue,
-  resolveCommissionAuditIssue,
   updateCommissionSettings,
   CommissionValidationError,
 } from "@/src/lib/commissions/commissionAdmin.server.js";
+import {
+  listCommissionAuditPage,
+  reopenCommissionAuditIssue,
+  resolveCommissionAuditIssue,
+  rerunCommissionAudit,
+} from "@/src/lib/commissions/commissionAudit.server.js";
 import {
   getCommissionPaymentBatchById,
   listCommissionPaymentsPage,
@@ -46,7 +49,7 @@ import {
   updateCommissionRule,
 } from "@/src/lib/commissions/commissionRules.server.js";
 import {
-  parseAuditListQuery,
+  parseCommissionAuditRerunBody,
   parseCommissionPersonCreateBody,
   parseCommissionPersonUpdateBody,
   parseCommissionRecalculateBody,
@@ -68,6 +71,7 @@ import {
 } from "@/src/lib/commissions/commissionForecast.server.js";
 import {
   CommissionQueryParseError,
+  parseCommissionAuditQuery,
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
@@ -542,13 +546,28 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
-      const query = parseAuditListQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionAuditIssues(query);
+      const query = parseCommissionAuditQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionAuditPage(query);
       return res.json(payload);
     } catch (error) {
+      if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("GET /api/commissions/audit", error);
       return res.status(500).json({ error: "Erro ao listar auditoria de comissões." });
+    }
+  });
+
+  app.post("/api/commissions/audit/rerun", ...recalcGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionAuditRerunBody(req.body);
+      const payload = await rerunCommissionAudit(body);
+      return res.status(202).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/audit/rerun", error);
+      return res.status(500).json({ error: "Erro ao reexecutar auditoria de comissões." });
     }
   });
 
