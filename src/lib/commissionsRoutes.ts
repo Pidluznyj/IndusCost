@@ -52,17 +52,21 @@ import {
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
 import {
+  getCommissionConfirmedDetail,
+  listCommissionConfirmedPage,
+} from "@/src/lib/commissions/commissionConfirmed.server.js";
+import {
   getCommissionForecastOrderDetail,
   listCommissionForecastPage,
 } from "@/src/lib/commissions/commissionForecast.server.js";
 import {
   CommissionQueryParseError,
+  parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
   parseCommissionRecordsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
-  listCommissionConfirmedRecords,
   listCommissionRecords,
   listCommissionReleases,
 } from "@/src/lib/commissions/commissionRecords.server.js";
@@ -266,8 +270,8 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
-      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionConfirmedRecords(query, ctx.scope);
+      const query = parseCommissionConfirmedQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionConfirmedPage(query, ctx.scope);
       return res.json(payload);
     } catch (error) {
       try {
@@ -275,6 +279,33 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/confirmed", error);
         return res.status(500).json({ error: "Erro ao listar comissões confirmadas." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/confirmed/detail", ...confirmedGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const confirmKey =
+        typeof req.query.confirmKey === "string" && req.query.confirmKey.trim()
+          ? req.query.confirmKey.trim()
+          : null;
+      if (!confirmKey) {
+        return res.status(400).json({ error: "confirmKey é obrigatório." });
+      }
+      const query = parseCommissionConfirmedQuery(req.query as Record<string, unknown>);
+      const payload = await getCommissionConfirmedDetail(confirmKey, query, ctx.scope);
+      if (!payload) {
+        return res.status(404).json({ error: "Comissão confirmada não encontrada." });
+      }
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/confirmed/detail", error);
+        return res.status(500).json({ error: "Erro ao carregar detalhe da comissão confirmada." });
       }
     }
   });

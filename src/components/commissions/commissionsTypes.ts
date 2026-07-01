@@ -142,6 +142,109 @@ export type CommissionsForecastDetailPayload = {
   }>;
 };
 
+export type CommissionsConfirmedCards = {
+  totalConfirmedCommission: number;
+  invoicedAmount: number;
+  receivedAmount: number;
+  waitingReceivableCommission: number;
+  partiallyReleasedCommission: number;
+  fullyReleasedCommission: number;
+  balanceToRelease: number;
+  inconsistentDocumentsCount: number;
+};
+
+export type CommissionsConfirmedRow = {
+  confirmKey: string;
+  orderCode: string | null;
+  nomusOrderId: number | null;
+  localOrderId: string | null;
+  nfeNumber: string | null;
+  nomusNfeId: number | null;
+  outputDocumentLabel: string | null;
+  customerName: string | null;
+  commissionPersonId: string;
+  commissionPersonName: string;
+  confirmedBaseAmount: number;
+  ratePercent: number;
+  confirmedCommissionAmount: number;
+  receivedAmount: number;
+  releasedCommissionAmount: number;
+  pendingBalance: number;
+  status: string;
+  highlight: "confirmed" | "waiting_receivable" | "divergence" | "cancelled";
+  hasDivergence: boolean;
+  recordIds: string[];
+  confirmedAt: string | null;
+};
+
+export type CommissionsConfirmedPayload = {
+  cards: CommissionsConfirmedCards;
+  rows: CommissionsConfirmedRow[];
+  pagination: CommissionsPagination;
+};
+
+export type CommissionsConfirmedDetailPayload = {
+  confirmKey: string;
+  orderCode: string | null;
+  nomusOrderId: number | null;
+  localOrderId: string | null;
+  nfeNumber: string | null;
+  nomusNfeId: number | null;
+  outputDocumentLabel: string | null;
+  customerName: string | null;
+  commissionPersonId: string;
+  commissionPersonName: string;
+  status: string;
+  confirmedAt: string | null;
+  totalBaseAmount: number;
+  totalConfirmedCommission: number;
+  totalReceivedAmount: number;
+  totalReleasedAmount: number;
+  pendingBalance: number;
+  orderItems: Array<{
+    recordId: string;
+    productCode: string | null;
+    productName: string | null;
+    baseAmount: number;
+    ratePercent: number;
+    commissionAmount: number;
+    ruleId: string | null;
+    ruleName: string | null;
+  }>;
+  outputDocumentItems: Array<{
+    movementId: string;
+    documentNumber: string | null;
+    productLabel: string | null;
+    quantity: number;
+    movementDate: string;
+  }>;
+  receivables: Array<{
+    nomusReceivableId: number | null;
+    installmentNumber: number | null;
+    dueDate: string | null;
+    amountReceivable: number;
+    amountReceived: number;
+    balanceReceivable: number;
+    commissionExpectedAmount: number;
+    commissionReleasedAmount: number;
+  }>;
+  supersessionHistory: Array<{
+    recordId: string;
+    productCode: string | null;
+    productName: string | null;
+    commissionAmount: number;
+    supersededAt: string;
+  }>;
+  auditIssues: Array<{
+    id: string;
+    severity: string;
+    type: string;
+    message: string;
+    resolved: boolean;
+    createdAt: string;
+  }>;
+};
+
 export type CommissionsRecordsPayload = {
   items: CommissionsRecordItem[];
   pagination: CommissionsPagination;

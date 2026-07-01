@@ -7,6 +7,7 @@ import {
   COMMISSION_CONFIRMED_STATUSES,
   COMMISSION_FORECAST_STATUSES,
   CommissionQueryParseError,
+  parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
   parseCommissionRecordsQuery,
@@ -73,6 +74,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/forecast",
       "/api/commissions/forecast/detail",
       "/api/commissions/confirmed",
+      "/api/commissions/confirmed/detail",
       "/api/commissions/releases",
       "/api/commissions/persons",
       "/api/commissions/rules",
@@ -129,6 +131,17 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.representativeId, 20);
     assert.equal(q.hasRule, true);
     assert.equal(q.includeSuperseded, true);
+  });
+
+  it("parseCommissionConfirmedQuery aceita documento de saída e canceladas", () => {
+    const q = parseCommissionConfirmedQuery({
+      outputDocument: "DS-100",
+      includeCancelled: "true",
+      nfeNumber: "12345",
+    });
+    assert.equal(q.outputDocument, "DS-100");
+    assert.equal(q.includeCancelled, true);
+    assert.equal(q.nfeNumber, "12345");
   });
 
   it("status sets previstas/confirmadas", () => {

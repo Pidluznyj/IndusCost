@@ -28,6 +28,13 @@ export const COMMISSION_CONFIRMED_STATUSES: CommissionRecordStatus[] = [
   "WAITING_PAYMENT",
   "PARTIALLY_RELEASED",
   "RELEASED",
+  "PAID_PARTIAL",
+  "PAID_TOTAL",
+];
+
+export const COMMISSION_CONFIRMED_CANCELLED_STATUSES: CommissionRecordStatus[] = [
+  "CANCELLED",
+  "REVERSED",
 ];
 
 const RECORD_STATUS_SET = new Set<string>([
@@ -87,6 +94,11 @@ export type CommissionRecordsQuery = CommissionPeriodQuery & {
 };
 
 export type CommissionForecastQuery = CommissionRecordsQuery;
+
+export type CommissionConfirmedQuery = CommissionRecordsQuery & {
+  outputDocument: string | null;
+  includeCancelled: boolean;
+};
 
 export type PaginatedMeta = {
   page: number;
@@ -259,6 +271,33 @@ export function resolveForecastStatusIn(
   const statuses: CommissionRecordStatus[] = [...COMMISSION_FORECAST_STATUSES];
   if (query.includeSuperseded) {
     statuses.push("SUPERSEDED_BY_OUTPUT_DOCUMENT");
+  }
+  return statuses;
+}
+
+export function parseCommissionConfirmedQuery(
+  query: Record<string, unknown>
+): CommissionConfirmedQuery {
+  const base = parseCommissionRecordsQuery(query);
+  const outputDocument =
+    typeof query.outputDocument === "string" && query.outputDocument.trim()
+      ? query.outputDocument.trim()
+      : null;
+  return {
+    ...base,
+    outputDocument,
+    includeCancelled:
+      query.includeCancelled === "true" || query.includeCancelled === true,
+  };
+}
+
+export function resolveConfirmedStatusIn(
+  query: CommissionConfirmedQuery
+): CommissionRecordStatus[] {
+  if (query.status) return [query.status];
+  const statuses: CommissionRecordStatus[] = [...COMMISSION_CONFIRMED_STATUSES];
+  if (query.includeCancelled) {
+    statuses.push(...COMMISSION_CONFIRMED_CANCELLED_STATUSES);
   }
   return statuses;
 }
