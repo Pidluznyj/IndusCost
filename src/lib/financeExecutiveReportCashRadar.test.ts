@@ -166,14 +166,14 @@ describe("financeExecutiveReportCashRadar", () => {
       ),
       "utf8"
     );
-    const pdf = readFileSync(
+    const printCss = readFileSync(
       join(
         process.cwd(),
         "src",
         "components",
         "finance",
         "executive-report",
-        "FinanceCashFlowDailyRadarPdfSection.tsx"
+        "finance-executive-report-print.css"
       ),
       "utf8"
     );
@@ -183,13 +183,15 @@ describe("financeExecutiveReportCashRadar", () => {
     );
 
     assert.match(document, /pageId="cash-radar"/);
+    assert.match(document, /allowContentFlow/);
     assert.match(document, /report\.cashRadar/);
     assert.match(document, /ExecutiveReportCashRadarSection/);
     assert.match(section, /executive-report-cash-radar/);
-    assert.match(section, /0-7|defaultOpenRange/);
-    assert.match(pdf, /executive-report-cash-radar-pdf/);
-    assert.match(pdf, /Contas a Receber/);
-    assert.match(pdf, /Contas a Pagar/);
+    assert.match(section, /executive-report-cash-radar-print/);
+    assert.match(section, /defaultOpenRange/);
+    assert.doesNotMatch(section, /FinanceCashFlowDailyRadarPdfSection/);
+    assert.match(printCss, /executive-print-page--flow/);
+    assert.match(printCss, /executive-report-cash-radar-print/);
     assert.match(reportTypes, /cashRadar:/);
     assert.doesNotMatch(section, /buildFinanceCashFlowDailyRadar\(/);
   });

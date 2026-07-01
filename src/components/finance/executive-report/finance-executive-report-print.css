@@ -684,7 +684,73 @@
     font-size: 7pt !important;
   }
 
-  .finance-executive-page-break,
+  /*
+   * Radar Diário de Caixa — conteúdo longo (faixas, dias, grids AR/AP).
+   * A página usa fluxo contínuo para não cortar com overflow:hidden da página fixa.
+   */
+  .executive-print-page.executive-print-page--flow {
+    height: unset !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .executive-print-page--flow .executive-print-page-body {
+    overflow: visible !important;
+    min-height: unset !important;
+    flex: 1 1 auto !important;
+    display: block !important;
+  }
+
+  .executive-print-page--flow .finance-executive-report-section.executive-section--cash-radar {
+    overflow: visible !important;
+    flex: none !important;
+    min-height: unset !important;
+    display: block !important;
+  }
+
+  .executive-report-cash-radar-print {
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print .executive-report-cash-radar-day-row {
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print .executive-report-cash-radar-range-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .executive-report-cash-radar-print [data-testid="finance-cc-grid-table"] {
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print table {
+    break-inside: auto;
+    page-break-inside: auto;
+    width: 100%;
+    font-size: 7pt !important;
+  }
+
+  .executive-report-cash-radar-print thead {
+    display: table-header-group;
+  }
+
+  .executive-report-cash-radar-print tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-report-cash-radar-print th,
+  .executive-report-cash-radar-print td {
+    padding: 1mm 1.2mm !important;
+    vertical-align: top;
+    word-break: break-word;
+  }
+
   .finance-executive-report-section--page-break {
     break-before: auto !important;
     page-break-before: auto !important;

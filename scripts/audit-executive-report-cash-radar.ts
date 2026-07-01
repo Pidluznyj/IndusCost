@@ -69,28 +69,45 @@ async function main() {
     join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportDocument.tsx"),
     "utf8"
   );
-  const pdfSection = readFileSync(
+  const sectionSource = readFileSync(
     join(
       process.cwd(),
       "src",
       "components",
       "finance",
       "executive-report",
-      "FinanceCashFlowDailyRadarPdfSection.tsx"
+      "ExecutiveReportCashRadarSection.tsx"
+    ),
+    "utf8"
+  );
+  const printCss = readFileSync(
+    join(
+      process.cwd(),
+      "src",
+      "components",
+      "finance",
+      "executive-report",
+      "finance-executive-report-print.css"
     ),
     "utf8"
   );
 
-  if (!document.includes('pageId="cash-radar"') || !document.includes("report.cashRadar")) {
-    push("BLOQUEANTE", "PDF/tela do Relatório Presidencial não referencia cashRadar.");
+  if (!document.includes('pageId="cash-radar"') || !document.includes("allowContentFlow")) {
+    push("BLOQUEANTE", "PDF/tela do Relatório Presidencial não referencia cashRadar com fluxo contínuo.");
   } else {
-    push("OK", "Documento do relatório inclui seção cash-radar.");
+    push("OK", "Documento do relatório inclui seção cash-radar com fluxo para impressão.");
   }
 
-  if (!pdfSection.includes("executive-report-cash-radar-pdf")) {
-    push("BLOQUEANTE", "Componente PDF do radar ausente.");
+  if (!sectionSource.includes("executive-report-cash-radar-print")) {
+    push("BLOQUEANTE", "Seção do radar não usa layout de impressão alinhado à tela.");
   } else {
-    push("OK", "Componente PDF do radar presente.");
+    push("OK", "Seção do radar usa o mesmo layout da tela na impressão.");
+  }
+
+  if (!printCss.includes("executive-print-page--flow")) {
+    push("BLOQUEANTE", "CSS de impressão não libera fluxo multipágina do radar.");
+  } else {
+    push("OK", "CSS de impressão permite fluxo multipágina do radar.");
   }
 
   const cashRadar = report.cashRadar;
@@ -161,17 +178,6 @@ async function main() {
       push("OK", `Filtros aplicáveis registrados: ${applied.length}.`);
     }
 
-    const sectionSource = readFileSync(
-      join(
-        process.cwd(),
-        "src",
-        "components",
-        "finance",
-        "executive-report",
-        "ExecutiveReportCashRadarSection.tsx"
-      ),
-      "utf8"
-    );
     if (sectionSource.includes("buildFinanceCashFlowDailyRadar(")) {
       push("BLOQUEANTE", "Cálculo paralelo buildFinanceCashFlowDailyRadar no React.");
     } else {

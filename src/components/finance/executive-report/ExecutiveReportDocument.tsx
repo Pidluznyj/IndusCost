@@ -808,11 +808,13 @@ export function ExecutiveReportDocument({
       <ExecutivePrintPageShell
         pageId="cash-radar"
         pageNumber={11}
+        allowContentFlow
         header={printHeader}
         generatedAt={report.generatedAt}
       >
         <ExecutiveReportSection
           id="cash-radar"
+          className="executive-section--cash-radar"
           eyebrow="Fluxo de Caixa"
           title="Radar Diário de Caixa"
           subtitle="Comparativo diário de entradas e saídas conforme os filtros do Relatório Presidencial."

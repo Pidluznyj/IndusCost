@@ -8,6 +8,7 @@ export function ExecutivePrintPageShell({
   pageId,
   pageNumber,
   cover = false,
+  allowContentFlow = false,
   header,
   generatedAt,
   children,
@@ -16,6 +17,8 @@ export function ExecutivePrintPageShell({
   pageId: string;
   pageNumber: number;
   cover?: boolean;
+  /** Permite que o conteúdo ultrapasse uma página física (ex.: Radar Diário com grids AR/AP). */
+  allowContentFlow?: boolean;
   header?: {
     branding: BrandingSettingsDTO;
     periodLabel: string;
@@ -31,6 +34,7 @@ export function ExecutivePrintPageShell({
       className={cn(
         "executive-print-page",
         cover && "executive-print-page--cover",
+        allowContentFlow && "executive-print-page--flow",
         className
       )}
       data-print-page={pageId}

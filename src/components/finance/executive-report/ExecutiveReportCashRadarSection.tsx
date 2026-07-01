@@ -28,7 +28,6 @@ import {
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { useExecutiveReportPdfMode } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
-import { FinanceCashFlowDailyRadarPdfSection } from "@/src/components/finance/executive-report/FinanceCashFlowDailyRadarPdfSection";
 import "@/src/components/finance/cash-flow/finance-cash-flow-daily-radar-payables-grid.css";
 
 type PayableSortKey = "supplier" | "company" | "amount" | "status" | "operationalDate";
@@ -489,21 +488,33 @@ export function ExecutiveReportCashRadarSection({
 
   const payload = data.radarPayload;
   const detail = data.selectedRangeDetail ?? payload.selectedDetail;
-  const selectedRangeSummary = useMemo(
-    () => data.ranges.find((r) => r.key === selectedRange) ?? null,
-    [data.ranges, selectedRange]
-  );
-  const showDays = Boolean(payload.selectedRange && selectedRangeSummary);
 
-  if (pdfMode) {
-    return (
-      <FinanceCashFlowDailyRadarPdfSection cashRadar={data} />
-    );
-  }
+  const printData = cashRadar;
+  const printPayload = printData.radarPayload;
+  const printDetail = printData.selectedRangeDetail ?? printPayload.selectedDetail;
+  const printRange = printData.defaultOpenRange;
+  const printRangeSummary = printData.ranges.find((r) => r.key === printRange) ?? null;
+
+  const displayData = pdfMode ? printData : data;
+  const activeRange = pdfMode ? printRange : selectedRange;
+  const activePayload = pdfMode ? printPayload : payload;
+  const activeDetail = pdfMode ? printDetail : detail;
+  const selectedRangeSummary = useMemo(
+    () => displayData.ranges.find((r) => r.key === activeRange) ?? null,
+    [displayData.ranges, activeRange]
+  );
+  const showDays = Boolean(
+    activePayload.selectedRange &&
+      selectedRangeSummary &&
+      activePayload.selectedRange.key === activeRange
+  );
 
   return (
     <section
-      className="space-y-4 executive-report-cash-radar-section"
+      className={cn(
+        "space-y-4 executive-report-cash-radar-section",
+        pdfMode && "executive-report-cash-radar-print"
+      )}
       data-testid="executive-report-cash-radar"
       aria-label="Radar Diário de Caixa"
     >
@@ -517,13 +528,13 @@ export function ExecutiveReportCashRadarSection({
           </>
         ) : null}
         <p className={cn("text-[10px] text-[#9CA3AF]", showHeader ? "mt-1" : "")}>
-          Data-base operacional: {formatFinanceDate(data.baseDate)}
+          Data-base operacional: {formatFinanceDate(displayData.baseDate)}
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2" data-testid="executive-report-cash-radar-filter-chips">
         <span className="text-[10px] font-semibold text-[#6B7280] self-center">Filtros aplicados:</span>
-        {data.filtersApplied.map((line) => (
+        {displayData.filtersApplied.map((line) => (
           <span
             key={line.label}
             title={
@@ -543,19 +554,23 @@ export function ExecutiveReportCashRadarSection({
         ))}
       </div>
 
-      {loading ? (
+      {!pdfMode && loading ? (
         <div className="flex items-center gap-2 text-sm text-[#6B7280]">
           <Loader2 className="h-4 w-4 animate-spin" />
           Atualizando radar…
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {data.ranges.map((range) => (
+      <div
+        className={cn(
+          "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 executive-report-cash-radar-range-grid"
+        )}
+      >
+        {displayData.ranges.map((range) => (
           <RangeCard
             key={range.key}
             range={range}
-            active={selectedRange === range.key}
+            active={activeRange === range.key}
             staticMode={staticMode}
             onSelect={() => {
               setSelectedRange(range.key);
@@ -566,16 +581,18 @@ export function ExecutiveReportCashRadarSection({
         ))}
       </div>
 
-      {showDays && payload.selectedRange ? (
+      {showDays && activePayload.selectedRange ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-3")}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-[#111827]">
                 Dias da faixa: {selectedRangeSummary?.label}
               </h3>
-              <p className="text-[11px] text-[#6B7280] mt-0.5">
-                Clique em um dia para ver contas a pagar e receber.
-              </p>
+              {!staticMode ? (
+                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                  Clique em um dia para ver contas a pagar e receber.
+                </p>
+              ) : null}
             </div>
             {!staticMode ? (
               <button
@@ -592,12 +609,17 @@ export function ExecutiveReportCashRadarSection({
               </button>
             ) : null}
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {payload.selectedRange.days.map((day) => (
+          <div
+            className={cn(
+              "flex gap-2 pb-1 executive-report-cash-radar-day-row",
+              staticMode ? "flex-wrap" : "overflow-x-auto"
+            )}
+          >
+            {activePayload.selectedRange.days.map((day) => (
               <DayCard
                 key={day.date}
                 day={day}
-                active={selectedDay === day.date}
+                active={!staticMode && selectedDay === day.date}
                 staticMode={staticMode}
                 onSelect={() => {
                   setSelectedDay((current) => (current === day.date ? null : day.date));
@@ -609,24 +631,24 @@ export function ExecutiveReportCashRadarSection({
         </div>
       ) : null}
 
-      {detail ? (
+      {activeDetail ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-4")} data-testid="executive-report-cash-radar-detail">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-[#111827]">
-                {detail.date
-                  ? `Detalhe do dia — ${formatFinanceDate(detail.date)}`
-                  : `Detalhe da faixa — ${detail.rangeLabel}`}
+                {activeDetail.date
+                  ? `Detalhe do dia — ${formatFinanceDate(activeDetail.date)}`
+                  : `Detalhe da faixa — ${activeDetail.rangeLabel}`}
               </h3>
               <div className="mt-2 flex flex-wrap gap-4 text-[11px]">
                 <span className="text-[#059669]">
-                  Entradas: <strong>{formatFinanceCurrency(detail.entriesTotal)}</strong>
+                  Entradas: <strong>{formatFinanceCurrency(activeDetail.entriesTotal)}</strong>
                 </span>
                 <span className="text-[#DC2626]">
-                  Saídas: <strong>{formatFinanceCurrency(detail.exitsTotal)}</strong>
+                  Saídas: <strong>{formatFinanceCurrency(activeDetail.exitsTotal)}</strong>
                 </span>
-                <span className={netTone(detail.netTotal)}>
-                  Saldo líquido: <strong>{formatFinanceCurrency(detail.netTotal)}</strong>
+                <span className={netTone(activeDetail.netTotal)}>
+                  Saldo líquido: <strong>{formatFinanceCurrency(activeDetail.netTotal)}</strong>
                 </span>
               </div>
             </div>
@@ -641,7 +663,7 @@ export function ExecutiveReportCashRadarSection({
           ) : null}
 
           <ReceivablesGrid
-            detail={detail.receivables}
+            detail={activeDetail.receivables}
             sort={receivableSort}
             onSort={(key) => {
               setReceivableSort((prev) => toggleSortState(prev, key, "desc"));
@@ -658,7 +680,7 @@ export function ExecutiveReportCashRadarSection({
           />
 
           <PayablesGrid
-            detail={detail.payables}
+            detail={activeDetail.payables}
             sort={payableSort}
             onSort={(key) => {
               setPayableSort((prev) => toggleSortState(prev, key, "desc"));

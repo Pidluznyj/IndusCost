@@ -213,6 +213,8 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(css, /\.executive-print-page \.finance-executive-report-section[\s\S]*break-inside:\s*auto/);
+    assert.match(css, /executive-print-page--flow/);
+    assert.match(css, /executive-report-cash-radar-print/);
   });
 
   it("rodapé de impressão documenta fontes e geração IndusCost", () => {
