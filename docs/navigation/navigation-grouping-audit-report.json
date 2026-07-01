@@ -1,0 +1,12 @@
+{
+  "status": "OK",
+  "runAt": "2026-07-01T22:14:23.687Z",
+  "baselinePath": "C:\\Users\\paulo\\OneDrive - Lazarios Koppetel\\Documentos\\Lazarios\\TI\\IndusCost\\IndusCost\\docs\\navigation\\navigation-grouping-baseline.json",
+  "findings": [
+    {
+      "severity": "OK",
+      "code": "ALL_CHECKS_PASSED",
+      "message": "Agrupamento visual preserva paths, labels, permissões e disponibilidade de menus."
+    }
+  ]
+}

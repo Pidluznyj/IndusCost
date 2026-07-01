@@ -53,9 +53,20 @@ import {
   resolveInitialExpandedGroups,
   serializeExpandedGroups,
   SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY,
+  SIDEBAR_GROUP_UI_LABELS,
   toggleExpandedGroupInSet,
   type SidebarMenuItemDef,
 } from "@/src/lib/sidebarNavigation";
+
+/** Marcadores estáveis para testes/auditoria de layout (sem alterar rotas). */
+export const SIDEBAR_LAYOUT_MARKERS = {
+  navScroll: "sidebar-nav-scroll",
+  footer: "sidebar-footer",
+  groupRoot: "sidebar-group",
+  groupActive: "sidebar-group-active",
+  navLink: "sidebar-nav-link",
+  navLinkActive: "sidebar-nav-link-active",
+} as const;
 
 const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -122,19 +133,35 @@ function SidebarNavLink({
       to={path}
       end
       title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      data-sidebar-item={moduleId}
       className={({ isActive }) =>
         cn(
-          "group flex items-center w-full rounded-lg transition-all duration-200 min-w-0",
-          nested ? "p-2 pl-3" : "p-3",
+          SIDEBAR_LAYOUT_MARKERS.navLink,
+          "group flex items-center w-full rounded-md transition-colors duration-200 min-w-0",
+          collapsed ? "justify-center p-2.5" : nested ? "py-2 pl-2.5 pr-2.5" : "px-3 py-2.5",
           isActive
-            ? "bg-primary text-primary-foreground shadow-md"
-            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            ? cn(
+                SIDEBAR_LAYOUT_MARKERS.navLinkActive,
+                "bg-primary text-primary-foreground shadow-sm font-medium"
+              )
+            : "text-muted-foreground hover:bg-accent/80 hover:text-foreground"
         )
       }
     >
-      <Icon className="h-5 w-5 shrink-0 group-hover:scale-110 transition-transform" />
+      <Icon
+        className={cn(
+          "shrink-0 transition-transform group-hover:scale-105",
+          nested ? "h-4 w-4" : "h-[18px] w-[18px]"
+        )}
+      />
       {!collapsed && (
-        <span className={cn("font-medium text-sm truncate", nested ? "ml-2.5" : "ml-3")}>
+        <span
+          className={cn(
+            "truncate",
+            nested ? "ml-2.5 text-[13px] leading-tight" : "ml-3 text-sm font-medium"
+          )}
+        >
           {label}
         </span>
       )}
@@ -162,7 +189,17 @@ function SidebarNavGroup({
   const panelId = getSidebarGroupPanelId(groupId);
 
   return (
-    <div className="min-w-0" role="group" aria-labelledby={buttonId}>
+    <div
+      className={cn(
+        SIDEBAR_LAYOUT_MARKERS.groupRoot,
+        "min-w-0 rounded-lg",
+        isActiveGroup && SIDEBAR_LAYOUT_MARKERS.groupActive
+      )}
+      data-sidebar-group={groupId}
+      data-sidebar-group-active={isActiveGroup ? "true" : "false"}
+      role="group"
+      aria-labelledby={buttonId}
+    >
       <button
         id={buttonId}
         type="button"
@@ -177,19 +214,21 @@ function SidebarNavGroup({
           }
         }}
         className={cn(
-          "flex items-center w-full p-3 rounded-lg transition-all duration-200 min-w-0",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          "flex items-center w-full rounded-md px-3 py-2.5 transition-colors duration-200 min-w-0",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           isActiveGroup
-            ? "bg-accent/80 text-foreground ring-1 ring-primary/20"
-            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            ? "bg-primary/8 text-foreground ring-1 ring-inset ring-primary/25"
+            : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"
         )}
       >
-        <GroupIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-        <span className="ml-3 font-medium text-sm truncate flex-1 text-left">{label}</span>
+        <GroupIcon className="h-[18px] w-[18px] shrink-0 opacity-90" aria-hidden="true" />
+        <span className="ml-3 text-sm font-semibold truncate flex-1 text-left tracking-tight">
+          {label}
+        </span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "h-4 w-4 shrink-0 opacity-70 transition-transform duration-200",
+            "h-4 w-4 shrink-0 opacity-60 transition-transform duration-200",
             expanded ? "rotate-180" : "rotate-0"
           )}
         />
@@ -199,7 +238,7 @@ function SidebarNavGroup({
           id={panelId}
           role="region"
           aria-labelledby={buttonId}
-          className="mt-1 ml-3 pl-2 border-l border-border/60 space-y-0.5 min-w-0 pb-1"
+          className="mt-1 mb-0.5 ml-4 pl-2.5 border-l-2 border-border/70 space-y-0.5 min-w-0"
         >
           {items.map((item) => (
             <SidebarNavLink key={item.itemId} item={item} collapsed={false} nested />
@@ -263,18 +302,25 @@ export const Sidebar = () => {
   return (
     <motion.aside
       initial={false}
-      animate={{ width: collapsed ? 80 : 260 }}
+      animate={{ width: collapsed ? 80 : 272 }}
+      data-sidebar-collapsed={collapsed ? "true" : "false"}
       className={cn(
-        "h-screen bg-card border-r border-border flex flex-col relative z-20 transition-all duration-300 ease-in-out",
-        collapsed ? "items-center" : ""
+        "h-screen min-h-0 bg-card border-r border-border flex flex-col relative z-20",
+        "transition-[width] duration-300 ease-in-out",
+        collapsed ? "items-stretch" : ""
       )}
     >
-      <div className={cn("p-6 flex items-center mb-2", collapsed ? "justify-center" : "justify-between")}>
+      <div
+        className={cn(
+          "shrink-0 px-4 pt-5 pb-3 border-b border-border/50",
+          collapsed ? "flex justify-center" : ""
+        )}
+      >
         <Link
           to="/"
           title="Página inicial"
           className={cn(
-            "rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-ring/40 focus-visible:ring-2",
+            "rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring/50",
             collapsed ? "flex justify-center" : ""
           )}
         >
@@ -282,16 +328,21 @@ export const Sidebar = () => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center gap-2 overflow-hidden"
+              className="flex items-center gap-2.5 overflow-hidden"
             >
-              <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+              <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center shadow-sm">
                 <TrendingUp className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg tracking-tight whitespace-nowrap">IndusCost</span>
+              <span className="font-bold text-lg tracking-tight whitespace-nowrap text-foreground">
+                IndusCost
+              </span>
             </motion.div>
           )}
           {collapsed && (
-            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+            <div
+              className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center shadow-sm"
+              title="IndusCost"
+            >
               <TrendingUp className="h-5 w-5 text-primary-foreground" />
             </div>
           )}
@@ -300,51 +351,63 @@ export const Sidebar = () => {
 
       <nav
         aria-label="Menu principal"
-        className="flex-1 px-3 overflow-y-auto overflow-x-hidden scrollbar-hide min-w-0 w-full"
+        data-sidebar-nav={SIDEBAR_LAYOUT_MARKERS.navScroll}
+        className={cn(
+          SIDEBAR_LAYOUT_MARKERS.navScroll,
+          "flex-1 min-h-0 px-2.5 py-3 overflow-y-auto overflow-x-hidden scrollbar-hide w-full"
+        )}
       >
         {collapsed ? (
-          <div className="space-y-1 min-w-0">
+          <div className="flex flex-col gap-1 min-w-0">
             {navigation.flatAccessibleItems.map((item) => (
               <SidebarNavLink key={item.id} item={item} collapsed />
             ))}
           </div>
         ) : (
-          <div className="space-y-1 min-w-0 pb-2">
+          <div className="flex flex-col gap-3 min-w-0 pb-1">
             {navigation.directItems.length > 0 ? (
-              <div className="pb-3 mb-2 border-b border-border/60 space-y-1">
+              <div className="pb-2 mb-1 border-b border-border/60">
                 {navigation.directItems.map((item) => (
                   <SidebarNavLink key={item.itemId} item={item} collapsed={false} />
                 ))}
               </div>
             ) : null}
 
-            <div className="space-y-1">
-              {collapsibleGroups.map((group) => {
-                const expanded = isNavigationGroupExpanded(
-                  group.id,
-                  expandedGroups,
-                  activeGroupId
-                );
-                return (
-                  <SidebarNavGroup
-                    key={group.id}
-                    groupId={group.id}
-                    label={group.label}
-                    items={group.items}
-                    expanded={expanded}
-                    isActiveGroup={activeGroupId === group.id}
-                    onToggle={toggleGroup}
-                  />
-                );
-              })}
-            </div>
+            {collapsibleGroups.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {collapsibleGroups.map((group) => {
+                  const expanded = isNavigationGroupExpanded(
+                    group.id,
+                    expandedGroups,
+                    activeGroupId
+                  );
+                  return (
+                    <SidebarNavGroup
+                      key={group.id}
+                      groupId={group.id}
+                      label={group.label}
+                      items={group.items}
+                      expanded={expanded}
+                      isActiveGroup={activeGroupId === group.id}
+                      onToggle={toggleGroup}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         )}
       </nav>
 
-      <div className="p-4 border-t border-border space-y-2 w-full min-w-0 shrink-0">
+      <div
+        data-sidebar-footer={SIDEBAR_LAYOUT_MARKERS.footer}
+        className={cn(
+          SIDEBAR_LAYOUT_MARKERS.footer,
+          "shrink-0 p-3 border-t border-border/80 bg-card/95 space-y-1.5 w-full min-w-0"
+        )}
+      >
         {authUser && !collapsed ? (
-          <div className="px-3 py-2 rounded-lg bg-muted/40 border border-border/60 mb-1">
+          <div className="px-3 py-2 rounded-md bg-muted/50 border border-border/60">
             <p className="text-xs font-semibold text-foreground truncate">{authUser.name}</p>
             <p className="text-[10px] text-muted-foreground truncate">{formatRoleLabel(authUser.role)}</p>
           </div>
@@ -353,10 +416,12 @@ export const Sidebar = () => {
           type="button"
           disabled={pendingLogout}
           title={collapsed ? (pendingLogout ? "Saindo…" : "Sair") : undefined}
+          aria-label={collapsed ? (pendingLogout ? "Saindo…" : "Sair") : undefined}
           className={cn(
-            "flex items-center w-full p-3 rounded-lg transition-all duration-200 group min-w-0",
-            "text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            "flex items-center w-full rounded-md transition-colors duration-200 min-w-0",
+            collapsed ? "justify-center p-2.5" : "px-3 py-2.5",
+            "text-muted-foreground hover:bg-accent/80 hover:text-foreground disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           )}
           onClick={() => {
             setPendingLogout(true);
@@ -365,9 +430,9 @@ export const Sidebar = () => {
               .finally(() => setPendingLogout(false));
           }}
         >
-          <LogOut className="h-5 w-5 shrink-0" />
+          <LogOut className="h-[18px] w-[18px] shrink-0" />
           {!collapsed && (
-            <span className="ml-3 font-medium text-sm truncate">
+            <span className="ml-3 text-sm font-medium truncate">
               {pendingLogout ? "Saindo…" : "Sair"}
             </span>
           )}
@@ -378,8 +443,9 @@ export const Sidebar = () => {
           aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "flex items-center justify-center w-full p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            "flex items-center justify-center w-full p-2 rounded-md transition-colors",
+            "text-muted-foreground hover:bg-accent/80 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           )}
         >
           {collapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
@@ -391,3 +457,6 @@ export const Sidebar = () => {
 
 /** Mapa de ícones exportado para testes/auditoria (labels oficiais inalterados). */
 export const SIDEBAR_MENU_ITEM_LABELS = MODULE_LABELS;
+
+/** Ordem oficial dos rótulos de grupo na sidebar expandida. */
+export const SIDEBAR_VISIBLE_GROUP_LABELS = SIDEBAR_GROUP_UI_LABELS;

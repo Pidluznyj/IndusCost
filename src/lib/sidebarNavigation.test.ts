@@ -278,6 +278,68 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     assert.ok(sidebar.includes("resolveActiveNavigationGroupId"));
     assert.ok(sidebar.includes("isNavigationGroupExpanded"));
     assert.ok(sidebar.includes("isActiveGroup"));
-    assert.ok(sidebar.includes("ring-primary/20"));
+    assert.ok(sidebar.includes("data-sidebar-group-active"));
+    assert.ok(sidebar.includes("sidebar-group-active"));
+  });
+});
+
+describe("Sidebar.tsx — acabamento visual e responsividade", () => {
+  it("grupos renderizam na ordem oficial Engenharia → Administração", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    assert.deepEqual(
+      nav.groups.map((g) => g.label),
+      [...SIDEBAR_GROUP_UI_LABELS]
+    );
+  });
+
+  it("marcadores de layout para scroll, footer e links ativos", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.ok(sidebar.includes("sidebar-nav-scroll"));
+    assert.ok(sidebar.includes("sidebar-footer"));
+    assert.ok(sidebar.includes("sidebar-nav-link-active"));
+    assert.ok(sidebar.includes("min-h-0"));
+    assert.ok(sidebar.includes("data-sidebar-collapsed"));
+  });
+
+  it("sidebar colapsada não renderiza accordions aninhados", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.match(sidebar, /data-sidebar-collapsed=\{collapsed \? "true" : "false"\}/);
+    assert.match(
+      sidebar,
+      /\{collapsed \? \([\s\S]*flatAccessibleItems[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
+    );
+  });
+
+  it("grupos vazios não aparecem para usuário sem permissões", () => {
+    const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
+    assert.equal(nav.groups.length, 1);
+    assert.equal(nav.groups[0]?.id, "engenharia");
+    assert.equal(nav.directItems.length, 0);
+  });
+
+  it("usuário com permissão parcial vê somente itens permitidos", () => {
+    const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
+    const ids = nav.flatAccessibleItems.map((item) => item.id);
+    assert.deepEqual(ids, ["dashboard", "reports", "guide"]);
+    assert.equal(nav.groups.length, 2);
+    assert.ok(!ids.includes("products"));
+  });
+
+  it("tooltips nativos no modo colapsado", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.match(sidebar, /title=\{collapsed \? label : undefined\}/);
+    assert.match(sidebar, /aria-label=\{collapsed \? label : undefined\}/);
+  });
+
+  it("rótulos oficiais dos grupos permanecem inalterados", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.ok(sidebar.includes("SIDEBAR_GROUP_UI_LABELS"));
+    assert.deepEqual([...SIDEBAR_GROUP_UI_LABELS], [
+      "Engenharia",
+      "Comercial",
+      "Financeiro",
+      "Operações",
+      "Administração",
+    ]);
   });
 });
