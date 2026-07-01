@@ -12,6 +12,7 @@ import {
   parseCommissionForecastQuery,
   parseCommissionPersonsQuery,
   parseCommissionRecordsQuery,
+  parseCommissionRulesQuery,
   parseCommissionReleasesQuery,
   parsePagination,
 } from "./commissions/commissionQuery.js";
@@ -82,6 +83,8 @@ describe("commissionsRoutes", () => {
       "/api/commissions/persons",
       "/api/commissions/persons/import-from-orders",
       "/api/commissions/rules",
+      "/api/commissions/rules/:id/usage",
+      "/api/commissions/rules/:id/duplicate",
       "/api/commissions/recalculate",
       "/api/commissions/audit",
       "/api/commissions/settings",
@@ -163,6 +166,21 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.active, true);
     assert.equal(q.year, 2026);
     assert.equal(q.month, 6);
+  });
+
+  it("parseCommissionRulesQuery aceita busca e filtros de regra", () => {
+    const q = parseCommissionRulesQuery({
+      search: "Vendedor",
+      active: "true",
+      beneficiaryType: "SELLER",
+      baseType: "SALES_ORDER_ITEM_NET",
+      releaseRule: "EACH_RECEIVABLE_PAID",
+    });
+    assert.equal(q.search, "Vendedor");
+    assert.equal(q.active, true);
+    assert.equal(q.beneficiaryType, "SELLER");
+    assert.equal(q.baseType, "SALES_ORDER_ITEM_NET");
+    assert.equal(q.releaseRule, "EACH_RECEIVABLE_PAID");
   });
 
   it("parseCommissionReleasesQuery aceita filtros de vencimento e liberação", () => {

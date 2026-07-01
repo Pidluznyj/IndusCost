@@ -394,8 +394,61 @@ export type CommissionsPersonFormInput = {
   notes: string | null;
 };
 
+export type CommissionsRuleConditionItem = {
+  id?: string;
+  companyExternalId?: number | null;
+  customerExternalId?: number | null;
+  customerUf?: string | null;
+  nomusSellerId?: number | null;
+  nomusRepresentativeId?: number | null;
+  productExternalId?: number | null;
+  productGroupExternalId?: number | null;
+  priceTableExternalId?: number | null;
+  paymentConditionExternalId?: number | null;
+  movementTypeExternalId?: number | null;
+  minOrderAmount?: number | null;
+  maxOrderAmount?: number | null;
+  minDiscountPercent?: number | null;
+  maxDiscountPercent?: number | null;
+};
+
 export type CommissionsRuleItem = {
   id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  priority: number;
+  beneficiaryType: string;
+  fixedCommissionPersonId: string | null;
+  fixedCommissionPersonName?: string | null;
+  ratePercent: number;
+  baseType: string;
+  releaseRule: string;
+  validFrom: string | null;
+  validTo: string | null;
+  conditions: CommissionsRuleConditionItem[];
+  conditionsCount?: number;
+  usageCount?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CommissionsRulesCards = {
+  totalCount: number;
+  activeCount: number;
+  inactiveCount: number;
+  withUsageCount: number;
+  withConditionsCount: number;
+};
+
+export type CommissionsRulesPayload = {
+  cards?: CommissionsRulesCards;
+  rows?: CommissionsRuleItem[];
+  items: CommissionsRuleItem[];
+  pagination: CommissionsPagination;
+};
+
+export type CommissionsRuleFormInput = {
   name: string;
   description: string | null;
   active: boolean;
@@ -407,14 +460,13 @@ export type CommissionsRuleItem = {
   releaseRule: string;
   validFrom: string | null;
   validTo: string | null;
-  conditions: unknown[];
-  createdAt: string;
-  updatedAt: string;
+  conditions: CommissionsRuleConditionItem[];
 };
 
-export type CommissionsRulesPayload = {
-  items: CommissionsRuleItem[];
-  pagination: CommissionsPagination;
+export type CommissionsRuleUsagePayload = {
+  rule: CommissionsRuleItem;
+  usageCount: number;
+  recentUsageCount: number;
 };
 
 export type CommissionsAuditItem = {

@@ -547,6 +547,90 @@ export function buildCommissionReleasesDueWhere(
 
 const PERSON_SOURCE_SET = new Set<string>(["NOMUS", "MANUAL"]);
 
+const BENEFICIARY_TYPE_SET = new Set<string>(["SELLER", "REPRESENTATIVE", "FIXED_PERSON"]);
+const BASE_TYPE_SET = new Set<string>([
+  "SALES_ORDER_ITEM_NET",
+  "OUTPUT_DOCUMENT_ITEM_NET",
+  "RECEIVABLE_AMOUNT",
+]);
+const RELEASE_RULE_SET = new Set<string>([
+  "SALES_ORDER_CREATED",
+  "OUTPUT_DOCUMENT_CREATED",
+  "FIRST_RECEIVABLE_PAID",
+  "EACH_RECEIVABLE_PAID",
+]);
+
+export type CommissionRulesQuery = {
+  page: number;
+  pageSize: number;
+  active?: boolean;
+  search?: string;
+  beneficiaryType?: string;
+  baseType?: string;
+  releaseRule?: string;
+  fixedCommissionPersonId?: string;
+};
+
+export function parseCommissionRulesQuery(
+  query: Record<string, unknown>
+): CommissionRulesQuery {
+  const pageRaw = parseOptionalInt(query.page);
+  const pageSizeRaw = parseOptionalInt(query.pageSize);
+  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
+  const pageSize = pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 100) : 50;
+  const active =
+    query.active === "true" ? true : query.active === "false" ? false : undefined;
+  const search =
+    typeof query.search === "string" && query.search.trim() ? query.search.trim() : undefined;
+
+  const beneficiaryTypeRaw =
+    typeof query.beneficiaryType === "string" && query.beneficiaryType.trim()
+      ? query.beneficiaryType.trim().toUpperCase()
+      : null;
+  const beneficiaryType =
+    beneficiaryTypeRaw && BENEFICIARY_TYPE_SET.has(beneficiaryTypeRaw)
+      ? beneficiaryTypeRaw
+      : undefined;
+  if (beneficiaryTypeRaw && !beneficiaryType) {
+    throw new CommissionQueryParseError("beneficiaryType inválido.");
+  }
+
+  const baseTypeRaw =
+    typeof query.baseType === "string" && query.baseType.trim()
+      ? query.baseType.trim().toUpperCase()
+      : null;
+  const baseType = baseTypeRaw && BASE_TYPE_SET.has(baseTypeRaw) ? baseTypeRaw : undefined;
+  if (baseTypeRaw && !baseType) {
+    throw new CommissionQueryParseError("baseType inválido.");
+  }
+
+  const releaseRuleRaw =
+    typeof query.releaseRule === "string" && query.releaseRule.trim()
+      ? query.releaseRule.trim().toUpperCase()
+      : null;
+  const releaseRule =
+    releaseRuleRaw && RELEASE_RULE_SET.has(releaseRuleRaw) ? releaseRuleRaw : undefined;
+  if (releaseRuleRaw && !releaseRule) {
+    throw new CommissionQueryParseError("releaseRule inválido.");
+  }
+
+  const fixedCommissionPersonId = parseOptionalUuid(query.fixedCommissionPersonId);
+  if (query.fixedCommissionPersonId && !fixedCommissionPersonId) {
+    throw new CommissionQueryParseError("fixedCommissionPersonId inválido.");
+  }
+
+  return {
+    page,
+    pageSize,
+    active,
+    search,
+    beneficiaryType,
+    baseType,
+    releaseRule,
+    fixedCommissionPersonId: fixedCommissionPersonId ?? undefined,
+  };
+}
+
 export type CommissionPersonsQuery = CommissionPeriodQuery & {
   page: number;
   pageSize: number;

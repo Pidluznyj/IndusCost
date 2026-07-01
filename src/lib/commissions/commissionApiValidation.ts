@@ -297,6 +297,14 @@ export function parseCommissionRuleCreateBody(body: unknown): CommissionRuleWrit
       "fixedCommissionPersonId é obrigatório para FIXED_PERSON."
     );
   }
+  const validFrom = core.validFrom ?? null;
+  const validTo = core.validTo ?? null;
+  if (validFrom && validTo && validTo < validFrom) {
+    throw new CommissionValidationError(
+      "INVALID_FIELD",
+      "Vigência final não pode ser anterior à vigência inicial."
+    );
+  }
   return {
     name: core.name,
     description: core.description ?? null,

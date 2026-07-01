@@ -18,16 +18,12 @@ import {
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import {
-  createCommissionRule,
   getCommissionPaymentBatchById,
   getCommissionSettingsPayload,
   listCommissionAuditIssues,
   listCommissionPaymentBatches,
-  listCommissionRules,
   reopenCommissionAuditIssue,
   resolveCommissionAuditIssue,
-  toggleCommissionRuleActive,
-  updateCommissionRule,
   updateCommissionSettings,
   CommissionValidationError,
 } from "@/src/lib/commissions/commissionAdmin.server.js";
@@ -39,6 +35,14 @@ import {
   updateCommissionPerson,
 } from "@/src/lib/commissions/commissionPersons.server.js";
 import {
+  createCommissionRule,
+  duplicateCommissionRule,
+  getCommissionRuleUsage,
+  listCommissionRulesPage,
+  toggleCommissionRuleActive,
+  updateCommissionRule,
+} from "@/src/lib/commissions/commissionRules.server.js";
+import {
   parseAuditListQuery,
   parseCommissionPersonCreateBody,
   parseCommissionPersonUpdateBody,
@@ -49,7 +53,6 @@ import {
   parseMarkPaidBody,
   parsePaymentBatchCreateBody,
   parsePaymentBatchesListQuery,
-  parseRulesListQuery,
 } from "@/src/lib/commissions/commissionApiValidation.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
@@ -68,6 +71,7 @@ import {
   parseCommissionForecastQuery,
   parseCommissionPersonsQuery,
   parseCommissionRecordsQuery,
+  parseCommissionRulesQuery,
   parseCommissionReleasesQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
@@ -434,13 +438,40 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
-      const query = parseRulesListQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionRules(query);
+      const query = parseCommissionRulesQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionRulesPage(query);
       return res.json(payload);
     } catch (error) {
+      if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("GET /api/commissions/rules", error);
       return res.status(500).json({ error: "Erro ao listar regras de comissão." });
+    }
+  });
+
+  app.get("/api/commissions/rules/:id/usage", ...rulesViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await getCommissionRuleUsage(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/rules/:id/usage", error);
+      return res.status(500).json({ error: "Erro ao carregar uso da regra." });
+    }
+  });
+
+  app.post("/api/commissions/rules/:id/duplicate", ...rulesManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await duplicateCommissionRule(req.params.id);
+      return res.status(201).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/rules/:id/duplicate", error);
+      return res.status(500).json({ error: "Erro ao duplicar regra de comissão." });
     }
   });
 
