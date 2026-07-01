@@ -104,9 +104,18 @@ export function CommissionsSectionIntro({
   );
 }
 
-export function CommissionsTableScroll({ children }: { children: React.ReactNode }) {
+export function CommissionsTableScroll({
+  children,
+  testId,
+}: {
+  children: React.ReactNode;
+  testId?: string;
+}) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
+    <div
+      className="overflow-x-auto rounded-xl border border-border"
+      data-testid={testId}
+    >
       <table className="min-w-full divide-y divide-border text-sm">{children}</table>
     </div>
   );

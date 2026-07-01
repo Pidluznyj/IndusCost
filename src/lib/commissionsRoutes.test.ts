@@ -8,6 +8,7 @@ import {
   COMMISSION_FORECAST_STATUSES,
   CommissionQueryParseError,
   parseCommissionDashboardQuery,
+  parseCommissionForecastQuery,
   parseCommissionRecordsQuery,
   parsePagination,
 } from "./commissions/commissionQuery.js";
@@ -70,6 +71,7 @@ describe("commissionsRoutes", () => {
     const endpoints = [
       "/api/commissions/records",
       "/api/commissions/forecast",
+      "/api/commissions/forecast/detail",
       "/api/commissions/confirmed",
       "/api/commissions/releases",
       "/api/commissions/persons",
@@ -114,6 +116,19 @@ describe("commissionQuery parsers", () => {
       () => parseCommissionRecordsQuery({ status: "INVALID" }),
       CommissionQueryParseError
     );
+  });
+
+  it("parseCommissionForecastQuery aceita filtros de vendedor e regra", () => {
+    const q = parseCommissionForecastQuery({
+      sellerId: "10",
+      representativeId: "20",
+      hasRule: "true",
+      includeSuperseded: "true",
+    });
+    assert.equal(q.sellerId, 10);
+    assert.equal(q.representativeId, 20);
+    assert.equal(q.hasRule, true);
+    assert.equal(q.includeSuperseded, true);
   });
 
   it("status sets previstas/confirmadas", () => {

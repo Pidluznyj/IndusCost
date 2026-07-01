@@ -12,10 +12,8 @@ import {
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsDashboardPage } from "@/src/components/commissions/pages/CommissionsDashboardPage";
-import {
-  CommissionsForecastPage,
-  CommissionsConfirmedPage,
-} from "@/src/components/commissions/pages/CommissionsForecastPage";
+import { CommissionsForecastPage } from "@/src/components/commissions/pages/CommissionsForecastPage";
+import { CommissionsConfirmedPage } from "@/src/components/commissions/pages/CommissionsConfirmedPage";
 import { CommissionsReleasesPage } from "@/src/components/commissions/pages/CommissionsReleasesPage";
 import { CommissionsPaymentsPage } from "@/src/components/commissions/pages/CommissionsPaymentsPage";
 import { CommissionsPersonsPage } from "@/src/components/commissions/pages/CommissionsPersonsPage";

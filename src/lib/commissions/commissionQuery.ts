@@ -77,10 +77,16 @@ export type CommissionRecordsQuery = CommissionPeriodQuery & {
   orderCode: string | null;
   nfeNumber: string | null;
   customer: string | null;
+  sellerId: number | null;
+  representativeId: number | null;
+  hasRule: boolean | null;
+  includeSuperseded: boolean;
   page: number;
   pageSize: number;
   statusIn?: CommissionRecordStatus[];
 };
+
+export type CommissionForecastQuery = CommissionRecordsQuery;
 
 export type PaginatedMeta = {
   page: number;
@@ -224,9 +230,37 @@ export function parseCommissionRecordsQuery(
     orderCode,
     nfeNumber,
     customer,
+    sellerId: parseOptionalInt(query.sellerId),
+    representativeId: parseOptionalInt(query.representativeId),
+    hasRule: parseOptionalBoolean(query.hasRule),
+    includeSuperseded: query.includeSuperseded === "true" || query.includeSuperseded === true,
     page,
     pageSize,
   };
+}
+
+function parseOptionalBoolean(raw: unknown): boolean | null {
+  if (raw == null || raw === "") return null;
+  if (raw === true || raw === "true" || raw === "1") return true;
+  if (raw === false || raw === "false" || raw === "0") return false;
+  throw new CommissionQueryParseError("hasRule inválido.");
+}
+
+export function parseCommissionForecastQuery(
+  query: Record<string, unknown>
+): CommissionForecastQuery {
+  return parseCommissionRecordsQuery(query);
+}
+
+export function resolveForecastStatusIn(
+  query: CommissionForecastQuery
+): CommissionRecordStatus[] {
+  if (query.status) return [query.status];
+  const statuses: CommissionRecordStatus[] = [...COMMISSION_FORECAST_STATUSES];
+  if (query.includeSuperseded) {
+    statuses.push("SUPERSEDED_BY_OUTPUT_DOCUMENT");
+  }
+  return statuses;
 }
 
 export function buildCommissionRecordPeriodWhere(
@@ -256,6 +290,8 @@ export function buildCommissionRecordsWhere(
     buildCommissionRecordPeriodWhere(query),
     applyCommissionRecordScope(scope, {
       commissionPersonId: query.commissionPersonId,
+      sellerId: query.sellerId,
+      representativeId: query.representativeId,
     }),
   ];
 

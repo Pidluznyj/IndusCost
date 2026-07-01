@@ -52,13 +52,17 @@ import {
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
 import {
+  getCommissionForecastOrderDetail,
+  listCommissionForecastPage,
+} from "@/src/lib/commissions/commissionForecast.server.js";
+import {
   CommissionQueryParseError,
   parseCommissionDashboardQuery,
+  parseCommissionForecastQuery,
   parseCommissionRecordsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
   listCommissionConfirmedRecords,
-  listCommissionForecastRecords,
   listCommissionRecords,
   listCommissionReleases,
 } from "@/src/lib/commissions/commissionRecords.server.js";
@@ -218,8 +222,8 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
-      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionForecastRecords(query, ctx.scope);
+      const query = parseCommissionForecastQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionForecastPage(query, ctx.scope);
       return res.json(payload);
     } catch (error) {
       try {
@@ -227,6 +231,33 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/forecast", error);
         return res.status(500).json({ error: "Erro ao listar comissões previstas." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/forecast/detail", ...forecastGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const orderKey =
+        typeof req.query.orderKey === "string" && req.query.orderKey.trim()
+          ? req.query.orderKey.trim()
+          : null;
+      if (!orderKey) {
+        return res.status(400).json({ error: "orderKey é obrigatório." });
+      }
+      const query = parseCommissionForecastQuery(req.query as Record<string, unknown>);
+      const payload = await getCommissionForecastOrderDetail(orderKey, query, ctx.scope);
+      if (!payload) {
+        return res.status(404).json({ error: "Previsão não encontrada para o pedido informado." });
+      }
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/forecast/detail", error);
+        return res.status(500).json({ error: "Erro ao carregar detalhe da previsão." });
       }
     }
   });

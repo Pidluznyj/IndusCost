@@ -64,6 +64,84 @@ export type CommissionsRecordItem = {
   confirmedAt: string | null;
 };
 
+export type CommissionsForecastCards = {
+  totalForecastAmount: number;
+  ordersWaitingNfe: number;
+  ordersWithoutRule: number;
+  ordersWithoutSellerOrRep: number;
+  forecastBaseToInvoice: number;
+  orderCount: number;
+};
+
+export type CommissionsForecastRow = {
+  orderKey: string;
+  orderCode: string | null;
+  nomusOrderId: number | null;
+  localOrderId: string | null;
+  orderDate: string | null;
+  customerName: string | null;
+  sellerLabel: string | null;
+  representativeLabel: string | null;
+  orderAmount: number;
+  baseAmount: number;
+  ratePercent: number;
+  forecastCommissionAmount: number;
+  paymentTermsHint: string | null;
+  nextDueDate: string | null;
+  status: string;
+  hasRule: boolean;
+  recordIds: string[];
+};
+
+export type CommissionsForecastPayload = {
+  cards: CommissionsForecastCards;
+  rows: CommissionsForecastRow[];
+  pagination: CommissionsPagination;
+};
+
+export type CommissionsForecastDetailPayload = {
+  orderKey: string;
+  orderCode: string | null;
+  nomusOrderId: number | null;
+  localOrderId: string | null;
+  orderDate: string | null;
+  customerName: string | null;
+  sellerLabel: string | null;
+  representativeLabel: string | null;
+  paymentTerms: string | null;
+  orderNetValue: number | null;
+  status: string;
+  forecastReason: string;
+  totalBaseAmount: number;
+  totalForecastCommission: number;
+  items: Array<{
+    recordId: string;
+    productCode: string | null;
+    productName: string | null;
+    commissionPersonId: string;
+    commissionPersonName: string;
+    baseAmount: number;
+    ratePercent: number;
+    commissionAmount: number;
+    ruleId: string | null;
+    ruleName: string | null;
+  }>;
+  installments: Array<{
+    installmentNumber: number | null;
+    dueDate: string | null;
+    expectedAmount: number | null;
+    commissionExpectedAmount: number;
+  }>;
+  auditIssues: Array<{
+    id: string;
+    severity: string;
+    type: string;
+    message: string;
+    resolved: boolean;
+    createdAt: string;
+  }>;
+};
+
 export type CommissionsRecordsPayload = {
   items: CommissionsRecordItem[];
   pagination: CommissionsPagination;
