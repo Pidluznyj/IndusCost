@@ -78,6 +78,32 @@ type CommercialGenResult = {
   commissionPerc?: number | null;
 };
 
+type ProductionCostVersionLite = {
+  id: string;
+  code: string;
+  name: string;
+  effectiveDate: string;
+  status: string;
+  revision: number;
+  publishedAt: string | null;
+  publishedBy: string | null;
+  itemsCount: number;
+};
+
+type ProductionCostGenResult = {
+  versionId: string;
+  code: string;
+  revision: number;
+  status: string;
+  itemsCount: number;
+  productsRead: number;
+  itemsCreated: number;
+  itemsSkipped: number;
+  errorsCount: number;
+  warningsCount: number;
+  fatalErrorMessage?: string;
+};
+
 const COMMERCIAL_TABLE_CODES = ["ATACADO", "VAREJO_1", "VAREJO_2", "VAREJO_3"] as const;
 const COMMERCIAL_TABLE_LABELS: Record<string, string> = {
   ATACADO: "Atacado",
@@ -203,6 +229,17 @@ export const PricingModule = () => {
   const [commercialPublishApprovedBy, setCommercialPublishApprovedBy] = useState("");
   /** versionId atualmente em publicação (loading discreto por card). */
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
+
+  const [productionCostOpen, setProductionCostOpen] = useState(false);
+  const [productionCostEffectiveDate, setProductionCostEffectiveDate] = useState("");
+  const [productionCostNotes, setProductionCostNotes] = useState("");
+  const [productionCostPublishedBy, setProductionCostPublishedBy] = useState("");
+  const [productionCostIncludeAll, setProductionCostIncludeAll] = useState(false);
+  const [productionCostRunning, setProductionCostRunning] = useState(false);
+  const [publishingProductionCostVersionId, setPublishingProductionCostVersionId] = useState<string | null>(null);
+  const [productionCostGenResult, setProductionCostGenResult] = useState<ProductionCostGenResult | null>(null);
+  const [productionCostVersions, setProductionCostVersions] = useState<ProductionCostVersionLite[]>([]);
+  const [productionCostVersionsLoading, setProductionCostVersionsLoading] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -808,6 +845,143 @@ export const PricingModule = () => {
     }
   };
 
+  const fetchProductionCostVersions = async () => {
+    setProductionCostVersionsLoading(true);
+    try {
+      const rows = await fetchJsonOk<ProductionCostVersionLite[]>("/api/production-cost-tables/versions?limit=12");
+      setProductionCostVersions(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.warn("GET /api/production-cost-tables/versions:", error);
+      setProductionCostVersions([]);
+    } finally {
+      setProductionCostVersionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (productionCostOpen && allowGenerateTables) {
+      void fetchProductionCostVersions();
+    }
+  }, [productionCostOpen, allowGenerateTables]);
+
+  const handleGenerateProductionCostDraft = async () => {
+    if (!productionCostEffectiveDate.trim()) {
+      alert("Informe a vigência desejada antes de gerar o custo de produção.");
+      return;
+    }
+    if (!productionCostIncludeAll && selectedProductIds.length === 0) {
+      alert("Selecione produtos no lote ou marque \"Todos os produtos ativos\".");
+      return;
+    }
+
+    setProductionCostRunning(true);
+    setProductionCostGenResult(null);
+    try {
+      const payload = await fetchJsonOk<{
+        version?: {
+          id?: string;
+          code?: string;
+          revision?: number;
+          status?: string;
+          itemsCount?: number;
+        };
+        summary?: {
+          productsRead?: number;
+          itemsCreated?: number;
+          itemsSkipped?: number;
+          errors?: unknown[];
+          warnings?: unknown[];
+        };
+      }>("/api/production-cost-tables/versions/generate-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          effectiveDate: productionCostEffectiveDate,
+          productIds: productionCostIncludeAll ? [] : selectedProductIds,
+          includeAllActiveProducts: productionCostIncludeAll,
+          notes: productionCostNotes.trim() || undefined,
+          createdBy: productionCostPublishedBy.trim() || undefined,
+        }),
+      });
+
+      const version = payload.version;
+      const summary = payload.summary ?? {};
+      const errors = Array.isArray(summary.errors) ? summary.errors : [];
+      const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+
+      if (version?.id) {
+        setProductionCostGenResult({
+          versionId: version.id,
+          code: version.code ?? "—",
+          revision: Number(version.revision) || 1,
+          status: version.status ?? "DRAFT",
+          itemsCount: Number(version.itemsCount) || 0,
+          productsRead: Number(summary.productsRead) || 0,
+          itemsCreated: Number(summary.itemsCreated) || 0,
+          itemsSkipped: Number(summary.itemsSkipped) || 0,
+          errorsCount: errors.length,
+          warningsCount: warnings.length,
+        });
+      }
+      await fetchProductionCostVersions();
+    } catch (error) {
+      console.error("POST /api/production-cost-tables/versions/generate-draft", error);
+      setProductionCostGenResult({
+        versionId: "",
+        code: "—",
+        revision: 0,
+        status: "ERROR",
+        itemsCount: 0,
+        productsRead: 0,
+        itemsCreated: 0,
+        itemsSkipped: 0,
+        errorsCount: 1,
+        warningsCount: 0,
+        fatalErrorMessage: error instanceof Error ? error.message : "Falha ao gerar DRAFT de custo.",
+      });
+    } finally {
+      setProductionCostRunning(false);
+    }
+  };
+
+  const handlePublishProductionCostVersion = async (input: {
+    versionId: string;
+    code: string;
+    revision: number;
+  }) => {
+    const { versionId, code, revision } = input;
+    if (!versionId || publishingProductionCostVersionId) return;
+
+    if (
+      !window.confirm(
+        `Publicar custo de produção ${code} rev.${revision}? Versões publicadas são imutáveis; correções geram nova revisão.`
+      )
+    ) {
+      return;
+    }
+
+    setPublishingProductionCostVersionId(versionId);
+    try {
+      await fetchJsonOk(`/api/production-cost-table-versions/${versionId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publishedBy: productionCostPublishedBy.trim() || undefined,
+        }),
+      });
+      alert(`Custo de produção ${code} rev.${revision} publicado. Histórico anterior preservado quando aplicável.`);
+      setProductionCostGenResult((prev) =>
+        prev && prev.versionId === versionId ? { ...prev, status: "PUBLISHED" } : prev
+      );
+      await fetchProductionCostVersions();
+    } catch (error) {
+      console.error("POST /api/production-cost-table-versions/:id/publish", error);
+      alert(error instanceof Error ? error.message : "Falha ao publicar versão de custo de produção.");
+    } finally {
+      setPublishingProductionCostVersionId(null);
+    }
+  };
+
   const handleRunSimulator = async () => {
     setSimulatorError(null);
     setSimulatorResult(null);
@@ -1265,6 +1439,223 @@ export const PricingModule = () => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {allowGenerateTables ? (
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <button
+            type="button"
+            onClick={() => setProductionCostOpen((v) => !v)}
+            aria-expanded={productionCostOpen}
+            aria-controls="pricing-production-cost-body"
+            className="w-full flex items-start justify-between gap-3 text-left"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Custo oficial de produção (versionado)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Gera DRAFT revisável a partir do motor industrial (MP + HH + HM). Publicação explícita — versões publicadas são imutáveis.
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                productionCostOpen && "rotate-90"
+              )}
+            />
+          </button>
+
+          {productionCostOpen && (
+            <div id="pricing-production-cost-body" className="mt-5 space-y-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Publicado não é editado. Correção gera nova revisão por produto. Esta seção não altera preço comercial — apenas registra custo de produção vigente.
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Vigência desejada</label>
+                  <input
+                    type="date"
+                    className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none"
+                    value={productionCostEffectiveDate}
+                    onChange={(e) => setProductionCostEffectiveDate(e.target.value)}
+                    disabled={productionCostRunning}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Publicado por (opcional)</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none"
+                    value={productionCostPublishedBy}
+                    onChange={(e) => setProductionCostPublishedBy(e.target.value)}
+                    placeholder="Ex.: Engenharia de Produtos"
+                    disabled={publishingProductionCostVersionId !== null}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-muted-foreground">Observações (opcional)</label>
+                <textarea
+                  className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none min-h-[72px]"
+                  value={productionCostNotes}
+                  onChange={(e) => setProductionCostNotes(e.target.value)}
+                  disabled={productionCostRunning}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="rounded accent-primary"
+                    checked={productionCostIncludeAll}
+                    onChange={(e) => setProductionCostIncludeAll(e.target.checked)}
+                    disabled={productionCostRunning}
+                  />
+                  Todos os produtos ativos
+                </label>
+                {!productionCostIncludeAll && (
+                  <span className="text-muted-foreground">
+                    Produtos selecionados no lote:{" "}
+                    <span className="font-bold text-primary">{selectedProductIds.length}</span>
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleGenerateProductionCostDraft()}
+                disabled={productionCostRunning}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {productionCostRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Calculando e gerando DRAFT...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" /> Gerar DRAFT de custo com vigência
+                  </>
+                )}
+              </button>
+
+              {productionCostGenResult && (
+                <div
+                  className={cn(
+                    "rounded-xl border p-4 space-y-2 text-sm",
+                    productionCostGenResult.status === "ERROR"
+                      ? "border-red-200 bg-red-50"
+                      : "border-green-200 bg-green-50"
+                  )}
+                >
+                  {productionCostGenResult.fatalErrorMessage ? (
+                    <p className="text-red-700 text-xs">{productionCostGenResult.fatalErrorMessage}</p>
+                  ) : (
+                    <>
+                      <p className="font-bold">
+                        {productionCostGenResult.code} rev.{productionCostGenResult.revision}{" "}
+                        <span className="ml-1 px-1.5 py-0.5 rounded bg-muted-foreground/10 text-[10px] uppercase">
+                          {productionCostGenResult.status}
+                        </span>
+                      </p>
+                      <p className="text-xs">
+                        Itens: {productionCostGenResult.itemsCreated}/{productionCostGenResult.productsRead} · Erros:{" "}
+                        {productionCostGenResult.errorsCount} · Avisos: {productionCostGenResult.warningsCount}
+                      </p>
+                      {allowPublishTables &&
+                        productionCostGenResult.versionId &&
+                        productionCostGenResult.status === "DRAFT" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handlePublishProductionCostVersion({
+                                versionId: productionCostGenResult.versionId,
+                                code: productionCostGenResult.code,
+                                revision: productionCostGenResult.revision,
+                              })
+                            }
+                            disabled={publishingProductionCostVersionId !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground"
+                          >
+                            {publishingProductionCostVersionId === productionCostGenResult.versionId ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Publicando...
+                              </>
+                            ) : (
+                              "Publicar revisão"
+                            )}
+                          </button>
+                        )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="border-t border-border pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold">Versões recentes</h4>
+                  <button
+                    type="button"
+                    onClick={() => void fetchProductionCostVersions()}
+                    disabled={productionCostVersionsLoading}
+                    className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    Atualizar
+                  </button>
+                </div>
+                {productionCostVersionsLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                ) : productionCostVersions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Nenhuma versão cadastrada ainda.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productionCostVersions.map((v) => (
+                      <div
+                        key={v.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-accent/10 px-3 py-2 text-xs"
+                      >
+                        <div>
+                          <span className="font-bold">{v.code}</span> rev.{v.revision}{" "}
+                          <span className="uppercase text-[10px] font-bold text-muted-foreground">{v.status}</span>
+                          <span className="ml-2 text-muted-foreground">
+                            vig. {String(v.effectiveDate).slice(0, 10)} · {v.itemsCount} produto(s)
+                          </span>
+                          {v.publishedAt && (
+                            <span className="ml-2 text-muted-foreground">
+                              pub. {new Date(v.publishedAt).toLocaleString("pt-BR")}
+                            </span>
+                          )}
+                        </div>
+                        {allowPublishTables && v.status === "DRAFT" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handlePublishProductionCostVersion({
+                                versionId: v.id,
+                                code: v.code,
+                                revision: v.revision,
+                              })
+                            }
+                            disabled={publishingProductionCostVersionId !== null}
+                            className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground"
+                          >
+                            Publicar
+                          </button>
+                        )}
+                        {v.status === "PUBLISHED" && (
+                          <span className="text-[10px] text-muted-foreground italic">Imutável</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

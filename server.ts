@@ -14,6 +14,13 @@ import {
 } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 import { createProductCostAnalysisEngine, type AnalysisCache } from "./src/lib/productCostAnalysisEngine.server.js";
+import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
+import {
+  generateProductionCostTableDraftFromProducts,
+  getProductionCostTableVersionById,
+  listProductionCostTableVersions,
+  publishProductionCostVersionFromDraft,
+} from "./src/lib/productionCostPublication.server.js";
 import { resolveServerAppBuildInfo } from "./src/lib/appVersion.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
@@ -6746,6 +6753,168 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     } catch (e) {
       console.error("POST /api/price-table-versions/:id/publish", e);
       return res.status(500).json({ error: "Erro ao publicar versão da tabela de preço." });
+    }
+  });
+
+  // --- API: Tabela oficial versionada de custo de produção industrial ---
+  app.get("/api/production-cost-tables/versions", requireAppAuth, requireAnyPermission(["pricing.view", "pricing.generate_tables", "settings.price_tables.view"]), async (req, res) => {
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+    const status = typeof req.query.status === "string" ? req.query.status : null;
+    const code = typeof req.query.code === "string" ? req.query.code : null;
+    try {
+      const versions = await listProductionCostTableVersions(prisma, { limit, status, code });
+      return res.json(
+        versions.map((v) => ({
+          id: v.id,
+          code: v.code,
+          name: v.name,
+          effectiveDate: v.effectiveDate,
+          status: v.status,
+          revision: v.revision,
+          publishedAt: v.publishedAt,
+          publishedBy: v.publishedBy,
+          createdAt: v.createdAt,
+          itemsCount: v._count.items,
+          source: v.source,
+          notes: v.notes,
+        }))
+      );
+    } catch (e) {
+      console.error("GET /api/production-cost-tables/versions", e);
+      return res.status(500).json({ error: "Erro ao listar versões de custo de produção." });
+    }
+  });
+
+  app.get("/api/production-cost-table-versions/:id", requireAppAuth, requireAnyPermission(["pricing.view", "pricing.generate_tables", "settings.price_tables.view"]), async (req, res) => {
+    try {
+      const version = await getProductionCostTableVersionById(prisma, req.params.id);
+      if (!version) return res.status(404).json({ error: "Versão não encontrada." });
+      return res.json(version);
+    } catch (e) {
+      console.error("GET /api/production-cost-table-versions/:id", e);
+      return res.status(500).json({ error: "Erro ao consultar versão de custo de produção." });
+    }
+  });
+
+  app.post("/api/production-cost-tables/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
+    const body = (req.body ?? {}) as {
+      effectiveDate?: unknown;
+      productIds?: unknown;
+      includeAllActiveProducts?: unknown;
+      notes?: unknown;
+      createdBy?: unknown;
+    };
+
+    const effectiveDateRaw =
+      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
+        ? body.effectiveDate.trim()
+        : null;
+    if (!effectiveDateRaw) {
+      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const effectiveDate = civilDateToLocalDate(effectiveDateRaw);
+    if (Number.isNaN(effectiveDate.getTime())) {
+      return res.status(400).json({ error: "effectiveDate inválida." });
+    }
+
+    const productIds = Array.isArray(body.productIds)
+      ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      : [];
+    const includeAllActiveProducts = body.includeAllActiveProducts === true;
+    const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+    const createdBy =
+      typeof body.createdBy === "string" && body.createdBy.trim() ? body.createdBy.trim() : null;
+
+    if (productIds.length === 0 && !includeAllActiveProducts) {
+      return res.status(400).json({
+        error: "Informe productIds ou includeAllActiveProducts=true.",
+      });
+    }
+
+    try {
+      const result = await generateProductionCostTableDraftFromProducts(prisma, {
+        initAnalysisCache,
+        getProductCostAnalysis,
+        isCostAnalysisFailure,
+        describeCostAnalysisFailure,
+      }, {
+        effectiveDate,
+        productIds,
+        includeAllActiveProducts,
+        notes,
+        createdBy,
+      });
+
+      if (!result.version) {
+        return res.status(500).json({ error: "Falha ao criar versão DRAFT." });
+      }
+
+      if (result.summary.itemsCreated === 0) {
+        return res.status(422).json({
+          error: "Nenhum item de custo foi criado. Revise os erros de cálculo.",
+          summary: result.summary,
+        });
+      }
+
+      return res.status(201).json({
+        version: {
+          id: result.version.id,
+          code: result.version.code,
+          name: result.version.name,
+          effectiveDate: result.version.effectiveDate,
+          status: result.version.status,
+          revision: result.version.revision,
+          supersedesVersionId: result.supersedesVersionId,
+          itemsCount: result.version._count.items,
+        },
+        summary: result.summary,
+        published: false,
+      });
+    } catch (e) {
+      console.error("POST /api/production-cost-tables/versions/generate-draft", e);
+      const message = e instanceof Error ? e.message : "Erro ao gerar DRAFT de custo de produção.";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/production-cost-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
+    const { id } = req.params;
+    const body = (req.body ?? {}) as { publishedBy?: unknown; supersedeVersionId?: unknown };
+    const publishedBy =
+      typeof body.publishedBy === "string" && body.publishedBy.trim() ? body.publishedBy.trim() : null;
+    const supersedeVersionId =
+      typeof body.supersedeVersionId === "string" && body.supersedeVersionId.trim()
+        ? body.supersedeVersionId.trim()
+        : null;
+
+    try {
+      const published = await publishProductionCostVersionFromDraft(prisma, {
+        versionId: id,
+        publishedBy,
+        supersedeVersionId,
+      });
+
+      return res.json({
+        version: {
+          id: published.id,
+          code: published.code,
+          name: published.name,
+          effectiveDate: published.effectiveDate,
+          status: published.status,
+          revision: published.revision,
+          publishedAt: published.publishedAt,
+          publishedBy: published.publishedBy,
+          itemsCount: published.items.length,
+        },
+        published: true,
+        immutable: true,
+      });
+    } catch (e) {
+      console.error("POST /api/production-cost-table-versions/:id/publish", e);
+      const message = e instanceof Error ? e.message : "Erro ao publicar versão de custo de produção.";
+      const status = /DRAFT|imutável|sem itens|não encontrada/i.test(message) ? 400 : 500;
+      return res.status(status).json({ error: message });
     }
   });
 
