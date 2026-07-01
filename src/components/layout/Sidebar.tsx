@@ -43,8 +43,17 @@ import {
 import type { NavigationGroupId, NavigationGroupedItem } from "@/src/lib/navigationGroups";
 import {
   buildAccessibleSidebarNavigation,
+  getSidebarGroupButtonId,
+  getSidebarGroupPanelId,
+  isNavigationGroupExpanded,
   mergeExpandedNavigationGroups,
+  parseStoredExpandedGroups,
+  resolveActiveNavigationGroupId,
   resolveExpandedGroupsForPath,
+  resolveInitialExpandedGroups,
+  serializeExpandedGroups,
+  SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY,
+  toggleExpandedGroupInSet,
   type SidebarMenuItemDef,
 } from "@/src/lib/sidebarNavigation";
 
@@ -83,6 +92,16 @@ const GROUP_ICONS: Record<NavigationGroupId, LucideIcon> = {
   administracao: Settings,
   outros: HelpCircle,
 };
+
+function readStoredExpandedGroups(): Set<NavigationGroupId> {
+  if (typeof window === "undefined") return new Set();
+  return parseStoredExpandedGroups(window.localStorage.getItem(SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY));
+}
+
+function persistExpandedGroups(groups: ReadonlySet<NavigationGroupId>): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY, serializeExpandedGroups(groups));
+}
 
 function SidebarNavLink({
   item,
@@ -127,7 +146,6 @@ function SidebarNavGroup({
   groupId,
   label,
   items,
-  collapsed,
   expanded,
   isActiveGroup,
   onToggle,
@@ -135,33 +153,41 @@ function SidebarNavGroup({
   groupId: NavigationGroupId;
   label: string;
   items: NavigationGroupedItem[];
-  collapsed: boolean;
   expanded: boolean;
   isActiveGroup: boolean;
   onToggle: (groupId: NavigationGroupId) => void;
 }) {
   const GroupIcon = GROUP_ICONS[groupId];
-
-  if (collapsed) {
-    return null;
-  }
+  const buttonId = getSidebarGroupButtonId(groupId);
+  const panelId = getSidebarGroupPanelId(groupId);
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" role="group" aria-labelledby={buttonId}>
       <button
+        id={buttonId}
         type="button"
         aria-expanded={expanded}
+        aria-controls={panelId}
+        aria-label={`${label}, ${expanded ? "recolher" : "expandir"} seção`}
         onClick={() => onToggle(groupId)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle(groupId);
+          }
+        }}
         className={cn(
           "flex items-center w-full p-3 rounded-lg transition-all duration-200 min-w-0",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
           isActiveGroup
-            ? "bg-accent/70 text-foreground"
+            ? "bg-accent/80 text-foreground ring-1 ring-primary/20"
             : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         )}
       >
-        <GroupIcon className="h-5 w-5 shrink-0" />
+        <GroupIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
         <span className="ml-3 font-medium text-sm truncate flex-1 text-left">{label}</span>
         <ChevronDown
+          aria-hidden="true"
           className={cn(
             "h-4 w-4 shrink-0 opacity-70 transition-transform duration-200",
             expanded ? "rotate-180" : "rotate-0"
@@ -169,7 +195,12 @@ function SidebarNavGroup({
         />
       </button>
       {expanded ? (
-        <div className="mt-1 ml-3 pl-2 border-l border-border/60 space-y-0.5 min-w-0">
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={buttonId}
+          className="mt-1 ml-3 pl-2 border-l border-border/60 space-y-0.5 min-w-0 pb-1"
+        >
           {items.map((item) => (
             <SidebarNavLink key={item.itemId} item={item} collapsed={false} nested />
           ))}
@@ -193,33 +224,34 @@ export const Sidebar = () => {
   );
 
   const [expandedGroups, setExpandedGroups] = React.useState<Set<NavigationGroupId>>(() =>
-    mergeExpandedNavigationGroups(
-      new Set<NavigationGroupId>(),
-      resolveExpandedGroupsForPath(location.pathname, navigation)
-    )
+    resolveInitialExpandedGroups(location.pathname, navigation, readStoredExpandedGroups())
+  );
+
+  const activeGroupId = React.useMemo(
+    () => resolveActiveNavigationGroupId(location.pathname, navigation),
+    [location.pathname, navigation]
   );
 
   React.useEffect(() => {
-    setExpandedGroups((current) =>
-      mergeExpandedNavigationGroups(current, resolveExpandedGroupsForPath(location.pathname, navigation))
-    );
-  }, [location.pathname, navigation]);
-
-  const toggleGroup = React.useCallback((groupId: NavigationGroupId) => {
     setExpandedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
+      const next = mergeExpandedNavigationGroups(
+        current,
+        resolveExpandedGroupsForPath(location.pathname, navigation)
+      );
+      persistExpandedGroups(next);
       return next;
     });
-  }, []);
+  }, [location.pathname, navigation]);
 
-  const activeGroupId = React.useMemo(
-    () => resolveExpandedGroupsForPath(location.pathname, navigation)[0] ?? null,
-    [location.pathname, navigation]
+  const toggleGroup = React.useCallback(
+    (groupId: NavigationGroupId) => {
+      setExpandedGroups((current) => {
+        const next = toggleExpandedGroupInSet(current, groupId, activeGroupId);
+        persistExpandedGroups(next);
+        return next;
+      });
+    },
+    [activeGroupId]
   );
 
   const collapsibleGroups = React.useMemo(() => {
@@ -237,7 +269,7 @@ export const Sidebar = () => {
         collapsed ? "items-center" : ""
       )}
     >
-      <div className={cn("p-6 flex items-center mb-4", collapsed ? "justify-center" : "justify-between")}>
+      <div className={cn("p-6 flex items-center mb-2", collapsed ? "justify-center" : "justify-between")}>
         <Link
           to="/"
           title="Página inicial"
@@ -266,34 +298,51 @@ export const Sidebar = () => {
         </Link>
       </div>
 
-      <nav className="flex-1 px-3 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-hide min-w-0">
+      <nav
+        aria-label="Menu principal"
+        className="flex-1 px-3 overflow-y-auto overflow-x-hidden scrollbar-hide min-w-0 w-full"
+      >
         {collapsed ? (
-          navigation.flatAccessibleItems.map((item) => (
-            <SidebarNavLink key={item.id} item={item} collapsed />
-          ))
+          <div className="space-y-1 min-w-0">
+            {navigation.flatAccessibleItems.map((item) => (
+              <SidebarNavLink key={item.id} item={item} collapsed />
+            ))}
+          </div>
         ) : (
-          <>
-            {navigation.directItems.map((item) => (
-              <SidebarNavLink key={item.itemId} item={item} collapsed={false} />
-            ))}
+          <div className="space-y-1 min-w-0 pb-2">
+            {navigation.directItems.length > 0 ? (
+              <div className="pb-3 mb-2 border-b border-border/60 space-y-1">
+                {navigation.directItems.map((item) => (
+                  <SidebarNavLink key={item.itemId} item={item} collapsed={false} />
+                ))}
+              </div>
+            ) : null}
 
-            {collapsibleGroups.map((group) => (
-              <SidebarNavGroup
-                key={group.id}
-                groupId={group.id}
-                label={group.label}
-                items={group.items}
-                collapsed={collapsed}
-                expanded={expandedGroups.has(group.id) || activeGroupId === group.id}
-                isActiveGroup={activeGroupId === group.id}
-                onToggle={toggleGroup}
-              />
-            ))}
-          </>
+            <div className="space-y-1">
+              {collapsibleGroups.map((group) => {
+                const expanded = isNavigationGroupExpanded(
+                  group.id,
+                  expandedGroups,
+                  activeGroupId
+                );
+                return (
+                  <SidebarNavGroup
+                    key={group.id}
+                    groupId={group.id}
+                    label={group.label}
+                    items={group.items}
+                    expanded={expanded}
+                    isActiveGroup={activeGroupId === group.id}
+                    onToggle={toggleGroup}
+                  />
+                );
+              })}
+            </div>
+          </div>
         )}
       </nav>
 
-      <div className="p-4 border-t border-border space-y-2 w-full min-w-0">
+      <div className="p-4 border-t border-border space-y-2 w-full min-w-0 shrink-0">
         {authUser && !collapsed ? (
           <div className="px-3 py-2 rounded-lg bg-muted/40 border border-border/60 mb-1">
             <p className="text-xs font-semibold text-foreground truncate">{authUser.name}</p>
@@ -306,7 +355,8 @@ export const Sidebar = () => {
           title={collapsed ? (pendingLogout ? "Saindo…" : "Sair") : undefined}
           className={cn(
             "flex items-center w-full p-3 rounded-lg transition-all duration-200 group min-w-0",
-            "text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           )}
           onClick={() => {
             setPendingLogout(true);
@@ -325,8 +375,12 @@ export const Sidebar = () => {
         <button
           type="button"
           title={collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
           onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center w-full p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors"
+          className={cn(
+            "flex items-center justify-center w-full p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          )}
         >
           {collapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
         </button>

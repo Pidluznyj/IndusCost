@@ -4,9 +4,17 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildAccessibleSidebarNavigation,
+  getSidebarGroupButtonId,
+  getSidebarGroupPanelId,
+  isNavigationGroupExpanded,
   mergeExpandedNavigationGroups,
+  parseStoredExpandedGroups,
   resolveActiveNavigationGroupId,
   resolveExpandedGroupsForPath,
+  resolveInitialExpandedGroups,
+  serializeExpandedGroups,
+  SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY,
+  toggleExpandedGroupInSet,
   SIDEBAR_GROUP_UI_LABELS,
 } from "./sidebarNavigation.js";
 import { buildGroupedNavigationStructure } from "./navigationGroups.js";
@@ -152,6 +160,64 @@ describe("sidebarNavigation — expansão do grupo ativo", () => {
   });
 });
 
+describe("sidebarNavigation — persistência localStorage", () => {
+  it("localStorage vazio inicia só com grupo da rota ativa", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const initial = resolveInitialExpandedGroups("/products", nav, parseStoredExpandedGroups(null));
+    assert.deepEqual([...initial], ["engenharia"]);
+  });
+
+  it("localStorage vazio em /dashboard não abre grupos", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const initial = resolveInitialExpandedGroups("/dashboard", nav, parseStoredExpandedGroups(""));
+    assert.equal(initial.size, 0);
+  });
+
+  it("preferência salva persiste Engenharia após refresh simulado", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const stored = parseStoredExpandedGroups(serializeExpandedGroups(new Set(["engenharia"])));
+    const initial = resolveInitialExpandedGroups("/dashboard", nav, stored);
+    assert.ok(initial.has("engenharia"));
+  });
+
+  it("rota ativa em Comercial abre grupo mesmo sem preferência salva", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const initial = resolveInitialExpandedGroups("/customers", nav, new Set());
+    assert.ok(initial.has("comercial"));
+  });
+
+  it("localStorage inválido usa fallback seguro (Set vazio)", () => {
+    assert.equal(parseStoredExpandedGroups("{invalid").size, 0);
+    assert.equal(parseStoredExpandedGroups('{"not":"array"}').size, 0);
+    assert.equal(parseStoredExpandedGroups('["unknown-group"]').size, 0);
+  });
+
+  it("serializeExpandedGroups gera JSON estável", () => {
+    assert.equal(
+      serializeExpandedGroups(new Set(["comercial", "engenharia"])),
+      '["comercial","engenharia"]'
+    );
+  });
+
+  it("toggleExpandedGroupInSet não recolhe grupo da rota ativa", () => {
+    const next = toggleExpandedGroupInSet(new Set(["financeiro"]), "financeiro", "financeiro");
+    assert.ok(next.has("financeiro"));
+  });
+
+  it("isNavigationGroupExpanded combina preferência e rota ativa", () => {
+    assert.equal(isNavigationGroupExpanded("engenharia", new Set(), "engenharia"), true);
+    assert.equal(isNavigationGroupExpanded("engenharia", new Set(["engenharia"]), null), true);
+    assert.equal(isNavigationGroupExpanded("comercial", new Set(), null), false);
+  });
+});
+
+describe("sidebarNavigation — ids de acessibilidade", () => {
+  it("expõe ids estáveis para aria-controls", () => {
+    assert.equal(getSidebarGroupButtonId("financeiro"), "sidebar-group-button-financeiro");
+    assert.equal(getSidebarGroupPanelId("financeiro"), "sidebar-group-panel-financeiro");
+  });
+});
+
 describe("Sidebar.tsx — renderização agrupada", () => {
   it("renderiza Dashboard como item direto e importa navigationGroups", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
@@ -181,16 +247,37 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     }
   });
 
-  it("modo colapsado mantém lista flat de itens acessíveis", () => {
+  it("modo colapsado usa ícones flat com tooltip e sem subitens aninhados", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.match(sidebar, /collapsed \?/);
-    assert.match(sidebar, /flatAccessibleItems/);
+    assert.match(sidebar, /flatAccessibleItems\.map\(\(item\) =>/);
+    assert.match(sidebar, /title=\{collapsed \? label : undefined\}/);
+    assert.match(
+      sidebar,
+      /\{collapsed \? \([\s\S]*flatAccessibleItems[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
+    );
   });
 
-  it("grupo ativo usa expandedGroups e resolveExpandedGroupsForPath", () => {
+  it("persiste expansão via localStorage", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.ok(sidebar.includes("resolveExpandedGroupsForPath"));
-    assert.ok(sidebar.includes("expandedGroups.has"));
+    assert.ok(sidebar.includes("SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY"));
+    assert.ok(sidebar.includes("readStoredExpandedGroups"));
+    assert.ok(sidebar.includes("persistExpandedGroups"));
+    assert.ok(sidebar.includes("serializeExpandedGroups"));
+  });
+
+  it("aria-expanded e aria-controls nos grupos", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.ok(sidebar.includes("aria-expanded={expanded}"));
+    assert.ok(sidebar.includes("aria-controls={panelId}"));
+    assert.ok(sidebar.includes("getSidebarGroupPanelId"));
+    assert.ok(sidebar.includes('role="group"'));
+  });
+
+  it("grupo ativo usa isActiveGroup e isNavigationGroupExpanded", () => {
+    const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.ok(sidebar.includes("resolveActiveNavigationGroupId"));
+    assert.ok(sidebar.includes("isNavigationGroupExpanded"));
     assert.ok(sidebar.includes("isActiveGroup"));
+    assert.ok(sidebar.includes("ring-primary/20"));
   });
 });

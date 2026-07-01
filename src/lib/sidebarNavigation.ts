@@ -159,3 +159,81 @@ export const SIDEBAR_GROUP_UI_LABELS = [
   "Operações",
   "Administração",
 ] as const;
+
+export const SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY = "induscost.sidebar.expandedGroups";
+
+const PERSISTABLE_GROUP_IDS: readonly NavigationGroupId[] = [
+  "engenharia",
+  "comercial",
+  "financeiro",
+  "operacoes",
+  "administracao",
+  "outros",
+];
+
+function isPersistableNavigationGroupId(value: unknown): value is NavigationGroupId {
+  return (
+    typeof value === "string" &&
+    (PERSISTABLE_GROUP_IDS as readonly string[]).includes(value)
+  );
+}
+
+/** Lê localStorage (ou valor injetado em testes) com fallback seguro para Set vazio. */
+export function parseStoredExpandedGroups(raw: string | null | undefined): Set<NavigationGroupId> {
+  if (raw == null || raw.trim() === "") return new Set();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    const valid = parsed.filter(isPersistableNavigationGroupId);
+    return new Set(valid);
+  } catch {
+    return new Set();
+  }
+}
+
+export function serializeExpandedGroups(groups: ReadonlySet<NavigationGroupId>): string {
+  return JSON.stringify([...groups].sort());
+}
+
+/** Estado inicial: preferências salvas + grupo da rota ativa (se houver). */
+export function resolveInitialExpandedGroups(
+  pathname: string,
+  navigation: SidebarAccessibleNavigation,
+  stored: ReadonlySet<NavigationGroupId> = new Set()
+): Set<NavigationGroupId> {
+  return mergeExpandedNavigationGroups(stored, resolveExpandedGroupsForPath(pathname, navigation));
+}
+
+/** Grupo visível expandido: preferência do usuário ou rota ativa. */
+export function isNavigationGroupExpanded(
+  groupId: NavigationGroupId,
+  expandedGroups: ReadonlySet<NavigationGroupId>,
+  activeGroupId: NavigationGroupId | null
+): boolean {
+  return expandedGroups.has(groupId) || activeGroupId === groupId;
+}
+
+/** Alterna grupo; não recolhe o grupo da rota ativa. */
+export function toggleExpandedGroupInSet(
+  current: ReadonlySet<NavigationGroupId>,
+  groupId: NavigationGroupId,
+  activeGroupId: NavigationGroupId | null
+): Set<NavigationGroupId> {
+  const next = new Set(current);
+  if (next.has(groupId)) {
+    if (activeGroupId !== groupId) {
+      next.delete(groupId);
+    }
+  } else {
+    next.add(groupId);
+  }
+  return next;
+}
+
+export function getSidebarGroupPanelId(groupId: NavigationGroupId): string {
+  return `sidebar-group-panel-${groupId}`;
+}
+
+export function getSidebarGroupButtonId(groupId: NavigationGroupId): string {
+  return `sidebar-group-button-${groupId}`;
+}
