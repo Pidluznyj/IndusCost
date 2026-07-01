@@ -240,6 +240,15 @@ export function resolveEffectiveProductProductionCostsFromCatalog(
   return map;
 }
 
+/** Chave estável para cache de custo vigente por produto + data civil de referência. */
+export function effectiveProductionCostLookupKey(
+  productId: string,
+  referenceDate: Date
+): string {
+  const ref = startOfCivilDate(referenceDate);
+  return `${productId}|${ref.toISOString().slice(0, 10)}`;
+}
+
 export function nextProductionCostTableRevision(existingMaxRevision: number | null | undefined): number {
   const base = existingMaxRevision ?? 0;
   return base + 1;

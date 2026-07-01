@@ -237,6 +237,7 @@ async function loadEnrichedMarginItems(
     select: {
       id: true,
       orderCode: true,
+      issueDate: true,
       responsible: true,
       customerId: true,
       nomusRawResponse: true,

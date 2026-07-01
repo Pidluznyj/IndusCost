@@ -10,7 +10,7 @@ import {
   resolveEffectiveProductProductionCostsFromCatalog,
   type ProductionCostTableVersionWithItems,
 } from "./productionCostVersioning.js";
-import { resolveSalesOrderItemCost } from "./salesOrderMarginResolver.js";
+import { resolveSalesOrderItemCostFromVersionedProduction } from "./salesOrderMarginResolver.js";
 
 function d(iso: string): Date {
   return civilDateToLocalDate(iso);
@@ -227,14 +227,35 @@ describe("productionCostVersioning", () => {
     assert.equal(map.get("p3")?.status, "SEM_CUSTO");
   });
 
-  it("unitCost Nomus não é considerado — margem usa motor, não SalesOrderItem.unitCost", () => {
-    const cost = resolveSalesOrderItemCost({
+  it("unitCost Nomus não é considerado — margem usa tabela versionada, não storedUnitCost", () => {
+    const cost = resolveSalesOrderItemCostFromVersionedProduction({
       salesOrderItemId: "i1",
       productId: "p1",
-      storedUnitCost: 999,
-      analysis: { summary: { totalIndustrialCost: 42 } },
+      referenceDate: civilDateToLocalDate("2026-06-10"),
+      effectiveCost: {
+        status: "OK",
+        productId: "p1",
+        unitProductionCost: 42,
+        costTableVersionId: "v1",
+        costTableItemId: "i1",
+        effectiveDate: civilDateToLocalDate("2026-06-01"),
+        versionName: "Jun",
+        versionCode: "2026-06",
+        revision: 1,
+        publishedAt: new Date(),
+        currency: "BRL",
+        breakdown: {
+          materialCost: 21,
+          processCost: 0,
+          laborCost: 10,
+          machineCost: 6,
+          overheadCost: 5,
+          otherCost: 0,
+        },
+        calculationSnapshot: null,
+      },
     });
     assert.equal(cost.unitCost, 42);
-    assert.notEqual(cost.unitCost, 999);
+    assert.equal(cost.costSource, "VERSIONED_PRODUCTION_COST");
   });
 });

@@ -85,6 +85,7 @@ function buildItemResult(
   const meta = resolveSalesOrderMarginStatusMeta(status);
   return {
     ...partial,
+    productionCost: input.productionCost ?? null,
     status,
     statusLabel: meta.statusLabel,
     statusSeverity: meta.statusSeverity,

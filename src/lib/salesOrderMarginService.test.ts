@@ -37,9 +37,50 @@ function createMockPrisma(options?: {
     unitCost?: number;
   }>;
   nomusConfigJson?: Record<string, unknown> | null;
+  /** Custo de produção vigente por productId na tabela versionada (mock). */
+  productionUnitCostByProductId?: Record<string, number>;
 }): PrismaClient {
   const products = options?.products ?? [PRODUCT];
   const salesOrderItems = options?.salesOrderItems ?? [];
+  const productionUnitCostByProductId = options?.productionUnitCostByProductId ?? {
+    "prod-1": 40,
+  };
+
+  const publishedVersions = [
+    {
+      id: "mock-pct-ver",
+      code: "2026-01",
+      name: "Mock custo",
+      effectiveDate: new Date("2026-01-01"),
+      status: "PUBLISHED" as const,
+      revision: 1,
+      publishedAt: new Date("2026-01-02"),
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-02"),
+      items: Object.entries(productionUnitCostByProductId).map(([productId, unitProductionCost]) => {
+        const product = products.find((p) => p.id === productId);
+        return {
+          id: `mock-item-${productId}`,
+          costTableVersionId: "mock-pct-ver",
+          productId,
+          productCodeSnapshot: product?.sku ?? productId,
+          productNameSnapshot: product?.name ?? productId,
+          unitProductionCost,
+          materialCost: unitProductionCost * 0.5,
+          processCost: 0,
+          laborCost: unitProductionCost * 0.2,
+          machineCost: unitProductionCost * 0.15,
+          overheadCost: unitProductionCost * 0.15,
+          otherCost: 0,
+          currency: "BRL",
+          calculationHash: "mock",
+          calculationSnapshot: { costAnalysisPartial: false },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }),
+    },
+  ];
 
   return {
     product: {
@@ -53,10 +94,15 @@ function createMockPrisma(options?: {
         }
         return [];
       },
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        products.find((p) => p.id === where.id) ?? null,
     },
     nomusProductCatalog: { findMany: async () => [] },
     proposalItem: { findMany: async () => [] },
     costCalculationLog: { findMany: async () => [] },
+    productionCostTableVersion: {
+      findMany: async () => publishedVersions,
+    },
     indirectCost: {
       findFirst: async () =>
         options?.nomusConfigJson
@@ -133,7 +179,7 @@ describe("salesOrderMarginService", () => {
       ],
     });
     const rows = await attachMarginsToSalesOrders(prisma, [
-      { id: "order-1", nomusRawResponse: null },
+      { id: "order-1", issueDate: new Date("2026-06-15"), nomusRawResponse: null },
     ]);
     assert.equal(rows.length, 1);
     assert.ok(rows[0]?.marginSummary);
@@ -144,6 +190,7 @@ describe("salesOrderMarginService", () => {
     const prisma = createMockPrisma();
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -169,6 +216,7 @@ describe("salesOrderMarginService", () => {
     const prisma = createMockPrisma();
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -202,10 +250,6 @@ describe("salesOrderMarginService", () => {
   });
 
   it("4. pedido com item sem custo retorna status parcial", async () => {
-    setSalesOrderMarginProductCostResolver(async (productId) => {
-      if (productId === "prod-1") return { summary: { totalIndustrialCost: 40 } };
-      return { error: "BOM_CYCLE" };
-    });
     const prisma = createMockPrisma({
       products: [
         PRODUCT,
@@ -214,6 +258,7 @@ describe("salesOrderMarginService", () => {
     });
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -243,15 +288,13 @@ describe("salesOrderMarginService", () => {
     assert.equal(summary?.status, "PARTIAL");
     assert.equal(summary?.hasMissingCost, true);
     assert.equal(summary?.validItemsCount, 1);
-    setSalesOrderMarginProductCostResolver(async () => ({
-      summary: { totalIndustrialCost: 40 },
-    }));
   });
 
   it("5. pedido com item sem produto retorna alerta", async () => {
     const prisma = createMockPrisma({ products: [] });
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -276,6 +319,7 @@ describe("salesOrderMarginService", () => {
     const prisma = createMockPrisma();
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: {
         itensPedido: [
           { item: 1, status: 6, quantidade: 1, idProduto: 1 },
@@ -315,12 +359,12 @@ describe("salesOrderMarginService", () => {
   });
 
   it("7. margem negativa aparece no status", async () => {
-    setSalesOrderMarginProductCostResolver(async () => ({
-      summary: { totalIndustrialCost: 200 },
-    }));
-    const prisma = createMockPrisma();
+    const prisma = createMockPrisma({
+      productionUnitCostByProductId: { "prod-1": 200 },
+    });
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -337,9 +381,6 @@ describe("salesOrderMarginService", () => {
     };
     const margins = await calculateSalesOrderMarginsForOrders(prisma, [order]);
     assert.equal(margins.get("order-1")?.marginSummary.status, "MARGEM_NEGATIVA");
-    setSalesOrderMarginProductCostResolver(async () => ({
-      summary: { totalIndustrialCost: 40 },
-    }));
   });
 
   it("8. deductFromGross com TaxRule deduz imposto da margem gerencial", async () => {
@@ -377,7 +418,7 @@ describe("salesOrderMarginService", () => {
     });
 
     const margins = await calculateSalesOrderMarginsForOrders(prisma, [
-      { id: "order-394", nomusRawResponse: null },
+      { id: "order-394", issueDate: new Date("2026-06-15"), nomusRawResponse: null },
     ]);
     const summary = margins.get("order-394")?.marginSummary;
     assert.ok(summary);
@@ -410,17 +451,18 @@ describe("salesOrderMarginService", () => {
       ],
     });
     const margins = await calculateSalesOrderMarginsForOrders(prisma, [
-      { id: "order-1", nomusRawResponse: null },
+      { id: "order-1", issueDate: new Date("2026-06-15"), nomusRawResponse: null },
     ]);
     const summary = margins.get("order-1")?.marginSummary;
     assert.equal(summary?.netRevenue, 394);
     assert.ok(Math.abs((summary?.marginValue ?? 0) - 354) < 0.02);
   });
 
-  it("10. não há N+1 evidente no cálculo de custo", async () => {
+  it("10. margem oficial usa lote de custo versionado (sem motor vivo)", async () => {
     const prisma = createMockPrisma();
     const order = {
       id: "order-1",
+      issueDate: new Date("2026-06-15"),
       nomusRawResponse: null,
       items: [
         {
@@ -458,7 +500,9 @@ describe("salesOrderMarginService", () => {
     const context = await buildSalesOrderMarginContext(prisma, [order], {
       itemsByOrderId: new Map([[order.id, order.items]]),
     });
-    assert.equal(context.costAnalysisCalls, 1);
+    assert.equal(context.costAnalysisCalls, 0);
+    assert.equal(context.byOrderId.get("order-1")?.itemResults.length, 3);
+    assert.equal(context.byOrderId.get("order-1")?.itemResults[0]?.costSource, "VERSIONED_PRODUCTION_COST");
   });
 
   it("refineSalesOrderMarginSummaryStatus prioriza alertas sem itens válidos", () => {

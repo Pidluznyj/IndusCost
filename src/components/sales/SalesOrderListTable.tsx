@@ -143,7 +143,11 @@ export function SalesOrderListTable({
                     </td>
                     {showMarginEconomics ? (
                       <td>
-                        <SalesOrderListMarginCell marginSummary={row.marginSummary} />
+                        <SalesOrderListMarginCell
+                          marginSummary={row.marginSummary}
+                          marginItems={row.marginItems}
+                          orderIssueDate={row.issueDate}
+                        />
                       </td>
                     ) : null}
                     <td className="so-value-cell text-muted-foreground" title={items.title}>

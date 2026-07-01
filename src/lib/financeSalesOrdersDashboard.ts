@@ -420,6 +420,7 @@ export async function buildFinanceSalesOrdersDashboard(
     prisma,
     dashboardOrders.map((order) => ({
       id: order.id,
+      issueDate: order.issueDate,
       nomusRawResponse: order.nomusRawResponse,
     }))
   );

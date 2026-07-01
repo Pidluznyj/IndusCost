@@ -11,10 +11,20 @@ import {
   registerSalesOrderMarginExternalProductMapping,
   resolveSalesOrderItemCost,
   resolveSalesOrderItemCosts,
+  resolveSalesOrderItemCostFromVersionedProduction,
   resolveSalesOrderItemProduct,
   resolveSalesOrderItemProducts,
   type SalesOrderMarginResolverItem,
 } from "./salesOrderMarginResolver.js";
+import {
+  DEFAULT_SALES_ORDER_MARGIN_COST_POLICY,
+  type SalesOrderMarginCostPolicy,
+} from "./salesOrderMarginTypes.js";
+
+const LEGACY_LIVE_COST_POLICY: SalesOrderMarginCostPolicy = {
+  ...DEFAULT_SALES_ORDER_MARGIN_COST_POLICY,
+  allowLiveCostFallback: true,
+};
 
 const PRODUCT_A = {
   id: "prod-a",
@@ -93,6 +103,7 @@ describe("salesOrderMarginResolver — custo", () => {
       salesOrderItemId: "item-1",
       productId: "prod-a",
       analysis: { summary: { totalIndustrialCost: 42.5 } },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     assert.equal(cost.unitCost, 42.5);
     assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
@@ -105,6 +116,7 @@ describe("salesOrderMarginResolver — custo", () => {
       salesOrderItemId: "item-1",
       productId: "prod-a",
       analysis: { error: "BOM_CYCLE" },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     assert.equal(cost.unitCost, null);
     assert.equal(cost.costSource, "MISSING_COST");
@@ -117,6 +129,7 @@ describe("salesOrderMarginResolver — custo", () => {
       productId: "prod-a",
       storedUnitCost: 77,
       analysis: { summary: { totalIndustrialCost: 999 } },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     assert.equal(cost.unitCost, 999);
     assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
@@ -129,6 +142,7 @@ describe("salesOrderMarginResolver — custo", () => {
       productId: "prod-a",
       storedUnitCost: 0,
       analysis: { summary: { totalIndustrialCost: 42.5 } },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     assert.equal(cost.unitCost, 42.5);
     assert.equal(cost.costSource, "LIVE_PRODUCT_COST");
@@ -161,7 +175,10 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
     const index = buildIndex();
     const products = resolveSalesOrderItemProducts(items, index);
     let calls = 0;
-    const costs = await resolveSalesOrderItemCosts(items, products, async (productId) => {
+    const costs = await resolveSalesOrderItemCosts(
+      items,
+      products,
+      async (productId) => {
       calls += 1;
       return {
         analysis: {
@@ -169,7 +186,10 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
           summary: { totalIndustrialCost: productId === "prod-a" ? 10 : 20 },
         },
       };
-    });
+    },
+      new Map(),
+      LEGACY_LIVE_COST_POLICY
+    );
     assert.equal(calls, 2);
     assert.equal(costs.get("i1")?.unitCost, 10);
     assert.equal(costs.get("i1")?.costSource, "LIVE_PRODUCT_COST");
@@ -184,10 +204,16 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
     const index = buildIndex();
     const products = resolveSalesOrderItemProducts(items, index);
     let calls = 0;
-    const costs = await resolveSalesOrderItemCosts(items, products, async () => {
+    const costs = await resolveSalesOrderItemCosts(
+      items,
+      products,
+      async () => {
       calls += 1;
       return { analysis: { summary: { totalIndustrialCost: 999 } } };
-    });
+    },
+      new Map(),
+      LEGACY_LIVE_COST_POLICY
+    );
     assert.equal(calls, 1);
     assert.equal(costs.get("i1")?.unitCost, 999);
     assert.equal(costs.get("i1")?.costSource, "LIVE_PRODUCT_COST");
@@ -203,6 +229,7 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
       salesOrderItemId: row.salesOrderItemId,
       productId: product.productId,
       analysis: { summary: { totalIndustrialCost: 30 } },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     const input = assembleSalesOrderMarginItemInput(row, product, cost);
     assert.equal(input.netTotalValue, 850);
@@ -217,6 +244,7 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
       salesOrderItemId: row.salesOrderItemId,
       productId: product.productId,
       analysis: { summary: { totalIndustrialCost: 55 } },
+      costPolicy: LEGACY_LIVE_COST_POLICY,
     });
     const input = assembleSalesOrderMarginItemInput(row, product, cost);
     assert.equal(input.unitCost, 55);
@@ -272,6 +300,7 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
           salesOrderItemId: "i1",
           productId: "prod-a",
           analysis: { summary: { totalIndustrialCost: 60 } },
+          costPolicy: LEGACY_LIVE_COST_POLICY,
         }),
       ],
       [
@@ -280,6 +309,7 @@ describe("salesOrderMarginResolver — performance e montagem", () => {
           salesOrderItemId: "i2",
           productId: "prod-b",
           analysis: { summary: { totalIndustrialCost: 100 } },
+          costPolicy: LEGACY_LIVE_COST_POLICY,
         }),
       ],
     ]);

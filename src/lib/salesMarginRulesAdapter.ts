@@ -130,7 +130,10 @@ export function resolveOfficialScopedMarginMetrics(
   };
 }
 
-function mapEngineItemToMarginItemResult(item: SalesMarginItemResult): SalesOrderMarginItemResult {
+function mapEngineItemToMarginItemResult(
+  item: SalesMarginItemResult,
+  productionCost?: import("./salesOrderMarginTypes.js").SalesOrderMarginProductionCostMeta | null
+): SalesOrderMarginItemResult {
   const meta = resolveSalesOrderMarginStatusMeta(item.status);
   const useSold = item.soldMarginAmount != null;
   return {
@@ -152,12 +155,16 @@ function mapEngineItemToMarginItemResult(item: SalesMarginItemResult): SalesOrde
     statusSeverity: meta.statusSeverity,
     costSource: item.costSource,
     costConfidence: item.costConfidence,
+    productionCost: productionCost ?? null,
     notes: [...item.notes],
   };
 }
 
-function mapEngineItemToItemMarginPayload(item: SalesMarginItemResult): SalesOrderItemMarginPayload {
-  const base = mapEngineItemToMarginItemResult(item);
+function mapEngineItemToItemMarginPayload(
+  item: SalesMarginItemResult,
+  productionCost?: import("./salesOrderMarginTypes.js").SalesOrderMarginProductionCostMeta | null
+): SalesOrderItemMarginPayload {
+  const base = mapEngineItemToMarginItemResult(item, productionCost);
   return {
     netRevenue: base.netRevenue,
     unitCost: base.unitCost,
@@ -171,6 +178,7 @@ function mapEngineItemToItemMarginPayload(item: SalesMarginItemResult): SalesOrd
     costSource: base.costSource,
     costConfidence: base.costConfidence,
     productResolutionSource: "LOCAL_PRODUCT_ID",
+    productionCost: base.productionCost ?? null,
     notes: base.notes,
   };
 }
@@ -181,7 +189,10 @@ function deriveCostSourceSummaryFromItems(
   SalesOrderMarginSummaryPayload,
   "costSourceSummary" | "hasFrozenCost" | "hasEstimatedCost" | "hasMixedCost"
 > {
-  const frozenSources = new Set<SalesOrderCostSource>(["HISTORICAL_SNAPSHOT"]);
+  const frozenSources = new Set<SalesOrderCostSource>([
+    "HISTORICAL_SNAPSHOT",
+    "VERSIONED_PRODUCTION_COST",
+  ]);
   const estimatedSources = new Set<SalesOrderCostSource>([
     "LIVE_PRODUCT_COST",
     "RECALCULATED_CURRENT_COST",
@@ -199,9 +210,9 @@ function deriveCostSourceSummaryFromItems(
     if (estimatedSources.has(item.costSource)) hasEstimatedCost = true;
   }
 
-  let costSourceSummary = "Custo oficial resolvido";
+  let costSourceSummary = "Custo oficial — tabela de produção vigente";
   if (hasFrozenCost && hasEstimatedCost) costSourceSummary = "Custo misto";
-  else if (hasFrozenCost) costSourceSummary = "Custo histórico congelado";
+  else if (hasFrozenCost) costSourceSummary = "Custo de produção IndusCost (tabela vigente)";
   else if (hasEstimatedCost) costSourceSummary = "Custo estimado atual";
 
   return {
@@ -330,7 +341,8 @@ function mapRulesResultToMarginByOrder(
     taxRuleName?: string | null;
     taxRulePercent?: number | null;
     fiscalConfigComplete?: boolean;
-  }
+  },
+  originalMarginByOrder?: Map<string, SalesOrderMarginOrderResult>
 ): Map<string, SalesOrderMarginOrderResult> {
   const taxCtx = rules.context.taxContext;
   const fiscalMeta = {
@@ -344,8 +356,18 @@ function mapRulesResultToMarginByOrder(
   };
   const byOrderId = new Map<string, SalesOrderMarginOrderResult>();
   for (const order of rules.orderResults) {
+    const originalItems = originalMarginByOrder?.get(order.orderId)?.itemResults ?? [];
+    const productionCostByItemId = new Map(
+      originalItems
+        .filter((row) => row.salesOrderItemId)
+        .map((row) => [row.salesOrderItemId!, row.productionCost ?? null] as const)
+    );
+
     const itemResults = order.items.map((item) => {
-      const mapped = mapEngineItemToMarginItemResult(item);
+      const productionCost = item.salesOrderItemId
+        ? productionCostByItemId.get(item.salesOrderItemId) ?? null
+        : null;
+      const mapped = mapEngineItemToMarginItemResult(item, productionCost);
       if (taxMode === "deductFromGross") {
         mapped.netRevenue = item.netSalesAmount;
         mapped.marginValue = item.marginAmount;
@@ -356,7 +378,8 @@ function mapRulesResultToMarginByOrder(
     const itemMargins = new Map<string, SalesOrderItemMarginPayload>();
     for (const item of order.items) {
       if (!item.salesOrderItemId) continue;
-      const payload = mapEngineItemToItemMarginPayload(item);
+      const productionCost = productionCostByItemId.get(item.salesOrderItemId) ?? null;
+      const payload = mapEngineItemToItemMarginPayload(item, productionCost);
       if (taxMode === "deductFromGross") {
         payload.netRevenue = item.netSalesAmount;
         payload.marginValue = item.marginAmount;
@@ -442,7 +465,7 @@ async function buildOfficialSalesMarginRulesForOrders(
         (officialTaxContext?.fiscalConfigComplete ??
           (taxContext != null &&
             !taxContext.defaultTaxLabel?.toLowerCase().includes("incompleta"))),
-    }),
+    }, marginContext.byOrderId),
     nomusConfig,
   };
 }
@@ -559,6 +582,7 @@ export async function enrichCustomerIntelligenceOrdersWithOfficialMargin(
     where: { id: { in: orderIds } },
     select: {
       id: true,
+      issueDate: true,
       nomusRawResponse: true,
       items: {
         select: {
@@ -618,6 +642,7 @@ export type OfficialCommercial360MarginMetrics = OfficialScopedMarginMetrics & {
 export type Commercial360SalesOrderForOfficialMargin = {
   id: string;
   status: string;
+  issueDate?: Date | string | null;
   nomusRawResponse?: unknown;
   items?: Array<{
     id: string;
@@ -636,6 +661,7 @@ function mapCommercial360OrdersToMarginInput(
 } {
   const forMargin: SalesOrderForMargin[] = orders.map((order) => ({
     id: order.id,
+    issueDate: order.issueDate,
     nomusRawResponse: order.nomusRawResponse,
     items: (order.items ?? []).map((item) => ({
       id: item.id,
@@ -776,7 +802,7 @@ export function buildOfficialSalesOrderResultMarginPayload(input: {
     source: {
       sales: input.salesBundle.metricsSource,
       margin: OFFICIAL_SM_RULES_SOURCE,
-      cost: "official-product-cost-engine",
+      cost: "versioned-production-cost-table",
       tax: "official-tax-rule-engine",
       projection: input.salesBundle.metricsSource,
     },

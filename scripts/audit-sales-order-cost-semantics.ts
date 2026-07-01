@@ -100,10 +100,13 @@ async function main(): Promise<void> {
   const ok = allFindings.filter((f) => f.status === "OK");
 
   const marginResolver = readFileSync("src/lib/salesOrderMarginResolver.ts", "utf8");
-  const marginUsesEngine =
-    /getProductCostAnalysis|LIVE_PRODUCT_COST|resolveOfficialProductFinalCostFromAnalysis/.test(
-      marginResolver
-    ) && !/useFrozenUnitCostFirst && storedSnapshot/.test(marginResolver);
+  const marginResolverServer = readFileSync("src/lib/salesOrderMarginResolver.server.ts", "utf8");
+  const marginUsesVersionedTable =
+    marginResolver.includes("resolveSalesOrderItemCostFromVersionedProduction") &&
+    marginResolverServer.includes("getEffectiveProductProductionCostsForPairs");
+  const marginUsesLiveEngineInOfficialPath =
+    marginResolverServer.includes("getSalesOrderMarginProductCostResolver") &&
+    marginResolverServer.includes("buildSalesOrderMarginContext");
 
   console.log(
     JSON.stringify(
@@ -118,13 +121,15 @@ async function main(): Promise<void> {
           blocking: blocking.length,
           alerts: alerts.length,
           ok: ok.length,
-          marginUsesIndusCostEngine: marginUsesEngine,
+          marginUsesVersionedProductionCostTable: marginUsesVersionedTable,
+          marginUsesLiveEngineInOfficialPath: marginUsesLiveEngineInOfficialPath,
           unitCostExcludedFromMarginCost: !/storedUnitCost: item\.unitCost/.test(marginResolver),
         },
         blocking: blocking.slice(0, 100),
         alertsSample: alerts.slice(0, 50),
         marginEngineCheck: {
-          usesGetProductCostAnalysis: marginUsesEngine,
+          usesVersionedProductionCost: marginUsesVersionedTable,
+          usesGetProductCostAnalysisInOfficialPath: marginUsesLiveEngineInOfficialPath,
           ignoresSalesOrderItemUnitCostAsProductionCost: !marginResolver.includes(
             "Custo unitário congelado de SalesOrderItem.unitCost"
           ),
@@ -134,6 +139,10 @@ async function main(): Promise<void> {
       2
     )
   );
+
+  if (marginUsesLiveEngineInOfficialPath) {
+    process.exitCode = 1;
+  }
 
   if (blocking.some((f) => !f.file.includes(".test."))) {
     process.exitCode = 1;

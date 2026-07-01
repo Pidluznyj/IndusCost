@@ -6,16 +6,13 @@ import {
   calculateSalesOrderItemMargin,
   calculateSalesOrderMarginSummary,
 } from "./salesOrderMarginMath.js";
-import { getSalesOrderMarginProductCostResolver } from "./salesOrderMarginProductCostResolver.js";
 import {
-  buildSalesOrderMarginInputsFromResolutions,
-  resolveSalesOrderItemCosts,
-  resolveSalesOrderItemProducts,
   type ProductResolution,
+  resolveSalesOrderItemProducts,
   type SalesOrderMarginResolverItem,
 } from "./salesOrderMarginResolver.js";
 import {
-  buildSalesOrderMarginInputs,
+  buildSalesOrderMarginInputsFromVersionedProductionCosts,
   loadSalesOrderMarginProductBatchIndex,
 } from "./salesOrderMarginResolver.server.js";
 import {
@@ -26,12 +23,10 @@ import {
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
 
 export { aggregateSalesOrderMarginSummaries };
-import {
-  DEFAULT_SALES_ORDER_MARGIN_COST_POLICY,
-  type SalesOrderItemMarginPayload,
-  type SalesOrderMarginCostPolicy,
-  type SalesOrderMarginItemResult,
-  type SalesOrderMarginSummaryPayload,
+import type {
+  SalesOrderItemMarginPayload,
+  SalesOrderMarginItemResult,
+  SalesOrderMarginSummaryPayload,
 } from "./salesOrderMarginTypes.js";
 import {
   extractNomusRawItems,
@@ -67,6 +62,7 @@ export type SalesOrderItemForMargin = {
 
 export type SalesOrderForMargin = {
   id: string;
+  issueDate?: Date | string | null;
   nomusRawResponse?: unknown;
   items?: SalesOrderItemForMargin[];
 };
@@ -115,6 +111,7 @@ function mapItemToResolverInput(
     itemStatus: nomusStatus === "cancelled" ? "CANCELADO" : matched?.status ?? null,
     isCanceled: nomusStatus === "cancelled",
     nomusRawItem: matched?.raw ?? null,
+    referenceDate: order.issueDate ?? null,
   };
 }
 
@@ -136,6 +133,7 @@ function formatItemMarginPayload(
     costSource: result.costSource,
     costConfidence: result.costConfidence,
     marginCostMode: result.marginCostMode,
+    productionCost: result.productionCost ?? null,
     productResolutionSource: productResolution.resolutionSource,
     notes: [...productResolution.notes, ...result.notes],
   };
@@ -240,28 +238,10 @@ export async function buildSalesOrderMarginContext(
   const productIndex = await loadSalesOrderMarginProductBatchIndex(prisma, resolverItems);
   const productResolutions = resolveSalesOrderItemProducts(resolverItems, productIndex);
 
-  let costAnalysisCalls = 0;
-  const resolveAnalysis = getSalesOrderMarginProductCostResolver();
-  const costCache = options?.costCache ?? new Map();
-  const costPolicy = options?.costPolicy ?? DEFAULT_SALES_ORDER_MARGIN_COST_POLICY;
-  const costResolutions = await resolveSalesOrderItemCosts(
+  const marginInputs = await buildSalesOrderMarginInputsFromVersionedProductionCosts(
+    prisma,
     resolverItems,
-    productResolutions,
-    async (productId) => {
-      if (!costCache.has(productId)) {
-        costAnalysisCalls += 1;
-        costCache.set(productId, { analysis: await resolveAnalysis(productId) });
-      }
-      return costCache.get(productId) ?? {};
-    },
-    costCache,
-    costPolicy
-  );
-
-  const marginInputs = buildSalesOrderMarginInputsFromResolutions(
-    resolverItems,
-    productResolutions,
-    costResolutions
+    { productIndex }
   );
 
   const itemResultsByOrder = new Map<string, SalesOrderMarginItemResult[]>();
@@ -308,7 +288,7 @@ export async function buildSalesOrderMarginContext(
     });
   }
 
-  return { byOrderId, costAnalysisCalls };
+  return { byOrderId, costAnalysisCalls: 0 };
 }
 
 export async function calculateSalesOrderMarginsForOrders(
@@ -325,17 +305,28 @@ export async function calculateSalesOrderMarginsForOrders(
 export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
   prisma: PrismaClient,
   orders: T[]
-): Promise<Array<T & { marginSummary?: SalesOrderMarginSummaryPayload }>> {
+): Promise<
+  Array<
+    T & {
+      marginSummary?: SalesOrderMarginSummaryPayload;
+      marginItems?: SalesOrderItemMarginPayload[];
+    }
+  >
+> {
   if (orders.length === 0) return [];
 
   const { calculateOfficialSalesOrderMarginsForOrders } = await import(
     "./salesMarginRulesAdapter.js"
   );
   const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, orders);
-  return orders.map((order) => ({
-    ...order,
-    marginSummary: marginByOrder.get(order.id)?.marginSummary,
-  }));
+  return orders.map((order) => {
+    const result = marginByOrder.get(order.id);
+    return {
+      ...order,
+      marginSummary: result?.marginSummary,
+      marginItems: result ? Array.from(result.itemMargins.values()) : undefined,
+    };
+  });
 }
 
 export async function attachMarginToSalesOrderDetail<
@@ -375,6 +366,6 @@ export async function buildSalesOrderMarginInputsForOrder(
   const resolverItems = order.items.map((item, index) =>
     mapItemToResolverInput(item, order, index, order.items.length)
   );
-  return buildSalesOrderMarginInputs(prisma, resolverItems, getSalesOrderMarginProductCostResolver());
+  return buildSalesOrderMarginInputsFromVersionedProductionCosts(prisma, resolverItems);
 }
 

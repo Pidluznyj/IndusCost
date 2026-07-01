@@ -62,7 +62,7 @@ import type {
 export const SALES_MARGIN_RULES_ENGINE_VERSION = "1.0.0";
 
 export const SALES_MARGIN_RULES_ENGINE_NOTE =
-  "Margem de Venda: receita = netTotalValue/netUnitPrice×qty; imposto = TaxRule (averageSalesTaxEngine); custo de produção IndusCost = unitCost resolvido×qty (nunca SalesOrderItem.unitCost Nomus); margem gerencial = receita líquida − custo; % agregada ponderada por receita." as const;
+  "Margem de Venda: receita = netTotalValue/netUnitPrice×qty; imposto = TaxRule (averageSalesTaxEngine); custo = tabela oficial de produção vigente na data do pedido (SalesOrder.issueDate); margem gerencial = receita líquida − custo; % agregada ponderada por receita." as const;
 
 export type {
   SalesMarginAggregateResult,

@@ -34,9 +34,11 @@ export { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMa
 export function SalesOrderMarginAnalysisSection({
   summary,
   items,
+  orderIssueDate,
 }: {
   summary?: SalesOrderMarginSummaryPayload | null;
   items: SalesOrderMarginItemRow[];
+  orderIssueDate?: string | null;
 }) {
   const alerts = buildSalesOrderMarginAlerts(summary);
   const supportText = resolveSalesOrderMarginSupportText(
@@ -56,6 +58,7 @@ export function SalesOrderMarginAnalysisSection({
               <SalesOrderMarginInfoTooltip
                 summary={summary}
                 itemMargins={items.map((it) => it.margin)}
+                orderIssueDate={orderIssueDate}
                 testId="sales-order-detail-margin-tooltip"
               />
             </div>

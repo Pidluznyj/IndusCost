@@ -8,6 +8,7 @@ import {
   assertNonNegativeProductionUnitCost,
   assertPositiveProductionUnitCost,
   assertProductionCostTableVersionEditable,
+  effectiveProductionCostLookupKey,
   nextProductionCostTableRevision,
   resolveEffectiveProductProductionCostFromCatalog,
   resolveEffectiveProductProductionCostsFromCatalog,
@@ -355,6 +356,54 @@ export async function getEffectiveProductProductionCosts(
 
   const catalog = await loadResolverCatalog(db, uniqueIds, referenceDate);
   return resolveEffectiveProductProductionCostsFromCatalog(catalog, uniqueIds, referenceDate);
+}
+
+export type EffectiveProductionCostPair = {
+  productId: string;
+  referenceDate: Date;
+};
+
+/**
+ * Resolve custo vigente para vários pares produto/data (ex.: margem por SalesOrder.issueDate).
+ * Uma consulta ao catálogo cobre o maior referenceDate do lote.
+ */
+export async function getEffectiveProductProductionCostsForPairs(
+  db: PrismaClient,
+  pairs: EffectiveProductionCostPair[]
+): Promise<Map<string, EffectiveProductProductionCostResult>> {
+  const normalized = pairs
+    .filter((p) => p.productId?.trim())
+    .map((p) => ({
+      productId: p.productId.trim(),
+      referenceDate: startOfCivilDate(p.referenceDate),
+    }))
+    .filter((p) => !Number.isNaN(p.referenceDate.getTime()));
+
+  if (normalized.length === 0) return new Map();
+
+  const productIds = [...new Set(normalized.map((p) => p.productId))];
+  const maxReference = normalized.reduce(
+    (max, p) => (p.referenceDate.getTime() > max.getTime() ? p.referenceDate : max),
+    normalized[0]!.referenceDate
+  );
+
+  const catalog = await loadResolverCatalog(db, productIds, maxReference);
+  const out = new Map<string, EffectiveProductProductionCostResult>();
+
+  for (const pair of normalized) {
+    const key = effectiveProductionCostLookupKey(pair.productId, pair.referenceDate);
+    if (out.has(key)) continue;
+    out.set(
+      key,
+      resolveEffectiveProductProductionCostFromCatalog(
+        catalog,
+        pair.productId,
+        pair.referenceDate
+      )
+    );
+  }
+
+  return out;
 }
 
 /** Impede update/delete acidental em versões imutáveis via serviço. */

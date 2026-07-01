@@ -1083,6 +1083,8 @@ export function SalesOrderManagementPage() {
                         {pickSalesOrderListMarginPercent(row.marginSummary)}
                         <SalesOrderMarginInfoTooltip
                           summary={row.marginSummary}
+                          itemMargins={row.marginItems}
+                          orderIssueDate={row.issueDate}
                           testId="sales-order-management-row-margin-tooltip"
                         />
                       </span>

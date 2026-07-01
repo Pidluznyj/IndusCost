@@ -38,12 +38,13 @@ export type SalesOrderMarginCostPolicy = {
 
 export const DEFAULT_SALES_ORDER_MARGIN_COST_POLICY: SalesOrderMarginCostPolicy = {
   useFrozenUnitCostFirst: false,
-  allowLiveCostFallback: true,
+  allowLiveCostFallback: false,
 };
 
 export type SalesOrderCostSource =
   | "SALES_ORDER_ITEM_SNAPSHOT"
   | "HISTORICAL_SNAPSHOT"
+  | "VERSIONED_PRODUCTION_COST"
   | "LIVE_PRODUCT_COST"
   | "RECALCULATED_CURRENT_COST"
   | "OFFICIAL_FINAL_COST"
@@ -51,6 +52,19 @@ export type SalesOrderCostSource =
   | "CURRENT_COST"
   | "MANUAL_COST"
   | "MISSING_COST";
+
+/** Metadados do custo vigente na tabela oficial de produção (margem). */
+export type SalesOrderMarginProductionCostMeta = {
+  costTableVersionId: string;
+  costTableItemId: string;
+  versionCode: string;
+  versionName: string;
+  revision: number;
+  effectiveDate: string;
+  publishedAt: string | null;
+  orderIssueDate: string | null;
+  warning?: string | null;
+};
 
 /** Classificação interna da margem quanto ao congelamento do custo (payload/API). */
 export type SalesOrderMarginCostMode = "HISTORICAL_FROZEN" | "LIVE_ESTIMATE" | "MISSING";
@@ -78,6 +92,7 @@ export type SalesOrderMarginItemInput = {
   costSource?: SalesOrderCostSource;
   costConfidence?: SalesOrderCostConfidence;
   marginCostMode?: SalesOrderMarginCostMode;
+  productionCost?: SalesOrderMarginProductionCostMeta | null;
 };
 
 export type SalesOrderMarginItemResult = {
@@ -106,6 +121,7 @@ export type SalesOrderMarginItemResult = {
   costConfidence: SalesOrderCostConfidence;
   /** Modo de resolução do custo de produção IndusCost (histórico congelado vs estimativa viva). */
   marginCostMode?: SalesOrderMarginCostMode;
+  productionCost?: SalesOrderMarginProductionCostMeta | null;
 
   notes: string[];
 };
@@ -150,6 +166,7 @@ export type SalesOrderItemMarginPayload = {
     | "SKU"
     | "RAW_NOMUS_CODE"
     | "NOT_FOUND";
+  productionCost?: SalesOrderMarginProductionCostMeta | null;
   notes: string[];
 };
 

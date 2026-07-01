@@ -47,8 +47,8 @@ function summary(
     taxRuleName: "Imposto médio sobre venda",
     taxRulePercent: 27.25,
     fiscalConfigComplete: true,
-    costSourceSummary: "Custo de produção IndusCost (motor vivo)",
-    hasFrozenCost: false,
+    costSourceSummary: "Custo de produção IndusCost (tabela vigente)",
+    hasFrozenCost: true,
     ...partial,
   };
 }
@@ -62,7 +62,8 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Imposto médio sobre venda \(27,25%\)/);
     assert.match(text, /Receita líquida gerencial: R\$\s*286,63/);
     assert.match(text, /Custo de produção IndusCost: R\$\s*193,49/);
-    assert.match(text, /Fonte do custo: motor de custo \/ getProductCostAnalysis/);
+    assert.match(text, /Fonte do custo: Tabela de Custo vigente/);
+    assert.doesNotMatch(text, /getProductCostAnalysis/);
     assert.match(text, /Margem R\$: R\$\s*93,14/);
     assert.match(text, /32,50%/);
     assert.match(text, /Cobertura: FULL/);

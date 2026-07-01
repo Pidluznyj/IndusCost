@@ -622,7 +622,11 @@ function SalesOrderDetailView({ id }: { id: string }) {
         </div>
       </div>
 
-      <SalesOrderMarginAnalysisSection summary={row.marginSummary} items={row.items ?? []} />
+      <SalesOrderMarginAnalysisSection
+        summary={row.marginSummary}
+        items={row.items ?? []}
+        orderIssueDate={row.issueDate}
+      />
 
       <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         <div className="p-4 border-b border-border bg-accent/30">

@@ -48,6 +48,7 @@ export function formatSalesOrderMarkup(value: unknown): string {
 export const SALES_ORDER_COST_SOURCE_LABEL: Record<SalesOrderCostSource, string> = {
   SALES_ORDER_ITEM_SNAPSHOT: "Legado — não usar como custo de produção",
   HISTORICAL_SNAPSHOT: "Snapshot histórico do motor de custo",
+  VERSIONED_PRODUCTION_COST: "Custo de produção IndusCost (tabela vigente)",
   LIVE_PRODUCT_COST: "Custo de produção IndusCost (motor vivo)",
   RECALCULATED_CURRENT_COST: "Custo de produção parcial recalculado",
   OFFICIAL_FINAL_COST: "Custo oficial da engenharia",
@@ -74,6 +75,9 @@ export function resolveSalesOrderMarginSupportText(
       .filter((s): s is SalesOrderCostSource => Boolean(s))
   );
 
+  if (sources.has("VERSIONED_PRODUCTION_COST")) {
+    return "Margem calculada com custo de produção IndusCost da tabela oficial vigente na data do pedido.";
+  }
   if (sources.has("HISTORICAL_SNAPSHOT")) {
     return "Margem calculada com snapshot histórico do motor de custo IndusCost.";
   }
@@ -212,8 +216,48 @@ export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
 
 export type SalesOrderMarginTooltipInput = {
   summary?: SalesOrderMarginSummaryPayload | null;
-  itemMargins?: Array<Pick<SalesOrderItemMarginPayload, "costSource"> | null | undefined>;
+  itemMargins?: Array<
+    Pick<SalesOrderItemMarginPayload, "costSource" | "productionCost" | "unitCost" | "totalCost"> | null | undefined
+  >;
+  orderIssueDate?: string | null;
 };
+
+function formatCivilDatePtBr(iso: string | null | undefined): string {
+  if (!iso?.trim()) return "—";
+  const parts = iso.trim().slice(0, 10).split("-");
+  if (parts.length !== 3) return iso;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function pickProductionCostTooltipLines(
+  itemMargins?: SalesOrderMarginTooltipInput["itemMargins"]
+): string[] {
+  const metas = (itemMargins ?? [])
+    .map((row) => row?.productionCost)
+    .filter((m): m is NonNullable<typeof m> => Boolean(m));
+  if (metas.length === 0) return [];
+
+  const unique = new Map<string, (typeof metas)[number]>();
+  for (const meta of metas) {
+    unique.set(`${meta.versionCode}|${meta.revision}|${meta.effectiveDate}`, meta);
+  }
+
+  const lines: string[] = [];
+  if (unique.size === 1) {
+    const meta = [...unique.values()][0]!;
+    lines.push(`Tabela de custo: ${meta.versionCode} (rev. ${meta.revision})`);
+    lines.push(`Fonte: Tabela de Custo vigente`);
+    lines.push(`Vigência: ${formatCivilDatePtBr(meta.effectiveDate)}`);
+    if (meta.orderIssueDate) {
+      lines.push(`Data do pedido: ${formatCivilDatePtBr(meta.orderIssueDate)}`);
+    }
+    if (meta.warning) lines.push(`Aviso: ${meta.warning}`);
+  } else {
+    lines.push(`Tabelas de custo: ${unique.size} versões distintas nos itens`);
+    lines.push(`Fonte: Tabela de Custo vigente`);
+  }
+  return lines;
+}
 
 export function isSalesOrderMarginDisplayUnavailable(
   summary?: SalesOrderMarginSummaryPayload | null
@@ -243,7 +287,10 @@ export function resolveSalesOrderMarginCostSourceSummary(
   if (summary?.hasEstimatedCost) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costEstimated;
   if (summary?.hasMissingCost) return "Custo indisponível";
 
-  const frozenSources = new Set<SalesOrderCostSource>(["HISTORICAL_SNAPSHOT"]);
+  const frozenSources = new Set<SalesOrderCostSource>([
+    "HISTORICAL_SNAPSHOT",
+    "VERSIONED_PRODUCTION_COST",
+  ]);
   const estimatedSources = new Set<SalesOrderCostSource>([
     "LIVE_PRODUCT_COST",
     "RECALCULATED_CURRENT_COST",
@@ -270,6 +317,9 @@ export function resolveSalesOrderMarginCostSourceSummary(
   if (hasFrozen && hasEstimated) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costMixed;
   if (hasFrozen) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costFrozen;
   if (hasEstimated) return SALES_ORDER_MARGIN_DISPLAY_LABELS.costEstimated;
+  if ((itemMargins ?? []).some((row) => row?.costSource === "VERSIONED_PRODUCTION_COST")) {
+    return "Custo de produção IndusCost (tabela vigente)";
+  }
   return "Custo oficial resolvido";
 }
 
@@ -303,7 +353,7 @@ function buildSalesOrderMarginUnavailableTooltip(
 export function buildOfficialSalesOrderMarginTooltipText(
   input: SalesOrderMarginTooltipInput
 ): string {
-  const { summary, itemMargins } = input;
+  const { summary, itemMargins, orderIssueDate } = input;
   if (!summary || isSalesOrderMarginDisplayUnavailable(summary)) {
     return buildSalesOrderMarginUnavailableTooltip(summary);
   }
@@ -348,7 +398,24 @@ export function buildOfficialSalesOrderMarginTooltipText(
   lines.push(
     `${SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}: ${formatSalesOrderMarginMoney(summary.totalCost)} — ${costLabel}`
   );
-  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: motor de custo / getProductCostAnalysis`);
+  lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.costSource}: Tabela de Custo vigente`);
+
+  const versionedItems = (itemMargins ?? []).filter(
+    (row) => row?.costSource === "VERSIONED_PRODUCTION_COST" && row.unitCost != null
+  );
+  if (versionedItems.length === 1 && versionedItems[0]?.unitCost != null) {
+    lines.push(
+      `Custo unitário de produção: ${formatSalesOrderMarginMoney(versionedItems[0].unitCost)}`
+    );
+  }
+
+  for (const extra of pickProductionCostTooltipLines(itemMargins)) {
+    lines.push(extra);
+  }
+  if (orderIssueDate && !pickProductionCostTooltipLines(itemMargins).some((l) => l.startsWith("Data do pedido"))) {
+    lines.push(`Data do pedido: ${formatCivilDatePtBr(orderIssueDate)}`);
+  }
+
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
 
   const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
@@ -363,6 +430,10 @@ export function buildOfficialSalesOrderMarginTooltipText(
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.coverage}: ${summary.costCoverageStatus ?? "—"}`);
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithCost}: ${summary.itemsWithCost ?? 0}`);
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.itemsWithoutCost}: ${summary.itemsWithoutCost ?? 0}`);
+
+  if ((summary.itemsWithoutCost ?? 0) > 0) {
+    lines.push("Itens sem custo: linhas SEM_CUSTO — não entram na margem agregada.");
+  }
 
   if (isPartial) {
     lines.push("");

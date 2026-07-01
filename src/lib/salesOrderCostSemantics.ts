@@ -9,7 +9,7 @@ export const SALES_ORDER_ITEM_UNIT_COST_IS_SALE_PRICE =
   "SalesOrderItem.unitCost espelha preço unitário comercial Nomus — não é custo de produção IndusCost." as const;
 
 export const SALES_ORDER_PRODUCTION_COST_SOURCE_NOTE =
-  "Custo de produção resolvido pelo motor industrial IndusCost (getProductCostAnalysis)." as const;
+  "Custo de produção resolvido pela tabela oficial versionada IndusCost (productId + data do pedido)." as const;
 
 export type SalesOrderCostSemanticsClassification =
   | "PRECO_VENDA"

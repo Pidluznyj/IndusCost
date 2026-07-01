@@ -133,6 +133,7 @@ export async function loadSalesOrderManagementPage(
     prisma,
     orders.map((order) => ({
       id: order.id,
+      issueDate: order.issueDate,
       nomusRawResponse: order.nomusRawResponse,
       items: order.items,
     }))
@@ -146,6 +147,7 @@ export async function loadSalesOrderManagementPage(
     row.marginSummary = marginResult?.marginSummary;
     if (marginResult) {
       row.marginDetail = countMarginItemStatuses(marginResult.itemResults);
+      row.marginItems = Array.from(marginResult.itemMargins.values());
       itemResultsByOrderId.set(row.id, marginResult.itemResults);
     }
   }

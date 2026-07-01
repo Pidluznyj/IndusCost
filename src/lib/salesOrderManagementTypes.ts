@@ -154,6 +154,8 @@ export type SalesOrderManagementRow = {
   suggestedActionLabel?: string | null;
   /** Margem consolidada calculada no backend (motor único). */
   marginSummary?: import("./salesOrderMarginTypes.js").SalesOrderMarginSummaryPayload;
+  /** Payloads por item para tooltip oficial (tabela/vigência). */
+  marginItems?: import("./salesOrderMarginTypes.js").SalesOrderItemMarginPayload[];
   /** Contagens de itens para análise econômica no drawer. */
   marginDetail?: import("./salesOrderManagementMargin.js").SalesOrderManagementMarginItemCounts;
 };

@@ -199,7 +199,7 @@ async function main() {
   }, null, 2));
 
   console.log(
-    "\nNota: custo de produção via getProductCostAnalysis — SalesOrderItem.unitCost Nomus (preço de venda) não entra na margem."
+    "\nNota: custo de produção via tabela versionada IndusCost (productId + issueDate) — SalesOrderItem.unitCost Nomus (preço de venda) não entra na margem."
   );
 }
 

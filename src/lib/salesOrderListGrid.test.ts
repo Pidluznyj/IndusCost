@@ -95,7 +95,8 @@ describe("salesOrderListUi formatters", () => {
     assert.match(ok, /Margem gerencial do pedido/);
     assert.match(ok, /Valor vendido:.*5\.301/);
     assert.match(ok, /Receita líquida gerencial:.*5\.301/);
-    assert.match(ok, /Custo:.*1\.321/);
+    assert.match(ok, /Custo de produção IndusCost:.*1\.321/);
+    assert.match(ok, /Tabela de Custo vigente/);
     assert.match(ok, /Margem R\$:.*3\.980/);
     assert.match(ok, /75,08%/);
     assert.match(ok, /Cobertura: FULL/);

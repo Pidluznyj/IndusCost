@@ -14,11 +14,12 @@ type SalesOrderMarginInfoTooltipProps = SalesOrderMarginTooltipInput & {
 export function SalesOrderMarginInfoTooltip({
   summary,
   itemMargins,
+  orderIssueDate,
   className,
   testId = "sales-order-margin-tooltip",
   panelClassName,
 }: SalesOrderMarginInfoTooltipProps) {
-  const text = buildOfficialSalesOrderMarginTooltipText({ summary, itemMargins });
+  const text = buildOfficialSalesOrderMarginTooltipText({ summary, itemMargins, orderIssueDate });
 
   return (
     <span

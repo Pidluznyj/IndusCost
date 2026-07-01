@@ -11,11 +11,13 @@ import {
   registerSalesOrderMarginCatalogMapping,
   registerSalesOrderMarginExternalProductMapping,
   resolveSalesOrderItemCosts,
+  resolveSalesOrderItemCostsFromVersionedProduction,
   resolveSalesOrderItemProducts,
   type SalesOrderMarginProductBatchIndex,
   type SalesOrderMarginProductCostResolver,
   type SalesOrderMarginResolverItem,
 } from "./salesOrderMarginResolver.js";
+import { getEffectiveProductProductionCostsForPairs } from "./productionCostTables.server.js";
 
 const PRODUCT_SELECT = {
   id: true,
@@ -204,6 +206,41 @@ export async function buildSalesOrderMarginInputs(
     productResolutions,
     costResolver,
     options?.costCache
+  );
+
+  return buildSalesOrderMarginInputsFromResolutions(items, productResolutions, costResolutions);
+}
+
+export async function buildSalesOrderMarginInputsFromVersionedProductionCosts(
+  prisma: PrismaClient,
+  items: SalesOrderMarginResolverItem[],
+  options?: {
+    productIndex?: SalesOrderMarginProductBatchIndex;
+  }
+): Promise<SalesOrderMarginItemInput[]> {
+  const productIndex =
+    options?.productIndex ?? (await loadSalesOrderMarginProductBatchIndex(prisma, items));
+  const productResolutions = resolveSalesOrderItemProducts(items, productIndex);
+
+  const pairs: Array<{ productId: string; referenceDate: Date }> = [];
+  for (const item of items) {
+    const productId = productResolutions.get(item.salesOrderItemId)?.productId;
+    if (!productId || !item.referenceDate) continue;
+    const ref =
+      item.referenceDate instanceof Date ? item.referenceDate : new Date(item.referenceDate);
+    if (Number.isNaN(ref.getTime())) continue;
+    pairs.push({ productId, referenceDate: ref });
+  }
+
+  const effectiveCostsByLookupKey = await getEffectiveProductProductionCostsForPairs(
+    prisma,
+    pairs
+  );
+
+  const costResolutions = await resolveSalesOrderItemCostsFromVersionedProduction(
+    items,
+    productResolutions,
+    effectiveCostsByLookupKey
   );
 
   return buildSalesOrderMarginInputsFromResolutions(items, productResolutions, costResolutions);

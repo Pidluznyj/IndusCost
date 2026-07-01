@@ -19,7 +19,7 @@ export const DEFAULT_SALES_MARGIN_NOMUS_CONFIG: SalesMarginNomusConfig = {
   defaultTaxRuleId: null,
   taxMode: "deductFromGross",
   useFrozenUnitCostFirst: false,
-  allowLiveCostFallback: true,
+  allowLiveCostFallback: false,
   showPartialCoverageWarning: true,
 };
 

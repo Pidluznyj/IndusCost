@@ -5,14 +5,18 @@ import {
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
 } from "@/src/lib/salesOrderMarginDisplay";
-import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
+import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 
 export function SalesOrderListMarginCell({
   marginSummary,
+  marginItems,
+  orderIssueDate,
 }: {
   marginSummary?: SalesOrderMarginSummaryPayload | null;
+  marginItems?: Array<SalesOrderItemMarginPayload | null | undefined>;
+  orderIssueDate?: string | null;
 }) {
   const percentLabel = pickSalesOrderListMarginPercent(marginSummary);
   const valueLabel = pickSalesOrderListMarginValue(marginSummary);
@@ -44,7 +48,12 @@ export function SalesOrderListMarginCell({
             />
           ) : null}
         </div>
-        <SalesOrderMarginInfoTooltip summary={marginSummary} testId="sales-order-list-margin-tooltip" />
+        <SalesOrderMarginInfoTooltip
+          summary={marginSummary}
+          itemMargins={marginItems}
+          orderIssueDate={orderIssueDate}
+          testId="sales-order-list-margin-tooltip"
+        />
       </div>
     </div>
   );

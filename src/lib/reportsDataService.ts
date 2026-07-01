@@ -261,6 +261,7 @@ export async function buildReportsDataPayload(
     db as PrismaClient,
     orders.map((order) => ({
       id: order.id,
+      issueDate: order.issueDate,
       nomusRawResponse: order.nomusRawResponse,
       items: order.items,
     }))

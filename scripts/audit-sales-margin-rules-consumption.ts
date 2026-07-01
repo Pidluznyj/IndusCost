@@ -267,7 +267,7 @@ function buildScreenMarginAuditRows(input: {
     taxRuleLabel: input.taxRuleLabel,
     taxPercent: input.taxPercent,
     fiscalStatus: input.fiscalStatus,
-    costSourceNote: "SalesOrderItem.unitCost → getProductCostAnalysis se configurado",
+    costSourceNote: "Tabela de custo de produção vigente (productId + issueDate)",
   };
 
   function divergence(actual: number | null | undefined): string {

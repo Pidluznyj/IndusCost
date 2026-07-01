@@ -3,6 +3,9 @@
  * Sem Prisma — seguro para testes e importação indireta no frontend (apenas tipos/funções puras).
  */
 import { normalizeSku } from "./nomusBomComparison.js";
+import { toCivilDateKey } from "./financeCivilDate.js";
+import type { EffectiveProductProductionCostResult } from "./productionCostVersioning.js";
+import { effectiveProductionCostLookupKey } from "./productionCostVersioning.js";
 import {
   extractOfficialProductFinalUnitCost,
   resolveOfficialProductFinalCostFromAnalysis,
@@ -14,6 +17,7 @@ import type {
   SalesOrderMarginCostMode,
   SalesOrderMarginCostPolicy,
   SalesOrderMarginItemInput,
+  SalesOrderMarginProductionCostMeta,
 } from "./salesOrderMarginTypes.js";
 import { DEFAULT_SALES_ORDER_MARGIN_COST_POLICY } from "./salesOrderMarginTypes.js";
 
@@ -42,6 +46,7 @@ export type CostResolution = {
   costConfidence: SalesOrderCostConfidence;
   marginCostMode: SalesOrderMarginCostMode;
   calculatedAt?: string;
+  productionCost?: SalesOrderMarginProductionCostMeta | null;
   notes: string[];
 };
 
@@ -69,6 +74,8 @@ export type SalesOrderMarginResolverItem = {
   isCanceled?: boolean;
   /** Payload bruto do item Nomus (`itensPedido[]`), quando disponível. */
   nomusRawItem?: Record<string, unknown> | null;
+  /** Data de referência para custo vigente (SalesOrder.issueDate). */
+  referenceDate?: Date | string | null;
 };
 
 export type SalesOrderMarginProductBatchIndex = {
@@ -115,6 +122,7 @@ export function resolveSalesOrderMarginCostMode(
 ): SalesOrderMarginCostMode {
   switch (costSource) {
     case "HISTORICAL_SNAPSHOT":
+    case "VERSIONED_PRODUCTION_COST":
     case "MANUAL_COST":
       return "HISTORICAL_FROZEN";
     case "LIVE_PRODUCT_COST":
@@ -432,6 +440,122 @@ export function resolveSalesOrderItemCost(input: {
   return base;
 }
 
+function readPartialWarningFromSnapshot(snapshot: unknown): string | null {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (row.costAnalysisPartial === true) {
+    return "Custo publicado com análise parcial no snapshot.";
+  }
+  return null;
+}
+
+export function mapEffectiveProductionCostToMarginMeta(
+  effective: Extract<EffectiveProductProductionCostResult, { status: "OK" }>,
+  orderIssueDate: Date | string | null | undefined
+): SalesOrderMarginProductionCostMeta {
+  const warning = readPartialWarningFromSnapshot(effective.calculationSnapshot);
+  return {
+    costTableVersionId: effective.costTableVersionId,
+    costTableItemId: effective.costTableItemId,
+    versionCode: effective.versionCode,
+    versionName: effective.versionName,
+    revision: effective.revision,
+    effectiveDate: toCivilDateKey(effective.effectiveDate) ?? effective.effectiveDate.toISOString(),
+    publishedAt: effective.publishedAt?.toISOString() ?? null,
+    orderIssueDate: orderIssueDate ? toCivilDateKey(orderIssueDate) : null,
+    warning,
+  };
+}
+
+/**
+ * Custo oficial de margem: tabela versionada vigente na data do pedido (nunca DRAFT, nunca unitCost Nomus).
+ */
+export function resolveSalesOrderItemCostFromVersionedProduction(
+  input: {
+    salesOrderItemId: string;
+    productId: string | null;
+    referenceDate?: Date | string | null;
+    effectiveCost?: EffectiveProductProductionCostResult | null;
+  }
+): CostResolution {
+  const notes: string[] = [];
+  const base: CostResolution = {
+    salesOrderItemId: input.salesOrderItemId,
+    productId: input.productId,
+    unitCost: null,
+    costSource: "MISSING_COST",
+    costConfidence: "MISSING",
+    marginCostMode: "MISSING",
+    productionCost: null,
+    notes,
+  };
+
+  if (!input.productId) {
+    notes.push("Custo não resolvido: produto ausente.");
+    return base;
+  }
+
+  if (!input.referenceDate) {
+    notes.push("Custo não resolvido: SalesOrder.issueDate ausente.");
+    return base;
+  }
+
+  const effective = input.effectiveCost;
+  if (!effective || effective.status === "SEM_CUSTO") {
+    notes.push(
+      "SEM_CUSTO — nenhuma tabela oficial vigente para o produto na data do pedido."
+    );
+    return base;
+  }
+
+  const meta = mapEffectiveProductionCostToMarginMeta(effective, input.referenceDate);
+  if (meta.warning) notes.push(meta.warning);
+  notes.push(
+    `Custo de produção IndusCost — tabela ${meta.versionCode} rev.${meta.revision} vigente em ${meta.effectiveDate}.`
+  );
+
+  return {
+    ...base,
+    unitCost: effective.unitProductionCost,
+    costSource: "VERSIONED_PRODUCTION_COST",
+    costConfidence: meta.warning ? "MEDIUM" : "HIGH",
+    marginCostMode: "HISTORICAL_FROZEN",
+    productionCost: meta,
+    notes,
+  };
+}
+
+export async function resolveSalesOrderItemCostsFromVersionedProduction(
+  items: SalesOrderMarginResolverItem[],
+  productResolutions: Map<string, ProductResolution>,
+  effectiveCostsByLookupKey: Map<string, EffectiveProductProductionCostResult>
+): Promise<Map<string, CostResolution>> {
+  const map = new Map<string, CostResolution>();
+  for (const item of items) {
+    const product = productResolutions.get(item.salesOrderItemId);
+    const productId = product?.productId ?? null;
+    let effective: EffectiveProductProductionCostResult | null = null;
+    if (productId && item.referenceDate) {
+      const ref =
+        item.referenceDate instanceof Date
+          ? item.referenceDate
+          : new Date(item.referenceDate);
+      const key = effectiveProductionCostLookupKey(productId, ref);
+      effective = effectiveCostsByLookupKey.get(key) ?? null;
+    }
+    map.set(
+      item.salesOrderItemId,
+      resolveSalesOrderItemCostFromVersionedProduction({
+        salesOrderItemId: item.salesOrderItemId,
+        productId,
+        referenceDate: item.referenceDate,
+        effectiveCost: effective,
+      })
+    );
+  }
+  return map;
+}
+
 export async function resolveSalesOrderItemCosts(
   items: SalesOrderMarginResolverItem[],
   productResolutions: Map<string, ProductResolution>,
@@ -500,6 +624,7 @@ export function assembleSalesOrderMarginItemInput(
     costSource: cost.costSource,
     costConfidence: cost.costConfidence,
     marginCostMode: cost.marginCostMode,
+    productionCost: cost.productionCost ?? null,
   };
 }
 
