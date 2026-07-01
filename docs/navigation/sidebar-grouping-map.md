@@ -49,7 +49,7 @@ Fonte de verdade dos itens: `SIDEBAR_MODULE_ORDER` + `MODULE_LABELS` em `src/lib
 
 - **Rotas/URLs:** nenhuma alterada; paths continuam `/{AppModuleId}`.
 - **Permissões:** `canAccessModule` e `permissionCatalog` inalterados; `MODULE_MENU_PERMISSION_KEYS` espelha as chaves usadas no gate de menu.
-- **Sidebar visual:** `Sidebar.tsx` permanece com lista flat (`ALL_MENU_ITEMS`); agrupamento só disponível via helper.
+- **Sidebar visual:** `Sidebar.tsx` consome `buildAccessibleSidebarNavigation()` — Dashboard direto + grupos expansíveis; modo colapsado mantém ícones flat com `title`.
 - **Itens não mapeados:** todos os 23 módulos atuais estão mapeados; grupo **Outros** vazio na auditoria (`unmappedItemIds: []`).
 
 ## Arquivos relacionados
@@ -59,7 +59,9 @@ Fonte de verdade dos itens: `SIDEBAR_MODULE_ORDER` + `MODULE_LABELS` em `src/lib
 | `src/lib/navigationGroups.ts` | Tipos, grupos oficiais, builder |
 | `src/lib/navigationGroups.test.ts` | Auditoria de cobertura e integridade |
 | `src/lib/modulePermissions.ts` | Ordem, labels e permissões de menu |
-| `src/components/layout/Sidebar.tsx` | UI atual (não alterada nesta etapa) |
+| `src/lib/sidebarNavigation.ts` | Filtro por permissão, expansão de grupos, flat colapsado |
+| `src/lib/sidebarNavigation.test.ts` | Testes da sidebar agrupada |
+| `src/components/layout/Sidebar.tsx` | UI agrupada (Dashboard + accordions) |
 | `src/lib/mainNavigation.ts` | Segmentos de path (documentação/validação) |
 
 ## Próxima etapa (fora do escopo atual)

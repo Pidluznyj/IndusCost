@@ -169,11 +169,10 @@ describe("navigationGroups — permissões preservadas", () => {
   });
 });
 
-describe("navigationGroups — sidebar visual inalterada nesta etapa", () => {
-  it("Sidebar.tsx ainda usa ALL_MENU_ITEMS flat sem navigationGroups", () => {
+describe("navigationGroups — integração com sidebar agrupada", () => {
+  it("Sidebar.tsx consome buildAccessibleSidebarNavigation", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.ok(sidebar.includes("ALL_MENU_ITEMS"));
-    assert.ok(!sidebar.includes("navigationGroups"));
-    assert.ok(!sidebar.includes("buildGroupedNavigationStructure"));
+    assert.ok(sidebar.includes("buildAccessibleSidebarNavigation"));
+    assert.ok(sidebar.includes("@/src/lib/navigationGroups"));
   });
 });
