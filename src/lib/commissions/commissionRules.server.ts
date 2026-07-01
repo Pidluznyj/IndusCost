@@ -8,6 +8,8 @@ import { prisma } from "@/src/lib/prisma.js";
 import { toPrismaDecimal } from "./commission-money.js";
 import type { CommissionRuleWriteInput } from "./commissionApiValidation.js";
 import { CommissionValidationError } from "./commissionApiValidation.js";
+import { assertFixedPersonRuleAllowed } from "./commissionSettings.server.js";
+import { loadCommissionSettings } from "./commission-settings.server.js";
 import type { CommissionRulesQuery } from "./commissionQuery.js";
 import { paginatedMeta } from "./commissionQuery.js";
 
@@ -258,6 +260,10 @@ export async function createCommissionRule(input: CommissionRuleWriteInput) {
     input.beneficiaryType,
     input.fixedCommissionPersonId ?? null
   );
+  if (input.beneficiaryType === "FIXED_PERSON") {
+    const settings = await loadCommissionSettings(prisma);
+    assertFixedPersonRuleAllowed(settings);
+  }
 
   const row = await prisma.commissionRule.create({
     data: {
@@ -297,6 +303,10 @@ export async function updateCommissionRule(id: string, input: Partial<Commission
   const nextTo = input.validTo !== undefined ? input.validTo : existing.validTo;
 
   assertFixedPersonRequired(nextBeneficiary, nextFixedId);
+  if (nextBeneficiary === "FIXED_PERSON") {
+    const settings = await loadCommissionSettings(prisma);
+    assertFixedPersonRuleAllowed(settings);
+  }
   assertValidPeriod(nextFrom, nextTo);
 
   await prisma.$transaction(async (tx) => {

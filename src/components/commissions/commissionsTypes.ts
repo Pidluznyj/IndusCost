@@ -526,7 +526,20 @@ export type CommissionsSettingsPayload = {
   releaseDefaultRule: string;
   forecastEnabled: boolean;
   outputDocumentSupersedesForecast: boolean;
+  receivableAsDefinitiveReleaseSource: boolean;
   paidCommissionBlockAutoChange: boolean;
+  manualPaymentEnabled: boolean;
+  partialPaymentEnabled: boolean;
+  requireApprovalBeforePaid: boolean;
+  auditOrderWithoutSeller: boolean;
+  auditOrderWithoutRepresentative: boolean;
+  auditNfeWithoutOutputDocument: boolean;
+  auditNfeWithoutReceivable: boolean;
+  auditPaidWithoutRelease: boolean;
+  calculateForSellers: boolean;
+  calculateForRepresentatives: boolean;
+  allowFixedPersonInRule: boolean;
+  warnings?: string[];
 };
 
 export type CommissionsPaymentBatchListItem = {

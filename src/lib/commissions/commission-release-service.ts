@@ -28,6 +28,7 @@ export function computeReleaseForSchedule(input: {
   releaseRule: CommissionReleaseRule;
   commissionAmount: number;
   alreadyReleased: number;
+  receivableAsDefinitiveReleaseSource?: boolean;
   schedule: CommissionPaymentScheduleDraft;
   receivable: CommissionReceivableSource | null;
   isFirstReceivablePaidInOrder: boolean;
@@ -54,7 +55,14 @@ export function computeReleaseForSchedule(input: {
   switch (input.releaseRule) {
     case "SALES_ORDER_CREATED":
     case "OUTPUT_DOCUMENT_CREATED":
-      delta = remaining;
+      if (
+        input.receivableAsDefinitiveReleaseSource &&
+        (!input.receivable || input.receivable.amountReceived <= 0)
+      ) {
+        delta = 0;
+      } else {
+        delta = remaining;
+      }
       break;
     case "FIRST_RECEIVABLE_PAID":
       if (input.isFirstReceivablePaidInOrder && input.receivable && input.receivable.amountReceived > 0) {

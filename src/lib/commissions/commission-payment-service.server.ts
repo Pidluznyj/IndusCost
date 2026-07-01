@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { decimalToNumber, roundMoney, toPrismaDecimal, clampPaymentAmount } from "./commission-money.js";
 import { computeBalanceAfterRelease } from "./commission-release-service.js";
+import { loadCommissionSettings } from "./commission-settings.server.js";
 
 export type UnpaidReleasedCommissionRow = {
   commissionRecordId: string;
@@ -72,6 +73,11 @@ export async function createCommissionPaymentBatch(
     createdBy?: string | null;
   }
 ): Promise<{ batchId: string; totalSelected: number }> {
+  const settings = await loadCommissionSettings(db);
+  if (!settings.manualPaymentEnabled) {
+    throw new Error("Pagamento manual de comissão está desabilitado nas configurações.");
+  }
+
   return db.$transaction(async (tx) => {
     const records = await tx.commissionRecord.findMany({
       where: {
@@ -159,12 +165,18 @@ export async function markCommissionPaymentBatchPaid(
     paidBy?: string | null;
   }
 ): Promise<{ totalPaid: number }> {
+  const settings = await loadCommissionSettings(db);
+
   return db.$transaction(async (tx) => {
     const batch = await tx.commissionPaymentBatch.findUnique({
       where: { id: input.batchId },
       include: {
         items: {
-          where: { status: { in: ["APPROVED"] } },
+          where: {
+            status: settings.requireApprovalBeforePaid
+              ? { in: ["APPROVED"] }
+              : { in: ["APPROVED", "DRAFT"] },
+          },
           select: {
             id: true,
             commissionRecordId: true,
@@ -178,8 +190,11 @@ export async function markCommissionPaymentBatchPaid(
     if (!batch) throw new Error("Lote não encontrado.");
     if (batch.status === "PAID") throw new Error("Lote já está pago.");
     if (batch.status === "CANCELLED") throw new Error("Lote cancelado não pode ser pago.");
-    if (batch.status !== "APPROVED") {
+    if (settings.requireApprovalBeforePaid && batch.status !== "APPROVED") {
       throw new Error("Somente lotes aprovados podem ser marcados como pagos.");
+    }
+    if (!settings.requireApprovalBeforePaid && batch.status !== "APPROVED" && batch.status !== "DRAFT") {
+      throw new Error("Lote não está disponível para pagamento.");
     }
 
     let totalPaid = 0;
@@ -203,6 +218,11 @@ export async function markCommissionPaymentBatchPaid(
       if (payAmount <= 0) {
         throw new Error(
           `Pagamento bloqueado: valor solicitado excede liberado no registro ${item.commissionRecordId}.`
+        );
+      }
+      if (!settings.partialPaymentEnabled && payAmount < maxPay) {
+        throw new Error(
+          "Pagamento parcial está desabilitado nas configurações do módulo."
         );
       }
 

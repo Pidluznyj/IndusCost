@@ -23,7 +23,9 @@ import {
   parseCommissionPersonCreateBody,
   parseCommissionRecalculateBody,
   parseCommissionRuleCreateBody,
+  parseCommissionSettingsUpdateBody,
 } from "./commissions/commissionApiValidation.js";
+import { validateCommissionSettingsSnapshot } from "./commissions/commissionSettings.server.js";
 import { CommissionValidationError } from "./commissions/commissionApiValidation.js";
 import { resolveCommissionAccessScope } from "./commissions/commissionAccessScope.js";
 import type { AppAuthContext } from "./appAuth.js";
@@ -292,6 +294,51 @@ describe("commissionApiValidation", () => {
     });
     assert.equal(body.name, "João");
     assert.equal(body.type, "SELLER");
+  });
+
+  it("parseCommissionSettingsUpdateBody aceita campos estendidos", () => {
+    const body = parseCommissionSettingsUpdateBody({
+      forecastEnabled: false,
+      receivableAsDefinitiveReleaseSource: true,
+      manualPaymentEnabled: true,
+      calculateForSellers: true,
+      releaseDefaultRule: "EACH_RECEIVABLE_PAID",
+    });
+    assert.equal(body.forecastEnabled, false);
+    assert.equal(body.receivableAsDefinitiveReleaseSource, true);
+    assert.equal(body.manualPaymentEnabled, true);
+    assert.equal(body.calculateForSellers, true);
+    assert.equal(body.releaseDefaultRule, "EACH_RECEIVABLE_PAID");
+  });
+});
+
+describe("commissionSettings validation", () => {
+  it("rejeita desativar todas as fontes de cálculo", () => {
+    const result = validateCommissionSettingsSnapshot({
+      releaseDefaultRule: "EACH_RECEIVABLE_PAID",
+      forecastEnabled: false,
+      outputDocumentSupersedesForecast: false,
+      receivableAsDefinitiveReleaseSource: false,
+      paidCommissionBlockAutoChange: true,
+      manualPaymentEnabled: true,
+      partialPaymentEnabled: true,
+      requireApprovalBeforePaid: true,
+      auditOrderWithoutSeller: true,
+      auditOrderWithoutRepresentative: true,
+      auditNfeWithoutOutputDocument: true,
+      auditNfeWithoutReceivable: true,
+      auditPaidWithoutRelease: true,
+      calculateForSellers: true,
+      calculateForRepresentatives: true,
+      allowFixedPersonInRule: true,
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("settings routes expõem restore e manage guard", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/commissionsRoutes.ts"), "utf8");
+    assert.match(src, /\/api\/commissions\/settings\/restore/);
+    assert.match(src, /COMMISSIONS_SETTINGS_MANAGE_PERMISSIONS/);
   });
 });
 

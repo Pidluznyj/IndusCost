@@ -4,6 +4,7 @@ import type {
   CommissionAuditIssueDraft,
   CommissionOrderSourceBundle,
   CommissionLinkedNfeSource,
+  CommissionSettingsAuditFlags,
 } from "./commission-types.js";
 import { isActiveCommissionStatus, isPaidCommissionStatus } from "./commission-calculation-hash.js";
 
@@ -176,19 +177,42 @@ export function buildManualReviewRequiredIssue(input: {
   };
 }
 
-export function collectOrderAuditIssues(order: CommissionOrderSourceBundle): CommissionAuditIssueDraft[] {
+export function collectOrderAuditIssues(
+  order: CommissionOrderSourceBundle,
+  auditSettings?: CommissionSettingsAuditFlags
+): CommissionAuditIssueDraft[] {
   const issues: CommissionAuditIssueDraft[] = [];
-  if (order.seller.nomusSellerId == null && !order.seller.responsibleName) {
+  const audit = auditSettings ?? {
+    auditOrderWithoutSeller: true,
+    auditOrderWithoutRepresentative: true,
+    auditNfeWithoutOutputDocument: true,
+    auditNfeWithoutReceivable: true,
+    auditPaidWithoutRelease: true,
+  };
+
+  if (
+    audit.auditOrderWithoutSeller &&
+    order.seller.nomusSellerId == null &&
+    !order.seller.responsibleName
+  ) {
     issues.push(buildOrderWithoutSellerIssue(order));
   }
-  if (order.representative.nomusRepresentativeId == null && !order.representative.name) {
+  if (
+    audit.auditOrderWithoutRepresentative &&
+    order.representative.nomusRepresentativeId == null &&
+    !order.representative.name
+  ) {
     issues.push(buildOrderWithoutRepresentativeIssue(order));
   }
   for (const nfe of order.authorizedOutputNfes) {
     const docs = order.outputDocumentsByNfeId.get(nfe.nfeExternalId) ?? [];
-    if (docs.length === 0) issues.push(buildNfeWithoutOutputDocumentIssue(order, nfe));
+    if (audit.auditNfeWithoutOutputDocument && docs.length === 0) {
+      issues.push(buildNfeWithoutOutputDocumentIssue(order, nfe));
+    }
     const ar = order.receivablesByNfeId.get(nfe.nfeExternalId) ?? [];
-    if (ar.length === 0) issues.push(buildNfeWithoutReceivableIssue(order, nfe));
+    if (audit.auditNfeWithoutReceivable && ar.length === 0) {
+      issues.push(buildNfeWithoutReceivableIssue(order, nfe));
+    }
   }
   return issues;
 }

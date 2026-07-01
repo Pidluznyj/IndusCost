@@ -16,7 +16,14 @@ import {
   collectOrderAuditIssues,
   upsertCommissionAuditIssues,
   buildNoCommissionRuleIssue,
+  buildPaidWithoutReleaseIssue,
+  shouldFlagPaidWithoutRelease,
 } from "./commission-audit-service.js";
+import {
+  extractAuditSettings,
+  filterRulesByScope,
+  resolveActiveBeneficiaryTypes,
+} from "./commissionSettings.server.js";
 import {
   computeBalanceAfterRelease,
   computeReleaseForSchedule,
@@ -528,6 +535,7 @@ async function applyReleaseForRecord(
       releaseRule,
       commissionAmount,
       alreadyReleased: releasedTotal,
+      receivableAsDefinitiveReleaseSource: settings.receivableAsDefinitiveReleaseSource,
       schedule: {
         scheduleKey: schedule.id,
         source: schedule.source,
@@ -600,7 +608,9 @@ export async function calculateCommissions(
 ): Promise<{ runId: string; summary: CommissionCalculationSummary }> {
   const period = resolveCommissionPeriod(input);
   const settings = await loadCommissionSettings(db);
-  const rules = await loadActiveCommissionRules(db);
+  const rules = filterRulesByScope(await loadActiveCommissionRules(db), settings);
+  const beneficiaryTypes = resolveActiveBeneficiaryTypes(settings);
+  const auditFlags = extractAuditSettings(settings);
 
   const run = await db.commissionCalculationRun.create({
     data: {
@@ -628,7 +638,7 @@ export async function calculateCommissions(
     const orders = await loadCommissionOrderSources(db, input);
     stats.ordersEvaluated = orders.length;
 
-    const auditDrafts = orders.flatMap(collectOrderAuditIssues);
+    const auditDrafts = orders.flatMap((order) => collectOrderAuditIssues(order, auditFlags));
 
     for (const order of orders) {
       if (order.status === "CANCELLED") continue;
@@ -640,7 +650,7 @@ export async function calculateCommissions(
       }
 
       for (const item of order.items) {
-        for (const beneficiaryType of BENEFICIARY_TYPES) {
+        for (const beneficiaryType of beneficiaryTypes) {
           try {
             await processBeneficiaryForItem(db, {
               runId: run.id,
@@ -661,6 +671,32 @@ export async function calculateCommissions(
                 : `${order.orderCode}: erro desconhecido`
             );
           }
+        }
+      }
+    }
+
+    if (settings.auditPaidWithoutRelease) {
+      const paidRecords = await db.commissionRecord.findMany({
+        where: {
+          calculatedAt: { gte: period.from, lte: period.to },
+          paidAmount: { gt: 0 },
+        },
+        select: {
+          id: true,
+          status: true,
+          releasedAmount: true,
+          paidAmount: true,
+        },
+      });
+      for (const record of paidRecords) {
+        if (
+          shouldFlagPaidWithoutRelease({
+            status: record.status,
+            releasedAmount: decimalToNumber(record.releasedAmount),
+            paidAmount: decimalToNumber(record.paidAmount),
+          })
+        ) {
+          auditDrafts.push(buildPaidWithoutReleaseIssue(record.id));
         }
       }
     }

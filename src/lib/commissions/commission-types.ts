@@ -22,19 +22,47 @@ export type {
   CommissionRuleBaseType,
 };
 
-/** Chaves em CommissionSettings (seed migration). */
+/** Chaves em CommissionSettings (seed migration + runtime upsert). */
 export const COMMISSION_SETTINGS_KEYS = {
   releaseDefaultRule: "release.default_rule",
   forecastEnabled: "forecast.enabled",
   outputDocumentSupersedesForecast: "output_document.supersedes_forecast",
+  receivableAsDefinitiveReleaseSource: "receivable.definitive_release_source",
   paidCommissionBlockAutoChange: "paid_commission.block_auto_change",
+  manualPaymentEnabled: "payment.manual_enabled",
+  partialPaymentEnabled: "payment.partial_enabled",
+  requireApprovalBeforePaid: "payment.require_approval_before_paid",
+  auditOrderWithoutSeller: "audit.order_without_seller",
+  auditOrderWithoutRepresentative: "audit.order_without_representative",
+  auditNfeWithoutOutputDocument: "audit.nfe_without_output_document",
+  auditNfeWithoutReceivable: "audit.nfe_without_receivable",
+  auditPaidWithoutRelease: "audit.paid_without_release",
+  calculateForSellers: "scope.calculate_sellers",
+  calculateForRepresentatives: "scope.calculate_representatives",
+  allowFixedPersonInRule: "scope.allow_fixed_person_in_rule",
 } as const;
 
 export type CommissionSettingsSnapshot = {
   releaseDefaultRule: CommissionReleaseRule;
   forecastEnabled: boolean;
   outputDocumentSupersedesForecast: boolean;
+  receivableAsDefinitiveReleaseSource: boolean;
   paidCommissionBlockAutoChange: boolean;
+  manualPaymentEnabled: boolean;
+  partialPaymentEnabled: boolean;
+  requireApprovalBeforePaid: boolean;
+  auditOrderWithoutSeller: boolean;
+  auditOrderWithoutRepresentative: boolean;
+  auditNfeWithoutOutputDocument: boolean;
+  auditNfeWithoutReceivable: boolean;
+  auditPaidWithoutRelease: boolean;
+  calculateForSellers: boolean;
+  calculateForRepresentatives: boolean;
+  allowFixedPersonInRule: boolean;
+};
+
+export type CommissionSettingsUpdateResult = CommissionSettingsSnapshot & {
+  warnings: string[];
 };
 
 export type CommissionPeriodInput = {
@@ -235,6 +263,15 @@ export type CommissionAuditIssueDraft = {
   message: string;
   metadataJson: Record<string, unknown> | null;
 };
+
+export type CommissionSettingsAuditFlags = Pick<
+  CommissionSettingsSnapshot,
+  | "auditOrderWithoutSeller"
+  | "auditOrderWithoutRepresentative"
+  | "auditNfeWithoutOutputDocument"
+  | "auditNfeWithoutReceivable"
+  | "auditPaidWithoutRelease"
+>;
 
 export type CommissionCalculationSummary = {
   ordersEvaluated: number;

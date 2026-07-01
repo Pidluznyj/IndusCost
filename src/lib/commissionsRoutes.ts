@@ -15,13 +15,15 @@ import {
   COMMISSIONS_RULES_MANAGE_PERMISSIONS,
   COMMISSIONS_RULES_VIEW_PERMISSIONS,
   COMMISSIONS_SETTINGS_VIEW_PERMISSIONS,
+  COMMISSIONS_SETTINGS_MANAGE_PERMISSIONS,
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import {
   getCommissionSettingsPayload,
+  restoreCommissionSettingsDefaults,
   updateCommissionSettings,
   CommissionValidationError,
-} from "@/src/lib/commissions/commissionAdmin.server.js";
+} from "@/src/lib/commissions/commissionSettings.server.js";
 import {
   listCommissionAuditPage,
   reopenCommissionAuditIssue,
@@ -200,6 +202,11 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
   const settingsViewGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_SETTINGS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const settingsManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_SETTINGS_MANAGE_PERMISSIONS]),
   ] as const;
 
   const recalcGuard = [
@@ -609,7 +616,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.put("/api/commissions/settings", ...rulesManageGuard, async (req, res) => {
+  app.put("/api/commissions/settings", ...settingsManageGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
@@ -620,6 +627,19 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("PUT /api/commissions/settings", error);
       return res.status(500).json({ error: "Erro ao salvar configurações de comissões." });
+    }
+  });
+
+  app.post("/api/commissions/settings/restore", ...settingsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await restoreCommissionSettingsDefaults();
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/settings/restore", error);
+      return res.status(500).json({ error: "Erro ao restaurar configurações padrão." });
     }
   });
 

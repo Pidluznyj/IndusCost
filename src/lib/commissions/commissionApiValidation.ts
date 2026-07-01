@@ -349,12 +349,9 @@ export function parseCommissionRecalculateBody(body: unknown): {
   return { from, to, mode: mode as CommissionCalculationRunMode };
 }
 
-export type CommissionSettingsWriteInput = {
-  releaseDefaultRule?: CommissionReleaseRule;
-  forecastEnabled?: boolean;
-  outputDocumentSupersedesForecast?: boolean;
-  paidCommissionBlockAutoChange?: boolean;
-};
+import type { CommissionSettingsSnapshot } from "./commission-types.js";
+
+export type CommissionSettingsWriteInput = Partial<CommissionSettingsSnapshot>;
 
 export function parseCommissionSettingsUpdateBody(body: unknown): CommissionSettingsWriteInput {
   if (!body || typeof body !== "object") {
@@ -362,6 +359,7 @@ export function parseCommissionSettingsUpdateBody(body: unknown): CommissionSett
   }
   const raw = body as Record<string, unknown>;
   const out: CommissionSettingsWriteInput = {};
+
   if (raw.releaseDefaultRule !== undefined) {
     if (
       typeof raw.releaseDefaultRule !== "string" ||
@@ -371,13 +369,31 @@ export function parseCommissionSettingsUpdateBody(body: unknown): CommissionSett
     }
     out.releaseDefaultRule = raw.releaseDefaultRule as CommissionReleaseRule;
   }
-  if (raw.forecastEnabled !== undefined) out.forecastEnabled = Boolean(raw.forecastEnabled);
-  if (raw.outputDocumentSupersedesForecast !== undefined) {
-    out.outputDocumentSupersedesForecast = Boolean(raw.outputDocumentSupersedesForecast);
+
+  const booleanFields = [
+    "forecastEnabled",
+    "outputDocumentSupersedesForecast",
+    "receivableAsDefinitiveReleaseSource",
+    "paidCommissionBlockAutoChange",
+    "manualPaymentEnabled",
+    "partialPaymentEnabled",
+    "requireApprovalBeforePaid",
+    "auditOrderWithoutSeller",
+    "auditOrderWithoutRepresentative",
+    "auditNfeWithoutOutputDocument",
+    "auditNfeWithoutReceivable",
+    "auditPaidWithoutRelease",
+    "calculateForSellers",
+    "calculateForRepresentatives",
+    "allowFixedPersonInRule",
+  ] as const;
+
+  for (const field of booleanFields) {
+    if (raw[field] !== undefined) {
+      out[field] = Boolean(raw[field]);
+    }
   }
-  if (raw.paidCommissionBlockAutoChange !== undefined) {
-    out.paidCommissionBlockAutoChange = Boolean(raw.paidCommissionBlockAutoChange);
-  }
+
   return out;
 }
 
