@@ -1,5 +1,11 @@
 import type { CommissionPersonType, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  applyCommissionPaymentBatchScope,
+  applyCommissionRecordScope,
+  mergePrismaWhere,
+  type CommissionAccessScope,
+} from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
 import { CommissionValidationError } from "./commissionApiValidation.js";
 import type { CommissionPaymentsQuery } from "./commissionQuery.js";
@@ -156,15 +162,19 @@ async function sumBatchTotals(
 
 async function computeCards(
   query: CommissionPaymentsQuery,
-  batchWhere: Prisma.CommissionPaymentBatchWhereInput
+  batchWhere: Prisma.CommissionPaymentBatchWhereInput,
+  scope?: CommissionAccessScope
 ): Promise<CommissionPaymentsCards> {
   const period = resolvePeriod(query);
-  const unpaidRows = await listUnpaidReleasedCommissionsDetailed({
-    commissionPersonId: query.commissionPersonId,
-    from: period?.from,
-    to: period?.to,
-    personType: query.personType,
-  });
+  const unpaidRows = await listUnpaidReleasedCommissionsDetailed(
+    {
+      commissionPersonId: query.commissionPersonId,
+      from: period?.from,
+      to: period?.to,
+      personType: query.personType,
+    },
+    scope
+  );
   const unpaidReleasedAmount = roundMoney(
     unpaidRows.reduce((sum, row) => sum + row.availableToPay, 0)
   );
@@ -218,13 +228,17 @@ function mapBatchRow(
 }
 
 export async function listCommissionPaymentsPage(
-  query: CommissionPaymentsQuery
+  query: CommissionPaymentsQuery,
+  scope?: CommissionAccessScope
 ): Promise<CommissionPaymentsPagePayload> {
-  const where = buildBatchWhere(query);
+  const where = mergePrismaWhere(
+    buildBatchWhere(query),
+    scope ? applyCommissionPaymentBatchScope(scope) : {}
+  );
   const skip = (query.page - 1) * query.pageSize;
 
   const [cards, total, rows] = await Promise.all([
-    computeCards(query, where),
+    computeCards(query, where, scope),
     prisma.commissionPaymentBatch.count({ where }),
     prisma.commissionPaymentBatch.findMany({
       where,
@@ -252,22 +266,32 @@ export async function listCommissionPaymentBatches(query: CommissionPaymentsQuer
   return { items: payload.items, pagination: payload.pagination };
 }
 
-export async function listUnpaidReleasedCommissionsDetailed(input?: {
-  commissionPersonId?: string;
-  from?: Date;
-  to?: Date;
-  personType?: string;
-}): Promise<UnpaidReleasedCommissionPayload[]> {
+export async function listUnpaidReleasedCommissionsDetailed(
+  input?: {
+    commissionPersonId?: string;
+    from?: Date;
+    to?: Date;
+    personType?: string;
+  },
+  scope?: CommissionAccessScope
+): Promise<UnpaidReleasedCommissionPayload[]> {
+  const recordScope = scope
+    ? applyCommissionRecordScope(scope, {
+        commissionPersonId: input?.commissionPersonId ?? null,
+      })
+    : input?.commissionPersonId
+      ? { commissionPersonId: input.commissionPersonId }
+      : {};
+
   const rows = await prisma.commissionRecord.findMany({
-    where: {
-      commissionPersonId: input?.commissionPersonId,
+    where: mergePrismaWhere(recordScope, {
       status: { in: ["PARTIALLY_RELEASED", "RELEASED", "PAID_PARTIAL"] },
       calculatedAt:
         input?.from && input?.to ? { gte: input.from, lte: input.to } : undefined,
       ...(input?.personType
         ? { commissionPerson: { type: input.personType as CommissionPersonType } }
         : {}),
-    },
+    }),
     select: {
       id: true,
       commissionPersonId: true,
@@ -316,10 +340,11 @@ export async function listUnpaidReleasedCommissionsDetailed(input?: {
 }
 
 export async function getCommissionPaymentBatchById(
-  id: string
+  id: string,
+  scope?: CommissionAccessScope
 ): Promise<CommissionPaymentBatchDetailPayload> {
-  const batch = await prisma.commissionPaymentBatch.findUnique({
-    where: { id },
+  const batch = await prisma.commissionPaymentBatch.findFirst({
+    where: mergePrismaWhere({ id }, scope ? applyCommissionPaymentBatchScope(scope) : {}),
     include: {
       commissionPerson: { select: { id: true, name: true, type: true } },
       items: {

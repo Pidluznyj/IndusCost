@@ -159,6 +159,28 @@ export function parseOptionalUuid(raw: unknown): string | null {
   return v;
 }
 
+export function mergePrismaWhere<T extends Record<string, unknown>>(
+  base: T,
+  extra: T
+): T {
+  if (!base || Object.keys(base).length === 0) return extra;
+  if (!extra || Object.keys(extra).length === 0) return base;
+  return { AND: [base, extra] } as T;
+}
+
+export function applyCommissionPaymentBatchScope(
+  scope: CommissionAccessScope
+): Prisma.CommissionPaymentBatchWhereInput {
+  if (scope.dataScope !== "own") return {};
+  if (scope.nomusSellerId == null) return { id: { in: [] } };
+  return {
+    commissionPerson: {
+      nomusPersonId: scope.nomusSellerId,
+      type: "SELLER",
+    },
+  };
+}
+
 export function applyCommissionRecordScope(
   scope: CommissionAccessScope,
   query: {

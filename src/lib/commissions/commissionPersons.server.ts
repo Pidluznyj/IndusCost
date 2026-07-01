@@ -368,6 +368,54 @@ function collectCandidatesFromOrders(
   return { candidates, skippedNoName, skippedNoNomusId };
 }
 
+export async function previewCommissionPersonsFromOrders(): Promise<CommissionPersonsImportResult> {
+  const orders = await prisma.salesOrder.findMany({
+    where: {
+      OR: [{ externalSellerId: { not: null } }, { nomusRawResponse: { not: Prisma.DbNull } }],
+    },
+    select: {
+      externalSellerId: true,
+      responsible: true,
+      nomusRawResponse: true,
+    },
+  });
+
+  const { candidates, skippedNoName, skippedNoNomusId } = collectCandidatesFromOrders(orders);
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+
+  for (const candidate of candidates.values()) {
+    const existing = await prisma.commissionPerson.findFirst({
+      where: {
+        nomusPersonId: candidate.nomusPersonId,
+        type: candidate.type,
+      },
+    });
+
+    if (!existing) {
+      created += 1;
+      continue;
+    }
+
+    if (existing.source === "NOMUS" && existing.name !== candidate.name) {
+      updated += 1;
+    } else {
+      unchanged += 1;
+    }
+  }
+
+  return {
+    ordersScanned: orders.length,
+    created,
+    updated,
+    skippedNoName,
+    skippedNoNomusId,
+    unchanged,
+  };
+}
+
 export async function importCommissionPersonsFromOrders(): Promise<CommissionPersonsImportResult> {
   const orders = await prisma.salesOrder.findMany({
     where: {

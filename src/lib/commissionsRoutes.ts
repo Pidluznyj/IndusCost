@@ -645,10 +645,10 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.get("/api/commissions/payment-batches", ...paymentsViewGuard, async (req, res) => {
     try {
-      const user = await getCurrentAppUser(req);
-      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
       const query = parseCommissionPaymentsQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionPaymentsPage(query);
+      const payload = await listCommissionPaymentsPage(query, ctx.scope);
       return res.json(payload);
     } catch (error) {
       if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
@@ -663,10 +663,10 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     ...paymentsViewGuard,
     async (req, res) => {
       try {
-        const user = await getCurrentAppUser(req);
-        if (!user) return res.status(401).json({ error: "Não autenticado." });
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
         const query = parseUnpaidReleasedCommissionsQuery(req.query as Record<string, unknown>);
-        const items = await listUnpaidReleasedCommissionsDetailed(query);
+        const items = await listUnpaidReleasedCommissionsDetailed(query, ctx.scope);
         return res.json({ items });
       } catch (error) {
         if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
@@ -678,9 +678,9 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.get("/api/commissions/payment-batches/:id", ...paymentsViewGuard, async (req, res) => {
     try {
-      const user = await getCurrentAppUser(req);
-      if (!user) return res.status(401).json({ error: "Não autenticado." });
-      const payload = await getCommissionPaymentBatchById(req.params.id);
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommissionPaymentBatchById(req.params.id, ctx.scope);
       return res.json(payload);
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
@@ -691,14 +691,14 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.post("/api/commissions/payment-batches", ...paymentsManageGuard, async (req, res) => {
     try {
-      const user = await getCurrentAppUser(req);
-      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
       const body = parsePaymentBatchCreateBody(req.body);
       const result = await createCommissionPaymentBatch(prisma, {
         ...body,
-        createdBy: user.id,
+        createdBy: ctx.user.id,
       });
-      const payload = await getCommissionPaymentBatchById(result.batchId);
+      const payload = await getCommissionPaymentBatchById(result.batchId, ctx.scope);
       return res.status(201).json(payload);
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
@@ -710,10 +710,10 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.post("/api/commissions/payment-batches/:id/approve", ...paymentsManageGuard, async (req, res) => {
     try {
-      const user = await getCurrentAppUser(req);
-      if (!user) return res.status(401).json({ error: "Não autenticado." });
-      await approveCommissionPaymentBatch(prisma, req.params.id, user.id);
-      const payload = await getCommissionPaymentBatchById(req.params.id);
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      await approveCommissionPaymentBatch(prisma, req.params.id, ctx.user.id);
+      const payload = await getCommissionPaymentBatchById(req.params.id, ctx.scope);
       return res.json(payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao aprovar lote.";
@@ -724,15 +724,15 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.post("/api/commissions/payment-batches/:id/mark-paid", ...paymentsManageGuard, async (req, res) => {
     try {
-      const user = await getCurrentAppUser(req);
-      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
       const body = parseMarkPaidBody(req.body);
       await markCommissionPaymentBatchPaid(prisma, {
         batchId: req.params.id,
         paymentDate: body.paymentDate,
-        paidBy: user.id,
+        paidBy: ctx.user.id,
       });
-      const payload = await getCommissionPaymentBatchById(req.params.id);
+      const payload = await getCommissionPaymentBatchById(req.params.id, ctx.scope);
       return res.json(payload);
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);

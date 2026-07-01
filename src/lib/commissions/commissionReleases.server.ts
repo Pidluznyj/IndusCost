@@ -1,9 +1,9 @@
 import type { CommissionAuditIssueType, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
+import { applyCommissionRecordScope } from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
 import {
-  applyCommissionRecordScope,
   buildCommissionReleasesDueWhere,
   COMMISSION_CONFIRMED_STATUSES,
   paginatedMeta,

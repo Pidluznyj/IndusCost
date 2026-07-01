@@ -555,23 +555,39 @@ Registro em `App.tsx`:
 
 ---
 
-## 14. Execução da auditoria
+## 14. Execução da auditoria e QA
 
 ```bash
-# Ano padrão 2026
-npx tsx scripts/audit-commission-readiness.ts
-
-# Ano explícito
+# Prontidão de dados (read-only)
 npx tsx scripts/audit-commission-readiness.ts --year=2026
 
-# Mês específico
-npx tsx scripts/audit-commission-readiness.ts --year=2026 --month=6
+# Vínculos pedido → NF-e → doc saída → AR (read-only)
+npx tsx scripts/audit-commission-links.ts --year=2026
 
-# Intervalo customizado
-npx tsx scripts/audit-commission-readiness.ts --from=2026-01-01 --to=2026-06-30
+# Liberação financeira vs recebimentos (read-only)
+npx tsx scripts/audit-commission-financial-release.ts --year=2026
+
+# Recálculo (preview ou apply)
+npx tsx scripts/recalculate-commissions.ts --year=2026 --dry-run
+npx tsx scripts/recalculate-commissions.ts --year=2026 --apply
+
+# Backfill de pessoas comissionadas (preview ou apply)
+npx tsx scripts/backfill-commission-persons.ts --year=2026 --dry-run
+npx tsx scripts/backfill-commission-persons.ts --apply
 ```
 
-O relatório lista modelos/campos consultados, totais, percentuais e amostras de inconsistências — **sem alterar dados**.
+Validações de deploy:
+
+```bash
+npx prisma validate
+npx prisma generate
+npm run check:frontend-server-imports
+npm run check:browser-bundle
+npm run build
+npm run test:commissions
+```
+
+Os relatórios de auditoria listam totais, percentuais e amostras de inconsistências — **sem alterar dados** (exceto `--apply`).
 
 ---
 
