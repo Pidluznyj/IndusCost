@@ -236,7 +236,7 @@ export function FinanceExecutiveReportPage() {
             <ExecutiveDataQualityAlert dataQuality={report.dataQuality} />
           </div>
           <ExecutiveReportPrintProvider pdfMode={printing}>
-            <ExecutiveReportDocument report={report} branding={branding} />
+            <ExecutiveReportDocument report={report} branding={branding} reportQuery={appliedQuery} />
           </ExecutiveReportPrintProvider>
         </>
       ) : null}

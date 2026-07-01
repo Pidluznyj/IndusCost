@@ -23,6 +23,7 @@ import type {
   ExecutiveReportApSectionKpis,
   ExecutiveReportArSectionKpis,
 } from "./financeExecutiveReportSectionKpis.js";
+import type { FinanceExecutiveReportCashRadar } from "./financeExecutiveReportCashRadar.js";
 
 /** Modo de geração — snapshot reservado para persistência futura. */
 export type FinanceExecutiveReportMode = "live" | "snapshot";
@@ -117,6 +118,12 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
     builder: "buildFinanceCostCenterDashboardDefault → buildCostCenterAnnualSpendingChart",
     description:
       "AP gerencial alocado por centro de custo — mesma base da Visão Gerencial de Centro de Custo.",
+  },
+  cashFlowDailyRadar: {
+    module: "financeCashFlowDailyRadar.ts",
+    builder: "buildCashFlowDailyRadarData → buildFinanceCashFlowDailyRadar",
+    description:
+      "Radar Diário de Caixa — horizonte AR/AP aberto com data operacional; filtros do relatório quando aplicável.",
   },
   executiveSummary: {
     module: "executiveDashboardService.ts",
@@ -380,6 +387,9 @@ export type FinanceExecutiveReportNarrative = {
   }>;
 };
 
+/** Radar Diário de Caixa — motor oficial do Fluxo de Caixa com filtros do relatório. */
+export type FinanceExecutiveReportCashFlowDailyRadar = FinanceExecutiveReportCashRadar;
+
 /**
  * Payload completo do Relatório Presidencial.
  * Montagem: fase posterior — consumir builders oficiais e mapear para este contrato.
@@ -406,5 +416,6 @@ export type FinanceExecutiveReport = {
   annualComparison: FinanceExecutiveReportAnnualComparison;
   salesOrders: FinanceExecutiveReportSalesOrders;
   costCenterSpending: FinanceExecutiveReportCostCenterSpending;
+  cashRadar: FinanceExecutiveReportCashFlowDailyRadar;
   executiveNarrative: FinanceExecutiveReportNarrative | null;
 };

@@ -9,6 +9,7 @@ import {
 } from "./financeCashFlowDashboard.js";
 import {
   buildFinanceCashFlowDailyRadar,
+  buildCashFlowDailyRadarData,
   createDailyRadarDashboardFilters,
   dailyRadarDayCardLabel,
   DAILY_RADAR_CUSTOM_RANGE_KEY,
@@ -545,5 +546,24 @@ describe("financeCashFlowDailyRadar", () => {
       payload.selectedDetail!.entriesTotal
     );
     assert.equal(payload.selectedDetail!.payables.summary.total, payload.selectedDetail!.exitsTotal);
+  });
+
+  it("buildCashFlowDailyRadarData delega ao motor oficial compartilhado", () => {
+    const arRows = [arRow({ dueDate: new Date(2026, 5, 9) })];
+    const apRows = [apRow({ dueDate: new Date(2026, 5, 10) })];
+    const direct = buildFinanceCashFlowDailyRadar(
+      arRows,
+      apRows,
+      { baseDate: BASE, rangeKey: "0-7", exportAll: true },
+      BASE
+    );
+    const shared = buildCashFlowDailyRadarData({
+      arRows,
+      apRows,
+      baseDate: BASE,
+      query: { rangeKey: "0-7", exportAll: true },
+    });
+    assert.equal(shared.ranges.length, direct.ranges.length);
+    assert.equal(shared.selectedDetail?.entriesTotal, direct.selectedDetail?.entriesTotal);
   });
 });

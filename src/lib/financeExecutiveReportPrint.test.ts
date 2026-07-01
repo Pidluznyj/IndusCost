@@ -58,6 +58,7 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /pageId="cash-flow"/);
     assert.match(document, /pageId="conclusion"/);
     assert.match(document, /pageId="cash-flow-monthly-timeline"/);
+    assert.match(document, /pageId="cash-radar"/);
     assert.doesNotMatch(document, /pageId="billing-projection"/);
     const salesIdx = document.indexOf('pageId="sales-orders"');
     const billingIdx = document.indexOf('pageId="billing-comparison"');
@@ -66,6 +67,7 @@ describe("financeExecutiveReportPrint", () => {
     const cfIdx = document.indexOf('pageId="cash-flow"');
     const conclusionIdx = document.indexOf('pageId="conclusion"');
     const timelineIdx = document.indexOf('pageId="cash-flow-monthly-timeline"');
+    const cashRadarIdx = document.indexOf('pageId="cash-radar"');
     assert.ok(
       salesIdx > 0 &&
         billingIdx > salesIdx &&
@@ -73,7 +75,8 @@ describe("financeExecutiveReportPrint", () => {
         apIdx > arIdx &&
         cfIdx > apIdx &&
         conclusionIdx > cfIdx &&
-        timelineIdx > conclusionIdx
+        timelineIdx > conclusionIdx &&
+        cashRadarIdx > timelineIdx
     );
   });
 

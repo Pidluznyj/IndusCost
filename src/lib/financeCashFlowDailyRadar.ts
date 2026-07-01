@@ -478,9 +478,10 @@ export function filterDailyRadarPortfolioRows(
   apRows: FinanceCashFlowApRow[],
   referenceDate: Date,
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  dashboardFilters?: FinanceCashFlowDashboardFilters
 ): { arRows: FinanceCashFlowArRow[]; apRows: FinanceCashFlowApRow[] } {
-  const filters = createDailyRadarDashboardFilters();
+  const filters = dashboardFilters ?? createDailyRadarDashboardFilters();
   return {
     arRows: filterCashFlowArPortfolioRows(
       arRows,
@@ -1063,6 +1064,46 @@ export function buildFinanceCashFlowDailyRadar(
 
 export function dailyRadarDayCardLabel(dayOffset: number): string {
   return dayLabel(dayOffset);
+}
+
+/** Faixa padrão aberta no Relatório Presidencial. */
+export const EXECUTIVE_REPORT_DEFAULT_CASH_RADAR_RANGE_KEY = "0-7" as const;
+
+export type BuildCashFlowDailyRadarDataInput = {
+  arRows: FinanceCashFlowArRow[];
+  apRows: FinanceCashFlowApRow[];
+  baseDate: Date;
+  query?: Partial<DailyRadarQuery>;
+  referenceDate?: Date;
+  arSyncCutoff?: NomusArReportSyncCutoff | null;
+  apSyncCutoff?: NomusApReportSyncCutoff | null;
+  dashboardFilters?: FinanceCashFlowDashboardFilters;
+};
+
+/**
+ * Builder compartilhado — Fluxo de Caixa e Relatório Presidencial usam o mesmo motor.
+ * Não duplica cálculo: delega a filterDailyRadarPortfolioRows + buildFinanceCashFlowDailyRadar.
+ */
+export function buildCashFlowDailyRadarData(input: BuildCashFlowDailyRadarDataInput): DailyRadarPayload {
+  const referenceDate = input.referenceDate ?? input.baseDate;
+  const portfolio = filterDailyRadarPortfolioRows(
+    input.arRows,
+    input.apRows,
+    referenceDate,
+    input.arSyncCutoff,
+    input.apSyncCutoff,
+    input.dashboardFilters
+  );
+  const query: DailyRadarQuery = {
+    baseDate: input.baseDate,
+    ...input.query,
+  };
+  return buildFinanceCashFlowDailyRadar(
+    portfolio.arRows,
+    portfolio.apRows,
+    query,
+    referenceDate
+  );
 }
 
 export { toggleSortState, type SortState, type SortDirection };

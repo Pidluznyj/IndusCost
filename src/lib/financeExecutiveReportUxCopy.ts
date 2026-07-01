@@ -35,6 +35,8 @@ export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
     "Mostra quanto foi gasto por centro de custo com base nas contas a pagar classificadas.",
   "sales-orders": "Mostra o volume de pedidos registrados.",
   conclusion: "Principais pontos de atenção para decisão.",
+  "cash-radar":
+    "Horizonte diário de entradas e saídas de caixa conforme vencimentos AR/AP abertos.",
 };
 
 export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
@@ -48,6 +50,7 @@ export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
     "Distribuição do AP gerencial por centro de custo no ano/filtro selecionado.",
   "sales-orders": "Pedidos registrados no período.",
   conclusion: "Leitura rápida para apoiar a decisão.",
+  "cash-radar": "Vencidos e próximos 90 dias — faixa 0 a 7 dias aberta por padrão.",
 };
 
 /** Tooltip curto — responde “O que é isso?” */

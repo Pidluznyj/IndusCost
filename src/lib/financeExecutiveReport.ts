@@ -38,6 +38,10 @@ import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.j
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
 import { buildSalesOrdersDashboardTab } from "./salesOrdersDashboardMetrics.js";
+import {
+  buildExecutiveReportCashRadarBlock,
+  loadExecutiveReportDailyRadarPortfolioRows,
+} from "./financeExecutiveReportCashRadar.js";
 import { formatExecutiveReportCurrency } from "./financeExecutiveReportUtils.js";
 import {
   buildExecutiveReportCoverTitle,
@@ -588,6 +592,7 @@ export async function buildFinanceExecutiveReport(
     arSyncStatus,
     apSyncStatus,
     nfeSyncStatus,
+    dailyRadarPortfolio,
   ] = await Promise.all([
     loadFinanceArManagementRowsFromPrisma(db, arPortfolioFilters, referenceDate),
     loadApRows(db, apPortfolioFilters),
@@ -611,6 +616,7 @@ export async function buildFinanceExecutiveReport(
     getNomusAccountsReceivableSyncStatus().catch(() => null),
     getNomusAccountsPayableSyncStatus().catch(() => null),
     getNomusNfesSyncStatus().catch(() => null),
+    loadExecutiveReportDailyRadarPortfolioRows(filters, referenceDate, db),
   ]);
 
   const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
@@ -794,6 +800,17 @@ export async function buildFinanceExecutiveReport(
     apCards: apPayload.cards,
     cashFlow: cashFlowPayload,
     salesOrdersTab,
+  });
+
+  const cashRadar = buildExecutiveReportCashRadarBlock({
+    arRows: dailyRadarPortfolio.arRows,
+    apRows: dailyRadarPortfolio.apRows,
+    filters,
+    referenceDate,
+    arSyncCutoff: dailyRadarPortfolio.arSyncCutoff,
+    apSyncCutoff: dailyRadarPortfolio.apSyncCutoff,
+    dashboardFilters: dailyRadarPortfolio.dashboardFilters,
+    exportAll: true,
   });
 
   return {
@@ -1018,6 +1035,7 @@ export async function buildFinanceExecutiveReport(
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
       chart: costCenterSpendingChart,
     },
+    cashRadar,
     executiveNarrative: narrative,
   };
 }

@@ -41,6 +41,7 @@ import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive
 import { ExecutiveCostCenterAnnualSpendingChart } from "@/src/components/finance/executive-report/charts/ExecutiveCostCenterAnnualSpendingChart";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
+import { ExecutiveReportCashRadarSection } from "@/src/components/finance/executive-report/ExecutiveReportCashRadarSection";
 import { ExecutiveReportPeriodMeta } from "@/src/components/finance/executive-report/ExecutiveReportPeriodMeta";
 import {
   buildExecutiveReportCashFlowPeriodCopy,
@@ -135,9 +136,11 @@ function resolvePrincipalAlerta(report: FinanceExecutiveReport): string {
 export function ExecutiveReportDocument({
   report,
   branding,
+  reportQuery = "",
 }: {
   report: FinanceExecutiveReport;
   branding: BrandingSettingsDTO;
+  reportQuery?: string;
 }) {
   const billingTab = report.billingComparison.tab;
   const billingPayload = report.billingComparison.payload;
@@ -800,6 +803,27 @@ export function ExecutiveReportDocument({
         <div className="executive-print-monthly-timeline" data-testid="executive-report-monthly-timeline">
           <FinanceCashFlowMonthlyTimelineTable rows={cashFlowMonthlyTimeline} year={report.year} />
         </div>
+      </ExecutivePrintPageShell>
+
+      <ExecutivePrintPageShell
+        pageId="cash-radar"
+        pageNumber={11}
+        header={printHeader}
+        generatedAt={report.generatedAt}
+      >
+        <ExecutiveReportSection
+          id="cash-radar"
+          eyebrow="Fluxo de Caixa"
+          title="Radar Diário de Caixa"
+          subtitle="Comparativo diário de entradas e saídas conforme os filtros do Relatório Presidencial."
+          intro="Horizonte de vencimentos AR/AP abertos a partir da data-base operacional."
+        >
+          <ExecutiveReportCashRadarSection
+            cashRadar={report.cashRadar}
+            reportQuery={reportQuery}
+            showHeader={false}
+          />
+        </ExecutiveReportSection>
       </ExecutivePrintPageShell>
 
       <ExecutiveReportDocumentFooter generatedAt={report.generatedAt} />
