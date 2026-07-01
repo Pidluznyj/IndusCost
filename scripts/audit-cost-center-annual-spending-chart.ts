@@ -11,7 +11,9 @@ import {
   buildFinanceCostCenterDashboardDefault,
   parseFinanceCostCenterDashboardFilters,
 } from "../src/lib/financeCostCenterDashboard.js";
-import { buildCostCenterAnnualSpendingChart } from "../src/lib/financeCostCenterAnnualSpendingChart.js";
+import {
+  resolveCostCenterDisplayName,
+} from "../src/lib/financeCostCenterAnnualSpendingChart.js";
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -29,6 +31,13 @@ function fmt(n: unknown): string {
 
 function nearlyEqual(a: number, b: number, epsilon = 0.02): boolean {
   return Math.abs(a - b) <= epsilon;
+}
+
+function looksLikeRawCodeLabel(displayName: string, code: string, name: string): boolean {
+  if (!name.trim() && displayName === code.trim()) return true;
+  if (displayName.startsWith("CC_")) return true;
+  if (code.trim() && displayName.startsWith(`${code.trim()} —`)) return true;
+  return false;
 }
 
 async function main() {
@@ -50,6 +59,20 @@ async function main() {
   const sumDisplay = chart.displayRows.reduce((sum, row) => sum + row.totalAmount, 0);
   const deltaVsByCc = Math.round((sumRows - sumByCostCenter) * 100) / 100;
   const deltaVsClassified = Math.round((sumRows - dashboard.summary.classifiedAmount) * 100) / 100;
+  const percentSum = chart.displayRows.reduce((sum, row) => sum + row.percentageOfTotal, 0);
+
+  const labelIssues: string[] = [];
+  for (const row of chart.rows) {
+    if (!row.displayName?.trim()) labelIssues.push(`#${row.rank} sem displayName`);
+    if (!row.shortName?.trim()) labelIssues.push(`#${row.rank} sem shortName`);
+    const expected = resolveCostCenterDisplayName(row.costCenterName, row.costCenterCode, row.costCenterId);
+    if (row.displayName !== expected) {
+      labelIssues.push(`#${row.rank} displayName diverge: ${row.displayName} ≠ ${expected}`);
+    }
+    if (looksLikeRawCodeLabel(row.displayName, row.costCenterCode, row.costCenterName)) {
+      labelIssues.push(`#${row.rank} displayName parece código cru: ${row.displayName}`);
+    }
+  }
 
   console.log(`Auditoria gráfico gastos por CC — year=${year} month=${month ?? "Todos"} asOfDate=${asOfDate}\n`);
   console.log("### Filtros");
@@ -59,6 +82,7 @@ async function main() {
   console.log(`- title: ${chart.title}`);
   console.log(`- metricsSource: ${chart.metricsSource}`);
   console.log(`- officialApSource: ${chart.officialApSource}`);
+  console.log(`- topNApplied: ${chart.topNApplied}`);
 
   console.log("\n### Totais");
   console.log(`- totalAmount (gráfico): ${fmt(chart.totalAmount)}`);
@@ -69,11 +93,12 @@ async function main() {
   console.log(`- delta rows vs byCostCenter: ${fmt(deltaVsByCc)}`);
   console.log(`- delta rows vs classifiedAmount: ${fmt(deltaVsClassified)}`);
   console.log(`- costCentersCount: ${chart.costCentersCount}`);
+  console.log(`- soma percentuais displayRows: ${fmt(percentSum)}%`);
 
-  console.log("\n### Top centros");
-  for (const row of chart.rows.slice(0, 10)) {
+  console.log("\n### Top centros (displayName legível)");
+  for (const row of chart.displayRows.slice(0, 10)) {
     console.log(
-      `- #${row.rank} ${row.displayName}: ${fmt(row.totalAmount)} (${fmt(row.percentageOfTotal)}%)`
+      `- #${row.rank} ${row.displayName} [${row.costCenterCode}]: ${fmt(row.totalAmount)} (${fmt(row.percentageOfTotal)}%)`
     );
   }
 
@@ -81,15 +106,34 @@ async function main() {
     console.log("\n### Bucket Outros (display)");
     console.log(`- centros agrupados: ${chart.othersIncludedCount}`);
     console.log(`- valor Outros: ${fmt(chart.othersAmount)}`);
+    const preview = chart.displayRows.find((row) => row.isOthersBucket)?.othersContainedPreview ?? [];
+    if (preview.length > 0) {
+      console.log("- preview Outros:");
+      for (const item of preview) {
+        console.log(`  · ${item.displayName}: ${fmt(item.totalAmount)}`);
+      }
+    }
+  }
+
+  if (labelIssues.length > 0) {
+    console.log("\n### Rótulos");
+    for (const issue of labelIssues) console.log(`- FALHA: ${issue}`);
+  } else {
+    console.log("\n### Rótulos");
+    console.log("- displayName/shortName OK em todas as linhas");
   }
 
   const okByCc = nearlyEqual(sumRows, sumByCostCenter);
   const okDisplay = nearlyEqual(sumDisplay, chart.totalAmount);
+  const okPercent = nearlyEqual(percentSum, 100, 0.5);
+  const okLabels = labelIssues.length === 0;
   console.log("\n### Resultado");
   console.log(`- bate com byCostCenter: ${okByCc ? "OK" : "FALHA"}`);
   console.log(`- displayRows bate total: ${okDisplay ? "OK" : "FALHA"}`);
+  console.log(`- percentuais ~100%: ${okPercent ? "OK" : "ALERTA"}`);
+  console.log(`- rótulos legíveis: ${okLabels ? "OK" : "FALHA"}`);
 
-  if (!okByCc || !okDisplay) {
+  if (!okByCc || !okDisplay || !okLabels) {
     process.exitCode = 1;
   }
 }

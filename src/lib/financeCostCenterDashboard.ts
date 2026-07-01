@@ -46,6 +46,7 @@ import {
 } from "@/src/lib/financeCostCenterSupplierConsolidation.js";
 import {
   buildCostCenterAnnualSpendingChart,
+  COST_CENTER_ANNUAL_SPENDING_DEFAULT_TOP_N,
   type CostCenterAnnualSpendingChartPayload,
 } from "@/src/lib/financeCostCenterAnnualSpendingChart.js";
 import { prisma } from "@/src/lib/prisma.js";
@@ -694,7 +695,9 @@ export function buildFinanceCostCenterDashboard(
     lastApSyncAt = syncCutoff.maxSyncedAt.toISOString();
   }
 
-  const annualSpendingChart = buildCostCenterAnnualSpendingChart(byCostCenterRows, filters);
+  const annualSpendingChart = buildCostCenterAnnualSpendingChart(byCostCenterRows, filters, {
+    topN: COST_CENTER_ANNUAL_SPENDING_DEFAULT_TOP_N,
+  });
 
   return {
     summary: {

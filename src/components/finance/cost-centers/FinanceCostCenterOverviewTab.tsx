@@ -26,6 +26,7 @@ import {
   FINANCE_BILLING_CHART_HEIGHT,
 } from "@/src/components/finance/billing/FinanceBillingChartShell";
 import { FinanceCostCenterAnnualSpendingChart } from "@/src/components/finance/cost-centers/FinanceCostCenterAnnualSpendingChart";
+import { resolveCostCenterDisplayName } from "@/src/lib/financeCostCenterAnnualSpendingChart";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
@@ -61,8 +62,9 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
   const monthly = data?.monthlySeries.totals ?? [];
 
   const ccChartData = byCostCenter.slice(0, 12).map((row) => ({
-    name: row.code,
+    name: resolveCostCenterDisplayName(row.name, row.code, row.costCenterId),
     amount: row.amount,
+    code: row.code,
   }));
 
   const unclassifiedChartData = unclassifiedTop.slice(0, 8).map((row) => ({
@@ -175,7 +177,13 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatFinanceCurrency(v)} width={90} />
-              <Tooltip formatter={(v: number) => formatFinanceCurrency(v)} />
+              <Tooltip
+                formatter={(v: number) => formatFinanceCurrency(v)}
+                labelFormatter={(label, items) => {
+                  const code = (items?.[0]?.payload as { code?: string } | undefined)?.code;
+                  return code ? `${label} (${code})` : label;
+                }}
+              />
               <Bar dataKey="amount" name="Valor" fill="#1e3a5f" radius={[4, 4, 0, 0]} />
             </ComposedChart>
           </ResponsiveContainer>

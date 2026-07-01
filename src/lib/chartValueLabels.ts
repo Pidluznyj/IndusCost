@@ -61,6 +61,34 @@ export function buildChartBarLabelProps(point: ChartLabelPoint): {
   };
 }
 
+/** Label à direita da barra horizontal (fora da área colorida). */
+export function buildHorizontalBarEndLabelProps(
+  point: ChartLabelPoint & { height?: number; suffix?: string }
+): {
+  x: number;
+  y: number;
+  text: string;
+  fill: string;
+  textAnchor: "start";
+} | null {
+  const value = toNumber(point.value);
+  if (!shouldShowChartValueLabel(value)) return null;
+  const x = point.x ?? 0;
+  const y = point.y ?? 0;
+  const width = point.width ?? 0;
+  const height = point.height ?? 0;
+  const amountText = formatChartCurrencyLabel(value);
+  const suffix = point.suffix?.trim();
+  const text = suffix ? `${amountText}  ${suffix}` : amountText;
+  return {
+    x: x + width + 8,
+    y: y + height / 2 + 4,
+    text,
+    fill: "#334155",
+    textAnchor: "start",
+  };
+}
+
 /** Label acima de pontos de linha. */
 export function buildChartLineLabelProps(point: ChartLabelPoint): {
   x: number;
