@@ -1,5 +1,6 @@
 /** Mapa módulo → permissões (Fase 1K-D / 1K-D.2). Usa ids reais do Sidebar/App.tsx. */
 
+import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
 
 export type AppModuleId =
@@ -20,6 +21,7 @@ export type AppModuleId =
   | "sales-orders"
   | "customers"
   | "crm-commercial"
+  | "commissions"
   | "simulations"
   | "reports"
   | "finance"
@@ -51,6 +53,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "sales-orders",
   "customers",
   "crm-commercial",
+  "commissions",
   "simulations",
   "reports",
   "finance",
@@ -77,6 +80,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("dashboard.view");
     case "crm-commercial":
       return check.hasAnyPermission([...CRM_MENU_PERMISSIONS]);
+    case "commissions":
+      return canAccessCommissionsModule(check);
     case "customers":
       return check.hasPermission("customers.view");
     case "proposals":
@@ -265,6 +270,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "sales-orders": "Pedidos de venda",
   customers: "Clientes",
   "crm-commercial": "CRM Comercial",
+  commissions: "Comissões",
   simulations: "Simulações",
   reports: "Relatórios",
   finance: "Financeiro",

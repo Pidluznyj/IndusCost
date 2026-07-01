@@ -12,6 +12,7 @@ import { PricingModule } from "./components/PricingModule";
 import { SimulationModule } from "./components/SimulationModule";
 import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
+import { CommissionsModule } from "./components/CommissionsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
@@ -856,6 +857,17 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/simulations/indicators" />}
             >
               <SimulationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commissions/*"
+          element={
+            <ModulePageShell
+              title="Comissões"
+              description="Gestão de comissões comerciais — previsão, confirmação, liberação por recebimento e pagamentos."
+            >
+              <CommissionsModule />
             </ModulePageShell>
           }
         />
