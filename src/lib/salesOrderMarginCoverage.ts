@@ -189,7 +189,7 @@ export function buildSalesOrderMarginCoverageHint(
     return "Margem calculada sobre 100% da receita vendida no escopo filtrado.";
   }
   if (coverage.costCoverageStatus === "NONE") {
-    return "Nenhuma linha com custo disponível — margem não calculada.";
+    return "Nenhuma linha com custo disponível — margem não calculada; receita e impostos permanecem identificados.";
   }
   const covered = formatMoney(coverage.marginRevenueCovered);
   const total = formatMoney(coverage.totalSalesRevenueInScope);

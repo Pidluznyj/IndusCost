@@ -105,12 +105,36 @@ describe("salesMarginRulesEngine", () => {
     const o = order({
       items: [
         item({ salesOrderItemId: "ok", netTotalValue: 800, unitCost: 40, quantity: 8 }),
-        item({ salesOrderItemId: "sem", unitCost: null }),
+        item({ salesOrderItemId: "sem", netTotalValue: 200, unitCost: null }),
       ],
     });
     const result = calculateSalesMarginOrder(o, buildContext());
     assert.equal(result.hasMissingCost, true);
     assert.equal(result.status, "PARTIAL");
+    assert.equal(result.grossSalesAmount, 1000);
+    assert.ok(result.netSalesAmount > 0);
+  });
+
+  it("4b. pedido só com SEM_CUSTO mantém receita e imposto", () => {
+    const o = order({
+      items: [
+        item({
+          salesOrderItemId: "sem",
+          netTotalValue: 794,
+          unitCost: null,
+          quantity: 200,
+          taxPercent: 27.25,
+        }),
+      ],
+    });
+    const result = calculateSalesMarginOrder(o, buildContext());
+    assert.equal(result.status, "SEM_CUSTO");
+    assert.equal(result.grossSalesAmount, 794);
+    assert.ok(Math.abs(result.taxAmount - 216.37) < 0.02);
+    assert.ok(Math.abs(result.netSalesAmount - 577.63) < 0.02);
+    assert.equal(result.marginAmount, null);
+    assert.equal(result.marginPercent, null);
+    assert.equal(result.totalCost, 0);
   });
 
   it("5. pedido com item sem produto", () => {

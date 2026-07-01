@@ -82,7 +82,7 @@ export type OfficialScopedMarginMetrics = {
   taxAmount: number;
   netSalesAmount: number;
   totalCost: number;
-  marginAmount: number;
+  marginAmount: number | null;
   marginPercent: number | null;
   missingCostCount: number;
   missingProductCount: number;
@@ -241,9 +241,14 @@ export function mapEngineOrderResultToMarginSummary(
   }
 ): SalesOrderMarginSummaryPayload {
   const netRevenue = taxMode === "deductFromGross" ? order.netSalesAmount : order.grossSalesAmount;
-  const marginValue = order.marginAmount;
+  const marginValue =
+    order.marginAmount != null && Number.isFinite(order.marginAmount)
+      ? order.marginAmount
+      : null;
   const marginPercent =
-    netRevenue > 0 ? roundPricingPercent((marginValue / netRevenue) * 100) : null;
+    marginValue != null && netRevenue > 0
+      ? roundPricingPercent((marginValue / netRevenue) * 100)
+      : null;
   const status = refineSalesOrderMarginSummaryStatus(
     {
       itemsCount: order.itemsCount,

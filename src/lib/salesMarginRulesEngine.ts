@@ -21,7 +21,10 @@ import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { resolveSalesOrderIssueDateRange } from "./salesOrderPeriodFilter.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
-import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
+import {
+  computeSalesOrderMarginCoverageFromItems,
+  isSalesOrderMarginItemInSalesScope,
+} from "./salesOrderMarginCoverage.js";
 import {
   calculateSalesOrderItemMargin,
   calculateSalesOrderMarginSummary,
@@ -349,27 +352,38 @@ export function calculateSalesMarginOrder(
   let taxAmount = 0;
   let netSalesAmount = 0;
   let totalCost = 0;
-  let marginAmount = 0;
+  let marginAmountSum = 0;
+  let marginCalculable = false;
 
   for (const item of items) {
-    if (!isSalesOrderMarginConsolidationEligible(item.status) && item.status !== "MARGEM_NEGATIVA") {
-      continue;
+    if (isSalesOrderMarginItemInSalesScope(item.status) && item.grossSalesAmount > 0) {
+      grossSalesAmount += item.grossSalesAmount;
+      taxAmount += item.taxAmount;
+      netSalesAmount += item.netSalesAmount;
     }
-    grossSalesAmount += item.grossSalesAmount;
-    taxAmount += item.taxAmount;
-    netSalesAmount += item.netSalesAmount;
-    totalCost += item.totalCost ?? 0;
-    marginAmount += item.marginAmount ?? 0;
+
+    if (
+      isSalesOrderMarginConsolidationEligible(item.status) ||
+      item.status === "MARGEM_NEGATIVA"
+    ) {
+      totalCost += item.totalCost ?? 0;
+      if (item.marginAmount != null && Number.isFinite(item.marginAmount)) {
+        marginAmountSum += item.marginAmount;
+        marginCalculable = true;
+      }
+    }
   }
 
   grossSalesAmount = roundPricingMoney(grossSalesAmount);
   taxAmount = roundPricingMoney(taxAmount);
   netSalesAmount = roundPricingMoney(netSalesAmount);
   totalCost = roundPricingMoney(totalCost);
-  marginAmount = roundPricingMoney(marginAmount);
+  const marginAmount = marginCalculable ? roundPricingMoney(marginAmountSum) : null;
 
   const marginPercent =
-    netSalesAmount > 0 ? roundPricingPercent((marginAmount / netSalesAmount) * 100) : null;
+    marginAmount != null && netSalesAmount > 0
+      ? roundPricingPercent((marginAmount / netSalesAmount) * 100)
+      : null;
   const markup = totalCost > 0 ? roundPricingMoney(netSalesAmount / totalCost) : null;
 
   return {
@@ -426,18 +440,17 @@ function emptyAggregate(): SalesMarginAggregateResult {
 
 function mapEngineItemForCoverage(
   item: SalesMarginItemResult,
-  taxMode: SalesMarginTaxMode
+  _taxMode: SalesMarginTaxMode
 ): import("./salesOrderMarginTypes.js").SalesOrderMarginItemResult {
   const meta = resolveSalesOrderMarginStatusMeta(item.status);
-  const netRevenue = taxMode === "deductFromGross" ? item.netSalesAmount : item.grossSalesAmount;
   return {
     salesOrderItemId: item.salesOrderItemId,
     productId: item.productId,
     productSku: item.productSku,
     productName: item.productName,
     quantity: item.quantity,
-    netUnitRevenue: item.quantity > 0 ? netRevenue / item.quantity : null,
-    netRevenue,
+    netUnitRevenue: item.quantity > 0 ? item.grossSalesAmount / item.quantity : null,
+    netRevenue: item.grossSalesAmount,
     unitCost: item.unitCost,
     totalCost: item.totalCost,
     marginValue: item.marginAmount,
@@ -536,7 +549,7 @@ export function aggregateSalesMargins(
     taxAmount: roundPricingMoney(taxAmount),
     netSalesAmount: consolidated?.netRevenue ?? 0,
     totalCost: consolidated?.totalCost ?? 0,
-    marginAmount: consolidated?.marginValue ?? 0,
+    marginAmount: consolidated?.marginValue ?? null,
     marginPercent:
       consolidated?.marginPercent != null
         ? roundPricingPercent(consolidated.marginPercent)
@@ -605,7 +618,7 @@ export function buildSalesMarginMonthlyTimeline(
     point.taxAmount += order.taxAmount;
     point.netSalesAmount += order.netSalesAmount;
     point.totalCost += order.totalCost;
-    point.marginAmount += order.marginAmount;
+    point.marginAmount += order.marginAmount ?? 0;
     const monthOrders = ordersByMonth.get(month) ?? new Set<string>();
     monthOrders.add(order.orderId);
     ordersByMonth.set(month, monthOrders);
@@ -763,21 +776,32 @@ export function buildSalesMarginRulesResult(
       if (!item.productId) continue;
       const key = item.productId;
       const existing = byProduct.get(key) ?? emptyAggregate();
-      if (isSalesOrderMarginConsolidationEligible(item.status) || item.status === "MARGEM_NEGATIVA") {
-        existing.grossSalesAmount = roundPricingMoney(existing.grossSalesAmount + item.grossSalesAmount);
+      if (isSalesOrderMarginItemInSalesScope(item.status) && item.grossSalesAmount > 0) {
+        existing.grossSalesAmount = roundPricingMoney(
+          existing.grossSalesAmount + item.grossSalesAmount
+        );
         existing.taxAmount = roundPricingMoney(existing.taxAmount + item.taxAmount);
-        existing.netSalesAmount = roundPricingMoney(existing.netSalesAmount + item.netSalesAmount);
-        existing.totalCost = roundPricingMoney(existing.totalCost + (item.totalCost ?? 0));
-        existing.marginAmount = roundPricingMoney(existing.marginAmount + (item.marginAmount ?? 0));
+        existing.netSalesAmount = roundPricingMoney(
+          existing.netSalesAmount + item.netSalesAmount
+        );
         existing.itemsCount += 1;
-        existing.validItemsCount += 1;
+      }
+      if (
+        isSalesOrderMarginConsolidationEligible(item.status) ||
+        item.status === "MARGEM_NEGATIVA"
+      ) {
+        existing.totalCost = roundPricingMoney(existing.totalCost + (item.totalCost ?? 0));
+        if (item.marginAmount != null && Number.isFinite(item.marginAmount)) {
+          existing.marginAmount = roundPricingMoney(existing.marginAmount + item.marginAmount);
+          existing.validItemsCount += 1;
+        }
       }
       byProduct.set(key, existing);
     }
   }
   for (const [key, agg] of byProduct) {
     agg.marginPercent =
-      agg.netSalesAmount > 0
+      agg.marginAmount > 0 && agg.netSalesAmount > 0
         ? roundPricingPercent((agg.marginAmount / agg.netSalesAmount) * 100)
         : null;
     agg.markup = agg.totalCost > 0 ? roundPricingMoney(agg.netSalesAmount / agg.totalCost) : null;

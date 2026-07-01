@@ -391,7 +391,18 @@ function scanDisplayPolicy(findings: PolicyFinding[]) {
       line: 0,
       occurrence: "isSalesOrderMarginDisplayUnavailable",
       permitted: "NÃO",
-      reason: "Deve bloquear exibição silenciosa de 0% quando margem indisponível.",
+      reason: "Deve bloquear exibição silenciosa quando config fiscal inválida.",
+      status: "BLOQUEANTE",
+    });
+  }
+
+  if (!display.includes("isSalesOrderMarginCalculable")) {
+    pushFinding(findings, {
+      file: "src/lib/salesOrderMarginDisplay.ts",
+      line: 0,
+      occurrence: "isSalesOrderMarginCalculable",
+      permitted: "NÃO",
+      reason: "Deve distinguir margem indisponível de receita gerencial exibível.",
       status: "BLOQUEANTE",
     });
   }
@@ -655,6 +666,98 @@ async function runRuntimeAudit(input: {
           permitted: "NÃO",
           reason: "Fallback 0% silencioso com cobertura NONE.",
           status: "BLOQUEANTE",
+        });
+      }
+    }
+
+    const soldRevenue =
+      official.grossSalesAmount ?? official.totalSalesRevenueInScope ?? 0;
+    const netMgmt = official.netSalesAmountAfterTax ?? official.netRevenue ?? 0;
+    const hasMissingCostOnly =
+      official.hasMissingCost &&
+      (official.status === "SEM_CUSTO" || official.costCoverageStatus === "NONE");
+
+    if (hasMissingCostOnly && soldRevenue > 0) {
+      if (netMgmt <= 0 && official.fiscalConfigComplete !== false) {
+        pushFinding(findings, {
+          file: `receita-gerencial (${order.orderCode})`,
+          line: 0,
+          occurrence: `netMgmt=${netMgmt} sold=${soldRevenue}`,
+          permitted: "NÃO",
+          reason: "Pedido com venda e sem custo deve exibir receita líquida gerencial > 0.",
+          status: "BLOQUEANTE",
+        });
+      } else {
+        pushFinding(findings, {
+          file: `receita-gerencial (${order.orderCode})`,
+          line: 0,
+          occurrence: `netMgmt=${fmt(netMgmt)} sold=${fmt(soldRevenue)}`,
+          permitted: "SIM",
+          reason: "Receita/imposto separados de custo indisponível.",
+          status: "OK",
+        });
+      }
+
+      if (
+        nomusConfig.taxMode === "deductFromGross" &&
+        official.fiscalConfigComplete !== false &&
+        (official.taxAmount ?? 0) <= 0
+      ) {
+        pushFinding(findings, {
+          file: `imposto (${order.orderCode})`,
+          line: 0,
+          occurrence: `taxAmount=${official.taxAmount}`,
+          permitted: "NÃO",
+          reason: "Imposto estimado deve ser > 0 com deductFromGross e venda válida.",
+          status: "BLOQUEANTE",
+        });
+      }
+
+      if (official.marginValue != null && (official.itemsWithCost ?? 0) === 0) {
+        pushFinding(findings, {
+          file: `margem-null (${order.orderCode})`,
+          line: 0,
+          occurrence: `marginValue=${official.marginValue}`,
+          permitted: "NÃO",
+          reason: "Margem R$ deve ser null/indisponível sem custo resolvido — nunca zero silencioso.",
+          status: "BLOQUEANTE",
+        });
+      }
+
+      if ((official.totalCost ?? 0) > 0 && (official.itemsWithCost ?? 0) === 0) {
+        pushFinding(findings, {
+          file: `custo-zero (${order.orderCode})`,
+          line: 0,
+          occurrence: `totalCost=${official.totalCost}`,
+          permitted: "NÃO",
+          reason: "Custo total não pode ser > 0 quando nenhum item tem custo resolvido.",
+          status: "BLOQUEANTE",
+        });
+      }
+    }
+
+    if (order.orderCode?.includes("02720") || order.orderCode?.includes("2720")) {
+      const itemsSum = order.items.reduce(
+        (sum, row) => sum + Number(row.totalNetValue ?? 0),
+        0
+      );
+      const headerNet = Number(order.totalNetValue ?? 0);
+      const delta = headerNet - itemsSum;
+      console.log(
+        `\n### Diagnóstico PD 02720: cabeçalho=${fmt(headerNet)} soma-itens=${fmt(itemsSum)} delta=${fmt(delta)}`
+      );
+      console.log(
+        `- motor grossSales=${fmt(official.grossSalesAmount)} tax=${fmt(official.taxAmount)} netMgmt=${fmt(netMgmt)}`
+      );
+      if (delta > 0.01) {
+        pushFinding(findings, {
+          file: `PD-02720 escopo`,
+          line: 0,
+          occurrence: `header-item delta=${fmt(delta)}`,
+          permitted: "SIM",
+          reason:
+            "Margem oficial usa escopo por item (soma totalNetValue). Diferença cabeçalho×itens pode ser frete/despesa/IPI/linha não importada — não alterado sem diagnóstico Nomus.",
+          status: "OK",
         });
       }
     }

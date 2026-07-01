@@ -25,6 +25,7 @@ import {
   formatSalesOrderMarginPercent,
   resolveSalesOrderMarginSupportText,
   resolveSalesOrderMarginRevenueLabel,
+  resolveSalesOrderManagementNetRevenue,
   SALES_ORDER_MARGIN_DISPLAY_LABELS,
 } from "@/src/lib/salesOrderMarginDisplay";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
@@ -222,7 +223,9 @@ export function SalesOrderQuickSummaryDrawer({
                 <div className="grid grid-cols-2 gap-3">
                   <SummaryField
                     label={resolveSalesOrderMarginRevenueLabel(margin)}
-                    value={formatSalesOrderMarginMoney(margin.netRevenue)}
+                    value={formatSalesOrderMarginMoney(
+                      resolveSalesOrderManagementNetRevenue(margin)
+                    )}
                   />
                   <SummaryField
                     label={SALES_ORDER_MARGIN_DISPLAY_LABELS.cost}

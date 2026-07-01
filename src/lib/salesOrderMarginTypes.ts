@@ -191,7 +191,7 @@ export type SalesOrderMarginSummaryPayload = SalesOrderMarginCoveragePayload &
   SalesOrderMarginFiscalDisplay & {
   netRevenue: number;
   totalCost: number;
-  marginValue: number;
+  marginValue: number | null;
   marginPercent: number | null;
   markup: number | null;
   itemsCount: number;

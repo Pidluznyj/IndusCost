@@ -146,7 +146,7 @@ export type SalesMarginOrderResult = {
   taxAmount: number;
   netSalesAmount: number;
   totalCost: number;
-  marginAmount: number;
+  marginAmount: number | null;
   marginPercent: number | null;
   markup: number | null;
   itemsCount: number;
@@ -164,7 +164,7 @@ export type SalesMarginAggregateResult = {
   taxAmount: number;
   netSalesAmount: number;
   totalCost: number;
-  marginAmount: number;
+  marginAmount: number | null;
   marginPercent: number | null;
   markup: number | null;
   ordersCount: number;
@@ -192,7 +192,7 @@ export type SalesMarginMonthlyTimelinePoint = {
   taxAmount: number;
   netSalesAmount: number;
   totalCost: number;
-  marginAmount: number;
+  marginAmount: number | null;
   marginPercent: number | null;
   ordersCount: number;
 };
@@ -206,7 +206,7 @@ export type SalesMarginGridRow = {
   grossSalesAmount: number;
   netSalesAmount: number;
   totalCost: number;
-  marginAmount: number;
+  marginAmount: number | null;
   marginPercent: number | null;
   status: string;
   hasMissingCost: boolean;

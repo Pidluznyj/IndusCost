@@ -166,7 +166,7 @@ describe("salesOrderMargin UI", () => {
 
   it("8. detalhe mostra alerta de item sem custo", () => {
     const alerts = buildSalesOrderMarginAlerts(summary({ hasMissingCost: true, status: "PARTIAL" }));
-    assert.ok(alerts.some((a) => a.includes("sem custo cadastrado")));
+    assert.ok(alerts.some((a) => a.includes("sem custo de produção publicado")));
     const analysisSrc = readFileSync(
       join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
       "utf8"

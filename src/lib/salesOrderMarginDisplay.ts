@@ -155,7 +155,7 @@ export function buildSalesOrderMarginAlerts(
   const alerts: string[] = [];
   if (summary.hasMissingCost) {
     alerts.push(
-      "Este pedido possui itens sem custo cadastrado. A margem pode estar incompleta."
+      "Este pedido possui itens sem custo de produção publicado/vigente na tabela de custo IndusCost. A receita e os impostos foram identificados, mas a margem não pode ser calculada até o custo ser publicado."
     );
   }
   if (summary.hasMissingProduct) {
@@ -177,7 +177,7 @@ export function buildSalesOrderMarginAlerts(
 export function pickSalesOrderListMarginPercent(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  if (isSalesOrderMarginDisplayUnavailable(summary)) return "—";
+  if (!isSalesOrderMarginCalculable(summary)) return "—";
   if (summary?.marginPercent != null && Number.isFinite(summary.marginPercent)) {
     return formatSalesOrderMarginPercent(summary.marginPercent);
   }
@@ -187,8 +187,8 @@ export function pickSalesOrderListMarginPercent(
 export function pickSalesOrderListMarginValue(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  if (isSalesOrderMarginDisplayUnavailable(summary)) return "—";
-  if (summary && Number.isFinite(summary.marginValue)) {
+  if (!isSalesOrderMarginCalculable(summary)) return "—";
+  if (summary && summary.marginValue != null && Number.isFinite(summary.marginValue)) {
     return formatSalesOrderMarginMoney(summary.marginValue);
   }
   return "—";
@@ -268,7 +268,6 @@ export function isSalesOrderMarginDisplayUnavailable(
   summary?: SalesOrderMarginSummaryPayload | null
 ): boolean {
   if (!summary) return true;
-  if (summary.costCoverageStatus === "NONE" && summary.itemsWithCost === 0) return true;
   if (
     summary.taxMode === "deductFromGross" &&
     summary.fiscalConfigComplete === false
@@ -277,6 +276,37 @@ export function isSalesOrderMarginDisplayUnavailable(
   }
   if (summary.hasInvalidRevenue && summary.validItemsCount === 0) return true;
   return false;
+}
+
+/** Margem R$/ % calculável — receita/imposto podem estar disponíveis mesmo quando false. */
+export function isSalesOrderMarginCalculable(
+  summary?: SalesOrderMarginSummaryPayload | null
+): boolean {
+  if (!summary || isSalesOrderMarginDisplayUnavailable(summary)) return false;
+  if (summary.costCoverageStatus === "NONE" && (summary.itemsWithCost ?? 0) === 0) {
+    return false;
+  }
+  if (summary.marginValue == null || !Number.isFinite(summary.marginValue)) return false;
+  return true;
+}
+
+/** Receita líquida gerencial exibível (independe de custo resolvido). */
+export function resolveSalesOrderManagementNetRevenue(
+  summary?: Pick<
+    SalesOrderMarginSummaryPayload,
+    "taxMode" | "netSalesAmountAfterTax" | "netRevenue" | "grossSalesAmount" | "totalSalesRevenueInScope"
+  > | null
+): number | null {
+  if (!summary) return null;
+  const netManagerial = summary.netSalesAmountAfterTax ?? summary.netRevenue;
+  if (netManagerial != null && Number.isFinite(netManagerial) && netManagerial > 0) {
+    return netManagerial;
+  }
+  const gross = summary.grossSalesAmount ?? summary.totalSalesRevenueInScope;
+  if (gross != null && Number.isFinite(gross) && gross > 0 && summary.taxMode === "none") {
+    return gross;
+  }
+  return netManagerial != null && Number.isFinite(netManagerial) ? netManagerial : null;
 }
 
 export function resolveSalesOrderMarginCostSourceSummary(
@@ -596,7 +626,13 @@ export function aggregateSalesOrderMarginSummaries(
 
   const netRevenue = summaries.reduce((sum, row) => sum + row.netRevenue, 0);
   const totalCost = summaries.reduce((sum, row) => sum + row.totalCost, 0);
-  const marginValue = summaries.reduce((sum, row) => sum + row.marginValue, 0);
+  const marginValue = summaries.reduce((sum, row) => {
+    if (row.marginValue == null || !Number.isFinite(row.marginValue)) return sum;
+    return sum + row.marginValue;
+  }, 0);
+  const hasCalculableMargin = summaries.some(
+    (row) => row.marginValue != null && Number.isFinite(row.marginValue)
+  );
   const itemsCount = summaries.reduce((sum, row) => sum + row.itemsCount, 0);
   const validItemsCount = summaries.reduce((sum, row) => sum + row.validItemsCount, 0);
   const ignoredItemsCount = summaries.reduce((sum, row) => sum + row.ignoredItemsCount, 0);
@@ -608,8 +644,11 @@ export function aggregateSalesOrderMarginSummaries(
     hasInvalidRevenue: summaries.some((row) => row.hasInvalidRevenue),
   };
 
-  const marginPercent = netRevenue > 0 ? (marginValue / netRevenue) * 100 : null;
-  const markup = totalCost > 0 ? netRevenue / totalCost : null;
+  const marginPercent =
+    hasCalculableMargin && netRevenue > 0
+      ? (marginValue / netRevenue) * 100
+      : null;
+  const markup = totalCost > 0 && hasCalculableMargin ? netRevenue / totalCost : null;
 
   let status: SalesOrderMarginSummaryPayload["status"] = "OK";
   if (validItemsCount === 0) {
@@ -655,7 +694,7 @@ export function aggregateSalesOrderMarginSummaries(
   return {
     netRevenue,
     totalCost,
-    marginValue,
+    marginValue: hasCalculableMargin ? marginValue : null,
     marginPercent,
     markup,
     itemsCount,
