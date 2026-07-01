@@ -172,6 +172,8 @@ async function main(): Promise<void> {
 
   const report = {
     ok: true,
+    status: "OK" as "OK" | "ALERTA" | "BLOQUEANTE",
+    findings: [] as Array<{ area: string; status: "OK" | "ALERTA" | "BLOQUEANTE"; message: string }>,
     searched: { orderCodeArg, variants, year: year ?? null, month: month ?? null },
     database: {
       id: order.id,
@@ -235,7 +237,43 @@ async function main(): Promise<void> {
     },
   };
 
-  console.log(JSON.stringify(report, null, 2));
+  if (report.driftIndicators.headerDiffersFromItems) {
+    report.findings.push({
+      area: "header-items",
+      status: "ALERTA",
+      message: `Cabeçalho R$ ${headerDrift.headerTotal} ≠ soma itens R$ ${headerDrift.itemsSum}.`,
+    });
+  }
+  if (report.driftIndicators.liveDiffersFromHeader) {
+    report.findings.push({
+      area: "nomus-live",
+      status: "BLOQUEANTE",
+      message: `Nomus atual R$ ${nomusLiveTotal} ≠ banco R$ ${money(order.totalNetValue)} — sync apply necessário.`,
+    });
+  } else if (report.driftIndicators.rawDiffersFromHeader) {
+    report.findings.push({
+      area: "nomus-raw",
+      status: "ALERTA",
+      message: `nomusRawResponse R$ ${rawTotal} ≠ cabeçalho R$ ${money(order.totalNetValue)}.`,
+    });
+  }
+  if (report.driftIndicators.possibleStaleImport) {
+    report.status = report.findings.some((f) => f.status === "BLOQUEANTE") ? "BLOQUEANTE" : "ALERTA";
+  }
+  if (report.findings.length === 0) {
+    report.findings.push({
+      area: "sync",
+      status: "OK",
+      message: "Pedido alinhado com itens e payload Nomus conhecido.",
+    });
+  }
+
+  const output = {
+    ...report,
+    status: report.status,
+  };
+
+  console.log(JSON.stringify(output, null, 2));
 }
 
 main()

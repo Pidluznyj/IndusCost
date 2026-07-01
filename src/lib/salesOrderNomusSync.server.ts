@@ -9,6 +9,25 @@ import {
 export const NOMUS_SALES_ORDER_SOURCE = "NOMUS";
 
 const STALE_LINE_NOTE = "[nomus-sync] linha removida ou substituída no Nomus";
+const NOMUS_LINE_NOTE_RE = /\[nomus-line:(\d+)\]/;
+
+/** Persiste id da linha Nomus em notes — dívida técnica até coluna externalLineId no schema. */
+export function formatNomusSyncLineNotes(
+  externalLineId: number | null,
+  notes: string | null
+): string | null {
+  const withoutTag = notes?.replace(/\s*\[nomus-line:\d+\]\s*/g, " ").trim() || null;
+  if (externalLineId == null || externalLineId <= 0) return withoutTag;
+  const tag = `[nomus-line:${externalLineId}]`;
+  return withoutTag ? `${withoutTag} | ${tag}` : tag;
+}
+
+export function parseNomusLineIdFromNotes(notes: string | null | undefined): number | null {
+  const match = notes?.match(NOMUS_LINE_NOTE_RE);
+  if (!match) return null;
+  const n = Number.parseInt(match[1]!, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 export type NomusSyncExistingSalesOrder = {
   id: string;
@@ -17,6 +36,7 @@ export type NomusSyncExistingSalesOrder = {
   externalSalesOrderCode: string | null;
   sourceSystem: string | null;
   totalNetValue: unknown;
+  totalGrossValue?: unknown;
   totalItems: number;
   totalCost: unknown;
   totalMarginValue: unknown;
@@ -90,10 +110,13 @@ export type NomusSyncUpdatePreview = {
   orderCodeBefore: string;
   totalNetValueBefore: number;
   totalNetValueAfter: number;
+  totalGrossValueBefore: number;
+  totalGrossValueAfter: number;
   itemCountBefore: number;
   itemCountAfter: number;
   changedHeaderTotals: boolean;
   changedItems: boolean;
+  changedCommercialPrices: boolean;
 };
 
 function parseMoney(value: unknown): number {
@@ -275,8 +298,9 @@ function buildExistingItemPool(items: NomusSyncExistingItem[]): Map<string, Nomu
   const pool = new Map<string, NomusSyncExistingItem[]>();
   for (const item of items) {
     if (item.externalProductId == null) continue;
+    const lineId = parseNomusLineIdFromNotes(item.notes);
     const key = buildNomusSyncLineReconcileKey({
-      externalLineId: null,
+      externalLineId: lineId,
       productId: item.productId,
       externalProductId: item.externalProductId,
       proposalItemId: item.proposalItemId,
@@ -339,7 +363,7 @@ export function buildNomusSyncItemWritePlan(input: {
       totalCost: decimalString(economics.totalCost),
       marginValue: decimalString(economics.marginValue),
       marginPerc: decimalString(economics.marginPerc),
-      notes: line.notes,
+      notes: formatNomusSyncLineNotes(line.externalLineId, line.notes),
     };
 
     if (matched) upserts.push(row);
@@ -377,13 +401,41 @@ export function buildNomusSyncItemWritePlan(input: {
 }
 
 export function buildNomusSyncUpdatePreview(
-  existing: NomusSyncExistingSalesOrder,
-  plan: { externalSalesOrderId: number; codigoPedido: string; totalNetValue: number; lineCount: number }
+  existing: NomusSyncExistingSalesOrder & { totalGrossValue?: unknown },
+  plan: {
+    externalSalesOrderId: number;
+    codigoPedido: string;
+    totalNetValue: number;
+    totalGrossValue?: number;
+    lineCount: number;
+    plannedLines?: Array<{ negotiatedPrice: number; quantity: number }>;
+    existingItems?: Array<{ negotiatedPrice: unknown; quantity: unknown }>;
+  }
 ): NomusSyncUpdatePreview {
   const totalNetValueBefore = parseMoney(existing.totalNetValue);
   const totalNetValueAfter = plan.totalNetValue;
+  const totalGrossValueBefore = parseMoney(existing.totalGrossValue);
+  const totalGrossValueAfter = plan.totalGrossValue ?? plan.totalNetValue;
   const itemCountBefore = existing.totalItems;
   const itemCountAfter = plan.lineCount;
+
+  let changedCommercialPrices = false;
+  if (plan.plannedLines && plan.existingItems) {
+    const activeExisting = plan.existingItems.filter(
+      (row) => parseMoney(row.quantity) > 0 && parseMoney(row.negotiatedPrice) > 0
+    );
+    if (activeExisting.length > 0 && plan.plannedLines.length > 0) {
+      const pricePairs = Math.min(activeExisting.length, plan.plannedLines.length);
+      for (let i = 0; i < pricePairs; i += 1) {
+        const before = parseMoney(activeExisting[i]?.negotiatedPrice);
+        const after = plan.plannedLines[i]?.negotiatedPrice ?? 0;
+        if (Math.abs(before - after) > 0.000001) {
+          changedCommercialPrices = true;
+          break;
+        }
+      }
+    }
+  }
 
   return {
     externalSalesOrderId: plan.externalSalesOrderId,
@@ -392,12 +444,16 @@ export function buildNomusSyncUpdatePreview(
     orderCodeBefore: existing.orderCode,
     totalNetValueBefore,
     totalNetValueAfter,
+    totalGrossValueBefore,
+    totalGrossValueAfter,
     itemCountBefore,
     itemCountAfter,
     changedHeaderTotals:
       Math.abs(totalNetValueBefore - totalNetValueAfter) > 0.000001 ||
+      Math.abs(totalGrossValueBefore - totalGrossValueAfter) > 0.000001 ||
       itemCountBefore !== itemCountAfter,
     changedItems: itemCountBefore !== itemCountAfter,
+    changedCommercialPrices,
   };
 }
 

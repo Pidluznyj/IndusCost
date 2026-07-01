@@ -7,9 +7,11 @@ import {
   detectSalesOrderHeaderItemDrift,
   expandNomusOrderCodeLookupVariants,
   findExistingSalesOrderForNomusSync,
+  formatNomusSyncLineNotes,
   indexExistingSalesOrdersByNomusKey,
   mergeNomusSyncHeaderPreservingHistoricalCosts,
   normalizeNomusOrderCodeForStorage,
+  parseNomusLineIdFromNotes,
   type NomusSyncExistingSalesOrder,
 } from "./salesOrderNomusSync.server.js";
 
@@ -188,5 +190,147 @@ describe("salesOrderNomusSync", () => {
     assert.equal(drift.hasDrift, true);
     assert.equal(drift.itemsSum, 158_000);
     assert.equal(drift.headerTotal, 275_430);
+  });
+
+  it("formatNomusSyncLineNotes persiste externalLineId em notes", () => {
+    const notes = formatNomusSyncLineNotes(501, "Obs comercial");
+    assert.match(notes ?? "", /\[nomus-line:501\]/);
+    assert.equal(parseNomusLineIdFromNotes(notes), 501);
+  });
+
+  it("buildNomusSyncItemWritePlan casa item existente por nomus-line em notes", () => {
+    const plan = buildNomusSyncItemWritePlan({
+      salesOrderId: "so-1",
+      plannedLines: [
+        {
+          externalLineId: 777,
+          productId: "p1",
+          externalProductId: 100,
+          proposalItemId: null,
+          skuSnapshot: "SKU-1",
+          productNameSnapshot: "Produto 1",
+          unit: "UN",
+          quantity: 1,
+          negotiatedPrice: 158_000,
+          totalNetValue: 158_000,
+          notes: null,
+        },
+      ],
+      existingItems: [
+        {
+          id: "item-legacy",
+          productId: "p-other",
+          externalProductId: 999,
+          proposalItemId: null,
+          skuSnapshot: "OLD",
+          productNameSnapshot: "Legado",
+          unit: "UN",
+          unitCost: "275430.000000",
+          totalCost: "0.000000",
+          marginValue: "0.000000",
+          marginPerc: "0.000000",
+          quantity: "9.000000",
+          negotiatedPrice: "30500.000000",
+          totalNetValue: "275430.000000",
+          notes: formatNomusSyncLineNotes(777, null),
+        },
+      ],
+    });
+
+    assert.equal(plan.upserts.length, 1);
+    assert.equal(plan.upserts[0]?.id, "item-legacy");
+    assert.equal(plan.upserts[0]?.unitCost, "158000.000000");
+    assert.equal(plan.creates.length, 0);
+    assert.equal(plan.staleUpdates.length, 0);
+  });
+
+  it("cenário PD 02339: preview detecta queda de 275430 para 158000", () => {
+    const existing: NomusSyncExistingSalesOrder = {
+      id: "so-pd2339",
+      orderCode: "PD 02339",
+      externalSalesOrderId: 2339,
+      externalSalesOrderCode: "PD 02339",
+      sourceSystem: "NOMUS",
+      totalNetValue: "275430.000000",
+      totalGrossValue: "275430.000000",
+      totalItems: 9,
+      totalCost: "120000.000000",
+      totalMarginValue: "155430.000000",
+      totalMarginPerc: "56.430000",
+    };
+
+    const preview = buildNomusSyncUpdatePreview(existing, {
+      externalSalesOrderId: 2339,
+      codigoPedido: "PD 02339",
+      totalNetValue: 158_000,
+      totalGrossValue: 158_000,
+      lineCount: 4,
+      plannedLines: [{ negotiatedPrice: 39_500, quantity: 4 }],
+      existingItems: [{ negotiatedPrice: "30500", quantity: "9" }],
+    });
+
+    assert.equal(preview.totalNetValueBefore, 275_430);
+    assert.equal(preview.totalNetValueAfter, 158_000);
+    assert.equal(preview.totalGrossValueBefore, 275_430);
+    assert.equal(preview.totalGrossValueAfter, 158_000);
+    assert.equal(preview.changedHeaderTotals, true);
+    assert.equal(preview.changedItems, true);
+
+    const merged = mergeNomusSyncHeaderPreservingHistoricalCosts(
+      {
+        totalNetValue: "158000.000000",
+        totalCost: "0.000000",
+        totalMarginValue: "158000.000000",
+        totalMarginPerc: "100.000000",
+      },
+      existing,
+      true
+    );
+    assert.equal(merged.totalNetValue, "158000.000000");
+    assert.equal(merged.totalCost, "120000.000000");
+  });
+
+  it("item novo entra em creates quando não há match", () => {
+    const plan = buildNomusSyncItemWritePlan({
+      salesOrderId: "so-1",
+      plannedLines: [
+        {
+          externalLineId: 2,
+          productId: "p2",
+          externalProductId: 200,
+          proposalItemId: null,
+          skuSnapshot: "SKU-2",
+          productNameSnapshot: "Novo",
+          unit: "UN",
+          quantity: 3,
+          negotiatedPrice: 10_000,
+          totalNetValue: 30_000,
+          notes: null,
+        },
+      ],
+      existingItems: [
+        {
+          id: "item-1",
+          productId: "p1",
+          externalProductId: 100,
+          proposalItemId: null,
+          skuSnapshot: "SKU-1",
+          productNameSnapshot: "Antigo",
+          unit: "UN",
+          unitCost: "1000.000000",
+          totalCost: "0.000000",
+          marginValue: "0.000000",
+          marginPerc: "0.000000",
+          quantity: "1.000000",
+          negotiatedPrice: "1000.000000",
+          totalNetValue: "1000.000000",
+          notes: formatNomusSyncLineNotes(1, null),
+        },
+      ],
+    });
+
+    assert.equal(plan.creates.length, 1);
+    assert.equal(plan.staleUpdates.length, 1);
+    assert.equal(plan.upserts.length, 0);
   });
 });

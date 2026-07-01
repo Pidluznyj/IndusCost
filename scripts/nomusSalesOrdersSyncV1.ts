@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
@@ -6,6 +7,7 @@ import {
   buildNomusSyncItemWritePlan,
   buildNomusSyncUpdatePreview,
   extractNomusLineExternalId,
+  canonicalNomusOrderCodeKey,
   expandNomusOrderCodeLookupVariants,
   findExistingSalesOrderForNomusSync,
   indexExistingSalesOrdersByNomusKey,
@@ -276,15 +278,57 @@ function hasNextPage(payload: unknown, page: number, pageSize: number, currentLe
   return currentLen > 0;
 }
 
-async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
-  const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
-  const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
-  const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
-  const startPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
+function parseCliArg(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length).trim();
+  }
+  return undefined;
+}
+
+function resolveSalesOrdersPaginationWindow(): { startPage: number; maxPages: number; cursorNote: string } {
   const maxPages = Math.max(
     1,
     toInt(process.env.NOMUS_SALES_ORDERS_MAX_PAGES) ?? toInt(process.env.NOMUS_MAX_PAGES) ?? 200
   );
+  const cursorFile = (process.env.NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE ?? "").trim();
+  if (!cursorFile) {
+    const startPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
+    return { startPage, maxPages, cursorNote: `startPage=${startPage} (fixo)` };
+  }
+
+  let startPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
+  try {
+    const raw = readFileSync(cursorFile, "utf8").trim();
+    const parsed = toInt(raw);
+    if (parsed != null && parsed >= 1) startPage = parsed;
+  } catch {
+    // primeira execução — usa startPage padrão
+  }
+
+  const nextStart = startPage + maxPages;
+  try {
+    writeFileSync(cursorFile, String(nextStart), "utf8");
+  } catch (err) {
+    console.warn(`[nomus-sales-orders-v1] não foi possível gravar cursor em ${cursorFile}:`, err);
+  }
+
+  return {
+    startPage,
+    maxPages,
+    cursorNote: `cursor rotativo ${cursorFile}: janela páginas ${startPage}..${startPage + maxPages - 1}, próximo=${nextStart}`,
+  };
+}
+
+async function fetchNomusPedidoPages(
+  baseUrl: string,
+  options: { startPage: number; maxPages: number }
+): Promise<JsonObject[]> {
+  const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
+  const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
+  const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
+  const startPage = options.startPage;
+  const maxPages = options.maxPages;
   const lastPage = startPage + maxPages - 1;
 
   const dataEmissaoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
@@ -329,6 +373,64 @@ async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
   }
 
   return pedidos;
+}
+
+async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
+  const window = resolveSalesOrdersPaginationWindow();
+  console.warn(`[nomus-sales-orders-v1] paginação: ${window.cursorNote}`);
+  return fetchNomusPedidoPages(baseUrl, window);
+}
+
+async function fetchNomusPedidoByOrderCode(
+  baseUrl: string,
+  orderCodeArg: string
+): Promise<JsonObject | null> {
+  const targetKey = canonicalNomusOrderCodeKey(orderCodeArg);
+  if (!targetKey) return null;
+
+  const maxPages = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_TARGET_MAX_PAGES) ?? 100);
+  const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
+  const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
+  const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
+
+  const dataEmissaoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
+  const dataEmissaoFinal = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_FINAL", "31/12/2030");
+  const dataVencimentoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_VENCIMENTO_INICIAL", "01/01/2023");
+  const dataVencimentoFinal = getEnvOrDefault("NOMUS_PEDIDO_DATA_VENCIMENTO_FINAL", "31/12/2030");
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = buildNomusUrl(baseUrl, "pedidos");
+    url.searchParams.set("pagina", String(page));
+    url.searchParams.set("tamanhoPagina", String(pageSize));
+    url.searchParams.set("dataEmissaoInicial", dataEmissaoInicial);
+    url.searchParams.set("dataEmissaoFinal", dataEmissaoFinal);
+    url.searchParams.set("dataVencimentoInicial", dataVencimentoInicial);
+    url.searchParams.set("dataVencimentoFinal", dataVencimentoFinal);
+
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const arr = pickArrayFromUnknown(payload).filter(
+      (entry): entry is JsonObject => !!entry && typeof entry === "object"
+    );
+
+    for (const pedido of arr) {
+      const codeKey = canonicalNomusOrderCodeKey(String(pedido.codigoPedido ?? ""));
+      if (codeKey === targetKey) return pedido;
+    }
+
+    if (arr.length < pageSize) break;
+  }
+
+  return null;
+}
+
+function pedidoAlreadyInList(pedidos: JsonObject[], pedido: JsonObject): boolean {
+  const id = toInt(pedido.id);
+  const key = canonicalNomusOrderCodeKey(String(pedido.codigoPedido ?? ""));
+  return pedidos.some((row) => {
+    if (id != null && toInt(row.id) === id) return true;
+    const rowKey = canonicalNomusOrderCodeKey(String(row.codigoPedido ?? ""));
+    return key != null && rowKey === key;
+  });
 }
 
 function nomusProductSku(product: JsonObject): string | null {
@@ -858,6 +960,7 @@ async function loadExistingSalesOrdersForNomusSync(
       externalSalesOrderCode: true,
       sourceSystem: true,
       totalNetValue: true,
+      totalGrossValue: true,
       totalItems: true,
       totalCost: true,
       totalMarginValue: true,
@@ -899,13 +1002,20 @@ async function runDry(
           externalSalesOrderId: plan.externalSalesOrderId,
           codigoPedido: plan.codigoPedido,
           totalNetValue,
+          totalGrossValue: totalNetValue,
           lineCount: plan.lines.length,
+          plannedLines: plan.lines.map((line) => ({
+            negotiatedPrice: line.negotiatedPrice,
+            quantity: line.quantity,
+          })),
         })
       );
     }
   }
 
-  const changedOrders = updatesPreview.filter((row) => row.changedHeaderTotals || row.changedItems);
+  const changedOrders = updatesPreview.filter(
+    (row) => row.changedHeaderTotals || row.changedItems || row.changedCommercialPrices
+  );
   const changedHeaderTotals = updatesPreview.filter((row) => row.changedHeaderTotals);
   const changedItems = updatesPreview.filter((row) => row.changedItems);
 
@@ -1175,13 +1285,44 @@ async function runApply(
 
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
+  const targetOrderCode = parseCliArg("orderCode");
 
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
   timeLog("INICIO fetchAllNomusPedidos");
-  const pedidos = await fetchAllNomusPedidos(nomusBaseUrl);
+  let pedidos = await fetchAllNomusPedidos(nomusBaseUrl);
+
+  if (targetOrderCode) {
+    const targetKey = canonicalNomusOrderCodeKey(targetOrderCode);
+    const alreadyInBatch = targetKey
+      ? pedidos.some(
+          (row) => canonicalNomusOrderCodeKey(String(row.codigoPedido ?? "")) === targetKey
+        )
+      : false;
+
+    if (!alreadyInBatch) {
+      const targeted = await fetchNomusPedidoByOrderCode(nomusBaseUrl, targetOrderCode);
+      if (targeted) {
+        pedidos = [targeted, ...pedidos.filter((row) => !pedidoAlreadyInList([targeted], row))];
+        console.warn(
+          `[nomus-sales-orders-v1] --orderCode=${targetOrderCode}: pedido incluído via busca direcionada.`
+        );
+      } else {
+        console.warn(
+          `[nomus-sales-orders-v1] --orderCode=${targetOrderCode}: pedido não encontrado no Nomus.`
+        );
+      }
+    }
+
+    if (targetKey) {
+      pedidos = pedidos.filter(
+        (row) => canonicalNomusOrderCodeKey(String(row.codigoPedido ?? "")) === targetKey
+      );
+    }
+  }
+
   timeLog(`FIM fetchAllNomusPedidos total=${pedidos.length}`);
   const itemStatusDistribution = collectNomusItemStatuses(pedidos);
 
@@ -1370,6 +1511,7 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         mode: isApply ? "apply" : "dry-run",
+        targetOrderCode: targetOrderCode ?? null,
         summary: result,
         applied,
         commercialNote:

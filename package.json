@@ -56,6 +56,7 @@
     "sync:nomus:bom-auto-apply": "tsx scripts/nomusBomAutoApplyAfterSyncV1.ts",
     "sync:nomus:all:apply-and-bom": "tsx scripts/nomusSyncOrchestrator.ts --apply",
     "sync:nomus:sales-orders:dry": "tsx scripts/nomusSalesOrdersSyncV1.ts",
+    "test:nomus:sales-orders-sync": "tsx --test src/lib/salesOrderNomusSync.test.ts src/lib/salesOrderNomusSyncCost.test.ts",
     "backfill:sales-order-nfe-links:dry": "tsx scripts/backfill-sales-order-nfe-links.ts --dry-run",
     "backfill:sales-order-nfe-links:apply": "tsx scripts/backfill-sales-order-nfe-links.ts --apply",
     "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts",

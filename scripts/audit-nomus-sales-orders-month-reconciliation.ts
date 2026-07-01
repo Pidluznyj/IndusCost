@@ -146,10 +146,32 @@ async function main(): Promise<void> {
       updatedAt: o.updatedAt.toISOString(),
     }));
 
+  const recentlyUpdated = [...orders]
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 30)
+    .map((o) => ({
+      orderCode: o.orderCode,
+      issueDate: o.issueDate.toISOString().slice(0, 10),
+      totalNetValue: money(o.totalNetValue),
+      items: o.items.length,
+      updatedAt: o.updatedAt.toISOString(),
+      sentToNomusAt: o.sentToNomusAt?.toISOString() ?? null,
+    }));
+
+  const blockingDrift = possibleDrift.filter((row) =>
+    headerItemDrift.some((d) => d.orderCode === row.orderCode)
+  );
+
   console.log(
     JSON.stringify(
       {
         period: label,
+        status:
+          blockingDrift.length > 0
+            ? "ALERTA"
+            : possibleDrift.length > 0
+              ? "ALERTA"
+              : "OK",
         totals: {
           orders: orders.length,
           sumTotalNetValue: sumNet,
@@ -164,6 +186,7 @@ async function main(): Promise<void> {
         possibleDriftCount: possibleDrift.length,
         possibleDrift: possibleDrift.slice(0, 50),
         lastOrders,
+        recentlyUpdated,
         pdSequenceGapsSample: gaps.slice(0, 30),
         totalsByDay: Object.entries(byDay)
           .sort(([a], [b]) => a.localeCompare(b))

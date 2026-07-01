@@ -30,14 +30,23 @@ describe("salesOrderNomusSyncCost (legado)", () => {
   });
 
   it("margem não trata storedUnitCost comercial como custo de produção", () => {
-    const resolved = resolveSalesOrderItemCost({
+    const withoutLive = resolveSalesOrderItemCost({
+      salesOrderItemId: "i1",
+      productId: "p1",
+      storedUnitCost: 55,
+    });
+    assert.equal(withoutLive.unitCost, null);
+    assert.notEqual(withoutLive.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
+
+    const withLive = resolveSalesOrderItemCost({
       salesOrderItemId: "i1",
       productId: "p1",
       storedUnitCost: 55,
       analysis: { summary: { totalIndustrialCost: 99 } },
+      costPolicy: { allowLiveCostFallback: true, useFrozenUnitCostFirst: false },
     });
-    assert.equal(resolved.unitCost, 99);
-    assert.notEqual(resolved.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
+    assert.equal(withLive.unitCost, 99);
+    assert.notEqual(withLive.costSource, "SALES_ORDER_ITEM_SNAPSHOT");
   });
 
   it("sync Nomus não preserva unitCost como custo industrial", () => {
