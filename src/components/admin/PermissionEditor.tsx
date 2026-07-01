@@ -1,22 +1,25 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Search } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { PERMISSION_GROUP_ORDER } from "@/src/lib/permissionCatalog";
 import {
   applyTemplatePermissions,
-  buildGroupTree,
-  clearGroup,
   enablePermission,
-  groupCatalogEntries,
   riskBadgeLabel,
-  selectAllInGroup,
-  selectViewOnlyForGroup,
   summarizePermissionSelection,
   togglePermissionSelected,
   type PermissionTemplateId,
   PERMISSION_TEMPLATES,
   type PermissionTreeNode,
 } from "@/src/lib/permissionCatalogUtils";
+import {
+  buildPermissionAccessGroupSections,
+  clearAccessGroup,
+  getAccessGroupButtonId,
+  getAccessGroupPanelId,
+  selectAllInAccessGroup,
+  selectViewOnlyForAccessGroup,
+  type PermissionAccessGroupSection,
+} from "@/src/lib/permissionGroups";
 import { MODULE_LABELS, type AppModuleId } from "@/src/lib/modulePermissions";
 
 export type QuickAccessProfileOption = {
@@ -100,6 +103,117 @@ function PermissionRow({
   );
 }
 
+function AccessGroupSection({
+  section,
+  collapsed,
+  readOnly,
+  selected,
+  onToggleCollapsed,
+  onChange,
+  onTogglePermission,
+}: {
+  section: PermissionAccessGroupSection;
+  collapsed: boolean;
+  readOnly: boolean;
+  selected: string[];
+  onToggleCollapsed: () => void;
+  onChange: (permissions: string[]) => void;
+  onTogglePermission: (key: string, enabled: boolean) => void;
+}) {
+  const buttonId = getAccessGroupButtonId(section.id);
+  const panelId = getAccessGroupPanelId(section.id);
+  const hasVisibleSections = section.catalogSections.some((catalog) => catalog.tree.length > 0);
+
+  if (!hasVisibleSections) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card/50 overflow-hidden">
+      <div className="flex items-start justify-between gap-2 px-3 py-2 bg-muted/40 border-b border-border">
+        <button
+          id={buttonId}
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={panelId}
+          onClick={onToggleCollapsed}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onToggleCollapsed();
+            }
+          }}
+          className="flex flex-col items-start gap-1 text-left min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-md"
+        >
+          <span className="flex items-center gap-1.5 text-xs font-bold min-w-0">
+            {collapsed ? (
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            )}
+            {section.label}
+            <span className="text-muted-foreground font-normal">
+              ({section.selectedCount}/{section.totalCount})
+            </span>
+          </span>
+          {section.relatedMenuLabels.length > 0 ? (
+            <span className="text-[10px] text-muted-foreground font-normal leading-snug">
+              Menus relacionados: {section.relatedMenuLabels.join(", ")}
+            </span>
+          ) : null}
+        </button>
+        {!readOnly ? (
+          <div className="flex flex-wrap gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onChange(selectAllInAccessGroup(section.id, selected))}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
+            >
+              Selecionar grupo
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(clearAccessGroup(section.id, selected))}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
+            >
+              Limpar grupo
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(selectViewOnlyForAccessGroup(section.id, selected))}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
+            >
+              Só visualização
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {!collapsed ? (
+        <div id={panelId} role="region" aria-labelledby={buttonId} className="p-2 space-y-3">
+          {section.catalogSections.map((catalogSection) =>
+            catalogSection.tree.length > 0 ? (
+              <div key={catalogSection.catalogGroup} className="space-y-1">
+                <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  {catalogSection.catalogGroup}
+                </p>
+                {catalogSection.tree.map((node) => (
+                  <div key={node.key}>
+                    <PermissionRow
+                      node={node}
+                      depth={0}
+                      selected={selected}
+                      onToggle={onTogglePermission}
+                      readOnly={readOnly}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const PermissionEditor: React.FC<PermissionEditorProps> = ({
   selected,
   onChange,
@@ -109,7 +223,10 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
   const [search, setSearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  const groups = useMemo(() => groupCatalogEntries(), []);
+  const accessGroups = useMemo(
+    () => buildPermissionAccessGroupSections(selected, search),
+    [selected, search]
+  );
 
   const summary = useMemo(
     () =>
@@ -139,8 +256,8 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
     onChange(acc);
   };
 
-  const toggleGroupCollapsed = (group: string) => {
-    setCollapsedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
+  const toggleGroupCollapsed = (groupId: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
   return (
@@ -152,7 +269,8 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
         <p className="text-[11px] text-muted-foreground flex items-start gap-1">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
           Permissões críticas podem alterar dados sensíveis, parâmetros, exclusões ou administração do
-          sistema. Marcar um item filho inclui automaticamente os requisitos (pais).
+          sistema. Marcar um item filho inclui automaticamente os requisitos (pais). Os grupos abaixo
+          seguem as mesmas áreas da sidebar — cada permissão continua individual.
         </p>
       </div>
 
@@ -162,7 +280,7 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
           {summary.groups.length > 0 ? (
             <>
               {" "}
-              · Grupos: <span className="text-foreground">{summary.groups.join(", ")}</span>
+              · Catálogos: <span className="text-foreground">{summary.groups.join(", ")}</span>
             </>
           ) : null}
         </p>
@@ -227,76 +345,18 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
       </div>
 
       <div className="space-y-2 max-h-[min(420px,50vh)] overflow-y-auto pr-1">
-        {PERMISSION_GROUP_ORDER.map((groupName) => {
-          const groupData = groups.find((g) => g.group === groupName);
-          if (!groupData) return null;
-          const collapsed = collapsedGroups[groupName] ?? false;
-          const tree = buildGroupTree(groupName, search);
-          if (search.trim() && tree.length === 0) return null;
-
-          return (
-            <div key={groupName} className="rounded-xl border border-border bg-card/50 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/40 border-b border-border">
-                <button
-                  type="button"
-                  onClick={() => toggleGroupCollapsed(groupName)}
-                  className="flex items-center gap-1.5 text-xs font-bold min-w-0"
-                >
-                  {collapsed ? (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  {groupName}
-                  <span className="text-muted-foreground font-normal">
-                    ({groupData.entries.filter((e) => selected.includes(e.key)).length}/
-                    {groupData.entries.length})
-                  </span>
-                </button>
-                {!readOnly ? (
-                  <div className="flex flex-wrap gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => onChange(selectAllInGroup(groupName, selected))}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
-                    >
-                      Marcar grupo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChange(clearGroup(groupName, selected))}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
-                    >
-                      Limpar grupo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChange(selectViewOnlyForGroup(groupName, selected))}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded border border-border hover:bg-accent"
-                    >
-                      Só visualização
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              {!collapsed ? (
-                <div className="p-2 space-y-1">
-                  {tree.map((node) => (
-                    <div key={node.key}>
-                      <PermissionRow
-                        node={node}
-                        depth={0}
-                        selected={selected}
-                        onToggle={handleToggle}
-                        readOnly={readOnly}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+        {accessGroups.map((section) => (
+          <AccessGroupSection
+            key={section.id}
+            section={section}
+            collapsed={collapsedGroups[section.id] ?? false}
+            readOnly={readOnly}
+            selected={selected}
+            onToggleCollapsed={() => toggleGroupCollapsed(section.id)}
+            onChange={onChange}
+            onTogglePermission={handleToggle}
+          />
+        ))}
       </div>
     </div>
   );
