@@ -1,0 +1,302 @@
+import type {
+  CommissionRecordOriginStage,
+  CommissionRecordStatus,
+} from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import type { CommissionAccessScope } from "./commissionAccessScope.js";
+import {
+  applyCommissionRecordScope,
+  parseOptionalInt,
+  parseOptionalUuid,
+} from "./commissionAccessScope.js";
+
+export class CommissionQueryParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CommissionQueryParseError";
+  }
+}
+
+export const COMMISSION_FORECAST_STATUSES: CommissionRecordStatus[] = [
+  "FORECAST_FROM_ORDER",
+  "WAITING_NFE",
+];
+
+export const COMMISSION_CONFIRMED_STATUSES: CommissionRecordStatus[] = [
+  "CONFIRMED_BY_OUTPUT_DOCUMENT",
+  "WAITING_RECEIVABLE",
+  "WAITING_PAYMENT",
+  "PARTIALLY_RELEASED",
+  "RELEASED",
+];
+
+const RECORD_STATUS_SET = new Set<string>([
+  "FORECAST_FROM_ORDER",
+  "WAITING_NFE",
+  "SUPERSEDED_BY_OUTPUT_DOCUMENT",
+  "CONFIRMED_BY_OUTPUT_DOCUMENT",
+  "WAITING_RECEIVABLE",
+  "WAITING_PAYMENT",
+  "PARTIALLY_RELEASED",
+  "RELEASED",
+  "PAID_PARTIAL",
+  "PAID_TOTAL",
+  "CANCELLED",
+  "REVERSED",
+  "ERROR",
+]);
+
+const ORIGIN_STAGE_SET = new Set<string>(["SALES_ORDER", "OUTPUT_DOCUMENT"]);
+
+export type CommissionPeriodQuery = {
+  year: number | null;
+  month: number | null;
+  from: Date | null;
+  to: Date | null;
+};
+
+export type CommissionDashboardQuery = CommissionPeriodQuery & {
+  commissionPersonId: string | null;
+  type: string | null;
+  status: CommissionRecordStatus | null;
+  customer: string | null;
+  sellerId: number | null;
+  representativeId: number | null;
+};
+
+export type CommissionRecordsQuery = CommissionPeriodQuery & {
+  status: CommissionRecordStatus | null;
+  originStage: CommissionRecordOriginStage | null;
+  commissionPersonId: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  customer: string | null;
+  page: number;
+  pageSize: number;
+  statusIn?: CommissionRecordStatus[];
+};
+
+export type PaginatedMeta = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+function parseIsoDate(raw: unknown, field: string): Date | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "string") {
+    throw new CommissionQueryParseError(`${field} inválido.`);
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    throw new CommissionQueryParseError(`${field} inválido.`);
+  }
+  return d;
+}
+
+function parsePeriodQuery(query: Record<string, unknown>): CommissionPeriodQuery {
+  const year = parseOptionalInt(query.year);
+  const month = parseOptionalInt(query.month);
+  if (month != null && (month < 1 || month > 12)) {
+    throw new CommissionQueryParseError("month deve estar entre 1 e 12.");
+  }
+  const from = parseIsoDate(query.from, "from");
+  const to = parseIsoDate(query.to, "to");
+  if (from && to && from > to) {
+    throw new CommissionQueryParseError("from não pode ser posterior a to.");
+  }
+  return { year, month, from, to };
+}
+
+function parseStatus(raw: unknown): CommissionRecordStatus | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "string" || !RECORD_STATUS_SET.has(raw)) {
+    throw new CommissionQueryParseError("status inválido.");
+  }
+  return raw as CommissionRecordStatus;
+}
+
+function parseOriginStage(raw: unknown): CommissionRecordOriginStage | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "string" || !ORIGIN_STAGE_SET.has(raw)) {
+    throw new CommissionQueryParseError("originStage inválido.");
+  }
+  return raw as CommissionRecordOriginStage;
+}
+
+export function parsePagination(query: Record<string, unknown>): { page: number; pageSize: number } {
+  const pageRaw = parseOptionalInt(query.page);
+  const pageSizeRaw = parseOptionalInt(query.pageSize);
+  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
+  const pageSize =
+    pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 100) : 20;
+  return { page, pageSize };
+}
+
+export function parseCommissionDashboardQuery(
+  query: Record<string, unknown>
+): CommissionDashboardQuery {
+  const period = parsePeriodQuery(query);
+  const status = parseStatus(query.status);
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+  const customer =
+    typeof query.customer === "string" && query.customer.trim()
+      ? query.customer.trim()
+      : null;
+  const type =
+    typeof query.type === "string" && query.type.trim() ? query.type.trim() : null;
+
+  return {
+    ...period,
+    commissionPersonId,
+    type,
+    status,
+    customer,
+    sellerId: parseOptionalInt(query.sellerId),
+    representativeId: parseOptionalInt(query.representativeId),
+  };
+}
+
+export function parseCommissionRecordsQuery(
+  query: Record<string, unknown>
+): CommissionRecordsQuery {
+  const period = parsePeriodQuery(query);
+  const { page, pageSize } = parsePagination(query);
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+  const orderCode =
+    typeof query.orderCode === "string" && query.orderCode.trim()
+      ? query.orderCode.trim()
+      : null;
+  const nfeNumber =
+    typeof query.nfeNumber === "string" && query.nfeNumber.trim()
+      ? query.nfeNumber.trim()
+      : null;
+  const customer =
+    typeof query.customer === "string" && query.customer.trim()
+      ? query.customer.trim()
+      : null;
+
+  return {
+    ...period,
+    status: parseStatus(query.status),
+    originStage: parseOriginStage(query.originStage),
+    commissionPersonId,
+    orderCode,
+    nfeNumber,
+    customer,
+    page,
+    pageSize,
+  };
+}
+
+export function buildCommissionRecordPeriodWhere(
+  query: CommissionPeriodQuery
+): Prisma.CommissionRecordWhereInput {
+  if (query.from && query.to) {
+    return { calculatedAt: { gte: query.from, lte: query.to } };
+  }
+  if (query.year != null && query.month != null) {
+    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
+    const to = new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999));
+    return { calculatedAt: { gte: from, lte: to } };
+  }
+  if (query.year != null) {
+    const from = new Date(Date.UTC(query.year, 0, 1));
+    const to = new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999));
+    return { calculatedAt: { gte: from, lte: to } };
+  }
+  return {};
+}
+
+export function buildCommissionRecordsWhere(
+  query: CommissionRecordsQuery,
+  scope: CommissionAccessScope
+): Prisma.CommissionRecordWhereInput {
+  const parts: Prisma.CommissionRecordWhereInput[] = [
+    buildCommissionRecordPeriodWhere(query),
+    applyCommissionRecordScope(scope, {
+      commissionPersonId: query.commissionPersonId,
+    }),
+  ];
+
+  if (query.statusIn?.length) {
+    parts.push({ status: { in: query.statusIn } });
+  } else if (query.status) {
+    parts.push({ status: query.status });
+  }
+  if (query.originStage) parts.push({ originStage: query.originStage });
+  if (query.commissionPersonId) {
+    parts.push({ commissionPersonId: query.commissionPersonId });
+  }
+  if (query.orderCode) {
+    parts.push({ orderCode: { contains: query.orderCode, mode: "insensitive" } });
+  }
+  if (query.nfeNumber) {
+    parts.push({ nfeNumber: { contains: query.nfeNumber, mode: "insensitive" } });
+  }
+  if (query.customer) {
+    parts.push({ customerName: { contains: query.customer, mode: "insensitive" } });
+  }
+
+  const filtered = parts.filter((p) => Object.keys(p).length > 0);
+  if (filtered.length === 0) return {};
+  if (filtered.length === 1) return filtered[0]!;
+  return { AND: filtered };
+}
+
+export function buildCommissionDashboardWhere(
+  query: CommissionDashboardQuery,
+  scope: CommissionAccessScope
+): Prisma.CommissionRecordWhereInput {
+  const parts: Prisma.CommissionRecordWhereInput[] = [
+    buildCommissionRecordPeriodWhere(query),
+    applyCommissionRecordScope(scope, {
+      sellerId: query.sellerId,
+      representativeId: query.representativeId,
+      commissionPersonId: query.commissionPersonId,
+    }),
+  ];
+
+  if (query.status) parts.push({ status: query.status });
+  if (query.commissionPersonId) {
+    parts.push({ commissionPersonId: query.commissionPersonId });
+  }
+  if (query.customer) {
+    parts.push({ customerName: { contains: query.customer, mode: "insensitive" } });
+  }
+  if (query.type === "SELLER") {
+    parts.push({ nomusSellerId: { not: null } });
+  } else if (query.type === "REPRESENTATIVE") {
+    parts.push({ nomusRepresentativeId: { not: null } });
+  }
+
+  const filtered = parts.filter((p) => Object.keys(p).length > 0);
+  if (filtered.length === 0) return {};
+  if (filtered.length === 1) return filtered[0]!;
+  return { AND: filtered };
+}
+
+export function paginatedMeta(total: number, page: number, pageSize: number): PaginatedMeta {
+  return {
+    page,
+    pageSize,
+    total,
+    totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+  };
+}
+
+export function inferRecordKind(
+  status: CommissionRecordStatus
+): "forecast" | "confirmed" | "paid" | "other" {
+  if (COMMISSION_FORECAST_STATUSES.includes(status)) return "forecast";
+  if (COMMISSION_CONFIRMED_STATUSES.includes(status)) return "confirmed";
+  if (status === "PAID_PARTIAL" || status === "PAID_TOTAL") return "paid";
+  return "other";
+}

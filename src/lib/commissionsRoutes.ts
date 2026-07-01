@@ -1,0 +1,554 @@
+import type express from "express";
+import type { RequestHandler } from "express";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import {
+  COMMISSIONS_AUDIT_VIEW_PERMISSIONS,
+  COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS,
+  COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS,
+  COMMISSIONS_FORECAST_VIEW_PERMISSIONS,
+  COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS,
+  COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS,
+  COMMISSIONS_PEOPLE_MANAGE_PERMISSIONS,
+  COMMISSIONS_PEOPLE_VIEW_PERMISSIONS,
+  COMMISSIONS_RECALCULATE_PERMISSIONS,
+  COMMISSIONS_RELEASE_VIEW_PERMISSIONS,
+  COMMISSIONS_RULES_MANAGE_PERMISSIONS,
+  COMMISSIONS_RULES_VIEW_PERMISSIONS,
+  COMMISSIONS_SETTINGS_VIEW_PERMISSIONS,
+  COMMISSIONS_VIEW_PERMISSIONS,
+} from "@/src/lib/commissionsPermissions.js";
+import {
+  createCommissionPerson,
+  createCommissionRule,
+  getCommissionPaymentBatchById,
+  getCommissionSettingsPayload,
+  listCommissionAuditIssues,
+  listCommissionPaymentBatches,
+  listCommissionPersons,
+  listCommissionRules,
+  reopenCommissionAuditIssue,
+  resolveCommissionAuditIssue,
+  toggleCommissionPersonActive,
+  toggleCommissionRuleActive,
+  updateCommissionPerson,
+  updateCommissionRule,
+  updateCommissionSettings,
+  CommissionValidationError,
+} from "@/src/lib/commissions/commissionAdmin.server.js";
+import {
+  parseAuditListQuery,
+  parseCommissionPersonCreateBody,
+  parseCommissionPersonUpdateBody,
+  parseCommissionRecalculateBody,
+  parseCommissionRuleCreateBody,
+  parseCommissionRuleUpdateBody,
+  parseCommissionSettingsUpdateBody,
+  parseMarkPaidBody,
+  parsePaymentBatchCreateBody,
+  parsePaymentBatchesListQuery,
+  parsePersonsListQuery,
+  parseRulesListQuery,
+} from "@/src/lib/commissions/commissionApiValidation.js";
+import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
+import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
+import {
+  CommissionQueryParseError,
+  parseCommissionDashboardQuery,
+  parseCommissionRecordsQuery,
+} from "@/src/lib/commissions/commissionQuery.js";
+import {
+  listCommissionConfirmedRecords,
+  listCommissionForecastRecords,
+  listCommissionRecords,
+  listCommissionReleases,
+} from "@/src/lib/commissions/commissionRecords.server.js";
+import { calculateCommissions } from "@/src/lib/commissions/commission-calculation-service.server.js";
+import {
+  approveCommissionPaymentBatch,
+  cancelCommissionPaymentBatch,
+  createCommissionPaymentBatch,
+  markCommissionPaymentBatchPaid,
+} from "@/src/lib/commissions/commission-payment-service.server.js";
+import { prisma } from "@/src/lib/prisma.js";
+
+type AuthGuards = {
+  requireAppAuth: RequestHandler;
+  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+};
+
+function handleQueryError(res: express.Response, error: unknown) {
+  if (error instanceof CommissionQueryParseError) {
+    return res.status(400).json({ error: error.message });
+  }
+  throw error;
+}
+
+function handleValidationError(res: express.Response, error: CommissionValidationError) {
+  const status = error.code === "NOT_FOUND" ? 404 : 400;
+  return res.status(status).json({ error: error.message, code: error.code });
+}
+
+async function resolveScopeOrRespond(
+  req: express.Request,
+  res: express.Response,
+  getCurrentAppUser: AuthGuards["getCurrentAppUser"]
+) {
+  const user = await getCurrentAppUser(req);
+  if (!user) {
+    res.status(401).json({ error: "Não autenticado." });
+    return null;
+  }
+  const scopeResult = requireCommissionDataScope(user);
+  if (!scopeResult.ok) {
+    res.status(scopeResult.status).json(scopeResult.body);
+    return null;
+  }
+  return { user, scope: scopeResult.scope };
+}
+
+export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards) {
+  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+
+  const viewAnyGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const dashboardGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const forecastGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_FORECAST_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const confirmedGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const releaseGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_RELEASE_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const paymentsViewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const paymentsManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS]),
+  ] as const;
+
+  const peopleViewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_PEOPLE_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const peopleManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_PEOPLE_MANAGE_PERMISSIONS]),
+  ] as const;
+
+  const rulesViewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_RULES_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const rulesManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_RULES_MANAGE_PERMISSIONS]),
+  ] as const;
+
+  const auditGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_AUDIT_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const settingsViewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_SETTINGS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const recalcGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]),
+  ] as const;
+
+  app.get("/api/commissions/dashboard", ...dashboardGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionDashboardQuery(req.query as Record<string, unknown>);
+      const payload = await buildCommissionDashboard(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/dashboard", error);
+        return res.status(500).json({ error: "Erro ao montar dashboard de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/records", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionRecords(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/records", error);
+        return res.status(500).json({ error: "Erro ao listar registros de comissão." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/forecast", ...forecastGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionForecastRecords(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/forecast", error);
+        return res.status(500).json({ error: "Erro ao listar comissões previstas." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/confirmed", ...confirmedGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionConfirmedRecords(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/confirmed", error);
+        return res.status(500).json({ error: "Erro ao listar comissões confirmadas." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/releases", ...releaseGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionRecordsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionReleases(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/releases", error);
+        return res.status(500).json({ error: "Erro ao listar liberações por recebimento." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/persons", ...peopleViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const query = parsePersonsListQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionPersons(query);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/persons", error);
+      return res.status(500).json({ error: "Erro ao listar pessoas comissionadas." });
+    }
+  });
+
+  app.post("/api/commissions/persons", ...peopleManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionPersonCreateBody(req.body);
+      const payload = await createCommissionPerson(body);
+      return res.status(201).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/persons", error);
+      return res.status(500).json({ error: "Erro ao criar pessoa comissionada." });
+    }
+  });
+
+  app.put("/api/commissions/persons/:id", ...peopleManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionPersonUpdateBody(req.body);
+      const payload = await updateCommissionPerson(req.params.id, body);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PUT /api/commissions/persons/:id", error);
+      return res.status(500).json({ error: "Erro ao atualizar pessoa comissionada." });
+    }
+  });
+
+  app.patch("/api/commissions/persons/:id/toggle-active", ...peopleManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await toggleCommissionPersonActive(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PATCH /api/commissions/persons/:id/toggle-active", error);
+      return res.status(500).json({ error: "Erro ao alterar status da pessoa comissionada." });
+    }
+  });
+
+  app.get("/api/commissions/rules", ...rulesViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const query = parseRulesListQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionRules(query);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/rules", error);
+      return res.status(500).json({ error: "Erro ao listar regras de comissão." });
+    }
+  });
+
+  app.post("/api/commissions/rules", ...rulesManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionRuleCreateBody(req.body);
+      const payload = await createCommissionRule(body);
+      return res.status(201).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/rules", error);
+      return res.status(500).json({ error: "Erro ao criar regra de comissão." });
+    }
+  });
+
+  app.put("/api/commissions/rules/:id", ...rulesManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionRuleUpdateBody(req.body);
+      const payload = await updateCommissionRule(req.params.id, body);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PUT /api/commissions/rules/:id", error);
+      return res.status(500).json({ error: "Erro ao atualizar regra de comissão." });
+    }
+  });
+
+  app.patch("/api/commissions/rules/:id/toggle-active", ...rulesManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await toggleCommissionRuleActive(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PATCH /api/commissions/rules/:id/toggle-active", error);
+      return res.status(500).json({ error: "Erro ao alterar status da regra." });
+    }
+  });
+
+  app.post("/api/commissions/recalculate", ...recalcGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionRecalculateBody(req.body);
+      const { runId, summary } = await calculateCommissions(prisma, {
+        from: body.from,
+        to: body.to,
+        mode: body.mode,
+      });
+      return res.status(202).json({ runId, summary });
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/recalculate", error);
+      return res.status(500).json({ error: "Erro ao recalcular comissões." });
+    }
+  });
+
+  app.get("/api/commissions/audit", ...auditGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const query = parseAuditListQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionAuditIssues(query);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/audit", error);
+      return res.status(500).json({ error: "Erro ao listar auditoria de comissões." });
+    }
+  });
+
+  app.patch("/api/commissions/audit/:id/resolve", ...auditGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await resolveCommissionAuditIssue(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PATCH /api/commissions/audit/:id/resolve", error);
+      return res.status(500).json({ error: "Erro ao resolver issue de auditoria." });
+    }
+  });
+
+  app.patch("/api/commissions/audit/:id/reopen", ...auditGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await reopenCommissionAuditIssue(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PATCH /api/commissions/audit/:id/reopen", error);
+      return res.status(500).json({ error: "Erro ao reabrir issue de auditoria." });
+    }
+  });
+
+  app.get("/api/commissions/settings", ...settingsViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await getCommissionSettingsPayload();
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/settings", error);
+      return res.status(500).json({ error: "Erro ao carregar configurações de comissões." });
+    }
+  });
+
+  app.put("/api/commissions/settings", ...rulesManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionSettingsUpdateBody(req.body);
+      const payload = await updateCommissionSettings(body);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("PUT /api/commissions/settings", error);
+      return res.status(500).json({ error: "Erro ao salvar configurações de comissões." });
+    }
+  });
+
+  app.get("/api/commissions/payment-batches", ...paymentsViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const query = parsePaymentBatchesListQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionPaymentBatches(query);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/payment-batches", error);
+      return res.status(500).json({ error: "Erro ao listar lotes de pagamento." });
+    }
+  });
+
+  app.get("/api/commissions/payment-batches/:id", ...paymentsViewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await getCommissionPaymentBatchById(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("GET /api/commissions/payment-batches/:id", error);
+      return res.status(500).json({ error: "Erro ao carregar lote de pagamento." });
+    }
+  });
+
+  app.post("/api/commissions/payment-batches", ...paymentsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parsePaymentBatchCreateBody(req.body);
+      const payload = await createCommissionPaymentBatch(prisma, {
+        ...body,
+        createdBy: user.id,
+      });
+      return res.status(201).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      const message = error instanceof Error ? error.message : "Erro ao criar lote de pagamento.";
+      console.error("POST /api/commissions/payment-batches", error);
+      return res.status(400).json({ error: message });
+    }
+  });
+
+  app.post("/api/commissions/payment-batches/:id/approve", ...paymentsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      await approveCommissionPaymentBatch(prisma, req.params.id, user.id);
+      const payload = await getCommissionPaymentBatchById(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao aprovar lote.";
+      console.error("POST /api/commissions/payment-batches/:id/approve", error);
+      return res.status(400).json({ error: message });
+    }
+  });
+
+  app.post("/api/commissions/payment-batches/:id/mark-paid", ...paymentsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseMarkPaidBody(req.body);
+      await markCommissionPaymentBatchPaid(prisma, {
+        batchId: req.params.id,
+        paymentDate: body.paymentDate,
+        paidBy: user.id,
+      });
+      const payload = await getCommissionPaymentBatchById(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      const message = error instanceof Error ? error.message : "Erro ao marcar lote como pago.";
+      console.error("POST /api/commissions/payment-batches/:id/mark-paid", error);
+      return res.status(400).json({ error: message });
+    }
+  });
+
+  app.post("/api/commissions/payment-batches/:id/cancel", ...paymentsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      await cancelCommissionPaymentBatch(prisma, req.params.id);
+      const payload = await getCommissionPaymentBatchById(req.params.id);
+      return res.json(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao cancelar lote.";
+      console.error("POST /api/commissions/payment-batches/:id/cancel", error);
+      return res.status(400).json({ error: message });
+    }
+  });
+}

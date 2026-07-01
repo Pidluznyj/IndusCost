@@ -199,6 +199,7 @@ import {
 } from "./src/lib/salesOrderPeriodFilter.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
+import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -11769,6 +11770,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   );
 
   registerInventoryRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerCommissionsRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
