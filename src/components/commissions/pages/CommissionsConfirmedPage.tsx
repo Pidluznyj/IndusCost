@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
+import { cn } from "@/src/lib/utils";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
 import {
@@ -23,6 +24,7 @@ import {
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
 import { formatCommissionStatus } from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
+import { commissionStatusClassName } from "@/src/components/commissions/commissionsStatusLabels";
 import type { CommissionsConfirmedRow } from "@/src/components/commissions/commissionsTypes";
 import { CommissionsConfirmedDetailDrawer } from "@/src/components/commissions/confirmed/CommissionsConfirmedDetailDrawer";
 import { CommissionsConfirmedFiltersPanel } from "@/src/components/commissions/confirmed/CommissionsConfirmedFiltersPanel";
@@ -236,7 +238,7 @@ export function CommissionsConfirmedPage() {
                       {formatFinanceCurrency(row.pendingBalance)}
                     </td>
                     <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-1">
+                      <span className={cn("inline-flex items-center gap-1 font-medium", commissionStatusClassName(row.status))}>
                         {row.hasDivergence ? (
                           <AlertTriangle className="h-3.5 w-3.5 text-red-500" aria-hidden />
                         ) : null}

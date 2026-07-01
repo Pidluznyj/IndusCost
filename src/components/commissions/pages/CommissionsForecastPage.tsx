@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
+import { cn } from "@/src/lib/utils";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermissions";
 import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
@@ -26,6 +27,7 @@ import {
   formatCommissionsApiError,
 } from "@/src/components/commissions/commissionsUi";
 import { formatCommissionStatus } from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
+import { commissionStatusClassName } from "@/src/components/commissions/commissionsStatusLabels";
 import type { CommissionsForecastRow } from "@/src/components/commissions/commissionsTypes";
 import { CommissionsForecastDetailDrawer } from "@/src/components/commissions/forecast/CommissionsForecastDetailDrawer";
 import { CommissionsForecastFiltersPanel } from "@/src/components/commissions/forecast/CommissionsForecastFiltersPanel";
@@ -314,7 +316,9 @@ export function CommissionsForecastPage() {
                     </td>
                     <td className="px-3 py-2 text-sm">{row.paymentTermsHint ?? "—"}</td>
                     <td className="px-3 py-2">{formatDate(row.nextDueDate)}</td>
-                    <td className="px-3 py-2">{formatCommissionStatus(row.status)}</td>
+                    <td className={cn("px-3 py-2 font-medium", commissionStatusClassName(row.status))}>
+                      {formatCommissionStatus(row.status)}
+                    </td>
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <ForecastRowActions
                         row={row}

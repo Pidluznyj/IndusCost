@@ -1,5 +1,11 @@
 /** Filtros do dashboard de comissões — serialização para query string da API. */
 
+import {
+  COMMISSION_STATUS_FILTER_OPTIONS,
+} from "@/src/components/commissions/commissionsStatusLabels";
+
+export { COMMISSION_STATUS_FILTER_OPTIONS };
+
 export type CommissionsDashboardFilters = {
   year: string;
   month: string;
@@ -34,19 +40,6 @@ export const COMMISSION_PERSON_TYPE_OPTIONS = [
   { value: "REPRESENTATIVE", label: "Representante" },
   { value: "MANAGER", label: "Gerente" },
   { value: "OTHER", label: "Outro" },
-] as const;
-
-export const COMMISSION_STATUS_FILTER_OPTIONS = [
-  { value: "", label: "Todos os status" },
-  { value: "FORECAST_FROM_ORDER", label: "Previsão (pedido)" },
-  { value: "WAITING_NFE", label: "Aguardando NF-e" },
-  { value: "CONFIRMED_BY_OUTPUT_DOCUMENT", label: "Confirmada" },
-  { value: "WAITING_RECEIVABLE", label: "Aguardando recebimento" },
-  { value: "WAITING_PAYMENT", label: "Aguardando pagamento" },
-  { value: "PARTIALLY_RELEASED", label: "Parcialmente liberada" },
-  { value: "RELEASED", label: "Liberada" },
-  { value: "PAID_PARTIAL", label: "Paga parcial" },
-  { value: "PAID_TOTAL", label: "Paga total" },
 ] as const;
 
 export function buildCommissionsDashboardQueryString(

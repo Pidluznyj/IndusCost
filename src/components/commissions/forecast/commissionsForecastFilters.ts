@@ -1,5 +1,11 @@
 /** Filtros da tela Comissões Previstas — serialização para query string da API. */
 
+import {
+  COMMISSION_FORECAST_STATUS_OPTIONS,
+} from "@/src/components/commissions/commissionsStatusLabels";
+
+export { COMMISSION_FORECAST_STATUS_OPTIONS };
+
 export type CommissionsForecastFilters = {
   year: string;
   month: string;
@@ -33,13 +39,6 @@ export const EMPTY_COMMISSIONS_FORECAST_FILTERS: CommissionsForecastFilters = {
   page: 1,
   pageSize: 20,
 };
-
-export const COMMISSION_FORECAST_STATUS_OPTIONS = [
-  { value: "", label: "Ativos (previsão + aguardando NF-e)" },
-  { value: "FORECAST_FROM_ORDER", label: "Previsão (pedido)" },
-  { value: "WAITING_NFE", label: "Aguardando NF-e" },
-  { value: "SUPERSEDED_BY_OUTPUT_DOCUMENT", label: "Substituída por doc. saída" },
-] as const;
 
 export const COMMISSION_HAS_RULE_OPTIONS = [
   { value: "", label: "Com ou sem regra" },

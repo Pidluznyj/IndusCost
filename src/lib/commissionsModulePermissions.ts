@@ -10,7 +10,9 @@ import {
   COMMISSIONS_RULES_VIEW_PERMISSIONS,
   COMMISSIONS_SETTINGS_VIEW_PERMISSIONS,
   COMMISSIONS_VIEW_PERMISSIONS,
-} from "@/src/lib/commissionsPermissions.js";import type { CommissionsSectionId } from "@/src/lib/commissionsNavigation.js";
+} from "@/src/lib/commissionsPermissions.js";
+import type { CommissionsSectionId } from "@/src/lib/commissionsNavigation.js";
+import { COMMISSIONS_SECTIONS } from "@/src/lib/commissionsNavigation.js";
 
 export function canAccessCommissionsModule(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
@@ -42,4 +44,9 @@ export function canViewCommissionsSection(
     default:
       return false;
   }
+}
+
+export function resolveFirstAccessibleCommissionsPath(check: PermissionChecker): string | null {
+  const section = COMMISSIONS_SECTIONS.find((s) => canViewCommissionsSection(s.id, check));
+  return section?.path ?? null;
 }

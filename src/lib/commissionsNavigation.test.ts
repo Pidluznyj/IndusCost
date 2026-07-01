@@ -8,7 +8,7 @@ import {
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
 } from "./commissionsNavigation.js";
-import { canAccessCommissionsModule, canViewCommissionsSection } from "./commissionsModulePermissions.js";
+import { canAccessCommissionsModule, canViewCommissionsSection, resolveFirstAccessibleCommissionsPath } from "./commissionsModulePermissions.js";
 import { canAccessModule, type PermissionChecker } from "./modulePermissions.js";
 
 function read(path: string): string {
@@ -70,5 +70,26 @@ describe("commissionsModulePermissions", () => {
       true
     );
     assert.equal(canViewCommissionsSection("forecast", checker(["commissions.dashboard.view"])), false);
+  });
+
+  it("resolveFirstAccessibleCommissionsPath retorna primeira seção permitida", () => {
+    assert.equal(
+      resolveFirstAccessibleCommissionsPath(checker(["commissions.forecast.view"])),
+      "/commissions/forecast"
+    );
+  });
+});
+
+describe("commissionsStatusLabels", () => {
+  it("padroniza labels de status", async () => {
+    const { COMMISSION_RECORD_STATUS_LABELS } = await import(
+      "../components/commissions/commissionsStatusLabels.js"
+    );
+    assert.equal(COMMISSION_RECORD_STATUS_LABELS.FORECAST_FROM_ORDER, "Prevista pelo Pedido");
+    assert.equal(
+      COMMISSION_RECORD_STATUS_LABELS.CONFIRMED_BY_OUTPUT_DOCUMENT,
+      "Confirmada por Documento de Saída"
+    );
+    assert.equal(COMMISSION_RECORD_STATUS_LABELS.ERROR, "Erro/Auditoria");
   });
 });

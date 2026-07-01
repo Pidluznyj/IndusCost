@@ -1,24 +1,10 @@
-/** Rótulos legíveis para status e severidade de comissões. */
+/** Rótulos e helpers do dashboard de comissões. */
 
-export const COMMISSION_STATUS_LABELS: Record<string, string> = {
-  FORECAST_FROM_ORDER: "Previsão (pedido)",
-  WAITING_NFE: "Aguardando NF-e",
-  SUPERSEDED_BY_OUTPUT_DOCUMENT: "Substituída por doc. saída",
-  CONFIRMED_BY_OUTPUT_DOCUMENT: "Confirmada",
-  WAITING_RECEIVABLE: "Aguardando recebimento",
-  WAITING_PAYMENT: "Aguardando pagamento",
-  PARTIALLY_RELEASED: "Parcialmente liberada",
-  RELEASED: "Liberada",
-  PAID_PARTIAL: "Paga parcial",
-  PAID_TOTAL: "Paga total",
-  CANCELLED: "Cancelada",
-  REVERSED: "Estornada",
-  ERROR: "Erro",
-};
-
-export function formatCommissionStatus(status: string): string {
-  return COMMISSION_STATUS_LABELS[status] ?? status;
-}
+export {
+  COMMISSION_STATUS_LABELS,
+  formatCommissionStatus,
+  formatCommissionRecordStatus,
+} from "@/src/components/commissions/commissionsStatusLabels";
 
 export function formatMonthYearLabel(year: number, month: number): string {
   return `${String(month).padStart(2, "0")}/${year}`;

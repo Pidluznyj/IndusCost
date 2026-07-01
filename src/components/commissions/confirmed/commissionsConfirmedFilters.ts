@@ -1,6 +1,11 @@
 /** Filtros da tela Comissões Confirmadas. */
 
 import type { CommissionsConfirmedRow } from "@/src/components/commissions/commissionsTypes";
+import {
+  COMMISSION_CONFIRMED_STATUS_OPTIONS,
+} from "@/src/components/commissions/commissionsStatusLabels";
+
+export { COMMISSION_CONFIRMED_STATUS_OPTIONS };
 
 export type CommissionsConfirmedFilters = {
   year: string;
@@ -33,19 +38,6 @@ export const EMPTY_COMMISSIONS_CONFIRMED_FILTERS: CommissionsConfirmedFilters = 
   page: 1,
   pageSize: 20,
 };
-
-export const COMMISSION_CONFIRMED_STATUS_OPTIONS = [
-  { value: "", label: "Ativos (confirmados e liberação)" },
-  { value: "CONFIRMED_BY_OUTPUT_DOCUMENT", label: "Confirmada" },
-  { value: "WAITING_RECEIVABLE", label: "Aguardando recebimento" },
-  { value: "WAITING_PAYMENT", label: "Aguardando pagamento" },
-  { value: "PARTIALLY_RELEASED", label: "Parcialmente liberada" },
-  { value: "RELEASED", label: "Liberada total" },
-  { value: "PAID_PARTIAL", label: "Paga parcial" },
-  { value: "PAID_TOTAL", label: "Paga total" },
-  { value: "CANCELLED", label: "Cancelada" },
-  { value: "REVERSED", label: "Estornada" },
-] as const;
 
 export function buildCommissionsConfirmedQueryString(
   filters: CommissionsConfirmedFilters
