@@ -12,8 +12,10 @@ import {
 import { calculateSalePriceFromCost } from "./pricingCalculations.js";
 import {
   buildProjectPricingView,
+  buildProjectCommercialPricingSummary,
   computeProjectPricingItem,
   listProjectPricingEligibleTargets,
+  resolveProjectCommercialPricingWeights,
   resolveProjectPricingItemCosts,
 } from "./projectsPricing.js";
 import { buildProjectExecutiveReport } from "./projectsExecutiveReport.js";
@@ -615,5 +617,121 @@ describe("projectsPricing — integração", () => {
     assert.equal(canViewProjects(checker(["projects.view"])), true);
     assert.equal(canManageProjects(checker(["projects.manage"])), true);
     assert.equal(canManageProjects(checker(["projects.view"])), false);
+  });
+
+  it("buildProjectCommercialPricingSummary agrega itens calculados sem zerar", () => {
+    const detail = buildMangoteDetailFixture();
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const summary = buildProjectCommercialPricingSummary({
+      items: view.items,
+      weightsByTargetId: resolveProjectCommercialPricingWeights(detail),
+      defaultMarginPercent: 35,
+    });
+    assert.equal(summary.isEmpty, false);
+    assert.ok(summary.averageFinalUnitCost != null && summary.averageFinalUnitCost > 0);
+    assert.ok(
+      summary.averageSuggestedPriceWithAmortization != null &&
+        summary.averageSuggestedPriceWithAmortization > 0
+    );
+    assert.ok(
+      summary.averageSuggestedPriceWithoutAmortization != null &&
+        summary.averageSuggestedPriceWithoutAmortization > 0
+    );
+    assert.equal(summary.pendingItems, 0);
+    assert.equal(summary.calculatedItems, view.items.length);
+  });
+
+  it("amortização zero deixa preços médios iguais", () => {
+    const view = buildProjectPricingView({
+      detail: buildDetailFixture(),
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const summary = buildProjectCommercialPricingSummary({
+      items: view.items,
+      defaultMarginPercent: 35,
+    });
+    assert.equal(
+      summary.averageSuggestedPriceWithoutAmortization,
+      summary.averageSuggestedPriceWithAmortization
+    );
+  });
+
+  it("média ponderada usa quantidade sugerida quando volumes diferem", () => {
+    const detail = buildMangoteDetailFixture();
+    detail.simulatedProducts = [
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        provisionalCode: "P1",
+        description: "Produto",
+        expectedVolume: 1000,
+        batchSize: null,
+        notes: null,
+      },
+    ];
+    const item = computeProjectPricingItem(
+      {
+        targetItemId: detail.simulatedItems[0]!.id,
+        targetItemType: "SIMULATION",
+        displayName: "Mangote mini Iris",
+        baseUnitCost: 1,
+        unitAmortizedCost: 0.5,
+        finalUnitCost: 1.5,
+      },
+      {
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "MI",
+        taxPercent: 10,
+        targetMarginPercent: 20,
+      }
+    );
+    const itemB = computeProjectPricingItem(
+      {
+        targetItemId: "other-item",
+        targetItemType: "SIMULATION",
+        displayName: "Outro",
+        baseUnitCost: 2,
+        unitAmortizedCost: 0,
+        finalUnitCost: 2,
+      },
+      {
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "MI",
+        taxPercent: 10,
+        targetMarginPercent: 20,
+      }
+    );
+    const weighted = buildProjectCommercialPricingSummary({
+      items: [item, itemB],
+      weightsByTargetId: new Map([
+        [item.targetItemId, 1000],
+        [itemB.targetItemId, 1],
+      ]),
+    });
+    const simple = buildProjectCommercialPricingSummary({
+      items: [item, itemB],
+    });
+    assert.equal(weighted.aggregationMode, "weighted");
+    assert.equal(simple.aggregationMode, "simple");
+    assert.notEqual(weighted.averageFinalUnitCost, simple.averageFinalUnitCost);
+  });
+
+  it("ProjectGuidedCostsTab não usa costBreakdown legado nos cards finais", () => {
+    const tab = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectGuidedCostsTab.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(tab, /Custo MP \(unitário\)/);
+    assert.match(tab, /ProjectPricingSection/);
+    const section = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /ProjectCommercialPricingSummaryCards/);
+    assert.match(section, /buildProjectCommercialPricingSummary/);
   });
 });

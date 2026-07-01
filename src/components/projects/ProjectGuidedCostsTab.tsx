@@ -75,7 +75,6 @@ export function ProjectGuidedCostsTab({
   onDetailRefresh,
 }: Props) {
   const guided = computeProjectGuidedCosts(detail);
-  const cost = detail.costBreakdown;
   const { snapshotGroups } = buildProjectStructureSnapshotGroups(detail.structureLines, {
     simulatedProducts: detail.simulatedProducts,
   });
@@ -308,15 +307,6 @@ export function ProjectGuidedCostsTab({
         canManage={canManage}
         onDetailRefresh={onDetailRefresh}
       />
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <StatCard label="Custo MP (unitário)" value={formatMoney(cost.rawMaterialCost)} />
-        <StatCard label="Custo componentes" value={formatMoney(cost.componentCost)} />
-        <StatCard label="Custo processo / roteiro" value={formatMoney(cost.serviceCost)} />
-        <StatCard label="Margem alvo" value={formatPercent(cost.targetMarginPercent)} />
-        <StatCard label="Preço sugerido" value={formatMoney(cost.suggestedPrice)} />
-        <StatCard label="Itens pendentes de custo" value={String(guided.pendingCount)} />
-      </div>
 
       {snapshotGroups.length > 0 ? (
         <div className="space-y-3">

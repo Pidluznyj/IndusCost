@@ -3,10 +3,13 @@ import { Calculator, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react"
 import { cn } from "@/src/lib/utils";
 import {
   buildProjectPricingView,
+  buildProjectCommercialPricingSummary,
   computeProjectPricingItem,
+  resolveProjectCommercialPricingWeights,
   resolveProjectPricingItemCosts,
   type ProjectPricingItemView,
 } from "@/src/lib/projectsPricing";
+import { ProjectCommercialPricingSummaryCards } from "@/src/components/projects/ProjectCommercialPricingSummaryCards";
 import type { ProjectCostAmortizationRow } from "@/src/lib/projectsCostAmortization";
 import type { ProjectDetail, ProjectPricingView } from "@/src/types/projects";
 
@@ -265,6 +268,17 @@ export function ProjectPricingSection({
     itemFiscalRules,
   ]);
 
+  const pricingSummary = useMemo(() => {
+    const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
+    return buildProjectCommercialPricingSummary({
+      items: computedItems,
+      weightsByTargetId: resolveProjectCommercialPricingWeights(detail),
+      defaultMarginPercent: Number.isFinite(marginDefault)
+        ? marginDefault
+        : detail.targetMarginPercent,
+    });
+  }, [computedItems, detail, defaultMargin]);
+
   const applyToAll = () => {
     const next: Record<string, string> = {};
     for (const item of computedItems) {
@@ -519,6 +533,8 @@ export function ProjectPricingSection({
           </table>
         </div>
       )}
+
+      <ProjectCommercialPricingSummaryCards summary={pricingSummary} />
     </div>
   );
 }

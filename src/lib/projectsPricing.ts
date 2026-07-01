@@ -9,6 +9,7 @@ import {
 import {
   calculateSalePriceFromCost,
   roundPricingMoney,
+  roundPricingPercent,
   sumTaxRuleComponentPercents,
 } from "./pricingCalculations.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
@@ -407,4 +408,203 @@ export function projectPricingPrimaryItem(view: ProjectPricingView | null | unde
 
 export function roundProjectPricingSnapshot(value: number): number {
   return roundProjectMoney(value);
+}
+
+export type ProjectCommercialPricingAggregationMode = "weighted" | "simple" | "empty";
+
+export type ProjectCommercialPricingSummary = {
+  totalItems: number;
+  calculatedItems: number;
+  pendingItems: number;
+  averageBaseUnitCost: number | null;
+  averageUnitAmortization: number | null;
+  averageFinalUnitCost: number | null;
+  averageSuggestedPriceWithoutAmortization: number | null;
+  averageSuggestedPriceWithAmortization: number | null;
+  averageAmortizationPriceDelta: number | null;
+  targetMarginLabel: string;
+  hasMultipleMargins: boolean;
+  hasMultipleTaxRules: boolean;
+  aggregationMode: ProjectCommercialPricingAggregationMode;
+  aggregationHint: string;
+  hasItems: boolean;
+  isEmpty: boolean;
+};
+
+function resolveItemWeight(
+  targetItemId: string,
+  weightsByTargetId?: Map<string, number> | Record<string, number>
+): number {
+  if (!weightsByTargetId) return 1;
+  const weight =
+    weightsByTargetId instanceof Map
+      ? weightsByTargetId.get(targetItemId)
+      : weightsByTargetId[targetItemId];
+  return weight != null && Number.isFinite(weight) && weight > 0 ? weight : 1;
+}
+
+function aggregateUnitAverage(
+  rows: Array<{ value: number | null | undefined; weight: number }>
+): number | null {
+  const valid = rows.filter(
+    (row) => row.value != null && Number.isFinite(row.value) && row.weight > 0
+  );
+  if (valid.length === 0) return null;
+  const totalWeight = valid.reduce((sum, row) => sum + row.weight, 0);
+  if (totalWeight <= 0) return null;
+  const total = valid.reduce((sum, row) => sum + row.value! * row.weight, 0);
+  return roundPricingMoney(total / totalWeight);
+}
+
+function detectAggregationMode(
+  calculatedItems: ProjectPricingItemView[],
+  weightsByTargetId?: Map<string, number> | Record<string, number>
+): ProjectCommercialPricingAggregationMode {
+  if (calculatedItems.length === 0) return "empty";
+  const weights = calculatedItems.map((item) =>
+    resolveItemWeight(item.targetItemId, weightsByTargetId)
+  );
+  const allEqual = weights.every((weight) => weight === weights[0]);
+  const allUnit = weights.every((weight) => weight === 1);
+  return allEqual && allUnit ? "simple" : "weighted";
+}
+
+export function isProjectCommercialPricingItemPending(item: ProjectPricingItemView): boolean {
+  if (item.status !== "CALCULATED") return true;
+  if (item.finalUnitCost <= 0) return true;
+  if (!item.fiscalRuleId) return true;
+  if (item.suggestedPriceWithAmortization == null || item.suggestedPriceWithAmortization <= 0) {
+    return true;
+  }
+  return false;
+}
+
+export function resolveProjectCommercialPricingWeights(detail: ProjectDetail): Map<string, number> {
+  const weights = new Map<string, number>();
+  for (const target of listProjectPricingEligibleTargets(detail)) {
+    const match = buildProjectAmortizationTargets(detail).find(
+      (row) => row.targetItemId === target.targetItemId
+    );
+    weights.set(target.targetItemId, match?.suggestedQuantity ?? 1);
+  }
+  return weights;
+}
+
+export function buildProjectCommercialPricingSummary(input: {
+  items: ProjectPricingItemView[];
+  weightsByTargetId?: Map<string, number> | Record<string, number>;
+  defaultMarginPercent?: number | null;
+}): ProjectCommercialPricingSummary {
+  const { items } = input;
+  const calculatedItems = items.filter((item) => item.status === "CALCULATED");
+  const pendingItems = items.filter(isProjectCommercialPricingItemPending).length;
+  const aggregationMode = detectAggregationMode(calculatedItems, input.weightsByTargetId);
+
+  if (items.length === 0) {
+    return {
+      totalItems: 0,
+      calculatedItems: 0,
+      pendingItems: 0,
+      averageBaseUnitCost: null,
+      averageUnitAmortization: null,
+      averageFinalUnitCost: null,
+      averageSuggestedPriceWithoutAmortization: null,
+      averageSuggestedPriceWithAmortization: null,
+      averageAmortizationPriceDelta: null,
+      targetMarginLabel: "—",
+      hasMultipleMargins: false,
+      hasMultipleTaxRules: false,
+      aggregationMode: "empty",
+      aggregationHint: "Nenhum item elegível para precificação neste projeto.",
+      hasItems: false,
+      isEmpty: true,
+    };
+  }
+
+  const weightRows = (selector: (item: ProjectPricingItemView) => number | null | undefined) =>
+    calculatedItems.map((item) => ({
+      value: selector(item),
+      weight: resolveItemWeight(item.targetItemId, input.weightsByTargetId),
+    }));
+
+  const averageBaseUnitCost = aggregateUnitAverage(
+    weightRows((item) => item.costBaseUnit)
+  );
+  const averageUnitAmortization = aggregateUnitAverage(
+    weightRows((item) => item.amortizationUnitCost)
+  );
+  const averageFinalUnitCost = aggregateUnitAverage(
+    weightRows((item) => item.finalUnitCost)
+  );
+  const averageSuggestedPriceWithoutAmortization = aggregateUnitAverage(
+    weightRows((item) => item.suggestedPriceWithoutAmortization)
+  );
+  const averageSuggestedPriceWithAmortization = aggregateUnitAverage(
+    weightRows((item) => item.suggestedPriceWithAmortization ?? item.suggestedPrice)
+  );
+
+  const averageAmortizationPriceDelta =
+    averageSuggestedPriceWithoutAmortization != null &&
+    averageSuggestedPriceWithAmortization != null
+      ? roundPricingMoney(
+          averageSuggestedPriceWithAmortization - averageSuggestedPriceWithoutAmortization
+        )
+      : null;
+
+  const margins = new Set(
+    calculatedItems.map((item) => roundPricingPercent(item.targetMarginPercent))
+  );
+  const taxRules = new Set(
+    calculatedItems.map((item) => item.fiscalRuleId).filter((id): id is string => !!id)
+  );
+
+  let targetMarginLabel = "—";
+  if (margins.size === 1) {
+    targetMarginLabel = `${[...margins][0]!.toFixed(1)}%`;
+  } else if (margins.size > 1) {
+    targetMarginLabel = "Múltiplas margens";
+  } else if (input.defaultMarginPercent != null && Number.isFinite(input.defaultMarginPercent)) {
+    targetMarginLabel = `${input.defaultMarginPercent.toFixed(1)}%`;
+  }
+
+  const aggregationHint =
+    aggregationMode === "weighted"
+      ? "Média ponderada pelo volume/quantidade estimada de cada item."
+      : aggregationMode === "simple"
+        ? "Média simples dos itens calculados (sem volume distinto por item)."
+        : "Sem itens calculados para agregar.";
+
+  return {
+    totalItems: items.length,
+    calculatedItems: calculatedItems.length,
+    pendingItems,
+    averageBaseUnitCost,
+    averageUnitAmortization,
+    averageFinalUnitCost,
+    averageSuggestedPriceWithoutAmortization,
+    averageSuggestedPriceWithAmortization,
+    averageAmortizationPriceDelta,
+    targetMarginLabel,
+    hasMultipleMargins: margins.size > 1,
+    hasMultipleTaxRules: taxRules.size > 1,
+    aggregationMode,
+    aggregationHint,
+    hasItems: true,
+    isEmpty: calculatedItems.length === 0,
+  };
+}
+
+export function formatProjectCommercialPricingSummaryMoney(
+  value: number | null | undefined,
+  summary: Pick<ProjectCommercialPricingSummary, "isEmpty" | "hasItems">
+): string {
+  if (!summary.hasItems) return "Sem itens";
+  if (summary.isEmpty) return "Sem itens calculados";
+  if (value == null || !Number.isFinite(value)) return "Indisponível";
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  });
 }
