@@ -10,6 +10,7 @@ import {
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
+  parseCommissionPersonsQuery,
   parseCommissionRecordsQuery,
   parseCommissionReleasesQuery,
   parsePagination,
@@ -79,6 +80,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/releases",
       "/api/commissions/releases/detail",
       "/api/commissions/persons",
+      "/api/commissions/persons/import-from-orders",
       "/api/commissions/rules",
       "/api/commissions/recalculate",
       "/api/commissions/audit",
@@ -144,6 +146,23 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.outputDocument, "DS-100");
     assert.equal(q.includeCancelled, true);
     assert.equal(q.nfeNumber, "12345");
+  });
+
+  it("parseCommissionPersonsQuery aceita busca e período", () => {
+    const q = parseCommissionPersonsQuery({
+      search: "João",
+      type: "SELLER",
+      source: "NOMUS",
+      active: "true",
+      year: "2026",
+      month: "6",
+    });
+    assert.equal(q.search, "João");
+    assert.equal(q.type, "SELLER");
+    assert.equal(q.source, "NOMUS");
+    assert.equal(q.active, true);
+    assert.equal(q.year, 2026);
+    assert.equal(q.month, 6);
   });
 
   it("parseCommissionReleasesQuery aceita filtros de vencimento e liberação", () => {

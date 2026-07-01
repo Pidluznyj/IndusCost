@@ -355,11 +355,43 @@ export type CommissionsPersonItem = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  linkedRulesCount?: number;
+  hasCommissionInPeriod?: boolean;
+};
+
+export type CommissionsPersonsCards = {
+  totalCount: number;
+  activeSellersCount: number;
+  activeRepresentativesCount: number;
+  withoutActiveRuleCount: number;
+  withCommissionInPeriodCount: number;
 };
 
 export type CommissionsPersonsPayload = {
+  cards?: CommissionsPersonsCards;
+  rows?: CommissionsPersonItem[];
   items: CommissionsPersonItem[];
   pagination: CommissionsPagination;
+};
+
+export type CommissionsPersonsImportResult = {
+  ordersScanned: number;
+  created: number;
+  updated: number;
+  skippedNoName: number;
+  skippedNoNomusId: number;
+  unchanged: number;
+};
+
+export type CommissionsPersonFormInput = {
+  name: string;
+  type: string;
+  source: string;
+  nomusPersonId: number | null;
+  email: string | null;
+  document: string | null;
+  active: boolean;
+  notes: string | null;
 };
 
 export type CommissionsRuleItem = {

@@ -18,23 +18,26 @@ import {
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import {
-  createCommissionPerson,
   createCommissionRule,
   getCommissionPaymentBatchById,
   getCommissionSettingsPayload,
   listCommissionAuditIssues,
   listCommissionPaymentBatches,
-  listCommissionPersons,
   listCommissionRules,
   reopenCommissionAuditIssue,
   resolveCommissionAuditIssue,
-  toggleCommissionPersonActive,
   toggleCommissionRuleActive,
-  updateCommissionPerson,
   updateCommissionRule,
   updateCommissionSettings,
   CommissionValidationError,
 } from "@/src/lib/commissions/commissionAdmin.server.js";
+import {
+  createCommissionPerson,
+  importCommissionPersonsFromOrders,
+  listCommissionPersonsPage,
+  toggleCommissionPersonActive,
+  updateCommissionPerson,
+} from "@/src/lib/commissions/commissionPersons.server.js";
 import {
   parseAuditListQuery,
   parseCommissionPersonCreateBody,
@@ -46,7 +49,6 @@ import {
   parseMarkPaidBody,
   parsePaymentBatchCreateBody,
   parsePaymentBatchesListQuery,
-  parsePersonsListQuery,
   parseRulesListQuery,
 } from "@/src/lib/commissions/commissionApiValidation.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
@@ -64,6 +66,7 @@ import {
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
+  parseCommissionPersonsQuery,
   parseCommissionRecordsQuery,
   parseCommissionReleasesQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
@@ -362,13 +365,27 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
-      const query = parsePersonsListQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionPersons(query);
+      const query = parseCommissionPersonsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionPersonsPage(query);
       return res.json(payload);
     } catch (error) {
+      if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("GET /api/commissions/persons", error);
       return res.status(500).json({ error: "Erro ao listar pessoas comissionadas." });
+    }
+  });
+
+  app.post("/api/commissions/persons/import-from-orders", ...peopleManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await importCommissionPersonsFromOrders();
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/persons/import-from-orders", error);
+      return res.status(500).json({ error: "Erro ao importar pessoas comissionadas dos pedidos." });
     }
   });
 

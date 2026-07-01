@@ -544,3 +544,43 @@ export function buildCommissionReleasesDueWhere(
   }
   return {};
 }
+
+const PERSON_SOURCE_SET = new Set<string>(["NOMUS", "MANUAL"]);
+
+export type CommissionPersonsQuery = CommissionPeriodQuery & {
+  page: number;
+  pageSize: number;
+  active?: boolean;
+  type?: string;
+  source?: string;
+  search?: string;
+};
+
+export function parseCommissionPersonsQuery(
+  query: Record<string, unknown>
+): CommissionPersonsQuery {
+  const period = parsePeriodQuery(query);
+  const pageRaw = parseOptionalInt(query.page);
+  const pageSizeRaw = parseOptionalInt(query.pageSize);
+  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
+  const pageSize = pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 100) : 50;
+  const active =
+    query.active === "true" ? true : query.active === "false" ? false : undefined;
+  const typeRaw =
+    typeof query.type === "string" && query.type.trim() ? query.type.trim().toUpperCase() : null;
+  const type = typeRaw && PERSON_TYPE_SET.has(typeRaw) ? typeRaw : undefined;
+  if (typeRaw && !type) {
+    throw new CommissionQueryParseError("type inválido.");
+  }
+  const sourceRaw =
+    typeof query.source === "string" && query.source.trim()
+      ? query.source.trim().toUpperCase()
+      : null;
+  const source = sourceRaw && PERSON_SOURCE_SET.has(sourceRaw) ? sourceRaw : undefined;
+  if (sourceRaw && !source) {
+    throw new CommissionQueryParseError("source inválido.");
+  }
+  const search =
+    typeof query.search === "string" && query.search.trim() ? query.search.trim() : undefined;
+  return { ...period, page, pageSize, active, type, source, search };
+}

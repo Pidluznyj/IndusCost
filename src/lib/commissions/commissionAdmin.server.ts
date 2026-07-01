@@ -7,109 +7,12 @@ import {
 import { loadCommissionSettings } from "./commission-settings.server.js";
 import {
   CommissionValidationError,
-  type CommissionPersonWriteInput,
   type CommissionRuleWriteInput,
   type CommissionSettingsWriteInput,
 } from "./commissionApiValidation.js";
 import { paginatedMeta } from "./commissionQuery.js";
 
 export { CommissionValidationError };
-
-function serializePerson(row: {
-  id: string;
-  nomusPersonId: number | null;
-  name: string;
-  type: string;
-  source: string;
-  email: string | null;
-  document: string | null;
-  active: boolean;
-  notes: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: row.id,
-    nomusPersonId: row.nomusPersonId,
-    name: row.name,
-    type: row.type,
-    source: row.source,
-    email: row.email,
-    document: row.document,
-    active: row.active,
-    notes: row.notes,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-export async function listCommissionPersons(query: {
-  page: number;
-  pageSize: number;
-  active?: boolean;
-  type?: string;
-}) {
-  const where = {
-    active: query.active,
-    type: query.type as import("@prisma/client").CommissionPersonType | undefined,
-  };
-  const skip = (query.page - 1) * query.pageSize;
-  const [total, rows] = await Promise.all([
-    prisma.commissionPerson.count({ where }),
-    prisma.commissionPerson.findMany({
-      where,
-      orderBy: [{ active: "desc" }, { name: "asc" }],
-      skip,
-      take: query.pageSize,
-    }),
-  ]);
-  return { items: rows.map(serializePerson), pagination: paginatedMeta(total, query.page, query.pageSize) };
-}
-
-export async function createCommissionPerson(input: CommissionPersonWriteInput) {
-  const row = await prisma.commissionPerson.create({
-    data: {
-      name: input.name,
-      type: input.type,
-      source: input.source ?? "MANUAL",
-      nomusPersonId: input.nomusPersonId ?? null,
-      email: input.email ?? null,
-      document: input.document ?? null,
-      notes: input.notes ?? null,
-      active: input.active ?? true,
-    },
-  });
-  return serializePerson(row);
-}
-
-export async function updateCommissionPerson(id: string, input: Partial<CommissionPersonWriteInput>) {
-  const existing = await prisma.commissionPerson.findUnique({ where: { id } });
-  if (!existing) throw new CommissionValidationError("NOT_FOUND", "Pessoa comissionada não encontrada.");
-  const row = await prisma.commissionPerson.update({
-    where: { id },
-    data: {
-      name: input.name,
-      type: input.type,
-      source: input.source,
-      nomusPersonId: input.nomusPersonId,
-      email: input.email,
-      document: input.document,
-      notes: input.notes,
-      active: input.active,
-    },
-  });
-  return serializePerson(row);
-}
-
-export async function toggleCommissionPersonActive(id: string) {
-  const existing = await prisma.commissionPerson.findUnique({ where: { id } });
-  if (!existing) throw new CommissionValidationError("NOT_FOUND", "Pessoa comissionada não encontrada.");
-  const row = await prisma.commissionPerson.update({
-    where: { id },
-    data: { active: !existing.active },
-  });
-  return serializePerson(row);
-}
 
 function serializeRule(row: Awaited<ReturnType<typeof getCommissionRuleById>>) {
   if (!row) return null;
