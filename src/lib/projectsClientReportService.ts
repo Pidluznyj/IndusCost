@@ -25,12 +25,15 @@ export {
 
 export type { ProjectClientReportPayload } from "./projectsClientReportShared.js";
 
+import { loadProjectClientProposalQuantities } from "./projectsClientProposalService.js";
+
 export async function loadProjectClientReport(
   projectId: string
 ): Promise<ProjectClientReportPayload | null> {
   const detail = await loadProjectDetail(projectId);
   if (!detail) return null;
-  const payload = buildProjectClientReport(detail);
+  const savedQuantities = await loadProjectClientProposalQuantities(projectId);
+  const payload = buildProjectClientReport(detail, savedQuantities);
   assertProjectClientReportPayloadIsSafe(payload);
   return payload;
 }

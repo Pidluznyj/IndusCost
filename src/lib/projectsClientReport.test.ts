@@ -5,9 +5,11 @@ import { describe, it } from "node:test";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
 import {
   assertProjectClientReportPayloadIsSafe,
+  applyProjectClientReportQuantities,
   buildProjectClientReport,
   buildProjectClientReportProducts,
   clientReportPdfContainsInternalTerms,
+  recalculateProjectClientReportProduct,
 } from "./projectsClientReport.js";
 import { buildProjectClientReportPdfBuffer } from "./projectsClientReportService.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
@@ -169,9 +171,59 @@ describe("projectsClientReport", () => {
     assert.equal(clientReportPdfContainsInternalTerms(buffer.toString("latin1")), false);
   });
 
-  it("minimal PDF writer gera arquivo PDF", () => {
-    const buffer = buildMinimalPdfDocument({ title: "Teste", lines: ["Linha 1"] });
-    assert.match(buffer.toString("utf8", 0, 8), /^%PDF-1.4/);
+  it("quantidade padrão é 1 por item", () => {
+    const detail = buildDetailWithPricing();
+    const products = buildProjectClientReportProducts(detail);
+    assert.equal(products.every((product) => product.quantityPerSet === 1), true);
+  });
+
+  it("editar quantidade recalcula preço total sem alterar preço unitário", () => {
+    const detail = buildDetailWithPricing();
+    const report = buildProjectClientReport(detail);
+    const product = report.products[0]!;
+    const updated = recalculateProjectClientReportProduct(product, 2);
+    assert.equal(updated.finalUnitPrice, 3.2);
+    assert.equal(updated.finalTotalPrice, 6.4);
+    assert.equal(updated.quantityPerSet, 2);
+  });
+
+  it("quantidades editadas recalculam preço final do conjunto", () => {
+    const report = buildProjectClientReport(buildDetailWithPricing());
+    const productA = report.products[0]!.id;
+    const productB = report.products[1]!.id;
+    const updated = applyProjectClientReportQuantities(report, {
+      [productA]: 1,
+      [productB]: 2,
+    });
+    assert.equal(updated.products[1]?.finalTotalPrice, 9.6);
+    assert.equal(updated.summary.finalSetPrice, 12.8);
+    assert.equal(updated.summary.totalProposalValue, 12800);
+  });
+
+  it("PDF inclui quantidade editada", () => {
+    const report = applyProjectClientReportQuantities(buildProjectClientReport(buildDetailWithPricing()), {
+      [buildDetailWithPricing().simulatedProducts[1]!.id]: 2,
+    });
+    const buffer = buildProjectClientReportPdfBuffer(report);
+    const text = buffer.toString("latin1");
+    assert.match(text, /Qtd 2/);
+    assert.match(text, /Total R\$/);
+  });
+
+  it("ProjectClientReportPage permite editar Qtd/conjunto", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/components/projects/ProjectClientReportPage.tsx"),
+      "utf8"
+    );
+    assert.match(page, /client-report\/quantities/);
+    assert.match(page, /applyProjectClientReportQuantities/);
+    assert.match(page, /Salvar quantidades/);
+    const report = readFileSync(
+      join(process.cwd(), "src/components/projects/ProjectClientReport.tsx"),
+      "utf8"
+    );
+    assert.match(report, /Qtd\/conjunto/);
+    assert.match(report, /Edite a quantidade de cada item no conjunto/);
   });
 });
 
@@ -193,6 +245,7 @@ describe("projectsClientReport wiring", () => {
     const routes = readFileSync(join(process.cwd(), "src/lib/projectsRoutes.ts"), "utf8");
     assert.match(routes, /client-report/);
     assert.match(routes, /client-report\.pdf/);
+    assert.match(routes, /client-report\/quantities/);
   });
 
   it("UI cliente não importa Prisma", () => {

@@ -11,6 +11,8 @@ import {
   PROJECT_CLIENT_REPORT_ROUTE_SUFFIX,
   PROJECT_CLIENT_REPORT_TITLE,
   PROJECT_CLIENT_REPORT_VERSION,
+  CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET,
+  type ProjectClientProposalQuantityRow,
   type ProjectClientReportCommercialTerms,
   type ProjectClientReportPayload,
   type ProjectClientReportProduct,
@@ -22,7 +24,10 @@ export {
   PROJECT_CLIENT_REPORT_BUTTON_LABEL,
   PROJECT_CLIENT_REPORT_ROUTE_SUFFIX,
   PROJECT_CLIENT_REPORT_TITLE,
+  CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET,
 };
+
+export type { ProjectClientProposalQuantityRow } from "./projectsClientReportShared.js";
 
 const INTERNAL_PAYLOAD_DENYLIST = [
   "costBaseUnit",
@@ -64,7 +69,106 @@ function resolveProductUnit(detail: ProjectDetail, productId: string): string {
   return detail.simulatedProducts.find((row) => row.id === productId)?.unit?.trim() || "UN";
 }
 
-export function buildProjectClientReportProducts(detail: ProjectDetail): ProjectClientReportProduct[] {
+export function normalizeClientProposalQuantityPerSet(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return null;
+  if (!Number.isInteger(n)) return null;
+  return n;
+}
+
+export function resolveClientProposalQuantityPerSet(
+  targetItemId: string,
+  savedQuantities?: Map<string, number> | Record<string, number>
+): number {
+  if (savedQuantities) {
+    const raw =
+      savedQuantities instanceof Map
+        ? savedQuantities.get(targetItemId)
+        : savedQuantities[targetItemId];
+    const normalized = normalizeClientProposalQuantityPerSet(raw);
+    if (normalized != null) return normalized;
+  }
+  return CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET;
+}
+
+export function recalculateProjectClientReportProduct(
+  product: ProjectClientReportProduct,
+  quantityPerSet: number
+): ProjectClientReportProduct {
+  const normalized = normalizeClientProposalQuantityPerSet(quantityPerSet);
+  if (normalized == null) {
+    return product;
+  }
+  return {
+    ...product,
+    quantityPerSet: normalized,
+    finalTotalPrice:
+      product.finalUnitPrice != null
+        ? roundProjectMoney(product.finalUnitPrice * normalized)
+        : null,
+  };
+}
+
+export function applyProjectClientReportQuantities(
+  payload: ProjectClientReportPayload,
+  quantitiesByProductId: Record<string, number>
+): ProjectClientReportPayload {
+  const products = payload.products.map((product) => {
+    const quantity = quantitiesByProductId[product.id];
+    if (quantity == null) return product;
+    return recalculateProjectClientReportProduct(product, quantity);
+  });
+  return rebuildProjectClientReportSummary(payload, products);
+}
+
+function rebuildProjectClientReportSummary(
+  payload: ProjectClientReportPayload,
+  products: ProjectClientReportProduct[]
+): ProjectClientReportPayload {
+  const finalSetPrice = computeProjectClientReportFinalSetPrice(products);
+  const totalProposalValue =
+    finalSetPrice != null && payload.summary.estimatedQuantity != null
+      ? roundProjectMoney(finalSetPrice * payload.summary.estimatedQuantity)
+      : finalSetPrice;
+
+  return {
+    ...payload,
+    products,
+    summary: {
+      ...payload.summary,
+      productsCount: products.length,
+      finalSetPrice,
+      totalProposalValue,
+    },
+  };
+}
+
+export function validateProjectClientReportQuantities(
+  products: ProjectClientReportProduct[],
+  quantitiesByProductId: Record<string, number>
+): { ok: true } | { ok: false; errors: Record<string, string> } {
+  const errors: Record<string, string> = {};
+  for (const product of products) {
+    const raw = quantitiesByProductId[product.id];
+    if (raw == null) {
+      errors[product.id] = "Quantidade obrigatória.";
+      continue;
+    }
+    const normalized = normalizeClientProposalQuantityPerSet(raw);
+    if (normalized == null) {
+      errors[product.id] = "Informe um número inteiro maior que zero.";
+    }
+  }
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true };
+}
+
+export function buildProjectClientReportProducts(
+  detail: ProjectDetail,
+  savedQuantities?: Map<string, number> | Record<string, number>
+): ProjectClientReportProduct[] {
   const pricingByTargetId = new Map(
     (detail.projectPricing?.items ?? []).map((item) => [item.targetItemId, item])
   );
@@ -78,7 +182,10 @@ export function buildProjectClientReportProducts(detail: ProjectDetail): Project
     )
     .map((target) => {
       const pricing = pricingByTargetId.get(target.targetItemId);
-      const quantityPerSet = Math.max(1, target.suggestedQuantity ?? 1);
+      const quantityPerSet = resolveClientProposalQuantityPerSet(
+        target.targetItemId,
+        savedQuantities
+      );
       const finalUnitPrice =
         pricing?.suggestedPrice != null && Number.isFinite(pricing.suggestedPrice)
           ? roundProjectMoney(pricing.suggestedPrice)
@@ -115,8 +222,11 @@ export function computeProjectClientReportFinalSetPrice(
   );
 }
 
-export function buildProjectClientReport(detail: ProjectDetail): ProjectClientReportPayload {
-  const products = buildProjectClientReportProducts(detail);
+export function buildProjectClientReport(
+  detail: ProjectDetail,
+  savedQuantities?: Map<string, number> | Record<string, number>
+): ProjectClientReportPayload {
+  const products = buildProjectClientReportProducts(detail, savedQuantities);
   const finalSetPrice = computeProjectClientReportFinalSetPrice(products);
   const estimatedQuantity =
     detail.expectedMonthlyVolume != null && Number.isFinite(detail.expectedMonthlyVolume)

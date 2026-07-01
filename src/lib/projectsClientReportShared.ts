@@ -13,6 +13,13 @@ export const PROJECT_CLIENT_REPORT_DISCLAIMER =
 export const PROJECT_CLIENT_REPORT_EXECUTIVE_SUMMARY =
   "Este relatório apresenta os produtos desenvolvidos para o projeto, com seus respectivos preços comerciais finais e o valor total estimado do conjunto.";
 
+export const CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET = 1;
+
+export type ProjectClientProposalQuantityRow = {
+  targetItemId: string;
+  quantityPerSet: number;
+};
+
 export type ProjectClientReportProduct = {
   id: string;
   sku: string | null;

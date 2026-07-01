@@ -1,26 +1,56 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, RotateCcw, Save } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
-import { canViewProjects } from "@/src/lib/projectsPermissions";
+import { canManageProjects, canViewProjects } from "@/src/lib/projectsPermissions";
 import { PROJECT_DETAIL_PATH } from "@/src/lib/projectsNavigation";
 import { PROJECT_CLIENT_REPORT_TITLE } from "@/src/lib/projectsClientReportShared";
 import type { ProjectClientReportPayload } from "@/src/lib/projectsClientReportShared";
+import {
+  applyProjectClientReportQuantities,
+  CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET,
+  normalizeClientProposalQuantityPerSet,
+  validateProjectClientReportQuantities,
+} from "@/src/lib/projectsClientReport";
 import { ProjectClientReport } from "@/src/components/projects/ProjectClientReport";
 import { ProjectExecutiveReportPrintControls } from "@/src/components/projects/ProjectExecutiveReportPrintControls";
 import "@/src/project-client-report-print.css";
 
 const ROUTE_BODY_CLASS = "project-client-report-route";
 
+function quantitiesFromReport(report: ProjectClientReportPayload): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const product of report.products) {
+    next[product.id] = String(product.quantityPerSet);
+  }
+  return next;
+}
+
+function quantitiesToNumbers(drafts: Record<string, string>): Record<string, number> {
+  const next: Record<string, number> = {};
+  for (const [productId, raw] of Object.entries(drafts)) {
+    const normalized = normalizeClientProposalQuantityPerSet(raw);
+    if (normalized != null) {
+      next[productId] = normalized;
+    }
+  }
+  return next;
+}
+
 export function ProjectClientReportPage() {
   const auth = useAuth();
   const canView = canViewProjects(auth);
+  const canManage = canManageProjects(auth);
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [report, setReport] = useState<ProjectClientReportPayload | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [baseReport, setBaseReport] = useState<ProjectClientReportPayload | null>(null);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [savedQuantityDrafts, setSavedQuantityDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const routeEntryTitleRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +65,26 @@ export function ProjectClientReportPage() {
     };
   }, []);
 
+  const loadReport = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJsonOk<ProjectClientReportPayload>(
+        `/api/projects/${projectId}/client-report`
+      );
+      setBaseReport(data);
+      const drafts = quantitiesFromReport(data);
+      setQuantityDrafts(drafts);
+      setSavedQuantityDrafts(drafts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível carregar o relatório.");
+      setBaseReport(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (!canView) {
       setLoading(false);
@@ -46,52 +96,105 @@ export function ProjectClientReportPage() {
       setError("Projeto inválido.");
       return;
     }
+    void loadReport();
+  }, [canView, projectId, loadReport]);
 
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+  const quantityValidation = useMemo(() => {
+    if (!baseReport) return { ok: true as const, errors: {} };
+    const numeric = quantitiesToNumbers(quantityDrafts);
+    return validateProjectClientReportQuantities(baseReport.products, numeric);
+  }, [baseReport, quantityDrafts]);
 
-    const run = async () => {
-      try {
-        const data = await fetchJsonOk<ProjectClientReportPayload>(
-          `/api/projects/${projectId}/client-report`
-        );
-        if (cancelled) return;
-        setReport(data);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Não foi possível carregar o relatório.");
-          setReport(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+  const displayReport = useMemo(() => {
+    if (!baseReport) return null;
+    if (!canManage) return baseReport;
+    const numeric = quantitiesToNumbers(quantityDrafts);
+    if (Object.keys(numeric).length !== baseReport.products.length) {
+      return baseReport;
+    }
+    return applyProjectClientReportQuantities(baseReport, numeric);
+  }, [baseReport, canManage, quantityDrafts]);
 
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [canView, projectId]);
+  const hasUnsavedQuantities = useMemo(() => {
+    return JSON.stringify(quantityDrafts) !== JSON.stringify(savedQuantityDrafts);
+  }, [quantityDrafts, savedQuantityDrafts]);
+
+  const exportBlocked =
+    !displayReport ||
+    !!error ||
+    (canManage &&
+      (!quantityValidation.ok || hasUnsavedQuantities || displayReport.summary.pricingPending));
 
   useEffect(() => {
-    if (!report) return;
-    document.title = `${report.project.code} — Proposta Cliente`;
-  }, [report]);
+    if (!displayReport) return;
+    document.title = `${displayReport.project.code} — Proposta Cliente`;
+  }, [displayReport]);
+
+  const handleQuantityChange = useCallback((productId: string, value: string) => {
+    setQuantityDrafts((current) => ({ ...current, [productId]: value }));
+    setSaveError(null);
+  }, []);
+
+  const handleRestoreDefaults = useCallback(() => {
+    if (!baseReport) return;
+    const next: Record<string, string> = {};
+    for (const product of baseReport.products) {
+      next[product.id] = String(CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET);
+    }
+    setQuantityDrafts(next);
+  }, [baseReport]);
+
+  const handleApplyOneToAll = useCallback(() => {
+    if (!baseReport) return;
+    const next: Record<string, string> = {};
+    for (const product of baseReport.products) {
+      next[product.id] = "1";
+    }
+    setQuantityDrafts(next);
+  }, [baseReport]);
+
+  const handleSaveQuantities = useCallback(async () => {
+    if (!projectId || !baseReport || !quantityValidation.ok) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const payload = await fetchJsonOk<ProjectClientReportPayload>(
+        `/api/projects/${projectId}/client-report/quantities`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: baseReport.products.map((product) => ({
+              targetItemId: product.id,
+              quantityPerSet: Number(quantityDrafts[product.id]),
+            })),
+          }),
+        }
+      );
+      setBaseReport(payload);
+      const drafts = quantitiesFromReport(payload);
+      setQuantityDrafts(drafts);
+      setSavedQuantityDrafts(drafts);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Erro ao salvar quantidades.");
+    } finally {
+      setSaving(false);
+    }
+  }, [projectId, baseReport, quantityDrafts, quantityValidation.ok]);
 
   const handlePrint = useCallback(() => {
-    if (!report) return;
+    if (exportBlocked) return;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.print();
       });
     });
-  }, [report]);
+  }, [exportBlocked]);
 
   const handleDownloadPdf = useCallback(() => {
-    if (!projectId) return;
+    if (!projectId || exportBlocked) return;
     window.open(`/api/projects/${projectId}/client-report.pdf`, "_blank", "noopener,noreferrer");
-  }, [projectId]);
+  }, [projectId, exportBlocked]);
 
   const handleBack = useCallback(() => {
     if (projectId) {
@@ -117,20 +220,69 @@ export function ProjectClientReportPage() {
         <ProjectExecutiveReportPrintControls
           onBack={handleBack}
           onPrint={handlePrint}
-          printDisabled={!report || !!error}
+          printDisabled={exportBlocked}
           backLabel="Voltar ao projeto"
         />
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={!report || !!error}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-          data-testid="project-client-report-download-pdf"
-        >
-          <Download className="h-4 w-4" />
-          Exportar PDF Cliente
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && baseReport ? (
+            <>
+              <button
+                type="button"
+                onClick={handleApplyOneToAll}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-accent"
+              >
+                Aplicar 1 para todos
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreDefaults}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-accent"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Restaurar padrão
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuantities}
+                disabled={saving || !quantityValidation.ok || !hasUnsavedQuantities}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Salvar quantidades
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={exportBlocked}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            data-testid="project-client-report-download-pdf"
+          >
+            <Download className="h-4 w-4" />
+            Exportar PDF Cliente
+          </button>
+        </div>
       </div>
+
+      {canManage && hasUnsavedQuantities ? (
+        <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Salve as quantidades antes de imprimir ou exportar o PDF.
+        </div>
+      ) : null}
+
+      {canManage && displayReport?.summary.pricingPending ? (
+        <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Alguns produtos ainda não possuem preço comercial final. Corrija a precificação antes de
+          gerar a proposta.
+        </div>
+      ) : null}
+
+      {saveError ? (
+        <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {saveError}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="mx-auto flex max-w-[1180px] items-center gap-2 rounded-xl border bg-white p-6 text-sm text-slate-600">
@@ -145,7 +297,15 @@ export function ProjectClientReportPage() {
         </div>
       ) : null}
 
-      {report ? <ProjectClientReport report={report} /> : null}
+      {displayReport ? (
+        <ProjectClientReport
+          report={displayReport}
+          editable={canManage}
+          quantityDrafts={quantityDrafts}
+          quantityErrors={quantityValidation.ok ? undefined : quantityValidation.errors}
+          onQuantityChange={handleQuantityChange}
+        />
+      ) : null}
     </div>
   );
 }

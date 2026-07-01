@@ -6,6 +6,10 @@ import {
 
 type Props = {
   report: ProjectClientReportPayload;
+  editable?: boolean;
+  quantityDrafts?: Record<string, string>;
+  quantityErrors?: Record<string, string>;
+  onQuantityChange?: (productId: string, value: string) => void;
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -26,7 +30,13 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ProjectClientReport({ report }: Props) {
+export function ProjectClientReport({
+  report,
+  editable = false,
+  quantityDrafts,
+  quantityErrors,
+  onQuantityChange,
+}: Props) {
   return (
     <article className="project-client-report-document mx-auto max-w-[1180px] bg-white p-6 print:p-0">
       <header className="mb-6 border-b border-slate-200 pb-4">
@@ -89,6 +99,11 @@ export function ProjectClientReport({ report }: Props) {
       ) : null}
 
       <Section title="Produtos / peças">
+        {editable ? (
+          <p className="mb-3 text-sm text-slate-600">
+            Edite a quantidade de cada item no conjunto antes de gerar a proposta.
+          </p>
+        ) : null}
         <div className="overflow-x-auto print:overflow-visible">
           <table className="w-full text-sm">
             <thead>
@@ -109,7 +124,30 @@ export function ProjectClientReport({ report }: Props) {
                   <td className="px-2 py-2">{index + 1}</td>
                   <td className="px-2 py-2">{product.sku ?? "—"}</td>
                   <td className="px-2 py-2">{product.description}</td>
-                  <td className="px-2 py-2 tabular-nums">{product.quantityPerSet}</td>
+                  <td className="px-2 py-2 tabular-nums">
+                    {editable ? (
+                      <div className="space-y-1">
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          value={quantityDrafts?.[product.id] ?? String(product.quantityPerSet)}
+                          onChange={(event) => onQuantityChange?.(product.id, event.target.value)}
+                          className="project-client-report-print-no-print w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                          aria-label={`Qtd/conjunto — ${product.name}`}
+                        />
+                        {quantityErrors?.[product.id] ? (
+                          <p className="project-client-report-print-no-print text-xs text-red-600">
+                            {quantityErrors[product.id]}
+                          </p>
+                        ) : null}
+                        <span className="hidden print:inline">{product.quantityPerSet}</span>
+                      </div>
+                    ) : (
+                      product.quantityPerSet
+                    )}
+                  </td>
                   <td className="px-2 py-2">{product.unit}</td>
                   <td className="px-2 py-2 tabular-nums font-medium">
                     {formatClientReportMoney(product.finalUnitPrice)}

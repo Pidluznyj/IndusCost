@@ -466,6 +466,37 @@ export function registerProjectsRoutes(
     }
   });
 
+  app.put("/api/projects/:id/client-report/quantities", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const { upsertProjectClientProposalQuantities } = await import(
+        "./projectsClientProposalService.js"
+      );
+      const { loadProjectClientReport } = await import("./projectsClientReportService.js");
+
+      await upsertProjectClientProposalQuantities(
+        req.params.id,
+        items.map((row: Record<string, unknown>) => ({
+          targetItemId: String(row.targetItemId ?? row.id ?? ""),
+          quantityPerSet: Number(row.quantityPerSet),
+        }))
+      );
+
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(payload);
+    } catch (e: unknown) {
+      console.error("PUT /api/projects/:id/client-report/quantities", e);
+      const message = e instanceof Error ? e.message : "Erro ao salvar quantidades da proposta.";
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.get("/api/projects/:id", ...view, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
