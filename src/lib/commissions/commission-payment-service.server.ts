@@ -164,7 +164,7 @@ export async function markCommissionPaymentBatchPaid(
       where: { id: input.batchId },
       include: {
         items: {
-          where: { status: { in: ["DRAFT", "APPROVED"] } },
+          where: { status: { in: ["APPROVED"] } },
           select: {
             id: true,
             commissionRecordId: true,
@@ -178,6 +178,9 @@ export async function markCommissionPaymentBatchPaid(
     if (!batch) throw new Error("Lote não encontrado.");
     if (batch.status === "PAID") throw new Error("Lote já está pago.");
     if (batch.status === "CANCELLED") throw new Error("Lote cancelado não pode ser pago.");
+    if (batch.status !== "APPROVED") {
+      throw new Error("Somente lotes aprovados podem ser marcados como pagos.");
+    }
 
     let totalPaid = 0;
 

@@ -10,10 +10,12 @@ import {
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
+  parseCommissionPaymentsQuery,
   parseCommissionPersonsQuery,
   parseCommissionRecordsQuery,
   parseCommissionRulesQuery,
   parseCommissionReleasesQuery,
+  parseUnpaidReleasedCommissionsQuery,
   parsePagination,
 } from "./commissions/commissionQuery.js";
 import {
@@ -89,6 +91,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/audit",
       "/api/commissions/settings",
       "/api/commissions/payment-batches",
+      "/api/commissions/payment-batches/unpaid-released",
     ];
     for (const ep of endpoints) {
       assert.match(src, new RegExp(ep.replace(/\//g, "\\/")));
@@ -181,6 +184,30 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.beneficiaryType, "SELLER");
     assert.equal(q.baseType, "SALES_ORDER_ITEM_NET");
     assert.equal(q.releaseRule, "EACH_RECEIVABLE_PAID");
+  });
+
+  it("parseCommissionPaymentsQuery aceita filtros de lote", () => {
+    const q = parseCommissionPaymentsQuery({
+      year: "2026",
+      month: "3",
+      status: "DRAFT",
+      personType: "SELLER",
+      paymentDateFrom: "2026-03-01",
+      paymentDateTo: "2026-03-31",
+    });
+    assert.equal(q.year, 2026);
+    assert.equal(q.month, 3);
+    assert.equal(q.status, "DRAFT");
+    assert.equal(q.personType, "SELLER");
+    assert.ok(q.paymentDateFrom);
+    assert.ok(q.paymentDateTo);
+  });
+
+  it("parseUnpaidReleasedCommissionsQuery exige commissionPersonId", () => {
+    assert.throws(
+      () => parseUnpaidReleasedCommissionsQuery({ year: "2026" }),
+      CommissionQueryParseError
+    );
   });
 
   it("parseCommissionReleasesQuery aceita filtros de vencimento e liberação", () => {

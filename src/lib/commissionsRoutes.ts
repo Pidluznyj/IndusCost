@@ -18,15 +18,18 @@ import {
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import {
-  getCommissionPaymentBatchById,
   getCommissionSettingsPayload,
   listCommissionAuditIssues,
-  listCommissionPaymentBatches,
   reopenCommissionAuditIssue,
   resolveCommissionAuditIssue,
   updateCommissionSettings,
   CommissionValidationError,
 } from "@/src/lib/commissions/commissionAdmin.server.js";
+import {
+  getCommissionPaymentBatchById,
+  listCommissionPaymentsPage,
+  listUnpaidReleasedCommissionsDetailed,
+} from "@/src/lib/commissions/commissionPayments.server.js";
 import {
   createCommissionPerson,
   importCommissionPersonsFromOrders,
@@ -52,7 +55,6 @@ import {
   parseCommissionSettingsUpdateBody,
   parseMarkPaidBody,
   parsePaymentBatchCreateBody,
-  parsePaymentBatchesListQuery,
 } from "@/src/lib/commissions/commissionApiValidation.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
@@ -70,9 +72,11 @@ import {
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
   parseCommissionPersonsQuery,
+  parseCommissionPaymentsQuery,
   parseCommissionRecordsQuery,
   parseCommissionRulesQuery,
   parseCommissionReleasesQuery,
+  parseUnpaidReleasedCommissionsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
   getCommissionReleaseDetail,
@@ -604,15 +608,34 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
-      const query = parsePaymentBatchesListQuery(req.query as Record<string, unknown>);
-      const payload = await listCommissionPaymentBatches(query);
+      const query = parseCommissionPaymentsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionPaymentsPage(query);
       return res.json(payload);
     } catch (error) {
+      if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("GET /api/commissions/payment-batches", error);
       return res.status(500).json({ error: "Erro ao listar lotes de pagamento." });
     }
   });
+
+  app.get(
+    "/api/commissions/payment-batches/unpaid-released",
+    ...paymentsViewGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+        const query = parseUnpaidReleasedCommissionsQuery(req.query as Record<string, unknown>);
+        const items = await listUnpaidReleasedCommissionsDetailed(query);
+        return res.json({ items });
+      } catch (error) {
+        if (error instanceof CommissionQueryParseError) return handleQueryError(res, error);
+        console.error("GET /api/commissions/payment-batches/unpaid-released", error);
+        return res.status(500).json({ error: "Erro ao listar comissões liberadas não pagas." });
+      }
+    }
+  );
 
   app.get("/api/commissions/payment-batches/:id", ...paymentsViewGuard, async (req, res) => {
     try {
@@ -632,10 +655,11 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
       const body = parsePaymentBatchCreateBody(req.body);
-      const payload = await createCommissionPaymentBatch(prisma, {
+      const result = await createCommissionPaymentBatch(prisma, {
         ...body,
         createdBy: user.id,
       });
+      const payload = await getCommissionPaymentBatchById(result.batchId);
       return res.status(201).json(payload);
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);

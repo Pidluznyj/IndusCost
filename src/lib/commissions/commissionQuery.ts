@@ -668,3 +668,97 @@ export function parseCommissionPersonsQuery(
     typeof query.search === "string" && query.search.trim() ? query.search.trim() : undefined;
   return { ...period, page, pageSize, active, type, source, search };
 }
+
+const BATCH_STATUS_SET = new Set<string>(["DRAFT", "APPROVED", "PAID", "CANCELLED"]);
+
+export type CommissionPaymentsQuery = CommissionPeriodQuery & {
+  page: number;
+  pageSize: number;
+  commissionPersonId?: string;
+  status?: string;
+  personType?: string;
+  paymentDateFrom?: Date | null;
+  paymentDateTo?: Date | null;
+};
+
+export function parseCommissionPaymentsQuery(
+  query: Record<string, unknown>
+): CommissionPaymentsQuery {
+  const period = parsePeriodQuery(query);
+  const pageRaw = parseOptionalInt(query.page);
+  const pageSizeRaw = parseOptionalInt(query.pageSize);
+  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
+  const pageSize = pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 100) : 20;
+
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+
+  const statusRaw =
+    typeof query.status === "string" && query.status.trim()
+      ? query.status.trim().toUpperCase()
+      : null;
+  const status = statusRaw && BATCH_STATUS_SET.has(statusRaw) ? statusRaw : undefined;
+  if (statusRaw && !status) {
+    throw new CommissionQueryParseError("status inválido.");
+  }
+
+  const personTypeRaw =
+    typeof query.personType === "string" && query.personType.trim()
+      ? query.personType.trim().toUpperCase()
+      : null;
+  const personType = personTypeRaw && PERSON_TYPE_SET.has(personTypeRaw) ? personTypeRaw : undefined;
+  if (personTypeRaw && !personType) {
+    throw new CommissionQueryParseError("personType inválido.");
+  }
+
+  const paymentDateFrom = parseIsoDate(query.paymentDateFrom, "paymentDateFrom");
+  const paymentDateTo = parseIsoDate(query.paymentDateTo, "paymentDateTo");
+
+  return {
+    ...period,
+    page,
+    pageSize,
+    commissionPersonId: commissionPersonId ?? undefined,
+    status,
+    personType,
+    paymentDateFrom,
+    paymentDateTo,
+  };
+}
+
+export function parseUnpaidReleasedCommissionsQuery(
+  query: Record<string, unknown>
+): {
+  commissionPersonId: string;
+  from?: Date;
+  to?: Date;
+  personType?: string;
+} {
+  const period = parsePeriodQuery(query);
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (!commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId é obrigatório.");
+  }
+  const personTypeRaw =
+    typeof query.personType === "string" && query.personType.trim()
+      ? query.personType.trim().toUpperCase()
+      : null;
+  const personType = personTypeRaw && PERSON_TYPE_SET.has(personTypeRaw) ? personTypeRaw : undefined;
+  if (personTypeRaw && !personType) {
+    throw new CommissionQueryParseError("personType inválido.");
+  }
+
+  let from = period.from ?? undefined;
+  let to = period.to ?? undefined;
+  if (!from && period.year != null && period.month != null) {
+    from = new Date(Date.UTC(period.year, period.month - 1, 1));
+    to = new Date(Date.UTC(period.year, period.month, 0, 23, 59, 59, 999));
+  } else if (!from && period.year != null) {
+    from = new Date(Date.UTC(period.year, 0, 1));
+    to = new Date(Date.UTC(period.year, 11, 31, 23, 59, 59, 999));
+  }
+
+  return { commissionPersonId, from, to, personType };
+}

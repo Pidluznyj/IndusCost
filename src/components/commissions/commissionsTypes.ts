@@ -494,12 +494,13 @@ export type CommissionsSettingsPayload = {
   paidCommissionBlockAutoChange: boolean;
 };
 
-export type CommissionsPaymentBatchItem = {
+export type CommissionsPaymentBatchListItem = {
   id: string;
   periodStart: string;
   periodEnd: string;
   commissionPersonId: string;
   commissionPersonName: string;
+  commissionPersonType?: string;
   status: string;
   totalReleased: number;
   totalSelected: number;
@@ -509,7 +510,71 @@ export type CommissionsPaymentBatchItem = {
   createdAt: string;
 };
 
-export type CommissionsPaymentBatchesPayload = {
-  items: CommissionsPaymentBatchItem[];
+export type CommissionsPaymentBatchDetailItem = {
+  id: string;
+  commissionRecordId: string;
+  orderCode: string | null;
+  productCode: string | null;
+  nfeNumber: string | null;
+  customerName: string | null;
+  nomusReceivableId: number | null;
+  commissionAmount: number;
+  releasedAmount: number;
+  paidAmount: number;
+  amountToPay: number;
+  amountPaid: number;
+  status: string;
+  notes: string | null;
+};
+
+export type CommissionsPaymentBatchDetail = {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  commissionPersonId: string;
+  commissionPersonName: string;
+  commissionPersonType?: string;
+  status: string;
+  totalReleased: number;
+  totalSelected: number;
+  totalPaid: number;
+  paymentDate: string | null;
+  notes: string | null;
+  items: CommissionsPaymentBatchDetailItem[];
+  createdAt: string;
+};
+
+export type CommissionsPaymentsCards = {
+  unpaidReleasedAmount: number;
+  draftBatchTotal: number;
+  approvedBatchTotal: number;
+  paidInPeriodTotal: number;
+  balanceToPay: number;
+};
+
+export type CommissionsPaymentsPayload = {
+  cards?: CommissionsPaymentsCards;
+  rows?: CommissionsPaymentBatchListItem[];
+  items: CommissionsPaymentBatchListItem[];
   pagination: CommissionsPagination;
+};
+
+export type UnpaidReleasedCommissionRow = {
+  commissionRecordId: string;
+  commissionPersonId: string;
+  orderCode: string | null;
+  productCode: string | null;
+  nfeNumber: string | null;
+  customerName: string | null;
+  status: string;
+  commissionAmount: number;
+  releasedAmount: number;
+  paidAmount: number;
+  balanceAmount: number;
+  availableToPay: number;
+  nomusReceivableId: number | null;
+};
+
+export type UnpaidReleasedCommissionsPayload = {
+  items: UnpaidReleasedCommissionRow[];
 };
