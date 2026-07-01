@@ -3,7 +3,7 @@
 **Projeto:** IndusCost / My Industry  
 **Escopo:** validação integrada pós-implementação (sem alteração de rotas, URLs, permissões reais ou telas)  
 **Última validação:** 2026-07-01  
-**Commit de referência:** *(preenchido após push)*
+**Commit de referência:** `87265af`
 
 ---
 
