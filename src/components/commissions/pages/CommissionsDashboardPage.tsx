@@ -1,140 +1,341 @@
-import React from "react";
-import { formatCurrency } from "@/src/lib/utils";
-import type { CommissionsDashboardPayload } from "@/src/components/commissions/commissionsTypes";
+import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  CommissionsEmptyState,
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
+  Calculator,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { fetchJsonOk } from "@/src/lib/http";
+import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
+import { financeBiButtonAccentClass, financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermissions";
+import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
+import {
   CommissionsErrorBanner,
-  CommissionsLoading,
-  CommissionsSectionIntro,
-  CommissionsSummaryGrid,
+  CommissionsEmptyState,
   CommissionsTableScroll,
+  formatCommissionsApiError,
 } from "@/src/components/commissions/commissionsUi";
-import { useCommissionsFetch } from "@/src/components/commissions/useCommissionsFetch";
+import { CommissionsDashboardCharts } from "@/src/components/commissions/dashboard/CommissionsDashboardCharts";
+import { CommissionsDashboardFiltersPanel } from "@/src/components/commissions/dashboard/CommissionsDashboardFiltersPanel";
+import {
+  buildPendingByDueDateBuckets,
+  filterUpcomingReleases,
+} from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
+import {
+  EMPTY_COMMISSIONS_DASHBOARD_FILTERS,
+  resolveCommissionsRecalculatePeriod,
+  type CommissionsDashboardFilters,
+} from "@/src/components/commissions/dashboard/commissionsDashboardFilters";
+import { useCommissionsDashboardData } from "@/src/components/commissions/dashboard/useCommissionsDashboardData";
 
-function hasDashboardActivity(data: CommissionsDashboardPayload): boolean {
-  const c = data.cards;
-  return (
-    c.forecastAmount > 0 ||
-    c.confirmedAmount > 0 ||
-    c.releasedAmount > 0 ||
-    c.paidAmount > 0 ||
-    data.monthlySeries.length > 0 ||
-    data.byPerson.length > 0 ||
-    data.byStatus.length > 0 ||
-    data.topCustomers.length > 0 ||
-    data.auditSummary.total > 0
-  );
+function formatDueDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("pt-BR");
+  } catch {
+    return "—";
+  }
 }
 
 export function CommissionsDashboardPage() {
-  const { data, loading, error, reload } = useCommissionsFetch<CommissionsDashboardPayload>(
-    "/api/commissions/dashboard",
-    "Não foi possível carregar o dashboard de comissões."
+  const auth = useAuth();
+  const canRecalculate = auth.hasAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]);
+
+  const [draftFilters, setDraftFilters] = useState<CommissionsDashboardFilters>(
+    EMPTY_COMMISSIONS_DASHBOARD_FILTERS
   );
+  const [appliedFilters, setAppliedFilters] = useState<CommissionsDashboardFilters>(
+    EMPTY_COMMISSIONS_DASHBOARD_FILTERS
+  );
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculateError, setRecalculateError] = useState<string | null>(null);
+
+  const { data, loading, error, reload } = useCommissionsDashboardData(appliedFilters);
+
+  const dashboard = data.dashboard;
+  const releases = data.releases?.items ?? [];
+  const criticalIssues = data.criticalAudit?.items ?? [];
+
+  const pendingBuckets = useMemo(
+    () => buildPendingByDueDateBuckets(releases),
+    [releases]
+  );
+  const upcomingReleases = useMemo(() => filterUpcomingReleases(releases, 8), [releases]);
+
+  async function handleRecalculate() {
+    if (!canRecalculate) return;
+    const period = resolveCommissionsRecalculatePeriod(appliedFilters);
+    const ok = window.confirm(
+      `Recalcular comissões de ${period.from} até ${period.to}?\n\nEsta operação pode levar alguns minutos.`
+    );
+    if (!ok) return;
+
+    setRecalculating(true);
+    setRecalculateError(null);
+    try {
+      await fetchJsonOk("/api/commissions/recalculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: period.from,
+          to: period.to,
+          mode: "FULL_RECALC",
+        }),
+      });
+      await reload();
+    } catch (e: unknown) {
+      setRecalculateError(
+        formatCommissionsApiError(e, "Não foi possível recalcular as comissões do período.")
+      );
+    } finally {
+      setRecalculating(false);
+    }
+  }
 
   return (
-    <div className="space-y-4">
-      <CommissionsSectionIntro
-        title="Dashboard executivo"
-        description="Visão consolidada de comissões previstas, confirmadas, liberadas e pagas."
-        testId="commissions-dashboard-intro"
+    <div className="space-y-5" data-testid="commissions-dashboard-page">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
+            Visão executiva
+          </p>
+          <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">
+            Dashboard de Comissões
+          </h3>
+          <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
+            KPIs, tendências e alertas com dados reais do cálculo de comissões.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {canRecalculate ? (
+            <button
+              type="button"
+              disabled={recalculating || loading}
+              onClick={() => void handleRecalculate()}
+              className={financeBiButtonAccentClass}
+              data-testid="commissions-recalculate-btn"
+            >
+              {recalculating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Recalcular período
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <CommissionsDashboardFiltersPanel
+        filters={draftFilters}
+        onChange={setDraftFilters}
+        onApply={() => setAppliedFilters({ ...draftFilters })}
+        disabled={loading || recalculating}
       />
+
+      {recalculateError ? (
+        <CommissionsErrorBanner
+          message={recalculateError}
+          onDismiss={() => setRecalculateError(null)}
+        />
+      ) : null}
 
       {error ? (
         <CommissionsErrorBanner message={error} onRetry={() => void reload()} />
       ) : null}
 
-      {loading ? <CommissionsLoading label="Carregando dashboard…" /> : null}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <FinanceKpiCard
+          label="Comissão prevista"
+          value=""
+          amount={dashboard?.cards.forecastAmount ?? 0}
+          amountFormat="currency"
+          icon={TrendingUp}
+          tone="info"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Comissão confirmada"
+          value=""
+          amount={dashboard?.cards.confirmedAmount ?? 0}
+          amountFormat="currency"
+          icon={CheckCircle2}
+          tone="success"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Aguardando NF-e"
+          value=""
+          amount={dashboard?.cards.waitingNfeAmount ?? 0}
+          amountFormat="currency"
+          icon={Clock}
+          tone="warning"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Aguardando recebimento"
+          value=""
+          amount={dashboard?.cards.waitingReceivableAmount ?? 0}
+          amountFormat="currency"
+          icon={Clock}
+          tone="warning"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Comissão liberada"
+          value=""
+          amount={dashboard?.cards.releasedAmount ?? 0}
+          amountFormat="currency"
+          icon={Wallet}
+          tone="info"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Comissão paga"
+          value=""
+          amount={dashboard?.cards.paidAmount ?? 0}
+          amountFormat="currency"
+          icon={Banknote}
+          tone="success"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Saldo a pagar"
+          value=""
+          amount={dashboard?.cards.balanceToPayAmount ?? 0}
+          amountFormat="currency"
+          icon={Calculator}
+          tone="neutral"
+          loading={loading}
+        />
+        <FinanceKpiCard
+          label="Divergências críticas"
+          value={String(dashboard?.cards.criticalDivergencesCount ?? 0)}
+          icon={ShieldAlert}
+          tone={
+            (dashboard?.cards.criticalDivergencesCount ?? 0) > 0 ? "danger" : "neutral"
+          }
+          helperText={
+            dashboard
+              ? `${dashboard.auditSummary.unresolved} issue(s) em aberto no total`
+              : undefined
+          }
+          loading={loading}
+        />
+      </div>
 
-      {!loading && !error && data ? (
+      <div className="flex flex-wrap gap-2">
+        {[
+          { label: "Previstas", to: getCommissionsSectionPath("forecast") },
+          { label: "Confirmadas", to: getCommissionsSectionPath("confirmed") },
+          { label: "Liberação", to: getCommissionsSectionPath("releases") },
+          { label: "Pagamentos", to: getCommissionsSectionPath("payments") },
+          { label: "Auditoria", to: getCommissionsSectionPath("audit") },
+        ].map((action) => (
+          <Link key={action.to} to={action.to} className={financeBiButtonOutlineClass}>
+            {action.label}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        ))}
+      </div>
+
+      {!loading && dashboard && dashboard.cards.criticalDivergencesCount > 0 ? (
+        <div
+          className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
+          data-testid="commissions-critical-alert"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-red-700 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-900">
+                  {dashboard.cards.criticalDivergencesCount} divergência(s) crítica(s) em aberto
+                </p>
+                <p className="text-sm text-red-800 mt-1">
+                  Revise os apontamentos de auditoria para corrigir inconsistências no cálculo ou
+                  liberação.
+                </p>
+              </div>
+            </div>
+            <Link
+              to={getCommissionsSectionPath("audit")}
+              className="inline-flex items-center gap-1 text-sm font-semibold text-red-900 underline"
+            >
+              Ir para Auditoria
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          {criticalIssues.length > 0 ? (
+            <ul className="space-y-2 text-sm text-red-900">
+              {criticalIssues.map((issue) => (
+                <li key={issue.id} className="rounded-lg bg-white/70 px-3 py-2 border border-red-100">
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!loading && dashboard ? (
         <>
-          <CommissionsSummaryGrid
-            items={[
-              { label: "Comissão prevista", value: formatCurrency(data.cards.forecastAmount, 2) },
-              { label: "Comissão confirmada", value: formatCurrency(data.cards.confirmedAmount, 2) },
-              { label: "Aguardando NF-e", value: formatCurrency(data.cards.waitingNfeAmount, 2) },
-              {
-                label: "Aguardando recebimento",
-                value: formatCurrency(data.cards.waitingReceivableAmount, 2),
-              },
-              { label: "Liberada", value: formatCurrency(data.cards.releasedAmount, 2) },
-              { label: "Paga", value: formatCurrency(data.cards.paidAmount, 2) },
-              { label: "Saldo a pagar", value: formatCurrency(data.cards.balanceToPayAmount, 2) },
-              {
-                label: "Divergências críticas",
-                value: String(data.cards.criticalDivergencesCount),
-                hint: `${data.auditSummary.unresolved} issue(s) em aberto`,
-              },
-            ]}
+          <CommissionsDashboardCharts
+            dashboard={dashboard}
+            pendingBuckets={pendingBuckets}
+            loading={loading}
           />
 
-          {!hasDashboardActivity(data) ? (
-            <CommissionsEmptyState
-              title="Sem movimentação de comissões"
-              description="Não há registros calculados no período. Execute um recálculo ou aguarde a sincronização dos pedidos."
-              testId="commissions-dashboard-empty"
-            />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Por status</h3>
-                {data.byStatus.length === 0 ? (
-                  <CommissionsEmptyState description="Nenhum agrupamento por status." />
-                ) : (
-                  <CommissionsTableScroll>
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Status</th>
-                        <th className="px-3 py-2 text-right font-medium">Qtd</th>
-                        <th className="px-3 py-2 text-right font-medium">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border bg-card">
-                      {data.byStatus.map((row) => (
-                        <tr key={row.status}>
-                          <td className="px-3 py-2">{row.status}</td>
-                          <td className="px-3 py-2 text-right">{row.count}</td>
-                          <td className="px-3 py-2 text-right">
-                            {formatCurrency(row.commissionAmount, 2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </CommissionsTableScroll>
-                )}
-              </section>
-
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Top comissionados</h3>
-                {data.byPerson.length === 0 ? (
-                  <CommissionsEmptyState description="Nenhum comissionado com valor no período." />
-                ) : (
-                  <CommissionsTableScroll>
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Pessoa</th>
-                        <th className="px-3 py-2 text-right font-medium">Comissão</th>
-                        <th className="px-3 py-2 text-right font-medium">Liberado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border bg-card">
-                      {data.byPerson.map((row) => (
-                        <tr key={row.commissionPersonId}>
-                          <td className="px-3 py-2">{row.personName}</td>
-                          <td className="px-3 py-2 text-right">
-                            {formatCurrency(row.commissionAmount, 2)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {formatCurrency(row.releasedAmount, 2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </CommissionsTableScroll>
-                )}
-              </section>
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-[#111827]">Próximas liberações</h3>
+              <p className="text-xs text-[#6B7280]">
+                Parcelas futuras com saldo de comissão ainda não liberado.
+              </p>
             </div>
-          )}
+            {upcomingReleases.length === 0 ? (
+              <CommissionsEmptyState
+                title="Nenhuma liberação futura"
+                description="Não há parcelas com vencimento futuro e saldo pendente de liberação."
+                testId="commissions-upcoming-releases-empty"
+              />
+            ) : (
+              <CommissionsTableScroll>
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Pessoa</th>
+                    <th className="px-3 py-2 text-left font-medium">Pedido</th>
+                    <th className="px-3 py-2 text-left font-medium">Vencimento</th>
+                    <th className="px-3 py-2 text-right font-medium">Saldo a liberar</th>
+                    <th className="px-3 py-2 text-left font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-card">
+                  {upcomingReleases.map((row) => (
+                    <tr key={row.scheduleId}>
+                      <td className="px-3 py-2">{row.commissionPersonName}</td>
+                      <td className="px-3 py-2">{row.orderCode ?? "—"}</td>
+                      <td className="px-3 py-2">{formatDueDate(row.dueDate)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatFinanceCurrency(row.balanceToRelease)}
+                      </td>
+                      <td className="px-3 py-2">{row.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </CommissionsTableScroll>
+            )}
+          </section>
         </>
       ) : null}
     </div>

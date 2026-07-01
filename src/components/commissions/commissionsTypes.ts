@@ -23,6 +23,7 @@ export type CommissionsDashboardPayload = {
     month: number;
     forecastAmount: number;
     confirmedAmount: number;
+    releasedAmount: number;
     paidAmount: number;
   }>;
   byPerson: Array<{

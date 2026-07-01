@@ -46,6 +46,8 @@ const RECORD_STATUS_SET = new Set<string>([
   "ERROR",
 ]);
 
+const PERSON_TYPE_SET = new Set<string>(["SELLER", "REPRESENTATIVE", "MANAGER", "OTHER"]);
+
 const ORIGIN_STAGE_SET = new Set<string>(["SALES_ORDER", "OUTPUT_DOCUMENT"]);
 
 export type CommissionPeriodQuery = {
@@ -58,8 +60,12 @@ export type CommissionPeriodQuery = {
 export type CommissionDashboardQuery = CommissionPeriodQuery & {
   commissionPersonId: string | null;
   type: string | null;
+  personType: string | null;
   status: CommissionRecordStatus | null;
   customer: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  ruleId: string | null;
   sellerId: number | null;
   representativeId: number | null;
 };
@@ -147,6 +153,29 @@ export function parseCommissionDashboardQuery(
     typeof query.customer === "string" && query.customer.trim()
       ? query.customer.trim()
       : null;
+  const orderCode =
+    typeof query.orderCode === "string" && query.orderCode.trim()
+      ? query.orderCode.trim()
+      : null;
+  const nfeNumber =
+    typeof query.nfeNumber === "string" && query.nfeNumber.trim()
+      ? query.nfeNumber.trim()
+      : null;
+  const ruleId = parseOptionalUuid(query.ruleId);
+  if (query.ruleId && !ruleId) {
+    throw new CommissionQueryParseError("ruleId inválido.");
+  }
+  const personTypeRaw =
+    typeof query.personType === "string" && query.personType.trim()
+      ? query.personType.trim().toUpperCase()
+      : typeof query.type === "string" && query.type.trim()
+        ? query.type.trim().toUpperCase()
+        : null;
+  const personType =
+    personTypeRaw && PERSON_TYPE_SET.has(personTypeRaw) ? personTypeRaw : null;
+  if (personTypeRaw && !personType) {
+    throw new CommissionQueryParseError("personType inválido.");
+  }
   const type =
     typeof query.type === "string" && query.type.trim() ? query.type.trim() : null;
 
@@ -154,8 +183,12 @@ export function parseCommissionDashboardQuery(
     ...period,
     commissionPersonId,
     type,
+    personType,
     status,
     customer,
+    orderCode,
+    nfeNumber,
+    ruleId,
     sellerId: parseOptionalInt(query.sellerId),
     representativeId: parseOptionalInt(query.representativeId),
   };
@@ -271,7 +304,27 @@ export function buildCommissionDashboardWhere(
   if (query.customer) {
     parts.push({ customerName: { contains: query.customer, mode: "insensitive" } });
   }
-  if (query.type === "SELLER") {
+  if (query.orderCode) {
+    parts.push({ orderCode: { contains: query.orderCode, mode: "insensitive" } });
+  }
+  if (query.nfeNumber) {
+    parts.push({ nfeNumber: { contains: query.nfeNumber, mode: "insensitive" } });
+  }
+  if (query.ruleId) {
+    parts.push({
+      metadataJson: {
+        path: ["ruleId"],
+        equals: query.ruleId,
+      },
+    });
+  }
+  if (query.personType) {
+    parts.push({
+      commissionPerson: {
+        type: query.personType as import("@prisma/client").CommissionPersonType,
+      },
+    });
+  } else if (query.type === "SELLER") {
     parts.push({ nomusSellerId: { not: null } });
   } else if (query.type === "REPRESENTATIVE") {
     parts.push({ nomusRepresentativeId: { not: null } });

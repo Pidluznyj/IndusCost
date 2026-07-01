@@ -26,6 +26,7 @@ export type CommissionDashboardPayload = {
     month: number;
     forecastAmount: number;
     confirmedAmount: number;
+    releasedAmount: number;
     paidAmount: number;
   }>;
   byPerson: Array<{
@@ -69,12 +70,20 @@ function aggregateMonthlySeries(
     calculatedAt: Date;
     status: string;
     commissionAmount: unknown;
+    releasedAmount: unknown;
     paidAmount: unknown;
   }>
 ): CommissionDashboardPayload["monthlySeries"] {
   const map = new Map<
     string,
-    { year: number; month: number; forecastAmount: number; confirmedAmount: number; paidAmount: number }
+    {
+      year: number;
+      month: number;
+      forecastAmount: number;
+      confirmedAmount: number;
+      releasedAmount: number;
+      paidAmount: number;
+    }
   >();
 
   for (const row of rows) {
@@ -86,9 +95,11 @@ function aggregateMonthlySeries(
       month,
       forecastAmount: 0,
       confirmedAmount: 0,
+      releasedAmount: 0,
       paidAmount: 0,
     };
     const commission = decimalToNumber(row.commissionAmount);
+    const released = decimalToNumber(row.releasedAmount);
     const paid = decimalToNumber(row.paidAmount);
     if (COMMISSION_FORECAST_STATUSES.includes(row.status as (typeof COMMISSION_FORECAST_STATUSES)[number])) {
       entry.forecastAmount = roundMoney(entry.forecastAmount + commission);
@@ -96,6 +107,7 @@ function aggregateMonthlySeries(
     if (COMMISSION_CONFIRMED_STATUSES.includes(row.status as (typeof COMMISSION_CONFIRMED_STATUSES)[number])) {
       entry.confirmedAmount = roundMoney(entry.confirmedAmount + commission);
     }
+    entry.releasedAmount = roundMoney(entry.releasedAmount + released);
     entry.paidAmount = roundMoney(entry.paidAmount + paid);
     map.set(key, entry);
   }
@@ -141,6 +153,7 @@ export async function buildCommissionDashboard(
           calculatedAt: true,
           status: true,
           commissionAmount: true,
+          releasedAmount: true,
           paidAmount: true,
         },
       }),
