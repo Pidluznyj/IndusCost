@@ -58,9 +58,9 @@ describe("salesOrderMarginTooltip", () => {
     const text = buildOfficialSalesOrderMarginTooltipText({ summary: summary() });
     assert.match(text, /Margem gerencial do pedido/);
     assert.match(text, /Valor vendido: R\$\s*394,00/);
-    assert.match(text, /Imposto estimado: R\$\s*107,37/);
-    assert.match(text, /Imposto médio sobre venda \(27,25%\)/);
-    assert.match(text, /Receita líquida gerencial: R\$\s*286,63/);
+    assert.match(text, /Imposto estimado \(dedução de imposto\): R\$\s*107,37/);
+    assert.match(text, /TaxRule Imposto médio sobre venda \(27,25%\)/);
+    assert.match(text, /Receita líquida gerencial após impostos: R\$\s*286,63/);
     assert.match(text, /Custo de produção IndusCost: R\$\s*193,49/);
     assert.match(text, /Fonte do custo: Tabela de custo vigente/);
     assert.match(text, /Custo total de produção: R\$\s*193,49/);
@@ -115,6 +115,22 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Margem indisponível/);
     assert.match(text, /TaxRule não configurada/);
     assert.equal(pickSalesOrderListMarginPercent(summary({ fiscalConfigComplete: false })), "—");
+  });
+
+  it("tooltip indisponível com NONE ainda documenta imposto em deductFromGross", () => {
+    const text = buildOfficialSalesOrderMarginTooltipText({
+      summary: summary({
+        costCoverageStatus: "NONE",
+        itemsWithCost: 0,
+        itemsWithoutCost: 2,
+        marginValue: 0,
+        marginPercent: 0,
+      }),
+    });
+    assert.match(text, /Margem indisponível/);
+    assert.match(text, /Imposto estimado \(dedução de imposto\)/);
+    assert.match(text, /Receita líquida gerencial após impostos/);
+    assert.match(text, /TaxRule/);
   });
 
   it("tooltip indisponível sem custo (NONE)", () => {

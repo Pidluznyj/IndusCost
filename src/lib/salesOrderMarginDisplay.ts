@@ -328,6 +328,49 @@ export function resolveSalesOrderMarginCostSourceSummary(
   return "Custo oficial resolvido";
 }
 
+function appendDeductFromGrossTaxTooltipLines(
+  lines: string[],
+  summary: Pick<
+    SalesOrderMarginSummaryPayload,
+    | "taxMode"
+    | "fiscalConfigComplete"
+    | "grossSalesAmount"
+    | "totalSalesRevenueInScope"
+    | "netRevenue"
+    | "netSalesAmountAfterTax"
+    | "taxAmount"
+    | "taxRuleName"
+    | "taxRulePercent"
+  >,
+  options?: { includeGrossSales?: boolean }
+): void {
+  const taxMode = summary.taxMode ?? "deductFromGross";
+  if (taxMode !== "deductFromGross" || summary.fiscalConfigComplete === false) return;
+
+  const grossSales =
+    summary.grossSalesAmount ?? summary.totalSalesRevenueInScope ?? summary.netRevenue;
+  const netManagerial = summary.netSalesAmountAfterTax ?? summary.netRevenue;
+  const taxAmount =
+    summary.taxAmount != null && Number.isFinite(summary.taxAmount)
+      ? summary.taxAmount
+      : Math.max(0, grossSales - netManagerial);
+  const ruleLabel = summary.taxRuleName ?? "TaxRule configurada";
+  const rulePercent =
+    summary.taxRulePercent != null && Number.isFinite(summary.taxRulePercent)
+      ? formatSalesOrderMarginPercent(summary.taxRulePercent)
+      : "—";
+
+  if (options?.includeGrossSales !== false) {
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.grossSales}: ${formatSalesOrderMarginMoney(grossSales)}`);
+  }
+  lines.push(
+    `${SALES_ORDER_MARGIN_DISPLAY_LABELS.taxEstimated} (dedução de imposto): ${formatSalesOrderMarginMoney(taxAmount)} — TaxRule ${ruleLabel} (${rulePercent})`
+  );
+  lines.push(
+    `Receita líquida gerencial após impostos: ${formatSalesOrderMarginMoney(netManagerial)}`
+  );
+}
+
 function buildSalesOrderMarginUnavailableTooltip(
   summary: SalesOrderMarginSummaryPayload | null | undefined
 ): string {
@@ -351,6 +394,8 @@ function buildSalesOrderMarginUnavailableTooltip(
   if (lines.length === 3) {
     lines.push("• Dados insuficientes para calcular a margem.");
   }
+  lines.push("");
+  appendDeductFromGrossTaxTooltipLines(lines, summary);
   return lines.join("\n");
 }
 
@@ -375,10 +420,6 @@ export function buildOfficialSalesOrderMarginTooltipText(
   const grossSales =
     summary.grossSalesAmount ?? summary.totalSalesRevenueInScope ?? summary.netRevenue;
   const netManagerial = summary.netSalesAmountAfterTax ?? summary.netRevenue;
-  const taxAmount =
-    summary.taxAmount != null && Number.isFinite(summary.taxAmount)
-      ? summary.taxAmount
-      : Math.max(0, grossSales - netManagerial);
   const costLabel = hasUnresolvedCost
     ? "Custo de produção não resolvido"
     : resolveSalesOrderMarginCostSourceSummary(itemMargins, summary);
@@ -402,17 +443,7 @@ export function buildOfficialSalesOrderMarginTooltipText(
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.grossSales}: ${formatSalesOrderMarginMoney(grossSales)}`);
 
   if (taxMode === "deductFromGross") {
-    const ruleLabel = summary.taxRuleName ?? "TaxRule configurada";
-    const rulePercent =
-      summary.taxRulePercent != null && Number.isFinite(summary.taxRulePercent)
-        ? formatSalesOrderMarginPercent(summary.taxRulePercent)
-        : "—";
-    lines.push(
-      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.taxEstimated}: ${formatSalesOrderMarginMoney(taxAmount)} — ${ruleLabel} (${rulePercent})`
-    );
-    lines.push(
-      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.netManagerial}: ${formatSalesOrderMarginMoney(netManagerial)}`
-    );
+    appendDeductFromGrossTaxTooltipLines(lines, summary, { includeGrossSales: false });
   } else {
     lines.push("Imposto: não deduzido neste modo");
   }

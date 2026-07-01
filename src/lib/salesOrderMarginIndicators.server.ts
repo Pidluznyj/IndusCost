@@ -28,6 +28,7 @@ import {
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
 import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
+import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
 import type {
   SalesOrderMarginIndicatorAlerts,
   SalesOrderMarginIndicatorCustomerRow,
