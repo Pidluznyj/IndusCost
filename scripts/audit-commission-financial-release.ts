@@ -8,7 +8,11 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { decimalToNumber, roundMoney } from "../src/lib/commissions/commission-money.ts";
-import { parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
+import {
+  activeCommissionRecordWhere,
+  parseYearPeriod,
+  requireDatabaseUrl,
+} from "./commission-script-utils.ts";
 
 type ReleaseIssue = {
   tipo: string;
@@ -30,10 +34,7 @@ async function main(): Promise<void> {
   console.log("Modo: read-only\n");
 
   const records = await prisma.commissionRecord.findMany({
-    where: {
-      calculatedAt: { gte: range.from, lte: range.to },
-      status: { not: "SUPERSEDED" },
-    },
+    where: activeCommissionRecordWhere({ from: range.from, to: range.to }),
     select: {
       id: true,
       orderCode: true,

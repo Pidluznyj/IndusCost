@@ -368,18 +368,116 @@ function collectCandidatesFromOrders(
   return { candidates, skippedNoName, skippedNoNomusId };
 }
 
-export async function previewCommissionPersonsFromOrders(): Promise<CommissionPersonsImportResult> {
-  const orders = await prisma.salesOrder.findMany({
-    where: {
-      OR: [{ externalSellerId: { not: null } }, { nomusRawResponse: { not: Prisma.DbNull } }],
-    },
+function buildPersonImportOrderWhere(period?: {
+  from: Date;
+  to: Date;
+}): Prisma.SalesOrderWhereInput {
+  const sellerOrRep: Prisma.SalesOrderWhereInput = {
+    OR: [{ externalSellerId: { not: null } }, { nomusRawResponse: { not: Prisma.DbNull } }],
+  };
+  if (!period) return sellerOrRep;
+  return {
+    AND: [sellerOrRep, { issueDate: { gte: period.from, lte: period.to } }],
+  };
+}
+
+async function loadOrdersForPersonImport(period?: { from: Date; to: Date }) {
+  return prisma.salesOrder.findMany({
+    where: buildPersonImportOrderWhere(period),
     select: {
       externalSellerId: true,
       responsible: true,
       nomusRawResponse: true,
     },
   });
+}
 
+export type CommissionPersonCandidatePreview = {
+  type: CommissionPersonType;
+  nomusPersonId: number;
+  name: string;
+  exists: boolean;
+  existingId: string | null;
+  wouldCreate: boolean;
+  wouldUpdate: boolean;
+};
+
+export type CommissionPersonsPeriodPreview = CommissionPersonsImportResult & {
+  candidates: CommissionPersonCandidatePreview[];
+};
+
+async function buildPersonPeriodPreview(
+  orders: Awaited<ReturnType<typeof loadOrdersForPersonImport>>
+): Promise<CommissionPersonsPeriodPreview> {
+  const { candidates, skippedNoName, skippedNoNomusId } = collectCandidatesFromOrders(orders);
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const candidateRows: CommissionPersonCandidatePreview[] = [];
+
+  for (const candidate of candidates.values()) {
+    const existing = await prisma.commissionPerson.findFirst({
+      where: {
+        nomusPersonId: candidate.nomusPersonId,
+        type: candidate.type,
+      },
+    });
+
+    let wouldCreate = false;
+    let wouldUpdate = false;
+    if (!existing) {
+      created += 1;
+      wouldCreate = true;
+    } else if (existing.source === "NOMUS" && existing.name !== candidate.name) {
+      updated += 1;
+      wouldUpdate = true;
+    } else {
+      unchanged += 1;
+    }
+
+    candidateRows.push({
+      type: candidate.type,
+      nomusPersonId: candidate.nomusPersonId,
+      name: candidate.name,
+      exists: Boolean(existing),
+      existingId: existing?.id ?? null,
+      wouldCreate,
+      wouldUpdate,
+    });
+  }
+
+  return {
+    ordersScanned: orders.length,
+    created,
+    updated,
+    skippedNoName,
+    skippedNoNomusId,
+    unchanged,
+    candidates: candidateRows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+  };
+}
+
+export async function previewCommissionPersonsForPeriod(period: {
+  from: Date;
+  to: Date;
+}): Promise<CommissionPersonsPeriodPreview> {
+  const orders = await loadOrdersForPersonImport(period);
+  return buildPersonPeriodPreview(orders);
+}
+
+export async function previewCommissionPersonsFromOrders(): Promise<CommissionPersonsImportResult> {
+  const orders = await loadOrdersForPersonImport();
+  const preview = await buildPersonPeriodPreview(orders);
+  const { candidates: _c, ...result } = preview;
+  return result;
+}
+
+export async function importCommissionPersonsForPeriod(period: {
+  from: Date;
+  to: Date;
+}): Promise<CommissionPersonsImportResult> {
+  const orders = await loadOrdersForPersonImport(period);
   const { candidates, skippedNoName, skippedNoNomusId } = collectCandidatesFromOrders(orders);
 
   let created = 0;
@@ -395,11 +493,24 @@ export async function previewCommissionPersonsFromOrders(): Promise<CommissionPe
     });
 
     if (!existing) {
+      await prisma.commissionPerson.create({
+        data: {
+          name: candidate.name,
+          type: candidate.type,
+          nomusPersonId: candidate.nomusPersonId,
+          source: "NOMUS",
+          active: true,
+        },
+      });
       created += 1;
       continue;
     }
 
     if (existing.source === "NOMUS" && existing.name !== candidate.name) {
+      await prisma.commissionPerson.update({
+        where: { id: existing.id },
+        data: { name: candidate.name },
+      });
       updated += 1;
     } else {
       unchanged += 1;
@@ -417,16 +528,7 @@ export async function previewCommissionPersonsFromOrders(): Promise<CommissionPe
 }
 
 export async function importCommissionPersonsFromOrders(): Promise<CommissionPersonsImportResult> {
-  const orders = await prisma.salesOrder.findMany({
-    where: {
-      OR: [{ externalSellerId: { not: null } }, { nomusRawResponse: { not: Prisma.DbNull } }],
-    },
-    select: {
-      externalSellerId: true,
-      responsible: true,
-      nomusRawResponse: true,
-    },
-  });
+  const orders = await loadOrdersForPersonImport();
 
   const { candidates, skippedNoName, skippedNoNomusId } = collectCandidatesFromOrders(orders);
 
