@@ -145,6 +145,7 @@
     "fleet:seed-demo": "tsx scripts/fleetSeedDemo.ts",
     "fleet:import": "tsx scripts/fleetImportCsv.ts",
     "audit:permissions": "tsx scripts/auditPermissionsV1.ts",
+    "audit:navigation-grouping": "tsx scripts/audit-navigation-grouping.ts",
     "audit:system-integrity": "tsx scripts/systemIntegrityAudit.ts",
     "audit:data-lineage": "tsx scripts/audit-data-lineage.ts",
     "audit:project-sources": "tsx scripts/audit-project-sources.ts",

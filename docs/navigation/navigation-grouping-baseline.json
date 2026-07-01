@@ -1,0 +1,433 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-01T22:12:05.094Z",
+  "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
+  "items": [
+    {
+      "order": 1,
+      "itemId": "dashboard",
+      "label": "Dashboard",
+      "path": "/dashboard",
+      "groupId": "dashboard",
+      "groupLabel": "Dashboard",
+      "isDirect": true,
+      "requiredPermissions": [
+        "dashboard.view"
+      ]
+    },
+    {
+      "order": 2,
+      "itemId": "employees",
+      "label": "Pessoas / RH",
+      "path": "/employees",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "employees.view",
+        "costs.view"
+      ]
+    },
+    {
+      "order": 3,
+      "itemId": "machines",
+      "label": "Máquinas",
+      "path": "/machines",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "machines.view",
+        "costs.view"
+      ]
+    },
+    {
+      "order": 4,
+      "itemId": "materials",
+      "label": "Suprimentos",
+      "path": "/materials",
+      "groupId": "engenharia",
+      "groupLabel": "Engenharia",
+      "isDirect": false,
+      "requiredPermissions": [
+        "materials.view",
+        "costs.view"
+      ]
+    },
+    {
+      "order": 5,
+      "itemId": "purchases",
+      "label": "Compras",
+      "path": "/purchases",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "purchases.view"
+      ]
+    },
+    {
+      "order": 6,
+      "itemId": "maintenance",
+      "label": "Manutenção Predial",
+      "path": "/maintenance",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "maintenance.view"
+      ]
+    },
+    {
+      "order": 7,
+      "itemId": "inventory",
+      "label": "Estoque / Almoxarifado",
+      "path": "/inventory",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "inventory.view"
+      ]
+    },
+    {
+      "order": 8,
+      "itemId": "projects",
+      "label": "Projetos",
+      "path": "/projects",
+      "groupId": "engenharia",
+      "groupLabel": "Engenharia",
+      "isDirect": false,
+      "requiredPermissions": [
+        "projects.view"
+      ]
+    },
+    {
+      "order": 9,
+      "itemId": "fleet",
+      "label": "Gestão de Frota",
+      "path": "/fleet",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "fleet.view",
+        "fleet.manage"
+      ]
+    },
+    {
+      "order": 10,
+      "itemId": "products",
+      "label": "Produtos",
+      "path": "/products",
+      "groupId": "engenharia",
+      "groupLabel": "Engenharia",
+      "isDirect": false,
+      "requiredPermissions": [
+        "products.view"
+      ]
+    },
+    {
+      "order": 11,
+      "itemId": "opex",
+      "label": "Custos Indiretos",
+      "path": "/opex",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "opex.view",
+        "costs.view"
+      ]
+    },
+    {
+      "order": 12,
+      "itemId": "taxes",
+      "label": "Tributos",
+      "path": "/taxes",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "taxes.view"
+      ]
+    },
+    {
+      "order": 13,
+      "itemId": "pricing",
+      "label": "Formação de Preço",
+      "path": "/pricing",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "pricing.view"
+      ]
+    },
+    {
+      "order": 14,
+      "itemId": "proposals",
+      "label": "Propostas",
+      "path": "/proposals",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "proposals.view"
+      ]
+    },
+    {
+      "order": 15,
+      "itemId": "sales-orders",
+      "label": "Pedidos de venda",
+      "path": "/sales-orders",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "sales_orders.view"
+      ]
+    },
+    {
+      "order": 16,
+      "itemId": "customers",
+      "label": "Clientes",
+      "path": "/customers",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "customers.view"
+      ]
+    },
+    {
+      "order": 17,
+      "itemId": "crm-commercial",
+      "label": "CRM Comercial",
+      "path": "/crm-commercial",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "crm.view",
+        "crm.general.view",
+        "crm.seller.view",
+        "crm.seller.own",
+        "crm.seller.all"
+      ]
+    },
+    {
+      "order": 18,
+      "itemId": "commissions",
+      "label": "Comissões",
+      "path": "/commissions",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "commissions.view",
+        "commissions.dashboard.view",
+        "commissions.forecast.view",
+        "commissions.confirmed.view",
+        "commissions.release.view",
+        "commissions.payments.view",
+        "commissions.people.view",
+        "commissions.rules.view",
+        "commissions.audit.view",
+        "commissions.settings.view"
+      ]
+    },
+    {
+      "order": 19,
+      "itemId": "simulations",
+      "label": "Simulações",
+      "path": "/simulations",
+      "groupId": "engenharia",
+      "groupLabel": "Engenharia",
+      "isDirect": false,
+      "requiredPermissions": [
+        "simulations.view",
+        "costs.view"
+      ]
+    },
+    {
+      "order": 20,
+      "itemId": "reports",
+      "label": "Relatórios",
+      "path": "/reports",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "reports.view",
+        "dashboard.view"
+      ]
+    },
+    {
+      "order": 21,
+      "itemId": "finance",
+      "label": "Financeiro",
+      "path": "/finance",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "finance.view",
+        "finance.accountsReceivable.view",
+        "finance.accountsPayable.view",
+        "reports.view",
+        "settings.nomus.view",
+        "settings.view"
+      ]
+    },
+    {
+      "order": 22,
+      "itemId": "guide",
+      "label": "Guia do Sistema",
+      "path": "/guide",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "guide.view",
+        "dashboard.view"
+      ]
+    },
+    {
+      "order": 23,
+      "itemId": "settings",
+      "label": "Configurações",
+      "path": "/settings",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "settings.view",
+        "users.manage"
+      ]
+    }
+  ],
+  "appModuleRoutes": {
+    "dashboard": true,
+    "employees": true,
+    "machines": true,
+    "materials": true,
+    "purchases": true,
+    "maintenance": true,
+    "inventory": true,
+    "projects": true,
+    "fleet": true,
+    "products": true,
+    "opex": true,
+    "taxes": true,
+    "pricing": true,
+    "proposals": true,
+    "sales-orders": true,
+    "customers": true,
+    "crm-commercial": true,
+    "commissions": true,
+    "simulations": true,
+    "reports": true,
+    "finance": true,
+    "guide": true,
+    "settings": true
+  },
+  "permissionKeysByModule": {
+    "dashboard": [
+      "dashboard.view"
+    ],
+    "crm-commercial": [
+      "crm.view",
+      "crm.general.view",
+      "crm.seller.view",
+      "crm.seller.own",
+      "crm.seller.all"
+    ],
+    "commissions": [
+      "commissions.view",
+      "commissions.dashboard.view",
+      "commissions.forecast.view",
+      "commissions.confirmed.view",
+      "commissions.release.view",
+      "commissions.payments.view",
+      "commissions.people.view",
+      "commissions.rules.view",
+      "commissions.audit.view",
+      "commissions.settings.view"
+    ],
+    "customers": [
+      "customers.view"
+    ],
+    "proposals": [
+      "proposals.view"
+    ],
+    "sales-orders": [
+      "sales_orders.view"
+    ],
+    "products": [
+      "products.view"
+    ],
+    "purchases": [
+      "purchases.view"
+    ],
+    "pricing": [
+      "pricing.view"
+    ],
+    "employees": [
+      "employees.view",
+      "costs.view"
+    ],
+    "machines": [
+      "machines.view",
+      "costs.view"
+    ],
+    "materials": [
+      "materials.view",
+      "costs.view"
+    ],
+    "opex": [
+      "opex.view",
+      "costs.view"
+    ],
+    "simulations": [
+      "simulations.view",
+      "costs.view"
+    ],
+    "taxes": [
+      "taxes.view"
+    ],
+    "settings": [
+      "settings.view",
+      "users.manage"
+    ],
+    "maintenance": [
+      "maintenance.view"
+    ],
+    "inventory": [
+      "inventory.view"
+    ],
+    "projects": [
+      "projects.view"
+    ],
+    "fleet": [
+      "fleet.view",
+      "fleet.manage"
+    ],
+    "reports": [
+      "reports.view",
+      "dashboard.view"
+    ],
+    "finance": [
+      "finance.view",
+      "finance.accountsReceivable.view",
+      "finance.accountsPayable.view",
+      "reports.view",
+      "settings.nomus.view",
+      "settings.view"
+    ],
+    "guide": [
+      "guide.view",
+      "dashboard.view"
+    ]
+  }
+}
