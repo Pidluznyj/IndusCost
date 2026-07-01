@@ -11,6 +11,7 @@ import {
   parseCommissionDashboardQuery,
   parseCommissionForecastQuery,
   parseCommissionRecordsQuery,
+  parseCommissionReleasesQuery,
   parsePagination,
 } from "./commissions/commissionQuery.js";
 import {
@@ -76,6 +77,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/confirmed",
       "/api/commissions/confirmed/detail",
       "/api/commissions/releases",
+      "/api/commissions/releases/detail",
       "/api/commissions/persons",
       "/api/commissions/rules",
       "/api/commissions/recalculate",
@@ -142,6 +144,21 @@ describe("commissionQuery parsers", () => {
     assert.equal(q.outputDocument, "DS-100");
     assert.equal(q.includeCancelled, true);
     assert.equal(q.nfeNumber, "12345");
+  });
+
+  it("parseCommissionReleasesQuery aceita filtros de vencimento e liberação", () => {
+    const q = parseCommissionReleasesQuery({
+      dueFrom: "2026-01-01",
+      dueTo: "2026-01-31",
+      receivableId: "999",
+      releaseFilter: "partial",
+      accountStatus: "ACTIVE",
+    });
+    assert.ok(q.dueFrom);
+    assert.ok(q.dueTo);
+    assert.equal(q.receivableId, 999);
+    assert.equal(q.releaseFilter, "partial");
+    assert.equal(q.accountStatus, "ACTIVE");
   });
 
   it("status sets previstas/confirmadas", () => {

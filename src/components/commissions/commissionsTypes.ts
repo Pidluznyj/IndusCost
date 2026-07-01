@@ -260,25 +260,87 @@ export type CommissionsRecordsPayload = {
 
 export type CommissionsReleaseItem = {
   scheduleId: string;
+  commissionRecordId: string;
   commissionPersonId: string;
   commissionPersonName: string;
   orderCode: string | null;
   nfeNumber: string | null;
   nomusReceivableId: number | null;
+  customerName: string | null;
   dueDate: string | null;
+  settlementDate: string | null;
   installmentNumber: number | null;
-  parcelAmount: number | null;
-  receivedAmount: number | null;
+  parcelAmount: number;
+  receivedAmount: number;
+  receivableBalance: number;
   receivedPercent: number | null;
   commissionParcelAmount: number;
   commissionReleasedAmount: number;
   balanceToRelease: number;
+  allocationPercent: number | null;
   status: string;
+  highlight: "overdue" | "received" | "partial_release" | "open" | "released";
+  recordCommissionTotal: number;
+};
+
+export type CommissionsReleasesCards = {
+  commissionToRelease: number;
+  commissionAlreadyReleased: number;
+  commissionBlockedByNoReceipt: number;
+  accountsReceivedCount: number;
+  accountsOpenCount: number;
+  accountsOverdueCount: number;
+  upcomingReleasesCount: number;
 };
 
 export type CommissionsReleasesPayload = {
+  cards: CommissionsReleasesCards;
+  rows: CommissionsReleaseItem[];
+  /** Alias legado — mesma lista de `rows` na página atual. */
   items: CommissionsReleaseItem[];
   pagination: CommissionsPagination;
+};
+
+export type CommissionsReleaseDetailPayload = {
+  scheduleId: string;
+  commissionRecordId: string;
+  commissionPersonId: string;
+  commissionPersonName: string;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  nomusReceivableId: number | null;
+  customerName: string | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  installmentNumber: number | null;
+  releaseRule: string;
+  recordCommissionTotal: number;
+  allocationPercent: number | null;
+  commissionParcelAmount: number;
+  commissionReleasedAmount: number;
+  balanceToRelease: number;
+  parcelAmount: number;
+  receivedAmount: number;
+  receivableBalance: number;
+  receivedPercent: number | null;
+  releaseExplanation: string;
+  releaseHistory: Array<{
+    scheduleId: string;
+    installmentNumber: number | null;
+    dueDate: string | null;
+    commissionExpectedAmount: number;
+    commissionReleasedAmount: number;
+    receivedAmount: number;
+    status: string;
+  }>;
+  auditIssues: Array<{
+    id: string;
+    severity: string;
+    type: string;
+    message: string;
+    resolved: boolean;
+    createdAt: string;
+  }>;
 };
 
 export type CommissionsPersonItem = {

@@ -100,6 +100,26 @@ export type CommissionConfirmedQuery = CommissionRecordsQuery & {
   includeCancelled: boolean;
 };
 
+export type CommissionReleaseFilter = "released" | "not_released" | "partial" | null;
+
+export type CommissionReleasesQuery = CommissionPeriodQuery & {
+  commissionPersonId: string | null;
+  customer: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  sellerId: number | null;
+  representativeId: number | null;
+  receivableId: number | null;
+  dueFrom: Date | null;
+  dueTo: Date | null;
+  settlementFrom: Date | null;
+  settlementTo: Date | null;
+  accountStatus: string | null;
+  releaseFilter: CommissionReleaseFilter;
+  page: number;
+  pageSize: number;
+};
+
 export type PaginatedMeta = {
   page: number;
   pageSize: number;
@@ -427,4 +447,100 @@ export function inferRecordKind(
   if (COMMISSION_CONFIRMED_STATUSES.includes(status)) return "confirmed";
   if (status === "PAID_PARTIAL" || status === "PAID_TOTAL") return "paid";
   return "other";
+}
+
+const SCHEDULE_STATUS_SET = new Set<string>([
+  "FORECAST",
+  "ACTIVE",
+  "SUPERSEDED",
+  "PAID",
+  "PARTIALLY_PAID",
+  "CANCELLED",
+  "REVIEW",
+]);
+
+const RELEASE_FILTER_SET = new Set<string>(["released", "not_released", "partial"]);
+
+export function parseCommissionReleasesQuery(
+  query: Record<string, unknown>
+): CommissionReleasesQuery {
+  const period = parsePeriodQuery(query);
+  const { page, pageSize } = parsePagination(query);
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+  const orderCode =
+    typeof query.orderCode === "string" && query.orderCode.trim()
+      ? query.orderCode.trim()
+      : null;
+  const nfeNumber =
+    typeof query.nfeNumber === "string" && query.nfeNumber.trim()
+      ? query.nfeNumber.trim()
+      : null;
+  const customer =
+    typeof query.customer === "string" && query.customer.trim()
+      ? query.customer.trim()
+      : null;
+  const accountStatusRaw =
+    typeof query.accountStatus === "string" && query.accountStatus.trim()
+      ? query.accountStatus.trim().toUpperCase()
+      : null;
+  const accountStatus =
+    accountStatusRaw && SCHEDULE_STATUS_SET.has(accountStatusRaw) ? accountStatusRaw : null;
+  if (accountStatusRaw && !accountStatus) {
+    throw new CommissionQueryParseError("accountStatus inválido.");
+  }
+  const releaseFilterRaw =
+    typeof query.releaseFilter === "string" && query.releaseFilter.trim()
+      ? query.releaseFilter.trim().toLowerCase()
+      : null;
+  const releaseFilter =
+    releaseFilterRaw && RELEASE_FILTER_SET.has(releaseFilterRaw)
+      ? (releaseFilterRaw as CommissionReleaseFilter)
+      : null;
+  if (releaseFilterRaw && !releaseFilter) {
+    throw new CommissionQueryParseError("releaseFilter inválido.");
+  }
+
+  return {
+    ...period,
+    commissionPersonId,
+    customer,
+    orderCode,
+    nfeNumber,
+    sellerId: parseOptionalInt(query.sellerId),
+    representativeId: parseOptionalInt(query.representativeId),
+    receivableId: parseOptionalInt(query.receivableId),
+    dueFrom: parseIsoDate(query.dueFrom, "dueFrom"),
+    dueTo: parseIsoDate(query.dueTo, "dueTo"),
+    settlementFrom: parseIsoDate(query.settlementFrom, "settlementFrom"),
+    settlementTo: parseIsoDate(query.settlementTo, "settlementTo"),
+    accountStatus,
+    releaseFilter,
+    page,
+    pageSize,
+  };
+}
+
+export function buildCommissionReleasesDueWhere(
+  query: CommissionReleasesQuery
+): Prisma.CommissionPaymentScheduleWhereInput {
+  if (query.dueFrom && query.dueTo) {
+    return { dueDate: { gte: query.dueFrom, lte: query.dueTo } };
+  }
+  if (query.year != null && query.month != null) {
+    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
+    const to = new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999));
+    return { dueDate: { gte: from, lte: to } };
+  }
+  if (query.year != null) {
+    const from = new Date(Date.UTC(query.year, 0, 1));
+    const to = new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999));
+    return { dueDate: { gte: from, lte: to } };
+  }
+  if (query.from && query.to) {
+    return { dueDate: { gte: query.from, lte: query.to } };
+  }
+  return {};
 }
