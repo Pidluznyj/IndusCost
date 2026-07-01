@@ -23,6 +23,19 @@ import {
 } from "./src/lib/productionCostPublication.server.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
+  getProductFrozenCostTrace,
+  getProductFrozenCostTracesBatch,
+  refreshProductProductionCostSnapshot,
+} from "./src/lib/productEngineeringCostSnapshot.server.js";
+import {
+  frozenCostTraceStatusLabel,
+  resolveFrozenCostTraceStatus,
+} from "./src/lib/productEngineeringCostSnapshot.js";
+import {
+  buildProductionCostCalculationHash,
+  buildProductionCostCalculationSnapshot,
+} from "./src/lib/productionCostPublication.js";
+import {
   formatEffectiveProductionCostSummary,
   PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
 } from "./src/lib/productionCostTablesUi.js";
@@ -636,6 +649,33 @@ async function startServer() {
     _sku: string
   ): Promise<CurrentCostSnapshot | null> {
     return loadCurrentCostSnapshotForProductId(productId);
+  }
+
+  const costAnalysisEngine = {
+    initAnalysisCache,
+    getProductCostAnalysis,
+    isCostAnalysisFailure,
+    describeCostAnalysisFailure,
+  };
+
+  function scheduleEngineeringCostSnapshot(input: {
+    productId: string;
+    productCode?: string | null;
+    reason: string;
+    changedBy?: string | null;
+    sourceEntity?: string | null;
+    sourceAction?: string | null;
+  }): void {
+    void refreshProductProductionCostSnapshot(prisma, costAnalysisEngine, {
+      productId: input.productId,
+      productCode: input.productCode ?? null,
+      reason: input.reason,
+      changedBy: input.changedBy ?? null,
+      sourceEntity: input.sourceEntity ?? null,
+      sourceAction: input.sourceAction ?? null,
+    }).catch((err) => {
+      console.error("[engineering-cost-snapshot]", input.productId, err);
+    });
   }
 
   const app = express();
@@ -3710,11 +3750,79 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               partial: resolved.costAnalysisPartial,
               source: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
             },
+            _resolvedForFrozen: resolved,
+            _analysisForFrozen: a,
           };
         })
       );
 
-      res.json(enriched);
+      const wantFrozenCost =
+        req.query.frozenCost === "1" ||
+        req.query.frozenCost === "true" ||
+        typeQ === "PRODUCT";
+      if (wantFrozenCost && typeQ === "PRODUCT") {
+        const productIds = products.filter((p) => p.type === "PRODUCT").map((p) => p.id);
+        const frozenBatch = await getProductFrozenCostTracesBatch(prisma, productIds, new Date());
+        const withFrozen = enriched.map((row) => {
+          const r = row as typeof row & {
+            _resolvedForFrozen?: ReturnType<typeof resolveOfficialProductFinalCostFromAnalysis>;
+            _analysisForFrozen?: unknown;
+          };
+          if (r.type !== "PRODUCT") return row;
+          const liveCiu =
+            r._resolvedForFrozen?.ok === true ? r._resolvedForFrozen.finalUnitCost : null;
+          let liveHash: string | null = null;
+          if (r._resolvedForFrozen?.ok === true) {
+            const snap = buildProductionCostCalculationSnapshot(
+              r._resolvedForFrozen,
+              r._analysisForFrozen
+            );
+            liveHash = buildProductionCostCalculationHash(snap);
+          }
+          const frozenBase = frozenBatch.get(r.id);
+          const traceStatus = frozenBase
+            ? resolveFrozenCostTraceStatus({
+                liveCiu,
+                liveHash,
+                publishedCost: frozenBase.frozenCost,
+                publishedHash: frozenBase.frozenHash,
+                publishedVersionStatus: frozenBase.frozenVersionStatus,
+                draftHash: frozenBase.draftHash,
+                draftVersionStatus: frozenBase.draftVersionId ? "DRAFT" : null,
+              })
+            : liveCiu == null
+              ? ("SEM_CUSTO" as const)
+              : ("SEM_CUSTO_CONGELADO" as const);
+          const { _resolvedForFrozen: _r, _analysisForFrozen: _a, ...rest } = r;
+          return {
+            ...rest,
+            frozenCostSummary: {
+              liveCiu,
+              liveHash,
+              frozenCost: frozenBase?.frozenCost ?? null,
+              frozenVersionCode: frozenBase?.frozenVersionCode ?? null,
+              frozenVersionRevision: frozenBase?.frozenVersionRevision ?? null,
+              frozenEffectiveDate: frozenBase?.frozenEffectiveDate ?? null,
+              frozenVersionId: frozenBase?.frozenVersionId ?? null,
+              draftVersionId: frozenBase?.draftVersionId ?? null,
+              traceStatus,
+              traceStatusLabel: frozenCostTraceStatusLabel(traceStatus),
+            },
+          };
+        });
+        res.json(withFrozen);
+        return;
+      }
+
+      const cleaned = enriched.map((row) => {
+        const { _resolvedForFrozen: _r, _analysisForFrozen: _a, ...rest } = row as typeof row & {
+          _resolvedForFrozen?: unknown;
+          _analysisForFrozen?: unknown;
+        };
+        return rest;
+      });
+
+      res.json(cleaned);
     } catch (error) {
       console.error("GET /api/products", error);
       res.status(500).json({ error: "Erro ao listar produtos." });
@@ -5159,6 +5267,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           req.appAuth?.name?.trim() ||
           "dashboard-user";
         const result = await applyNomusBomFromDashboard({ parentCode, approvedBy });
+        if (result.status === "applied" && result.productId) {
+          scheduleEngineeringCostSnapshot({
+            productId: result.productId,
+            productCode: result.productCode ?? parentCode,
+            reason: "Manutenção Nomus — BOM aplicada",
+            changedBy: approvedBy,
+            sourceEntity: "NomusBomApply",
+            sourceAction: "APPLY",
+          });
+        }
         const status =
           result.status === "applied"
             ? 200
@@ -5194,6 +5312,18 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           req.appAuth?.name?.trim() ||
           "dashboard-user";
         const result = await applyNomusBomBatchFromDashboard({ parentCodes, approvedBy });
+        for (const item of result.results) {
+          if (item.status === "applied" && item.productId) {
+            scheduleEngineeringCostSnapshot({
+              productId: item.productId,
+              productCode: item.productCode,
+              reason: "Manutenção Nomus — BOM aplicada (lote)",
+              changedBy: approvedBy,
+              sourceEntity: "NomusBomApplyBatch",
+              sourceAction: "APPLY",
+            });
+          }
+        }
         return res.json(result);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Erro ao aplicar BOM em lote.";
@@ -5468,6 +5598,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         },
         include: { ProductBOM: true, ProductRouting: true }
       });
+      if (effectiveType === "PRODUCT") {
+        scheduleEngineeringCostSnapshot({
+          productId: product.id,
+          productCode: product.sku,
+          reason: "Criação de produto",
+          changedBy:
+            req.appAuth?.email?.trim() ||
+            req.appAuth?.id?.trim() ||
+            req.appAuth?.name?.trim() ||
+            null,
+          sourceEntity: "Product",
+          sourceAction: "CREATE",
+        });
+      }
       res.json(product);
     } catch (error) {
       console.error("Product creation error:", error);
@@ -5654,6 +5798,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           include: { ProductBOM: true, ProductRouting: true }
         });
       });
+      if (effectiveType === "PRODUCT") {
+        scheduleEngineeringCostSnapshot({
+          productId: product.id,
+          productCode: product.sku,
+          reason: "Alteração de engenharia (produto/BOM/roteiro)",
+          changedBy:
+            req.appAuth?.email?.trim() ||
+            req.appAuth?.id?.trim() ||
+            req.appAuth?.name?.trim() ||
+            null,
+          sourceEntity: "Product",
+          sourceAction: "UPDATE",
+        });
+      }
       res.json(product);
     } catch (error) {
       console.error("Product update error:", error);
@@ -7919,6 +8077,51 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: "Erro interno no cálculo da análise." });
     }
   });
+
+  app.post(
+    "/api/products/:id/production-cost-snapshot",
+    requireAppAuth,
+    requireAnyPermission(["pricing.generate_tables", "products.edit"]),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const changedBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null;
+        const result = await refreshProductProductionCostSnapshot(prisma, costAnalysisEngine, {
+          productId: id,
+          reason: "Atualização manual via Engenharia de Produto",
+          changedBy,
+          sourceEntity: "ProductModule",
+          sourceAction: "MANUAL_SNAPSHOT",
+        });
+        const trace = await getProductFrozenCostTrace(prisma, costAnalysisEngine, id, new Date());
+        return res.json({
+          ...result,
+          frozenCostSummary: trace
+            ? {
+                liveCiu: trace.liveCiu,
+                frozenCost: trace.frozenCost,
+                frozenVersionCode: trace.frozenVersionCode,
+                frozenVersionRevision: trace.frozenVersionRevision,
+                frozenEffectiveDate: trace.frozenEffectiveDate,
+                frozenVersionId: trace.frozenVersionId,
+                draftVersionId: trace.draftVersionId,
+                traceStatus: trace.traceStatus,
+                traceStatusLabel: frozenCostTraceStatusLabel(trace.traceStatus),
+              }
+            : null,
+        });
+      } catch (error) {
+        console.error("POST /api/products/:id/production-cost-snapshot", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro ao gerar snapshot de custo.",
+        });
+      }
+    }
+  );
 
   app.patch("/api/employees/:id/status", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
     const { id } = req.params;

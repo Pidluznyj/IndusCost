@@ -72,6 +72,12 @@ import {
   COST_SUMMARY_LABELS,
   pickCostSummaryFromAnalysis,
 } from "@/src/lib/productCostSummaryView";
+import {
+  FROZEN_COST_DIVERGENCE_ALERT,
+  frozenCostTraceBadgeClass,
+  GRID_FROZEN_COST_COLUMN_LABEL,
+  GRID_FROZEN_COST_COLUMN_TOOLTIP,
+} from "@/src/lib/productFrozenCostDisplay";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -80,6 +86,17 @@ export type ProductWithCostSummary = Product & {
     | { unavailable: true; reason: string }
     | { error: true; code?: string; message?: string }
     | { totalIndustrialCost: number; partial?: boolean };
+  frozenCostSummary?: {
+    liveCiu: number | null;
+    frozenCost: number | null;
+    frozenVersionCode: string | null;
+    frozenVersionRevision: number | null;
+    frozenEffectiveDate: string | null;
+    frozenVersionId: string | null;
+    draftVersionId: string | null;
+    traceStatus: "ATUALIZADO" | "PENDENTE_PUBLICACAO" | "SEM_CUSTO_CONGELADO" | "CUSTO_DIVERGENTE" | "SEM_CUSTO";
+    traceStatusLabel: string;
+  };
 };
 
 /** Linha retornada por GET /api/products/bom-item-options (lista unificada para a BOM). */
@@ -152,6 +169,9 @@ export const ProductModule = () => {
   const canEditProduct = auth.hasPermission("products.edit");
   const canDeleteProduct = auth.hasPermission("products.delete");
   const canExportEngineering = auth.hasPermission("products.export.engineering");
+  const canRefreshFrozenCost =
+    auth.hasPermission("pricing.generate_tables") || auth.hasPermission("products.edit");
+  const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
   const canCompareNomusBom = auth.hasAnyPermission([
     "products.tab.bom",
     "products.tab.tree",
@@ -261,6 +281,33 @@ export const ProductModule = () => {
       )
     );
   }, []);
+
+  const refreshFrozenCostSnapshot = useCallback(
+    async (productId: string) => {
+      if (!canRefreshFrozenCost) return;
+      setSnapshotRefreshingId(productId);
+      try {
+        const result = await fetchJsonOk<{
+          status: string;
+          frozenCostSummary?: ProductWithCostSummary["frozenCostSummary"];
+          message?: string;
+        }>(`/api/products/${productId}/production-cost-snapshot`, { method: "POST" });
+        if (result.frozenCostSummary) {
+          setItems((prev) =>
+            prev.map((p) =>
+              p.id === productId ? { ...p, frozenCostSummary: result.frozenCostSummary } : p
+            )
+          );
+        }
+        await fetchData();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Falha ao atualizar snapshot de custo.");
+      } finally {
+        setSnapshotRefreshingId(null);
+      }
+    },
+    [canRefreshFrozenCost, fetchData]
+  );
 
   const refreshProductCostInList = useCallback(
     async (productId: string) => {
@@ -1209,6 +1256,11 @@ export const ProductModule = () => {
                     {GRID_CIU_COLUMN_LABEL}
                   </span>
                 </th>
+                {engineeringSegment === "PRODUCT" ? (
+                  <th className="p-4 font-semibold text-sm whitespace-nowrap">
+                    <span title={GRID_FROZEN_COST_COLUMN_TOOLTIP}>{GRID_FROZEN_COST_COLUMN_LABEL}</span>
+                  </th>
+                ) : null}
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -1216,14 +1268,14 @@ export const ProductModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
@@ -1342,6 +1394,76 @@ export const ProductModule = () => {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       })()}
                     </td>
+                    {engineeringSegment === "PRODUCT" ? (
+                      <td className="p-4 align-middle min-w-[10rem]">
+                        {(() => {
+                          const fc = item.frozenCostSummary;
+                          if (!fc) {
+                            return <span className="text-xs text-muted-foreground">—</span>;
+                          }
+                          return (
+                            <div className="flex flex-col gap-1.5">
+                              <span
+                                className={cn(
+                                  "inline-flex w-fit text-[10px] font-semibold px-2 py-0.5 rounded-full",
+                                  frozenCostTraceBadgeClass(fc.traceStatus)
+                                )}
+                              >
+                                {fc.traceStatusLabel}
+                              </span>
+                              {fc.frozenCost != null && Number.isFinite(fc.frozenCost) ? (
+                                <span className="text-xs font-medium tabular-nums">
+                                  {formatProductCiu(fc.frozenCost)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Sem vigente</span>
+                              )}
+                              {fc.frozenVersionCode ? (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {fc.frozenVersionCode}
+                                  {fc.frozenVersionRevision != null ? ` v${fc.frozenVersionRevision}` : ""}
+                                  {fc.frozenEffectiveDate ? ` · ${fc.frozenEffectiveDate}` : ""}
+                                </span>
+                              ) : null}
+                              {fc.traceStatus === "CUSTO_DIVERGENTE" ? (
+                                <span
+                                  className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug"
+                                  title={FROZEN_COST_DIVERGENCE_ALERT}
+                                >
+                                  {FROZEN_COST_DIVERGENCE_ALERT}
+                                </span>
+                              ) : null}
+                              <div className="flex flex-wrap gap-1">
+                                {fc.frozenVersionId ? (
+                                  <a
+                                    href={`/pricing?productionCostVersion=${fc.frozenVersionId}`}
+                                    className="text-[10px] text-primary hover:underline"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    Ver custo congelado
+                                  </a>
+                                ) : null}
+                                {canRefreshFrozenCost ? (
+                                  <button
+                                    type="button"
+                                    className="text-[10px] text-primary hover:underline disabled:opacity-50"
+                                    disabled={snapshotRefreshingId === item.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void refreshFrozenCostSnapshot(item.id);
+                                    }}
+                                  >
+                                    {snapshotRefreshingId === item.id
+                                      ? "Atualizando…"
+                                      : "Atualizar snapshot"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    ) : null}
                     <td className="p-4">
                       <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
                         {item.status === "ACTIVE" ? "Ativo" : "Inativo"}

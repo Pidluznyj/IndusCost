@@ -13,6 +13,8 @@ import {
   getEffectiveProductProductionCost,
   PRODUCTION_COST_TABLE_IMMUTABLE_STATUSES,
 } from "../src/lib/productionCostTables.server.ts";
+import { createProductCostAnalysisEngine } from "../src/lib/productCostAnalysisEngine.server.ts";
+import { evaluateProductEngineeringCost } from "../src/lib/productEngineeringCostSnapshot.server.ts";
 
 type AuditStatus = "OK" | "ALERTA" | "BLOQUEANTE";
 
@@ -119,6 +121,36 @@ async function main(): Promise<void> {
     }
   }
 
+  let ciuWithFrozenGap = 0;
+  const engine = createProductCostAnalysisEngine(prisma);
+  const activeProductSample = await prisma.product.findMany({
+    where: { status: "ACTIVE", type: "PRODUCT" },
+    select: { id: true, sku: true },
+    take: 30,
+    orderBy: { sku: "asc" },
+  });
+  for (const p of activeProductSample) {
+    const evaluated = await evaluateProductEngineeringCost(prisma, engine, p.id);
+    const effective = await getEffectiveProductProductionCost(prisma, p.id, referenceDate);
+    if (evaluated.calculable && effective.status === "SEM_CUSTO") ciuWithFrozenGap += 1;
+  }
+  if (ciuWithFrozenGap > 0) {
+    findings.push({
+      area: "engineering-gap",
+      status: "ALERTA",
+      message: `${ciuWithFrozenGap} produto(s) na amostra têm CIU calculável mas SEM custo congelado vigente.`,
+    });
+  }
+
+  let product619: Awaited<ReturnType<typeof evaluateProductEngineeringCost>> | null = null;
+  if (productCode === "619.24AA" || !productCode) {
+    const p619 = await prisma.product.findFirst({
+      where: { sku: "619.24AA" },
+      select: { id: true },
+    });
+    if (p619) product619 = await evaluateProductEngineeringCost(prisma, engine, p619.id);
+  }
+
   const productsWithPublishedItems = await prisma.productionCostTableItem.findMany({
     distinct: ["productId"],
     select: { productId: true },
@@ -163,6 +195,27 @@ async function main(): Promise<void> {
   console.log("\n--- Cobertura amostral (até 50 produtos com item publicado) ---");
   console.log(`  Com custo vigente: ${withCost}`);
   console.log(`  SEM_CUSTO: ${withoutCost}`);
+
+  console.log(`\nProdutos com CIU mas sem custo congelado (amostra 30): ${ciuWithFrozenGap}`);
+
+  if (product619) {
+    console.log("\n--- Produto 619.24AA (CIU Engenharia) ---");
+    console.log(
+      JSON.stringify(
+        {
+          calculable: product619.calculable,
+          unitProductionCost:
+            product619.calculable && product619.resolved.ok
+              ? product619.resolved.finalUnitCost
+              : null,
+          hash: product619.calculationHash,
+          error: product619.errorMessage,
+        },
+        null,
+        2
+      )
+    );
+  }
 
   if (resolverSample && sampleProductId) {
     console.log("\n--- Exemplo de resolução ---");

@@ -187,7 +187,17 @@ export function ProductionCostTablesPanel({
         {loadingVersions ? (
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
         ) : versions.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nenhuma versão cadastrada.</p>
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p>Nenhuma versão cadastrada.</p>
+            <p>
+              Gere a tabela inicial a partir do CIU da Engenharia (Formação de Preço → gerar
+              rascunho) ou via script{" "}
+              <code className="text-[10px] bg-muted px-1 rounded">
+                bootstrap-production-cost-table-from-engineering.ts
+              </code>
+              .
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-xs">

@@ -14,6 +14,7 @@ import {
   PRODUCTION_COST_TABLE_IMMUTABLE_STATUSES,
 } from "../src/lib/productionCostTables.server.ts";
 import { PRODUCTION_COST_PUBLICATION_SOURCE } from "../src/lib/productionCostPublication.ts";
+import { PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE } from "../src/lib/productEngineeringCostSnapshot.ts";
 
 type AuditStatus = "OK" | "ALERTA" | "BLOQUEANTE";
 
@@ -99,7 +100,7 @@ async function main(): Promise<void> {
         message: `DRAFT ${draft.code} rev.${draft.revision} sem itens.`,
       });
     }
-    if (draft.source && draft.source !== PRODUCTION_COST_PUBLICATION_SOURCE) {
+    if (draft.source && draft.source !== PRODUCTION_COST_PUBLICATION_SOURCE && draft.source !== PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE) {
       findings.push({
         area: "source",
         status: "ALERTA",
