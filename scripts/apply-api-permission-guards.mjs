@@ -123,10 +123,6 @@ const rules = [
   ["get", '"/api/settings/nomus-sync/logs/:fileName"', "requireBootstrapOrAnyPermission([\"settings.nomus.view\", \"settings.view\"]), "],
   ["get", '"/api/settings/nomus-sync/daily-status"', "requireBootstrapOrAnyPermission([\"settings.nomus.sync\", \"settings.view\"]), "],
   ["post", '"/api/settings/nomus-sync/daily-run"', "requireBootstrapOrAnyPermission([\"settings.nomus.sync\", \"settings.view\"]), "],
-  ["get", '"/api/settings/production-hour-cost-simulations"', "requireBootstrapOrAnyPermission([\"settings.global_params.view\", \"settings.view\"]), "],
-  ["get", '"/api/settings/production-hour-cost-simulations/:id"', "requireBootstrapOrAnyPermission([\"settings.global_params.view\", \"settings.view\"]), "],
-  ["post", '"/api/settings/production-hour-cost-simulations"', "requireBootstrapOrAnyPermission([\"settings.global_params.edit\", \"users.manage\"]), "],
-  ["delete", '"/api/settings/production-hour-cost-simulations/:id"', "requireBootstrapOrAnyPermission([\"settings.global_params.edit\", \"users.manage\"]), "],
 
   // CRM
   ["get", '"/api/crm/dashboard/basic"', "requireAppAuth, requireAnyPermission([\"crm.view\", \"crm.customer_cockpit.view\", \"customers.view\"]), "],
