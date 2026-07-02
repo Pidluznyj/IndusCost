@@ -155,7 +155,7 @@ export function CommissionsDashboardPage() {
         <CommissionsErrorBanner message={error} onRetry={() => void reload()} />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="indus-kpi-grid commercial-kpi-grid">
         <FinanceKpiCard
           label="Comissão prevista"
           value=""

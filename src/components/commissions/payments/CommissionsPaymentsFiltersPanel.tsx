@@ -7,14 +7,15 @@ import {
   COMMISSION_PAYMENT_BATCH_STATUS_OPTIONS,
   COMMISSION_PAYMENT_PERSON_TYPE_OPTIONS,
 } from "@/src/components/commissions/payments/commissionsPaymentsLabels";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   countActiveCommissionsPaymentsFilters,
   EMPTY_COMMISSIONS_PAYMENTS_FILTERS,
   type CommissionsPaymentsFilters,
 } from "@/src/components/commissions/payments/commissionsPaymentsFilters";
+import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 
-const inputClass =
-  "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30";
+const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
 type Props = {
   filters: CommissionsPaymentsFilters;
@@ -96,28 +97,14 @@ export function CommissionsPaymentsFiltersPanel({
 
       {open ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-[#6B7280]">Ano</span>
-            <input
-              type="number"
-              className={inputClass}
-              value={filters.year}
-              onChange={(e) => patch({ year: e.target.value })}
-              disabled={disabled}
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-[#6B7280]">Mês</span>
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className={inputClass}
-              value={filters.month}
-              onChange={(e) => patch({ month: e.target.value })}
-              disabled={disabled}
-            />
-          </label>
+          <CommissionsPeriodFilterFields
+            year={filters.year}
+            month={filters.month}
+            onYearChange={(year) => patch({ year })}
+            onMonthChange={(month) => patch({ month })}
+            allowAllYears={false}
+            disabled={disabled}
+          />
           <label className="space-y-1">
             <span className="text-xs font-medium text-[#6B7280]">Período de</span>
             <input

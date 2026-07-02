@@ -128,19 +128,24 @@ export function commissionsTableClassName(): string {
 export function CommissionsSummaryGrid({
   items,
 }: {
-  items: Array<{ label: string; value: string; hint?: string }>;
+  items: Array<{ label: string; value: string; hint?: string; valueTitle?: string }>;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="indus-kpi-grid commercial-kpi-grid">
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
+          className="indus-kpi-card commercial-kpi-card rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </p>
-          <p className="mt-1 text-xl font-bold text-foreground">{item.value}</p>
+          <p
+            className="indus-kpi-value commercial-kpi-value mt-1 font-bold text-foreground"
+            title={item.valueTitle}
+          >
+            {item.value}
+          </p>
           {item.hint ? <p className="mt-1 text-xs text-muted-foreground">{item.hint}</p> : null}
         </div>
       ))}

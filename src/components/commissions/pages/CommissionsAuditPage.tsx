@@ -228,7 +228,7 @@ export function CommissionsAuditPage() {
       />
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Críticas abertas"
             value={String(cards.criticalOpenCount)}

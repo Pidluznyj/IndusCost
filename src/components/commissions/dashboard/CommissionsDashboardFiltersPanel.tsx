@@ -7,6 +7,7 @@ import type {
   CommissionsPersonsPayload,
   CommissionsRulesPayload,
 } from "@/src/components/commissions/commissionsTypes";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   COMMISSION_PERSON_TYPE_OPTIONS,
   COMMISSION_STATUS_FILTER_OPTIONS,
@@ -14,9 +15,9 @@ import {
   EMPTY_COMMISSIONS_DASHBOARD_FILTERS,
   type CommissionsDashboardFilters,
 } from "@/src/components/commissions/dashboard/commissionsDashboardFilters";
+import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 
-const inputClass =
-  "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30";
+const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
 type Props = {
   filters: CommissionsDashboardFilters;
@@ -102,30 +103,14 @@ export function CommissionsDashboardFiltersPanel({
 
       {open ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Ano
-            <input
-              type="number"
-              className={inputClass}
-              value={filters.year}
-              onChange={(e) => patch({ year: e.target.value })}
-              placeholder="Ex.: 2026"
-              min={2000}
-              max={2100}
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Mês
-            <input
-              type="number"
-              className={inputClass}
-              value={filters.month}
-              onChange={(e) => patch({ month: e.target.value })}
-              placeholder="1–12"
-              min={1}
-              max={12}
-            />
-          </label>
+          <CommissionsPeriodFilterFields
+            year={filters.year}
+            month={filters.month}
+            onYearChange={(year) => patch({ year })}
+            onMonthChange={(month) => patch({ month })}
+            disabled={disabled}
+            labelClassName="text-xs font-medium text-[#6B7280]"
+          />
           <label className="space-y-1 text-xs font-medium text-[#6B7280]">
             De
             <input

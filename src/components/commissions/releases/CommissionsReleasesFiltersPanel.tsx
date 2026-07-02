@@ -3,6 +3,7 @@ import { Filter, RotateCcw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import type { CommissionsPersonsPayload } from "@/src/components/commissions/commissionsTypes";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   COMMISSION_ACCOUNT_STATUS_OPTIONS,
   COMMISSION_RELEASE_FILTER_OPTIONS,
@@ -10,9 +11,9 @@ import {
   EMPTY_COMMISSIONS_RELEASES_FILTERS,
   type CommissionsReleasesFilters,
 } from "@/src/components/commissions/releases/commissionsReleasesFilters";
+import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 
-const inputClass =
-  "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30";
+const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
 type Props = {
   filters: CommissionsReleasesFilters;
@@ -93,28 +94,16 @@ export function CommissionsReleasesFiltersPanel({
 
       {open ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Ano (vencimento)
-            <input
-              type="number"
-              className={inputClass}
-              value={filters.year}
-              onChange={(e) => patch({ year: e.target.value })}
-              disabled={disabled}
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Mês (vencimento)
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className={inputClass}
-              value={filters.month}
-              onChange={(e) => patch({ month: e.target.value })}
-              disabled={disabled}
-            />
-          </label>
+          <CommissionsPeriodFilterFields
+            year={filters.year}
+            month={filters.month}
+            onYearChange={(year) => patch({ year })}
+            onMonthChange={(month) => patch({ month })}
+            yearLabel="Ano (vencimento)"
+            monthLabel="Mês (vencimento)"
+            disabled={disabled}
+            labelClassName="text-xs font-medium text-[#6B7280]"
+          />
           <label className="space-y-1 text-xs font-medium text-[#6B7280]">
             Vencimento de
             <input

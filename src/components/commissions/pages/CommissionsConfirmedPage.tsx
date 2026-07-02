@@ -137,40 +137,54 @@ export function CommissionsConfirmedPage() {
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Comissão confirmada"
-            value={formatFinanceCurrency(cards.totalConfirmedCommission)}
+            value=""
+            amount={cards.totalConfirmedCommission}
+            amountFormat="currency"
             icon={FileCheck}
           />
           <FinanceKpiCard
             label="Valor faturado"
-            value={formatFinanceCurrency(cards.invoicedAmount)}
+            value=""
+            amount={cards.invoicedAmount}
+            amountFormat="currency"
             icon={Receipt}
           />
           <FinanceKpiCard
             label="Valor recebido"
-            value={formatFinanceCurrency(cards.receivedAmount)}
+            value=""
+            amount={cards.receivedAmount}
+            amountFormat="currency"
             icon={Banknote}
           />
           <FinanceKpiCard
             label="Aguardando recebimento"
-            value={formatFinanceCurrency(cards.waitingReceivableCommission)}
+            value=""
+            amount={cards.waitingReceivableCommission}
+            amountFormat="currency"
             icon={Clock}
           />
           <FinanceKpiCard
             label="Liberada parcial"
-            value={formatFinanceCurrency(cards.partiallyReleasedCommission)}
+            value=""
+            amount={cards.partiallyReleasedCommission}
+            amountFormat="currency"
             icon={TrendingUp}
           />
           <FinanceKpiCard
             label="Liberada total"
-            value={formatFinanceCurrency(cards.fullyReleasedCommission)}
+            value=""
+            amount={cards.fullyReleasedCommission}
+            amountFormat="currency"
             icon={CheckCircle2}
           />
           <FinanceKpiCard
             label="Saldo a liberar"
-            value={formatFinanceCurrency(cards.balanceToRelease)}
+            value=""
+            amount={cards.balanceToRelease}
+            amountFormat="currency"
             icon={Wallet}
           />
           <FinanceKpiCard

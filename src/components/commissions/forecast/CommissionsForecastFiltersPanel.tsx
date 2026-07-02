@@ -3,6 +3,7 @@ import { Filter, RotateCcw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import type { CommissionsPersonsPayload } from "@/src/components/commissions/commissionsTypes";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   COMMISSION_FORECAST_STATUS_OPTIONS,
   COMMISSION_HAS_RULE_OPTIONS,
@@ -10,9 +11,9 @@ import {
   EMPTY_COMMISSIONS_FORECAST_FILTERS,
   type CommissionsForecastFilters,
 } from "@/src/components/commissions/forecast/commissionsForecastFilters";
+import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 
-const inputClass =
-  "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30";
+const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
 type Props = {
   filters: CommissionsForecastFilters;
@@ -93,30 +94,14 @@ export function CommissionsForecastFiltersPanel({
 
       {open ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Ano
-            <input
-              type="number"
-              className={inputClass}
-              value={filters.year}
-              onChange={(e) => patch({ year: e.target.value })}
-              placeholder="2026"
-              disabled={disabled}
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-[#6B7280]">
-            Mês
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className={inputClass}
-              value={filters.month}
-              onChange={(e) => patch({ month: e.target.value })}
-              placeholder="1–12"
-              disabled={disabled}
-            />
-          </label>
+          <CommissionsPeriodFilterFields
+            year={filters.year}
+            month={filters.month}
+            onYearChange={(year) => patch({ year })}
+            onMonthChange={(month) => patch({ month })}
+            disabled={disabled}
+            labelClassName="text-xs font-medium text-[#6B7280]"
+          />
           <label className="space-y-1 text-xs font-medium text-[#6B7280]">
             Período de
             <input

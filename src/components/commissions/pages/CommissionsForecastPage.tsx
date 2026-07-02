@@ -230,10 +230,12 @@ export function CommissionsForecastPage() {
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Comissão prevista total"
-            value={formatFinanceCurrency(cards.totalForecastAmount)}
+            value=""
+            amount={cards.totalForecastAmount}
+            amountFormat="currency"
             icon={TrendingUp}
           />
           <FinanceKpiCard
@@ -253,7 +255,9 @@ export function CommissionsForecastPage() {
           />
           <FinanceKpiCard
             label="Valor previsto a faturar"
-            value={formatFinanceCurrency(cards.forecastBaseToInvoice)}
+            value=""
+            amount={cards.forecastBaseToInvoice}
+            amountFormat="currency"
             icon={ShoppingCart}
           />
           <FinanceKpiCard

@@ -250,7 +250,7 @@ export function CommissionsRulesPage() {
       ) : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Total de regras"
             value={String(cards.totalCount)}

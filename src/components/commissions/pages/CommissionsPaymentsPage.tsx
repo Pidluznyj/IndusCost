@@ -131,34 +131,44 @@ export function CommissionsPaymentsPage() {
       ) : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Liberadas não pagas"
-            value={formatFinanceCurrency(cards.unpaidReleasedAmount)}
+            value=""
+            amount={cards.unpaidReleasedAmount}
+            amountFormat="currency"
             icon={Wallet}
             tone="info"
           />
           <FinanceKpiCard
             label="Em rascunho"
-            value={formatFinanceCurrency(cards.draftBatchTotal)}
+            value=""
+            amount={cards.draftBatchTotal}
+            amountFormat="currency"
             icon={ClipboardList}
             tone="neutral"
           />
           <FinanceKpiCard
             label="Aprovados"
-            value={formatFinanceCurrency(cards.approvedBatchTotal)}
+            value=""
+            amount={cards.approvedBatchTotal}
+            amountFormat="currency"
             icon={Banknote}
             tone="warning"
           />
           <FinanceKpiCard
             label="Pago no período"
-            value={formatFinanceCurrency(cards.paidInPeriodTotal)}
+            value=""
+            amount={cards.paidInPeriodTotal}
+            amountFormat="currency"
             icon={Banknote}
             tone="success"
           />
           <FinanceKpiCard
             label="Saldo a pagar"
-            value={formatFinanceCurrency(cards.balanceToPay)}
+            value=""
+            amount={cards.balanceToPay}
+            amountFormat="currency"
             icon={Wallet}
             tone="info"
           />

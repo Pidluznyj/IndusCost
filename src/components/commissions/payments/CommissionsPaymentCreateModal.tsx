@@ -6,6 +6,7 @@ import type {
   CommissionsPersonsPayload,
   UnpaidReleasedCommissionRow,
 } from "@/src/components/commissions/commissionsTypes";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   buildUnpaidReleasedQueryString,
   resolveCreateBatchPeriod,
@@ -187,14 +188,14 @@ export function CommissionsPaymentCreateModal({
                 ))}
               </select>
             </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-[#6B7280]">Ano</span>
-              <input type="number" className={fieldClass} value={year} onChange={(e) => setYear(e.target.value)} />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-[#6B7280]">Mês</span>
-              <input type="number" min={1} max={12} className={fieldClass} value={month} onChange={(e) => setMonth(e.target.value)} />
-            </label>
+            <CommissionsPeriodFilterFields
+              year={year}
+              month={month}
+              onYearChange={setYear}
+              onMonthChange={setMonth}
+              allowAllYears={false}
+              fieldClassName={fieldClass}
+            />
             <label className="block space-y-1">
               <span className="text-xs font-medium text-[#6B7280]">De</span>
               <input type="date" className={fieldClass} value={from} onChange={(e) => setFrom(e.target.value)} />

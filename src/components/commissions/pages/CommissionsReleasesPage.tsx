@@ -236,20 +236,26 @@ export function CommissionsReleasesPage() {
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="indus-kpi-grid commercial-kpi-grid">
           <FinanceKpiCard
             label="Comissão a liberar"
-            value={formatFinanceCurrency(cards.commissionToRelease)}
+            value=""
+            amount={cards.commissionToRelease}
+            amountFormat="currency"
             icon={Unlock}
           />
           <FinanceKpiCard
             label="Comissão já liberada"
-            value={formatFinanceCurrency(cards.commissionAlreadyReleased)}
+            value=""
+            amount={cards.commissionAlreadyReleased}
+            amountFormat="currency"
             icon={Banknote}
           />
           <FinanceKpiCard
             label="Bloqueada (sem recebimento)"
-            value={formatFinanceCurrency(cards.commissionBlockedByNoReceipt)}
+            value=""
+            amount={cards.commissionBlockedByNoReceipt}
+            amountFormat="currency"
             icon={Lock}
           />
           <FinanceKpiCard
