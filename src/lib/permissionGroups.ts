@@ -54,6 +54,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   reports: "financeiro",
   guide: "administracao",
   products: "engenharia",
+  "transformation-simulator": "engenharia",
   materials: "engenharia",
   simulations: "engenharia",
   projects: "engenharia",
@@ -347,7 +348,7 @@ export function getRelatedSidebarModulesForAccessGroup(
     case "dashboard-sistema":
       return ["dashboard"];
     case "engenharia":
-      return ["products", "materials", "simulations", "projects"];
+      return ["products", "transformation-simulator", "materials", "simulations", "projects"];
     case "comercial":
       return ["crm-commercial", "customers", "proposals", "sales-orders", "pricing", "commissions"];
     case "financeiro":

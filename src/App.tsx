@@ -10,6 +10,7 @@ import { IndirectCostModule } from "./components/IndirectCostModule";
 import { TaxModule } from "./components/TaxModule";
 import { PricingModule } from "./components/PricingModule";
 import { SimulationModule } from "./components/SimulationModule";
+import { TransformationCostSimulatorModule } from "./components/TransformationCostSimulatorModule";
 import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
 import { CommissionsModule } from "./components/CommissionsModule";
@@ -574,6 +575,17 @@ export default function App() {
               }
             >
               <ProductModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="transformation-simulator"
+          element={
+            <ModulePageShell
+              title="Simulador de Custo de Transformação"
+              description="Estimativa operacional de HH, HM e custo de transformação por peça — sem impacto em custos oficiais."
+            >
+              <TransformationCostSimulatorModule />
             </ModulePageShell>
           }
         />

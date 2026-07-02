@@ -10,6 +10,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "purchases",
   "maintenance",
   "products",
+  "transformation-simulator",
   "opex",
   "taxes",
   "pricing",

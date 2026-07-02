@@ -14,6 +14,7 @@ export type AppModuleId =
   | "projects"
   | "fleet"
   | "products"
+  | "transformation-simulator"
   | "opex"
   | "taxes"
   | "pricing"
@@ -46,6 +47,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "projects",
   "fleet",
   "products",
+  "transformation-simulator",
   "opex",
   "taxes",
   "pricing",
@@ -90,6 +92,12 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("sales_orders.view");
     case "products":
       return check.hasPermission("products.view");
+    case "transformation-simulator":
+      return (
+        check.hasPermission("products.view") ||
+        check.hasPermission("simulations.view") ||
+        check.hasPermission(LEGACY_COSTS_VIEW)
+      );
     case "purchases":
       return check.hasPermission("purchases.view");
     case "pricing":
@@ -263,6 +271,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   projects: "Projetos",
   fleet: "Gestão de Frota",
   products: "Produtos",
+  "transformation-simulator": "Simulador de Custo de Transformação",
   opex: "Custos Indiretos",
   taxes: "Tributos",
   pricing: "Formação de Preço",

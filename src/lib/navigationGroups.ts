@@ -87,6 +87,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   proposals: ["proposals.view"],
   "sales-orders": ["sales_orders.view"],
   products: ["products.view"],
+  "transformation-simulator": ["products.view", "simulations.view", "costs.view"],
   purchases: ["purchases.view"],
   pricing: ["pricing.view"],
   employees: ["employees.view", "costs.view"],
@@ -127,7 +128,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Engenharia",
     iconKey: "Package",
     order: 2,
-    itemIds: ["products", "materials", "simulations", "projects"],
+    itemIds: ["products", "transformation-simulator", "materials", "simulations", "projects"],
   },
   {
     id: "comercial",

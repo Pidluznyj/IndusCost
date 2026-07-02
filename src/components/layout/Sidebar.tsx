@@ -29,6 +29,7 @@ import {
   Warehouse,
   Briefcase,
   Factory,
+  Gauge,
   HelpCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -79,6 +80,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   projects: FolderKanban,
   fleet: Car,
   products: Package,
+  "transformation-simulator": Gauge,
   opex: PieChart,
   taxes: Scale,
   pricing: Calculator,

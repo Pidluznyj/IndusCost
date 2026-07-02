@@ -33,6 +33,7 @@ function checker(perms: string[]): PermissionChecker {
 const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   dashboard: "dashboard",
   products: "engenharia",
+  "transformation-simulator": "engenharia",
   materials: "engenharia",
   simulations: "engenharia",
   projects: "engenharia",
@@ -124,7 +125,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     const structure = buildGroupedNavigationStructure();
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
     assert.deepEqual(counts, {
-      engenharia: 4,
+      engenharia: 5,
       comercial: 6,
       financeiro: 4,
       operacoes: 5,
