@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Gauge, RefreshCcw, Eraser, Info } from "lucide-react";
-import { AppAlert } from "@/src/components/shared/AppAlert";
+import {
+  Users,
+  Zap,
+  Cog,
+  RefreshCcw,
+  Eraser,
+  Info,
+  ShieldCheck,
+  TrendingUp,
+} from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import {
   computeTransformationCostSimulator,
@@ -12,7 +20,7 @@ import {
 } from "@/src/lib/transformationCostSimulator";
 
 const INPUT_CLASS =
-  "w-full rounded-xl border border-border bg-background p-3 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20";
+  "h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 function formatHourlyRate(value: number | null): string {
   if (value == null) return TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
@@ -52,48 +60,79 @@ function loadStoredForm(): TransformationCostSimulatorFormValues {
   }
 }
 
+function MetricValue({ value, unavailableClass }: { value: string; unavailableClass?: string }) {
+  const isUnavailable = value === TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
+  return (
+    <p
+      className={cn(
+        "mt-1.5 text-base font-semibold tabular-nums leading-tight",
+        isUnavailable
+          ? cn("text-sm font-normal italic text-slate-500", unavailableClass)
+          : "text-slate-900"
+      )}
+    >
+      {value}
+    </p>
+  );
+}
+
 function ResultTile({
   label,
   value,
-  highlight,
+  emphasis,
 }: {
   label: string;
   value: string;
-  highlight?: "primary" | "amber" | "blue";
+  emphasis?: "default" | "accent" | "highlight";
 }) {
-  const valueClass =
-    highlight === "primary"
-      ? "text-primary"
-      : highlight === "amber"
-        ? "text-amber-700 dark:text-amber-300"
-        : highlight === "blue"
-          ? "text-blue-700 dark:text-blue-300"
-          : "text-slate-900 dark:text-slate-100";
-
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/40">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-      <p className={cn("mt-1 text-sm font-semibold tabular-nums", valueClass)}>{value}</p>
+    <div
+      className={cn(
+        "rounded-lg border bg-white p-3.5 shadow-sm",
+        emphasis === "highlight"
+          ? "border-emerald-200 bg-emerald-50/30"
+          : emphasis === "accent"
+            ? "border-slate-300 bg-slate-50/80"
+            : "border-slate-200"
+      )}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{label}</p>
+      <MetricValue
+        value={value}
+        unavailableClass={emphasis === "highlight" ? "text-slate-500" : undefined}
+      />
     </div>
   );
 }
 
 function BlockCard({
+  step,
+  icon: Icon,
   title,
   subtitle,
   children,
 }: {
+  step: string;
+  icon: React.ComponentType<{ className?: string }>;
   title: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="mb-4 space-y-1">
-        <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">{title}</h3>
-        <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">{subtitle}</p>
+    <section className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <Icon className="h-5 w-5" aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              {step}
+            </span>
+            <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-600">{subtitle}</p>
+        </div>
       </div>
       {children}
     </section>
@@ -119,9 +158,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-        {label}
-      </label>
+      <label className="text-sm font-medium text-slate-700">{label}</label>
       <input
         type={type}
         step={step}
@@ -130,10 +167,13 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className={INPUT_CLASS}
       />
-      {error ? <p className="text-xs text-amber-700 dark:text-amber-300">{error}</p> : null}
+      {error ? <p className="text-xs font-medium text-amber-800">{error}</p> : null}
     </div>
   );
 }
+
+const SECONDARY_BUTTON_CLASS =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300";
 
 export function TransformationCostSimulatorModule() {
   const [form, setForm] = useState<TransformationCostSimulatorFormValues>(loadStoredForm);
@@ -149,53 +189,52 @@ export function TransformationCostSimulatorModule() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const heroCost = formatCostPerPiece(result.product.estimatedTransformationCostPerPiece);
+  const heroReady = heroCost !== TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
+
   return (
-    <div className="space-y-6">
-      <AppAlert variant="info" title="Simulador de estimativa" className="border-sky-200 bg-sky-50/70">
-        Simulador de estimativa. Os valores calculados aqui não alteram custos oficiais, produtos,
-        pedidos, margens ou tabelas vigentes.
-      </AppAlert>
-
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Gauge className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">
-                Simulador de Custo de Transformação
-              </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Estime HH, HM e custo de transformação por peça para aprendizado e cenários
-                operacionais.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <button
             type="button"
             onClick={() => setForm(DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES)}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent"
+            className={SECONDARY_BUTTON_CLASS}
           >
-            <RefreshCcw className="h-4 w-4" />
+            <RefreshCcw className="h-4 w-4 text-slate-600" />
             Restaurar exemplo padrão
           </button>
           <button
             type="button"
             onClick={() => setForm(EMPTY_TRANSFORMATION_COST_SIMULATOR_VALUES)}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent"
+            className={SECONDARY_BUTTON_CLASS}
           >
-            <Eraser className="h-4 w-4" />
+            <Eraser className="h-4 w-4 text-slate-600" />
             Limpar campos
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+      <div
+        role="status"
+        className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 shadow-sm"
+      >
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm ring-1 ring-slate-200">
+          <ShieldCheck className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-900">Simulador de estimativa</p>
+          <p className="text-sm leading-relaxed text-slate-700">
+            Simulador de estimativa. Os valores calculados aqui não alteram custos oficiais,
+            produtos, pedidos, margens ou tabelas vigentes.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <BlockCard
+          step="Bloco 1"
+          icon={Users}
           title="Mão de Obra"
           subtitle="Folha produtiva mensal, pessoas, horas disponíveis e eficiência real da operação."
         >
@@ -229,7 +268,7 @@ export function TransformationCostSimulatorModule() {
               step="0.01"
               error={result.fieldErrors.laborEfficiencyPercent}
             />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
               <ResultTile
                 label="Horas homem teóricas"
                 value={formatHours(result.labor.theoreticalLaborHours)}
@@ -242,13 +281,15 @@ export function TransformationCostSimulatorModule() {
               <ResultTile
                 label="HH ajustado"
                 value={formatHourlyRate(result.labor.adjustedHH)}
-                highlight="blue"
+                emphasis="accent"
               />
             </div>
           </div>
         </BlockCard>
 
         <BlockCard
+          step="Bloco 2"
+          icon={Zap}
           title="Energia / Máquinas"
           subtitle="Energia do parque produtivo, máquinas ativas, horas disponíveis e eficiência real."
         >
@@ -282,7 +323,7 @@ export function TransformationCostSimulatorModule() {
               step="0.01"
               error={result.fieldErrors.machineEfficiencyPercent}
             />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
               <ResultTile
                 label="Horas máquina teóricas"
                 value={formatHours(result.energy.theoreticalMachineHours)}
@@ -298,13 +339,15 @@ export function TransformationCostSimulatorModule() {
               <ResultTile
                 label="HM energia ajustado"
                 value={formatHourlyRate(result.energy.adjustedHM)}
-                highlight="blue"
+                emphasis="accent"
               />
             </div>
           </div>
         </BlockCard>
 
         <BlockCard
+          step="Bloco 3"
+          icon={Cog}
           title="Produto / Operação"
           subtitle="Simulação livre da peça: ciclo, cavidades, operadores e refugo estimado."
         >
@@ -347,11 +390,11 @@ export function TransformationCostSimulatorModule() {
               step="0.01"
               error={result.fieldErrors.scrapPercent}
             />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
               <ResultTile
                 label="Custo hora transformação"
                 value={formatHourlyRate(result.product.transformationCostPerHour)}
-                highlight="primary"
+                emphasis="accent"
               />
               <ResultTile
                 label="Ciclos por hora"
@@ -374,73 +417,105 @@ export function TransformationCostSimulatorModule() {
         </BlockCard>
       </div>
 
-      <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card p-6 shadow-sm">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Resumo final consolidado
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <ResultTile
-            label="HH ajustado"
-            value={formatHourlyRate(result.labor.adjustedHH)}
-            highlight="blue"
-          />
-          <ResultTile
-            label="HM energia ajustado"
-            value={formatHourlyRate(result.energy.adjustedHM)}
-            highlight="blue"
-          />
-          <ResultTile
-            label="Custo hora transformação"
-            value={formatHourlyRate(result.product.transformationCostPerHour)}
-            highlight="primary"
-          />
-          <ResultTile
-            label="Peças boas por hora"
-            value={formatPiecesPerHour(result.product.goodPiecesPerHour)}
-          />
-          <ResultTile
-            label="Custo transformação estimado por peça"
-            value={formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
-            highlight="amber"
-          />
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-slate-50/80 px-6 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-slate-600" aria-hidden />
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+              Resumo final consolidado
+            </h3>
+          </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-950/40">
-          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-            Custo de Transformação Estimado por Peça
-          </p>
-          <p className="mt-2 text-3xl font-black tabular-nums text-primary">
-            {formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
-          </p>
-          {form.simulationName.trim() ? (
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Simulação: <span className="font-medium text-slate-800 dark:text-slate-200">{form.simulationName}</span>
+        <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)]">
+          <div className="flex flex-col justify-center rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 via-white to-white p-6 shadow-sm">
+            <span className="inline-flex w-fit rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+              Resultado principal
+            </span>
+            <p className="mt-3 text-base font-semibold text-slate-800">
+              Custo de Transformação Estimado por Peça
             </p>
-          ) : null}
+            <p
+              className={cn(
+                "mt-3 font-black tabular-nums tracking-tight",
+                heroReady ? "text-4xl text-emerald-900 sm:text-5xl" : "text-lg italic text-slate-500"
+              )}
+            >
+              {heroCost}
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-600">
+              Estimativa operacional calculada a partir de HH, HM, ciclo, cavidades, operadores e
+              refugo. Não substitui custo oficial publicado.
+            </p>
+            {form.simulationName.trim() ? (
+              <p className="mt-4 border-t border-emerald-100 pt-3 text-sm text-slate-600">
+                Cenário:{" "}
+                <span className="font-semibold text-slate-900">{form.simulationName.trim()}</span>
+              </p>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ResultTile
+              label="HH ajustado"
+              value={formatHourlyRate(result.labor.adjustedHH)}
+              emphasis="accent"
+            />
+            <ResultTile
+              label="HM energia ajustado"
+              value={formatHourlyRate(result.energy.adjustedHM)}
+              emphasis="accent"
+            />
+            <ResultTile
+              label="Custo hora transformação"
+              value={formatHourlyRate(result.product.transformationCostPerHour)}
+              emphasis="accent"
+            />
+            <ResultTile
+              label="Peças boas por hora"
+              value={formatPiecesPerHour(result.product.goodPiecesPerHour)}
+            />
+            <div className="sm:col-span-2">
+              <ResultTile
+                label="Custo transformação estimado por peça"
+                value={formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
+                emphasis="highlight"
+              />
+            </div>
+          </div>
         </div>
       </section>
 
-      <details className="rounded-2xl border border-border bg-card p-5">
-        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-          <Info className="h-4 w-4 text-primary" />
+      <details className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-800 marker:content-none">
+          <Info className="h-4 w-4 text-slate-600" aria-hidden />
           Como o cálculo funciona
+          <span className="ml-auto text-xs font-medium text-slate-500 group-open:hidden">Expandir</span>
         </summary>
-        <div className="mt-4 space-y-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+        <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 text-sm leading-relaxed text-slate-700 sm:grid-cols-2">
           <p>
-            <strong>HH teórico</strong> = folha produtiva ÷ (pessoas × horas por pessoa).{" "}
-            <strong>HH ajustado</strong> = folha ÷ horas produtivas ajustadas (teóricas × eficiência).
+            <span className="font-semibold text-slate-900">HH teórico</span> = folha produtiva ÷
+            (pessoas × horas por pessoa).
           </p>
           <p>
-            <strong>HM teórico</strong> = energia ÷ (máquinas × horas por máquina).{" "}
-            <strong>HM ajustado</strong> = energia ÷ horas máquina produtivas ajustadas.
+            <span className="font-semibold text-slate-900">HH ajustado</span> = folha ÷ horas
+            produtivas ajustadas (teóricas × eficiência).
           </p>
           <p>
-            <strong>Custo hora transformação</strong> = HM ajustado + (HH ajustado × operadores).{" "}
-            <strong>Ciclos/h</strong> = 3600 ÷ ciclo (s). <strong>Peças boas/h</strong> = ciclos/h ×
-            cavidades × (1 − refugo).
+            <span className="font-semibold text-slate-900">HM teórico</span> = energia ÷ (máquinas ×
+            horas por máquina).
           </p>
           <p>
-            <strong>Custo por peça</strong> = custo hora transformação ÷ peças boas por hora.
+            <span className="font-semibold text-slate-900">HM ajustado</span> = energia ÷ horas
+            máquina produtivas ajustadas.
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Custo hora transformação</span> = HM
+            ajustado + (HH ajustado × operadores).
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Custo por peça</span> = custo hora
+            transformação ÷ peças boas por hora.
           </p>
         </div>
       </details>
