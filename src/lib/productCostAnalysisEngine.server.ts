@@ -12,6 +12,7 @@ import {
   buildExcludedBomLineRecord,
   type ExcludedBomLineRecord,
 } from "./costAnalysisPartial.js";
+import { computeStandardProcessUnitCosts } from "./componentStandardProcessCost.js";
 
 export interface AnalysisCache {
   indirectCosts: any[];
@@ -432,33 +433,37 @@ async function getProductCostAnalysis(
       return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: Processo Padrão com dados inválidos.` };
     }
 
-    const effDecimal = eff / 100;
     const machineHourCost = cache.energyCost / cache.workingHours;
-    const cellHourCost = machineHourCost + cache.globalHhCost;
+    const computed = computeStandardProcessUnitCosts({
+      cycleTimeSeconds: cycle,
+      cavities: cav,
+      efficiencyExpectedPercent: eff,
+      setupTimeMin: setup,
+      lotSize,
+      globalHhCostPerHour: cache.globalHhCost,
+      machineHourCostPerHour: machineHourCost,
+    });
+    if (!computed.ok) {
+      return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: Processo Padrão com dados inválidos.` };
+    }
 
-    const netPph = (3600 / cycle) * cav * effDecimal;
-    const unitTransform = cellHourCost / netPph;
-
+    const { cellHourCost, netPph, unitTransform, setupCost, totalStepCost } = computed;
     const setupH = setup / 60;
-    const setupCost = (setupH * cellHourCost) / lotSize;
-    const totalStepCost = unitTransform + setupCost;
+    const hhRatio = cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0;
+    const hmRatio = cellHourCost > 0 ? machineHourCost / cellHourCost : 0;
 
     return [
       {
-        totalHH: totalStepCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
-        totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
+        totalHH: computed.totalHH_Unit,
+        totalHM: computed.totalHM_Unit,
         totalTimeH: (1 / netPph) + (setupH / lotSize),
         breakdown: {
           source: "STANDARD_PROCESS",
           description: "Processo Padrão do Componente",
           timeMin: (1 / netPph) * 60,
           ratePerMin: cellHourCost / 60,
-          machineCost:
-            unitTransform * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0) +
-            setupCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
-          laborCost:
-            unitTransform * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0) +
-            setupCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
+          machineCost: unitTransform * hmRatio + setupCost * hmRatio,
+          laborCost: unitTransform * hhRatio + setupCost * hhRatio,
           total: totalStepCost,
           calculationDetails: {
             cycle,

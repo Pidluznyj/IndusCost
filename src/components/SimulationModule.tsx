@@ -45,7 +45,12 @@ import {
   materialLineTotal,
   type NewProductMaterialLine,
   type SimulatedComponent,
+  type SimulatedComponentProcessInputs,
 } from "@/src/lib/newProductSandbox";
+import {
+  resolveSimulatedComponentHhHm,
+  type DefaultProcessHourCosts,
+} from "@/src/lib/componentStandardProcessCost";
 import type { Material } from "@/src/types/material";
 import {
   persistedStatusFromApiRecord,
@@ -139,6 +144,14 @@ export const SimulationModule = () => {
   const [simDraftSku, setSimDraftSku] = useState("");
   const [simDraftHh, setSimDraftHh] = useState("0");
   const [simDraftHm, setSimDraftHm] = useState("0");
+  const [simUseManualHhHm, setSimUseManualHhHm] = useState(false);
+  const [simDraftCycle, setSimDraftCycle] = useState("");
+  const [simDraftCavities, setSimDraftCavities] = useState("");
+  const [simDraftEfficiency, setSimDraftEfficiency] = useState("100");
+  const [simDraftSetup, setSimDraftSetup] = useState("0");
+  const [simDraftLotSize, setSimDraftLotSize] = useState("1");
+  const [defaultHourCosts, setDefaultHourCosts] = useState<DefaultProcessHourCosts | null>(null);
+  const [defaultHourCostsError, setDefaultHourCostsError] = useState<string | null>(null);
   const [simDraftMaterials, setSimDraftMaterials] = useState<NewProductMaterialLine[]>([
     { code: "", description: "", quantity: 1, unit: "kg", unitCost: 0, source: "CATALOG", materialId: null },
   ]);
@@ -184,16 +197,39 @@ export const SimulationModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, p, t, mats] = await Promise.all([
+      const [s, p, t, mats, hourCostsRaw] = await Promise.all([
         fetchJsonOk("/api/simulations"),
         fetchJsonOk("/api/products?cost=1"),
         fetchJsonOk("/api/tax-rules"),
         fetchJsonOk("/api/materials"),
+        fetchJsonOk("/api/simulations/default-process-hour-costs").catch(() => null),
       ]);
       setSimulations(Array.isArray(s) ? s : []);
       setProducts(Array.isArray(p) ? p : []);
       setTaxRules(Array.isArray(t) ? t : []);
       setMaterialCatalog(Array.isArray(mats) ? (mats as Material[]) : []);
+      const hourCosts = hourCostsRaw as {
+        available?: boolean;
+        globalHhCostPerHour?: number;
+        machineHourCostPerHour?: number;
+        hhSource?: "AUTO" | "MANUAL";
+        error?: string;
+      } | null;
+      if (hourCosts?.available) {
+        setDefaultHourCosts({
+          globalHhCostPerHour: Number(hourCosts.globalHhCostPerHour) || 0,
+          machineHourCostPerHour: Number(hourCosts.machineHourCostPerHour) || 0,
+          hhSource: hourCosts.hhSource ?? "AUTO",
+          available: true,
+        });
+        setDefaultHourCostsError(null);
+      } else {
+        setDefaultHourCosts(null);
+        setDefaultHourCostsError(
+          hourCosts?.error ??
+            "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais."
+        );
+      }
     } catch (error) {
       console.error("Erro ao buscar simulações:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar simulações.");
@@ -520,16 +556,51 @@ export const SimulationModule = () => {
     setSimDraftSku("");
     setSimDraftHh("0");
     setSimDraftHm("0");
+    setSimUseManualHhHm(false);
+    setSimDraftCycle("");
+    setSimDraftCavities("");
+    setSimDraftEfficiency("100");
+    setSimDraftSetup("0");
+    setSimDraftLotSize("1");
     setSimDraftMaterials([{ code: "", description: "", quantity: 1, unit: "kg", unitCost: 0, source: "CATALOG", materialId: null }]);
   };
+
+  const simDraftProcessInputs = useMemo(
+    () => ({
+      cycleTimeSeconds: Number.parseFloat(simDraftCycle) || 0,
+      cavities: Number.parseFloat(simDraftCavities) || 0,
+      efficiencyExpectedPercent: Number.parseFloat(simDraftEfficiency) || 100,
+      setupTimeMin: Number.parseFloat(simDraftSetup) || 0,
+      lotSize: Number.parseFloat(simDraftLotSize) || 1,
+    }),
+    [simDraftCycle, simDraftCavities, simDraftEfficiency, simDraftSetup, simDraftLotSize]
+  );
+
+  const simDraftResolvedHhHm = useMemo(
+    () =>
+      resolveSimulatedComponentHhHm({
+        useDefaultHourCosts: !simUseManualHhHm,
+        manualHh: Number.parseFloat(simDraftHh) || 0,
+        manualHm: Number.parseFloat(simDraftHm) || 0,
+        process: !simUseManualHhHm ? simDraftProcessInputs : undefined,
+        defaultHourCosts,
+      }),
+    [
+      simUseManualHhHm,
+      simDraftHh,
+      simDraftHm,
+      simDraftProcessInputs,
+      defaultHourCosts,
+    ]
+  );
 
   const simulatedDraftPreview = computeSimulatedComponent({
     id: editingSimulatedId ?? "draft",
     name: simDraftName || "Componente simulado",
     sku: simDraftSku || undefined,
     materials: simDraftMaterials,
-    hh: Number.parseFloat(simDraftHh) || 0,
-    hm: Number.parseFloat(simDraftHm) || 0,
+    hh: simDraftResolvedHhHm.hh,
+    hm: simDraftResolvedHhHm.hm,
   });
 
   const saveSimulatedComponent = () => {
@@ -542,14 +613,33 @@ export const SimulationModule = () => {
       alert("Há linha de MP 'da base (Suprimentos)' sem material selecionado. Selecione um item da lista ou remova a linha.");
       return;
     }
+    if (!simUseManualHhHm && simDraftResolvedHhHm.error) {
+      alert(simDraftResolvedHhHm.error);
+      return;
+    }
     const id = editingSimulatedId ?? makeId();
+    const processInputs: SimulatedComponentProcessInputs = simUseManualHhHm
+      ? {
+          useDefaultHourCosts: false,
+          manualHh: Number.parseFloat(simDraftHh) || 0,
+          manualHm: Number.parseFloat(simDraftHm) || 0,
+        }
+      : {
+          useDefaultHourCosts: true,
+          cycleTimeSeconds: simDraftProcessInputs.cycleTimeSeconds,
+          cavities: simDraftProcessInputs.cavities,
+          efficiencyExpectedPercent: simDraftProcessInputs.efficiencyExpectedPercent,
+          setupTimeMin: simDraftProcessInputs.setupTimeMin,
+          lotSize: simDraftProcessInputs.lotSize,
+        };
     const component = computeSimulatedComponent({
       id,
       name: simDraftName.trim(),
       sku: simDraftSku.trim() || undefined,
       materials: simDraftMaterials,
-      hh: Number.parseFloat(simDraftHh) || 0,
-      hm: Number.parseFloat(simDraftHm) || 0,
+      hh: simDraftResolvedHhHm.hh,
+      hm: simDraftResolvedHhHm.hm,
+      processInputs,
     });
     setSimulatedComponents((prev) => {
       const idx = prev.findIndex((x) => x.id === id);
@@ -567,8 +657,26 @@ export const SimulationModule = () => {
     setEditingSimulatedId(target.id);
     setSimDraftName(target.name);
     setSimDraftSku(target.sku ?? "");
-    setSimDraftHh(String(target.hh));
-    setSimDraftHm(String(target.hm));
+    const pi = target.processInputs;
+    if (pi?.useDefaultHourCosts) {
+      setSimUseManualHhHm(false);
+      setSimDraftCycle(pi.cycleTimeSeconds != null ? String(pi.cycleTimeSeconds) : "");
+      setSimDraftCavities(pi.cavities != null ? String(pi.cavities) : "");
+      setSimDraftEfficiency(pi.efficiencyExpectedPercent != null ? String(pi.efficiencyExpectedPercent) : "100");
+      setSimDraftSetup(pi.setupTimeMin != null ? String(pi.setupTimeMin) : "0");
+      setSimDraftLotSize(pi.lotSize != null ? String(pi.lotSize) : "1");
+      setSimDraftHh("0");
+      setSimDraftHm("0");
+    } else {
+      setSimUseManualHhHm(true);
+      setSimDraftHh(String(target.hh));
+      setSimDraftHm(String(target.hm));
+      setSimDraftCycle("");
+      setSimDraftCavities("");
+      setSimDraftEfficiency("100");
+      setSimDraftSetup("0");
+      setSimDraftLotSize("1");
+    }
     setSimDraftMaterials(
       target.materials.length > 0
         ? target.materials.map((m) => ({
@@ -809,6 +917,7 @@ export const SimulationModule = () => {
           mpPct: c.breakdown.mpPct,
           hhPct: c.breakdown.hhPct,
           hmPct: c.breakdown.hmPct,
+          processInputs: c.processInputs,
           materials: c.materials.map((m) => ({
             code: m.code,
             description: m.description,
@@ -903,6 +1012,7 @@ export const SimulationModule = () => {
         sku: item.sku,
         hh: Number(item.hh) || 0,
         hm: Number(item.hm) || 0,
+        processInputs: item.processInputs,
         materials: item.materials.map((m) => ({
           code: m.code,
           description: m.description,
@@ -1657,15 +1767,135 @@ export const SimulationModule = () => {
                   })}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <label className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-muted-foreground">HH (R$)</span>
-                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHh} onChange={(e) => setSimDraftHh(e.target.value)} />
+                <div className="rounded-xl border border-border bg-accent/10 p-4 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Processo (HH / HM)</h4>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Os valores de HH e HM foram carregados das Configurações Gerais e seguem o mesmo padrão usado no cadastro oficial de componentes.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="rounded border-border"
+                      checked={!simUseManualHhHm}
+                      onChange={(e) => setSimUseManualHhHm(!e.target.checked)}
+                      disabled={newProductIsReadOnly}
+                    />
+                    <span>Usar custo default do sistema</span>
                   </label>
-                  <label className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-muted-foreground">HM (R$)</span>
-                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHm} onChange={(e) => setSimDraftHm(e.target.value)} />
-                  </label>
+
+                  {!simUseManualHhHm ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Ciclo (segundos)</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={simDraftCycle}
+                            onChange={(e) => setSimDraftCycle(e.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Cavidades boas</span>
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={simDraftCavities}
+                            onChange={(e) => setSimDraftCavities(e.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Eficiência esperada (%)</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={simDraftEfficiency}
+                            onChange={(e) => setSimDraftEfficiency(e.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Setup (min)</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={simDraftSetup}
+                            onChange={(e) => setSimDraftSetup(e.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Lote padrão</span>
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={simDraftLotSize}
+                            onChange={(e) => setSimDraftLotSize(e.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">HH default usado</p>
+                          <p className="text-sm font-bold tabular-nums">
+                            {defaultHourCosts?.available
+                              ? `${formatCurrency(defaultHourCosts.globalHhCostPerHour)}/h`
+                              : "—"}
+                          </p>
+                          {defaultHourCosts?.hhSource === "MANUAL" ? (
+                            <p className="text-[10px] text-muted-foreground">Fonte: override manual (Configurações Gerais)</p>
+                          ) : (
+                            <p className="text-[10px] text-muted-foreground">Fonte: cálculo automático (folha / horas fábrica)</p>
+                          )}
+                        </div>
+                        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">HM default usado</p>
+                          <p className="text-sm font-bold tabular-nums">
+                            {defaultHourCosts?.available
+                              ? `${formatCurrency(defaultHourCosts.machineHourCostPerHour)}/h`
+                              : "—"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">Fonte: energia / horas úteis (Configurações Gerais)</p>
+                        </div>
+                      </div>
+
+                      {(defaultHourCostsError || simDraftResolvedHhHm.error) && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-400/60 bg-amber-50/80 dark:bg-amber-950/20 p-3 text-xs text-amber-900 dark:text-amber-200">
+                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                          <span>{simDraftResolvedHhHm.error ?? defaultHourCostsError}</span>
+                        </div>
+                      )}
+
+                      {!simDraftResolvedHhHm.error && simDraftResolvedHhHm.source === "DEFAULT" ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Custo calculado por peça: HH {formatCurrency(simDraftResolvedHhHm.hh, 5)} • HM {formatCurrency(simDraftResolvedHhHm.hm, 5)}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">HH manual (R$/peça)</span>
+                        <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHh} onChange={(e) => setSimDraftHh(e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">HM manual (R$/peça)</span>
+                        <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHm} onChange={(e) => setSimDraftHm(e.target.value)} />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <button

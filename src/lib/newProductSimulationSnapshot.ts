@@ -27,6 +27,16 @@ export type NewProductSnapshotComponent = {
   mpPct: number;
   hhPct: number;
   hmPct: number;
+  processInputs?: {
+    useDefaultHourCosts: boolean;
+    cycleTimeSeconds?: number;
+    cavities?: number;
+    efficiencyExpectedPercent?: number;
+    setupTimeMin?: number;
+    lotSize?: number;
+    manualHh?: number;
+    manualHm?: number;
+  };
   materials: Array<{
     code: string;
     description: string;

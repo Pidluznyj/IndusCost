@@ -3,6 +3,9 @@ import {
   priceFromCostAndMargin,
 } from "./simulationFormula";
 
+import type { SimulatedComponentProcessInputs } from "./componentStandardProcessCost.js";
+export type { SimulatedComponentProcessInputs };
+
 /** origem: cadastro Suprimentos (recomendado) ou linha digitada manualmente no sandbox */
 export type NewProductMaterialSource = "CATALOG" | "MANUAL";
 
@@ -35,6 +38,7 @@ export type SimulatedComponent = {
   hh: number;
   hm: number;
   breakdown: CostBreakdown;
+  processInputs?: SimulatedComponentProcessInputs;
 };
 
 export type ExistingComponentCost = {
@@ -112,6 +116,7 @@ export function computeSimulatedComponent(input: {
   materials: NewProductMaterialLine[];
   hh: number;
   hm: number;
+  processInputs?: SimulatedComponentProcessInputs;
 }): SimulatedComponent {
   const mp = sumMaterialTotal(input.materials);
   const breakdown = computeCostBreakdown(mp, input.hh, input.hm);
@@ -123,6 +128,7 @@ export function computeSimulatedComponent(input: {
     hh: Number(input.hh) || 0,
     hm: Number(input.hm) || 0,
     breakdown,
+    processInputs: input.processInputs,
   };
 }
 

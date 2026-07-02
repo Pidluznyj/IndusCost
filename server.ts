@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 import { createProductCostAnalysisEngine, type AnalysisCache } from "./src/lib/productCostAnalysisEngine.server.js";
+import { resolveDefaultProcessHourCostsFromAnalysisCache } from "./src/lib/componentStandardProcessCost.js";
 import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
 import {
   generateProductionCostTableDraftFromProducts,
@@ -7712,6 +7713,38 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   // --- API: Simulations (What-if Analysis) ---
+  app.get(
+    "/api/simulations/default-process-hour-costs",
+    requireAppAuth,
+    requirePermission("simulations.view"),
+    async (_req, res) => {
+      try {
+        const cache = await initAnalysisCache();
+        const costs = resolveDefaultProcessHourCostsFromAnalysisCache(cache);
+        if (!costs.available) {
+          return res.status(503).json({
+            error: "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais.",
+            available: false,
+          });
+        }
+        return res.json({
+          globalHhCostPerHour: costs.globalHhCostPerHour,
+          machineHourCostPerHour: costs.machineHourCostPerHour,
+          hhSource: costs.hhSource,
+          workingHours: cache.workingHours,
+          energyCost: cache.energyCost,
+          available: true,
+        });
+      } catch (err) {
+        console.error("default-process-hour-costs error:", err);
+        return res.status(503).json({
+          error: "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais.",
+          available: false,
+        });
+      }
+    }
+  );
+
   app.get("/api/simulations", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
     const simulations = await prisma.simulation.findMany({
       orderBy: { createdAt: "desc" },
