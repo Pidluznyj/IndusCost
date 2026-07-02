@@ -50,6 +50,7 @@ async function main(): Promise<void> {
           receivableAmount: true,
           receivedAmount: true,
           commissionReleasedAmount: true,
+          commissionExpectedAmount: true,
         },
       },
     },
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   let paidWithoutRelease = 0;
   let releasedAboveCommission = 0;
   let releasedWithReceivableGap = 0;
+  let scheduleReleasedAboveExpected = 0;
   const issues: ReleaseIssue[] = [];
 
   for (const record of records) {
@@ -124,8 +126,20 @@ async function main(): Promise<void> {
 
     for (const schedule of record.paymentSchedules) {
       const scheduleReleased = decimalToNumber(schedule.commissionReleasedAmount);
+      const scheduleExpected = decimalToNumber(schedule.commissionExpectedAmount);
       const received = decimalToNumber(schedule.receivedAmount);
       const receivable = decimalToNumber(schedule.receivableAmount);
+      if (scheduleReleased > scheduleExpected + 0.01) {
+        scheduleReleasedAboveExpected += 1;
+        if (issues.filter((i) => i.tipo === "LIBERADO_ACIMA_ESPERADO_PARCELA").length < 5) {
+          issues.push({
+            tipo: "LIBERADO_ACIMA_ESPERADO_PARCELA",
+            recordId: record.id,
+            orderCode: record.orderCode,
+            detalhe: `AR ${schedule.nomusReceivableId}: released=${fmtBrl(scheduleReleased)} expected=${fmtBrl(scheduleExpected)}`,
+          });
+        }
+      }
       if (received > 0 && scheduleReleased <= 0) {
         releasedWithReceivableGap += 1;
         if (issues.filter((i) => i.tipo === "RECEBIDO_SEM_LIBERACAO_PARCELA").length < 5) {
@@ -167,6 +181,7 @@ async function main(): Promise<void> {
   console.log(`Pagos sem liberação: ${paidWithoutRelease}`);
   console.log(`Liberado acima da comissão: ${releasedAboveCommission}`);
   console.log(`Parcelas AR recebidas sem liberação: ${releasedWithReceivableGap}`);
+  console.log(`Parcelas liberadas acima do commissionExpectedAmount: ${scheduleReleasedAboveExpected}`);
 
   console.log("\n--- Amostras de inconsistências (até 5 por tipo) ---");
   if (issues.length === 0) {

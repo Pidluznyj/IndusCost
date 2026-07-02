@@ -26,8 +26,8 @@ import {
 } from "./commissionSettings.server.js";
 import {
   computeBalanceAfterRelease,
-  computeReleaseForSchedule,
   resolveEffectiveReleaseRule,
+  recomputeCommissionRecordRelease,
 } from "./commission-release-service.js";
 import {
   loadActiveCommissionRules,
@@ -534,99 +534,69 @@ async function applyReleaseForRecord(
   if (!record) return;
 
   const commissionAmount = decimalToNumber(record.commissionAmount);
-  let releasedTotal = decimalToNumber(record.releasedAmount);
+  const paidAmount = decimalToNumber(record.paidAmount);
   const releaseRule = resolveEffectiveReleaseRule(record.releaseRule, settings);
 
   const arSchedules = record.paymentSchedules.filter((s) => s.source === "ACCOUNTS_RECEIVABLE");
-  let firstPaidSeen = false;
 
-  for (const schedule of arSchedules) {
-    const receivable =
-      schedule.nomusReceivableId != null
-        ? {
-            nomusReceivableId: schedule.nomusReceivableId,
-            nomusNfeId: schedule.nomusNfeId,
-            installmentNumber: schedule.installmentNumber,
-            dueDate: schedule.dueDate,
-            amountReceivable: decimalToNumber(schedule.receivableAmount),
-            amountReceived: decimalToNumber(schedule.receivedAmount),
-            balanceReceivable: decimalToNumber(schedule.openBalance),
-            settlementDate: null,
-          }
-        : null;
+  const recomputed = recomputeCommissionRecordRelease({
+    releaseRule,
+    commissionAmount,
+    paidAmount,
+    receivableAsDefinitiveReleaseSource: settings.receivableAsDefinitiveReleaseSource,
+    schedules: arSchedules.map((schedule) => ({
+      id: schedule.id,
+      commissionExpectedAmount: decimalToNumber(schedule.commissionExpectedAmount),
+      commissionReleasedAmount: decimalToNumber(schedule.commissionReleasedAmount),
+      receivableAmount:
+        schedule.receivableAmount != null ? decimalToNumber(schedule.receivableAmount) : null,
+      receivedAmount:
+        schedule.receivedAmount != null ? decimalToNumber(schedule.receivedAmount) : null,
+      receivable:
+        schedule.nomusReceivableId != null
+          ? {
+              nomusReceivableId: schedule.nomusReceivableId,
+              nomusNfeId: schedule.nomusNfeId,
+              installmentNumber: schedule.installmentNumber,
+              dueDate: schedule.dueDate,
+              amountReceivable: decimalToNumber(schedule.receivableAmount),
+              amountReceived: decimalToNumber(schedule.receivedAmount),
+              balanceReceivable: decimalToNumber(schedule.openBalance),
+              settlementDate: null,
+            }
+          : null,
+    })),
+  });
 
-    const isFirstPaid = !firstPaidSeen && (receivable?.amountReceived ?? 0) > 0;
-    if (isFirstPaid) firstPaidSeen = true;
-
-    const computation = computeReleaseForSchedule({
-      releaseRule,
-      commissionAmount,
-      alreadyReleased: releasedTotal,
-      receivableAsDefinitiveReleaseSource: settings.receivableAsDefinitiveReleaseSource,
-      schedule: {
-        scheduleKey: schedule.id,
-        source: schedule.source,
-        status: schedule.status,
-        nomusOrderId: schedule.nomusOrderId,
-        nomusNfeId: schedule.nomusNfeId,
-        nomusReceivableId: schedule.nomusReceivableId,
-        installmentNumber: schedule.installmentNumber,
-        dueDate: schedule.dueDate,
-        expectedAmount: schedule.expectedAmount != null ? decimalToNumber(schedule.expectedAmount) : null,
-        receivableAmount:
-          schedule.receivableAmount != null ? decimalToNumber(schedule.receivableAmount) : null,
-        receivedAmount:
-          schedule.receivedAmount != null ? decimalToNumber(schedule.receivedAmount) : null,
-        openBalance: schedule.openBalance != null ? decimalToNumber(schedule.openBalance) : null,
-        allocationPercent:
-          schedule.allocationPercent != null ? decimalToNumber(schedule.allocationPercent) : null,
-        commissionExpectedAmount: decimalToNumber(schedule.commissionExpectedAmount),
-        commissionReleasedAmount: decimalToNumber(schedule.commissionReleasedAmount),
-      },
-      receivable,
-      isFirstReceivablePaidInOrder: isFirstPaid,
-    });
-
-    if (computation.releasedDelta <= 0) continue;
-
-    releasedTotal = computation.newReleasedTotal;
+  for (const scheduleUpdate of recomputed.scheduleUpdates) {
+    const schedule = arSchedules.find((s) => s.id === scheduleUpdate.id);
+    if (!schedule) continue;
     await db.commissionPaymentSchedule.update({
-      where: { id: schedule.id },
+      where: { id: scheduleUpdate.id },
       data: {
-        commissionReleasedAmount: toPrismaDecimal(computation.scheduleReleasedAmount),
-        status: computation.scheduleStatus,
+        commissionReleasedAmount: toPrismaDecimal(scheduleUpdate.commissionReleasedAmount),
+        status: scheduleUpdate.scheduleStatus,
         receivedAmount:
-          receivable?.amountReceived != null ? toPrismaDecimal(receivable.amountReceived) : undefined,
+          schedule.receivedAmount != null
+            ? toPrismaDecimal(decimalToNumber(schedule.receivedAmount))
+            : undefined,
         openBalance:
-          receivable?.balanceReceivable != null ? toPrismaDecimal(receivable.balanceReceivable) : undefined,
+          schedule.openBalance != null
+            ? toPrismaDecimal(decimalToNumber(schedule.openBalance))
+            : undefined,
       },
     });
   }
 
-  const paidAmount = decimalToNumber(record.paidAmount);
   await db.commissionRecord.update({
     where: { id: record.id },
     data: {
-      releasedAmount: toPrismaDecimal(releasedTotal),
-      status: computationStatus(releasedTotal, commissionAmount, paidAmount),
-      releasedAt: releasedTotal > 0 ? new Date() : record.releasedAt,
-      balanceAmount: toPrismaDecimal(
-        computeBalanceAfterRelease(commissionAmount, releasedTotal, paidAmount)
-      ),
+      releasedAmount: toPrismaDecimal(recomputed.releasedAmount),
+      status: recomputed.status,
+      releasedAt: recomputed.releasedAmount > 0 ? new Date() : record.releasedAt,
+      balanceAmount: toPrismaDecimal(recomputed.balanceAmount),
     },
   });
-}
-
-function computationStatus(
-  released: number,
-  commission: number,
-  paid: number
-): "WAITING_PAYMENT" | "PARTIALLY_RELEASED" | "RELEASED" | "PAID_PARTIAL" | "PAID_TOTAL" {
-  if (paid >= commission && commission > 0) return "PAID_TOTAL";
-  if (paid > 0) return "PAID_PARTIAL";
-  if (released >= commission && commission > 0) return "RELEASED";
-  if (released > 0) return "PARTIALLY_RELEASED";
-  return "WAITING_PAYMENT";
 }
 
 export async function calculateCommissions(
