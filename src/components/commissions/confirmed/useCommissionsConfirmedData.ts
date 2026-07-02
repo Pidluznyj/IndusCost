@@ -9,12 +9,17 @@ import {
   type CommissionsConfirmedFilters,
 } from "@/src/components/commissions/confirmed/commissionsConfirmedFilters";
 
-export function useCommissionsConfirmedData(filters: CommissionsConfirmedFilters) {
+export function useCommissionsConfirmedData(
+  filters: CommissionsConfirmedFilters,
+  options?: { listPath?: string; detailPath?: string }
+) {
+  const listPath = options?.listPath ?? "/api/commissions/confirmed";
+  const detailPath = options?.detailPath ?? "/api/commissions/confirmed/detail";
   const queryString = useMemo(
     () => buildCommissionsConfirmedQueryString(filters),
     [filters]
   );
-  const url = `/api/commissions/confirmed?${queryString}`;
+  const url = `${listPath}?${queryString}`;
 
   const [data, setData] = useState<CommissionsConfirmedPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,8 +52,10 @@ export function useCommissionsConfirmedData(filters: CommissionsConfirmedFilters
 
 export function useCommissionsConfirmedDetail(
   confirmKey: string | null,
-  filters: CommissionsConfirmedFilters
+  filters: CommissionsConfirmedFilters,
+  options?: { detailPath?: string }
 ) {
+  const detailPath = options?.detailPath ?? "/api/commissions/confirmed/detail";
   const baseQuery = useMemo(
     () => buildCommissionsConfirmedQueryString({ ...filters, page: 1, pageSize: 100 }),
     [filters]
@@ -68,7 +75,7 @@ export function useCommissionsConfirmedDetail(
     setError(null);
     try {
       const payload = await fetchJsonOk<CommissionsConfirmedDetailPayload>(
-        `/api/commissions/confirmed/detail?confirmKey=${encodeURIComponent(confirmKey)}&${baseQuery}`
+        `${detailPath}?confirmKey=${encodeURIComponent(confirmKey)}&${baseQuery}`
       );
       setData(payload);
     } catch (e: unknown) {
@@ -81,7 +88,7 @@ export function useCommissionsConfirmedDetail(
     } finally {
       setLoading(false);
     }
-  }, [confirmKey, baseQuery]);
+  }, [confirmKey, baseQuery, detailPath]);
 
   useEffect(() => {
     void reload();

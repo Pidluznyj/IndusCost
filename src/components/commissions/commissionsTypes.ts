@@ -40,6 +40,80 @@ export type CommissionsDashboardPayload = {
     commissionAmount: number;
   }>;
   auditSummary: { total: number; critical: number; warning: number; unresolved: number };
+  ytd: CommissionDashboardYtdPayload | null;
+};
+
+export type CommissionDashboardYtdPayload = {
+  year: number;
+  generatedYtd: number;
+  releasedYtd: number;
+  payableInMonth: number;
+  futureCommission: number;
+  overdueCommission: number;
+  averageRatePercent: number;
+  commissionableBaseYtd: number;
+  noCommissionSales: { amount: number; customerCount: number; documentCount: number };
+  tierDistribution: Array<{
+    tierCode: string;
+    tierName: string;
+    baseAmount: number;
+    commissionAmount: number;
+    count: number;
+  }>;
+  monthlyYtd: Array<{ month: number; generated: number; released: number; pending: number }>;
+  sellerRanking: Array<{
+    commissionPersonId: string;
+    personName: string;
+    generated: number;
+    released: number;
+    future: number;
+    overdue: number;
+  }>;
+};
+
+export type CommissionsArViewRow = {
+  scheduleId: string;
+  commissionPersonName: string;
+  customerName: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  installmentNumber: number | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  parcelAmount: number;
+  commissionParcelAmount: number;
+  commissionReleasedAmount: number;
+  paymentStatus: string;
+  daysUntilDue: number | null;
+  daysOverdue: number | null;
+  commissionBlocked: number;
+};
+
+export type CommissionsArViewPayload = {
+  cards: {
+    totalCommission: number;
+    totalReleased: number;
+    totalBlocked: number;
+    rowCount: number;
+  };
+  rows: CommissionsArViewRow[];
+  pagination: CommissionsPagination;
+};
+
+export type CommissionsExceptionItem = {
+  id: string;
+  customerExternalId: number | null;
+  customerName: string | null;
+  commissionPersonId: string | null;
+  commissionPersonName: string | null;
+  productCode: string | null;
+  productExternalId: number | null;
+  reason: string;
+  startDate: string;
+  endDate: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CommissionsRecordItem = {

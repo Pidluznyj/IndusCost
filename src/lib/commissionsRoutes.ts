@@ -7,6 +7,8 @@ import {
   COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS,
   COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS,
   COMMISSIONS_FORECAST_VIEW_PERMISSIONS,
+  COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS,
+  COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS,
   COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS,
   COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS,
   COMMISSIONS_PEOPLE_MANAGE_PERMISSIONS,
@@ -53,6 +55,8 @@ import {
 } from "@/src/lib/commissions/commissionRules.server.js";
 import {
   parseCommissionAuditRerunBody,
+  parseCommissionExceptionCreateBody,
+  parseCommissionExceptionUpdateBody,
   parseCommissionPersonCreateBody,
   parseCommissionPersonUpdateBody,
   parseCommissionRecalculateBody,
@@ -63,6 +67,20 @@ import {
   parsePaymentBatchCreateBody,
 } from "@/src/lib/commissions/commissionApiValidation.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
+import {
+  getCommissionAuditTrailDetail,
+  getCommissionGeneratedDetail,
+  listCommissionFuturePage,
+  listCommissionGeneratedPage,
+  listCommissionOverduePage,
+  listCommissionPayablePage,
+} from "@/src/lib/commissions/commissionArViews.server.js";
+import {
+  createCommissionCustomerException,
+  listCommissionExceptionsPage,
+  toggleCommissionCustomerExceptionActive,
+  updateCommissionCustomerException,
+} from "@/src/lib/commissions/commissionExceptions.server.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
 import {
   exportCommissionApuracaoCsv,
@@ -87,6 +105,7 @@ import {
   parseCommissionPaymentsQuery,
   parseCommissionRecordsQuery,
   parseCommissionRulesQuery,
+  parseCommissionExceptionsQuery,
   parseCommissionReleasesQuery,
   parseUnpaidReleasedCommissionsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
@@ -220,6 +239,16 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     requireAnyPermission([...COMMISSIONS_SETTINGS_MANAGE_PERMISSIONS]),
   ] as const;
 
+  const exceptionsViewGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const exceptionsManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS]),
+  ] as const;
+
   const recalcGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]),
@@ -239,6 +268,181 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         console.error("GET /api/commissions/dashboard", error);
         return res.status(500).json({ error: "Erro ao montar dashboard de comissões." });
       }
+    }
+  });
+
+  app.get("/api/commissions/payable", ...releaseGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReleasesQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionPayablePage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/payable", error);
+        return res.status(500).json({ error: "Erro ao listar comissão a pagar." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/generated", ...confirmedGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionConfirmedQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionGeneratedPage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/generated", error);
+        return res.status(500).json({ error: "Erro ao listar comissão gerada." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/generated/detail", ...confirmedGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const confirmKey =
+        typeof req.query.confirmKey === "string" ? req.query.confirmKey.trim() : "";
+      if (!confirmKey) {
+        return res.status(400).json({ error: "confirmKey é obrigatório." });
+      }
+      const payload = await getCommissionGeneratedDetail(confirmKey, ctx.scope);
+      if (!payload) return res.status(404).json({ error: "Documento não encontrado." });
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/generated/detail", error);
+      return res.status(500).json({ error: "Erro ao carregar detalhe da comissão gerada." });
+    }
+  });
+
+  app.get("/api/commissions/future", ...forecastGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReleasesQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionFuturePage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/future", error);
+        return res.status(500).json({ error: "Erro ao listar comissões futuras." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/overdue", ...releaseGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReleasesQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionOverduePage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/overdue", error);
+        return res.status(500).json({ error: "Erro ao listar comissões atrasadas." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/audit-trail/detail", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const scheduleId =
+        typeof req.query.scheduleId === "string" ? req.query.scheduleId.trim() : null;
+      const confirmKey =
+        typeof req.query.confirmKey === "string" ? req.query.confirmKey.trim() : null;
+      const payload = await getCommissionAuditTrailDetail({
+        scheduleId,
+        confirmKey,
+        scope: ctx.scope,
+      });
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/audit-trail/detail", error);
+      return res.status(500).json({ error: "Erro ao carregar trilha de auditoria." });
+    }
+  });
+
+  app.get("/api/commissions/exceptions", ...exceptionsViewGuard, async (req, res) => {
+    try {
+      const query = parseCommissionExceptionsQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionExceptionsPage(query);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/exceptions", error);
+        return res.status(500).json({ error: "Erro ao listar exceções de comissão." });
+      }
+    }
+  });
+
+  app.post("/api/commissions/exceptions", ...exceptionsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      const body = parseCommissionExceptionCreateBody(req.body);
+      const row = await createCommissionCustomerException({
+        ...body,
+        createdByUserId: user?.userId ?? null,
+      });
+      return res.status(201).json(row);
+    } catch (error) {
+      try {
+        return handleValidationError(res, error as CommissionValidationError);
+      } catch {
+        console.error("POST /api/commissions/exceptions", error);
+        return res.status(500).json({ error: "Erro ao criar exceção de comissão." });
+      }
+    }
+  });
+
+  app.put("/api/commissions/exceptions/:id", ...exceptionsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      const body = parseCommissionExceptionUpdateBody(req.body);
+      const row = await updateCommissionCustomerException(req.params.id, {
+        ...body,
+        updatedByUserId: user?.userId ?? null,
+      });
+      if (!row) return res.status(404).json({ error: "Exceção não encontrada." });
+      return res.json(row);
+    } catch (error) {
+      try {
+        return handleValidationError(res, error as CommissionValidationError);
+      } catch {
+        console.error("PUT /api/commissions/exceptions/:id", error);
+        return res.status(500).json({ error: "Erro ao atualizar exceção." });
+      }
+    }
+  });
+
+  app.patch("/api/commissions/exceptions/:id/toggle-active", ...exceptionsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      const row = await toggleCommissionCustomerExceptionActive(
+        req.params.id,
+        user?.userId ?? null
+      );
+      if (!row) return res.status(404).json({ error: "Exceção não encontrada." });
+      return res.json(row);
+    } catch (error) {
+      console.error("PATCH /api/commissions/exceptions/:id/toggle-active", error);
+      return res.status(500).json({ error: "Erro ao alterar status da exceção." });
     }
   });
 

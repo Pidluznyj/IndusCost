@@ -111,10 +111,11 @@ export function CommissionsDashboardPage() {
             Visão executiva
           </p>
           <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">
-            Dashboard de Comissões
+            Dashboard Gerencial
           </h3>
           <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
-            KPIs, tendências e alertas com dados reais do cálculo de comissões.
+            Comissão por item → NF/pedido → títulos do Contas a Receber → liberação pela baixa real.
+            KPIs YTD consumidos da API oficial — sem cálculo no frontend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
@@ -153,6 +154,70 @@ export function CommissionsDashboardPage() {
 
       {error ? (
         <CommissionsErrorBanner message={error} onRetry={() => void reload()} />
+      ) : null}
+
+      {dashboard?.ytd ? (
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#6B7280]">
+            YTD {dashboard.ytd.year}
+          </p>
+          <div className="indus-kpi-grid commercial-kpi-grid">
+            <FinanceKpiCard
+              label="Comissão gerada no ano"
+              value=""
+              amount={dashboard.ytd.generatedYtd}
+              amountFormat="currency"
+              icon={Calculator}
+              tone="info"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              label="Comissão liberada no ano"
+              value=""
+              amount={dashboard.ytd.releasedYtd}
+              amountFormat="currency"
+              icon={Wallet}
+              tone="success"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              label="Comissão liberada no mês"
+              value=""
+              amount={dashboard.ytd.payableInMonth}
+              amountFormat="currency"
+              icon={Banknote}
+              tone="neutral"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              label="Comissão futura"
+              value=""
+              amount={dashboard.ytd.futureCommission}
+              amountFormat="currency"
+              icon={Clock}
+              tone="warning"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              label="Comissão atrasada (inadimplência)"
+              value=""
+              amount={dashboard.ytd.overdueCommission}
+              amountFormat="currency"
+              icon={AlertTriangle}
+              tone="danger"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              label="% médio de comissão"
+              value={`${dashboard.ytd.averageRatePercent.toFixed(2)}%`}
+              amount={dashboard.ytd.commissionableBaseYtd}
+              amountFormat="currency"
+              icon={TrendingUp}
+              tone="neutral"
+              loading={loading}
+            />
+          </div>
+        </div>
       ) : null}
 
       <div className="indus-kpi-grid commercial-kpi-grid">
@@ -237,10 +302,10 @@ export function CommissionsDashboardPage() {
 
       <div className="flex flex-wrap gap-2">
         {[
-          { label: "Previstas", to: getCommissionsSectionPath("forecast") },
-          { label: "Confirmadas", to: getCommissionsSectionPath("confirmed") },
-          { label: "Liberação", to: getCommissionsSectionPath("releases") },
-          { label: "Pagamentos", to: getCommissionsSectionPath("payments") },
+          { label: "Comissão Gerada", to: getCommissionsSectionPath("generated") },
+          { label: "A Pagar", to: getCommissionsSectionPath("payable") },
+          { label: "Futuras", to: getCommissionsSectionPath("future") },
+          { label: "Atrasadas", to: getCommissionsSectionPath("overdue") },
           { label: "Auditoria", to: getCommissionsSectionPath("audit") },
         ].map((action) => (
           <Link key={action.to} to={action.to} className={financeBiButtonOutlineClass}>

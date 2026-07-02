@@ -1,5 +1,9 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
+import {
+  buildCommissionDashboardYtd,
+  type CommissionDashboardYtdPayload,
+} from "./commissionArViews.server.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import {
   buildCommissionDashboardWhere,
@@ -43,6 +47,7 @@ export type CommissionDashboardPayload = {
     commissionAmount: number;
   }>;
   auditSummary: { total: number; critical: number; warning: number; unresolved: number };
+  ytd: CommissionDashboardYtdPayload | null;
 };
 
 export function emptyCommissionDashboard(): CommissionDashboardPayload {
@@ -62,6 +67,7 @@ export function emptyCommissionDashboard(): CommissionDashboardPayload {
     byStatus: [],
     topCustomers: [],
     auditSummary: { total: 0, critical: 0, warning: 0, unresolved: 0 },
+    ytd: null,
   };
 }
 
@@ -219,6 +225,14 @@ export async function buildCommissionDashboard(
       : [];
   const personNameById = new Map(persons.map((p) => [p.id, p.name]));
 
+  const ytdYear = query.year ?? new Date().getFullYear();
+  const ytd = await buildCommissionDashboardYtd(
+    ytdYear,
+    scope,
+    query.commissionPersonId,
+    query.month
+  );
+
   return {
     cards: {
       forecastAmount,
@@ -254,5 +268,6 @@ export async function buildCommissionDashboard(
       warning: auditWarning,
       unresolved: auditUnresolved,
     },
+    ytd,
   };
 }

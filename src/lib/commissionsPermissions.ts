@@ -86,5 +86,14 @@ export const COMMISSIONS_RECALCULATE_PERMISSIONS = [
   "commissions.payments.manage",
 ] as const;
 
+export const COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS = [
+  "commissions.rules.view",
+  "commissions.view",
+] as const;
+
+export const COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS = [
+  "commissions.rules.manage",
+] as const;
+
 export const COMMISSIONS_SELLER_ALL_PERMISSION = "commissions.seller.all" as const;
 export const COMMISSIONS_SELLER_OWN_PERMISSION = "commissions.seller.own" as const;

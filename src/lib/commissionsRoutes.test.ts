@@ -78,7 +78,13 @@ describe("commissionsRoutes", () => {
   it("expõe endpoints principais do módulo", () => {
     const src = routes();
     const endpoints = [
-      "/api/commissions/records",
+      "/api/commissions/payable",
+      "/api/commissions/generated",
+      "/api/commissions/generated/detail",
+      "/api/commissions/future",
+      "/api/commissions/overdue",
+      "/api/commissions/audit-trail/detail",
+      "/api/commissions/exceptions",
       "/api/commissions/forecast",
       "/api/commissions/forecast/detail",
       "/api/commissions/confirmed",
@@ -381,6 +387,7 @@ describe("commissionDashboard", () => {
     const payload = emptyCommissionDashboard();
     assert.equal(payload.cards.forecastAmount, 0);
     assert.equal(payload.cards.criticalDivergencesCount, 0);
+    assert.equal(payload.ytd, null);
     assert.ok(Array.isArray(payload.monthlySeries));
   });
 });

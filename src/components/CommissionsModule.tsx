@@ -1,6 +1,5 @@
 import React from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
@@ -8,27 +7,38 @@ import {
   resolveFirstAccessibleCommissionsPath,
 } from "@/src/lib/commissionsModulePermissions";
 import {
+  COMMISSIONS_LEGACY_PATH_REDIRECTS,
   COMMISSIONS_SECTIONS,
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
+  isCommissionsLegacySectionSegment,
   parseCommissionsSectionFromPath,
   resolveCommissionsCanonicalPath,
+  resolveCommissionsLegacyRedirect,
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsDashboardPage } from "@/src/components/commissions/pages/CommissionsDashboardPage";
-import { CommissionsForecastPage } from "@/src/components/commissions/pages/CommissionsForecastPage";
-import { CommissionsConfirmedPage } from "@/src/components/commissions/pages/CommissionsConfirmedPage";
-import { CommissionsApuracaoPage } from "@/src/components/commissions/pages/CommissionsApuracaoPage";
-import { CommissionsReleasesPage } from "@/src/components/commissions/pages/CommissionsReleasesPage";
-import { CommissionsPaymentsPage } from "@/src/components/commissions/pages/CommissionsPaymentsPage";
+import {
+  CommissionsFuturePage,
+  CommissionsGeneratedPage,
+  CommissionsOverduePage,
+  CommissionsPayablePage,
+} from "@/src/components/commissions/pages/CommissionsArPages";
 import { CommissionsPersonsPage } from "@/src/components/commissions/pages/CommissionsPersonsPage";
 import { CommissionsRulesPage } from "@/src/components/commissions/pages/CommissionsRulesPage";
+import { CommissionsExceptionsPage } from "@/src/components/commissions/pages/CommissionsExceptionsPage";
 import { CommissionsAuditPage } from "@/src/components/commissions/pages/CommissionsAuditPage";
 import { CommissionsSettingsPage } from "@/src/components/commissions/pages/CommissionsSettingsPage";
 
 function CommissionsCanonicalRedirect() {
   const location = useLocation();
   const target = resolveCommissionsCanonicalPath(location.pathname);
+  const search = location.search;
+  return <Navigate to={`${target}${search}`} replace />;
+}
+
+function CommissionsLegacyRedirect({ segment }: { segment: string }) {
+  const target = resolveCommissionsLegacyRedirect(segment) ?? getCommissionsDefaultPath();
   return <Navigate to={target} replace />;
 }
 
@@ -108,6 +118,7 @@ export function CommissionsModule() {
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 )
               }
+              title={section.description}
             >
               {section.label}
             </NavLink>
@@ -117,15 +128,28 @@ export function CommissionsModule() {
 
       <Routes>
         <Route index element={guard("dashboard", <CommissionsDashboardPage />)} />
-        <Route path="forecast" element={guard("forecast", <CommissionsForecastPage />)} />
-        <Route path="confirmed" element={guard("confirmed", <CommissionsConfirmedPage />)} />
-        <Route path="apuracao" element={guard("apuracao", <CommissionsApuracaoPage />)} />
-        <Route path="releases" element={guard("releases", <CommissionsReleasesPage />)} />
-        <Route path="payments" element={guard("payments", <CommissionsPaymentsPage />)} />
+        <Route path="payable" element={guard("payable", <CommissionsPayablePage />)} />
+        <Route path="generated" element={guard("generated", <CommissionsGeneratedPage />)} />
+        <Route path="future" element={guard("future", <CommissionsFuturePage />)} />
+        <Route path="overdue" element={guard("overdue", <CommissionsOverduePage />)} />
         <Route path="persons" element={guard("persons", <CommissionsPersonsPage />)} />
         <Route path="rules" element={guard("rules", <CommissionsRulesPage />)} />
+        <Route path="exceptions" element={guard("exceptions", <CommissionsExceptionsPage />)} />
         <Route path="audit" element={guard("audit", <CommissionsAuditPage />)} />
         <Route path="settings" element={guard("settings", <CommissionsSettingsPage />)} />
+        {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
+          <Route
+            key={legacy}
+            path={legacy}
+            element={
+              isCommissionsLegacySectionSegment(legacy) ? (
+                <CommissionsLegacyRedirect segment={legacy} />
+              ) : (
+                <CommissionsCanonicalRedirect />
+              )
+            }
+          />
+        ))}
         <Route path="*" element={<CommissionsCanonicalRedirect />} />
       </Routes>
     </div>
@@ -135,7 +159,6 @@ export function CommissionsModule() {
 export function CommissionsModuleLoadingFallback() {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
       Carregando Comissões…
     </div>
   );

@@ -3777,6 +3777,7 @@ model CommissionPerson {
   fixedCommissionRules CommissionRule[]           @relation("CommissionRuleFixedPerson")
   commissionRecords    CommissionRecord[]
   paymentBatches       CommissionPaymentBatch[]
+  customerExceptions   CommissionCustomerException[]
 
   @@index([nomusPersonId])
   @@index([type])
@@ -4025,4 +4026,31 @@ model CommissionSettings {
   description String?
   createdAt   DateTime @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+/// Exceção explícita: cliente/produto/vendedor sem comissão (decisão auditável).
+model CommissionCustomerException {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerExternalId Int?
+  customerName       String?
+  commissionPersonId String?   @db.Uuid
+  productCode        String?
+  productExternalId  Int?
+  reason             String
+  startDate          DateTime  @db.Timestamptz(6)
+  endDate            DateTime? @db.Timestamptz(6)
+  active             Boolean   @default(true)
+  createdByUserId    String?   @db.Uuid
+  updatedByUserId    String?   @db.Uuid
+  metadataJson       Json?
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  commissionPerson CommissionPerson? @relation(fields: [commissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([customerExternalId])
+  @@index([commissionPersonId])
+  @@index([productCode])
+  @@index([active])
+  @@index([startDate, endDate])
 }

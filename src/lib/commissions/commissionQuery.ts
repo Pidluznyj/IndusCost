@@ -943,3 +943,27 @@ export function parseUnpaidReleasedCommissionsQuery(
 
   return { commissionPersonId, from, to, personType };
 }
+
+export type CommissionExceptionsQuery = {
+  search: string | null;
+  active: boolean | null;
+  commissionPersonId: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export function parseCommissionExceptionsQuery(
+  query: Record<string, unknown>
+): CommissionExceptionsQuery {
+  const { page, pageSize } = parsePagination(query);
+  const commissionPersonId = parseOptionalUuid(query.commissionPersonId);
+  if (query.commissionPersonId && !commissionPersonId) {
+    throw new CommissionQueryParseError("commissionPersonId inválido.");
+  }
+  const search =
+    typeof query.search === "string" && query.search.trim() ? query.search.trim() : null;
+  let active: boolean | null = null;
+  if (query.active === "true") active = true;
+  if (query.active === "false") active = false;
+  return { search, active, commissionPersonId, page, pageSize };
+}

@@ -536,3 +536,116 @@ export function parseRulesListQuery(query: Record<string, unknown>): {
     query.active === "true" ? true : query.active === "false" ? false : undefined;
   return { page, pageSize, active };
 }
+
+export function parseCommissionExceptionCreateBody(raw: unknown): {
+  customerExternalId?: number | null;
+  customerName?: string | null;
+  commissionPersonId?: string | null;
+  productCode?: string | null;
+  productExternalId?: number | null;
+  reason: string;
+  startDate: Date;
+  endDate?: Date | null;
+  active?: boolean;
+  metadataJson?: Record<string, unknown>;
+} {
+  if (!raw || typeof raw !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const body = raw as Record<string, unknown>;
+  const reason = requireString(body.reason, "reason");
+  const startDateRaw = body.startDate;
+  if (typeof startDateRaw !== "string" || !startDateRaw.trim()) {
+    throw new CommissionValidationError("INVALID_FIELD", "startDate é obrigatório.");
+  }
+  const startDate = new Date(startDateRaw);
+  if (Number.isNaN(startDate.getTime())) {
+    throw new CommissionValidationError("INVALID_FIELD", "startDate inválido.");
+  }
+  let endDate: Date | null | undefined;
+  if (body.endDate != null && body.endDate !== "") {
+    if (typeof body.endDate !== "string") {
+      throw new CommissionValidationError("INVALID_FIELD", "endDate inválido.");
+    }
+    endDate = new Date(body.endDate);
+    if (Number.isNaN(endDate.getTime())) {
+      throw new CommissionValidationError("INVALID_FIELD", "endDate inválido.");
+    }
+  }
+  const customerExternalId =
+    body.customerExternalId != null ? Number(body.customerExternalId) : null;
+  if (customerExternalId != null && !Number.isFinite(customerExternalId)) {
+    throw new CommissionValidationError("INVALID_FIELD", "customerExternalId inválido.");
+  }
+  if (!customerExternalId && !optionalString(body.customerName)) {
+    throw new CommissionValidationError("INVALID_FIELD", "Informe cliente (nome ou ID externo).");
+  }
+  return {
+    customerExternalId,
+    customerName: optionalString(body.customerName),
+    commissionPersonId: optionalString(body.commissionPersonId),
+    productCode: optionalString(body.productCode),
+    productExternalId:
+      body.productExternalId != null ? Number(body.productExternalId) : null,
+    reason,
+    startDate,
+    endDate,
+    active: body.active !== undefined ? Boolean(body.active) : undefined,
+    metadataJson:
+      body.metadataJson && typeof body.metadataJson === "object"
+        ? (body.metadataJson as Record<string, unknown>)
+        : undefined,
+  };
+}
+
+export function parseCommissionExceptionUpdateBody(raw: unknown): Partial<
+  ReturnType<typeof parseCommissionExceptionCreateBody>
+> {
+  if (!raw || typeof raw !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const body = raw as Record<string, unknown>;
+  const patch: Partial<ReturnType<typeof parseCommissionExceptionCreateBody>> = {};
+  if (body.reason !== undefined) patch.reason = requireString(body.reason, "reason");
+  if (body.startDate !== undefined) {
+    if (typeof body.startDate !== "string") {
+      throw new CommissionValidationError("INVALID_FIELD", "startDate inválido.");
+    }
+    const d = new Date(body.startDate);
+    if (Number.isNaN(d.getTime())) {
+      throw new CommissionValidationError("INVALID_FIELD", "startDate inválido.");
+    }
+    patch.startDate = d;
+  }
+  if (body.endDate !== undefined) {
+    if (body.endDate == null || body.endDate === "") patch.endDate = null;
+    else {
+      if (typeof body.endDate !== "string") {
+        throw new CommissionValidationError("INVALID_FIELD", "endDate inválido.");
+      }
+      const d = new Date(body.endDate);
+      if (Number.isNaN(d.getTime())) {
+        throw new CommissionValidationError("INVALID_FIELD", "endDate inválido.");
+      }
+      patch.endDate = d;
+    }
+  }
+  if (body.customerExternalId !== undefined) {
+    patch.customerExternalId =
+      body.customerExternalId != null ? Number(body.customerExternalId) : null;
+  }
+  if (body.customerName !== undefined) patch.customerName = optionalString(body.customerName);
+  if (body.commissionPersonId !== undefined) {
+    patch.commissionPersonId = optionalString(body.commissionPersonId);
+  }
+  if (body.productCode !== undefined) patch.productCode = optionalString(body.productCode);
+  if (body.productExternalId !== undefined) {
+    patch.productExternalId =
+      body.productExternalId != null ? Number(body.productExternalId) : null;
+  }
+  if (body.active !== undefined) patch.active = Boolean(body.active);
+  if (body.metadataJson !== undefined && typeof body.metadataJson === "object") {
+    patch.metadataJson = body.metadataJson as Record<string, unknown>;
+  }
+  return patch;
+}

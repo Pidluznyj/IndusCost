@@ -21,7 +21,7 @@ export type CommissionsDashboardFilters = {
 };
 
 export const EMPTY_COMMISSIONS_DASHBOARD_FILTERS: CommissionsDashboardFilters = {
-  year: "",
+  year: String(new Date().getFullYear()),
   month: "",
   from: "",
   to: "",

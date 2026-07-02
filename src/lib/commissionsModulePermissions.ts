@@ -1,9 +1,9 @@
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import {
-  COMMISSIONS_APURACAO_VIEW_PERMISSIONS,
   COMMISSIONS_AUDIT_VIEW_PERMISSIONS,
   COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS,
   COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS,
+  COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS,
   COMMISSIONS_FORECAST_VIEW_PERMISSIONS,
   COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS,
   COMMISSIONS_PEOPLE_VIEW_PERMISSIONS,
@@ -26,20 +26,23 @@ export function canViewCommissionsSection(
   switch (sectionId) {
     case "dashboard":
       return check.hasAnyPermission([...COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS]);
-    case "forecast":
-      return check.hasAnyPermission([...COMMISSIONS_FORECAST_VIEW_PERMISSIONS]);
-    case "confirmed":
+    case "payable":
+      return check.hasAnyPermission([
+        ...COMMISSIONS_RELEASE_VIEW_PERMISSIONS,
+        ...COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS,
+      ]);
+    case "generated":
       return check.hasAnyPermission([...COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS]);
-    case "apuracao":
-      return check.hasAnyPermission([...COMMISSIONS_APURACAO_VIEW_PERMISSIONS]);
-    case "releases":
+    case "future":
+      return check.hasAnyPermission([...COMMISSIONS_FORECAST_VIEW_PERMISSIONS]);
+    case "overdue":
       return check.hasAnyPermission([...COMMISSIONS_RELEASE_VIEW_PERMISSIONS]);
-    case "payments":
-      return check.hasAnyPermission([...COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS]);
     case "persons":
       return check.hasAnyPermission([...COMMISSIONS_PEOPLE_VIEW_PERMISSIONS]);
     case "rules":
       return check.hasAnyPermission([...COMMISSIONS_RULES_VIEW_PERMISSIONS]);
+    case "exceptions":
+      return check.hasAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]);
     case "audit":
       return check.hasAnyPermission([...COMMISSIONS_AUDIT_VIEW_PERMISSIONS]);
     case "settings":

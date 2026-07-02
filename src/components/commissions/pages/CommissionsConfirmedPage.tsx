@@ -74,7 +74,19 @@ function ConfirmedRowActions({
   );
 }
 
-export function CommissionsConfirmedPage() {
+export function CommissionsConfirmedPage({
+  variant = "confirmed",
+}: {
+  variant?: "confirmed" | "generated";
+} = {}) {
+  const isGenerated = variant === "generated";
+  const apiOptions = isGenerated
+    ? {
+        listPath: "/api/commissions/generated",
+        detailPath: "/api/commissions/generated/detail",
+      }
+    : undefined;
+
   const [draftFilters, setDraftFilters] = useState<CommissionsConfirmedFilters>(
     EMPTY_COMMISSIONS_CONFIRMED_FILTERS
   );
@@ -83,8 +95,12 @@ export function CommissionsConfirmedPage() {
   );
   const [selectedConfirmKey, setSelectedConfirmKey] = useState<string | null>(null);
 
-  const { data, loading, error, reload } = useCommissionsConfirmedData(appliedFilters);
-  const detailState = useCommissionsConfirmedDetail(selectedConfirmKey, appliedFilters);
+  const { data, loading, error, reload } = useCommissionsConfirmedData(appliedFilters, apiOptions);
+  const detailState = useCommissionsConfirmedDetail(
+    selectedConfirmKey,
+    appliedFilters,
+    apiOptions
+  );
 
   function changePage(nextPage: number) {
     setAppliedFilters((prev) => ({ ...prev, page: nextPage }));
@@ -96,16 +112,20 @@ export function CommissionsConfirmedPage() {
   const pagination = data?.pagination;
 
   return (
-    <div className="space-y-5" data-testid="commissions-confirmed-page">
+    <div className="space-y-5" data-testid={isGenerated ? "commissions-generated-page" : "commissions-confirmed-page"}>
       <div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
-          Comissões confirmadas
+          {isGenerated ? "Comissão gerada" : "Comissões confirmadas"}
         </p>
         <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">
-          Confirmadas por NF-e e Documento de Saída
+          {isGenerated
+            ? "Comissão Gerada por NF / Pedido Faturado"
+            : "Confirmadas por NF-e e Documento de Saída"}
         </h3>
         <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-          Comissões reais vinculadas a NF-e autorizada, documento de saída e contas a receber.
+          {isGenerated
+            ? "Comissão calculada por item, consolidada por NF/pedido na competência do documento faturado."
+            : "Comissões reais vinculadas a NF-e autorizada, documento de saída e contas a receber."}
         </p>
       </div>
 

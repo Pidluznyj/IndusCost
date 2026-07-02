@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  COMMISSIONS_LEGACY_PATH_REDIRECTS,
   COMMISSIONS_SECTION_PATHS,
   COMMISSIONS_SECTIONS,
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
+  resolveCommissionsLegacyRedirect,
 } from "./commissionsNavigation.js";
 import { canAccessCommissionsModule, canViewCommissionsSection, resolveFirstAccessibleCommissionsPath } from "./commissionsModulePermissions.js";
 import { canAccessModule, type PermissionChecker } from "./modulePermissions.js";
@@ -24,17 +26,26 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("expõe 10 seções alinhadas ao menu", () => {
+  it("expõe 10 seções alinhadas ao menu gerencial", () => {
     assert.equal(COMMISSIONS_SECTIONS.length, 10);
     assert.equal(COMMISSIONS_SECTION_PATHS.dashboard, "/commissions");
-    assert.equal(COMMISSIONS_SECTION_PATHS.apuracao, "/commissions/apuracao");
-    assert.equal(COMMISSIONS_SECTION_PATHS.forecast, "/commissions/forecast");
+    assert.equal(COMMISSIONS_SECTION_PATHS.payable, "/commissions/payable");
+    assert.equal(COMMISSIONS_SECTION_PATHS.generated, "/commissions/generated");
+    assert.equal(COMMISSIONS_SECTION_PATHS.exceptions, "/commissions/exceptions");
     assert.equal(COMMISSIONS_SECTION_PATHS.settings, "/commissions/settings");
+  });
+
+  it("redireciona rotas legadas", () => {
+    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions/future");
+    assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions/generated");
+    assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions/payable");
+    assert.ok(COMMISSIONS_LEGACY_PATH_REDIRECTS.apuracao);
   });
 
   it("paths canônicos", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions"), true);
-    assert.equal(isCommissionsCanonicalPath("/commissions/payments"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/forecast"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/unknown"), false);
     assert.equal(getCommissionsDefaultPath(), "/commissions");
   });
@@ -70,13 +81,14 @@ describe("commissionsModulePermissions", () => {
       canViewCommissionsSection("dashboard", checker(["commissions.dashboard.view"])),
       true
     );
-    assert.equal(canViewCommissionsSection("forecast", checker(["commissions.dashboard.view"])), false);
+    assert.equal(canViewCommissionsSection("payable", checker(["commissions.dashboard.view"])), false);
+    assert.equal(canViewCommissionsSection("payable", checker(["commissions.release.view"])), true);
   });
 
   it("resolveFirstAccessibleCommissionsPath retorna primeira seção permitida", () => {
     assert.equal(
       resolveFirstAccessibleCommissionsPath(checker(["commissions.forecast.view"])),
-      "/commissions/forecast"
+      "/commissions/future"
     );
   });
 });
