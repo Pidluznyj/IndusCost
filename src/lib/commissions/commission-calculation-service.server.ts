@@ -375,6 +375,9 @@ async function processBeneficiaryForItem(
     input.auditDrafts.push(rateResolution.auditIssue);
     return;
   }
+  if (rateResolution.auditWarning) {
+    input.auditDrafts.push(rateResolution.auditWarning);
+  }
 
   const ratePercent = rateResolution.ratePercent;
   const tierMetadata = rateResolution.metadata;

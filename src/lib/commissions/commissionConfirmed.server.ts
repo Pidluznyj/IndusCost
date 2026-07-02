@@ -2,6 +2,7 @@ import type { CommissionAuditIssueType, CommissionRecordStatus, Prisma } from "@
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
+import { isOutOfTablePriceMetadata } from "./commissionOutOfTable.js";
 import {
   buildCommissionRecordsWhere,
   paginatedMeta,
@@ -52,6 +53,7 @@ export type CommissionConfirmedRow = {
   status: string;
   highlight: "confirmed" | "waiting_receivable" | "divergence" | "cancelled";
   hasDivergence: boolean;
+  hasOutOfTablePrice: boolean;
   recordIds: string[];
   confirmedAt: string | null;
 };
@@ -89,6 +91,7 @@ export type CommissionConfirmedDetailPayload = {
     commissionAmount: number;
     ruleId: string | null;
     ruleName: string | null;
+    outOfTablePrice: boolean;
   }>;
   outputDocumentItems: Array<{
     movementId: string;
@@ -177,6 +180,7 @@ type GroupAggregate = {
   scheduleIds: Set<string>;
   recordIds: string[];
   latestConfirmedAt: Date | null;
+  hasOutOfTablePrice: boolean;
 };
 
 function confirmKeyFromRecord(row: {
@@ -316,6 +320,7 @@ function aggregateRecords(rows: RecordWithRelations[]): GroupAggregate[] {
         scheduleIds: new Set(),
         recordIds: [],
         latestConfirmedAt: row.confirmedAt,
+        hasOutOfTablePrice: false,
       };
       map.set(key, agg);
     }
@@ -340,6 +345,9 @@ function aggregateRecords(rows: RecordWithRelations[]): GroupAggregate[] {
     const meta = metadataFields(row.metadataJson);
     if (meta.localOutputDocumentMovementId) {
       agg.outputDocumentMovementId = meta.localOutputDocumentMovementId;
+    }
+    if (isOutOfTablePriceMetadata(row.metadataJson)) {
+      agg.hasOutOfTablePrice = true;
     }
 
     for (const schedule of row.paymentSchedules) {
@@ -622,6 +630,7 @@ export async function listCommissionConfirmedPage(
       status,
       highlight: resolveHighlight(status, hasDivergence),
       hasDivergence,
+      hasOutOfTablePrice: agg.hasOutOfTablePrice,
       recordIds: agg.recordIds,
       confirmedAt: agg.latestConfirmedAt?.toISOString() ?? null,
     };
@@ -780,6 +789,7 @@ export async function getCommissionConfirmedDetail(
         commissionAmount: decimalToNumber(row.commissionAmount),
         ruleId: meta.ruleId,
         ruleName: meta.ruleName,
+        outOfTablePrice: isOutOfTablePriceMetadata(row.metadataJson),
       };
     }),
     outputDocumentItems: outputMovements.map((movement) => {

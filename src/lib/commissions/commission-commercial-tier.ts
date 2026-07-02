@@ -3,6 +3,11 @@
  * Lógica pura — percentuais e preços vêm de PriceTableItem publicado, nunca hardcoded.
  */
 import { roundMoney } from "./commission-money.js";
+import {
+  OUT_OF_TABLE_COMMISSION_PERCENT,
+  OUT_OF_TABLE_TIER_CODE,
+  OUT_OF_TABLE_TIER_LABEL,
+} from "./commissionOutOfTable.js";
 
 export const COMMERCIAL_PRICE_TIER_CODES = [
   "ATACADO",
@@ -13,6 +18,10 @@ export const COMMERCIAL_PRICE_TIER_CODES = [
 
 export type CommercialPriceTierCode = (typeof COMMERCIAL_PRICE_TIER_CODES)[number];
 
+export type CommercialPriceTierCodeResolved =
+  | CommercialPriceTierCode
+  | typeof OUT_OF_TABLE_TIER_CODE;
+
 export type CommercialPriceTierRow = {
   code: CommercialPriceTierCode;
   name: string;
@@ -22,17 +31,21 @@ export type CommercialPriceTierRow = {
 
 export type ResolveCommercialTierSuccess = {
   ok: true;
-  tierCode: CommercialPriceTierCode;
+  tierCode: CommercialPriceTierCodeResolved;
   tierName: string;
   referenceSalePrice: number;
   ratePercent: number;
   soldUnitPrice: number;
   tiersUsed: CommercialPriceTierRow[];
+  outOfTablePrice?: boolean;
+  warningCode?: "OUT_OF_TABLE_PRICE_COMMISSION";
+  atacadoPrice?: number;
+  differenceAmount?: number;
+  differencePercent?: number;
 };
 
 export type ResolveCommercialTierErrorCode =
   | "NO_COMMERCIAL_PRICE_TABLE"
-  | "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE"
   | "INVALID_COMMERCIAL_PRICE_RANGE"
   | "NO_COMMISSION_TABLE_RATE";
 
@@ -90,7 +103,7 @@ export function validateCommercialTierPriceOrder(
  * - [Varejo 1, Varejo 2) → Varejo 1
  * - [Varejo 2, Varejo 3) → Varejo 2
  * - >= Varejo 3 → Varejo 3
- * - < Atacado → BELOW_MINIMUM
+ * - < Atacado → comissão mínima ({@link OUT_OF_TABLE_COMMISSION_PERCENT}%) com alerta
  */
 export function resolveCommercialPriceTier(input: {
   soldUnitPrice: number;
@@ -127,13 +140,24 @@ export function resolveCommercialPriceTier(input: {
   const [atacado, varejo1, varejo2, varejo3] = tiers;
 
   if (soldUnitPrice < atacado.salePrice) {
+    const differenceAmount = roundMoney(atacado.salePrice - soldUnitPrice);
+    const differencePercent =
+      atacado.salePrice > 0
+        ? roundMoney((differenceAmount / atacado.salePrice) * 100)
+        : 0;
     return {
-      ok: false,
-      code: "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE",
-      message:
-        "Preço vendido abaixo da tabela Atacado. Comissão não calculada automaticamente.",
+      ok: true,
+      tierCode: OUT_OF_TABLE_TIER_CODE,
+      tierName: OUT_OF_TABLE_TIER_LABEL,
+      referenceSalePrice: atacado.salePrice,
+      ratePercent: OUT_OF_TABLE_COMMISSION_PERCENT,
       soldUnitPrice,
-      tiers,
+      tiersUsed: tiers,
+      outOfTablePrice: true,
+      warningCode: "OUT_OF_TABLE_PRICE_COMMISSION",
+      atacadoPrice: atacado.salePrice,
+      differenceAmount,
+      differencePercent,
     };
   }
 
@@ -173,8 +197,6 @@ export function commercialTierAuditMessage(code: ResolveCommercialTierErrorCode)
   switch (code) {
     case "NO_COMMERCIAL_PRICE_TABLE":
       return "Produto vendido sem tabela comercial gerada.";
-    case "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE":
-      return "Preço vendido abaixo da tabela Atacado. Comissão não calculada automaticamente.";
     case "INVALID_COMMERCIAL_PRICE_RANGE":
       return "Tabelas comerciais inconsistentes para o produto.";
     case "NO_COMMISSION_TABLE_RATE":

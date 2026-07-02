@@ -5,6 +5,10 @@
 
 import type { CommissionRecordStatus } from "@prisma/client";
 import { roundMoney } from "./commission-money.js";
+import {
+  hasBlockingCommissionAuditTypes,
+  isOutOfTablePriceMetadata,
+} from "./commissionOutOfTable.js";
 
 export type CommissionApuracaoLineStatus =
   | "CALCULADA"
@@ -59,7 +63,9 @@ export type CommissionApuracaoRecordInput = {
     receivedAt?: string | null;
   } | null;
   hasOpenAuditIssue?: boolean;
+  hasBlockingAuditIssue?: boolean;
   auditIssueTypes?: string[];
+  outOfTablePrice?: boolean;
 };
 
 export type CommissionApuracaoLine = {
@@ -94,6 +100,7 @@ export type CommissionApuracaoLine = {
   compareStatus: CommissionApuracaoCompareStatus;
   compareNote: string | null;
   isPayable: boolean;
+  outOfTablePrice: boolean;
 };
 
 export type CommissionApuracaoTotals = {
@@ -165,7 +172,9 @@ export function resolveBlockReason(
 ): string | null {
   const types = record.auditIssueTypes ?? [];
   if (types.includes("NO_COMMERCIAL_PRICE_TABLE")) return "Sem tabela comercial";
-  if (types.includes("BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE")) return "Preço abaixo do Atacado";
+  if (types.includes("BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE")) {
+    return "Preço abaixo do Atacado (legado — recalcule o período)";
+  }
   if (types.includes("NO_COMMISSION_RULE")) return "Sem regra de comissão";
   if (types.includes("NFE_WITHOUT_RECEIVABLE")) return "NF-e sem conta a receber";
   if (types.includes("NFE_WITHOUT_OUTPUT_DOCUMENT")) return "NF-e sem documento de saída";
@@ -207,13 +216,21 @@ export function buildApuracaoLine(record: CommissionApuracaoRecordInput): Commis
   const commissionPaid = record.paidAmount;
   const balance = roundMoney(Math.max(0, commissionCalculated - commissionReleased - commissionPaid));
 
-  const hasAudit = Boolean(record.hasOpenAuditIssue);
+  const auditTypes = record.auditIssueTypes ?? [];
+  const hasBlockingAudit =
+    record.hasBlockingAuditIssue ??
+    (auditTypes.length > 0
+      ? hasBlockingCommissionAuditTypes(auditTypes)
+      : Boolean(record.hasOpenAuditIssue));
+  const outOfTablePrice =
+    record.outOfTablePrice ?? isOutOfTablePriceMetadata(record.metadataJson);
+
   const apuracaoStatus = resolveApuracaoLineStatus(
     record.status,
     commissionReleased,
     commissionPaid,
     commissionCalculated,
-    hasAudit
+    hasBlockingAudit
   );
   const blockReason = resolveBlockReason(record, apuracaoStatus);
 
@@ -255,6 +272,7 @@ export function buildApuracaoLine(record: CommissionApuracaoRecordInput): Commis
     compareStatus: "NAO_COMPARADO",
     compareNote: null,
     isPayable: false,
+    outOfTablePrice,
   };
   line.isPayable = isApuracaoLinePayable(line);
   return line;
@@ -353,5 +371,6 @@ export function apuracaoLineToCsvRow(line: CommissionApuracaoLine): Record<strin
     regra: line.ruleName ?? "",
     status: line.apuracaoStatus,
     motivo: line.blockReason ?? "",
+    precoForaTabela: line.outOfTablePrice ? "Sim" : "Não",
   };
 }

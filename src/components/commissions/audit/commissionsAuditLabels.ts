@@ -21,7 +21,8 @@ export const COMMISSION_AUDIT_TYPE_OPTIONS = [
   { value: "DIVERGENT_AMOUNT", label: "Valor divergente" },
   { value: "MANUAL_REVIEW_REQUIRED", label: "Revisão manual" },
   { value: "NO_COMMERCIAL_PRICE_TABLE", label: "Sem tabela comercial" },
-  { value: "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE", label: "Preço abaixo do Atacado" },
+  { value: "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE", label: "Preço abaixo do Atacado (legado)" },
+  { value: "OUT_OF_TABLE_PRICE_COMMISSION", label: "Preço fora da tabela (1% mínimo)" },
   { value: "MISSING_OFFICIAL_PRODUCT_COST", label: "Sem custo oficial IndusCost" },
   { value: "INVALID_COMMERCIAL_PRICE_RANGE", label: "Faixas comerciais inconsistentes" },
   { value: "NO_COMMISSION_TABLE_RATE", label: "Tabela sem % de comissão" },
@@ -57,7 +58,12 @@ const METADATA_LABELS: Record<string, string> = {
   tierCode: "Faixa comercial",
   tierName: "Nome da faixa",
   referenceSalePrice: "Preço de referência da faixa",
-  missingCodes: "Tabelas ausentes",
+  atacadoPrice: "Preço Atacado (referência)",
+  differenceAmount: "Diferença vs Atacado",
+  differencePercent: "Diferença % vs Atacado",
+  appliedCommissionPercent: "% comissão aplicado",
+  appliedTier: "Faixa aplicada",
+  outOfTablePrice: "Preço fora da tabela",
 };
 
 export function formatAuditSeverity(severity: string): string {

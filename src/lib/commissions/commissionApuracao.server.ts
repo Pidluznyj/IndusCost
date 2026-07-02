@@ -12,6 +12,7 @@ import {
   type CommissionApuracaoTotals,
 } from "./commissionApuracao.js";
 import { decimalToNumber } from "./commission-money.js";
+import { hasBlockingCommissionAuditTypes, isOutOfTablePriceMetadata } from "./commissionOutOfTable.js";
 import {
   buildCommissionRecordsWhere,
   paginatedMeta,
@@ -120,7 +121,11 @@ function expandRecordsToInputs(
       commissionPersonName: row.commissionPerson.name,
       metadataJson: row.metadataJson,
       hasOpenAuditIssue: auditByRecordId.has(row.id),
+      hasBlockingAuditIssue: hasBlockingCommissionAuditTypes(
+        auditByRecordId.get(row.id) ?? []
+      ),
       auditIssueTypes: auditByRecordId.get(row.id) ?? [],
+      outOfTablePrice: isOutOfTablePriceMetadata(row.metadataJson),
     };
 
     const schedules = row.paymentSchedules.filter((s) => s.source === "ACCOUNTS_RECEIVABLE");
@@ -283,6 +288,7 @@ export function buildApuracaoCsv(lines: CommissionApuracaoLine[]): string {
     "regra",
     "status",
     "motivo",
+    "precoForaTabela",
   ];
   const escape = (v: string | number) => {
     const s = String(v);

@@ -27,6 +27,7 @@ export type CommissionApuracaoLine = {
   apuracaoStatus: CommissionApuracaoLineStatus;
   blockReason: string | null;
   isPayable: boolean;
+  outOfTablePrice: boolean;
 };
 
 export type CommissionApuracaoPayload = {

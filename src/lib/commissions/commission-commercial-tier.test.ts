@@ -68,10 +68,26 @@ describe("commission-commercial-tier", () => {
     }
   });
 
-  it("preço abaixo de Atacado gera BELOW_MINIMUM", () => {
-    const result = resolveCommercialPriceTier({ soldUnitPrice: 9.99, tiers: sampleTiers() });
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.equal(result.code, "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE");
+  it("preço abaixo de Atacado aplica 1% com faixa Preço fora da tabela", () => {
+    const result = resolveCommercialPriceTier({ soldUnitPrice: 9.5, tiers: sampleTiers() });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.tierCode, "PRECO_FORA_DA_TABELA");
+      assert.equal(result.tierName, "Preço fora da tabela");
+      assert.equal(result.ratePercent, 1);
+      assert.equal(result.outOfTablePrice, true);
+      assert.equal(result.warningCode, "OUT_OF_TABLE_PRICE_COMMISSION");
+      assert.equal(result.atacadoPrice, 10);
+      assert.equal(result.differenceAmount, 0.5);
+    }
+  });
+
+  it("exemplo de negócio: base R$ 1.000 com preço abaixo do Atacado → comissão R$ 10", () => {
+    const result = resolveCommercialPriceTier({ soldUnitPrice: 9.5, tiers: sampleTiers() });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(computeCommissionAmount(1000, result.ratePercent), 10);
+    }
   });
 
   it("faixa inconsistente gera INVALID_COMMERCIAL_PRICE_RANGE", () => {

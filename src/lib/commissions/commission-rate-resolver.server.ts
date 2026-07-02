@@ -10,6 +10,10 @@ import {
   resolveSoldUnitNetPrice,
   type ResolveCommercialTierErrorCode,
 } from "./commission-commercial-tier.js";
+import {
+  OUT_OF_TABLE_PRICE_AUDIT_MESSAGE,
+  OUT_OF_TABLE_PRICE_AUDIT_TYPE,
+} from "./commissionOutOfTable.js";
 import { buildAuditIssueKey } from "./commission-calculation-hash.js";
 import type {
   CommissionAuditIssueDraft,
@@ -23,6 +27,7 @@ export type CommissionRateResolution =
       ok: true;
       ratePercent: number;
       metadata: Record<string, unknown>;
+      auditWarning?: CommissionAuditIssueDraft;
     }
   | {
       ok: false;
@@ -30,7 +35,7 @@ export type CommissionRateResolution =
     };
 
 function buildCommercialTierAuditIssue(input: {
-  type: ResolveCommercialTierErrorCode | "MISSING_OFFICIAL_PRODUCT_COST";
+  type: ResolveCommercialTierErrorCode | "MISSING_OFFICIAL_PRODUCT_COST" | typeof OUT_OF_TABLE_PRICE_AUDIT_TYPE;
   order: CommissionOrderSourceBundle;
   item: CommissionOrderItemSource;
   message: string;
@@ -149,25 +154,60 @@ export async function resolveCommissionRateForItem(
     };
   }
 
+  const metadata: Record<string, unknown> = {
+    calculationType: "COMMERCIAL_PRICE_TIER",
+    tierCode: tierResult.tierCode,
+    tierName: tierResult.tierName,
+    referenceSalePrice: tierResult.referenceSalePrice,
+    soldUnitPrice: tierResult.soldUnitPrice,
+    officialUnitProductionCost: officialCost.unitProductionCost,
+    officialCostTableVersionId: officialCost.costTableVersionId,
+    officialCostTableCode: officialCost.versionCode,
+    officialCostTableRevision: officialCost.revision,
+    tiersCompared: tierResult.tiersUsed.map((t) => ({
+      code: t.code,
+      name: t.name,
+      salePrice: t.salePrice,
+      commissionPercent: t.commissionPercent,
+    })),
+  };
+
+  let auditWarning: CommissionAuditIssueDraft | undefined;
+
+  if (tierResult.outOfTablePrice) {
+    metadata.outOfTablePrice = true;
+    metadata.warningCode = tierResult.warningCode;
+    metadata.atacadoPrice = tierResult.atacadoPrice;
+    metadata.differenceAmount = tierResult.differenceAmount;
+    metadata.differencePercent = tierResult.differencePercent;
+    metadata.appliedCommissionPercent = tierResult.ratePercent;
+    metadata.appliedTier = tierResult.tierCode;
+
+    auditWarning = buildCommercialTierAuditIssue({
+      type: OUT_OF_TABLE_PRICE_AUDIT_TYPE,
+      order: input.order,
+      item: input.item,
+      message: OUT_OF_TABLE_PRICE_AUDIT_MESSAGE,
+      metadata: {
+        productId: input.item.localProductId,
+        productCode: input.item.productCode,
+        productName: input.item.productName,
+        salesOrderId: input.order.localOrderId,
+        salesOrderCode: input.order.orderCode,
+        soldUnitPrice: tierResult.soldUnitPrice,
+        atacadoPrice: tierResult.atacadoPrice,
+        differenceAmount: tierResult.differenceAmount,
+        differencePercent: tierResult.differencePercent,
+        appliedCommissionPercent: tierResult.ratePercent,
+        appliedTier: tierResult.tierCode,
+      },
+    });
+  }
+
   return {
     ok: true,
     ratePercent: tierResult.ratePercent,
-    metadata: {
-      calculationType: "COMMERCIAL_PRICE_TIER",
-      tierCode: tierResult.tierCode,
-      tierName: tierResult.tierName,
-      referenceSalePrice: tierResult.referenceSalePrice,
-      soldUnitPrice: tierResult.soldUnitPrice,
-      officialUnitProductionCost: officialCost.unitProductionCost,
-      officialCostTableVersionId: officialCost.costTableVersionId,
-      officialCostTableCode: officialCost.versionCode,
-      officialCostTableRevision: officialCost.revision,
-      tiersCompared: tierResult.tiersUsed.map((t) => ({
-        code: t.code,
-        name: t.name,
-        salePrice: t.salePrice,
-        commissionPercent: t.commissionPercent,
-      })),
-    },
+    metadata,
+    auditWarning,
   };
 }

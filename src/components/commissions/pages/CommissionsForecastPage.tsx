@@ -28,6 +28,7 @@ import {
 } from "@/src/components/commissions/commissionsUi";
 import { formatCommissionStatus } from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
 import { commissionStatusClassName } from "@/src/components/commissions/commissionsStatusLabels";
+import { CommissionOutOfTableFlag } from "@/src/components/commissions/CommissionOutOfTableBadge";
 import type { CommissionsForecastRow } from "@/src/components/commissions/commissionsTypes";
 import { CommissionsForecastDetailDrawer } from "@/src/components/commissions/forecast/CommissionsForecastDetailDrawer";
 import { CommissionsForecastFiltersPanel } from "@/src/components/commissions/forecast/CommissionsForecastFiltersPanel";
@@ -172,6 +173,7 @@ export function CommissionsForecastPage() {
       nextDueDate: null,
       status: detailState.data.status,
       hasRule: detailState.data.items.some((i) => i.ruleId),
+      hasOutOfTablePrice: detailState.data.items.some((i) => i.outOfTablePrice),
       recordIds: detailState.data.items.map((i) => i.recordId),
     };
     await handleRecalculateRow(row);
@@ -322,6 +324,7 @@ export function CommissionsForecastPage() {
                     <td className="px-3 py-2">{formatDate(row.nextDueDate)}</td>
                     <td className={cn("px-3 py-2 font-medium", commissionStatusClassName(row.status))}>
                       {formatCommissionStatus(row.status)}
+                      <CommissionOutOfTableFlag show={row.hasOutOfTablePrice} />
                     </td>
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <ForecastRowActions

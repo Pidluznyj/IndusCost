@@ -90,6 +90,7 @@ export type CommissionsForecastRow = {
   nextDueDate: string | null;
   status: string;
   hasRule: boolean;
+  hasOutOfTablePrice: boolean;
   recordIds: string[];
 };
 
@@ -125,6 +126,7 @@ export type CommissionsForecastDetailPayload = {
     commissionAmount: number;
     ruleId: string | null;
     ruleName: string | null;
+    outOfTablePrice: boolean;
   }>;
   installments: Array<{
     installmentNumber: number | null;
@@ -173,6 +175,7 @@ export type CommissionsConfirmedRow = {
   status: string;
   highlight: "confirmed" | "waiting_receivable" | "divergence" | "cancelled";
   hasDivergence: boolean;
+  hasOutOfTablePrice: boolean;
   recordIds: string[];
   confirmedAt: string | null;
 };
@@ -210,6 +213,7 @@ export type CommissionsConfirmedDetailPayload = {
     commissionAmount: number;
     ruleId: string | null;
     ruleName: string | null;
+    outOfTablePrice: boolean;
   }>;
   outputDocumentItems: Array<{
     movementId: string;

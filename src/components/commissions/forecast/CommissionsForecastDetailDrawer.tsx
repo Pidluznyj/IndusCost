@@ -9,6 +9,7 @@ import {
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
 import { formatCommissionStatus } from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
+import { CommissionOutOfTableFlag } from "@/src/components/commissions/CommissionOutOfTableBadge";
 import type { CommissionsForecastDetailPayload } from "@/src/components/commissions/commissionsTypes";
 
 function formatDate(iso: string | null): string {
@@ -148,6 +149,7 @@ export function CommissionsForecastDetailDrawer({
                           <div className="text-xs text-muted-foreground">
                             {item.productCode ?? "—"}
                           </div>
+                          <CommissionOutOfTableFlag show={item.outOfTablePrice} />
                         </td>
                         <td className="px-3 py-2">{item.commissionPersonName}</td>
                         <td className="px-3 py-2 text-xs">

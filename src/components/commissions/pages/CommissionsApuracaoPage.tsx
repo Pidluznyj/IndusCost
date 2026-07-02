@@ -15,6 +15,7 @@ import {
   CommissionsLoading,
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
+import { CommissionOutOfTableFlag } from "@/src/components/commissions/CommissionOutOfTableBadge";
 import { CommissionsApuracaoFiltersPanel } from "@/src/components/commissions/apuracao/CommissionsApuracaoFiltersPanel";
 import {
   EMPTY_COMMISSIONS_APURACAO_FILTERS,
@@ -226,7 +227,10 @@ export function CommissionsApuracaoPage() {
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatFinanceCurrency(row.commissionReleased)}
                     </td>
-                    <td className="px-3 py-2 text-xs">{row.commercialTierName ?? row.ruleName ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      {row.commercialTierName ?? row.ruleName ?? "—"}
+                      <CommissionOutOfTableFlag show={row.outOfTablePrice} />
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${apuracaoStatusClass(row.apuracaoStatus)}`}

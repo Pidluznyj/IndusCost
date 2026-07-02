@@ -2,6 +2,7 @@ import type { CommissionRecordStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
+import { isOutOfTablePriceMetadata } from "./commissionOutOfTable.js";
 import {
   buildCommissionRecordsWhere,
   paginatedMeta,
@@ -35,6 +36,7 @@ export type CommissionForecastOrderRow = {
   nextDueDate: string | null;
   status: string;
   hasRule: boolean;
+  hasOutOfTablePrice: boolean;
   recordIds: string[];
 };
 
@@ -70,6 +72,7 @@ export type CommissionForecastDetailPayload = {
     commissionAmount: number;
     ruleId: string | null;
     ruleName: string | null;
+    outOfTablePrice: boolean;
   }>;
   installments: Array<{
     installmentNumber: number | null;
@@ -128,6 +131,7 @@ type OrderAggregate = {
     commissionExpectedAmount: number;
   }>;
   hasRule: boolean;
+  hasOutOfTablePrice: boolean;
 };
 
 function buildForecastWhere(
@@ -227,6 +231,7 @@ function aggregateRecords(rows: RecordWithRelations[]): OrderAggregate[] {
         latestCalculatedAt: row.calculatedAt,
         schedules: [],
         hasRule: false,
+        hasOutOfTablePrice: false,
       };
       map.set(key, agg);
     }
@@ -246,6 +251,7 @@ function aggregateRecords(rows: RecordWithRelations[]): OrderAggregate[] {
     }
     if (row.customerName) agg.customerName = row.customerName;
     if (recordHasRule(row.metadataJson)) agg.hasRule = true;
+    if (isOutOfTablePriceMetadata(row.metadataJson)) agg.hasOutOfTablePrice = true;
 
     for (const schedule of row.paymentSchedules) {
       mergeSchedule(agg.schedules, {
@@ -461,6 +467,7 @@ async function buildOrderRows(
       nextDueDate: resolveNextDueDate(agg.schedules),
       status,
       hasRule: agg.hasRule,
+      hasOutOfTablePrice: agg.hasOutOfTablePrice,
       recordIds: agg.recordIds,
     };
   });
@@ -632,6 +639,7 @@ export async function getCommissionForecastOrderDetail(
         commissionAmount: decimalToNumber(row.commissionAmount),
         ruleId: rule.ruleId,
         ruleName: rule.ruleName,
+        outOfTablePrice: isOutOfTablePriceMetadata(row.metadataJson),
       };
     }),
     installments: installments.map((inst) => ({
