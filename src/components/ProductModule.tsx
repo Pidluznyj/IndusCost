@@ -81,6 +81,7 @@ import {
 import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionCostTablesUi";
 import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
 import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
+import { ComponentInjectionCalculationBreakdown } from "@/src/components/product/ComponentInjectionCalculationBreakdown";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -1936,6 +1937,7 @@ export const ProductModule = () => {
                       )}
 
                       {formData.type === "COMPONENT" && (
+                        <>
                         <div
                           className={cn(
                             "mt-6 border border-border rounded-xl bg-card overflow-hidden",
@@ -2001,6 +2003,13 @@ export const ProductModule = () => {
                             </div>
                           </div>
                         </div>
+                        <ComponentInjectionCalculationBreakdown
+                          cycleTimeSeconds={formData.cycleTimeSeconds}
+                          cavities={formData.cavities}
+                          efficiencyExpectedPercent={formData.efficiencyExpected}
+                          disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                        />
+                        </>
                       )}
                       
                     </div>
