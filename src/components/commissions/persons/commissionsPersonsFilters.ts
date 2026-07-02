@@ -17,7 +17,7 @@ export const EMPTY_COMMISSIONS_PERSONS_FILTERS: CommissionsPersonsFilters = {
   search: "",
   type: "",
   source: "",
-  active: "",
+  active: "true",
   year: String(new Date().getFullYear()),
   month: "",
   from: "",

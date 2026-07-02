@@ -144,38 +144,8 @@ export async function resolveOrCreateCommissionPerson(
     name: string;
   }
 ): Promise<string | null> {
-  if (input.beneficiaryType === "FIXED_PERSON" && input.fixedPersonId) {
-    const existing = await db.commissionPerson.findFirst({
-      where: { id: input.fixedPersonId, active: true },
-      select: { id: true },
-    });
-    return existing?.id ?? null;
-  }
-
-  if (input.nomusPersonId != null) {
-    const byNomus = await db.commissionPerson.findFirst({
-      where: { nomusPersonId: input.nomusPersonId, active: true },
-      select: { id: true },
-    });
-    if (byNomus) return byNomus.id;
-  }
-
-  const personType =
-    input.beneficiaryType === "REPRESENTATIVE"
-      ? "REPRESENTATIVE"
-      : input.beneficiaryType === "SELLER"
-        ? "SELLER"
-        : "OTHER";
-
-  const created = await db.commissionPerson.create({
-    data: {
-      name: input.name.trim() || "Comissionado",
-      type: personType,
-      source: input.nomusPersonId != null ? "NOMUS" : "MANUAL",
-      nomusPersonId: input.nomusPersonId ?? null,
-      active: true,
-    },
-    select: { id: true },
-  });
-  return created.id;
+  const { resolveOrUpsertCommissionPerson } = await import(
+    "./commissionPersonResolution.server.js"
+  );
+  return resolveOrUpsertCommissionPerson(db, input);
 }
