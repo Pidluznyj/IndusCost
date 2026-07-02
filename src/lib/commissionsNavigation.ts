@@ -1,8 +1,19 @@
 /** Rotas canônicas do módulo Comissões (React Router). */
 
+/**
+ * Modo simplificado: uma única tela de auditoria visual.
+ * Telas antigas permanecem no código, mas ficam inacessíveis até revisão do modelo.
+ */
+export const COMMISSIONS_SIMPLIFIED_UI = true as const;
+
 export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 
-export const COMMISSIONS_SECTION_IDS = [
+export const COMMISSIONS_SECTION_IDS = ["visualAudit"] as const;
+
+export type CommissionsSectionId = (typeof COMMISSIONS_SECTION_IDS)[number];
+
+/** Seções legadas — código preservado; rotas redirecionam para /commissions. */
+export const COMMISSIONS_DISABLED_SECTION_IDS = [
   "dashboard",
   "payable",
   "generated",
@@ -15,31 +26,30 @@ export const COMMISSIONS_SECTION_IDS = [
   "settings",
 ] as const;
 
-export type CommissionsSectionId = (typeof COMMISSIONS_SECTION_IDS)[number];
-
-/** Rotas legadas — redirecionam para as novas seções. */
+/** Rotas legadas → tela única de auditoria visual. */
 export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
-  forecast: "/commissions/future",
-  confirmed: "/commissions/generated",
-  apuracao: "/commissions/generated",
-  releases: "/commissions/payable",
-  payments: "/commissions/payable?tab=payments",
+  dashboard: "/commissions",
+  payable: "/commissions",
+  generated: "/commissions",
+  future: "/commissions",
+  overdue: "/commissions",
+  persons: "/commissions",
+  rules: "/commissions",
+  exceptions: "/commissions",
+  audit: "/commissions",
+  settings: "/commissions",
+  forecast: "/commissions",
+  confirmed: "/commissions",
+  apuracao: "/commissions",
+  releases: "/commissions",
+  payments: "/commissions",
 };
 
 export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
-  dashboard: "/commissions",
-  payable: "/commissions/payable",
-  generated: "/commissions/generated",
-  future: "/commissions/future",
-  overdue: "/commissions/overdue",
-  persons: "/commissions/persons",
-  rules: "/commissions/rules",
-  exceptions: "/commissions/exceptions",
-  audit: "/commissions/audit",
-  settings: "/commissions/settings",
+  visualAudit: "/commissions",
 };
 
-export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "dashboard";
+export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "visualAudit";
 
 export type CommissionsSectionDef = {
   id: CommissionsSectionId;
@@ -50,59 +60,10 @@ export type CommissionsSectionDef = {
 
 export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
   {
-    id: "dashboard",
-    label: "Dashboard Gerencial",
-    path: COMMISSIONS_SECTION_PATHS.dashboard,
-    description: "Visão YTD e comparativos por vendedor",
-  },
-  {
-    id: "payable",
-    label: "Comissão a Pagar",
-    path: COMMISSIONS_SECTION_PATHS.payable,
-    description: "Comissão liberada pela baixa real do título (Contas a Receber)",
-  },
-  {
-    id: "generated",
-    label: "Comissão Gerada",
-    path: COMMISSIONS_SECTION_PATHS.generated,
-    description: "Comissão criada por NF/pedido faturado (competência do documento)",
-  },
-  {
-    id: "future",
-    label: "Comissões Futuras",
-    path: COMMISSIONS_SECTION_PATHS.future,
-    description: "Títulos a vencer — comissão prevista após pagamento do cliente",
-  },
-  {
-    id: "overdue",
-    label: "Comissões Atrasadas",
-    path: COMMISSIONS_SECTION_PATHS.overdue,
-    description: "Títulos vencidos sem baixa — comissão bloqueada por inadimplência",
-  },
-  {
-    id: "persons",
-    label: "Pessoas Comissionadas",
-    path: COMMISSIONS_SECTION_PATHS.persons,
-  },
-  {
-    id: "rules",
-    label: "Regras de Comissão",
-    path: COMMISSIONS_SECTION_PATHS.rules,
-  },
-  {
-    id: "exceptions",
-    label: "Exceções / Clientes sem Comissão",
-    path: COMMISSIONS_SECTION_PATHS.exceptions,
-  },
-  {
-    id: "audit",
-    label: "Auditoria",
-    path: COMMISSIONS_SECTION_PATHS.audit,
-  },
-  {
-    id: "settings",
-    label: "Configurações",
-    path: COMMISSIONS_SECTION_PATHS.settings,
+    id: "visualAudit",
+    label: "Auditoria Visual",
+    path: COMMISSIONS_SECTION_PATHS.visualAudit,
+    description: "Validação por pedido, NF, títulos e comissão por parcela (Contas a Receber)",
   },
 ];
 
@@ -139,19 +100,13 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
 
 export function parseCommissionsSectionFromPath(pathname: string): CommissionsSectionId | null {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  if (normalized === COMMISSIONS_BASE_PATH) return "dashboard";
+  if (normalized === COMMISSIONS_BASE_PATH) return "visualAudit";
   const segments = normalized.split("/").filter(Boolean);
   const idx = segments.indexOf("commissions");
   if (idx < 0) return null;
   const next = segments[idx + 1];
-  if (!next) return "dashboard";
-  if (isCommissionsLegacySectionSegment(next)) {
-    const redirect = resolveCommissionsLegacyRedirect(next);
-    if (redirect) {
-      const target = redirect.replace("/commissions/", "").split("?")[0];
-      return isCommissionsSectionId(target) ? target : null;
-    }
-  }
+  if (!next) return "visualAudit";
+  if (isCommissionsLegacySectionSegment(next)) return "visualAudit";
   return isCommissionsSectionId(next) ? next : null;
 }
 

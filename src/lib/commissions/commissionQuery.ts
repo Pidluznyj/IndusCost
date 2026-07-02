@@ -952,6 +952,73 @@ export type CommissionExceptionsQuery = {
   pageSize: number;
 };
 
+export type CommissionVisualAuditQuery = CommissionRecordsQuery & {
+  nomusReceivableId: number | null;
+  dueDateFrom: Date | null;
+  dueDateTo: Date | null;
+  settlementDateFrom: Date | null;
+  settlementDateTo: Date | null;
+  onlySettled: boolean;
+  onlyOpen: boolean;
+  onlyDivergences: boolean;
+  onlyZeroCommission: boolean;
+  onlyMissingReceivableLink: boolean;
+  receivableTitleStatus: string | null;
+  commissionStatus: string | null;
+  nomusReferenceBase: number | null;
+  nomusReferenceCommission: number | null;
+};
+
+export function parseCommissionVisualAuditQuery(
+  query: Record<string, unknown>
+): CommissionVisualAuditQuery {
+  const base = parseCommissionRecordsQuery({
+    ...query,
+    periodBasis: "confirmedAt",
+  });
+  const dueDateFrom = parseIsoDate(query.dueDateFrom, "dueDateFrom");
+  const dueDateTo = parseIsoDate(query.dueDateTo, "dueDateTo");
+  const settlementDateFrom = parseIsoDate(query.settlementDateFrom, "settlementDateFrom");
+  const settlementDateTo = parseIsoDate(query.settlementDateTo, "settlementDateTo");
+  const nomusReceivableId = parseOptionalInt(query.nomusReceivableId);
+  const nomusReferenceBaseRaw = query.nomusReferenceBase ?? query.nomusBase;
+  const nomusReferenceCommissionRaw = query.nomusReferenceCommission ?? query.nomusCommission;
+  const nomusReferenceBase =
+    nomusReferenceBaseRaw != null && nomusReferenceBaseRaw !== ""
+      ? Number.parseFloat(String(nomusReferenceBaseRaw).replace(",", "."))
+      : null;
+  const nomusReferenceCommission =
+    nomusReferenceCommissionRaw != null && nomusReferenceCommissionRaw !== ""
+      ? Number.parseFloat(String(nomusReferenceCommissionRaw).replace(",", "."))
+      : null;
+
+  return {
+    ...base,
+    nomusReceivableId,
+    dueDateFrom,
+    dueDateTo,
+    settlementDateFrom,
+    settlementDateTo,
+    onlySettled: query.onlySettled === "true",
+    onlyOpen: query.onlyOpen === "true",
+    onlyDivergences: query.onlyDivergences === "true",
+    onlyZeroCommission: query.onlyZeroCommission === "true",
+    onlyMissingReceivableLink: query.onlyMissingReceivableLink === "true",
+    receivableTitleStatus:
+      typeof query.receivableTitleStatus === "string" && query.receivableTitleStatus.trim()
+        ? query.receivableTitleStatus.trim()
+        : null,
+    commissionStatus:
+      typeof query.commissionStatus === "string" && query.commissionStatus.trim()
+        ? query.commissionStatus.trim()
+        : null,
+    nomusReferenceBase: Number.isFinite(nomusReferenceBase) ? nomusReferenceBase : null,
+    nomusReferenceCommission: Number.isFinite(nomusReferenceCommission)
+      ? nomusReferenceCommission
+      : null,
+  };
+}
+
 export function parseCommissionExceptionsQuery(
   query: Record<string, unknown>
 ): CommissionExceptionsQuery {

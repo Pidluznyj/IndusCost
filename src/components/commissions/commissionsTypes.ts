@@ -706,3 +706,56 @@ export type UnpaidReleasedCommissionRow = {
 export type UnpaidReleasedCommissionsPayload = {
   items: UnpaidReleasedCommissionRow[];
 };
+
+export type CommissionsVisualAuditRow = {
+  lineId: string;
+  recordId: string;
+  scheduleId: string | null;
+  commissionPersonId: string;
+  commissionPersonName: string;
+  customerName: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  confirmedAt: string | null;
+  documentBaseAmount: number;
+  documentCommissionTotal: number;
+  nomusReceivableId: number | null;
+  installmentNumber: number | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  receivableAmount: number;
+  receivedAmount: number;
+  openBalance: number;
+  financialSharePercent: number | null;
+  commissionExpected: number;
+  commissionReleased: number;
+  commissionPending: number;
+  receivableTitleStatus: string;
+  commissionStatus: string;
+  alertLabels: string[];
+};
+
+export type CommissionsVisualAuditPayload = {
+  cards: {
+    documentAmountTotal: number;
+    receivableAmountTotal: number;
+    commissionableBaseTotal: number;
+    commissionCalculatedTotal: number;
+    commissionExpectedTotal: number;
+    commissionReleasedTotal: number;
+    commissionFutureTotal: number;
+    commissionBlockedTotal: number;
+    documentCount: number;
+    scheduleCount: number;
+    divergenceCount: number;
+    averageRatePercent: number;
+  };
+  rows: CommissionsVisualAuditRow[];
+  pagination: CommissionsPagination;
+  nomusReference: {
+    base: number | null;
+    commission: number | null;
+    baseDiff: number | null;
+    commissionDiff: number | null;
+  };
+};

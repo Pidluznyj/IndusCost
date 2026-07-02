@@ -78,6 +78,9 @@ describe("commissionsRoutes", () => {
   it("expõe endpoints principais do módulo", () => {
     const src = routes();
     const endpoints = [
+      "/api/commissions/visual-audit",
+      "/api/commissions/visual-audit/export",
+      "/api/commissions/visual-audit/detail",
       "/api/commissions/payable",
       "/api/commissions/generated",
       "/api/commissions/generated/detail",

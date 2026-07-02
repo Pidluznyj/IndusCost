@@ -1,3 +1,10 @@
+/**
+ * Módulo Comissões — modo simplificado (auditoria visual única).
+ *
+ * Telas antigas (dashboard, payable, generated, etc.) permanecem no repositório
+ * para revisão futura do modelo, mas estão temporariamente desativadas na UI.
+ * Ver COMMISSIONS_DISABLED_SECTION_IDS e páginas em pages/.
+ */
 import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
@@ -11,35 +18,18 @@ import {
   COMMISSIONS_SECTIONS,
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
-  isCommissionsLegacySectionSegment,
   parseCommissionsSectionFromPath,
   resolveCommissionsCanonicalPath,
-  resolveCommissionsLegacyRedirect,
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
-import { CommissionsDashboardPage } from "@/src/components/commissions/pages/CommissionsDashboardPage";
-import {
-  CommissionsFuturePage,
-  CommissionsGeneratedPage,
-  CommissionsOverduePage,
-  CommissionsPayablePage,
-} from "@/src/components/commissions/pages/CommissionsArPages";
-import { CommissionsPersonsPage } from "@/src/components/commissions/pages/CommissionsPersonsPage";
-import { CommissionsRulesPage } from "@/src/components/commissions/pages/CommissionsRulesPage";
-import { CommissionsExceptionsPage } from "@/src/components/commissions/pages/CommissionsExceptionsPage";
-import { CommissionsAuditPage } from "@/src/components/commissions/pages/CommissionsAuditPage";
-import { CommissionsSettingsPage } from "@/src/components/commissions/pages/CommissionsSettingsPage";
+import { CommissionsVisualAuditPage } from "@/src/components/commissions/pages/CommissionsVisualAuditPage";
 
-function CommissionsCanonicalRedirect() {
-  const location = useLocation();
-  const target = resolveCommissionsCanonicalPath(location.pathname);
-  const search = location.search;
-  return <Navigate to={`${target}${search}`} replace />;
+function CommissionsHomeRedirect() {
+  return <Navigate to={getCommissionsDefaultPath()} replace />;
 }
 
-function CommissionsLegacyRedirect({ segment }: { segment: string }) {
-  const target = resolveCommissionsLegacyRedirect(segment) ?? getCommissionsDefaultPath();
-  return <Navigate to={target} replace />;
+function CommissionsLegacyRedirect() {
+  return <Navigate to="/commissions" replace />;
 }
 
 function CommissionsSectionGuard({
@@ -72,7 +62,8 @@ export function CommissionsModule() {
     getCommissionsDefaultPath();
 
   if (!isCommissionsCanonicalPath(location.pathname)) {
-    return <CommissionsCanonicalRedirect />;
+    const target = resolveCommissionsCanonicalPath(location.pathname);
+    return <Navigate to={target} replace />;
   }
 
   const currentSection = parseCommissionsSectionFromPath(location.pathname);
@@ -109,7 +100,7 @@ export function CommissionsModule() {
             <NavLink
               key={section.id}
               to={section.path}
-              end={section.id === "dashboard"}
+              end
               className={({ isActive }) =>
                 cn(
                   "inline-flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap",
@@ -127,30 +118,11 @@ export function CommissionsModule() {
       </nav>
 
       <Routes>
-        <Route index element={guard("dashboard", <CommissionsDashboardPage />)} />
-        <Route path="payable" element={guard("payable", <CommissionsPayablePage />)} />
-        <Route path="generated" element={guard("generated", <CommissionsGeneratedPage />)} />
-        <Route path="future" element={guard("future", <CommissionsFuturePage />)} />
-        <Route path="overdue" element={guard("overdue", <CommissionsOverduePage />)} />
-        <Route path="persons" element={guard("persons", <CommissionsPersonsPage />)} />
-        <Route path="rules" element={guard("rules", <CommissionsRulesPage />)} />
-        <Route path="exceptions" element={guard("exceptions", <CommissionsExceptionsPage />)} />
-        <Route path="audit" element={guard("audit", <CommissionsAuditPage />)} />
-        <Route path="settings" element={guard("settings", <CommissionsSettingsPage />)} />
+        <Route index element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
-          <Route
-            key={legacy}
-            path={legacy}
-            element={
-              isCommissionsLegacySectionSegment(legacy) ? (
-                <CommissionsLegacyRedirect segment={legacy} />
-              ) : (
-                <CommissionsCanonicalRedirect />
-              )
-            }
-          />
+          <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
         ))}
-        <Route path="*" element={<CommissionsCanonicalRedirect />} />
+        <Route path="*" element={<CommissionsHomeRedirect />} />
       </Routes>
     </div>
   );

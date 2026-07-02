@@ -6,6 +6,7 @@ import {
   COMMISSIONS_LEGACY_PATH_REDIRECTS,
   COMMISSIONS_SECTION_PATHS,
   COMMISSIONS_SECTIONS,
+  COMMISSIONS_SIMPLIFIED_UI,
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
   resolveCommissionsLegacyRedirect,
@@ -26,20 +27,20 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("expõe 10 seções alinhadas ao menu gerencial", () => {
-    assert.equal(COMMISSIONS_SECTIONS.length, 10);
-    assert.equal(COMMISSIONS_SECTION_PATHS.dashboard, "/commissions");
-    assert.equal(COMMISSIONS_SECTION_PATHS.payable, "/commissions/payable");
-    assert.equal(COMMISSIONS_SECTION_PATHS.generated, "/commissions/generated");
-    assert.equal(COMMISSIONS_SECTION_PATHS.exceptions, "/commissions/exceptions");
-    assert.equal(COMMISSIONS_SECTION_PATHS.settings, "/commissions/settings");
+  it("modo simplificado expõe apenas auditoria visual", () => {
+    assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
+    assert.equal(COMMISSIONS_SECTIONS.length, 1);
+    assert.equal(COMMISSIONS_SECTIONS[0]?.id, "visualAudit");
+    assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions");
   });
 
-  it("redireciona rotas legadas", () => {
-    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions/future");
-    assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions/generated");
-    assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions/payable");
+  it("redireciona rotas legadas para /commissions", () => {
+    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("dashboard"), "/commissions");
     assert.ok(COMMISSIONS_LEGACY_PATH_REDIRECTS.apuracao);
+    assert.equal(COMMISSIONS_LEGACY_PATH_REDIRECTS.payable, "/commissions");
   });
 
   it("paths canônicos", () => {
@@ -56,6 +57,13 @@ describe("commissions frontend wiring", () => {
     const app = read("src/App.tsx");
     assert.match(app, /path="commissions\/\*"/);
     assert.match(app, /CommissionsModule/);
+  });
+
+  it("CommissionsModule usa auditoria visual e redirects legados", () => {
+    const moduleSrc = read("src/components/CommissionsModule.tsx");
+    assert.match(moduleSrc, /CommissionsVisualAuditPage/);
+    assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
+    assert.match(moduleSrc, /CommissionsLegacyRedirect/);
   });
 
   it("Sidebar inclui item Comissões", () => {
@@ -75,20 +83,15 @@ describe("commissionsModulePermissions", () => {
     assert.equal(canAccessModule("commissions", checker(["finance.view"])), false);
   });
 
-  it("dashboard exige permissão de dashboard ou view", () => {
-    assert.equal(canViewCommissionsSection("dashboard", checker(["commissions.view"])), true);
-    assert.equal(
-      canViewCommissionsSection("dashboard", checker(["commissions.dashboard.view"])),
-      true
-    );
-    assert.equal(canViewCommissionsSection("payable", checker(["commissions.dashboard.view"])), false);
-    assert.equal(canViewCommissionsSection("payable", checker(["commissions.release.view"])), true);
+  it("visualAudit exige commissions.view", () => {
+    assert.equal(canViewCommissionsSection("visualAudit", checker(["commissions.view"])), true);
+    assert.equal(canViewCommissionsSection("visualAudit", checker(["finance.view"])), false);
   });
 
-  it("resolveFirstAccessibleCommissionsPath retorna primeira seção permitida", () => {
+  it("resolveFirstAccessibleCommissionsPath retorna /commissions", () => {
     assert.equal(
-      resolveFirstAccessibleCommissionsPath(checker(["commissions.forecast.view"])),
-      "/commissions/future"
+      resolveFirstAccessibleCommissionsPath(checker(["commissions.view"])),
+      "/commissions"
     );
   });
 });
