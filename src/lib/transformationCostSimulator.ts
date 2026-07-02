@@ -5,6 +5,9 @@
 export const TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE =
   "Informe os dados necessários para calcular";
 
+export const TRANSFORMATION_COST_SIMULATOR_LABOR_ENERGY_UNAVAILABLE =
+  "Informe mão de obra e energia para calcular";
+
 export type TransformationCostSimulatorFormValues = {
   monthlyPayroll: string;
   productivePeople: string;
@@ -73,10 +76,17 @@ export type TransformationCostSimulatorEnergyBlock = {
 };
 
 export type TransformationCostSimulatorProductBlock = {
+  /** HH ajustado + HM energia ajustado — não depende de ciclo/cavidades. */
+  injectionHourlyCost: number | null;
+  /** HM ajustado + (HH ajustado × operadores) — custo horário da operação. */
+  operationHourlyCost: number | null;
+  /** @deprecated Alias de operationHourlyCost — mantido por compatibilidade interna. */
   transformationCostPerHour: number | null;
   cyclesPerHour: number | null;
   theoreticalPiecesPerHour: number | null;
   goodPiecesPerHour: number | null;
+  estimatedInjectionCostPerPiece: number | null;
+  /** Custo por peça com operadores (HM + HH×operadores) ÷ peças boas/h. */
   estimatedTransformationCostPerPiece: number | null;
 };
 
@@ -196,10 +206,16 @@ export function computeTransformationCostSimulator(
       : null;
 
   const operatorCount = operators ?? null;
-  const transformationCostPerHour =
+
+  const injectionHourlyCost =
+    adjustedHH != null && adjustedHM != null ? adjustedHH + adjustedHM : null;
+
+  const operationHourlyCost =
     adjustedHM != null && operatorCount != null && adjustedHH != null
       ? adjustedHM + adjustedHH * operatorCount
       : null;
+
+  const transformationCostPerHour = operationHourlyCost;
 
   const validCycle = cycleSeconds != null && cycleSeconds > 0 ? cycleSeconds : null;
   const cyclesPerHour = validCycle != null ? safeDivide(3600, validCycle) : null;
@@ -216,9 +232,14 @@ export function computeTransformationCostSimulator(
       ? theoreticalPiecesPerHour * scrapFactor
       : null;
 
+  const estimatedInjectionCostPerPiece =
+    injectionHourlyCost != null && isPositive(goodPiecesPerHour)
+      ? safeDivide(injectionHourlyCost, goodPiecesPerHour)
+      : null;
+
   const estimatedTransformationCostPerPiece =
-    transformationCostPerHour != null && isPositive(goodPiecesPerHour)
-      ? safeDivide(transformationCostPerHour, goodPiecesPerHour)
+    operationHourlyCost != null && isPositive(goodPiecesPerHour)
+      ? safeDivide(operationHourlyCost, goodPiecesPerHour)
       : null;
 
   return {
@@ -235,14 +256,24 @@ export function computeTransformationCostSimulator(
       adjustedHM,
     },
     product: {
+      injectionHourlyCost,
+      operationHourlyCost,
       transformationCostPerHour,
       cyclesPerHour,
       theoreticalPiecesPerHour,
       goodPiecesPerHour,
+      estimatedInjectionCostPerPiece,
       estimatedTransformationCostPerPiece,
     },
     fieldErrors,
   };
+}
+
+export function computeInjectionHourlyCostFromRates(input: {
+  adjustedHH: number;
+  adjustedHM: number;
+}): number {
+  return input.adjustedHH + input.adjustedHM;
 }
 
 export function computeTransformationCostPerHourFromRates(input: {

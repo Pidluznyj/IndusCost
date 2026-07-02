@@ -14,6 +14,7 @@ import {
   computeTransformationCostSimulator,
   DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
   EMPTY_TRANSFORMATION_COST_SIMULATOR_VALUES,
+  TRANSFORMATION_COST_SIMULATOR_LABOR_ENERGY_UNAVAILABLE,
   TRANSFORMATION_COST_SIMULATOR_STORAGE_KEY,
   TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE,
   type TransformationCostSimulatorFormValues,
@@ -25,6 +26,11 @@ const INPUT_CLASS =
 function formatHourlyRate(value: number | null): string {
   if (value == null) return TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
   return `${formatCurrency(value)}/h`;
+}
+
+function formatInjectionHourlyRate(value: number | null): string {
+  if (value != null) return `${formatCurrency(value)}/h`;
+  return TRANSFORMATION_COST_SIMULATOR_LABOR_ENERGY_UNAVAILABLE;
 }
 
 function formatPiecesPerHour(value: number | null): string {
@@ -189,8 +195,13 @@ export function TransformationCostSimulatorModule() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const heroCost = formatCostPerPiece(result.product.estimatedTransformationCostPerPiece);
+  const heroCost = formatCostPerPiece(result.product.estimatedInjectionCostPerPiece);
   const heroReady = heroCost !== TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
+  const injectionHourlyReady = result.product.injectionHourlyCost != null;
+  const showOperationHourly =
+    result.product.operationHourlyCost != null &&
+    result.product.injectionHourlyCost != null &&
+    Math.abs(result.product.operationHourlyCost - result.product.injectionHourlyCost) > 0.000001;
 
   return (
     <div className="space-y-8">
@@ -392,8 +403,8 @@ export function TransformationCostSimulatorModule() {
             />
             <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
               <ResultTile
-                label="Custo hora transformação"
-                value={formatHourlyRate(result.product.transformationCostPerHour)}
+                label="Custo hora da operação"
+                value={formatHourlyRate(result.product.operationHourlyCost)}
                 emphasis="accent"
               />
               <ResultTile
@@ -417,6 +428,43 @@ export function TransformationCostSimulatorModule() {
         </BlockCard>
       </div>
 
+      <section
+        className={cn(
+          "rounded-xl border p-6 shadow-sm",
+          injectionHourlyReady
+            ? "border-slate-300 bg-gradient-to-r from-slate-50 via-white to-slate-50"
+            : "border-slate-200 bg-white"
+        )}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
+              Custo hora de injeção
+            </p>
+            <p
+              className={cn(
+                "font-black tabular-nums tracking-tight",
+                injectionHourlyReady ? "text-3xl text-slate-900 sm:text-4xl" : "text-base italic text-slate-500"
+              )}
+            >
+              {formatInjectionHourlyRate(result.product.injectionHourlyCost)}
+            </p>
+            <p className="text-sm text-slate-600">HH ajustado + HM energia ajustado</p>
+          </div>
+          {showOperationHourly ? (
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Custo hora da operação
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                {formatHourlyRate(result.product.operationHourlyCost)}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">HM ajustado + (HH ajustado × operadores)</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50/80 px-6 py-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -433,7 +481,7 @@ export function TransformationCostSimulatorModule() {
               Resultado principal
             </span>
             <p className="mt-3 text-base font-semibold text-slate-800">
-              Custo de Transformação Estimado por Peça
+              Custo de Injeção Estimado por Peça
             </p>
             <p
               className={cn(
@@ -444,7 +492,7 @@ export function TransformationCostSimulatorModule() {
               {heroCost}
             </p>
             <p className="mt-3 text-sm leading-relaxed text-slate-600">
-              Estimativa operacional calculada a partir de HH, HM, ciclo, cavidades, operadores e
+              Estimativa operacional calculada a partir do custo hora de injeção, ciclo, cavidades e
               refugo. Não substitui custo oficial publicado.
             </p>
             {form.simulationName.trim() ? (
@@ -456,6 +504,14 @@ export function TransformationCostSimulatorModule() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <ResultTile
+                label="Custo hora de injeção"
+                value={formatInjectionHourlyRate(result.product.injectionHourlyCost)}
+                emphasis="accent"
+              />
+              <p className="mt-1 px-1 text-[11px] text-slate-500">HH ajustado + HM energia ajustado</p>
+            </div>
             <ResultTile
               label="HH ajustado"
               value={formatHourlyRate(result.labor.adjustedHH)}
@@ -466,22 +522,32 @@ export function TransformationCostSimulatorModule() {
               value={formatHourlyRate(result.energy.adjustedHM)}
               emphasis="accent"
             />
-            <ResultTile
-              label="Custo hora transformação"
-              value={formatHourlyRate(result.product.transformationCostPerHour)}
-              emphasis="accent"
-            />
+            {showOperationHourly ? (
+              <ResultTile
+                label="Custo hora da operação"
+                value={formatHourlyRate(result.product.operationHourlyCost)}
+                emphasis="accent"
+              />
+            ) : null}
             <ResultTile
               label="Peças boas por hora"
               value={formatPiecesPerHour(result.product.goodPiecesPerHour)}
             />
             <div className="sm:col-span-2">
               <ResultTile
-                label="Custo transformação estimado por peça"
-                value={formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
+                label="Custo de injeção estimado por peça"
+                value={formatCostPerPiece(result.product.estimatedInjectionCostPerPiece)}
                 emphasis="highlight"
               />
             </div>
+            {showOperationHourly ? (
+              <div className="sm:col-span-2">
+                <ResultTile
+                  label="Custo operacional estimado por peça"
+                  value={formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -510,12 +576,16 @@ export function TransformationCostSimulatorModule() {
             máquina produtivas ajustadas.
           </p>
           <p>
-            <span className="font-semibold text-slate-900">Custo hora transformação</span> = HM
+            <span className="font-semibold text-slate-900">Custo hora de injeção</span> = HH
+            ajustado + HM energia ajustado.
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Custo hora da operação</span> = HM
             ajustado + (HH ajustado × operadores).
           </p>
           <p>
-            <span className="font-semibold text-slate-900">Custo por peça</span> = custo hora
-            transformação ÷ peças boas por hora.
+            <span className="font-semibold text-slate-900">Custo de injeção por peça</span> = custo
+            hora de injeção ÷ peças boas por hora.
           </p>
         </div>
       </details>

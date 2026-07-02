@@ -582,7 +582,7 @@ export default function App() {
           path="transformation-simulator"
           element={
             <ModulePageShell
-              title="Simulador de Custo de Transformação"
+              title="Simulador de Custo de Injeção"
               description="Estimativa operacional de HH, HM e custo de transformação por peça — sem impacto em custos oficiais."
             >
               <TransformationCostSimulatorModule />

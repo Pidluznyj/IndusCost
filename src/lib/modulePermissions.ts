@@ -271,7 +271,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   projects: "Projetos",
   fleet: "Gestão de Frota",
   products: "Produtos",
-  "transformation-simulator": "Simulador de Custo de Transformação",
+  "transformation-simulator": "Simulador de Custo de Injeção",
   opex: "Custos Indiretos",
   taxes: "Tributos",
   pricing: "Formação de Preço",

@@ -14,6 +14,8 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.doesNotMatch(mod, /prisma/i);
     assert.match(mod, /localStorage/);
     assert.match(mod, /não alteram custos oficiais/i);
+    assert.match(mod, /Custo hora de injeção/);
+    assert.match(mod, /Custo de Injeção Estimado por Peça/);
   });
 
   it("rota e menu em Engenharia", () => {

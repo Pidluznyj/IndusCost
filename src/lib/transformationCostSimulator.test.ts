@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  computeInjectionHourlyCostFromRates,
   computeTransformationCostPerHourFromRates,
   computeTransformationCostSimulator,
   DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
@@ -26,11 +27,34 @@ describe("transformationCostSimulator", () => {
     approx(result.energy.theoreticalHM, 10.68, 0.01);
     approx(result.energy.adjustedHM, 13.35, 0.01);
 
+    approx(result.product.injectionHourlyCost, 31.87, 0.02);
+    approx(result.product.operationHourlyCost, 31.87, 0.02);
     approx(result.product.transformationCostPerHour, 31.87, 0.02);
     approx(result.product.cyclesPerHour, 56.25, 0.01);
     approx(result.product.theoreticalPiecesPerHour, 1350, 0.01);
     approx(result.product.goodPiecesPerHour, 1350, 0.01);
+    approx(result.product.estimatedInjectionCostPerPiece, 0.0236, 0.0001);
     approx(result.product.estimatedTransformationCostPerPiece, 0.0236, 0.0001);
+  });
+
+  it("custo hora de injeção — exemplo HH + HM ajustados", () => {
+    const injection = computeInjectionHourlyCostFromRates({
+      adjustedHH: 28.935185,
+      adjustedHM: 13.354701,
+    });
+    approx(injection, 42.289886, 0.000001);
+  });
+
+  it("sem ciclo/cavidades — custo hora de injeção calculado e custo por peça indisponível", () => {
+    const result = computeTransformationCostSimulator({
+      ...DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
+      cycleSeconds: "",
+      cavities: "",
+      scrapPercent: "",
+    });
+    approx(result.product.injectionHourlyCost, 31.87, 0.02);
+    assert.equal(result.product.estimatedInjectionCostPerPiece, null);
+    assert.equal(result.product.goodPiecesPerHour, null);
   });
 
   it("eficiência 100% mantém horas teóricas = ajustadas", () => {
@@ -68,6 +92,7 @@ describe("transformationCostSimulator", () => {
     });
     assert.match(zeroCycle.fieldErrors.cycleSeconds ?? "", /maior que zero/);
     assert.equal(zeroCycle.product.cyclesPerHour, null);
+    approx(zeroCycle.product.injectionHourlyCost, 31.87, 0.02);
 
     const zeroCavities = computeTransformationCostSimulator({
       ...DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
@@ -75,12 +100,16 @@ describe("transformationCostSimulator", () => {
     });
     assert.match(zeroCavities.fieldErrors.cavities ?? "", /maiores que zero/);
     assert.equal(zeroCavities.product.goodPiecesPerHour, null);
+    approx(zeroCavities.product.injectionHourlyCost, 31.87, 0.02);
   });
 
-  it("operadores fracionados alteram custo hora transformação", () => {
+  it("operadores fracionados alteram custo hora da operação, não o custo hora de injeção", () => {
     const base = computeTransformationCostSimulator(DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES);
     const hh = base.labor.adjustedHH as number;
     const hm = base.energy.adjustedHM as number;
+    const injection = base.product.injectionHourlyCost as number;
+
+    approx(injection, hh + hm, 0.001);
 
     approx(
       computeTransformationCostPerHourFromRates({ adjustedHH: hh, adjustedHM: hm, operators: 0.5 }),
@@ -97,6 +126,17 @@ describe("transformationCostSimulator", () => {
       50.39,
       0.02
     );
+
+    const twoOperators = computeTransformationCostSimulator({
+      ...DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
+      operators: "2",
+    });
+    approx(twoOperators.product.injectionHourlyCost, injection, 0.001);
+    approx(twoOperators.product.operationHourlyCost, 50.39, 0.02);
+    assert.ok(
+      (twoOperators.product.estimatedInjectionCostPerPiece ?? 0) <
+        (twoOperators.product.estimatedTransformationCostPerPiece ?? 0)
+    );
   });
 
   it("refugo 5% reduz peças boas por hora", () => {
@@ -105,7 +145,7 @@ describe("transformationCostSimulator", () => {
       scrapPercent: "5",
     });
     approx(result.product.goodPiecesPerHour, 1282.5, 0.01);
-    assert.ok((result.product.estimatedTransformationCostPerPiece ?? 0) > 0.0236);
+    assert.ok((result.product.estimatedInjectionCostPerPiece ?? 0) > 0.0236);
   });
 
   it("campos vazios não geram NaN ou Infinity", () => {
@@ -115,7 +155,10 @@ describe("transformationCostSimulator", () => {
       result.labor.adjustedHH,
       result.energy.theoreticalHM,
       result.energy.adjustedHM,
+      result.product.injectionHourlyCost,
+      result.product.operationHourlyCost,
       result.product.transformationCostPerHour,
+      result.product.estimatedInjectionCostPerPiece,
       result.product.estimatedTransformationCostPerPiece,
     ];
     for (const value of values) {
@@ -123,6 +166,7 @@ describe("transformationCostSimulator", () => {
         assert.ok(Number.isFinite(value));
       }
     }
-    assert.equal(result.product.estimatedTransformationCostPerPiece, null);
+    assert.equal(result.product.injectionHourlyCost, null);
+    assert.equal(result.product.estimatedInjectionCostPerPiece, null);
   });
 });
