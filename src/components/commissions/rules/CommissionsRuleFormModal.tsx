@@ -12,6 +12,7 @@ import {
   COMMISSION_RULE_BASE_OPTIONS,
   COMMISSION_RULE_BENEFICIARY_OPTIONS,
   COMMISSION_RULE_RELEASE_OPTIONS,
+  COMMISSION_RULE_CALCULATION_OPTIONS,
   dateInputToIsoEnd,
   dateInputToIsoStart,
   isoToDateInput,
@@ -38,6 +39,7 @@ const EMPTY: FormState = {
   active: true,
   priority: 100,
   beneficiaryType: "SELLER",
+  calculationType: "FIXED_PERCENT",
   fixedCommissionPersonId: null,
   ratePercent: 0,
   baseType: "SALES_ORDER_ITEM_NET",
@@ -91,6 +93,7 @@ export function CommissionsRuleFormModal({
         active: initial.active,
         priority: initial.priority,
         beneficiaryType: initial.beneficiaryType,
+        calculationType: initial.calculationType ?? "FIXED_PERCENT",
         fixedCommissionPersonId: initial.fixedCommissionPersonId,
         ratePercent: initial.ratePercent,
         baseType: initial.baseType,
@@ -146,9 +149,10 @@ export function CommissionsRuleFormModal({
       active: form.active,
       priority: form.priority,
       beneficiaryType: form.beneficiaryType,
+      calculationType: form.calculationType,
       fixedCommissionPersonId:
         form.beneficiaryType === "FIXED_PERSON" ? form.fixedCommissionPersonId : null,
-      ratePercent: form.ratePercent,
+      ratePercent: form.calculationType === "COMMERCIAL_PRICE_TIER" ? 0 : form.ratePercent,
       baseType: form.baseType,
       releaseRule: form.releaseRule,
       validFrom: dateInputToIsoStart(form.validFromInput),
@@ -217,6 +221,35 @@ export function CommissionsRuleFormModal({
             />
           </label>
 
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-[#6B7280]">Tipo de comissão *</span>
+            <select
+              required
+              className={fieldClass}
+              value={form.calculationType}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  calculationType: e.target.value,
+                  ratePercent: e.target.value === "COMMERCIAL_PRICE_TIER" ? 0 : f.ratePercent,
+                }))
+              }
+            >
+              {COMMISSION_RULE_CALCULATION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {form.calculationType === "COMMERCIAL_PRICE_TIER" ? (
+              <p className="text-[11px] text-[#6B7280] leading-snug">
+                A comissão será resolvida conforme a faixa de preço em que o item vendido se
+                enquadrar: Atacado, Varejo 1, Varejo 2 ou Varejo 3 — usando as tabelas geradas em
+                Formação de Preço.
+              </p>
+            ) : null}
+          </label>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1">
               <span className="text-xs font-medium text-[#6B7280]">Prioridade *</span>
@@ -230,23 +263,31 @@ export function CommissionsRuleFormModal({
                 }
               />
             </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-[#6B7280]">Percentual (%) *</span>
-              <input
-                type="number"
-                required
-                min={0}
-                step="0.0001"
-                className={fieldClass}
-                value={form.ratePercent}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    ratePercent: Number.parseFloat(e.target.value) || 0,
-                  }))
-                }
-              />
-            </label>
+            {form.calculationType === "FIXED_PERCENT" ? (
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-[#6B7280]">Percentual (%) *</span>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  step="0.0001"
+                  className={fieldClass}
+                  value={form.ratePercent}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      ratePercent: Number.parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </label>
+            ) : (
+              <div className="flex items-end">
+                <p className="text-xs text-[#6B7280] pb-2">
+                  Percentual definido pela tabela comercial publicada.
+                </p>
+              </div>
+            )}
           </div>
 
           <label className="block space-y-1">

@@ -153,6 +153,7 @@ function sampleOrder(): CommissionOrderSourceBundle {
     items: [
       {
         localItemId: "item-1",
+        localProductId: "prod-1",
         nomusOrderItemId: 1001,
         nomusProductId: 200,
         productCode: "SKU-1",
@@ -181,6 +182,7 @@ describe("commission-rule-engine", () => {
     active: true,
     priority: 100,
     beneficiaryType: "SELLER",
+    calculationType: "FIXED_PERCENT",
     fixedCommissionPersonId: null,
     ratePercent: 5,
     baseType: "SALES_ORDER_ITEM_NET",

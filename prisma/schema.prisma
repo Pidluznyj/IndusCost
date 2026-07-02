@@ -3648,6 +3648,11 @@ enum CommissionRuleBeneficiaryType {
   FIXED_PERSON
 }
 
+enum CommissionRuleCalculationType {
+  FIXED_PERCENT
+  COMMERCIAL_PRICE_TIER
+}
+
 enum CommissionRuleBaseType {
   SALES_ORDER_ITEM_NET
   OUTPUT_DOCUMENT_ITEM_NET
@@ -3748,6 +3753,11 @@ enum CommissionAuditIssueType {
   PAID_WITHOUT_RELEASE
   DIVERGENT_AMOUNT
   MANUAL_REVIEW_REQUIRED
+  NO_COMMERCIAL_PRICE_TABLE
+  BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE
+  MISSING_OFFICIAL_PRODUCT_COST
+  INVALID_COMMERCIAL_PRICE_RANGE
+  NO_COMMISSION_TABLE_RATE
 }
 
 model CommissionPerson {
@@ -3780,6 +3790,7 @@ model CommissionRule {
   active                  Boolean                       @default(true)
   priority                Int                           @default(100)
   beneficiaryType         CommissionRuleBeneficiaryType
+  calculationType         CommissionRuleCalculationType   @default(FIXED_PERCENT)
   fixedCommissionPersonId String?                       @db.Uuid
   ratePercent             Decimal                       @db.Decimal(10, 4)
   baseType                CommissionRuleBaseType

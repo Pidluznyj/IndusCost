@@ -419,6 +419,7 @@ export type CommissionsRuleItem = {
   active: boolean;
   priority: number;
   beneficiaryType: string;
+  calculationType: string;
   fixedCommissionPersonId: string | null;
   fixedCommissionPersonName?: string | null;
   ratePercent: number;
@@ -454,6 +455,7 @@ export type CommissionsRuleFormInput = {
   active: boolean;
   priority: number;
   beneficiaryType: string;
+  calculationType: string;
   fixedCommissionPersonId: string | null;
   ratePercent: number;
   baseType: string;

@@ -65,6 +65,7 @@ export async function loadCommissionOrderSources(
       items: {
         select: {
           id: true,
+          productId: true,
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,

@@ -8,6 +8,7 @@ import type {
   CommissionReleaseRule,
   CommissionRuleBeneficiaryType,
   CommissionRuleBaseType,
+  CommissionRuleCalculationType,
 } from "@prisma/client";
 
 export type {
@@ -20,6 +21,7 @@ export type {
   CommissionReleaseRule,
   CommissionRuleBeneficiaryType,
   CommissionRuleBaseType,
+  CommissionRuleCalculationType,
 };
 
 /** Chaves em CommissionSettings (seed migration + runtime upsert). */
@@ -95,6 +97,7 @@ export type CommissionOrderInstallmentForecast = {
 
 export type CommissionOrderItemSource = {
   localItemId: string;
+  localProductId: string;
   nomusOrderItemId: number | null;
   nomusProductId: number | null;
   productCode: string;
@@ -176,6 +179,7 @@ export type CommissionActiveRule = {
   active: boolean;
   priority: number;
   beneficiaryType: CommissionRuleBeneficiaryType;
+  calculationType: CommissionRuleCalculationType;
   fixedCommissionPersonId: string | null;
   ratePercent: number;
   baseType: CommissionRuleBaseType;
@@ -203,6 +207,7 @@ export type CommissionActiveRule = {
 
 export type CommissionRuleMatchResult = {
   rule: CommissionActiveRule;
+  calculationType: CommissionRuleCalculationType;
   ratePercent: number;
   releaseRule: CommissionReleaseRule;
   baseType: CommissionRuleBaseType;

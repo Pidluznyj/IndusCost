@@ -19,6 +19,14 @@ export const COMMISSION_RULE_RELEASE_OPTIONS = [
   { value: "EACH_RECEIVABLE_PAID", label: "Proporcional a cada Conta a Receber paga" },
 ] as const;
 
+export const COMMISSION_RULE_CALCULATION_OPTIONS = [
+  { value: "FIXED_PERCENT", label: "Percentual fixo" },
+  {
+    value: "COMMERCIAL_PRICE_TIER",
+    label: "Por faixa da tabela comercial (Atacado / Varejo 1–3)",
+  },
+] as const;
+
 const BENEFICIARY_LABELS: Record<string, string> = {
   SELLER: "Vendedor do pedido",
   REPRESENTATIVE: "Representante do pedido",
@@ -58,6 +66,7 @@ export function buildCommissionRuleSummary(
   rule: Pick<
     CommissionsRuleItem | CommissionsRuleFormInput,
     | "beneficiaryType"
+    | "calculationType"
     | "fixedCommissionPersonId"
     | "ratePercent"
     | "baseType"
@@ -70,6 +79,9 @@ export function buildCommissionRuleSummary(
       : formatCommissionRuleBeneficiary(rule.beneficiaryType);
   const base = formatCommissionRuleBase(rule.baseType);
   const release = formatCommissionRuleRelease(rule.releaseRule);
+  if (rule.calculationType === "COMMERCIAL_PRICE_TIER") {
+    return `${beneficiary} recebe comissão conforme a faixa comercial (Atacado, Varejo 1, Varejo 2 ou Varejo 3) sobre ${base}, ${release}.`;
+  }
   return `${beneficiary} recebe ${rule.ratePercent}% sobre ${base}, ${release}.`;
 }
 

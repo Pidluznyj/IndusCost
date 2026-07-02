@@ -13,6 +13,8 @@ import {
   loadActiveCommissionRules,
   selectBestMatchingRule,
 } from "./commission-rule-engine.js";
+import { CommercialTierCache } from "./commission-commercial-tier.server.js";
+import { resolveCommissionRateForItem } from "./commission-rate-resolver.server.js";
 import { loadCommissionOrderSources } from "./commission-source-resolver.server.js";
 import type { CommissionOrderSourceBundle, CommissionPeriodInput } from "./commission-types.js";
 import { activeCommissionRecordWhere } from "./commission-record-status.js";
@@ -139,6 +141,7 @@ export async function previewCommissionCalculation(
   let waitingNfeLines = 0;
   let noRuleLines = 0;
   let noSellerLines = 0;
+  let tierBlockedLines = 0;
   let forecastAmount = 0;
   let confirmedAmount = 0;
   let waitingNfeAmount = 0;
@@ -147,6 +150,7 @@ export async function previewCommissionCalculation(
 
   const sellerTotals = new Map<string, { amount: number; count: number }>();
   const customerTotals = new Map<string, { amount: number; count: number }>();
+  const tierCache = new CommercialTierCache(db);
 
   for (const order of activeOrders) {
     for (const item of order.items) {
@@ -219,8 +223,39 @@ export async function previewCommissionCalculation(
         }
 
         const baseAmount = itemBaseAmount(item);
-        const commissionAmount = computeCommissionAmount(baseAmount, match.ratePercent);
+
+        const rateResolution = await resolveCommissionRateForItem(db, {
+          match,
+          order,
+          item,
+          referenceDate: order.issueDate,
+          tierCache,
+        });
+        if (!rateResolution.ok) {
+          tierBlockedLines += 1;
+          pushLine(lines, {
+            orderCode: order.orderCode,
+            issueDate: order.issueDate.toISOString().slice(0, 10),
+            productCode: item.productCode,
+            customerName: order.customerName,
+            sellerName: order.seller.responsibleName,
+            commissionPersonName: person.personName,
+            beneficiaryType,
+            mode: "blocked",
+            status: rateResolution.auditIssue.type,
+            ruleName: match.rule.name,
+            rulePercent: null,
+            baseAmount,
+            commissionAmount: 0,
+            nfeNumber: null,
+            blockReason: rateResolution.auditIssue.message,
+          });
+          continue;
+        }
+
+        const commissionAmount = computeCommissionAmount(baseAmount, rateResolution.ratePercent);
         if (commissionAmount <= 0) continue;
+        const rulePercent = rateResolution.ratePercent;
 
         const hasAuthorized = order.authorizedOutputNfes.length > 0;
 
@@ -271,7 +306,7 @@ export async function previewCommissionCalculation(
             mode: "forecast",
             status,
             ruleName: match.rule.name,
-            rulePercent: match.ratePercent,
+            rulePercent: rulePercent,
             baseAmount,
             commissionAmount,
             nfeNumber: null,
@@ -313,7 +348,7 @@ export async function previewCommissionCalculation(
             mode: "confirmed",
             status,
             ruleName: match.rule.name,
-            rulePercent: match.ratePercent,
+            rulePercent: rulePercent,
             baseAmount,
             commissionAmount,
             nfeNumber: nfe.nfeNumber,

@@ -111,6 +111,7 @@ export function extractRepresentativeFromNomusRaw(raw: unknown): CommissionRepre
 
 export function mapSalesOrderItemToSource(item: {
   id: string;
+  productId: string;
   externalProductId: number | null;
   skuSnapshot: string;
   productNameSnapshot: string;
@@ -138,6 +139,7 @@ export function mapSalesOrderItemToSource(item: {
 
   return {
     localItemId: item.id,
+    localProductId: item.productId,
     nomusOrderItemId,
     nomusProductId: item.externalProductId,
     productCode: item.skuSnapshot,

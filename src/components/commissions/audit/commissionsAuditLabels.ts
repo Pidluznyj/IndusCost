@@ -20,6 +20,11 @@ export const COMMISSION_AUDIT_TYPE_OPTIONS = [
   { value: "PAID_WITHOUT_RELEASE", label: "Pago sem liberação" },
   { value: "DIVERGENT_AMOUNT", label: "Valor divergente" },
   { value: "MANUAL_REVIEW_REQUIRED", label: "Revisão manual" },
+  { value: "NO_COMMERCIAL_PRICE_TABLE", label: "Sem tabela comercial" },
+  { value: "BELOW_MINIMUM_COMMERCIAL_TABLE_PRICE", label: "Preço abaixo do Atacado" },
+  { value: "MISSING_OFFICIAL_PRODUCT_COST", label: "Sem custo oficial IndusCost" },
+  { value: "INVALID_COMMERCIAL_PRICE_RANGE", label: "Faixas comerciais inconsistentes" },
+  { value: "NO_COMMISSION_TABLE_RATE", label: "Tabela sem % de comissão" },
 ] as const;
 
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(
@@ -48,7 +53,11 @@ const METADATA_LABELS: Record<string, string> = {
   commissionRecordId: "Registro de comissão (ID)",
   ruleId: "Regra (ID)",
   nomusOrderId: "Pedido Nomus",
-  nomusReceivableId: "CR Nomus",
+  soldUnitPrice: "Preço unitário vendido",
+  tierCode: "Faixa comercial",
+  tierName: "Nome da faixa",
+  referenceSalePrice: "Preço de referência da faixa",
+  missingCodes: "Tabelas ausentes",
 };
 
 export function formatAuditSeverity(severity: string): string {

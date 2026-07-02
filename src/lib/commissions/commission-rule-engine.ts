@@ -84,6 +84,7 @@ export function selectBestMatchingRule(
 
   return {
     rule: best,
+    calculationType: best.calculationType,
     ratePercent: best.ratePercent,
     releaseRule: best.releaseRule,
     baseType: best.baseType,
@@ -105,6 +106,7 @@ export async function loadActiveCommissionRules(
     active: row.active,
     priority: row.priority,
     beneficiaryType: row.beneficiaryType,
+    calculationType: row.calculationType,
     fixedCommissionPersonId: row.fixedCommissionPersonId,
     ratePercent: decimalToNumber(row.ratePercent),
     baseType: row.baseType,

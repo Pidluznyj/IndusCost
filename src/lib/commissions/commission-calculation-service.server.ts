@@ -34,6 +34,8 @@ import {
   resolveOrCreateCommissionPerson,
   selectBestMatchingRule,
 } from "./commission-rule-engine.js";
+import { CommercialTierCache } from "./commission-commercial-tier.server.js";
+import { resolveCommissionRateForItem } from "./commission-rate-resolver.server.js";
 import { loadCommissionSettings } from "./commission-settings.server.js";
 import { loadCommissionOrderSources, resolveCommissionPeriod } from "./commission-source-resolver.server.js";
 import type {
@@ -312,6 +314,7 @@ async function processBeneficiaryForItem(
     rules: Awaited<ReturnType<typeof loadActiveCommissionRules>>;
     settings: Awaited<ReturnType<typeof loadCommissionSettings>>;
     referenceDate: Date;
+    tierCache: CommercialTierCache;
     auditDrafts: import("./commission-types.js").CommissionAuditIssueDraft[];
     stats: CommissionCalculationSummary;
   }
@@ -360,8 +363,30 @@ async function processBeneficiaryForItem(
   }
 
   const baseAmount = itemBaseAmount(item, match.baseType);
-  const commissionAmount = computeCommissionAmount(baseAmount, match.ratePercent);
+
+  const rateResolution = await resolveCommissionRateForItem(db, {
+    match,
+    order,
+    item,
+    referenceDate: input.referenceDate,
+    tierCache: input.tierCache,
+  });
+  if (!rateResolution.ok) {
+    input.auditDrafts.push(rateResolution.auditIssue);
+    return;
+  }
+
+  const ratePercent = rateResolution.ratePercent;
+  const tierMetadata = rateResolution.metadata;
+  const commissionAmount = computeCommissionAmount(baseAmount, ratePercent);
   if (commissionAmount <= 0) return;
+
+  const recordMetadataBase = {
+    ruleId: match.rule.id,
+    ruleName: match.rule.name,
+    calculationType: match.calculationType,
+    ...tierMetadata,
+  };
 
   const hasAuthorized = order.authorizedOutputNfes.length > 0;
 
@@ -397,11 +422,11 @@ async function processBeneficiaryForItem(
       customerName: order.customerName,
       companyExternalId: order.companyExternalId,
       baseAmount,
-      ratePercent: match.ratePercent,
+      ratePercent,
       commissionAmount,
       releaseRule: match.releaseRule,
       confirmedAt: null,
-      metadataJson: { ruleId: match.rule.id, ruleName: match.rule.name, mode: "forecast" },
+      metadataJson: { ...recordMetadataBase, mode: "forecast" },
     };
     const schedules = buildForecastSchedules(order, hash, commissionAmount);
     await upsertCommissionRecord(db, input.runId, draft, schedules, input.settings, input.stats);
@@ -461,13 +486,12 @@ async function processBeneficiaryForItem(
       customerName: order.customerName,
       companyExternalId: order.companyExternalId,
       baseAmount,
-      ratePercent: match.ratePercent,
+      ratePercent,
       commissionAmount,
       releaseRule: match.releaseRule,
       confirmedAt,
       metadataJson: {
-        ruleId: match.rule.id,
-        ruleName: match.rule.name,
+        ...recordMetadataBase,
         mode: "confirmed",
         nfeExternalId: nfe.nfeExternalId,
         localOutputDocumentMovementId: docs[0]?.localMovementId ?? null,
@@ -639,6 +663,7 @@ export async function calculateCommissions(
     stats.ordersEvaluated = orders.length;
 
     const auditDrafts = orders.flatMap((order) => collectOrderAuditIssues(order, auditFlags));
+    const tierCache = new CommercialTierCache(db);
 
     for (const order of orders) {
       if (order.status === "CANCELLED") continue;
@@ -660,6 +685,7 @@ export async function calculateCommissions(
               rules,
               settings,
               referenceDate: order.issueDate,
+              tierCache,
               auditDrafts,
               stats,
             });

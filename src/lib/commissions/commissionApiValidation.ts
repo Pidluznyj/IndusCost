@@ -5,6 +5,7 @@ import type {
   CommissionReleaseRule,
   CommissionRuleBaseType,
   CommissionRuleBeneficiaryType,
+  CommissionRuleCalculationType,
 } from "@prisma/client";
 
 export class CommissionValidationError extends Error {
@@ -39,6 +40,10 @@ const RELEASE_RULES = new Set<CommissionReleaseRule>([
   "OUTPUT_DOCUMENT_CREATED",
   "FIRST_RECEIVABLE_PAID",
   "EACH_RECEIVABLE_PAID",
+]);
+const CALCULATION_TYPES = new Set<CommissionRuleCalculationType>([
+  "FIXED_PERCENT",
+  "COMMERCIAL_PRICE_TIER",
 ]);
 const RUN_MODES = new Set<CommissionCalculationRunMode>([
   "FORECAST",
@@ -187,6 +192,7 @@ export type CommissionRuleWriteInput = {
   active?: boolean;
   priority?: number;
   beneficiaryType: CommissionRuleBeneficiaryType;
+  calculationType?: CommissionRuleCalculationType;
   fixedCommissionPersonId?: string | null;
   ratePercent: number;
   baseType: CommissionRuleBaseType;
@@ -236,7 +242,19 @@ function parseRuleCore(raw: Record<string, unknown>): Omit<CommissionRuleWriteIn
     throw new CommissionValidationError("INVALID_FIELD", "releaseRule inválido.");
   }
 
-  const ratePercent = parseRatePercent(raw.ratePercent);
+  const calculationTypeRaw = raw.calculationType ?? "FIXED_PERCENT";
+  if (
+    typeof calculationTypeRaw !== "string" ||
+    !CALCULATION_TYPES.has(calculationTypeRaw as CommissionRuleCalculationType)
+  ) {
+    throw new CommissionValidationError("INVALID_FIELD", "calculationType inválido.");
+  }
+  const calculationType = calculationTypeRaw as CommissionRuleCalculationType;
+
+  const ratePercent =
+    calculationType === "COMMERCIAL_PRICE_TIER"
+      ? 0
+      : parseRatePercent(raw.ratePercent);
   const conditions = Array.isArray(raw.conditions)
     ? raw.conditions.map(parseRuleCondition)
     : undefined;
@@ -256,6 +274,7 @@ function parseRuleCore(raw: Record<string, unknown>): Omit<CommissionRuleWriteIn
           })()
         : undefined,
     beneficiaryType: beneficiaryType as CommissionRuleBeneficiaryType,
+    calculationType,
     fixedCommissionPersonId:
       raw.fixedCommissionPersonId !== undefined
         ? optionalString(raw.fixedCommissionPersonId)
@@ -311,6 +330,7 @@ export function parseCommissionRuleCreateBody(body: unknown): CommissionRuleWrit
     active: core.active ?? true,
     priority: core.priority ?? 100,
     beneficiaryType: core.beneficiaryType,
+    calculationType: core.calculationType ?? "FIXED_PERCENT",
     fixedCommissionPersonId: core.fixedCommissionPersonId ?? null,
     ratePercent: core.ratePercent,
     baseType: core.baseType,
