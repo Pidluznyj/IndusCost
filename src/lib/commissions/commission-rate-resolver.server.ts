@@ -5,6 +5,7 @@ import type { CommissionAuditIssueType, PrismaClient } from "@prisma/client";
 import { getEffectiveProductProductionCost } from "../productionCostTables.server.js";
 import { CommercialTierCache } from "./commission-commercial-tier.server.js";
 import {
+  buildCommercialTierMetadata,
   commercialTierAuditMessage,
   resolveCommercialPriceTier,
   resolveSoldUnitNetPrice,
@@ -155,34 +156,16 @@ export async function resolveCommissionRateForItem(
   }
 
   const metadata: Record<string, unknown> = {
-    calculationType: "COMMERCIAL_PRICE_TIER",
-    tierCode: tierResult.tierCode,
-    tierName: tierResult.tierName,
-    referenceSalePrice: tierResult.referenceSalePrice,
-    soldUnitPrice: tierResult.soldUnitPrice,
+    ...buildCommercialTierMetadata(tierResult),
     officialUnitProductionCost: officialCost.unitProductionCost,
     officialCostTableVersionId: officialCost.costTableVersionId,
     officialCostTableCode: officialCost.versionCode,
     officialCostTableRevision: officialCost.revision,
-    tiersCompared: tierResult.tiersUsed.map((t) => ({
-      code: t.code,
-      name: t.name,
-      salePrice: t.salePrice,
-      commissionPercent: t.commissionPercent,
-    })),
   };
 
   let auditWarning: CommissionAuditIssueDraft | undefined;
 
   if (tierResult.outOfTablePrice) {
-    metadata.outOfTablePrice = true;
-    metadata.warningCode = tierResult.warningCode;
-    metadata.atacadoPrice = tierResult.atacadoPrice;
-    metadata.differenceAmount = tierResult.differenceAmount;
-    metadata.differencePercent = tierResult.differencePercent;
-    metadata.appliedCommissionPercent = tierResult.ratePercent;
-    metadata.appliedTier = tierResult.tierCode;
-
     auditWarning = buildCommercialTierAuditIssue({
       type: OUT_OF_TABLE_PRICE_AUDIT_TYPE,
       order: input.order,
