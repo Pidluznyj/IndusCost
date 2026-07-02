@@ -13,6 +13,7 @@ import {
   getEffectiveProductProductionCost,
   PRODUCTION_COST_TABLE_IMMUTABLE_STATUSES,
 } from "../src/lib/productionCostTables.server.ts";
+import { getProductProductionCostPublicationStatus } from "../src/lib/productProductionCostPublicationStatus.server.ts";
 import { PRODUCTION_COST_PUBLICATION_SOURCE } from "../src/lib/productionCostPublication.ts";
 import { PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE } from "../src/lib/productEngineeringCostSnapshot.ts";
 
@@ -222,6 +223,21 @@ async function main(): Promise<void> {
   if (resolverSample) {
     console.log("\n--- Exemplo de resolução por produto/data ---");
     console.log(JSON.stringify(resolverSample, null, 2));
+  }
+
+  if (productCode && sampleProductId) {
+    const publicationStatus = await getProductProductionCostPublicationStatus(
+      prisma,
+      sampleProductId,
+      referenceDate
+    );
+    console.log("\n--- Status publicação (produto informado) ---");
+    console.log(JSON.stringify(publicationStatus, null, 2));
+    if (publicationStatus?.pendingDraft) {
+      console.log(
+        "\n  DRAFT pendente detectado — publique via UI (Engenharia > Produto) ou POST /api/production-cost-table-versions/:id/publish"
+      );
+    }
   }
 
   console.log("\n--- Achados ---");

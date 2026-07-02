@@ -143,6 +143,12 @@ function toTime(value: Date | null | undefined): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+function productionCostResolverStatusRank(status: ProductionCostTableVersionStatus): number {
+  if (status === "PUBLISHED") return 2;
+  if (status === "SUPERSEDED") return 1;
+  return 0;
+}
+
 /** Retorna > 0 se `candidate` é mais recente que `incumbent` para resolver custo vigente. */
 export function compareProductionCostTableVersionsForResolver(
   candidate: ProductionCostTableVersionSnapshot,
@@ -150,6 +156,11 @@ export function compareProductionCostTableVersionsForResolver(
 ): number {
   const effectiveDiff = toTime(candidate.effectiveDate) - toTime(incumbent.effectiveDate);
   if (effectiveDiff !== 0) return effectiveDiff;
+
+  const statusDiff =
+    productionCostResolverStatusRank(candidate.status) -
+    productionCostResolverStatusRank(incumbent.status);
+  if (statusDiff !== 0) return statusDiff;
 
   const publishedDiff = toTime(candidate.publishedAt) - toTime(incumbent.publishedAt);
   if (publishedDiff !== 0) return publishedDiff;

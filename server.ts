@@ -27,6 +27,7 @@ import {
   getProductFrozenCostTracesBatch,
   refreshProductProductionCostSnapshot,
 } from "./src/lib/productEngineeringCostSnapshot.server.js";
+import { getProductProductionCostPublicationStatus } from "./src/lib/productProductionCostPublicationStatus.server.js";
 import {
   frozenCostTraceStatusLabel,
   resolveFrozenCostTraceStatus,
@@ -8077,6 +8078,32 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: "Erro interno no cálculo da análise." });
     }
   });
+
+  app.get(
+    "/api/products/:id/production-cost-publication-status",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.cost",
+      "products.edit",
+      ...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
+    ]),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const status = await getProductProductionCostPublicationStatus(prisma, id, new Date());
+        if (!status) {
+          return res.status(404).json({ error: "Produto não encontrado." });
+        }
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/products/:id/production-cost-publication-status", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro ao consultar status de publicação.",
+        });
+      }
+    }
+  );
 
   app.post(
     "/api/products/:id/production-cost-snapshot",

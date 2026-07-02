@@ -59,6 +59,12 @@ describe("productionCostTablesRoutes", () => {
     }
   });
 
+  it("GET publication-status por produto consulta DRAFT vs oficial", () => {
+    const src = server();
+    assert.match(src, /\/api\/products\/:id\/production-cost-publication-status/);
+    assert.match(src, /getProductProductionCostPublicationStatus/);
+  });
+
   it("UI consome APIs sem cálculo paralelo no React", () => {
     const src = panel();
     assert.match(src, /\/api\/production-cost-tables\/versions/);

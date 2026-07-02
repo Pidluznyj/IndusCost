@@ -113,6 +113,42 @@ describe("productionCostVersioning", () => {
     }
   });
 
+  it("PUBLISHED prevalece sobre SUPERSEDED com mesma vigência e revisão", () => {
+    const catalog: ProductionCostTableVersionWithItems[] = [
+      version({
+        id: "sup",
+        code: "2026-06",
+        name: "Jun superseded",
+        effectiveDate: d("2026-06-01"),
+        status: "SUPERSEDED",
+        revision: 2,
+        publishedAt: d("2026-06-20"),
+        items: [item("prod-a", 99, "sup")],
+      }),
+      version({
+        id: "pub",
+        code: "2026-06",
+        name: "Jun published",
+        effectiveDate: d("2026-06-01"),
+        status: "PUBLISHED",
+        revision: 2,
+        publishedAt: d("2026-06-15"),
+        items: [item("prod-a", 11.5, "pub")],
+      }),
+    ];
+
+    const result = resolveEffectiveProductProductionCostFromCatalog(
+      catalog,
+      "prod-a",
+      d("2026-06-25")
+    );
+    assert.equal(result.status, "OK");
+    if (result.status === "OK") {
+      assert.equal(result.unitProductionCost, 11.5);
+      assert.equal(result.costTableVersionId, "pub");
+    }
+  });
+
   it("produto sem custo retorna SEM_CUSTO — nunca zero silencioso", () => {
     const catalog: ProductionCostTableVersionWithItems[] = [
       version({

@@ -78,6 +78,9 @@ import {
   GRID_FROZEN_COST_COLUMN_LABEL,
   GRID_FROZEN_COST_COLUMN_TOOLTIP,
 } from "@/src/lib/productFrozenCostDisplay";
+import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionCostTablesUi";
+import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
+import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -171,7 +174,15 @@ export const ProductModule = () => {
   const canExportEngineering = auth.hasPermission("products.export.engineering");
   const canRefreshFrozenCost =
     auth.hasPermission("pricing.generate_tables") || auth.hasPermission("products.edit");
+  const canPublishProductionCost = auth.hasAnyPermission([
+    ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
+  ]);
   const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
+  const [costPublicationStatus, setCostPublicationStatus] =
+    useState<ProductProductionCostPublicationStatus | null>(null);
+  const [costPublicationLoading, setCostPublicationLoading] = useState(false);
+  const [costPublicationRefreshToken, setCostPublicationRefreshToken] = useState(0);
+  const [costPublicationSuccess, setCostPublicationSuccess] = useState<string | null>(null);
   const canCompareNomusBom = auth.hasAnyPermission([
     "products.tab.bom",
     "products.tab.tree",
@@ -300,14 +311,39 @@ export const ProductModule = () => {
           );
         }
         await fetchData();
+        if (editingItem?.id === productId) {
+          setCostPublicationRefreshToken((token) => token + 1);
+        }
       } catch (error) {
         alert(error instanceof Error ? error.message : "Falha ao atualizar snapshot de custo.");
       } finally {
         setSnapshotRefreshingId(null);
       }
     },
-    [canRefreshFrozenCost, fetchData]
+    [canRefreshFrozenCost, fetchData, editingItem?.id]
   );
+
+  const loadCostPublicationStatus = useCallback(async (productId: string) => {
+    setCostPublicationLoading(true);
+    try {
+      const data = await fetchJsonOk<ProductProductionCostPublicationStatus>(
+        `/api/products/${productId}/production-cost-publication-status`
+      );
+      setCostPublicationStatus(data.pendingDraft ? data : null);
+    } catch {
+      setCostPublicationStatus(null);
+    } finally {
+      setCostPublicationLoading(false);
+    }
+  }, []);
+
+  const handleCostPublished = useCallback(async () => {
+    if (!editingItem?.id) return;
+    setCostPublicationSuccess("Novo custo oficial publicado com sucesso.");
+    setCostPublicationRefreshToken((token) => token + 1);
+    await fetchData();
+    window.setTimeout(() => setCostPublicationSuccess(null), 6000);
+  }, [editingItem?.id, fetchData]);
 
   const refreshProductCostInList = useCallback(
     async (productId: string) => {
@@ -324,6 +360,21 @@ export const ProductModule = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!isModalOpen || !editingItem?.id || formData.type !== "PRODUCT") {
+      setCostPublicationStatus(null);
+      setCostPublicationSuccess(null);
+      return;
+    }
+    void loadCostPublicationStatus(editingItem.id);
+  }, [
+    isModalOpen,
+    editingItem?.id,
+    formData.type,
+    costPublicationRefreshToken,
+    loadCostPublicationStatus,
+  ]);
 
   useEffect(() => {
     if (!isModalOpen || formData.type === "MATERIAL") {
@@ -1425,6 +1476,11 @@ export const ProductModule = () => {
                                   {fc.frozenEffectiveDate ? ` · ${fc.frozenEffectiveDate}` : ""}
                                 </span>
                               ) : null}
+                              {fc.traceStatus === "PENDENTE_PUBLICACAO" ? (
+                                <span className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug">
+                                  DRAFT pendente — abra o produto para publicar o novo custo oficial.
+                                </span>
+                              ) : null}
                               {fc.traceStatus === "CUSTO_DIVERGENTE" ? (
                                 <span
                                   className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug"
@@ -1647,6 +1703,23 @@ export const ProductModule = () => {
               
               <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
                 <div className="flex-1 overflow-y-auto p-6">
+                  {costPublicationSuccess ? (
+                    <AppAlert variant="success" role="status" className="mb-4">
+                      {costPublicationSuccess}
+                    </AppAlert>
+                  ) : null}
+                  {editingItem?.id &&
+                  formData.type === "PRODUCT" &&
+                  !costPublicationLoading &&
+                  costPublicationStatus?.pendingDraft ? (
+                    <div className="mb-6">
+                      <ProductCostPublicationPendingCard
+                        status={costPublicationStatus}
+                        canPublish={canPublishProductionCost}
+                        onPublished={handleCostPublished}
+                      />
+                    </div>
+                  ) : null}
                   {visibleFormTabs.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-12">
                       Você não possui permissão para nenhuma aba de engenharia deste produto.
