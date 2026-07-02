@@ -8,12 +8,16 @@ function read(rel: string): string {
 }
 
 describe("transformationCostSimulator UI isolation", () => {
-  it("módulo não chama APIs nem persiste custo oficial", () => {
+  it("módulo carrega referência oficial sem persistir custo oficial", () => {
     const mod = read("src/components/TransformationCostSimulatorModule.tsx");
-    assert.doesNotMatch(mod, /fetchJsonOk|\/api\//);
+    assert.match(mod, /fetchJsonOk[\s\S]*\/api\/transformation-simulator\/official-reference-costs/);
     assert.doesNotMatch(mod, /prisma/i);
     assert.match(mod, /localStorage/);
     assert.match(mod, /não alteram custos oficiais/i);
+    assert.match(mod, /Referência oficial do sistema/);
+    assert.match(mod, /HH default/);
+    assert.match(mod, /HM default/);
+    assert.match(mod, /Custo hora de injeção default/);
     assert.match(mod, /Custo hora de injeção/);
     assert.match(mod, /Custo de Injeção Estimado por Peça/);
   });
@@ -26,5 +30,12 @@ describe("transformationCostSimulator UI isolation", () => {
     const groups = read("src/lib/navigationGroups.ts");
     assert.match(groups, /"transformation-simulator"/);
     assert.match(groups, /engenharia[\s\S]*transformation-simulator/);
+  });
+
+  it("endpoint read-only de referência oficial no server", () => {
+    const server = read("server.ts");
+    assert.match(server, /\/api\/transformation-simulator\/official-reference-costs/);
+    assert.match(server, /buildOfficialDefaultIndustrialCostsReference/);
+    assert.match(server, /initAnalysisCache/);
   });
 });

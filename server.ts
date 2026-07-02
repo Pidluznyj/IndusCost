@@ -14,7 +14,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 import { createProductCostAnalysisEngine, type AnalysisCache } from "./src/lib/productCostAnalysisEngine.server.js";
-import { resolveDefaultProcessHourCostsFromAnalysisCache } from "./src/lib/componentStandardProcessCost.js";
+import { resolveDefaultProcessHourCostsFromAnalysisCache, buildOfficialDefaultIndustrialCostsReference } from "./src/lib/componentStandardProcessCost.js";
 import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
 import {
   generateProductionCostTableDraftFromProducts,
@@ -7711,6 +7711,35 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: "Erro ao aplicar premissas em banco." });
     }
   });
+
+  // --- API: Transformation Cost Simulator (read-only official reference) ---
+  app.get(
+    "/api/transformation-simulator/official-reference-costs",
+    requireAppAuth,
+    requireBootstrapOrAnyPermission(["products.view", "simulations.view", "costs.view"]),
+    async (_req, res) => {
+      try {
+        const cache = await initAnalysisCache();
+        const reference = buildOfficialDefaultIndustrialCostsReference(cache);
+        if (!reference.available) {
+          return res.status(503).json({
+            error:
+              "Não foi possível carregar os custos default do sistema. Verifique Configurações Gerais.",
+            ...reference,
+          });
+        }
+        return res.json(reference);
+      } catch (err) {
+        console.error("transformation-simulator/official-reference-costs error:", err);
+        return res.status(503).json({
+          error:
+            "Não foi possível carregar os custos default do sistema. Verifique Configurações Gerais.",
+          available: false,
+          source: "GENERAL_SETTINGS",
+        });
+      }
+    }
+  );
 
   // --- API: Simulations (What-if Analysis) ---
   app.get(

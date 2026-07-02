@@ -102,6 +102,7 @@ const rules = [
   ["post", '"/api/pricing/apply-batch"', "requireAppAuth, requirePermission(\"pricing.simulate\"), "],
 
   // Simulations
+  ["get", '"/api/transformation-simulator/official-reference-costs"', "requireAppAuth, requireBootstrapOrAnyPermission([\"products.view\", \"simulations.view\", \"costs.view\"]), "],
   ["get", '"/api/simulations/default-process-hour-costs"', "requireAppAuth, requirePermission(\"simulations.view\"), "],
   ["get", '"/api/simulations"', "requireAppAuth, requirePermission(\"simulations.view\"), "],
   ["post", '"/api/simulations"', "requireAppAuth, requirePermission(\"simulations.create\"), "],

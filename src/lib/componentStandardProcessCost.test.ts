@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildOfficialDefaultIndustrialCostsReference,
+  compareSimulatedInjectionHourlyToOfficial,
   computeStandardProcessUnitCosts,
   resolveDefaultProcessHourCostsFromAnalysisCache,
   resolveSimulatedComponentHhHm,
@@ -135,5 +137,58 @@ describe("componentStandardProcessCost", () => {
     assert.equal(resolved.source, "MANUAL");
     assert.equal(resolved.hh, 1.5);
     assert.equal(resolved.hm, 2.25);
+  });
+
+  it("buildOfficialDefaultIndustrialCostsReference — HH + HM default", () => {
+    const reference = buildOfficialDefaultIndustrialCostsReference(SAMPLE_CACHE);
+    assert.equal(reference.available, true);
+    assert.equal(reference.source, "GENERAL_SETTINGS");
+    assert.equal(reference.hhDefault, 25);
+    assert.ok(Math.abs(reference.hmDefault - 50000 / 220) < 0.0001);
+    assert.ok(Math.abs(reference.injectionHourlyCostDefault - (25 + 50000 / 220)) < 0.0001);
+  });
+
+  it("buildOfficialDefaultIndustrialCostsReference — exemplo 18.52 + 13.35", () => {
+    const reference = buildOfficialDefaultIndustrialCostsReference({
+      globalHhCost: 18.52,
+      energyCost: 25000,
+      workingHours: 1872,
+      hhSource: "AUTO",
+    });
+    assert.equal(reference.available, true);
+    assert.ok(Math.abs(reference.hhDefault - 18.52) < 0.001);
+    assert.ok(Math.abs(reference.hmDefault - 13.35) < 0.02);
+    assert.ok(Math.abs(reference.injectionHourlyCostDefault - 31.87) < 0.02);
+  });
+
+  it("buildOfficialDefaultIndustrialCostsReference — indisponível sem horas úteis", () => {
+    const reference = buildOfficialDefaultIndustrialCostsReference({
+      ...SAMPLE_CACHE,
+      workingHours: 0,
+    });
+    assert.equal(reference.available, false);
+    assert.equal(reference.injectionHourlyCostDefault, 0);
+  });
+
+  it("compareSimulatedInjectionHourlyToOfficial — diferença percentual", () => {
+    const comparison = compareSimulatedInjectionHourlyToOfficial({
+      simulatedInjectionHourlyCost: 35,
+      officialReference: {
+        available: true,
+        injectionHourlyCostDefault: 31.87,
+      },
+    });
+    assert.notEqual(comparison, null);
+    assert.ok(Math.abs((comparison as { difference: number }).difference - 3.13) < 0.01);
+  });
+
+  it("compareSimulatedInjectionHourlyToOfficial — retorna null sem simulação", () => {
+    assert.equal(
+      compareSimulatedInjectionHourlyToOfficial({
+        simulatedInjectionHourlyCost: null,
+        officialReference: { available: true, injectionHourlyCostDefault: 31.87 },
+      }),
+      null
+    );
   });
 });

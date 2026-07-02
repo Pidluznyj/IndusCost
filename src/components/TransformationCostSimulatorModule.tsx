@@ -8,8 +8,16 @@ import {
   Info,
   ShieldCheck,
   TrendingUp,
+  Loader2,
+  AlertCircle,
+  Scale,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
+import {
+  compareSimulatedInjectionHourlyToOfficial,
+  type OfficialDefaultIndustrialCostsReference,
+} from "@/src/lib/componentStandardProcessCost";
 import {
   computeTransformationCostSimulator,
   DEFAULT_TRANSFORMATION_COST_SIMULATOR_VALUES,
@@ -22,6 +30,11 @@ import {
 
 const INPUT_CLASS =
   "h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+
+function formatOfficialHourlyRate(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${formatCurrency(value)}/h`;
+}
 
 function formatHourlyRate(value: number | null): string {
   if (value == null) return TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE;
@@ -181,8 +194,45 @@ function Field({
 const SECONDARY_BUTTON_CLASS =
   "inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300";
 
+const OFFICIAL_REFERENCE_UNAVAILABLE =
+  "Não foi possível carregar os custos default do sistema. Verifique Configurações Gerais.";
+
 export function TransformationCostSimulatorModule() {
   const [form, setForm] = useState<TransformationCostSimulatorFormValues>(loadStoredForm);
+  const [officialReference, setOfficialReference] =
+    useState<OfficialDefaultIndustrialCostsReference | null>(null);
+  const [officialReferenceError, setOfficialReferenceError] = useState<string | null>(null);
+  const [officialReferenceLoading, setOfficialReferenceLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setOfficialReferenceLoading(true);
+      try {
+        const data = (await fetchJsonOk(
+          "/api/transformation-simulator/official-reference-costs"
+        )) as OfficialDefaultIndustrialCostsReference & { error?: string };
+        if (cancelled) return;
+        if (data.available) {
+          setOfficialReference(data);
+          setOfficialReferenceError(null);
+        } else {
+          setOfficialReference(null);
+          setOfficialReferenceError(data.error ?? OFFICIAL_REFERENCE_UNAVAILABLE);
+        }
+      } catch {
+        if (!cancelled) {
+          setOfficialReference(null);
+          setOfficialReferenceError(OFFICIAL_REFERENCE_UNAVAILABLE);
+        }
+      } finally {
+        if (!cancelled) setOfficialReferenceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -202,6 +252,15 @@ export function TransformationCostSimulatorModule() {
     result.product.operationHourlyCost != null &&
     result.product.injectionHourlyCost != null &&
     Math.abs(result.product.operationHourlyCost - result.product.injectionHourlyCost) > 0.000001;
+
+  const hourlyComparison = useMemo(
+    () =>
+      compareSimulatedInjectionHourlyToOfficial({
+        simulatedInjectionHourlyCost: result.product.injectionHourlyCost,
+        officialReference,
+      }),
+    [result.product.injectionHourlyCost, officialReference]
+  );
 
   return (
     <div className="space-y-8">
@@ -241,6 +300,61 @@ export function TransformationCostSimulatorModule() {
           </p>
         </div>
       </div>
+
+      <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
+        <div className="mb-5 space-y-1 border-b border-slate-100 pb-4">
+          <h2 className="text-lg font-bold text-slate-900">Referência oficial do sistema</h2>
+          <p className="text-sm leading-relaxed text-slate-600">
+            Valores default cadastrados em Configurações Gerais e usados como base no cálculo oficial
+            de produtos.
+          </p>
+        </div>
+
+        {officialReferenceLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Carregando referência oficial...
+          </div>
+        ) : officialReference?.available ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">HH default</p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-slate-900">
+                {formatOfficialHourlyRate(officialReference.hhDefault)}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                Custo hora homem cadastrado em Configurações Gerais
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">HM default</p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-slate-900">
+                {formatOfficialHourlyRate(officialReference.hmDefault)}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                Custo hora máquina cadastrado em Configurações Gerais
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-400 bg-slate-50/90 p-4 shadow-md ring-1 ring-slate-200">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                Custo hora de injeção default
+              </p>
+              <p className="mt-2 text-3xl font-black tabular-nums text-slate-900">
+                {formatOfficialHourlyRate(officialReference.injectionHourlyCostDefault)}
+              </p>
+              <p className="mt-2 text-xs font-medium text-slate-700">HH default + HM default</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                Referência para comparar com a simulação manual abaixo.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <p>{officialReferenceError ?? OFFICIAL_REFERENCE_UNAVAILABLE}</p>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <BlockCard
@@ -546,6 +660,37 @@ export function TransformationCostSimulatorModule() {
                   label="Custo operacional estimado por peça"
                   value={formatCostPerPiece(result.product.estimatedTransformationCostPerPiece)}
                 />
+              </div>
+            ) : null}
+            {hourlyComparison ? (
+              <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <Scale className="h-4 w-4 text-slate-600" aria-hidden />
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                    Comparação com referência oficial
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-slate-600">Referência oficial</p>
+                    <p className="font-bold tabular-nums text-slate-900">
+                      {formatOfficialHourlyRate(hourlyComparison.official)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-600">Simulação atual</p>
+                    <p className="font-bold tabular-nums text-slate-900">
+                      {formatOfficialHourlyRate(hourlyComparison.simulated)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-600">Diferença</p>
+                    <p className="font-bold tabular-nums text-slate-900">
+                      {formatCurrency(hourlyComparison.difference)} (
+                      {formatNumber(hourlyComparison.differencePct, 2)}%)
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>

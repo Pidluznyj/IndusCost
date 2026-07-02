@@ -81,6 +81,68 @@ export function resolveDefaultProcessHourCostsFromAnalysisCache(
   };
 }
 
+export type OfficialDefaultIndustrialCostsReference = {
+  hhDefault: number;
+  hmDefault: number;
+  injectionHourlyCostDefault: number;
+  hhSource: "AUTO" | "MANUAL";
+  source: "GENERAL_SETTINGS";
+  available: boolean;
+};
+
+export function buildOfficialDefaultIndustrialCostsReference(
+  cache: ProcessHourCostsCache
+): OfficialDefaultIndustrialCostsReference {
+  const costs = resolveDefaultProcessHourCostsFromAnalysisCache(cache);
+  if (!costs.available) {
+    return {
+      hhDefault: 0,
+      hmDefault: 0,
+      injectionHourlyCostDefault: 0,
+      hhSource: costs.hhSource,
+      source: "GENERAL_SETTINGS",
+      available: false,
+    };
+  }
+
+  const injectionHourlyCostDefault = costs.globalHhCostPerHour + costs.machineHourCostPerHour;
+
+  return {
+    hhDefault: costs.globalHhCostPerHour,
+    hmDefault: costs.machineHourCostPerHour,
+    injectionHourlyCostDefault: Number.isFinite(injectionHourlyCostDefault)
+      ? injectionHourlyCostDefault
+      : 0,
+    hhSource: costs.hhSource,
+    source: "GENERAL_SETTINGS",
+    available: true,
+  };
+}
+
+export function compareSimulatedInjectionHourlyToOfficial(input: {
+  simulatedInjectionHourlyCost: number | null;
+  officialReference: Pick<
+    OfficialDefaultIndustrialCostsReference,
+    "injectionHourlyCostDefault" | "available"
+  > | null;
+}): {
+  official: number;
+  simulated: number;
+  difference: number;
+  differencePct: number;
+} | null {
+  if (!input.officialReference?.available) return null;
+  const official = Number(input.officialReference.injectionHourlyCostDefault);
+  const simulated = input.simulatedInjectionHourlyCost;
+  if (simulated == null || !Number.isFinite(official) || !Number.isFinite(simulated)) {
+    return null;
+  }
+  const difference = simulated - official;
+  const differencePct = official !== 0 ? (difference / official) * 100 : 0;
+  if (!Number.isFinite(difference) || !Number.isFinite(differencePct)) return null;
+  return { official, simulated, difference, differencePct };
+}
+
 export function computeStandardProcessUnitCosts(
   input: StandardProcessCostInput
 ): StandardProcessCostResult {
