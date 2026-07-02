@@ -61,7 +61,7 @@ describe("productionCostTablesUi", () => {
         calculationSnapshot: null,
       },
     });
-    assert.match(ok, /Produto 618\.08AA em 10\/06\/2026 usa Tabela de Custo 2026-06 v2/);
+    assert.match(ok, /Item 618\.08AA em 10\/06\/2026 usa Tabela de Custo 2026-06 v2/);
     assert.match(ok, /vigência 01\/06\/2026/);
 
     const sem = formatEffectiveProductionCostSummary({

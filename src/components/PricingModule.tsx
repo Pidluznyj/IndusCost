@@ -98,6 +98,9 @@ type ProductionCostGenResult = {
   status: string;
   itemsCount: number;
   productsRead: number;
+  productsEvaluated?: number;
+  componentsEvaluated?: number;
+  materialsIgnored?: number;
   itemsCreated: number;
   itemsSkipped: number;
   errorsCount: number;
@@ -893,6 +896,10 @@ export const PricingModule = () => {
         };
         summary?: {
           productsRead?: number;
+          itemsEvaluated?: number;
+          productsEvaluated?: number;
+          componentsEvaluated?: number;
+          materialsIgnored?: number;
           itemsCreated?: number;
           itemsSkipped?: number;
           errors?: unknown[];
@@ -922,7 +929,10 @@ export const PricingModule = () => {
           revision: Number(version.revision) || 1,
           status: version.status ?? "DRAFT",
           itemsCount: Number(version.itemsCount) || 0,
-          productsRead: Number(summary.productsRead) || 0,
+          productsRead: Number(summary.itemsEvaluated ?? summary.productsRead) || 0,
+          productsEvaluated: Number(summary.productsEvaluated) || undefined,
+          componentsEvaluated: Number(summary.componentsEvaluated) || undefined,
+          materialsIgnored: Number(summary.materialsIgnored) || undefined,
           itemsCreated: Number(summary.itemsCreated) || 0,
           itemsSkipped: Number(summary.itemsSkipped) || 0,
           errorsCount: errors.length,
@@ -1575,8 +1585,14 @@ export const PricingModule = () => {
                         </span>
                       </p>
                       <p className="text-xs">
-                        Itens: {productionCostGenResult.itemsCreated}/{productionCostGenResult.productsRead} · Erros:{" "}
-                        {productionCostGenResult.errorsCount} · Avisos: {productionCostGenResult.warningsCount}
+                        Itens: {productionCostGenResult.itemsCreated}/{productionCostGenResult.productsRead}
+                        {productionCostGenResult.componentsEvaluated != null &&
+                        productionCostGenResult.componentsEvaluated > 0
+                          ? ` (produtos: ${productionCostGenResult.productsEvaluated ?? "—"}, componentes: ${productionCostGenResult.componentsEvaluated})`
+                          : ""}
+                        {" · "}
+                        Erros: {productionCostGenResult.errorsCount} · Avisos:{" "}
+                        {productionCostGenResult.warningsCount}
                       </p>
                       {allowPublishTables &&
                         productionCostGenResult.versionId &&

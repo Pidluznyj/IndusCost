@@ -6,6 +6,24 @@ import type { OfficialProductFinalCostSuccess } from "./productOfficialFinalCost
 
 export const PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE = "PRODUCT_ENGINEERING_CHANGE" as const;
 
+/** Tipos de item da Engenharia elegíveis para a tabela oficial de custo de produção. */
+export const PRODUCTION_COST_TABLE_ELIGIBLE_ITEM_TYPES = ["PRODUCT", "COMPONENT"] as const;
+
+export type ProductionCostTableEligibleItemType =
+  (typeof PRODUCTION_COST_TABLE_ELIGIBLE_ITEM_TYPES)[number];
+
+export function isProductionCostTableEligibleItemType(
+  type: string
+): type is ProductionCostTableEligibleItemType {
+  return type === "PRODUCT" || type === "COMPONENT";
+}
+
+export function productionCostTableEligibleItemTypesFilter(): {
+  in: ProductionCostTableEligibleItemType[];
+} {
+  return { in: [...PRODUCTION_COST_TABLE_ELIGIBLE_ITEM_TYPES] };
+}
+
 export type FrozenCostTraceStatus =
   | "ATUALIZADO"
   | "PENDENTE_PUBLICACAO"

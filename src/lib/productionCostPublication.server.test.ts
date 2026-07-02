@@ -51,7 +51,8 @@ type ItemRow = {
   updatedAt: Date;
 };
 
-function createMockDb(products: Array<{ id: string; sku: string; name: string }>) {
+function createMockDb(products: Array<{ id: string; sku: string; name: string; type?: string }>) {
+  const normalized = products.map((p) => ({ ...p, type: p.type ?? "PRODUCT" }));
   const versions = new Map<string, VersionRow>();
   const items = new Map<string, ItemRow>();
   let versionSeq = 0;
@@ -176,14 +177,25 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string }>
       findMany: async ({
         where,
       }: {
-        where: { id?: { in: string[] }; status?: string; type?: string };
+        where: {
+          id?: { in: string[] };
+          status?: string;
+          type?: string | { in: string[] };
+        };
       }) => {
         if (where.id?.in?.length === 0) return [];
+        let rows = normalized;
+        if (where.type && typeof where.type === "object" && Array.isArray(where.type.in)) {
+          rows = rows.filter((p) => where.type.in.includes(p.type));
+        } else if (where.type === "PRODUCT") {
+          rows = rows.filter((p) => p.type === "PRODUCT");
+        }
         const ids = where.id?.in;
-        return ids ? products.filter((p) => ids.includes(p.id)) : products;
+        return ids ? rows.filter((p) => ids.includes(p.id)) : rows;
       },
       findUnique: async ({ where }: { where: { id: string } }) =>
-        products.find((p) => p.id === where.id) ?? null,
+        normalized.find((p) => p.id === where.id) ?? null,
+      count: async () => 0,
     },
     $transaction: async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
   };
@@ -331,6 +343,34 @@ describe("productionCostPublication.server", () => {
     if (costA.status === "OK") assert.equal(costA.unitProductionCost, 11.5);
     assert.equal(costB.status, "OK");
     if (costB.status === "OK") assert.equal(costB.unitProductionCost, 20);
+  });
+
+  it("gera DRAFT com componente calculável (309.86AA)", async () => {
+    const products = [
+      {
+        id: "comp-309",
+        sku: "309.86AA",
+        name: "Mangote Azul - Esmaltec",
+        type: "COMPONENT",
+      },
+    ];
+    const { db } = createMockDb(products);
+    const engine = createMockEngine({ "comp-309": { total: 0.537299 } });
+
+    const { version, summary } = await generateProductionCostTableDraftFromProducts(
+      db as never,
+      engine,
+      {
+        effectiveDate: civilDateToLocalDate("2026-06-01"),
+        productIds: ["comp-309"],
+      }
+    );
+
+    assert.ok(version);
+    assert.equal(summary.itemsCreated, 1);
+    assert.equal(summary.componentsEvaluated, 1);
+    assert.equal(summary.productsEvaluated, 0);
+    assert.equal(summary.itemsEvaluated, 1);
   });
 
   it("versão publicada não pode ser editada após publicação", async () => {

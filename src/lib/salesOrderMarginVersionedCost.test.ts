@@ -177,6 +177,44 @@ describe("salesOrderMarginVersionedCost", () => {
     assert.equal(cost.unitCost, 11.5);
   });
 
+  it("componente com custo publicado resolve margem pela tabela vigente", () => {
+    const componentCatalog: ProductionCostTableVersionWithItems[] = [
+      version({
+        id: "v-comp",
+        code: "2026-06",
+        revision: 1,
+        status: "PUBLISHED",
+        effectiveDate: civilDateToLocalDate("2026-06-01"),
+        items: [
+          {
+            ...itemRow("v-comp", "comp-309", 0.537299),
+            productCodeSnapshot: "309.86AA",
+            productNameSnapshot: "Mangote Azul - Esmaltec",
+          },
+        ],
+      }),
+    ];
+    const ref = civilDateToLocalDate("2026-06-10");
+    const effective = resolveEffectiveProductProductionCostFromCatalog(
+      componentCatalog,
+      "comp-309",
+      ref
+    );
+    assert.equal(effective.status, "OK");
+    if (effective.status === "OK") {
+      assert.ok(Math.abs(effective.unitProductionCost - 0.537299) < 0.000001);
+    }
+
+    const cost = resolveSalesOrderItemCostFromVersionedProduction({
+      salesOrderItemId: "so-item-1",
+      productId: "comp-309",
+      referenceDate: ref,
+      effectiveCost: effective,
+    });
+    assert.equal(cost.costSource, "VERSIONED_PRODUCTION_COST");
+    assert.ok(cost.unitCost != null && Math.abs(cost.unitCost - 0.537299) < 0.000001);
+  });
+
   it("tooltip mostra tabela e vigência", () => {
     const text = buildOfficialSalesOrderMarginTooltipText({
       summary: {

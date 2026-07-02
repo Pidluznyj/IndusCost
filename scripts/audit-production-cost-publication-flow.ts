@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 
   const findings: Finding[] = [];
 
-  const [draftVersions, publishedVersions, supersededVersions, totalItems, activeProducts] =
+  const [draftVersions, publishedVersions, supersededVersions, totalItems, activeEligibleItems] =
     await Promise.all([
       prisma.productionCostTableVersion.findMany({
         where: { status: "DRAFT" },
@@ -73,7 +73,9 @@ async function main(): Promise<void> {
         include: { _count: { select: { items: true } } },
       }),
       prisma.productionCostTableItem.count(),
-      prisma.product.count({ where: { status: "ACTIVE", type: "PRODUCT" } }),
+      prisma.product.count({
+        where: { status: "ACTIVE", type: { in: ["PRODUCT", "COMPONENT"] } },
+      }),
     ]);
 
   for (const row of publishedVersions) {
@@ -121,17 +123,17 @@ async function main(): Promise<void> {
     });
   }
 
-  const productsWithAnyItem = await prisma.productionCostTableItem.findMany({
+  const itemsWithAnyCost = await prisma.productionCostTableItem.findMany({
     distinct: ["productId"],
     select: { productId: true },
     take: 5000,
   });
-  const productsWithoutCost = activeProducts - productsWithAnyItem.length;
-  if (productsWithoutCost > 0 && publishedVersions.length > 0) {
+  const eligibleWithoutCost = activeEligibleItems - itemsWithAnyCost.length;
+  if (eligibleWithoutCost > 0 && publishedVersions.length > 0) {
     findings.push({
       area: "coverage",
       status: "ALERTA",
-      message: `${productsWithoutCost} produto(s) ACTIVE sem nenhum item em tabela de custo (amostra global).`,
+      message: `${eligibleWithoutCost} item(ns) de engenharia ACTIVE (produto/componente) sem nenhum item em tabela de custo (amostra global).`,
     });
   }
 
@@ -171,7 +173,7 @@ async function main(): Promise<void> {
 
   console.log("=== Auditoria — Fluxo de publicação de custo de produção ===\n");
   console.log(`Data de referência: ${toCivilDateKey(referenceDate)}`);
-  console.log(`Produtos ACTIVE: ${activeProducts}`);
+  console.log(`Itens de engenharia ACTIVE (produto/componente): ${activeEligibleItems}`);
   console.log(`Total itens: ${totalItems}`);
   console.log(`Fonte esperada de geração: ${PRODUCTION_COST_PUBLICATION_SOURCE}`);
   console.log(`Status imutáveis: ${PRODUCTION_COST_TABLE_IMMUTABLE_STATUSES.join(", ")}`);

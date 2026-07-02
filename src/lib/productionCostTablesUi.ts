@@ -88,11 +88,11 @@ export function formatEffectiveProductionCostSummary(input: {
 }): string {
   const refLabel = formatCivilDatePtBrFromIso(input.referenceDate);
   if (input.result.status === "SEM_CUSTO") {
-    return `Produto ${input.productCode} em ${refLabel}: ${PRODUCTION_COST_DISPLAY_LABELS.costUnresolved}.`;
+    return `Item ${input.productCode} em ${refLabel}: ${PRODUCTION_COST_DISPLAY_LABELS.costUnresolved}.`;
   }
   const tableLabel = `${input.result.versionName} v${input.result.revision}`;
   const vigLabel = formatCivilDatePtBrFromIso(input.result.effectiveDate);
-  return `Produto ${input.productCode} em ${refLabel} usa ${tableLabel}, vigência ${vigLabel}.`;
+  return `Item ${input.productCode} em ${refLabel} usa ${tableLabel}, vigência ${vigLabel}.`;
 }
 
 export function isProductionCostVersionReadOnly(status: string | null | undefined): boolean {

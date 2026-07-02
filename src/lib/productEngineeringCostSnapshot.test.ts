@@ -5,6 +5,8 @@ import {
   incrementalProductionCostVersionCode,
   isCalculableProductionUnitCost,
   isExplicitlyValidZeroProductionCost,
+  isProductionCostTableEligibleItemType,
+  productionCostTableEligibleItemTypesFilter,
   resolveFrozenCostTraceStatus,
 } from "./productEngineeringCostSnapshot.js";
 import type { OfficialProductFinalCostSuccess } from "./productOfficialFinalCost.js";
@@ -28,6 +30,15 @@ function success(finalUnitCost: number, partial = false): OfficialProductFinalCo
 }
 
 describe("productEngineeringCostSnapshot", () => {
+  it("elegibilidade da tabela oficial inclui PRODUCT e COMPONENT", () => {
+    assert.equal(isProductionCostTableEligibleItemType("PRODUCT"), true);
+    assert.equal(isProductionCostTableEligibleItemType("COMPONENT"), true);
+    assert.equal(isProductionCostTableEligibleItemType("MATERIAL"), false);
+    assert.deepEqual(productionCostTableEligibleItemTypesFilter(), {
+      in: ["PRODUCT", "COMPONENT"],
+    });
+  });
+
   it("rejeita custo zero silencioso", () => {
     const resolved = success(0);
     assert.equal(isCalculableProductionUnitCost(resolved, {}), false);

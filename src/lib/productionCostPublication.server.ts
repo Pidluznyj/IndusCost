@@ -15,6 +15,7 @@ import {
   productionCostTableCodeFromEffectiveDate,
   productionCostTableNameFromCode,
 } from "./productionCostPublication.js";
+import { productionCostTableEligibleItemTypesFilter } from "./productEngineeringCostSnapshot.js";
 import {
   addOrUpdateProductionCostTableDraftItem,
   createProductionCostTableDraft,
@@ -30,6 +31,12 @@ export type GenerateProductionCostDraftIssue = {
 };
 
 export type GenerateProductionCostDraftSummary = {
+  /** Total de itens de engenharia elegíveis avaliados (produtos + componentes). */
+  itemsEvaluated: number;
+  productsEvaluated: number;
+  componentsEvaluated: number;
+  materialsIgnored: number;
+  /** @deprecated Use itemsEvaluated — mantido por compatibilidade com UI/API existente. */
   productsRead: number;
   itemsCreated: number;
   itemsSkipped: number;
@@ -70,20 +77,29 @@ export async function generateProductionCostTableDraftFromProducts(
   const selectedProducts = await db.product.findMany({
     where: {
       status: "ACTIVE",
-      type: "PRODUCT",
+      type: productionCostTableEligibleItemTypesFilter(),
       ...(productIds.length > 0
         ? { id: { in: productIds } }
         : input.includeAllActiveProducts
           ? {}
           : { id: { in: [] } }),
     },
-    select: { id: true, sku: true, name: true },
+    select: { id: true, sku: true, name: true, type: true },
     orderBy: { sku: "asc" },
   });
 
   if (selectedProducts.length === 0) {
-    throw new Error("Nenhum produto ativo selecionado para geração de custo de produção.");
+    throw new Error(
+      "Nenhum item de engenharia ativo elegível (produto ou componente) selecionado para geração de custo de produção."
+    );
   }
+
+  const materialsIgnored =
+    productIds.length > 0
+      ? 0
+      : await db.product.count({ where: { status: "ACTIVE", type: "MATERIAL" } });
+  const productsEvaluated = selectedProducts.filter((p) => p.type === "PRODUCT").length;
+  const componentsEvaluated = selectedProducts.filter((p) => p.type === "COMPONENT").length;
 
   const code = productionCostTableCodeFromEffectiveDate(effectiveDate);
   const latestPublished = await findLatestPublishedProductionCostVersionByCode(db, code);
@@ -107,6 +123,10 @@ export async function generateProductionCostTableDraftFromProducts(
   });
 
   const summary: GenerateProductionCostDraftSummary = {
+    itemsEvaluated: selectedProducts.length,
+    productsEvaluated,
+    componentsEvaluated,
+    materialsIgnored,
     productsRead: selectedProducts.length,
     itemsCreated: 0,
     itemsSkipped: 0,

@@ -26,7 +26,9 @@ import {
   incrementalProductionCostVersionCode,
   incrementalProductionCostVersionName,
   isCalculableProductionUnitCost,
+  isProductionCostTableEligibleItemType,
   PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE,
+  productionCostTableEligibleItemTypesFilter,
   readProductEngineeringCostSnapshotConfig,
   resolveFrozenCostTraceStatus,
   type FrozenCostTraceStatus,
@@ -70,6 +72,7 @@ export type BootstrapProductionCostPreviewRow = {
   productId: string;
   sku: string;
   productName: string;
+  itemType: string;
   unitProductionCost: number | null;
   calculable: boolean;
   calculationHash: string | null;
@@ -79,9 +82,14 @@ export type BootstrapProductionCostPreviewRow = {
 };
 
 export type BootstrapProductionCostPreview = {
+  itemsEvaluated: number;
   productsEvaluated: number;
+  componentsEvaluated: number;
+  materialsIgnored: number;
   calculableCount: number;
   semCustoCount: number;
+  itemsIncluded: number;
+  itemsIgnored: number;
   topByCost: BootstrapProductionCostPreviewRow[];
   sampleProduct: BootstrapProductionCostPreviewRow | null;
   errors: Array<{ sku: string; code: string; message: string }>;
@@ -180,7 +188,8 @@ export async function evaluateProductEngineeringCost(
     };
   }
 
-  if (product.type !== "PRODUCT") {
+  if (!isProductionCostTableEligibleItemType(product.type)) {
+    const isMaterial = product.type === "MATERIAL";
     return {
       product,
       analysis: null,
@@ -189,14 +198,21 @@ export async function evaluateProductEngineeringCost(
         productId,
         sku: product.sku,
         diagnostics: [
-          { code: "CUSTO_OFICIAL_NAO_CALCULADO", message: "Apenas produtos finais geram custo congelado." },
+          {
+            code: "CUSTO_OFICIAL_NAO_CALCULADO",
+            message: isMaterial
+              ? "Materiais não entram automaticamente na tabela oficial de custo."
+              : "Tipo de item não elegível para tabela oficial de custo.",
+          },
         ],
       },
       calculable: false,
       calculationHash: null,
       calculationSnapshot: null,
-      errorMessage: "Componentes não geram item de tabela de produção.",
-      errorCode: "NOT_PRODUCT",
+      errorMessage: isMaterial
+        ? "Materiais não entram automaticamente na tabela oficial de custo."
+        : "Tipo de item não elegível para tabela oficial de custo.",
+      errorCode: isMaterial ? "NOT_ELIGIBLE_MATERIAL" : "NOT_ELIGIBLE_ITEM_TYPE",
       warning: null,
     };
   }
@@ -625,28 +641,35 @@ export async function previewBootstrapProductionCostTableFromEngineering(
   engine: ProductCostAnalysisEngine,
   options?: { onlyProductCode?: string | null }
 ): Promise<BootstrapProductionCostPreview> {
+  const skuFilter = options?.onlyProductCode?.trim() || null;
   const where = {
     status: "ACTIVE" as const,
-    type: "PRODUCT" as const,
-    ...(options?.onlyProductCode?.trim() ? { sku: options.onlyProductCode.trim() } : {}),
+    type: productionCostTableEligibleItemTypesFilter(),
+    ...(skuFilter ? { sku: skuFilter } : {}),
   };
 
-  const products = await db.product.findMany({
-    where,
-    select: { id: true, sku: true, name: true },
-    orderBy: { sku: "asc" },
-  });
+  const [items, materialsIgnored] = await Promise.all([
+    db.product.findMany({
+      where,
+      select: { id: true, sku: true, name: true, type: true },
+      orderBy: { sku: "asc" },
+    }),
+    skuFilter
+      ? Promise.resolve(0)
+      : db.product.count({ where: { status: "ACTIVE", type: "MATERIAL" } }),
+  ]);
 
   const rows: BootstrapProductionCostPreviewRow[] = [];
   const errors: BootstrapProductionCostPreview["errors"] = [];
   const warnings: BootstrapProductionCostPreview["warnings"] = [];
 
-  for (const product of products) {
-    const evaluated = await evaluateProductEngineeringCost(db, engine, product.id);
+  for (const item of items) {
+    const evaluated = await evaluateProductEngineeringCost(db, engine, item.id);
     const row: BootstrapProductionCostPreviewRow = {
-      productId: product.id,
-      sku: product.sku,
-      productName: product.name,
+      productId: item.id,
+      sku: item.sku,
+      productName: item.name,
+      itemType: item.type,
       unitProductionCost:
         evaluated.calculable && evaluated.resolved.ok ? evaluated.resolved.finalUnitCost : null,
       calculable: evaluated.calculable,
@@ -657,10 +680,10 @@ export async function previewBootstrapProductionCostTableFromEngineering(
     };
     rows.push(row);
     if (evaluated.errorCode && evaluated.errorMessage) {
-      errors.push({ sku: product.sku, code: evaluated.errorCode, message: evaluated.errorMessage });
+      errors.push({ sku: item.sku, code: evaluated.errorCode, message: evaluated.errorMessage });
     }
     if (evaluated.warning) {
-      warnings.push({ sku: product.sku, code: "COST_ANALYSIS_PARTIAL", message: evaluated.warning });
+      warnings.push({ sku: item.sku, code: "COST_ANALYSIS_PARTIAL", message: evaluated.warning });
     }
   }
 
@@ -669,13 +692,21 @@ export async function previewBootstrapProductionCostTableFromEngineering(
     .sort((a, b) => (b.unitProductionCost ?? 0) - (a.unitProductionCost ?? 0))
     .slice(0, 10);
 
-  const sampleSku = options?.onlyProductCode?.trim() ?? "619.24AA";
+  const sampleSku = skuFilter ?? "309.86AA";
   const sampleProduct = rows.find((r) => r.sku === sampleSku) ?? null;
 
+  const productsEvaluated = rows.filter((r) => r.itemType === "PRODUCT").length;
+  const componentsEvaluated = rows.filter((r) => r.itemType === "COMPONENT").length;
+
   return {
-    productsEvaluated: rows.length,
+    itemsEvaluated: rows.length,
+    productsEvaluated,
+    componentsEvaluated,
+    materialsIgnored,
     calculableCount: calculableRows.length,
     semCustoCount: rows.length - calculableRows.length,
+    itemsIncluded: calculableRows.length,
+    itemsIgnored: rows.length - calculableRows.length,
     topByCost,
     sampleProduct,
     errors,
@@ -693,15 +724,16 @@ export async function applyBootstrapProductionCostTableFromEngineering(
   const name = input.name.trim();
   if (!code || !name) throw new Error("code e name são obrigatórios.");
 
+  const skuFilter = input.onlyProductCode?.trim() || null;
   const where = {
     status: "ACTIVE" as const,
-    type: "PRODUCT" as const,
-    ...(input.onlyProductCode?.trim() ? { sku: input.onlyProductCode.trim() } : {}),
+    type: productionCostTableEligibleItemTypesFilter(),
+    ...(skuFilter ? { sku: skuFilter } : {}),
   };
 
   const products = await db.product.findMany({
     where,
-    select: { id: true, sku: true, name: true },
+    select: { id: true, sku: true, name: true, type: true },
     orderBy: { sku: "asc" },
   });
 
@@ -726,6 +758,8 @@ export async function applyBootstrapProductionCostTableFromEngineering(
   let itemsSkipped = 0;
   const errors: Array<{ sku: string; code: string; message: string }> = [];
   const warnings: Array<{ sku: string; code: string; message: string }> = [];
+  const productsEvaluated = products.filter((p) => p.type === "PRODUCT").length;
+  const componentsEvaluated = products.filter((p) => p.type === "COMPONENT").length;
 
   for (const product of products) {
     const evaluated = await evaluateProductEngineeringCost(db, engine, product.id);
@@ -767,6 +801,10 @@ export async function applyBootstrapProductionCostTableFromEngineering(
     code,
     revision: nextRevision,
     status: published ? "PUBLISHED" : "DRAFT",
+    itemsEvaluated: products.length,
+    productsEvaluated,
+    componentsEvaluated,
+    /** @deprecated Use itemsEvaluated — mantido por compatibilidade. */
     productsRead: products.length,
     itemsCreated,
     itemsSkipped,

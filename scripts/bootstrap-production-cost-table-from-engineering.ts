@@ -55,9 +55,14 @@ async function main(): Promise<void> {
       onlyProductCode,
     });
     console.log("=== Preview — Bootstrap tabela de custo (Engenharia) ===\n");
-    console.log(`Produtos ACTIVE avaliados: ${result.productsEvaluated}`);
+    console.log(`Itens elegíveis avaliados: ${result.itemsEvaluated}`);
+    console.log(`  Produtos avaliados: ${result.productsEvaluated}`);
+    console.log(`  Componentes avaliados: ${result.componentsEvaluated}`);
+    console.log(`  Materiais ignorados: ${result.materialsIgnored}`);
     console.log(`Com custo calculável: ${result.calculableCount}`);
     console.log(`SEM_CUSTO: ${result.semCustoCount}`);
+    console.log(`Itens incluídos na tabela (preview): ${result.itemsIncluded}`);
+    console.log(`Itens ignorados: ${result.itemsIgnored}`);
     console.log("\n--- Top 10 por custo ---");
     for (const row of result.topByCost) {
       console.log(
@@ -108,7 +113,9 @@ async function main(): Promise<void> {
   console.log("=== Apply — Bootstrap tabela de custo (Engenharia) ===\n");
   console.log(`Versão: ${result.code} rev.${result.revision} [${result.status}]`);
   console.log(`versionId: ${result.versionId}`);
-  console.log(`Produtos lidos: ${result.productsRead}`);
+  console.log(`Itens elegíveis lidos: ${result.itemsEvaluated ?? result.productsRead}`);
+  console.log(`  Produtos: ${result.productsEvaluated ?? "—"}`);
+  console.log(`  Componentes: ${result.componentsEvaluated ?? "—"}`);
   console.log(`Itens criados: ${result.itemsCreated}`);
   console.log(`Itens ignorados (SEM_CUSTO): ${result.itemsSkipped}`);
   console.log(`Publicada: ${result.published ? "sim" : "não (DRAFT pendente)"}`);

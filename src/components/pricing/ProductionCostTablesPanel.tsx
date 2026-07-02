@@ -208,7 +208,7 @@ export function ProductionCostTablesPanel({
                   <th className="p-2 text-left font-semibold">Vigência</th>
                   <th className="p-2 text-left font-semibold">Status</th>
                   <th className="p-2 text-right font-semibold">Rev.</th>
-                  <th className="p-2 text-right font-semibold">Produtos</th>
+                  <th className="p-2 text-right font-semibold">Itens</th>
                   <th className="p-2 text-left font-semibold">Publicado em</th>
                   <th className="p-2 text-left font-semibold">Publicado por</th>
                   <th className="p-2 text-left font-semibold">Substitui</th>
