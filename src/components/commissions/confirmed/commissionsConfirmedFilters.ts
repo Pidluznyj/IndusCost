@@ -24,7 +24,7 @@ export type CommissionsConfirmedFilters = {
 };
 
 export const EMPTY_COMMISSIONS_CONFIRMED_FILTERS: CommissionsConfirmedFilters = {
-  year: "",
+  year: String(new Date().getFullYear()),
   month: "",
   from: "",
   to: "",

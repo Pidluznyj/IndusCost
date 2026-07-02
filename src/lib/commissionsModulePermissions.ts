@@ -1,5 +1,6 @@
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import {
+  COMMISSIONS_APURACAO_VIEW_PERMISSIONS,
   COMMISSIONS_AUDIT_VIEW_PERMISSIONS,
   COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS,
   COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS,
@@ -29,6 +30,8 @@ export function canViewCommissionsSection(
       return check.hasAnyPermission([...COMMISSIONS_FORECAST_VIEW_PERMISSIONS]);
     case "confirmed":
       return check.hasAnyPermission([...COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS]);
+    case "apuracao":
+      return check.hasAnyPermission([...COMMISSIONS_APURACAO_VIEW_PERMISSIONS]);
     case "releases":
       return check.hasAnyPermission([...COMMISSIONS_RELEASE_VIEW_PERMISSIONS]);
     case "payments":

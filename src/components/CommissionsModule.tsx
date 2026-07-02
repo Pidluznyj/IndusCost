@@ -18,6 +18,7 @@ import {
 import { CommissionsDashboardPage } from "@/src/components/commissions/pages/CommissionsDashboardPage";
 import { CommissionsForecastPage } from "@/src/components/commissions/pages/CommissionsForecastPage";
 import { CommissionsConfirmedPage } from "@/src/components/commissions/pages/CommissionsConfirmedPage";
+import { CommissionsApuracaoPage } from "@/src/components/commissions/pages/CommissionsApuracaoPage";
 import { CommissionsReleasesPage } from "@/src/components/commissions/pages/CommissionsReleasesPage";
 import { CommissionsPaymentsPage } from "@/src/components/commissions/pages/CommissionsPaymentsPage";
 import { CommissionsPersonsPage } from "@/src/components/commissions/pages/CommissionsPersonsPage";
@@ -118,6 +119,7 @@ export function CommissionsModule() {
         <Route index element={guard("dashboard", <CommissionsDashboardPage />)} />
         <Route path="forecast" element={guard("forecast", <CommissionsForecastPage />)} />
         <Route path="confirmed" element={guard("confirmed", <CommissionsConfirmedPage />)} />
+        <Route path="apuracao" element={guard("apuracao", <CommissionsApuracaoPage />)} />
         <Route path="releases" element={guard("releases", <CommissionsReleasesPage />)} />
         <Route path="payments" element={guard("payments", <CommissionsPaymentsPage />)} />
         <Route path="persons" element={guard("persons", <CommissionsPersonsPage />)} />

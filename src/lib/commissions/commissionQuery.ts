@@ -57,11 +57,14 @@ const PERSON_TYPE_SET = new Set<string>(["SELLER", "REPRESENTATIVE", "MANAGER", 
 
 const ORIGIN_STAGE_SET = new Set<string>(["SALES_ORDER", "OUTPUT_DOCUMENT"]);
 
+export type CommissionPeriodBasis = "calculatedAt" | "confirmedAt";
+
 export type CommissionPeriodQuery = {
   year: number | null;
   month: number | null;
   from: Date | null;
   to: Date | null;
+  periodBasis?: CommissionPeriodBasis;
 };
 
 export type CommissionDashboardQuery = CommissionPeriodQuery & {
@@ -98,6 +101,24 @@ export type CommissionForecastQuery = CommissionRecordsQuery;
 export type CommissionConfirmedQuery = CommissionRecordsQuery & {
   outputDocument: string | null;
   includeCancelled: boolean;
+};
+
+export type CommissionApuracaoLineStatusFilter =
+  | "CALCULADA"
+  | "LIBERADA"
+  | "PAGA"
+  | "PENDENTE_RECEBIMENTO"
+  | "DIVERGENTE"
+  | "BLOQUEADA";
+
+export type CommissionApuracaoQuery = CommissionRecordsQuery & {
+  receivableCode: string | null;
+  apuracaoStatus: CommissionApuracaoLineStatusFilter | null;
+  onlyDivergences: boolean;
+  onlyPayable: boolean;
+  periodBasis: CommissionPeriodBasis;
+  nomusReferenceBase: number | null;
+  nomusReferenceCommission: number | null;
 };
 
 export type CommissionReleaseFilter = "released" | "not_released" | "partial" | null;
@@ -308,7 +329,52 @@ export function parseCommissionConfirmedQuery(
     outputDocument,
     includeCancelled:
       query.includeCancelled === "true" || query.includeCancelled === true,
+    periodBasis: "confirmedAt",
   };
+}
+
+export function parseCommissionApuracaoQuery(
+  query: Record<string, unknown>
+): CommissionApuracaoQuery {
+  const base = parseCommissionRecordsQuery(query);
+  const receivableCode =
+    typeof query.receivableCode === "string" && query.receivableCode.trim()
+      ? query.receivableCode.trim()
+      : null;
+  const apuracaoStatusRaw =
+    typeof query.apuracaoStatus === "string" ? query.apuracaoStatus.trim().toUpperCase() : null;
+  const apuracaoStatusSet = new Set([
+    "CALCULADA",
+    "LIBERADA",
+    "PAGA",
+    "PENDENTE_RECEBIMENTO",
+    "DIVERGENTE",
+    "BLOQUEADA",
+  ]);
+  const apuracaoStatus =
+    apuracaoStatusRaw && apuracaoStatusSet.has(apuracaoStatusRaw)
+      ? (apuracaoStatusRaw as CommissionApuracaoLineStatusFilter)
+      : null;
+
+  const nomusReferenceBase = parseOptionalFloat(query.nomusReferenceBase);
+  const nomusReferenceCommission = parseOptionalFloat(query.nomusReferenceCommission);
+
+  return {
+    ...base,
+    receivableCode,
+    apuracaoStatus,
+    onlyDivergences: query.onlyDivergences === "true" || query.onlyDivergences === true,
+    onlyPayable: query.onlyPayable === "true" || query.onlyPayable === true,
+    periodBasis: "confirmedAt",
+    nomusReferenceBase,
+    nomusReferenceCommission,
+  };
+}
+
+function parseOptionalFloat(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number.parseFloat(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
 }
 
 export function resolveConfirmedStatusIn(
@@ -322,31 +388,56 @@ export function resolveConfirmedStatusIn(
   return statuses;
 }
 
-export function buildCommissionRecordPeriodWhere(
+function resolvePeriodDateRange(
   query: CommissionPeriodQuery
-): Prisma.CommissionRecordWhereInput {
+): { from: Date; to: Date } | null {
   if (query.from && query.to) {
-    return { calculatedAt: { gte: query.from, lte: query.to } };
+    return { from: query.from, to: query.to };
   }
   if (query.year != null && query.month != null) {
-    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
-    const to = new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999));
-    return { calculatedAt: { gte: from, lte: to } };
+    return {
+      from: new Date(Date.UTC(query.year, query.month - 1, 1)),
+      to: new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999)),
+    };
   }
   if (query.year != null) {
-    const from = new Date(Date.UTC(query.year, 0, 1));
-    const to = new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999));
-    return { calculatedAt: { gte: from, lte: to } };
+    return {
+      from: new Date(Date.UTC(query.year, 0, 1)),
+      to: new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999)),
+    };
   }
-  return {};
+  return null;
+}
+
+export function buildCommissionRecordPeriodWhere(
+  query: CommissionPeriodQuery,
+  basis: CommissionPeriodBasis = "calculatedAt"
+): Prisma.CommissionRecordWhereInput {
+  const range = resolvePeriodDateRange(query);
+  if (!range) return {};
+
+  if (basis === "confirmedAt") {
+    return {
+      OR: [
+        { confirmedAt: { gte: range.from, lte: range.to } },
+        {
+          AND: [{ confirmedAt: null }, { calculatedAt: { gte: range.from, lte: range.to } }],
+        },
+      ],
+    };
+  }
+
+  return { calculatedAt: { gte: range.from, lte: range.to } };
 }
 
 export function buildCommissionRecordsWhere(
   query: CommissionRecordsQuery,
-  scope: CommissionAccessScope
+  scope: CommissionAccessScope,
+  options?: { periodBasis?: CommissionPeriodBasis }
 ): Prisma.CommissionRecordWhereInput {
+  const periodBasis = options?.periodBasis ?? query.periodBasis ?? "calculatedAt";
   const parts: Prisma.CommissionRecordWhereInput[] = [
-    buildCommissionRecordPeriodWhere(query),
+    buildCommissionRecordPeriodWhere(query, periodBasis),
     applyCommissionRecordScope(scope, {
       commissionPersonId: query.commissionPersonId,
       sellerId: query.sellerId,

@@ -28,6 +28,12 @@ export const COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS = [
   "commissions.view",
 ] as const;
 
+export const COMMISSIONS_APURACAO_VIEW_PERMISSIONS = [
+  "commissions.confirmed.view",
+  "commissions.dashboard.view",
+  "commissions.view",
+] as const;
+
 export const COMMISSIONS_RELEASE_VIEW_PERMISSIONS = [
   "commissions.release.view",
   "commissions.view",

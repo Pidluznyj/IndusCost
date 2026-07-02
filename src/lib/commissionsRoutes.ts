@@ -2,6 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
+  COMMISSIONS_APURACAO_VIEW_PERMISSIONS,
   COMMISSIONS_AUDIT_VIEW_PERMISSIONS,
   COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS,
   COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS,
@@ -64,6 +65,10 @@ import {
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
 import {
+  exportCommissionApuracaoCsv,
+  listCommissionApuracaoPage,
+} from "@/src/lib/commissions/commissionApuracao.server.js";
+import {
   getCommissionConfirmedDetail,
   listCommissionConfirmedPage,
 } from "@/src/lib/commissions/commissionConfirmed.server.js";
@@ -73,6 +78,7 @@ import {
 } from "@/src/lib/commissions/commissionForecast.server.js";
 import {
   CommissionQueryParseError,
+  parseCommissionApuracaoQuery,
   parseCommissionAuditQuery,
   parseCommissionConfirmedQuery,
   parseCommissionDashboardQuery,
@@ -157,6 +163,11 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
   const confirmedGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS]),
+  ] as const;
+
+  const apuracaoGuard = [
+    requireAppAuth,
+    requireAnyPermission([...COMMISSIONS_APURACAO_VIEW_PERMISSIONS]),
   ] as const;
 
   const releaseGuard = [
@@ -332,6 +343,45 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/confirmed/detail", error);
         return res.status(500).json({ error: "Erro ao carregar detalhe da comissão confirmada." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/apuracao", ...apuracaoGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionApuracaoQuery(req.query as Record<string, unknown>);
+      const payload = await listCommissionApuracaoPage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/apuracao", error);
+        return res.status(500).json({ error: "Erro ao carregar apuração de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/apuracao/export", ...apuracaoGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionApuracaoQuery(req.query as Record<string, unknown>);
+      const csv = await exportCommissionApuracaoCsv(query, ctx.scope);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="apuracao-comissao-${query.year ?? "periodo"}.csv"`
+      );
+      return res.send(csv);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/apuracao/export", error);
+        return res.status(500).json({ error: "Erro ao exportar apuração." });
       }
     }
   });

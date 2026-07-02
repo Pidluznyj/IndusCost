@@ -24,9 +24,10 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("expõe 9 seções alinhadas ao menu", () => {
-    assert.equal(COMMISSIONS_SECTIONS.length, 9);
+  it("expõe 10 seções alinhadas ao menu", () => {
+    assert.equal(COMMISSIONS_SECTIONS.length, 10);
     assert.equal(COMMISSIONS_SECTION_PATHS.dashboard, "/commissions");
+    assert.equal(COMMISSIONS_SECTION_PATHS.apuracao, "/commissions/apuracao");
     assert.equal(COMMISSIONS_SECTION_PATHS.forecast, "/commissions/forecast");
     assert.equal(COMMISSIONS_SECTION_PATHS.settings, "/commissions/settings");
   });

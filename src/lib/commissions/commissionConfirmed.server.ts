@@ -250,7 +250,8 @@ async function buildConfirmedWhere(
   const statusIn = resolveConfirmedStatusIn(query);
   const base = buildCommissionRecordsWhere(
     { ...query, statusIn, status: null },
-    scope
+    scope,
+    { periodBasis: "confirmedAt" }
   );
 
   if (!query.outputDocument) return base;
