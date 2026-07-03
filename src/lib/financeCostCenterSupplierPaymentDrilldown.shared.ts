@@ -81,6 +81,8 @@ export type CostCenterSupplierPaymentTitleRow = {
   classificationOriginLabel: string;
   isManualClassification: boolean;
   primaryCostCenterId: string | null;
+  hasCostCenterClassification: boolean;
+  costCenterIds: string[];
 };
 
 export type CostCenterSupplierPaymentTitlesPayload = {
@@ -97,4 +99,10 @@ export type CostCenterSupplierPaymentTitlesPayload = {
   pageSize: number;
   totalPages: number;
   filtersApplied: CostCenterSupplierPaymentFiltersApplied;
+  listFiltersApplied: {
+    search: string;
+    costCenterFilter: string;
+    classificationStatus: string;
+  };
+  costCenterOptions: Array<{ id: string; code: string; name: string }>;
 };

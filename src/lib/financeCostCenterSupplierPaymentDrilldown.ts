@@ -20,6 +20,7 @@ import {
 import { OFFICIAL_AP_RULES_SOURCE } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import {
   isTitleRealAllocated,
+  isTitleFullyClassified,
   resolveCostCenterTitleAmount,
   resolveTitleAllocatedAmount,
   resolveTitleUnallocatedGap,
@@ -60,6 +61,12 @@ import {
 import { formatAccountsPayableDescriptiveText } from "@/src/lib/financeAccountsPayableDescriptiveText.js";
 import { resolveApClassificationOriginLabel } from "@/src/lib/financeAccountsPayableCostCenterIntegration.js";
 import type { ApIntegrationAllocationRow } from "@/src/lib/financeAccountsPayableCostCenterIntegration.js";
+import {
+  matchesPaidTitleListFilters,
+  matchesPaidTitleSearch,
+  PAID_TITLE_UNCLASSIFIED_LABEL,
+  type PaidTitleListFilters,
+} from "@/src/lib/financePaidTitlesModalFilters.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 export type PaymentDrilldownAllocationRow = AllocationDashboardRow & {
@@ -347,7 +354,7 @@ function resolveCostCenterLabels(
     ? rowAllocations.filter((a) => a.costCenterId === costCenterFilter)
     : rowAllocations;
   if (applicable.length === 0) {
-    return { name: "Sem centro de custo classificado", code: null };
+    return { name: PAID_TITLE_UNCLASSIFIED_LABEL, code: null };
   }
   const names = [
     ...new Set(
@@ -624,7 +631,11 @@ export function buildCostCenterSupplierPaymentTitles(
   year: number,
   page = 1,
   pageSize = 50,
-  search = ""
+  listFilters: PaidTitleListFilters = {
+    search: "",
+    costCenterFilter: "all",
+    classificationStatus: "all",
+  }
 ): CostCenterSupplierPaymentTitlesPayload {
   const paidWindow = resolvePaidTitlesWindow(ctx, year);
   const matches: CostCenterSupplierPaymentTitleRow[] = [];
@@ -651,6 +662,14 @@ export function buildCostCenterSupplierPaymentTitles(
       toCivilDateKey(match.row.settlementDate);
     const drilldownRow = match.row as FinanceApPaymentDrilldownRow;
     const classificationMeta = resolveTitleClassificationMeta(match.rowAllocations);
+    const titleAmount = finiteMoney(Math.abs(match.row.amountPayable ?? 0));
+    const hasCostCenterClassification = isTitleFullyClassified(
+      match.rowAllocations,
+      titleAmount
+    );
+    const costCenterIds = [
+      ...new Set(match.rowAllocations.map((allocation) => allocation.costCenterId)),
+    ];
     matches.push({
       accountsPayableId: match.row.externalId,
       paymentDate: toCivilDateKey(match.paidAt),
@@ -672,26 +691,14 @@ export function buildCostCenterSupplierPaymentTitles(
       classificationOriginLabel: classificationMeta.classificationOriginLabel,
       isManualClassification: classificationMeta.isManualClassification,
       primaryCostCenterId: classificationMeta.primaryCostCenterId,
+      hasCostCenterClassification,
+      costCenterIds,
     });
   });
 
-  const normalizedSearch = search.trim().toLowerCase();
-  const filtered = normalizedSearch
-    ? matches.filter((row) =>
-        [
-          row.documentNumber,
-          row.description,
-          row.descriptiveText,
-          row.costCenterName,
-          row.companyName,
-          String(row.accountsPayableId),
-          row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null,
-          row.sourceInvoiceNumber,
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(normalizedSearch))
-      )
-    : matches;
+  const filtered = matches
+    .filter((row) => matchesPaidTitleListFilters(row, listFilters))
+    .filter((row) => matchesPaidTitleSearch(row, listFilters.search));
 
   filtered.sort((a, b) => {
     const dateCmp = (b.paymentDate ?? "").localeCompare(a.paymentDate ?? "");
@@ -705,6 +712,10 @@ export function buildCostCenterSupplierPaymentTitles(
   const safePage = Math.min(Math.max(page, 1), totalPages);
   const start = (safePage - 1) * safePageSize;
   const items = filtered.slice(start, start + safePageSize);
+  const costCenterOptions = [...ctx.ccMeta.values()]
+    .filter((center) => center.status === "ACTIVE")
+    .map((center) => ({ id: center.id, code: center.code, name: center.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return {
     supplierKey,
@@ -720,6 +731,12 @@ export function buildCostCenterSupplierPaymentTitles(
     pageSize: safePageSize,
     totalPages,
     filtersApplied: toFiltersAppliedPayload(ctx.filters),
+    listFiltersApplied: {
+      search: listFilters.search,
+      costCenterFilter: listFilters.costCenterFilter,
+      classificationStatus: listFilters.classificationStatus,
+    },
+    costCenterOptions,
   };
 }
 

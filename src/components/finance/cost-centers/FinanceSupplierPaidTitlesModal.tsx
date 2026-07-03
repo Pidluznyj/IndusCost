@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
@@ -31,6 +31,14 @@ import {
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
+import {
+  resolvePaidTitleListDefaultFilters,
+  type PaidTitleListFilters,
+} from "@/src/lib/financePaidTitlesModalFilters";
+import {
+  financeModuleFilterFieldClass,
+  financeModuleFilterLabelClass,
+} from "@/src/lib/financeModuleUiStandards";
 
 type Props = {
   open: boolean;
@@ -69,18 +77,21 @@ export function FinanceSupplierPaidTitlesModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [search, setSearch] = useState("");
+  const [defaultListFilters, setDefaultListFilters] = useState<PaidTitleListFilters>(() =>
+    resolvePaidTitleListDefaultFilters({ hasActiveRule: true })
+  );
+  const [draftFilters, setDraftFilters] = useState<PaidTitleListFilters>(defaultListFilters);
+  const [appliedFilters, setAppliedFilters] = useState<PaidTitleListFilters>(defaultListFilters);
   const [reclassifyTitle, setReclassifyTitle] =
     useState<CostCenterSupplierPaymentTitleRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchReclassifyOpen, setBatchReclassifyOpen] = useState(false);
-  const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const year = filters.year ?? new Date().getFullYear();
 
   const loadTitles = useCallback(
-    async (nextPage: number, nextSearch: string) => {
+    async (nextPage: number, nextFilters: PaidTitleListFilters) => {
       if (!supplier) return;
       setLoading(true);
       setError(null);
@@ -89,7 +100,9 @@ export function FinanceSupplierPaidTitlesModal({
           year,
           page: nextPage,
           pageSize: 50,
-          search: nextSearch || undefined,
+          search: nextFilters.search || undefined,
+          costCenterFilter: nextFilters.costCenterFilter,
+          classificationStatus: nextFilters.classificationStatus,
         });
         const data = await fetchJsonOk<CostCenterSupplierPaymentTitlesPayload>(
           `/api/finance/cost-centers/supplier-payment-titles?${qs}`,
@@ -111,14 +124,18 @@ export function FinanceSupplierPaidTitlesModal({
       setPayload(null);
       setError(null);
       setPage(1);
-      setSearch("");
-      setSearchDraft("");
       setSelectedIds(new Set());
       setBatchReclassifyOpen(false);
-      setBatchSuccessMessage(null);
+      setSuccessMessage(null);
+      setReclassifyTitle(null);
       return;
     }
-    void loadTitles(1, "");
+    const defaults = resolvePaidTitleListDefaultFilters(supplier);
+    setDefaultListFilters(defaults);
+    setDraftFilters(defaults);
+    setAppliedFilters(defaults);
+    setPage(1);
+    void loadTitles(1, defaults);
   }, [open, supplier, loadTitles]);
 
   const pageRows = payload?.items ?? [];
@@ -130,7 +147,32 @@ export function FinanceSupplierPaidTitlesModal({
   const allPageSelected =
     pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.accountsPayableId));
 
+  const costCenterOptions = payload?.costCenterOptions ?? [];
+
   const clearSelection = () => setSelectedIds(new Set());
+
+  const applyFilters = (nextFilters: PaidTitleListFilters, nextPage = 1) => {
+    setAppliedFilters(nextFilters);
+    setDraftFilters(nextFilters);
+    setPage(nextPage);
+    clearSelection();
+    setSuccessMessage(null);
+    void loadTitles(nextPage, nextFilters);
+  };
+
+  const handleSearch = () => {
+    applyFilters({ ...draftFilters, search: draftFilters.search.trim() }, 1);
+  };
+
+  const handleClearFilters = () => {
+    applyFilters(defaultListFilters, 1);
+  };
+
+  const refreshCurrentList = (message?: string) => {
+    if (message) setSuccessMessage(message);
+    clearSelection();
+    void loadTitles(page, appliedFilters);
+  };
 
   const toggleRowSelection = (accountsPayableId: number) => {
     setSelectedIds((prev) => {
@@ -168,248 +210,305 @@ export function FinanceSupplierPaidTitlesModal({
     <>
       {showPanel && supplier && portalContainer
         ? createPortal(
-    <div className="fixed inset-0 z-[75] flex">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40"
-        aria-label="Fechar modal"
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          financeBiCardClass,
-          "relative ml-auto flex h-full w-full max-w-6xl flex-col overflow-hidden shadow-2xl"
-        )}
-        data-testid="finance-supplier-paid-titles-modal"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            <h3 className="text-lg font-bold truncate">
-              Títulos pagos — {supplier.name}
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Lista de títulos pagos vinculados a este fornecedor no período/filtro selecionado.
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {payload?.periodScopeNote ??
-                "Somente leitura — não altera classificação nem dados do Contas a Pagar."}
-            </p>
-          </div>
-          <button type="button" className="rounded-lg border p-2" onClick={onClose} aria-label="Fechar">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="border-b border-border/80 bg-muted/20 px-5 py-3 text-sm">
-          <div className="flex flex-wrap gap-x-6 gap-y-1">
-            <span>
-              <span className="text-muted-foreground">Fornecedor:</span>{" "}
-              <span className="font-semibold">{supplier.name}</span>
-            </span>
-            <span>
-              <span className="text-muted-foreground">Documento:</span>{" "}
-              {supplier.document ?? payload?.supplierDocument ?? "—"}
-            </span>
-            <span>
-              <span className="text-muted-foreground">Centro padrão:</span> {supplier.costCenterName}
-            </span>
-            <span>
-              <span className="text-muted-foreground">Regra:</span> {supplier.ruleStatus}
-            </span>
-          </div>
-          {periodSummary ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Período: <span className="font-semibold text-foreground">{periodSummary}</span>
-            </p>
-          ) : null}
-          <p className="mt-1 text-[11px] text-muted-foreground" title={COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE}>
-            {COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE}
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {error ? (
-            <FinanceModuleErrorBanner
-              message={error}
-              onRetry={() => void loadTitles(page, search)}
-              onDismiss={() => setError(null)}
-            />
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <FinanceCostCenterGridSearchBar
-              value={searchDraft}
-              onChange={setSearchDraft}
-              placeholder="Buscar documento, descrição, NF…"
-              testId="finance-supplier-paid-titles-search"
-            />
-            <button
-              type="button"
-              className="rounded-lg border px-3 py-2 text-sm font-semibold"
-              onClick={() => {
-                setSearch(searchDraft);
-                setPage(1);
-                clearSelection();
-                void loadTitles(1, searchDraft);
-              }}
-            >
-              Buscar
-            </button>
-          </div>
-
-          {canReclassify && selectedCount > 0 ? (
-            <div
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
-              data-testid="finance-supplier-paid-titles-batch-bar"
-            >
-              <p className="text-sm font-semibold">
-                {selectedCount} título{selectedCount === 1 ? "" : "s"} selecionado
-                {selectedCount === 1 ? "" : "s"}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  (desta página)
-                </span>
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border px-3 py-1.5 text-sm font-semibold"
-                  onClick={clearSelection}
-                >
-                  Limpar seleção
-                </button>
-                <button
-                  type="button"
-                  data-testid="finance-supplier-paid-titles-batch-reclassify-button"
-                  className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
-                  onClick={() => setBatchReclassifyOpen(true)}
-                >
-                  Reclassificar selecionados
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {batchSuccessMessage ? (
-            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-              {batchSuccessMessage}
-            </p>
-          ) : null}
-
-          {loading ? <FinanceModuleLoadingBlock label="Carregando títulos pagos…" /> : null}
-
-          {!loading && payload && payload.items.length === 0 ? (
-            <FinanceModuleEmptyState
-              title="Nenhum título pago encontrado"
-              description="Nenhum título pago encontrado para este fornecedor no filtro atual."
-            />
-          ) : null}
-
-          {!loading && payload && payload.items.length > 0 ? (
-            <FinanceCostCenterGridTableShell
-              tableClassName="min-w-[1100px]"
-              head={
-                <tr className="border-b border-border text-left text-[10px] uppercase text-muted-foreground">
-                  {canReclassify ? (
-                    <th className="px-3 py-2 w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="Selecionar todos os títulos da página"
-                        data-testid="finance-supplier-paid-titles-select-all"
-                        checked={allPageSelected}
-                        onChange={toggleSelectAllPage}
-                      />
-                    </th>
-                  ) : null}
-                  <th className="px-3 py-2">Documento</th>
-                  <th className="px-3 py-2">Emissão</th>
-                  <th className="px-3 py-2">Vencimento</th>
-                  <th className="px-3 py-2">Pagamento</th>
-                  <th className="px-3 py-2">Baixa oper.</th>
-                  <th className="px-3 py-2 text-right">Valor pago</th>
-                  <th className="px-3 py-2">Centro de custo</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2 min-w-[14rem]">Descrição / comentário</th>
-                  {canReclassify ? <th className="px-3 py-2">Ações</th> : null}
-                </tr>
-              }
-              footer={
-                <FinanceCostCenterGridPagination
-                  page={payload.page}
-                  totalPages={payload.totalPages}
-                  pageSize={payload.pageSize}
-                  onPageChange={(nextPage) => {
-                    setPage(nextPage);
-                    clearSelection();
-                    void loadTitles(nextPage, search);
-                  }}
-                  onPageSizeChange={() => undefined}
-                />
-              }
-            >
-              {payload.items.map((row) => (
-                <tr key={row.accountsPayableId} className="border-b border-border/60 text-xs align-top">
-                  {canReclassify ? (
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`Selecionar título ${row.documentNumber ?? row.accountsPayableId}`}
-                        data-testid="finance-supplier-paid-title-select"
-                        checked={selectedIds.has(row.accountsPayableId)}
-                        onChange={() => toggleRowSelection(row.accountsPayableId)}
-                      />
-                    </td>
-                  ) : null}
-                  <td className="px-3 py-2">
-                    {row.documentNumber ?? row.accountsPayableId}
-                    {row.sourceInvoiceNumber || row.sourceInvoiceId ? (
-                      <p className="text-[10px] text-muted-foreground">
-                        NF {row.sourceInvoiceNumber ?? row.sourceInvoiceId}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">{formatFinanceDate(row.issueDate)}</td>
-                  <td className="px-3 py-2">{formatFinanceDate(row.dueDate)}</td>
-                  <td className="px-3 py-2">{formatFinanceDate(row.paymentDate)}</td>
-                  <td className="px-3 py-2">{formatFinanceDate(row.operationalPaymentDate)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                    {formatFinanceCurrency(row.paidAmount)}
-                  </td>
-                  <td className="px-3 py-2" title={row.costCenterCode ?? undefined}>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span>{row.costCenterName}</span>
-                      {row.isManualClassification ? (
-                        <ExecutiveAlertBadge variant="attention" className="text-[9px]">
-                          Manual
-                        </ExecutiveAlertBadge>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">{row.statusLabel}</td>
-                  <td className="px-3 py-2 max-w-[20rem]">
-                    <p className="line-clamp-3 whitespace-pre-wrap" title={row.descriptiveText}>
-                      {row.descriptiveText}
+            <div className="fixed inset-0 z-[75] flex">
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/40"
+                aria-label="Fechar modal"
+                onClick={onClose}
+              />
+              <div
+                className={cn(
+                  financeBiCardClass,
+                  "relative ml-auto flex h-full w-full max-w-6xl flex-col overflow-hidden shadow-2xl"
+                )}
+                data-testid="finance-supplier-paid-titles-modal"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold truncate">
+                      Títulos pagos — {supplier.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Lista de títulos pagos vinculados a este fornecedor no período/filtro selecionado.
                     </p>
-                  </td>
-                  {canReclassify ? (
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        data-testid="finance-supplier-paid-title-reclassify-button"
-                        className="text-xs font-semibold text-primary hover:underline"
-                        onClick={() => setReclassifyTitle(row)}
-                      >
-                        Reclassificar
-                      </button>
-                    </td>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {payload?.periodScopeNote ??
+                        "Somente leitura — não altera classificação nem dados do Contas a Pagar."}
+                    </p>
+                  </div>
+                  <button type="button" className="rounded-lg border p-2" onClick={onClose} aria-label="Fechar">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="border-b border-border/80 bg-muted/20 px-5 py-3 text-sm">
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>
+                      <span className="text-muted-foreground">Fornecedor:</span>{" "}
+                      <span className="font-semibold">{supplier.name}</span>
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Documento:</span>{" "}
+                      {supplier.document ?? payload?.supplierDocument ?? "—"}
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Centro padrão:</span> {supplier.costCenterName}
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Regra:</span> {supplier.ruleStatus}
+                    </span>
+                  </div>
+                  {periodSummary ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Resultado filtrado:{" "}
+                      <span className="font-semibold text-foreground">{periodSummary}</span>
+                    </p>
                   ) : null}
-                </tr>
-              ))}
-            </FinanceCostCenterGridTableShell>
-          ) : null}
-        </div>
-      </div>
-    </div>,
-    portalContainer
+                  <p
+                    className="mt-1 text-[11px] text-muted-foreground"
+                    title={COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE}
+                  >
+                    {COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE}
+                  </p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  {error ? (
+                    <FinanceModuleErrorBanner
+                      message={error}
+                      onRetry={() => void loadTitles(page, appliedFilters)}
+                      onDismiss={() => setError(null)}
+                    />
+                  ) : null}
+
+                  <div
+                    className="flex flex-wrap items-end gap-3"
+                    data-testid="finance-supplier-paid-titles-filters"
+                  >
+                    <div className="min-w-[12rem] flex-1">
+                      <FinanceCostCenterGridSearchBar
+                        value={draftFilters.search}
+                        onChange={(value) => setDraftFilters((prev) => ({ ...prev, search: value }))}
+                        placeholder="Buscar documento, descrição, NF…"
+                        testId="finance-supplier-paid-titles-search"
+                      />
+                    </div>
+                    <label className="min-w-[11rem] space-y-1">
+                      <span className={financeModuleFilterLabelClass()}>Centro de custo</span>
+                      <select
+                        className={financeModuleFilterFieldClass()}
+                        value={draftFilters.costCenterFilter}
+                        onChange={(e) =>
+                          setDraftFilters((prev) => ({
+                            ...prev,
+                            costCenterFilter: e.target.value,
+                          }))
+                        }
+                        data-testid="finance-supplier-paid-titles-cost-center-filter"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="unclassified">Sem centro de custo classificado</option>
+                        {costCenterOptions.map((center) => (
+                          <option key={center.id} value={center.id}>
+                            {center.code} — {center.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="min-w-[11rem] space-y-1">
+                      <span className={financeModuleFilterLabelClass()}>Status de classificação</span>
+                      <select
+                        className={financeModuleFilterFieldClass()}
+                        value={draftFilters.classificationStatus}
+                        onChange={(e) =>
+                          setDraftFilters((prev) => ({
+                            ...prev,
+                            classificationStatus: e.target.value as PaidTitleListFilters["classificationStatus"],
+                          }))
+                        }
+                        data-testid="finance-supplier-paid-titles-classification-filter"
+                      >
+                        <option value="pending">Pendentes / sem classificação</option>
+                        <option value="manual">Reclassificados manualmente</option>
+                        <option value="auto">Classificados automaticamente</option>
+                        <option value="all">Todos</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-lg border px-3 py-2 text-sm font-semibold"
+                      data-testid="finance-supplier-paid-titles-search-button"
+                      onClick={handleSearch}
+                    >
+                      Buscar
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border px-3 py-2 text-sm font-semibold"
+                      data-testid="finance-supplier-paid-titles-clear-filters-button"
+                      onClick={handleClearFilters}
+                    >
+                      Limpar filtros
+                    </button>
+                  </div>
+
+                  {canReclassify && selectedCount > 0 ? (
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
+                      data-testid="finance-supplier-paid-titles-batch-bar"
+                    >
+                      <p className="text-sm font-semibold">
+                        {selectedCount} título{selectedCount === 1 ? "" : "s"} selecionado
+                        {selectedCount === 1 ? "" : "s"}
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          (desta página)
+                        </span>
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg border px-3 py-1.5 text-sm font-semibold"
+                          onClick={clearSelection}
+                        >
+                          Limpar seleção
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="finance-supplier-paid-titles-batch-reclassify-button"
+                          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+                          onClick={() => setBatchReclassifyOpen(true)}
+                        >
+                          Reclassificar selecionados
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {successMessage ? (
+                    <p
+                      className="text-sm font-semibold text-emerald-700 dark:text-emerald-400"
+                      data-testid="finance-supplier-paid-titles-success-message"
+                    >
+                      {successMessage}
+                    </p>
+                  ) : null}
+
+                  {loading ? <FinanceModuleLoadingBlock label="Carregando títulos pagos…" /> : null}
+
+                  {!loading && payload && payload.items.length === 0 ? (
+                    <FinanceModuleEmptyState
+                      title="Nenhum título pago encontrado"
+                      description="Nenhum título pago encontrado para este fornecedor no filtro atual."
+                    />
+                  ) : null}
+
+                  {!loading && payload && payload.items.length > 0 ? (
+                    <FinanceCostCenterGridTableShell
+                      tableClassName="min-w-[1100px]"
+                      head={
+                        <tr className="border-b border-border text-left text-[10px] uppercase text-muted-foreground">
+                          {canReclassify ? (
+                            <th className="px-3 py-2 w-10">
+                              <input
+                                type="checkbox"
+                                aria-label="Selecionar todos os títulos da página"
+                                data-testid="finance-supplier-paid-titles-select-all"
+                                checked={allPageSelected}
+                                onChange={toggleSelectAllPage}
+                              />
+                            </th>
+                          ) : null}
+                          <th className="px-3 py-2">Documento</th>
+                          <th className="px-3 py-2">Emissão</th>
+                          <th className="px-3 py-2">Vencimento</th>
+                          <th className="px-3 py-2">Pagamento</th>
+                          <th className="px-3 py-2">Baixa oper.</th>
+                          <th className="px-3 py-2 text-right">Valor pago</th>
+                          <th className="px-3 py-2">Centro de custo</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2 min-w-[14rem]">Descrição / comentário</th>
+                          {canReclassify ? <th className="px-3 py-2">Ações</th> : null}
+                        </tr>
+                      }
+                      footer={
+                        <FinanceCostCenterGridPagination
+                          page={payload.page}
+                          totalPages={payload.totalPages}
+                          pageSize={payload.pageSize}
+                          onPageChange={(nextPage) => {
+                            setPage(nextPage);
+                            clearSelection();
+                            void loadTitles(nextPage, appliedFilters);
+                          }}
+                          onPageSizeChange={() => undefined}
+                        />
+                      }
+                    >
+                      {payload.items.map((row) => (
+                        <tr key={row.accountsPayableId} className="border-b border-border/60 text-xs align-top">
+                          {canReclassify ? (
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                aria-label={`Selecionar título ${row.documentNumber ?? row.accountsPayableId}`}
+                                data-testid="finance-supplier-paid-title-select"
+                                checked={selectedIds.has(row.accountsPayableId)}
+                                onChange={() => toggleRowSelection(row.accountsPayableId)}
+                              />
+                            </td>
+                          ) : null}
+                          <td className="px-3 py-2">
+                            {row.documentNumber ?? row.accountsPayableId}
+                            {row.sourceInvoiceNumber || row.sourceInvoiceId ? (
+                              <p className="text-[10px] text-muted-foreground">
+                                NF {row.sourceInvoiceNumber ?? row.sourceInvoiceId}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2">{formatFinanceDate(row.issueDate)}</td>
+                          <td className="px-3 py-2">{formatFinanceDate(row.dueDate)}</td>
+                          <td className="px-3 py-2">{formatFinanceDate(row.paymentDate)}</td>
+                          <td className="px-3 py-2">{formatFinanceDate(row.operationalPaymentDate)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                            {formatFinanceCurrency(row.paidAmount)}
+                          </td>
+                          <td className="px-3 py-2" title={row.costCenterCode ?? undefined}>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span>{row.costCenterName}</span>
+                              {row.isManualClassification ? (
+                                <ExecutiveAlertBadge variant="attention" className="text-[9px]">
+                                  Manual
+                                </ExecutiveAlertBadge>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">{row.statusLabel}</td>
+                          <td className="px-3 py-2 max-w-[20rem]">
+                            <p className="line-clamp-3 whitespace-pre-wrap" title={row.descriptiveText}>
+                              {row.descriptiveText}
+                            </p>
+                          </td>
+                          {canReclassify ? (
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                data-testid="finance-supplier-paid-title-reclassify-button"
+                                className="text-xs font-semibold text-primary hover:underline"
+                                onClick={() => setReclassifyTitle(row)}
+                              >
+                                Reclassificar
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </FinanceCostCenterGridTableShell>
+                  ) : null}
+                </div>
+              </div>
+            </div>,
+            portalContainer
           )
         : null}
       <FinanceApTitleReclassifyModal
@@ -418,7 +517,8 @@ export function FinanceSupplierPaidTitlesModal({
         supplierName={supplier?.name ?? ""}
         onClose={() => setReclassifyTitle(null)}
         onSaved={() => {
-          if (supplier) void loadTitles(page, search);
+          setReclassifyTitle(null);
+          refreshCurrentList("Título reclassificado com sucesso.");
         }}
       />
       <FinanceApTitleBatchReclassifyModal
@@ -427,12 +527,12 @@ export function FinanceSupplierPaidTitlesModal({
         supplierName={supplier?.name ?? ""}
         onClose={() => setBatchReclassifyOpen(false)}
         onSaved={(result) => {
-          clearSelection();
           setBatchReclassifyOpen(false);
           if (result.updated > 0) {
-            setBatchSuccessMessage(`${result.updated} título(s) reclassificado(s) com sucesso.`);
+            refreshCurrentList(`${result.updated} título(s) reclassificado(s) com sucesso.`);
+          } else {
+            refreshCurrentList();
           }
-          if (supplier) void loadTitles(page, search);
         }}
       />
     </>

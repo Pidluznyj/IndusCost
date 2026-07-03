@@ -196,6 +196,8 @@ describe("financeCostCenterSupplierPaymentDrilldown", () => {
       2026
     );
     assert.equal(titles.items[0]?.costCenterName, "Sem centro de custo classificado");
+    assert.equal(titles.items[0]?.hasCostCenterClassification, false);
+    assert.equal(titles.items[0]?.costCenterIds.length, 0);
   });
 
   it("resolveSupplierPaidAttributionAmount respeita filtro de centro de custo", () => {
@@ -283,5 +285,48 @@ describe("financeCostCenterSupplierPaymentDrilldown", () => {
     );
     assert.ok(titles.items.every((row) => row.accountsPayableId === 50));
     assert.equal(titles.paidTitlesCount, 1);
+  });
+
+  it("lista de títulos pagos filtra pendências e expõe opções de centro de custo", () => {
+    const ctx = makeCtx({
+      rows: [
+        makeApRow({
+          externalId: 60,
+          dueDate: new Date("2026-06-18T00:00:00.000Z"),
+        }),
+        makeApRow({
+          externalId: 61,
+          dueDate: new Date("2026-06-19T00:00:00.000Z"),
+        }),
+      ],
+      allocations: [
+        {
+          id: "a61",
+          accountsPayableId: 61,
+          supplierId: null,
+          costCenterId: "cc-1",
+          amount: { toNumber: () => 1000 } as never,
+          percentage: { toNumber: () => 100 } as never,
+          source: "AUTO_RULE",
+          lockedManual: false,
+          ruleId: "r1",
+        },
+      ],
+    });
+    const summary = buildCostCenterSupplierPaymentSummary(ctx);
+    const supplier = summary.supplierPaymentSummary[0]!;
+    const pendingOnly = buildCostCenterSupplierPaymentTitles(
+      ctx,
+      supplier.supplierKey,
+      supplier.supplierDisplayName,
+      2026,
+      1,
+      50,
+      { search: "", costCenterFilter: "unclassified", classificationStatus: "pending" }
+    );
+    assert.equal(pendingOnly.paidTitlesCount, 1);
+    assert.equal(pendingOnly.items[0]?.accountsPayableId, 60);
+    assert.ok(pendingOnly.costCenterOptions.length > 0);
+    assert.equal(pendingOnly.listFiltersApplied.classificationStatus, "pending");
   });
 });
