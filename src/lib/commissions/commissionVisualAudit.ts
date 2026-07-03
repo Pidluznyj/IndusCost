@@ -117,11 +117,13 @@ export type VisualAuditNomusReference = {
   comparable: boolean;
 };
 
+function startOfDay(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
 }
 
+export function resolveAllocatedBaseAmount(row: VisualAuditRowInput): number {
   const pct = row.allocationPercent;
   if (pct != null && pct > 0) {
     return roundMoney(row.itemBaseAmount * (pct / 100));
