@@ -41,6 +41,20 @@ import {
   formatEffectiveProductionCostSummary,
   PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
 } from "./src/lib/productionCostTablesUi.js";
+import {
+  generateMaterialCostTableDraftFromMaterials,
+  listMaterialCostTableVersions,
+  publishMaterialCostVersionFromDraft,
+} from "./src/lib/materialCostPublication.server.js";
+import {
+  getEffectiveMaterialCost,
+  getMaterialCostTableVersionById,
+  listMaterialCostTableVersionItems,
+} from "./src/lib/materialCostTables.server.js";
+import {
+  formatEffectiveMaterialCostSummary,
+  MATERIAL_COST_TABLE_VIEW_PERMISSIONS,
+} from "./src/lib/materialCostTablesUi.js";
 import { resolveServerAppBuildInfo } from "./src/lib/appVersion.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
@@ -7191,6 +7205,271 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("POST /api/production-cost-table-versions/:id/publish", e);
       const message = e instanceof Error ? e.message : "Erro ao publicar versão de custo de produção.";
       const status = /DRAFT|imutável|sem itens|não encontrada/i.test(message) ? 400 : 500;
+      return res.status(status).json({ error: message });
+    }
+  });
+
+  // --- API: Tabela oficial versionada de custo de matéria-prima ---
+  app.get("/api/material-cost-tables/versions", requireAppAuth, requireAnyPermission([...MATERIAL_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+    const status = typeof req.query.status === "string" ? req.query.status : null;
+    const code = typeof req.query.code === "string" ? req.query.code : null;
+    try {
+      const versions = await listMaterialCostTableVersions(prisma, { limit, status, code });
+      return res.json(
+        versions.map((v) => ({
+          id: v.id,
+          code: v.code,
+          name: v.name,
+          description: v.description,
+          effectiveDate: v.effectiveDate,
+          status: v.status,
+          revision: v.revision,
+          publishedAt: v.publishedAt,
+          publishedBy: v.publishedBy,
+          createdBy: v.createdBy,
+          createdAt: v.createdAt,
+          itemsCount: v._count.items,
+          source: v.source,
+          notes: v.notes,
+          summaryJson: v.summaryJson,
+          supersedesVersionId: v.supersedesVersionId,
+          supersedesVersion: v.supersedesVersion,
+        }))
+      );
+    } catch (e) {
+      console.error("GET /api/material-cost-tables/versions", e);
+      return res.status(500).json({ error: "Erro ao listar versões de custo de matéria-prima." });
+    }
+  });
+
+  app.get("/api/material-cost-tables/effective-cost", requireAppAuth, requireAnyPermission([...MATERIAL_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
+    const materialId = typeof req.query.materialId === "string" ? req.query.materialId.trim() : "";
+    const dateRaw =
+      typeof req.query.date === "string"
+        ? req.query.date.trim()
+        : typeof req.query.referenceDate === "string"
+          ? req.query.referenceDate.trim()
+          : "";
+    if (!materialId) {
+      return res.status(400).json({ error: "materialId é obrigatório." });
+    }
+    if (!dateRaw) {
+      return res.status(400).json({ error: "date é obrigatória (yyyy-mm-dd)." });
+    }
+    const referenceDate = civilDateToLocalDate(dateRaw);
+    if (Number.isNaN(referenceDate.getTime())) {
+      return res.status(400).json({ error: "date inválida." });
+    }
+    try {
+      const material = await prisma.material.findUnique({
+        where: { id: materialId },
+        select: { id: true, code: true, description: true, unit: true, currentCost: true, freight: true },
+      });
+      if (!material) {
+        return res.status(404).json({ error: "Matéria-prima não encontrada." });
+      }
+      const result = await getEffectiveMaterialCost(prisma, materialId, referenceDate);
+      const summaryText = formatEffectiveMaterialCostSummary({
+        materialCode: material.code,
+        referenceDate: dateRaw,
+        result,
+      });
+      return res.json({
+        ...result,
+        referenceDate: dateRaw,
+        material: {
+          ...material,
+          currentCostLive: Number(material.currentCost),
+          freightLive: Number(material.freight ?? 0),
+          landedCostLive: Number(material.currentCost) + Number(material.freight ?? 0),
+        },
+        summaryText,
+      });
+    } catch (e) {
+      console.error("GET /api/material-cost-tables/effective-cost", e);
+      return res.status(500).json({ error: "Erro ao consultar custo vigente de matéria-prima." });
+    }
+  });
+
+  app.get("/api/material-cost-table-versions/:id", requireAppAuth, requireAnyPermission([...MATERIAL_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
+    try {
+      const version = await getMaterialCostTableVersionById(prisma, req.params.id);
+      if (!version) return res.status(404).json({ error: "Versão não encontrada." });
+      return res.json({
+        id: version.id,
+        code: version.code,
+        name: version.name,
+        description: version.description,
+        effectiveDate: version.effectiveDate,
+        status: version.status,
+        revision: version.revision,
+        publishedAt: version.publishedAt,
+        publishedBy: version.publishedBy,
+        createdBy: version.createdBy,
+        createdAt: version.createdAt,
+        source: version.source,
+        notes: version.notes,
+        summaryJson: version.summaryJson,
+        supersedesVersionId: version.supersedesVersionId,
+        supersedesVersion: version.supersedesVersion,
+        itemsCount: version.items.length,
+        items: version.items.map((item) => ({
+          id: item.id,
+          materialId: item.materialId,
+          materialCodeSnapshot: item.materialCodeSnapshot,
+          materialDescriptionSnapshot: item.materialDescriptionSnapshot,
+          unitSnapshot: item.unitSnapshot,
+          currentCostSnapshot: item.currentCostSnapshot,
+          freightSnapshot: item.freightSnapshot,
+          landedCostSnapshot: item.landedCostSnapshot,
+          averageCostSnapshot: item.averageCostSnapshot,
+          standardCostSnapshot: item.standardCostSnapshot,
+          standardLossSnapshot: item.standardLossSnapshot,
+          costSource: item.costSource,
+          warningsJson: item.warningsJson,
+          calculationHash: item.calculationHash,
+          calculationSnapshot: item.calculationSnapshot,
+        })),
+      });
+    } catch (e) {
+      console.error("GET /api/material-cost-table-versions/:id", e);
+      return res.status(500).json({ error: "Erro ao consultar versão de custo de matéria-prima." });
+    }
+  });
+
+  app.get("/api/material-cost-table-versions/:id/items", requireAppAuth, requireAnyPermission([...MATERIAL_COST_TABLE_VIEW_PERMISSIONS]), async (req, res) => {
+    try {
+      const limitRaw = Number(req.query.limit);
+      const offsetRaw = Number(req.query.offset);
+      const items = await listMaterialCostTableVersionItems(prisma, req.params.id, {
+        limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
+        offset: Number.isFinite(offsetRaw) ? offsetRaw : undefined,
+      });
+      return res.json(items);
+    } catch (e) {
+      console.error("GET /api/material-cost-table-versions/:id/items", e);
+      return res.status(500).json({ error: "Erro ao listar itens da versão." });
+    }
+  });
+
+  app.post("/api/material-cost-tables/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
+    const body = (req.body ?? {}) as {
+      effectiveDate?: unknown;
+      materialIds?: unknown;
+      includeAllActiveMaterials?: unknown;
+      notes?: unknown;
+      description?: unknown;
+      createdBy?: unknown;
+    };
+
+    const effectiveDateRaw =
+      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
+        ? body.effectiveDate.trim()
+        : null;
+    if (!effectiveDateRaw) {
+      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const effectiveDate = civilDateToLocalDate(effectiveDateRaw);
+    if (Number.isNaN(effectiveDate.getTime())) {
+      return res.status(400).json({ error: "effectiveDate inválida." });
+    }
+
+    const materialIds = Array.isArray(body.materialIds)
+      ? body.materialIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      : [];
+    const includeAllActiveMaterials = body.includeAllActiveMaterials === true;
+    const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+    const description =
+      typeof body.description === "string" && body.description.trim() ? body.description.trim() : null;
+    const createdBy =
+      typeof body.createdBy === "string" && body.createdBy.trim() ? body.createdBy.trim() : null;
+
+    if (materialIds.length === 0 && !includeAllActiveMaterials) {
+      return res.status(400).json({
+        error: "Informe materialIds ou includeAllActiveMaterials=true.",
+      });
+    }
+
+    try {
+      const result = await generateMaterialCostTableDraftFromMaterials(prisma, {
+        effectiveDate,
+        materialIds,
+        includeAllActiveMaterials,
+        notes,
+        description,
+        createdBy,
+      });
+
+      if (!result.version) {
+        return res.status(500).json({ error: "Falha ao criar versão DRAFT." });
+      }
+
+      if (result.summary.itemsCreated === 0) {
+        return res.status(422).json({
+          error: "Nenhum item de matéria-prima foi criado. Revise materiais sem custo.",
+          summary: result.summary,
+        });
+      }
+
+      return res.status(201).json({
+        version: {
+          id: result.version.id,
+          code: result.version.code,
+          name: result.version.name,
+          effectiveDate: result.version.effectiveDate,
+          status: result.version.status,
+          revision: result.version.revision,
+          supersedesVersionId: result.supersedesVersionId,
+          itemsCount: result.version._count.items,
+        },
+        summary: result.summary,
+        published: false,
+      });
+    } catch (e) {
+      console.error("POST /api/material-cost-tables/versions/generate-draft", e);
+      const message = e instanceof Error ? e.message : "Erro ao gerar DRAFT de custo de matéria-prima.";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/material-cost-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
+    const { id } = req.params;
+    const body = (req.body ?? {}) as { publishedBy?: unknown; supersedeVersionId?: unknown };
+    const publishedBy =
+      typeof body.publishedBy === "string" && body.publishedBy.trim() ? body.publishedBy.trim() : null;
+    const supersedeVersionId =
+      typeof body.supersedeVersionId === "string" && body.supersedeVersionId.trim()
+        ? body.supersedeVersionId.trim()
+        : null;
+
+    try {
+      const published = await publishMaterialCostVersionFromDraft(prisma, {
+        versionId: id,
+        publishedBy,
+        supersedeVersionId,
+      });
+
+      return res.json({
+        version: {
+          id: published.id,
+          code: published.code,
+          name: published.name,
+          effectiveDate: published.effectiveDate,
+          status: published.status,
+          revision: published.revision,
+          publishedAt: published.publishedAt,
+          publishedBy: published.publishedBy,
+          itemsCount: published.items.length,
+        },
+        published: true,
+        immutable: true,
+      });
+    } catch (e) {
+      console.error("POST /api/material-cost-table-versions/:id/publish", e);
+      const message = e instanceof Error ? e.message : "Erro ao publicar versão de custo de matéria-prima.";
+      const status = /DRAFT|imutável|sem itens|não encontrada|landed/i.test(message) ? 400 : 500;
       return res.status(status).json({ error: message });
     }
   });

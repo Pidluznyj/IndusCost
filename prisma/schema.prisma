@@ -119,6 +119,7 @@ model Material {
   ProductBOM           ProductBOM[]
   PurchaseRequestItem  PurchaseRequestItem[]
   ProjectStructureLine ProjectStructureLine[]
+  MaterialCostTableItem MaterialCostTableItem[]
 }
 
 model MaterialPriceHistory {
@@ -698,6 +699,64 @@ model ProductionCostTableItem {
   @@index([costTableVersionId])
   @@index([productId])
   @@index([productCodeSnapshot])
+}
+
+/// Versão oficial de tabela de custo de matéria-prima por vigência.
+model MaterialCostTableVersion {
+  id                  String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                String
+  name                String
+  description         String?
+  effectiveDate       DateTime                         @db.Date
+  status              ProductionCostTableVersionStatus @default(DRAFT)
+  revision            Int
+  supersedesVersionId String?                          @db.Uuid
+  source              String?
+  notes               String?
+  summaryJson         Json?
+  publishedAt         DateTime?                        @db.Timestamptz(6)
+  publishedBy         String?
+  createdBy           String?
+  createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  supersedesVersion   MaterialCostTableVersion?        @relation("MaterialCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersededBy        MaterialCostTableVersion[]       @relation("MaterialCostTableVersionSupersedes")
+  items               MaterialCostTableItem[]
+
+  @@unique([code, revision])
+  @@index([code])
+  @@index([status])
+  @@index([effectiveDate])
+  @@index([publishedAt])
+}
+
+/// Linha de custo de matéria-prima congelada por versão.
+model MaterialCostTableItem {
+  id                          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialCostTableVersionId  String                   @db.Uuid
+  materialId                  String                   @db.Uuid
+  materialCodeSnapshot        String
+  materialDescriptionSnapshot String
+  unitSnapshot                String
+  currentCostSnapshot         Decimal                  @db.Decimal(20, 6)
+  freightSnapshot             Decimal                  @default(0) @db.Decimal(20, 6)
+  landedCostSnapshot          Decimal                  @db.Decimal(20, 6)
+  averageCostSnapshot         Decimal?                 @db.Decimal(20, 6)
+  standardCostSnapshot        Decimal?                 @db.Decimal(20, 6)
+  standardLossSnapshot        Decimal?                 @db.Decimal(10, 6)
+  costSource                  String                   @default("CURRENT_MATERIAL")
+  warningsJson                Json?
+  calculationHash             String?
+  calculationSnapshot         Json?
+  createdAt                   DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  materialCostTableVersion    MaterialCostTableVersion @relation(fields: [materialCostTableVersionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Material                    Material                 @relation(fields: [materialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([materialCostTableVersionId, materialId])
+  @@index([materialCostTableVersionId])
+  @@index([materialId])
+  @@index([materialCodeSnapshot])
 }
 
 model CostCalculationLog {

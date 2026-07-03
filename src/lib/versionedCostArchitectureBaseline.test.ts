@@ -233,7 +233,7 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
 });
 
 describe("versionedCostArchitectureBaseline — matéria-prima e componentes (as-is)", () => {
-  it("motor industrial lê Material.currentCost vivo (sem tabela versionada de MP)", () => {
+  it("motor industrial ainda lê Material.currentCost vivo (MP versionada não ligada ao motor)", () => {
     const engine = read("src/lib/productCostAnalysisEngine.server.ts");
     assert.match(engine, /mat\.currentCost/);
     assert.doesNotMatch(engine, /MaterialPriceHistory/);
@@ -251,9 +251,10 @@ describe("versionedCostArchitectureBaseline — matéria-prima e componentes (as
     assert.match(pub, /componentsEvaluated/);
   });
 
-  it("não existe entidade MaterialCostTableVersion no schema (gap baseline)", () => {
+  it("existe entidade MaterialCostTableVersion no schema (fase MP versionada)", () => {
     const schema = read("prisma/schema.prisma");
-    assert.doesNotMatch(schema, /model MaterialCostTableVersion/);
+    assert.match(schema, /model MaterialCostTableVersion/);
+    assert.match(schema, /model MaterialCostTableItem/);
     assert.match(schema, /model MaterialPriceHistory/);
     assert.match(schema, /model ProductionCostTableVersion/);
     assert.match(schema, /model PriceTableVersion/);

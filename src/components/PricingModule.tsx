@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
-  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer
+  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer, Package
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -15,6 +15,7 @@ import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
 import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab";
 import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingDetailedCompositionTab";
 import { ProductionCostTablesPanel } from "@/src/components/pricing/ProductionCostTablesPanel";
+import { MaterialCostTablesPanel } from "@/src/components/pricing/MaterialCostTablesPanel";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 import {
   filterAndSortPricingRows,
@@ -165,6 +166,12 @@ export const PricingModule = () => {
     auth.hasPermission("costs.view") ||
     auth.hasPermission("products.tab.cost") ||
     allowGenerateTables;
+  const canViewMaterialCostTables =
+    auth.hasPermission("pricing.view") ||
+    auth.hasPermission("costs.view") ||
+    auth.hasPermission("purchases.view") ||
+    auth.hasPermission("materials.view") ||
+    allowGenerateTables;
   const [tourOpen, setTourOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
@@ -261,6 +268,8 @@ export const PricingModule = () => {
   const [productionCostGenResult, setProductionCostGenResult] = useState<ProductionCostGenResult | null>(null);
   const [productionCostVersions, setProductionCostVersions] = useState<ProductionCostVersionLite[]>([]);
   const [productionCostVersionsLoading, setProductionCostVersionsLoading] = useState(false);
+
+  const [materialCostOpen, setMaterialCostOpen] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -1696,6 +1705,41 @@ export const PricingModule = () => {
               />
             </div>
           )}
+        </div>
+        ) : null}
+
+        {canViewMaterialCostTables ? (
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <button
+            type="button"
+            onClick={() => setMaterialCostOpen((v) => !v)}
+            aria-expanded={materialCostOpen}
+            aria-controls="pricing-material-cost-body"
+            className="w-full flex items-start justify-between gap-3 text-left"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" /> Custo oficial de matéria-prima (versionado)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Congela custo de MP por vigência a partir do cadastro Material. Publicação explícita — não altera o motor de produção nesta fase.
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                materialCostOpen && "rotate-90"
+              )}
+            />
+          </button>
+          {materialCostOpen ? (
+            <div id="pricing-material-cost-body" className="mt-5">
+              <MaterialCostTablesPanel
+                canManage={allowGenerateTables}
+                canPublish={allowPublishTables}
+              />
+            </div>
+          ) : null}
         </div>
         ) : null}
 
