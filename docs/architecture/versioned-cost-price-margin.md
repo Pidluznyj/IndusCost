@@ -95,6 +95,8 @@ npm run audit:component-performance-coverage -- --top=20 --sold-only --missing-o
 
 Testes: `npm run test:component-performance-coverage`
 
+Documentação da frente: `docs/operations/component-performance-flow.md`
+
 ---
 
 ## 2. Fases concluídas
