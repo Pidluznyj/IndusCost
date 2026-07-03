@@ -29,15 +29,17 @@ function checker(perms: string[]): PermissionChecker {
 describe("commissionsNavigation", () => {
   it("modo simplificado expõe fechamento mensal e auditoria visual", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 2);
+    assert.equal(COMMISSIONS_SECTIONS.length, 3);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
-    assert.equal(COMMISSIONS_SECTIONS[1]?.id, "visualAudit");
+    assert.equal(COMMISSIONS_SECTIONS[1]?.id, "receivableForecast");
+    assert.equal(COMMISSIONS_SECTIONS[2]?.id, "visualAudit");
+    assert.equal(COMMISSIONS_SECTION_PATHS.receivableForecast, "/commissions/previsao");
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
     assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions/auditoria");
   });
 
   it("redireciona rotas legadas para /commissions", () => {
-    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions/previsao");
     assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("dashboard"), "/commissions");
@@ -48,6 +50,7 @@ describe("commissionsNavigation", () => {
   it("paths canônicos", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/auditoria"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/previsao"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/forecast"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/unknown"), false);
@@ -65,6 +68,7 @@ describe("commissions frontend wiring", () => {
   it("CommissionsModule usa fechamento mensal, auditoria visual e redirects legados", () => {
     const moduleSrc = read("src/components/CommissionsModule.tsx");
     assert.match(moduleSrc, /CommissionsMonthlyClosingPage/);
+    assert.match(moduleSrc, /CommissionsReceivableForecastPage/);
     assert.match(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
     assert.match(moduleSrc, /CommissionsLegacyRedirect/);

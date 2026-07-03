@@ -83,6 +83,8 @@ describe("commissionsRoutes", () => {
       "/api/commissions/visual-audit/detail",
       "/api/commissions/monthly-closing",
       "/api/commissions/monthly-closing/export",
+      "/api/commissions/receivable-forecast",
+      "/api/commissions/receivable-forecast/export",
       "/api/commissions/payable",
       "/api/commissions/generated",
       "/api/commissions/generated/detail",

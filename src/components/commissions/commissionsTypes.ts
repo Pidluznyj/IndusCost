@@ -847,3 +847,53 @@ export type CommissionsMonthlyClosingPayload = {
   detailRows: CommissionsMonthlyClosingDetailRow[];
   pagination: CommissionsPagination;
 };
+
+export type CommissionsReceivableForecastMonthlyRow = {
+  dueMonthKey: string;
+  dueMonthLabelPt: string;
+  openTitlesAmount: number;
+  allocatedBaseAmount: number;
+  forecastCommissionAmount: number;
+  titleCount: number;
+  sellerCount: number;
+  bucket: string;
+};
+
+export type CommissionsReceivableForecastDetailRow = {
+  lineId: string;
+  sellerName: string;
+  customerName: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  nomusReceivableId: number | null;
+  dueDate: string | null;
+  openAmount: number;
+  allocatedBaseAmount: number;
+  forecastCommissionAmount: number;
+  receivableTitleStatus: string;
+  bucket: string;
+  alerts: string[];
+};
+
+export type CommissionsReceivableForecastPayload = {
+  cards: {
+    futureCommissionTotal: number;
+    overdueCommissionTotal: number;
+    futureTitlesAmountTotal: number;
+    overdueTitlesAmountTotal: number;
+    peakMonthKey: string | null;
+    peakMonthLabelPt: string | null;
+    peakMonthCommission: number;
+    nextMonthKey: string | null;
+    nextMonthLabelPt: string | null;
+    nextMonthCommission: number;
+    titleCount: number;
+    sellerCount: number;
+  };
+  monthly: CommissionsReceivableForecastMonthlyRow[];
+  overdue: CommissionsReceivableForecastMonthlyRow[];
+  currentMonth: CommissionsReceivableForecastMonthlyRow | null;
+  futureMonths: CommissionsReceivableForecastMonthlyRow[];
+  detailRows: CommissionsReceivableForecastDetailRow[];
+  pagination: CommissionsPagination;
+};

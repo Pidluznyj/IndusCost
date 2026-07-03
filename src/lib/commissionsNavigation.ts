@@ -8,7 +8,7 @@ export const COMMISSIONS_SIMPLIFIED_UI = true as const;
 
 export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 
-export const COMMISSIONS_SECTION_IDS = ["monthlyClosing", "visualAudit"] as const;
+export const COMMISSIONS_SECTION_IDS = ["monthlyClosing", "receivableForecast", "visualAudit"] as const;
 
 export type CommissionsSectionId = (typeof COMMISSIONS_SECTION_IDS)[number];
 
@@ -38,7 +38,7 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
   exceptions: "/commissions",
   audit: "/commissions",
   settings: "/commissions",
-  forecast: "/commissions",
+  forecast: "/commissions/previsao",
   confirmed: "/commissions",
   apuracao: "/commissions",
   releases: "/commissions",
@@ -47,6 +47,7 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
 
 export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   monthlyClosing: "/commissions",
+  receivableForecast: "/commissions/previsao",
   visualAudit: "/commissions/auditoria",
 };
 
@@ -66,6 +67,12 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.monthlyClosing,
     description:
       "Comissão oficial a pagar com base nos títulos baixados/recebidos no mês (settlementDate)",
+  },
+  {
+    id: "receivableForecast",
+    label: "Previsão",
+    path: COMMISSIONS_SECTION_PATHS.receivableForecast,
+    description: "Comissão prevista por vencimento de títulos em aberto no Contas a Receber",
   },
   {
     id: "visualAudit",
@@ -102,6 +109,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   const firstSegment = remainder.split("/").filter(Boolean)[0];
   if (!firstSegment) return true;
   if (firstSegment === "auditoria") return true;
+  if (firstSegment === "previsao") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
   if (isCommissionsLegacySectionSegment(firstSegment)) return true;
   return false;
@@ -116,6 +124,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   const next = segments[idx + 1];
   if (!next) return "monthlyClosing";
   if (next === "auditoria") return "visualAudit";
+  if (next === "previsao") return "receivableForecast";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";
   return isCommissionsSectionId(next) ? next : null;
 }

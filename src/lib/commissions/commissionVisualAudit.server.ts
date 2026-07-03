@@ -402,6 +402,19 @@ export type PayableVisualAuditRowsQuery = {
   onlyDivergences?: boolean;
 };
 
+export type ForecastVisualAuditRowsQuery = {
+  commissionPersonId?: string | null;
+  customer?: string | null;
+  orderCode?: string | null;
+  nfeNumber?: string | null;
+  nomusReceivableId?: number | null;
+  receivableTitleStatus?: string | null;
+  commissionStatus?: string | null;
+  dueDateFrom?: Date | null;
+  dueDateTo?: Date | null;
+  onlyDivergences?: boolean;
+};
+
 /** Linhas PAYABLE filtradas por settlementDate — base para auditoria mensal oficial. */
 export async function listPayableVisualAuditRows(
   query: PayableVisualAuditRowsQuery,
@@ -427,6 +440,45 @@ export async function listPayableVisualAuditRows(
       settlementDateTo: null,
       onlySettled: false,
       onlyOpen: false,
+      onlyDivergences: query.onlyDivergences ?? false,
+      onlyZeroCommission: false,
+      onlyMissingReceivableLink: false,
+      receivableTitleStatus: query.receivableTitleStatus ?? null,
+      commissionStatus: query.commissionStatus ?? null,
+      nomusReferenceBase: null,
+      nomusReferenceCommission: null,
+      page: 1,
+      pageSize: 100000,
+    },
+    scope
+  );
+}
+
+/** Títulos em aberto — previsão por dueDate (sem filtro de confirmedAt). */
+export async function listForecastVisualAuditRows(
+  query: ForecastVisualAuditRowsQuery,
+  scope: CommissionAccessScope
+): Promise<VisualAuditRow[]> {
+  return listFilteredVisualAuditRows(
+    {
+      year: null,
+      month: null,
+      from: null,
+      to: null,
+      appraisalMode: "FORECAST",
+      commissionPersonId: query.commissionPersonId ?? null,
+      customer: query.customer ?? null,
+      orderCode: query.orderCode ?? null,
+      nfeNumber: query.nfeNumber ?? null,
+      sellerId: null,
+      representativeId: null,
+      nomusReceivableId: query.nomusReceivableId ?? null,
+      dueDateFrom: query.dueDateFrom ?? null,
+      dueDateTo: query.dueDateTo ?? null,
+      settlementDateFrom: null,
+      settlementDateTo: null,
+      onlySettled: false,
+      onlyOpen: true,
       onlyDivergences: query.onlyDivergences ?? false,
       onlyZeroCommission: false,
       onlyMissingReceivableLink: false,

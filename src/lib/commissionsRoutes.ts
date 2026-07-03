@@ -77,6 +77,10 @@ import {
   getCommissionMonthlyClosingPage,
 } from "@/src/lib/commissions/commissionMonthlyPayable.server.js";
 import {
+  exportCommissionReceivableForecastCsv,
+  getCommissionReceivableForecastPage,
+} from "@/src/lib/commissions/commissionReceivableForecast.server.js";
+import {
   getCommissionAuditTrailDetail,
   getCommissionGeneratedDetail,
   listCommissionFuturePage,
@@ -118,6 +122,7 @@ import {
   parseCommissionReleasesQuery,
   parseCommissionVisualAuditQuery,
   parseCommissionMonthlyClosingQuery,
+  parseCommissionReceivableForecastQuery,
   parseUnpaidReleasedCommissionsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
@@ -378,6 +383,53 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/monthly-closing/export", error);
         return res.status(500).json({ error: "Erro ao exportar fechamento mensal." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/receivable-forecast", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReceivableForecastQuery(req.query as Record<string, unknown>);
+      const payload = await getCommissionReceivableForecastPage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/receivable-forecast", error);
+        return res.status(500).json({ error: "Erro ao carregar previsão de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/receivable-forecast/export", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReceivableForecastQuery(req.query as Record<string, unknown>);
+      const formatRaw = typeof req.query.format === "string" ? req.query.format : "full";
+      const format =
+        formatRaw === "monthly" || formatRaw === "detail" || formatRaw === "full"
+          ? formatRaw
+          : "full";
+      const csv = await exportCommissionReceivableForecastCsv(query, ctx.scope, format);
+      const filename =
+        format === "monthly"
+          ? "previsao-comissao-mensal.csv"
+          : format === "detail"
+            ? "previsao-comissao-detalhe.csv"
+            : "previsao-comissao.csv";
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/receivable-forecast/export", error);
+        return res.status(500).json({ error: "Erro ao exportar previsão de comissões." });
       }
     }
   });

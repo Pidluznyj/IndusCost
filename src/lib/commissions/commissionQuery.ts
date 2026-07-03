@@ -4,6 +4,7 @@ import type {
 } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
+import type { CommissionReceivableForecastQuery } from "./commissionReceivableForecast.js";
 import {
   parseVisualAuditAppraisalMode,
   type VisualAuditAppraisalMode,
@@ -1062,6 +1063,38 @@ export function parseCommissionMonthlyClosingQuery(
     onlyDivergences: visual.onlyDivergences,
     nomusReferenceBase: visual.nomusReferenceBase,
     nomusReferenceCommission: visual.nomusReferenceCommission,
+    page: visual.page,
+    pageSize: visual.pageSize,
+  };
+}
+
+export type CommissionReceivableForecastQueryParsed = CommissionReceivableForecastQuery & {
+  page: number;
+  pageSize: number;
+};
+
+export function parseCommissionReceivableForecastQuery(
+  query: Record<string, unknown>
+): CommissionReceivableForecastQueryParsed {
+  const visual = parseCommissionVisualAuditQuery({ ...query, appraisalMode: "FORECAST" });
+  const horizonRaw = query.horizonMonths ?? query.horizon;
+  const horizonMonths =
+    horizonRaw != null && horizonRaw !== ""
+      ? Number.parseInt(String(horizonRaw), 10)
+      : null;
+
+  return {
+    commissionPersonId: visual.commissionPersonId,
+    customer: visual.customer,
+    orderCode: visual.orderCode,
+    nfeNumber: visual.nfeNumber,
+    nomusReceivableId: visual.nomusReceivableId,
+    receivableTitleStatus: visual.receivableTitleStatus,
+    commissionStatus: visual.commissionStatus,
+    dueDateFrom: visual.dueDateFrom,
+    dueDateTo: visual.dueDateTo,
+    onlyDivergences: visual.onlyDivergences,
+    horizonMonths: Number.isFinite(horizonMonths) ? horizonMonths : null,
     page: visual.page,
     pageSize: visual.pageSize,
   };
