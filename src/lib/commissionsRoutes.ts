@@ -364,7 +364,10 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const query = parseCommissionMonthlyClosingQuery(req.query as Record<string, unknown>);
       const formatRaw = typeof req.query.format === "string" ? req.query.format : "full";
       const format =
-        formatRaw === "summary" || formatRaw === "detail" || formatRaw === "full"
+        formatRaw === "summary" ||
+        formatRaw === "detail" ||
+        formatRaw === "full" ||
+        formatRaw === "official"
           ? formatRaw
           : "full";
       const csv = await exportCommissionMonthlyClosingCsv(query, ctx.scope, format);
@@ -373,6 +376,8 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           ? `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}-resumo.csv`
           : format === "detail"
             ? `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}-detalhe.csv`
+            : format === "official"
+              ? `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}-oficial.csv`
             : `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}.csv`;
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

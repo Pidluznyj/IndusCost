@@ -88,6 +88,77 @@ function ClosingDetailDrawer({
   );
 }
 
+function WorkflowStatusBadge({ label, status }: { label: string; status: string }) {
+  const tone =
+    status === "PAID"
+      ? "bg-emerald-100 text-emerald-800"
+      : status === "APPROVED"
+        ? "bg-blue-100 text-blue-800"
+        : status === "REVIEWED"
+          ? "bg-sky-100 text-sky-800"
+          : status === "DIVERGENT"
+            ? "bg-amber-100 text-amber-900"
+            : "bg-slate-100 text-slate-700";
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${tone}`}>
+      {label}
+    </span>
+  );
+}
+
+function SellerWorkflowTable({
+  rows,
+}: {
+  rows: NonNullable<CommissionsMonthlyClosingPayload["workflow"]>["sellerRows"];
+}) {
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nenhum vendedor no período.</p>;
+  }
+  return (
+    <CommissionsTableScroll>
+      <table className="min-w-[1000px] text-xs">
+        <thead>
+          <tr className="border-b text-left uppercase text-muted-foreground">
+            <th className="px-2 py-2">Vendedor</th>
+            <th className="px-2 py-2 text-right">Títulos</th>
+            <th className="px-2 py-2 text-right">Recebido</th>
+            <th className="px-2 py-2 text-right">Base</th>
+            <th className="px-2 py-2 text-right">Comissão a pagar</th>
+            <th className="px-2 py-2">Status fechamento</th>
+            <th className="px-2 py-2">Lote pagamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.sellerId} className="border-b">
+              <td className="px-2 py-2 font-medium">{row.sellerName}</td>
+              <td className="px-2 py-2 text-right">{row.receivedTitlesCount}</td>
+              <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
+              <td className="px-2 py-2 text-right">
+                {formatFinanceCurrency(row.allocatedBaseAmount)}
+              </td>
+              <td className="px-2 py-2 text-right font-semibold">
+                {formatFinanceCurrency(row.releasedCommissionAmount)}
+              </td>
+              <td className="px-2 py-2">
+                <WorkflowStatusBadge
+                  label={row.workflow.statusLabel}
+                  status={row.workflow.status}
+                />
+              </td>
+              <td className="px-2 py-2 text-muted-foreground">
+                {row.workflow.paymentBatchId
+                  ? `${row.workflow.paymentBatchStatus ?? "—"} · ${row.workflow.paymentBatchId.slice(0, 8)}…`
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </CommissionsTableScroll>
+  );
+}
+
 function GroupingsTable({ rows }: { rows: CommissionsMonthlyClosingGroupRow[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum agrupamento no período.</p>;
@@ -172,7 +243,7 @@ export function CommissionsMonthlyClosingPage() {
     void reload();
   }, [reload]);
 
-  async function exportCsv(format: "summary" | "detail" | "full") {
+  async function exportCsv(format: "summary" | "detail" | "full" | "official") {
     setExporting(format);
     try {
       const qs = buildMonthlyClosingExportQueryString(appliedFilters, format);
@@ -190,6 +261,7 @@ export function CommissionsMonthlyClosingPage() {
   }
 
   const cards = data?.cards;
+  const workflow = data?.workflow;
   const nomus = data?.nomusReference;
   const detailRows = data?.detailRows ?? [];
   const pagination = data?.pagination;
@@ -252,8 +324,28 @@ export function CommissionsMonthlyClosingPage() {
             <Download className="mr-2 h-4 w-4" />
             CSV detalhe
           </button>
+          <button
+            type="button"
+            className={financeBiButtonOutlineClass}
+            onClick={() => void exportCsv("official")}
+            disabled={exporting != null}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            CSV oficial
+          </button>
         </div>
       </div>
+
+      {workflow ? (
+        <ExecutiveAlert
+          variant={workflow.overallStatus === "DIVERGENT" ? "attention" : "info"}
+          density="compact"
+          title={`Status do fechamento: ${workflow.overallStatusLabel}`}
+          description={`Fechamento calculado em tempo real — aprovação do mês não é gravada nesta tela. Aprovação/pagamento usam lotes existentes (CommissionPaymentBatch). ${
+            workflow.approvalBlockedReason ?? "Exporte o CSV oficial para conferência."
+          }`}
+        />
+      ) : null}
 
       {data ? (
         <ExecutiveAlert
@@ -484,6 +576,13 @@ export function CommissionsMonthlyClosingPage() {
           description={data.warnings.slice(0, 5).join(" · ")}
         />
       ) : null}
+
+      <div className="space-y-3">
+        <p className="text-xs font-bold uppercase tracking-widest text-[#6B7280]">
+          Conferência por vendedor
+        </p>
+        <SellerWorkflowTable rows={workflow?.sellerRows ?? []} />
+      </div>
 
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">

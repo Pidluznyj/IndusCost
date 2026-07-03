@@ -66,7 +66,7 @@ export function buildMonthlyClosingQueryString(filters: MonthlyClosingFilters): 
 
 export function buildMonthlyClosingExportQueryString(
   filters: MonthlyClosingFilters,
-  format: "summary" | "detail" | "full"
+  format: "summary" | "detail" | "full" | "official"
 ): string {
   const base = buildMonthlyClosingQueryString({ ...filters, page: 1, pageSize: 100000 });
   const q = new URLSearchParams(base);

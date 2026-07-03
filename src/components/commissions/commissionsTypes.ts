@@ -846,6 +846,35 @@ export type CommissionsMonthlyClosingPayload = {
   };
   detailRows: CommissionsMonthlyClosingDetailRow[];
   pagination: CommissionsPagination;
+  workflow: CommissionsMonthlyClosingWorkflowMeta;
+};
+
+export type CommissionsMonthlyClosingSellerWorkflow = {
+  status: string;
+  statusLabel: string;
+  isCriticalDivergence: boolean;
+  canApprove: boolean;
+  approvalBlockedReason: string | null;
+  paymentBatchId: string | null;
+  paymentBatchStatus: string | null;
+};
+
+export type CommissionsMonthlyClosingWorkflowMeta = {
+  persistApproval: false;
+  overallStatus: string;
+  overallStatusLabel: string;
+  canApprove: boolean;
+  approvalBlockedReason: string | null;
+  sellerRows: Array<{
+    sellerId: string;
+    sellerName: string;
+    receivedTitlesCount: number;
+    receivedAmount: number;
+    allocatedBaseAmount: number;
+    releasedCommissionAmount: number;
+    averageCommissionRate: number;
+    workflow: CommissionsMonthlyClosingSellerWorkflow;
+  }>;
 };
 
 export type CommissionsReceivableForecastMonthlyRow = {
