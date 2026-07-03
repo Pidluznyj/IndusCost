@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
-  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer, Package
+  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer, Package, ClipboardCheck
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -16,6 +16,7 @@ import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab"
 import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingDetailedCompositionTab";
 import { ProductionCostTablesPanel } from "@/src/components/pricing/ProductionCostTablesPanel";
 import { MaterialCostTablesPanel } from "@/src/components/pricing/MaterialCostTablesPanel";
+import { CostPriceMarginAuditPanel } from "@/src/components/pricing/CostPriceMarginAuditPanel";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 import {
   filterAndSortPricingRows,
@@ -266,6 +267,7 @@ export const PricingModule = () => {
   const [commercialGenProductionCostSourceLoading, setCommercialGenProductionCostSourceLoading] =
     useState(false);
 
+  const [integratedAuditOpen, setIntegratedAuditOpen] = useState(false);
   const [productionCostOpen, setProductionCostOpen] = useState(false);
   const [productionCostEffectiveDate, setProductionCostEffectiveDate] = useState("");
   const [productionCostNotes, setProductionCostNotes] = useState("");
@@ -1881,6 +1883,38 @@ export const PricingModule = () => {
                 canManage={allowGenerateTables}
                 canPublish={allowPublishTables}
               />
+            </div>
+          ) : null}
+        </div>
+        ) : null}
+
+        {canViewProductionCostTables ? (
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <button
+            type="button"
+            onClick={() => setIntegratedAuditOpen((v) => !v)}
+            aria-expanded={integratedAuditOpen}
+            aria-controls="pricing-integrated-audit-body"
+            className="w-full flex items-start justify-between gap-3 text-left"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-primary" /> Auditoria de Custo, Preço e Margem
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Cobertura de MP, custo publicado, preço oficial e pendências de margem no período — read-only.
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                integratedAuditOpen && "rotate-90"
+              )}
+            />
+          </button>
+          {integratedAuditOpen ? (
+            <div id="pricing-integrated-audit-body" className="mt-5">
+              <CostPriceMarginAuditPanel canView={canViewProductionCostTables} />
             </div>
           ) : null}
         </div>

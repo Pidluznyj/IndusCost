@@ -144,6 +144,78 @@ Auditoria read-only em produção (quando aplicável):
 npx tsx scripts/audit-production-cost-versioning.ts
 npx tsx scripts/audit-sales-order-effective-cost.ts
 npx tsx scripts/bootstrap-production-cost-table-from-engineering.ts --preview
+npm run audit:cost-price-margin-integration -- --year=2026 --month=7
+```
+
+---
+
+## 8. Auditoria integrada (MP → produção → preço → margem)
+
+Ferramenta read-only que consolida cobertura e pendências sem alterar cálculos, versões publicadas ou sync Nomus.
+
+### Como rodar
+
+**Script CLI** (requer `DATABASE_URL`):
+
+```bash
+# Mês corrente / período
+npm run audit:cost-price-margin-integration -- --year=2026 --month=7
+
+# Filtros opcionais
+npm run audit:cost-price-margin-integration -- --year=2026 --month=7 --seller=João --customer=ACME --sku=80001 --top=20
+
+# Somente JSON (CI / integração)
+npm run audit:cost-price-margin-integration -- --year=2026 --json
+```
+
+**API** (autenticada):
+
+```
+GET /api/cost-price-margin/audit?year=2026&month=7&top=10
+GET /api/cost-price-margin/audit?from=2026-07-01&to=2026-07-31
+```
+
+**UI:** módulo Precificação → seção **Auditoria de Custo, Preço e Margem**.
+
+### O que é medido
+
+| Bloco | Fonte | Regra |
+|-------|-------|-------|
+| Cobertura MP | `getEffectiveMaterialCost` | Material ACTIVE com landed cost publicado > 0 na data de referência (fim do período) |
+| Custo produto/componente | `getEffectiveProductProductionCosts` | Product ACTIVE com `unitProductionCost` publicado > 0 |
+| Preço oficial | `PriceTableVersion` PUBLISHED + `PriceTableItem` | Pelo menos uma tabela ACTIVE com `salePrice` > 0 |
+| Margem vendida | Motor `calculateSalesOrderMarginsForOrders` | Custo = produção publicada na `issueDate`; nunca `SalesOrderItem.unitCost` |
+
+### Pendências detectadas
+
+| Código | Significado | Gravidade |
+|--------|-------------|-----------|
+| `MATERIAL_SEM_CUSTO_PUBLICADO` | Material ACTIVE sem MP publicada vigente | Alta — bloqueia nova produção |
+| `PRODUTO_SEM_CUSTO_PUBLICADO` | Produto ACTIVE sem custo de produção publicado | Alta |
+| `COMPONENTE_SEM_CUSTO_PUBLICADO` | Componente ACTIVE sem custo publicado | Alta — impacta venda direta |
+| `PRODUTO_SEM_PRECO_OFICIAL` | Produto sem item em tabela comercial publicada | Média |
+| `COMPONENTE_SEM_PRECO_OFICIAL` | Componente sem preço oficial | Média |
+| `ITEM_VENDIDO_SEM_CUSTO` | Item vendido no período com margem `SEM_CUSTO` | Crítica |
+| `ITEM_VENDIDO_SEM_PRECO_TABELA` | Pedido sem proposta/tabela vinculada | Informativa (margem realizada OK) |
+| `ITEM_VENDIDO_PRECO_INDISPONIVEL` | Tabela vinculada, mas sem `PriceTableItem` vigente | Média |
+| `MARGEM_OUTROS_PROBLEMAS` | `SEM_PRODUTO`, receita inválida, etc. | Variável |
+
+Custo zero **nunca** conta como OK — alinhado às regras R7 e resolvers (`unitProductionCost` / `landedCostSnapshot` > 0).
+
+### Ordem recomendada de correção
+
+1. **MP publicada** — gerar/publicar `MaterialCostTableVersion` para materiais ACTIVE pendentes.
+2. **Custo de produção** — DRAFT a partir de MP congelada → publicar `ProductionCostTableVersion` (produtos e componentes vendidos).
+3. **Preço comercial** — DRAFT a partir de produção publicada → publicar `PriceTableVersion`.
+4. **Pedidos SEM_CUSTO** — priorizar SKUs do top vendidos; publicar custo retroativo **não recalcula passado** automaticamente — nova revisão vigente na `issueDate` do pedido.
+5. **SEM_PRECO_TABELA** — vincular proposta/pedido à tabela comercial ou aceitar como referência ausente (margem realizada permanece).
+
+### Validação
+
+```bash
+npm run test:cost-price-margin-audit
+npm run test:sales-orders-margins
+npm run build
 ```
 
 ---
@@ -153,3 +225,4 @@ npx tsx scripts/bootstrap-production-cost-table-from-engineering.ts --preview
 | Data | Alteração |
 |------|-----------|
 | 2026-07-02 | Baseline inicial + testes de caracterização (Fase 0) |
+| 2026-07-02 | Auditoria integrada MP/produção/preço/margem — script, API e UI |
