@@ -46,6 +46,9 @@ function baseInput(overrides: Partial<VisualAuditRowInput> = {}): VisualAuditRow
     hasArLink: true,
     hasSchedule: true,
     customerNoCommission: false,
+    isCommissionable: true,
+    exclusionReason: null,
+    exclusionRuleId: null,
     ...overrides,
   };
 }
@@ -253,5 +256,42 @@ describe("commissionVisualAudit", () => {
     assert.equal(parseVisualAuditAppraisalMode("payable"), "PAYABLE");
     assert.equal(parseVisualAuditAppraisalMode("FORECAST"), "FORECAST");
     assert.equal(parseVisualAuditAppraisalMode(undefined), "GENERATED");
+  });
+
+  it("cliente excluído mantém base e zera comissão na linha", () => {
+    const row = buildVisualAuditRow(
+      baseInput({
+        customerNoCommission: true,
+        isCommissionable: false,
+        exclusionReason: "Política comercial",
+        exclusionRuleId: "ex-1",
+        itemBaseAmount: 1000,
+        commissionExpected: 0,
+        commissionReleased: 0,
+        itemRatePercent: 0,
+      })
+    );
+    assert.equal(row.commissionStatus, "SEM_COMISSAO");
+    assert.equal(row.itemBaseAmount, 1000);
+    assert.equal(row.commissionExpected, 0);
+    assert.match(row.alertLabels.join(" "), /Cliente excluído de comissionamento/);
+  });
+
+  it("export CSV inclui motivo de exclusão", () => {
+    const row = buildVisualAuditRow(
+      baseInput({
+        customerNoCommission: true,
+        isCommissionable: false,
+        exclusionReason: "Política ESMALTEC",
+        exclusionRuleId: "rule-1",
+        commissionExpected: 0,
+        itemRatePercent: 0,
+      })
+    );
+    const csv = buildVisualAuditCsv([row], computeVisualAuditCards([row], "GENERATED"));
+    assert.match(csv, /comissionavel/);
+    assert.match(csv, /motivoExclusao/);
+    assert.match(csv, /regraExclusaoId/);
+    assert.match(csv, /Política ESMALTEC/);
   });
 });

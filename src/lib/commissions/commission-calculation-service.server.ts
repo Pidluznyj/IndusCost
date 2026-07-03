@@ -38,6 +38,12 @@ import { CommercialTierCache } from "./commission-commercial-tier.server.js";
 import { resolveCommissionRateForItem } from "./commission-rate-resolver.server.js";
 import { loadCommissionSettings } from "./commission-settings.server.js";
 import { loadCommissionOrderSources, resolveCommissionPeriod } from "./commission-source-resolver.server.js";
+import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
+import {
+  applyCustomerExclusionToCommission,
+  resolveCustomerExclusionForSale,
+} from "./commissionCustomerExclusionApply.js";
+import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import type {
   CalculateCommissionsInput,
   CommissionCalculationSummary,
@@ -312,6 +318,7 @@ async function processBeneficiaryForItem(
     item: CommissionOrderSourceBundle["items"][number];
     beneficiaryType: BeneficiaryType;
     rules: Awaited<ReturnType<typeof loadActiveCommissionRules>>;
+    exclusionRules: CustomerExclusionRuleSnapshot[];
     settings: Awaited<ReturnType<typeof loadCommissionSettings>>;
     referenceDate: Date;
     tierCache: CommercialTierCache;
@@ -379,10 +386,12 @@ async function processBeneficiaryForItem(
     input.auditDrafts.push(rateResolution.auditWarning);
   }
 
-  const ratePercent = rateResolution.ratePercent;
+  const ratePercentBeforeExclusion = rateResolution.ratePercent;
   const tierMetadata = rateResolution.metadata;
-  const commissionAmount = computeCommissionAmount(baseAmount, ratePercent);
-  if (commissionAmount <= 0) return;
+  const commissionAmountBeforeExclusion = computeCommissionAmount(
+    baseAmount,
+    ratePercentBeforeExclusion
+  );
 
   const recordMetadataBase = {
     ruleId: match.rule.id,
@@ -394,6 +403,19 @@ async function processBeneficiaryForItem(
   const hasAuthorized = order.authorizedOutputNfes.length > 0;
 
   if (!hasAuthorized && input.settings.forecastEnabled) {
+    const exclusion = resolveCustomerExclusionForSale({
+      customerExternalId: order.customerExternalId,
+      customerName: order.customerName,
+      referenceDate: order.issueDate,
+      rules: input.exclusionRules,
+    });
+    const applied = applyCustomerExclusionToCommission({
+      exclusion,
+      ratePercent: ratePercentBeforeExclusion,
+      commissionAmount: commissionAmountBeforeExclusion,
+    });
+    if (!applied.shouldPersist) return;
+
     const hash = buildCommissionCalculationHash({
       nomusOrderId: order.nomusOrderId,
       orderCode: order.orderCode,
@@ -425,13 +447,17 @@ async function processBeneficiaryForItem(
       customerName: order.customerName,
       companyExternalId: order.companyExternalId,
       baseAmount,
-      ratePercent,
-      commissionAmount,
+      ratePercent: applied.ratePercent,
+      commissionAmount: applied.commissionAmount,
       releaseRule: match.releaseRule,
       confirmedAt: null,
-      metadataJson: { ...recordMetadataBase, mode: "forecast" },
+      metadataJson: {
+        ...recordMetadataBase,
+        ...applied.metadataPatch,
+        mode: "forecast",
+      },
     };
-    const schedules = buildForecastSchedules(order, hash, commissionAmount);
+    const schedules = buildForecastSchedules(order, hash, applied.commissionAmount);
     await upsertCommissionRecord(db, input.runId, draft, schedules, input.settings, input.stats);
     return;
   }
@@ -467,7 +493,20 @@ async function processBeneficiaryForItem(
       originStage: "OUTPUT_DOCUMENT",
     });
 
-    const confirmedAt = nfe.dataProcessamento ?? new Date();
+    const confirmedAt = nfe.dataProcessamento ?? order.issueDate;
+    const exclusion = resolveCustomerExclusionForSale({
+      customerExternalId: order.customerExternalId,
+      customerName: order.customerName,
+      referenceDate: confirmedAt,
+      rules: input.exclusionRules,
+    });
+    const applied = applyCustomerExclusionToCommission({
+      exclusion,
+      ratePercent: ratePercentBeforeExclusion,
+      commissionAmount: commissionAmountBeforeExclusion,
+    });
+    if (!applied.shouldPersist) continue;
+
     const draft: CommissionRecordDraft = {
       calculationHash: hash,
       originStage: "OUTPUT_DOCUMENT",
@@ -489,12 +528,13 @@ async function processBeneficiaryForItem(
       customerName: order.customerName,
       companyExternalId: order.companyExternalId,
       baseAmount,
-      ratePercent,
-      commissionAmount,
+      ratePercent: applied.ratePercent,
+      commissionAmount: applied.commissionAmount,
       releaseRule: match.releaseRule,
       confirmedAt,
       metadataJson: {
         ...recordMetadataBase,
+        ...applied.metadataPatch,
         mode: "confirmed",
         nfeExternalId: nfe.nfeExternalId,
         localOutputDocumentMovementId: docs[0]?.localMovementId ?? null,
@@ -507,13 +547,13 @@ async function processBeneficiaryForItem(
             order,
             nfeExternalId: nfe.nfeExternalId,
             calculationHash: hash,
-            commissionAmount,
+            commissionAmount: applied.commissionAmount,
           })
-        : buildForecastSchedules(order, hash, commissionAmount);
+        : buildForecastSchedules(order, hash, applied.commissionAmount);
 
     await upsertCommissionRecord(db, input.runId, draft, schedules, input.settings, input.stats);
 
-    if (receivables.length > 0) {
+    if (receivables.length > 0 && !applied.excluded) {
       await applyReleaseForRecord(db, hash, input.settings);
     }
   }
@@ -637,6 +677,7 @@ export async function calculateCommissions(
 
     const auditDrafts = orders.flatMap((order) => collectOrderAuditIssues(order, auditFlags));
     const tierCache = new CommercialTierCache(db);
+    const exclusionRules = await loadActiveCustomerExclusionRuleSnapshots();
 
     for (const order of orders) {
       if (order.status === "CANCELLED") continue;
@@ -656,6 +697,7 @@ export async function calculateCommissions(
               item,
               beneficiaryType,
               rules,
+              exclusionRules,
               settings,
               referenceDate: order.issueDate,
               tierCache,

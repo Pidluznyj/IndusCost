@@ -45,6 +45,9 @@ function settledRow(overrides: Record<string, unknown> = {}) {
     hasArLink: true,
     hasSchedule: true,
     customerNoCommission: false,
+    isCommissionable: true,
+    exclusionReason: null,
+    exclusionRuleId: null,
     ...overrides,
   });
 }

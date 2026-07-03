@@ -388,3 +388,25 @@ export async function findApplicableCustomerExclusionRule(
     rows.map(mapSnapshot)
   );
 }
+
+export async function loadActiveCustomerExclusionRuleSnapshots(): Promise<
+  CustomerExclusionRuleSnapshot[]
+> {
+  const rows = await prisma.commissionCustomerExclusionRule.findMany({
+    where: { status: "ACTIVE" },
+    select: {
+      id: true,
+      customerId: true,
+      customerExternalId: true,
+      customerNameSnapshot: true,
+      normalizedCustomerName: true,
+      reason: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      status: true,
+      notes: true,
+    },
+    orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }],
+  });
+  return rows.map(mapSnapshot);
+}

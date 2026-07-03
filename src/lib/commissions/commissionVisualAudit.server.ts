@@ -12,6 +12,7 @@ import {
   type VisualAuditRow,
   type VisualAuditRowInput,
 } from "./commissionVisualAudit.js";
+import { resolveVisualAuditCustomerExclusion } from "./commissionCustomerExclusionApply.js";
 import {
   buildCommissionRecordsWhere,
   COMMISSION_CONFIRMED_STATUSES,
@@ -282,10 +283,18 @@ async function buildVisualAuditRows(
     const docKey = documentKey(record);
     const docAgg = docTotals.get(docKey) ?? { base: 0, commission: 0 };
     const schedules = record.paymentSchedules;
-    const customerNoCommission =
-      record.customerExternalId != null && exceptionCustomers.has(record.customerExternalId);
+    const recordRatePercent = decimalToNumber(record.ratePercent);
+    const recordCommissionAmount = decimalToNumber(record.commissionAmount);
 
     if (schedules.length === 0) {
+      const exclusionView = resolveVisualAuditCustomerExclusion({
+        metadataJson: record.metadataJson,
+        customerExternalId: record.customerExternalId,
+        legacyExceptionCustomerIds: exceptionCustomers,
+        commissionExpected: 0,
+        commissionReleased: decimalToNumber(record.releasedAmount),
+        itemRatePercent: recordRatePercent,
+      });
       inputs.push({
         lineId: record.id,
         recordId: record.id,
@@ -301,8 +310,8 @@ async function buildVisualAuditRows(
         documentBaseAmount: docAgg.base,
         documentCommissionTotal: docAgg.commission,
         itemBaseAmount: decimalToNumber(record.baseAmount),
-        itemCommissionAmount: decimalToNumber(record.commissionAmount),
-        itemRatePercent: decimalToNumber(record.ratePercent),
+        itemCommissionAmount: recordCommissionAmount,
+        itemRatePercent: exclusionView.itemRatePercent,
         productCode: record.productCode,
         nomusReceivableId: null,
         installmentNumber: null,
@@ -312,11 +321,14 @@ async function buildVisualAuditRows(
         receivedAmount: 0,
         openBalance: 0,
         allocationPercent: null,
-        commissionExpected: 0,
-        commissionReleased: decimalToNumber(record.releasedAmount),
+        commissionExpected: exclusionView.commissionExpected,
+        commissionReleased: exclusionView.commissionReleased,
         hasArLink: false,
         hasSchedule: false,
-        customerNoCommission,
+        customerNoCommission: exclusionView.customerNoCommission,
+        isCommissionable: exclusionView.isCommissionable,
+        exclusionReason: exclusionView.exclusionReason,
+        exclusionRuleId: exclusionView.exclusionRuleId,
       });
       continue;
     }
@@ -334,6 +346,15 @@ async function buildVisualAuditRows(
         if (settled < period.from.getTime() || settled > period.to.getTime()) continue;
       }
 
+      const exclusionView = resolveVisualAuditCustomerExclusion({
+        metadataJson: record.metadataJson,
+        customerExternalId: record.customerExternalId,
+        legacyExceptionCustomerIds: exceptionCustomers,
+        commissionExpected: decimalToNumber(schedule.commissionExpectedAmount),
+        commissionReleased: decimalToNumber(schedule.commissionReleasedAmount),
+        itemRatePercent: recordRatePercent,
+      });
+
       inputs.push({
         lineId: `${record.id}:${schedule.id}`,
         recordId: record.id,
@@ -349,8 +370,8 @@ async function buildVisualAuditRows(
         documentBaseAmount: docAgg.base,
         documentCommissionTotal: docAgg.commission,
         itemBaseAmount: decimalToNumber(record.baseAmount),
-        itemCommissionAmount: decimalToNumber(record.commissionAmount),
-        itemRatePercent: decimalToNumber(record.ratePercent),
+        itemCommissionAmount: recordCommissionAmount,
+        itemRatePercent: exclusionView.itemRatePercent,
         productCode: record.productCode,
         nomusReceivableId: schedule.nomusReceivableId,
         installmentNumber: schedule.installmentNumber,
@@ -367,11 +388,14 @@ async function buildVisualAuditRows(
           schedule.allocationPercent != null
             ? decimalToNumber(schedule.allocationPercent)
             : null,
-        commissionExpected: decimalToNumber(schedule.commissionExpectedAmount),
-        commissionReleased: decimalToNumber(schedule.commissionReleasedAmount),
+        commissionExpected: exclusionView.commissionExpected,
+        commissionReleased: exclusionView.commissionReleased,
         hasArLink: ar != null,
         hasSchedule: true,
-        customerNoCommission,
+        customerNoCommission: exclusionView.customerNoCommission,
+        isCommissionable: exclusionView.isCommissionable,
+        exclusionReason: exclusionView.exclusionReason,
+        exclusionRuleId: exclusionView.exclusionRuleId,
       });
     }
   }

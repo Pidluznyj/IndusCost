@@ -48,6 +48,9 @@ describe("commissionReceivablesTimeline", () => {
       hasArLink: true,
       hasSchedule: true,
       customerNoCommission: false,
+    isCommissionable: true,
+    exclusionReason: null,
+    exclusionRuleId: null,
     });
     const period = {
       from: new Date("2026-06-01T00:00:00.000Z"),

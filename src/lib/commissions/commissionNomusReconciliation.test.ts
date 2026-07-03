@@ -49,6 +49,9 @@ function baseInput(overrides: Partial<VisualAuditRowInput> = {}): VisualAuditRow
     hasArLink: true,
     hasSchedule: true,
     customerNoCommission: false,
+    isCommissionable: true,
+    exclusionReason: null,
+    exclusionRuleId: null,
     ...overrides,
   };
 }

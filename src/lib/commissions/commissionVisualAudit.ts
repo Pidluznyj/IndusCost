@@ -3,6 +3,9 @@
  */
 import { roundMoney } from "./commission-money.js";
 import {
+  customerExclusionAlertLabel,
+} from "./commissionCustomerExclusionApply.js";
+import {
   VISUAL_AUDIT_MODE_LABELS,
   type VisualAuditAppraisalMode,
 } from "./commissionVisualAudit.shared.js";
@@ -74,6 +77,9 @@ export type VisualAuditRowInput = {
   hasArLink: boolean;
   hasSchedule: boolean;
   customerNoCommission: boolean;
+  isCommissionable: boolean;
+  exclusionReason: string | null;
+  exclusionRuleId: string | null;
 };
 
 export type VisualAuditRow = VisualAuditRowInput & {
@@ -208,7 +214,10 @@ export function resolveVisualAuditAlerts(row: VisualAuditRowInput): {
     push("DIFERENCA_ARREDONDAMENTO", "Possível diferença de arredondamento");
   }
   if (row.customerNoCommission) {
-    push("CLIENTE_SEM_COMISSAO", "Cliente marcado como sem comissão");
+    push(
+      "CLIENTE_SEM_COMISSAO",
+      customerExclusionAlertLabel(row.exclusionReason)
+    );
   }
 
   return { alerts, alertLabels: labels };
@@ -440,6 +449,9 @@ export function visualAuditRowToCsv(
     baseRateada: row.allocatedBaseAmount,
     percentualItem: row.itemRatePercent,
     produto: row.productCode ?? "",
+    comissionavel: row.isCommissionable ? "SIM" : "NAO",
+    motivoExclusao: row.exclusionReason ?? "",
+    regraExclusaoId: row.exclusionRuleId ?? "",
     comissaoPrevista: row.commissionExpected,
     comissaoLiberada: row.commissionReleased,
     comissaoPendente: row.commissionPending,
