@@ -54,7 +54,37 @@ Margem realizada (custo publicado) + referência preço oficial (se proposta/tab
 
 - **HH/HM globais** (`IndirectCost`) permanecem vivos na geração de DRAFT de produção.
 - **BOM Nomus** viva — altera novos DRAFTs, não publicações antigas.
+- **Performance operacional** (ciclo/cavidades em `Product`) viva — altera novos DRAFTs via `getProductCostAnalysis`, não publicações antigas.
 - Pedidos Nomus sem proposta → margem realizada OK, referência `SEM_PRECO_TABELA`.
+
+### Performance operacional × custo publicado
+
+| Conceito | Onde vive | Impacto comercial |
+|----------|-----------|-------------------|
+| **Dado vivo operacional** | `Product.cycleTimeSeconds`, `Product.cavities` (Operações > Performance) | Nenhum até nova geração de DRAFT |
+| **Snapshot congelado** | `ProductionCostTableItem.calculationSnapshot.processPerformance` | Custo/preço/margem histórica |
+| **Motor único** | `getProductCostAnalysis` → `buildStandardOperationItems` | Lê campos vivos na geração de DRAFT |
+
+Fluxo:
+
+```
+Operações > Performance altera Product (ciclo/cavidades)
+        ↓ (não recalcula publicado)
+ProductionCostTableItem PUBLISHED permanece congelado
+        ↓ generate novo DRAFT + publish
+Novo snapshot inclui ciclo/cavidades usados + warnings se ausentes
+        ↓
+Margem de pedidos antigos continua no custo publicado anterior
+```
+
+Auditoria read-only:
+
+```bash
+npm run audit:component-performance-cost-impact -- --before-cycle=64 --after-cycle=90
+npm run audit:component-performance-cost-impact -- --sku=309.86AA --json
+```
+
+Testes: `npm run test:component-performance-cost-draft`
 
 ---
 

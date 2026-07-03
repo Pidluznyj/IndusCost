@@ -15,11 +15,14 @@ import {
 import {
   buildProductionCostBomStructureHashInput,
   extractProductionCostBomAuditStructureFromAnalysis,
+  buildProductionCostPerformanceAuditWarnings,
+  extractProductionCostProcessPerformanceFromAnalysis,
   extractProductionCostWarningsFromAnalysis,
   PRODUCTION_COST_SNAPSHOT_KIND,
   PRODUCTION_COST_SNAPSHOT_LIVE_BOM_NOTICE,
   type ProductionCostBomAuditStructure,
   type ProductionCostAuditWarning,
+  type ProductionCostProcessPerformanceAudit,
 } from "./productionCostCalculationSnapshotAudit.js";
 
 export const PRODUCTION_COST_PUBLICATION_SOURCE = "PRICING_MODULE_PRODUCTION_COST" as const;
@@ -66,8 +69,10 @@ export type ProductionCostCalculationSnapshot = {
   };
   analysisSummary: Record<string, unknown>;
   bomStructure: ProductionCostBomAuditStructure;
+  /** Ciclo/cavidades congelados na geração — fonte: processo padrão vivo ou roteiro. */
+  processPerformance: ProductionCostProcessPerformanceAudit;
   warnings: ProductionCostAuditWarning[];
-  calculationHashInputVersion: 3;
+  calculationHashInputVersion: 4;
 };
 
 function round6(value: number): number {
@@ -120,7 +125,12 @@ export function buildProductionCostCalculationSnapshot(
       ? (raw.summary as Record<string, unknown>)
       : raw;
   const bomStructure = extractProductionCostBomAuditStructureFromAnalysis(analysis);
-  const warnings = extractProductionCostWarningsFromAnalysis(analysis);
+  const processPerformance = extractProductionCostProcessPerformanceFromAnalysis(analysis);
+  const productType = productMeta?.type?.trim() || readString(raw.productType) || null;
+  const warnings = [
+    ...extractProductionCostWarningsFromAnalysis(analysis),
+    ...buildProductionCostPerformanceAuditWarnings(processPerformance, productType),
+  ];
 
   return {
     snapshotKind: PRODUCTION_COST_SNAPSHOT_KIND,
@@ -146,10 +156,15 @@ export function buildProductionCostCalculationSnapshot(
       costAnalysisPartial: summary.costAnalysisPartial ?? raw.costAnalysisPartial,
       costingMode: raw.costingMode ?? null,
       ownProcessSkipped: raw.ownProcessSkipped ?? null,
+      processSource: processPerformance.processSource,
+      cycleTimeSeconds: processPerformance.cycleTimeSeconds,
+      cavities: processPerformance.cavities,
+      performanceDataSource: processPerformance.dataSource,
     },
     bomStructure,
+    processPerformance,
     warnings,
-    calculationHashInputVersion: 3,
+    calculationHashInputVersion: 4,
   };
 }
 
@@ -175,6 +190,12 @@ export function buildProductionCostCalculationHash(
       code: warning.code,
       message: warning.message,
     })),
+    processPerformance: {
+      processSource: snapshot.processPerformance.processSource,
+      cycleTimeSeconds: snapshot.processPerformance.cycleTimeSeconds,
+      cavities: snapshot.processPerformance.cavities,
+      dataSource: snapshot.processPerformance.dataSource,
+    },
     costAnalysisPartial: snapshot.costAnalysisPartial,
     materialCostTableRef: snapshot.materialCostTableRef,
   });

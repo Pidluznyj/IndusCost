@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildProductionCostBomStructureHashInput,
   extractProductionCostBomAuditStructureFromAnalysis,
+  extractProductionCostProcessPerformanceFromAnalysis,
   extractProductionCostWarningsFromAnalysis,
   normalizeProductionCostBomLineAudit,
   PRODUCTION_COST_SNAPSHOT_KIND,
@@ -92,6 +93,19 @@ function sampleAnalysis(overrides?: Record<string, unknown>) {
           unitCost: 0.537299,
         },
       ],
+      processBreakdown: [
+        {
+          source: "STANDARD_PROCESS",
+          description: "Processo Padrão do Componente",
+          calculationDetails: {
+            cycle: 64,
+            cavities: 24,
+            efficiency: 100,
+            setupTimeMin: 0,
+            netPph: 1350,
+          },
+        },
+      ],
     },
     ...overrides,
   };
@@ -115,6 +129,14 @@ describe("productionCostCalculationSnapshotAudit", () => {
     assert.equal(warnings[0]?.code, "PARTIAL_CHILD");
   });
 
+  it("extracts process performance from analysis processBreakdown", () => {
+    const performance = extractProductionCostProcessPerformanceFromAnalysis(sampleAnalysis());
+    assert.equal(performance.processSource, "STANDARD_PROCESS");
+    assert.equal(performance.cycleTimeSeconds, 64);
+    assert.equal(performance.cavities, 24);
+    assert.equal(performance.dataSource, "PRODUCT_LIVE_FIELDS");
+  });
+
   it("calculationSnapshot includes material/component structure and metadata", () => {
     const snapshot = buildProductionCostCalculationSnapshot(
       sampleResolved(),
@@ -130,6 +152,8 @@ describe("productionCostCalculationSnapshotAudit", () => {
     assert.equal(snapshot.breakdown.materialCost, 50);
     assert.equal(snapshot.breakdown.laborCost, 20);
     assert.equal(snapshot.breakdown.machineCost, 15);
+    assert.equal(snapshot.processPerformance.cycleTimeSeconds, 64);
+    assert.equal(snapshot.processPerformance.cavities, 24);
     assert.match(snapshot.liveBomNotice, /BOM viva/);
   });
 

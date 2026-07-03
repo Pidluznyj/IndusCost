@@ -173,3 +173,123 @@ export const PRODUCTION_COST_SNAPSHOT_KIND = "FROZEN_AT_GENERATION" as const;
 
 export const PRODUCTION_COST_SNAPSHOT_LIVE_BOM_NOTICE =
   "Snapshot congelado na geração do DRAFT/publicação. A BOM viva (Nomus) pode divergir após a publicação.";
+
+export const PRODUCTION_COST_PROCESS_PERFORMANCE_LIVE_NOTICE =
+  "Ciclo e cavidades congelados na geração do DRAFT/publicação. Alterações em Operações > Performance afetam apenas novas gerações de custo; custos publicados permanecem congelados.";
+
+export type ProductionCostProcessPerformanceSource =
+  | "STANDARD_PROCESS"
+  | "ROUTING"
+  | "NONE"
+  | "SKIPPED_BY_COSTING_MODE";
+
+export type ProductionCostProcessPerformanceDataSource =
+  | "PRODUCT_LIVE_FIELDS"
+  | "ROUTING_STEP"
+  | "NONE";
+
+export type ProductionCostProcessPerformanceAudit = {
+  processSource: ProductionCostProcessPerformanceSource;
+  cycleTimeSeconds: number | null;
+  cavities: number | null;
+  efficiencyExpectedPercent: number | null;
+  setupTimeMin: number | null;
+  netPiecesPerHour: number | null;
+  dataSource: ProductionCostProcessPerformanceDataSource;
+  liveOperationalNotice: typeof PRODUCTION_COST_PROCESS_PERFORMANCE_LIVE_NOTICE;
+};
+
+/** Extrai ciclo/cavidades usados pelo motor a partir do detalhamento de processo. */
+export function extractProductionCostProcessPerformanceFromAnalysis(
+  analysis: unknown
+): ProductionCostProcessPerformanceAudit {
+  const empty: ProductionCostProcessPerformanceAudit = {
+    processSource: "NONE",
+    cycleTimeSeconds: null,
+    cavities: null,
+    efficiencyExpectedPercent: null,
+    setupTimeMin: null,
+    netPiecesPerHour: null,
+    dataSource: "NONE",
+    liveOperationalNotice: PRODUCTION_COST_PROCESS_PERFORMANCE_LIVE_NOTICE,
+  };
+
+  const raw = readRecord(analysis);
+  if (raw.ownProcessSkipped === true) {
+    return {
+      ...empty,
+      processSource: "SKIPPED_BY_COSTING_MODE",
+    };
+  }
+
+  const details = readRecord(raw.details);
+  const processRows = Array.isArray(details.processBreakdown) ? details.processBreakdown : [];
+  const ownRow = processRows.find((row) => readRecord(row).rollupFromBom !== true);
+  if (!ownRow) return empty;
+
+  const row = readRecord(ownRow);
+  const calc = readRecord(row.calculationDetails);
+  const sourceRaw = readString(row.source);
+  const processSource: ProductionCostProcessPerformanceSource =
+    sourceRaw === "ROUTING"
+      ? "ROUTING"
+      : sourceRaw === "STANDARD_PROCESS"
+        ? "STANDARD_PROCESS"
+        : "NONE";
+  const dataSource: ProductionCostProcessPerformanceDataSource =
+    processSource === "ROUTING"
+      ? "ROUTING_STEP"
+      : processSource === "STANDARD_PROCESS"
+        ? "PRODUCT_LIVE_FIELDS"
+        : "NONE";
+
+  return {
+    processSource,
+    cycleTimeSeconds: readNumber(calc.cycle),
+    cavities: readNumber(calc.cavities),
+    efficiencyExpectedPercent: readNumber(calc.efficiency),
+    setupTimeMin: readNumber(calc.setupTimeMin),
+    netPiecesPerHour: readNumber(calc.netPph),
+    dataSource,
+    liveOperationalNotice: PRODUCTION_COST_PROCESS_PERFORMANCE_LIVE_NOTICE,
+  };
+}
+
+/** Warnings adicionais quando ciclo/cavidades necessários estão ausentes no snapshot. */
+export function buildProductionCostPerformanceAuditWarnings(
+  performance: ProductionCostProcessPerformanceAudit,
+  productType: string | null
+): ProductionCostAuditWarning[] {
+  const warnings: ProductionCostAuditWarning[] = [];
+  if (productType === "COMPONENT" && performance.processSource === "NONE") {
+    warnings.push({
+      code: "PERFORMANCE_DATA_MISSING",
+      severity: "error",
+      message:
+        "Componente sem ciclo/cavidades (processo padrão ou roteiro) — custo de processo não calculado.",
+      context: "PROCESS_PERFORMANCE",
+    });
+  }
+  if (
+    performance.processSource === "STANDARD_PROCESS" ||
+    performance.processSource === "ROUTING"
+  ) {
+    if (performance.cycleTimeSeconds == null || performance.cycleTimeSeconds <= 0) {
+      warnings.push({
+        code: "PERFORMANCE_CYCLE_MISSING",
+        severity: "warning",
+        message: "Ciclo ausente ou inválido no snapshot de performance.",
+        context: "PROCESS_PERFORMANCE",
+      });
+    }
+    if (performance.cavities == null || performance.cavities < 1) {
+      warnings.push({
+        code: "PERFORMANCE_CAVITIES_MISSING",
+        severity: "warning",
+        message: "Cavidades ausentes ou inválidas no snapshot de performance.",
+        context: "PROCESS_PERFORMANCE",
+      });
+    }
+  }
+  return warnings;
+}
