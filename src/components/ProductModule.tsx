@@ -78,6 +78,7 @@ import {
   GRID_FROZEN_COST_COLUMN_LABEL,
   GRID_FROZEN_COST_COLUMN_TOOLTIP,
 } from "@/src/lib/productFrozenCostDisplay";
+import { executiveAlertInlineTextClass } from "@/src/lib/executiveAlertStyles";
 import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionCostTablesUi";
 import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
 import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
@@ -1457,8 +1458,8 @@ export const ProductModule = () => {
                             <div className="flex flex-col gap-1.5">
                               <span
                                 className={cn(
-                                  "inline-flex w-fit text-[10px] font-semibold px-2 py-0.5 rounded-full",
-                                  frozenCostTraceBadgeClass(fc.traceStatus)
+                                  frozenCostTraceBadgeClass(fc.traceStatus),
+                                  "text-[10px]"
                                 )}
                               >
                                 {fc.traceStatusLabel}
@@ -1478,17 +1479,21 @@ export const ProductModule = () => {
                                 </span>
                               ) : null}
                               {fc.traceStatus === "PENDENTE_PUBLICACAO" ? (
-                                <span className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug">
+                                <p
+                                  className={executiveAlertInlineTextClass("attention")}
+                                  data-testid="frozen-cost-pending-publication-alert"
+                                >
                                   DRAFT pendente — abra o produto para publicar o novo custo oficial.
-                                </span>
+                                </p>
                               ) : null}
                               {fc.traceStatus === "CUSTO_DIVERGENTE" ? (
-                                <span
-                                  className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug"
+                                <p
+                                  className={executiveAlertInlineTextClass("attention")}
                                   title={FROZEN_COST_DIVERGENCE_ALERT}
+                                  data-testid="frozen-cost-divergence-alert"
                                 >
                                   {FROZEN_COST_DIVERGENCE_ALERT}
-                                </span>
+                                </p>
                               ) : null}
                               <div className="flex flex-wrap gap-1">
                                 {fc.frozenVersionId ? (

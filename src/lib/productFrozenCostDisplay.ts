@@ -4,6 +4,10 @@
 import type { FrozenCostTraceStatus } from "./productEngineeringCostSnapshot.js";
 import { frozenCostTraceStatusLabel } from "./productEngineeringCostSnapshot.js";
 import { formatProductCiu } from "./productCostDisplay.js";
+import {
+  executiveAlertBadgeClass,
+  frozenCostTraceToExecutiveVariant,
+} from "./executiveAlertStyles.js";
 
 export type ProductFrozenCostSummary = {
   liveCiu: number | null;
@@ -19,19 +23,7 @@ export type ProductFrozenCostSummary = {
 };
 
 export function frozenCostTraceBadgeClass(status: FrozenCostTraceStatus): string {
-  switch (status) {
-    case "ATUALIZADO":
-      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300";
-    case "PENDENTE_PUBLICACAO":
-      return "bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200";
-    case "CUSTO_DIVERGENTE":
-      return "bg-orange-100 text-orange-900 dark:bg-orange-950/40 dark:text-orange-200";
-    case "SEM_CUSTO_CONGELADO":
-    case "SEM_CUSTO":
-      return "bg-slate-100 text-slate-700 dark:bg-slate-900/50 dark:text-slate-300";
-    default:
-      return "bg-muted text-muted-foreground";
-  }
+  return executiveAlertBadgeClass(frozenCostTraceToExecutiveVariant(status));
 }
 
 export function formatFrozenCostSummaryLine(summary: ProductFrozenCostSummary | undefined): string {

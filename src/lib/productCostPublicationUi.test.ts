@@ -72,17 +72,19 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /production-cost-snapshot/);
   });
 
-  it("alerta de pendência usa paleta âmbar executiva clara", () => {
+  it("alerta de pendência usa componente ExecutiveAlert com paleta âmbar", () => {
     const src = card();
+    const styles = read("src/lib/executiveAlertStyles.ts");
     assert.match(src, /engineering-pending-cost-alert/);
-    assert.match(src, /bg-\[#FFFBEB\]/);
-    assert.match(src, /border-\[#F59E0B\]/);
-    assert.match(src, /text-\[#92400E\]/);
-    assert.match(src, /text-\[#78350F\]/);
-    assert.match(src, /bg-\[#FDE68A\]/);
-    assert.match(src, /border-\[#FCD34D\]/);
-    assert.match(src, /bg-white/);
-    assert.doesNotMatch(src, /dark:bg-slate-950/);
-    assert.doesNotMatch(src, /dark:bg-amber-950/);
+    assert.match(src, /ExecutiveAlert/);
+    assert.match(src, /variant="attention"/);
+    assert.match(styles, /bg-\[#FFFBEB\]/);
+    assert.match(styles, /border-\[#F59E0B\]/);
+    assert.match(styles, /text-\[#92400E\]/);
+    assert.match(styles, /text-\[#78350F\]/);
+    assert.match(styles, /bg-\[#FDE68A\]/);
+    assert.match(styles, /border-\[#FCD34D\]/);
+    assert.doesNotMatch(styles, /dark:bg-amber-950/);
+    assert.doesNotMatch(styles, /dark:bg-slate-950/);
   });
 });

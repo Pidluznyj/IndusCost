@@ -8,6 +8,14 @@ import {
   formatProductionCostPublicationDelta,
   type ProductProductionCostPublicationStatus,
 } from "@/src/lib/productProductionCostPublicationStatus";
+import {
+  ExecutiveAlert,
+  ExecutiveAlertPanel,
+} from "@/src/components/ui/ExecutiveAlert";
+import {
+  EXECUTIVE_ALERT_LABEL_CLASS,
+  executiveAlertValueClass,
+} from "@/src/lib/executiveAlertStyles";
 
 type Props = {
   status: ProductProductionCostPublicationStatus;
@@ -27,39 +35,14 @@ function CostBreakdownRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-[#64748B]">{label}</span>
-      <span className="tabular-nums text-right text-[#111827]">
-        <span className="text-[#64748B]">{formatProductCiu(official)}</span>
+      <span className={EXECUTIVE_ALERT_LABEL_CLASS}>{label}</span>
+      <span className={cn("tabular-nums text-right", executiveAlertValueClass("default"))}>
+        <span className={EXECUTIVE_ALERT_LABEL_CLASS}>{formatProductCiu(official)}</span>
         <span className="mx-2 text-amber-300" aria-hidden>
           →
         </span>
-        <span className="font-semibold text-[#111827]">{formatProductCiu(draft)}</span>
+        <span className="font-semibold">{formatProductCiu(draft)}</span>
       </span>
-    </div>
-  );
-}
-
-function InnerPanel({
-  title,
-  children,
-  className,
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border border-[#FCD34D] bg-white p-4 shadow-sm",
-        "dark:border-[#FCD34D] dark:bg-white",
-        className
-      )}
-    >
-      <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#92400E]">
-        {title}
-      </p>
-      {children}
     </div>
   );
 }
@@ -109,107 +92,91 @@ export function ProductCostPublicationPendingCard({
 
   return (
     <>
-      <section
-        role="status"
-        data-testid="engineering-pending-cost-alert"
-        className={cn(
-          "rounded-2xl border border-[#F59E0B] bg-[#FFFBEB] p-5 shadow-sm",
-          "dark:border-[#FBBF24] dark:bg-[#FFFBEB]",
-          compact && "p-4"
-        )}
+      <ExecutiveAlert
+        variant="attention"
+        density={compact ? "compact" : "default"}
+        testId="engineering-pending-cost-alert"
+        title="Custo pendente para publicação"
+        badge="DRAFT"
+        icon={<AlertCircle className="h-4 w-4" aria-hidden />}
+        description={
+          <>
+            O snapshot da engenharia foi atualizado, mas o custo oficial publicado ainda não mudou.
+            Publique este DRAFT para que o novo custo passe a valer nas margens conforme a vigência.
+            Atualizar snapshot recalcula o custo. Publicar novo custo oficial altera a tabela usada nas
+            margens.
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            disabled={!canPublish || publishing}
+            title={
+              canPublish ? undefined : "Você não tem permissão para publicar custos oficiais."
+            }
+            onClick={() => {
+              setPublishError(null);
+              setConfirmOpen(true);
+            }}
+            className={cn(
+              "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+              "bg-primary text-primary-foreground hover:bg-primary/90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
+              "disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+            )}
+          >
+            {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Publicar novo custo oficial
+          </button>
+        }
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FDE68A] text-[#92400E]">
-                <AlertCircle className="h-4 w-4" aria-hidden />
-              </span>
-              <h4 className="text-base font-semibold text-[#92400E]">
-                Custo pendente para publicação
-              </h4>
-              <span className="inline-flex rounded-full border border-[#FBBF24] bg-[#FDE68A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]">
-                DRAFT
-              </span>
-            </div>
-            <p className="max-w-3xl text-sm leading-relaxed text-[#78350F]">
-              O snapshot da engenharia foi atualizado, mas o custo oficial publicado ainda não mudou.
-              Publique este DRAFT para que o novo custo passe a valer nas margens conforme a vigência.
-              Atualizar snapshot recalcula o custo. Publicar novo custo oficial altera a tabela usada nas
-              margens.
-            </p>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-stretch gap-1 lg:items-end lg:pt-1">
-            <button
-              type="button"
-              disabled={!canPublish || publishing}
-              title={
-                canPublish
-                  ? undefined
-                  : "Você não tem permissão para publicar custos oficiais."
-              }
-              onClick={() => {
-                setPublishError(null);
-                setConfirmOpen(true);
-              }}
-              className={cn(
-                "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
-                "bg-primary text-primary-foreground hover:bg-primary/90",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
-                "disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
-              )}
-            >
-              {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Publicar novo custo oficial
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <InnerPanel title="Resumo">
+        <div className={cn("grid grid-cols-1 gap-4", !compact && "mt-5 md:grid-cols-2")}>
+          <ExecutiveAlertPanel title="Resumo">
             <dl className="space-y-2.5 text-sm">
               <div className="flex justify-between gap-3">
-                <dt className="text-[#64748B]">Produto / SKU</dt>
-                <dd className="font-mono font-medium text-[#111827]">{sku}</dd>
+                <dt className={EXECUTIVE_ALERT_LABEL_CLASS}>Produto / SKU</dt>
+                <dd className={cn("font-mono font-medium", executiveAlertValueClass("default"))}>
+                  {sku}
+                </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-[#64748B]">Custo oficial atual</dt>
-                <dd className="tabular-nums font-medium text-[#111827]">
+                <dt className={EXECUTIVE_ALERT_LABEL_CLASS}>Custo oficial atual</dt>
+                <dd className={cn("tabular-nums font-medium", executiveAlertValueClass("default"))}>
                   {officialCost ? formatProductCiu(officialUnit) : "Sem vigente"}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-[#64748B]">Novo custo calculado</dt>
-                <dd className="tabular-nums font-bold text-[#111827]">
+                <dt className={EXECUTIVE_ALERT_LABEL_CLASS}>Novo custo calculado</dt>
+                <dd className={cn("tabular-nums font-bold", executiveAlertValueClass("default"))}>
                   {formatProductCiu(draftUnit)}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-[#64748B]">Diferença</dt>
+                <dt className={EXECUTIVE_ALERT_LABEL_CLASS}>Diferença</dt>
                 <dd
                   className={cn(
                     "tabular-nums font-semibold",
-                    diffIsPositive && "text-[#047857]",
-                    diffIsNegative && "text-[#B91C1C]",
-                    !diffIsPositive && !diffIsNegative && "text-[#111827]"
+                    diffIsPositive && executiveAlertValueClass("positive"),
+                    diffIsNegative && executiveAlertValueClass("negative"),
+                    !diffIsPositive && !diffIsNegative && executiveAlertValueClass("default")
                   )}
                 >
                   {formatCurrency(diffAmount)} ({delta.percentLabel})
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-[#64748B]">Vigência do DRAFT</dt>
-                <dd className="text-right font-medium text-[#111827]">
+                <dt className={EXECUTIVE_ALERT_LABEL_CLASS}>Vigência do DRAFT</dt>
+                <dd className={cn("text-right font-medium", executiveAlertValueClass("default"))}>
                   {pendingDraft.effectiveDate}
                   {pendingDraft.versionCode ? ` · ${pendingDraft.versionCode}` : ""}
                   {pendingDraft.revision != null ? ` v${pendingDraft.revision}` : ""}
                 </dd>
               </div>
             </dl>
-          </InnerPanel>
+          </ExecutiveAlertPanel>
 
           {!compact ? (
-            <InnerPanel title="Quebra do custo (oficial → DRAFT)">
+            <ExecutiveAlertPanel title="Quebra do custo (oficial → DRAFT)">
               <div className="space-y-2">
                 <CostBreakdownRow
                   label="Material"
@@ -239,10 +206,10 @@ export function ProductCostPublicationPendingCard({
                   />
                 ) : null}
               </div>
-            </InnerPanel>
+            </ExecutiveAlertPanel>
           ) : null}
         </div>
-      </section>
+      </ExecutiveAlert>
 
       {confirmOpen ? (
         <ProjectModalShell
@@ -273,9 +240,7 @@ export function ProductCostPublicationPendingCard({
           }
         >
           {publishError ? (
-            <div className="mb-3 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm text-[#991B1B]">
-              {publishError}
-            </div>
+            <ExecutiveAlert variant="danger" density="inline" description={publishError} />
           ) : null}
           <p className="text-sm text-muted-foreground mb-4">
             Após publicar, esta versão passa a ser oficial para cálculo de margem conforme a vigência.
