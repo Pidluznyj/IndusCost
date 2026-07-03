@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -13,6 +14,7 @@ import {
   ModalErrorBlock,
   ModalSuccessBlock,
 } from "@/src/components/finance/cost-centers/financeUnclassifiedModalUi";
+import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 import { financeModuleFilterFieldClass, financeModuleFilterLabelClass } from "@/src/lib/financeModuleUiStandards";
 
 type CostCenterOption = {
@@ -37,6 +39,7 @@ export function FinanceApTitleReclassifyModal({
   onClose,
   onSaved,
 }: Props) {
+  const portalContainer = usePortalContainer();
   const [detail, setDetail] = useState<FinanceApTitleClassificationDetail | null>(null);
   const [costCenters, setCostCenters] = useState<CostCenterOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -137,9 +140,9 @@ export function FinanceApTitleReclassifyModal({
     }
   };
 
-  if (!open || !titleRow) return null;
+  if (!open || !titleRow || !portalContainer) return null;
 
-  return (
+  return createPortal(
     <CostCenterDialog
       testId="finance-ap-title-reclassify-modal"
       title="Reclassificar título"
@@ -147,6 +150,7 @@ export function FinanceApTitleReclassifyModal({
       onClose={onClose}
       closeDisabled={saving}
       maxWidthClass="max-w-4xl"
+      stacked
       footer={
         <>
           <button
@@ -272,6 +276,7 @@ export function FinanceApTitleReclassifyModal({
           </div>
         </div>
       ) : null}
-    </CostCenterDialog>
+    </CostCenterDialog>,
+    portalContainer
   );
 }

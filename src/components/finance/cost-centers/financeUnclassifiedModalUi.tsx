@@ -12,6 +12,7 @@ export function CostCenterDialog({
   onClose,
   closeDisabled = false,
   maxWidthClass = "max-w-3xl",
+  stacked = false,
 }: {
   testId: string;
   title: string;
@@ -21,9 +22,16 @@ export function CostCenterDialog({
   onClose: () => void;
   closeDisabled?: boolean;
   maxWidthClass?: string;
+  /** Empilha acima de modais/drawers de títulos (z-[75]). */
+  stacked?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
+    <div
+      className={cn(
+        "fixed inset-0 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4",
+        stacked ? "z-[85]" : "z-50"
+      )}
+    >
       <div
         className={cn(
           financeBiCardClass,
