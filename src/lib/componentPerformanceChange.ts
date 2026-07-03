@@ -328,6 +328,8 @@ export type ComponentPerformanceListFilters = {
   missingProcessOnly?: boolean;
   missingCycleOnly?: boolean;
   missingCavitiesOnly?: boolean;
+  soldMissingOnly?: boolean;
+  pendingOnly?: boolean;
   recentlyChangedOnly?: boolean;
   recentDays?: number;
   limit?: number;
@@ -348,6 +350,8 @@ export function parseComponentPerformanceListQuery(
     query.missingCycleOnly === "1" || query.missingCycleOnly === "true";
   const missingCavitiesOnly =
     query.missingCavitiesOnly === "1" || query.missingCavitiesOnly === "true";
+  const soldMissingOnly = query.soldMissingOnly === "1" || query.soldMissingOnly === "true";
+  const pendingOnly = query.pendingOnly === "1" || query.pendingOnly === "true";
   const recentlyChangedOnly =
     query.recentlyChangedOnly === "1" || query.recentlyChangedOnly === "true";
   const recentDaysRaw = query.recentDays != null ? Number(query.recentDays) : 30;
@@ -368,6 +372,8 @@ export function parseComponentPerformanceListQuery(
     missingProcessOnly,
     missingCycleOnly,
     missingCavitiesOnly,
+    soldMissingOnly,
+    pendingOnly,
     recentlyChangedOnly,
     recentDays,
     limit,

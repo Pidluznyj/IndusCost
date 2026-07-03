@@ -108,6 +108,23 @@ function buildListWhere(filters: ComponentPerformanceListFilters): Prisma.Produc
     where.cavities = null;
   }
 
+  if (filters.soldMissingOnly) {
+    where.SalesOrderItem = { some: {} };
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      { OR: [{ cycleTimeSeconds: null }, { cavities: null }] },
+    ];
+  }
+
+  if (filters.pendingOnly) {
+    where.OR = [
+      { cycleTimeSeconds: null },
+      { cavities: null },
+      { setupTimeMin: null },
+      { efficiencyExpected: null },
+    ];
+  }
+
   if (filters.recentlyChangedOnly) {
     const days = filters.recentDays ?? 30;
     const since = new Date();

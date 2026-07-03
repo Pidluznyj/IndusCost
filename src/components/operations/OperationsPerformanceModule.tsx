@@ -9,10 +9,12 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
+  fetchComponentPerformanceCoverage,
   fetchComponentPerformanceHistory,
   fetchComponentPerformanceList,
   patchComponentPerformanceProduct,
   type ComponentPerformanceChangeLogItem,
+  type ComponentPerformanceCoverageResponse,
   type ComponentPerformanceListItem,
   type ComponentPerformanceListQuery,
 } from "@/src/lib/componentPerformanceClient";
@@ -45,6 +47,10 @@ function filterToQuery(
   switch (filter) {
     case "sold":
       return { ...base, soldOnly: true };
+    case "pending":
+      return { ...base, pendingOnly: true };
+    case "sold_missing":
+      return { ...base, soldMissingOnly: true };
     case "missing_cycle":
       return { ...base, missingCycleOnly: true };
     case "missing_cavities":
@@ -72,6 +78,9 @@ export function OperationsPerformanceModule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<ComponentPerformanceCoverageResponse | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
 
   const [editItem, setEditItem] = useState<ComponentPerformanceListItem | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -88,6 +97,26 @@ export function OperationsPerformanceModule() {
     () => filterToQuery(filter, skuSearch, nameSearch, offset),
     [filter, skuSearch, nameSearch, offset]
   );
+
+  const loadCoverage = useCallback(async () => {
+    if (!canView) return;
+    setCoverageLoading(true);
+    setCoverageError(null);
+    try {
+      const now = new Date();
+      const data = await fetchComponentPerformanceCoverage({
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+        top: 5,
+      });
+      setCoverage(data);
+    } catch (e: unknown) {
+      setCoverageError(e instanceof Error ? e.message : "Erro ao carregar cobertura.");
+      setCoverage(null);
+    } finally {
+      setCoverageLoading(false);
+    }
+  }, [canView]);
 
   const loadList = useCallback(async () => {
     if (!canView) return;
@@ -110,6 +139,10 @@ export function OperationsPerformanceModule() {
   useEffect(() => {
     void loadList();
   }, [loadList]);
+
+  useEffect(() => {
+    void loadCoverage();
+  }, [loadCoverage]);
 
   useEffect(() => {
     if (!toast) return;
@@ -158,6 +191,7 @@ export function OperationsPerformanceModule() {
           : result.message ?? "Nenhuma alteração detectada."
       );
       await loadList();
+      void loadCoverage();
     } catch (e: unknown) {
       setEditError(e instanceof Error ? e.message : "Erro ao salvar alteração.");
     } finally {
@@ -181,6 +215,62 @@ export function OperationsPerformanceModule() {
       {toast ? (
         <div className="fixed bottom-4 right-4 z-[60] max-w-md rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-lg">
           {toast}
+        </div>
+      ) : null}
+
+      <div
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        data-testid="performance-coverage-cards"
+      >
+        {[
+          {
+            label: "Componentes ativos",
+            value: coverage?.totals.activeComponents,
+            hint: coverage?.periodLabel ?? "—",
+          },
+          {
+            label: "Sem ciclo ou cavidades",
+            value: coverage?.totals.withoutCycleOrCavities,
+            hint: "Pendências operacionais",
+          },
+          {
+            label: "Vendidos sem performance",
+            value: coverage?.totals.soldWithoutCompletePerformance,
+            hint: "Crítico comercial",
+            critical: true,
+          },
+          {
+            label: "Nunca revisados",
+            value: coverage?.totals.neverReviewed,
+            hint: "Sem histórico de alteração",
+          },
+        ].map((card) => (
+          <div
+            key={card.label}
+            className={cn(
+              "rounded-xl border bg-card p-4",
+              card.critical ? "border-amber-300/60" : "border-border"
+            )}
+          >
+            <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
+            <p
+              className={cn(
+                "mt-1 text-2xl font-semibold tabular-nums",
+                card.critical && (coverage?.totals.soldWithoutCompletePerformance ?? 0) > 0
+                  ? "text-amber-700"
+                  : ""
+              )}
+            >
+              {coverageLoading ? "…" : card.value ?? "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      {coverageError ? (
+        <div className="rounded-xl border border-amber-300/50 bg-amber-50/50 p-3 text-sm text-amber-900">
+          {coverageError}
         </div>
       ) : null}
 
@@ -248,6 +338,16 @@ export function OperationsPerformanceModule() {
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void loadList();
+              void loadCoverage();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent text-xs"
+          >
+            Recarregar cobertura
           </button>
         </div>
       </div>

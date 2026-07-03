@@ -11,6 +11,10 @@ import {
   patchComponentPerformanceProduct,
 } from "./componentPerformanceChange.server.js";
 import {
+  buildComponentPerformanceCoverageReportFromDb,
+  serializeCoverageReportForApi,
+} from "./componentPerformanceCoverage.server.js";
+import {
   COMPONENT_PERFORMANCE_EDIT_PERMISSIONS,
   COMPONENT_PERFORMANCE_VIEW_PERMISSIONS,
 } from "./componentPerformancePermissions.js";
@@ -46,6 +50,23 @@ export function registerComponentPerformanceRoutes(
   auth: AuthGuards
 ): void {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+
+  app.get(
+    "/api/operations/performance/coverage",
+    requireAppAuth,
+    requireAnyPermission([...COMPONENT_PERFORMANCE_VIEW_PERMISSIONS, "products.view"]),
+    async (req, res) => {
+      try {
+        const report = await buildComponentPerformanceCoverageReportFromDb(
+          prisma,
+          req.query as Record<string, unknown>
+        );
+        res.json(serializeCoverageReportForApi(report));
+      } catch (error) {
+        handleServiceError(error, res, "GET /api/operations/performance/coverage");
+      }
+    }
+  );
 
   app.get(
     "/api/operations/performance/components",

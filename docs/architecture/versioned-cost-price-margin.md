@@ -86,6 +86,15 @@ npm run audit:component-performance-cost-impact -- --sku=309.86AA --json
 
 Testes: `npm run test:component-performance-cost-draft`
 
+Auditoria operacional de cobertura (read-only):
+
+```bash
+npm run audit:component-performance-coverage -- --year=2026 --month=7
+npm run audit:component-performance-coverage -- --top=20 --sold-only --missing-only --json
+```
+
+Testes: `npm run test:component-performance-coverage`
+
 ---
 
 ## 2. Fases concluídas

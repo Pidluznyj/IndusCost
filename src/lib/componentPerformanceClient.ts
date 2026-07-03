@@ -62,10 +62,32 @@ export type ComponentPerformanceListQuery = {
   missingProcessOnly?: boolean;
   missingCycleOnly?: boolean;
   missingCavitiesOnly?: boolean;
+  soldMissingOnly?: boolean;
+  pendingOnly?: boolean;
   recentlyChangedOnly?: boolean;
   recentDays?: number;
   limit?: number;
   offset?: number;
+};
+
+export type ComponentPerformanceCoverageTotals = {
+  activeComponents: number;
+  soldComponentsInPeriod: number;
+  withoutCycle: number;
+  withoutCavities: number;
+  withoutCycleOrCavities: number;
+  soldWithoutCompletePerformance: number;
+  neverReviewed: number;
+  recentlyChanged: number;
+};
+
+export type ComponentPerformanceCoverageResponse = {
+  periodLabel: string;
+  periodFrom: string | null;
+  periodTo: string | null;
+  totals: ComponentPerformanceCoverageTotals;
+  topSoldWithoutCompletePerformance: Array<Record<string, unknown>>;
+  recentlyChanged: Array<Record<string, unknown>>;
 };
 
 function buildQueryString(query: ComponentPerformanceListQuery): string {
@@ -77,6 +99,8 @@ function buildQueryString(query: ComponentPerformanceListQuery): string {
   if (query.missingProcessOnly) params.set("missingProcessOnly", "1");
   if (query.missingCycleOnly) params.set("missingCycleOnly", "1");
   if (query.missingCavitiesOnly) params.set("missingCavitiesOnly", "1");
+  if (query.soldMissingOnly) params.set("soldMissingOnly", "1");
+  if (query.pendingOnly) params.set("pendingOnly", "1");
   if (query.recentlyChangedOnly) params.set("recentlyChangedOnly", "1");
   if (query.recentDays != null) params.set("recentDays", String(query.recentDays));
   if (query.limit != null) params.set("limit", String(query.limit));
@@ -90,6 +114,19 @@ export async function fetchComponentPerformanceList(
 ): Promise<ComponentPerformanceListResponse> {
   return fetchJsonOk<ComponentPerformanceListResponse>(
     `/api/operations/performance/components${buildQueryString(query)}`
+  );
+}
+
+export async function fetchComponentPerformanceCoverage(
+  query?: { year?: number; month?: number; top?: number }
+): Promise<ComponentPerformanceCoverageResponse> {
+  const params = new URLSearchParams();
+  if (query?.year != null) params.set("year", String(query.year));
+  if (query?.month != null) params.set("month", String(query.month));
+  if (query?.top != null) params.set("top", String(query.top));
+  const qs = params.toString();
+  return fetchJsonOk<ComponentPerformanceCoverageResponse>(
+    `/api/operations/performance/coverage${qs ? `?${qs}` : ""}`
   );
 }
 

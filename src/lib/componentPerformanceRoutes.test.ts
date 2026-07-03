@@ -10,6 +10,7 @@ function read(path: string): string {
 describe("componentPerformanceRoutes", () => {
   it("registra endpoints de operações/performance", () => {
     const routes = read("src/lib/componentPerformanceRoutes.ts");
+    assert.match(routes, /GET \/api\/operations\/performance\/coverage/);
     assert.match(routes, /GET \/api\/operations\/performance\/components/);
     assert.match(routes, /GET \/api\/operations\/performance\/components\/:id/);
     assert.match(routes, /PATCH \/api\/operations\/performance\/components\/:id/);

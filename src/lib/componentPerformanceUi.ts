@@ -13,6 +13,8 @@ export const OPERATIONS_PERFORMANCE_PAGE_DESCRIPTION =
 export type ComponentPerformanceFilterId =
   | "all"
   | "sold"
+  | "pending"
+  | "sold_missing"
   | "missing_cycle"
   | "missing_cavities"
   | "missing_process"
@@ -24,6 +26,8 @@ export const COMPONENT_PERFORMANCE_FILTER_OPTIONS: ReadonlyArray<{
 }> = [
   { id: "all", label: "Todos" },
   { id: "sold", label: "Vendidos" },
+  { id: "pending", label: "Pendentes" },
+  { id: "sold_missing", label: "Vendidos sem performance" },
   { id: "missing_cycle", label: "Sem ciclo" },
   { id: "missing_cavities", label: "Sem cavidades" },
   { id: "missing_process", label: "Processo incompleto" },
