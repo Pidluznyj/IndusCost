@@ -15,6 +15,7 @@ import type { FinanceSupplierIntelligencePayload } from "@/src/lib/financeSuppli
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
+import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 
 type Props = {
   open: boolean;
@@ -33,6 +34,7 @@ export function FinanceSupplierCadastroDrawer({
   canManage,
   canDelete,
 }: Props) {
+  const portalContainer = usePortalContainer();
   const [profile, setProfile] = useState<FinancialSupplierProfileDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -215,7 +217,7 @@ export function FinanceSupplierCadastroDrawer({
     }
   };
 
-  if (!open || !supplierId) return null;
+  if (!open || !supplierId || !portalContainer) return null;
 
   return createPortal(
     <div
@@ -513,6 +515,6 @@ export function FinanceSupplierCadastroDrawer({
         ) : null}
       </div>
     </div>,
-    document.body
+    portalContainer
   );
 }

@@ -29,6 +29,7 @@ import {
   FinanceModuleErrorBanner,
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
+import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 
 type Props = {
   open: boolean;
@@ -62,6 +63,7 @@ export function FinanceSupplierPaidTitlesModal({
   canReclassify,
   onClose,
 }: Props) {
+  const portalContainer = usePortalContainer();
   const [payload, setPayload] = useState<CostCenterSupplierPaymentTitlesPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,9 +119,12 @@ export function FinanceSupplierPaidTitlesModal({
     return `${payload.periodLabel} · ${payload.paidTitlesCount} título(s) · ${formatFinanceCurrency(payload.totalPaidAmount)}`;
   }, [payload]);
 
-  if (!open || !supplier) return null;
+  const showPanel = Boolean(open && supplier && portalContainer);
 
-  const panel = createPortal(
+  return (
+    <>
+      {showPanel && supplier && portalContainer
+        ? createPortal(
     <div className="fixed inset-0 z-[75] flex">
       <button
         type="button"
@@ -299,19 +304,16 @@ export function FinanceSupplierPaidTitlesModal({
         </div>
       </div>
     </div>,
-    document.body
-  );
-
-  return (
-    <>
-      {panel}
+    portalContainer
+          )
+        : null}
       <FinanceApTitleReclassifyModal
-        open={Boolean(reclassifyTitle)}
+        open={Boolean(open && supplier && reclassifyTitle)}
         titleRow={reclassifyTitle}
-        supplierName={supplier.name}
+        supplierName={supplier?.name ?? ""}
         onClose={() => setReclassifyTitle(null)}
         onSaved={() => {
-          void loadTitles(page, search);
+          if (supplier) void loadTitles(page, search);
         }}
       />
     </>

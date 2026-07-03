@@ -25,6 +25,7 @@ describe("FinanceSupplierPaidTitlesModal", () => {
     const modal = read("src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx");
     assert.doesNotMatch(modal, /cost-center-reclassification/);
     assert.doesNotMatch(modal, /supplier-cost-center-rules/);
+    assert.match(modal, /usePortalContainer/);
     assert.match(modal, /buildFinanceCostCentersDashboardQuery/);
   });
 });
