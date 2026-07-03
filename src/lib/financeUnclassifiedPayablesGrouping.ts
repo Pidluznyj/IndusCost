@@ -25,9 +25,18 @@ export type UnclassifiedGroupedBySupplierRow = {
   supplierId: string | null;
   supplierName: string | null;
   identityKey: string;
+  /** Chave de agrupamento usada na tabela (fs:{supplierId} ou identityKey). */
+  groupKey: string;
   personDocument: string | null;
   sampleExternalId: number;
 };
+
+export function resolveUnclassifiedGroupedRowKey(
+  row: Pick<UnclassifiedGroupedBySupplierRow, "supplierId" | "identityKey">
+): string {
+  if (row.supplierId) return `fs:${row.supplierId}`;
+  return row.identityKey;
+}
 
 export function resolveUnclassifiedPayableGroupKey(item: UnclassifiedPayableListItem): string {
   if (item.supplierId) return `fs:${item.supplierId}`;
@@ -74,6 +83,7 @@ export function groupUnclassifiedPayablesBySupplier(
         supplierId: null,
         supplierName: null,
         identityKey: apIdentityKey,
+        groupKey: key,
         personDocument: item.personDocument ?? null,
         sampleExternalId: item.externalId,
       } satisfies UnclassifiedGroupedBySupplierRow);

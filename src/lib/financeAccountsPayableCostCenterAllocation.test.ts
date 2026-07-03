@@ -451,6 +451,7 @@ describe("financeAccountsPayableCostCenterAllocation", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     assert.match(routes, /\/api\/finance\/accounts-payable\/classification-summary/);
     assert.match(routes, /\/api\/finance\/accounts-payable\/unclassified/);
+    assert.match(routes, /\/api\/finance\/cost-centers\/unclassified-groups\/:groupKey\/titles/);
     assert.match(routes, /classify-batch-preview", \.\.\.batchApplyGuard/);
     assert.match(routes, /classify-batch-apply", \.\.\.batchApplyGuard/);
     assert.match(routes, /\/api\/finance\/accounts-payable\/:id\/cost-center-allocation/);

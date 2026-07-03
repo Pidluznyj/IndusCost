@@ -225,6 +225,21 @@ describe("financeCostCentersPage", () => {
     });
   });
 
+  describe("aba Títulos sem Classificação — drilldown Ver títulos", () => {
+    const tab = () =>
+      read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+    const modal = () =>
+      read("src/components/finance/cost-centers/FinanceUnclassifiedGroupTitlesModal.tsx");
+    const routes = () => read("src/lib/financeAccountsPayableCostCenterAllocationRoutes.ts");
+
+    it("botão Ver títulos abre modal com groupKey", () => {
+      assert.match(tab(), /finance-unclassified-view-titles-button/);
+      assert.match(tab(), /FinanceUnclassifiedGroupTitlesModal/);
+      assert.match(modal(), /unclassified-groups/);
+      assert.match(routes(), /unclassified-groups\/:groupKey\/titles/);
+    });
+  });
+
   describe("aba Títulos sem Classificação — exportar/importar planilha", () => {
     const tab = () =>
       read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");

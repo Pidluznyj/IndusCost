@@ -4,6 +4,7 @@ import {
   formatAccountsPayableDescriptiveText,
   pickDescriptiveTextFromRawPayload,
   resolveAccountsPayableDescriptiveText,
+  resolveAccountsPayableDescriptiveTextWithSource,
 } from "./financeAccountsPayableDescriptiveText.js";
 
 describe("financeAccountsPayableDescriptiveText", () => {
@@ -42,5 +43,21 @@ describe("financeAccountsPayableDescriptiveText", () => {
   it("retorna fallback — quando não há texto descritivo", () => {
     assert.equal(formatAccountsPayableDescriptiveText({}), "—");
     assert.equal(resolveAccountsPayableDescriptiveText({ comments: null }), null);
+  });
+
+  it("resolveAccountsPayableDescriptiveTextWithSource informa a fonte", () => {
+    assert.deepEqual(
+      resolveAccountsPayableDescriptiveTextWithSource({
+        description: "Frete",
+        comments: "Comentário",
+      }),
+      { text: "Frete", source: "description" }
+    );
+    assert.deepEqual(
+      resolveAccountsPayableDescriptiveTextWithSource({
+        rawPayload: { observacao: "Manutenção" },
+      }),
+      { text: "Manutenção", source: "rawPayload.observacao" }
+    );
   });
 });

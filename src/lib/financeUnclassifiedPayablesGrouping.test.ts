@@ -31,6 +31,7 @@ describe("financeUnclassifiedPayablesGrouping", () => {
     assert.equal(grouped[0]?.titlesCount, 2);
     assert.equal(grouped[0]?.amount, 150);
     assert.equal(grouped[0]?.identityKey, "name:joao da silva");
+    assert.equal(grouped[0]?.groupKey, "name:joao da silva");
   });
 
   it("não agrupa nomes parecidos sem identidade compartilhada", () => {
@@ -64,5 +65,21 @@ describe("financeUnclassifiedPayablesGrouping", () => {
       supplierId: "uuid-abc",
     });
     assert.equal(key, "fs:uuid-abc");
+  });
+
+  it("groupKey do agrupamento usa fs: quando há supplierId", () => {
+    const grouped = groupUnclassifiedPayablesBySupplier([
+      {
+        externalId: 1,
+        titleAmount: 100,
+        companyName: null,
+        personName: "CONTA ADMINISTRATIVA",
+        identityKey: "name:conta administrativa",
+        supplierId: "uuid-admin",
+        cause: "NO_SUPPLIER",
+      },
+    ]);
+    assert.equal(grouped[0]?.groupKey, "fs:uuid-admin");
+    assert.equal(grouped[0]?.identityKey, "name:conta administrativa");
   });
 });

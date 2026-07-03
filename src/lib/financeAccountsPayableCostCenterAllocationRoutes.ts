@@ -14,6 +14,10 @@ import {
   previewBatchAccountsPayableAllocationDefault,
   reclassifyAccountsPayableAllocationDefault,
 } from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
+import {
+  listUnclassifiedGroupTitlesDefault,
+  parseUnclassifiedGroupTitlesQuery,
+} from "@/src/lib/financeUnclassifiedGroupTitles.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
@@ -104,6 +108,36 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
       );
     }
   });
+
+  app.get(
+    "/api/finance/cost-centers/unclassified-groups/:groupKey/titles",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const groupKey = decodeURIComponent(String(req.params.groupKey ?? "").trim());
+        const query = parseUnclassifiedGroupTitlesQuery({
+          ...(req.query as Record<string, unknown>),
+          groupKey,
+        });
+        const payload = await listUnclassifiedGroupTitlesDefault(query);
+        return res.json(payload);
+      } catch (error) {
+        if (error instanceof FinanceApAllocationError) {
+          return handleAllocationError(res, error);
+        }
+        console.error(
+          "GET /api/finance/cost-centers/unclassified-groups/:groupKey/titles",
+          error
+        );
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao listar títulos do grupo sem classificação.", error)
+        );
+      }
+    }
+  );
 
   app.post("/api/finance/accounts-payable/classify-batch-preview", ...batchApplyGuard, async (req, res) => {
     try {

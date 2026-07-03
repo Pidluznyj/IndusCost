@@ -77,6 +77,7 @@ import {
 } from "@/src/lib/financeCostCenterGridKit";
 import { getSortDefaultDirection } from "@/src/lib/soldProductsTableSort";
 import { groupUnclassifiedPayablesBySupplier } from "@/src/lib/financeUnclassifiedPayablesGrouping";
+import { FinanceUnclassifiedGroupTitlesModal } from "@/src/components/finance/cost-centers/FinanceUnclassifiedGroupTitlesModal";
 import {
   CostCenterDialog,
   ModalErrorBlock,
@@ -116,6 +117,7 @@ type GroupedRow = {
   supplierId: string | null;
   supplierName: string | null;
   identityKey: string;
+  groupKey: string;
   personDocument: string | null;
   sampleExternalId: number;
 };
@@ -184,6 +186,7 @@ export function FinanceUnclassifiedPayablesTab({
   const [confirmation, setConfirmation] = useState("");
 
   const [classifyGroup, setClassifyGroup] = useState<GroupedRow | null>(null);
+  const [viewTitlesGroup, setViewTitlesGroup] = useState<GroupedRow | null>(null);
   const [centers, setCenters] = useState<FinanceCostCenterDto[]>([]);
   const [centersLoaded, setCentersLoaded] = useState(false);
   const [modalCostCenterId, setModalCostCenterId] = useState("");
@@ -836,9 +839,19 @@ export function FinanceUnclassifiedPayablesTab({
             }
           >
             {pageRows.map((row) => (
-              <tr key={row.name} className="border-b border-border/60 hover:bg-muted/20">
+              <tr key={row.groupKey} className="border-b border-border/60 hover:bg-muted/20">
                 <td className="px-4 py-3 font-semibold">{row.name}</td>
-                <td className="px-4 py-3 tabular-nums">{row.titlesCount}</td>
+                <td className="px-4 py-3 tabular-nums">
+                  <button
+                    type="button"
+                    className="font-semibold text-primary hover:underline tabular-nums"
+                    title="Ver títulos deste grupo"
+                    data-testid="finance-unclassified-view-titles-count"
+                    onClick={() => setViewTitlesGroup(row)}
+                  >
+                    {row.titlesCount}
+                  </button>
+                </td>
                 <td className="px-4 py-3 tabular-nums text-right">{formatFinanceCurrency(row.amount)}</td>
                 <td className="px-4 py-3">
                   {row.cause ? (
@@ -862,15 +875,27 @@ export function FinanceUnclassifiedPayablesTab({
                       : "Revisar fornecedor"}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    data-testid="finance-unclassified-classify-supplier-button"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10"
-                    onClick={() => openClassifyModal(row)}
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                    Classificar fornecedor
-                  </button>
+                  <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      data-testid="finance-unclassified-view-titles-button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-muted/40"
+                      title="Ver títulos deste grupo"
+                      onClick={() => setViewTitlesGroup(row)}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Ver títulos
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="finance-unclassified-classify-supplier-button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10"
+                      onClick={() => openClassifyModal(row)}
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                      Classificar fornecedor
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1216,6 +1241,14 @@ export function FinanceUnclassifiedPayablesTab({
           </div>
         </CostCenterDialog>
       ) : null}
+
+      <FinanceUnclassifiedGroupTitlesModal
+        open={Boolean(viewTitlesGroup)}
+        group={viewTitlesGroup}
+        appliedFilters={appliedFilters}
+        causeFilter={causeFilter}
+        onClose={() => setViewTitlesGroup(null)}
+      />
     </div>
   );
 }

@@ -68,3 +68,30 @@ export function formatAccountsPayableDescriptiveText(
 ): string {
   return resolveAccountsPayableDescriptiveText(input) ?? "—";
 }
+
+export type AccountsPayableDescriptiveTextResult = {
+  text: string;
+  source: string | null;
+};
+
+export function resolveAccountsPayableDescriptiveTextWithSource(
+  input: AccountsPayableDescriptiveInput
+): AccountsPayableDescriptiveTextResult {
+  const description = trimText(input.description);
+  if (description) return { text: description, source: "description" };
+
+  const comments = trimText(input.comments);
+  if (comments) return { text: comments, source: "comments" };
+
+  if (isJsonObject(input.rawPayload)) {
+    for (const key of RAW_PAYLOAD_DESCRIPTIVE_KEYS) {
+      const value = input.rawPayload[key];
+      if (typeof value === "string") {
+        const trimmed = trimText(value);
+        if (trimmed) return { text: trimmed, source: `rawPayload.${key}` };
+      }
+    }
+  }
+
+  return { text: "—", source: null };
+}
