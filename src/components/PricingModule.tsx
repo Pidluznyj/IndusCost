@@ -255,6 +255,16 @@ export const PricingModule = () => {
   const [commercialPublishApprovedBy, setCommercialPublishApprovedBy] = useState("");
   /** versionId atualmente em publicação (loading discreto por card). */
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
+  const [commercialGenProductionCostSource, setCommercialGenProductionCostSource] = useState<{
+    available: boolean;
+    message: string | null;
+    productionCostTableVersionCode: string | null;
+    revision: number | null;
+    itemsCount: number;
+    name: string | null;
+  } | null>(null);
+  const [commercialGenProductionCostSourceLoading, setCommercialGenProductionCostSourceLoading] =
+    useState(false);
 
   const [productionCostOpen, setProductionCostOpen] = useState(false);
   const [productionCostEffectiveDate, setProductionCostEffectiveDate] = useState("");
@@ -592,6 +602,10 @@ export const PricingModule = () => {
       alert("Selecione uma regra fiscal.");
       return;
     }
+    if (!commercialGenEffectiveFrom.trim()) {
+      alert("Informe a vigência desejada (referência para custo de produção publicado).");
+      return;
+    }
     const selectedTables = COMMERCIAL_TABLE_CODES
       .map((code) => priceTables.find((t) => t.code === code))
       .filter((t): t is PriceTableLite => !!t && commercialGenSelectedCodes.has(t.code));
@@ -664,6 +678,7 @@ export const PricingModule = () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              effectiveDate: commercialGenEffectiveFrom.trim(),
               taxRuleId: commercialGenTaxRuleId,
               includeAllActiveProducts: true,
               commissionPerc: tableCommissionParsed,
@@ -902,6 +917,37 @@ export const PricingModule = () => {
       void fetchProductionCostVersions();
     }
   }, [productionCostOpen, allowGenerateTables]);
+
+  useEffect(() => {
+    if (!commercialGenOpen || !commercialGenEffectiveFrom.trim()) {
+      setCommercialGenProductionCostSource(null);
+      return;
+    }
+    let cancelled = false;
+    setCommercialGenProductionCostSourceLoading(true);
+    void fetchJsonOk<{
+      available: boolean;
+      message: string | null;
+      productionCostTableVersionCode: string | null;
+      revision: number | null;
+      itemsCount: number;
+      name: string | null;
+    }>(
+      `/api/price-tables/production-cost-source?effectiveDate=${encodeURIComponent(commercialGenEffectiveFrom.trim())}`
+    )
+      .then((data) => {
+        if (!cancelled) setCommercialGenProductionCostSource(data);
+      })
+      .catch(() => {
+        if (!cancelled) setCommercialGenProductionCostSource(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCommercialGenProductionCostSourceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [commercialGenOpen, commercialGenEffectiveFrom]);
 
   useEffect(() => {
     if (!productionCostOpen || !productionCostEffectiveDate.trim()) {
@@ -1171,9 +1217,37 @@ export const PricingModule = () => {
                     disabled={commercialGenRunning}
                   />
                   <p className="text-[10px] text-muted-foreground leading-snug">
-                    A vigência será usada como referência para publicação. Nesta etapa serão geradas apenas DRAFTs para revisão.
+                    Define qual tabela de custo de produção publicada será usada na geração do preço (produtos e componentes).
+                    A vigência de publicação da tabela comercial é informada ao publicar a DRAFT.
                   </p>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-accent/10 p-3 text-xs">
+                <p className="font-bold uppercase text-muted-foreground mb-1">Fonte de custo de produção</p>
+                {commercialGenProductionCostSourceLoading ? (
+                  <p className="text-muted-foreground">Consultando tabela publicada vigente…</p>
+                ) : commercialGenProductionCostSource?.available ? (
+                  <p className="text-foreground">
+                    Tabela de preço será gerada a partir da tabela de custo de produção{" "}
+                    <span className="font-semibold">
+                      {commercialGenProductionCostSource.name ??
+                        commercialGenProductionCostSource.productionCostTableVersionCode}
+                    </span>{" "}
+                    ({commercialGenProductionCostSource.productionCostTableVersionCode} rev.{" "}
+                    {commercialGenProductionCostSource.revision}) —{" "}
+                    {commercialGenProductionCostSource.itemsCount} item(ns) publicado(s).
+                  </p>
+                ) : commercialGenEffectiveFrom.trim() ? (
+                  <p className="text-red-700">
+                    {commercialGenProductionCostSource?.message ??
+                      "Não há tabela de custo de produção publicada vigente para esta data."}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Informe a vigência para verificar a tabela de custo de produção que será usada.
+                  </p>
+                )}
               </div>
 
 
@@ -1301,6 +1375,7 @@ export const PricingModule = () => {
                       onClick={handleGenerateCommercialDrafts}
                       disabled={
                         !commercialGenTaxRuleId ||
+                        !commercialGenEffectiveFrom.trim() ||
                         availableSelectedCount === 0 ||
                         commercialGenRunning
                       }
@@ -1412,7 +1487,7 @@ export const PricingModule = () => {
 
                               {r.errorsCount > 0 && (
                                 <div className="rounded-md border border-red-300 bg-red-100 p-2 space-y-1 text-[11px]">
-                                  <p className="font-bold text-red-800">Existem erros de custo. Revise antes de publicar.</p>
+                                  <p className="font-bold text-red-800">Existem pendências de custo/preço. Revise antes de publicar.</p>
                                   {r.errorsPreview.map((it, idx) => (
                                     <p key={idx} className="text-red-700">
                                       • <span className="font-mono">{it.sku ?? "—"}</span>

@@ -399,6 +399,13 @@ export const SettingsModule = () => {
   const [taxRules, setTaxRules] = useState<TaxRuleLite[]>([]);
   const [selectedTaxRuleId, setSelectedTaxRuleId] = useState<string>("");
   const [draftNotes, setDraftNotes] = useState("");
+  const [draftEffectiveDate, setDraftEffectiveDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
   const [draftConfirmChecked, setDraftConfirmChecked] = useState(false);
   const [draftSubmitting, setDraftSubmitting] = useState(false);
   const [draftFeedbackError, setDraftFeedbackError] = useState<string | null>(null);
@@ -711,6 +718,10 @@ export const SettingsModule = () => {
       setDraftFeedbackError("Confirme explicitamente a geração da nova versão DRAFT antes de continuar.");
       return;
     }
+    if (!draftEffectiveDate.trim()) {
+      setDraftFeedbackError("Informe a data de referência para o custo de produção publicado.");
+      return;
+    }
     setDraftSubmitting(true);
     setDraftFeedbackError(null);
     setDraftFeedbackSuccess(null);
@@ -729,6 +740,7 @@ export const SettingsModule = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          effectiveDate: draftEffectiveDate.trim(),
           taxRuleId: selectedTaxRuleId,
           includeAllActiveProducts: true,
           notes: draftNotes.trim() || null,
@@ -2365,9 +2377,23 @@ export const SettingsModule = () => {
                 </div>
 
                 <AppAlert variant="warning" density="compact" title="Antes de gerar">
-                  A geração usará os produtos ativos. Produtos sem custo válido podem ser ignorados. A versão criada ficará
-                  em DRAFT para revisão posterior.
+                  A geração usará produtos e componentes ativos com custo de produção publicado vigente na data
+                  informada. Itens sem custo oficial aparecem como pendência (não entram com preço zero). A versão
+                  criada ficará em DRAFT para revisão posterior.
                 </AppAlert>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    Data de referência (custo de produção publicado)
+                  </label>
+                  <input
+                    type="date"
+                    value={draftEffectiveDate}
+                    onChange={(e) => setDraftEffectiveDate(e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                    disabled={draftSubmitting}
+                  />
+                </div>
 
                 {taxRulesLoading ? (
                   <div className="p-4 text-center">
@@ -2420,8 +2446,8 @@ export const SettingsModule = () => {
                     className="mt-0.5"
                   />
                   <span>
-                    Confirmo que desejo gerar uma nova versão DRAFT para esta tabela usando os produtos ativos e a regra
-                    fiscal selecionada.
+                    Confirmo que desejo gerar uma nova versão DRAFT para esta tabela usando produtos/componentes ativos,
+                    custo de produção publicado na data informada e a regra fiscal selecionada.
                   </span>
                 </label>
 

@@ -604,16 +604,19 @@ model PriceTableVersion {
   approvedBy            String?
   generationSummaryJson Json?
   commissionPerc        Decimal?         @db.Decimal(10, 6)
+  productionCostTableVersionId String?   @db.Uuid
   createdAt             DateTime         @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
   PriceTable            PriceTable       @relation(fields: [priceTableId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   TaxRule               TaxRule?         @relation("PriceTableVersionTaxRule", fields: [taxRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  productionCostTableVersion ProductionCostTableVersion? @relation(fields: [productionCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   items                 PriceTableItem[]
 
   @@unique([priceTableId, versionNumber])
   @@index([priceTableId])
   @@index([taxRuleId])
   @@index([status])
+  @@index([productionCostTableVersionId])
 }
 
 /// Linha publicada de uma versão (snapshot gerado pelo motor atual — Fase 1 sem geração automática).
@@ -667,6 +670,7 @@ model ProductionCostTableVersion {
   supersededBy        ProductionCostTableVersion[]     @relation("ProductionCostTableVersionSupersedes")
   materialCostTableVersion   MaterialCostTableVersion? @relation(fields: [materialCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   items               ProductionCostTableItem[]
+  priceTableVersions  PriceTableVersion[]
 
   @@unique([code, revision])
   @@index([code])

@@ -23,6 +23,12 @@ import {
   listProductionCostTableVersions,
   publishProductionCostVersionFromDraft,
 } from "./src/lib/productionCostPublication.server.js";
+import {
+  generatePriceTableVersionDraftFromProductionCosts,
+  previewProductionCostTableSourceForPriceDraft,
+  resolvePublishedPriceTableVersionForDate,
+} from "./src/lib/priceTablePublication.server.js";
+import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
   getProductFrozenCostTrace,
@@ -6247,23 +6253,36 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.post("/api/price-tables/:priceTableId/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
     const { priceTableId } = req.params;
     const body = (req.body ?? {}) as {
+      effectiveDate?: unknown;
       taxRuleId?: unknown;
       includeAllActiveProducts?: unknown;
       productIds?: unknown;
+      itemScope?: unknown;
       notes?: unknown;
       commissionPerc?: unknown;
     };
+
+    const effectiveDateRaw =
+      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
+        ? body.effectiveDate.trim()
+        : null;
+    if (!effectiveDateRaw) {
+      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const effectiveDate = civilDateToLocalDate(effectiveDateRaw);
+    if (Number.isNaN(effectiveDate.getTime())) {
+      return res.status(400).json({ error: "effectiveDate inválida." });
+    }
 
     const taxRuleId = typeof body.taxRuleId === "string" && body.taxRuleId.trim() ? body.taxRuleId.trim() : null;
     const includeAllActiveProducts = body.includeAllActiveProducts === true;
     const productIds = Array.isArray(body.productIds)
       ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       : [];
+    const itemScope =
+      typeof body.itemScope === "string" && body.itemScope.trim() ? body.itemScope.trim() : undefined;
     const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
 
-    // Comissão de vendedor opcional informada na geração da tabela.
-    // - Se vier (qualquer número finito >= 0 e <= 50), sobrepõe ProductPricing.commission para TODOS os produtos.
-    // - Se NÃO vier (undefined/null/""), comportamento atual: usa ProductPricing.commission por produto.
     let hasCommissionOverride = false;
     let generationCommissionPerc: number | null = null;
     const rawCommission = body.commissionPerc;
@@ -6276,304 +6295,84 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       generationCommissionPerc = parsed;
     }
 
+    if (productIds.length === 0 && !includeAllActiveProducts) {
+      return res.status(400).json({
+        error: "Informe productIds ou includeAllActiveProducts=true.",
+      });
+    }
+
     try {
-      const table = await prisma.priceTable.findUnique({ where: { id: priceTableId } });
-      if (!table) return res.status(404).json({ error: "Tabela de preço não encontrada." });
-      if (table.status !== "ACTIVE") {
-        return res.status(400).json({ error: "Apenas tabelas de preço ativas podem gerar versão DRAFT." });
-      }
-
-      let validatedTaxRule:
-        | (Awaited<ReturnType<typeof prisma.taxRule.findUnique>> & { TaxComponent: Array<{ percentage: Prisma.Decimal }> })
-        | null = null;
-      if (taxRuleId) {
-        const taxRule = await prisma.taxRule.findUnique({
-          where: { id: taxRuleId },
-          include: { TaxComponent: { select: { percentage: true } } },
-        });
-        if (!taxRule) return res.status(404).json({ error: "TaxRule não encontrada." });
-        validatedTaxRule = taxRule;
-      }
-
-      const selectedProducts = await prisma.product.findMany({
-        where: {
-          status: "ACTIVE",
-          type: "PRODUCT",
-          ...(productIds.length > 0
-            ? { id: { in: productIds } }
-            : includeAllActiveProducts
-              ? {}
-              : { id: { in: [] } }),
-        },
-        select: { id: true, sku: true, name: true },
-        orderBy: { sku: "asc" },
-      });
-      if (selectedProducts.length === 0) {
-        return res.status(400).json({ error: "Nenhum produto ativo selecionado para geração da versão." });
-      }
-
-      const version = await prisma.$transaction(async (tx) => {
-        const maxVersion = await tx.priceTableVersion.findFirst({
-          where: { priceTableId },
-          orderBy: { versionNumber: "desc" },
-          select: { versionNumber: true },
-        });
-        return tx.priceTableVersion.create({
-          data: {
-            priceTableId,
-            taxRuleId,
-            versionNumber: Number(maxVersion?.versionNumber ?? 0) + 1,
-            status: "DRAFT",
-            generatedAt: new Date(),
-            notes,
-            commissionPerc: hasCommissionOverride ? generationCommissionPerc : null,
-          },
-        });
+      const result = await generatePriceTableVersionDraftFromProductionCosts(prisma, {
+        priceTableId,
+        effectiveDate,
+        taxRuleId,
+        includeAllActiveProducts,
+        productIds,
+        itemScope,
+        notes,
+        commissionPerc: generationCommissionPerc,
+        hasCommissionOverride,
       });
 
-      const defaultMarginPct = Number(table.defaultMarginPct);
-      const marginRate = defaultMarginPct / 100;
-      const fixedTaxRate = validatedTaxRule
-        ? validatedTaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100
-        : null;
-
-      const cache = await initAnalysisCache();
-      const summary: {
-        productsRead: number;
-        itemsCreated: number;
-        itemsSkipped: number;
-        errors: Array<Record<string, unknown>>;
-        warnings: Array<Record<string, unknown>>;
-        commissionOverridePerc: number | null;
-      } = {
-        productsRead: selectedProducts.length,
-        itemsCreated: 0,
-        itemsSkipped: 0,
-        errors: [],
-        warnings: [],
-        commissionOverridePerc: hasCommissionOverride ? generationCommissionPerc : null,
-      };
-
-      for (const product of selectedProducts) {
-        try {
-          const costData = await getProductCostAnalysis(product.id, cache, true);
-          if (!costData) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
-              code: "PRODUCT_NOT_FOUND",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              message: "Produto não encontrado para análise de custo.",
-            });
-            continue;
-          }
-          if (isCostAnalysisFailure(costData)) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
-              code: String((costData as { error?: string }).error ?? "COST_ANALYSIS_ERROR"),
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              message: String((costData as { message?: string }).message ?? "Erro na análise de custo."),
-            });
-            continue;
-          }
-
-          const excludedBomLines = Array.isArray((costData as any).excludedBomLines)
-            ? ((costData as any).excludedBomLines as Array<Record<string, unknown>>)
-            : [];
-          const costWarnings = Array.isArray((costData as any).warnings)
-            ? ((costData as any).warnings as Array<Record<string, unknown>>)
-            : [];
-          const isPartialCost = Boolean((costData as any).costAnalysisPartial) || excludedBomLines.length > 0;
-          if (isPartialCost) {
-            summary.warnings.push({
-              code: "PARTIAL_COST_ANALYSIS",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              excludedBomLinesCount: excludedBomLines.length,
-              excludedBomLinesPreview: excludedBomLines.slice(0, 10).map((line) => ({
-                sku: line.sku ?? line.childSku ?? null,
-                name: line.name ?? line.childName ?? null,
-                errorCode: line.errorCode ?? line.code ?? null,
-                message: line.message ?? null,
-              })),
-              message: "Produto gerado com custo parcial. Existem componentes excluídos do cálculo.",
-            });
-          }
-          if (costWarnings.length > 0) {
-            summary.warnings.push({
-              code: "COST_ANALYSIS_WARNINGS",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              warningsCount: costWarnings.length,
-              warningsPreview: costWarnings.slice(0, 10).map((w) => ({
-                code: w.code ?? null,
-                severity: w.severity ?? null,
-                message: w.message ?? null,
-              })),
-              message: "Produto com warnings internos no motor de custo.",
-            });
-          }
-
-          const custoFabril = extractOfficialProductFinalUnitCost(costData);
-          if (custoFabril == null || custoFabril <= 0) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
-              code: "NO_COST_AVAILABLE",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              frozenTotalCost: custoFabril,
-              salePrice: null,
-              message:
-                "Produto sem custo calculável (> 0). PriceTableItem não foi criado para evitar preço comercial inválido.",
-            });
-            continue;
-          }
-
-          const productPricing = taxRuleId
-            ? await prisma.productPricing.findUnique({
-                where: { productId_taxRuleId: { productId: product.id, taxRuleId } },
-              })
-            : await prisma.productPricing.findFirst({
-                where: { productId: product.id },
-                include: { TaxRule: { include: { TaxComponent: true } } },
-                orderBy: { createdAt: "desc" },
-              });
-          const productPricingAny = productPricing as any;
-
-          const taxRate = fixedTaxRate ?? (
-            productPricingAny?.TaxRule?.TaxComponent
-              ? productPricingAny.TaxRule.TaxComponent.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100
-              : 0
-          );
-          // Quando a geração veio com commissionPerc no body, sobrepõe ProductPricing.commission para todos os produtos.
-          const commRate = hasCommissionOverride
-            ? Number(generationCommissionPerc) / 100
-            : Number(productPricingAny?.commission ?? 0) / 100;
-          const otherRate = Number(productPricingAny?.otherVariables ?? 0) / 100;
-          const freight = Number(productPricingAny?.freightOut ?? 0);
-
-          if (!productPricing) {
-            summary.warnings.push({
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              message:
-                "Produto sem premissa em ProductPricing. Comissão/outros/frete/taxa fiscal não informada foram assumidos como zero.",
-            });
-          }
-
-          const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-          if (divisor <= 0) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
-              code: "INVALID_PRICING_DIVISOR",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              divisor,
-              rates: {
-                taxRate,
-                commRate,
-                otherRate,
-                marginRate,
-              },
-              message: "Soma de impostos/comissão/outros/margem maior ou igual a 100%.",
-            });
-            continue;
-          }
-
-          const salePrice = (custoFabril + freight) / divisor;
-          if (!Number.isFinite(salePrice) || salePrice <= 0) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
-              code: "INVALID_PRICE_RESULT",
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              frozenTotalCost: custoFabril,
-              salePrice: Number.isFinite(salePrice) ? salePrice : null,
-              message:
-                "Preço calculado inválido (<= 0). PriceTableItem não foi criado para evitar snapshot comercial inconsistente.",
-            });
-            continue;
-          }
-
-          const frozenTaxCost = salePrice * taxRate;
-          const totalCommission = salePrice * commRate;
-          const totalOther = salePrice * otherRate;
-          const frozenOtherCost = totalCommission + totalOther + freight;
-
-          await prisma.priceTableItem.create({
-            data: {
-              priceTableVersionId: version.id,
-              productId: product.id,
-              sku: product.sku,
-              productName: product.name,
-              frozenTotalCost: custoFabril,
-              frozenMaterialCost: Number((costData as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0),
-              frozenHhCost: Number((costData as { totalHH_Unit?: unknown }).totalHH_Unit ?? 0),
-              frozenHmCost: Number((costData as { totalHM_Unit?: unknown }).totalHM_Unit ?? 0),
-              frozenTaxCost,
-              frozenOtherCost,
-              marginPct: defaultMarginPct,
-              salePrice,
-              commissionPerc: commRate * 100,
-              commissionValue: totalCommission,
-              costSnapshotJson: costData as Prisma.InputJsonValue,
-              formulaSnapshotJson: {
-                priceTableId,
-                priceTableVersionId: version.id,
-                taxRuleId: taxRuleId ?? (productPricingAny?.taxRuleId ?? null),
-                marginPct: defaultMarginPct,
-                rates: {
-                  taxRate,
-                  commissionRate: commRate,
-                  otherRate,
-                },
-                freight,
-                divisor,
-                outputs: {
-                  frozenTotalCost: custoFabril,
-                  frozenTaxCost,
-                  frozenOtherCost,
-                  salePrice,
-                },
-              } as Prisma.InputJsonValue,
-            },
-          });
-          summary.itemsCreated += 1;
-        } catch (e) {
-          summary.itemsSkipped += 1;
-          summary.errors.push({
-            code: "UNEXPECTED_ERROR",
-            productId: product.id,
-            sku: product.sku,
-            productName: product.name,
-            message: e instanceof Error ? e.message : String(e),
-          });
-        }
+      if (result.summary.itemsCreated === 0) {
+        return res.status(422).json({
+          error: "Nenhum item de preço foi criado. Revise os erros de custo de produção.",
+          summary: result.summary,
+        });
       }
 
-      const updatedVersion = await prisma.priceTableVersion.update({
-        where: { id: version.id },
-        data: { generationSummaryJson: summary as Prisma.InputJsonValue },
-        include: { PriceTable: true, TaxRule: true },
-      });
-
-      const persistedSummary = (updatedVersion.generationSummaryJson ?? summary) as Prisma.JsonValue;
+      const persistedSummary = result.summary as Prisma.JsonValue;
       return res.status(201).json({
-        version: updatedVersion,
+        version: result.version,
         summary: persistedSummary,
+        productionCostTable: {
+          productionCostTableVersionId: result.summary.productionCostTableVersionId,
+          productionCostTableVersionCode: result.summary.productionCostTableVersionCode,
+          revision: result.summary.productionCostTableRevision,
+          effectiveDate: result.summary.productionCostTableEffectiveDate,
+        },
       });
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (
+        message === NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE ||
+        message.includes("tabela oficial de custo de produção")
+      ) {
+        return res.status(422).json({ error: message });
+      }
+      if (
+        message.includes("não encontrada") ||
+        message.includes("Nenhum produto") ||
+        message.includes("Nenhum item") ||
+        message.includes("inválida")
+      ) {
+        return res.status(400).json({ error: message });
+      }
       console.error("POST /api/price-tables/:priceTableId/versions/generate-draft", e);
       return res.status(500).json({ error: "Erro ao gerar versão DRAFT da tabela de preço." });
+    }
+  });
+
+  app.get("/api/price-tables/production-cost-source", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage", "pricing.view", "settings.price_tables.view"]), async (req, res) => {
+    const dateRaw =
+      typeof req.query.effectiveDate === "string"
+        ? req.query.effectiveDate.trim()
+        : typeof req.query.date === "string"
+          ? req.query.date.trim()
+          : "";
+    if (!dateRaw) {
+      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const effectiveDate = civilDateToLocalDate(dateRaw);
+    if (Number.isNaN(effectiveDate.getTime())) {
+      return res.status(400).json({ error: "effectiveDate inválida." });
+    }
+    try {
+      const preview = await previewProductionCostTableSourceForPriceDraft(prisma, effectiveDate);
+      return res.json({ effectiveDate: dateRaw, ...preview });
+    } catch (e) {
+      console.error("GET /api/price-tables/production-cost-source", e);
+      return res.status(500).json({ error: "Erro ao consultar fonte de custo de produção." });
     }
   });
 
@@ -6629,7 +6428,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   app.get("/api/price-tables/:priceTableId/products/:productId/published-price", requireAppAuth, requireAnyPermission(["pricing.view", "proposals.view", "settings.price_tables.view"]), async (req, res) => {
     const { priceTableId, productId } = req.params;
-    const now = new Date();
+    const dateRaw =
+      typeof req.query.date === "string"
+        ? req.query.date.trim()
+        : typeof req.query.referenceDate === "string"
+          ? req.query.referenceDate.trim()
+          : "";
+    const referenceDate = dateRaw ? civilDateToLocalDate(dateRaw) : new Date();
+    if (dateRaw && Number.isNaN(referenceDate.getTime())) {
+      return res.status(400).json({
+        code: "INVALID_REFERENCE_DATE",
+        message: "referenceDate inválida (yyyy-mm-dd).",
+      });
+    }
     try {
       const priceTable = await prisma.priceTable.findUnique({
         where: { id: priceTableId },
@@ -6655,41 +6466,33 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (!product) {
         return res.status(404).json({
           code: "PRODUCT_NOT_FOUND",
-          message: "Produto não encontrado.",
+          message: "Produto ou componente não encontrado.",
         });
       }
 
-      const publishedVersion = await prisma.priceTableVersion.findFirst({
-        where: {
-          priceTableId,
-          status: "PUBLISHED",
-          AND: [
-            {
-              OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: now } }],
-            },
-            {
-              OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
-            },
-          ],
-        },
-        orderBy: [{ effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
-        select: {
-          id: true,
-          versionNumber: true,
-          status: true,
-          publishedAt: true,
-          effectiveFrom: true,
-          effectiveTo: true,
-          approvedBy: true,
-          generationSummaryJson: true,
-        },
-      });
+      const publishedVersion = await resolvePublishedPriceTableVersionForDate(
+        prisma,
+        priceTableId,
+        referenceDate
+      );
       if (!publishedVersion) {
         return res.status(404).json({
           code: "NO_PUBLISHED_PRICE_TABLE_VERSION",
           message: "Não existe versão publicada vigente para a tabela informada.",
         });
       }
+
+      const publishedVersionSelect = {
+        id: publishedVersion.id,
+        versionNumber: publishedVersion.versionNumber,
+        status: publishedVersion.status,
+        publishedAt: publishedVersion.publishedAt,
+        effectiveFrom: publishedVersion.effectiveFrom,
+        effectiveTo: publishedVersion.effectiveTo,
+        approvedBy: publishedVersion.approvedBy,
+        generationSummaryJson: publishedVersion.generationSummaryJson,
+        productionCostTableVersionId: publishedVersion.productionCostTableVersionId,
+      };
 
       const item = await prisma.priceTableItem.findUnique({
         where: {
@@ -6716,7 +6519,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (!item) {
         return res.status(404).json({
           code: "NO_PRICE_TABLE_ITEM",
-          message: "Produto não encontrado na versão publicada da tabela de preço.",
+          message: "Item não encontrado na versão publicada da tabela de preço.",
         });
       }
 
@@ -6742,12 +6545,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       const warnings: Array<{ code: string; message: string }> = [];
       const versionSummary =
-        publishedVersion.generationSummaryJson && typeof publishedVersion.generationSummaryJson === "object"
-          ? (publishedVersion.generationSummaryJson as Record<string, unknown>)
+        publishedVersionSelect.generationSummaryJson && typeof publishedVersionSelect.generationSummaryJson === "object"
+          ? (publishedVersionSelect.generationSummaryJson as Record<string, unknown>)
           : null;
       const summaryItemsCreated = Number(versionSummary?.itemsCreated);
       if (
-        publishedVersion.id === "151a3cbf-ce7c-435c-97ff-7758015db6bf" ||
+        publishedVersionSelect.id === "151a3cbf-ce7c-435c-97ff-7758015db6bf" ||
         (Number.isFinite(summaryItemsCreated) && summaryItemsCreated <= 2)
       ) {
         warnings.push({
@@ -6766,18 +6569,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           defaultMarginPct: Number(priceTable.defaultMarginPct),
         },
         version: {
-          id: publishedVersion.id,
-          versionNumber: publishedVersion.versionNumber,
-          status: publishedVersion.status,
-          publishedAt: publishedVersion.publishedAt,
-          effectiveFrom: publishedVersion.effectiveFrom,
-          effectiveTo: publishedVersion.effectiveTo,
-          approvedBy: publishedVersion.approvedBy ?? null,
+          id: publishedVersionSelect.id,
+          versionNumber: publishedVersionSelect.versionNumber,
+          status: publishedVersionSelect.status,
+          publishedAt: publishedVersionSelect.publishedAt,
+          effectiveFrom: publishedVersionSelect.effectiveFrom,
+          effectiveTo: publishedVersionSelect.effectiveTo,
+          approvedBy: publishedVersionSelect.approvedBy ?? null,
+          productionCostTableVersionId: publishedVersionSelect.productionCostTableVersionId ?? null,
         },
         product: {
           id: product.id,
           sku: product.sku,
           name: product.name,
+          type: product.type,
         },
         item: {
           priceTableItemId: item.id,

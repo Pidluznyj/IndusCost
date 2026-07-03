@@ -201,24 +201,26 @@ describe("versionedCostArchitectureBaseline — vigência por issueDate", () => 
 });
 
 describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () => {
-  it("generate-draft de preço usa getProductCostAnalysis (custo vivo), não tabela publicada", () => {
+  it("generate-draft de preço usa custo de produção publicado, não getProductCostAnalysis vivo", () => {
     const server = read("server.ts");
     const block = server.slice(
       server.indexOf('app.post("/api/price-tables/:priceTableId/versions/generate-draft"'),
       server.indexOf('app.get("/api/price-table-versions/:id/items"')
     );
-    assert.match(block, /getProductCostAnalysis/);
-    assert.doesNotMatch(block, /getEffectiveProductProductionCost/);
+    assert.match(block, /generatePriceTableVersionDraftFromProductionCosts/);
+    assert.doesNotMatch(block, /getProductCostAnalysis/);
   });
 
-  it("generate-draft de preço filtra somente Product.type = PRODUCT (componentes excluídos hoje)", () => {
-    const server = read("server.ts");
-    const block = server.slice(
-      server.indexOf('app.post("/api/price-tables/:priceTableId/versions/generate-draft"'),
-      server.indexOf('app.get("/api/price-table-versions/:id/items"')
-    );
-    assert.match(block, /type:\s*"PRODUCT"/);
-    assert.doesNotMatch(block, /productionCostTableEligibleItemTypesFilter/);
+  it("generate-draft de preço inclui produtos e componentes via resolveProductsForProductionCostDraft", () => {
+    const pub = read("src/lib/priceTablePublication.server.ts");
+    assert.match(pub, /resolveProductsForProductionCostDraft/);
+    assert.match(pub, /DEFAULT_PRODUCTION_COST_DRAFT_ITEM_SCOPE/);
+    assert.doesNotMatch(pub, /getProductCostAnalysis/);
+  });
+
+  it("PriceTableVersion grava productionCostTableVersionId na geração", () => {
+    const pub = read("src/lib/priceTablePublication.server.ts");
+    assert.match(pub, /productionCostTableVersionId: productionCostVersion\.id/);
   });
 
   it("publicação de preço arquiva versão PUBLISHED anterior — preço congelado por versão", () => {
@@ -229,6 +231,22 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
     );
     assert.match(block, /status:\s*"ARCHIVED"/);
     assert.match(block, /effectiveTo/);
+  });
+
+  it("GET /api/price-tables/production-cost-source preview para geração comercial", () => {
+    const server = read("server.ts");
+    assert.match(server, /\/api\/price-tables\/production-cost-source/);
+    assert.match(server, /previewProductionCostTableSourceForPriceDraft/);
+  });
+
+  it("published-price aceita referenceDate por query", () => {
+    const server = read("server.ts");
+    const block = server.slice(
+      server.indexOf('app.get("/api/price-tables/:priceTableId/products/:productId/published-price"'),
+      server.indexOf('app.post("/api/price-table-versions/:id/publish"')
+    );
+    assert.match(block, /resolvePublishedPriceTableVersionForDate/);
+    assert.match(block, /referenceDate/);
   });
 });
 
