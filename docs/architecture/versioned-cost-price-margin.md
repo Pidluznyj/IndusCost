@@ -214,8 +214,32 @@ Custo zero **nunca** conta como OK — alinhado às regras R7 e resolvers (`unit
 
 ```bash
 npm run test:cost-price-margin-audit
+npm run test:cost-price-margin-flow
 npm run test:sales-orders-margins
 npm run build
+```
+
+### Fluxo ponta a ponta validado (E2E service)
+
+Testes em `src/lib/costPriceMarginFlow.server.test.ts` (`npm run test:cost-price-margin-flow`):
+
+| Cenário | O que valida |
+|---------|----------------|
+| **A — Produto** | MP publicada → DRAFT/publish produção → DRAFT/publish preço → margem OK com `VERSIONED_PRODUCTION_COST` e referência comercial |
+| **B — Componente** | Componente ACTIVE no DRAFT de produção e preço; margem e preço oficial |
+| **C — Mudança MP viva** | `Material.currentCost` alterado não muda snapshot publicado, custo produção ou preço congelado; nova publicação gera nova realidade |
+| **D — Mudança BOM** | Motor retorna custo maior no novo DRAFT; pedido na vigência antiga mantém custo publicado |
+| **E — Pendências** | Item sem custo → `SEM_CUSTO` (nunca zero); componente sem custo na geração de preço → `SEM_CUSTO_PRODUCAO_OFICIAL` |
+| **Legado produção** | `ProductionCostTableVersion` sem `materialCostTableVersionId` ainda resolve margem |
+| **Legado preço** | `PriceTableVersion` sem `productionCostTableVersionId` ainda legível por data |
+
+Sequência oficial (não alterar ordem):
+
+```
+Material ACTIVE → MaterialCostTableVersion PUBLISHED
+  → ProductionCostTableVersion DRAFT (MP congelada) → PUBLISHED
+  → PriceTableVersion DRAFT (custo produção publicado) → PUBLISHED
+  → SalesOrder.issueDate → margem realizada + referência preço tabela
 ```
 
 ---
@@ -226,3 +250,4 @@ npm run build
 |------|-----------|
 | 2026-07-02 | Baseline inicial + testes de caracterização (Fase 0) |
 | 2026-07-02 | Auditoria integrada MP/produção/preço/margem — script, API e UI |
+| 2026-07-02 | Testes E2E service `costPriceMarginFlow.server.test.ts` — fluxo ponta a ponta |
