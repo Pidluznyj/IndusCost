@@ -653,6 +653,26 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "machines.view",
     requires: ["machines.view"],
   }),
+  perm({
+    key: "operations.component-performance.view",
+    label: "Operações — Performance de componentes",
+    group: OPS,
+    module: "machines",
+    description:
+      "Consultar componentes e histórico de alterações de performance produtiva (ciclo, cavidades).",
+    type: "menu",
+  }),
+  perm({
+    key: "operations.component-performance.edit",
+    label: "Operações — Alterar performance de componentes",
+    group: OPS,
+    module: "machines",
+    description:
+      "Registrar alterações operacionais de ciclo, cavidades e demais parâmetros produtivos de componentes.",
+    type: "action",
+    parentKey: "operations.component-performance.view",
+    requires: ["operations.component-performance.view"],
+  }),
   perm({ key: "materials.view", label: "Materiais", group: OPS, module: "materials", description: "Consultar materiais.", type: "menu" }),
   perm({
     key: "materials.edit",

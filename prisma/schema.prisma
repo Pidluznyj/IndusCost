@@ -163,6 +163,7 @@ model Product {
   ProductionCostTableItem ProductionCostTableItem[]
   ProjectStructureLine ProjectStructureLine[]
   InventoryItem        InventoryItem[]
+  ComponentPerformanceChangeLog ComponentPerformanceChangeLog[]
 
   @@index([type], map: "idx_Product_type")
   @@index([isNomusControlled], map: "idx_Product_isNomusControlled")
@@ -191,6 +192,36 @@ model ProductBOM {
   @@index([productId], map: "idx_ProductBOM_productId")
   @@index([isNomusControlled], map: "idx_ProductBOM_isNomusControlled")
   @@index([localException], map: "idx_ProductBOM_localException")
+}
+
+/// Histórico de alterações operacionais de performance produtiva (ciclo, cavidades, etc.).
+model ComponentPerformanceChangeLog {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId             String   @db.Uuid
+  skuSnapshot           String
+  productNameSnapshot   String
+  productTypeSnapshot   ItemType
+  changedAt             DateTime @default(now()) @db.Timestamptz(6)
+  changedByUserId       String   @db.Uuid
+  changedByUserName     String
+  changedByUserEmail    String
+  responsiblePersonName String
+  note                  String?
+  oldCycleTimeSeconds   Decimal? @db.Decimal(20, 6)
+  newCycleTimeSeconds   Decimal? @db.Decimal(20, 6)
+  oldCavities           Int?
+  newCavities           Int?
+  oldValuesJson         Json?
+  newValuesJson         Json?
+  changedFieldsJson     Json
+  source                String   @default("OPERATIONS_PERFORMANCE")
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  Product               Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([productId])
+  @@index([changedAt])
+  @@index([skuSnapshot])
+  @@index([source])
 }
 
 model ProductRouting {
