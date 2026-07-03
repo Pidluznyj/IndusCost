@@ -125,15 +125,92 @@ export function assertProductionCostTableVersionEditable(
   }
 }
 
-export function assertNonNegativeProductionUnitCost(value: number, label = "unitProductionCost"): void {
+export function assertNonNegativeProductionUnitCost(value: number, fieldName = "unitProductionCost"): void {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${label} deve ser um número finito >= 0.`);
+    throw new Error(`${fieldName} deve ser um número finito >= 0.`);
   }
 }
 
-export function assertPositiveProductionUnitCost(value: number, label = "unitProductionCost"): void {
+export type ProductionCostPublicationPendency = {
+  productId: string;
+  productCode: string;
+  productName: string;
+  field: string;
+  reason: string;
+};
+
+/** Converte Decimal Prisma/número — nunca use SKU/código aqui. */
+export function productionCostDecimalToNumber(value: unknown): number {
+  if (value == null) return NaN;
+  if (typeof value === "number") return value;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toNumber" in value &&
+    typeof (value as { toNumber: () => number }).toNumber === "function"
+  ) {
+    return (value as { toNumber: () => number }).toNumber();
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return NaN;
+    return Number(trimmed);
+  }
+  return Number(value);
+}
+
+export function isPublishableProductionUnitCost(value: unknown): boolean {
+  const n = productionCostDecimalToNumber(value);
+  return Number.isFinite(n) && n > 0;
+}
+
+export function formatProductionCostPublicationFieldError(
+  productCode: string,
+  fieldName: string,
+  productName?: string | null
+): string {
+  const code = String(productCode ?? "").trim() || "—";
+  const name = String(productName ?? "").trim();
+  const who = name ? `Produto ${code} (${name})` : `Produto ${code}`;
+  return `${who} — ${fieldName} inválido para publicação.`;
+}
+
+export function classifyProductionCostItemForPublication(input: {
+  id: string;
+  productId: string;
+  productCodeSnapshot: string;
+  productNameSnapshot: string;
+  unitProductionCost: unknown;
+}): ProductionCostPublicationPendency | null {
+  const unit = productionCostDecimalToNumber(input.unitProductionCost);
+  if (Number.isFinite(unit) && unit > 0) return null;
+
+  let reason = "custo unitário deve ser número finito > 0";
+  if (!Number.isFinite(unit)) reason = "custo unitário não é um número finito";
+  else if (unit <= 0) reason = "custo unitário deve ser maior que zero";
+
+  return {
+    productId: input.productId,
+    productCode: input.productCodeSnapshot,
+    productName: input.productNameSnapshot,
+    field: "unitProductionCost",
+    reason,
+  };
+}
+
+export function assertPositiveProductionUnitCost(
+  value: number,
+  fieldName = "unitProductionCost",
+  productCode?: string | null,
+  productName?: string | null
+): void {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${label} deve ser um número finito > 0 para publicação.`);
+    if (productCode != null && String(productCode).trim()) {
+      throw new Error(
+        formatProductionCostPublicationFieldError(productCode, fieldName, productName)
+      );
+    }
+    throw new Error(`${fieldName} deve ser um número finito > 0 para publicação.`);
   }
 }
 

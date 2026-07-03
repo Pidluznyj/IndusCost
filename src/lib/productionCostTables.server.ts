@@ -6,17 +6,19 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { ProductionCostTableVersionStatus } from "@prisma/client";
 import {
   assertNonNegativeProductionUnitCost,
-  assertPositiveProductionUnitCost,
   assertProductionCostTableVersionEditable,
+  classifyProductionCostItemForPublication,
   effectiveProductionCostLookupKey,
   nextProductionCostTableRevision,
   resolveEffectiveProductProductionCostFromCatalog,
   resolveEffectiveProductProductionCostsFromCatalog,
   type EffectiveProductProductionCostResult,
+  type ProductionCostPublicationPendency,
   type ProductionCostTableDraftItemInput,
   type ProductionCostTableItemSnapshot,
   type ProductionCostTableVersionSnapshot,
   type ProductionCostTableVersionWithItems,
+  productionCostDecimalToNumber,
 } from "./productionCostVersioning.js";
 import { startOfCivilDate } from "./financeCivilDate.js";
 
@@ -32,8 +34,35 @@ export {
 } from "./productionCostVersioning.js";
 
 function decimalToNumber(value: unknown): number {
-  const n = Number(value);
+  const n = productionCostDecimalToNumber(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function buildPublicationAuditNote(
+  existingNotes: string | null | undefined,
+  meta: {
+    itemsPublished: number;
+    itemsExcluded: number;
+    pendencies: ProductionCostPublicationPendency[];
+  }
+): string | null {
+  const stamp = new Date().toISOString();
+  const preview =
+    meta.pendencies.length > 0
+      ? meta.pendencies
+          .slice(0, 8)
+          .map((p) => p.productCode)
+          .join(", ")
+      : "";
+  const lines = [
+    `[publicação ${stamp}]`,
+    `itens publicados: ${meta.itemsPublished}`,
+    meta.itemsExcluded > 0 ? `excluídos por custo inválido: ${meta.itemsExcluded}` : null,
+    preview ? `pendências (amostra): ${preview}${meta.pendencies.length > 8 ? "…" : ""}` : null,
+  ].filter(Boolean);
+  const summary = lines.join(" · ");
+  const base = existingNotes?.trim() || "";
+  return base ? `${base}\n${summary}` : summary;
 }
 
 function mapItemRow(row: {
@@ -262,10 +291,35 @@ export type PublishProductionCostTableVersionInput = {
   supersedeVersionId?: string | null;
 };
 
+export type PublishProductionCostTableVersionResult = {
+  version: {
+    id: string;
+    code: string;
+    name: string;
+    effectiveDate: Date;
+    status: ProductionCostTableVersionStatus;
+    revision: number;
+    publishedAt: Date | null;
+    publishedBy: string | null;
+    notes: string | null;
+    items: Array<{
+      id: string;
+      productId: string;
+      productCodeSnapshot: string;
+      productNameSnapshot: string;
+      unitProductionCost: unknown;
+    }>;
+  };
+  itemsPublished: number;
+  itemsExcluded: number;
+  pendencies: ProductionCostPublicationPendency[];
+  partialPublication: boolean;
+};
+
 export async function publishProductionCostTableVersion(
   db: PrismaClient,
   input: PublishProductionCostTableVersionInput
-) {
+): Promise<PublishProductionCostTableVersionResult> {
   const version = await db.productionCostTableVersion.findUnique({
     where: { id: input.versionId },
     include: { items: true },
@@ -277,19 +331,47 @@ export async function publishProductionCostTableVersion(
     throw new Error("Não é possível publicar versão sem itens.");
   }
 
+  const pendencies: ProductionCostPublicationPendency[] = [];
+  const validItemIds: string[] = [];
+  const invalidItemIds: string[] = [];
+
   for (const row of version.items) {
-    assertPositiveProductionUnitCost(decimalToNumber(row.unitProductionCost), row.productCodeSnapshot);
+    const issue = classifyProductionCostItemForPublication(row);
+    if (issue) {
+      pendencies.push(issue);
+      invalidItemIds.push(row.id);
+    } else {
+      validItemIds.push(row.id);
+    }
+  }
+
+  if (validItemIds.length === 0) {
+    throw new Error(
+      "Não é possível publicar: nenhum item com custo unitário válido (> 0) na revisão."
+    );
   }
 
   const publishedAt = new Date();
+  const auditNote = buildPublicationAuditNote(version.notes, {
+    itemsPublished: validItemIds.length,
+    itemsExcluded: invalidItemIds.length,
+    pendencies,
+  });
 
-  return db.$transaction(async (tx) => {
-    const published = await tx.productionCostTableVersion.update({
+  const published = await db.$transaction(async (tx) => {
+    if (invalidItemIds.length > 0) {
+      await tx.productionCostTableItem.deleteMany({
+        where: { id: { in: invalidItemIds } },
+      });
+    }
+
+    const row = await tx.productionCostTableVersion.update({
       where: { id: input.versionId },
       data: {
         status: "PUBLISHED",
         publishedAt,
         publishedBy: input.publishedBy?.trim() || null,
+        notes: auditNote,
       },
       include: { items: true },
     });
@@ -312,8 +394,16 @@ export async function publishProductionCostTableVersion(
       }
     }
 
-    return published;
+    return row;
   });
+
+  return {
+    version: published,
+    itemsPublished: validItemIds.length,
+    itemsExcluded: invalidItemIds.length,
+    pendencies,
+    partialPublication: invalidItemIds.length > 0,
+  };
 }
 
 async function loadResolverCatalog(

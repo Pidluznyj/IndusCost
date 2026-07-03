@@ -7030,18 +7030,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       return res.json({
         version: {
-          id: published.id,
-          code: published.code,
-          name: published.name,
-          effectiveDate: published.effectiveDate,
-          status: published.status,
-          revision: published.revision,
-          publishedAt: published.publishedAt,
-          publishedBy: published.publishedBy,
-          itemsCount: published.items.length,
+          id: published.version.id,
+          code: published.version.code,
+          name: published.version.name,
+          effectiveDate: published.version.effectiveDate,
+          status: published.version.status,
+          revision: published.version.revision,
+          publishedAt: published.version.publishedAt,
+          publishedBy: published.version.publishedBy,
+          itemsCount: published.version.items.length,
         },
         published: true,
         immutable: true,
+        partialPublication: published.partialPublication,
+        itemsPublished: published.itemsPublished,
+        itemsExcluded: published.itemsExcluded,
+        pendencies: published.pendencies,
       });
     } catch (e) {
       console.error("POST /api/production-cost-table-versions/:id/publish", e);

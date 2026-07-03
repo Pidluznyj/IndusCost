@@ -89,7 +89,8 @@ describe("versionedCostArchitectureBaseline — imutabilidade produção", () =>
 
   it("publicação exige custo unitário positivo — não aceita zero silencioso", () => {
     const src = read("src/lib/productionCostTables.server.ts");
-    assert.match(src, /assertPositiveProductionUnitCost/);
+    assert.match(src, /classifyProductionCostItemForPublication/);
+    assert.match(src, /isPublishableProductionUnitCost|productionCostDecimalToNumber/);
   });
 });
 

@@ -251,6 +251,14 @@ function createMockDb(
         items.set(key, row);
         return row;
       },
+      deleteMany: async ({ where }: { where: { id: { in: string[] } } }) => {
+        for (const id of where.id.in) {
+          for (const [key, row] of items.entries()) {
+            if (row.id === id) items.delete(key);
+          }
+        }
+        return { count: where.id.in.length };
+      },
     },
     product: {
       findMany: async ({

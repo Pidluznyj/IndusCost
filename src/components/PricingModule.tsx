@@ -42,7 +42,7 @@ import {
   productionCostDraftIncludeAllLabel,
   type ProductionCostDraftItemScope,
 } from "@/src/lib/productionCostDraftItemScope";
-import { buildProductionCostDraftGenerationSummaryLines } from "@/src/lib/productionCostTablesUi";
+import { buildProductionCostDraftGenerationSummaryLines, buildProductionCostPublicationPendencyLines, type ProductionCostPublicationFeedback } from "@/src/lib/productionCostTablesUi";
 
 type PriceTableLite = {
   id: string;
@@ -278,6 +278,9 @@ export const PricingModule = () => {
   const [productionCostRunning, setProductionCostRunning] = useState(false);
   const [publishingProductionCostVersionId, setPublishingProductionCostVersionId] = useState<string | null>(null);
   const [productionCostGenResult, setProductionCostGenResult] = useState<ProductionCostGenResult | null>(null);
+  const [productionCostPublishFeedback, setProductionCostPublishFeedback] =
+    useState<ProductionCostPublicationFeedback | null>(null);
+  const [productionCostPublishError, setProductionCostPublishError] = useState<string | null>(null);
   const [productionCostVersions, setProductionCostVersions] = useState<ProductionCostVersionLite[]>([]);
   const [productionCostVersionsLoading, setProductionCostVersionsLoading] = useState(false);
   const [productionCostMaterialSource, setProductionCostMaterialSource] = useState<{
@@ -991,6 +994,8 @@ export const PricingModule = () => {
     }
 
     setProductionCostRunning(true);
+    setProductionCostPublishFeedback(null);
+    setProductionCostPublishError(null);
     setProductionCostGenResult(null);
     try {
       const payload = await fetchJsonOk<{
@@ -1091,22 +1096,44 @@ export const PricingModule = () => {
     }
 
     setPublishingProductionCostVersionId(versionId);
+    setProductionCostPublishError(null);
     try {
-      await fetchJsonOk(`/api/production-cost-table-versions/${versionId}/publish`, {
+      const data = await fetchJsonOk<{
+        version: { id: string; code: string; revision: number; status: string };
+        partialPublication?: boolean;
+        itemsPublished?: number;
+        itemsExcluded?: number;
+        pendencies?: Array<{
+          productCode: string;
+          productName: string;
+          field: string;
+          reason: string;
+        }>;
+      }>(`/api/production-cost-table-versions/${versionId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           publishedBy: productionCostPublishedBy.trim() || undefined,
         }),
       });
-      alert(`Custo de produção ${code} rev.${revision} publicado. Histórico anterior preservado quando aplicável.`);
+      setProductionCostPublishFeedback({
+        code: data.version.code ?? code,
+        revision: data.version.revision ?? revision,
+        itemsPublished: Number(data.itemsPublished) || 0,
+        itemsExcluded: Number(data.itemsExcluded) || 0,
+        partialPublication: Boolean(data.partialPublication),
+        pendencies: Array.isArray(data.pendencies) ? data.pendencies : [],
+      });
       setProductionCostGenResult((prev) =>
         prev && prev.versionId === versionId ? { ...prev, status: "PUBLISHED" } : prev
       );
       await fetchProductionCostVersions();
     } catch (error) {
       console.error("POST /api/production-cost-table-versions/:id/publish", error);
-      alert(error instanceof Error ? error.message : "Falha ao publicar versão de custo de produção.");
+      setProductionCostPublishFeedback(null);
+      setProductionCostPublishError(
+        error instanceof Error ? error.message : "Falha ao publicar versão de custo de produção."
+      );
     } finally {
       setPublishingProductionCostVersionId(null);
     }
@@ -1771,6 +1798,30 @@ export const PricingModule = () => {
                   </>
                 )}
               </button>
+
+              {productionCostPublishError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  {productionCostPublishError}
+                </div>
+              ) : null}
+
+              {productionCostPublishFeedback ? (
+                <div
+                  className={cn(
+                    "rounded-xl border p-4 space-y-2 text-sm",
+                    productionCostPublishFeedback.partialPublication
+                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-950"
+                  )}
+                  data-testid="production-cost-publish-feedback"
+                >
+                  <ul className="text-xs space-y-0.5 list-disc pl-4">
+                    {buildProductionCostPublicationPendencyLines(productionCostPublishFeedback).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {productionCostGenResult && (
                 <div

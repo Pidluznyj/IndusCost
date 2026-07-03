@@ -151,3 +151,49 @@ export function buildProductionCostDraftGenerationSummaryLines(
   }
   return lines;
 }
+
+export type ProductionCostPublicationFeedback = {
+  code: string;
+  revision: number;
+  itemsPublished: number;
+  itemsExcluded: number;
+  partialPublication: boolean;
+  pendencies: Array<{
+    productCode: string;
+    productName: string;
+    field: string;
+    reason: string;
+  }>;
+};
+
+export function formatProductionCostPublicationSuccessMessage(
+  feedback: ProductionCostPublicationFeedback
+): string {
+  if (!feedback.partialPublication) {
+    return `Custo de produção ${feedback.code} rev.${feedback.revision} publicado (${feedback.itemsPublished} itens).`;
+  }
+  return `Publicado com pendências: ${feedback.itemsPublished} itens publicados; ${feedback.itemsExcluded} não incluídos por falta de custo válido.`;
+}
+
+export function buildProductionCostPublicationPendencyLines(
+  feedback: ProductionCostPublicationFeedback
+): string[] {
+  const lines = [
+    formatProductionCostPublicationSuccessMessage(feedback),
+    `Itens publicados: ${feedback.itemsPublished}`,
+  ];
+  if (feedback.partialPublication) {
+    lines.push(`Itens excluídos (custo inválido): ${feedback.itemsExcluded}`);
+    const preview = feedback.pendencies.slice(0, 5);
+    if (preview.length > 0) {
+      lines.push("Principais pendências:");
+      for (const row of preview) {
+        lines.push(`• ${row.productCode} — ${row.productName || "sem nome"} (${row.field})`);
+      }
+      if (feedback.pendencies.length > preview.length) {
+        lines.push(`… e mais ${feedback.pendencies.length - preview.length} item(ns).`);
+      }
+    }
+  }
+  return lines;
+}

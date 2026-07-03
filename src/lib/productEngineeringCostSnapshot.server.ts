@@ -435,7 +435,7 @@ export async function refreshProductProductionCostSnapshot(
       });
       result.status = "PUBLISHED";
       result.published = true;
-      result.costTableVersionId = published.id;
+      result.costTableVersionId = published.version.id;
       return result;
     }
 
