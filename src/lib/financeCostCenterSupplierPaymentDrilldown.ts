@@ -58,7 +58,15 @@ import {
   type CostCenterSupplierPaymentYearsPayload,
 } from "@/src/lib/financeCostCenterSupplierPaymentDrilldown.shared.js";
 import { formatAccountsPayableDescriptiveText } from "@/src/lib/financeAccountsPayableDescriptiveText.js";
+import { resolveApClassificationOriginLabel } from "@/src/lib/financeAccountsPayableCostCenterIntegration.js";
+import type { ApIntegrationAllocationRow } from "@/src/lib/financeAccountsPayableCostCenterIntegration.js";
 import { prisma } from "@/src/lib/prisma.js";
+
+export type PaymentDrilldownAllocationRow = AllocationDashboardRow & {
+  source: "AUTO_RULE" | "MANUAL" | "BATCH";
+  lockedManual: boolean;
+  ruleId: string | null;
+};
 
 export {
   COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE,
@@ -175,6 +183,17 @@ function resolveTitleIssueDate(row: FinanceApPaymentDrilldownRow): string | null
   return toCivilDateKey(row.competenceDate) ?? toCivilDateKey(row.createdAtNomus);
 }
 
+function resolveTitleClassificationMeta(allocations: PaymentDrilldownAllocationRow[]) {
+  const integrationRows = allocations as ApIntegrationAllocationRow[];
+  return {
+    classificationOriginLabel: resolveApClassificationOriginLabel(integrationRows),
+    isManualClassification: allocations.some(
+      (allocation) => allocation.source === "MANUAL" || allocation.lockedManual
+    ),
+    primaryCostCenterId: allocations[0]?.costCenterId ?? null,
+  };
+}
+
 function resolveTitleDescriptiveText(row: FinanceApPaymentDrilldownRow): string {
   return formatAccountsPayableDescriptiveText({
     description: row.description,
@@ -203,7 +222,7 @@ function finiteMoney(value: number): number {
 }
 
 function resolveAllocationShareAmount(
-  allocation: Pick<AllocationDashboardRow, "amount" | "percentage">,
+  allocation: Pick<PaymentDrilldownAllocationRow, "amount" | "percentage">,
   titleAmount: number
 ): number {
   const explicit = decimalFieldToNumber(allocation.amount);
@@ -234,7 +253,7 @@ function resolveFinancialSupplier(
 
 function matchesSupplierFilter(
   row: FinanceApDashboardRow,
-  allocations: AllocationDashboardRow[],
+  allocations: PaymentDrilldownAllocationRow[],
   supplierId: string | undefined,
   suppliers: SupplierWithAliases[]
 ): boolean {
@@ -281,7 +300,7 @@ export function isTitlePaidInPeriod(
 
 export function resolveSupplierPaidAttributionAmount(
   row: FinanceApDashboardRow,
-  rowAllocations: AllocationDashboardRow[],
+  rowAllocations: PaymentDrilldownAllocationRow[],
   filters: FinanceCostCenterDashboardFilters
 ): number {
   const realized = resolveFinanceApRealizedAmount(row);
@@ -320,7 +339,7 @@ export function resolveSupplierPaidAttributionAmount(
 }
 
 function resolveCostCenterLabels(
-  rowAllocations: AllocationDashboardRow[],
+  rowAllocations: PaymentDrilldownAllocationRow[],
   ccMeta: Map<string, CostCenterMetaRow>,
   costCenterFilter?: string
 ): { name: string; code: string | null } {
@@ -348,7 +367,7 @@ function resolveCostCenterLabels(
 
 type SupplierPaymentContext = {
   rows: FinanceApPaymentDrilldownRow[];
-  allocationsByPayable: Map<number, AllocationDashboardRow[]>;
+  allocationsByPayable: Map<number, PaymentDrilldownAllocationRow[]>;
   suppliers: SupplierWithAliases[];
   ccMeta: Map<string, CostCenterMetaRow>;
   filters: FinanceCostCenterDashboardFilters;
@@ -413,7 +432,7 @@ function iterateSupplierPaidRows(
     display: { name: string; document: string | null };
     paidAmount: number;
     paidAt: Date;
-    rowAllocations: AllocationDashboardRow[];
+    rowAllocations: PaymentDrilldownAllocationRow[];
   }) => void
 ): void {
   const scopeFilters = stripCostCenterDashboardPeriodFilters(ctx.filters);
@@ -631,6 +650,7 @@ export function buildCostCenterSupplierPaymentTitles(
       toCivilDateKey(match.row.paymentDate) ??
       toCivilDateKey(match.row.settlementDate);
     const drilldownRow = match.row as FinanceApPaymentDrilldownRow;
+    const classificationMeta = resolveTitleClassificationMeta(match.rowAllocations);
     matches.push({
       accountsPayableId: match.row.externalId,
       paymentDate: toCivilDateKey(match.paidAt),
@@ -649,6 +669,9 @@ export function buildCostCenterSupplierPaymentTitles(
       statusLabel: status,
       companyName: match.row.companyName,
       nomusClassification: drilldownRow.classification ?? null,
+      classificationOriginLabel: classificationMeta.classificationOriginLabel,
+      isManualClassification: classificationMeta.isManualClassification,
+      primaryCostCenterId: classificationMeta.primaryCostCenterId,
     });
   });
 
@@ -729,9 +752,25 @@ export async function loadCostCenterSupplierPaymentContext(
           })
         ).map(mapPrismaRowToPaymentDrilldownRow);
   const allocationIds = rows.map((row) => row.externalId);
-  const allocations = await deps.loadAllocations(allocationIds);
-  const allocationsByPayable = new Map<number, AllocationDashboardRow[]>();
-  for (const allocation of allocations) {
+  const allocationRows =
+    allocationIds.length === 0
+      ? []
+      : await prisma.accountsPayableCostCenterAllocation.findMany({
+          where: { accountsPayableId: { in: allocationIds } },
+          select: {
+            id: true,
+            accountsPayableId: true,
+            supplierId: true,
+            costCenterId: true,
+            amount: true,
+            percentage: true,
+            source: true,
+            lockedManual: true,
+            ruleId: true,
+          },
+        });
+  const allocationsByPayable = new Map<number, PaymentDrilldownAllocationRow[]>();
+  for (const allocation of allocationRows) {
     const list = allocationsByPayable.get(allocation.accountsPayableId) ?? [];
     list.push(allocation);
     allocationsByPayable.set(allocation.accountsPayableId, list);

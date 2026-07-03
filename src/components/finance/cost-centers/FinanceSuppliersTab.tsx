@@ -56,6 +56,7 @@ type Props = {
   canViewSuppliers: boolean;
   canManageSuppliers: boolean;
   canDeleteSupplier: boolean;
+  canReclassifyTitles: boolean;
   onNavigateTab: (tab: FinanceCostCentersTabId) => void;
   onSuppliersChanged?: () => void;
 };
@@ -66,6 +67,7 @@ export function FinanceSuppliersTab({
   canViewSuppliers,
   canManageSuppliers,
   canDeleteSupplier,
+  canReclassifyTitles,
   onNavigateTab,
   onSuppliersChanged,
 }: Props) {
@@ -446,6 +448,7 @@ export function FinanceSuppliersTab({
         open={Boolean(paidTitlesSupplier)}
         supplier={paidTitlesSupplier}
         filters={appliedFilters}
+        canReclassify={canReclassifyTitles}
         onClose={() => setPaidTitlesSupplier(null)}
       />
 

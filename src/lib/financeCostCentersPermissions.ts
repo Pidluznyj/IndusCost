@@ -66,6 +66,10 @@ export function canViewFinanceCostCenterAudit(auth: FinanceCostCentersPermission
   );
 }
 
+export function canManageFinanceApAllocations(auth: FinanceCostCentersPermissionCheck): boolean {
+  return auth.hasPermission("finance.ap_allocations.manage");
+}
+
 export function canReallocateFinanceCostCenterAllocations(
   auth: FinanceCostCentersPermissionCheck & { role?: string }
 ): boolean {

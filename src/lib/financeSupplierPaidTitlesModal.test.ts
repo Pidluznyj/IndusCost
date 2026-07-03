@@ -17,12 +17,13 @@ describe("FinanceSupplierPaidTitlesModal", () => {
     assert.match(modal, /Descrição \/ comentário/);
     assert.match(modal, /descriptiveText/);
     assert.match(modal, /Nenhum título pago encontrado para este fornecedor no filtro atual/);
+    assert.match(modal, /finance-supplier-paid-title-reclassify-button/);
+    assert.match(modal, /Manual/);
   });
 
-  it("modal é somente leitura e não altera classificação", () => {
+  it("modal principal não altera classificação diretamente", () => {
     const modal = read("src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx");
-    assert.doesNotMatch(modal, /POST/);
-    assert.doesNotMatch(modal, /PATCH/);
+    assert.doesNotMatch(modal, /cost-center-reclassification/);
     assert.doesNotMatch(modal, /supplier-cost-center-rules/);
     assert.match(modal, /buildFinanceCostCentersDashboardQuery/);
   });

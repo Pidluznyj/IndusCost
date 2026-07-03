@@ -437,6 +437,7 @@ function summarizeAuditEntry(entry: {
   if (entry.action === "CREATE") return "Classificação criada";
   if (entry.action === "UPDATE") return "Classificação atualizada";
   if (entry.action === "DELETE") return "Classificação removida";
+  if (entry.action === "MANUAL_RECLASSIFICATION") return "Reclassificação manual de centro de custo";
   return entry.action;
 }
 

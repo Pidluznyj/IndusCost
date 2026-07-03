@@ -16,6 +16,7 @@ import {
   previewAccountsPayableAllocation,
   previewBatchAccountsPayableAllocation,
   protectManualLockedAllocations,
+  reclassifyAccountsPayableAllocation,
   resolveCostCenterRulesForSupplier,
   resolveSupplierForAccountsPayable,
   resolveTitleAllocationBaseAmount,
@@ -482,6 +483,185 @@ describe("financeAccountsPayableCostCenterAllocation", () => {
 
   it("resolveTitleAllocationBaseAmount usa balancePayable", () => {
     assert.equal(resolveTitleAllocationBaseAmount({ externalId: 1, balancePayable: 250 }), 250);
+  });
+});
+
+describe("reclassifyAccountsPayableAllocation — override manual por título", () => {
+  function baseState(over: Partial<MockState> = {}): MockState {
+    return {
+      apRows: [apRow(1000), apRow(1001)],
+      suppliers: [supplierActive()],
+      rules: [rule("r1", "cc-auto", 100)],
+      allocations: [
+        {
+          id: "auto-1000",
+          accountsPayableId: 1000,
+          supplierId: "sup-1",
+          costCenterId: "cc-auto",
+          amount: new Prisma.Decimal(1000),
+          percentage: new Prisma.Decimal(100),
+          source: "AUTO_RULE",
+          confidence: null,
+          lockedManual: false,
+          ruleId: "r1",
+          notes: null,
+        },
+        {
+          id: "auto-1001",
+          accountsPayableId: 1001,
+          supplierId: "sup-1",
+          costCenterId: "cc-auto",
+          amount: new Prisma.Decimal(1000),
+          percentage: new Prisma.Decimal(100),
+          source: "AUTO_RULE",
+          confidence: null,
+          lockedManual: false,
+          ruleId: "r1",
+          notes: null,
+        },
+      ],
+      auditLogs: [],
+      costCenters: [
+        { id: "cc-auto", code: "LOG", name: "Logística", status: "ACTIVE" },
+        { id: "cc-manual", code: "MAN", name: "Manutenção", status: "ACTIVE" },
+      ],
+      apWrites: 0,
+      nextAllocationId: 10,
+      auditShouldFailOnNth: null,
+      auditCreateCount: 0,
+      transactionActive: false,
+      ...over,
+    };
+  }
+
+  const user = { userId: "user-1", userName: "Paulo" };
+
+  it("título classificado automaticamente pode ser reclassificado manualmente", async () => {
+    const state = baseState();
+    const result = await reclassifyAccountsPayableAllocation(
+      createMockDeps(state),
+      1000,
+      {
+        lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+        reason: "Título referente a manutenção, não frete/logística.",
+        lockedManual: true,
+      },
+      user
+    );
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]!.costCenterId, "cc-manual");
+    assert.equal(result.items[0]!.source, "MANUAL");
+    assert.equal(result.items[0]!.lockedManual, true);
+    assert.equal(result.items[0]!.notes, "Título referente a manutenção, não frete/logística.");
+  });
+
+  it("centro antigo e novo são gravados na auditoria", async () => {
+    const state = baseState();
+    await reclassifyAccountsPayableAllocation(
+      createMockDeps(state),
+      1000,
+      {
+        lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+        reason: "Correção pontual.",
+        lockedManual: true,
+      },
+      user
+    );
+    const reclassLog = state.auditLogs.find(
+      (log) => log.action === FINANCE_AP_ALLOCATION_AUDIT_ACTION.MANUAL_RECLASSIFICATION
+    );
+    assert.ok(reclassLog);
+    const before = reclassLog!.beforeJson as { allocations: Array<{ costCenterId: string }> };
+    const after = reclassLog!.afterJson as {
+      origin: string;
+      reason: string;
+      allocations: Array<{ costCenterId: string }>;
+    };
+    assert.equal(before.allocations[0]!.costCenterId, "cc-auto");
+    assert.equal(after.allocations[0]!.costCenterId, "cc-manual");
+    assert.equal(after.origin, "MANUAL_RECLASSIFICATION");
+    assert.equal(after.reason, "Correção pontual.");
+    assert.equal(reclassLog!.userId, "user-1");
+    assert.equal(reclassLog!.userName, "Paulo");
+  });
+
+  it("motivo é obrigatório", async () => {
+    const state = baseState();
+    await assert.rejects(
+      () =>
+        reclassifyAccountsPayableAllocation(
+          createMockDeps(state),
+          1000,
+          {
+            lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+            reason: "   ",
+            lockedManual: true,
+          },
+          user
+        ),
+      (error: unknown) =>
+        error instanceof FinanceApAllocationError && error.code === "MISSING_REASON"
+    );
+  });
+
+  it("classificação manual prevalece sobre regra automática", async () => {
+    const state = baseState();
+    await reclassifyAccountsPayableAllocation(
+      createMockDeps(state),
+      1000,
+      {
+        lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+        reason: "Override manual.",
+        lockedManual: true,
+      },
+      user
+    );
+    const preview = await previewAccountsPayableAllocation(createMockDeps(state), 1000);
+    assert.equal(preview.action, "skip");
+    assert.equal(preview.skipReason, "MANUAL_LOCKED");
+  });
+
+  it("reprocessamento em lote não sobrescreve override manual", async () => {
+    const state = baseState();
+    await reclassifyAccountsPayableAllocation(
+      createMockDeps(state),
+      1000,
+      {
+        lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+        reason: "Override manual.",
+        lockedManual: true,
+      },
+      user
+    );
+    const batch = await applyBatchAccountsPayableAllocation(
+      createMockDeps(state),
+      { externalIds: [1000, 1001] },
+      FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT,
+      user
+    );
+    assert.equal(batch.summary.skippedManualLocked, 1);
+    const title1000 = state.allocations.filter((row) => row.accountsPayableId === 1000);
+    assert.equal(title1000.length, 1);
+    assert.equal(title1000[0]!.costCenterId, "cc-manual");
+    assert.equal(title1000[0]!.lockedManual, true);
+  });
+
+  it("reclassificar um título não altera outros títulos do mesmo fornecedor", async () => {
+    const state = baseState();
+    await reclassifyAccountsPayableAllocation(
+      createMockDeps(state),
+      1000,
+      {
+        lines: [{ costCenterId: "cc-manual", percentage: 100 }],
+        reason: "Somente este título.",
+        lockedManual: true,
+      },
+      user
+    );
+    const other = state.allocations.filter((row) => row.accountsPayableId === 1001);
+    assert.equal(other.length, 1);
+    assert.equal(other[0]!.costCenterId, "cc-auto");
+    assert.equal(other[0]!.lockedManual, false);
   });
 });
 

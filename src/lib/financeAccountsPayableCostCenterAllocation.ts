@@ -67,6 +67,12 @@ export type ManualAllocationInput = {
   notes?: string | null;
 };
 
+export type ReclassificationInput = {
+  lines: AllocationLineInput[];
+  reason: string;
+  lockedManual?: boolean;
+};
+
 export type AllocationRecord = {
   id: string;
   accountsPayableId: number;
@@ -619,10 +625,11 @@ async function persistAllocationsForTitle(
     lockedManual: boolean;
     supplierId: string | null;
     notes?: string | null;
+    allowReplaceManualLocked?: boolean;
   }
 ): Promise<AllocationRecord[]> {
   const existing = await deps.loadAllocationsForPayable(ap.externalId);
-  if (hasManualLockedAllocation(existing)) {
+  if (!options.allowReplaceManualLocked && hasManualLockedAllocation(existing)) {
     throw new FinanceApAllocationError(
       "MANUAL_LOCKED",
       "Título possui classificação manual bloqueada."
@@ -632,9 +639,9 @@ async function persistAllocationsForTitle(
   const titleAmount = resolveTitleAllocationBaseAmount(ap);
   validateAllocationTotals(lines, titleAmount);
 
-  const removableIds = existing
-    .filter((row) => !isManualLockedAllocation(row))
-    .map((row) => row.id);
+  const removableIds = options.allowReplaceManualLocked
+    ? existing.map((row) => row.id)
+    : existing.filter((row) => !isManualLockedAllocation(row)).map((row) => row.id);
 
   const created = await deps.replaceAllocationsForPayable(
     ap.externalId,
@@ -683,6 +690,139 @@ async function persistAllocationsForTitle(
   }
 
   return created;
+}
+
+async function buildReclassificationAuditSnapshot(
+  deps: FinanceApAllocationDeps,
+  ap: ApAllocationTitleRow,
+  existing: AllocationRecord[],
+  supplier: Awaited<ReturnType<typeof resolveSupplierForAccountsPayable>>
+): Promise<Prisma.InputJsonValue> {
+  const allocations = await Promise.all(
+    existing.map(async (allocation) => {
+      const meta = await deps.loadCostCenterMeta(allocation.costCenterId);
+      return {
+        allocationId: allocation.id,
+        costCenterId: allocation.costCenterId,
+        costCenterCode: meta?.code ?? allocation.costCenterId,
+        costCenterName: meta?.name ?? allocation.costCenterId,
+        percentage: decimalToNumber(allocation.percentage),
+        amount: decimalToNumber(allocation.amount) || null,
+        source: allocation.source,
+        lockedManual: allocation.lockedManual,
+      };
+    })
+  );
+  return {
+    accountsPayableId: ap.externalId,
+    documentNumber: ap.documentNumber,
+    description: ap.description,
+    supplierId: supplier?.id ?? null,
+    supplierName: supplier?.displayName ?? ap.personName,
+    titleAmount: resolveTitleAllocationBaseAmount(ap),
+    allocations,
+  };
+}
+
+async function buildReclassificationAfterSnapshot(
+  deps: FinanceApAllocationDeps,
+  ap: ApAllocationTitleRow,
+  created: AllocationRecord[],
+  input: ReclassificationInput,
+  supplier: Awaited<ReturnType<typeof resolveSupplierForAccountsPayable>>
+): Promise<Prisma.InputJsonValue> {
+  const allocations = await Promise.all(
+    created.map(async (allocation) => {
+      const meta = await deps.loadCostCenterMeta(allocation.costCenterId);
+      return {
+        allocationId: allocation.id,
+        costCenterId: allocation.costCenterId,
+        costCenterCode: meta?.code ?? allocation.costCenterId,
+        costCenterName: meta?.name ?? allocation.costCenterId,
+        percentage: decimalToNumber(allocation.percentage),
+        amount: decimalToNumber(allocation.amount) || null,
+        source: allocation.source,
+        lockedManual: allocation.lockedManual,
+      };
+    })
+  );
+  return {
+    accountsPayableId: ap.externalId,
+    documentNumber: ap.documentNumber,
+    description: ap.description,
+    supplierId: supplier?.id ?? null,
+    supplierName: supplier?.displayName ?? ap.personName,
+    titleAmount: resolveTitleAllocationBaseAmount(ap),
+    reason: input.reason.trim(),
+    origin: "MANUAL_RECLASSIFICATION",
+    allocations,
+  };
+}
+
+export async function reclassifyAccountsPayableAllocation(
+  deps: FinanceApAllocationDeps,
+  externalId: number,
+  input: ReclassificationInput,
+  user: AllocationUserContext
+): Promise<{ items: AllocationRecord[] }> {
+  const reason = input.reason.trim();
+  if (!reason) {
+    throw new FinanceApAllocationError("MISSING_REASON", "Motivo da reclassificação é obrigatório.");
+  }
+
+  const ap = await deps.loadApById(externalId);
+  if (!ap) throw new FinanceApAllocationError("AP_NOT_FOUND", "Título AP não encontrado.");
+
+  const closedThroughDate = await deps.getClosedThroughDate();
+  if (isTitleInClosedPeriod(ap, closedThroughDate)) {
+    throw new FinanceApAllocationError(
+      "CLOSED_PERIOD",
+      "Título em período fechado não pode ser reclassificado."
+    );
+  }
+
+  const suppliers = await deps.loadAllSuppliers();
+  const supplier = resolveSupplierForAccountsPayable(ap, suppliers);
+  const existing = await deps.loadAllocationsForPayable(externalId);
+  const beforeSnapshot = await buildReclassificationAuditSnapshot(deps, ap, existing, supplier);
+  const lines = buildLinesFromManualInput(
+    { lines: input.lines, lockedManual: input.lockedManual !== false },
+    resolveTitleAllocationBaseAmount(ap)
+  );
+
+  for (const line of lines) {
+    const cc = await deps.loadCostCenterMeta(line.costCenterId);
+    if (!cc || cc.status !== "ACTIVE") {
+      throw new FinanceApAllocationError(
+        "INACTIVE_COST_CENTER",
+        "Centro de custo inválido ou inativo."
+      );
+    }
+  }
+
+  const created = await deps.runInTransaction(async (txDeps) => {
+    const rows = await persistAllocationsForTitle(txDeps, ap, lines, user, {
+      source: "MANUAL",
+      lockedManual: input.lockedManual !== false,
+      supplierId: supplier?.id ?? null,
+      notes: reason,
+      allowReplaceManualLocked: true,
+    });
+
+    await txDeps.createAuditLog({
+      entityType: FINANCE_AP_ALLOCATION_AUDIT_ENTITY.ALLOCATION,
+      entityId: String(ap.externalId),
+      action: FINANCE_AP_ALLOCATION_AUDIT_ACTION.MANUAL_RECLASSIFICATION,
+      beforeJson: beforeSnapshot,
+      afterJson: await buildReclassificationAfterSnapshot(deps, ap, rows, input, supplier),
+      userId: user.userId,
+      userName: user.userName,
+    });
+
+    return rows;
+  });
+
+  return { items: created };
 }
 
 export async function applyAccountsPayableAllocation(
@@ -1220,6 +1360,19 @@ export async function applyAccountsPayableAllocationDefault(
   return applyAccountsPayableAllocation(createDefaultFinanceApAllocationDeps(), externalId, input, user);
 }
 
+export async function reclassifyAccountsPayableAllocationDefault(
+  externalId: number,
+  input: ReclassificationInput,
+  user: AllocationUserContext
+) {
+  return reclassifyAccountsPayableAllocation(
+    createDefaultFinanceApAllocationDeps(),
+    externalId,
+    input,
+    user
+  );
+}
+
 export async function applyBatchAccountsPayableAllocationDefault(
   filters: BatchAllocationFilters,
   confirmationText: string,
@@ -1277,6 +1430,23 @@ export function parseManualAllocationBody(body: unknown): ManualAllocationInput 
     lines,
     lockedManual: record.lockedManual === false ? false : true,
     notes: typeof record.notes === "string" ? record.notes : null,
+  };
+}
+
+export function parseReclassificationBody(body: unknown): ReclassificationInput {
+  const manual = parseManualAllocationBody(body);
+  if (body == null || typeof body !== "object" || Array.isArray(body)) {
+    throw new FinanceApAllocationError("INVALID_BODY", "Body inválido.");
+  }
+  const record = body as Record<string, unknown>;
+  const reason = typeof record.reason === "string" ? record.reason.trim() : "";
+  if (!reason) {
+    throw new FinanceApAllocationError("MISSING_REASON", "Motivo da reclassificação é obrigatório.");
+  }
+  return {
+    lines: manual.lines,
+    reason,
+    lockedManual: manual.lockedManual,
   };
 }
 

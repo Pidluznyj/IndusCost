@@ -78,6 +78,9 @@ export type CostCenterSupplierPaymentTitleRow = {
   statusLabel: string;
   companyName: string | null;
   nomusClassification: string | null;
+  classificationOriginLabel: string;
+  isManualClassification: boolean;
+  primaryCostCenterId: string | null;
 };
 
 export type CostCenterSupplierPaymentTitlesPayload = {

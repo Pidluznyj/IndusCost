@@ -10,7 +10,9 @@ import {
   parseBatchAllocationApplyBody,
   parseBatchAllocationFiltersBody,
   parseManualAllocationBody,
+  parseReclassificationBody,
   previewBatchAccountsPayableAllocationDefault,
+  reclassifyAccountsPayableAllocationDefault,
 } from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
@@ -166,6 +168,36 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
         console.error("POST /api/finance/accounts-payable/:id/cost-center-allocation", error);
         return res.status(500).json(
           financeApiErrorJson("Erro ao classificar título AP manualmente.", error)
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/finance/accounts-payable/:id/cost-center-reclassification",
+    ...manageGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const externalId = parseExternalIdParam(req.params.id);
+        const input = parseReclassificationBody(req.body);
+        const result = await reclassifyAccountsPayableAllocationDefault(externalId, input, {
+          userId: user.id,
+          userName: user.name ?? user.email ?? null,
+        });
+        return res.status(200).json(result);
+      } catch (error) {
+        if (error instanceof FinanceApAllocationError) {
+          return handleAllocationError(res, error);
+        }
+        console.error(
+          "POST /api/finance/accounts-payable/:id/cost-center-reclassification",
+          error
+        );
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao reclassificar título manualmente.", error)
         );
       }
     }

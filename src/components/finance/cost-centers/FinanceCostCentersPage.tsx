@@ -18,6 +18,7 @@ import {
 } from "@/src/lib/financeCostCentersPageTypes";
 import {
   canApplyFinanceApAllocationsBatch,
+  canManageFinanceApAllocations,
   canManageFinanceCostCenterRules,
   canManageFinanceCostCenters,
   canViewFinanceApAllocations,
@@ -147,6 +148,7 @@ export function FinanceCostCentersPage() {
   const canManageRules = canManageFinanceCostCenterRules(auth);
   const canViewRules = canViewFinanceCostCenterRules(auth);
   const canApplyBatch = canApplyFinanceApAllocationsBatch(auth);
+  const canReclassifyTitles = canManageFinanceApAllocations(auth);
   const canViewAllocations = canViewFinanceApAllocations(auth);
   const canViewAudit = canViewFinanceCostCenterAudit(auth);
 
@@ -335,6 +337,7 @@ export function FinanceCostCentersPage() {
           canViewSuppliers={canViewSuppliers}
           canManageSuppliers={canManageSuppliers}
           canDeleteSupplier={canDeleteSupplier}
+          canReclassifyTitles={canReclassifyTitles}
           onNavigateTab={setActiveTab}
           onSuppliersChanged={() => void load()}
         />

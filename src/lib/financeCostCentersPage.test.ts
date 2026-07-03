@@ -110,7 +110,9 @@ describe("financeCostCentersPage", () => {
     assert.match(unclassified, /FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT/);
     assert.match(suppliers, /finance-suppliers-view-paid-titles-button/);
     assert.match(suppliers, /FinanceSupplierPaidTitlesModal/);
+    assert.match(suppliers, /canReclassifyTitles/);
     assert.match(read("src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx"), /supplier-payment-titles/);
+    assert.match(read("src/components/finance/cost-centers/FinanceApTitleReclassifyModal.tsx"), /cost-center-reclassification/);
   });
 
   it("não importa Prisma no frontend", () => {
