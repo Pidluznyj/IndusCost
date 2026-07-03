@@ -87,6 +87,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.inventory,
     MODULE_LABELS.purchases,
     MODULE_LABELS.machines,
+    MODULE_LABELS["operations-performance"],
     MODULE_LABELS.maintenance,
     MODULE_LABELS.fleet,
   ],

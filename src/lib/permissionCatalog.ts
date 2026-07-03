@@ -657,7 +657,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     key: "operations.component-performance.view",
     label: "Operações — Performance de componentes",
     group: OPS,
-    module: "machines",
+    module: "operations-performance",
     description:
       "Consultar componentes e histórico de alterações de performance produtiva (ciclo, cavidades).",
     type: "menu",
@@ -666,7 +666,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     key: "operations.component-performance.edit",
     label: "Operações — Alterar performance de componentes",
     group: OPS,
-    module: "machines",
+    module: "operations-performance",
     description:
       "Registrar alterações operacionais de ciclo, cavidades e demais parâmetros produtivos de componentes.",
     type: "action",

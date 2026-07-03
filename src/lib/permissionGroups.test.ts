@@ -75,13 +75,14 @@ describe("permissionGroups — agrupamento por área", () => {
     assert.ok(keys.some((k) => k.startsWith("projects.")));
   });
 
-  it("Operações contém estoque, compras, máquinas, manutenção e frota", () => {
+  it("Operações contém estoque, compras, máquinas, performance, manutenção e frota", () => {
     const operacoes = buildPermissionAccessGroupSections([]).find((g) => g.id === "operacoes");
     assert.ok(operacoes);
     const keys = operacoes!.permissionKeys;
     assert.ok(keys.some((k) => k.startsWith("inventory.")));
     assert.ok(keys.some((k) => k.startsWith("purchases.")));
     assert.ok(keys.some((k) => k.startsWith("machines.")));
+    assert.ok(keys.some((k) => k.startsWith("operations.component-performance.")));
     assert.ok(keys.some((k) => k.startsWith("maintenance.")));
     assert.ok(keys.some((k) => k.startsWith("fleet.")));
   });

@@ -72,6 +72,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   inventory: "operacoes",
   fleet: "operacoes",
   machines: "operacoes",
+  "operations-performance": "operacoes",
   employees: "administracao",
   settings: "administracao",
   costs: "outros",
@@ -151,6 +152,7 @@ export const PERMISSION_ACCESS_GROUP_DEFINITIONS: readonly PermissionAccessGroup
       MODULE_LABELS.inventory,
       MODULE_LABELS.purchases,
       MODULE_LABELS.machines,
+      MODULE_LABELS["operations-performance"],
       MODULE_LABELS.maintenance,
       MODULE_LABELS.fleet,
     ],
@@ -354,7 +356,7 @@ export function getRelatedSidebarModulesForAccessGroup(
     case "financeiro":
       return ["finance", "opex", "taxes", "reports"];
     case "operacoes":
-      return ["inventory", "purchases", "machines", "maintenance", "fleet"];
+      return ["inventory", "purchases", "machines", "operations-performance", "maintenance", "fleet"];
     case "administracao":
       return ["employees", "settings", "guide"];
     default:

@@ -98,6 +98,7 @@
     "test:versioned-cost-baseline": "tsx --test src/lib/versionedCostArchitectureBaseline.test.ts",
     "test:cost-price-margin-audit": "tsx --test src/lib/costPriceMarginIntegratedAudit.test.ts",
     "test:component-performance": "tsx --test src/lib/componentPerformanceChange.test.ts src/lib/componentPerformanceChange.server.test.ts src/lib/componentPerformanceRoutes.test.ts",
+    "test:operations-performance": "tsx --test src/lib/componentPerformanceChange.test.ts src/lib/operationsPerformanceModule.test.tsx src/lib/operationsPerformanceNavigation.test.ts",
     "test:cost-price-margin-flow": "tsx --test src/lib/costPriceMarginFlow.server.test.ts",
     "test:production-cost-tables": "tsx --test src/lib/versionedCostArchitectureBaseline.test.ts src/lib/materialCostEngineResolver.test.ts src/lib/productionCostDraftItemScope.test.ts src/lib/productionCostCalculationSnapshotAudit.test.ts src/lib/productionCostTablesUi.test.ts src/lib/productionCostTablesRoutes.test.ts src/lib/productionCostTables.server.test.ts src/lib/productionCostPublication.server.test.ts src/lib/productEngineeringCostSnapshot.test.ts src/lib/productionCostVersioning.test.ts src/lib/productionCostPublication.test.ts src/lib/productProductionCostPublicationStatus.test.ts src/lib/productCostPublicationUi.test.ts",
     "test:price-table-publication": "tsx --test src/lib/priceTablePublication.test.ts src/lib/priceTableProductionCostResolver.test.ts src/lib/priceTablePublication.server.test.ts",

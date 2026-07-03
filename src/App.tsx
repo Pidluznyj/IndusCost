@@ -30,6 +30,7 @@ import { ProjectClientReportPage } from "./components/projects/ProjectClientRepo
 import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
 import { InventoryModule } from "./components/InventoryModule";
+import { OperationsPerformanceModule } from "./components/operations/OperationsPerformanceModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
 import { FleetPublicVehicleChecklistPage } from "./components/fleet/FleetPublicVehicleChecklistPage";
@@ -376,6 +377,17 @@ export default function App() {
               description="Controle de solicitações de manutenção predial/facilities, responsáveis, status e materiais."
             >
               <MaintenanceModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="operations-performance"
+          element={
+            <ModulePageShell
+              title="Performance de Componentes"
+              description="Atualize ciclo e cavidades dos componentes. Alterações impactam apenas novas gerações de DRAFT de custo; custos publicados permanecem congelados."
+            >
+              <OperationsPerformanceModule />
             </ModulePageShell>
           }
         />

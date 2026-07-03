@@ -326,6 +326,10 @@ export type ComponentPerformanceListFilters = {
   status?: string;
   soldOnly?: boolean;
   missingProcessOnly?: boolean;
+  missingCycleOnly?: boolean;
+  missingCavitiesOnly?: boolean;
+  recentlyChangedOnly?: boolean;
+  recentDays?: number;
   limit?: number;
   offset?: number;
 };
@@ -340,13 +344,46 @@ export function parseComponentPerformanceListQuery(
   const soldOnly = query.soldOnly === "1" || query.soldOnly === "true";
   const missingProcessOnly =
     query.missingProcessOnly === "1" || query.missingProcessOnly === "true";
+  const missingCycleOnly =
+    query.missingCycleOnly === "1" || query.missingCycleOnly === "true";
+  const missingCavitiesOnly =
+    query.missingCavitiesOnly === "1" || query.missingCavitiesOnly === "true";
+  const recentlyChangedOnly =
+    query.recentlyChangedOnly === "1" || query.recentlyChangedOnly === "true";
+  const recentDaysRaw = query.recentDays != null ? Number(query.recentDays) : 30;
+  const recentDays = Number.isFinite(recentDaysRaw)
+    ? Math.min(Math.max(Math.floor(recentDaysRaw), 1), 365)
+    : 30;
 
   const limitRaw = query.limit != null ? Number(query.limit) : 100;
   const offsetRaw = query.offset != null ? Number(query.offset) : 0;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 500) : 100;
   const offset = Number.isFinite(offsetRaw) ? Math.max(Math.floor(offsetRaw), 0) : 0;
 
-  return { sku, name, status, soldOnly, missingProcessOnly, limit, offset };
+  return {
+    sku,
+    name,
+    status,
+    soldOnly,
+    missingProcessOnly,
+    missingCycleOnly,
+    missingCavitiesOnly,
+    recentlyChangedOnly,
+    recentDays,
+    limit,
+    offset,
+  };
+}
+
+export function estimateTheoreticalPiecesPerHour(
+  process: ComponentPerformanceProcessSnapshot
+): number | null {
+  const cycle = process.cycleTimeSeconds;
+  const cav = process.cavities;
+  const eff = process.efficiencyExpected ?? 100;
+  if (cycle == null || cycle <= 0 || cav == null || cav < 1 || eff <= 0) return null;
+  const value = (3600 / cycle) * cav * (eff / 100);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export function isMissingComponentProcess(snapshot: ComponentPerformanceProcessSnapshot): boolean {

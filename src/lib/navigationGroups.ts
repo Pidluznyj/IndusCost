@@ -99,6 +99,11 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   settings: ["settings.view", "users.manage"],
   maintenance: ["maintenance.view"],
   inventory: ["inventory.view"],
+  "operations-performance": [
+    "operations.component-performance.view",
+    "operations.component-performance.edit",
+    "products.view",
+  ],
   projects: ["projects.view"],
   fleet: ["fleet.view", "fleet.manage"],
   reports: ["reports.view", "dashboard.view"],
@@ -156,7 +161,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Operações",
     iconKey: "Warehouse",
     order: 5,
-    itemIds: ["inventory", "purchases", "machines", "maintenance", "fleet"],
+    itemIds: ["inventory", "purchases", "machines", "operations-performance", "maintenance", "fleet"],
   },
   {
     id: "administracao",

@@ -18,6 +18,7 @@ import {
   type ComponentPerformanceProcessSnapshot,
   validateMergedProcessSnapshot,
   validatePositiveFieldsWhenPresent,
+  estimateTheoreticalPiecesPerHour,
 } from "./componentPerformanceChange.js";
 
 export type ComponentPerformanceActor = {
@@ -48,6 +49,7 @@ function serializeProductRow(product: {
   defaultLotSize: unknown;
   updatedAt: Date | null;
   _count?: { SalesOrderItem?: number; ProductRouting?: number };
+  lastPerformanceChangeAt?: Date | null;
 }) {
   const process = snapshotFromProduct(product);
   return {
@@ -63,6 +65,8 @@ function serializeProductRow(product: {
     soldCount: product._count?.SalesOrderItem ?? 0,
     routingStepCount: product._count?.ProductRouting ?? 0,
     updatedAt: product.updatedAt?.toISOString() ?? null,
+    lastPerformanceChangeAt: product.lastPerformanceChangeAt?.toISOString() ?? null,
+    estimatedPiecesPerHour: estimateTheoreticalPiecesPerHour(process),
   };
 }
 
@@ -96,7 +100,46 @@ function buildListWhere(filters: ComponentPerformanceListFilters): Prisma.Produc
     ];
   }
 
+  if (filters.missingCycleOnly) {
+    where.cycleTimeSeconds = null;
+  }
+
+  if (filters.missingCavitiesOnly) {
+    where.cavities = null;
+  }
+
+  if (filters.recentlyChangedOnly) {
+    const days = filters.recentDays ?? 30;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    where.ComponentPerformanceChangeLog = {
+      some: {
+        changedAt: { gte: since },
+      },
+    };
+  }
+
   return where;
+}
+
+async function attachLastPerformanceChangeAt<
+  T extends { id: string },
+>(
+  db: PrismaClient,
+  rows: T[]
+): Promise<Array<T & { lastPerformanceChangeAt: Date | null }>> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.id);
+  const grouped = await db.componentPerformanceChangeLog.groupBy({
+    by: ["productId"],
+    where: { productId: { in: ids } },
+    _max: { changedAt: true },
+  });
+  const map = new Map(grouped.map((row) => [row.productId, row._max.changedAt ?? null]));
+  return rows.map((row) => ({
+    ...row,
+    lastPerformanceChangeAt: map.get(row.id) ?? null,
+  }));
 }
 
 const productSelectForList = {
@@ -138,11 +181,13 @@ export async function listComponentPerformanceProducts(
     }),
   ]);
 
+  const rowsWithHistory = await attachLastPerformanceChangeAt(db, rows);
+
   return {
     total,
     limit: filters.limit ?? 100,
     offset: filters.offset ?? 0,
-    items: rows.map(serializeProductRow),
+    items: rowsWithHistory.map(serializeProductRow),
   };
 }
 

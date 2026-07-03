@@ -117,13 +117,14 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.deepEqual(group?.items.map((i) => i.itemId), ["finance", "opex", "taxes", "reports"]);
   });
 
-  it("Operações contém Estoque, Compras, Máquinas, Manutenção e Frota", () => {
+  it("Operações contém Estoque, Compras, Máquinas, Performance, Manutenção e Frota", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "operacoes");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "inventory",
       "purchases",
       "machines",
+      "operations-performance",
       "maintenance",
       "fleet",
     ]);
