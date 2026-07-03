@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { promises as fs } from "fs";
 import { fileURLToPath } from "url";
+import { prisma } from "./src/lib/prisma.js";
 import {
   Prisma,
   AppUserRole,
