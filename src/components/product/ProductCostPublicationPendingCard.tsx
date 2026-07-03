@@ -27,13 +27,13 @@ function CostBreakdownRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-slate-500 dark:text-slate-400">{label}</span>
-      <span className="tabular-nums text-right text-slate-900 dark:text-slate-100">
-        <span className="text-slate-500 dark:text-slate-400">{formatProductCiu(official)}</span>
-        <span className="mx-2 text-slate-300 dark:text-slate-600" aria-hidden>
+      <span className="text-[#64748B]">{label}</span>
+      <span className="tabular-nums text-right text-[#111827]">
+        <span className="text-[#64748B]">{formatProductCiu(official)}</span>
+        <span className="mx-2 text-amber-300" aria-hidden>
           →
         </span>
-        <span className="font-semibold">{formatProductCiu(draft)}</span>
+        <span className="font-semibold text-[#111827]">{formatProductCiu(draft)}</span>
       </span>
     </div>
   );
@@ -51,11 +51,12 @@ function InnerPanel({
   return (
     <div
       className={cn(
-        "rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/40",
+        "rounded-xl border border-[#FCD34D] bg-white p-4 shadow-sm",
+        "dark:border-[#FCD34D] dark:bg-white",
         className
       )}
     >
-      <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#92400E]">
         {title}
       </p>
       {children}
@@ -81,6 +82,7 @@ export function ProductCostPublicationPendingCard({
   const draftUnit = pendingDraft.unitProductionCost;
   const diffAmount = difference?.amount ?? 0;
   const diffIsPositive = diffAmount > 0;
+  const diffIsNegative = diffAmount < 0;
 
   const handleConfirmPublish = async () => {
     if (!canPublish || publishing) return;
@@ -109,26 +111,27 @@ export function ProductCostPublicationPendingCard({
     <>
       <section
         role="status"
+        data-testid="engineering-pending-cost-alert"
         className={cn(
-          "rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm",
-          "dark:border-amber-800/50 dark:bg-amber-950/20",
+          "rounded-2xl border border-[#F59E0B] bg-[#FFFBEB] p-5 shadow-sm",
+          "dark:border-[#FBBF24] dark:bg-[#FFFBEB]",
           compact && "p-4"
         )}
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FDE68A] text-[#92400E]">
                 <AlertCircle className="h-4 w-4" aria-hidden />
               </span>
-              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-50">
+              <h4 className="text-base font-semibold text-[#92400E]">
                 Custo pendente para publicação
               </h4>
-              <span className="inline-flex rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:border-amber-700 dark:bg-amber-900/50 dark:text-amber-200">
+              <span className="inline-flex rounded-full border border-[#FBBF24] bg-[#FDE68A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]">
                 DRAFT
               </span>
             </div>
-            <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="max-w-3xl text-sm leading-relaxed text-[#78350F]">
               O snapshot da engenharia foi atualizado, mas o custo oficial publicado ainda não mudou.
               Publique este DRAFT para que o novo custo passe a valer nas margens conforme a vigência.
               Atualizar snapshot recalcula o custo. Publicar novo custo oficial altera a tabela usada nas
@@ -166,37 +169,37 @@ export function ProductCostPublicationPendingCard({
           <InnerPanel title="Resumo">
             <dl className="space-y-2.5 text-sm">
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Produto / SKU</dt>
-                <dd className="font-mono font-medium text-slate-900 dark:text-slate-100">{sku}</dd>
+                <dt className="text-[#64748B]">Produto / SKU</dt>
+                <dd className="font-mono font-medium text-[#111827]">{sku}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Custo oficial atual</dt>
-                <dd className="tabular-nums font-medium text-slate-900 dark:text-slate-100">
+                <dt className="text-[#64748B]">Custo oficial atual</dt>
+                <dd className="tabular-nums font-medium text-[#111827]">
                   {officialCost ? formatProductCiu(officialUnit) : "Sem vigente"}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Novo custo calculado</dt>
-                <dd className="tabular-nums font-bold text-blue-700 dark:text-blue-300">
+                <dt className="text-[#64748B]">Novo custo calculado</dt>
+                <dd className="tabular-nums font-bold text-[#111827]">
                   {formatProductCiu(draftUnit)}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Diferença</dt>
+                <dt className="text-[#64748B]">Diferença</dt>
                 <dd
                   className={cn(
                     "tabular-nums font-semibold",
-                    diffIsPositive
-                      ? "text-amber-700 dark:text-amber-300"
-                      : "text-slate-900 dark:text-slate-100"
+                    diffIsPositive && "text-[#047857]",
+                    diffIsNegative && "text-[#B91C1C]",
+                    !diffIsPositive && !diffIsNegative && "text-[#111827]"
                   )}
                 >
                   {formatCurrency(diffAmount)} ({delta.percentLabel})
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Vigência do DRAFT</dt>
-                <dd className="text-right font-medium text-slate-900 dark:text-slate-100">
+                <dt className="text-[#64748B]">Vigência do DRAFT</dt>
+                <dd className="text-right font-medium text-[#111827]">
                   {pendingDraft.effectiveDate}
                   {pendingDraft.versionCode ? ` · ${pendingDraft.versionCode}` : ""}
                   {pendingDraft.revision != null ? ` v${pendingDraft.revision}` : ""}
@@ -270,7 +273,7 @@ export function ProductCostPublicationPendingCard({
           }
         >
           {publishError ? (
-            <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="mb-3 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm text-[#991B1B]">
               {publishError}
             </div>
           ) : null}

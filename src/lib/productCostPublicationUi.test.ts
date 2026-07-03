@@ -71,4 +71,18 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /setCostPublicationRefreshToken/);
     assert.match(mod, /production-cost-snapshot/);
   });
+
+  it("alerta de pendência usa paleta âmbar executiva clara", () => {
+    const src = card();
+    assert.match(src, /engineering-pending-cost-alert/);
+    assert.match(src, /bg-\[#FFFBEB\]/);
+    assert.match(src, /border-\[#F59E0B\]/);
+    assert.match(src, /text-\[#92400E\]/);
+    assert.match(src, /text-\[#78350F\]/);
+    assert.match(src, /bg-\[#FDE68A\]/);
+    assert.match(src, /border-\[#FCD34D\]/);
+    assert.match(src, /bg-white/);
+    assert.doesNotMatch(src, /dark:bg-slate-950/);
+    assert.doesNotMatch(src, /dark:bg-amber-950/);
+  });
 });
