@@ -526,21 +526,50 @@ async function buildPreviewForTitle(
   }
 
   const supplier = resolveSupplierForAccountsPayable(ap, suppliers);
+  const supplierRuleRecords = supplier ? await deps.loadRulesForSupplier(supplier.id) : [];
+
+  if (supplier && accountsPayableMatchesFinancialSupplier(ap, supplier)) {
+    try {
+      const applicableSupplierRules = resolveCostCenterRulesForSupplier(
+        supplier.id,
+        ap,
+        supplierRuleRecords,
+        options
+      );
+      if (applicableSupplierRules.length > 0) {
+        const lines = buildLinesFromRules(applicableSupplierRules, titleAmount);
+        validateAllocationTotals(lines, titleAmount);
+        return {
+          accountsPayableId: ap.externalId,
+          action: existing.length > 0 ? "replace" : "create",
+          skipReason: null,
+          supplierId: supplier.id,
+          supplierName: supplier.displayName,
+          titleAmount,
+          lines,
+          existingAllocationIds: existing
+            .filter((row) => !isManualLockedAllocation(row))
+            .map((row) => row.id),
+        };
+      }
+    } catch {
+      // Regras do fornecedor incompletas — tenta matcher de classificação abaixo.
+    }
+  }
+
   const classificationRules = deps.loadActiveClassificationRules
     ? await deps.loadActiveClassificationRules()
     : [];
-  const supplierRules = supplier
-    ? (await deps.loadRulesForSupplier(supplier.id)).map((rule) => ({
-        id: rule.id,
-        supplierId: rule.supplierId,
-        costCenterId: rule.costCenterId,
-        percentage: decimalToNumber(rule.percentage),
-        priority: rule.priority,
-        autoApply: rule.autoApply,
-        isActive: rule.isActive,
-        company: rule.company,
-      }))
-    : [];
+  const supplierRules = supplierRuleRecords.map((rule) => ({
+    id: rule.id,
+    supplierId: rule.supplierId,
+    costCenterId: rule.costCenterId,
+    percentage: decimalToNumber(rule.percentage),
+    priority: rule.priority,
+    autoApply: rule.autoApply,
+    isActive: rule.isActive,
+    company: rule.company,
+  }));
 
   const match = resolveBestClassificationMatch({
     ap: mapApToClassificationRow(ap),
