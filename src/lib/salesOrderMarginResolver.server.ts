@@ -23,6 +23,7 @@ const PRODUCT_SELECT = {
   id: true,
   sku: true,
   name: true,
+  type: true,
   sourceExternalId: true,
 } as const;
 

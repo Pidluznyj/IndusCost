@@ -54,6 +54,7 @@ export type SalesOrderMarginResolverProductRow = {
   id: string;
   sku: string;
   name: string;
+  type?: string;
   sourceExternalId?: string | null;
 };
 

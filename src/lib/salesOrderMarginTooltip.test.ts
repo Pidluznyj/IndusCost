@@ -227,7 +227,9 @@ describe("salesOrderMarginTooltip", () => {
       join(process.cwd(), "src/components/sales/SalesOrderMarginAnalysis.tsx"),
       "utf8"
     );
-    assert.match(analysis, /Preço unitário de venda/);
+    assert.match(analysis, /Preço vendido/);
+    assert.match(analysis, /Preço tabela/);
+    assert.match(analysis, /Margem realizada/);
     assert.match(analysis, /PRODUCTION_COST_DISPLAY_LABELS\.productionUnitCost/);
     assert.match(analysis, /costUnresolved/);
   });

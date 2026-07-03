@@ -15,6 +15,12 @@ import {
   buildSalesOrderMarginInputsFromVersionedProductionCosts,
   loadSalesOrderMarginProductBatchIndex,
 } from "./salesOrderMarginResolver.server.js";
+import { buildSalesOrderMarginCommercialReference } from "./salesOrderMarginOfficialPrice.js";
+import {
+  loadOfficialPriceTableItemsForPairs,
+  loadSalesOrderMarginPriceTableContext,
+  officialPriceLookupKey,
+} from "./salesOrderMarginPriceResolver.server.js";
 import {
   refineSalesOrderMarginSummaryStatus,
   resolveSalesOrderMarginStatusMeta,
@@ -38,6 +44,7 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   id: true,
   salesOrderId: true,
   productId: true,
+  proposalItemId: true,
   externalProductId: true,
   skuSnapshot: true,
   productNameSnapshot: true,
@@ -50,6 +57,7 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
 /** Select mínimo para margem agregada da listagem (todos os pedidos filtrados). */
 export const SALES_ORDER_LIST_MARGIN_PRISMA_SELECT = {
   id: true,
+  proposalId: true,
   issueDate: true,
   nomusRawResponse: true,
   items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
@@ -59,6 +67,7 @@ export type SalesOrderItemForMargin = {
   id: string;
   salesOrderId?: string;
   productId?: string | null;
+  proposalItemId?: string | null;
   externalProductId?: number | null;
   skuSnapshot?: string | null;
   productNameSnapshot?: string | null;
@@ -70,6 +79,7 @@ export type SalesOrderItemForMargin = {
 
 export type SalesOrderForMargin = {
   id: string;
+  proposalId?: string | null;
   issueDate?: Date | string | null;
   nomusRawResponse?: unknown;
   items?: SalesOrderItemForMargin[];
@@ -125,7 +135,8 @@ function mapItemToResolverInput(
 
 function formatItemMarginPayload(
   result: SalesOrderMarginItemResult,
-  productResolution: ProductResolution
+  productResolution: ProductResolution,
+  commercialReference?: import("./salesOrderMarginTypes.js").SalesOrderMarginCommercialReference | null
 ): SalesOrderItemMarginPayload {
   const meta = resolveSalesOrderMarginStatusMeta(result.status);
   return {
@@ -143,6 +154,7 @@ function formatItemMarginPayload(
     marginCostMode: result.marginCostMode,
     productionCost: result.productionCost ?? null,
     productResolutionSource: productResolution.resolutionSource,
+    commercialReference: commercialReference ?? null,
     notes: [...productResolution.notes, ...result.notes],
   };
 }
@@ -252,6 +264,49 @@ export async function buildSalesOrderMarginContext(
     { productIndex }
   );
 
+  const priceTableContext = await loadSalesOrderMarginPriceTableContext(
+    prisma,
+    orders.map((order) => ({
+      id: order.id,
+      proposalId: order.proposalId,
+      items: (order.items ?? itemsByOrderId.get(order.id) ?? []).map((item) => ({
+        id: item.id,
+        proposalItemId: item.proposalItemId,
+      })),
+    }))
+  );
+
+  const officialPricePairs: Array<{ priceTableId: string; productId: string; referenceDate: Date }> =
+    [];
+  for (const order of orders) {
+    if (!order.issueDate) continue;
+    const ref =
+      order.issueDate instanceof Date ? order.issueDate : new Date(order.issueDate);
+    if (Number.isNaN(ref.getTime())) continue;
+    const items = order.items ?? itemsByOrderId.get(order.id) ?? [];
+    for (const item of items) {
+      const productId = item.productId;
+      if (!productId) continue;
+      const priceTableId =
+        priceTableContext.priceTableByItemId.get(item.id)?.priceTableId ??
+        priceTableContext.priceTableByOrderId.get(order.id)?.priceTableId ??
+        null;
+      if (!priceTableId) continue;
+      officialPricePairs.push({ priceTableId, productId, referenceDate: ref });
+    }
+  }
+
+  const officialPricesByKey = await loadOfficialPriceTableItemsForPairs(
+    prisma,
+    officialPricePairs
+  );
+
+  const productTypesById = new Map<string, string>();
+  for (const product of productIndex.byId.values()) {
+    const row = product as { id: string; type?: string };
+    if (row.type) productTypesById.set(row.id, row.type);
+  }
+
   const itemResultsByOrder = new Map<string, SalesOrderMarginItemResult[]>();
   const itemMarginsByOrder = new Map<string, Map<string, SalesOrderItemMarginPayload>>();
 
@@ -274,12 +329,62 @@ export async function buildSalesOrderMarginContext(
         notes: [],
       } satisfies ProductResolution);
 
+    const order = orders.find((o) => o.id === orderId);
+    const priceTableId =
+      priceTableContext.priceTableByItemId.get(itemId)?.priceTableId ??
+      (order ? priceTableContext.priceTableByOrderId.get(order.id)?.priceTableId : null) ??
+      null;
+
+    let officialPriceMeta: import("./salesOrderMarginTypes.js").SalesOrderMarginOfficialPriceMeta | null =
+      null;
+    let officialPriceItem: import("./salesOrderMarginOfficialPrice.js").OfficialPriceTableItemSnapshot | null =
+      null;
+
+    if (order?.issueDate && priceTableId && input.productId) {
+      const ref =
+        order.issueDate instanceof Date ? order.issueDate : new Date(order.issueDate);
+      if (!Number.isNaN(ref.getTime())) {
+        const priceKey = officialPriceLookupKey(priceTableId, input.productId, ref);
+        const resolved = officialPricesByKey.get(priceKey);
+        if (resolved) {
+          officialPriceMeta = resolved.meta;
+          officialPriceItem = resolved.item;
+        } else {
+          officialPriceMeta = {
+            priceTableId,
+            priceTableCode:
+              priceTableContext.priceTableByItemId.get(itemId)?.priceTableCode ??
+              priceTableContext.priceTableByOrderId.get(orderId)?.priceTableCode ??
+              "",
+            priceTableName: "",
+            priceTableVersionId: "",
+            versionNumber: 0,
+            effectiveFrom: null,
+            effectiveTo: null,
+            priceTableItemId: "",
+            orderIssueDate: ref.toISOString().slice(0, 10),
+          };
+        }
+      }
+    }
+
+    const commercialReference = buildSalesOrderMarginCommercialReference({
+      item: result,
+      productionCost: result.productionCost ?? null,
+      officialPrice: officialPriceMeta,
+      officialPriceItem,
+      productType: input.productId ? productTypesById.get(input.productId) ?? null : null,
+    });
+
     const orderItemResults = itemResultsByOrder.get(orderId) ?? [];
     orderItemResults.push(result);
     itemResultsByOrder.set(orderId, orderItemResults);
 
     const orderItemMargins = itemMarginsByOrder.get(orderId) ?? new Map();
-    orderItemMargins.set(itemId, formatItemMarginPayload(result, productResolution));
+    orderItemMargins.set(
+      itemId,
+      formatItemMarginPayload(result, productResolution, commercialReference)
+    );
     itemMarginsByOrder.set(orderId, orderItemMargins);
   }
 

@@ -4,12 +4,14 @@ import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMa
 import { SalesOrderMarginMetricGrid } from "@/src/components/sales/SalesOrderMarginMetricGrid";
 import {
   buildSalesOrderMarginAlerts,
-  formatSalesOrderCostSourceLabel,
+  formatOfficialPriceTableReferenceLabel,
+  formatProductTypeLabel,
+  formatProductionCostReferenceLabel,
   formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
-  formatSalesOrderMarkup,
   resolveSalesOrderMarginRevenueLabel,
   resolveSalesOrderMarginSupportText,
+  SALES_ORDER_COMMERCIAL_REFERENCE_STATUS_LABEL,
 } from "@/src/lib/salesOrderMarginDisplay";
 import { PRODUCTION_COST_DISPLAY_LABELS } from "@/src/lib/productionCostTablesUi";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
@@ -110,12 +112,14 @@ export function SalesOrderMarginAnalysisSection({
           </h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1100px]">
+          <table className="w-full text-left text-sm min-w-[1400px]">
             <thead className="bg-muted/50">
               <tr>
-                <th className="p-3 font-semibold">Produto</th>
+                <th className="p-3 font-semibold">Item</th>
                 <th className="p-3 font-semibold text-right">Qtd</th>
-                <th className="p-3 font-semibold text-right">Preço unitário de venda</th>
+                <th className="p-3 font-semibold text-right">Preço vendido</th>
+                <th className="p-3 font-semibold text-right">Preço tabela</th>
+                <th className="p-3 font-semibold text-right">Desconto vs tabela</th>
                 <th className="p-3 font-semibold text-right">Valor líquido</th>
                 <th className="p-3 font-semibold text-right">
                   {PRODUCTION_COST_DISPLAY_LABELS.productionUnitCost}
@@ -123,34 +127,56 @@ export function SalesOrderMarginAnalysisSection({
                 <th className="p-3 font-semibold text-right">
                   {PRODUCTION_COST_DISPLAY_LABELS.productionTotalCost}
                 </th>
-                <th className="p-3 font-semibold text-right">Margem R$</th>
-                <th className="p-3 font-semibold text-right">Margem %</th>
-                <th className="p-3 font-semibold text-right">Markup</th>
-                <th className="p-3 font-semibold">Fonte custo</th>
+                <th className="p-3 font-semibold text-right">Margem realizada R$</th>
+                <th className="p-3 font-semibold text-right">Margem realizada %</th>
+                <th className="p-3 font-semibold text-right">Margem tabela R$</th>
+                <th className="p-3 font-semibold text-right">Vazamento margem</th>
+                <th className="p-3 font-semibold">Referência</th>
                 <th className="p-3 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={14} className="p-6 text-center text-muted-foreground">
                     Nenhum item no pedido.
                   </td>
                 </tr>
               ) : (
                 items.map((it) => {
                   const margin = it.margin;
+                  const ref = margin?.commercialReference;
                   return (
                     <tr key={it.id} data-testid={`sales-order-item-margin-${it.id}`}>
                       <td className="p-3">
                         <div className="font-mono text-xs text-muted-foreground">{it.skuSnapshot}</div>
                         <div className="max-w-[220px]">{it.productNameSnapshot}</div>
+                        {ref?.productType ? (
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {formatProductTypeLabel(ref.productType)}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="p-3 text-right font-mono">
                         {formatNumber(Number(it.quantity), 4)}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarginMoney(it.negotiatedPrice)}
+                        {formatSalesOrderMarginMoney(ref?.soldUnitPrice ?? it.negotiatedPrice)}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ref?.referenceStatus === "SEM_PRECO_TABELA" ||
+                        ref?.referenceStatus === "PRECO_INDISPONIVEL"
+                          ? "—"
+                          : formatSalesOrderMarginMoney(ref?.officialUnitPrice)}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ref?.discountVsOfficialPrice != null
+                          ? `${formatSalesOrderMarginMoney(ref.discountVsOfficialPrice)}${
+                              ref.discountPercentVsOfficialPrice != null
+                                ? ` (${formatSalesOrderMarginPercent(ref.discountPercentVsOfficialPrice)})`
+                                : ""
+                            }`
+                          : "—"}
                       </td>
                       <td className="p-3 text-right font-mono font-medium">
                         {margin
@@ -170,18 +196,39 @@ export function SalesOrderMarginAnalysisSection({
                       <td className="p-3 text-right font-mono">
                         {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
                           ? "—"
-                          : formatSalesOrderMarginMoney(margin?.marginValue)}
+                          : formatSalesOrderMarginMoney(
+                              ref?.realizedMarginAmount ?? margin?.marginValue
+                            )}
                       </td>
                       <td className="p-3 text-right font-mono">
                         {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
                           ? "—"
-                          : formatSalesOrderMarginPercent(margin?.marginPercent)}
+                          : formatSalesOrderMarginPercent(
+                              ref?.realizedMarginPercent ?? margin?.marginPercent
+                            )}
                       </td>
                       <td className="p-3 text-right font-mono">
-                        {formatSalesOrderMarkup(margin?.markup)}
+                        {ref?.tableMarginAmount != null
+                          ? formatSalesOrderMarginMoney(ref.tableMarginAmount)
+                          : "—"}
                       </td>
-                      <td className="p-3 text-xs text-muted-foreground">
-                        {formatSalesOrderCostSourceLabel(margin?.costSource)}
+                      <td className="p-3 text-right font-mono">
+                        {ref?.marginLeakageAmount != null
+                          ? formatSalesOrderMarginMoney(ref.marginLeakageAmount)
+                          : "—"}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground max-w-[180px]">
+                        <div>
+                          Custo: {formatProductionCostReferenceLabel(ref?.productionCost)}
+                        </div>
+                        <div>
+                          Preço: {formatOfficialPriceTableReferenceLabel(ref?.officialPrice)}
+                        </div>
+                        {ref?.referenceStatus && ref.referenceStatus !== "OK" ? (
+                          <div className="text-amber-700 dark:text-amber-300 mt-1">
+                            {SALES_ORDER_COMMERCIAL_REFERENCE_STATUS_LABEL[ref.referenceStatus]}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="p-3">
                         {margin ? (

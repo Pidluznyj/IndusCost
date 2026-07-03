@@ -374,6 +374,11 @@ function mapRulesResultToMarginByOrder(
         .filter((row) => row.salesOrderItemId)
         .map((row) => [row.salesOrderItemId!, row.productionCost ?? null] as const)
     );
+    const commercialRefByItemId = new Map(
+      [...(originalMarginByOrder?.get(order.orderId)?.itemMargins.entries() ?? [])].map(
+        ([id, payload]) => [id, payload.commercialReference ?? null] as const
+      )
+    );
 
     const itemResults = order.items.map((item) => {
       const productionCost = item.salesOrderItemId
@@ -396,6 +401,15 @@ function mapRulesResultToMarginByOrder(
         payload.netRevenue = item.netSalesAmount;
         payload.marginValue = item.marginAmount;
         payload.marginPercent = item.marginPercent;
+      }
+      payload.commercialReference =
+        commercialRefByItemId.get(item.salesOrderItemId) ?? payload.commercialReference ?? null;
+      if (payload.commercialReference && taxMode === "deductFromGross") {
+        payload.commercialReference = {
+          ...payload.commercialReference,
+          realizedMarginAmount: payload.marginValue,
+          realizedMarginPercent: payload.marginPercent,
+        };
       }
       itemMargins.set(item.salesOrderItemId, payload);
     }

@@ -158,9 +158,10 @@ describe("salesOrderMargin UI", () => {
       join(process.cwd(), "src", "components", "sales", "SalesOrderMarginAnalysis.tsx"),
       "utf8"
     );
-    assert.match(analysisSrc, /formatSalesOrderCostSourceLabel/);
+    assert.match(analysisSrc, /formatOfficialPriceTableReferenceLabel/);
+    assert.match(analysisSrc, /commercialReference/);
     assert.match(analysisSrc, /formatSalesOrderMarginPercent/);
-    assert.match(analysisSrc, /formatSalesOrderMarkup/);
+    assert.match(analysisSrc, /marginLeakageAmount/);
     assert.match(analysisSrc, /sales-order-item-margin-/);
   });
 

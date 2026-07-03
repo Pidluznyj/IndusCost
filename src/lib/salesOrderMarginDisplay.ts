@@ -76,7 +76,7 @@ export function resolveSalesOrderMarginSupportText(
   );
 
   if (sources.has("VERSIONED_PRODUCTION_COST")) {
-    return "Margem calculada com custo de produção IndusCost da tabela oficial vigente na data do pedido.";
+    return "Margem realizada com custo de produção IndusCost da tabela oficial vigente na data do pedido. A referência comercial compara o preço vendido com o preço publicado da tabela vinculada à proposta, quando disponível.";
   }
   if (sources.has("HISTORICAL_SNAPSHOT")) {
     return "Margem calculada com snapshot histórico do motor de custo IndusCost.";
@@ -147,6 +147,41 @@ export {
   resolveSalesOrderMarginPercentLabel,
   resolveSalesOrderMarginRevenueLabel,
 } from "./salesOrderMarginCoverage.js";
+
+export const SALES_ORDER_COMMERCIAL_REFERENCE_STATUS_LABEL: Record<
+  import("./salesOrderMarginTypes.js").SalesOrderMarginCommercialReferenceStatus,
+  string
+> = {
+  OK: "Referência comercial OK",
+  SEM_CUSTO: "Sem custo oficial",
+  SEM_PRECO_TABELA: "Sem tabela de preço vinculada",
+  CUSTO_INDISPONIVEL: "Custo indisponível",
+  PRECO_INDISPONIVEL: "Preço de tabela indisponível",
+  RECEITA_INVALIDA: "Receita inválida",
+};
+
+export function formatOfficialPriceTableReferenceLabel(
+  ref?: import("./salesOrderMarginTypes.js").SalesOrderMarginOfficialPriceMeta | null
+): string {
+  if (!ref?.priceTableCode) return "—";
+  const version =
+    ref.versionNumber > 0 ? ` v${ref.versionNumber}` : ref.priceTableVersionId ? "" : "";
+  return `${ref.priceTableCode}${version}`;
+}
+
+export function formatProductionCostReferenceLabel(
+  meta?: import("./salesOrderMarginTypes.js").SalesOrderMarginProductionCostMeta | null
+): string {
+  if (!meta?.versionCode) return "—";
+  return `${meta.versionCode} (rev. ${meta.revision})`;
+}
+
+export function formatProductTypeLabel(type?: string | null): string {
+  if (!type) return "—";
+  if (type === "PRODUCT") return "Produto";
+  if (type === "COMPONENT") return "Componente";
+  return type;
+}
 
 export function buildSalesOrderMarginAlerts(
   summary?: SalesOrderMarginSummaryPayload | null

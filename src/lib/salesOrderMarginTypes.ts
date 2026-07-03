@@ -66,6 +66,46 @@ export type SalesOrderMarginProductionCostMeta = {
   warning?: string | null;
 };
 
+/** Metadados do preço oficial publicado na tabela comercial vigente na data do pedido. */
+export type SalesOrderMarginOfficialPriceMeta = {
+  priceTableId: string;
+  priceTableCode: string;
+  priceTableName: string;
+  priceTableVersionId: string;
+  versionNumber: number;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  priceTableItemId: string;
+  orderIssueDate: string | null;
+};
+
+/** Status da referência comercial (preço de tabela) — não substitui status da margem realizada. */
+export type SalesOrderMarginCommercialReferenceStatus =
+  | "OK"
+  | "SEM_CUSTO"
+  | "SEM_PRECO_TABELA"
+  | "CUSTO_INDISPONIVEL"
+  | "PRECO_INDISPONIVEL"
+  | "RECEITA_INVALIDA";
+
+/** KPIs de comparação: margem realizada vs preço/custo oficial de tabela. */
+export type SalesOrderMarginCommercialReference = {
+  officialCost: number | null;
+  soldUnitPrice: number | null;
+  officialUnitPrice: number | null;
+  discountVsOfficialPrice: number | null;
+  discountPercentVsOfficialPrice: number | null;
+  realizedMarginAmount: number | null;
+  realizedMarginPercent: number | null;
+  tableMarginAmount: number | null;
+  tableMarginPercent: number | null;
+  marginLeakageAmount: number | null;
+  referenceStatus: SalesOrderMarginCommercialReferenceStatus;
+  productionCost?: SalesOrderMarginProductionCostMeta | null;
+  officialPrice?: SalesOrderMarginOfficialPriceMeta | null;
+  productType?: string | null;
+};
+
 /** Classificação interna da margem quanto ao congelamento do custo (payload/API). */
 export type SalesOrderMarginCostMode = "HISTORICAL_FROZEN" | "LIVE_ESTIMATE" | "MISSING";
 
@@ -167,6 +207,8 @@ export type SalesOrderItemMarginPayload = {
     | "RAW_NOMUS_CODE"
     | "NOT_FOUND";
   productionCost?: SalesOrderMarginProductionCostMeta | null;
+  /** Comparação com preço/custo oficial de tabela — não altera margem realizada. */
+  commercialReference?: SalesOrderMarginCommercialReference | null;
   notes: string[];
 };
 
