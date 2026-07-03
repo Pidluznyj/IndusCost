@@ -30,6 +30,7 @@ import {
   Briefcase,
   Factory,
   Gauge,
+  Activity,
   HelpCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -77,6 +78,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   purchases: ShoppingCart,
   maintenance: Wrench,
   inventory: Warehouse,
+  "operations-performance": Activity,
   projects: FolderKanban,
   fleet: Car,
   products: Package,
@@ -458,6 +460,7 @@ export const Sidebar = () => {
 };
 
 /** Mapa de ícones exportado para testes/auditoria (labels oficiais inalterados). */
+export const SIDEBAR_MENU_ITEM_ICONS = MENU_ITEM_ICONS;
 export const SIDEBAR_MENU_ITEM_LABELS = MODULE_LABELS;
 
 /** Ordem oficial dos rótulos de grupo na sidebar expandida. */

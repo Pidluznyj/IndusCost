@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "check:frontend-server-imports": "tsx scripts/checkFrontendServerImports.ts",
     "test:server-startup": "tsx --test src/lib/serverStartupPrisma.test.ts",
+    "test:app-routes": "tsx --test src/lib/appRouteComponents.test.tsx",
     "check:browser-bundle": "tsx scripts/checkBrowserBundle.ts",
     "check:frontend-imports": "tsx scripts/checkFrontendServerImports.ts",
     "build:safe": "npm run check:frontend-server-imports && npm run build && npm run check:browser-bundle",

@@ -50,6 +50,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   inventory: "operacoes",
   purchases: "operacoes",
   machines: "operacoes",
+  "operations-performance": "operacoes",
   maintenance: "operacoes",
   fleet: "operacoes",
   employees: "administracao",
@@ -128,7 +129,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       engenharia: 5,
       comercial: 6,
       financeiro: 4,
-      operacoes: 5,
+      operacoes: 6,
       administracao: 3,
     });
   });

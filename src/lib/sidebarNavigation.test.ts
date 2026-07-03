@@ -248,6 +248,17 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     }
   });
 
+  it("MENU_ITEM_ICONS cobre todos os AppModuleId (evita React error #130)", async () => {
+    const { SIDEBAR_MENU_ITEM_ICONS } = await import("../components/layout/Sidebar.tsx");
+    for (const moduleId of SIDEBAR_MODULE_ORDER) {
+      const Icon = SIDEBAR_MENU_ITEM_ICONS[moduleId];
+      assert.ok(
+        typeof Icon === "function" || (typeof Icon === "object" && Icon != null),
+        `missing sidebar icon for ${moduleId}`
+      );
+    }
+  });
+
   it("modo colapsado usa ícones flat com tooltip e sem subitens aninhados", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /flatAccessibleItems\.map\(\(item\) =>/);
