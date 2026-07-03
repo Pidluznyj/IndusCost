@@ -198,7 +198,7 @@ export async function loadExclusionReprocessRecords(
   });
 }
 
-async function loadActiveExclusionRulesForFilter(
+export async function loadActiveExclusionRulesForFilter(
   db: PrismaClient,
   filter: ExclusionReprocessCustomerFilter
 ): Promise<CustomerExclusionRuleSnapshot[]> {
