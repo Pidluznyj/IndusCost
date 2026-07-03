@@ -92,6 +92,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/overdue",
       "/api/commissions/audit-trail/detail",
       "/api/commissions/exceptions",
+      "/api/commissions/customer-exclusions",
       "/api/commissions/forecast",
       "/api/commissions/forecast/detail",
       "/api/commissions/confirmed",

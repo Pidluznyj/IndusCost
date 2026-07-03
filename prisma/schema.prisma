@@ -355,8 +355,9 @@ model Customer {
   CrmCustomerProfile         CrmCustomerProfile?
   CrmCustomerCommercialOwner CrmCustomerCommercialOwner?
   CustomerCnpjLookup         CustomerCnpjLookup[]
-  proposals                  Proposal[]
-  salesOrders                SalesOrder[]
+  proposals                         Proposal[]
+  salesOrders                       SalesOrder[]
+  commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
 }
 
 model Proposal {
@@ -3859,6 +3860,11 @@ enum CommissionAuditIssueType {
   NO_COMMISSION_TABLE_RATE
 }
 
+enum CommissionCustomerExclusionRuleStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model CommissionPerson {
   id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nomusPersonId Int?
@@ -4151,4 +4157,31 @@ model CommissionCustomerException {
   @@index([productCode])
   @@index([active])
   @@index([startDate, endDate])
+}
+
+/// Regra de exclusão de comissionamento por cliente (cadastro auditável, vigência por data da venda/NF).
+model CommissionCustomerExclusionRule {
+  id                     String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId             String?                               @db.Uuid
+  customerExternalId     Int?
+  customerNameSnapshot   String
+  normalizedCustomerName String
+  reason                 String
+  effectiveFrom          DateTime                              @db.Date
+  effectiveTo            DateTime?                             @db.Date
+  status                 CommissionCustomerExclusionRuleStatus   @default(ACTIVE)
+  createdByUserId        String?                               @db.Uuid
+  inactivatedAt          DateTime?                             @db.Timestamptz(6)
+  inactivatedByUserId    String?                               @db.Uuid
+  notes                  String?
+  createdAt              DateTime                              @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([status])
+  @@index([customerId])
+  @@index([customerExternalId])
+  @@index([normalizedCustomerName])
+  @@index([effectiveFrom, effectiveTo])
 }

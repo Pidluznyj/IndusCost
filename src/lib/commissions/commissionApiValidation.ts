@@ -649,3 +649,110 @@ export function parseCommissionExceptionUpdateBody(raw: unknown): Partial<
   }
   return patch;
 }
+
+function parseRequiredDateField(value: unknown, field: string): Date {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} é obrigatório.`);
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} inválido.`);
+  }
+  return d;
+}
+
+function parseOptionalDateField(value: unknown, field: string): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} inválido.`);
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} inválido.`);
+  }
+  return d;
+}
+
+export function parseCustomerExclusionCreateBody(raw: unknown): {
+  customerId?: string | null;
+  customerExternalId?: number | null;
+  customerNameSnapshot?: string | null;
+  reason: string;
+  effectiveFrom: Date;
+  effectiveTo?: Date | null;
+  notes?: string | null;
+} {
+  if (!raw || typeof raw !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const body = raw as Record<string, unknown>;
+  const reason = requireString(body.reason, "reason");
+  const effectiveFrom = parseRequiredDateField(body.effectiveFrom, "effectiveFrom");
+  const effectiveTo = parseOptionalDateField(body.effectiveTo, "effectiveTo");
+  const customerId = optionalString(body.customerId);
+  const customerExternalId =
+    body.customerExternalId != null ? Number(body.customerExternalId) : null;
+  if (customerExternalId != null && !Number.isFinite(customerExternalId)) {
+    throw new CommissionValidationError("INVALID_FIELD", "customerExternalId inválido.");
+  }
+  const customerNameSnapshot = optionalString(body.customerNameSnapshot);
+  if (!customerId && customerExternalId == null && !customerNameSnapshot) {
+    throw new CommissionValidationError(
+      "INVALID_FIELD",
+      "Informe cliente (customerId, customerExternalId ou customerNameSnapshot)."
+    );
+  }
+  if (effectiveTo && effectiveTo < effectiveFrom) {
+    throw new CommissionValidationError(
+      "INVALID_FIELD",
+      "effectiveTo não pode ser anterior a effectiveFrom."
+    );
+  }
+  return {
+    customerId,
+    customerExternalId,
+    customerNameSnapshot,
+    reason,
+    effectiveFrom,
+    effectiveTo: effectiveTo ?? undefined,
+    notes: optionalString(body.notes) ?? undefined,
+  };
+}
+
+export function parseCustomerExclusionUpdateBody(raw: unknown): Partial<
+  ReturnType<typeof parseCustomerExclusionCreateBody>
+> {
+  if (!raw || typeof raw !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const body = raw as Record<string, unknown>;
+  const patch: Partial<ReturnType<typeof parseCustomerExclusionCreateBody>> = {};
+  if (body.reason !== undefined) patch.reason = requireString(body.reason, "reason");
+  if (body.effectiveFrom !== undefined) {
+    patch.effectiveFrom = parseRequiredDateField(body.effectiveFrom, "effectiveFrom");
+  }
+  if (body.effectiveTo !== undefined) {
+    patch.effectiveTo = parseOptionalDateField(body.effectiveTo, "effectiveTo") ?? null;
+  }
+  if (body.customerId !== undefined) patch.customerId = optionalString(body.customerId);
+  if (body.customerExternalId !== undefined) {
+    patch.customerExternalId =
+      body.customerExternalId != null ? Number(body.customerExternalId) : null;
+  }
+  if (body.customerNameSnapshot !== undefined) {
+    patch.customerNameSnapshot = optionalString(body.customerNameSnapshot);
+  }
+  if (body.notes !== undefined) patch.notes = optionalString(body.notes);
+  if (
+    patch.effectiveFrom &&
+    patch.effectiveTo &&
+    patch.effectiveTo < patch.effectiveFrom
+  ) {
+    throw new CommissionValidationError(
+      "INVALID_FIELD",
+      "effectiveTo não pode ser anterior a effectiveFrom."
+    );
+  }
+  return patch;
+}

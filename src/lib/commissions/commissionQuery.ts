@@ -1115,3 +1115,23 @@ export function parseCommissionExceptionsQuery(
   if (query.active === "false") active = false;
   return { search, active, commissionPersonId, page, pageSize };
 }
+
+export type CustomerExclusionRulesQuery = {
+  search: string | null;
+  status: "ACTIVE" | "INACTIVE" | null;
+  page: number;
+  pageSize: number;
+};
+
+export function parseCustomerExclusionRulesQuery(
+  query: Record<string, unknown>
+): CustomerExclusionRulesQuery {
+  const { page, pageSize } = parsePagination(query);
+  const search =
+    typeof query.search === "string" && query.search.trim() ? query.search.trim() : null;
+  let status: "ACTIVE" | "INACTIVE" | null = null;
+  if (query.status === "ACTIVE" || query.status === "INACTIVE") {
+    status = query.status;
+  }
+  return { search, status, page, pageSize };
+}

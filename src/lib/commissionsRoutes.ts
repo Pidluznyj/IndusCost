@@ -57,6 +57,8 @@ import {
   parseCommissionAuditRerunBody,
   parseCommissionExceptionCreateBody,
   parseCommissionExceptionUpdateBody,
+  parseCustomerExclusionCreateBody,
+  parseCustomerExclusionUpdateBody,
   parseCommissionPersonCreateBody,
   parseCommissionPersonUpdateBody,
   parseCommissionRecalculateBody,
@@ -94,6 +96,12 @@ import {
   toggleCommissionCustomerExceptionActive,
   updateCommissionCustomerException,
 } from "@/src/lib/commissions/commissionExceptions.server.js";
+import {
+  createCustomerExclusionRule,
+  inactivateCustomerExclusionRule,
+  listCustomerExclusionRules,
+  updateCustomerExclusionRule,
+} from "@/src/lib/commissions/commissionCustomerExclusionRules.server.js";
 import { buildCommissionDashboard } from "@/src/lib/commissions/commissionDashboard.server.js";
 import {
   exportCommissionApuracaoCsv,
@@ -119,6 +127,7 @@ import {
   parseCommissionRecordsQuery,
   parseCommissionRulesQuery,
   parseCommissionExceptionsQuery,
+  parseCustomerExclusionRulesQuery,
   parseCommissionReleasesQuery,
   parseCommissionVisualAuditQuery,
   parseCommissionMonthlyClosingQuery,
@@ -155,7 +164,8 @@ function handleQueryError(res: express.Response, error: unknown) {
 }
 
 function handleValidationError(res: express.Response, error: CommissionValidationError) {
-  const status = error.code === "NOT_FOUND" ? 404 : 400;
+  const status =
+    error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
@@ -613,6 +623,75 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       return res.status(500).json({ error: "Erro ao alterar status da exceção." });
     }
   });
+
+  app.get("/api/commissions/customer-exclusions", ...exceptionsViewGuard, async (req, res) => {
+    try {
+      const query = parseCustomerExclusionRulesQuery(req.query as Record<string, unknown>);
+      const payload = await listCustomerExclusionRules(query);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/customer-exclusions", error);
+        return res.status(500).json({ error: "Erro ao listar exclusões de cliente." });
+      }
+    }
+  });
+
+  app.post("/api/commissions/customer-exclusions", ...exceptionsManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      const body = parseCustomerExclusionCreateBody(req.body);
+      const row = await createCustomerExclusionRule({
+        ...body,
+        createdByUserId: user?.userId ?? null,
+      });
+      return res.status(201).json(row);
+    } catch (error) {
+      try {
+        return handleValidationError(res, error as CommissionValidationError);
+      } catch {
+        console.error("POST /api/commissions/customer-exclusions", error);
+        return res.status(500).json({ error: "Erro ao criar exclusão de cliente." });
+      }
+    }
+  });
+
+  app.patch("/api/commissions/customer-exclusions/:id", ...exceptionsManageGuard, async (req, res) => {
+    try {
+      const body = parseCustomerExclusionUpdateBody(req.body);
+      const row = await updateCustomerExclusionRule(req.params.id, body);
+      if (!row) return res.status(404).json({ error: "Regra de exclusão não encontrada." });
+      return res.json(row);
+    } catch (error) {
+      try {
+        return handleValidationError(res, error as CommissionValidationError);
+      } catch {
+        console.error("PATCH /api/commissions/customer-exclusions/:id", error);
+        return res.status(500).json({ error: "Erro ao atualizar exclusão de cliente." });
+      }
+    }
+  });
+
+  app.post(
+    "/api/commissions/customer-exclusions/:id/inactivate",
+    ...exceptionsManageGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        const row = await inactivateCustomerExclusionRule(
+          req.params.id,
+          user?.userId ?? null
+        );
+        if (!row) return res.status(404).json({ error: "Regra de exclusão não encontrada." });
+        return res.json(row);
+      } catch (error) {
+        console.error("POST /api/commissions/customer-exclusions/:id/inactivate", error);
+        return res.status(500).json({ error: "Erro ao inativar exclusão de cliente." });
+      }
+    }
+  );
 
   app.get("/api/commissions/records", ...viewAnyGuard, async (req, res) => {
     try {
