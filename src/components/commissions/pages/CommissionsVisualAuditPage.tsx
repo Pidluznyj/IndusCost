@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, X } from "lucide-react";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
@@ -14,6 +15,12 @@ import {
 import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 import type { CommissionsVisualAuditPayload } from "@/src/components/commissions/commissionsTypes";
+import {
+  VISUAL_AUDIT_APPRAISAL_MODES,
+  VISUAL_AUDIT_MODE_DESCRIPTIONS,
+  VISUAL_AUDIT_MODE_LABELS,
+  type VisualAuditAppraisalMode,
+} from "@/src/lib/commissions/commissionVisualAudit.shared";
 import {
   buildVisualAuditQueryString,
   EMPTY_VISUAL_AUDIT_FILTERS,
@@ -108,6 +115,86 @@ function VisualAuditDetailDrawer({
   );
 }
 
+function VisualAuditModeTabs({
+  mode,
+  onChange,
+}: {
+  mode: VisualAuditAppraisalMode;
+  onChange: (mode: VisualAuditAppraisalMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" data-testid="commissions-visual-audit-mode-tabs">
+      {VISUAL_AUDIT_APPRAISAL_MODES.map((item) => (
+        <button
+          key={item}
+          type="button"
+          data-testid={`commissions-visual-audit-mode-${item.toLowerCase()}`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            mode === item
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "border border-border bg-background text-foreground hover:bg-muted/50"
+          }`}
+          onClick={() => onChange(item)}
+        >
+          {VISUAL_AUDIT_MODE_LABELS[item]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function VisualAuditCards({
+  mode,
+  cards,
+}: {
+  mode: VisualAuditAppraisalMode;
+  cards: CommissionsVisualAuditPayload["cards"];
+}) {
+  const money = formatFinanceCurrency;
+  if (mode === "GENERATED") {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <FinanceKpiCard label="Valor NFs/documentos" value={money(cards.documentAmountTotal)} />
+        <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
+        <FinanceKpiCard label="Base comissionável gerada" value={money(cards.commissionableBaseTotal)} />
+        <FinanceKpiCard label="Comissão prevista gerada" value={money(cards.commissionCalculatedTotal)} />
+        <FinanceKpiCard label="% médio" value={`${cards.averageRatePercent.toFixed(2)}%`} />
+        <FinanceKpiCard label="Documentos/NFs" value={String(cards.documentCount)} />
+        <FinanceKpiCard label="Títulos únicos" value={String(cards.receivableCount)} />
+        <FinanceKpiCard label="Parcelas" value={String(cards.scheduleCount)} />
+      </div>
+    );
+  }
+
+  if (mode === "FORECAST") {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <FinanceKpiCard label="Títulos em aberto/futuros" value={String(cards.receivableCount)} />
+        <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
+        <FinanceKpiCard label="Base pendente" value={money(cards.commissionableBaseTotal)} />
+        <FinanceKpiCard label="Comissão a liberar" value={money(cards.commissionPendingTotal)} />
+        <FinanceKpiCard label="Comissão futura" value={money(cards.commissionFutureTotal)} />
+        <FinanceKpiCard label="Vencido / bloqueada" value={money(cards.commissionBlockedTotal)} />
+        <FinanceKpiCard label="Parcelas" value={String(cards.scheduleCount)} />
+        <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FinanceKpiCard label="Títulos baixados no mês" value={String(cards.receivableCount)} />
+      <FinanceKpiCard label="Valor recebido/baixado" value={money(cards.receivedAmountTotal)} />
+      <FinanceKpiCard label="Base comissionável baixada" value={money(cards.commissionableBaseTotal)} />
+      <FinanceKpiCard label="Comissão liberada / a pagar" value={money(cards.commissionReleasedTotal)} />
+      <FinanceKpiCard label="% médio" value={`${cards.averageRatePercent.toFixed(2)}%`} />
+      <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
+      <FinanceKpiCard label="Comissão pendente" value={money(cards.commissionPendingTotal)} />
+      <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
+    </div>
+  );
+}
+
 export function CommissionsVisualAuditPage() {
   const [draftFilters, setDraftFilters] = useState<VisualAuditFilters>(EMPTY_VISUAL_AUDIT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<VisualAuditFilters>(EMPTY_VISUAL_AUDIT_FILTERS);
@@ -117,6 +204,8 @@ export function CommissionsVisualAuditPage() {
   const [exporting, setExporting] = useState(false);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [persons, setPersons] = useState<Array<{ id: string; name: string }>>([]);
+
+  const mode = appliedFilters.appraisalMode;
 
   useEffect(() => {
     void fetchJsonOk<{ items: Array<{ id: string; name: string }> }>(
@@ -156,7 +245,7 @@ export function CommissionsVisualAuditPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `auditoria-comissao-${appliedFilters.year || "periodo"}.csv`;
+      a.download = `auditoria-comissao-${appliedFilters.appraisalMode.toLowerCase()}-${appliedFilters.year || "periodo"}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -164,10 +253,16 @@ export function CommissionsVisualAuditPage() {
     }
   }
 
+  function switchMode(nextMode: VisualAuditAppraisalMode) {
+    setDraftFilters((f) => ({ ...f, appraisalMode: nextMode, page: 1 }));
+    setAppliedFilters((f) => ({ ...f, appraisalMode: nextMode, page: 1 }));
+  }
+
   const cards = data?.cards;
   const rows = data?.rows ?? [];
   const pagination = data?.pagination;
   const nomus = data?.nomusReference;
+  const modeDescription = useMemo(() => VISUAL_AUDIT_MODE_DESCRIPTIONS[mode], [mode]);
 
   return (
     <div className="space-y-5" data-testid="commissions-visual-audit-page">
@@ -180,8 +275,8 @@ export function CommissionsVisualAuditPage() {
             Auditoria Visual por Contas a Receber
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Visão simplificada para validar pedido, NF, títulos, vencimentos, recebimentos e comissão
-            por parcela. Sem cálculo no frontend.
+            Valide comissão gerada, prevista e a pagar por título, NF, pedido e recebimento.
+            Resumo calculado no backend — sem cálculo no frontend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -196,11 +291,22 @@ export function CommissionsVisualAuditPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-4">
+      <VisualAuditModeTabs mode={mode} onChange={switchMode} />
+      <p className="text-sm text-muted-foreground">{modeDescription}</p>
+
+      <div className="rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-widest text-[#6B7280]">
           Referência Nomus manual (opcional)
         </p>
-        <div className="mt-2 grid gap-3 md:grid-cols-4">
+        {!nomus?.comparable && nomus != null ? (
+          <ExecutiveAlert
+            variant="attention"
+            density="compact"
+            title="Comparação Nomus"
+            description="A referência Nomus normalmente é por títulos baixados no período. Para comparação mensal, use a visão A pagar no mês."
+          />
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-4">
           <label className="text-sm">
             Base Nomus
             <input
@@ -221,12 +327,26 @@ export function CommissionsVisualAuditPage() {
               placeholder="20926.56"
             />
           </label>
-          <div className="text-sm md:col-span-2 self-end">
+          <div className="text-sm md:col-span-2 self-end space-y-1">
             {nomus?.baseDiff != null ? (
-              <p>Diferença base: {formatFinanceCurrency(nomus.baseDiff)}</p>
+              <p>
+                Diferença base: {formatFinanceCurrency(nomus.baseDiff)}
+                {nomus.baseDiffPercent != null ? ` (${nomus.baseDiffPercent.toFixed(2)}%)` : null}
+              </p>
             ) : null}
             {nomus?.commissionDiff != null ? (
-              <p>Diferença comissão: {formatFinanceCurrency(nomus.commissionDiff)}</p>
+              <p>
+                Diferença comissão: {formatFinanceCurrency(nomus.commissionDiff)}
+                {nomus.commissionDiffPercent != null
+                  ? ` (${nomus.commissionDiffPercent.toFixed(2)}%)`
+                  : null}
+              </p>
+            ) : null}
+            {nomus?.nomusAverageRatePercent != null ? (
+              <p>% médio Nomus: {nomus.nomusAverageRatePercent.toFixed(2)}%</p>
+            ) : null}
+            {nomus?.indusAverageRatePercent != null ? (
+              <p>% médio IndusCost: {nomus.indusAverageRatePercent.toFixed(2)}%</p>
             ) : null}
           </div>
         </div>
@@ -274,7 +394,7 @@ export function CommissionsVisualAuditPage() {
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
           {[
-            ["onlySettled", "Somente baixados"],
+            ["onlySettled", mode === "PAYABLE" ? "Somente baixados (redundante nesta visão)" : "Somente baixados"],
             ["onlyOpen", "Somente em aberto"],
             ["onlyDivergences", "Somente divergências"],
             ["onlyZeroCommission", "Comissão zerada"],
@@ -311,27 +431,12 @@ export function CommissionsVisualAuditPage() {
 
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
-      {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <FinanceKpiCard label="Valor NFs/documentos" value={formatFinanceCurrency(cards.documentAmountTotal)} />
-          <FinanceKpiCard label="Valor títulos" value={formatFinanceCurrency(cards.receivableAmountTotal)} />
-          <FinanceKpiCard label="Base comissionável" value={formatFinanceCurrency(cards.commissionableBaseTotal)} />
-          <FinanceKpiCard label="Comissão calculada" value={formatFinanceCurrency(cards.commissionCalculatedTotal)} />
-          <FinanceKpiCard label="Comissão prevista parcelas" value={formatFinanceCurrency(cards.commissionExpectedTotal)} />
-          <FinanceKpiCard label="Comissão liberada" value={formatFinanceCurrency(cards.commissionReleasedTotal)} />
-          <FinanceKpiCard label="Comissão futura" value={formatFinanceCurrency(cards.commissionFutureTotal)} />
-          <FinanceKpiCard label="Travada inadimplência" value={formatFinanceCurrency(cards.commissionBlockedTotal)} />
-          <FinanceKpiCard label="Documentos/NFs" value={String(cards.documentCount)} />
-          <FinanceKpiCard label="Títulos/parcelas" value={String(cards.scheduleCount)} />
-          <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
-          <FinanceKpiCard label="% médio comissão" value={`${cards.averageRatePercent.toFixed(2)}%`} />
-        </div>
-      ) : null}
+      {cards ? <VisualAuditCards mode={mode} cards={cards} /> : null}
 
       {loading && !data ? <CommissionsLoading label="Carregando auditoria…" /> : null}
 
       {!loading && rows.length === 0 ? (
-        <CommissionsEmptyState title="Nenhuma linha no período" description="Ajuste ano, mês ou vendedor." />
+        <CommissionsEmptyState title="Nenhuma linha no período" description="Ajuste ano, mês, visão ou vendedor." />
       ) : null}
 
       {rows.length > 0 ? (
@@ -354,7 +459,8 @@ export function CommissionsVisualAuditPage() {
                   <th className="px-2 py-2 text-right">Título</th>
                   <th className="px-2 py-2 text-right">Recebido</th>
                   <th className="px-2 py-2 text-right">Saldo</th>
-                  <th className="px-2 py-2 text-right">% título</th>
+                  <th className="px-2 py-2 text-right">% parcela</th>
+                  <th className="px-2 py-2 text-right">Base rateada</th>
                   <th className="px-2 py-2 text-right">Com. prevista</th>
                   <th className="px-2 py-2 text-right">Com. liberada</th>
                   <th className="px-2 py-2 text-right">Com. pendente</th>
@@ -386,6 +492,9 @@ export function CommissionsVisualAuditPage() {
                     <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.openBalance)}</td>
                     <td className="px-2 py-2 text-right">
                       {row.financialSharePercent != null ? `${row.financialSharePercent.toFixed(2)}%` : "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      {formatFinanceCurrency(row.allocatedBaseAmount ?? 0)}
                     </td>
                     <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.commissionExpected)}</td>
                     <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.commissionReleased)}</td>

@@ -4,8 +4,11 @@ import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
 import {
   buildVisualAuditCsv,
+  buildVisualAuditNomusReference,
   buildVisualAuditRow,
   computeVisualAuditCards,
+  filterRowsByAppraisalMode,
+  type VisualAuditNomusReference,
   type VisualAuditRow,
   type VisualAuditRowInput,
 } from "./commissionVisualAudit.js";
@@ -13,6 +16,7 @@ import {
   buildCommissionRecordsWhere,
   COMMISSION_CONFIRMED_STATUSES,
   paginatedMeta,
+  resolvePeriodDateRange,
   type CommissionVisualAuditQuery,
 } from "./commissionQuery.js";
 
@@ -20,12 +24,7 @@ export type CommissionVisualAuditPayload = {
   cards: ReturnType<typeof computeVisualAuditCards>;
   rows: VisualAuditRow[];
   pagination: ReturnType<typeof paginatedMeta>;
-  nomusReference: {
-    base: number | null;
-    commission: number | null;
-    baseDiff: number | null;
-    commissionDiff: number | null;
-  };
+  nomusReference: VisualAuditNomusReference;
 };
 
 type ArMeta = {
@@ -71,6 +70,18 @@ async function loadArMeta(ids: number[]): Promise<Map<number, ArMeta>> {
   );
 }
 
+async function loadSettledReceivableIds(query: CommissionVisualAuditQuery): Promise<number[]> {
+  const range = resolvePeriodDateRange(query);
+  if (!range) return [];
+  const rows = await prisma.nomusAccountsReceivable.findMany({
+    where: {
+      settlementDate: { gte: range.from, lte: range.to },
+    },
+    select: { externalId: true },
+  });
+  return rows.map((row) => row.externalId);
+}
+
 async function loadCustomerExceptionIds(): Promise<Set<number>> {
   const rows = await prisma.commissionCustomerException.findMany({
     where: { active: true },
@@ -79,11 +90,72 @@ async function loadCustomerExceptionIds(): Promise<Set<number>> {
   return new Set(rows.map((r) => r.customerExternalId).filter((id): id is number => id != null));
 }
 
-function buildVisualAuditWhere(
+function buildScopeWhere(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Prisma.CommissionRecordWhereInput {
-  const base = buildCommissionRecordsWhere(
+  return buildCommissionRecordsWhere(
+    {
+      year: null,
+      month: null,
+      from: null,
+      to: null,
+      periodBasis: "confirmedAt",
+      status: null,
+      statusIn: COMMISSION_CONFIRMED_STATUSES,
+      originStage: null,
+      commissionPersonId: query.commissionPersonId,
+      orderCode: query.orderCode,
+      nfeNumber: query.nfeNumber,
+      customer: query.customer,
+      sellerId: query.sellerId,
+      representativeId: query.representativeId,
+      hasRule: null,
+      includeSuperseded: false,
+      page: query.page,
+      pageSize: query.pageSize,
+    },
+    scope,
+    { periodBasis: "confirmedAt" }
+  );
+}
+
+async function buildVisualAuditWhere(
+  query: CommissionVisualAuditQuery,
+  scope: CommissionAccessScope
+): Promise<Prisma.CommissionRecordWhereInput> {
+  const scopeWhere = buildScopeWhere(query, scope);
+
+  if (query.appraisalMode === "PAYABLE") {
+    const settledIds = await loadSettledReceivableIds(query);
+    if (settledIds.length === 0) {
+      return { id: { in: [] } };
+    }
+    const parts: Prisma.CommissionRecordWhereInput[] = [
+      scopeWhere,
+      {
+        paymentSchedules: {
+          some: {
+            source: "ACCOUNTS_RECEIVABLE",
+            nomusReceivableId: { in: settledIds },
+          },
+        },
+      },
+    ];
+    if (query.nomusReceivableId != null) {
+      parts.push({
+        paymentSchedules: {
+          some: {
+            nomusReceivableId: query.nomusReceivableId,
+            source: "ACCOUNTS_RECEIVABLE",
+          },
+        },
+      });
+    }
+    return { AND: parts };
+  }
+
+  const periodWhere = buildCommissionRecordsWhere(
     {
       year: query.year,
       month: query.month,
@@ -111,7 +183,7 @@ function buildVisualAuditWhere(
   if (query.nomusReceivableId != null) {
     return {
       AND: [
-        base,
+        periodWhere,
         {
           paymentSchedules: {
             some: { nomusReceivableId: query.nomusReceivableId, source: "ACCOUNTS_RECEIVABLE" },
@@ -120,7 +192,7 @@ function buildVisualAuditWhere(
       ],
     };
   }
-  return base;
+  return periodWhere;
 }
 
 function applyRowFilters(rows: VisualAuditRow[], query: CommissionVisualAuditQuery): VisualAuditRow[] {
@@ -175,7 +247,7 @@ async function buildVisualAuditRows(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Promise<VisualAuditRow[]> {
-  const where = buildVisualAuditWhere(query, scope);
+  const where = await buildVisualAuditWhere(query, scope);
   const records = await prisma.commissionRecord.findMany({
     where,
     include: {
@@ -202,6 +274,7 @@ async function buildVisualAuditRows(
   );
   const arMeta = await loadArMeta(receivableIds);
   const exceptionCustomers = await loadCustomerExceptionIds();
+  const period = resolvePeriodDateRange(query);
 
   const inputs: VisualAuditRowInput[] = [];
 
@@ -253,6 +326,14 @@ async function buildVisualAuditRows(
         schedule.nomusReceivableId != null
           ? arMeta.get(schedule.nomusReceivableId)
           : undefined;
+      const settlementDate = ar?.settlementDate?.toISOString() ?? null;
+
+      if (query.appraisalMode === "PAYABLE" && period) {
+        if (!settlementDate) continue;
+        const settled = new Date(settlementDate).getTime();
+        if (settled < period.from.getTime() || settled > period.to.getTime()) continue;
+      }
+
       inputs.push({
         lineId: `${record.id}:${schedule.id}`,
         recordId: record.id,
@@ -274,7 +355,7 @@ async function buildVisualAuditRows(
         nomusReceivableId: schedule.nomusReceivableId,
         installmentNumber: schedule.installmentNumber,
         dueDate: schedule.dueDate?.toISOString() ?? null,
-        settlementDate: ar?.settlementDate?.toISOString() ?? null,
+        settlementDate,
         receivableAmount: roundMoney(
           ar?.amountReceivable ?? decimalToNumber(schedule.receivableAmount)
         ),
@@ -298,35 +379,36 @@ async function buildVisualAuditRows(
   return inputs.map(buildVisualAuditRow);
 }
 
+async function listFilteredVisualAuditRows(
+  query: CommissionVisualAuditQuery,
+  scope: CommissionAccessScope
+): Promise<VisualAuditRow[]> {
+  let rows = await buildVisualAuditRows(query, scope);
+  rows = applyRowFilters(rows, query);
+  rows = filterRowsByAppraisalMode(rows, query.appraisalMode, resolvePeriodDateRange(query));
+  return rows;
+}
+
 export async function listCommissionVisualAuditPage(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Promise<CommissionVisualAuditPayload> {
-  let rows = await buildVisualAuditRows(query, scope);
-  rows = applyRowFilters(rows, query);
-
-  const cards = computeVisualAuditCards(rows);
+  const rows = await listFilteredVisualAuditRows(query, scope);
+  const cards = computeVisualAuditCards(rows, query.appraisalMode);
   const total = rows.length;
   const skip = (query.page - 1) * query.pageSize;
   const pageRows = rows.slice(skip, skip + query.pageSize);
-
-  const nomusBase = query.nomusReferenceBase;
-  const nomusCommission = query.nomusReferenceCommission;
 
   return {
     cards,
     rows: pageRows,
     pagination: paginatedMeta(total, query.page, query.pageSize),
-    nomusReference: {
-      base: nomusBase,
-      commission: nomusCommission,
-      baseDiff:
-        nomusBase != null ? roundMoney(cards.commissionableBaseTotal - nomusBase) : null,
-      commissionDiff:
-        nomusCommission != null
-          ? roundMoney(cards.commissionCalculatedTotal - nomusCommission)
-          : null,
-    },
+    nomusReference: buildVisualAuditNomusReference({
+      mode: query.appraisalMode,
+      cards,
+      nomusBase: query.nomusReferenceBase,
+      nomusCommission: query.nomusReferenceCommission,
+    }),
   };
 }
 
@@ -334,9 +416,9 @@ export async function exportCommissionVisualAuditCsv(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Promise<string> {
-  let rows = await buildVisualAuditRows(query, scope);
-  rows = applyRowFilters(rows, query);
-  return buildVisualAuditCsv(rows);
+  const rows = await listFilteredVisualAuditRows(query, scope);
+  const cards = computeVisualAuditCards(rows, query.appraisalMode);
+  return buildVisualAuditCsv(rows, cards);
 }
 
 export async function getCommissionVisualAuditDetail(input: {
@@ -382,6 +464,7 @@ export async function getCommissionVisualAuditDetail(input: {
       month: null,
       from: null,
       to: null,
+      appraisalMode: "GENERATED",
       commissionPersonId: record.commissionPersonId,
       customer: null,
       orderCode: record.orderCode,
@@ -421,8 +504,8 @@ export async function getCommissionVisualAuditDetail(input: {
 
   let explanation = `NF ${record.nfeNumber ?? "—"} gerou R$ ${documentTotals.commission.toFixed(2)} de comissão total.`;
   if (scheduleRow?.nomusReceivableId) {
-    const share = scheduleRow.financialSharePercent ?? scheduleRow.allocationPercent ?? 0;
-    explanation += ` O título ${scheduleRow.nomusReceivableId} (parcela ${scheduleRow.installmentNumber ?? "—"}) representa ${share}% do valor financeiro vinculado, com comissão prevista de R$ ${scheduleRow.commissionExpected.toFixed(2)}.`;
+    const share = scheduleRow.allocationPercent ?? scheduleRow.financialSharePercent ?? 0;
+    explanation += ` O título ${scheduleRow.nomusReceivableId} (parcela ${scheduleRow.installmentNumber ?? "—"}) representa ${share}% do valor financeiro vinculado, com base rateada de R$ ${scheduleRow.allocatedBaseAmount.toFixed(2)} e comissão prevista de R$ ${scheduleRow.commissionExpected.toFixed(2)}.`;
     if (scheduleRow.settlementDate) {
       explanation += ` Baixa em ${new Date(scheduleRow.settlementDate).toLocaleDateString("pt-BR")} — comissão liberada R$ ${scheduleRow.commissionReleased.toFixed(2)}.`;
     } else {

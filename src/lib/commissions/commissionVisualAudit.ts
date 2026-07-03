@@ -2,6 +2,18 @@
  * Auditoria visual por Contas a Receber — lógica pura (sem Prisma).
  */
 import { roundMoney } from "./commission-money.js";
+import {
+  VISUAL_AUDIT_MODE_LABELS,
+  type VisualAuditAppraisalMode,
+} from "./commissionVisualAudit.shared.js";
+
+export {
+  parseVisualAuditAppraisalMode,
+  VISUAL_AUDIT_APPRAISAL_MODES,
+  VISUAL_AUDIT_MODE_DESCRIPTIONS,
+  VISUAL_AUDIT_MODE_LABELS,
+  type VisualAuditAppraisalMode,
+} from "./commissionVisualAudit.shared.js";
 
 export type VisualAuditReceivableTitleStatus =
   | "BAIXADO"
@@ -65,6 +77,7 @@ export type VisualAuditRowInput = {
 };
 
 export type VisualAuditRow = VisualAuditRowInput & {
+  allocatedBaseAmount: number;
   receivableTitleStatus: VisualAuditReceivableTitleStatus;
   commissionStatus: VisualAuditCommissionStatus;
   commissionPending: number;
@@ -74,24 +87,55 @@ export type VisualAuditRow = VisualAuditRowInput & {
 };
 
 export type VisualAuditCards = {
+  appraisalMode: VisualAuditAppraisalMode;
   documentAmountTotal: number;
   receivableAmountTotal: number;
+  receivedAmountTotal: number;
   commissionableBaseTotal: number;
   commissionCalculatedTotal: number;
   commissionExpectedTotal: number;
   commissionReleasedTotal: number;
+  commissionPendingTotal: number;
   commissionFutureTotal: number;
   commissionBlockedTotal: number;
   documentCount: number;
+  receivableCount: number;
   scheduleCount: number;
   divergenceCount: number;
   averageRatePercent: number;
 };
 
-function startOfDay(d: Date): Date {
+export type VisualAuditNomusReference = {
+  base: number | null;
+  commission: number | null;
+  baseDiff: number | null;
+  commissionDiff: number | null;
+  baseDiffPercent: number | null;
+  commissionDiffPercent: number | null;
+  nomusAverageRatePercent: number | null;
+  indusAverageRatePercent: number | null;
+  comparable: boolean;
+};
+
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
+}
+
+  const pct = row.allocationPercent;
+  if (pct != null && pct > 0) {
+    return roundMoney(row.itemBaseAmount * (pct / 100));
+  }
+  if (row.commissionExpected > 0 && row.itemRatePercent > 0) {
+    return roundMoney(row.commissionExpected / (row.itemRatePercent / 100));
+  }
+  return roundMoney(row.itemBaseAmount);
+}
+
+export function resolveReceivableUniqueKey(row: VisualAuditRowInput): string | null {
+  if (row.nomusReceivableId != null) return `cr:${row.nomusReceivableId}`;
+  if (row.scheduleId) return `sch:${row.scheduleId}`;
+  return null;
 }
 
 export function resolveReceivableTitleStatus(input: {
@@ -194,6 +238,7 @@ export function buildVisualAuditRow(input: VisualAuditRowInput): VisualAuditRow 
   const commissionPending = roundMoney(
     Math.max(0, input.commissionExpected - input.commissionReleased)
   );
+  const allocatedBaseAmount = resolveAllocatedBaseAmount(input);
   const financialSharePercent =
     input.documentBaseAmount > 0
       ? roundMoney((input.receivableAmount / input.documentBaseAmount) * 100)
@@ -201,6 +246,7 @@ export function buildVisualAuditRow(input: VisualAuditRowInput): VisualAuditRow 
 
   return {
     ...input,
+    allocatedBaseAmount,
     receivableTitleStatus,
     commissionStatus,
     commissionPending,
@@ -210,30 +256,85 @@ export function buildVisualAuditRow(input: VisualAuditRowInput): VisualAuditRow 
   };
 }
 
-export function computeVisualAuditCards(rows: VisualAuditRow[]): VisualAuditCards {
+export function filterRowsByAppraisalMode(
+  rows: VisualAuditRow[],
+  mode: VisualAuditAppraisalMode,
+  period?: { from: Date | null; to: Date | null }
+): VisualAuditRow[] {
+  if (mode === "GENERATED") return rows;
+
+  if (mode === "FORECAST") {
+    return rows.filter((row) => {
+      if (row.receivableTitleStatus === "SEM_VINCULO") return true;
+      if (row.receivableTitleStatus === "BAIXADO") return false;
+      if (row.commissionPending <= 0 && row.commissionExpected <= 0) return false;
+      if (!period?.from && !period?.to) return true;
+      if (!row.dueDate) return row.openBalance > 0;
+      const due = new Date(row.dueDate).getTime();
+      if (period.from && due < period.from.getTime()) return false;
+      if (period.to && due > period.to.getTime()) return false;
+      return true;
+    });
+  }
+
+  return rows.filter((row) => {
+    if (!row.settlementDate) return false;
+    const settled = new Date(row.settlementDate).getTime();
+    if (period?.from && settled < period.from.getTime()) return false;
+    if (period?.to && settled > period.to.getTime()) return false;
+    return true;
+  });
+}
+
+export function computeVisualAuditCards(
+  rows: VisualAuditRow[],
+  mode: VisualAuditAppraisalMode = "GENERATED"
+): VisualAuditCards {
   const docKeys = new Set<string>();
+  const receivableKeys = new Set<string>();
+  const scheduleKeys = new Set<string>();
+
   let documentAmountTotal = 0;
   let receivableAmountTotal = 0;
+  let receivedAmountTotal = 0;
   let commissionableBaseTotal = 0;
-  let commissionCalculatedTotal = 0;
   let commissionExpectedTotal = 0;
   let commissionReleasedTotal = 0;
+  let commissionPendingTotal = 0;
   let commissionFutureTotal = 0;
   let commissionBlockedTotal = 0;
   let divergenceCount = 0;
-  const docAmountByKey = new Map<string, number>();
 
   for (const row of rows) {
-    if (!docAmountByKey.has(row.documentKey)) {
-      docAmountByKey.set(row.documentKey, row.documentBaseAmount);
-      documentAmountTotal = roundMoney(documentAmountTotal + row.documentBaseAmount);
+    if (!docKeys.has(row.documentKey)) {
       docKeys.add(row.documentKey);
+      documentAmountTotal = roundMoney(documentAmountTotal + row.documentBaseAmount);
     }
-    commissionableBaseTotal = roundMoney(commissionableBaseTotal + row.itemBaseAmount);
-    commissionCalculatedTotal = roundMoney(commissionCalculatedTotal + row.itemCommissionAmount);
-    receivableAmountTotal = roundMoney(receivableAmountTotal + row.receivableAmount);
-    commissionExpectedTotal = roundMoney(commissionExpectedTotal + row.commissionExpected);
-    commissionReleasedTotal = roundMoney(commissionReleasedTotal + row.commissionReleased);
+
+    const receivableKey = resolveReceivableUniqueKey(row);
+    if (receivableKey && !receivableKeys.has(receivableKey)) {
+      receivableKeys.add(receivableKey);
+      receivableAmountTotal = roundMoney(receivableAmountTotal + row.receivableAmount);
+      receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    }
+
+    const scheduleKey = row.scheduleId ?? row.lineId;
+    if (!scheduleKeys.has(scheduleKey)) {
+      scheduleKeys.add(scheduleKey);
+      commissionableBaseTotal = roundMoney(
+        commissionableBaseTotal + row.allocatedBaseAmount
+      );
+      commissionExpectedTotal = roundMoney(
+        commissionExpectedTotal + row.commissionExpected
+      );
+      commissionReleasedTotal = roundMoney(
+        commissionReleasedTotal + row.commissionReleased
+      );
+      commissionPendingTotal = roundMoney(
+        commissionPendingTotal + row.commissionPending
+      );
+    }
+
     if (row.commissionStatus === "AGUARDANDO_RECEBIMENTO" && row.receivableTitleStatus === "FUTURO") {
       commissionFutureTotal = roundMoney(commissionFutureTotal + row.commissionPending);
     }
@@ -243,29 +344,81 @@ export function computeVisualAuditCards(rows: VisualAuditRow[]): VisualAuditCard
     if (row.alerts.length > 0) divergenceCount += 1;
   }
 
+  const commissionCalculatedTotal = commissionExpectedTotal;
   const averageRatePercent =
     commissionableBaseTotal > 0
       ? roundMoney((commissionCalculatedTotal / commissionableBaseTotal) * 100)
       : 0;
 
   return {
+    appraisalMode: mode,
     documentAmountTotal,
     receivableAmountTotal,
+    receivedAmountTotal,
     commissionableBaseTotal,
     commissionCalculatedTotal,
     commissionExpectedTotal,
     commissionReleasedTotal,
+    commissionPendingTotal,
     commissionFutureTotal,
     commissionBlockedTotal,
     documentCount: docKeys.size,
-    scheduleCount: rows.filter((r) => r.scheduleId).length,
+    receivableCount: receivableKeys.size,
+    scheduleCount: scheduleKeys.size,
     divergenceCount,
     averageRatePercent,
   };
 }
 
-export function visualAuditRowToCsv(row: VisualAuditRow): Record<string, string | number> {
+export function buildVisualAuditNomusReference(input: {
+  mode: VisualAuditAppraisalMode;
+  cards: VisualAuditCards;
+  nomusBase: number | null;
+  nomusCommission: number | null;
+}): VisualAuditNomusReference {
+  const comparable = input.mode === "PAYABLE";
+  const indusBase = comparable
+    ? input.cards.commissionableBaseTotal
+    : input.cards.commissionableBaseTotal;
+  const indusCommission = comparable
+    ? input.cards.commissionReleasedTotal
+    : input.cards.commissionCalculatedTotal;
+
+  const baseDiff =
+    input.nomusBase != null ? roundMoney(indusBase - input.nomusBase) : null;
+  const commissionDiff =
+    input.nomusCommission != null
+      ? roundMoney(indusCommission - input.nomusCommission)
+      : null;
+
   return {
+    base: input.nomusBase,
+    commission: input.nomusCommission,
+    baseDiff,
+    commissionDiff,
+    baseDiffPercent:
+      input.nomusBase != null && input.nomusBase > 0 && baseDiff != null
+        ? roundMoney((baseDiff / input.nomusBase) * 100)
+        : null,
+    commissionDiffPercent:
+      input.nomusCommission != null && input.nomusCommission > 0 && commissionDiff != null
+        ? roundMoney((commissionDiff / input.nomusCommission) * 100)
+        : null,
+    nomusAverageRatePercent:
+      input.nomusBase != null && input.nomusBase > 0 && input.nomusCommission != null
+        ? roundMoney((input.nomusCommission / input.nomusBase) * 100)
+        : null,
+    indusAverageRatePercent: input.cards.averageRatePercent,
+    comparable,
+  };
+}
+
+export function visualAuditRowToCsv(
+  row: VisualAuditRow,
+  mode: VisualAuditAppraisalMode
+): Record<string, string | number> {
+  return {
+    apuracao: VISUAL_AUDIT_MODE_LABELS[mode],
     vendedor: row.commissionPersonName,
     cliente: row.customerName ?? "",
     pedido: row.orderCode ?? "",
@@ -280,23 +433,43 @@ export function visualAuditRowToCsv(row: VisualAuditRow): Record<string, string 
     valorTitulo: row.receivableAmount,
     valorRecebido: row.receivedAmount,
     saldoAberto: row.openBalance,
-    percentualTitulo: row.financialSharePercent ?? "",
+    percentualTitulo: row.allocationPercent ?? row.financialSharePercent ?? "",
+    baseItem: row.itemBaseAmount,
+    baseRateada: row.allocatedBaseAmount,
+    percentualItem: row.itemRatePercent,
+    produto: row.productCode ?? "",
     comissaoPrevista: row.commissionExpected,
     comissaoLiberada: row.commissionReleased,
     comissaoPendente: row.commissionPending,
     statusTitulo: row.receivableTitleStatus,
     statusComissao: row.commissionStatus,
     alertas: row.alertLabels.join("; "),
-    baseItem: row.itemBaseAmount,
-    percentualItem: row.itemRatePercent,
-    produto: row.productCode ?? "",
   };
 }
 
-export function buildVisualAuditCsv(rows: VisualAuditRow[]): string {
-  if (rows.length === 0) return "vendedor,cliente,pedido,nfe\n";
-  const sample = visualAuditRowToCsv(rows[0]!);
-  const headers = Object.keys(sample);
+export function buildVisualAuditCsvSummaryLines(
+  cards: VisualAuditCards
+): string[] {
+  return [
+    `# apuracao=${cards.appraisalMode}`,
+    `# documentos=${cards.documentCount}`,
+    `# titulos_unicos=${cards.receivableCount}`,
+    `# parcelas=${cards.scheduleCount}`,
+    `# valor_nf_unico=${cards.documentAmountTotal}`,
+    `# valor_cr_unico=${cards.receivableAmountTotal}`,
+    `# valor_recebido=${cards.receivedAmountTotal}`,
+    `# base_rateada=${cards.commissionableBaseTotal}`,
+    `# comissao_prevista=${cards.commissionExpectedTotal}`,
+    `# comissao_liberada=${cards.commissionReleasedTotal}`,
+    `# comissao_pendente=${cards.commissionPendingTotal}`,
+    `# percentual_medio=${cards.averageRatePercent}`,
+  ];
+}
+
+export function buildVisualAuditCsv(
+  rows: VisualAuditRow[],
+  cards: VisualAuditCards
+): string {
   const escape = (v: string | number) => {
     const s = String(v);
     if (s.includes(",") || s.includes('"') || s.includes("\n")) {
@@ -304,8 +477,19 @@ export function buildVisualAuditCsv(rows: VisualAuditRow[]): string {
     }
     return s;
   };
+
+  if (rows.length === 0) {
+    return [...buildVisualAuditCsvSummaryLines(cards), "apuracao,vendedor,cliente"].join("\n");
+  }
+
+  const sample = visualAuditRowToCsv(rows[0]!, cards.appraisalMode);
+  const headers = Object.keys(sample);
   const lines = rows.map((row) =>
-    headers.map((h) => escape(visualAuditRowToCsv(row)[h] ?? "")).join(",")
+    headers.map((h) => escape(visualAuditRowToCsv(row, cards.appraisalMode)[h] ?? "")).join(",")
   );
-  return [headers.join(","), ...lines].join("\n");
+  return [
+    ...buildVisualAuditCsvSummaryLines(cards),
+    headers.join(","),
+    ...lines,
+  ].join("\n");
 }

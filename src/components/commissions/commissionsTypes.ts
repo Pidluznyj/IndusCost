@@ -730,6 +730,7 @@ export type CommissionsVisualAuditRow = {
   commissionExpected: number;
   commissionReleased: number;
   commissionPending: number;
+  allocatedBaseAmount?: number;
   receivableTitleStatus: string;
   commissionStatus: string;
   alertLabels: string[];
@@ -737,15 +738,19 @@ export type CommissionsVisualAuditRow = {
 
 export type CommissionsVisualAuditPayload = {
   cards: {
+    appraisalMode: string;
     documentAmountTotal: number;
     receivableAmountTotal: number;
+    receivedAmountTotal: number;
     commissionableBaseTotal: number;
     commissionCalculatedTotal: number;
     commissionExpectedTotal: number;
     commissionReleasedTotal: number;
+    commissionPendingTotal: number;
     commissionFutureTotal: number;
     commissionBlockedTotal: number;
     documentCount: number;
+    receivableCount: number;
     scheduleCount: number;
     divergenceCount: number;
     averageRatePercent: number;
@@ -757,5 +762,10 @@ export type CommissionsVisualAuditPayload = {
     commission: number | null;
     baseDiff: number | null;
     commissionDiff: number | null;
+    baseDiffPercent: number | null;
+    commissionDiffPercent: number | null;
+    nomusAverageRatePercent: number | null;
+    indusAverageRatePercent: number | null;
+    comparable: boolean;
   };
 };

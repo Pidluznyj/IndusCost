@@ -1,6 +1,8 @@
 /** Filtros da auditoria visual — serialização para API. */
+import type { VisualAuditAppraisalMode } from "@/src/lib/commissions/commissionVisualAudit.shared";
 
 export type VisualAuditFilters = {
+  appraisalMode: VisualAuditAppraisalMode;
   year: string;
   month: string;
   commissionPersonId: string;
@@ -20,6 +22,7 @@ export type VisualAuditFilters = {
 };
 
 export const EMPTY_VISUAL_AUDIT_FILTERS: VisualAuditFilters = {
+  appraisalMode: "GENERATED",
   year: String(new Date().getFullYear()),
   month: String(new Date().getMonth() + 1),
   commissionPersonId: "",
@@ -40,6 +43,7 @@ export const EMPTY_VISUAL_AUDIT_FILTERS: VisualAuditFilters = {
 
 export function buildVisualAuditQueryString(filters: VisualAuditFilters): string {
   const q = new URLSearchParams();
+  q.set("appraisalMode", filters.appraisalMode);
   if (filters.year.trim()) q.set("year", filters.year.trim());
   if (filters.month.trim()) q.set("month", filters.month.trim());
   if (filters.commissionPersonId.trim()) q.set("commissionPersonId", filters.commissionPersonId.trim());

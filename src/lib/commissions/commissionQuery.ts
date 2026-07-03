@@ -5,6 +5,10 @@ import type {
 import type { Prisma } from "@prisma/client";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import {
+  parseVisualAuditAppraisalMode,
+  type VisualAuditAppraisalMode,
+} from "./commissionVisualAudit.shared.js";
+import {
   applyCommissionRecordScope,
   parseOptionalInt,
   parseOptionalUuid,
@@ -388,7 +392,7 @@ export function resolveConfirmedStatusIn(
   return statuses;
 }
 
-function resolvePeriodDateRange(
+export function resolvePeriodDateRange(
   query: CommissionPeriodQuery
 ): { from: Date; to: Date } | null {
   if (query.from && query.to) {
@@ -953,6 +957,7 @@ export type CommissionExceptionsQuery = {
 };
 
 export type CommissionVisualAuditQuery = CommissionRecordsQuery & {
+  appraisalMode: VisualAuditAppraisalMode;
   nomusReceivableId: number | null;
   dueDateFrom: Date | null;
   dueDateTo: Date | null;
@@ -994,6 +999,7 @@ export function parseCommissionVisualAuditQuery(
 
   return {
     ...base,
+    appraisalMode: parseVisualAuditAppraisalMode(query.appraisalMode ?? query.mode),
     nomusReceivableId,
     dueDateFrom,
     dueDateTo,
