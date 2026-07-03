@@ -389,6 +389,51 @@ async function listFilteredVisualAuditRows(
   return rows;
 }
 
+export type PayableVisualAuditRowsQuery = {
+  year: number;
+  month: number;
+  commissionPersonId?: string | null;
+};
+
+/** Linhas PAYABLE filtradas por settlementDate — base para auditoria mensal oficial. */
+export async function listPayableVisualAuditRows(
+  query: PayableVisualAuditRowsQuery,
+  scope: CommissionAccessScope
+): Promise<VisualAuditRow[]> {
+  return listFilteredVisualAuditRows(
+    {
+      year: query.year,
+      month: query.month,
+      from: null,
+      to: null,
+      appraisalMode: "PAYABLE",
+      commissionPersonId: query.commissionPersonId ?? null,
+      customer: null,
+      orderCode: null,
+      nfeNumber: null,
+      sellerId: null,
+      representativeId: null,
+      nomusReceivableId: null,
+      dueDateFrom: null,
+      dueDateTo: null,
+      settlementDateFrom: null,
+      settlementDateTo: null,
+      onlySettled: false,
+      onlyOpen: false,
+      onlyDivergences: false,
+      onlyZeroCommission: false,
+      onlyMissingReceivableLink: false,
+      receivableTitleStatus: null,
+      commissionStatus: null,
+      nomusReferenceBase: null,
+      nomusReferenceCommission: null,
+      page: 1,
+      pageSize: 100000,
+    },
+    scope
+  );
+}
+
 export async function listCommissionVisualAuditPage(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
