@@ -7,6 +7,7 @@ import {
   classifyFinanceApTitle,
   decimalFieldToNumber,
   endOfLocalDay,
+  mapPrismaRowToFinanceApDashboardRow,
   roundMoney,
   safeRatio,
   type FinanceApDashboardRow,
@@ -56,6 +57,8 @@ import {
   type CostCenterSupplierPaymentYearRow,
   type CostCenterSupplierPaymentYearsPayload,
 } from "@/src/lib/financeCostCenterSupplierPaymentDrilldown.shared.js";
+import { formatAccountsPayableDescriptiveText } from "@/src/lib/financeAccountsPayableDescriptiveText.js";
+import { prisma } from "@/src/lib/prisma.js";
 
 export {
   COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE,
@@ -83,6 +86,102 @@ const MONTH_LABELS = [
   "Nov",
   "Dez",
 ] as const;
+
+export const SUPPLIER_PAYMENT_DRILLDOWN_AP_SELECT = {
+  externalId: true,
+  companyName: true,
+  personName: true,
+  personCnpj: true,
+  personId: true,
+  description: true,
+  comments: true,
+  rawPayload: true,
+  dueDate: true,
+  scheduleDate: true,
+  type: true,
+  settlementDate: true,
+  paymentDate: true,
+  competenceDate: true,
+  createdAtNomus: true,
+  amountPayable: true,
+  amountPaid: true,
+  balancePayable: true,
+  paymentMethodName: true,
+  bankAccountName: true,
+  sourceInvoiceId: true,
+  sourceInvoiceNumber: true,
+  documentNumber: true,
+  suspendPayment: true,
+  status: true,
+  classification: true,
+  syncedAt: true,
+} as const;
+
+export type FinanceApPaymentDrilldownRow = FinanceApDashboardRow & {
+  comments?: string | null;
+  rawPayload?: unknown;
+  competenceDate?: Date | null;
+  createdAtNomus?: Date | null;
+  sourceInvoiceNumber?: string | null;
+  classification?: string | null;
+  personId?: number | null;
+};
+
+export const SUPPLIER_PAYMENT_PERIOD_SCOPE_NOTE =
+  "Lista somente títulos pagos no período selecionado (ano/mês), respeitando empresa, classificação e centro de custo dos filtros da tela." as const;
+
+function mapPrismaRowToPaymentDrilldownRow(row: {
+  externalId: number;
+  companyName: string | null;
+  personName: string | null;
+  personCnpj: string | null;
+  personId?: number | null;
+  description: string | null;
+  comments?: string | null;
+  rawPayload?: unknown;
+  dueDate: Date | null;
+  scheduleDate?: Date | null;
+  type?: number | null;
+  settlementDate: Date | null;
+  paymentDate: Date | null;
+  competenceDate?: Date | null;
+  createdAtNomus?: Date | null;
+  amountPayable: import("@prisma/client").Prisma.Decimal | null;
+  amountPaid: import("@prisma/client").Prisma.Decimal | null;
+  balancePayable: import("@prisma/client").Prisma.Decimal | null;
+  paymentMethodName: string | null;
+  bankAccountName: string | null;
+  sourceInvoiceId: number | null;
+  sourceInvoiceNumber?: string | null;
+  documentNumber: string | null;
+  suspendPayment: boolean | null;
+  status: boolean | null;
+  classification?: string | null;
+  syncedAt: Date;
+}): FinanceApPaymentDrilldownRow {
+  return {
+    ...mapPrismaRowToFinanceApDashboardRow(row),
+    comments: row.comments ?? null,
+    rawPayload: row.rawPayload,
+    competenceDate: row.competenceDate ?? null,
+    createdAtNomus: row.createdAtNomus ?? null,
+    sourceInvoiceNumber: row.sourceInvoiceNumber ?? null,
+    classification: row.classification ?? null,
+    personId: row.personId ?? null,
+  };
+}
+
+function resolveTitleIssueDate(row: FinanceApPaymentDrilldownRow): string | null {
+  return toCivilDateKey(row.competenceDate) ?? toCivilDateKey(row.createdAtNomus);
+}
+
+function resolveTitleDescriptiveText(row: FinanceApPaymentDrilldownRow): string {
+  return formatAccountsPayableDescriptiveText({
+    description: row.description,
+    comments: row.comments,
+    rawPayload: row.rawPayload,
+  });
+}
 
 function toFiltersAppliedPayload(
   filters: FinanceCostCenterDashboardFilters
@@ -248,7 +347,7 @@ function resolveCostCenterLabels(
 }
 
 type SupplierPaymentContext = {
-  rows: FinanceApDashboardRow[];
+  rows: FinanceApPaymentDrilldownRow[];
   allocationsByPayable: Map<number, AllocationDashboardRow[]>;
   suppliers: SupplierWithAliases[];
   ccMeta: Map<string, CostCenterMetaRow>;
@@ -262,14 +361,41 @@ function isPaidInWindow(
   options: { periodStart?: Date; periodEnd?: Date; year?: number }
 ): boolean {
   if (!paidAt) return false;
-  if (options.year != null && paidAt.getFullYear() !== options.year) return false;
   if (options.periodStart && options.periodEnd) {
     const startMs = options.periodStart.getTime();
     const endMs = options.periodEnd.getTime();
     const paidMs = paidAt.getTime();
     return paidMs >= startMs && paidMs <= endMs;
   }
+  if (options.year != null && paidAt.getFullYear() !== options.year) return false;
   return true;
+}
+
+function resolvePaidTitlesWindow(
+  ctx: SupplierPaymentContext,
+  year: number
+): { periodStart?: Date; periodEnd?: Date; year?: number; periodLabel: string } {
+  const filterYear = ctx.filters.year ?? year;
+  const { periodStart, periodEnd, periodLabel } = resolveSupplierPaymentPeriodBounds(
+    { ...ctx.filters, year: filterYear },
+    ctx.referenceDate
+  );
+  if (ctx.filters.month != null && ctx.filters.month >= 1 && ctx.filters.month <= 12) {
+    return { periodStart, periodEnd, periodLabel };
+  }
+  if (filterYear === year) {
+    return {
+      year,
+      periodLabel: String(year),
+    };
+  }
+  const annualStart = new Date(year, 0, 1, 0, 0, 0, 0);
+  const annualEnd = endOfLocalDay(new Date(year, 11, 31));
+  return {
+    periodStart: annualStart,
+    periodEnd: annualEnd,
+    periodLabel: String(year),
+  };
 }
 
 function iterateSupplierPaidRows(
@@ -481,9 +607,20 @@ export function buildCostCenterSupplierPaymentTitles(
   pageSize = 50,
   search = ""
 ): CostCenterSupplierPaymentTitlesPayload {
+  const paidWindow = resolvePaidTitlesWindow(ctx, year);
   const matches: CostCenterSupplierPaymentTitleRow[] = [];
+  const supplierDocument =
+    ctx.suppliers.find((supplier) => `fs:${supplier.id}` === supplierKey)?.normalizedDocument ?? null;
 
-  iterateSupplierPaidRows(ctx, { supplierKey, year }, (match) => {
+  iterateSupplierPaidRows(
+    ctx,
+    {
+      supplierKey,
+      periodStart: paidWindow.periodStart,
+      periodEnd: paidWindow.periodEnd,
+      year: paidWindow.year,
+    },
+    (match) => {
     const cc = resolveCostCenterLabels(
       match.rowAllocations,
       ctx.ccMeta,
@@ -493,21 +630,25 @@ export function buildCostCenterSupplierPaymentTitles(
     const operational =
       toCivilDateKey(match.row.paymentDate) ??
       toCivilDateKey(match.row.settlementDate);
+    const drilldownRow = match.row as FinanceApPaymentDrilldownRow;
     matches.push({
       accountsPayableId: match.row.externalId,
       paymentDate: toCivilDateKey(match.paidAt),
       operationalPaymentDate: operational,
       dueDate: toCivilDateKey(match.row.dueDate),
+      issueDate: resolveTitleIssueDate(drilldownRow),
       documentNumber: match.row.documentNumber,
       sourceInvoiceId: match.row.sourceInvoiceId,
+      sourceInvoiceNumber: drilldownRow.sourceInvoiceNumber ?? null,
       description: match.row.description,
+      descriptiveText: resolveTitleDescriptiveText(drilldownRow),
       costCenterName: cc.name,
       costCenterCode: cc.code,
       amountPayable: finiteMoney(Math.abs(match.row.amountPayable)),
       paidAmount: match.paidAmount,
       statusLabel: status,
       companyName: match.row.companyName,
-      nomusClassification: null,
+      nomusClassification: drilldownRow.classification ?? null,
     });
   });
 
@@ -517,10 +658,12 @@ export function buildCostCenterSupplierPaymentTitles(
         [
           row.documentNumber,
           row.description,
+          row.descriptiveText,
           row.costCenterName,
           row.companyName,
           String(row.accountsPayableId),
           row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null,
+          row.sourceInvoiceNumber,
         ]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(normalizedSearch))
@@ -543,7 +686,10 @@ export function buildCostCenterSupplierPaymentTitles(
   return {
     supplierKey,
     supplierDisplayName,
+    supplierDocument: supplierDocument ?? matchSupplierDocument(ctx, supplierKey),
     year,
+    periodLabel: paidWindow.periodLabel,
+    periodScopeNote: SUPPLIER_PAYMENT_PERIOD_SCOPE_NOTE,
     items,
     totalPaidAmount,
     paidTitlesCount: filtered.length,
@@ -554,6 +700,16 @@ export function buildCostCenterSupplierPaymentTitles(
   };
 }
 
+function matchSupplierDocument(ctx: SupplierPaymentContext, supplierKey: string): string | null {
+  let found: string | null = null;
+  iterateSupplierPaidRows(ctx, { supplierKey }, (match) => {
+    if (!found) {
+      found = resolveCostCenterSupplierDisplay(match.row, match.supplier).document;
+    }
+  });
+  return found;
+}
+
 export async function loadCostCenterSupplierPaymentContext(
   filters: FinanceCostCenterDashboardFilters,
   referenceDate: Date = new Date()
@@ -562,7 +718,16 @@ export async function loadCostCenterSupplierPaymentContext(
   const syncCutoff = await deps.resolveSyncCutoff();
   const scopeFilters = stripCostCenterDashboardPeriodFilters(filters);
   const where = buildFinanceApPrismaWhere(scopeFilters, syncCutoff);
-  const rows = where.externalId === -1 ? [] : await deps.loadApRows(where);
+  const rows =
+    where.externalId === -1
+      ? []
+      : (
+          await prisma.nomusAccountsPayable.findMany({
+            where,
+            select: SUPPLIER_PAYMENT_DRILLDOWN_AP_SELECT,
+            orderBy: { dueDate: "asc" },
+          })
+        ).map(mapPrismaRowToPaymentDrilldownRow);
   const allocationIds = rows.map((row) => row.externalId);
   const allocations = await deps.loadAllocations(allocationIds);
   const allocationsByPayable = new Map<number, AllocationDashboardRow[]>();

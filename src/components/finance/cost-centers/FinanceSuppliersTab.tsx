@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, FileText, RefreshCw, Settings2 } from "lucide-react";
+import { Eye, FileText, ListOrdered, RefreshCw, Settings2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -48,6 +48,7 @@ import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTy
 import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-centers/FinanceSupplierCadastroDrawer";
 import { FinanceSupplierPaymentDrilldownSection } from "@/src/components/finance/cost-centers/FinanceSupplierPaymentDrilldownSection";
+import { FinanceSupplierPaidTitlesModal } from "@/src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal";
 
 type Props = {
   dashboard: FinanceCostCenterDashboardPayload | null;
@@ -74,6 +75,7 @@ export function FinanceSuppliersTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aliasesSupplier, setAliasesSupplier] = useState<SupplierGridRow | null>(null);
+  const [paidTitlesSupplier, setPaidTitlesSupplier] = useState<SupplierGridRow | null>(null);
   const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
   const [creatingCadastroFor, setCreatingCadastroFor] = useState<string | null>(null);
 
@@ -151,6 +153,7 @@ export function FinanceSuppliersTab({
       const previewItem = row.supplierId ? previewById.get(row.supplierId) : null;
       const hasActiveRule = supplierRules.length > 0;
       return {
+        supplierKey: row.supplierKey,
         supplierId: row.supplierId,
         name: row.name,
         document: row.document,
@@ -342,7 +345,7 @@ export function FinanceSuppliersTab({
             }
           >
             {pageRows.map((row) => (
-              <tr key={`${row.supplierId ?? row.name}`} className="border-b border-border/60">
+              <tr key={row.supplierKey} className="border-b border-border/60">
                 <td className="px-3 py-2 font-semibold">{row.name}</td>
                 <td className="px-3 py-2 text-muted-foreground">{row.document ?? "—"}</td>
                 <td className="px-3 py-2 tabular-nums">{row.titlesCount}</td>
@@ -373,6 +376,15 @@ export function FinanceSuppliersTab({
                         {creatingCadastroFor === row.name ? "Criando…" : "Criar cadastro"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      data-testid="finance-suppliers-view-paid-titles-button"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                      onClick={() => setPaidTitlesSupplier(row)}
+                    >
+                      <ListOrdered className="h-3 w-3" />
+                      Ver títulos
+                    </button>
                     <button
                       type="button"
                       data-testid="finance-suppliers-define-rule-button"
@@ -428,6 +440,13 @@ export function FinanceSuppliersTab({
         onChanged={onSuppliersChanged}
         canManage={canManageSuppliers}
         canDelete={canDeleteSupplier}
+      />
+
+      <FinanceSupplierPaidTitlesModal
+        open={Boolean(paidTitlesSupplier)}
+        supplier={paidTitlesSupplier}
+        filters={appliedFilters}
+        onClose={() => setPaidTitlesSupplier(null)}
       />
 
       <FinanceSupplierPaymentDrilldownSection filters={appliedFilters} />

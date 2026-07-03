@@ -31,6 +31,7 @@ describe("financeCostCenterGridKit", () => {
     const rows = filterSupplierGridRows(
       [
         {
+          supplierKey: "fs:1",
           supplierId: "1",
           name: "A",
           document: null,
@@ -42,6 +43,7 @@ describe("financeCostCenterGridKit", () => {
           aliasesCount: 0,
         },
         {
+          supplierKey: "fs:2",
           supplierId: "2",
           name: "B",
           document: null,
@@ -63,6 +65,7 @@ describe("financeCostCenterGridKit", () => {
     const filtered = filterSupplierGridRows(
       [
         {
+          supplierKey: "fs:1",
           supplierId: "1",
           name: "A",
           document: null,
@@ -74,6 +77,7 @@ describe("financeCostCenterGridKit", () => {
           aliasesCount: 0,
         },
         {
+          supplierKey: "fs:2",
           supplierId: "2",
           name: "B",
           document: null,
@@ -94,6 +98,7 @@ describe("financeCostCenterGridKit", () => {
 
   it("paginação não altera totalizadores da base filtrada", () => {
     const base = Array.from({ length: 30 }, (_, i) => ({
+      supplierKey: `fs:${i}`,
       supplierId: String(i),
       name: `S${i}`,
       document: null,

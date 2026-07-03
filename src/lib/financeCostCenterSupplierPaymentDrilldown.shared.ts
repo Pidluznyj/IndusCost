@@ -65,9 +65,12 @@ export type CostCenterSupplierPaymentTitleRow = {
   paymentDate: string | null;
   operationalPaymentDate: string | null;
   dueDate: string | null;
+  issueDate: string | null;
   documentNumber: string | null;
   sourceInvoiceId: number | null;
+  sourceInvoiceNumber: string | null;
   description: string | null;
+  descriptiveText: string;
   costCenterName: string;
   costCenterCode: string | null;
   amountPayable: number;
@@ -80,7 +83,10 @@ export type CostCenterSupplierPaymentTitleRow = {
 export type CostCenterSupplierPaymentTitlesPayload = {
   supplierKey: string;
   supplierDisplayName: string;
+  supplierDocument: string | null;
   year: number;
+  periodLabel: string;
+  periodScopeNote: string;
   items: CostCenterSupplierPaymentTitleRow[];
   totalPaidAmount: number;
   paidTitlesCount: number;

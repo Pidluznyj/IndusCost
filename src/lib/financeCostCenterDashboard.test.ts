@@ -119,6 +119,7 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.unclassified.titlesCount, 1);
     assert.equal(payload.byCostCenter.length, 0);
     assert.equal(payload.bySupplier.length, 1);
+    assert.equal(payload.bySupplier[0]!.supplierKey, "fs:sup-1");
     assert.equal(payload.bySupplier[0]!.supplierId, "sup-1");
     assert.equal(payload.bySupplier[0]!.amount, 500);
   });

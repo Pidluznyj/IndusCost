@@ -180,6 +180,7 @@ export type SupplierGridSortKey =
   | "ruleStatus";
 
 export type SupplierGridRow = {
+  supplierKey: string;
   supplierId: string | null;
   name: string;
   document: string | null;

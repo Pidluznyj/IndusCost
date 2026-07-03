@@ -240,13 +240,16 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
         if (!user) return res.status(401).json({ error: "Não autenticado." });
 
         const supplierKey = String(req.query.supplierKey ?? "").trim();
-        const year = Number(req.query.year);
         if (!supplierKey) {
           return res.status(400).json({ error: "supplierKey é obrigatório." });
         }
-        if (!Number.isFinite(year)) {
-          return res.status(400).json({ error: "year inválido." });
-        }
+        const filters = parseFinanceCostCenterDashboardFilters(req.query as Record<string, unknown>);
+        const asOfRaw = typeof req.query.asOfDate === "string" ? req.query.asOfDate.trim() : "";
+        const referenceDate = asOfRaw ? new Date(`${asOfRaw}T12:00:00.000Z`) : new Date();
+        const yearRaw = Number(req.query.year);
+        const year = Number.isFinite(yearRaw)
+          ? yearRaw
+          : filters.year ?? referenceDate.getFullYear();
         const supplierDisplayName =
           typeof req.query.supplierDisplayName === "string"
             ? req.query.supplierDisplayName.trim()
@@ -255,9 +258,6 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
         const pageSize = Number(req.query.pageSize ?? 50);
         const search = typeof req.query.search === "string" ? req.query.search : "";
 
-        const filters = parseFinanceCostCenterDashboardFilters(req.query as Record<string, unknown>);
-        const asOfRaw = typeof req.query.asOfDate === "string" ? req.query.asOfDate.trim() : "";
-        const referenceDate = asOfRaw ? new Date(`${asOfRaw}T12:00:00.000Z`) : new Date();
         const ctx = await loadCostCenterSupplierPaymentContext(filters, referenceDate);
         const payload = buildCostCenterSupplierPaymentTitles(
           ctx,

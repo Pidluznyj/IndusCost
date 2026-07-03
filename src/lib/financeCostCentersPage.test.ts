@@ -102,11 +102,15 @@ describe("financeCostCentersPage", () => {
     const crud = read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx");
     const rules = read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx");
     const unclassified = read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
+    const suppliers = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
     assert.match(crud, /finance-cost-centers-create-button/);
     assert.match(rules, /finance-rules-create-button/);
     assert.match(rules, /finance-rules-preview-button/);
     assert.match(unclassified, /finance-unclassified-batch-apply-button/);
     assert.match(unclassified, /FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT/);
+    assert.match(suppliers, /finance-suppliers-view-paid-titles-button/);
+    assert.match(suppliers, /FinanceSupplierPaidTitlesModal/);
+    assert.match(read("src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx"), /supplier-payment-titles/);
   });
 
   it("não importa Prisma no frontend", () => {
@@ -115,6 +119,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx",
       "src/components/finance/cost-centers/FinanceSuppliersTab.tsx",
+      "src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx",
       "src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx",
       "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx",
       "src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx",

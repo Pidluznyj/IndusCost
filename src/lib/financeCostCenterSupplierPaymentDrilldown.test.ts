@@ -219,4 +219,69 @@ describe("financeCostCenterSupplierPaymentDrilldown", () => {
     const paid = resolveSupplierPaidAttributionAmount(row, allocations, filters);
     assert.equal(paid, 400);
   });
+
+  it("títulos pagos expõem texto descritivo priorizando description e comments", () => {
+    const ctx = makeCtx({
+      rows: [
+        {
+          ...makeApRow({
+            externalId: 40,
+            description: "Descrição principal",
+            dueDate: new Date("2026-06-18T00:00:00.000Z"),
+          }),
+          comments: "Comentário secundário",
+        },
+        {
+          ...makeApRow({
+            externalId: 41,
+            description: "",
+            dueDate: new Date("2026-06-19T00:00:00.000Z"),
+          }),
+          comments: "Somente comentário",
+        },
+      ],
+    });
+    const summary = buildCostCenterSupplierPaymentSummary(ctx);
+    const supplier = summary.supplierPaymentSummary[0]!;
+    const titles = buildCostCenterSupplierPaymentTitles(
+      ctx,
+      supplier.supplierKey,
+      supplier.supplierDisplayName,
+      2026
+    );
+    assert.equal(titles.items.find((row) => row.accountsPayableId === 40)?.descriptiveText, "Descrição principal");
+    assert.equal(titles.items.find((row) => row.accountsPayableId === 41)?.descriptiveText, "Somente comentário");
+    assert.match(titles.periodScopeNote, /títulos pagos/i);
+  });
+
+  it("supplierKey isola títulos por fornecedor consolidado", () => {
+    const ctx = makeCtx({
+      rows: [
+        makeApRow({
+          externalId: 50,
+          personName: "Fornecedor A",
+          personCnpj: "11.111.111/0001-11",
+          dueDate: new Date("2026-06-10T00:00:00.000Z"),
+        }),
+        makeApRow({
+          externalId: 51,
+          personName: "Fornecedor B",
+          personCnpj: "22.222.222/0001-22",
+          dueDate: new Date("2026-06-11T00:00:00.000Z"),
+        }),
+      ],
+    });
+    const summary = buildCostCenterSupplierPaymentSummary(ctx);
+    const supplierA = summary.supplierPaymentSummary.find((row) =>
+      row.supplierDisplayName.includes("Fornecedor A")
+    )!;
+    const titles = buildCostCenterSupplierPaymentTitles(
+      ctx,
+      supplierA.supplierKey,
+      supplierA.supplierDisplayName,
+      2026
+    );
+    assert.ok(titles.items.every((row) => row.accountsPayableId === 50));
+    assert.equal(titles.paidTitlesCount, 1);
+  });
 });

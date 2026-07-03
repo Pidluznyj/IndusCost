@@ -463,6 +463,7 @@ export function FinanceSupplierPaymentDrilldownSection({ filters }: Props) {
                                 <th className="px-3 py-2">Centro de custo</th>
                                 <th className="px-3 py-2 text-right">Valor pago</th>
                                 <th className="px-3 py-2">Status</th>
+                                <th className="px-3 py-2 min-w-[12rem]">Descrição / comentário</th>
                               </tr>
                             }
                             footer={
@@ -494,6 +495,11 @@ export function FinanceSupplierPaymentDrilldownSection({ filters }: Props) {
                                   {formatFinanceCurrency(row.paidAmount)}
                                 </td>
                                 <td className="px-3 py-2">{row.statusLabel}</td>
+                                <td className="px-3 py-2 max-w-[16rem]">
+                                  <p className="line-clamp-2 whitespace-pre-wrap" title={row.descriptiveText}>
+                                    {row.descriptiveText}
+                                  </p>
+                                </td>
                               </tr>
                             ))}
                           </FinanceCostCenterGridTableShell>

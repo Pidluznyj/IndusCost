@@ -119,6 +119,7 @@ export type FinanceCostCenterDashboardByCostCenterRow = {
 };
 
 export type FinanceCostCenterDashboardBySupplierRow = {
+  supplierKey: string;
   supplierId: string | null;
   name: string;
   document: string | null;
@@ -654,8 +655,9 @@ export function buildFinanceCostCenterDashboard(
     apScope
   );
 
-  const bySupplierRows = [...consolidatedSuppliers.values()]
-    .map((row) => ({
+  const bySupplierRows = [...consolidatedSuppliers.entries()]
+    .map(([supplierKey, row]) => ({
+      supplierKey,
       supplierId: row.supplierId,
       name: row.name,
       document: row.document,
