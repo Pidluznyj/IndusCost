@@ -29,6 +29,12 @@ import {
 } from "@/src/lib/financeCostCenterAudit.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import { FinanceApFilterParseError } from "@/src/lib/financeAccountsPayableDashboard.js";
+import {
+  batchReclassifyAccountsPayableAllocationsDefault,
+  FinanceApAllocationError,
+  parseBatchReclassificationBody,
+} from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
+import { FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS } from "@/src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -55,6 +61,16 @@ function handleDashboardError(
   return res.status(400).json({ error: error.message, code: "code" in error ? error.code : "INVALID_FILTER" });
 }
 
+function handleAllocationError(res: express.Response, error: FinanceApAllocationError) {
+  const status =
+    error.code === "AP_NOT_FOUND"
+      ? 404
+      : error.code === "BATCH_VALIDATION_FAILED" || error.code === "CLOSED_PERIOD"
+        ? 409
+        : 400;
+  return res.status(status).json({ error: error.message, code: error.code });
+}
+
 export function registerFinanceCostCentersRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
   const viewGuard = [
@@ -64,6 +80,10 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
   const manageGuard = [
     requireAppAuth,
     requireAnyPermission([...FINANCE_COST_CENTERS_MANAGE_PERMISSIONS]),
+  ] as const;
+  const allocationManageGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS]),
   ] as const;
   const auditGuard = [
     requireAppAuth,
@@ -279,6 +299,32 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
         console.error("GET /api/finance/cost-centers/supplier-payment-titles", error);
         return res.status(500).json(
           financeApiErrorJson("Erro ao listar títulos pagos do fornecedor.", error)
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/finance/cost-centers/payables/reclassify-batch",
+    ...allocationManageGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const input = parseBatchReclassificationBody(req.body);
+        const result = await batchReclassifyAccountsPayableAllocationsDefault(input, {
+          userId: user.id,
+          userName: user.name ?? user.email ?? null,
+        });
+        return res.status(200).json(result);
+      } catch (error) {
+        if (error instanceof FinanceApAllocationError) {
+          return handleAllocationError(res, error);
+        }
+        console.error("POST /api/finance/cost-centers/payables/reclassify-batch", error);
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao reclassificar títulos em lote.", error)
         );
       }
     }

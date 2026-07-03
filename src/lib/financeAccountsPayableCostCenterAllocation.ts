@@ -12,6 +12,9 @@ import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE,
   FINANCE_AP_ALLOCATION_AUDIT_ENTITY,
   FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT,
   FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE,
+  BATCH_RECLASSIFY_MAX_PAYABLES,
+  type BatchReclassificationResult,
+  type BatchReclassificationResultItem,
 } from "@/src/lib/financeApAllocationShared.js";
 import {
   isTitleRealAllocated,
@@ -72,6 +75,20 @@ export type ReclassificationInput = {
   reason: string;
   lockedManual?: boolean;
 };
+
+export type BatchReclassificationInput = {
+  payableIds: number[];
+  costCenterId: string;
+  percentage: number;
+  reason: string;
+  lockedManual?: boolean;
+};
+
+export {
+  BATCH_RECLASSIFY_MAX_PAYABLES,
+  type BatchReclassificationResult,
+  type BatchReclassificationResultItem,
+} from "@/src/lib/financeApAllocationShared.js";
 
 export type AllocationRecord = {
   id: string;
@@ -825,6 +842,115 @@ export async function reclassifyAccountsPayableAllocation(
   return { items: created };
 }
 
+export async function batchReclassifyAccountsPayableAllocations(
+  deps: FinanceApAllocationDeps,
+  input: BatchReclassificationInput,
+  user: AllocationUserContext
+): Promise<BatchReclassificationResult> {
+  const reason = input.reason.trim();
+  if (!reason) {
+    throw new FinanceApAllocationError("MISSING_REASON", "Motivo da reclassificação é obrigatório.");
+  }
+
+  const costCenterId = input.costCenterId.trim();
+  if (!costCenterId) {
+    throw new FinanceApAllocationError("MISSING_COST_CENTER", "Centro de custo é obrigatório.");
+  }
+
+  const percentage = Number(input.percentage);
+  if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+    throw new FinanceApAllocationError("INVALID_PERCENTAGE", "Percentual deve estar entre 0 e 100.");
+  }
+
+  const payableIds = [...new Set(input.payableIds.map((id) => Number(id)))].filter((id) =>
+    Number.isFinite(id)
+  );
+  if (payableIds.length === 0) {
+    throw new FinanceApAllocationError("MISSING_PAYABLES", "Informe ao menos um título.");
+  }
+  if (payableIds.length > BATCH_RECLASSIFY_MAX_PAYABLES) {
+    throw new FinanceApAllocationError(
+      "TOO_MANY_PAYABLES",
+      `Selecione no máximo ${BATCH_RECLASSIFY_MAX_PAYABLES} títulos por vez.`
+    );
+  }
+
+  const cc = await deps.loadCostCenterMeta(costCenterId);
+  if (!cc || cc.status !== "ACTIVE") {
+    throw new FinanceApAllocationError(
+      "INACTIVE_COST_CENTER",
+      "Centro de custo inválido ou inativo."
+    );
+  }
+
+  const reclassInput: ReclassificationInput = {
+    lines: [{ costCenterId, percentage }],
+    reason,
+    lockedManual: input.lockedManual !== false,
+  };
+
+  const closedThroughDate = await deps.getClosedThroughDate();
+  const preflight: BatchReclassificationResultItem[] = [];
+  for (const payableId of payableIds) {
+    const ap = await deps.loadApById(payableId);
+    if (!ap) {
+      preflight.push({
+        payableId,
+        status: "failed",
+        message: "Título AP não encontrado.",
+      });
+      continue;
+    }
+    if (isTitleInClosedPeriod(ap, closedThroughDate)) {
+      preflight.push({
+        payableId,
+        status: "failed",
+        message: "Título em período fechado não pode ser reclassificado.",
+      });
+    }
+  }
+
+  if (preflight.length > 0) {
+    throw new FinanceApAllocationError(
+      "BATCH_VALIDATION_FAILED",
+      `${preflight.length} título(s) não podem ser reclassificados. Nenhuma alteração foi aplicada.`
+    );
+  }
+
+  const results: BatchReclassificationResultItem[] = [];
+  let updated = 0;
+  let failed = 0;
+
+  for (const payableId of payableIds) {
+    try {
+      await reclassifyAccountsPayableAllocation(deps, payableId, reclassInput, user);
+      results.push({ payableId, status: "updated" });
+      updated += 1;
+    } catch (error) {
+      failed += 1;
+      results.push({
+        payableId,
+        status: "failed",
+        message:
+          error instanceof FinanceApAllocationError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Erro ao reclassificar título.",
+      });
+    }
+  }
+
+  return {
+    success: failed === 0,
+    requested: payableIds.length,
+    updated,
+    skipped: 0,
+    failed,
+    results,
+  };
+}
+
 export async function applyAccountsPayableAllocation(
   deps: FinanceApAllocationDeps,
   externalId: number,
@@ -1373,6 +1499,17 @@ export async function reclassifyAccountsPayableAllocationDefault(
   );
 }
 
+export async function batchReclassifyAccountsPayableAllocationsDefault(
+  input: BatchReclassificationInput,
+  user: AllocationUserContext
+) {
+  return batchReclassifyAccountsPayableAllocations(
+    createDefaultFinanceApAllocationDeps(),
+    input,
+    user
+  );
+}
+
 export async function applyBatchAccountsPayableAllocationDefault(
   filters: BatchAllocationFilters,
   confirmationText: string,
@@ -1447,6 +1584,39 @@ export function parseReclassificationBody(body: unknown): ReclassificationInput 
     lines: manual.lines,
     reason,
     lockedManual: manual.lockedManual,
+  };
+}
+
+export function parseBatchReclassificationBody(body: unknown): BatchReclassificationInput {
+  if (body == null || typeof body !== "object" || Array.isArray(body)) {
+    throw new FinanceApAllocationError("INVALID_BODY", "Body inválido.");
+  }
+  const record = body as Record<string, unknown>;
+  const rawIds = record.payableIds ?? record.externalIds;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    throw new FinanceApAllocationError("MISSING_PAYABLES", "payableIds é obrigatório.");
+  }
+  const payableIds = rawIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  if (payableIds.length === 0) {
+    throw new FinanceApAllocationError("MISSING_PAYABLES", "payableIds inválido.");
+  }
+  const costCenterId = typeof record.costCenterId === "string" ? record.costCenterId.trim() : "";
+  if (!costCenterId) {
+    throw new FinanceApAllocationError("MISSING_COST_CENTER", "costCenterId é obrigatório.");
+  }
+  const percentage = record.percentage == null ? 100 : Number(record.percentage);
+  const reason = typeof record.reason === "string" ? record.reason.trim() : "";
+  if (!reason) {
+    throw new FinanceApAllocationError("MISSING_REASON", "Motivo da reclassificação é obrigatório.");
+  }
+  return {
+    payableIds,
+    costCenterId,
+    percentage,
+    reason,
+    lockedManual: record.lockedManual === false ? false : true,
   };
 }
 

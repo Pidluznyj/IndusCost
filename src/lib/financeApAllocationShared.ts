@@ -16,3 +16,20 @@ export const FINANCE_AP_ALLOCATION_AUDIT_ACTION = {
 
 export const FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE = 0.01;
 export const FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE = 0.01;
+
+export const BATCH_RECLASSIFY_MAX_PAYABLES = 50;
+
+export type BatchReclassificationResultItem = {
+  payableId: number;
+  status: "updated" | "skipped" | "failed";
+  message?: string;
+};
+
+export type BatchReclassificationResult = {
+  success: boolean;
+  requested: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  results: BatchReclassificationResultItem[];
+};

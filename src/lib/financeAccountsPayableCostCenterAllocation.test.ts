@@ -17,6 +17,8 @@ import {
   previewBatchAccountsPayableAllocation,
   protectManualLockedAllocations,
   reclassifyAccountsPayableAllocation,
+  batchReclassifyAccountsPayableAllocations,
+  parseBatchReclassificationBody,
   resolveCostCenterRulesForSupplier,
   resolveSupplierForAccountsPayable,
   resolveTitleAllocationBaseAmount,
@@ -663,6 +665,70 @@ describe("reclassifyAccountsPayableAllocation — override manual por título", 
     assert.equal(other.length, 1);
     assert.equal(other[0]!.costCenterId, "cc-auto");
     assert.equal(other[0]!.lockedManual, false);
+  });
+
+  it("batch reclassifica múltiplos títulos com auditoria individual", async () => {
+    const state = baseState();
+    const result = await batchReclassifyAccountsPayableAllocations(
+      createMockDeps(state),
+      {
+        payableIds: [1000, 1001],
+        costCenterId: "cc-manual",
+        percentage: 100,
+        reason: "Correção em lote.",
+        lockedManual: true,
+      },
+      user
+    );
+    assert.equal(result.updated, 2);
+    assert.equal(result.failed, 0);
+    assert.equal(result.success, true);
+    const logs = state.auditLogs.filter(
+      (log) => log.action === FINANCE_AP_ALLOCATION_AUDIT_ACTION.MANUAL_RECLASSIFICATION
+    );
+    assert.equal(logs.length, 2);
+    for (const row of state.allocations) {
+      assert.equal(row.costCenterId, "cc-manual");
+      assert.equal(row.lockedManual, true);
+    }
+  });
+
+  it("batch não aplica nenhum título se validação falhar", async () => {
+    const state = baseState({
+      apRows: [apRow(1000)],
+    });
+    await assert.rejects(
+      () =>
+        batchReclassifyAccountsPayableAllocations(
+          createMockDeps(state),
+          {
+            payableIds: [1000, 9999],
+            costCenterId: "cc-manual",
+            percentage: 100,
+            reason: "Lote inválido.",
+            lockedManual: true,
+          },
+          user
+        ),
+      (error: unknown) =>
+        error instanceof FinanceApAllocationError && error.code === "BATCH_VALIDATION_FAILED"
+    );
+    assert.equal(
+      state.allocations.filter((row) => row.costCenterId === "cc-manual").length,
+      0
+    );
+  });
+
+  it("parseBatchReclassificationBody exige payableIds, centro e motivo", () => {
+    const parsed = parseBatchReclassificationBody({
+      payableIds: [1000, 1001],
+      costCenterId: "cc-manual",
+      percentage: 100,
+      reason: "Motivo válido.",
+    });
+    assert.deepEqual(parsed.payableIds, [1000, 1001]);
+    assert.equal(parsed.costCenterId, "cc-manual");
+    assert.equal(parsed.reason, "Motivo válido.");
   });
 });
 

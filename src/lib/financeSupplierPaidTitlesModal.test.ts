@@ -18,6 +18,8 @@ describe("FinanceSupplierPaidTitlesModal", () => {
     assert.match(modal, /descriptiveText/);
     assert.match(modal, /Nenhum título pago encontrado para este fornecedor no filtro atual/);
     assert.match(modal, /finance-supplier-paid-title-reclassify-button/);
+    assert.match(modal, /finance-supplier-paid-title-select/);
+    assert.match(modal, /finance-supplier-paid-titles-batch-reclassify-button/);
     assert.match(modal, /Manual/);
   });
 

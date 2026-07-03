@@ -12,6 +12,7 @@ import type {
 import { COST_CENTER_SUPPLIER_PAYMENT_DATE_RULE_NOTE } from "@/src/lib/financeCostCenterSupplierPaymentDrilldown.shared";
 import type { SupplierGridRow } from "@/src/lib/financeCostCenterGridKit";
 import { FinanceApTitleReclassifyModal } from "@/src/components/finance/cost-centers/FinanceApTitleReclassifyModal";
+import { FinanceApTitleBatchReclassifyModal } from "@/src/components/finance/cost-centers/FinanceApTitleBatchReclassifyModal";
 import { ExecutiveAlertBadge } from "@/src/components/ui/ExecutiveAlert";
 import {
   formatFinanceCurrency,
@@ -72,6 +73,9 @@ export function FinanceSupplierPaidTitlesModal({
   const [search, setSearch] = useState("");
   const [reclassifyTitle, setReclassifyTitle] =
     useState<CostCenterSupplierPaymentTitleRow | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchReclassifyOpen, setBatchReclassifyOpen] = useState(false);
+  const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
 
   const year = filters.year ?? new Date().getFullYear();
 
@@ -109,10 +113,49 @@ export function FinanceSupplierPaidTitlesModal({
       setPage(1);
       setSearch("");
       setSearchDraft("");
+      setSelectedIds(new Set());
+      setBatchReclassifyOpen(false);
+      setBatchSuccessMessage(null);
       return;
     }
     void loadTitles(1, "");
   }, [open, supplier, loadTitles]);
+
+  const pageRows = payload?.items ?? [];
+  const selectedRows = useMemo(
+    () => pageRows.filter((row) => selectedIds.has(row.accountsPayableId)),
+    [pageRows, selectedIds]
+  );
+  const selectedCount = selectedRows.length;
+  const allPageSelected =
+    pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.accountsPayableId));
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleRowSelection = (accountsPayableId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(accountsPayableId)) next.delete(accountsPayableId);
+      else next.add(accountsPayableId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPage = () => {
+    if (allPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const row of pageRows) next.delete(row.accountsPayableId);
+        return next;
+      });
+      return;
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const row of pageRows) next.add(row.accountsPayableId);
+      return next;
+    });
+  };
 
   const periodSummary = useMemo(() => {
     if (!payload) return null;
@@ -206,12 +249,51 @@ export function FinanceSupplierPaidTitlesModal({
               onClick={() => {
                 setSearch(searchDraft);
                 setPage(1);
+                clearSelection();
                 void loadTitles(1, searchDraft);
               }}
             >
               Buscar
             </button>
           </div>
+
+          {canReclassify && selectedCount > 0 ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
+              data-testid="finance-supplier-paid-titles-batch-bar"
+            >
+              <p className="text-sm font-semibold">
+                {selectedCount} título{selectedCount === 1 ? "" : "s"} selecionado
+                {selectedCount === 1 ? "" : "s"}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  (desta página)
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-1.5 text-sm font-semibold"
+                  onClick={clearSelection}
+                >
+                  Limpar seleção
+                </button>
+                <button
+                  type="button"
+                  data-testid="finance-supplier-paid-titles-batch-reclassify-button"
+                  className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+                  onClick={() => setBatchReclassifyOpen(true)}
+                >
+                  Reclassificar selecionados
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {batchSuccessMessage ? (
+            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+              {batchSuccessMessage}
+            </p>
+          ) : null}
 
           {loading ? <FinanceModuleLoadingBlock label="Carregando títulos pagos…" /> : null}
 
@@ -227,6 +309,17 @@ export function FinanceSupplierPaidTitlesModal({
               tableClassName="min-w-[1100px]"
               head={
                 <tr className="border-b border-border text-left text-[10px] uppercase text-muted-foreground">
+                  {canReclassify ? (
+                    <th className="px-3 py-2 w-10">
+                      <input
+                        type="checkbox"
+                        aria-label="Selecionar todos os títulos da página"
+                        data-testid="finance-supplier-paid-titles-select-all"
+                        checked={allPageSelected}
+                        onChange={toggleSelectAllPage}
+                      />
+                    </th>
+                  ) : null}
                   <th className="px-3 py-2">Documento</th>
                   <th className="px-3 py-2">Emissão</th>
                   <th className="px-3 py-2">Vencimento</th>
@@ -246,6 +339,7 @@ export function FinanceSupplierPaidTitlesModal({
                   pageSize={payload.pageSize}
                   onPageChange={(nextPage) => {
                     setPage(nextPage);
+                    clearSelection();
                     void loadTitles(nextPage, search);
                   }}
                   onPageSizeChange={() => undefined}
@@ -254,6 +348,17 @@ export function FinanceSupplierPaidTitlesModal({
             >
               {payload.items.map((row) => (
                 <tr key={row.accountsPayableId} className="border-b border-border/60 text-xs align-top">
+                  {canReclassify ? (
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecionar título ${row.documentNumber ?? row.accountsPayableId}`}
+                        data-testid="finance-supplier-paid-title-select"
+                        checked={selectedIds.has(row.accountsPayableId)}
+                        onChange={() => toggleRowSelection(row.accountsPayableId)}
+                      />
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2">
                     {row.documentNumber ?? row.accountsPayableId}
                     {row.sourceInvoiceNumber || row.sourceInvoiceId ? (
@@ -313,6 +418,20 @@ export function FinanceSupplierPaidTitlesModal({
         supplierName={supplier?.name ?? ""}
         onClose={() => setReclassifyTitle(null)}
         onSaved={() => {
+          if (supplier) void loadTitles(page, search);
+        }}
+      />
+      <FinanceApTitleBatchReclassifyModal
+        open={Boolean(open && supplier && batchReclassifyOpen && selectedCount > 0)}
+        selectedRows={selectedRows}
+        supplierName={supplier?.name ?? ""}
+        onClose={() => setBatchReclassifyOpen(false)}
+        onSaved={(result) => {
+          clearSelection();
+          setBatchReclassifyOpen(false);
+          if (result.updated > 0) {
+            setBatchSuccessMessage(`${result.updated} título(s) reclassificado(s) com sucesso.`);
+          }
           if (supplier) void loadTitles(page, search);
         }}
       />
