@@ -76,6 +76,8 @@ export function FinanceCostCenterAuditTab({ canView, canManage = false }: Props)
     AUDIT_SORT_KEYS,
     { key: "createdAt", direction: "desc" }
   );
+  const sortKey = sort.key;
+  const sortDirection = sort.direction;
 
   const patchUrl = useCallback(
     (patch: Record<string, string | number | null | undefined>) => {
@@ -101,8 +103,8 @@ export function FinanceCostCenterAuditTab({ canView, canManage = false }: Props)
       if (dateTo.trim()) q.set("dateTo", dateTo.trim());
       q.set("page", String(page));
       q.set("limit", String(pageSize));
-      q.set("sortBy", sort.key);
-      q.set("sortDirection", sort.direction);
+      q.set("sortBy", sortKey);
+      q.set("sortDirection", sortDirection);
       const data = await fetchJsonOk<AuditListPayload>(
         `/api/finance/cost-center-audit?${q.toString()}`,
         { credentials: "include" }
@@ -114,7 +116,19 @@ export function FinanceCostCenterAuditTab({ canView, canManage = false }: Props)
     } finally {
       setLoading(false);
     }
-  }, [canView, entityType, userName, action, search, dateFrom, dateTo, page, pageSize, sort]);
+  }, [
+    canView,
+    entityType,
+    userName,
+    action,
+    search,
+    dateFrom,
+    dateTo,
+    page,
+    pageSize,
+    sortKey,
+    sortDirection,
+  ]);
 
   useEffect(() => {
     void load();
