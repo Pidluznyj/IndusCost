@@ -279,7 +279,10 @@ export async function evaluateProductEngineeringCost(
     };
   }
 
-  const snapshot = buildProductionCostCalculationSnapshot(resolved, analysis);
+  const snapshot = buildProductionCostCalculationSnapshot(resolved, analysis, {
+    name: product.name,
+    type: product.type,
+  });
   const calculationHash = buildProductionCostCalculationHash(snapshot);
   const warning = resolved.costAnalysisPartial
     ? "Análise de custo parcial — revise antes de publicar."

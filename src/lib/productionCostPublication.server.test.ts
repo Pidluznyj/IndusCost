@@ -454,13 +454,16 @@ describe("productionCostPublication.server", () => {
 
   it("versão publicada não pode ser editada após publicação", async () => {
     const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
-    const { db } = createMockDb(products);
+    const { db, items } = createMockDb(products);
     const engine = createMockEngine({ "prod-a": { total: 10 } });
 
     const gen = await generateProductionCostTableDraftFromProducts(db as never, engine, {
       effectiveDate: civilDateToLocalDate("2026-06-01"),
       productIds: ["prod-a"],
     });
+    const frozenSnapshot = JSON.stringify(
+      [...items.values()].find((i) => i.costTableVersionId === gen.version!.id)?.calculationSnapshot
+    );
     await publishProductionCostVersionFromDraft(db as never, { versionId: gen.version!.id });
 
     await assert.rejects(
@@ -470,8 +473,12 @@ describe("productionCostPublication.server", () => {
           productCodeSnapshot: "PA",
           productNameSnapshot: "Produto A",
           unitProductionCost: 99,
+          calculationSnapshot: { tampered: true },
         }),
       /imutável/
     );
+
+    const publishedItem = [...items.values()].find((i) => i.costTableVersionId === gen.version!.id);
+    assert.equal(JSON.stringify(publishedItem?.calculationSnapshot), frozenSnapshot);
   });
 });

@@ -3777,7 +3777,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           if (r._resolvedForFrozen?.ok === true) {
             const snap = buildProductionCostCalculationSnapshot(
               r._resolvedForFrozen,
-              r._analysisForFrozen
+              r._analysisForFrozen,
+              { name: r.name, type: r.type }
             );
             liveHash = buildProductionCostCalculationHash(snap);
           }

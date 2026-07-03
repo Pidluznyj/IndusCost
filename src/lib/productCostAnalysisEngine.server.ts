@@ -660,10 +660,17 @@ async function getProductCostAnalysis(
         const landedCost = Number(mat.currentCost) + Number(mat.freight);
         const matEffectiveCost = landedCost / (1 - matStandardLoss);
         materialsRows.push({
+          lineType: "MATERIAL",
+          materialId: mat.id,
+          childProductId: null,
           description: mat.description,
           sku: mat.code,
           bomLineId: item.id,
+          quantity: Number(item.quantity),
+          lossPercentage: Number(item.lossPercentage ?? 0),
+          unit: mat.unit,
           basePrice: Number(mat.currentCost),
+          unitCostUsed: matEffectiveCost,
           requiredQty,
           unitCost: matEffectiveCost * requiredQty,
         });
@@ -686,16 +693,26 @@ async function getProductCostAnalysis(
           Number(childResult.totalHH_Unit ?? 0) +
           Number(childResult.totalHM_Unit ?? 0);
         materialsRows.push({
+          lineType: "COMPONENT",
+          materialId: null,
+          childProductId: item.childProductId,
           description: String(childResult.name ?? "—"),
           sku: String(childResult.sku ?? ""),
           bomLineId: item.id,
+          quantity: Number(item.quantity),
+          lossPercentage: Number(item.lossPercentage ?? 0),
+          unit: null,
           basePrice: childUnitNoCif,
+          unitCostUsed: childUnitNoCif,
           requiredQty,
           unitCost: childUnitNoCif * requiredQty,
         });
         continue;
       }
       materialsRows.push({
+        lineType: "INCOMPLETE",
+        materialId: null,
+        childProductId: null,
         description: "Linha de BOM sem material nem componente",
         basePrice: 0,
         requiredQty,

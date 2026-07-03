@@ -246,7 +246,8 @@ describe("versionedCostArchitectureBaseline — matéria-prima e componentes (as
       in: ["PRODUCT", "COMPONENT"],
     });
     const pub = read("src/lib/productionCostPublication.server.ts");
-    assert.match(pub, /productionCostTableEligibleItemTypesFilter/);
+    assert.match(pub, /PRODUCT_AND_COMPONENT/);
+    assert.match(pub, /prismaProductTypeFilterForProductionCostDraftScope/);
     assert.match(pub, /componentsEvaluated/);
   });
 

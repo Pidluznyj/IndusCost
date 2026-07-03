@@ -53,17 +53,29 @@ describe("productionCostPublication", () => {
 
   it("buildProductionCostDraftItemFromAnalysis inclui snapshot e hash", () => {
     const item = buildProductionCostDraftItemFromAnalysis(
-      { id: "prod-a", sku: "PA-001", name: "Produto A" },
+      { id: "prod-a", sku: "PA-001", name: "Produto A", type: "PRODUCT" },
       sampleResolved(),
-      { summary: { totalIndustrialCost: 100 } },
+      {
+        productType: "PRODUCT",
+        warnings: [],
+        excludedBomLines: [],
+        details: { materials: [] },
+        totalIndustrialCost: 100,
+      },
       new Date("2026-06-01T12:00:00.000Z")
     );
     assert.equal(item.unitProductionCost, 100);
     assert.equal(item.productCodeSnapshot, "PA-001");
     assert.ok(item.calculationHash);
     assert.ok(item.calculationSnapshot);
-    const snapshot = item.calculationSnapshot as { finalUnitCost: number };
+    const snapshot = item.calculationSnapshot as {
+      finalUnitCost: number;
+      snapshotKind: string;
+      bomStructure: { lines: unknown[] };
+    };
     assert.equal(snapshot.finalUnitCost, 100);
+    assert.equal(snapshot.snapshotKind, "FROZEN_AT_GENERATION");
+    assert.ok(Array.isArray(snapshot.bomStructure.lines));
   });
 
   it("buildProductionCostCalculationHash é estável para mesmo snapshot", () => {
