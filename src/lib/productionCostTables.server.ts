@@ -112,6 +112,7 @@ export type CreateProductionCostTableDraftInput = {
   notes?: string | null;
   createdBy?: string | null;
   supersedesVersionId?: string | null;
+  materialCostTableVersionId?: string | null;
 };
 
 export async function createProductionCostTableDraft(
@@ -160,6 +161,7 @@ export async function createProductionCostTableDraft(
       notes: input.notes?.trim() || null,
       createdBy: input.createdBy?.trim() || null,
       supersedesVersionId: input.supersedesVersionId ?? null,
+      materialCostTableVersionId: input.materialCostTableVersionId ?? null,
     },
   });
 }

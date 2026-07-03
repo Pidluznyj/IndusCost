@@ -27,6 +27,12 @@ import {
   createProductionCostTableDraft,
   publishProductionCostTableVersion,
 } from "./productionCostTables.server.js";
+import {
+  loadMaterialCostEngineCatalogForProductionDraft,
+  previewMaterialCostTableSourceForProductionDraft,
+} from "./materialCostEngineResolver.js";
+
+export { previewMaterialCostTableSourceForProductionDraft } from "./materialCostEngineResolver.js";
 
 export type GenerateProductionCostDraftIssue = {
   code: string;
@@ -52,6 +58,9 @@ export type GenerateProductionCostDraftSummary = {
   itemsSkipped: number;
   errors: GenerateProductionCostDraftIssue[];
   warnings: GenerateProductionCostDraftIssue[];
+  materialCostTableVersionId: string | null;
+  materialCostTableVersionCode: string | null;
+  materialCostTableRevision: number | null;
 };
 
 export type GenerateProductionCostDraftInput = {
@@ -213,6 +222,8 @@ export async function generateProductionCostTableDraftFromProducts(
   const code = productionCostTableCodeFromEffectiveDate(effectiveDate);
   const latestPublished = await findLatestPublishedProductionCostVersionByCode(db, code);
 
+  const materialCostCatalog = await loadMaterialCostEngineCatalogForProductionDraft(db, effectiveDate);
+
   const maxRevisionRow = await db.productionCostTableVersion.findFirst({
     where: { code },
     orderBy: { revision: "desc" },
@@ -229,6 +240,7 @@ export async function generateProductionCostTableDraftFromProducts(
     source: PRODUCTION_COST_PUBLICATION_SOURCE,
     notes: input.notes?.trim() || null,
     createdBy: input.createdBy?.trim() || null,
+    materialCostTableVersionId: materialCostCatalog.materialCostTableVersionId,
   });
 
   const summary: GenerateProductionCostDraftSummary = {
@@ -244,9 +256,13 @@ export async function generateProductionCostTableDraftFromProducts(
     itemsSkipped: 0,
     errors: [],
     warnings: [],
+    materialCostTableVersionId: materialCostCatalog.materialCostTableVersionId,
+    materialCostTableVersionCode: materialCostCatalog.materialCostTableVersionCode,
+    materialCostTableRevision: materialCostCatalog.revision,
   };
 
   const cache = await engine.initAnalysisCache();
+  cache.materialCostCatalog = materialCostCatalog;
   const calculatedAt = new Date();
 
   for (const product of selectedProducts) {
@@ -304,7 +320,8 @@ export async function generateProductionCostTableDraftFromProducts(
         product,
         resolved,
         analysis,
-        calculatedAt
+        calculatedAt,
+        materialCostCatalog
       );
       await addOrUpdateProductionCostTableDraftItem(db, draft.id, item);
       summary.itemsCreated += 1;
@@ -330,7 +347,7 @@ export async function generateProductionCostTableDraftFromProducts(
     include: { _count: { select: { items: true } } },
   });
 
-  return { version, summary, supersedesVersionId: latestPublished?.id ?? null };
+  return { version, summary, supersedesVersionId: latestPublished?.id ?? null, materialCostCatalog };
 }
 
 export type PublishProductionCostVersionInput = {

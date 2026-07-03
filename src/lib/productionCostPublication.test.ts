@@ -7,6 +7,7 @@ import {
   productionCostTableCodeFromEffectiveDate,
   productionCostTableNameFromCode,
 } from "./productionCostPublication.js";
+import { buildMaterialCostEngineCatalogFromVersion } from "./materialCostEngineResolver.js";
 import { civilDateToLocalDate } from "./financeCivilDate.js";
 import type { OfficialProductFinalCostSuccess } from "./productOfficialFinalCost.js";
 
@@ -72,10 +73,44 @@ describe("productionCostPublication", () => {
       finalUnitCost: number;
       snapshotKind: string;
       bomStructure: { lines: unknown[] };
+      materialCostTableRef: unknown;
     };
     assert.equal(snapshot.finalUnitCost, 100);
     assert.equal(snapshot.snapshotKind, "FROZEN_AT_GENERATION");
     assert.ok(Array.isArray(snapshot.bomStructure.lines));
+    assert.equal(snapshot.materialCostTableRef, null);
+  });
+
+  it("snapshot inclui materialCostTableRef com catálogo oficial de MP", () => {
+    const catalog = buildMaterialCostEngineCatalogFromVersion(
+      {
+        id: "mp-v1",
+        code: "2026-07",
+        revision: 2,
+        effectiveDate: civilDateToLocalDate("2026-07-01"),
+        items: [],
+      },
+      { officialProductionDraft: true }
+    );
+    const item = buildProductionCostDraftItemFromAnalysis(
+      { id: "prod-a", sku: "PA-001", name: "Produto A", type: "PRODUCT" },
+      sampleResolved(),
+      { totalIndustrialCost: 100 },
+      new Date("2026-07-01T12:00:00.000Z"),
+      catalog
+    );
+    const snapshot = item.calculationSnapshot as {
+      materialCostTableRef: {
+        materialCostTableVersionId: string;
+        materialCostTableVersionCode: string;
+        revision: number;
+        costSource: string;
+      } | null;
+    };
+    assert.ok(snapshot.materialCostTableRef);
+    assert.equal(snapshot.materialCostTableRef!.materialCostTableVersionId, "mp-v1");
+    assert.equal(snapshot.materialCostTableRef!.revision, 2);
+    assert.equal(snapshot.materialCostTableRef!.costSource, "VERSIONED_MATERIAL_COST_TABLE");
   });
 
   it("buildProductionCostCalculationHash é estável para mesmo snapshot", () => {

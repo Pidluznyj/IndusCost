@@ -22,6 +22,7 @@ type VersionRow = {
   status: "DRAFT" | "PUBLISHED" | "SUPERSEDED" | "ARCHIVED";
   revision: number;
   supersedesVersionId: string | null;
+  materialCostTableVersionId: string | null;
   source: string | null;
   notes: string | null;
   publishedAt: Date | null;
@@ -51,23 +52,92 @@ type ItemRow = {
   updatedAt: Date;
 };
 
+type MaterialCostVersionRow = {
+  id: string;
+  code: string;
+  name: string;
+  effectiveDate: Date;
+  status: string;
+  revision: number;
+  items: Array<{
+    materialId: string;
+    materialCodeSnapshot: string;
+    currentCostSnapshot: number;
+    freightSnapshot: number;
+    landedCostSnapshot: number;
+    standardLossSnapshot: number | null;
+    unitSnapshot: string;
+    costSource: string;
+  }>;
+};
+
+function seedDefaultMaterialCostTable(materialVersions: Map<string, MaterialCostVersionRow>) {
+  materialVersions.set("mp-ver-default", {
+    id: "mp-ver-default",
+    code: "2026-01",
+    name: "MP default test",
+    effectiveDate: civilDateToLocalDate("2026-01-01"),
+    status: "PUBLISHED",
+    revision: 1,
+    items: [
+      {
+        materialId: "mp-default",
+        materialCodeSnapshot: "MP-DEFAULT",
+        currentCostSnapshot: 10,
+        freightSnapshot: 0,
+        landedCostSnapshot: 10,
+        standardLossSnapshot: 0,
+        unitSnapshot: "kg",
+        costSource: "CURRENT_MATERIAL",
+      },
+    ],
+  });
+}
+
 function createMockDb(products: Array<{ id: string; sku: string; name: string; type?: string }>) {
   const normalized = products.map((p) => ({ ...p, type: p.type ?? "PRODUCT" }));
   const versions = new Map<string, VersionRow>();
   const items = new Map<string, ItemRow>();
+  const materialVersions = new Map<string, MaterialCostVersionRow>();
+  seedDefaultMaterialCostTable(materialVersions);
   let versionSeq = 0;
   let itemSeq = 0;
 
   const itemKey = (versionId: string, productId: string) => `${versionId}:${productId}`;
 
   const db = {
+    materialCostTableVersion: {
+      findFirst: async ({
+        where,
+        include,
+      }: {
+        where: { status?: string; effectiveDate?: { lte: Date } };
+        include?: { items?: unknown };
+      }) => {
+        let rows = [...materialVersions.values()];
+        if (where.status) rows = rows.filter((v) => v.status === where.status);
+        if (where.effectiveDate?.lte) {
+          const lte = where.effectiveDate.lte.getTime();
+          rows = rows.filter((v) => v.effectiveDate.getTime() <= lte);
+        }
+        rows.sort((a, b) => {
+          const eff = b.effectiveDate.getTime() - a.effectiveDate.getTime();
+          if (eff !== 0) return eff;
+          return b.revision - a.revision;
+        });
+        const row = rows[0] ?? null;
+        if (!row) return null;
+        if (include?.items) return { ...row, items: row.items };
+        return row;
+      },
+    },
     productionCostTableVersion: {
       findFirst: async ({
         where,
         orderBy,
         select,
       }: {
-        where: { code?: string; status?: string };
+        where: { code?: string; status?: string; effectiveDate?: { lte: Date } };
         orderBy?: Array<{ revision?: "desc"; publishedAt?: "desc" }>;
         select?: unknown;
       }) => {
@@ -118,11 +188,17 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string; t
         return result;
       },
       findMany: async () => [...versions.values()],
-      create: async ({ data }: { data: Omit<VersionRow, "id" | "createdAt" | "updatedAt"> }) => {
+      create: async ({ data }: { data: Omit<VersionRow, "id" | "createdAt" | "updatedAt"> & { materialCostTableVersionId?: string | null } }) => {
         versionSeq += 1;
         const id = `ver-${versionSeq}`;
         const now = new Date();
-        const row: VersionRow = { id, createdAt: now, updatedAt: now, ...data };
+        const row: VersionRow = {
+          id,
+          createdAt: now,
+          updatedAt: now,
+          materialCostTableVersionId: data.materialCostTableVersionId ?? null,
+          ...data,
+        };
         versions.set(id, row);
         return row;
       },
@@ -206,14 +282,14 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string; t
     $transaction: async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
   };
 
-  return { versions, items, db };
+  return { versions, items, materialVersions, db };
 }
 
 function createMockEngine(
   costs: Record<string, { total: number; partial?: boolean } | "FAIL">
 ): ProductCostAnalysisEngine {
   return {
-    initAnalysisCache: async () => ({} as never),
+    initAnalysisCache: async () => ({}),
     getProductCostAnalysis: async (productId: string) => {
       const entry = costs[productId];
       if (entry === "FAIL") return { error: "CONFIG_MISSING", message: "Config ausente." };
@@ -262,6 +338,57 @@ describe("productionCostPublication.server", () => {
     assert.equal(summary.itemsSkipped, 0);
     assert.equal(versions.get(version!.id)?.status, "DRAFT");
     assert.equal(versions.get(version!.id)?.revision, 1);
+    assert.equal(summary.materialCostTableVersionId, "mp-ver-default");
+    assert.equal(versions.get(version!.id)?.materialCostTableVersionId, "mp-ver-default");
+  });
+
+  it("sem tabela de MP publicada bloqueia geração oficial de produção", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, materialVersions } = createMockDb(products);
+    materialVersions.clear();
+    const engine = createMockEngine({ "prod-a": { total: 10 } });
+    await assert.rejects(
+      () =>
+        generateProductionCostTableDraftFromProducts(db as never, engine, {
+          effectiveDate: civilDateToLocalDate("2026-06-01"),
+          productIds: ["prod-a"],
+        }),
+      /Não existe tabela oficial de matéria-prima publicada vigente/
+    );
+  });
+
+  it("passa catálogo de MP versionada ao motor via cache", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db } = createMockDb(products);
+    let catalogSeen = false;
+    const engine: ProductCostAnalysisEngine = {
+      initAnalysisCache: async () => ({}),
+      getProductCostAnalysis: async (_productId, cache) => {
+        if (cache?.materialCostCatalog?.officialProductionDraft) catalogSeen = true;
+        return {
+          productId: "prod-a",
+          sku: "PA",
+          summary: {
+            totalIndustrialCost: 10,
+            totalMaterialCost: 5,
+            totalHH_Unit: 2,
+            totalHM_Unit: 2,
+            totalCIF_Unit: 0.5,
+            totalOPEX_Unit: 0.5,
+          },
+        };
+      },
+      isCostAnalysisFailure: (x: unknown): x is { error: string; message?: string } =>
+        !!x && typeof x === "object" && "error" in x,
+      describeCostAnalysisFailure: (failure: unknown) =>
+        String((failure as { message?: string }).message ?? "Erro"),
+    };
+
+    await generateProductionCostTableDraftFromProducts(db as never, engine, {
+      effectiveDate: civilDateToLocalDate("2026-06-01"),
+      productIds: ["prod-a"],
+    });
+    assert.equal(catalogSeen, true);
   });
 
   it("publica segunda revisão e supersede anterior; resolver usa novo item só para produto alterado", async () => {

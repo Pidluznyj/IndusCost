@@ -12,12 +12,13 @@ import {
   type MaintenancePriority,
   type MaintenanceStatus,
 } from "@prisma/client";
-import { prisma } from "./src/lib/prisma.js";
+import { NO_PUBLISHED_MATERIAL_COST_TABLE_MESSAGE } from "./src/lib/materialCostEngineResolver.js";
 import { createProductCostAnalysisEngine, type AnalysisCache } from "./src/lib/productCostAnalysisEngine.server.js";
 import { resolveDefaultProcessHourCostsFromAnalysisCache, buildOfficialDefaultIndustrialCostsReference } from "./src/lib/componentStandardProcessCost.js";
 import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
 import {
   generateProductionCostTableDraftFromProducts,
+  previewMaterialCostTableSourceForProductionDraft,
   getProductionCostTableVersionById,
   listProductionCostTableVersions,
   publishProductionCostVersionFromDraft,
@@ -6963,11 +6964,35 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           notes: v.notes,
           supersedesVersionId: v.supersedesVersionId,
           supersedesVersion: v.supersedesVersion,
+          materialCostTableVersionId: v.materialCostTableVersionId,
         }))
       );
     } catch (e) {
       console.error("GET /api/production-cost-tables/versions", e);
       return res.status(500).json({ error: "Erro ao listar versões de custo de produção." });
+    }
+  });
+
+  app.get("/api/production-cost-tables/material-cost-source", requireAppAuth, requireAnyPermission([...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS, "pricing.generate_tables"]), async (req, res) => {
+    const dateRaw =
+      typeof req.query.effectiveDate === "string"
+        ? req.query.effectiveDate.trim()
+        : typeof req.query.date === "string"
+          ? req.query.date.trim()
+          : "";
+    if (!dateRaw) {
+      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    }
+    const effectiveDate = civilDateToLocalDate(dateRaw);
+    if (Number.isNaN(effectiveDate.getTime())) {
+      return res.status(400).json({ error: "effectiveDate inválida." });
+    }
+    try {
+      const preview = await previewMaterialCostTableSourceForProductionDraft(prisma, effectiveDate);
+      return res.json({ effectiveDate: dateRaw, ...preview });
+    } catch (e) {
+      console.error("GET /api/production-cost-tables/material-cost-source", e);
+      return res.status(500).json({ error: "Erro ao consultar fonte de matéria-prima." });
     }
   });
 
@@ -7157,14 +7182,23 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           status: result.version.status,
           revision: result.version.revision,
           supersedesVersionId: result.supersedesVersionId,
+          materialCostTableVersionId: result.summary.materialCostTableVersionId,
           itemsCount: result.version._count.items,
         },
         summary: result.summary,
+        materialCostTable: {
+          materialCostTableVersionId: result.summary.materialCostTableVersionId,
+          materialCostTableVersionCode: result.summary.materialCostTableVersionCode,
+          revision: result.summary.materialCostTableRevision,
+        },
         published: false,
       });
     } catch (e) {
       console.error("POST /api/production-cost-tables/versions/generate-draft", e);
       const message = e instanceof Error ? e.message : "Erro ao gerar DRAFT de custo de produção.";
+      if (message.includes(NO_PUBLISHED_MATERIAL_COST_TABLE_MESSAGE)) {
+        return res.status(422).json({ error: message, code: "NO_PUBLISHED_MATERIAL_COST_TABLE" });
+      }
       return res.status(500).json({ error: message });
     }
   });

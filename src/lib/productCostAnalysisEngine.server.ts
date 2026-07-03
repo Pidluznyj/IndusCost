@@ -13,6 +13,10 @@ import {
   type ExcludedBomLineRecord,
 } from "./costAnalysisPartial.js";
 import { computeStandardProcessUnitCosts } from "./componentStandardProcessCost.js";
+import {
+  resolveMaterialLineCostForEngine,
+  type MaterialCostEngineCatalog,
+} from "./materialCostEngineResolver.js";
 
 export interface AnalysisCache {
   indirectCosts: any[];
@@ -23,6 +27,8 @@ export interface AnalysisCache {
   opexRatePerHour: number;
   hhSource?: "AUTO" | "MANUAL";
   autoHhCost?: number;
+  /** Catálogo de MP versionada — quando presente, substitui Material.currentCost vivo. */
+  materialCostCatalog?: MaterialCostEngineCatalog;
 }
 
 export type ProductCostAnalysisEngine = {
@@ -225,7 +231,18 @@ async function getProductCostAnalysis(
   for (const item of product.ProductBOM) {
     if (item.Material) {
       const mat = item.Material;
-      const landedCost = Number(mat.currentCost) + Number(mat.freight);
+      const costResolved = resolveMaterialLineCostForEngine(mat, cache.materialCostCatalog);
+      if (!costResolved.ok) {
+        return {
+          error: costResolved.error,
+          message: costResolved.message,
+          materialId: costResolved.materialId,
+          materialCode: costResolved.materialCode,
+          productId: product.id,
+          sku: product.sku,
+        };
+      }
+      const landedCost = costResolved.landedCost;
       if (!Number.isFinite(landedCost) || landedCost <= 0) {
         warnings.push({
           code: "MATERIAL_ZERO_OR_INVALID_LANDED_COST",
@@ -238,7 +255,8 @@ async function getProductCostAnalysis(
           bomLineId: item.id,
         });
       }
-      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
+      const matStandardLoss = costResolved.standardLossPct / 100;
+      const matEffectiveCost = landedCost / (1 - matStandardLoss);
       const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
       const lineTotal = matEffectiveCost * requiredQty;
       if (lineTotal === 0 && landedCost > 0) {
@@ -656,9 +674,19 @@ async function getProductCostAnalysis(
       }
       if (item.Material) {
         const mat = item.Material;
-        const matStandardLoss = Number(mat.standardLoss) / 100;
-        const landedCost = Number(mat.currentCost) + Number(mat.freight);
-        const matEffectiveCost = landedCost / (1 - matStandardLoss);
+        const costResolved = resolveMaterialLineCostForEngine(mat, cache.materialCostCatalog);
+        if (!costResolved.ok) {
+          return {
+            error: costResolved.error,
+            message: costResolved.message,
+            materialId: costResolved.materialId,
+            materialCode: costResolved.materialCode,
+            productId: product.id,
+            sku: product.sku,
+          };
+        }
+        const matStandardLoss = costResolved.standardLossPct / 100;
+        const matEffectiveCost = costResolved.landedCost / (1 - matStandardLoss);
         materialsRows.push({
           lineType: "MATERIAL",
           materialId: mat.id,
@@ -669,10 +697,14 @@ async function getProductCostAnalysis(
           quantity: Number(item.quantity),
           lossPercentage: Number(item.lossPercentage ?? 0),
           unit: mat.unit,
-          basePrice: Number(mat.currentCost),
+          basePrice: costResolved.currentCost,
           unitCostUsed: matEffectiveCost,
           requiredQty,
           unitCost: matEffectiveCost * requiredQty,
+          materialCostSource: costResolved.costSource,
+          materialCostTableVersionId: costResolved.materialCostTableVersionId ?? null,
+          materialCostTableVersionCode: costResolved.materialCostTableVersionCode ?? null,
+          materialCostTableRevision: costResolved.revision ?? null,
         });
         continue;
       }

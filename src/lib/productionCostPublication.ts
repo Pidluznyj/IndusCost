@@ -9,6 +9,10 @@ import {
 } from "./productOfficialFinalCost.js";
 import type { ProductionCostTableDraftItemInput } from "./productionCostVersioning.js";
 import {
+  MATERIAL_COST_SOURCE_VERSIONED_TABLE,
+  type MaterialCostEngineCatalog,
+} from "./materialCostEngineResolver.js";
+import {
   buildProductionCostBomStructureHashInput,
   extractProductionCostBomAuditStructureFromAnalysis,
   extractProductionCostWarningsFromAnalysis,
@@ -30,6 +34,14 @@ export function productionCostTableNameFromCode(code: string, revision: number):
   return `Custo de produção ${code} (rev. ${revision})`;
 }
 
+export type ProductionCostMaterialCostTableRef = {
+  materialCostTableVersionId: string;
+  materialCostTableVersionCode: string;
+  revision: number;
+  effectiveDate: string;
+  costSource: typeof MATERIAL_COST_SOURCE_VERSIONED_TABLE;
+};
+
 export type ProductionCostCalculationSnapshot = {
   snapshotKind: typeof PRODUCTION_COST_SNAPSHOT_KIND;
   liveBomNotice: typeof PRODUCTION_COST_SNAPSHOT_LIVE_BOM_NOTICE;
@@ -42,6 +54,8 @@ export type ProductionCostCalculationSnapshot = {
   productType: string | null;
   finalUnitCost: number;
   costAnalysisPartial: boolean;
+  /** Tabela oficial de MP usada no cálculo (geração oficial de produção). */
+  materialCostTableRef: ProductionCostMaterialCostTableRef | null;
   breakdown: {
     materialCost: number;
     processCost: number;
@@ -53,7 +67,7 @@ export type ProductionCostCalculationSnapshot = {
   analysisSummary: Record<string, unknown>;
   bomStructure: ProductionCostBomAuditStructure;
   warnings: ProductionCostAuditWarning[];
-  calculationHashInputVersion: 2;
+  calculationHashInputVersion: 3;
 };
 
 function round6(value: number): number {
@@ -79,11 +93,25 @@ export function mapOfficialCostToItemBreakdown(resolved: OfficialProductFinalCos
   return { materialCost, processCost, laborCost, machineCost, overheadCost, otherCost };
 }
 
+export function buildMaterialCostTableRefFromCatalog(
+  catalog: MaterialCostEngineCatalog | null | undefined
+): ProductionCostMaterialCostTableRef | null {
+  if (!catalog?.officialProductionDraft) return null;
+  return {
+    materialCostTableVersionId: catalog.materialCostTableVersionId,
+    materialCostTableVersionCode: catalog.materialCostTableVersionCode,
+    revision: catalog.revision,
+    effectiveDate: catalog.effectiveDate,
+    costSource: MATERIAL_COST_SOURCE_VERSIONED_TABLE,
+  };
+}
+
 export function buildProductionCostCalculationSnapshot(
   resolved: OfficialProductFinalCostSuccess,
   analysis: unknown,
   productMeta?: { name?: string | null; type?: string | null },
-  calculatedAt: Date = new Date()
+  calculatedAt: Date = new Date(),
+  materialCostCatalog?: MaterialCostEngineCatalog | null
 ): ProductionCostCalculationSnapshot {
   const breakdown = mapOfficialCostToItemBreakdown(resolved);
   const raw = analysis && typeof analysis === "object" ? (analysis as Record<string, unknown>) : {};
@@ -106,6 +134,7 @@ export function buildProductionCostCalculationSnapshot(
     productType: productMeta?.type?.trim() || readString(raw.productType) || null,
     finalUnitCost: resolved.finalUnitCost,
     costAnalysisPartial: resolved.costAnalysisPartial,
+    materialCostTableRef: buildMaterialCostTableRefFromCatalog(materialCostCatalog),
     breakdown,
     analysisSummary: {
       totalIndustrialCost: summary.totalIndustrialCost ?? raw.totalIndustrialCost,
@@ -120,7 +149,7 @@ export function buildProductionCostCalculationSnapshot(
     },
     bomStructure,
     warnings,
-    calculationHashInputVersion: 2,
+    calculationHashInputVersion: 3,
   };
 }
 
@@ -147,6 +176,7 @@ export function buildProductionCostCalculationHash(
       message: warning.message,
     })),
     costAnalysisPartial: snapshot.costAnalysisPartial,
+    materialCostTableRef: snapshot.materialCostTableRef,
   });
   return crypto.createHash("sha256").update(stable).digest("hex").slice(0, 32);
 }
@@ -155,13 +185,15 @@ export function buildProductionCostDraftItemFromAnalysis(
   product: { id: string; sku: string; name: string; type?: string | null },
   resolved: OfficialProductFinalCostSuccess,
   analysis: unknown,
-  calculatedAt?: Date
+  calculatedAt?: Date,
+  materialCostCatalog?: MaterialCostEngineCatalog | null
 ): ProductionCostTableDraftItemInput {
   const snapshot = buildProductionCostCalculationSnapshot(
     resolved,
     analysis,
     { name: product.name, type: product.type ?? null },
-    calculatedAt
+    calculatedAt,
+    materialCostCatalog
   );
   return {
     productId: product.id,

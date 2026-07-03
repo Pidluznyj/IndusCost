@@ -16,6 +16,8 @@ import {
 import { createProductCostAnalysisEngine } from "../src/lib/productCostAnalysisEngine.server.ts";
 import { evaluateProductEngineeringCost } from "../src/lib/productEngineeringCostSnapshot.server.ts";
 
+import { previewMaterialCostTableSourceForProductionDraft } from "../src/lib/materialCostEngineResolver.ts";
+
 type AuditStatus = "OK" | "ALERTA" | "BLOQUEANTE";
 
 type Finding = {
@@ -53,7 +55,8 @@ async function main(): Promise<void> {
 
   const findings: Finding[] = [];
 
-  const [totalVersions, statusGroups, latestPublished, itemCount, draftCount] = await Promise.all([
+  const [totalVersions, statusGroups, latestPublished, itemCount, draftCount, mpLinkStats, mpSourcePreview] =
+    await Promise.all([
     prisma.productionCostTableVersion.count(),
     prisma.productionCostTableVersion.groupBy({
       by: ["status"],
@@ -67,6 +70,11 @@ async function main(): Promise<void> {
     }),
     prisma.productionCostTableItem.count(),
     prisma.productionCostTableVersion.count({ where: { status: "DRAFT" } }),
+    prisma.productionCostTableVersion.groupBy({
+      by: ["materialCostTableVersionId"],
+      _count: { _all: true },
+    }),
+    previewMaterialCostTableSourceForProductionDraft(prisma, referenceDate),
   ]);
 
   const publishedVersions = await prisma.productionCostTableVersion.findMany({
@@ -166,6 +174,29 @@ async function main(): Promise<void> {
     else withoutCost += 1;
   }
 
+  const draftsWithoutMpLink = await prisma.productionCostTableVersion.count({
+    where: { status: "DRAFT", materialCostTableVersionId: null },
+  });
+  const publishedWithoutMpLink = await prisma.productionCostTableVersion.count({
+    where: { status: { in: ["PUBLISHED", "SUPERSEDED"] }, materialCostTableVersionId: null },
+  });
+
+  if (draftsWithoutMpLink > 0) {
+    findings.push({
+      area: "material-table-link",
+      status: "ALERTA",
+      message: `${draftsWithoutMpLink} DRAFT(s) de produção sem materialCostTableVersionId (legado ou gerado antes da integração).`,
+    });
+  }
+
+  if (!mpSourcePreview.available && totalVersions > 0) {
+    findings.push({
+      area: "material-table-source",
+      status: "ALERTA",
+      message: mpSourcePreview.message ?? "Sem tabela de MP publicada vigente para a data de referência.",
+    });
+  }
+
   if (totalVersions === 0) {
     findings.push({
       area: "data",
@@ -180,6 +211,16 @@ async function main(): Promise<void> {
   console.log(`Total itens: ${itemCount}`);
   console.log(`DRAFTs: ${draftCount}`);
   console.log(`Produtos ACTIVE: ${activeProducts}`);
+  console.log("\n--- Vínculo com tabela de MP ---");
+  console.log(
+    `  MP vigente para ${toCivilDateKey(referenceDate)}: ${
+      mpSourcePreview.available
+        ? `${mpSourcePreview.materialCostTableVersionCode} rev.${mpSourcePreview.revision} (${mpSourcePreview.itemsCount} itens)`
+        : "indisponível"
+    }`
+  );
+  console.log(`  DRAFTs sem materialCostTableVersionId: ${draftsWithoutMpLink}`);
+  console.log(`  Publicadas/supersedidas sem vínculo MP: ${publishedWithoutMpLink}`);
   console.log("\n--- Versões por status ---");
   for (const row of statusGroups) {
     console.log(`  ${row.status}: ${row._count._all}`);
@@ -245,7 +286,11 @@ async function main(): Promise<void> {
           items: itemCount,
           drafts: draftCount,
           activeProducts,
+          draftsWithoutMpLink,
+          publishedWithoutMpLink,
         },
+        materialCostSource: mpSourcePreview,
+        mpLinkStats,
         statusGroups,
         sampleCoverage: { withCost, withoutCost, sampleSize: sampleIds.length },
         resolverSample,

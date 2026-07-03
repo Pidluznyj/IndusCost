@@ -233,11 +233,20 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
 });
 
 describe("versionedCostArchitectureBaseline — matéria-prima e componentes (as-is)", () => {
-  it("motor industrial ainda lê Material.currentCost vivo (MP versionada não ligada ao motor)", () => {
+  it("motor industrial usa resolveMaterialLineCostForEngine com fallback vivo sem catálogo", () => {
     const engine = read("src/lib/productCostAnalysisEngine.server.ts");
-    assert.match(engine, /mat\.currentCost/);
-    assert.doesNotMatch(engine, /MaterialPriceHistory/);
-    assert.doesNotMatch(engine, /MaterialCostTable/);
+    assert.match(engine, /resolveMaterialLineCostForEngine/);
+    assert.match(engine, /materialCostCatalog/);
+    const resolver = read("src/lib/materialCostEngineResolver.ts");
+    assert.match(resolver, /LIVE_MATERIAL/);
+    assert.match(resolver, /VERSIONED_MATERIAL_COST_TABLE/);
+  });
+
+  it("geração oficial de produção usa tabela de MP publicada", () => {
+    const pub = read("src/lib/productionCostPublication.server.ts");
+    assert.match(pub, /loadMaterialCostEngineCatalogForProductionDraft/);
+    assert.match(pub, /materialCostTableVersionId/);
+    assert.match(pub, /cache\.materialCostCatalog/);
   });
 
   it("geração de custo de produção elegível inclui PRODUCT e COMPONENT", () => {
@@ -255,6 +264,7 @@ describe("versionedCostArchitectureBaseline — matéria-prima e componentes (as
     const schema = read("prisma/schema.prisma");
     assert.match(schema, /model MaterialCostTableVersion/);
     assert.match(schema, /model MaterialCostTableItem/);
+    assert.match(schema, /materialCostTableVersionId/);
     assert.match(schema, /model MaterialPriceHistory/);
     assert.match(schema, /model ProductionCostTableVersion/);
     assert.match(schema, /model PriceTableVersion/);

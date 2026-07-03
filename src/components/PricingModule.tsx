@@ -268,6 +268,15 @@ export const PricingModule = () => {
   const [productionCostGenResult, setProductionCostGenResult] = useState<ProductionCostGenResult | null>(null);
   const [productionCostVersions, setProductionCostVersions] = useState<ProductionCostVersionLite[]>([]);
   const [productionCostVersionsLoading, setProductionCostVersionsLoading] = useState(false);
+  const [productionCostMaterialSource, setProductionCostMaterialSource] = useState<{
+    available: boolean;
+    message: string | null;
+    materialCostTableVersionCode: string | null;
+    revision: number | null;
+    itemsCount: number;
+    name: string | null;
+  } | null>(null);
+  const [productionCostMaterialSourceLoading, setProductionCostMaterialSourceLoading] = useState(false);
 
   const [materialCostOpen, setMaterialCostOpen] = useState(false);
 
@@ -893,6 +902,35 @@ export const PricingModule = () => {
       void fetchProductionCostVersions();
     }
   }, [productionCostOpen, allowGenerateTables]);
+
+  useEffect(() => {
+    if (!productionCostOpen || !productionCostEffectiveDate.trim()) {
+      setProductionCostMaterialSource(null);
+      return;
+    }
+    let cancelled = false;
+    setProductionCostMaterialSourceLoading(true);
+    void fetchJsonOk<{
+      available: boolean;
+      message: string | null;
+      materialCostTableVersionCode: string | null;
+      revision: number | null;
+      itemsCount: number;
+      name: string | null;
+    }>(`/api/production-cost-tables/material-cost-source?effectiveDate=${encodeURIComponent(productionCostEffectiveDate)}`)
+      .then((row) => {
+        if (!cancelled) setProductionCostMaterialSource(row);
+      })
+      .catch(() => {
+        if (!cancelled) setProductionCostMaterialSource(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProductionCostMaterialSourceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productionCostOpen, productionCostEffectiveDate, allowGenerateTables]);
 
   const handleGenerateProductionCostDraft = async () => {
     if (!productionCostEffectiveDate.trim()) {
@@ -1521,6 +1559,36 @@ export const PricingModule = () => {
               <>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                 Publicado não é editado. Correção gera nova revisão por produto. Esta seção não altera preço comercial — apenas registra custo de produção vigente.
+              </div>
+
+              <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs space-y-1">
+                <p className="font-bold uppercase text-muted-foreground">Fonte de matéria-prima (automática)</p>
+                {productionCostMaterialSourceLoading ? (
+                  <p className="text-muted-foreground">Consultando tabela de MP vigente…</p>
+                ) : productionCostMaterialSource?.available ? (
+                  <p className="text-foreground">
+                    Usará{" "}
+                    <span className="font-semibold">
+                      {productionCostMaterialSource.name ?? productionCostMaterialSource.materialCostTableVersionCode}
+                    </span>{" "}
+                    ({productionCostMaterialSource.materialCostTableVersionCode} rev.{" "}
+                    {productionCostMaterialSource.revision}) — {productionCostMaterialSource.itemsCount} material(is).
+                    Custo congelado da tabela publicada, não Material.currentCost vivo.
+                  </p>
+                ) : productionCostEffectiveDate.trim() ? (
+                  <div className="space-y-2">
+                    <p className="text-amber-900 flex items-start gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      {productionCostMaterialSource?.message ??
+                        "Não há tabela oficial de matéria-prima publicada vigente para esta data."}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Gere e publique a tabela de MP na seção &quot;Custo oficial de matéria-prima (versionado)&quot; antes de gerar o DRAFT de produção.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Informe a vigência para verificar a tabela de MP aplicável.</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

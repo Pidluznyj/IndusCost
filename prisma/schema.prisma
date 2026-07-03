@@ -662,8 +662,10 @@ model ProductionCostTableVersion {
   createdBy           String?
   createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  materialCostTableVersionId String?                   @db.Uuid
   supersedesVersion   ProductionCostTableVersion?      @relation("ProductionCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   supersededBy        ProductionCostTableVersion[]     @relation("ProductionCostTableVersionSupersedes")
+  materialCostTableVersion   MaterialCostTableVersion? @relation(fields: [materialCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   items               ProductionCostTableItem[]
 
   @@unique([code, revision])
@@ -671,6 +673,7 @@ model ProductionCostTableVersion {
   @@index([status])
   @@index([effectiveDate])
   @@index([publishedAt])
+  @@index([materialCostTableVersionId])
 }
 
 /// Linha de custo de produção por produto dentro de uma versão.
@@ -722,6 +725,7 @@ model MaterialCostTableVersion {
   supersedesVersion   MaterialCostTableVersion?        @relation("MaterialCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   supersededBy        MaterialCostTableVersion[]       @relation("MaterialCostTableVersionSupersedes")
   items               MaterialCostTableItem[]
+  productionCostTableVersions ProductionCostTableVersion[]
 
   @@unique([code, revision])
   @@index([code])
