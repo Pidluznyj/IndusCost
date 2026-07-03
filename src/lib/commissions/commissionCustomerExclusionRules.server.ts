@@ -389,6 +389,27 @@ export async function findApplicableCustomerExclusionRule(
   );
 }
 
+export async function getCustomerExclusionRuleSnapshotById(
+  ruleId: string
+): Promise<CustomerExclusionRuleSnapshot | null> {
+  const row = await prisma.commissionCustomerExclusionRule.findUnique({
+    where: { id: ruleId },
+    select: {
+      id: true,
+      customerId: true,
+      customerExternalId: true,
+      customerNameSnapshot: true,
+      normalizedCustomerName: true,
+      reason: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      status: true,
+      notes: true,
+    },
+  });
+  return row ? mapSnapshot(row) : null;
+}
+
 export async function loadActiveCustomerExclusionRuleSnapshots(): Promise<
   CustomerExclusionRuleSnapshot[]
 > {
