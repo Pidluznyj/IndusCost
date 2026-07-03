@@ -43,6 +43,7 @@ describe("productionCostTablesRoutes", () => {
   it("gerar DRAFT restrito a perfil autorizado", () => {
     const src = server();
     assert.match(src, /\/api\/production-cost-tables\/versions\/generate-draft/);
+    assert.match(src, /itemScope/);
     assert.match(src, /pricing\.generate_tables/);
     assert.match(src, /settings\.price_tables\.manage/);
     for (const perm of PRODUCTION_COST_TABLE_MANAGE_PERMISSIONS) {

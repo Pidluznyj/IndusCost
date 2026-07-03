@@ -7044,6 +7044,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       effectiveDate?: unknown;
       productIds?: unknown;
       includeAllActiveProducts?: unknown;
+      itemScope?: unknown;
+      soldComponentsYear?: unknown;
+      soldComponentsMonth?: unknown;
       notes?: unknown;
       createdBy?: unknown;
     };
@@ -7064,9 +7067,38 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       : [];
     const includeAllActiveProducts = body.includeAllActiveProducts === true;
+    const itemScope =
+      typeof body.itemScope === "string" && body.itemScope.trim()
+        ? body.itemScope.trim()
+        : undefined;
     const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
     const createdBy =
       typeof body.createdBy === "string" && body.createdBy.trim() ? body.createdBy.trim() : null;
+
+    let soldComponentsPeriod: { from: Date; to: Date } | null = null;
+    const soldYearRaw = body.soldComponentsYear;
+    const soldMonthRaw = body.soldComponentsMonth;
+    if (soldYearRaw != null && String(soldYearRaw).trim()) {
+      const year = Number(soldYearRaw);
+      const month = soldMonthRaw != null && String(soldMonthRaw).trim() ? Number(soldMonthRaw) : null;
+      if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+        return res.status(400).json({ error: "soldComponentsYear inválido." });
+      }
+      if (month != null) {
+        if (!Number.isFinite(month) || month < 1 || month > 12) {
+          return res.status(400).json({ error: "soldComponentsMonth inválido (1-12)." });
+        }
+        soldComponentsPeriod = {
+          from: new Date(year, month - 1, 1),
+          to: new Date(year, month, 0, 23, 59, 59, 999),
+        };
+      } else {
+        soldComponentsPeriod = {
+          from: new Date(year, 0, 1),
+          to: new Date(year, 11, 31, 23, 59, 59, 999),
+        };
+      }
+    }
 
     if (productIds.length === 0 && !includeAllActiveProducts) {
       return res.status(400).json({
@@ -7084,6 +7116,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         effectiveDate,
         productIds,
         includeAllActiveProducts,
+        itemScope,
+        soldComponentsPeriod,
         notes,
         createdBy,
       });

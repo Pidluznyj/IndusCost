@@ -187,8 +187,11 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string; t
         let rows = normalized;
         if (where.type && typeof where.type === "object" && Array.isArray(where.type.in)) {
           rows = rows.filter((p) => where.type.in.includes(p.type));
-        } else if (where.type === "PRODUCT") {
-          rows = rows.filter((p) => p.type === "PRODUCT");
+        } else if (typeof where.type === "string") {
+          rows = rows.filter((p) => p.type === where.type);
+        }
+        if (where.status) {
+          rows = rows.filter((p) => (p as { status?: string }).status !== "INACTIVE");
         }
         const ids = where.id?.in;
         return ids ? rows.filter((p) => ids.includes(p.id)) : rows;
@@ -196,6 +199,9 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string; t
       findUnique: async ({ where }: { where: { id: string } }) =>
         normalized.find((p) => p.id === where.id) ?? null,
       count: async () => 0,
+    },
+    salesOrderItem: {
+      findMany: async () => [] as Array<{ productId: string }>,
     },
     $transaction: async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
   };
@@ -371,6 +377,79 @@ describe("productionCostPublication.server", () => {
     assert.equal(summary.componentsEvaluated, 1);
     assert.equal(summary.productsEvaluated, 0);
     assert.equal(summary.itemsEvaluated, 1);
+    assert.equal(summary.productsCalculated, 0);
+    assert.equal(summary.componentsCalculated, 1);
+    assert.equal(summary.itemScope, "PRODUCT_AND_COMPONENT");
+  });
+
+  it("generate draft includes PRODUCT and COMPONENT with PRODUCT_AND_COMPONENT scope", async () => {
+    const products = [
+      { id: "prod-a", sku: "PA", name: "Produto A", type: "PRODUCT" },
+      { id: "comp-b", sku: "CB", name: "Componente B", type: "COMPONENT" },
+    ];
+    const { db, items } = createMockDb(products);
+    const engine = createMockEngine({
+      "prod-a": { total: 10 },
+      "comp-b": { total: 3.5 },
+    });
+
+    const { summary } = await generateProductionCostTableDraftFromProducts(db as never, engine, {
+      effectiveDate: civilDateToLocalDate("2026-06-01"),
+      productIds: [],
+      includeAllActiveProducts: true,
+      itemScope: "PRODUCT_AND_COMPONENT",
+    });
+
+    assert.equal(summary.itemsEvaluated, 2);
+    assert.equal(summary.productsEvaluated, 1);
+    assert.equal(summary.componentsEvaluated, 1);
+    assert.equal(summary.itemsCreated, 2);
+    assert.equal(summary.productsCalculated, 1);
+    assert.equal(summary.componentsCalculated, 1);
+    assert.equal(items.size, 2);
+  });
+
+  it("component without enough data is skipped with explicit error — never zero", async () => {
+    const products = [
+      { id: "comp-bad", sku: "BAD.01", name: "Componente incompleto", type: "COMPONENT" },
+    ];
+    const { db, items } = createMockDb(products);
+    const engine = createMockEngine({ "comp-bad": "FAIL" });
+
+    const { summary } = await generateProductionCostTableDraftFromProducts(db as never, engine, {
+      effectiveDate: civilDateToLocalDate("2026-06-01"),
+      productIds: ["comp-bad"],
+      itemScope: "COMPONENT",
+    });
+
+    assert.equal(summary.itemsCreated, 0);
+    assert.equal(summary.itemsSkipped, 1);
+    assert.equal(summary.errors.length, 1);
+    assert.equal(items.size, 0);
+  });
+
+  it("no duplicate item for same productId in same version (upsert)", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, items } = createMockDb(products);
+    const engine = createMockEngine({ "prod-a": { total: 10 } });
+
+    const gen = await generateProductionCostTableDraftFromProducts(db as never, engine, {
+      effectiveDate: civilDateToLocalDate("2026-06-01"),
+      productIds: ["prod-a"],
+    });
+
+    await addOrUpdateProductionCostTableDraftItem(db as never, gen.version!.id, {
+      productId: "prod-a",
+      productCodeSnapshot: "PA",
+      productNameSnapshot: "Produto A",
+      unitProductionCost: 12,
+    });
+
+    const versionItems = [...items.values()].filter(
+      (row) => row.costTableVersionId === gen.version!.id && row.productId === "prod-a"
+    );
+    assert.equal(versionItems.length, 1);
+    assert.equal(Number(versionItems[0]!.unitProductionCost), 12);
   });
 
   it("versão publicada não pode ser editada após publicação", async () => {

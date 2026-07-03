@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildProductionCostDraftGenerationSummaryLines,
   formatEffectiveProductionCostSummary,
   formatProductionCostVersionStatusLabel,
   isProductionCostVersionReadOnly,
@@ -85,6 +86,24 @@ describe("productionCostTablesUi", () => {
     assert.match(panel, /production-cost-view-items-/);
     assert.match(panel, /Consulta de custo vigente|effective-cost/);
     assert.match(panel, /isProductionCostVersionReadOnly/);
+  });
+
+  it("resumo de geração de DRAFT separa produtos e componentes", () => {
+    const lines = buildProductionCostDraftGenerationSummaryLines({
+      productsEvaluated: 10,
+      componentsEvaluated: 5,
+      itemsEvaluated: 15,
+      productsCalculated: 9,
+      componentsCalculated: 3,
+      itemsCreated: 12,
+      itemsSkipped: 3,
+      errorsCount: 3,
+      warningsCount: 1,
+    });
+    assert.match(lines.join("\n"), /Produtos avaliados: 10/);
+    assert.match(lines.join("\n"), /Componentes avaliados: 5/);
+    assert.match(lines.join("\n"), /Componentes calculados: 3/);
+    assert.match(lines.join("\n"), /nunca com custo zero|sem custo válido/i);
   });
 
   it("permissões view/manage/publish definidas", () => {

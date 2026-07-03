@@ -15,7 +15,13 @@ import {
   productionCostTableCodeFromEffectiveDate,
   productionCostTableNameFromCode,
 } from "./productionCostPublication.js";
-import { productionCostTableEligibleItemTypesFilter } from "./productEngineeringCostSnapshot.js";
+import {
+  DEFAULT_PRODUCTION_COST_DRAFT_ITEM_SCOPE,
+  matchesProductionCostDraftItemScope,
+  parseProductionCostDraftItemScope,
+  prismaProductTypeFilterForProductionCostDraftScope,
+  type ProductionCostDraftItemScope,
+} from "./productionCostDraftItemScope.js";
 import {
   addOrUpdateProductionCostTableDraftItem,
   createProductionCostTableDraft,
@@ -31,10 +37,14 @@ export type GenerateProductionCostDraftIssue = {
 };
 
 export type GenerateProductionCostDraftSummary = {
+  /** Escopo aplicado na geração. */
+  itemScope: ProductionCostDraftItemScope;
   /** Total de itens de engenharia elegíveis avaliados (produtos + componentes). */
   itemsEvaluated: number;
   productsEvaluated: number;
   componentsEvaluated: number;
+  productsCalculated: number;
+  componentsCalculated: number;
   materialsIgnored: number;
   /** @deprecated Use itemsEvaluated — mantido por compatibilidade com UI/API existente. */
   productsRead: number;
@@ -50,7 +60,107 @@ export type GenerateProductionCostDraftInput = {
   notes?: string | null;
   createdBy?: string | null;
   includeAllActiveProducts?: boolean;
+  /** Default: PRODUCT_AND_COMPONENT — produtos e componentes ativos. */
+  itemScope?: ProductionCostDraftItemScope | string | null;
+  /** Período opcional para escopo SOLD_COMPONENTS (pedidos com issueDate no intervalo). */
+  soldComponentsPeriod?: { from: Date; to: Date } | null;
 };
+
+export type ProductionCostDraftProductRow = {
+  id: string;
+  sku: string;
+  name: string;
+  type: string;
+};
+
+export async function findSoldActiveComponentProductIds(
+  db: PrismaClient,
+  period?: { from: Date; to: Date } | null
+): Promise<string[]> {
+  const rows = await db.salesOrderItem.findMany({
+    where: {
+      Product: { type: "COMPONENT", status: "ACTIVE" },
+      ...(period
+        ? {
+            SalesOrder: {
+              issueDate: { gte: period.from, lte: period.to },
+            },
+          }
+        : {}),
+    },
+    select: { productId: true },
+    distinct: ["productId"],
+  });
+  return rows.map((row) => row.productId);
+}
+
+export async function resolveProductsForProductionCostDraft(
+  db: PrismaClient,
+  input: {
+    productIds: string[];
+    includeAllActiveProducts?: boolean;
+    itemScope: ProductionCostDraftItemScope;
+    soldComponentsPeriod?: { from: Date; to: Date } | null;
+  }
+): Promise<ProductionCostDraftProductRow[]> {
+  const productIds = [...new Set(input.productIds.filter(Boolean))];
+  const typeFilter = prismaProductTypeFilterForProductionCostDraftScope(input.itemScope);
+
+  const select = {
+    id: true,
+    sku: true,
+    name: true,
+    type: true,
+  } as const;
+
+  if (input.itemScope === "SOLD_COMPONENTS") {
+    const soldIds = await findSoldActiveComponentProductIds(db, input.soldComponentsPeriod);
+    const targetIds =
+      productIds.length > 0
+        ? productIds.filter((id) => soldIds.includes(id))
+        : input.includeAllActiveProducts
+          ? soldIds
+          : productIds;
+
+    if (targetIds.length === 0) return [];
+
+    return db.product.findMany({
+      where: {
+        status: "ACTIVE",
+        type: "COMPONENT",
+        id: { in: targetIds },
+      },
+      select,
+      orderBy: { sku: "asc" },
+    });
+  }
+
+  if (productIds.length > 0) {
+    const rows = await db.product.findMany({
+      where: {
+        status: "ACTIVE",
+        type: typeFilter,
+        id: { in: productIds },
+      },
+      select,
+      orderBy: { sku: "asc" },
+    });
+    return rows.filter((row) => matchesProductionCostDraftItemScope(row.type, input.itemScope));
+  }
+
+  if (input.includeAllActiveProducts) {
+    return db.product.findMany({
+      where: {
+        status: "ACTIVE",
+        type: typeFilter,
+      },
+      select,
+      orderBy: { sku: "asc" },
+    });
+  }
+
+  return [];
+}
 
 export async function findLatestPublishedProductionCostVersionByCode(
   db: PrismaClient,
@@ -74,28 +184,27 @@ export async function generateProductionCostTableDraftFromProducts(
   }
 
   const productIds = [...new Set(input.productIds.filter(Boolean))];
-  const selectedProducts = await db.product.findMany({
-    where: {
-      status: "ACTIVE",
-      type: productionCostTableEligibleItemTypesFilter(),
-      ...(productIds.length > 0
-        ? { id: { in: productIds } }
-        : input.includeAllActiveProducts
-          ? {}
-          : { id: { in: [] } }),
-    },
-    select: { id: true, sku: true, name: true, type: true },
-    orderBy: { sku: "asc" },
+  const itemScope = parseProductionCostDraftItemScope(
+    input.itemScope ?? DEFAULT_PRODUCTION_COST_DRAFT_ITEM_SCOPE
+  );
+
+  const selectedProducts = await resolveProductsForProductionCostDraft(db, {
+    productIds,
+    includeAllActiveProducts: input.includeAllActiveProducts,
+    itemScope,
+    soldComponentsPeriod: input.soldComponentsPeriod,
   });
 
   if (selectedProducts.length === 0) {
     throw new Error(
-      "Nenhum item de engenharia ativo elegível (produto ou componente) selecionado para geração de custo de produção."
+      itemScope === "SOLD_COMPONENTS"
+        ? "Nenhum componente vendido ativo encontrado para geração de custo de produção no escopo/período informado."
+        : "Nenhum item de engenharia ativo elegível (produto ou componente) selecionado para geração de custo de produção."
     );
   }
 
   const materialsIgnored =
-    productIds.length > 0
+    productIds.length > 0 || itemScope !== "PRODUCT_AND_COMPONENT"
       ? 0
       : await db.product.count({ where: { status: "ACTIVE", type: "MATERIAL" } });
   const productsEvaluated = selectedProducts.filter((p) => p.type === "PRODUCT").length;
@@ -123,9 +232,12 @@ export async function generateProductionCostTableDraftFromProducts(
   });
 
   const summary: GenerateProductionCostDraftSummary = {
+    itemScope,
     itemsEvaluated: selectedProducts.length,
     productsEvaluated,
     componentsEvaluated,
+    productsCalculated: 0,
+    componentsCalculated: 0,
     materialsIgnored,
     productsRead: selectedProducts.length,
     itemsCreated: 0,
@@ -196,6 +308,11 @@ export async function generateProductionCostTableDraftFromProducts(
       );
       await addOrUpdateProductionCostTableDraftItem(db, draft.id, item);
       summary.itemsCreated += 1;
+      if (product.type === "COMPONENT") {
+        summary.componentsCalculated += 1;
+      } else {
+        summary.productsCalculated += 1;
+      }
     } catch (error) {
       summary.itemsSkipped += 1;
       summary.errors.push({

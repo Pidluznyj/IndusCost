@@ -98,3 +98,56 @@ export function formatEffectiveProductionCostSummary(input: {
 export function isProductionCostVersionReadOnly(status: string | null | undefined): boolean {
   return String(status ?? "").toUpperCase() !== "DRAFT";
 }
+
+export type ProductionCostDraftGenerationSummaryUi = {
+  itemScope?: string | null;
+  itemsEvaluated?: number;
+  productsEvaluated?: number;
+  componentsEvaluated?: number;
+  productsCalculated?: number;
+  componentsCalculated?: number;
+  itemsCreated?: number;
+  itemsSkipped?: number;
+  materialsIgnored?: number;
+  errorsCount?: number;
+  warningsCount?: number;
+};
+
+/** Linhas de resumo para UI após geração de DRAFT de custo de produção. */
+export function buildProductionCostDraftGenerationSummaryLines(
+  summary: ProductionCostDraftGenerationSummaryUi
+): string[] {
+  const lines: string[] = [];
+  const evaluated = summary.itemsEvaluated ?? 0;
+  const productsEvaluated = summary.productsEvaluated ?? 0;
+  const componentsEvaluated = summary.componentsEvaluated ?? 0;
+  const productsCalculated = summary.productsCalculated ?? 0;
+  const componentsCalculated = summary.componentsCalculated ?? 0;
+  const created = summary.itemsCreated ?? 0;
+  const skipped = summary.itemsSkipped ?? 0;
+  const errors = summary.errorsCount ?? 0;
+  const warnings = summary.warningsCount ?? 0;
+
+  lines.push(`Produtos avaliados: ${productsEvaluated}`);
+  lines.push(`Componentes avaliados: ${componentsEvaluated}`);
+  lines.push(`Total avaliado: ${evaluated}`);
+  lines.push(`Produtos calculados: ${productsCalculated}`);
+  lines.push(`Componentes calculados: ${componentsCalculated}`);
+  lines.push(`Itens incluídos no DRAFT: ${created}`);
+  if (skipped > 0) {
+    lines.push(`Itens ignorados (sem custo válido): ${skipped}`);
+  }
+  if (errors > 0) {
+    lines.push(`Erros de engenharia/BOM/roteiro/material: ${errors}`);
+  }
+  if (warnings > 0) {
+    lines.push(`Avisos (custo parcial): ${warnings}`);
+  }
+  if ((summary.materialsIgnored ?? 0) > 0) {
+    lines.push(`Matérias-primas ignoradas (fora do escopo): ${summary.materialsIgnored}`);
+  }
+  if (skipped > 0 || errors > 0) {
+    lines.push("Componentes/produtos sem dados suficientes não entram com custo zero — ficam como pendência.");
+  }
+  return lines;
+}
