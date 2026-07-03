@@ -11,7 +11,7 @@ export function canViewCommissionsSection(
   sectionId: CommissionsSectionId,
   check: PermissionChecker
 ): boolean {
-  if (sectionId === "visualAudit") {
+  if (sectionId === "monthlyClosing" || sectionId === "visualAudit") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
   return false;

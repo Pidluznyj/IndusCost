@@ -8,7 +8,7 @@ export const COMMISSIONS_SIMPLIFIED_UI = true as const;
 
 export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 
-export const COMMISSIONS_SECTION_IDS = ["visualAudit"] as const;
+export const COMMISSIONS_SECTION_IDS = ["monthlyClosing", "visualAudit"] as const;
 
 export type CommissionsSectionId = (typeof COMMISSIONS_SECTION_IDS)[number];
 
@@ -46,10 +46,11 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
 };
 
 export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
-  visualAudit: "/commissions",
+  monthlyClosing: "/commissions",
+  visualAudit: "/commissions/auditoria",
 };
 
-export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "visualAudit";
+export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "monthlyClosing";
 
 export type CommissionsSectionDef = {
   id: CommissionsSectionId;
@@ -59,6 +60,13 @@ export type CommissionsSectionDef = {
 };
 
 export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
+  {
+    id: "monthlyClosing",
+    label: "Fechamento do mês",
+    path: COMMISSIONS_SECTION_PATHS.monthlyClosing,
+    description:
+      "Comissão oficial a pagar com base nos títulos baixados/recebidos no mês (settlementDate)",
+  },
   {
     id: "visualAudit",
     label: "Auditoria Visual",
@@ -93,6 +101,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   const remainder = normalized.slice(COMMISSIONS_BASE_PATH.length + 1);
   const firstSegment = remainder.split("/").filter(Boolean)[0];
   if (!firstSegment) return true;
+  if (firstSegment === "auditoria") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
   if (isCommissionsLegacySectionSegment(firstSegment)) return true;
   return false;
@@ -100,13 +109,14 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
 
 export function parseCommissionsSectionFromPath(pathname: string): CommissionsSectionId | null {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  if (normalized === COMMISSIONS_BASE_PATH) return "visualAudit";
+  if (normalized === COMMISSIONS_BASE_PATH) return "monthlyClosing";
   const segments = normalized.split("/").filter(Boolean);
   const idx = segments.indexOf("commissions");
   if (idx < 0) return null;
   const next = segments[idx + 1];
-  if (!next) return "visualAudit";
-  if (isCommissionsLegacySectionSegment(next)) return "visualAudit";
+  if (!next) return "monthlyClosing";
+  if (next === "auditoria") return "visualAudit";
+  if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";
   return isCommissionsSectionId(next) ? next : null;
 }
 

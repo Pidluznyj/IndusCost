@@ -12,6 +12,43 @@ export type CommissionMonthlyPayableQuery = {
   year: number;
   month: number;
   sellerId?: string | null;
+  customer?: string | null;
+  orderCode?: string | null;
+  nfeNumber?: string | null;
+  nomusReceivableId?: number | null;
+  receivableTitleStatus?: string | null;
+  commissionStatus?: string | null;
+  onlyDivergences?: boolean;
+  nomusReferenceBase?: number | null;
+  nomusReferenceCommission?: number | null;
+};
+
+export type MonthlyClosingGroupSummary = {
+  groupKey: string;
+  groupLabel: string;
+  lineCount: number;
+  receivedTitlesCount: number;
+  receivedAmount: number;
+  allocatedBaseAmount: number;
+  releasedCommissionAmount: number;
+  averageCommissionRate: number;
+};
+
+export type MonthlyClosingGroupings = {
+  bySeller: MonthlyClosingGroupSummary[];
+  byCustomer: MonthlyClosingGroupSummary[];
+  byNfe: MonthlyClosingGroupSummary[];
+  byReceivable: MonthlyClosingGroupSummary[];
+  byProduct: MonthlyClosingGroupSummary[];
+};
+
+export type MonthlyClosingCards = {
+  payableCommissionTotal: number;
+  allocatedBaseAmountTotal: number;
+  receivedAmountTotal: number;
+  uniqueReceivablesCount: number;
+  averageCommissionRate: number;
+  divergenceCount: number;
 };
 
 export type CommissionMonthlyPayableDetailLine = {
@@ -224,14 +261,103 @@ export function mapRowToPayableDetail(
   };
 }
 
+function aggregateGroupRows(
+  rows: VisualAuditRow[],
+  monthKey: string,
+  keyFn: (row: VisualAuditRow) => string,
+  labelFn: (row: VisualAuditRow) => string
+): MonthlyClosingGroupSummary[] {
+  const buckets = new Map<string, VisualAuditRow[]>();
+  for (const row of rows) {
+    const key = keyFn(row);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(row);
+    buckets.set(key, bucket);
+  }
+
+  return [...buckets.entries()]
+    .map(([groupKey, groupRows]) => {
+      const agg = aggregateSellerRows(
+        groupKey,
+        labelFn(groupRows[0]!),
+        monthKey,
+        groupRows
+      );
+      return {
+        groupKey,
+        groupLabel: labelFn(groupRows[0]!),
+        lineCount: groupRows.length,
+        receivedTitlesCount: agg.receivedTitlesCount,
+        receivedAmount: agg.receivedAmount,
+        allocatedBaseAmount: agg.allocatedBaseAmount,
+        releasedCommissionAmount: agg.releasedCommissionAmount,
+        averageCommissionRate: agg.averageCommissionRate,
+      };
+    })
+    .sort((a, b) => a.groupLabel.localeCompare(b.groupLabel, "pt-BR"));
+}
+
+export function buildMonthlyClosingGroupings(
+  rows: VisualAuditRow[],
+  monthKey: string
+): MonthlyClosingGroupings {
+  return {
+    bySeller: aggregateGroupRows(
+      rows,
+      monthKey,
+      (r) => r.commissionPersonId,
+      (r) => r.commissionPersonName
+    ),
+    byCustomer: aggregateGroupRows(
+      rows,
+      monthKey,
+      (r) => r.customerName ?? "—",
+      (r) => r.customerName ?? "Sem cliente"
+    ),
+    byNfe: aggregateGroupRows(
+      rows,
+      monthKey,
+      (r) => nfeKey(r),
+      (r) => r.nfeNumber ?? String(r.nomusNfeId ?? "—")
+    ),
+    byReceivable: aggregateGroupRows(
+      rows,
+      monthKey,
+      (r) => String(r.nomusReceivableId ?? r.scheduleId ?? r.lineId),
+      (r) => `CR ${r.nomusReceivableId ?? "—"}`
+    ),
+    byProduct: aggregateGroupRows(
+      rows,
+      monthKey,
+      (r) => r.productCode ?? "—",
+      (r) => r.productCode ?? "Sem produto"
+    ),
+  };
+}
+
+export function buildMonthlyClosingCards(
+  summary: CommissionMonthlyPayableSummary,
+  divergenceCount: number
+): MonthlyClosingCards {
+  return {
+    payableCommissionTotal: summary.payableCommissionTotal,
+    allocatedBaseAmountTotal: summary.allocatedBaseAmountTotal,
+    receivedAmountTotal: summary.receivedAmountTotal,
+    uniqueReceivablesCount: summary.uniqueReceivablesCount,
+    averageCommissionRate: summary.averageCommissionRate,
+    divergenceCount,
+  };
+}
+
 export function aggregateMonthlyPayableFromRows(
   rows: VisualAuditRow[],
   query: CommissionMonthlyPayableQuery
 ): CommissionMonthlyPayableSummary {
   const monthKey = buildMonthKey(query.year, query.month);
-  const filtered = query.sellerId
-    ? rows.filter((r) => r.commissionPersonId === query.sellerId)
-    : rows;
+  let filtered = rows;
+  if (query.sellerId) {
+    filtered = filtered.filter((r) => r.commissionPersonId === query.sellerId);
+  }
 
   const bySeller = new Map<string, VisualAuditRow[]>();
   for (const row of filtered) {
@@ -308,12 +434,22 @@ export function aggregateMonthlyPayableFromRows(
   };
 }
 
-export function buildMonthlyPayableCsv(summary: CommissionMonthlyPayableSummary): string {
-  const lines: string[] = [
+function csvSummaryHeader(summary: CommissionMonthlyPayableSummary): string[] {
+  return [
     `# comissao_a_pagar_mes=${summary.monthKey}`,
-    `# total_liberado=${summary.payableCommissionTotal}`,
-    `# base_rateada=${summary.allocatedBaseAmountTotal}`,
-    `# valor_recebido=${summary.receivedAmountTotal}`,
+    `# total_liberado=${summary.payableCommissionTotal.toFixed(2)}`,
+    `# base_rateada=${summary.allocatedBaseAmountTotal.toFixed(2)}`,
+    `# valor_recebido=${summary.receivedAmountTotal.toFixed(2)}`,
+    `# titulos_recebidos=${summary.uniqueReceivablesCount}`,
+    `# percentual_medio=${summary.averageCommissionRate.toFixed(4)}`,
+  ];
+}
+
+export function buildMonthlyPayableSellerSummaryCsv(
+  summary: CommissionMonthlyPayableSummary
+): string {
+  const lines: string[] = [
+    ...csvSummaryHeader(summary),
     "",
     "vendedor,titulos_recebidos,valor_recebido,base_rateada,comissao_esperada,comissao_liberada,comissao_pendente,percentual_medio",
   ];
@@ -333,28 +469,42 @@ export function buildMonthlyPayableCsv(summary: CommissionMonthlyPayableSummary)
     );
   }
 
-  if (summary.details.length > 0) {
-    lines.push("");
+  return lines.join("\n");
+}
+
+export function buildMonthlyPayableDetailCsv(summary: CommissionMonthlyPayableSummary): string {
+  const lines: string[] = [
+    ...csvSummaryHeader(summary),
+    "",
+    "vendedor,cliente,pedido,nf,produto,cr,parcela,data_nf,vencimento,baixa,valor_recebido,base_rateada,percentual,comissao_liberada,status",
+  ];
+
+  for (const d of summary.details) {
     lines.push(
-      "detalhe_vendedor,cr,parcela,nf,pedido,cliente,baixa,valor_recebido,base_rateada,comissao_liberada"
+      [
+        `"${d.sellerName.replace(/"/g, '""')}"`,
+        `"${(d.customerName ?? "").replace(/"/g, '""')}"`,
+        d.orderCode ?? "",
+        d.nfeNumber ?? "",
+        d.productCode ?? "",
+        d.nomusReceivableId ?? "",
+        d.installmentNumber ?? "",
+        d.confirmedAt?.slice(0, 10) ?? "",
+        d.dueDate?.slice(0, 10) ?? "",
+        d.settlementDate?.slice(0, 10) ?? "",
+        d.receivedAmount.toFixed(2),
+        d.allocatedBaseAmount.toFixed(2),
+        d.itemRatePercent.toFixed(4),
+        d.releasedCommissionAmount.toFixed(2),
+        d.alerts.length > 0 ? `"${d.alerts.join("; ").replace(/"/g, '""')}"` : "",
+      ].join(",")
     );
-    for (const d of summary.details) {
-      lines.push(
-        [
-          `"${d.sellerName.replace(/"/g, '""')}"`,
-          d.nomusReceivableId ?? "",
-          d.installmentNumber ?? "",
-          d.nfeNumber ?? "",
-          d.orderCode ?? "",
-          `"${(d.customerName ?? "").replace(/"/g, '""')}"`,
-          d.settlementDate?.slice(0, 10) ?? "",
-          d.receivedAmount.toFixed(2),
-          d.allocatedBaseAmount.toFixed(2),
-          d.releasedCommissionAmount.toFixed(2),
-        ].join(",")
-      );
-    }
   }
 
   return lines.join("\n");
+}
+
+/** Resumo por vendedor + detalhe (compatível com script CLI). */
+export function buildMonthlyPayableCsv(summary: CommissionMonthlyPayableSummary): string {
+  return `${buildMonthlyPayableSellerSummaryCsv(summary)}\n\n${buildMonthlyPayableDetailCsv(summary)}`;
 }

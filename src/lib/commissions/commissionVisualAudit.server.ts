@@ -393,6 +393,13 @@ export type PayableVisualAuditRowsQuery = {
   year: number;
   month: number;
   commissionPersonId?: string | null;
+  customer?: string | null;
+  orderCode?: string | null;
+  nfeNumber?: string | null;
+  nomusReceivableId?: number | null;
+  receivableTitleStatus?: string | null;
+  commissionStatus?: string | null;
+  onlyDivergences?: boolean;
 };
 
 /** Linhas PAYABLE filtradas por settlementDate — base para auditoria mensal oficial. */
@@ -408,23 +415,23 @@ export async function listPayableVisualAuditRows(
       to: null,
       appraisalMode: "PAYABLE",
       commissionPersonId: query.commissionPersonId ?? null,
-      customer: null,
-      orderCode: null,
-      nfeNumber: null,
+      customer: query.customer ?? null,
+      orderCode: query.orderCode ?? null,
+      nfeNumber: query.nfeNumber ?? null,
       sellerId: null,
       representativeId: null,
-      nomusReceivableId: null,
+      nomusReceivableId: query.nomusReceivableId ?? null,
       dueDateFrom: null,
       dueDateTo: null,
       settlementDateFrom: null,
       settlementDateTo: null,
       onlySettled: false,
       onlyOpen: false,
-      onlyDivergences: false,
+      onlyDivergences: query.onlyDivergences ?? false,
       onlyZeroCommission: false,
       onlyMissingReceivableLink: false,
-      receivableTitleStatus: null,
-      commissionStatus: null,
+      receivableTitleStatus: query.receivableTitleStatus ?? null,
+      commissionStatus: query.commissionStatus ?? null,
       nomusReferenceBase: null,
       nomusReferenceCommission: null,
       page: 1,

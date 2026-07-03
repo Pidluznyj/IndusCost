@@ -769,3 +769,81 @@ export type CommissionsVisualAuditPayload = {
     comparable: boolean;
   };
 };
+
+export type CommissionsMonthlyClosingDetailRow = {
+  lineId: string;
+  sellerId: string;
+  sellerName: string;
+  month: string;
+  nomusReceivableId: number | null;
+  installmentNumber: number | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  customerName: string | null;
+  productCode: string | null;
+  confirmedAt: string | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  receivedAmount: number;
+  allocatedBaseAmount: number;
+  expectedCommissionAmount: number;
+  releasedCommissionAmount: number;
+  pendingCommissionAmount: number;
+  itemRatePercent: number;
+  alerts: string[];
+};
+
+export type CommissionsMonthlyClosingGroupRow = {
+  groupKey: string;
+  groupLabel: string;
+  lineCount: number;
+  receivedTitlesCount: number;
+  receivedAmount: number;
+  allocatedBaseAmount: number;
+  releasedCommissionAmount: number;
+  averageCommissionRate: number;
+};
+
+export type CommissionsMonthlyClosingPayload = {
+  year: number;
+  month: number;
+  monthKey: string;
+  monthLabelPt: string;
+  payableCommissionTotal: number;
+  receivedAmountTotal: number;
+  allocatedBaseAmountTotal: number;
+  expectedCommissionAmountTotal: number;
+  pendingCommissionAmountTotal: number;
+  uniqueReceivablesCount: number;
+  uniqueSellersCount: number;
+  averageCommissionRate: number;
+  receivedVsBaseDiff: number;
+  warnings: string[];
+  sellers: Array<{
+    sellerId: string;
+    sellerName: string;
+    receivedTitlesCount: number;
+    receivedAmount: number;
+    allocatedBaseAmount: number;
+    releasedCommissionAmount: number;
+    averageCommissionRate: number;
+  }>;
+  cards: {
+    payableCommissionTotal: number;
+    allocatedBaseAmountTotal: number;
+    receivedAmountTotal: number;
+    uniqueReceivablesCount: number;
+    averageCommissionRate: number;
+    divergenceCount: number;
+  };
+  nomusReference: CommissionsVisualAuditPayload["nomusReference"];
+  groupings: {
+    bySeller: CommissionsMonthlyClosingGroupRow[];
+    byCustomer: CommissionsMonthlyClosingGroupRow[];
+    byNfe: CommissionsMonthlyClosingGroupRow[];
+    byReceivable: CommissionsMonthlyClosingGroupRow[];
+    byProduct: CommissionsMonthlyClosingGroupRow[];
+  };
+  detailRows: CommissionsMonthlyClosingDetailRow[];
+  pagination: CommissionsPagination;
+};

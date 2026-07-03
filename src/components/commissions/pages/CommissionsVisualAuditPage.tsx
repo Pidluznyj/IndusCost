@@ -303,7 +303,7 @@ export function CommissionsVisualAuditPage() {
             variant="attention"
             density="compact"
             title="Comparação Nomus"
-            description="A referência Nomus normalmente é por títulos baixados no período. Para comparação mensal, use a visão A pagar no mês."
+            description="A referência Nomus normalmente é por títulos baixados no período. Para comparação mensal oficial, use a aba Fechamento do mês ou a visão A pagar no mês."
           />
         ) : null}
         <div className="grid gap-3 md:grid-cols-4">

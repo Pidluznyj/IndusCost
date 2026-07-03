@@ -73,6 +73,10 @@ import {
   listCommissionVisualAuditPage,
 } from "@/src/lib/commissions/commissionVisualAudit.server.js";
 import {
+  exportCommissionMonthlyClosingCsv,
+  getCommissionMonthlyClosingPage,
+} from "@/src/lib/commissions/commissionMonthlyPayable.server.js";
+import {
   getCommissionAuditTrailDetail,
   getCommissionGeneratedDetail,
   listCommissionFuturePage,
@@ -113,6 +117,7 @@ import {
   parseCommissionExceptionsQuery,
   parseCommissionReleasesQuery,
   parseCommissionVisualAuditQuery,
+  parseCommissionMonthlyClosingQuery,
   parseUnpaidReleasedCommissionsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
@@ -327,6 +332,53 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     } catch (error) {
       console.error("GET /api/commissions/visual-audit/detail", error);
       return res.status(500).json({ error: "Erro ao carregar detalhe da auditoria visual." });
+    }
+  });
+
+  app.get("/api/commissions/monthly-closing", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionMonthlyClosingQuery(req.query as Record<string, unknown>);
+      const payload = await getCommissionMonthlyClosingPage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/monthly-closing", error);
+        return res.status(500).json({ error: "Erro ao carregar fechamento mensal de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/monthly-closing/export", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionMonthlyClosingQuery(req.query as Record<string, unknown>);
+      const formatRaw = typeof req.query.format === "string" ? req.query.format : "full";
+      const format =
+        formatRaw === "summary" || formatRaw === "detail" || formatRaw === "full"
+          ? formatRaw
+          : "full";
+      const csv = await exportCommissionMonthlyClosingCsv(query, ctx.scope, format);
+      const filename =
+        format === "summary"
+          ? `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}-resumo.csv`
+          : format === "detail"
+            ? `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}-detalhe.csv`
+            : `fechamento-comissao-${query.year}-${String(query.month).padStart(2, "0")}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/monthly-closing/export", error);
+        return res.status(500).json({ error: "Erro ao exportar fechamento mensal." });
+      }
     }
   });
 

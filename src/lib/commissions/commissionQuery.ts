@@ -1025,6 +1025,48 @@ export function parseCommissionVisualAuditQuery(
   };
 }
 
+export type CommissionMonthlyClosingQuery = {
+  year: number;
+  month: number;
+  sellerId: string | null;
+  customer: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  nomusReceivableId: number | null;
+  receivableTitleStatus: string | null;
+  commissionStatus: string | null;
+  onlyDivergences: boolean;
+  nomusReferenceBase: number | null;
+  nomusReferenceCommission: number | null;
+  page: number;
+  pageSize: number;
+};
+
+export function parseCommissionMonthlyClosingQuery(
+  query: Record<string, unknown>
+): CommissionMonthlyClosingQuery {
+  const visual = parseCommissionVisualAuditQuery({ ...query, appraisalMode: "PAYABLE" });
+  if (visual.year == null || visual.month == null) {
+    throw new CommissionQueryParseError("year e month são obrigatórios para fechamento mensal.");
+  }
+  return {
+    year: visual.year,
+    month: visual.month,
+    sellerId: visual.commissionPersonId,
+    customer: visual.customer,
+    orderCode: visual.orderCode,
+    nfeNumber: visual.nfeNumber,
+    nomusReceivableId: visual.nomusReceivableId,
+    receivableTitleStatus: visual.receivableTitleStatus,
+    commissionStatus: visual.commissionStatus,
+    onlyDivergences: visual.onlyDivergences,
+    nomusReferenceBase: visual.nomusReferenceBase,
+    nomusReferenceCommission: visual.nomusReferenceCommission,
+    page: visual.page,
+    pageSize: visual.pageSize,
+  };
+}
+
 export function parseCommissionExceptionsQuery(
   query: Record<string, unknown>
 ): CommissionExceptionsQuery {

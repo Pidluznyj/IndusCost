@@ -23,6 +23,7 @@ import {
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsVisualAuditPage } from "@/src/components/commissions/pages/CommissionsVisualAuditPage";
+import { CommissionsMonthlyClosingPage } from "@/src/components/commissions/pages/CommissionsMonthlyClosingPage";
 
 function CommissionsHomeRedirect() {
   return <Navigate to={getCommissionsDefaultPath()} replace />;
@@ -118,7 +119,8 @@ export function CommissionsModule() {
       </nav>
 
       <Routes>
-        <Route index element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
+        <Route index element={guard("monthlyClosing", <CommissionsMonthlyClosingPage />)} />
+        <Route path="auditoria" element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
           <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
         ))}

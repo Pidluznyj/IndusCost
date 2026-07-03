@@ -27,11 +27,13 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("modo simplificado expõe apenas auditoria visual", () => {
+  it("modo simplificado expõe fechamento mensal e auditoria visual", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 1);
-    assert.equal(COMMISSIONS_SECTIONS[0]?.id, "visualAudit");
-    assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions");
+    assert.equal(COMMISSIONS_SECTIONS.length, 2);
+    assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
+    assert.equal(COMMISSIONS_SECTIONS[1]?.id, "visualAudit");
+    assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
+    assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions/auditoria");
   });
 
   it("redireciona rotas legadas para /commissions", () => {
@@ -45,6 +47,7 @@ describe("commissionsNavigation", () => {
 
   it("paths canônicos", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/auditoria"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/forecast"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/unknown"), false);
@@ -59,8 +62,9 @@ describe("commissions frontend wiring", () => {
     assert.match(app, /CommissionsModule/);
   });
 
-  it("CommissionsModule usa auditoria visual e redirects legados", () => {
+  it("CommissionsModule usa fechamento mensal, auditoria visual e redirects legados", () => {
     const moduleSrc = read("src/components/CommissionsModule.tsx");
+    assert.match(moduleSrc, /CommissionsMonthlyClosingPage/);
     assert.match(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
     assert.match(moduleSrc, /CommissionsLegacyRedirect/);
@@ -81,6 +85,11 @@ describe("commissionsModulePermissions", () => {
 
   it("sem permissão não abre módulo", () => {
     assert.equal(canAccessModule("commissions", checker(["finance.view"])), false);
+  });
+
+  it("monthlyClosing exige commissions.view", () => {
+    assert.equal(canViewCommissionsSection("monthlyClosing", checker(["commissions.view"])), true);
+    assert.equal(canViewCommissionsSection("monthlyClosing", checker(["finance.view"])), false);
   });
 
   it("visualAudit exige commissions.view", () => {
