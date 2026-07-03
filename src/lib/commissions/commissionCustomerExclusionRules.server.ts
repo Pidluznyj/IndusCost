@@ -17,6 +17,7 @@ export type CustomerExclusionRuleRow = {
   customerId: string | null;
   customerExternalId: number | null;
   customerNameSnapshot: string;
+  customerTaxId: string | null;
   normalizedCustomerName: string;
   reason: string;
   effectiveFrom: string;
@@ -55,12 +56,14 @@ function mapRow(row: {
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
+  customer?: { taxId: string } | null;
 }): CustomerExclusionRuleRow {
   return {
     id: row.id,
     customerId: row.customerId,
     customerExternalId: row.customerExternalId,
     customerNameSnapshot: row.customerNameSnapshot,
+    customerTaxId: row.customer?.taxId?.trim() || null,
     normalizedCustomerName: row.normalizedCustomerName,
     reason: row.reason,
     effectiveFrom: toIsoDate(row.effectiveFrom),
@@ -209,6 +212,7 @@ export async function listCustomerExclusionRules(
     prisma.commissionCustomerExclusionRule.count({ where }),
     prisma.commissionCustomerExclusionRule.findMany({
       where,
+      include: { customer: { select: { taxId: true } } },
       orderBy: [{ status: "asc" }, { effectiveFrom: "desc" }, { createdAt: "desc" }],
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,

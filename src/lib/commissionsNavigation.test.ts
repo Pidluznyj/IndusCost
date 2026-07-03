@@ -27,15 +27,17 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("modo simplificado expõe fechamento mensal e auditoria visual", () => {
+  it("modo simplificado expõe fechamento mensal, previsão, auditoria e exclusões por cliente", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 3);
+    assert.equal(COMMISSIONS_SECTIONS.length, 4);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
     assert.equal(COMMISSIONS_SECTIONS[1]?.id, "receivableForecast");
     assert.equal(COMMISSIONS_SECTIONS[2]?.id, "visualAudit");
+    assert.equal(COMMISSIONS_SECTIONS[3]?.id, "customerExclusions");
     assert.equal(COMMISSIONS_SECTION_PATHS.receivableForecast, "/commissions/previsao");
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
     assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions/auditoria");
+    assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
   });
 
   it("redireciona rotas legadas para /commissions", () => {
@@ -43,6 +45,7 @@ describe("commissionsNavigation", () => {
     assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("dashboard"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("exceptions"), "/commissions/exclusoes-cliente");
     assert.ok(COMMISSIONS_LEGACY_PATH_REDIRECTS.apuracao);
     assert.equal(COMMISSIONS_LEGACY_PATH_REDIRECTS.payable, "/commissions");
   });
@@ -51,6 +54,7 @@ describe("commissionsNavigation", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/auditoria"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/previsao"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/exclusoes-cliente"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/forecast"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/unknown"), false);
@@ -70,6 +74,7 @@ describe("commissions frontend wiring", () => {
     assert.match(moduleSrc, /CommissionsMonthlyClosingPage/);
     assert.match(moduleSrc, /CommissionsReceivableForecastPage/);
     assert.match(moduleSrc, /CommissionsVisualAuditPage/);
+    assert.match(moduleSrc, /CommissionsCustomerExclusionsPage/);
     assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
     assert.match(moduleSrc, /CommissionsLegacyRedirect/);
   });
@@ -99,6 +104,15 @@ describe("commissionsModulePermissions", () => {
   it("visualAudit exige commissions.view", () => {
     assert.equal(canViewCommissionsSection("visualAudit", checker(["commissions.view"])), true);
     assert.equal(canViewCommissionsSection("visualAudit", checker(["finance.view"])), false);
+  });
+
+  it("customerExclusions exige commissions.rules.view", () => {
+    assert.equal(
+      canViewCommissionsSection("customerExclusions", checker(["commissions.rules.view"])),
+      true
+    );
+    assert.equal(canViewCommissionsSection("customerExclusions", checker(["commissions.view"])), true);
+    assert.equal(canViewCommissionsSection("customerExclusions", checker(["finance.view"])), false);
   });
 
   it("resolveFirstAccessibleCommissionsPath retorna /commissions", () => {

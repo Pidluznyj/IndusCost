@@ -8,7 +8,12 @@ export const COMMISSIONS_SIMPLIFIED_UI = true as const;
 
 export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 
-export const COMMISSIONS_SECTION_IDS = ["monthlyClosing", "receivableForecast", "visualAudit"] as const;
+export const COMMISSIONS_SECTION_IDS = [
+  "monthlyClosing",
+  "receivableForecast",
+  "visualAudit",
+  "customerExclusions",
+] as const;
 
 export type CommissionsSectionId = (typeof COMMISSIONS_SECTION_IDS)[number];
 
@@ -35,7 +40,7 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
   overdue: "/commissions",
   persons: "/commissions",
   rules: "/commissions",
-  exceptions: "/commissions",
+  exceptions: "/commissions/exclusoes-cliente",
   audit: "/commissions",
   settings: "/commissions",
   forecast: "/commissions/previsao",
@@ -49,6 +54,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   monthlyClosing: "/commissions",
   receivableForecast: "/commissions/previsao",
   visualAudit: "/commissions/auditoria",
+  customerExclusions: "/commissions/exclusoes-cliente",
 };
 
 export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "monthlyClosing";
@@ -80,6 +86,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.visualAudit,
     description: "Validação por pedido, NF, títulos e comissão por parcela (Contas a Receber)",
   },
+  {
+    id: "customerExclusions",
+    label: "Exceções por cliente",
+    path: COMMISSIONS_SECTION_PATHS.customerExclusions,
+    description:
+      "Clientes que não geram comissão — regra auditável com vigência, sem ocultar vendas",
+  },
 ];
 
 export function getCommissionsSectionPath(sectionId: CommissionsSectionId): string {
@@ -110,6 +123,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (!firstSegment) return true;
   if (firstSegment === "auditoria") return true;
   if (firstSegment === "previsao") return true;
+  if (firstSegment === "exclusoes-cliente") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
   if (isCommissionsLegacySectionSegment(firstSegment)) return true;
   return false;
@@ -125,6 +139,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (!next) return "monthlyClosing";
   if (next === "auditoria") return "visualAudit";
   if (next === "previsao") return "receivableForecast";
+  if (next === "exclusoes-cliente") return "customerExclusions";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";
   return isCommissionsSectionId(next) ? next : null;
 }

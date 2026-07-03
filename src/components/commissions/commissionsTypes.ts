@@ -116,6 +116,30 @@ export type CommissionsExceptionItem = {
   updatedAt: string;
 };
 
+export type CustomerExclusionRuleItem = {
+  id: string;
+  customerId: string | null;
+  customerExternalId: number | null;
+  customerNameSnapshot: string;
+  customerTaxId: string | null;
+  normalizedCustomerName: string;
+  reason: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  createdByUserId: string | null;
+  inactivatedAt: string | null;
+  inactivatedByUserId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerExclusionRulesPayload = {
+  rows: CustomerExclusionRuleItem[];
+  pagination: CommissionsPagination;
+};
+
 export type CommissionsRecordItem = {
   id: string;
   status: string;

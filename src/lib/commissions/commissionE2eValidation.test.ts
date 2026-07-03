@@ -214,10 +214,11 @@ describe("commission E2E validation", () => {
     assert.equal(summary.receivedAmountTotal, 500);
   });
 
-  it("UI expõe três abas canônicas", () => {
+  it("UI expõe abas canônicas incluindo exclusões por cliente", () => {
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
     assert.equal(COMMISSIONS_SECTION_PATHS.receivableForecast, "/commissions/previsao");
     assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions/auditoria");
+    assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
   });
 
   it("timeline enumera 12 meses de 2026", () => {

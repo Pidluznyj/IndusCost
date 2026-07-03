@@ -20,18 +20,24 @@ import {
   isCommissionsCanonicalPath,
   parseCommissionsSectionFromPath,
   resolveCommissionsCanonicalPath,
+  resolveCommissionsLegacyRedirect,
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsMonthlyClosingPage } from "@/src/components/commissions/pages/CommissionsMonthlyClosingPage";
 import { CommissionsReceivableForecastPage } from "@/src/components/commissions/pages/CommissionsReceivableForecastPage";
 import { CommissionsVisualAuditPage } from "@/src/components/commissions/pages/CommissionsVisualAuditPage";
+import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 
 function CommissionsHomeRedirect() {
   return <Navigate to={getCommissionsDefaultPath()} replace />;
 }
 
 function CommissionsLegacyRedirect() {
-  return <Navigate to="/commissions" replace />;
+  const location = useLocation();
+  const segments = location.pathname.split("/").filter(Boolean);
+  const legacySegment = segments[segments.indexOf("commissions") + 1] ?? "";
+  const target = resolveCommissionsLegacyRedirect(legacySegment) ?? "/commissions";
+  return <Navigate to={target} replace />;
 }
 
 function CommissionsSectionGuard({
@@ -123,6 +129,10 @@ export function CommissionsModule() {
         <Route index element={guard("monthlyClosing", <CommissionsMonthlyClosingPage />)} />
         <Route path="previsao" element={guard("receivableForecast", <CommissionsReceivableForecastPage />)} />
         <Route path="auditoria" element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
+        <Route
+          path="exclusoes-cliente"
+          element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}
+        />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
           <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
         ))}
