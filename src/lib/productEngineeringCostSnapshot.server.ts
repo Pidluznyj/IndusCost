@@ -33,6 +33,7 @@ import {
   resolveFrozenCostTraceStatus,
   type FrozenCostTraceStatus,
 } from "./productEngineeringCostSnapshot.js";
+import { countActiveMaterialsOutsideProductionCostDraftScope } from "./productionCostDraftItemScope.js";
 
 export type ProductEngineeringCostSnapshotInput = {
   productId: string;
@@ -659,7 +660,7 @@ export async function previewBootstrapProductionCostTableFromEngineering(
     }),
     skuFilter
       ? Promise.resolve(0)
-      : db.product.count({ where: { status: "ACTIVE", type: "MATERIAL" } }),
+      : countActiveMaterialsOutsideProductionCostDraftScope(db),
   ]);
 
   const rows: BootstrapProductionCostPreviewRow[] = [];

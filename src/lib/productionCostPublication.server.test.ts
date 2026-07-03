@@ -94,7 +94,10 @@ function seedDefaultMaterialCostTable(materialVersions: Map<string, MaterialCost
   });
 }
 
-function createMockDb(products: Array<{ id: string; sku: string; name: string; type?: string }>) {
+function createMockDb(
+  products: Array<{ id: string; sku: string; name: string; type?: string }>,
+  options?: { activeMaterialCount?: number }
+) {
   const normalized = products.map((p) => ({ ...p, type: p.type ?? "PRODUCT" }));
   const versions = new Map<string, VersionRow>();
   const items = new Map<string, ItemRow>();
@@ -274,7 +277,20 @@ function createMockDb(products: Array<{ id: string; sku: string; name: string; t
       },
       findUnique: async ({ where }: { where: { id: string } }) =>
         normalized.find((p) => p.id === where.id) ?? null,
-      count: async () => 0,
+      count: async ({
+        where,
+      }: {
+        where?: { status?: string; type?: string | { in: string[] } };
+      }) => {
+        if (where?.type === "MATERIAL") {
+          throw new Error("Product.type MATERIAL is invalid for ItemType");
+        }
+        return 0;
+      },
+    },
+    material: {
+      count: async ({ where }: { where?: { status?: string } }) =>
+        where?.status === "ACTIVE" ? (options?.activeMaterialCount ?? 0) : 0,
     },
     salesOrderItem: {
       findMany: async () => [] as Array<{ productId: string }>,
@@ -534,6 +550,30 @@ describe("productionCostPublication.server", () => {
     assert.equal(summary.productsCalculated, 1);
     assert.equal(summary.componentsCalculated, 1);
     assert.equal(items.size, 2);
+  });
+
+  it("include-all PRODUCT_AND_COMPONENT reporta materiais via Material, não Product.type", async () => {
+    const products = [
+      { id: "prod-a", sku: "PA", name: "Produto A", type: "PRODUCT" },
+      { id: "comp-b", sku: "CB", name: "Componente B", type: "COMPONENT" },
+    ];
+    const { db } = createMockDb(products, { activeMaterialCount: 42 });
+    const engine = createMockEngine({
+      "prod-a": { total: 10 },
+      "comp-b": { total: 3.5 },
+    });
+
+    const { summary } = await generateProductionCostTableDraftFromProducts(db as never, engine, {
+      effectiveDate: civilDateToLocalDate("2026-06-01"),
+      productIds: [],
+      includeAllActiveProducts: true,
+      itemScope: "PRODUCT_AND_COMPONENT",
+    });
+
+    assert.equal(summary.materialsIgnored, 42);
+    assert.equal(summary.itemsEvaluated, 2);
+    assert.equal(summary.componentsEvaluated, 1);
+    assert.equal(summary.productsEvaluated, 1);
   });
 
   it("component without enough data is skipped with explicit error — never zero", async () => {

@@ -3,7 +3,9 @@
  *
  * Reutiliza `Product.type` (PRODUCT / COMPONENT). Matéria-prima (`Material`) fica fora.
  */
+import type { PrismaClient } from "@prisma/client";
 import {
+  isProductionCostTableEligibleItemType,
   productionCostTableEligibleItemTypesFilter,
   type ProductionCostTableEligibleItemType,
 } from "./productEngineeringCostSnapshot.js";
@@ -74,6 +76,7 @@ export function matchesProductionCostDraftItemScope(
   productType: unknown,
   scope: ProductionCostDraftItemScope
 ): boolean {
+  if (!isProductionCostTableEligibleItemType(String(productType ?? ""))) return false;
   const itemType = resolveProductionCostDraftItemType(productType);
   if (scope === "PRODUCT_AND_COMPONENT") return true;
   if (scope === "PRODUCT") return itemType === "PRODUCT";
@@ -113,4 +116,11 @@ export function productionCostDraftIncludeAllLabel(scope: ProductionCostDraftIte
     default:
       return "Produtos e componentes ativos";
   }
+}
+
+/** Matérias-primas vivem em `Material`, não em `Product.type`. */
+export async function countActiveMaterialsOutsideProductionCostDraftScope(
+  db: PrismaClient
+): Promise<number> {
+  return db.material.count({ where: { status: "ACTIVE" } });
 }

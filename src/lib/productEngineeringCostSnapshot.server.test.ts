@@ -14,7 +14,7 @@ type ProductRow = {
   status: string;
 };
 
-function createMockDb(products: ProductRow[]) {
+function createMockDb(products: ProductRow[], activeMaterialCount = 0) {
   const db = {
     product: {
       findUnique: async ({ where }: { where: { id: string } }) =>
@@ -31,7 +31,6 @@ function createMockDb(products: ProductRow[]) {
         let rows = [...products];
         if (where.status) rows = rows.filter((p) => p.status === where.status);
         if (where.sku) rows = rows.filter((p) => p.sku === where.sku);
-        if (where.type === "MATERIAL") rows = rows.filter((p) => p.type === "MATERIAL");
         if (where.type && typeof where.type === "object" && Array.isArray(where.type.in)) {
           rows = rows.filter((p) => where.type.in.includes(p.type));
         }
@@ -40,13 +39,17 @@ function createMockDb(products: ProductRow[]) {
       count: async ({
         where,
       }: {
-        where: { status?: string; type?: string | { in: string[] } };
+        where?: { status?: string; type?: string | { in: string[] } };
       }) => {
-        let rows = [...products];
-        if (where.status) rows = rows.filter((p) => p.status === where.status);
-        if (where.type === "MATERIAL") rows = rows.filter((p) => p.type === "MATERIAL");
-        return rows.length;
+        if (where?.type === "MATERIAL") {
+          throw new Error("Product.type MATERIAL is invalid for ItemType");
+        }
+        return 0;
       },
+    },
+    material: {
+      count: async ({ where }: { where?: { status?: string } }) =>
+        where?.status === "ACTIVE" ? activeMaterialCount : 0,
     },
   };
   return db;
@@ -113,7 +116,7 @@ describe("productEngineeringCostSnapshot.server", () => {
   });
 
   it("preview inclui produto e componente, ignora material", async () => {
-    const db = createMockDb(products);
+    const db = createMockDb(products, 1);
     const engine = createMockEngine({
       "prod-a": { total: 10 },
       "comp-309": { total: 0.537299 },

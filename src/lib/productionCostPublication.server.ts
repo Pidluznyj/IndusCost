@@ -20,6 +20,7 @@ import {
   matchesProductionCostDraftItemScope,
   parseProductionCostDraftItemScope,
   prismaProductTypeFilterForProductionCostDraftScope,
+  countActiveMaterialsOutsideProductionCostDraftScope,
   type ProductionCostDraftItemScope,
 } from "./productionCostDraftItemScope.js";
 import {
@@ -215,7 +216,7 @@ export async function generateProductionCostTableDraftFromProducts(
   const materialsIgnored =
     productIds.length > 0 || itemScope !== "PRODUCT_AND_COMPONENT"
       ? 0
-      : await db.product.count({ where: { status: "ACTIVE", type: "MATERIAL" } });
+      : await countActiveMaterialsOutsideProductionCostDraftScope(db);
   const productsEvaluated = selectedProducts.filter((p) => p.type === "PRODUCT").length;
   const componentsEvaluated = selectedProducts.filter((p) => p.type === "COMPONENT").length;
 
