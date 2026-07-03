@@ -24,6 +24,12 @@ describe("salesMarginNomusConfig", () => {
     assert.equal(config.useFrozenUnitCostFirst, false);
   });
 
+  it("JSON parcial usa allowLiveCostFallback false por padrão", () => {
+    const config = parseSalesMarginNomusConfigJson({ taxMode: "none" });
+    assert.equal(config.allowLiveCostFallback, false);
+    assert.equal(config.useFrozenUnitCostFirst, false);
+  });
+
   it("serializa e reparseia config", () => {
     const raw = serializeSalesMarginNomusConfig({
       ...DEFAULT_SALES_MARGIN_NOMUS_CONFIG,

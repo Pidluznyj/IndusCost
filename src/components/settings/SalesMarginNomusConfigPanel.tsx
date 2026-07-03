@@ -304,12 +304,14 @@ export function SalesMarginNomusConfigPanel() {
               checked={form.allowLiveCostFallback}
               onChange={(e) => setForm({ ...form, allowLiveCostFallback: e.target.checked })}
             />
-            Permitir fallback de custo de produção via motor IndusCost (getProductCostAnalysis)
+            Permitir fallback de custo vivo via motor IndusCost (desaconselhado — use tabela publicada)
           </label>
           <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-3">
-            O custo de produção vem exclusivamente do motor de custo industrial IndusCost (custo vigente por produto — futura tabela publicada).
-            <strong> SalesOrderItem.unitCost</strong> espelha preço unitário de venda Nomus — não entra na margem como custo de produção.
-            Itens sem custo de produção resolvido ficam como SEM_CUSTO e reduzem a cobertura.
+            A margem oficial usa <strong>custo de produção publicado</strong> (
+            <code className="text-[11px]">ProductionCostTableItem</code> vigente na data do pedido).
+            O fallback vivo só deve ser habilitado temporariamente em migração — nunca como padrão.
+            <strong> SalesOrderItem.unitCost</strong> espelha preço unitário de venda Nomus — não entra na margem como custo industrial.
+            Itens sem custo publicado ficam como <strong>SEM_CUSTO</strong> (nunca zero silencioso).
           </p>
           <label className="flex items-center gap-2 text-sm">
             <input

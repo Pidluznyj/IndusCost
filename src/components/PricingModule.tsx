@@ -1618,7 +1618,7 @@ export const PricingModule = () => {
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {allowGenerateTables
-                  ? "Gera DRAFT revisável a partir do motor industrial (MP + HH + HM). Publicação explícita — versões publicadas são imutáveis."
+                  ? "Gera DRAFT a partir do motor industrial com matéria-prima publicada congelada (produtos e componentes). Publicação explícita — versões publicadas são imutáveis."
                   : "Consulte tabelas publicadas, itens por versão e custo vigente por produto e data."}
               </p>
             </div>

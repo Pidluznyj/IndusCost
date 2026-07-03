@@ -5,8 +5,8 @@
  *   npx tsx scripts/audit-sales-order-margins.ts --year=2026 --limit=50
  *   npm run audit:sales-order-margins
  *
- * Não altera dados. Usa o motor `salesOrderMarginService` com getProductCostAnalysis —
- * SalesOrderItem.unitCost Nomus não entra como custo de produção.
+ * Não altera dados. Usa custo de produção publicado (ProductionCostTableItem)
+ * na SalesOrder.issueDate — nunca SalesOrderItem.unitCost Nomus como custo industrial.
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
@@ -17,6 +17,7 @@ import {
 } from "../src/lib/salesOrderMarginService.server.ts";
 import { setSalesOrderMarginProductCostResolver } from "../src/lib/salesOrderMarginProductCostResolver.ts";
 import { aggregateSalesOrderMarginSummaries } from "../src/lib/salesOrderMarginDisplay.ts";
+import { DEFAULT_SALES_ORDER_MARGIN_COST_POLICY } from "../src/lib/salesOrderMarginTypes.ts";
 import type { SalesOrderMarginItemResult, SalesOrderMarginStatus } from "../src/lib/salesOrderMarginTypes.ts";
 import { isSalesOrderMarginConsolidationEligible } from "../src/lib/salesOrderMarginStatus.ts";
 
@@ -43,34 +44,6 @@ function parseYearRange(year: number): { start: Date; end: Date } {
   };
 }
 
-async function loadCostLogIndex(productIds: string[]) {
-  const index = new Map<string, { totalCiu: number; calculatedAt: string }>();
-  if (productIds.length === 0) return index;
-
-  const rows = await prisma.costCalculationLog.findMany({
-    where: { productId: { in: productIds } },
-    orderBy: { calculatedAt: "desc" },
-    select: { productId: true, totalCiu: true, calculatedAt: true },
-  });
-
-  for (const row of rows) {
-    if (index.has(row.productId)) continue;
-    const totalCiu = Number(row.totalCiu);
-    if (!Number.isFinite(totalCiu) || totalCiu <= 0) continue;
-    index.set(row.productId, {
-      totalCiu,
-      calculatedAt: row.calculatedAt.toISOString(),
-    });
-  }
-  return index;
-}
-
-function registerAuditCostResolver(costLogIndex: Map<string, { totalCiu: number; calculatedAt: string }>) {
-  setSalesOrderMarginProductCostResolver(async (productId) => ({
-    costLog: costLogIndex.get(productId) ?? null,
-  }));
-}
-
 function countByStatus(items: SalesOrderMarginItemResult[]) {
   const counts: Record<string, number> = {};
   for (const item of items) {
@@ -92,22 +65,19 @@ async function main() {
     select: {
       id: true,
       orderCode: true,
+      proposalId: true,
+      issueDate: true,
       nomusRawResponse: true,
       items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
     },
   });
 
-  const productIds = [
-    ...new Set(
-      orders.flatMap((o) => o.items.map((i) => i.productId).filter((id): id is string => Boolean(id)))
-    ),
-  ];
-  const costLogIndex = await loadCostLogIndex(productIds);
-  registerAuditCostResolver(costLogIndex);
+  setSalesOrderMarginProductCostResolver(null);
 
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
     prisma,
-    orders as SalesOrderForMargin[]
+    orders as SalesOrderForMargin[],
+    { costPolicy: DEFAULT_SALES_ORDER_MARGIN_COST_POLICY }
   );
 
   let itemsAnalyzed = 0;
@@ -179,7 +149,7 @@ async function main() {
     itemsWithoutProduct,
     itemsWithNegativeMargin: itemsNegativeMargin,
     itemsCanceledExcluded: itemsCanceled,
-    costLogsLoaded: costLogIndex.size,
+    costPolicy: DEFAULT_SALES_ORDER_MARGIN_COST_POLICY,
     itemStatusBreakdown: statusCounts,
     consolidatedMargin: {
       netRevenue: consolidated.netRevenue,
@@ -199,7 +169,8 @@ async function main() {
   }, null, 2));
 
   console.log(
-    "\nNota: custo de produção via tabela versionada IndusCost (productId + issueDate) — SalesOrderItem.unitCost Nomus (preço de venda) não entra na margem."
+    "\nNota: custo = ProductionCostTableItem vigente na issueDate (VERSIONED_PRODUCTION_COST). " +
+      "SalesOrderItem.unitCost é preço comercial Nomus — não entra como custo industrial."
   );
 }
 

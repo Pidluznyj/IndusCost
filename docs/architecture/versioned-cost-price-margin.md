@@ -1,95 +1,77 @@
 # Arquitetura: custo versionado, preço e margem
 
-> **Baseline técnico** — documento de referência antes da sequência de implementação.  
+> **Referência operacional** — fluxo implementado e validado.  
 > **Atualizado:** 2026-07-02  
 > **Escopo:** matéria-prima, custo de produção, preço de venda, margem comercial.
 
 ---
 
-## 1. Estado atual (as-is)
+## 1. Arquitetura implementada
 
-### Camadas existentes
+### Camadas congeladas
 
-| Camada | Entidades Prisma | Status |
-|--------|------------------|--------|
-| Matéria-prima | `Material`, `MaterialPriceHistory` | **Sem versionamento oficial** — motor usa `Material.currentCost + freight` (vivo) |
-| Custo de produção | `ProductionCostTableVersion`, `ProductionCostTableItem` | **Implementado** — DRAFT / PUBLISHED / SUPERSEDED / ARCHIVED |
-| Preço comercial | `PriceTable`, `PriceTableVersion`, `PriceTableItem` | **Implementado** — DRAFT / PUBLISHED / ARCHIVED |
-| Margem pedido | — (motor puro + service) | **Usa custo de produção publicado** na `SalesOrder.issueDate` |
+| Camada | Entidades | Geração oficial | Consumo (margem/preço) |
+|--------|-----------|-----------------|------------------------|
+| Matéria-prima | `MaterialCostTableVersion`, `MaterialCostTableItem` | Snapshot de `Material` ACTIVE com custo > 0 | DRAFT de produção (catálogo MP congelado) |
+| Custo produção | `ProductionCostTableVersion`, `ProductionCostTableItem` | `getProductCostAnalysis` + MP publicada; PRODUCT + COMPONENT | Margem na `issueDate`; DRAFT de preço |
+| Preço comercial | `PriceTableVersion`, `PriceTableItem` | `ProductionCostTableItem` publicado (não motor vivo) | Referência comercial na margem |
+| Margem | motor + service | — | Custo publicado + preço vendido real + preço tabela (KPI) |
 
-### Motor industrial (único)
-
-- `getProductCostAnalysis` em `src/lib/productCostAnalysisEngine.server.ts`
-- Custo oficial = **MP + HH + HM** (`totalIndustrialCost`)
-- Resolução canônica: `resolveOfficialProductFinalCostFromAnalysis`
-
-### Fluxos de geração hoje
+### Fluxo oficial (ordem obrigatória)
 
 ```
-Material.currentCost (vivo)
+Material ACTIVE (cadastro)
+        ↓ generate + publish
+MaterialCostTableVersion PUBLISHED  ← matéria-prima publicada (landedCostSnapshot)
+        ↓ generate DRAFT + publish
+ProductionCostTableVersion PUBLISHED  ← produtos e componentes (unitProductionCost)
+        ↓ generate DRAFT + publish
+PriceTableVersion PUBLISHED  ← salePrice congelado (produtos e componentes)
         ↓
-getProductCostAnalysis
+SalesOrder.issueDate
         ↓
-┌───────────────────────────────┐     ┌──────────────────────────────┐
-│ ProductionCostTable DRAFT     │     │ PriceTableVersion DRAFT      │
-│ (PRODUCT + COMPONENT elegível)│     │ (somente PRODUCT)            │
-│ congela snapshot por produto  │     │ usa motor VIVO na geração    │
-└───────────────────────────────┘     └──────────────────────────────┘
-        ↓ publish                           ↓ publish
-   Margem / Comissão                   Preço congelado (salePrice)
-   (custo publicado + receita real)
+Margem realizada (custo publicado) + referência preço oficial (se proposta/tabela)
 ```
 
-### Gaps conhecidos (baseline)
+### Motor único
 
-1. **Matéria-prima não versionada** — mudança de `currentCost` afeta próxima geração de DRAFT, não custo já publicado.
-2. **Geração de preço usa custo vivo** — não consome `ProductionCostTableItem` publicado.
-3. **Tabela de preço exclui COMPONENT** — só `Product.type = PRODUCT` no generate-draft.
-4. **Componentes vendidos** — elegíveis no backend de custo de produção, mas cobertura publicada incompleta (cadastro/engenharia/UI).
-5. **Parâmetros HH/HM globais** (`IndirectCost`) — vivos no momento do cálculo; não versionados.
-6. **BOM Nomus** — viva; corretamente não altera snapshots publicados, mas altera novos DRAFTs.
+- `getProductCostAnalysis` — usado **apenas na geração de DRAFT** de produção (com catálogo MP congelado).
+- **Margem e preço comercial não chamam o motor vivo** — leem snapshots publicados.
+- Simulações, open book e engenharia podem usar motor vivo (fora do fluxo oficial de margem).
+
+### Terminologia padronizada
+
+| Termo | Significado |
+|-------|-------------|
+| **Matéria-prima publicada** | `MaterialCostTableItem.landedCostSnapshot` em versão PUBLISHED/SUPERSEDED |
+| **Custo publicado** | `ProductionCostTableItem.unitProductionCost` vigente na data |
+| **Preço oficial** | `PriceTableItem.salePrice` vigente na data (referência comercial) |
+| **Preço vendido** | Receita líquida unitária real do pedido |
+| **Custo vivo** | `Material.currentCost` ou motor sem snapshot — **não entra na margem oficial** |
+| **SEM_CUSTO** | Pendência explícita — nunca substituída por zero |
+
+### Limitações conhecidas (aceitas)
+
+- **HH/HM globais** (`IndirectCost`) permanecem vivos na geração de DRAFT de produção.
+- **BOM Nomus** viva — altera novos DRAFTs, não publicações antigas.
+- Pedidos Nomus sem proposta → margem realizada OK, referência `SEM_PRECO_TABELA`.
 
 ---
 
-## 2. Arquitetura desejada (to-be)
+## 2. Fases concluídas
 
-```
-Suprimentos / compras
-        ↓
-MaterialCostTableVersion + MaterialCostTableItem   ← FASE 3 (não existe)
-        ↓
-getProductCostAnalysis(materialCatalog congelado)
-        ↓
-ProductionCostTableVersion (+ FK materialCostTableVersionId)   ← FASE 4
-        ↓
-PriceTableVersion (+ FK productionCostTableVersionId)          ← FASE 5
-        ↓
-Margem / decisão comercial (custo publicado + receita real)   ← FASE 6
-```
+| Fase | Status |
+|------|--------|
+| 0 — Baseline + testes | ✅ |
+| 1 — Auditoria/cobertura | ✅ script + API + UI |
+| 2 — Componentes no custo | ✅ |
+| 3 — MP versionada | ✅ |
+| 4 — Produção ↔ MP | ✅ FK + catálogo congelado |
+| 5 — Preço desacoplado | ✅ produção publicada + COMPONENT |
+| 6 — Margem enriquecida | ✅ preço oficial como referência |
+| 7 — E2E + auditoria contínua | ✅ |
 
-Princípios:
-
-- **Um motor** — sem duplicar `getProductCostAnalysis`.
-- **Três congelamentos** — MP, produção, preço — cada um com DRAFT → PUBLISHED → revisão.
-- **Resolver automático por data** — usuário não escolhe tabela por pedido (salvo auditoria).
-- **Pendência explícita** — custo faltante = erro/SEM_CUSTO, nunca zero silencioso.
-
----
-
-## 3. Ordem das fases
-
-| Fase | Entrega | Schema? |
-|------|---------|---------|
-| **0 — Baseline** | Este doc + testes de caracterização + CI verde | Não |
-| **1 — Auditoria/cobertura** | Dashboards/scripts de gap (produto/componente/MP) | Não |
-| **2 — Componentes no custo publicado** | UI + universo + master data | Mínimo |
-| **3 — MP versionada** | `MaterialCostTableVersion/Item` | Sim |
-| **4 — Produção ↔ MP** | FK + motor lê catálogo congelado na geração | Sim |
-| **5 — Preço desacoplado** | Preço a partir de produção publicada; incluir COMPONENT | Sim/leve |
-| **6 — Margem enriquecida** | KPI desvio vs preço tabela (opcional) | Não |
-| **7 — Testes + auditoria contínua** | Scripts CI, relatórios | Não |
-
-**Fora de escopo desta sequência:** alterar sync BOM Nomus, recalcular passado automaticamente, segundo motor de custo.
+**Fora de escopo:** alterar sync BOM Nomus, recalcular passado automaticamente, segundo motor de custo.
 
 ---
 
@@ -100,7 +82,7 @@ Estas regras são **travas de segurança** — qualquer PR da sequência deve re
 | ID | Regra |
 |----|-------|
 | **R1** | **BOM viva não altera custo publicado** — `ProductionCostTableItem` de versão PUBLISHED/SUPERSEDED é imutável; mudança de BOM só impacta nova geração de DRAFT. |
-| **R2** | **MP viva não altera custo publicado** — após Fase 3, MP congelada na geração; até lá, custo publicado permanece snapshot histórico. |
+| **R2** | **MP viva não altera custo publicado** — MP congelada na geração de DRAFT; snapshots PUBLISHED imutáveis. |
 | **R3** | **Preço publicado não muda automaticamente** — `PriceTableItem.salePrice` só muda com nova versão publicada. |
 | **R4** | **Pedido usa custo publicado** — margem/comissão resolvem `ProductionCostTable` vigente em `SalesOrder.issueDate` (`VERSIONED_PRODUCTION_COST`). |
 | **R5** | **SalesOrderItem.unitCost não é custo industrial** — espelho comercial/Nomus; nunca fonte de margem oficial. |
@@ -120,7 +102,10 @@ Estas regras são **travas de segurança** — qualquer PR da sequência deve re
 | Custo oficial | `src/lib/productOfficialFinalCost.ts`, `src/lib/productionCostPublication.server.ts` |
 | Versionamento produção | `src/lib/productionCostVersioning.ts`, `src/lib/productionCostTables.server.ts` |
 | Preço | `server.ts` (rotas price-table), `PricingModule.tsx`, `SettingsModule.tsx` |
-| Margem | `src/lib/salesOrderMarginResolver.ts`, `src/lib/salesOrderMarginService.server.ts` |
+| Margem + referência comercial | `src/lib/salesOrderMarginService.server.ts`, `src/lib/salesOrderMarginOfficialPrice.ts` |
+| Auditoria integrada | `src/lib/costPriceMarginIntegratedAudit.server.ts`, `scripts/audit-cost-price-margin-integration.ts` |
+| MP versionada | `src/lib/materialCostPublication.server.ts`, `src/lib/materialCostTables.server.ts` |
+| Preço ← produção | `src/lib/priceTablePublication.server.ts`, `src/lib/priceTableProductionCostResolver.ts` |
 | Elegibilidade | `src/lib/productEngineeringCostSnapshot.ts` (`PRODUCT` + `COMPONENT`) |
 | Testes baseline | `src/lib/versionedCostArchitectureBaseline.test.ts` |
 
@@ -132,8 +117,12 @@ Scripts/npm recomendados antes de cada fase:
 
 ```bash
 npm run test:versioned-cost-baseline
+npm run test:material-cost-tables
 npm run test:production-cost-tables
+npm run test:price-table-publication
 npm run test:sales-orders-margins
+npm run test:cost-price-margin-audit
+npm run test:cost-price-margin-flow
 npm run build
 npm run check:frontend-server-imports
 ```
@@ -244,6 +233,56 @@ Material ACTIVE → MaterialCostTableVersion PUBLISHED
 
 ---
 
+## 9. Operação recomendada
+
+### a) Matéria-prima publicada
+
+**Onde:** Precificação → Custo oficial de matéria-prima (versionado)  
+**Ação:** Gerar DRAFT → revisar → Publicar  
+**Fonte:** materiais ACTIVE com `currentCost + freight` > 0 no cadastro  
+**Pendência:** material sem custo válido é **ignorado** (não entra com zero)
+
+### b) Custo de produção
+
+**Onde:** Precificação → Custo oficial de produção (versionado)  
+**Pré-requisito:** MP publicada vigente na data escolhida  
+**Ação:** Gerar DRAFT (produtos **e** componentes) → Publicar  
+**Fonte:** motor + catálogo MP congelado (não `Material.currentCost` vivo)  
+**Pendência:** produto/componente sem engenharia ou motor FAIL → skip com erro explícito
+
+### c) Preço comercial
+
+**Onde:** Precificação → Geração comercial / Configurações → Tabelas de preço  
+**Pré-requisito:** custo de produção publicado vigente  
+**Ação:** Gerar DRAFT → Publicar com vigência  
+**Fonte:** `ProductionCostTableItem` publicado (produtos e componentes)  
+**Pendência:** `SEM_CUSTO_PRODUCAO_OFICIAL` — item não entra na tabela
+
+### d) Auditoria de margem
+
+**Onde:** Precificação → Auditoria de Custo, Preço e Margem  
+**Script:** `npm run audit:cost-price-margin-integration -- --year=YYYY --month=M`  
+**Ordem de correção:** MP → produção → preço → pedidos SEM_CUSTO
+
+### BOM atualizada
+
+- Custo/preço **já publicados** não mudam.
+- Gere **nova revisão** DRAFT de produção (reflete BOM viva + MP publicada vigente).
+- Publique nova versão; margem de pedidos futuros usa nova vigência por `issueDate`.
+
+### Material sem custo
+
+- Corrija cadastro `Material` (currentCost/freight).
+- Gere nova revisão MP → produção → preço.
+
+### Componente sem engenharia
+
+- Complete BOM/roteiro no cadastro de produto.
+- Regenerar DRAFT de produção incluindo escopo PRODUCT_AND_COMPONENT.
+- Se vendido sem custo: margem fica **SEM_CUSTO** até publicação.
+
+---
+
 ## 7. Histórico
 
 | Data | Alteração |
@@ -251,3 +290,4 @@ Material ACTIVE → MaterialCostTableVersion PUBLISHED
 | 2026-07-02 | Baseline inicial + testes de caracterização (Fase 0) |
 | 2026-07-02 | Auditoria integrada MP/produção/preço/margem — script, API e UI |
 | 2026-07-02 | Testes E2E service `costPriceMarginFlow.server.test.ts` — fluxo ponta a ponta |
+| 2026-07-02 | Hardening: doc final, fallback vivo desabilitado por padrão, script margem alinhado |

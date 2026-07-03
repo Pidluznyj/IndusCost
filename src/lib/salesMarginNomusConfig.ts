@@ -162,7 +162,7 @@ export function parseSalesMarginNomusConfigJson(raw: unknown): SalesMarginNomusC
     defaultTaxRuleId: taxRuleId,
     taxMode: parseTaxMode(obj.taxMode),
     useFrozenUnitCostFirst: false,
-    allowLiveCostFallback: parseBoolean(obj.allowLiveCostFallback, true),
+    allowLiveCostFallback: parseBoolean(obj.allowLiveCostFallback, false),
     showPartialCoverageWarning: parseBoolean(obj.showPartialCoverageWarning, true),
   };
 }

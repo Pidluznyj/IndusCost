@@ -277,12 +277,12 @@ export function ProductionCostTablesPanel({
           {PRODUCTION_COST_DISPLAY_LABELS.effectiveCostLookup}
         </h4>
         <p className="text-xs text-muted-foreground">
-          Informe produto e data para ver qual custo de produção IndusCost estaria vigente (mesma
+          Informe produto ou componente e data para ver qual custo de produção publicado estaria vigente (mesma
           regra da margem de pedidos).
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div className="space-y-1 md:col-span-2">
-            <label className="text-xs font-bold uppercase text-muted-foreground">Produto</label>
+            <label className="text-xs font-bold uppercase text-muted-foreground">Produto / componente</label>
             <SearchableSelect
               options={productOptions}
               value={lookupProductId}
