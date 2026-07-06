@@ -23,6 +23,9 @@ type CommercialPublishedPricesGridProps = {
   emptyMessage: string | null;
   allowSimulate: boolean;
   pricings: PremissaRow[];
+  openingRowId?: string | null;
+  onRowClick: (row: CommercialPublishedPriceGridRow) => void;
+  onPriceCellClick: (row: CommercialPublishedPriceGridRow, tableId: string) => void;
   onCalculate: (productId: string, taxRuleId: string) => void;
   onEditPremissa: (premissa: PremissaRow) => void;
   onCreatePremissa: (productId: string, taxRuleId: string | null) => void;
@@ -42,6 +45,9 @@ export function CommercialPublishedPricesGrid({
   emptyMessage,
   allowSimulate,
   pricings,
+  openingRowId,
+  onRowClick,
+  onPriceCellClick,
   onCalculate,
   onEditPremissa,
   onCreatePremissa,
@@ -100,7 +106,14 @@ export function CommercialPublishedPricesGrid({
                 );
 
                 return (
-                  <tr key={row.productId} className="hover:bg-accent/20">
+                  <tr
+                    key={row.productId}
+                    className={cn(
+                      "hover:bg-accent/20 cursor-pointer",
+                      openingRowId === row.productId && "opacity-70"
+                    )}
+                    onClick={() => onRowClick(row)}
+                  >
                     <td className="p-4 font-mono text-xs text-muted-foreground whitespace-nowrap">{row.sku}</td>
                     <td className="p-4">
                       <p className="font-bold text-sm tracking-tight">{row.productName}</p>
@@ -120,7 +133,14 @@ export function CommercialPublishedPricesGrid({
                     {tables.map((table) => {
                       const price = resolvePriceForTable(row, table.tableId);
                       return (
-                        <td key={`${row.productId}-${table.tableId}`} className="p-4 text-right whitespace-nowrap">
+                        <td
+                          key={`${row.productId}-${table.tableId}`}
+                          className="p-4 text-right whitespace-nowrap"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onPriceCellClick(row, table.tableId);
+                          }}
+                        >
                           {price?.status === "PUBLISHED" && price.salePrice != null ? (
                             <span className="font-bold text-primary">{formatCurrency(price.salePrice, 2)}</span>
                           ) : (
@@ -144,12 +164,12 @@ export function CommercialPublishedPricesGrid({
                         {formatPublishedRowStatus(row.status)}
                       </span>
                     </td>
-                    <td className="p-4">
+                    <td className="p-4 btn-acoes" onClick={(event) => event.stopPropagation()}>
                       <div className="flex gap-2 justify-center">
                         {allowSimulate && fiscalRuleId ? (
                           <button
                             type="button"
-                            title="Resultado da Formação de Preço"
+                            title="Simulação ao vivo (premissa)"
                             onClick={() => onCalculate(row.productId, fiscalRuleId)}
                             className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"
                           >

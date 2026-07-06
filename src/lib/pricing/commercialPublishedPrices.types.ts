@@ -30,6 +30,7 @@ export type CommercialPublishedPriceGridTable = {
   taxRuleId: string | null;
   taxRuleName: string | null;
   status: string;
+  isPrimary?: boolean;
 };
 
 export type CommercialPublishedPriceCell = {

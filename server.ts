@@ -6526,6 +6526,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           commissionPerc: true,
           commissionValue: true,
           formulaSnapshotJson: true,
+          costSnapshotJson: true,
         },
       });
       if (!item) {
@@ -6608,6 +6609,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           salePrice: Number(item.salePrice),
           commissionPerc: finalCommissionPerc,
           commissionValue: finalCommissionValue,
+          formulaSnapshotJson: item.formulaSnapshotJson,
+          costSnapshotJson: item.costSnapshotJson,
         },
         proposalDefaults: {
           unitCost: Number(item.frozenTotalCost),

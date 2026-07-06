@@ -46,6 +46,7 @@ import { buildProductionCostDraftGenerationSummaryLines, buildProductionCostPubl
 import { CommercialPublishedPricesGrid } from "@/src/components/pricing/CommercialPublishedPricesGrid";
 import { useCommercialPublishedPrices } from "@/src/components/pricing/useCommercialPublishedPrices";
 import {
+  formatPublishedAtLabel,
   resolveCommercialPublishedEmptyMessage,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 
@@ -55,6 +56,7 @@ type PriceTableLite = {
   name: string;
   status: string;
   defaultMarginPct: number | string;
+  isPrimary?: boolean;
 };
 
 type CommercialGenIssuePreview = {
@@ -189,6 +191,8 @@ export const PricingModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [calculationResult, setCalculationResult] = useState<any | null>(null);
+  const [publishedFormationMeta, setPublishedFormationMeta] = useState<PublishedFormationMeta | null>(null);
+  const [openingPublishedRowId, setOpeningPublishedRowId] = useState<string | null>(null);
   const [resultTab, setResultTab] = useState<"summary" | "composition" | "detailed">("summary");
   
   const [searchTermBatch, setSearchTermBatch] = useState("");
@@ -499,6 +503,7 @@ export const PricingModule = () => {
 
   // --- UNITARY LOGIC ---
   const handleCalculateUnit = async (productId: string, taxRuleId: string) => {
+    setPublishedFormationMeta(null);
     setCalculating(true);
     try {
       const data = await fetchJsonOk(`/api/pricing/${productId}/${taxRuleId}/calculate`);
@@ -550,6 +555,58 @@ export const PricingModule = () => {
       otherVariables: Number(premissa.otherVariables ?? 0),
     });
     setIsModalOpen(true);
+  };
+
+  const resolvePrimaryTableIdFromCatalog = () => {
+    const marked = priceTables.find((table) => table.isPrimary === true);
+    return marked?.id ?? null;
+  };
+
+  const closeFormationResultModal = () => {
+    setCalculationResult(null);
+    setPublishedFormationMeta(null);
+  };
+
+  const handleOpenPublishedFormation = async (
+    row: CommercialPublishedPriceGridRow,
+    preferredTableId?: string | null
+  ) => {
+    const tablesForSelection = publishedTables.map((table) => ({
+      ...table,
+      isPrimary: priceTables.find((entry) => entry.id === table.tableId)?.isPrimary === true,
+    }));
+    const selection = resolvePublishedPriceSelectionForRow(row, tablesForSelection, {
+      preferredTableId,
+      primaryTableId: resolvePrimaryTableIdFromCatalog(),
+    });
+    if (!selection) {
+      window.alert(NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE);
+      return;
+    }
+
+    setOpeningPublishedRowId(row.productId);
+    try {
+      const api = await fetchJsonOk<PublishedPriceApiResponse>(
+        buildPublishedPriceRequestUrl(selection.table.tableId, row.productId)
+      );
+      const mapped = mapPublishedPriceApiToFormationResult(api, {
+        table: selection.table,
+        priceItemId: selection.price.priceItemId!,
+        sku: row.sku,
+        productName: row.productName,
+        productId: row.productId,
+        taxRuleName: row.taxInfo?.fiscalRuleName,
+        taxRuleId: row.taxInfo?.fiscalRuleId,
+      });
+      setPublishedFormationMeta(mapped.publishedMeta);
+      setCalculationResult(mapped);
+      setResultTab("summary");
+    } catch (error) {
+      console.error("Erro ao abrir preço publicado:", error);
+      window.alert(error instanceof Error ? error.message : "Não foi possível carregar o preço publicado.");
+    } finally {
+      setOpeningPublishedRowId(null);
+    }
   };
 
   const handleCreatePremissaFromGrid = (productId: string, taxRuleId: string | null) => {
@@ -2213,6 +2270,9 @@ export const PricingModule = () => {
         emptyMessage={publishedEmptyMessage}
         allowSimulate={allowSimulate}
         pricings={pricings}
+        openingRowId={openingPublishedRowId}
+        onRowClick={(row) => void handleOpenPublishedFormation(row)}
+        onPriceCellClick={(row, tableId) => void handleOpenPublishedFormation(row, tableId)}
         onCalculate={handleCalculateUnit}
         onEditPremissa={handleEditPremissaFromGrid}
         onCreatePremissa={handleCreatePremissaFromGrid}
@@ -2866,8 +2926,18 @@ export const PricingModule = () => {
                   <div>
                     <h3 className="text-xl font-bold">Resultado da Formação de Preço</h3>
                     <p className="text-xs opacity-80">{calculationResult.product} • SKU: {calculationResult.sku}</p>
+                    {publishedFormationMeta ? (
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-white/15 px-2 py-1">Preço publicado</span>
+                        <span className="rounded-full bg-white/15 px-2 py-1">{publishedFormationMeta.tableName}</span>
+                        <span className="rounded-full bg-white/15 px-2 py-1">v{publishedFormationMeta.versionNumber}</span>
+                        <span className="rounded-full bg-white/15 px-2 py-1">
+                          {formatPublishedAtLabel(publishedFormationMeta.publishedAt)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
-                  <button onClick={() => setCalculationResult(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <button onClick={closeFormationResultModal} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
@@ -2903,11 +2973,16 @@ export const PricingModule = () => {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                  {publishedFormationMeta?.compositionFallbackNote ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      {publishedFormationMeta.compositionFallbackNote}
+                    </div>
+                  ) : null}
                   {resultTab === "summary" && (
                     <>
                       <div className="relative p-8 rounded-3xl bg-primary/5 border-2 border-primary/20 flex flex-col items-center text-center overflow-hidden">
                      <div className="absolute top-4 right-4 bg-primary text-primary-foreground px-3 py-1 rounded-full text-[10px] font-black uppercase">
-                       Preço Sugerido
+                       {publishedFormationMeta ? "Preço Publicado" : "Preço Sugerido"}
                      </div>
                      <p className="text-5xl font-black text-primary mb-2">
                        {formatCurrency(calculationResult.resultados.suggestedPrice, 5)}
