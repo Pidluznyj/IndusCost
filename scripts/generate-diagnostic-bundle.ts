@@ -7,11 +7,12 @@
  *   npx tsx scripts/generate-diagnostic-bundle.ts --scope=SYSTEM
  *   npx tsx scripts/generate-diagnostic-bundle.ts --scope=PRODUCT_ENGINEERING --sku=618.08AA
  *   npx tsx scripts/generate-diagnostic-bundle.ts --scope=PUBLISHED_PRICE --sku=618.08AA --table-code=VAREJO_2
- *   npx tsx scripts/generate-diagnostic-bundle.ts --scope=COST_TO_CASH
+ *   npx tsx scripts/generate-diagnostic-bundle.ts --scope=COMMISSION_RECEIPT_CLOSING --year=2026 --month=6
  */
 import "dotenv/config";
 import { buildAndWriteDiagnosticBundle } from "../src/lib/diagnostics/diagnosticBundleBuilder.server.ts";
 import { buildProductEngineeringDiagnosticBundleInput } from "../src/lib/diagnostics/productEngineeringDiagnostic.server.ts";
+import { buildCommissionReceiptClosingDiagnosticBundleInput } from "../src/lib/diagnostics/commissionDiagnostic.server.ts";
 import { buildPublishedPriceDiagnosticBundleInput } from "../src/lib/diagnostics/pricingDiagnostic.server.ts";
 import type { DiagnosticScope } from "../src/lib/diagnostics/chatgptDiagnosticTypes.ts";
 import { prisma } from "../src/lib/prisma.ts";
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
 
   let result;
 
-  if (scope === "PRODUCT_ENGINEERING" || scope === "PUBLISHED_PRICE") {
+  if (scope === "PRODUCT_ENGINEERING" || scope === "PUBLISHED_PRICE" || scope === "COMMISSION_RECEIPT_CLOSING") {
     if (!process.env.DATABASE_URL?.trim()) {
       console.error(
         `[generate-diagnostic-bundle] DATABASE_URL ausente — configure .env para ${scope}.`
@@ -85,6 +86,22 @@ async function main(): Promise<void> {
       screenRoute: "/pricing",
     });
     result = await buildAndWriteDiagnosticBundle(input);
+  } else if (scope === "COMMISSION_RECEIPT_CLOSING") {
+    const year = Number(parseArg("--year"));
+    const month = Number(parseArg("--month"));
+    if (!Number.isInteger(year) || !Number.isInteger(month)) {
+      console.error("[generate-diagnostic-bundle] Informe --year e --month para COMMISSION_RECEIPT_CLOSING.");
+      process.exit(1);
+    }
+    const input = await buildCommissionReceiptClosingDiagnosticBundleInput(prisma, {
+      year,
+      month,
+      seller: parseArg("--seller"),
+      customer: parseArg("--customer"),
+      screenTitle: "Fechamento por Recebimento",
+      screenRoute: "/commissions/receipt-closing",
+    });
+    result = await buildAndWriteDiagnosticBundle(input);
   } else {
     result = await buildAndWriteDiagnosticBundle({
       scope,
@@ -116,6 +133,13 @@ async function main(): Promise<void> {
     console.log(`Tabela: ${evidence.commercialTable?.tableCode ?? tableCode ?? "—"}`);
     console.log(`Preço: ${evidence.price?.salePrice ?? evidence.trace?.commercialPrice?.salePrice ?? "—"}`);
     console.log(`Custo usado: ${evidence.price?.costUsed ?? evidence.trace?.costSource?.industrialCost ?? "—"}`);
+  }
+
+  if (scope === "COMMISSION_RECEIPT_CLOSING") {
+    const evidence = JSON.parse(result.bundle.entries["evidence/commission-trace.json"] ?? "{}");
+    console.log(`Preview OK: ${evidence.capture?.ok ?? "—"}`);
+    console.log(`Erro: ${evidence.capture?.error?.classification ?? "—"}`);
+    console.log(`Recebido único: ${evidence.uniqueReceivedTotal ?? "—"}`);
   }
 }
 

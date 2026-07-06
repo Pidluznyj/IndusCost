@@ -4,7 +4,13 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { PrismaClient } from "@prisma/client";
+import { COMMISSIONS_AUDIT_VIEW_PERMISSIONS } from "../commissionsPermissions.js";
 import { PRODUCTION_COST_TABLE_VIEW_PERMISSIONS } from "../productionCostTablesUi.js";
+import {
+  CommissionReceiptClosingDiagnosticValidationError,
+  buildAndWriteCommissionReceiptClosingDiagnosticBundle,
+  parseCommissionReceiptClosingDiagnosticRequest,
+} from "./commissionDiagnostic.server.js";
 import {
   ProductEngineeringDiagnosticValidationError,
   buildAndWriteProductEngineeringDiagnosticBundle,
@@ -23,6 +29,7 @@ type AuthGuards = {
 
 const DIAGNOSTIC_BUNDLE_PERMISSIONS = [
   ...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
+  ...COMMISSIONS_AUDIT_VIEW_PERMISSIONS,
   "pricing.view",
   "settings.price_tables.view",
 ] as const;
@@ -85,13 +92,36 @@ export function registerDiagnosticBundleRoutes(
         return;
       }
 
+      if (scope === "COMMISSION_RECEIPT_CLOSING") {
+        const parsed = parseCommissionReceiptClosingDiagnosticRequest(req.body);
+        const result = await buildAndWriteCommissionReceiptClosingDiagnosticBundle(
+          prisma,
+          parsed.context
+        );
+        res.status(200).json({
+          ok: true,
+          scope: parsed.scope,
+          bundleId: result.bundle.manifest.bundleId,
+          generatedAt: result.bundle.manifest.generatedAt,
+          outputDir: result.outputDir,
+          zipPath: result.zipPath,
+          fileCount: result.bundle.manifest.files.length,
+          year: parsed.context.year,
+          month: parsed.context.month,
+          seller: parsed.context.seller ?? null,
+        });
+        return;
+      }
+
       res.status(400).json({
-        error: 'scope deve ser "PRODUCT_ENGINEERING" ou "PUBLISHED_PRICE".',
+        error:
+          'scope deve ser "PRODUCT_ENGINEERING", "PUBLISHED_PRICE" ou "COMMISSION_RECEIPT_CLOSING".',
       });
     } catch (error) {
       if (
         error instanceof ProductEngineeringDiagnosticValidationError ||
-        error instanceof PublishedPriceDiagnosticValidationError
+        error instanceof PublishedPriceDiagnosticValidationError ||
+        error instanceof CommissionReceiptClosingDiagnosticValidationError
       ) {
         res.status(400).json({ error: error.message });
         return;

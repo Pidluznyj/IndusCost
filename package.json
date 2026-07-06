@@ -93,7 +93,7 @@
     "audit:commission-trace": "tsx scripts/audit-commission-trace.ts",
     "validate:cost-to-cash-trace": "tsx scripts/validate-cost-to-cash-trace.ts --live",
     "generate:diagnostic-bundle": "tsx scripts/generate-diagnostic-bundle.ts --scope=SYSTEM",
-    "test:diagnostic-bundle": "tsx --test src/lib/diagnostics/chatgptDiagnosticBundle.test.ts src/lib/diagnostics/sanitizeDiagnosticPayload.test.ts src/lib/diagnostics/productEngineeringDiagnostic.test.ts src/lib/diagnostics/pricingDiagnostic.test.ts",
+    "test:diagnostic-bundle": "tsx --test src/lib/diagnostics/chatgptDiagnosticBundle.test.ts src/lib/diagnostics/sanitizeDiagnosticPayload.test.ts src/lib/diagnostics/productEngineeringDiagnostic.test.ts src/lib/diagnostics/pricingDiagnostic.test.ts src/lib/diagnostics/commissionDiagnostic.test.ts",
     "test:cost-to-cash-trace": "tsx --test src/lib/audit/costToCashTrace.test.ts src/lib/audit/traceDiagnostic.test.ts src/lib/audit/costToCashTraceRoutes.test.ts src/lib/audit/costToCashTracePage.test.ts src/lib/audit/costToCashTraceDossier.test.ts",
     "audit:component-performance-cost-impact": "tsx scripts/audit-component-performance-cost-impact.ts",
     "audit:component-performance-coverage": "tsx scripts/audit-component-performance-coverage.ts",

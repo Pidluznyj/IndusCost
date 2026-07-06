@@ -397,11 +397,13 @@ export function buildChatGptDiagnosticBundle(
 
   if (input.rawLimitedEvidence) {
     const rawPath =
-      input.scope === "PUBLISHED_PRICE"
-        ? "evidence/raw-limited/published-price-summary.json"
-        : input.scope === "PRODUCT_ENGINEERING"
-          ? "evidence/raw-limited/product-engineering-summary.json"
-          : "evidence/raw-limited/summary.json";
+      input.scope === "COMMISSION_RECEIPT_CLOSING"
+        ? "evidence/raw-limited/commission-receipt-closing-summary.json"
+        : input.scope === "PUBLISHED_PRICE"
+          ? "evidence/raw-limited/published-price-summary.json"
+          : input.scope === "PRODUCT_ENGINEERING"
+            ? "evidence/raw-limited/product-engineering-summary.json"
+            : "evidence/raw-limited/summary.json";
     sanitizeCtx.filesSanitized.add(rawPath);
     entries[rawPath] = JSON.stringify(input.rawLimitedEvidence, null, 2);
   }
