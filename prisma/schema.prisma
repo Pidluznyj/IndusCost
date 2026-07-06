@@ -164,6 +164,7 @@ model Product {
   ProjectStructureLine ProjectStructureLine[]
   InventoryItem        InventoryItem[]
   ComponentPerformanceChangeLog ComponentPerformanceChangeLog[]
+  commissionOrderItemSnapshots  CommissionOrderItemSnapshot[]
 
   @@index([type], map: "idx_Product_type")
   @@index([isNomusControlled], map: "idx_Product_isNomusControlled")
@@ -359,6 +360,7 @@ model Customer {
   salesOrders                       SalesOrder[]
   commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
   commissionReceiptLedgerLines      CommissionReceiptLedgerLine[]
+  commissionOrderSnapshots          CommissionOrderSnapshot[]
 }
 
 model Proposal {
@@ -547,6 +549,7 @@ model SalesOrder {
   items                  SalesOrderItem[]
   CommercialActivity     CommercialActivity[]
   nfeLinks               SalesOrderNfeLink[]
+  commissionOrderSnapshots CommissionOrderSnapshot[]
 
   @@index([customerId])
   @@index([status])
@@ -617,6 +620,7 @@ model SalesOrderItem {
   Product             Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   ProposalItem        ProposalItem? @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   SalesOrder          SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  commissionItemSnapshots CommissionOrderItemSnapshot[]
 
   @@index([salesOrderId])
   @@index([proposalItemId])
@@ -3938,6 +3942,7 @@ model CommissionPerson {
   customerExceptions   CommissionCustomerException[]
   sellerAliases        CommissionPersonAlias[]
   receiptLedgerLines   CommissionReceiptLedgerLine[] @relation("ReceiptLedgerCanonicalSeller")
+  orderSnapshots       CommissionOrderSnapshot[]     @relation("OrderSnapshotCanonicalSeller")
 
   @@index([nomusPersonId])
   @@index([type])
@@ -3988,6 +3993,8 @@ model CommissionRule {
   fixedCommissionPerson CommissionPerson?       @relation("CommissionRuleFixedPerson", fields: [fixedCommissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   conditions            CommissionRuleCondition[]
   receiptLedgerLines    CommissionReceiptLedgerLine[]
+
+  orderItemSnapshots CommissionOrderItemSnapshot[]
 
   @@index([active])
   @@index([priority])
@@ -4370,5 +4377,89 @@ model CommissionReceiptLedgerLine {
   @@index([commissionRecordId])
   @@index([commissionPaymentScheduleId])
   @@index([settlementDate])
+}
+
+enum CommissionOrderSnapshotStatus {
+  ACTIVE
+  STALE
+  SUPERSEDED
+  ERROR
+}
+
+enum CommissionOrderItemSnapshotStatus {
+  COMMISSIONABLE
+  CUSTOMER_EXCLUDED
+  NO_RULE
+  SELLER_UNRESOLVED
+  NO_COMMERCIAL_PRICE_TABLE
+  INVALID_COMMERCIAL_PRICE_RANGE
+  NO_COMMISSION_TABLE_RATE
+  ERROR
+}
+
+/// Snapshot materializado da comissão calculada na venda (pedido/NF) — fonte para distribuição/fechamento.
+model CommissionOrderSnapshot {
+  id                         String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId               String                        @db.Uuid
+  nfeId                      Int?
+  customerId                 String                        @db.Uuid
+  customerNameSnapshot       String
+  rawSellerId                Int?
+  rawSellerName              String?
+  canonicalSellerId          String?                       @db.Uuid
+  canonicalSellerName        String?
+  sellerResolutionStatus     String?
+  saleDate                   DateTime                      @db.Timestamptz(6)
+  totalSoldAmount            Decimal                       @default(0) @db.Decimal(20, 2)
+  totalGrossCommissionAmount Decimal                       @default(0) @db.Decimal(20, 2)
+  totalFinalCommissionAmount Decimal                       @default(0) @db.Decimal(20, 2)
+  sourceHash                 String                        @unique
+  status                     CommissionOrderSnapshotStatus @default(ACTIVE)
+  createdAt                  DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  salesOrder      SalesOrder                      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer        Customer                        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  canonicalSeller CommissionPerson?               @relation("OrderSnapshotCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items           CommissionOrderItemSnapshot[]
+
+  @@index([salesOrderId])
+  @@index([nfeId])
+  @@index([canonicalSellerId])
+  @@index([status])
+  @@index([saleDate])
+  @@index([customerId])
+}
+
+model CommissionOrderItemSnapshot {
+  id                    String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderSnapshotId       String                            @db.Uuid
+  salesOrderItemId      String                            @db.Uuid
+  productId             String                            @db.Uuid
+  productNameSnapshot   String
+  soldAmount            Decimal                           @default(0) @db.Decimal(20, 2)
+  marginPercent         Decimal?                          @db.Decimal(10, 4)
+  commissionRatePercent Decimal                           @default(0) @db.Decimal(10, 4)
+  grossCommissionAmount Decimal                           @default(0) @db.Decimal(20, 2)
+  finalCommissionAmount Decimal                           @default(0) @db.Decimal(20, 2)
+  ruleId                String?                           @db.Uuid
+  ruleSnapshotJson      Json?
+  exclusionReason       String?
+  sourceHash            String                            @unique
+  status                CommissionOrderItemSnapshotStatus
+  createdAt             DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  orderSnapshot  CommissionOrderSnapshot @relation(fields: [orderSnapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salesOrderItem SalesOrderItem          @relation(fields: [salesOrderItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product        Product                 @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  rule           CommissionRule?         @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([orderSnapshotId, salesOrderItemId])
+  @@index([orderSnapshotId])
+  @@index([salesOrderItemId])
+  @@index([productId])
+  @@index([status])
+  @@index([ruleId])
 }
 
