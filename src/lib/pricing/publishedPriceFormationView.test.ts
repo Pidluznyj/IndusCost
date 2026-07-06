@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { CommercialPublishedPriceGridRow } from "./commercialPublishedPrices.types.js";
 import {
+  isPublishedPriceCellClickable,
   mapPublishedPriceApiToFormationResult,
   NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE,
   resolveDefaultPublishedTableSelection,
+  resolvePublishedPriceCellSelection,
   resolvePublishedPriceSelectionForRow,
 } from "./publishedPriceFormationView.js";
 
@@ -131,9 +133,54 @@ describe("publishedPriceFormationView", () => {
         },
       ],
     });
-    const selection = resolvePublishedPriceSelectionForRow(row, tables, { preferredTableId: "t-varejo" });
-    assert.equal(selection?.table.tableId, "t-varejo");
-    assert.equal(selection?.price.salePrice, 120);
+    const atacado = resolvePublishedPriceCellSelection(row, tables, "t-atacado");
+    const varejo = resolvePublishedPriceCellSelection(row, tables, "t-varejo");
+    assert.equal(atacado?.table.tableId, "t-atacado");
+    assert.equal(atacado?.price.salePrice, 100);
+    assert.equal(varejo?.table.tableId, "t-varejo");
+    assert.equal(varejo?.price.salePrice, 120);
+  });
+
+  it("clique na linha usa tabela padrão sem preferredTableId", () => {
+    const row = sampleRow({
+      prices: [
+        {
+          tableId: "t-atacado",
+          tableName: "Atacado",
+          versionId: "v1",
+          priceItemId: "item-1",
+          salePrice: 28.97,
+          marginPercent: 20,
+          markup: 50,
+          commissionPercent: 2,
+          taxPercent: 10,
+          status: "PUBLISHED",
+        },
+        {
+          tableId: "t-varejo",
+          tableName: "Varejo 1",
+          versionId: "v2",
+          priceItemId: "item-2",
+          salePrice: 31.5,
+          marginPercent: 25,
+          markup: 60,
+          commissionPercent: 3,
+          taxPercent: 10,
+          status: "PUBLISHED",
+        },
+      ],
+    });
+    const selection = resolvePublishedPriceSelectionForRow(row, tables, {
+      primaryTableId: null,
+    });
+    assert.equal(selection?.table.tableId, "t-atacado");
+    assert.equal(selection?.price.salePrice, 28.97);
+  });
+
+  it("célula sem preço não é clicável", () => {
+    const price = sampleRow().prices[1];
+    assert.equal(isPublishedPriceCellClickable(price), false);
+    assert.equal(resolvePublishedPriceCellSelection(sampleRow(), tables, "t-varejo"), null);
   });
 
   it("produto sem preço publicado não retorna seleção", () => {
@@ -178,6 +225,7 @@ describe("publishedPriceFormationView", () => {
       {
         table: tables[0]!,
         priceItemId: "item-1",
+        clickedSalePrice: 28.97,
         sku: "SKU-001",
         productName: "Produto A",
         productId: "prod-1",
@@ -187,6 +235,7 @@ describe("publishedPriceFormationView", () => {
     );
 
     assert.equal(mapped.resultados.suggestedPrice, 100);
+    assert.equal(mapped.publishedMeta.clickedSalePrice, 28.97);
     assert.equal(mapped.publishedMeta.source, "PUBLISHED_PRICE_TABLE");
     assert.equal(mapped.publishedMeta.tableName, "Atacado");
     assert.equal(mapped.publishedMeta.versionNumber, 3);
@@ -228,6 +277,21 @@ describe("pricingModulePublishedFormationModal", () => {
   it("célula de preço não propaga clique para a linha", () => {
     assert.match(gridSrc(), /event\.stopPropagation\(\)/);
     assert.match(gridSrc(), /onPriceCellClick\(row, table\.tableId\)/);
+    assert.match(gridSrc(), /isPublishedPriceCellClickable/);
+  });
+
+  it("sem preço não é clicável no grid", () => {
+    const src = gridSrc();
+    assert.match(src, /Sem preço/);
+    assert.match(src, /clickable \? handleCellOpen : undefined/);
+    assert.match(src, /cursor-default/);
+  });
+
+  it("handleOpenPublishedFormation usa seleção por célula quando tableId é informado", () => {
+    const src = moduleSrc();
+    assert.match(src, /resolvePublishedPriceCellSelection/);
+    assert.match(src, /preferredTableId != null && preferredTableId\.trim\(\) !== ""/);
+    assert.match(src, /clickedSalePrice: selection\.price\.salePrice/);
   });
 
   it("mensagem de ausência de preço documentada", () => {

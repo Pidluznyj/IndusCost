@@ -49,6 +49,16 @@ import {
   formatPublishedAtLabel,
   resolveCommercialPublishedEmptyMessage,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
+import type { CommercialPublishedPriceGridRow } from "@/src/lib/pricing/commercialPublishedPrices.types";
+import {
+  buildPublishedPriceRequestUrl,
+  mapPublishedPriceApiToFormationResult,
+  NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE,
+  type PublishedFormationMeta,
+  type PublishedPriceApiResponse,
+  resolvePublishedPriceCellSelection,
+  resolvePublishedPriceSelectionForRow,
+} from "@/src/lib/pricing/publishedPriceFormationView";
 
 type PriceTableLite = {
   id: string;
@@ -575,10 +585,12 @@ export const PricingModule = () => {
       ...table,
       isPrimary: priceTables.find((entry) => entry.id === table.tableId)?.isPrimary === true,
     }));
-    const selection = resolvePublishedPriceSelectionForRow(row, tablesForSelection, {
-      preferredTableId,
-      primaryTableId: resolvePrimaryTableIdFromCatalog(),
-    });
+    const selection =
+      preferredTableId != null && preferredTableId.trim() !== ""
+        ? resolvePublishedPriceCellSelection(row, tablesForSelection, preferredTableId.trim())
+        : resolvePublishedPriceSelectionForRow(row, tablesForSelection, {
+            primaryTableId: resolvePrimaryTableIdFromCatalog(),
+          });
     if (!selection) {
       window.alert(NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE);
       return;
@@ -591,7 +603,8 @@ export const PricingModule = () => {
       );
       const mapped = mapPublishedPriceApiToFormationResult(api, {
         table: selection.table,
-        priceItemId: selection.price.priceItemId!,
+        priceItemId: selection.price.priceItemId,
+        clickedSalePrice: selection.price.salePrice,
         sku: row.sku,
         productName: row.productName,
         productId: row.productId,
@@ -2931,6 +2944,11 @@ export const PricingModule = () => {
                         <span className="rounded-full bg-white/15 px-2 py-1">Preço publicado</span>
                         <span className="rounded-full bg-white/15 px-2 py-1">{publishedFormationMeta.tableName}</span>
                         <span className="rounded-full bg-white/15 px-2 py-1">v{publishedFormationMeta.versionNumber}</span>
+                        {publishedFormationMeta.clickedSalePrice != null ? (
+                          <span className="rounded-full bg-white/15 px-2 py-1">
+                            {formatCurrency(publishedFormationMeta.clickedSalePrice, 2)}
+                          </span>
+                        ) : null}
                         <span className="rounded-full bg-white/15 px-2 py-1">
                           {formatPublishedAtLabel(publishedFormationMeta.publishedAt)}
                         </span>

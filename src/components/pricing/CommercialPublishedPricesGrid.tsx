@@ -9,6 +9,7 @@ import {
   formatPublishedAtLabel,
   formatPublishedRowStatus,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
+import { isPublishedPriceCellClickable } from "@/src/lib/pricing/publishedPriceFormationView";
 
 type PremissaRow = {
   id: string;
@@ -31,10 +32,7 @@ type CommercialPublishedPricesGridProps = {
   onCreatePremissa: (productId: string, taxRuleId: string | null) => void;
 };
 
-function resolvePriceForTable(
-  row: CommercialPublishedPriceGridRow,
-  tableId: string
-) {
+function resolvePriceForTable(row: CommercialPublishedPriceGridRow, tableId: string) {
   return row.prices.find((price) => price.tableId === tableId) ?? null;
 }
 
@@ -132,17 +130,45 @@ export function CommercialPublishedPricesGrid({
                     </td>
                     {tables.map((table) => {
                       const price = resolvePriceForTable(row, table.tableId);
+                      const clickable = isPublishedPriceCellClickable(price);
+                      const handleCellOpen = (event: React.MouseEvent | React.KeyboardEvent) => {
+                        event.stopPropagation();
+                        if (!clickable) return;
+                        onPriceCellClick(row, table.tableId);
+                      };
+
                       return (
                         <td
                           key={`${row.productId}-${table.tableId}`}
-                          className="p-4 text-right whitespace-nowrap"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onPriceCellClick(row, table.tableId);
-                          }}
+                          className={cn(
+                            "p-4 text-right whitespace-nowrap",
+                            clickable
+                              ? "cursor-pointer hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary/40"
+                              : "cursor-default"
+                          )}
+                          role={clickable ? "button" : undefined}
+                          tabIndex={clickable ? 0 : undefined}
+                          aria-label={
+                            clickable
+                              ? `Abrir resultado publicado da tabela ${table.tableName} com preço ${formatCurrency(price.salePrice, 2)}`
+                              : `Sem preço publicado na tabela ${table.tableName}`
+                          }
+                          onClick={clickable ? handleCellOpen : undefined}
+                          onKeyDown={
+                            clickable
+                              ? (event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    handleCellOpen(event);
+                                  }
+                                }
+                              : undefined
+                          }
                         >
-                          {price?.status === "PUBLISHED" && price.salePrice != null ? (
-                            <span className="font-bold text-primary">{formatCurrency(price.salePrice, 2)}</span>
+                          {clickable ? (
+                            <span className="font-bold text-primary underline-offset-2 hover:underline">
+                              {formatCurrency(price.salePrice, 2)}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground text-xs font-medium">Sem preço</span>
                           )}

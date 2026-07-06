@@ -25,6 +25,7 @@ export type PublishedFormationMeta = {
   versionNumber: number;
   priceItemId: string;
   publishedAt: string | null;
+  clickedSalePrice: number | null;
   compositionFallbackNote: string | null;
 };
 
@@ -130,6 +131,23 @@ export function resolveDefaultPublishedTableSelection(
   return tables[0] ?? null;
 }
 
+export function isPublishedPriceCellClickable(
+  price: CommercialPublishedPriceCell | null | undefined
+): price is CommercialPublishedPriceCell & { priceItemId: string; salePrice: number } {
+  return price?.status === "PUBLISHED" && price.priceItemId != null && price.salePrice != null;
+}
+
+export function resolvePublishedPriceCellSelection(
+  row: CommercialPublishedPriceGridRow,
+  tables: CommercialPublishedPriceGridTable[],
+  tableId: string
+): { table: CommercialPublishedPriceGridTable; price: CommercialPublishedPriceCell & { priceItemId: string; salePrice: number } } | null {
+  const table = tables.find((entry) => entry.tableId === tableId);
+  const price = row.prices.find((entry) => entry.tableId === tableId);
+  if (!table || !isPublishedPriceCellClickable(price)) return null;
+  return { table, price };
+}
+
 export function resolvePublishedPriceSelectionForRow(
   row: CommercialPublishedPriceGridRow,
   tables: CommercialPublishedPriceGridTable[],
@@ -186,6 +204,7 @@ export function mapPublishedPriceApiToFormationResult(
   selection: {
     table: Pick<CommercialPublishedPriceGridTable, "tableId" | "tableName" | "tableCode" | "versionId" | "versionNumber" | "publishedAt">;
     priceItemId: string;
+    clickedSalePrice?: number | null;
     sku: string;
     productName: string;
     productId: string;
@@ -271,6 +290,7 @@ export function mapPublishedPriceApiToFormationResult(
     versionNumber: selection.table.versionNumber,
     priceItemId: selection.priceItemId,
     publishedAt: selection.table.publishedAt,
+    clickedSalePrice: selection.clickedSalePrice ?? salePrice,
     compositionFallbackNote: openBook ? PUBLISHED_COMPOSITION_FALLBACK_NOTE : null,
   };
 
