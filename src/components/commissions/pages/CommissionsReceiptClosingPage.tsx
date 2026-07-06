@@ -21,6 +21,7 @@ import type {
   CommissionsReceiptClosingPayload,
   CommissionsReceiptClosingSellerRow,
 } from "@/src/components/commissions/commissionsTypes";
+import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -343,6 +344,17 @@ export function CommissionsReceiptClosingPage() {
             <Download className="mr-2 h-4 w-4" />
             Exportar CSV
           </button>
+          <DiagnosticReportButton
+            scope="COMMISSION_RECEIPT_CLOSING"
+            size="sm"
+            context={{
+              year: Number(year),
+              month: Number(month),
+              screenTitle: "Fechamento por Recebimento",
+              screenRoute: "/commissions/receipt-closing",
+            }}
+            data-testid="commission-receipt-closing-diagnostic-report"
+          />
         </div>
       </div>
 

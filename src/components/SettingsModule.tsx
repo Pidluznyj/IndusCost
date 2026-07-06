@@ -29,6 +29,7 @@ import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
+import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
   canAccessSettingsSection,
@@ -1237,6 +1238,15 @@ export const SettingsModule = () => {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          <DiagnosticReportButton
+            scope="SYSTEM"
+            size="sm"
+            context={{
+              screenTitle: "Administração / Sistema",
+              screenRoute: "/settings",
+            }}
+            data-testid="system-diagnostic-report"
+          />
           {activeHubSection === "operational" && (
             <button
               onClick={() => handleOpenModal()}

@@ -69,6 +69,7 @@ import {
   resolvePublishedPriceCellSelection,
   resolvePublishedPriceSelectionForRow,
 } from "@/src/lib/pricing/publishedPriceFormationView";
+import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 
 type PriceTableLite = {
   id: string;
@@ -3362,6 +3363,24 @@ export const PricingModule = () => {
                     )
                   )}
                 </div>
+
+                {publishedFormationMeta ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-accent/10 px-6 py-4">
+                    <DiagnosticReportButton
+                      scope="PUBLISHED_PRICE"
+                      size="sm"
+                      context={{
+                        sku: publishedFormationMeta.sku,
+                        productId: publishedFormationMeta.productId,
+                        tableCode: publishedFormationMeta.tableCode,
+                        priceItemId: publishedFormationMeta.priceItemId,
+                        screenTitle: "Resultado da Formação de Preço",
+                        screenRoute: "/pricing",
+                      }}
+                      data-testid="published-price-diagnostic-report"
+                    />
+                  </div>
+                ) : null}
              </motion.div>
           </div>
         )}

@@ -84,6 +84,7 @@ import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionC
 import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
 import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
 import { ComponentInjectionCalculationBreakdown } from "@/src/components/product/ComponentInjectionCalculationBreakdown";
+import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -1675,14 +1676,29 @@ export const ProductModule = () => {
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-2 hover:bg-accent rounded-full transition-colors shrink-0"
-                  aria-label="Fechar"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {editingItem?.sku ? (
+                    <DiagnosticReportButton
+                      scope="PRODUCT_ENGINEERING"
+                      size="sm"
+                      context={{
+                        sku: editingItem.sku,
+                        productId: editingItem.id,
+                        screenTitle: "Engenharia de Produto",
+                        screenRoute: "/products/engineering",
+                      }}
+                      data-testid="product-engineering-diagnostic-report"
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="p-2 hover:bg-accent rounded-full transition-colors shrink-0"
+                    aria-label="Fechar"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Tabs Navigation */}
