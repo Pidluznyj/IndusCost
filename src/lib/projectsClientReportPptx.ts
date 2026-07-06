@@ -930,10 +930,17 @@ export async function extractProjectClientProposalPptxText(buffer: Buffer): Prom
   return chunks.join(" ").replace(/\s+/g, " ");
 }
 
+/** Conta imagens embutidas no PPTX (logo da identidade visual). */
+export async function projectClientProposalPptxEmbeddedImageCount(buffer: Buffer): Promise<number> {
+  const zip = await JSZip.loadAsync(buffer);
+  return Object.keys(zip.files).filter(
+    (name) => name.startsWith("ppt/media/") && !zip.files[name]!.dir
+  ).length;
+}
+
 /** Confirma presença de mídia embutida (logo da identidade visual). */
 export async function projectClientProposalPptxHasEmbeddedMedia(buffer: Buffer): Promise<boolean> {
-  const zip = await JSZip.loadAsync(buffer);
-  return Object.keys(zip.files).some((name) => name.startsWith("ppt/media/"));
+  return (await projectClientProposalPptxEmbeddedImageCount(buffer)) > 0;
 }
 
 export async function buildProjectClientProposalPptxBuffer(

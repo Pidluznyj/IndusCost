@@ -17,6 +17,7 @@ import {
   buildProjectClientProposalPptxBuffer,
   buildProjectClientProposalPptxFilename,
   extractProjectClientProposalPptxText,
+  projectClientProposalPptxEmbeddedImageCount,
   projectClientProposalPptxHasEmbeddedMedia,
 } from "./projectsClientReportPptx.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
@@ -289,6 +290,7 @@ describe("projectsClientReport", () => {
     assert.match(text, /Esmaltec/);
     assert.match(text, /Proposta Comercial/);
     assert.equal(await projectClientProposalPptxHasEmbeddedMedia(buffer), true);
+    assert.ok((await projectClientProposalPptxEmbeddedImageCount(buffer)) >= 2);
   });
 
   it("PPTX usa capa institucional da identidade visual quando configurada", async () => {
@@ -299,8 +301,8 @@ describe("projectsClientReport", () => {
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     });
     const withoutLogo = await buildProjectClientProposalPptxBuffer(report, DEFAULT_BRANDING);
-    assert.equal(await projectClientProposalPptxHasEmbeddedMedia(withLogo), true);
-    assert.equal(await projectClientProposalPptxHasEmbeddedMedia(withoutLogo), false);
+    assert.ok((await projectClientProposalPptxEmbeddedImageCount(withLogo)) >= 2);
+    assert.equal(await projectClientProposalPptxEmbeddedImageCount(withoutLogo), 0);
   });
 
   it("quantidade padrão é 1 por item", () => {
