@@ -54,7 +54,7 @@ export const SettingsModule = () => {
     hhSource: "AUTO"
   });
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals">("roles");
+  const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals" | "branding">("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
 
@@ -78,43 +78,90 @@ export const SettingsModule = () => {
     hhOverride: "" as string | number
   });
 
+  const [brandingForm, setBrandingForm] = useState({
+    companyName: "",
+    tradeName: "",
+    document: "",
+    logoUrl: "",
+    logoBase64: "",
+    primaryColor: "#2563eb",
+    secondaryColor: "#0f172a",
+    accentColor: "#3b82f6",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
+    proposalFooterText: "",
+    commercialContactName: "",
+    commercialContactEmail: "",
+    commercialContactPhone: "",
+  });
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error", text: string } | null>(null);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rRes, cRes, gRes] = await Promise.all([
-        fetch("/api/roles"),
-        fetch("/api/payroll-components"),
-        fetch("/api/settings/globals")
+      const [rRes, cRes, gRes, bRes] = await Promise.all([
+        fetch("/api/roles").catch(() => null),
+        fetch("/api/payroll-components").catch(() => null),
+        fetch("/api/settings/globals").catch(() => null),
+        fetch("/api/branding-settings").catch(() => null)
       ]);
-      setRoles(await rRes.json());
-      setComponents(await cRes.json());
+
+      if (rRes && rRes.ok) setRoles(await rRes.json());
+      if (cRes && cRes.ok) setComponents(await cRes.json());
       
-      const config = await gRes.json();
-      
-      setGlobals({
-        energyCost: config.values.energyCost,
-        workingHours: config.values.workingHours,
-        factoryHours: config.values.factoryHours,
-        hhOverride: config.values.hhOverride,
-        calculatedHh: config.calculated.hhAuto,
-        hhSource: config.calculated.hhSource,
-        energyId: config.ids.energyId,
-        hoursId: config.ids.hoursId,
-        factoryId: config.ids.factoryId,
-        hhOverrideId: config.ids.hhOverrideId
-      });
-      setGlobalForm({
-        energyCost: config.values.energyCost,
-        workingHours: config.values.workingHours,
-        factoryHours: config.values.factoryHours,
-        hhOverride: config.values.hhOverride ?? "",
-      });
+      if (gRes && gRes.ok) {
+        const config = await gRes.json();
+        setGlobals({
+          energyCost: config.values.energyCost,
+          workingHours: config.values.workingHours,
+          factoryHours: config.values.factoryHours,
+          hhOverride: config.values.hhOverride,
+          calculatedHh: config.calculated.hhAuto,
+          hhSource: config.calculated.hhSource,
+          energyId: config.ids.energyId,
+          hoursId: config.ids.hoursId,
+          factoryId: config.ids.factoryId,
+          hhOverrideId: config.ids.hhOverrideId
+        });
+        setGlobalForm({
+          energyCost: config.values.energyCost,
+          workingHours: config.values.workingHours,
+          factoryHours: config.values.factoryHours,
+          hhOverride: config.values.hhOverride ?? "",
+        });
+      }
+
+      if (bRes && bRes.ok) {
+        const branding = await bRes.json();
+        setBrandingForm({
+          companyName: branding.companyName || "Lazarios",
+          tradeName: branding.tradeName || "Lazarios",
+          document: branding.document || "",
+          logoUrl: branding.logoUrl || "",
+          logoBase64: branding.logoBase64 || "",
+          primaryColor: branding.primaryColor || "#2563eb",
+          secondaryColor: branding.secondaryColor || "#0f172a",
+          accentColor: branding.accentColor || "#3b82f6",
+          address: branding.address || "",
+          phone: branding.phone || "",
+          email: branding.email || "",
+          website: branding.website || "",
+          proposalFooterText: branding.proposalFooterText || "",
+          commercialContactName: branding.commercialContactName || "",
+          commercialContactEmail: branding.commercialContactEmail || "",
+          commercialContactPhone: branding.commercialContactPhone || "",
+        });
+      }
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
     } finally {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchData();
@@ -218,6 +265,46 @@ export const SettingsModule = () => {
     }
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setToastMessage({ type: "error", text: "O logotipo deve ter no máximo 2MB." });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setBrandingForm(prev => ({ ...prev, logoBase64: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveBranding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBrandingSaving(true);
+    setToastMessage(null);
+    try {
+      const res = await fetch("/api/branding-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(brandingForm),
+      });
+      if (res.ok) {
+        setToastMessage({ type: "success", text: "Identidade visual salva com sucesso!" });
+        fetchData();
+      } else {
+        const errData = await res.json();
+        setToastMessage({ type: "error", text: errData.message || "Erro ao salvar identidade visual." });
+      }
+    } catch (error) {
+      console.error("Erro ao salvar branding:", error);
+      setToastMessage({ type: "error", text: "Erro ao conectar ao servidor." });
+    } finally {
+      setBrandingSaving(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const endpoint = activeSubTab === "roles" ? "/api/roles" : "/api/payroll-components";
@@ -274,8 +361,18 @@ export const SettingsModule = () => {
             Parâmetros Globais
             {activeSubTab === "globals" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
           </button>
+          <button
+            onClick={() => { setActiveSubTab("branding"); setToastMessage(null); }}
+            className={cn(
+              "px-4 py-2 text-sm font-bold transition-all relative",
+              activeSubTab === "branding" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Identidade Visual
+            {activeSubTab === "branding" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+          </button>
         </div>
-        {activeSubTab !== "globals" && (
+        {(activeSubTab !== "globals" && activeSubTab !== "branding") && (
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm shrink-0"
@@ -290,10 +387,297 @@ export const SettingsModule = () => {
         <div className="p-12 text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {activeSubTab === "roles" ? (
-            roles.map((role) => (
+      ) : activeSubTab === "branding" ? (
+            <div className="bg-card rounded-2xl border border-border shadow-sm p-6 space-y-6">
+              <div className="border-b border-border pb-4">
+                <h3 className="text-lg font-bold text-foreground">Identidade Visual da Empresa</h3>
+                <p className="text-xs text-muted-foreground">Personalize a marca da empresa. Estas informações serão usadas nas propostas comerciais, relatórios e documentos exportados.</p>
+              </div>
+
+              {toastMessage && (
+                <div className={cn(
+                  "p-4 rounded-xl flex items-center gap-3 text-sm font-medium mb-6",
+                  toastMessage.type === "success" ? "bg-green-500/10 text-green-700 border border-green-200" : "bg-red-500/10 text-red-700 border border-red-200"
+                )}>
+                  {toastMessage.type === "success" ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertCircle className="h-5 w-5 shrink-0" />}
+                  <span>{toastMessage.text}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveBranding} className="space-y-8">
+                {/* Grid 1: Informações Gerais */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Dados Corporativos</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Razão Social *</label>
+                      <input
+                        required
+                        type="text"
+                        value={brandingForm.companyName}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, companyName: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: Lazarios Koppetel Ltda"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nome Fantasia *</label>
+                      <input
+                        required
+                        type="text"
+                        value={brandingForm.tradeName}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, tradeName: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: Lazarios"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">CNPJ / CPF</label>
+                      <input
+                        type="text"
+                        value={brandingForm.document}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, document: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: 00.000.000/0000-00"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid 2: Contato e Endereço */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Endereço e Contato</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Endereço Completo</label>
+                      <input
+                        type="text"
+                        value={brandingForm.address}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, address: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: Av. Paulista, 1000 - Bela Vista, São Paulo - SP"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Telefone</label>
+                      <input
+                        type="text"
+                        value={brandingForm.phone}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, phone: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: (11) 99999-9999"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">E-mail Geral</label>
+                      <input
+                        type="email"
+                        value={brandingForm.email}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, email: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: contato@empresa.com.br"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                      <input
+                        type="text"
+                        value={brandingForm.website}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, website: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                        placeholder="Ex: www.empresa.com.br"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid 3: Paleta de Cores e Logotipo */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Design Visual da Marca</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Cores */}
+                    <div className="space-y-4 bg-accent/20 p-5 rounded-2xl border border-border">
+                      <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cores da Identidade</h5>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Cor Primária</label>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="color"
+                              value={brandingForm.primaryColor}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, primaryColor: e.target.value })}
+                              className="h-9 w-9 rounded cursor-pointer border border-border bg-transparent p-0"
+                            />
+                            <input
+                              type="text"
+                              value={brandingForm.primaryColor}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, primaryColor: e.target.value })}
+                              className="w-full p-1 border border-border rounded text-xs text-center outline-none bg-background font-mono"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Cor Secundária</label>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="color"
+                              value={brandingForm.secondaryColor || "#0f172a"}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, secondaryColor: e.target.value })}
+                              className="h-9 w-9 rounded cursor-pointer border border-border bg-transparent p-0"
+                            />
+                            <input
+                              type="text"
+                              value={brandingForm.secondaryColor || ""}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, secondaryColor: e.target.value })}
+                              className="w-full p-1 border border-border rounded text-xs text-center outline-none bg-background font-mono"
+                              placeholder="#0f172a"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Cor Destaque</label>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="color"
+                              value={brandingForm.accentColor || "#3b82f6"}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, accentColor: e.target.value })}
+                              className="h-9 w-9 rounded cursor-pointer border border-border bg-transparent p-0"
+                            />
+                            <input
+                              type="text"
+                              value={brandingForm.accentColor || ""}
+                              onChange={(e) => setBrandingForm({ ...brandingForm, accentColor: e.target.value })}
+                              className="w-full p-1 border border-border rounded text-xs text-center outline-none bg-background font-mono"
+                              placeholder="#3b82f6"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="pt-2">
+                        <div className="text-[10px] text-muted-foreground">Pré-visualização da Paleta:</div>
+                        <div className="flex gap-1 h-4 w-full rounded-md overflow-hidden border border-border mt-1">
+                          <div className="flex-1" style={{ backgroundColor: brandingForm.primaryColor }} />
+                          <div className="flex-1" style={{ backgroundColor: brandingForm.secondaryColor || "#0f172a" }} />
+                          <div className="flex-1" style={{ backgroundColor: brandingForm.accentColor || "#3b82f6" }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Logotipo */}
+                    <div className="space-y-4 bg-accent/20 p-5 rounded-2xl border border-border flex flex-col justify-between">
+                      <div>
+                        <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Logotipo da Empresa</h5>
+                        <div className="flex items-center gap-4">
+                          {brandingForm.logoBase64 ? (
+                            <div className="h-20 w-20 rounded-xl bg-card border border-border flex items-center justify-center p-2 overflow-hidden shrink-0">
+                              <img src={brandingForm.logoBase64} alt="Logo Preview" className="max-h-full max-w-full object-contain" />
+                            </div>
+                          ) : (
+                            <div className="h-20 w-20 rounded-xl bg-card border border-dashed border-muted-foreground/30 flex items-center justify-center text-xs text-muted-foreground text-center p-1 shrink-0">
+                              Sem Logo
+                            </div>
+                          )}
+                          <div className="space-y-2 w-full">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              id="logo-file-input"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                            />
+                            <label
+                              htmlFor="logo-file-input"
+                              className="cursor-pointer inline-flex items-center justify-center px-4 py-2 border border-border bg-card hover:bg-accent rounded-xl text-xs font-bold w-full transition-colors hover:bg-accent/80"
+                            >
+                              Carregar Imagem
+                            </label>
+                            {brandingForm.logoBase64 && (
+                              <button
+                                type="button"
+                                onClick={() => setBrandingForm({ ...brandingForm, logoBase64: "" })}
+                                className="w-full text-center text-xs text-red-500 hover:underline cursor-pointer"
+                              >
+                                Remover logotipo
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Formato recomendado: PNG transparente ou SVG. Tamanho máximo de 2MB.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid 4: Rodapé e Contato Comercial */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Rodapé das Propostas</h4>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Texto de Termos / Rodapé</label>
+                      <textarea
+                        rows={5}
+                        value={brandingForm.proposalFooterText}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, proposalFooterText: e.target.value })}
+                        className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm resize-none"
+                        placeholder="Ex: Preços válidos por 15 dias. Condições de pagamento conforme acordado."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Contato Comercial da Proposta</h4>
+                    <div className="space-y-3 bg-accent/20 p-5 rounded-2xl border border-border">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Nome do Contato</label>
+                        <input
+                          type="text"
+                          value={brandingForm.commercialContactName}
+                          onChange={(e) => setBrandingForm({ ...brandingForm, commercialContactName: e.target.value })}
+                          className="w-full p-2 bg-background border border-border rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Ex: João da Silva"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">E-mail Comercial</label>
+                        <input
+                          type="email"
+                          value={brandingForm.commercialContactEmail}
+                          onChange={(e) => setBrandingForm({ ...brandingForm, commercialContactEmail: e.target.value })}
+                          className="w-full p-2 bg-background border border-border rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Ex: joao.silva@empresa.com"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Telefone Comercial</label>
+                        <input
+                          type="text"
+                          value={brandingForm.commercialContactPhone}
+                          onChange={(e) => setBrandingForm({ ...brandingForm, commercialContactPhone: e.target.value })}
+                          className="w-full p-2 bg-background border border-border rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Ex: (11) 98888-8888"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Salvar */}
+                <div className="flex justify-end pt-4 border-t border-border">
+                  <button
+                    type="submit"
+                    disabled={brandingSaving}
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 text-sm shrink-0 cursor-pointer"
+                  >
+                    {brandingSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Salvar Identidade Visual
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {activeSubTab === "roles" ? (
+                roles.map((role) => (
               <motion.div 
                 key={role.id}
                 initial={{ opacity: 0, y: 10 }}

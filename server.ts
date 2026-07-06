@@ -56,9 +56,9 @@ async function startServer() {
     console.log("Fetching dashboard data...");
     try {
       const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
-        prisma.employee.findMany({ 
+        prisma.employee.findMany({
           where: { status: "ACTIVE" },
-          include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } } 
+          include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } }
         }),
         prisma.machine.findMany({ include: { MachineCostComponent: true } }),
         prisma.product.findMany({ where: { status: "ACTIVE" } }),
@@ -82,7 +82,7 @@ async function startServer() {
       // Verificação de Parâmetros Globais para Custo Máquina
       const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
       const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
-      
+
       if (!energyCostParam || !workingHoursParam) {
         return res.status(400).json({ error: "CONFIG_MISSING", message: "Parâmetros globais de energia e/ou horas trabalhadas não configurados." });
       }
@@ -118,7 +118,7 @@ async function startServer() {
 
         const divisor = 1 - taxRate - commRate - otherRate - marginRate;
         const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
-        
+
         const totalTaxes = suggestedPrice * taxRate;
         const totalComm = suggestedPrice * commRate;
         const marginAbs = suggestedPrice - totalTaxes - totalComm - freight - analysis.totalGerencialCost;
@@ -251,7 +251,7 @@ async function startServer() {
   app.delete("/api/machines/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      
+
       const inUse = await prisma.productRouting.findFirst({ where: { machineId: id } });
       if (inUse) {
         return res.status(400).json({ error: "IN_USE", message: "Não é possível excluir esta máquina porque ela está vinculada a roteiros de produção." });
@@ -300,236 +300,236 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  
-// --- API: Employees (Funcionários) ---
-app.get("/api/employees", async (req, res) => {
-  const employees = await prisma.employee.findMany({
-    include: {
-      Role: true,
-      EmployeePayrollComponent: {
-        include: { PayrollComponent: true }
-      }
-    },
-    orderBy: { name: "asc" },
-  });
 
-  // Lógica de Cálculo de Custo (Motor de Custeio HH)
-  const employeesWithCosts = employees.map((emp) => {
-    const salary = Number(emp.salary);
-    let totalBenefits = 0;
-    let totalCharges = 0;
-    let totalProvisions = 0;
-
-    emp.EmployeePayrollComponent.forEach((rel) => {
-      const comp = rel.PayrollComponent;
-      const value = Number(comp.value);
-      const amount =
-        comp.calculationType === "PERCENTAGE"
-          ? (salary * value) / 100
-          : value;
-
-      if (comp.type === "BENEFIT") totalBenefits += amount;
-      if (comp.type === "CHARGE") totalCharges += amount;
-      if (comp.type === "PROVISION") totalProvisions += amount;
+  // --- API: Employees (Funcionários) ---
+  app.get("/api/employees", async (req, res) => {
+    const employees = await prisma.employee.findMany({
+      include: {
+        Role: true,
+        EmployeePayrollComponent: {
+          include: { PayrollComponent: true }
+        }
+      },
+      orderBy: { name: "asc" },
     });
 
-    const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
-    const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
-    const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
-    const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
+    // Lógica de Cálculo de Custo (Motor de Custeio HH)
+    const employeesWithCosts = employees.map((emp) => {
+      const salary = Number(emp.salary);
+      let totalBenefits = 0;
+      let totalCharges = 0;
+      let totalProvisions = 0;
 
-    return {
-      ...emp,
-      costs: {
-        salary,
-        totalBenefits,
-        totalCharges,
-        totalProvisions,
-        totalMonthlyCost,
-        costPerContractedHour,
-        costPerProductiveHour,
-        productiveHours
-      }
-    };
+      emp.EmployeePayrollComponent.forEach((rel) => {
+        const comp = rel.PayrollComponent;
+        const value = Number(comp.value);
+        const amount =
+          comp.calculationType === "PERCENTAGE"
+            ? (salary * value) / 100
+            : value;
+
+        if (comp.type === "BENEFIT") totalBenefits += amount;
+        if (comp.type === "CHARGE") totalCharges += amount;
+        if (comp.type === "PROVISION") totalProvisions += amount;
+      });
+
+      const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
+      const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
+      const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
+      const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
+
+      return {
+        ...emp,
+        costs: {
+          salary,
+          totalBenefits,
+          totalCharges,
+          totalProvisions,
+          totalMonthlyCost,
+          costPerContractedHour,
+          costPerProductiveHour,
+          productiveHours
+        }
+      };
+    });
+
+    res.json(employeesWithCosts);
   });
 
-  res.json(employeesWithCosts);
-});
+  function isNonEmptyString(value: unknown): value is string {
+    return typeof value === "string" && value.trim().length > 0;
+  }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
+  function normalizeOptionalText(value: unknown): string | null {
+    return isNonEmptyString(value) ? value.trim() : null;
+  }
 
-function normalizeOptionalText(value: unknown): string | null {
-  return isNonEmptyString(value) ? value.trim() : null;
-}
+  function normalizeRequiredText(value: unknown): string {
+    return isNonEmptyString(value) ? value.trim() : "";
+  }
 
-function normalizeRequiredText(value: unknown): string {
-  return isNonEmptyString(value) ? value.trim() : "";
-}
+  function toNumber(value: unknown, fallback = 0): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
 
-function toNumber(value: unknown, fallback = 0): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+  function isUuid(value: unknown): value is string {
+    if (typeof value !== "string") return false;
+    const v = value.trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  }
 
-function isUuid(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  const v = value.trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-}
+  function sanitizeUuidArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0 && isUuid(item));
+  }
 
-function sanitizeUuidArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0 && isUuid(item));
-}
+  app.post("/api/employees", async (req, res) => {
+    try {
+      const {
+        name,
+        roleId,
+        department,
+        costCenter,
+        classification,
+        salary,
+        monthlyHours,
+        productivity,
+        status,
+        componentIds
+      } = req.body;
 
-app.post("/api/employees", async (req, res) => {
-  try {
-    const {
-      name,
-      roleId,
-      department,
-      costCenter,
-      classification,
-      salary,
-      monthlyHours,
-      productivity,
-      status,
-      componentIds
-    } = req.body;
+      const cleanName = normalizeRequiredText(name);
+      const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
+      const cleanComponentIds = sanitizeUuidArray(componentIds);
 
-    const cleanName = normalizeRequiredText(name);
-    const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
-    const cleanComponentIds = sanitizeUuidArray(componentIds);
+      if (!cleanName) {
+        return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
+      }
 
-    if (!cleanName) {
-      return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
-    }
+      if (!cleanRoleId) {
+        return res.status(400).json({ error: "Selecione um cargo válido." });
+      }
 
-    if (!cleanRoleId) {
-      return res.status(400).json({ error: "Selecione um cargo válido." });
-    }
-
-    const employee = await prisma.employee.create({
-      data: {
-        name: cleanName,
-        roleId: cleanRoleId,
-        department: normalizeOptionalText(department),
-        costCenter: normalizeOptionalText(costCenter),
-        classification: normalizeOptionalText(classification),
-        salary: toNumber(salary, 0),
-        monthlyHours: toNumber(monthlyHours, 0),
-        productivity: toNumber(productivity, 0),
-        status: normalizeOptionalText(status) ?? "ACTIVE",
-        EmployeePayrollComponent:
-          cleanComponentIds.length > 0
-            ? {
+      const employee = await prisma.employee.create({
+        data: {
+          name: cleanName,
+          roleId: cleanRoleId,
+          department: normalizeOptionalText(department),
+          costCenter: normalizeOptionalText(costCenter),
+          classification: normalizeOptionalText(classification),
+          salary: toNumber(salary, 0),
+          monthlyHours: toNumber(monthlyHours, 0),
+          productivity: toNumber(productivity, 0),
+          status: normalizeOptionalText(status) ?? "ACTIVE",
+          EmployeePayrollComponent:
+            cleanComponentIds.length > 0
+              ? {
                 create: cleanComponentIds.map((id) => ({
                   PayrollComponent: { connect: { id } }
                 }))
               }
-            : undefined
-      },
-      include: {
-        Role: true,
-        EmployeePayrollComponent: {
-          include: { PayrollComponent: true }
+              : undefined
+        },
+        include: {
+          Role: true,
+          EmployeePayrollComponent: {
+            include: { PayrollComponent: true }
+          }
         }
+      });
+
+      res.json(employee);
+    } catch (error) {
+      console.error("Create employee error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Erro ao criar funcionário"
+      });
+    }
+  });
+
+  app.put("/api/employees/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        componentIds,
+        name,
+        roleId,
+        department,
+        costCenter,
+        classification,
+        salary,
+        monthlyHours,
+        productivity,
+        status
+      } = req.body;
+
+      if (!isUuid(id)) {
+        return res.status(400).json({ error: "ID de funcionário inválido." });
       }
-    });
 
-    res.json(employee);
-  } catch (error) {
-    console.error("Create employee error:", error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Erro ao criar funcionário"
-    });
-  }
-});
+      const cleanName = normalizeRequiredText(name);
+      const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
+      const cleanComponentIds = sanitizeUuidArray(componentIds);
 
-app.put("/api/employees/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      componentIds,
-      name,
-      roleId,
-      department,
-      costCenter,
-      classification,
-      salary,
-      monthlyHours,
-      productivity,
-      status
-    } = req.body;
+      if (!cleanName) {
+        return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
+      }
 
-    if (!isUuid(id)) {
-      return res.status(400).json({ error: "ID de funcionário inválido." });
-    }
+      if (!cleanRoleId) {
+        return res.status(400).json({ error: "Selecione um cargo válido." });
+      }
 
-    const cleanName = normalizeRequiredText(name);
-    const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
-    const cleanComponentIds = sanitizeUuidArray(componentIds);
+      await prisma.employeePayrollComponent.deleteMany({
+        where: { employeeId: id }
+      });
 
-    if (!cleanName) {
-      return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
-    }
-
-    if (!cleanRoleId) {
-      return res.status(400).json({ error: "Selecione um cargo válido." });
-    }
-
-    await prisma.employeePayrollComponent.deleteMany({
-      where: { employeeId: id }
-    });
-
-    const employee = await prisma.employee.update({
-      where: { id },
-      data: {
-        name: cleanName,
-        roleId: cleanRoleId,
-        department: normalizeOptionalText(department),
-        costCenter: normalizeOptionalText(costCenter),
-        classification: normalizeOptionalText(classification),
-        salary: toNumber(salary, 0),
-        monthlyHours: toNumber(monthlyHours, 0),
-        productivity: toNumber(productivity, 0),
-        status: normalizeOptionalText(status) ?? "ACTIVE",
-        EmployeePayrollComponent:
-          cleanComponentIds.length > 0
-            ? {
+      const employee = await prisma.employee.update({
+        where: { id },
+        data: {
+          name: cleanName,
+          roleId: cleanRoleId,
+          department: normalizeOptionalText(department),
+          costCenter: normalizeOptionalText(costCenter),
+          classification: normalizeOptionalText(classification),
+          salary: toNumber(salary, 0),
+          monthlyHours: toNumber(monthlyHours, 0),
+          productivity: toNumber(productivity, 0),
+          status: normalizeOptionalText(status) ?? "ACTIVE",
+          EmployeePayrollComponent:
+            cleanComponentIds.length > 0
+              ? {
                 create: cleanComponentIds.map((compId) => ({
                   PayrollComponent: { connect: { id: compId } }
                 }))
               }
-            : undefined
-      },
-      include: {
-        Role: true,
-        EmployeePayrollComponent: {
-          include: { PayrollComponent: true }
+              : undefined
+        },
+        include: {
+          Role: true,
+          EmployeePayrollComponent: {
+            include: { PayrollComponent: true }
+          }
         }
-      }
-    });
+      });
 
-    res.json(employee);
-  } catch (error) {
-    console.error("Update employee error:", error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Erro ao atualizar funcionário"
-    });
-  }
-});
+      res.json(employee);
+    } catch (error) {
+      console.error("Update employee error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Erro ao atualizar funcionário"
+      });
+    }
+  });
 
-app.delete("/api/employees/:id", async (req, res) => {
-  const { id } = req.params;
-  await prisma.employee.delete({ where: { id } });
-  res.json({ success: true });
-});
+  app.delete("/api/employees/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.employee.delete({ where: { id } });
+    res.json({ success: true });
+  });
 
   // --- API: Materials (Matérias-Primas e Insumos) ---
   app.get("/api/materials/import/template", (req, res) => {
@@ -550,10 +550,10 @@ app.delete("/api/employees/:id", async (req, res) => {
       const result = await ServerImporter.parseExcel(req.file.buffer, MaterialImportConfig);
       const importId = crypto.randomUUID();
       importCache.set(importId, result.data);
-      
+
       // Cleanup after 30 mins
       setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
-      
+
       res.json({ ...result, importId });
     } catch (error) {
       console.error("Import preview error:", error);
@@ -581,7 +581,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       const existingCodes = new Set(existing.map(e => e.code));
 
       const toCreate = data.filter(d => !existingCodes.has(d.code));
-      
+
       if (toCreate.length > 0) {
         await prisma.material.createMany({
           data: toCreate.map(d => ({
@@ -601,10 +601,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         });
       }
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         count: toCreate.length,
-        skipped: existingCodes.size 
+        skipped: existingCodes.size
       });
     } catch (error) {
       console.error("Import confirm error:", error);
@@ -640,10 +640,10 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   app.post("/api/materials", async (req, res) => {
-    const { 
-      code, description, unit, category, supplier, 
-      currentCost, averageCost, standardCost, freight, 
-      standardLoss, conversionFactor 
+    const {
+      code, description, unit, category, supplier,
+      currentCost, averageCost, standardCost, freight,
+      standardLoss, conversionFactor
     } = req.body;
 
     const material = await prisma.material.create({
@@ -706,7 +706,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   // --- Helper Functions for Recursive BOM ---
   async function checkBOMCycle(parentId: string, childProductId: string): Promise<boolean> {
     if (parentId === childProductId) return true;
-    
+
     const children = await prisma.productBOM.findMany({
       where: { productId: childProductId },
       select: { childProductId: true }
@@ -784,17 +784,17 @@ app.delete("/api/employees/:id", async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const results = await ServerImporter.parseExcelMulti(req.file.buffer, EngineeringImportConfigs);
-      
+
       const cadastro = results["CADASTRO"];
       const estrutura = results["ESTRUTURA"];
-      
+
       const fileSkus = new Set(cadastro.data.map(d => d.sku));
-      
+
       // Cross-sheet validation
       estrutura.data.forEach((item, idx) => {
         const rowNum = idx + 2;
         const parentInFile = cadastro.data.find(d => d.sku === item.parentSku);
-        
+
         if (parentInFile && parentInFile.type === "PRODUCT" && item.childType === "MATERIAL") {
           estrutura.errors.push({
             row: rowNum,
@@ -808,10 +808,10 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       const importId = crypto.randomUUID();
       importCache.set(importId, results);
-      
+
       // Cleanup after 30 mins
       setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
-      
+
       res.json({ ...results, importId });
     } catch (error) {
       console.error("Import preview error:", error);
@@ -830,7 +830,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       estrutura = cached["ESTRUTURA"].data;
       importCache.delete(importId);
     }
-    
+
     if (!cadastro || !estrutura) {
       return res.status(400).json({ success: false, error: "Dados de cadastro ou estrutura ausentes ou sessão expirada." });
     }
@@ -863,11 +863,11 @@ app.delete("/api/employees/:id", async (req, res) => {
         // 2. Create BOMs
         // Refresh product list to get IDs (including newly created ones)
         const allSkus = [...new Set([
-          ...skus, 
-          ...estrutura.map((e: any) => e.parentSku), 
+          ...skus,
+          ...estrutura.map((e: any) => e.parentSku),
           ...estrutura.filter((e: any) => e.childType === "COMPONENT").map((e: any) => e.childIdentifier)
         ])];
-        
+
         const products = await tx.product.findMany({
           where: { sku: { in: allSkus as string[] } },
           select: { id: true, sku: true }
@@ -911,8 +911,8 @@ app.delete("/api/employees/:id", async (req, res) => {
           await tx.productBOM.createMany({ data: bomData });
         }
 
-        return { 
-          productsCreated: toCreate.length, 
+        return {
+          productsCreated: toCreate.length,
           bomCreated: bomData.length,
           skipped: existingSkus.size
         };
@@ -921,8 +921,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       res.json({ success: true, ...result });
     } catch (error) {
       console.error("Import confirm error:", error);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         error: "Erro ao salvar dados no banco de dados. Verifique se há SKUs duplicados ou dados inválidos.",
         details: error instanceof Error ? error.message : String(error)
       });
@@ -932,11 +932,11 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.get("/api/products", async (req, res) => {
     const products = await prisma.product.findMany({
       include: {
-        ProductBOM: { 
-          include: { 
+        ProductBOM: {
+          include: {
             Material: true,
             ChildProduct: true
-          } 
+          }
         },
         ProductRouting: { include: { Machine: true, Role: true } },
       },
@@ -950,11 +950,11 @@ app.delete("/api/employees/:id", async (req, res) => {
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
-        ProductBOM: { 
-          include: { 
+        ProductBOM: {
+          include: {
             Material: true,
             ChildProduct: true
-          } 
+          }
         },
         ProductRouting: { include: { Machine: true, Role: true } },
       },
@@ -990,7 +990,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (item.childProductId) {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
           if (!child) return res.status(400).json({ error: "Componente não encontrado." });
-          
+
           if (effectiveType === "PRODUCT" && child.type !== "COMPONENT") {
             return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
           }
@@ -1008,10 +1008,10 @@ app.delete("/api/employees/:id", async (req, res) => {
       }
 
       // Sanitização dos campos do Processo Padrão (null-safe, NaN-safe)
-      const safeCycle = cycleTimeSeconds   == null || cycleTimeSeconds   === "" ? null : Number(cycleTimeSeconds);
-      const safeCav   = cavities           == null || cavities           === "" ? null : Number(cavities);
-      const safeSetup = setupTimeMin       == null || setupTimeMin       === "" ? null : Number(setupTimeMin);
-      const safeEff   = efficiencyExpected == null || efficiencyExpected === "" ? null : Number(efficiencyExpected);
+      const safeCycle = cycleTimeSeconds == null || cycleTimeSeconds === "" ? null : Number(cycleTimeSeconds);
+      const safeCav = cavities == null || cavities === "" ? null : Number(cavities);
+      const safeSetup = setupTimeMin == null || setupTimeMin === "" ? null : Number(setupTimeMin);
+      const safeEff = efficiencyExpected == null || efficiencyExpected === "" ? null : Number(efficiencyExpected);
 
       const hasProcessoField = safeCycle !== null || safeCav !== null || safeSetup !== null || safeEff !== null;
 
@@ -1121,21 +1121,21 @@ app.delete("/api/employees/:id", async (req, res) => {
       // Detectar presença EXPLÍCITA de cada campo no payload (chave ausente ≠ null)
       const body = req.body;
       const cycleInPayload = Object.prototype.hasOwnProperty.call(body, "cycleTimeSeconds");
-      const cavInPayload   = Object.prototype.hasOwnProperty.call(body, "cavities");
+      const cavInPayload = Object.prototype.hasOwnProperty.call(body, "cavities");
       const setupInPayload = Object.prototype.hasOwnProperty.call(body, "setupTimeMin");
-      const effInPayload   = Object.prototype.hasOwnProperty.call(body, "efficiencyExpected");
+      const effInPayload = Object.prototype.hasOwnProperty.call(body, "efficiencyExpected");
 
       // Sanitizar apenas os campos que vieram explicitamente no payload
       const safeCycle = cycleInPayload ? (cycleTimeSeconds == null || cycleTimeSeconds === "" ? null : Number(cycleTimeSeconds)) : undefined;
-      const safeCav   = cavInPayload   ? (cavities         == null || cavities         === "" ? null : Number(cavities))         : undefined;
-      const safeSetup = setupInPayload ? (setupTimeMin     == null || setupTimeMin     === "" ? null : Number(setupTimeMin))     : undefined;
-      const safeEff   = effInPayload   ? (efficiencyExpected == null || efficiencyExpected === "" ? null : Number(efficiencyExpected)) : undefined;
+      const safeCav = cavInPayload ? (cavities == null || cavities === "" ? null : Number(cavities)) : undefined;
+      const safeSetup = setupInPayload ? (setupTimeMin == null || setupTimeMin === "" ? null : Number(setupTimeMin)) : undefined;
+      const safeEff = effInPayload ? (efficiencyExpected == null || efficiencyExpected === "" ? null : Number(efficiencyExpected)) : undefined;
 
       // Valores resolvidos: payload tem precedência; ausente no payload → preserva do banco
       const resolvedCycle = safeCycle !== undefined ? safeCycle : (currentProduct.cycleTimeSeconds !== null ? Number(currentProduct.cycleTimeSeconds) : null);
-      const resolvedCav   = safeCav   !== undefined ? safeCav   : (currentProduct.cavities           !== null ? Number(currentProduct.cavities)           : null);
-      const resolvedSetup = safeSetup !== undefined ? safeSetup : (currentProduct.setupTimeMin       !== null ? Number(currentProduct.setupTimeMin)       : null);
-      const resolvedEff   = safeEff   !== undefined ? safeEff   : (currentProduct.efficiencyExpected !== null ? Number(currentProduct.efficiencyExpected) : null);
+      const resolvedCav = safeCav !== undefined ? safeCav : (currentProduct.cavities !== null ? Number(currentProduct.cavities) : null);
+      const resolvedSetup = safeSetup !== undefined ? safeSetup : (currentProduct.setupTimeMin !== null ? Number(currentProduct.setupTimeMin) : null);
+      const resolvedEff = safeEff !== undefined ? safeEff : (currentProduct.efficiencyExpected !== null ? Number(currentProduct.efficiencyExpected) : null);
 
       const hasProcessoField = resolvedCycle !== null || resolvedCav !== null || resolvedSetup !== null || resolvedEff !== null;
 
@@ -1232,15 +1232,15 @@ app.delete("/api/employees/:id", async (req, res) => {
       // Check if used in other BOMs
       if (product.UsedInBOM.length > 0) {
         const parentNames = product.UsedInBOM.map(b => b.ParentProduct.name).join(", ");
-        return res.status(409).json({ 
-          error: `Não é possível excluir este item pois ele é utilizado na estrutura de: ${parentNames}.` 
+        return res.status(409).json({
+          error: `Não é possível excluir este item pois ele é utilizado na estrutura de: ${parentNames}.`
         });
       }
 
       // Check if used in Proposals
       if (product.ProposalItem.length > 0) {
-        return res.status(409).json({ 
-          error: "Não é possível excluir este item pois ele já possui histórico em propostas comerciais." 
+        return res.status(409).json({
+          error: "Não é possível excluir este item pois ele já possui histórico em propostas comerciais."
         });
       }
 
@@ -1291,22 +1291,22 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (product.UsedInBOM.length > 0) {
           const parentNames = product.UsedInBOM.map(b => b.ParentProduct.name).join(", ");
           results.blocked++;
-          results.details.push({ 
-            id, 
-            name: product.name, 
-            status: "blocked", 
-            reason: `Utilizado na estrutura de: ${parentNames}.` 
+          results.details.push({
+            id,
+            name: product.name,
+            status: "blocked",
+            reason: `Utilizado na estrutura de: ${parentNames}.`
           });
           continue;
         }
 
         if (product.ProposalItem.length > 0) {
           results.blocked++;
-          results.details.push({ 
-            id, 
-            name: product.name, 
-            status: "blocked", 
-            reason: "Possui histórico em propostas comerciais." 
+          results.details.push({
+            id,
+            name: product.name,
+            status: "blocked",
+            reason: "Possui histórico em propostas comerciais."
           });
           continue;
         }
@@ -1361,12 +1361,12 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.delete("/api/indirect-costs/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      
+
       const target = await prisma.indirectCost.findUnique({ where: { id } });
       if (target?.category === "GLOBAL_PARAM") {
         return res.status(400).json({ error: "PROTECTED_PARAM", message: "Este registro é um parâmetro global do sistema e não pode ser excluído por esta tela." });
       }
-      
+
       await prisma.indirectCost.delete({ where: { id } });
       res.json({ success: true });
     } catch (err) {
@@ -1460,39 +1460,39 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.post("/api/pricing/bulk-delete", async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
-       return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
+      return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
     }
 
     let successCount = 0; let errorCount = 0;
     const errorsList = [];
 
     for (const id of ids) {
-       try {
-         await prisma.productPricing.delete({ where: { id } });
-         successCount++;
-       } catch (err: any) {
-         errorCount++;
-         if (err.code === 'P2003') {
-           errorsList.push({ id, message: "Bloqueio relacional ativo (Vínculo de Restrição)." });
-         } else {
-           errorsList.push({ id, message: err.message || "Erro genérico." });
-         }
-       }
+      try {
+        await prisma.productPricing.delete({ where: { id } });
+        successCount++;
+      } catch (err: any) {
+        errorCount++;
+        if (err.code === 'P2003') {
+          errorsList.push({ id, message: "Bloqueio relacional ativo (Vínculo de Restrição)." });
+        } else {
+          errorsList.push({ id, message: err.message || "Erro genérico." });
+        }
+      }
     }
 
     res.json({
-       total: ids.length, success: successCount, error: errorCount,
-       details: errorsList
+      total: ids.length, success: successCount, error: errorCount,
+      details: errorsList
     });
   });
 
   app.delete("/api/pricing/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      
+
       const target = await prisma.productPricing.findUnique({ where: { id } });
       if (!target) return res.status(404).json({ error: "Formação de preço não encontrada no sistema." });
-      
+
       await prisma.productPricing.delete({ where: { id } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1523,31 +1523,31 @@ app.delete("/api/employees/:id", async (req, res) => {
       const summary = (costData as any).summary || costData;
       const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
       const opex = Number(summary.totalOPEX_Unit);
-    
-    // Custo Fabril Completo = CIU (que já inclui CIF)
-    const custoFabril = ciu;
-    // Custo Gerencial Total = CIU + OPEX
-    const custoGerencial = ciu + opex;
 
-    const taxRate = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
-    const commRate = Number(pricing.commission) / 100;
-    const marginRate = Number(pricing.desiredMargin) / 100;
-    const otherRate = Number(pricing.otherVariables) / 100;
-    const freight = Number(pricing.freightOut);
+      // Custo Fabril Completo = CIU (que já inclui CIF)
+      const custoFabril = ciu;
+      // Custo Gerencial Total = CIU + OPEX
+      const custoGerencial = ciu + opex;
 
-    // Cálculo do Preço de Venda (Markup Divisor)
-    // PV = (Custo + Frete) / (1 - Impostos - Comissões - Outros - Margem)
-    const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-    
-    if (divisor <= 0) return res.status(400).json({ error: "Margem e impostos excedem 100% do preço." });
+      const taxRate = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+      const commRate = Number(pricing.commission) / 100;
+      const marginRate = Number(pricing.desiredMargin) / 100;
+      const otherRate = Number(pricing.otherVariables) / 100;
+      const freight = Number(pricing.freightOut);
 
-    const suggestedPrice = (custoFabril + freight) / divisor;
-    const totalTaxes = suggestedPrice * taxRate;
-    const totalCommission = suggestedPrice * commRate;
-    const totalOther = suggestedPrice * otherRate;
+      // Cálculo do Preço de Venda (Markup Divisor)
+      // PV = (Custo + Frete) / (1 - Impostos - Comissões - Outros - Margem)
+      const divisor = 1 - taxRate - commRate - otherRate - marginRate;
 
-    const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
-    const operationalMargin = contributionMargin - opex;
+      if (divisor <= 0) return res.status(400).json({ error: "Margem e impostos excedem 100% do preço." });
+
+      const suggestedPrice = (custoFabril + freight) / divisor;
+      const totalTaxes = suggestedPrice * taxRate;
+      const totalCommission = suggestedPrice * commRate;
+      const totalOther = suggestedPrice * otherRate;
+
+      const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
+      const operationalMargin = contributionMargin - opex;
 
       res.json({
         product: costData.name,
@@ -1578,9 +1578,9 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   app.post("/api/pricing/simulate-batch", async (req, res) => {
     const { productIds, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
-    
+
     if (!Array.isArray(productIds) || productIds.length === 0) return res.status(400).json({ error: "Nenhum produto selecionado" });
-    
+
     try {
       const taxRule = await prisma.taxRule.findUnique({
         where: { id: taxRuleId },
@@ -1610,7 +1610,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 
           const summary = (costData as any).summary || costData;
           const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
-          
+
           if (divisor <= 0) {
             errorCount++;
             results.push({ productId: pid, sku: summary.sku, name: summary.name, status: "ERROR", message: "Margem e impostos excedem 100%." });
@@ -1645,21 +1645,21 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   app.post("/api/pricing/apply-batch", async (req, res) => {
     const { validResults, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
-    
+
     if (!Array.isArray(validResults) || validResults.length === 0) return res.status(400).json({ error: "Nenhum resultado válido fornecido" });
 
     try {
-       let appliedCount = 0;
-       for (const item of validResults) {
-          if (item.status !== "SUCCESS") continue;
-          await prisma.productPricing.upsert({
-            where: { productId_taxRuleId: { productId: item.productId, taxRuleId } },
-            update: { desiredMargin, commission, freightOut, otherVariables },
-            create: { productId: item.productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables }
-          });
-          appliedCount++;
-       }
-       res.json({ success: true, appliedCount });
+      let appliedCount = 0;
+      for (const item of validResults) {
+        if (item.status !== "SUCCESS") continue;
+        await prisma.productPricing.upsert({
+          where: { productId_taxRuleId: { productId: item.productId, taxRuleId } },
+          update: { desiredMargin, commission, freightOut, otherVariables },
+          create: { productId: item.productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables }
+        });
+        appliedCount++;
+      }
+      res.json({ success: true, appliedCount });
     } catch (err) {
       console.error("Batch apply error:", err);
       res.status(500).json({ error: "Erro ao aplicar premissas em banco." });
@@ -1731,51 +1731,51 @@ app.delete("/api/employees/:id", async (req, res) => {
       };
 
       // 2. Aplicar Ajustes (Simulação)
-    const matAdj = 1 + (Number(sim.materialAdj) / 100);
-    const laborAdj = 1 + (Number(sim.laborAdj) / 100);
-    const indirectAdj = 1 + (Number(sim.indirectAdj) / 100);
-    const efficiencyAdj = 1 + (Number(sim.efficiencyAdj) / 100);
-    const marginAdj = 1 + (Number(sim.marginAdj) / 100);
+      const matAdj = 1 + (Number(sim.materialAdj) / 100);
+      const laborAdj = 1 + (Number(sim.laborAdj) / 100);
+      const indirectAdj = 1 + (Number(sim.indirectAdj) / 100);
+      const efficiencyAdj = 1 + (Number(sim.efficiencyAdj) / 100);
+      const marginAdj = 1 + (Number(sim.marginAdj) / 100);
 
-    // Recalcular Custo Industrial Simulado
-    const simCIU_Materials = base.ciu * 0.6 * matAdj; // Estimativa: 60% do CIU é material
-    const simCIU_Conversion = base.ciu * 0.3 * laborAdj / efficiencyAdj; // Estimativa: 30% é conversão
-    const simCIU_CIF = base.ciu * 0.1 * indirectAdj; // Estimativa: 10% é CIF
-    
-    const simCIU = simCIU_Materials + simCIU_Conversion + simCIU_CIF;
-    const simOPEX = base.custoGerencial - base.ciu;
-    const simCustoGerencial = simCIU + (simOPEX * indirectAdj);
+      // Recalcular Custo Industrial Simulado
+      const simCIU_Materials = base.ciu * 0.6 * matAdj; // Estimativa: 60% do CIU é material
+      const simCIU_Conversion = base.ciu * 0.3 * laborAdj / efficiencyAdj; // Estimativa: 30% é conversão
+      const simCIU_CIF = base.ciu * 0.1 * indirectAdj; // Estimativa: 10% é CIF
 
-    // Recalcular Preço Sugerido Simulado
-    const taxRate = base.premissas.taxRate / 100;
-    const commRate = base.premissas.commRate / 100;
-    const marginRate = (base.premissas.marginRate * marginAdj) / 100;
-    const freight = base.premissas.freight;
+      const simCIU = simCIU_Materials + simCIU_Conversion + simCIU_CIF;
+      const simOPEX = base.custoGerencial - base.ciu;
+      const simCustoGerencial = simCIU + (simOPEX * indirectAdj);
 
-    const divisor = 1 - taxRate - commRate - marginRate;
-    const simSuggestedPrice = (simCIU + freight) / divisor;
+      // Recalcular Preço Sugerido Simulado
+      const taxRate = base.premissas.taxRate / 100;
+      const commRate = base.premissas.commRate / 100;
+      const marginRate = (base.premissas.marginRate * marginAdj) / 100;
+      const freight = base.premissas.freight;
 
-    res.json({
-      base,
-      simulated: {
-        ciu: simCIU,
-        custoGerencial: simCustoGerencial,
-        suggestedPrice: simSuggestedPrice,
-        marginRate: marginRate * 100,
-        markup: simSuggestedPrice / simCIU,
-      },
-      delta: {
-        price: simSuggestedPrice - base.resultados.suggestedPrice,
-        pricePct: ((simSuggestedPrice / base.resultados.suggestedPrice) - 1) * 100,
-        ciu: simCIU - base.ciu,
-        ciuPct: ((simCIU / base.ciu) - 1) * 100,
-      }
-    });
-  } catch (error) {
-    console.error("Simulation comparison error:", error);
-    res.status(500).json({ error: "Erro ao comparar simulação" });
-  }
-});
+      const divisor = 1 - taxRate - commRate - marginRate;
+      const simSuggestedPrice = (simCIU + freight) / divisor;
+
+      res.json({
+        base,
+        simulated: {
+          ciu: simCIU,
+          custoGerencial: simCustoGerencial,
+          suggestedPrice: simSuggestedPrice,
+          marginRate: marginRate * 100,
+          markup: simSuggestedPrice / simCIU,
+        },
+        delta: {
+          price: simSuggestedPrice - base.resultados.suggestedPrice,
+          pricePct: ((simSuggestedPrice / base.resultados.suggestedPrice) - 1) * 100,
+          ciu: simCIU - base.ciu,
+          ciuPct: ((simCIU / base.ciu) - 1) * 100,
+        }
+      });
+    } catch (error) {
+      console.error("Simulation comparison error:", error);
+      res.status(500).json({ error: "Erro ao comparar simulação" });
+    }
+  });
 
   // --- Helper: Cálculo de Custo de Produto ---
   interface AnalysisCache {
@@ -1793,10 +1793,10 @@ app.delete("/api/employees/:id", async (req, res) => {
     const energyParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
     const hoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
     const hhOverrideParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "HH_VALUE_OVERRIDE");
-    
+
     const fhMonthlyRaw = Number(factoryHoursParam?.monthlyValue);
-    const energyRaw    = Number(energyParam?.monthlyValue);
-    const hoursRaw     = Number(hoursParam?.monthlyValue);
+    const energyRaw = Number(energyParam?.monthlyValue);
+    const hoursRaw = Number(hoursParam?.monthlyValue);
 
     if (!factoryHoursParam || !Number.isFinite(fhMonthlyRaw) || fhMonthlyRaw <= 0)
       throw new Error("CONFIG_MISSING: FACTORY_HOURS_MONTHLY inválido.");
@@ -1808,16 +1808,16 @@ app.delete("/api/employees/:id", async (req, res) => {
     const allEmps = await prisma.employee.findMany({ include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } } });
     let megaPayroll = 0;
     allEmps.forEach(e => {
-        const sal = Number(e.salary || e.Role?.baseSalary || 0);
-        let loads = 0;
-        e.EmployeePayrollComponent.forEach(r => {
-            loads += r.PayrollComponent.calculationType === "PERCENTAGE" ? (sal * Number(r.PayrollComponent.value)) / 100 : Number(r.PayrollComponent.value);
-        });
-        megaPayroll += sal + loads;
+      const sal = Number(e.salary || e.Role?.baseSalary || 0);
+      let loads = 0;
+      e.EmployeePayrollComponent.forEach(r => {
+        loads += r.PayrollComponent.calculationType === "PERCENTAGE" ? (sal * Number(r.PayrollComponent.value)) / 100 : Number(r.PayrollComponent.value);
+      });
+      megaPayroll += sal + loads;
     });
-    
+
     const autoHhCost = megaPayroll / (fhMonthlyRaw || 1);
-    
+
     let globalHhCost = 0;
     let hhSource: "AUTO" | "MANUAL" = "AUTO";
 
@@ -1832,15 +1832,15 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const totalOpex = indirects.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
-    return { 
-      indirectCosts: indirects, 
-      factoryHoursMonthly: fhMonthlyRaw, 
-      energyCost: energyRaw, 
-      workingHours: hoursRaw, 
+    return {
+      indirectCosts: indirects,
+      factoryHoursMonthly: fhMonthlyRaw,
+      energyCost: energyRaw,
+      workingHours: hoursRaw,
       globalHhCost,
       hhSource,
       autoHhCost,
-      opexRatePerHour: totalOpex / fhMonthlyRaw 
+      opexRatePerHour: totalOpex / fhMonthlyRaw
     };
   }
 
@@ -1849,7 +1849,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     try {
       const cache = await initAnalysisCache();
       const indirects = await prisma.indirectCost.findMany({ where: { category: "GLOBAL_PARAM" } });
-      
+
       const energy = indirects.find(c => c.description === "ENERGY_COST");
       const hours = indirects.find(c => c.description === "WORKING_HOURS");
       const factoryH = indirects.find(c => c.description === "FACTORY_HOURS_MONTHLY");
@@ -1879,6 +1879,118 @@ app.delete("/api/employees/:id", async (req, res) => {
       res.status(500).json({ error: "Erro ao carregar configurações globais." });
     }
   });
+
+  // --- API: Branding Settings ---
+  app.get("/api/branding-settings", async (req, res) => {
+    try {
+      let settings = await prisma.brandingSettings.findFirst();
+      if (!settings) {
+        settings = await prisma.brandingSettings.create({
+          data: {
+            companyName: "Lazarios",
+            tradeName: "Lazarios",
+            primaryColor: "#2563eb",
+            secondaryColor: "#0f172a",
+            accentColor: "#3b82f6",
+          }
+        });
+      }
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching branding settings:", error);
+      res.status(500).json({ error: "Erro ao carregar identidade visual." });
+    }
+  });
+
+  app.put("/api/branding-settings", async (req, res) => {
+    try {
+      const {
+        companyName,
+        tradeName,
+        document,
+        logoUrl,
+        logoBase64,
+        primaryColor,
+        secondaryColor,
+        accentColor,
+        address,
+        phone,
+        email,
+        website,
+        proposalFooterText,
+        commercialContactName,
+        commercialContactEmail,
+        commercialContactPhone
+      } = req.body;
+
+      if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
+        return res.status(400).json({ error: "VALIDATION_FAILED", message: "Nome da empresa é obrigatório." });
+      }
+
+      const hexRegex = /^#([0-9a-fA-F]{3}){1,2}$/;
+      if (primaryColor && !hexRegex.test(primaryColor)) {
+        return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor primária inválida. Deve ser um código hexadecimal (ex: #2563eb)." });
+      }
+      if (secondaryColor && !hexRegex.test(secondaryColor)) {
+        return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor secundária inválida. Deve ser um código hexadecimal." });
+      }
+      if (accentColor && !hexRegex.test(accentColor)) {
+        return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor de destaque inválida. Deve ser um código hexadecimal." });
+      }
+
+      let settings = await prisma.brandingSettings.findFirst();
+      if (settings) {
+        settings = await prisma.brandingSettings.update({
+          where: { id: settings.id },
+          data: {
+            companyName: companyName.trim(),
+            tradeName: tradeName?.trim() || companyName.trim(),
+            document: document?.trim() || null,
+            logoUrl: logoUrl?.trim() || null,
+            logoBase64: logoBase64 || null,
+            primaryColor: primaryColor || "#2563eb",
+            secondaryColor: secondaryColor || "#0f172a",
+            accentColor: accentColor || "#3b82f6",
+            address: address?.trim() || null,
+            phone: phone?.trim() || null,
+            email: email?.trim() || null,
+            website: website?.trim() || null,
+            proposalFooterText: proposalFooterText?.trim() || null,
+            commercialContactName: commercialContactName?.trim() || null,
+            commercialContactEmail: commercialContactEmail?.trim() || null,
+            commercialContactPhone: commercialContactPhone?.trim() || null,
+          }
+        });
+      } else {
+        settings = await prisma.brandingSettings.create({
+          data: {
+            companyName: companyName.trim(),
+            tradeName: tradeName?.trim() || companyName.trim(),
+            document: document?.trim() || null,
+            logoUrl: logoUrl?.trim() || null,
+            logoBase64: logoBase64 || null,
+            primaryColor: primaryColor || "#2563eb",
+            secondaryColor: secondaryColor || "#0f172a",
+            accentColor: accentColor || "#3b82f6",
+            address: address?.trim() || null,
+            phone: phone?.trim() || null,
+            email: email?.trim() || null,
+            website: website?.trim() || null,
+            proposalFooterText: proposalFooterText?.trim() || null,
+            commercialContactName: commercialContactName?.trim() || null,
+            commercialContactEmail: commercialContactEmail?.trim() || null,
+            commercialContactPhone: commercialContactPhone?.trim() || null,
+          }
+        });
+      }
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error saving branding settings:", error);
+      res.status(500).json({ error: "Erro ao salvar identidade visual." });
+    }
+  });
+
 
   async function getProductCostAnalysis(productId: string, cache?: AnalysisCache, includeDetails = false) {
     if (!cache) {
@@ -1911,7 +2023,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
         return { unitCost: matEffectiveCost * requiredQty };
       }
-      
+
       if (item.childProductId) {
         const childAnalysis = await getProductCostAnalysis(item.childProductId, cache);
         if (childAnalysis && !childAnalysis.error) {
@@ -1920,17 +2032,17 @@ app.delete("/api/employees/:id", async (req, res) => {
           return { unitCost: childUnitCost * requiredQty };
         }
       }
-      
+
       return { unitCost: 0 };
     }));
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações (A Mágica da Prioridade)
-    let operationItems: Array<{ 
-      totalHH: number, 
-      totalHM: number, 
+    let operationItems: Array<{
+      totalHH: number,
+      totalHM: number,
       totalTimeH: number,
-      breakdown?: any 
+      breakdown?: any
     }> = [];
 
     if (product.type === "COMPONENT" && product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0) {
@@ -1947,10 +2059,10 @@ app.delete("/api/employees/:id", async (req, res) => {
       const effDecimal = eff / 100;
       const machineHourCost = cache.energyCost / cache.workingHours;
       const cellHourCost = machineHourCost + cache.globalHhCost;
-      
+
       const netPph = (3600 / cycle) * cav * effDecimal;
       const unitTransform = cellHourCost / netPph;
-      
+
       const setupH = setup / 60;
       const setupCost = (setupH * cellHourCost) / lotSize;
       const totalStepCost = unitTransform + setupCost;
@@ -1958,11 +2070,11 @@ app.delete("/api/employees/:id", async (req, res) => {
       operationItems.push({
         totalHH: totalStepCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
         totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
-        totalTimeH: (1/netPph) + (setupH/lotSize),
+        totalTimeH: (1 / netPph) + (setupH / lotSize),
         breakdown: {
           source: "STANDARD_PROCESS",
           description: "Processo Padrão do Componente",
-          timeMin: (1/netPph) * 60,
+          timeMin: (1 / netPph) * 60,
           ratePerMin: cellHourCost / 60,
           machineCost: unitTransform * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0)),
           laborCost: unitTransform * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0)),
@@ -1992,7 +2104,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         const salary = Number(step.Role?.baseSalary || 0);
         let totalPayrollLoad = 0;
         const payrollComponents = roleData?.components || [];
-        
+
         if (payrollComponents.length > 0) {
           payrollComponents.forEach((rel: any) => {
             const comp = rel.PayrollComponent;
@@ -2023,7 +2135,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           breakdown: {
             source: "ROUTING",
             description: step.description || `Op. ${step.sequence}`,
-            timeMin: (1/netPph) * 60,
+            timeMin: (1 / netPph) * 60,
             ratePerMin: cellHourCost / 60,
             machineCost: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
             laborCost: totalStepCost * (cellHourCost > 0 ? hhCost / cellHourCost : 0),
@@ -2050,10 +2162,10 @@ app.delete("/api/employees/:id", async (req, res) => {
       return { error: "CONFIG_MISSING", message: "Parâmetro global FACTORY_HOURS_MONTHLY não configurado ou inválido." };
     }
     const totalCIF_Monthly = cache.indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
-    
+
     const cifRatePerHour = totalCIF_Monthly / cache.factoryHoursMonthly;
     const opexRatePerHour = cache.opexRatePerHour;
-    
+
     const totalCIF_Unit = totalTimeH_Unit * cifRatePerHour;
     const totalOPEX_Unit = totalTimeH_Unit * opexRatePerHour;
 
@@ -2211,10 +2323,10 @@ app.delete("/api/employees/:id", async (req, res) => {
       const result = await ServerImporter.parseExcel(req.file.buffer, CustomerImportConfig);
       const importId = crypto.randomUUID();
       importCache.set(importId, result.data);
-      
+
       // Cleanup after 30 mins
       setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
-      
+
       res.json({ ...result, importId });
     } catch (error) {
       console.error("Import preview error:", error);
@@ -2242,7 +2354,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       const existingTaxIds = new Set(existing.map(e => e.taxId));
 
       const toCreate = data.filter(d => !existingTaxIds.has(d.taxId));
-      
+
       if (toCreate.length > 0) {
         await prisma.customer.createMany({
           data: toCreate.map(d => ({
@@ -2264,10 +2376,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         });
       }
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         count: toCreate.length,
-        skipped: existingTaxIds.size 
+        skipped: existingTaxIds.size
       });
     } catch (error) {
       console.error("Import confirm error:", error);
@@ -2315,7 +2427,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     const { id } = req.params;
     const proposal = await prisma.proposal.findUnique({
       where: { id },
-      include: { 
+      include: {
         Customer: true,
         items: { include: { Product: true } }
       },
@@ -2410,7 +2522,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   // Global Error Handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: err.message || "Internal Server Error",
       stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
     });

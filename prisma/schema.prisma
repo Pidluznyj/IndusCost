@@ -373,3 +373,28 @@ model CostCalculationLog {
   suggestedPrice Decimal  @db.Decimal(20, 6)
   inputSnapshot  String
 }
+
+// --- Configurações do Sistema ---
+
+model BrandingSettings {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName             String   @default("Lazarios")
+  tradeName               String   @default("Lazarios")
+  document                String?  // CNPJ
+  logoUrl                 String?
+  logoBase64              String?  @db.Text
+  primaryColor            String   @default("#2563eb")
+  secondaryColor          String?  @default("#0f172a")
+  accentColor             String?  @default("#3b82f6")
+  address                 String?
+  phone                   String?
+  email                   String?
+  website                 String?
+  proposalFooterText      String?
+  commercialContactName   String?
+  commercialContactEmail  String?
+  commercialContactPhone  String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
