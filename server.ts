@@ -249,6 +249,7 @@ import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
+import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
 import { registerComponentPerformanceRoutes } from "./src/lib/componentPerformanceRoutes.js";
 import {
   getNomusDailySyncStatus,
@@ -12304,6 +12305,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerCostPriceMarginAuditRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    prisma,
+  });
+
+  registerCostToCashTraceRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     prisma,

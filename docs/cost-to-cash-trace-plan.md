@@ -68,6 +68,22 @@ CSV continua em `tmp/` (gitignored).
 
 ---
 
+## APIs (implementado)
+
+| Endpoint | Permissão mínima |
+|----------|------------------|
+| `GET /api/audit/product-cost-trace` | `pricing.view` / `costs.view` |
+| `GET /api/audit/published-price-trace` | `pricing.view` |
+| `GET /api/audit/sales-order-trace` | `sales_orders.view` |
+| `GET /api/audit/commission-trace` | `commissions.audit.view` |
+| `GET /api/audit/cost-to-cash-trace` | qualquer permissão da cadeia |
+
+Resposta padronizada: `{ status, summary, sections, diagnostics, warnings, errors }`.
+
+Registro: `registerCostToCashTraceRoutes` em `server.ts`.
+
+---
+
 ## APIs e telas (futuro)
 
 - **Preço publicado:** `GET /api/pricing/published-price-source-trace` — pode migrar import para `audit/publishedPriceTrace`
