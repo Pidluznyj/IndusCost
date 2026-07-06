@@ -1,4 +1,7 @@
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding.js";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
+import { mergePrintBranding } from "./printBranding.js";
+import { prisma } from "./prisma.js";
 import {
   assertProjectClientReportPayloadIsSafe,
   buildProjectClientReport,
@@ -8,7 +11,16 @@ import {
   formatClientReportMoney,
 } from "./projectsClientReport.js";
 import type { ProjectClientReportPayload } from "./projectsClientReportShared.js";
+import {
+  buildProjectClientProposalPptxBuffer,
+  buildProjectClientProposalPptxFilename,
+} from "./projectsClientReportPptx.js";
 import { loadProjectDetail } from "./projectsService.js";
+
+export {
+  buildProjectClientProposalPptxBuffer,
+  buildProjectClientProposalPptxFilename,
+} from "./projectsClientReportPptx.js";
 
 export {
   assertProjectClientReportPayloadIsSafe,
@@ -106,4 +118,37 @@ export function buildProjectClientReportPdfBuffer(
   }
 
   return buffer;
+}
+
+export async function loadBrandingForClientExport(): Promise<BrandingSettingsDTO> {
+  try {
+    const row = await prisma.brandingSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+    if (!row) return DEFAULT_BRANDING;
+    return mergePrintBranding(
+      {
+        companyName: row.companyName ?? DEFAULT_BRANDING.companyName,
+        slogan: row.slogan ?? DEFAULT_BRANDING.slogan,
+        primaryColor: row.primaryColor ?? DEFAULT_BRANDING.primaryColor,
+        secondaryColor: row.secondaryColor ?? DEFAULT_BRANDING.secondaryColor,
+        systemCompactLogoDataUrl: row.systemCompactLogoDataUrl,
+        systemExpandedLogoDataUrl: row.systemExpandedLogoDataUrl,
+        proposalLogoDataUrl: row.proposalLogoDataUrl,
+        darkLogoDataUrl: row.darkLogoDataUrl,
+        faviconDataUrl: row.faviconDataUrl,
+        proposalCoverDataUrl: row.proposalCoverDataUrl,
+        proposalSideImageDataUrl: row.proposalSideImageDataUrl,
+        watermarkDataUrl: row.watermarkDataUrl,
+      },
+      DEFAULT_BRANDING
+    );
+  } catch {
+    return DEFAULT_BRANDING;
+  }
+}
+
+export async function buildProjectClientProposalPptxExportBuffer(
+  payload: ProjectClientReportPayload
+): Promise<Buffer> {
+  const branding = await loadBrandingForClientExport();
+  return buildProjectClientProposalPptxBuffer(payload, branding);
 }

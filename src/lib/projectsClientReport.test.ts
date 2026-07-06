@@ -12,6 +12,10 @@ import {
   recalculateProjectClientReportProduct,
 } from "./projectsClientReport.js";
 import { buildProjectClientReportPdfBuffer } from "./projectsClientReportService.js";
+import {
+  buildProjectClientProposalPptxBuffer,
+  buildProjectClientProposalPptxFilename,
+} from "./projectsClientReportPptx.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
 function buildDetailWithPricing(): ProjectDetail {
@@ -171,6 +175,33 @@ describe("projectsClientReport", () => {
     assert.equal(clientReportPdfContainsInternalTerms(buffer.toString("latin1")), false);
   });
 
+  it("gera PPTX cliente válido a partir do payload da proposta", async () => {
+    const report = buildProjectClientReport(buildDetailWithPricing());
+    const buffer = await buildProjectClientProposalPptxBuffer(report);
+    assert.ok(buffer.length > 1000);
+    assert.equal(buffer[0], 0x50);
+    assert.equal(buffer[1], 0x4b);
+    assert.equal(buildProjectClientProposalPptxFilename("PRJ-0100"), "proposta-cliente-PRJ-0100.pptx");
+  });
+
+  it("PPTX não quebra com projeto sem alguns dados comerciais", async () => {
+    const detail = buildDetailWithPricing();
+    detail.notes = "";
+    detail.commercialOwner = "";
+    detail.expectedMonthlyVolume = null;
+    detail.projectPricing!.items = detail.projectPricing!.items.map((item) => ({
+      ...item,
+      suggestedPrice: null,
+      status: "PENDING",
+      statusLabel: "Pendente",
+    }));
+    const report = buildProjectClientReport(detail);
+    const buffer = await buildProjectClientProposalPptxBuffer(report);
+    assert.ok(buffer.length > 1000);
+    assert.equal(buffer[0], 0x50);
+    assert.equal(buffer[1], 0x4b);
+  });
+
   it("quantidade padrão é 1 por item", () => {
     const detail = buildDetailWithPricing();
     const products = buildProjectClientReportProducts(detail);
@@ -218,6 +249,8 @@ describe("projectsClientReport", () => {
     assert.match(page, /client-report\/quantities/);
     assert.match(page, /applyProjectClientReportQuantities/);
     assert.match(page, /Salvar quantidades/);
+    assert.match(page, /client-proposal-pptx/);
+    assert.match(page, /Baixar PowerPoint/);
     const report = readFileSync(
       join(process.cwd(), "src/components/projects/ProjectClientReport.tsx"),
       "utf8"
@@ -245,6 +278,7 @@ describe("projectsClientReport wiring", () => {
     const routes = readFileSync(join(process.cwd(), "src/lib/projectsRoutes.ts"), "utf8");
     assert.match(routes, /client-report/);
     assert.match(routes, /client-report\.pdf/);
+    assert.match(routes, /client-proposal-pptx/);
     assert.match(routes, /client-report\/quantities/);
   });
 

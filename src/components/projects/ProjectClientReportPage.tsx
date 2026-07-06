@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Download, Loader2, RotateCcw, Save } from "lucide-react";
+import { Download, Loader2, Presentation, RotateCcw, Save } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { canManageProjects, canViewProjects } from "@/src/lib/projectsPermissions";
@@ -196,6 +196,11 @@ export function ProjectClientReportPage() {
     window.open(`/api/projects/${projectId}/client-report.pdf`, "_blank", "noopener,noreferrer");
   }, [projectId, exportBlocked]);
 
+  const handleDownloadPptx = useCallback(() => {
+    if (!projectId || exportBlocked) return;
+    window.open(`/api/projects/${projectId}/client-proposal-pptx`, "_blank", "noopener,noreferrer");
+  }, [projectId, exportBlocked]);
+
   const handleBack = useCallback(() => {
     if (projectId) {
       navigate(PROJECT_DETAIL_PATH(projectId));
@@ -252,6 +257,16 @@ export function ProjectClientReportPage() {
               </button>
             </>
           ) : null}
+          <button
+            type="button"
+            onClick={handleDownloadPptx}
+            disabled={exportBlocked}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            data-testid="project-client-report-download-pptx"
+          >
+            <Presentation className="h-4 w-4" />
+            Baixar PowerPoint
+          </button>
           <button
             type="button"
             onClick={handleDownloadPdf}

@@ -466,6 +466,32 @@ export function registerProjectsRoutes(
     }
   });
 
+  app.get("/api/projects/:id/client-proposal-pptx", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const {
+        loadProjectClientReport,
+        buildProjectClientProposalPptxExportBuffer,
+        buildProjectClientProposalPptxFilename,
+      } = await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      const buffer = await buildProjectClientProposalPptxExportBuffer(payload);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${buildProjectClientProposalPptxFilename(payload.project.code)}"`
+      );
+      res.send(buffer);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-proposal-pptx", e);
+      res.status(500).json({ error: "Erro ao gerar apresentação PPT da proposta comercial." });
+    }
+  });
+
   app.put("/api/projects/:id/client-report/quantities", ...manage, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
