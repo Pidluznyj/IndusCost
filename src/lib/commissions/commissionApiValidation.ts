@@ -756,3 +756,65 @@ export function parseCustomerExclusionUpdateBody(raw: unknown): Partial<
   }
   return patch;
 }
+
+function parseReceiptClosingYearMonth(body: Record<string, unknown>): { year: number; month: number } {
+  const year = Number(body.year);
+  const month = Number(body.month);
+  if (!Number.isFinite(year) || !Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new CommissionValidationError("INVALID_FIELD", "year inválido.");
+  }
+  if (!Number.isFinite(month) || !Number.isInteger(month) || month < 1 || month > 12) {
+    throw new CommissionValidationError("INVALID_FIELD", "month inválido.");
+  }
+  return { year, month };
+}
+
+export function parseReceiptClosingPeriodBody(body: unknown) {
+  if (body == null || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo da requisição inválido.");
+  }
+  return parseReceiptClosingYearMonth(body as Record<string, unknown>);
+}
+
+export function parseReceiptClosingApplyBody(body: unknown) {
+  if (body == null || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo da requisição inválido.");
+  }
+  const record = body as Record<string, unknown>;
+  const { year, month } = parseReceiptClosingYearMonth(record);
+  const confirm = requireString(record.confirm, "confirm");
+  if (confirm !== "FECHAR COMISSAO") {
+    throw new CommissionValidationError(
+      "CONFIRMATION_REQUIRED",
+      'Confirmação obrigatória: digite "FECHAR COMISSAO".'
+    );
+  }
+  return {
+    year,
+    month,
+    confirm,
+    notes: optionalString(record.notes),
+  };
+}
+
+export function parseReceiptClosingReprocessBody(body: unknown) {
+  if (body == null || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo da requisição inválido.");
+  }
+  const record = body as Record<string, unknown>;
+  const { year, month } = parseReceiptClosingYearMonth(record);
+  const confirm = requireString(record.confirm, "confirm");
+  if (confirm !== "REPROCESSAR COMISSAO") {
+    throw new CommissionValidationError(
+      "CONFIRMATION_REQUIRED",
+      'Confirmação obrigatória: digite "REPROCESSAR COMISSAO".'
+    );
+  }
+  const reason = requireString(record.reason ?? record.notes, "reason", 3);
+  return {
+    year,
+    month,
+    confirm,
+    reason,
+  };
+}

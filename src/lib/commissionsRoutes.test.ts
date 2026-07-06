@@ -83,6 +83,12 @@ describe("commissionsRoutes", () => {
       "/api/commissions/visual-audit/detail",
       "/api/commissions/monthly-closing",
       "/api/commissions/monthly-closing/export",
+      "/api/commissions/receipt-closing/preview",
+      "/api/commissions/receipt-closing/apply",
+      "/api/commissions/receipt-closing/:year/:month",
+      "/api/commissions/receipt-closing/:year/:month/export.csv",
+      "/api/commissions/receipt-closing/reprocess-preview",
+      "/api/commissions/receipt-closing/reprocess-apply",
       "/api/commissions/receivable-forecast",
       "/api/commissions/receivable-forecast/export",
       "/api/commissions/payable",
@@ -123,6 +129,15 @@ describe("commissionsRoutes", () => {
   it("POST audit/rerun delega rerunCommissionAudit", () => {
     assert.match(routes(), /rerunCommissionAudit/);
     assert.match(routes(), /\/api\/commissions\/audit\/rerun/);
+  });
+
+  it("receipt-closing apply/reprocess exige COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS", () => {
+    const src = routes();
+    assert.match(src, /\/api\/commissions\/receipt-closing\/apply/);
+    assert.match(src, /\/api\/commissions\/receipt-closing\/reprocess-apply/);
+    const applyIdx = src.indexOf('"/api/commissions/receipt-closing/apply"');
+    const applySlice = src.slice(applyIdx, applyIdx + 200);
+    assert.match(applySlice, /paymentsManageGuard/);
   });
 
   it("payment-batches mark-paid usa markCommissionPaymentBatchPaid", () => {

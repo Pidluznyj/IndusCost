@@ -71,7 +71,7 @@ describe("commissions frontend wiring", () => {
 
   it("CommissionsModule usa fechamento mensal, auditoria visual e redirects legados", () => {
     const moduleSrc = read("src/components/CommissionsModule.tsx");
-    assert.match(moduleSrc, /CommissionsMonthlyClosingPage/);
+    assert.match(moduleSrc, /CommissionsReceiptClosingPage/);
     assert.match(moduleSrc, /CommissionsReceivableForecastPage/);
     assert.match(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /CommissionsCustomerExclusionsPage/);

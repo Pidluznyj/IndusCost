@@ -950,3 +950,91 @@ export type CommissionsReceivableForecastPayload = {
   detailRows: CommissionsReceivableForecastDetailRow[];
   pagination: CommissionsPagination;
 };
+
+export type CommissionsReceiptClosingSnapshot = {
+  closingId: string;
+  year: number;
+  month: number;
+  status: string;
+  source: string;
+  calculationHash: string | null;
+  totalReceivedAmount: number;
+  totalCommissionableBase: number;
+  totalExpectedCommission: number;
+  totalReleasedCommission: number;
+  totalExcludedAmount: number;
+  totalExceptionAmount: number;
+  lineCount: number;
+  closedAt: string | null;
+  closedBy: string | null;
+  notes: string | null;
+};
+
+export type CommissionsReceiptClosingLine = {
+  lineKey: string;
+  nomusReceivableId: number | null;
+  receivableNumber: string | null;
+  installmentNumber: number | null;
+  settlementDate: string | null;
+  dueDate: string | null;
+  customerId: string | null;
+  customerExternalId: number | null;
+  customerName: string | null;
+  orderCode: string | null;
+  localOrderId: string | null;
+  nomusNfeId: number | null;
+  nfeNumber: string | null;
+  localItemId: string | null;
+  nomusOrderItemId: number | null;
+  productCode: string | null;
+  productName: string | null;
+  rawSellerId: number | null;
+  rawSellerName: string | null;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  sellerResolutionStatus: string | null;
+  receivedAmount: number;
+  commissionableBaseAmount: number;
+  ratePercent: number;
+  expectedCommissionAmount: number;
+  releasedCommissionAmount: number;
+  ruleId: string | null;
+  ruleName: string | null;
+  exclusionReason: string | null;
+  status: string;
+  statusReason: string | null;
+  source: string;
+};
+
+export type CommissionsReceiptClosingSellerRow = {
+  sellerId: string | null;
+  sellerName: string | null;
+  receivableCount: number;
+  receivedAmount: number;
+  commissionableBase: number;
+  expectedCommission: number;
+  releasedCommission: number;
+  exceptionCount: number;
+};
+
+export type CommissionsReceiptClosingPayload = {
+  year: number;
+  month: number;
+  mode: "EMPTY" | "PREVIEW" | "CLOSED";
+  exportMode: "PREVIEW" | "CLOSED" | "NONE";
+  closing: CommissionsReceiptClosingSnapshot | null;
+  canApply: boolean;
+  applyBlockedReason: string | null;
+  summary: {
+    totalReceivables: number;
+    totalReceivedAmount: number;
+    totalCommissionableBase: number;
+    totalExpectedCommission: number;
+    totalReleasedCommission: number;
+    totalExcludedAmount: number;
+    totalExceptionAmount: number;
+    countByStatus: Record<string, number>;
+  };
+  bySeller: CommissionsReceiptClosingSellerRow[];
+  lines: CommissionsReceiptClosingLine[];
+};

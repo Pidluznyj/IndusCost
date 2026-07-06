@@ -1073,6 +1073,46 @@ export type CommissionReceivableForecastQueryParsed = CommissionReceivableForeca
   pageSize: number;
 };
 
+export type ReceiptClosingQueryParsed = {
+  year: number;
+  month: number;
+  seller?: string | null;
+  customer?: string | null;
+};
+
+export function parseReceiptClosingQuery(
+  query: Record<string, unknown>
+): ReceiptClosingQueryParsed {
+  const year = parseOptionalInt(query.year);
+  const month = parseOptionalInt(query.month);
+  if (year == null || month == null) {
+    throw new CommissionQueryParseError("year e month são obrigatórios.");
+  }
+  if (month < 1 || month > 12) {
+    throw new CommissionQueryParseError("month deve estar entre 1 e 12.");
+  }
+  const seller =
+    typeof query.seller === "string" && query.seller.trim() ? query.seller.trim() : null;
+  const customer =
+    typeof query.customer === "string" && query.customer.trim() ? query.customer.trim() : null;
+  return { year, month, seller, customer };
+}
+
+export function parseReceiptClosingPeriodParams(params: {
+  year?: string;
+  month?: string;
+}): { year: number; month: number } {
+  const year = Number(params.year);
+  const month = Number(params.month);
+  if (!Number.isFinite(year) || !Number.isInteger(year)) {
+    throw new CommissionQueryParseError("year inválido.");
+  }
+  if (!Number.isFinite(month) || !Number.isInteger(month) || month < 1 || month > 12) {
+    throw new CommissionQueryParseError("month inválido.");
+  }
+  return { year, month };
+}
+
 export function parseCommissionReceivableForecastQuery(
   query: Record<string, unknown>
 ): CommissionReceivableForecastQueryParsed {

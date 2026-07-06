@@ -23,7 +23,7 @@ import {
   resolveCommissionsLegacyRedirect,
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
-import { CommissionsMonthlyClosingPage } from "@/src/components/commissions/pages/CommissionsMonthlyClosingPage";
+import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
 import { CommissionsReceivableForecastPage } from "@/src/components/commissions/pages/CommissionsReceivableForecastPage";
 import { CommissionsVisualAuditPage } from "@/src/components/commissions/pages/CommissionsVisualAuditPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
@@ -126,7 +126,7 @@ export function CommissionsModule() {
       </nav>
 
       <Routes>
-        <Route index element={guard("monthlyClosing", <CommissionsMonthlyClosingPage />)} />
+        <Route index element={guard("monthlyClosing", <CommissionsReceiptClosingPage />)} />
         <Route path="previsao" element={guard("receivableForecast", <CommissionsReceivableForecastPage />)} />
         <Route path="auditoria" element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
         <Route

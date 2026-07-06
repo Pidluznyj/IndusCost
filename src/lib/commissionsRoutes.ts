@@ -67,6 +67,9 @@ import {
   parseCommissionSettingsUpdateBody,
   parseMarkPaidBody,
   parsePaymentBatchCreateBody,
+  parseReceiptClosingApplyBody,
+  parseReceiptClosingPeriodBody,
+  parseReceiptClosingReprocessBody,
 } from "@/src/lib/commissions/commissionApiValidation.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import {
@@ -132,8 +135,22 @@ import {
   parseCommissionVisualAuditQuery,
   parseCommissionMonthlyClosingQuery,
   parseCommissionReceivableForecastQuery,
+  parseReceiptClosingPeriodParams,
+  parseReceiptClosingQuery,
   parseUnpaidReleasedCommissionsQuery,
 } from "@/src/lib/commissions/commissionQuery.js";
+import {
+  applyReceiptClosingFromApi,
+  exportReceiptClosingCsv,
+  getReceiptClosingPage,
+  getReceiptClosingPreviewPage,
+  reprocessReceiptClosingApplyFromApi,
+  reprocessReceiptClosingPreviewFromApi,
+} from "@/src/lib/commissions/commissionReceiptClosingApi.server.js";
+import {
+  ReceiptClosingDuplicateError,
+  ReceiptClosingValidationError,
+} from "@/src/lib/commissions/commissionReceiptClosing.js";
 import {
   getCommissionReleaseDetail,
   listCommissionReleasesPage,
@@ -167,6 +184,20 @@ function handleValidationError(res: express.Response, error: CommissionValidatio
   const status =
     error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : 400;
   return res.status(status).json({ error: error.message, code: error.code });
+}
+
+function handleReceiptClosingError(res: express.Response, error: unknown) {
+  if (error instanceof ReceiptClosingValidationError) {
+    return res.status(400).json({ error: error.message, code: error.code });
+  }
+  if (error instanceof ReceiptClosingDuplicateError) {
+    return res.status(409).json({
+      error: error.message,
+      code: error.code,
+      existingClosingId: error.existingClosingId,
+    });
+  }
+  throw error;
 }
 
 async function resolveScopeOrRespond(
@@ -401,6 +432,140 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       }
     }
   });
+
+  app.get("/api/commissions/receipt-closing/preview", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const filters = parseReceiptClosingQuery(req.query as Record<string, unknown>);
+      const payload = await getReceiptClosingPreviewPage(filters);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/receipt-closing/preview", error);
+        return res.status(500).json({ error: "Erro ao gerar prévia do fechamento por recebimento." });
+      }
+    }
+  });
+
+  app.post("/api/commissions/receipt-closing/apply", ...paymentsManageGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const body = parseReceiptClosingApplyBody(req.body);
+      const result = await applyReceiptClosingFromApi({
+        year: body.year,
+        month: body.month,
+        userId: ctx.user.id,
+        notes: body.notes,
+      });
+      const payload = await getReceiptClosingPage(body.year, body.month);
+      return res.status(201).json({ result, payload });
+    } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      try {
+        return handleReceiptClosingError(res, error);
+      } catch {
+        console.error("POST /api/commissions/receipt-closing/apply", error);
+        return res.status(500).json({ error: "Erro ao aplicar fechamento por recebimento." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/receipt-closing/:year/:month", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const { year, month } = parseReceiptClosingPeriodParams(req.params);
+      const payload = await getReceiptClosingPage(year, month);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/receipt-closing/:year/:month", error);
+        return res.status(500).json({ error: "Erro ao carregar fechamento por recebimento." });
+      }
+    }
+  });
+
+  app.get(
+    "/api/commissions/receipt-closing/:year/:month/export.csv",
+    ...viewAnyGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const { year, month } = parseReceiptClosingPeriodParams(req.params);
+        const { csv, filename } = await exportReceiptClosingCsv({ year, month });
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(csv);
+      } catch (error) {
+        try {
+          return handleQueryError(res, error);
+        } catch {
+          console.error("GET /api/commissions/receipt-closing/:year/:month/export.csv", error);
+          return res.status(500).json({ error: "Erro ao exportar fechamento por recebimento." });
+        }
+      }
+    }
+  );
+
+  app.post(
+    "/api/commissions/receipt-closing/reprocess-preview",
+    ...paymentsManageGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const body = parseReceiptClosingPeriodBody(req.body);
+        const preview = await reprocessReceiptClosingPreviewFromApi({
+          year: body.year,
+          month: body.month,
+        });
+        return res.json(preview);
+      } catch (error) {
+        if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+        try {
+          return handleReceiptClosingError(res, error);
+        } catch {
+          console.error("POST /api/commissions/receipt-closing/reprocess-preview", error);
+          return res.status(500).json({ error: "Erro ao pré-visualizar reprocessamento." });
+        }
+      }
+    }
+  );
+
+  app.post(
+    "/api/commissions/receipt-closing/reprocess-apply",
+    ...paymentsManageGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const body = parseReceiptClosingReprocessBody(req.body);
+        const result = await reprocessReceiptClosingApplyFromApi({
+          year: body.year,
+          month: body.month,
+          userId: ctx.user.id,
+          reason: body.reason,
+        });
+        const payload = await getReceiptClosingPage(body.year, body.month);
+        return res.json({ result, payload });
+      } catch (error) {
+        if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+        try {
+          return handleReceiptClosingError(res, error);
+        } catch {
+          console.error("POST /api/commissions/receipt-closing/reprocess-apply", error);
+          return res.status(500).json({ error: "Erro ao reprocessar fechamento por recebimento." });
+        }
+      }
+    }
+  );
 
   app.get("/api/commissions/receivable-forecast", ...viewAnyGuard, async (req, res) => {
     try {
