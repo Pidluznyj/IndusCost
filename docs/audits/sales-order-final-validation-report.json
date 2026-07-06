@@ -1,0 +1,139 @@
+{
+  "generatedAt": "2026-06-23T23:32:58.086Z",
+  "year": 2026,
+  "engineVersion": "1.0.0",
+  "dbAvailable": false,
+  "codeAudit": {
+    "totalFindings": 80,
+    "pendingOrRisk": 20,
+    "byClassification": {
+      "okMotor": 35,
+      "okSync": 25,
+      "pendente": 4,
+      "risco": 16
+    },
+    "topPending": [
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\components\\contextual\\MaterialDemandIntelligenceDrilldownDrawer.tsx",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\components\\CrmSellerDashboardLists.tsx",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\components\\finance\\FinanceSalesOrdersPage.tsx",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "orderIsInvoicedSql",
+        "file": "src\\lib\\billingDashboardMetrics.ts",
+        "count": 2,
+        "classification": "Pendente"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\billingDashboardMetrics.ts",
+        "count": 2,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\crmCustomersList.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\crmOrderPortfolioSql.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "orderIsInvoicedSql",
+        "file": "src\\lib\\crmSellerDashboardService.ts",
+        "count": 4,
+        "classification": "Pendente"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\crmSellerDashboardService.ts",
+        "count": 8,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\customerCommercialSalesOrderView.ts",
+        "count": 3,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "nomusRawResponse.nfes",
+        "file": "src\\lib\\financeBillingActions.test.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "orderIsInvoicedSql",
+        "file": "src\\lib\\financeSalesOrdersDashboard.ts",
+        "count": 3,
+        "classification": "Pendente"
+      },
+      {
+        "pattern": "orderNotInvoicedSql",
+        "file": "src\\lib\\financeSalesOrdersDashboard.ts",
+        "count": 4,
+        "classification": "Pendente"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\financeSalesOrdersDashboardTypes.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesOrderDashboardRules.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesOrderInvoicingSql.ts",
+        "count": 7,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesOrderLifecycleStatus.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesOrderRawMaterialIntelligenceService.ts",
+        "count": 1,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesOrderStatusAudit.ts",
+        "count": 2,
+        "classification": "Risco"
+      },
+      {
+        "pattern": "dataProcessamento-direct",
+        "file": "src\\lib\\salesProductRanking.ts",
+        "count": 5,
+        "classification": "Risco"
+      }
+    ]
+  },
+  "dbError": "\nInvalid `prisma.$queryRaw()` invocation:\n\n\nCan't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+}

@@ -1,0 +1,341 @@
+export type ProjectType =
+  | "NEW_PRODUCT"
+  | "NEW_COMPONENT"
+  | "MOLD"
+  | "PRODUCT_CHANGE"
+  | "PRODUCT_WITH_NEW_COMPONENT"
+  | "FULL_DEVELOPMENT"
+  | "QUICK_ESTIMATE";
+
+export type ProjectStatus =
+  | "DRAFT"
+  | "TECHNICAL_ANALYSIS"
+  | "WAITING_QUOTATION"
+  | "WAITING_INTERNAL_APPROVAL"
+  | "SENT_TO_CUSTOMER"
+  | "NEGOTIATION"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "CONVERTED";
+
+export type ProjectSimulatedItemType =
+  | "RAW_MATERIAL"
+  | "COMPONENT"
+  | "FINISHED_PRODUCT"
+  | "PACKAGING"
+  | "SERVICE"
+  | "MOLD"
+  | "TOOLING"
+  | "OUTSOURCED_PROCESS"
+  | "OTHER";
+
+export type ProjectStructureSourceType =
+  | "EXISTING_PRODUCT"
+  | "EXISTING_MATERIAL"
+  | "SIMULATED_ITEM"
+  | "MANUAL";
+
+export type ProjectStructureLineType =
+  | "RAW_MATERIAL"
+  | "COMPONENT"
+  | "PACKAGING"
+  | "SERVICE"
+  | "PROCESS"
+  | "MOLD_AMORTIZATION"
+  | "OTHER";
+
+export type ProjectMoldChargeMode =
+  | "CHARGED_SEPARATELY"
+  | "AMORTIZED_IN_PRODUCT"
+  | "PARTIALLY_ABSORBED"
+  | "INTERNAL_INVESTMENT";
+
+export type ProjectMoldOwnership = "CUSTOMER" | "COMPANY" | "SHARED" | "UNDEFINED";
+
+export type ProjectListRow = {
+  id: string;
+  code: string;
+  title: string;
+  customerName: string;
+  projectType: ProjectType;
+  status: ProjectStatus;
+  commercialOwner: string | null;
+  technicalOwner: string | null;
+  estimatedValue: number | null;
+  marginPercent: number | null;
+  updatedAt: string;
+};
+
+export type ProjectListResponse = {
+  rows: ProjectListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export type ProjectVersionRow = {
+  id: string;
+  versionNumber: number;
+  title: string | null;
+  status: ProjectStatus;
+  isCurrent: boolean;
+  unitCost: number | null;
+  suggestedPrice: number | null;
+  marginPercent: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectSimulatedProductRow = {
+  id: string;
+  provisionalCode: string | null;
+  description: string;
+  unit: string;
+  estimatedWeight: number | null;
+  expectedVolume: number | null;
+  batchSize: number | null;
+  notes: string | null;
+};
+
+export type ProjectSimulatedItemRow = {
+  id: string;
+  provisionalCode: string | null;
+  description: string;
+  itemType: ProjectSimulatedItemType;
+  unit: string;
+  estimatedUnitCost: number | null;
+  quotedUnitCost: number | null;
+  supplierName: string | null;
+  leadTimeDays: number | null;
+  estimatedWeight: number | null;
+  lossPercent: number | null;
+  requiresQuotation: boolean;
+  requiresEngineeringReview: boolean;
+  canBecomeOfficial: boolean;
+  notes: string | null;
+};
+
+export type ProjectStructureLineRow = {
+  id: string;
+  simulatedProductId: string | null;
+  parentLineId: string | null;
+  level: number | null;
+  treePath: string | null;
+  snapshotRootProductId: string | null;
+  lineType: ProjectStructureLineType;
+  sourceType: ProjectStructureSourceType;
+  existingProductId: string | null;
+  existingMaterialId: string | null;
+  simulatedItemId: string | null;
+  sourceOfficialBomId: string | null;
+  sourceOfficialRoutingId: string | null;
+  descriptionSnapshot: string;
+  unitSnapshot: string;
+  quantity: number;
+  lossPercent: number | null;
+  officialQuantitySnapshot: number | null;
+  officialLossPercentSnapshot: number | null;
+  officialUnitCostSnapshot: number | null;
+  unitCostSnapshot: number;
+  totalCost: number;
+  costSource: string | null;
+  isChangedFromOfficial: boolean;
+  isMissingCost: boolean;
+  countsInSimulatedProductCost: boolean;
+  supplierNameSnapshot: string | null;
+  notes: string | null;
+  sortOrder: number;
+};
+
+export type ProjectMoldRow = {
+  id: string;
+  name: string;
+  moldType: string | null;
+  cavities: number | null;
+  estimatedLifeCycles: number | null;
+  supplierName: string | null;
+  constructionCost: number;
+  maintenanceCost: number | null;
+  changeCost: number | null;
+  leadTimeDays: number | null;
+  chargeMode: ProjectMoldChargeMode;
+  amortizationQuantity: number | null;
+  amortizedCostPerUnit: number | null;
+  ownership: ProjectMoldOwnership;
+  notes: string | null;
+};
+
+export type ProjectCostBreakdown = {
+  rawMaterialCost: number;
+  componentCost: number;
+  serviceCost: number;
+  packagingCost: number;
+  separateMoldCost: number;
+  amortizedMoldCostPerUnit: number;
+  unitCost: number;
+  targetMarginPercent: number | null;
+  suggestedPrice: number | null;
+  markupPercent: number | null;
+  targetPrice: number | null;
+  priceGap: number | null;
+};
+
+export type ProjectAlert = {
+  code: string;
+  message: string;
+  severity: "info" | "warning" | "error";
+};
+
+export type ProjectCostAmortizationAllocationRow = {
+  targetItemId: string;
+  targetItemType: string;
+  targetSnapshotRootProductId?: string | null;
+  targetDescriptionSnapshot: string;
+  targetBaseUnitCostSnapshot: number;
+  allocationPercent: number;
+  amortizationQuantity: number;
+  allocatedAmount: number;
+  unitAmortizedCost: number;
+  finalUnitCost: number;
+};
+
+export type ProjectCostAmortizationSavedRow = {
+  id: string;
+  projectId: string;
+  sourceType: "MOLD" | "OTHER_COST";
+  sourceId: string;
+  sourceDescriptionSnapshot: string;
+  sourceTotalCostSnapshot: number;
+  passThroughPercent: number;
+  passThroughAmount: number;
+  absorbedAmount: number;
+  status: string;
+  distributionPercentTotal: number;
+  distributionBalancePercent: number;
+  allocatedAmountTotal: number;
+  unallocatedAmount: number;
+  allocations: ProjectCostAmortizationAllocationRow[];
+};
+
+export type ProjectCostAmortizationSummaryView = {
+  baseItemsUnitCost: number;
+  totalMoldsCost: number;
+  totalOtherCosts: number;
+  totalPassThroughAmount: number;
+  totalAbsorbedAmount: number;
+  totalAmortizationAllocated: number;
+  finalItemsUnitCostWithAmortization: number;
+  itemRollups: Array<{
+    targetItemId: string;
+    displayName: string;
+    baseUnitCost: number;
+    unitAmortizedCost: number;
+    finalUnitCost: number;
+    totalAllocated: number;
+    sourceLabels: string[];
+  }>;
+  amortizations: Array<{
+    sourceType: "MOLD" | "OTHER_COST";
+    sourceId: string;
+    sourceDescriptionSnapshot: string;
+    sourceTotalCostSnapshot: number;
+    passThroughPercent: number;
+    passThroughAmount: number;
+    absorbedAmount: number;
+    status: string;
+    distributionPercentTotal: number;
+    distributionBalancePercent: number;
+    allocatedAmountTotal: number;
+    unallocatedAmount: number;
+    allocations: ProjectCostAmortizationAllocationRow[];
+  }>;
+  alerts: string[];
+};
+
+export type ProjectDetail = {
+  id: string;
+  code: string;
+  title: string;
+  customerName: string;
+  customerDocument: string | null;
+  description: string | null;
+  projectType: ProjectType;
+  status: ProjectStatus;
+  commercialOwner: string | null;
+  technicalOwner: string | null;
+  expectedMonthlyVolume: number | null;
+  targetPrice: number | null;
+  targetMarginPercent: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  currentVersion: ProjectVersionRow | null;
+  versions: ProjectVersionRow[];
+  simulatedProducts: ProjectSimulatedProductRow[];
+  simulatedItems: ProjectSimulatedItemRow[];
+  structureLines: ProjectStructureLineRow[];
+  molds: ProjectMoldRow[];
+  /** SKU/nome dos produtos oficiais importados (chave = snapshotRootProductId). */
+  snapshotRootProducts: Record<string, { sku: string; name: string }>;
+  costBreakdown: ProjectCostBreakdown;
+  alerts: ProjectAlert[];
+  conversionAvailable: false;
+  costAmortizations?: ProjectCostAmortizationSavedRow[];
+  costAmortizationSummary?: ProjectCostAmortizationSummaryView;
+  projectPricing?: ProjectPricingView;
+};
+
+export type ProjectPricingTaxRuleOption = {
+  id: string;
+  name: string;
+  description: string | null;
+  taxPercent: number;
+};
+
+export type ProjectPricingItemView = {
+  targetItemId: string;
+  targetItemType: "OFFICIAL_PRODUCT" | "OFFICIAL_COMPONENT" | "SIMULATION" | "LEGACY";
+  displayName: string;
+  costBaseUnit: number;
+  amortizationUnitCost: number;
+  finalUnitCost: number;
+  fiscalRuleId: string | null;
+  fiscalRuleName: string | null;
+  taxPercent: number;
+  targetMarginPercent: number;
+  suggestedPrice: number | null;
+  suggestedPriceWithoutAmortization: number | null;
+  suggestedPriceWithAmortization: number | null;
+  taxAmountWithoutAmortization: number | null;
+  marginAmountWithoutAmortization: number | null;
+  taxAmount: number | null;
+  marginAmount: number | null;
+  status: string;
+  statusLabel: string;
+  errorMessage: string | null;
+};
+
+export type ProjectPricingView = {
+  config: {
+    fiscalRuleId: string | null;
+    defaultMarginPercent: number | null;
+  };
+  items: ProjectPricingItemView[];
+  taxRules: ProjectPricingTaxRuleOption[];
+  hasSavedPricing: boolean;
+};
+
+export type ProjectDashboardPayload = {
+  openCount: number;
+  waitingEngineeringCount: number;
+  waitingQuotationCount: number;
+  sentToCustomerCount: number;
+  approvedCount: number;
+  potentialValue: number;
+  moldInvestment: number;
+  averageMarginPercent: number | null;
+  statusCounts: Record<ProjectStatus, number>;
+  recentProjects: ProjectListRow[];
+};

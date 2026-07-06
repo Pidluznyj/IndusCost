@@ -1,0 +1,56 @@
+/* Impressão — Proposta Comercial para Cliente (/projects/:projectId/client-report) */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.project-client-report-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.project-client-report-route,
+  body.project-client-report-route * {
+    visibility: visible !important;
+  }
+
+  body.project-client-report-route .project-client-report-print-no-print,
+  .project-client-report-print-no-print {
+    display: none !important;
+  }
+
+  body.project-client-report-route #root > * > aside,
+  body.project-client-report-route #root > * > header,
+  body.project-client-report-route nav,
+  body.project-client-report-route .project-client-report-print-no-print {
+    display: none !important;
+  }
+
+  .project-client-report-route-page,
+  .project-client-report-document {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .project-client-report-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

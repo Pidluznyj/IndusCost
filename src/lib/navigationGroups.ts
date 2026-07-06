@@ -1,0 +1,277 @@
+/**
+ * Agrupamento oficial da navegação lateral (sidebar).
+ * Fonte de verdade dos itens: SIDEBAR_MODULE_ORDER + MODULE_LABELS em modulePermissions.
+ * Este módulo apenas mapeia itens existentes para grupos — sem novos paths, labels ou permissões.
+ */
+
+import { COMMISSIONS_VIEW_PERMISSIONS } from "@/src/lib/commissionsPermissions.js";
+import {
+  MODULE_LABELS,
+  SIDEBAR_MODULE_ORDER,
+  type AppModuleId,
+} from "@/src/lib/modulePermissions.js";
+
+/** Chave de ícone (nome do componente lucide-react) para uso futuro na sidebar agrupada. */
+export type NavigationIconKey =
+  | "LayoutDashboard"
+  | "Package"
+  | "HandCoins"
+  | "Banknote"
+  | "Warehouse"
+  | "Settings"
+  | "FolderQuestion";
+
+export type NavigationGroupId =
+  | "dashboard"
+  | "engenharia"
+  | "comercial"
+  | "financeiro"
+  | "operacoes"
+  | "administracao"
+  | "outros";
+
+export type NavigationGroup = {
+  id: NavigationGroupId;
+  label: string;
+  iconKey: NavigationIconKey;
+  order: number;
+  /** ids de AppModuleId neste grupo (ordem de exibição dentro do grupo). */
+  itemIds: readonly AppModuleId[];
+  /** Grupo renderizado como item direto (sem accordion), ex.: Dashboard no topo. */
+  isDirect?: boolean;
+};
+
+/** Referência mínima ao item de menu existente (sem ícones React — camada de dados). */
+export type SidebarNavigationItemSource = {
+  id: AppModuleId;
+  label: string;
+  path: string;
+};
+
+export type NavigationGroupedItem = {
+  groupId: NavigationGroupId;
+  itemId: AppModuleId;
+  label: string;
+  path: string;
+  requiredPermissions: readonly string[];
+  originalItem: SidebarNavigationItemSource;
+};
+
+export type NavigationGroupWithItems = NavigationGroup & {
+  items: NavigationGroupedItem[];
+};
+
+export type GroupedNavigationStructure = {
+  /** Itens diretos no topo (ex.: Dashboard), fora de accordions. */
+  directItems: NavigationGroupedItem[];
+  /** Grupos colapsáveis com ao menos um item mapeado. */
+  groups: NavigationGroupWithItems[];
+  /** Grupo fallback quando existir item não mapeado explicitamente. */
+  fallbackGroup: NavigationGroupWithItems | null;
+  /** ids presentes na navegação atual sem mapeamento explícito (auditoria). */
+  unmappedItemIds: AppModuleId[];
+};
+
+/** Permissões de menu por módulo — espelho read-only de canAccessModule (OR entre entradas). */
+export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]> = {
+  dashboard: ["dashboard.view"],
+  "crm-commercial": [
+    "crm.view",
+    "crm.general.view",
+    "crm.seller.view",
+    "crm.seller.own",
+    "crm.seller.all",
+  ],
+  commissions: [...COMMISSIONS_VIEW_PERMISSIONS],
+  customers: ["customers.view"],
+  proposals: ["proposals.view"],
+  "sales-orders": ["sales_orders.view"],
+  products: ["products.view"],
+  "transformation-simulator": ["products.view", "simulations.view", "costs.view"],
+  purchases: ["purchases.view"],
+  pricing: ["pricing.view"],
+  employees: ["employees.view", "costs.view"],
+  machines: ["machines.view", "costs.view"],
+  materials: ["materials.view", "costs.view"],
+  opex: ["opex.view", "costs.view"],
+  simulations: ["simulations.view", "costs.view"],
+  taxes: ["taxes.view"],
+  settings: ["settings.view", "users.manage"],
+  maintenance: ["maintenance.view"],
+  inventory: ["inventory.view"],
+  "operations-performance": [
+    "operations.component-performance.view",
+    "operations.component-performance.edit",
+    "products.view",
+  ],
+  projects: ["projects.view"],
+  fleet: ["fleet.view", "fleet.manage"],
+  reports: ["reports.view", "dashboard.view"],
+  finance: [
+    "finance.view",
+    "finance.accountsReceivable.view",
+    "finance.accountsPayable.view",
+    "reports.view",
+    "settings.nomus.view",
+    "settings.view",
+  ],
+  guide: ["guide.view", "dashboard.view"],
+};
+
+/** Definição estática dos grupos oficiais da sidebar. */
+export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    iconKey: "LayoutDashboard",
+    order: 1,
+    itemIds: ["dashboard"],
+    isDirect: true,
+  },
+  {
+    id: "engenharia",
+    label: "Engenharia",
+    iconKey: "Package",
+    order: 2,
+    itemIds: ["products", "transformation-simulator", "materials", "simulations", "projects"],
+  },
+  {
+    id: "comercial",
+    label: "Comercial",
+    iconKey: "HandCoins",
+    order: 3,
+    itemIds: [
+      "crm-commercial",
+      "customers",
+      "proposals",
+      "sales-orders",
+      "pricing",
+      "commissions",
+    ],
+  },
+  {
+    id: "financeiro",
+    label: "Financeiro",
+    iconKey: "Banknote",
+    order: 4,
+    itemIds: ["finance", "opex", "taxes", "reports"],
+  },
+  {
+    id: "operacoes",
+    label: "Operações",
+    iconKey: "Warehouse",
+    order: 5,
+    itemIds: ["inventory", "purchases", "machines", "operations-performance", "maintenance", "fleet"],
+  },
+  {
+    id: "administracao",
+    label: "Administração",
+    iconKey: "Settings",
+    order: 6,
+    itemIds: ["employees", "settings", "guide"],
+  },
+];
+
+const FALLBACK_GROUP_DEFINITION: NavigationGroup = {
+  id: "outros",
+  label: "Outros",
+  iconKey: "FolderQuestion",
+  order: 99,
+  itemIds: [],
+};
+
+const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
+  NAVIGATION_GROUP_DEFINITIONS.flatMap((group) =>
+    group.itemIds.map((itemId) => [itemId, group.id] as const)
+  )
+);
+
+export function getModulePath(moduleId: AppModuleId): string {
+  return `/${moduleId}`;
+}
+
+export function getSidebarNavigationItemSource(moduleId: AppModuleId): SidebarNavigationItemSource {
+  return {
+    id: moduleId,
+    label: MODULE_LABELS[moduleId],
+    path: getModulePath(moduleId),
+  };
+}
+
+export function getModuleMenuPermissionKeys(moduleId: AppModuleId): readonly string[] {
+  return MODULE_MENU_PERMISSION_KEYS[moduleId];
+}
+
+export function resolveNavigationGroupIdForModule(moduleId: AppModuleId): NavigationGroupId {
+  return EXPLICIT_MODULE_TO_GROUP.get(moduleId) ?? "outros";
+}
+
+export function buildNavigationGroupedItem(moduleId: AppModuleId): NavigationGroupedItem {
+  const originalItem = getSidebarNavigationItemSource(moduleId);
+  return {
+    groupId: resolveNavigationGroupIdForModule(moduleId),
+    itemId: moduleId,
+    label: originalItem.label,
+    path: originalItem.path,
+    requiredPermissions: getModuleMenuPermissionKeys(moduleId),
+    originalItem,
+  };
+}
+
+/** Estrutura agrupada completa a partir da ordem oficial do menu lateral. */
+export function buildGroupedNavigationStructure(): GroupedNavigationStructure {
+  const allItems = SIDEBAR_MODULE_ORDER.map(buildNavigationGroupedItem);
+  const unmappedItemIds = allItems
+    .filter((item) => item.groupId === "outros")
+    .map((item) => item.itemId);
+
+  const directItems = allItems.filter((item) => {
+    const def = NAVIGATION_GROUP_DEFINITIONS.find((g) => g.id === item.groupId);
+    return def?.isDirect === true;
+  });
+
+  const directItemIds = new Set(directItems.map((item) => item.itemId));
+
+  const groups: NavigationGroupWithItems[] = NAVIGATION_GROUP_DEFINITIONS.filter(
+    (group) => !group.isDirect
+  )
+    .sort((a, b) => a.order - b.order)
+    .map((group) => ({
+      ...group,
+      items: group.itemIds
+        .map((itemId) => allItems.find((item) => item.itemId === itemId))
+        .filter((item): item is NavigationGroupedItem => item != null),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const fallbackItems = allItems.filter(
+    (item) => item.groupId === "outros" && !directItemIds.has(item.itemId)
+  );
+
+  const fallbackGroup: NavigationGroupWithItems | null =
+    fallbackItems.length > 0
+      ? {
+          ...FALLBACK_GROUP_DEFINITION,
+          itemIds: fallbackItems.map((item) => item.itemId),
+          items: fallbackItems,
+        }
+      : null;
+
+  return {
+    directItems,
+    groups,
+    fallbackGroup,
+    unmappedItemIds,
+  };
+}
+
+/** Todos os itens agrupados em ordem estável (direct → groups → fallback). */
+export function flattenGroupedNavigationItems(
+  structure: GroupedNavigationStructure = buildGroupedNavigationStructure()
+): NavigationGroupedItem[] {
+  return [
+    ...structure.directItems,
+    ...structure.groups.flatMap((group) => group.items),
+    ...(structure.fallbackGroup?.items ?? []),
+  ];
+}

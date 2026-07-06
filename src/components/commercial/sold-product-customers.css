@@ -1,0 +1,80 @@
+@import "./commercial-kpi-grid.css";
+
+.sold-product-customers-page .sold-product-customers-table {
+  table-layout: auto;
+}
+
+.sold-product-customers-page .sold-product-customers-table td,
+.sold-product-customers-page .sold-product-customers-table th {
+  white-space: nowrap;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-customer {
+  min-width: 220px;
+  max-width: 280px;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-cnpj {
+  min-width: 130px;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-city {
+  min-width: 90px;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-money {
+  min-width: 120px;
+  text-align: right;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-price {
+  min-width: 110px;
+  text-align: right;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-date {
+  min-width: 110px;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-suggested {
+  min-width: 160px;
+  max-width: 220px;
+  white-space: normal;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-actions {
+  min-width: 160px;
+}
+
+.sold-product-customers-page .sold-product-customers-table .col-actions-sticky {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: inherit;
+}
+
+.sold-product-customers-page .sold-product-customers-table thead .col-actions-sticky {
+  background: #f9fafb;
+}
+
+.sold-product-customers-page .sold-product-customers-table tbody .col-actions-sticky {
+  background: #fff;
+}
+
+.sold-product-customers-page .sold-product-customers-table tbody tr:hover .col-actions-sticky {
+  background: #f9fafb;
+}
+
+.sold-product-customers-page .sold-product-customers-table .cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.sold-product-customers-page .sold-product-customers-table .cell-money {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,813 @@
+/* Impressão / PDF — Relatório Presidencial Financeiro (A4 landscape) */
+
+@page {
+  size: A4 landscape;
+  margin: 6mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    overflow: visible !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Isola o documento executivo — oculta shell do app (sidebar, header, tabs). */
+  body.finance-executive-report-route #root {
+    visibility: hidden;
+  }
+
+  body.finance-executive-report-route .executive-report-print-root {
+    visibility: visible;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  body.finance-executive-report-route .executive-report-print-root * {
+    visibility: visible;
+  }
+
+  body.finance-executive-report-route .flex.h-screen > aside,
+  body.finance-executive-report-route main > header,
+  body.finance-executive-report-route nav.finance-module-tabs {
+    display: none !important;
+  }
+
+  body.finance-executive-report-route .flex.h-screen,
+  body.finance-executive-report-route .flex.h-screen > main,
+  body.finance-executive-report-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .no-print,
+  .print-actions,
+  .executive-report-filters,
+  .finance-executive-report-print-no-print,
+  body.finance-executive-report-route button,
+  body.finance-executive-report-route .executive-report-screen-only,
+  body.finance-executive-report-route .executive-report-screen-cover,
+  body.finance-executive-report-route .executive-print-data-quality,
+  body.finance-executive-report-route .executive-alerts-panel {
+    display: none !important;
+  }
+
+  body.finance-executive-report-route .finance-executive-report-page {
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .executive-report-print-root,
+  .finance-executive-report-document.executive-report-print-root {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  /*
+   * Cada seção ocupa exatamente uma página paisagem.
+   * A4 paisagem = 210mm de altura; com margem @page de 6mm sobram 198mm úteis.
+   * Fixamos uma altura levemente menor (193mm) como folga de arredondamento para
+   * evitar "vazamento" de conteúdo para uma página seguinte quase em branco
+   * (sintoma clássico: página só com rodapé/data).
+   */
+  .executive-print-page {
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    height: 193mm;
+    max-height: 193mm;
+    overflow: hidden !important;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5mm;
+    padding: 0;
+    box-sizing: border-box;
+    background: #fff !important;
+  }
+
+  .executive-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* Corpo da página cresce e distribui o espaço para o card do gráfico. */
+  .executive-print-page-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-print-page-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3mm;
+    border-bottom: 0.4mm solid #cbd5e1;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
+    font-size: 7.5pt;
+    color: #334155;
+    flex-shrink: 0;
+  }
+
+  .executive-print-page-logo {
+    max-height: 9mm;
+    max-width: 32mm;
+    object-fit: contain;
+  }
+
+  .executive-print-page-brand-text,
+  .executive-print-cover-brand-fallback {
+    font-weight: 700;
+    font-size: 9pt;
+    color: #1e3a5f;
+  }
+
+  .executive-print-page-header-doc {
+    font-weight: 800;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #0f172a;
+    margin: 0;
+  }
+
+  .executive-print-page-header-meta {
+    margin: 0;
+    font-size: 7pt;
+    color: #64748b;
+  }
+
+  .executive-print-page-header-source {
+    display: none;
+  }
+
+  .executive-print-page-footer {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5mm;
+    border-top: 0.3mm solid #e2e8f0;
+    padding-top: 1.5mm;
+    margin-top: auto;
+    font-size: 6pt;
+    color: #64748b;
+    flex-shrink: 0;
+  }
+
+  .executive-print-page-footer-sources {
+    flex: 1 1 70%;
+    max-width: 70%;
+    line-height: 1.3;
+  }
+
+  .executive-print-page-footer-page {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .executive-print-page-footer-generated {
+    flex: 1 1 100%;
+    text-align: right;
+    font-weight: 600;
+    font-size: 5.5pt;
+  }
+
+  .executive-section-intro {
+    font-size: 8pt !important;
+    color: #475569 !important;
+    margin: 0 0 2mm !important;
+    line-height: 1.45 !important;
+  }
+
+  .executive-report-period-meta {
+    font-size: 7pt !important;
+    color: #64748b !important;
+    margin: 0 0 2.5mm !important;
+    line-height: 1.35 !important;
+    page-break-inside: avoid;
+  }
+
+  .executive-report-period-meta svg {
+    width: 3mm !important;
+    height: 3mm !important;
+  }
+
+  .executive-print-cover {
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #334155 100%) !important;
+    color: #f8fafc !important;
+    padding: 14mm 12mm;
+    border-radius: 0 !important;
+  }
+
+  .executive-print-cover-logo {
+    max-height: 20mm;
+    max-width: 68mm;
+    object-fit: contain;
+    margin-bottom: 5mm;
+    filter: brightness(0) invert(1);
+  }
+
+  .executive-print-cover-logo[data-light="true"] {
+    filter: none;
+  }
+
+  .executive-print-cover-title {
+    font-size: 26pt;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0 0 3mm;
+    color: #fff !important;
+  }
+
+  .executive-print-cover-subtitle {
+    font-size: 10pt;
+    color: #cbd5e1 !important;
+    margin: 0 0 6mm;
+    max-width: 140mm;
+  }
+
+  .executive-print-cover-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3mm;
+    width: 100%;
+    max-width: 240mm;
+    margin-top: 3mm;
+  }
+
+  .executive-print-cover-label {
+    font-size: 6.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8 !important;
+    margin: 0 0 1mm;
+  }
+
+  .executive-print-cover-value {
+    font-size: 10pt;
+    font-weight: 700;
+    margin: 0;
+    color: #f8fafc !important;
+  }
+
+  .executive-print-cover-source {
+    margin-top: 8mm;
+    font-size: 7pt;
+    color: #94a3b8 !important;
+    max-width: 160mm;
+    line-height: 1.35;
+  }
+
+  .finance-executive-report-cover {
+    display: none !important;
+  }
+
+  .executive-print-page .finance-executive-report-section,
+  .executive-section {
+    break-inside: auto;
+    page-break-inside: auto;
+    box-shadow: none !important;
+    border: 0.3mm solid #e2e8f0 !important;
+    border-radius: 2mm !important;
+    padding: 2.5mm 3mm !important;
+    margin: 0 !important;
+    background: #fff !important;
+    /* A seção é uma coluna flex: cabeçalho/KPI fixos e o gráfico ocupa o resto. */
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .finance-executive-section-header {
+    flex: 0 0 auto;
+    margin-bottom: 1mm !important;
+  }
+
+  /*
+   * Região do gráfico: cresce para ocupar toda a área restante da página,
+   * deixando o gráfico como elemento principal (≈55–65% da altura útil).
+   */
+  .executive-chart-region {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 2mm !important;
+  }
+
+  .executive-chart-region > .executive-chart,
+  .executive-chart-region > .executive-chart-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .finance-executive-report-section-title {
+    font-size: 14pt !important;
+    margin-bottom: 1mm !important;
+  }
+
+  .finance-executive-report-section-subtitle {
+    font-size: 8.5pt !important;
+    margin-bottom: 2mm !important;
+  }
+
+  .finance-executive-section-eyebrow {
+    font-size: 7pt !important;
+  }
+
+  .executive-kpi-grid,
+  .indus-kpi-grid.finance-executive-kpi-grid,
+  .finance-executive-kpi-grid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 2mm !important;
+  }
+
+  .finance-executive-kpi-grid[data-columns="5"] {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact {
+    gap: 1.5mm !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
+    max-height: none !important;
+    min-height: 16mm !important;
+    height: auto !important;
+    padding: 1.2mm 1.8mm !important;
+    overflow: visible !important;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .executive-kpi-card-value,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .commercial-kpi-value,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card .indus-kpi-value {
+    font-size: 10pt !important;
+  }
+
+  /* Páginas com gráfico: KPIs densos + gráfico prioritário */
+  .executive-section--with-chart {
+    padding: 2mm 2.5mm !important;
+    gap: 1mm !important;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .executive-section--with-chart .executive-section-intro,
+  .executive-section--with-chart .finance-executive-report-section-subtitle {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-section-header {
+    margin-bottom: 0.5mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-report-section-title {
+    font-size: 11pt !important;
+    margin-bottom: 0 !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-grid.executive-kpi-grid--compact {
+    gap: 1.2mm !important;
+    flex-shrink: 0;
+    overflow: visible !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card.commercial-kpi-card,
+  .executive-section--with-chart .finance-executive-kpi-card.indus-kpi-card {
+    min-height: 17mm !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 1.2mm 1.6mm !important;
+    overflow: visible !important;
+  }
+
+  /* Sub/trend abaixo do valor — oculto no PDF para priorizar label + valor legível */
+  .executive-section--with-chart .finance-executive-kpi-card > div:last-child {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card > * + * {
+    margin-top: 0.6mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card button[aria-label] {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card .commercial-kpi-value,
+  .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-value,
+  .executive-section--with-chart .finance-executive-kpi-card .indus-kpi-value {
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    padding-bottom: 0.2mm !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-card .executive-kpi-card-label {
+    font-size: 5.5pt !important;
+    line-height: 1.2 !important;
+  }
+
+  .executive-section--with-chart .finance-executive-kpi-label,
+  .executive-section--with-chart .finance-executive-kpi-card [class*="financeBiKpiLabel"] {
+    font-size: 5.5pt !important;
+    line-height: 1.05 !important;
+  }
+
+  .executive-section--with-chart .executive-report-period-meta,
+  .executive-section--with-chart .mt-4 {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .executive-chart-region {
+    margin-top: 0 !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-section--with-chart .executive-chart-region > .executive-chart-shell,
+  .executive-section--with-chart .executive-chart-region > .space-y-2 {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-section--with-chart .executive-chart-title {
+    display: none !important;
+  }
+
+  .executive-section--with-chart .executive-chart-subtitle {
+    font-size: 7pt !important;
+    margin-top: 0 !important;
+    line-height: 1.25 !important;
+  }
+
+  .executive-section--with-chart .executive-chart-shell {
+    padding: 1.5mm 2mm !important;
+    gap: 0.5mm !important;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .executive-section--with-chart .executive-chart-header {
+    margin-bottom: 0.3mm !important;
+  }
+
+  .executive-section--with-chart .executive-chart-scenario {
+    font-size: 6.5pt !important;
+    padding: 1mm 1.5mm !important;
+    margin: 0.3mm 0 !important;
+    line-height: 1.3 !important;
+  }
+
+  .executive-section--with-chart .executive-target-hint {
+    font-size: 6pt !important;
+    margin: 0 0 0.5mm !important;
+  }
+
+  .executive-print-page-body > .executive-section--with-chart {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-hint,
+  .finance-executive-kpi-grid.executive-kpi-grid--compact [class*="financeBiKpiHint"] {
+    display: none !important;
+  }
+
+  .finance-executive-kpi-card,
+  .finance-executive-kpi-card.commercial-kpi-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    min-height: auto !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 2mm 2.5mm !important;
+    border-radius: 1.5mm !important;
+    overflow: visible !important;
+  }
+
+  .finance-executive-kpi-card .commercial-kpi-value,
+  .finance-executive-kpi-card .indus-kpi-value,
+  .finance-executive-kpi-card .executive-kpi-card-value {
+    font-size: 13pt !important;
+    line-height: 1.25 !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+  }
+
+  .finance-executive-kpi-card .finance-bi-kpi-label,
+  .finance-executive-kpi-card [class*="financeBiKpiLabel"] {
+    font-size: 6.5pt !important;
+  }
+
+  .finance-executive-kpi-label {
+    font-size: 6.5pt !important;
+  }
+
+  .finance-executive-kpi-hint {
+    font-size: 6.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  .executive-chart,
+  .executive-chart-shell {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    border: 0.3mm solid #e2e8f0 !important;
+    padding: 2mm 2.5mm !important;
+    margin: 0 !important;
+    background: #fff !important;
+    /* Card do gráfico também é coluna flex para o corpo crescer. */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .executive-chart-header {
+    flex: 0 0 auto;
+    margin-bottom: 1mm !important;
+  }
+
+  .executive-chart-title {
+    font-size: 11pt !important;
+  }
+
+  .executive-chart-subtitle {
+    font-size: 8pt !important;
+  }
+
+  /*
+   * Corpo do gráfico: altura explícita para o Recharts ResponsiveContainer.
+   * NÃO usar height: auto — colapsa o SVG no PDF (altura 0).
+   */
+  .executive-report-chart-frame,
+  .executive-chart-body {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: 98mm !important;
+    min-height: 98mm !important;
+    max-height: 98mm !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .executive-report-chart-frame .recharts-responsive-container,
+  .executive-chart-body .recharts-responsive-container,
+  .executive-report-chart-frame .recharts-wrapper,
+  .executive-chart-body .recharts-wrapper {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 98mm !important;
+  }
+
+  .executive-report-chart-frame svg,
+  .executive-chart-body svg {
+    display: block !important;
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+
+  .executive-chart-body .recharts-cartesian-axis-tick text,
+  .executive-chart-body .recharts-legend-item-text {
+    font-size: 8pt !important;
+  }
+
+  .executive-chart-scenario {
+    flex: 0 0 auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 7.5pt !important;
+    padding: 1.5mm 2mm !important;
+    margin: 1mm 0 !important;
+  }
+
+  .executive-target-hint {
+    font-size: 7pt !important;
+    margin: 1mm 0 0 !important;
+    color: #64748b !important;
+  }
+
+  .finance-executive-narrative-box,
+  .finance-executive-reading {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 8.5pt !important;
+    padding: 2mm 2.5mm !important;
+  }
+
+  .finance-executive-narrative-bullets {
+    margin: 0 !important;
+    padding-left: 4mm !important;
+    font-size: 8.5pt !important;
+    line-height: 1.4 !important;
+  }
+
+  .finance-executive-narrative-bullets li {
+    margin: 0 0 1mm !important;
+  }
+
+  .executive-print-conclusion-note {
+    margin-top: 4mm;
+    font-size: 7pt;
+    color: #64748b;
+    line-height: 1.35;
+    text-align: center;
+  }
+
+  .executive-print-monthly-timeline {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-print-monthly-timeline [data-testid$="-tooltip"] {
+    display: none !important;
+  }
+
+  .executive-print-monthly-timeline table {
+    font-size: 7pt !important;
+  }
+
+  .executive-print-monthly-timeline th,
+  .executive-print-monthly-timeline td {
+    padding: 1.2mm 1.5mm !important;
+  }
+
+  .executive-print-monthly-timeline h3 {
+    font-size: 11pt !important;
+  }
+
+  .executive-print-monthly-timeline p {
+    font-size: 7pt !important;
+  }
+
+  /*
+   * Radar Diário de Caixa — conteúdo longo (faixas, dias, grids AR/AP).
+   * A página usa fluxo contínuo para não cortar com overflow:hidden da página fixa.
+   */
+  .executive-print-page.executive-print-page--flow {
+    height: unset !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .executive-print-page--flow .executive-print-page-body {
+    overflow: visible !important;
+    min-height: unset !important;
+    flex: 1 1 auto !important;
+    display: block !important;
+  }
+
+  .executive-print-page--flow .finance-executive-report-section.executive-section--cash-radar {
+    overflow: visible !important;
+    flex: none !important;
+    min-height: unset !important;
+    display: block !important;
+  }
+
+  .executive-report-cash-radar-print {
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print .executive-report-cash-radar-day-row {
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print .executive-report-cash-radar-range-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .executive-report-cash-radar-print [data-testid="finance-cc-grid-table"] {
+    overflow: visible !important;
+  }
+
+  .executive-report-cash-radar-print table {
+    break-inside: auto;
+    page-break-inside: auto;
+    width: 100%;
+    font-size: 7pt !important;
+  }
+
+  .executive-report-cash-radar-print thead {
+    display: table-header-group;
+  }
+
+  .executive-report-cash-radar-print tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-report-cash-radar-print th,
+  .executive-report-cash-radar-print td {
+    padding: 1mm 1.2mm !important;
+    vertical-align: top;
+    word-break: break-word;
+  }
+
+  .finance-executive-report-section--page-break {
+    break-before: auto !important;
+    page-break-before: auto !important;
+  }
+
+  .finance-executive-report-footer {
+    display: none !important;
+  }
+
+  .mt-4,
+  .mt-5,
+  .mt-6 {
+    margin-top: 2mm !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+@media screen {
+  .executive-print-page-header,
+  .executive-print-page-footer {
+    display: none;
+  }
+
+  .executive-print-cover {
+    display: none;
+  }
+
+  .executive-print-page + .executive-print-page {
+    margin-top: 0;
+  }
+
+  .executive-print-conclusion-note {
+    display: none;
+  }
+}
+
+@media print {
+  .executive-report-screen-cover,
+  .executive-report-screen-only {
+    display: none !important;
+  }
+
+  .recharts-tooltip-wrapper,
+  .executive-chart-tooltip,
+  .executive-report-pdf-mode .recharts-tooltip-wrapper {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}
+
+body.executive-report-pdf-mode .recharts-tooltip-wrapper,
+body.executive-report-pdf-mode .executive-chart-tooltip {
+  display: none !important;
+}

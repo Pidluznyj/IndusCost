@@ -1,0 +1,33 @@
+.cash-flow-radar-payables-grid {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-supplier {
+  width: 18%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-company {
+  width: 10%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-description {
+  width: 32%;
+  min-width: 10rem;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-document {
+  width: 10%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-due {
+  width: 10%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-value {
+  width: 12%;
+}
+
+.cash-flow-radar-payables-grid .cash-flow-radar-payables-col-scheduled {
+  width: 8%;
+}

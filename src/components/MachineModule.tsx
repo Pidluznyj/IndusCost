@@ -15,7 +15,11 @@ import {
   Clock
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { MACHINE_TOUR_STEPS } from "@/src/tours/machineTourSteps";
 
 interface MachineCostComponent {
   id?: string;
@@ -39,6 +43,7 @@ export const MachineModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMachine, setEditingMachine] = useState<Machine | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     code: "",
@@ -52,10 +57,11 @@ export const MachineModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/machines");
-      setMachines(await res.json());
+      const data = await fetchJsonOk<Machine[]>("/api/machines");
+      setMachines(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar máquinas:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar máquinas.");
     } finally {
       setLoading(false);
     }
@@ -112,17 +118,16 @@ export const MachineModule = () => {
     const url = editingMachine ? `/api/machines/${editingMachine.id}` : "/api/machines";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar máquina:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a máquina.");
     }
   };
 
@@ -130,16 +135,11 @@ export const MachineModule = () => {
     if (!window.confirm(`Tem certeza que deseja excluir esta máquina?\n(${machine.name})`)) return;
     
     try {
-      const res = await fetch(`/api/machines/${machine.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        window.alert(errorData.message || "Erro ao excluir máquina.");
-        return;
-      }
+      await fetchJsonOk(`/api/machines/${machine.id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao deletar máquina:", error);
-      window.alert("Erro de conexão ao tentar excluir máquina.");
+      window.alert(error instanceof Error ? error.message : "Erro ao excluir máquina.");
     }
   };
 
@@ -150,8 +150,11 @@ export const MachineModule = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6" data-tour="machines-root">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="machines-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -162,13 +165,16 @@ export const MachineModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Máquina
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Máquina
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -176,7 +182,7 @@ export const MachineModule = () => {
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="machines-grid">
           {machines.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.code.toLowerCase().includes(searchTerm.toLowerCase())).map((machine) => {
             const hm = calculateHM(machine);
             return (
@@ -407,6 +413,13 @@ export const MachineModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={MACHINE_TOUR_STEPS}
+        tourName="Tour de Máquinas"
+      />
     </div>
   );
 };

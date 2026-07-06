@@ -1,0 +1,95 @@
+import type express from "express";
+import { prisma } from "@/src/lib/prisma.js";
+import { loadFleetSettings } from "@/src/lib/fleetService.js";
+import { getReservationOrThrow } from "@/src/lib/fleetReservationOps.js";
+import { resolveMobileUsageMode } from "@/src/lib/fleetMobileUsage.js";
+import { getUsageByReservationId, serializeUsage, USAGE_INCLUDE } from "@/src/lib/fleetUsageOps.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
+
+type AuthGuards = FleetAuthGuards;
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+
+export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards) {
+  const g = createFleetRouteGuards(auth);
+
+  app.get("/api/fleet/reservations/:id/usage-context", ...g.view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const reservation = await getReservationOrThrow(id);
+      const mode = resolveMobileUsageMode(reservation.status);
+      const settings = await loadFleetSettings();
+      let usage: ReturnType<typeof serializeUsage> | null = null;
+      if (mode === "checkin") {
+        const row = await prisma.fleetUsage.findUnique({
+          where: { reservationId: id },
+          include: USAGE_INCLUDE,
+        });
+        if (row) usage = serializeUsage(row);
+      }
+      res.json({
+        reservation: {
+          ...reservation,
+          startDateTime: reservation.startDateTime.toISOString(),
+          endDateTime: reservation.endDateTime.toISOString(),
+          createdAt: reservation.createdAt.toISOString(),
+          updatedAt: reservation.updatedAt.toISOString(),
+          vehicle: reservation.vehicle
+            ? { ...reservation.vehicle, currentKm: Number(reservation.vehicle.currentKm) }
+            : reservation.vehicle,
+          driver: reservation.driver
+            ? {
+                ...reservation.driver,
+                cnhExpirationDate:
+                  reservation.driver.cnhExpirationDate?.toISOString() ?? null,
+              }
+            : reservation.driver,
+        },
+        mode,
+        usage,
+        settings: {
+          checklistRetiradaObrigatorio: settings.checklistRetiradaObrigatorio,
+          checklistDevolucaoObrigatorio: settings.checklistDevolucaoObrigatorio,
+          bloquearRetiradaCnhVencida: settings.bloquearRetiradaCnhVencida,
+        },
+      });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET usage-context", req);
+    }
+  });
+
+  app.get("/api/fleet/reservations/:id/usage", ...g.view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const usage = await getUsageByReservationId(id);
+      res.json({ usage });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET reservation usage", req);
+    }
+  });
+
+  app.get("/api/fleet/vehicles/:id/usages", ...g.view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const usages = await prisma.fleetUsage.findMany({
+        where: { vehicleId: id },
+        include: USAGE_INCLUDE,
+        orderBy: { checkoutAt: "desc" },
+        take: 100,
+      });
+      res.json({ usages: usages.map(serializeUsage) });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET vehicle usages", req);
+    }
+  });
+}

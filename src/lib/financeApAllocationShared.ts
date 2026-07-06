@@ -1,0 +1,35 @@
+/** Confirmação textual obrigatória para apply em lote de classificação AP. */
+export const FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT = "APLICAR CENTROS DE CUSTO AP";
+
+export const FINANCE_AP_ALLOCATION_AUDIT_ENTITY = {
+  ALLOCATION: "AccountsPayableCostCenterAllocation",
+  BATCH_RUN: "AccountsPayableAllocationBatch",
+} as const;
+
+export const FINANCE_AP_ALLOCATION_AUDIT_ACTION = {
+  CREATE: "CREATE",
+  UPDATE: "UPDATE",
+  DELETE: "DELETE",
+  BATCH_APPLY: "BATCH_APPLY",
+  MANUAL_RECLASSIFICATION: "MANUAL_RECLASSIFICATION",
+} as const;
+
+export const FINANCE_AP_ALLOCATION_PERCENTAGE_TOLERANCE = 0.01;
+export const FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE = 0.01;
+
+export const BATCH_RECLASSIFY_MAX_PAYABLES = 50;
+
+export type BatchReclassificationResultItem = {
+  payableId: number;
+  status: "updated" | "skipped" | "failed";
+  message?: string;
+};
+
+export type BatchReclassificationResult = {
+  success: boolean;
+  requested: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  results: BatchReclassificationResultItem[];
+};

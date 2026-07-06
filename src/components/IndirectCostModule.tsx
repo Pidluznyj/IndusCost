@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   Plus, 
   Search, 
@@ -18,7 +18,13 @@ import {
   TrendingDown
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { INDIRECT_COST_TOUR_STEPS } from "@/src/tours/indirectTourSteps";
+import { filterIndirectCosts } from "@/src/lib/operationalListFilters";
 
 interface IndirectCost {
   id: string;
@@ -34,8 +40,11 @@ export const IndirectCostModule = () => {
   const [costs, setCosts] = useState<IndirectCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listCategory, setListCategory] = useState("");
+  const [listStatus, setListStatus] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCost, setEditingCost] = useState<IndirectCost | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     description: "",
@@ -48,10 +57,11 @@ export const IndirectCostModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/indirect-costs");
-      setCosts(await res.json());
+      const data = await fetchJsonOk<IndirectCost[]>("/api/indirect-costs");
+      setCosts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar custos indiretos:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar custos indiretos.");
     } finally {
       setLoading(false);
     }
@@ -90,17 +100,16 @@ export const IndirectCostModule = () => {
     const url = editingCost ? `/api/indirect-costs/${editingCost.id}` : "/api/indirect-costs";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o custo indireto.");
     }
   };
 
@@ -108,16 +117,11 @@ export const IndirectCostModule = () => {
     if (!window.confirm(`Tem certeza que deseja excluir este custo indireto: ${cost.description}?`)) return;
     
     try {
-      const res = await fetch(`/api/indirect-costs/${cost.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        window.alert(errorData.message || "Erro ao excluir custo indireto.");
-        return;
-      }
+      await fetchJsonOk(`/api/indirect-costs/${cost.id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao deletar custo indireto:", error);
-      window.alert("Erro de conexão ao tentar excluir custo indireto.");
+      window.alert(error instanceof Error ? error.message : "Erro ao excluir custo indireto.");
     }
   };
 
@@ -139,10 +143,23 @@ export const IndirectCostModule = () => {
   const totalCIF = costs.filter(c => c.category === "CIF" && c.status === "ACTIVE").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
   const totalOPEX = costs.filter(c => c.category !== "CIF" && c.status === "ACTIVE").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
+  const filteredCosts = useMemo(() => {
+    return filterIndirectCosts(costs, { search: searchTerm, category: listCategory, status: listStatus });
+  }, [costs, searchTerm, listCategory, listStatus]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListCategory("");
+    setListStatus("");
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="indirect-cost-root">
       {/* Summary Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        data-tour="indirect-cost-summary"
+      >
         <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
           <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total CIF Mensal</p>
           <p className="text-2xl font-black text-blue-600">{formatCurrency(totalCIF)}</p>
@@ -168,8 +185,12 @@ export const IndirectCostModule = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="indirect-cost-toolbar"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
@@ -179,17 +200,62 @@ export const IndirectCostModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          <select
+            className="min-w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            value={listCategory}
+            onChange={(e) => setListCategory(e.target.value)}
+          >
+            <option value="">Todas as categorias</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="min-w-[160px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            value={listStatus}
+            onChange={(e) => setListStatus(e.target.value)}
+          >
+            <option value="">Todos os status</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Despesa
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Exibindo <span className="font-bold text-foreground">{filteredCosts.length}</span> de{" "}
+          <span className="font-bold text-foreground">{costs.filter((c) => c.category !== "GLOBAL_PARAM").length}</span>{" "}
+          despesa(s).
+        </p>
+        <button
+          type="button"
+          onClick={clearListFilters}
+          disabled={!searchTerm.trim() && !listCategory && !listStatus}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
         >
-          <Plus className="h-4 w-4" />
-          Nova Despesa
+          <X className="h-4 w-4" />
+          Limpar filtros
         </button>
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+      <div
+        className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden"
+        data-tour="indirect-cost-table"
+      >
         <table className="w-full text-left text-sm">
           <thead className="bg-accent/50 border-b border-border">
             <tr>
@@ -214,8 +280,14 @@ export const IndirectCostModule = () => {
                   Nenhuma despesa indireta cadastrada.
                 </td>
               </tr>
+            ) : filteredCosts.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-12 text-center text-muted-foreground italic">
+                  Nenhum resultado encontrado com os filtros aplicados.
+                </td>
+              </tr>
             ) : (
-              costs.filter(c => c.category !== "GLOBAL_PARAM" && c.description.toLowerCase().includes(searchTerm.toLowerCase())).map((cost) => {
+              filteredCosts.map((cost) => {
                 const cat = categories.find(cat => cat.id === cost.category);
                 const Icon = cat?.icon || HelpCircle;
                 return (
@@ -311,15 +383,16 @@ export const IndirectCostModule = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Categoria</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Categoria..."
+                      options={categories.map((cat) => ({
+                        value: cat.id,
+                        label: cat.label,
+                        searchTerms: `${cat.id} ${cat.label}`,
+                      }))}
                       value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    >
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.label}</option>
-                      ))}
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, category: v })}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Valor Mensal (R$)</label>
@@ -347,15 +420,16 @@ export const IndirectCostModule = () => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Critério de Rateio</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Critério..."
+                      options={criteria.map((cr) => ({
+                        value: cr.id,
+                        label: cr.label,
+                        searchTerms: `${cr.id} ${cr.label}`,
+                      }))}
                       value={formData.allocationCriteria}
-                      onChange={(e) => setFormData({...formData, allocationCriteria: e.target.value})}
-                    >
-                      {criteria.map(cr => (
-                        <option key={cr.id} value={cr.id}>{cr.label}</option>
-                      ))}
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, allocationCriteria: v })}
+                    />
                   </div>
                 </div>
 
@@ -380,6 +454,13 @@ export const IndirectCostModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={INDIRECT_COST_TOUR_STEPS}
+        tourName="Tour de Custos Indiretos"
+      />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 // src/types/commercial.ts
 import { Product } from "./product";
+import type { CalculationExplanation } from "./calculation";
 
 export type ProposalStatus = 
   | "DRAFT" 
@@ -34,6 +35,7 @@ export interface Customer {
 export interface ProposalItem {
   id?: string;
   proposalId?: string;
+  externalProductId?: number | null;
   productId: string;
   Product?: Product;
   quantity: number;
@@ -51,7 +53,24 @@ export interface ProposalItem {
   commissionValue: number;
   freightValue: number;
   notes?: string;
+  /** Metadados de transparência vindos do snapshot de preço (unitCost / preço sugerido). */
+  calculationExplainability?: {
+    unitCost?: CalculationExplanation;
+    suggestedPrice?: CalculationExplanation;
+  };
+  priceTableItemId?: string | null;
+  priceSource?: string | null;
+  /** Cópia auditável da resposta de preço publicado (ou legível pelo backend). */
+  pricingSnapshotJson?: Record<string, unknown> | null;
+  /** Rastreio direto da tabela/versão usada no item (proposta mista). */
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
 }
+
+/** Pedido interno vinculado à proposta (quando existir). */
+export type SalesOrderLinkStatus = "DRAFT" | "READY_TO_SEND" | "SENT_TO_NOMUS" | "CANCELLED" | "ERROR";
 
 export interface Proposal {
   id: string;
@@ -60,6 +79,12 @@ export interface Proposal {
   customerId: string;
   Customer?: Customer;
   status: ProposalStatus;
+  /** Pedido de venda gerado a partir desta proposta (lista / detalhe). */
+  salesOrder?: {
+    id: string;
+    orderCode: string;
+    status: SalesOrderLinkStatus;
+  } | null;
   responsible?: string;
   companyIssuer?: string;
   validityDays: number;
@@ -85,6 +110,12 @@ export interface Proposal {
   items: ProposalItem[];
   createdAt: string;
   updatedAt: string;
+
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
+  priceSource?: string | null;
 }
 
 export interface CreateProposalInput {
@@ -112,6 +143,12 @@ export interface CreateProposalInput {
   totalTaxes: number;
   totalCommission: number;
   totalFreight: number;
+
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
+  priceSource?: string | null;
 
   items: Omit<ProposalItem, "id" | "proposalId" | "Product">[];
 }

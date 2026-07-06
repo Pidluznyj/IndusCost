@@ -16,7 +16,23 @@ import {
   MapPin
 } from "lucide-react";
 import { cn, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { TAX_TOUR_STEPS } from "@/src/tours/taxTourSteps";
+
+const TAX_OPERATION_OPTIONS = [
+  { value: "VENDA", label: "Venda", searchTerms: "VENDA venda" },
+  { value: "COMPRA", label: "Compra", searchTerms: "COMPRA compra" },
+  { value: "TRANSFERENCIA", label: "Transferência", searchTerms: "TRANSFERENCIA transferencia transferência" },
+];
+
+const TAX_BASE_TYPE_OPTIONS = [
+  { value: "GROSS_PRICE", label: "Preço Bruto", searchTerms: "GROSS bruto" },
+  { value: "NET_PRICE", label: "Preço Líquido", searchTerms: "NET líquido liquido" },
+];
 
 interface TaxComponent {
   id?: string;
@@ -41,6 +57,7 @@ export const TaxModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<TaxRule | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -52,10 +69,11 @@ export const TaxModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/tax-rules");
-      setRules(await res.json());
+      const data = await fetchJsonOk<TaxRule[]>("/api/tax-rules");
+      setRules(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar regras tributárias:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar regras tributárias.");
     } finally {
       setLoading(false);
     }
@@ -109,24 +127,26 @@ export const TaxModule = () => {
     const url = editingRule ? `/api/tax-rules/${editingRule.id}` : "/api/tax-rules";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a regra tributária.");
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="tax-rules-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="tax-rules-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -137,17 +157,20 @@ export const TaxModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Regra Fiscal
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Regra Fiscal
+          </button>
+        </div>
       </div>
 
       {/* Rules Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="tax-rules-grid">
         {loading ? (
           <div className="col-span-full p-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -243,15 +266,12 @@ export const TaxModule = () => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de Operação</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Tipo de operação..."
+                      options={TAX_OPERATION_OPTIONS}
                       value={formData.operation}
-                      onChange={(e) => setFormData({...formData, operation: e.target.value})}
-                    >
-                      <option value="VENDA">Venda</option>
-                      <option value="COMPRA">Compra</option>
-                      <option value="TRANSFERENCIA">Transferência</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, operation: v })}
+                    />
                   </div>
                 </div>
 
@@ -304,18 +324,17 @@ export const TaxModule = () => {
                         </div>
                         <div className="col-span-3 space-y-1.5">
                           <label className="text-[10px] font-bold text-muted-foreground uppercase">Base de Cálculo</label>
-                          <select
-                            className="w-full p-2 rounded-lg border border-border bg-background text-[10px] outline-none"
+                          <SearchableSelect
+                            placeholder="Base..."
+                            className="text-[10px]"
+                            options={TAX_BASE_TYPE_OPTIONS}
                             value={comp.baseType}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const newComps = [...formData.components];
-                              newComps[idx].baseType = e.target.value;
+                              newComps[idx].baseType = v;
                               setFormData({ ...formData, components: newComps });
                             }}
-                          >
-                            <option value="GROSS_PRICE">Preço Bruto</option>
-                            <option value="NET_PRICE">Preço Líquido</option>
-                          </select>
+                          />
                         </div>
                         <div className="col-span-1 flex justify-end">
                           <button 
@@ -362,6 +381,13 @@ export const TaxModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={TAX_TOUR_STEPS}
+        tourName="Tour de Regras Fiscais"
+      />
     </div>
   );
 };

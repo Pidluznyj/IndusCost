@@ -1,0 +1,84 @@
+import { normalizeComponentCode, normalizeSku } from "@/src/lib/nomusBomComparison";
+import { detectOperationalItem } from "@/src/lib/nomusBomClassification";
+import { isLocalAssemblyComponentCode } from "@/src/lib/nomusEffectivePricingBomTypes";
+import { prisma } from "@/src/lib/prisma";
+
+export const AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON =
+  "Item existe no universo Nomus, mas não consta mais na BOM efetiva Nomus deste produto.";
+
+export type NomusUniverseCodeSet = ReadonlySet<string>;
+
+export function isCodeKnownInNomusUniverse(
+  code: string,
+  universe: NomusUniverseCodeSet
+): boolean {
+  const key = normalizeComponentCode(code);
+  if (!key) return false;
+  return universe.has(key);
+}
+
+/**
+ * Códigos conhecidos no ecossistema Nomus:
+ * - BOM stage (componentes/pais)
+ * - produtos controlados IndusCost
+ * - catálogo ERP Nomus (NomusProductCatalog), incluindo matérias-primas
+ *
+ * Material.code não tem origem Nomus confiável no schema — não entra neste universo.
+ */
+export async function buildNomusUniverseCodeSet(): Promise<Set<string>> {
+  const codes = new Set<string>();
+
+  const [componentGroups, parentGroups, products, catalogRows] = await Promise.all([
+    prisma.nomusBomComponentStage.groupBy({ by: ["componentCode"] }),
+    prisma.nomusBomComponentStage.groupBy({ by: ["parentCode"] }),
+    prisma.product.findMany({
+      where: {
+        OR: [
+          { isNomusControlled: true },
+          { sourceSystem: { equals: "NOMUS", mode: "insensitive" } },
+        ],
+      },
+      select: { sku: true },
+    }),
+    prisma.nomusProductCatalog.findMany({
+      select: { code: true },
+    }),
+  ]);
+
+  for (const row of componentGroups) {
+    if (row.componentCode) codes.add(normalizeComponentCode(row.componentCode));
+  }
+  for (const row of parentGroups) {
+    if (row.parentCode) codes.add(normalizeComponentCode(row.parentCode));
+  }
+  for (const product of products) {
+    if (product.sku) {
+      codes.add(normalizeComponentCode(product.sku));
+      codes.add(normalizeSku(product.sku));
+    }
+  }
+  for (const row of catalogRows) {
+    if (row.code) {
+      codes.add(normalizeComponentCode(row.code));
+      codes.add(normalizeSku(row.code));
+    }
+  }
+
+  codes.delete("");
+  return codes;
+}
+
+export function isAutoRemovableObsoleteLocalLine(input: {
+  componentCode: string;
+  componentDescription?: string | null;
+  localException?: boolean;
+  /** Subproduto (childProduct) na ProductBOM — exige decisão humana, não auto-exclusão. */
+  indusComponentKind?: "PRODUCT" | "MATERIAL" | "UNKNOWN";
+  nomusUniverse: NomusUniverseCodeSet;
+}): boolean {
+  if (input.localException === true) return false;
+  if (input.indusComponentKind === "PRODUCT") return false;
+  if (isLocalAssemblyComponentCode(input.componentCode)) return false;
+  if (detectOperationalItem(input.componentCode, input.componentDescription)) return false;
+  return isCodeKnownInNomusUniverse(input.componentCode, input.nomusUniverse);
+}

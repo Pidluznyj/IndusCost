@@ -41,7 +41,29 @@ export const DataImportDialog = ({
   const [previewData, setPreviewData] = useState<ImportResult<any> | Record<string, ImportResult<any>> | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
-  const [importResult, setImportResult] = useState<{ count?: number; skipped?: number; productsCreated?: number; bomCreated?: number } | null>(null);
+  const [importResult, setImportResult] = useState<{
+    count?: number;
+    skipped?: number;
+    productsCreated?: number;
+    bomCreated?: number;
+    bomLinesWritten?: number;
+    bomParentsStructureReplaced?: number;
+    estruturaRowsIgnored?: number;
+    hasStructureWarnings?: boolean;
+    estruturaIgnoredDetails?: Array<{
+      row: number;
+      parentSku: string;
+      childType?: string;
+      childIdentifier?: string;
+      reason: string;
+    }>;
+    summary?: {
+      rowsProcessed?: number;
+      rowsImported?: number;
+      rowsSkippedExisting?: number;
+      rowsFailed?: number;
+    };
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -385,44 +407,99 @@ export const DataImportDialog = ({
                 key="success"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="py-12 text-center space-y-6"
+                className="py-8 text-center space-y-6"
               >
-                <div className="h-20 w-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto text-green-500">
+                <div className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto ${
+                  importResult.hasStructureWarnings
+                    ? "bg-amber-500/10 text-amber-600"
+                    : "bg-green-500/10 text-green-500"
+                }`}>
                   <CheckCircle2 className="h-12 w-12" />
                 </div>
                 <div>
                   <h4 className="text-2xl font-bold">Importação Concluída!</h4>
-                  <p className="text-muted-foreground">Os dados foram processados com sucesso.</p>
+                  <p className="text-muted-foreground">
+                    {importResult.hasStructureWarnings
+                      ? "Dados gravados com avisos na estrutura (BOM). Revise os detalhes abaixo."
+                      : "Os dados foram processados com sucesso."}
+                  </p>
                 </div>
-                <div className="flex items-center justify-center gap-8">
+                <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8">
                   {importResult.productsCreated !== undefined ? (
                     <>
                       <div className="text-center">
-                        <p className="text-xs font-bold text-muted-foreground uppercase">Itens Criados</p>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Produtos novos</p>
                         <p className="text-3xl font-black text-primary">{importResult.productsCreated}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs font-bold text-muted-foreground uppercase">Estruturas</p>
-                        <p className="text-3xl font-black text-blue-500">{importResult.bomCreated}</p>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Pais c/ BOM substituída</p>
+                        <p className="text-3xl font-black text-violet-500">
+                          {importResult.bomParentsStructureReplaced ?? "—"}
+                        </p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs font-bold text-muted-foreground uppercase">Ignorados</p>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Linhas BOM gravadas</p>
+                        <p className="text-3xl font-black text-blue-500">
+                          {importResult.bomLinesWritten ?? importResult.bomCreated}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Cadastro já existia</p>
                         <p className="text-3xl font-black text-orange-500">{importResult.skipped}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Linhas estrutura ignoradas</p>
+                        <p className="text-3xl font-black text-amber-600">
+                          {importResult.estruturaRowsIgnored ?? 0}
+                        </p>
                       </div>
                     </>
                   ) : (
                     <>
                       <div className="text-center">
                         <p className="text-xs font-bold text-muted-foreground uppercase">Importados</p>
-                        <p className="text-3xl font-black text-primary">{importResult.count}</p>
+                        <p className="text-3xl font-black text-primary">
+                          {importResult.summary?.rowsImported ?? importResult.count}
+                        </p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs font-bold text-muted-foreground uppercase">Ignorados</p>
-                        <p className="text-3xl font-black text-orange-500">{importResult.skipped}</p>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Já existiam</p>
+                        <p className="text-3xl font-black text-orange-500">
+                          {importResult.summary?.rowsSkippedExisting ?? importResult.skipped}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Linhas no arquivo</p>
+                        <p className="text-3xl font-black text-slate-600">
+                          {importResult.summary?.rowsProcessed ?? (importResult.count ?? 0) + (importResult.skipped ?? 0)}
+                        </p>
                       </div>
                     </>
                   )}
                 </div>
+                {importResult.estruturaIgnoredDetails && importResult.estruturaIgnoredDetails.length > 0 && (
+                  <div className="text-left max-h-48 overflow-y-auto rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 mx-auto max-w-2xl">
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-200 mb-2 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      Linhas de estrutura não aplicadas ({importResult.estruturaIgnoredDetails.length})
+                    </p>
+                    <ul className="space-y-1 text-[11px] text-amber-900/90 dark:text-amber-100/90">
+                      {importResult.estruturaIgnoredDetails.slice(0, 40).map((d, i) => (
+                        <li key={i}>
+                          <span className="font-mono">L{d.row}</span>
+                          {d.parentSku ? ` · ${d.parentSku}` : ""}
+                          {": "}
+                          {d.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    {importResult.estruturaIgnoredDetails.length > 40 && (
+                      <p className="text-[10px] text-muted-foreground mt-2">
+                        Mostrando 40 de {importResult.estruturaIgnoredDetails.length} ocorrências.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <button 
                   onClick={onClose}
                   className="px-8 py-2 rounded-lg bg-primary text-primary-foreground font-bold hover:opacity-90 transition-opacity"

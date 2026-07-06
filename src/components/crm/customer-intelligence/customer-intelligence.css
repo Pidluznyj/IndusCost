@@ -1,0 +1,94 @@
+@import "../../../styles/indus-kpi-grid.css";
+
+.customer-intelligence-page {
+  --ci-card-radius: 1rem;
+}
+
+.customer-intelligence-header {
+  border-radius: var(--ci-card-radius);
+}
+
+.customer-intelligence-kpi-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.customer-intelligence-tab-panel {
+  min-height: 12rem;
+}
+
+.customer-intelligence-data-quality {
+  font-size: 0.75rem;
+}
+
+.customer-intelligence-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: hsl(var(--background) / 0.92);
+  backdrop-filter: blur(8px);
+  padding-bottom: 0.25rem;
+}
+
+.customer-intelligence-page section,
+.customer-intelligence-page table {
+  max-width: 100%;
+}
+
+.customer-intelligence-tab-panel {
+  overflow-x: auto;
+}
+
+.customer-intelligence-print-only {
+  display: none;
+}
+
+@media print {
+  body.customer-intelligence-printing #root > * > aside,
+  body.customer-intelligence-printing #root > * > header,
+  body.customer-intelligence-printing .flex.h-screen > aside,
+  body.customer-intelligence-printing main > header,
+  body.customer-intelligence-printing nav,
+  body.customer-intelligence-printing button,
+  .customer-intelligence-no-print {
+    display: none !important;
+  }
+
+  body.customer-intelligence-printing .flex.h-screen,
+  body.customer-intelligence-printing .flex.h-screen > main,
+  body.customer-intelligence-printing main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .customer-intelligence-sticky-header {
+    position: static;
+    backdrop-filter: none;
+  }
+
+  .customer-intelligence-page {
+    padding: 0;
+    max-width: none;
+    overflow: visible;
+  }
+
+  .customer-intelligence-print-only {
+    display: block !important;
+    margin-bottom: 1rem;
+    font-size: 0.75rem;
+    color: #444;
+  }
+
+  .customer-intelligence-tab-panel {
+    overflow: visible;
+    break-inside: avoid;
+  }
+
+  .customer-intelligence-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

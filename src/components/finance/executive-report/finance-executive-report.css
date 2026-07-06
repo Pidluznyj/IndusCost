@@ -1,0 +1,128 @@
+/* Relatório Presidencial — visual alinhado ao padrão BI Financeiro */
+
+.finance-executive-report-page {
+  --exec-ink: #111827;
+  --exec-muted: #6b7280;
+  --exec-accent: #2563eb;
+  --exec-border: #e5e7eb;
+  overflow-x: hidden;
+}
+
+.finance-executive-report-document {
+  color: var(--exec-ink);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.finance-executive-report-cover {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #334155 100%);
+  color: #f8fafc;
+  border-radius: 1.25rem;
+  padding: 3.5rem 2.75rem;
+  min-height: 24rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+  box-shadow: 0 20px 45px rgb(15 23 42 / 18%);
+}
+
+.finance-executive-report-section--page-break {
+  scroll-margin-top: 1rem;
+}
+
+.executive-report-loading-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.executive-report-document-footer {
+  margin-top: 1.5rem;
+  padding: 1rem 0 2rem;
+  border-top: 1px solid var(--exec-border);
+  text-align: center;
+  color: var(--exec-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.executive-report-document-footer-sources {
+  margin: 0 0 0.35rem;
+}
+
+.executive-report-document-footer-generated {
+  margin: 0;
+  font-weight: 600;
+  color: #475569;
+}
+
+.executive-chart-body,
+.executive-report-chart-frame {
+  width: 100%;
+  overflow: hidden;
+}
+
+.executive-chart-body .recharts-cartesian-axis-tick text,
+.executive-chart-body .recharts-legend-item-text {
+  font-size: 13px !important;
+}
+
+.executive-chart-tooltip {
+  background: #fff;
+  border: 1px solid var(--exec-border);
+  border-radius: 0.75rem;
+  padding: 0.8rem 1rem;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.executive-chart-tooltip-title {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  color: var(--exec-ink);
+}
+
+.finance-executive-page-break {
+  height: 0;
+}
+
+.finance-executive-report-footer {
+  font-size: 0.7rem;
+  color: var(--exec-muted);
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+/*
+ * KPIs do relatório — valores completos (sem ellipsis/clip do indus-kpi-grid global).
+ * Não altera gráficos nem outros módulos que reutilizam FinanceBiKpiCard.
+ */
+.finance-executive-report-document .finance-executive-kpi-card.indus-kpi-card,
+.finance-executive-report-document .finance-executive-kpi-card.commercial-kpi-card {
+  overflow: visible;
+  min-height: auto;
+}
+
+.finance-executive-report-document .finance-executive-kpi-grid.executive-kpi-grid--compact .finance-executive-kpi-card {
+  min-height: 5.5rem;
+  padding: 0.875rem 1rem;
+}
+
+.finance-executive-report-document .finance-executive-kpi-card .commercial-kpi-value,
+.finance-executive-report-document .finance-executive-kpi-card .indus-kpi-value,
+.finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-value {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+  font-size: clamp(0.9375rem, 1.05vw, 1.125rem);
+  max-width: 100%;
+}
+
+.finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-label {
+  line-height: 1.25;
+}

@@ -1,0 +1,288 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Loader2,
+  Printer,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
+import { fetchJsonOk } from "@/src/lib/http";
+import {
+  buildCustomerIntelligenceApiPath,
+  CUSTOMER_INTELLIGENCE_SCREEN_TITLE,
+  type CustomerIntelligenceTabId,
+} from "@/src/lib/customerIntelligenceNavigation";
+import {
+  buildCustomerIntelligenceApiQuery,
+  createDefaultCustomerIntelligenceUiFilters,
+  customerIntelligenceUiFiltersFromSearchParams,
+  customerIntelligenceUiFiltersToSearchParams,
+  type CustomerIntelligenceUiFilters,
+} from "@/src/lib/customerIntelligencePageFilters";
+import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
+import { CustomerIntelligenceHeader } from "./customer-intelligence/CustomerIntelligenceHeader";
+import { CustomerIntelligenceFilters } from "./customer-intelligence/CustomerIntelligenceFilters";
+import { CustomerIntelligenceDataQuality } from "./customer-intelligence/CustomerIntelligenceDataQuality";
+import {
+  CustomerIntelligenceTabs,
+  CustomerIntelligenceTabPlaceholder,
+} from "./customer-intelligence/CustomerIntelligenceTabs";
+import { CustomerIntelligenceOverviewTab } from "./customer-intelligence/CustomerIntelligenceOverviewTab";
+import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/CustomerIntelligencePurchasesTab";
+import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
+import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/CustomerIntelligenceFinancialTab";
+import { CustomerIntelligenceCrmTab } from "./customer-intelligence/CustomerIntelligenceCrmTab";
+import { CustomerIntelligenceRepurchaseTab } from "./customer-intelligence/CustomerIntelligenceRepurchaseTab";
+import { CustomerIntelligenceOpportunitiesTab } from "./customer-intelligence/CustomerIntelligenceOpportunitiesTab";
+import { CustomerIntelligenceProfileTab } from "./customer-intelligence/CustomerIntelligenceProfileTab";
+import "./customer-intelligence/customer-intelligence.css";
+
+function isEmptyReport(report: CustomerIntelligenceReport): boolean {
+  return (
+    report.lifetimeSummary.validOrdersCount === 0 &&
+    report.lifetimeSummary.ordersCount === 0 &&
+    report.history.byYear.length === 0
+  );
+}
+
+function isFilteredEmpty(report: CustomerIntelligenceReport): boolean {
+  return (
+    report.commercialSummary.validOrdersCount === 0 &&
+    report.commercialSummary.ordersCount === 0 &&
+    report.filtersApplied.hasActiveFilter
+  );
+}
+
+export function CustomerIntelligencePage() {
+  const { customerId } = useParams<{ customerId: string }>();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const appliedFilters = useMemo(
+    () => customerIntelligenceUiFiltersFromSearchParams(searchParams),
+    [searchParams]
+  );
+
+  const [draftFilters, setDraftFilters] = useState<CustomerIntelligenceUiFilters>(appliedFilters);
+  const [activeTab, setActiveTab] = useState<CustomerIntelligenceTabId>("overview");
+  const [report, setReport] = useState<CustomerIntelligenceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftFilters(appliedFilters);
+  }, [appliedFilters]);
+
+  const apiQuery = useMemo(
+    () => buildCustomerIntelligenceApiQuery(appliedFilters),
+    [appliedFilters]
+  );
+
+  const loadReport = useCallback(async () => {
+    if (!customerId) {
+      setError("Cliente não informado na URL.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJsonOk<CustomerIntelligenceReport>(
+        buildCustomerIntelligenceApiPath(customerId, apiQuery)
+      );
+      setReport(data);
+    } catch (e) {
+      setReport(null);
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível carregar a inteligência do cliente."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId, apiQuery]);
+
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+
+  const handleApplyFilters = () => {
+    setSearchParams(customerIntelligenceUiFiltersToSearchParams(draftFilters), { replace: true });
+  };
+
+  const handleResetFilters = () => {
+    const defaults = createDefaultCustomerIntelligenceUiFilters();
+    setDraftFilters(defaults);
+    setSearchParams(customerIntelligenceUiFiltersToSearchParams(defaults), { replace: true });
+  };
+
+  const handlePrint = () => {
+    const clearPrintRoute = () => {
+      document.body.classList.remove("customer-intelligence-printing");
+    };
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    };
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    window.setTimeout(() => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    }, 60_000);
+
+    document.body.classList.add("customer-intelligence-printing");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
+
+  return (
+    <div className="customer-intelligence-page space-y-5 pb-8 max-w-[1500px] mx-auto overflow-x-hidden">
+      <div className="customer-intelligence-no-print flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </button>
+          <Link
+            to="/customers"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent"
+          >
+            Clientes
+          </Link>
+          <Link
+            to="/crm-commercial"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent"
+          >
+            CRM Comercial
+          </Link>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void loadReport()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+          >
+            <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent"
+          >
+            <Printer className="h-4 w-4" />
+            Imprimir ficha
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-6 w-6 text-primary" />
+        <div>
+          <h1 className="text-xl font-bold">{CUSTOMER_INTELLIGENCE_SCREEN_TITLE}</h1>
+          <p className="text-sm text-muted-foreground">Central 360º — comercial, financeiro e CRM</p>
+        </div>
+      </div>
+
+      <CustomerIntelligenceFilters
+        draft={draftFilters}
+        onChange={(patch) => setDraftFilters((prev) => ({ ...prev, ...patch }))}
+        onApply={handleApplyFilters}
+        onReset={handleResetFilters}
+      />
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm">Carregando inteligência do cliente…</p>
+        </div>
+      ) : null}
+
+      {!loading && error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-red-900">
+          <p className="font-semibold">Não foi possível carregar os dados</p>
+          <p className="text-sm mt-2">{error}</p>
+          <button
+            type="button"
+            onClick={() => void loadReport()}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-900 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && !error && report ? (
+        <>
+          <div className="customer-intelligence-print-only">
+            <p className="font-semibold">
+              Ficha do cliente — {report.customer.name}
+            </p>
+            <p>
+              Impresso em {new Date().toLocaleDateString("pt-BR")} · Score {report.scoring.score}/100
+            </p>
+          </div>
+          <CustomerIntelligenceDataQuality dataQuality={report.dataQuality} />
+          <div className="customer-intelligence-sticky-header space-y-4">
+            <CustomerIntelligenceHeader report={report} />
+          </div>
+
+          {isFilteredEmpty(report) && !isEmptyReport(report) ? (
+            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/50 p-4 text-center text-sm">
+              <p className="font-semibold text-amber-950">Sem pedidos no filtro atual</p>
+              <p className="text-muted-foreground mt-1">
+                O cliente possui histórico de compras, mas não no período selecionado.
+                {report.filtersApplied.summary ? ` Filtro: ${report.filtersApplied.summary}.` : null}
+              </p>
+            </div>
+          ) : null}
+
+          {isEmptyReport(report) ? (
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
+              <p className="font-semibold">Sem dados comerciais para este cliente</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Aguarde novos pedidos de venda sincronizados do Nomus.
+              </p>
+            </div>
+          ) : null}
+
+          <CustomerIntelligenceTabs activeTab={activeTab} onChange={setActiveTab} />
+
+          <div className="pt-2">
+            {activeTab === "overview" ? <CustomerIntelligenceOverviewTab report={report} /> : null}
+            {activeTab === "purchases" ? (
+              <CustomerIntelligencePurchasesTab report={report} />
+            ) : null}
+            {activeTab === "products" ? (
+              <CustomerIntelligenceProductsTab report={report} />
+            ) : null}
+            {activeTab === "repurchase" ? (
+              <CustomerIntelligenceRepurchaseTab report={report} />
+            ) : null}
+            {activeTab === "financial" ? (
+              <CustomerIntelligenceFinancialTab report={report} />
+            ) : null}
+            {activeTab === "crm" ? <CustomerIntelligenceCrmTab report={report} /> : null}
+            {activeTab === "profile" ? (
+              <CustomerIntelligenceProfileTab report={report} />
+            ) : null}
+            {activeTab === "opportunities" ? (
+              <CustomerIntelligenceOpportunitiesTab report={report} />
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

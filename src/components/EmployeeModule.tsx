@@ -1,45 +1,150 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { 
   Plus, 
   Search, 
   Edit2, 
   UserMinus, 
   UserCheck, 
-  Filter,
-  Download,
   X,
   Loader2,
-  DollarSign,
-  Clock,
-  PieChart
+  PieChart,
+  Info,
+  Settings,
+  Eye,
+  EyeOff,
+  User
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
+import {
+  CONTRACT_TYPE_OPTIONS,
+  createEmptyEmployeeForm,
+  displayText,
+  employeeToFormData,
+  EPI_GLOVE_SIZE_OPTIONS,
+  EPI_PANTS_SIZE_OPTIONS,
+  EPI_SHOE_SIZE_OPTIONS,
+  EPI_TOP_SIZE_OPTIONS,
+  formatContractType,
+  formatEmployeeDate,
+  type EmployeeFichaTabId,
+} from "@/src/lib/employeeHrUi";
+import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { motion } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
+import { useAuth } from "@/src/contexts/AuthContext";
+
+const EMPLOYEE_CLASSIFICATION_OPTIONS = [
+  { value: "DIRETO", label: "Direto", searchTerms: "DIRETO direto" },
+  { value: "INDIRETO", label: "Indireto", searchTerms: "INDIRETO indireto" },
+  { value: "APOIO", label: "Apoio", searchTerms: "APOIO apoio" },
+];
+
+const PAYROLL_TYPE_OPTIONS = [
+  { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT beneficio benefício" },
+  { value: "CHARGE", label: "Encargo", searchTerms: "CHARGE encargo" },
+  { value: "PROVISION", label: "Provisão", searchTerms: "PROVISION provisão provisao" },
+];
+
+const PAYROLL_CALC_OPTIONS = [
+  { value: "PERCENTAGE", label: "Percentual (%)", searchTerms: "PERCENTAGE percentual" },
+  { value: "FIXED", label: "Valor Fixo (R$)", searchTerms: "FIXED fixo" },
+];
+
+const INPUT_CLASS =
+  "w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm";
+
+const TEXTAREA_CLASS =
+  "w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm min-h-[88px] resize-y";
+
+const FICHA_MODAL_CLASS =
+  "bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]";
+
+function EpiSizeSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (next: string) => void;
+}) {
+  const normalized = value ?? "";
+  const isLegacy = normalized.length > 0 && !options.includes(normalized);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-muted-foreground uppercase">{label}</label>
+      <select
+        className={INPUT_CLASS}
+        value={normalized}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">—</option>
+        {isLegacy && <option value={normalized}>{normalized}</option>}
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  className,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div className={className}>
+      <p className="text-muted-foreground text-xs">{label}</p>
+      <p className={cn("font-medium", multiline && "whitespace-pre-wrap")}>{value}</p>
+    </div>
+  );
+}
 
 export const EmployeeModule = () => {
+  const auth = useAuth();
+  const canEdit = auth.hasPermission("employees.edit");
+  const canAccessOperationalSettings = auth.hasAnyPermission([
+    "settings.operational.view",
+    "settings.operational.manage",
+    "settings.view",
+  ]);
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
+  const [showLegacyEstimates, setShowLegacyEstimates] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [viewingCosts, setViewingCosts] = useState<Employee | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
+  const [employeeFichaTab, setEmployeeFichaTab] = useState<EmployeeFichaTabId>("professional");
+  const [viewFichaTab, setViewFichaTab] = useState<EmployeeFichaTabId>("professional");
 
   // Form State
-  const [formData, setFormData] = useState<CreateEmployeeInput>({
-    name: "",
-    roleId: "",
-    department: "",
-    costCenter: "",
-    classification: "DIRETO",
-    salary: 0,
-    monthlyHours: 220,
-    productivity: 100,
-    componentIds: [],
-  });
+  const [formData, setFormData] = useState<CreateEmployeeInput>(createEmptyEmployeeForm());
 
   const [compFormData, setCompFormData] = useState({
     name: "",
@@ -51,19 +156,17 @@ export const EmployeeModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [empRes, roleRes, compRes] = await Promise.all([
-        fetch("/api/employees"),
-        fetch("/api/roles"),
-        fetch("/api/payroll-components")
+      const [empData, roleData, compData] = await Promise.all([
+        fetchJsonOk<Employee[]>("/api/employees"),
+        fetchJsonOk<Role[]>("/api/roles"),
+        fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
       ]);
-      const empData = await empRes.json();
-      const roleData = await roleRes.json();
-      const compData = await compRes.json();
-      setEmployees(empData);
-      setRoles(roleData);
-      setPayrollComponents(compData);
+      setEmployees(Array.isArray(empData) ? empData : []);
+      setRoles(Array.isArray(roleData) ? roleData : []);
+      setPayrollComponents(Array.isArray(compData) ? compData : []);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar colaboradores.");
     } finally {
       setLoading(false);
     }
@@ -74,34 +177,20 @@ export const EmployeeModule = () => {
   }, []);
 
   const handleOpenModal = (employee?: Employee) => {
+    setEmployeeFichaTab("professional");
     if (employee) {
       setEditingEmployee(employee);
-      setFormData({
-        name: employee.name,
-        roleId: employee.roleId,
-        department: employee.department,
-        costCenter: employee.costCenter,
-        classification: employee.classification,
-        salary: Number(employee.salary),
-        monthlyHours: employee.monthlyHours,
-        productivity: Number(employee.productivity),
-        componentIds: employee.EmployeePayrollComponent.map(c => c.PayrollComponent.id),
-      });
+      setFormData(employeeToFormData(employee));
     } else {
       setEditingEmployee(null);
-      setFormData({
-        name: "",
-        roleId: roles[0]?.id || "",
-        department: "",
-        costCenter: "",
-        classification: "DIRETO",
-        salary: 0,
-        monthlyHours: 220,
-        productivity: 100,
-        componentIds: [],
-      });
+      setFormData(createEmptyEmployeeForm(roles[0]?.id || ""));
     }
     setIsModalOpen(true);
+  };
+
+  const openEmployeeView = (employee: Employee) => {
+    setViewFichaTab("professional");
+    setViewingEmployee(employee);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,34 +199,32 @@ export const EmployeeModule = () => {
     const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o colaborador.");
     }
   };
 
   const handleComponentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/payroll-components", {
+      await fetchJsonOk("/api/payroll-components", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(compFormData),
       });
-      if (res.ok) {
-        setIsComponentModalOpen(false);
-        fetchData();
-      }
+      setIsComponentModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar componente:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o componente de folha.");
     }
   };
 
@@ -153,7 +240,7 @@ export const EmployeeModule = () => {
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      await fetch(`/api/employees/${id}/status`, {
+      await fetchOk(`/api/employees/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -161,58 +248,175 @@ export const EmployeeModule = () => {
       fetchData();
     } catch (error) {
       console.error("Erro ao alterar status:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível alterar o status.");
     }
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.Role.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return employees.filter((emp) => {
+      if (listClassificationFilter && emp.classification !== listClassificationFilter) return false;
+      if (listStatusFilter && emp.status !== listStatusFilter) return false;
+      if (!q) return true;
+      return (
+        (emp.name ?? "").toLowerCase().includes(q) ||
+        (emp.socialName ?? "").toLowerCase().includes(q) ||
+        (emp.Role?.name ?? "").toLowerCase().includes(q) ||
+        (emp.department ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [employees, searchTerm, listClassificationFilter, listStatusFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListClassificationFilter("");
+    setListStatusFilter("");
+  };
+
+  const tableColSpan = 6 + (showLegacyEstimates ? 3 : 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por nome, cargo ou setor..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <div className="space-y-6" data-tour="employees-root">
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 flex gap-3 items-start">
+        <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">Módulo administrativo de Pessoas/RH</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            As informações desta tela não alteram o CIU, o custo dos produtos, o HH global, roteiros de produção,
+            formação de preço ou integrações Nomus.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setIsComponentModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
+      </div>
+
+      {canAccessOperationalSettings && (
+        <div className="rounded-xl border border-dashed border-border bg-card px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Cargos e verbas (estrutura legada/operacional)</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cargos e verbas globais continuam em Configurações → Operacional. Alterações lá podem impactar
+              roteiros e cálculos industriais existentes.
+            </p>
+          </div>
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors text-sm font-medium shrink-0"
           >
-            <PieChart className="h-4 w-4" />
-            Configurar Verbas
-          </button>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            <Settings className="h-4 w-4" />
+            Abrir Configurações
+          </Link>
+        </div>
+      )}
+
+      {/* Header Actions */}
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="employees-toolbar"
+      >
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="relative flex-1 max-w-md min-w-[260px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por nome, cargo ou setor..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[170px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listClassificationFilter}
+              onChange={(e) => setListClassificationFilter(e.target.value as any)}
+            >
+              <option value="">Todas as classificações</option>
+              {EMPLOYEE_CLASSIFICATION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="min-w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listClassificationFilter && !listStatusFilter}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+              title="Limpar filtros"
+            >
+              <X className="h-4 w-4" />
+              Limpar
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Exibindo <span className="font-bold text-foreground">{filteredEmployees.length}</span> de{" "}
+            <span className="font-bold text-foreground">{employees.length}</span> colaborador(es).
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            type="button"
+            onClick={() => setShowLegacyEstimates((v) => !v)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
+            title="Mostrar ou ocultar colunas de estimativa legada"
           >
-            <Plus className="h-4 w-4" />
-            Novo Funcionário
+            {showLegacyEstimates ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showLegacyEstimates ? "Ocultar estimativas" : "Mostrar estimativas"}
           </button>
+          {canEdit && (
+            <>
+              <button 
+                onClick={() => setIsComponentModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
+              >
+                <PieChart className="h-4 w-4" />
+                Configurar Verbas
+              </button>
+              <button 
+                onClick={() => handleOpenModal()}
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Novo Colaborador
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="employees-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-accent/50 border-b border-border">
-                <th className="p-4 font-semibold text-sm">Funcionário</th>
+                <th className="p-4 font-semibold text-sm">Colaborador</th>
                 <th className="p-4 font-semibold text-sm">Cargo / Setor</th>
-                <th className="p-4 font-semibold text-sm">Salário Base</th>
-                <th className="p-4 font-semibold text-sm">Custo Mensal Total</th>
-                <th className="p-4 font-semibold text-sm text-center">Custo/Hora (Prod)</th>
+                <th className="p-4 font-semibold text-sm">Contrato</th>
+                <th className="p-4 font-semibold text-sm">Admissão</th>
+                {showLegacyEstimates && (
+                  <>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground">Ref. salarial</th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground">Estimativa mensal</th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground text-center">Estimativa /h prod.</th>
+                  </>
+                )}
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -220,15 +424,15 @@ export const EmployeeModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center">
+                  <td colSpan={tableColSpan} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando colaboradores...</p>
                   </td>
                 </tr>
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    Nenhum funcionário encontrado.
+                  <td colSpan={tableColSpan} className="p-8 text-center text-muted-foreground">
+                    Nenhum colaborador encontrado.
                   </td>
                 </tr>
               ) : (
@@ -241,6 +445,9 @@ export const EmployeeModule = () => {
                         </div>
                         <div>
                           <p className="font-medium text-sm">{emp.name}</p>
+                          {emp.socialName?.trim() && (
+                            <p className="text-xs text-muted-foreground">Apelido: {emp.socialName}</p>
+                          )}
                           <p className="text-xs text-muted-foreground">{emp.costCenter}</p>
                         </div>
                       </div>
@@ -250,17 +457,27 @@ export const EmployeeModule = () => {
                       <p className="text-xs text-muted-foreground">{emp.department}</p>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm font-medium">{formatCurrency(emp.salary)}</p>
-                      <p className="text-[10px] text-muted-foreground">{emp.monthlyHours}h/mês</p>
+                      <p className="text-sm">{formatContractType(emp.contractType)}</p>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm font-bold text-primary">{formatCurrency(emp.costs?.totalMonthlyCost || 0)}</p>
-                      <p className="text-[10px] text-muted-foreground">Total Empresa</p>
+                      <p className="text-sm">{formatEmployeeDate(emp.admissionDate)}</p>
                     </td>
-                    <td className="p-4 text-center">
-                      <p className="text-sm font-bold">{formatCurrency(emp.costs?.costPerProductiveHour || 0, 5)}</p>
-                      <p className="text-[10px] text-muted-foreground">{formatNumber(emp.productivity, 2)}% prod.</p>
-                    </td>
+                    {showLegacyEstimates && (
+                      <>
+                        <td className="p-4">
+                          <p className="text-sm text-muted-foreground">{formatCurrency(emp.salary)}</p>
+                          <p className="text-[10px] text-muted-foreground">{emp.monthlyHours}h/mês · ref. admin.</p>
+                        </td>
+                        <td className="p-4">
+                          <p className="text-sm text-muted-foreground">{formatCurrency(emp.costs?.totalMonthlyCost || 0)}</p>
+                          <p className="text-[10px] text-muted-foreground">Estimativa legada</p>
+                        </td>
+                        <td className="p-4 text-center">
+                          <p className="text-sm text-muted-foreground">{formatCurrency(emp.costs?.costPerProductiveHour || 0, 5)}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatNumber(emp.productivity, 2)}% prod.</p>
+                        </td>
+                      </>
+                    )}
                     <td className="p-4">
                       <div className={cn(
                         "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
@@ -273,29 +490,33 @@ export const EmployeeModule = () => {
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => setViewingCosts(emp)}
+                          onClick={() => openEmployeeView(emp)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
-                          title="Ver Detalhes de Custo"
+                          title="Ver ficha do colaborador"
                         >
-                          <DollarSign className="h-4 w-4" />
+                          <User className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => handleOpenModal(emp)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
-                          title="Editar"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button 
-                          onClick={() => toggleStatus(emp.id, emp.status)}
-                          className={cn(
-                            "p-2 rounded-md hover:bg-accent transition-all",
-                            emp.status === "ACTIVE" ? "text-red-500" : "text-green-500"
-                          )}
-                          title={emp.status === "ACTIVE" ? "Inativar" : "Ativar"}
-                        >
-                          {emp.status === "ACTIVE" ? <UserMinus className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                        </button>
+                        {canEdit && (
+                          <>
+                            <button 
+                              onClick={() => handleOpenModal(emp)}
+                              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                              title="Editar"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button 
+                              onClick={() => toggleStatus(emp.id, emp.status)}
+                              className={cn(
+                                "p-2 rounded-md hover:bg-accent transition-all",
+                                emp.status === "ACTIVE" ? "text-red-500" : "text-green-500"
+                              )}
+                              title={emp.status === "ACTIVE" ? "Inativar" : "Ativar"}
+                            >
+                              {emp.status === "ACTIVE" ? <UserMinus className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -307,174 +528,216 @@ export const EmployeeModule = () => {
       </div>
 
       {/* Modal: Employee Form */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <motion.div 
+      {isModalOpen && canEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-card w-full max-w-4xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className={FICHA_MODAL_CLASS}
           >
-            <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
-              <h3 className="text-xl font-bold">{editingEmployee ? "Editar Funcionário" : "Novo Funcionário"}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+            <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/30 shrink-0">
+              <h3 className="text-xl font-bold">{editingEmployee ? "Editar Colaborador" : "Novo Colaborador"}</h3>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Basic Info */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Informações Básicas</h4>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">Nome Completo</label>
-                      <input
-                        required
-                        type="text"
-                        className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                        value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+                <EmployeeFichaTabNav activeTab={employeeFichaTab} onTabChange={setEmployeeFichaTab} layout="sidebar" />
+
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
+                  <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
+                    Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
+                  </p>
+
+                  {employeeFichaTab === "professional" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome completo</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome social / apelido</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.socialName ?? ""} onChange={(e) => setFormData({ ...formData, socialName: e.target.value })} />
+                      </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.roleId}
-                          onChange={(e) => setFormData({...formData, roleId: e.target.value})}
-                        >
-                          {roles.map(role => (
-                            <option key={role.id} value={role.id}>{role.name}</option>
-                          ))}
-                        </select>
+                        <SearchableSelect required placeholder="Selecione o cargo..." options={roles.map((role) => ({ value: role.id, label: role.name, searchTerms: role.name }))} value={formData.roleId} onChange={(v) => setFormData({ ...formData, roleId: v })} />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Setor</label>
-                        <input
-                          required
-                          type="text"
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.department}
-                          onChange={(e) => setFormData({...formData, department: e.target.value})}
-                        />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / setor</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Centro de Custo</label>
-                        <input
-                          required
-                          type="text"
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.costCenter}
-                          onChange={(e) => setFormData({...formData, costCenter: e.target.value})}
-                        />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Centro de custo</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.costCenter} onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.classification}
-                          onChange={(e) => setFormData({...formData, classification: e.target.value})}
-                        >
-                          <option value="DIRETO">Direto</option>
-                          <option value="INDIRETO">Indireto</option>
-                          <option value="APOIO">Apoio</option>
+                        <SearchableSelect required placeholder="Classificação..." options={EMPLOYEE_CLASSIFICATION_OPTIONS} value={formData.classification} onChange={(v) => setFormData({ ...formData, classification: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de contrato</label>
+                        <SearchableSelect placeholder="Tipo de contrato..." options={CONTRACT_TYPE_OPTIONS} value={formData.contractType ?? ""} onChange={(v) => setFormData({ ...formData, contractType: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de admissão</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.admissionDate ?? ""} onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de desligamento</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.terminationDate ?? ""} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Gestor responsável</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.managerName ?? ""} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
+                        <select className={INPUT_CLASS} value={formData.status ?? "ACTIVE"} onChange={(e) => setFormData({ ...formData, status: e.target.value as CreateEmployeeInput["status"] })}>
+                          <option value="ACTIVE">Ativo</option>
+                          <option value="INACTIVE">Inativo</option>
                         </select>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Financial Info */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Dados Financeiros</h4>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">Salário Base (R$)</label>
-                      <input
-                        required
-                        type="number"
-                        step="0.00001"
-                        className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                        value={formData.salary}
-                        onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                  {employeeFichaTab === "personal" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (Horas)</label>
-                        <input
-                          required
-                          type="number"
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.monthlyHours}
-                          onChange={(e) => setFormData({...formData, monthlyHours: parseInt(e.target.value)})}
-                        />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">CPF</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.cpf ?? ""} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
-                        <input
-                          required
-                          type="number"
-                          step="0.00001"
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.productivity}
-                          onChange={(e) => setFormData({...formData, productivity: parseFloat(e.target.value)})}
-                        />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">RG</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.rg ?? ""} onChange={(e) => setFormData({ ...formData, rg: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de nascimento</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.birthDate ?? ""} onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                        <input type="tel" className={INPUT_CLASS} value={formData.phone ?? ""} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">E-mail pessoal</label>
+                        <input type="email" className={INPUT_CLASS} value={formData.personalEmail ?? ""} onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Endereço</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.address ?? ""} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
                       </div>
                     </div>
-                  </div>
+                  )}
+
+                  {employeeFichaTab === "emergency" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome do contato</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactName ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                        <input type="tel" className={INPUT_CLASS} value={formData.emergencyContactPhone ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Grau / relação</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactRelationship ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactRelationship: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "epi" && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <EpiSizeSelect label="Camiseta / camisa" value={formData.shirtSize ?? ""} options={EPI_TOP_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, shirtSize: v })} />
+                        <EpiSizeSelect label="Calça" value={formData.pantsSize ?? ""} options={EPI_PANTS_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, pantsSize: v })} />
+                        <EpiSizeSelect label="Jaqueta / blusa" value={formData.jacketSize ?? ""} options={EPI_TOP_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, jacketSize: v })} />
+                        <EpiSizeSelect label="Luva" value={formData.gloveSize ?? ""} options={EPI_GLOVE_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, gloveSize: v })} />
+                        <EpiSizeSelect label="Calçado / bota" value={formData.shoeSize ?? ""} options={EPI_SHOE_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, shoeSize: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações de EPI / uniforme</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.epiNotes ?? ""} onChange={(e) => setFormData({ ...formData, epiNotes: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "admin" && (
+                    <div className="space-y-5">
+                      <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                        Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Referência salarial (R$)</label>
+                          <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (horas/mês)</label>
+                          <input required type="number" className={INPUT_CLASS} value={formData.monthlyHours} onChange={(e) => setFormData({ ...formData, monthlyHours: parseInt(e.target.value, 10) })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
+                          <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.productivity} onChange={(e) => setFormData({ ...formData, productivity: parseFloat(e.target.value) })} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Verbas / benefícios legados</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {payrollComponents.map((comp) => (
+                            <div
+                              key={comp.id}
+                              onClick={() => toggleComponent(comp.id)}
+                              className={cn(
+                                "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
+                                formData.componentIds?.includes(comp.id)
+                                  ? "bg-primary/5 border-primary shadow-sm"
+                                  : "bg-background border-border hover:border-primary/50"
+                              )}
+                            >
+                              <div>
+                                <p className="text-xs font-bold">{comp.name}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
+                                </p>
+                              </div>
+                              <div className={cn(
+                                "h-4 w-4 rounded-full border flex items-center justify-center",
+                                formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
+                              )}>
+                                {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "notes" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações profissionais</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.professionalNotes ?? ""} onChange={(e) => setFormData({ ...formData, professionalNotes: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações administrativas</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.adminNotes ?? ""} onChange={(e) => setFormData({ ...formData, adminNotes: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Components Selection */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Verbas e Encargos</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {payrollComponents.map(comp => (
-                    <div 
-                      key={comp.id}
-                      onClick={() => toggleComponent(comp.id)}
-                      className={cn(
-                        "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
-                        formData.componentIds?.includes(comp.id)
-                          ? "bg-primary/5 border-primary shadow-sm"
-                          : "bg-background border-border hover:border-primary/50"
-                      )}
-                    >
-                      <div>
-                        <p className="text-xs font-bold">{comp.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
-                        </p>
-                      </div>
-                      <div className={cn(
-                        "h-4 w-4 rounded-full border flex items-center justify-center",
-                        formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
-                      )}>
-                        {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-6 border-t border-border">
-                <button 
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-                >
+              <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm">
                   Cancelar
                 </button>
-                <button 
-                  type="submit"
-                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm"
-                >
-                  {editingEmployee ? "Salvar Alterações" : "Cadastrar Funcionário"}
+                <button type="submit" className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm">
+                  {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
                 </button>
               </div>
             </form>
@@ -483,7 +746,7 @@ export const EmployeeModule = () => {
       )}
 
       {/* Modal: Payroll Component Form */}
-      {isComponentModalOpen && (
+      {isComponentModalOpen && canEdit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
@@ -511,26 +774,21 @@ export const EmployeeModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Tipo</label>
-                  <select
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                  <SearchableSelect
+                    placeholder="Tipo..."
+                    options={PAYROLL_TYPE_OPTIONS}
                     value={compFormData.type}
-                    onChange={(e) => setCompFormData({...compFormData, type: e.target.value})}
-                  >
-                    <option value="BENEFIT">Benefício</option>
-                    <option value="CHARGE">Encargo</option>
-                    <option value="PROVISION">Provisão</option>
-                  </select>
+                    onChange={(v) => setCompFormData({ ...compFormData, type: v })}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Cálculo</label>
-                  <select
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                  <SearchableSelect
+                    placeholder="Cálculo..."
+                    options={PAYROLL_CALC_OPTIONS}
                     value={compFormData.calculationType}
-                    onChange={(e) => setCompFormData({...compFormData, calculationType: e.target.value})}
-                  >
-                    <option value="PERCENTAGE">Percentual (%)</option>
-                    <option value="FIXED">Valor Fixo (R$)</option>
-                  </select>
+                    onChange={(v) => setCompFormData({ ...compFormData, calculationType: v })}
+                  />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -555,73 +813,165 @@ export const EmployeeModule = () => {
         </div>
       )}
 
-      {/* Modal: Cost Breakdown View */}
-      {viewingCosts && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <motion.div 
+      {/* Modal: Ficha do colaborador */}
+      {viewingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden"
+            className={FICHA_MODAL_CLASS}
           >
-            <div className="p-6 border-b border-border flex items-center justify-between bg-primary text-primary-foreground">
+            <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/40 shrink-0">
               <div>
-                <h3 className="text-xl font-bold">{viewingCosts.name}</h3>
-                <p className="text-xs opacity-80">{viewingCosts.Role.name} • {viewingCosts.department}</p>
+                <h3 className="text-xl font-bold">{viewingEmployee.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {viewingEmployee.socialName?.trim() ? `${viewingEmployee.socialName} · ` : ""}
+                  {viewingEmployee.Role.name} · {viewingEmployee.department}
+                </p>
               </div>
-              <button onClick={() => setViewingCosts(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const employee = viewingEmployee;
+                      setViewingEmployee(null);
+                      handleOpenModal(employee);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    Editar
+                  </button>
+                )}
+                <button type="button" onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
-            
-            <div className="p-8 space-y-8">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-accent/50 border border-border">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Custo Mensal Total</p>
-                  <p className="text-2xl font-black text-primary">{formatCurrency(viewingCosts.costs?.totalMonthlyCost || 0)}</p>
-                </div>
-                <div className="p-4 rounded-xl bg-accent/50 border border-border">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Custo Hora Produtiva</p>
-                  <p className="text-2xl font-black text-primary">{formatCurrency(viewingCosts.costs?.costPerProductiveHour || 0, 5)}</p>
-                </div>
-              </div>
 
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground border-b border-border pb-2">Composição do Custo</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Salário Base</span>
-                    <span className="font-bold">{formatCurrency(viewingCosts.costs?.salary || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Benefícios</span>
-                    <span className="font-bold text-green-600">{formatCurrency(viewingCosts.costs?.totalBenefits || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Encargos</span>
-                    <span className="font-bold text-orange-600">{formatCurrency(viewingCosts.costs?.totalCharges || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Provisões (Férias/13º)</span>
-                    <span className="font-bold text-blue-600">{formatCurrency(viewingCosts.costs?.totalProvisions || 0)}</span>
-                  </div>
-                </div>
-              </div>
+            <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+              <EmployeeFichaTabNav activeTab={viewFichaTab} onTabChange={setViewFichaTab} layout="sidebar" />
 
-              <div className="p-4 rounded-xl border border-dashed border-border bg-accent/20 flex items-center gap-4">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold">Eficiência Operacional</p>
-                  <p className="text-sm text-muted-foreground">
-                    Este colaborador produz <strong>{viewingCosts.costs?.productiveHours.toFixed(1)}h</strong> reais das {viewingCosts.monthlyHours}h contratadas.
-                  </p>
-                </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
+                <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
+                  Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
+                </p>
+
+                {viewFichaTab === "professional" && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <DetailField label="Nome social / apelido" value={displayText(viewingEmployee.socialName)} />
+                    <DetailField label="Cargo" value={displayText(viewingEmployee.Role.name)} />
+                    <DetailField label="Departamento" value={displayText(viewingEmployee.department)} />
+                    <DetailField label="Centro de custo" value={displayText(viewingEmployee.costCenter)} />
+                    <DetailField label="Classificação" value={displayText(viewingEmployee.classification)} />
+                    <DetailField label="Tipo de contrato" value={formatContractType(viewingEmployee.contractType)} />
+                    <DetailField label="Admissão" value={formatEmployeeDate(viewingEmployee.admissionDate)} />
+                    <DetailField label="Desligamento" value={formatEmployeeDate(viewingEmployee.terminationDate)} />
+                    <DetailField label="Gestor responsável" value={displayText(viewingEmployee.managerName)} />
+                    <div>
+                      <p className="text-muted-foreground text-xs">Status</p>
+                      <div className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1",
+                        viewingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
+                      )}>
+                        {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {viewFichaTab === "personal" && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <DetailField label="CPF" value={displayText(viewingEmployee.cpf)} />
+                    <DetailField label="RG" value={displayText(viewingEmployee.rg)} />
+                    <DetailField label="Nascimento" value={formatEmployeeDate(viewingEmployee.birthDate)} />
+                    <DetailField label="Telefone" value={displayText(viewingEmployee.phone)} />
+                    <DetailField label="E-mail pessoal" value={displayText(viewingEmployee.personalEmail)} className="col-span-2 md:col-span-3" />
+                    <DetailField label="Endereço" value={displayText(viewingEmployee.address)} className="col-span-2 md:col-span-3" multiline />
+                  </div>
+                )}
+
+                {viewFichaTab === "emergency" && (
+                  <div className="grid grid-cols-2 gap-4 text-sm max-w-3xl">
+                    <DetailField label="Nome do contato" value={displayText(viewingEmployee.emergencyContactName)} className="col-span-2" />
+                    <DetailField label="Telefone" value={displayText(viewingEmployee.emergencyContactPhone)} />
+                    <DetailField label="Grau / relação" value={displayText(viewingEmployee.emergencyContactRelationship)} />
+                  </div>
+                )}
+
+                {viewFichaTab === "epi" && (
+                  <div className="space-y-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <DetailField label="Camiseta / camisa" value={displayText(viewingEmployee.shirtSize)} />
+                      <DetailField label="Calça" value={displayText(viewingEmployee.pantsSize)} />
+                      <DetailField label="Jaqueta / blusa" value={displayText(viewingEmployee.jacketSize)} />
+                      <DetailField label="Luva" value={displayText(viewingEmployee.gloveSize)} />
+                      <DetailField label="Calçado / bota" value={displayText(viewingEmployee.shoeSize)} />
+                    </div>
+                    <DetailField label="Observações de EPI / uniforme" value={displayText(viewingEmployee.epiNotes)} multiline />
+                  </div>
+                )}
+
+                {viewFichaTab === "admin" && (
+                  <div className="space-y-5">
+                    <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                      Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa mensal</p>
+                        <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa /h produtiva</p>
+                        <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.costPerProductiveHour || 0, 5)}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Referência salarial</span><span>{formatCurrency(viewingEmployee.costs?.salary || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Jornada mensal</span><span>{viewingEmployee.monthlyHours}h</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Produtividade</span><span>{formatNumber(viewingEmployee.productivity, 2)}%</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Benefícios (estimativa)</span><span className="text-green-600">{formatCurrency(viewingEmployee.costs?.totalBenefits || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Encargos (estimativa)</span><span className="text-orange-600">{formatCurrency(viewingEmployee.costs?.totalCharges || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Provisões (estimativa)</span><span className="text-blue-600">{formatCurrency(viewingEmployee.costs?.totalProvisions || 0)}</span></div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Verbas vinculadas</p>
+                      {viewingEmployee.EmployeePayrollComponent.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">—</p>
+                      ) : (
+                        <ul className="space-y-1 text-sm">
+                          {viewingEmployee.EmployeePayrollComponent.map((c) => (
+                            <li key={c.PayrollComponent.id} className="flex justify-between gap-2">
+                              <span>{c.PayrollComponent.name}</span>
+                              <span className="text-muted-foreground text-xs">{c.PayrollComponent.type}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {viewFichaTab === "notes" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <DetailField label="Observações profissionais" value={displayText(viewingEmployee.professionalNotes)} multiline />
+                    <DetailField label="Observações administrativas" value={displayText(viewingEmployee.adminNotes)} multiline />
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={EMPLOYEE_TOUR_STEPS}
+        tourName="Tour de Pessoas / RH"
+      />
     </div>
   );
 };

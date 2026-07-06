@@ -1,0 +1,69 @@
+/**
+ * Tipos do resumo de margem geral ponderada — listagem de Pedidos de Venda.
+ */
+import type {
+  SalesOrderMarginCostCoverageStatus,
+  SalesOrderMarginSummaryPayload,
+} from "./salesOrderMarginTypes.js";
+import type { SalesMarginTaxMode } from "./salesMarginRulesEngine.types.js";
+
+export type SalesOrderListMarginSummary = {
+  totalOrdersCount: number;
+  totalMarginValue: number;
+  totalMarginPercentage: number | null;
+  totalManagerialNetRevenue: number;
+  grossSalesAmount: number;
+  taxAmount: number;
+  totalCost: number;
+  marginCoverage: SalesOrderMarginCostCoverageStatus;
+  itemsWithoutCost: number;
+  ordersWithoutFullMargin: number;
+  taxMode: SalesMarginTaxMode;
+  taxRuleName: string | null;
+  taxRate: number | null;
+  /** false quando cobertura NONE — card exibe indisponível */
+  available: boolean;
+  tooltipSummary: SalesOrderMarginSummaryPayload;
+};
+
+export const EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY: SalesOrderListMarginSummary = {
+  totalOrdersCount: 0,
+  totalMarginValue: 0,
+  totalMarginPercentage: null,
+  totalManagerialNetRevenue: 0,
+  grossSalesAmount: 0,
+  taxAmount: 0,
+  totalCost: 0,
+  marginCoverage: "NONE",
+  itemsWithoutCost: 0,
+  ordersWithoutFullMargin: 0,
+  taxMode: "deductFromGross",
+  taxRuleName: null,
+  taxRate: null,
+  available: false,
+  tooltipSummary: {
+    netRevenue: 0,
+    totalCost: 0,
+    marginValue: 0,
+    marginPercent: null,
+    markup: null,
+    itemsCount: 0,
+    validItemsCount: 0,
+    ignoredItemsCount: 0,
+    hasMissingCost: true,
+    hasMissingProduct: false,
+    hasNegativeMargin: false,
+    hasInvalidRevenue: false,
+    status: "SEM_CUSTO",
+    statusLabel: "Sem custo",
+    statusSeverity: "warning",
+    costCoverageStatus: "NONE",
+    itemsTotal: 0,
+    itemsWithCost: 0,
+    itemsWithoutCost: 0,
+    totalSalesRevenueInScope: 0,
+    marginRevenueCovered: 0,
+    marginRevenueUncovered: 0,
+    marginCoveragePercent: 0,
+  },
+};

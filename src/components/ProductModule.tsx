@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { 
   Plus, 
   Search, 
@@ -23,67 +23,123 @@ import {
   FileText,
   History,
   CheckCircle2,
-  Download
+  Download,
+  BookOpen,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import { SearchableSelect } from "./shared/SearchableSelect";
+import { fetchJsonOk } from "@/src/lib/http";
+import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { ProductImportConfig } from "../lib/importer/ProductConfig";
+import { CalculatedValue } from "./shared/CalculatedValue";
+import { BomCostDetailRow } from "./shared/BomCostDetailRow";
+import { AppAlert } from "./shared/AppAlert";
+import type { CalculationExplainabilityMap } from "@/src/types/calculation";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
+import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
+import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
+import { ProductNomusMaintenanceSection } from "@/src/components/product/ProductNomusMaintenanceSection";
+import { ProductHistoryTab } from "@/src/components/product/ProductHistoryTab";
+import { ItemReclassificationModal } from "@/src/components/product/ItemReclassificationModal";
+import type {
+  ItemReclassificationApplyResult,
+  ItemReclassificationKind,
+} from "@/src/lib/itemReclassificationTypes";
+import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
+import {
+  OpenBookCompositionTab,
+  type OpenBookPayload,
+} from "@/src/components/product/OpenBookCompositionTab";
+import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { getVisibleProductTabs, type ProductTabId } from "@/src/lib/modulePermissions";
+import {
+  GRID_CIU_COLUMN_LABEL,
+  GRID_CIU_COLUMN_TOOLTIP,
+  MODAL_CURRENT_COST_LABEL,
+  MODAL_CURRENT_COST_SUBTEXT,
+  PRODUCT_COST_MOTOR_HINT,
+  costSummaryFromCostAnalysis,
+  formatProductCiu,
+} from "@/src/lib/productCostDisplay";
+import {
+  buildProductCostSummaryView,
+  COST_SUMMARY_LABELS,
+  pickCostSummaryFromAnalysis,
+} from "@/src/lib/productCostSummaryView";
+import {
+  FROZEN_COST_DIVERGENCE_ALERT,
+  frozenCostTraceBadgeClass,
+  GRID_FROZEN_COST_COLUMN_LABEL,
+  GRID_FROZEN_COST_COLUMN_TOOLTIP,
+} from "@/src/lib/productFrozenCostDisplay";
+import { executiveAlertInlineTextClass } from "@/src/lib/executiveAlertStyles";
+import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionCostTablesUi";
+import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
+import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
+import { ComponentInjectionCalculationBreakdown } from "@/src/components/product/ComponentInjectionCalculationBreakdown";
+
+/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
+export type ProductWithCostSummary = Product & {
+  costSummary?:
+    | { na: true; label: string }
+    | { unavailable: true; reason: string }
+    | { error: true; code?: string; message?: string }
+    | { totalIndustrialCost: number; partial?: boolean };
+  frozenCostSummary?: {
+    liveCiu: number | null;
+    frozenCost: number | null;
+    frozenVersionCode: string | null;
+    frozenVersionRevision: number | null;
+    frozenEffectiveDate: string | null;
+    frozenVersionId: string | null;
+    draftVersionId: string | null;
+    traceStatus: "ATUALIZADO" | "PENDENTE_PUBLICACAO" | "SEM_CUSTO_CONGELADO" | "CUSTO_DIVERGENTE" | "SEM_CUSTO";
+    traceStatusLabel: string;
+  };
+};
+
+/** Linha retornada por GET /api/products/bom-item-options (lista unificada para a BOM). */
+type BomItemOptionRow =
+  | { type: "MATERIAL"; id: string; code: string; name: string; label: string }
+  | { type: "PRODUCT"; id: string; sku: string; name: string; productType: ItemType; label: string };
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
 /* -------------------------------------------------------------------------- */
 
-const Badge = ({ children, variant = "default" }: { children: React.ReactNode, variant?: "default" | "success" | "warning" | "danger" | "info" }) => {
+const Badge = ({
+  children,
+  variant = "default",
+  className,
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "success" | "warning" | "danger" | "info";
+  className?: string;
+}) => {
   const variants = {
     default: "bg-accent text-accent-foreground",
     success: "bg-green-500/10 text-green-600",
-    warning: "bg-yellow-500/10 text-yellow-600",
+    warning:
+      "bg-amber-100 text-amber-950 ring-1 ring-amber-500/35 dark:bg-amber-950/55 dark:text-amber-50 dark:ring-amber-400/35",
     danger: "bg-red-500/10 text-red-600",
     info: "bg-blue-500/10 text-blue-600",
   };
   return (
-    <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", variants[variant])}>
+    <span
+      className={cn(
+        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+        variants[variant],
+        className
+      )}
+    >
       {children}
     </span>
-  );
-};
-
-const TreeNode: React.FC<{ node: any }> = ({ node }) => {
-  const isComponent = node.type === "COMPONENT";
-  const name = isComponent ? node.item?.name : node.item?.description;
-  const code = isComponent ? node.item?.sku : node.item?.code;
-
-  return (
-    <div className="relative">
-      <div className="absolute -left-6 top-4 w-6 h-px bg-border" />
-      <div className="flex items-center gap-3 p-3 bg-accent/30 rounded-lg border border-border group hover:border-primary/30 transition-colors">
-        <div className={cn(
-          "h-8 w-8 rounded flex items-center justify-center",
-          isComponent ? "bg-purple-500/10 text-purple-600" : "bg-orange-500/10 text-orange-600"
-        )}>
-          {isComponent ? <Layers className="h-4 w-4" /> : <Box className="h-4 w-4" />}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold">{name || "Desconhecido"}</p>
-            <p className="text-[10px] font-bold text-primary">Qtd: {Number(node.quantity)}</p>
-          </div>
-          <p className="text-[10px] text-muted-foreground font-mono">{code}</p>
-        </div>
-      </div>
-      
-      {isComponent && node.item?.children && node.item.children.length > 0 && (
-        <div className="ml-6 border-l-2 border-border pl-6 mt-2 space-y-2">
-          {node.item.children.map((childNode: any, cIdx: number) => (
-            <TreeNode key={cIdx} node={childNode} />
-          ))}
-        </div>
-      )}
-    </div>
   );
 };
 
@@ -91,22 +147,102 @@ const TreeNode: React.FC<{ node: any }> = ({ node }) => {
 /*                                Main Module                                 */
 /* -------------------------------------------------------------------------- */
 
+const PRODUCT_FORM_TABS: {
+  id: ProductTabId;
+  label: string;
+  icon: typeof Info;
+}[] = [
+  { id: "info", label: "Informações", icon: Info },
+  { id: "bom", label: "Estrutura (BOM)", icon: Layers },
+  { id: "routing", label: "Processo (Roteiro)", icon: Settings },
+  { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
+  { id: "cost", label: "Análise de Custo", icon: DollarSign },
+  { id: "composition", label: "Composição de Custos", icon: BookOpen },
+  { id: "history", label: "Histórico", icon: Clock },
+];
+
+type ProductsMainTab = "products" | "nomus-maintenance";
+
+const PRODUCTS_MAIN_TABS: { id: ProductsMainTab; label: string }[] = [
+  { id: "products", label: "Produtos e Componentes" },
+  { id: "nomus-maintenance", label: "Manutenção Nomus" },
+];
+
 export const ProductModule = () => {
-  const [items, setItems] = useState<Product[]>([]);
+  const auth = useAuth();
+  const canCreateProduct = auth.hasPermission("products.create");
+  const canEditProduct = auth.hasPermission("products.edit");
+  const canDeleteProduct = auth.hasPermission("products.delete");
+  const canExportEngineering = auth.hasPermission("products.export.engineering");
+  const canRefreshFrozenCost =
+    auth.hasPermission("pricing.generate_tables") || auth.hasPermission("products.edit");
+  const canPublishProductionCost = auth.hasAnyPermission([
+    ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
+  ]);
+  const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
+  const [costPublicationStatus, setCostPublicationStatus] =
+    useState<ProductProductionCostPublicationStatus | null>(null);
+  const [costPublicationLoading, setCostPublicationLoading] = useState(false);
+  const [costPublicationRefreshToken, setCostPublicationRefreshToken] = useState(0);
+  const [costPublicationSuccess, setCostPublicationSuccess] = useState<string | null>(null);
+  const canCompareNomusBom = auth.hasAnyPermission([
+    "products.tab.bom",
+    "products.tab.tree",
+    "products.tab.cost",
+    "products.edit",
+  ]);
+  const canViewNomusBomReport = auth.hasAnyPermission([
+    "products.view",
+    "products.tab.bom",
+    "products.tab.tree",
+    "products.tab.cost",
+    "products.edit",
+  ]);
+  const showNomusMaintenanceTab = canViewNomusBomReport;
+
+  const [activeProductsMainTab, setActiveProductsMainTab] = useState<ProductsMainTab>("products");
+
+  const visibleFormTabs = useMemo(() => {
+    const allowed = new Set(getVisibleProductTabs(auth));
+    return PRODUCT_FORM_TABS.filter((t) => allowed.has(t.id));
+  }, [auth]);
+
+  const [items, setItems] = useState<ProductWithCostSummary[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [bomItemOptions, setBomItemOptions] = useState<BomItemOptionRow[]>([]);
+  const [bomOptionsLoading, setBomOptionsLoading] = useState(false);
   const [machines, setMachines] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  /** Escopo da lista: só Produtos ou Componentes (GET /api/products?type=…). */
+  const [engineeringSegment, setEngineeringSegment] = useState<"PRODUCT" | "COMPONENT">("PRODUCT");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree">("info");
+  const [activeFormTab, setActiveFormTab] = useState<ProductTabId>("info");
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (visibleFormTabs.length === 0) return;
+    if (!visibleFormTabs.some((t) => t.id === activeFormTab)) {
+      setActiveFormTab(visibleFormTabs[0]!.id);
+    }
+  }, [isModalOpen, visibleFormTabs, activeFormTab]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
   const [backendCostAnalysis, setBackendCostAnalysis] = useState<any>(null);
   const [loadingCost, setLoadingCost] = useState(false);
+  const [costAnalysisError, setCostAnalysisError] = useState<string | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // Reclassificação de item: estado do modal de análise de impacto.
+  const [reclassifyTargetKind, setReclassifyTargetKind] =
+    useState<ItemReclassificationKind | null>(null);
+  const reclassifyOpen =
+    reclassifyTargetKind !== null && Boolean(editingItem?.id);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -120,67 +256,246 @@ export const ProductModule = () => {
     cavities: "",
     setupTimeMin: "",
     efficiencyExpected: "",
+    costingMode: "OWN_PROCESS",
     bom: [],
     routing: [],
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [productsRes, materialsRes, machinesRes, rolesRes] = await Promise.all([
-        fetch("/api/products"),
-        fetch("/api/materials"),
-        fetch("/api/machines"),
-        fetch("/api/roles")
-      ]);
-      
+      const qs = new URLSearchParams({ cost: "1", type: engineeringSegment });
       const [productsData, materialsData, machinesData, rolesData] = await Promise.all([
-        productsRes.json(),
-        materialsRes.json(),
-        machinesRes.json(),
-        rolesRes.json()
+        fetchJsonOk<ProductWithCostSummary[]>(`/api/products?${qs.toString()}`),
+        fetchJsonOk<Material[]>("/api/materials"),
+        fetchJsonOk("/api/machines"),
+        fetchJsonOk("/api/roles"),
       ]);
-
-      setItems(productsData);
-      setMaterials(materialsData);
-      setMachines(machinesData);
-      setRoles(rolesData);
+      setItems(Array.isArray(productsData) ? productsData : []);
+      setMaterials(Array.isArray(materialsData) ? materialsData : []);
+      setMachines(Array.isArray(machinesData) ? machinesData : []);
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar dados de engenharia.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineeringSegment]);
+
+  const patchListCostFromAnalysis = useCallback((productId: string, analysis: unknown) => {
+    const summary = costSummaryFromCostAnalysis(analysis);
+    if (!summary) return;
+    setItems((prev) =>
+      prev.map((p) =>
+        p.id === productId
+          ? { ...p, costSummary: { totalIndustrialCost: summary.totalIndustrialCost, partial: summary.partial } }
+          : p
+      )
+    );
+  }, []);
+
+  const refreshFrozenCostSnapshot = useCallback(
+    async (productId: string) => {
+      if (!canRefreshFrozenCost) return;
+      setSnapshotRefreshingId(productId);
+      try {
+        const result = await fetchJsonOk<{
+          status: string;
+          frozenCostSummary?: ProductWithCostSummary["frozenCostSummary"];
+          message?: string;
+        }>(`/api/products/${productId}/production-cost-snapshot`, { method: "POST" });
+        if (result.frozenCostSummary) {
+          setItems((prev) =>
+            prev.map((p) =>
+              p.id === productId ? { ...p, frozenCostSummary: result.frozenCostSummary } : p
+            )
+          );
+        }
+        await fetchData();
+        if (editingItem?.id === productId) {
+          setCostPublicationRefreshToken((token) => token + 1);
+        }
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Falha ao atualizar snapshot de custo.");
+      } finally {
+        setSnapshotRefreshingId(null);
+      }
+    },
+    [canRefreshFrozenCost, fetchData, editingItem?.id]
+  );
+
+  const loadCostPublicationStatus = useCallback(async (productId: string) => {
+    setCostPublicationLoading(true);
+    try {
+      const data = await fetchJsonOk<ProductProductionCostPublicationStatus>(
+        `/api/products/${productId}/production-cost-publication-status`
+      );
+      setCostPublicationStatus(data.pendingDraft ? data : null);
+    } catch {
+      setCostPublicationStatus(null);
+    } finally {
+      setCostPublicationLoading(false);
+    }
+  }, []);
+
+  const handleCostPublished = useCallback(async () => {
+    if (!editingItem?.id) return;
+    setCostPublicationSuccess("Novo custo oficial publicado com sucesso.");
+    setCostPublicationRefreshToken((token) => token + 1);
+    await fetchData();
+    window.setTimeout(() => setCostPublicationSuccess(null), 6000);
+  }, [editingItem?.id, fetchData]);
+
+  const refreshProductCostInList = useCallback(
+    async (productId: string) => {
+      try {
+        const data = await fetchJsonOk(`/api/products/${productId}/cost-analysis`);
+        patchListCostFromAnalysis(productId, data);
+      } catch (err) {
+        console.error("Erro ao atualizar CIU na listagem:", err);
+      }
+    },
+    [patchListCostFromAnalysis]
+  );
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    void fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (!isModalOpen || !editingItem?.id || formData.type !== "PRODUCT") {
+      setCostPublicationStatus(null);
+      setCostPublicationSuccess(null);
+      return;
+    }
+    void loadCostPublicationStatus(editingItem.id);
+  }, [
+    isModalOpen,
+    editingItem?.id,
+    formData.type,
+    costPublicationRefreshToken,
+    loadCostPublicationStatus,
+  ]);
+
+  useEffect(() => {
+    if (!isModalOpen || formData.type === "MATERIAL") {
+      setBomItemOptions([]);
+      setBomOptionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBomOptionsLoading(true);
+    const params = new URLSearchParams();
+    if (editingItem?.id) params.set("excludeProductId", editingItem.id);
+    const q = params.toString();
+    void fetchJsonOk<BomItemOptionRow[]>(`/api/products/bom-item-options${q ? `?${q}` : ""}`)
+      .then((data) => {
+        if (!cancelled) setBomItemOptions(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) {
+          setBomItemOptions([]);
+          alert(err instanceof Error ? err.message : "Não foi possível carregar opções da estrutura (BOM).");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBomOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, formData.type, editingItem?.id]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [engineeringSegment]);
+
+  const reloadTree = useCallback(async () => {
+    if (!editingItem?.id) return;
+    setLoadingTree(true);
+    setTreeData(null);
+    try {
+      const data = await fetchJsonOk(`/api/products/${editingItem.id}/tree`);
+      setTreeData(data);
+    } catch (err) {
+      console.error("Erro ao carregar árvore:", err);
+      setTreeData(null);
+      alert(err instanceof Error ? err.message : "Não foi possível carregar a árvore do produto.");
+    } finally {
+      setLoadingTree(false);
+    }
+  }, [editingItem?.id]);
 
   useEffect(() => {
     if (activeFormTab === "tree" && editingItem?.id) {
-      setLoadingTree(true);
-      fetch(`/api/products/${editingItem.id}/tree`)
-        .then(res => res.json())
-        .then(data => setTreeData(data))
-        .catch(err => console.error("Erro ao carregar árvore:", err))
-        .finally(() => setLoadingTree(false));
+      void reloadTree();
     }
-  }, [activeFormTab, editingItem?.id]);
+  }, [activeFormTab, editingItem?.id, reloadTree]);
+
+  /**
+   * Token de reload — incrementar dispara nova chamada de cost-analysis sem
+   * precisar reabrir o modal. Usado pelo botão "Atualizar custo" e por mutações
+   * (BOM tree, apply Nomus, etc.) que invalidam o resumo.
+   */
+  const [costReloadToken, setCostReloadToken] = useState(0);
+  const reloadCostSummary = useCallback(() => {
+    setCostReloadToken((t) => t + 1);
+  }, []);
 
   useEffect(() => {
-    if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
-      setLoadingCost(true);
-      fetch(`/api/products/${editingItem.id}/cost-analysis`)
-        .then(res => res.json())
-        .then(data => setBackendCostAnalysis(data))
-        .catch(err => console.error("Erro ao carregar custo:", err))
-        .finally(() => setLoadingCost(false));
-    } else if (!editingItem?.id) {
+    if (!isModalOpen || !editingItem?.id) {
       setBackendCostAnalysis(null);
+      setCostAnalysisError(null);
+      setLoadingCost(false);
+      return;
     }
-  }, [activeFormTab, isModalOpen, editingItem?.id]);
+
+    // Carrega o resumo de custo assim que o modal abre com um produto real.
+    // Antes só carregava nas abas "cost"/"composition", o que fazia o rodapé
+    // mostrar R$ 0,00 falso em todas as outras abas.
+    const ac = new AbortController();
+    let cancelled = false;
+    setLoadingCost(true);
+    setCostAnalysisError(null);
+    fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`, { signal: ac.signal })
+      .then((data) => {
+        if (!cancelled) {
+          setBackendCostAnalysis(data);
+          setCostAnalysisError(null);
+          if (editingItem?.id) patchListCostFromAnalysis(editingItem.id, data);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Erro ao carregar custo:", err);
+        if (!cancelled) {
+          // Não apaga `backendCostAnalysis` anterior — `buildProductCostSummaryView`
+          // exibe valor anterior em modo "stale" enquanto sinaliza o erro.
+          const text = err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.";
+          setCostAnalysisError(text);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCost(false);
+      });
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [isModalOpen, editingItem?.id, costReloadToken, patchListCostFromAnalysis]);
 
   const handleOpenModal = (item?: Product) => {
+    setBackendCostAnalysis(null);
+    setCostAnalysisError(null);
+    // Quando reabrirmos com um produto existente, marcamos `loadingCost=true`
+    // SÍNCRONAMENTE para que o primeiro render do modal já mostre
+    // "Calculando custo…" em vez de piscar "Custo não calculado" (idle)
+    // antes do effect disparar o fetch. Em criação (sem item) ficamos em
+    // idle real — não há produto para calcular.
+    setLoadingCost(item?.id ? true : false);
     if (item) {
       setEditingItem(item);
       setFormData({
@@ -194,6 +509,7 @@ export const ProductModule = () => {
         cavities: item.cavities ?? "",
         setupTimeMin: item.setupTimeMin ?? "",
         efficiencyExpected: item.efficiencyExpected ?? "",
+        costingMode: item.costingMode ?? "OWN_PROCESS",
         bom: item.ProductBOM.map(b => ({
           materialId: b.materialId,
           childProductId: b.childProductId,
@@ -228,25 +544,51 @@ export const ProductModule = () => {
         cavities: "",
         setupTimeMin: "",
         efficiencyExpected: "",
+        costingMode: "OWN_PROCESS",
         bom: [],
         routing: [],
       });
     }
     setActiveFormTab("info");
     setIsModalOpen(true);
+    if (item?.id) void refreshProductCostInList(item.id);
   };
+
+  const handleOpenProductById = useCallback(
+    async (productId: string, options?: { tab?: ProductTabId }) => {
+      const openWithTab = (product: Product) => {
+        handleOpenModal(product);
+        if (options?.tab) setActiveFormTab(options.tab);
+      };
+      const existing = items.find((item) => item.id === productId);
+      if (existing) {
+        openWithTab(existing);
+        return;
+      }
+      try {
+        const product = await fetchJsonOk<Product>(`/api/products/${productId}`);
+        openWithTab(product);
+      } catch (err) {
+        console.error("Erro ao abrir produto do relatório Nomus:", err);
+        alert(err instanceof Error ? err.message : "Não foi possível abrir o produto.");
+      }
+    },
+    [items, handleOpenModal]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validation based on type
     if (formData.type === "PRODUCT" && formData.bom.length === 0) {
-      alert("Um PRODUTO deve ter pelo menos um COMPONENTE em sua estrutura.");
+      alert("Um PRODUTO deve ter pelo menos uma linha na estrutura (componentes fabricados e/ou materiais comprados).");
       return;
     }
 
     // Validação do Processo Padrão do Componente
-    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback
+    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback.
+    // Em modos BOM_ONLY / FINISHING_SERVICE, o processo padrão é IGNORADO no custo, mas a
+    // consistência do cadastro (tudo-ou-nada) continua válida para não criar dados inválidos no banco.
     if (formData.type === "COMPONENT" && formData.cycleTimeSeconds !== "" && formData.cycleTimeSeconds !== null && formData.cycleTimeSeconds !== undefined) {
       const ct = Number(formData.cycleTimeSeconds);
       if (!Number.isFinite(ct) || ct <= 0) {
@@ -303,25 +645,74 @@ export const ProductModule = () => {
       cavities: rawCav === "" || rawCav === null || rawCav === undefined ? null : Number(rawCav),
       setupTimeMin: rawSetup === "" || rawSetup === null || rawSetup === undefined ? null : Number(rawSetup),
       efficiencyExpected: rawEff === "" || rawEff === null || rawEff === undefined ? null : Number(rawEff),
+      costingMode: formData.costingMode ?? "OWN_PROCESS",
     };
 
     try {
-      const res = await fetch(url, {
+      const saved = await fetchJsonOk<Product>(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao salvar item.");
+      if (editingItem && saved?.id === editingItem.id) {
+        setItems((prev) =>
+          prev.map((p) => (p.id === saved.id ? ({ ...saved, costSummary: (p as ProductWithCostSummary).costSummary } as ProductWithCostSummary) : p))
+        );
+        void refreshProductCostInList(saved.id);
       }
+      setBackendCostAnalysis(null);
+      setCostAnalysisError(null);
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Erro de conexão ao salvar o item.");
     }
   };
+
+  /**
+   * Callback após a aplicação bem-sucedida da reclassificação no backend.
+   * Atualiza a lista, fecha o modal de impacto e — quando o item virou Material —
+   * fecha o modal de engenharia (pois o registro principal mudou de entidade).
+   */
+  const handleReclassifyApplied = useCallback(
+    (result: ItemReclassificationApplyResult) => {
+      setReclassifyTargetKind(null);
+      const plan = result.appliedPlan;
+      if (plan.kind === "UPDATE_PRODUCT_TYPE") {
+        const newType: ItemType = plan.to;
+        if (editingItem?.id === plan.productId) {
+          setEditingItem({ ...editingItem, type: newType });
+          setFormData((prev) => ({
+            ...prev,
+            type: newType,
+            cycleTimeSeconds: plan.clearProcessFields ? "" : prev.cycleTimeSeconds,
+            cavities: plan.clearProcessFields ? "" : prev.cavities,
+            setupTimeMin: plan.clearProcessFields ? "" : prev.setupTimeMin,
+            efficiencyExpected: plan.clearProcessFields ? "" : prev.efficiencyExpected,
+          }));
+        }
+        void fetchData();
+        if (plan.productId) void refreshProductCostInList(plan.productId);
+        alert(result.message);
+        return;
+      }
+      if (plan.kind === "CONVERT_PRODUCT_TO_MATERIAL") {
+        // Produto virou Material — o registro principal mudou de entidade.
+        // Fechar o modal de engenharia e recarregar a lista.
+        setBackendCostAnalysis(null);
+        setCostAnalysisError(null);
+        setIsModalOpen(false);
+        setEditingItem(null);
+        void fetchData();
+        alert(result.message);
+        return;
+      }
+      // Demais planos não são aplicáveis nesta fase; nada a fazer.
+      void fetchData();
+    },
+    [editingItem, fetchData, refreshProductCostInList]
+  );
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.")) {
@@ -329,20 +720,14 @@ export const ProductModule = () => {
     }
 
     try {
-      const res = await fetch(`/api/products/${id}`, {
+      await fetchJsonOk(`/api/products/${id}`, {
         method: "DELETE",
       });
-
-      if (res.ok) {
-        setSelectedIds(prev => prev.filter(i => i !== id));
-        fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao excluir item.");
-      }
+      setSelectedIds((prev) => prev.filter((i) => i !== id));
+      fetchData();
     } catch (error) {
       console.error("Erro ao excluir:", error);
-      alert("Erro de conexão ao tentar excluir o item.");
+      alert(error instanceof Error ? error.message : "Erro de conexão ao tentar excluir o item.");
     }
   };
 
@@ -354,33 +739,34 @@ export const ProductModule = () => {
     }
 
     try {
-      const res = await fetch("/api/products/bulk-delete", {
+      const result = await fetchJsonOk<{
+        deleted?: number;
+        blocked?: number;
+        details?: Array<{ status?: string; name?: string; reason?: string }>;
+        error?: string;
+      }>("/api/products/bulk-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedIds })
+        body: JSON.stringify({ ids: selectedIds }),
       });
 
-      const result = await res.json();
+      if (result.blocked != null && result.blocked > 0) {
+        const blockedDetails = (result.details ?? [])
+          .filter((d: any) => d.status === "blocked")
+          .map((d: any) => `- ${d.name}: ${d.reason}`)
+          .join("\n");
 
-      if (res.ok) {
-        if (result.blocked > 0) {
-          const blockedDetails = result.details
-            .filter((d: any) => d.status === "blocked")
-            .map((d: any) => `- ${d.name}: ${d.reason}`)
-            .join("\n");
-          
-          alert(`${result.deleted} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`);
-        } else {
-          alert(`${result.deleted} itens excluídos com sucesso.`);
-        }
-        setSelectedIds([]);
-        fetchData();
+        alert(
+          `${result.deleted ?? 0} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`
+        );
       } else {
-        alert(result.error || "Erro ao processar exclusão em massa.");
+        alert(`${result.deleted ?? 0} itens excluídos com sucesso.`);
       }
+      setSelectedIds([]);
+      fetchData();
     } catch (error) {
       console.error("Bulk delete error:", error);
-      alert("Erro de conexão ao tentar excluir itens.");
+      alert(error instanceof Error ? error.message : "Erro de conexão ao tentar excluir itens.");
     }
   };
 
@@ -398,10 +784,59 @@ export const ProductModule = () => {
     }
   };
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredItems = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return items.filter((item) => {
+      if (listStatusFilter && item.status !== listStatusFilter) return false;
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.sku.toLowerCase().includes(q)
+      );
+    });
+  }, [items, searchTerm, listStatusFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListStatusFilter("");
+  };
+
+  const handleExportEngineering = () => {
+    const selected = selectedIds.length
+      ? filteredItems.filter((i) => selectedIds.includes(i.id))
+      : filteredItems;
+
+    const exportable = selected.filter((p) => p.type === "PRODUCT" || p.type === "COMPONENT");
+    const skipped = selected.length - exportable.length;
+
+    if (exportable.length === 0) {
+      alert("Nenhum item exportável. Selecione itens do tipo PRODUCT ou COMPONENT.");
+      return;
+    }
+
+    try {
+      const wb = buildEngineeringExportWorkbook(exportable);
+      const bytes = workbookToXlsxBytes(wb);
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "engenharia_produto_export.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      if (skipped > 0) {
+        alert(`Exportação concluída. ${skipped} item(ns) foram ignorados por não serem PRODUCT/COMPONENT.`);
+      }
+    } catch (err) {
+      console.error("Export engineering error:", err);
+      alert(err instanceof Error ? err.message : "Não foi possível exportar a engenharia.");
+    }
+  };
 
   /* -------------------------------------------------------------------------- */
   /*                                BOM Helpers                                 */
@@ -428,6 +863,109 @@ export const ProductModule = () => {
     if (field === "materialId") newBOM[index].childProductId = undefined;
     if (field === "childProductId") newBOM[index].materialId = undefined;
     
+    setFormData({ ...formData, bom: newBOM });
+  };
+
+  const baseBomSelectOptions = useMemo((): SelectOption[] => {
+    return bomItemOptions.map((row) => {
+      if (row.type === "MATERIAL") {
+        return {
+          value: `material:${row.id}`,
+          label: row.label,
+          sublabel: "Matéria-prima",
+          searchTerms: `${row.code} ${row.name} MP material`,
+        };
+      }
+      return {
+        value: `product:${row.id}`,
+        label: row.label,
+        sublabel: row.productType === "COMPONENT" ? "Componente" : "Produto",
+        searchTerms: `${row.sku} ${row.name} produto componente`,
+      };
+    });
+  }, [bomItemOptions]);
+
+  /**
+   * Em edição, garante label para itens já salvos na BOM mesmo quando o valor
+   * não está na lista atual do dropdown (ex.: tela em segmento PRODUCT).
+   */
+  const persistedBomSelectOptions = useMemo((): SelectOption[] => {
+    const rows = Array.isArray((editingItem as any)?.ProductBOM) ? ((editingItem as any).ProductBOM as any[]) : [];
+    return rows
+      .map((row) => {
+        const material = row?.Material || row?.material;
+        if (row?.materialId) {
+          if (material?.code && material?.description) {
+            return {
+              value: `material:${String(row.materialId)}`,
+              label: `${material.code} — ${material.description}`,
+              sublabel: "Material (salvo)",
+              searchTerms: `${material.code} ${material.description}`,
+            };
+          }
+          return {
+            value: `material:${String(row.materialId)}`,
+            label: "Material (salvo — fora da lista atual)",
+            sublabel: "Material (salvo)",
+            searchTerms: "material salvo",
+          };
+        }
+        if (row?.childProductId) {
+          const child = row?.ChildProduct || row?.childProduct;
+          if (child?.sku && child?.name) {
+            const isComp = child.type === "COMPONENT";
+            return {
+              value: `product:${String(row.childProductId)}`,
+              label: `${child.sku} — ${child.name}`,
+              sublabel: isComp ? "Componente (salvo)" : "Produto (salvo)",
+              searchTerms: `${child.sku} ${child.name}`,
+            };
+          }
+          return {
+            value: `product:${String(row.childProductId)}`,
+            label: "Produto/componente (salvo — fora da lista atual)",
+            sublabel: "Produto (salvo)",
+            searchTerms: "produto salvo",
+          };
+        }
+        return null;
+      })
+      .filter((opt): opt is NonNullable<typeof opt> => Boolean(opt));
+  }, [editingItem]);
+
+  const bomSelectOptions = useMemo(() => {
+    const merged = [...baseBomSelectOptions, ...persistedBomSelectOptions];
+    const dedup = new Map<string, (typeof merged)[number]>();
+    merged.forEach((opt) => {
+      if (!dedup.has(opt.value)) dedup.set(opt.value, opt);
+    });
+    return Array.from(dedup.values());
+  }, [baseBomSelectOptions, persistedBomSelectOptions]);
+
+  const setBomLineMaterialOrChild = (index: number, val: string) => {
+    const newBOM = [...formData.bom];
+    if (!val) {
+      newBOM[index] = { ...newBOM[index], materialId: undefined, childProductId: undefined };
+    } else if (val.startsWith("material:")) {
+      newBOM[index] = {
+        ...newBOM[index],
+        materialId: val.slice("material:".length),
+        childProductId: undefined,
+      };
+    } else if (val.startsWith("product:")) {
+      newBOM[index] = {
+        ...newBOM[index],
+        childProductId: val.slice("product:".length),
+        materialId: undefined,
+      };
+    } else {
+      const isMat = materials.some((m) => m.id === val);
+      if (isMat) {
+        newBOM[index] = { ...newBOM[index], materialId: val, childProductId: undefined };
+      } else {
+        newBOM[index] = { ...newBOM[index], childProductId: val, materialId: undefined };
+      }
+    }
     setFormData({ ...formData, bom: newBOM });
   };
 
@@ -471,72 +1009,276 @@ export const ProductModule = () => {
 
   const displayCost = useMemo(() => {
     if (backendCostAnalysis) {
+      const s = backendCostAnalysis.summary;
+      const bomCost = s?.totalMaterialCost || 0;
+      const routingCost = s?.totalConversionCost || 0;
+      const cifCost = s?.totalCIF_Unit || 0;
+      const total = s?.totalIndustrialCost || 0;
+      const warnings = Array.isArray(backendCostAnalysis.warnings)
+        ? backendCostAnalysis.warnings
+        : [];
+      const warningCount =
+        typeof backendCostAnalysis.warningCount === "number"
+          ? backendCostAnalysis.warningCount
+          : warnings.length;
+      const calculationExplainability =
+        (backendCostAnalysis as { calculationExplainability?: CalculationExplainabilityMap })
+          .calculationExplainability ?? null;
+      const costAnalysisPartial = Boolean(
+        (backendCostAnalysis as { costAnalysisPartial?: boolean }).costAnalysisPartial
+      );
+      const excludedBomLines = Array.isArray(
+        (backendCostAnalysis as { excludedBomLines?: unknown }).excludedBomLines
+      )
+        ? (backendCostAnalysis as { excludedBomLines: unknown[] }).excludedBomLines
+        : [];
+      const openBook = (backendCostAnalysis as { openBook?: unknown }).openBook ?? null;
+      const productType = (backendCostAnalysis as { productType?: string }).productType ?? null;
+      const costingMode =
+        (backendCostAnalysis as { costingMode?: string }).costingMode ?? "OWN_PROCESS";
+      const ownProcessSkipped = Boolean(
+        (backendCostAnalysis as { ownProcessSkipped?: boolean }).ownProcessSkipped
+      );
+      const ownProcessSkipReason =
+        (backendCostAnalysis as { ownProcessSkipReason?: string | null }).ownProcessSkipReason ??
+        null;
+      const processBreakdown = Array.isArray(backendCostAnalysis.details?.processBreakdown)
+        ? (backendCostAnalysis.details.processBreakdown as Array<{
+            rollupFromBom?: boolean;
+            calculationDetails?: { rollupFromBom?: boolean; childSku?: string };
+          }>)
+        : [];
+      const hasBomChildConversionRollup = processBreakdown.some(
+        (step) => Boolean(step?.rollupFromBom || step?.calculationDetails?.rollupFromBom)
+      );
+      const fabricatedChildSkus = [
+        ...new Set(
+          processBreakdown
+            .filter((step) => step?.rollupFromBom || step?.calculationDetails?.rollupFromBom)
+            .map((step) => String(step?.calculationDetails?.childSku ?? "").trim())
+            .filter((sku) => sku.length > 0)
+        ),
+      ];
       return {
-        bomCost: backendCostAnalysis.summary?.totalMaterialCost || 0,
-        routingCost: backendCostAnalysis.summary?.totalConversionCost || 0,
-        total: backendCostAnalysis.summary?.totalIndustrialCost || 0,
-        details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] }
+        bomCost,
+        routingCost,
+        cifCost,
+        total,
+        details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] },
+        warnings,
+        warningCount,
+        calculationExplainability,
+        costAnalysisPartial,
+        excludedBomLines,
+        openBook,
+        productType,
+        costingMode,
+        ownProcessSkipped,
+        ownProcessSkipReason,
+        hasBomChildConversionRollup,
+        fabricatedChildSkus,
       };
     }
-    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [], processBreakdown: [] } };
+    return {
+      bomCost: 0,
+      routingCost: 0,
+      cifCost: 0,
+      total: 0,
+      details: { materials: [], operations: [], processBreakdown: [] },
+      warnings: [] as unknown[],
+      warningCount: 0,
+      calculationExplainability: null as CalculationExplainabilityMap | null,
+      costAnalysisPartial: false,
+      excludedBomLines: [] as unknown[],
+      openBook: null as unknown,
+      productType: null as string | null,
+      costingMode: "OWN_PROCESS" as string,
+      ownProcessSkipped: false,
+      ownProcessSkipReason: null as string | null,
+      hasBomChildConversionRollup: false,
+      fabricatedChildSkus: [] as string[],
+    };
   }, [backendCostAnalysis]);
 
+  /**
+   * View-model do resumo de custo industrial (rodapé / cards-resumo).
+   * Distingue: idle (criação), loading, error, loaded (zero real ok), stale.
+   * Nunca exibe R$ 0,00 quando o cálculo ainda não terminou.
+   */
+  const costSummaryView = useMemo(
+    () =>
+      buildProductCostSummaryView({
+        productId: editingItem?.id ?? null,
+        loading: loadingCost,
+        errorMessage: costAnalysisError,
+        cost: pickCostSummaryFromAnalysis(backendCostAnalysis),
+      }),
+    [editingItem?.id, loadingCost, costAnalysisError, backendCostAnalysis]
+  );
+
+  const showTraditionalProductsView =
+    activeProductsMainTab === "products" || !showNomusMaintenanceTab;
+
   return (
-    <div className="space-y-6">
-      {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por SKU ou nome..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <div className="space-y-6" data-tour="products-root">
+      {showNomusMaintenanceTab ? (
+        <div
+          className="flex flex-wrap gap-2 border-b border-border pb-3"
+          role="tablist"
+          aria-label="Áreas do módulo de produtos"
+        >
+          {PRODUCTS_MAIN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeProductsMainTab === tab.id}
+              onClick={() => setActiveProductsMainTab(tab.id)}
+              className={cn(
+                "h-10 shrink-0 rounded-lg border px-4 text-sm font-semibold transition-colors",
+                activeProductsMainTab === tab.id
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          {selectedIds.length > 0 && (
+      ) : null}
+
+      {showTraditionalProductsView ? (
+        <>
+      {/* Header: filtros (esq.) + ações (dir.) — altura h-10 alinhada */}
+      <div
+        className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6"
+        data-tour="products-toolbar"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="tablist"
+            aria-label="Escopo da lista de engenharia"
+          >
+            {(["PRODUCT", "COMPONENT"] as const).map((seg) => (
+              <button
+                key={seg}
+                type="button"
+                role="tab"
+                aria-selected={engineeringSegment === seg}
+                onClick={() => setEngineeringSegment(seg)}
+                className={cn(
+                  "h-10 shrink-0 rounded-lg border px-3 text-sm font-semibold transition-colors",
+                  engineeringSegment === seg
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                {seg === "PRODUCT" ? "Produtos" : "Componentes"}
+              </button>
+            ))}
+          </div>
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filtros da lista de engenharia"
+          >
+            <div className="relative min-w-[200px] max-w-md flex-1 basis-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por SKU ou nome..."
+                className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition-all focus:ring-2 focus:ring-primary/20"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listStatusFilter}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 disabled:hover:bg-card"
+              title="Limpar filtros"
+            >
+              <X className="h-4 w-4 shrink-0" />
+              Limpar
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Exibindo <span className="font-bold text-foreground">{filteredItems.length}</span> de{" "}
+            <span className="font-bold text-foreground">{items.length}</span> item(ns).
+          </p>
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-2 lg:justify-end"
+          role="group"
+          aria-label="Ações da engenharia"
+        >
+          <TourHelpButton
+            onClick={() => setTourOpen(true)}
+            className="h-10 shrink-0 rounded-lg px-3 py-0 text-sm font-medium"
+          />
+          {selectedIds.length > 0 && canDeleteProduct ? (
             <motion.button
+              type="button"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               onClick={handleBulkDelete}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-600 font-bold hover:bg-red-500/20 transition-all border border-red-500/20 text-sm"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/15"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
             </motion.button>
-          )}
-          <button 
+          ) : null}
+          <button
+            type="button"
             onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-4 w-4 shrink-0" />
             Importar
           </button>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Novo Item de Engenharia
-          </button>
+          {canExportEngineering ? (
+            <button
+              type="button"
+              onClick={handleExportEngineering}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
+              title={selectedIds.length ? "Exportar itens selecionados no layout de importação" : "Exportar itens filtrados no layout de importação"}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" />
+              Exportar
+            </button>
+          ) : null}
+          {canCreateProduct ? (
+            <button
+              type="button"
+              onClick={() => handleOpenModal()}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              Novo Item de Engenharia
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {/* Import Dialog */}
-      <DataImportDialog 
-        isOpen={isImportOpen}
-        onClose={() => setIsImportOpen(false)}
-        onSuccess={fetchData}
-        config={ProductImportConfig}
-        templateUrl="/api/products/import/template"
-        previewUrl="/api/products/import/preview"
-        confirmUrl="/api/products/import/confirm"
-      />
-
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="products-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -558,6 +1300,20 @@ export const ProductModule = () => {
                 <th className="p-4 font-semibold text-sm">Tipo</th>
                 <th className="p-4 font-semibold text-sm">Versão</th>
                 <th className="p-4 font-semibold text-sm">Estrutura</th>
+                <th className="p-4 font-semibold text-sm text-right whitespace-nowrap">
+                  <span
+                    className="inline-flex items-center gap-1.5"
+                    title={GRID_CIU_COLUMN_TOOLTIP}
+                  >
+                    <DollarSign className="h-3.5 w-3.5 text-primary opacity-80" />
+                    {GRID_CIU_COLUMN_LABEL}
+                  </span>
+                </th>
+                {engineeringSegment === "PRODUCT" ? (
+                  <th className="p-4 font-semibold text-sm whitespace-nowrap">
+                    <span title={GRID_FROZEN_COST_COLUMN_TOOLTIP}>{GRID_FROZEN_COST_COLUMN_LABEL}</span>
+                  </th>
+                ) : null}
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -565,19 +1321,19 @@ export const ProductModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
+                filteredItems.map((item: ProductWithCostSummary) => (
                   <tr key={item.id} className={cn(
                     "hover:bg-accent/30 transition-colors group",
                     selectedIds.includes(item.id) && "bg-primary/5"
@@ -634,6 +1390,142 @@ export const ProductModule = () => {
                         </div>
                       </div>
                     </td>
+                    <td className="p-4 text-right align-middle min-w-[8.5rem]">
+                      {(() => {
+                        const cs = item.costSummary;
+                        if (!cs) {
+                          return <span className="text-xs text-muted-foreground">—</span>;
+                        }
+                        if ("na" in cs && cs.na) {
+                          return (
+                            <span className="text-xs text-muted-foreground" title={cs.label}>
+                              —
+                            </span>
+                          );
+                        }
+                        if ("unavailable" in cs && cs.unavailable) {
+                          return (
+                            <span
+                              className="text-xs font-medium text-amber-700 dark:text-amber-400"
+                              title={cs.reason}
+                            >
+                              Config
+                            </span>
+                          );
+                        }
+                        if ("error" in cs && cs.error) {
+                          return (
+                            <span
+                              className="text-xs font-medium text-destructive"
+                              title={cs.message || cs.code || "Custeio indisponível"}
+                            >
+                              —
+                            </span>
+                          );
+                        }
+                        if (
+                          "totalIndustrialCost" in cs &&
+                          typeof cs.totalIndustrialCost === "number" &&
+                          Number.isFinite(cs.totalIndustrialCost)
+                        ) {
+                          return (
+                            <div
+                              className="flex flex-col items-end gap-1"
+                              title={GRID_CIU_COLUMN_TOOLTIP}
+                            >
+                              <span className="text-sm font-bold tabular-nums tracking-tight text-primary">
+                                {formatProductCiu(cs.totalIndustrialCost)}
+                              </span>
+                              {"partial" in cs && cs.partial ? (
+                                <Badge variant="warning" className="text-[9px] px-1.5 py-0 h-5 font-bold">
+                                  Parcial
+                                </Badge>
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      })()}
+                    </td>
+                    {engineeringSegment === "PRODUCT" ? (
+                      <td className="p-4 align-middle min-w-[10rem]">
+                        {(() => {
+                          const fc = item.frozenCostSummary;
+                          if (!fc) {
+                            return <span className="text-xs text-muted-foreground">—</span>;
+                          }
+                          return (
+                            <div className="flex flex-col gap-1.5">
+                              <span
+                                className={cn(
+                                  frozenCostTraceBadgeClass(fc.traceStatus),
+                                  "text-[10px]"
+                                )}
+                              >
+                                {fc.traceStatusLabel}
+                              </span>
+                              {fc.frozenCost != null && Number.isFinite(fc.frozenCost) ? (
+                                <span className="text-xs font-medium tabular-nums">
+                                  {formatProductCiu(fc.frozenCost)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Sem vigente</span>
+                              )}
+                              {fc.frozenVersionCode ? (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {fc.frozenVersionCode}
+                                  {fc.frozenVersionRevision != null ? ` v${fc.frozenVersionRevision}` : ""}
+                                  {fc.frozenEffectiveDate ? ` · ${fc.frozenEffectiveDate}` : ""}
+                                </span>
+                              ) : null}
+                              {fc.traceStatus === "PENDENTE_PUBLICACAO" ? (
+                                <p
+                                  className={executiveAlertInlineTextClass("attention")}
+                                  data-testid="frozen-cost-pending-publication-alert"
+                                >
+                                  DRAFT pendente — abra o produto para publicar o novo custo oficial.
+                                </p>
+                              ) : null}
+                              {fc.traceStatus === "CUSTO_DIVERGENTE" ? (
+                                <p
+                                  className={executiveAlertInlineTextClass("attention")}
+                                  title={FROZEN_COST_DIVERGENCE_ALERT}
+                                  data-testid="frozen-cost-divergence-alert"
+                                >
+                                  {FROZEN_COST_DIVERGENCE_ALERT}
+                                </p>
+                              ) : null}
+                              <div className="flex flex-wrap gap-1">
+                                {fc.frozenVersionId ? (
+                                  <a
+                                    href={`/pricing?productionCostVersion=${fc.frozenVersionId}`}
+                                    className="text-[10px] text-primary hover:underline"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    Ver custo congelado
+                                  </a>
+                                ) : null}
+                                {canRefreshFrozenCost ? (
+                                  <button
+                                    type="button"
+                                    className="text-[10px] text-primary hover:underline disabled:opacity-50"
+                                    disabled={snapshotRefreshingId === item.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void refreshFrozenCostSnapshot(item.id);
+                                    }}
+                                  >
+                                    {snapshotRefreshingId === item.id
+                                      ? "Atualizando…"
+                                      : "Atualizar snapshot"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    ) : null}
                     <td className="p-4">
                       <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
                         {item.status === "ACTIVE" ? "Ativo" : "Inativo"}
@@ -663,6 +1555,30 @@ export const ProductModule = () => {
         </div>
       </div>
 
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={PRODUCT_TOUR_STEPS}
+        tourName="Tour de Produtos"
+      />
+        </>
+      ) : (
+        <ProductNomusMaintenanceSection
+          onOpenProduct={(productId) => void handleOpenProductById(productId)}
+          onEngineeringListRefresh={fetchData}
+        />
+      )}
+
+      <DataImportDialog
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={fetchData}
+        config={ProductImportConfig}
+        templateUrl="/api/products/import/template"
+        previewUrl="/api/products/import/preview"
+        confirmUrl="/api/products/import/confirm"
+      />
+
       {/* Modal: Product Form */}
       <AnimatePresence>
         {isModalOpen && (
@@ -671,55 +1587,152 @@ export const ProductModule = () => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-card flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border shadow-2xl"
             >
               {/* Modal Header */}
-              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    {formData.type === "PRODUCT" ? <Package className="h-6 w-6" /> : 
-                     formData.type === "COMPONENT" ? <Layers className="h-6 w-6" /> : 
-                     <Box className="h-6 w-6" />}
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3 bg-accent/30">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                    {formData.type === "PRODUCT" ? <Package className="h-5 w-5" /> : 
+                     formData.type === "COMPONENT" ? <Layers className="h-5 w-5" /> : 
+                     <Box className="h-5 w-5" />}
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold">{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</h3>
-                    <p className="text-xs text-muted-foreground">Defina a estrutura e o processo produtivo do item</p>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h3 className="text-lg font-bold leading-tight inline-flex items-center gap-2 flex-wrap">
+                      <span>{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</span>
+                      {editingItem?.isNomusControlled ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-900"
+                          title={
+                            editingItem.lastNomusSyncAt
+                              ? `Última sincronização Nomus: ${new Date(
+                                  editingItem.lastNomusSyncAt
+                                ).toLocaleString("pt-BR")}`
+                              : "Produto controlado pelo Nomus"
+                          }
+                        >
+                          Controlado pelo Nomus
+                        </span>
+                      ) : null}
+                      {(formData.costingMode ?? "OWN_PROCESS") === "FINISHING_SERVICE" ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-900"
+                          title="Custo de transformação não é calculado neste nível — vem da BOM."
+                        >
+                          Acabamento / beneficiamento
+                        </span>
+                      ) : null}
+                      {(formData.costingMode ?? "OWN_PROCESS") === "BOM_ONLY" ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900"
+                          title="Custo deste item vem somente da BOM."
+                        >
+                          Sem processo próprio
+                        </span>
+                      ) : null}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      {editingItem?.isNomusControlled
+                        ? "Campos de engenharia controlados pelo Nomus ficam bloqueados. Altere no Nomus e sincronize novamente."
+                        : "Defina a estrutura e o processo produtivo do item"}
+                    </p>
+                    <p
+                      className="flex items-baseline gap-2 pt-1 min-w-0 text-sm"
+                      data-tour="products-modal-context"
+                    >
+                      <span className="shrink-0 font-mono text-xs font-semibold text-primary tabular-nums">
+                        {(formData.sku && String(formData.sku).trim()) || (editingItem ? "—" : "…")}
+                      </span>
+                      <span className="text-muted-foreground/50 shrink-0 select-none" aria-hidden>
+                        ·
+                      </span>
+                      <span
+                        className="min-w-0 truncate text-[13px] font-medium text-foreground/90"
+                        title={
+                          (formData.description && String(formData.description).trim()) ||
+                          (formData.name && String(formData.name).trim()) ||
+                          ""
+                        }
+                      >
+                        {(formData.description && String(formData.description).trim()) ||
+                          (formData.name && String(formData.name).trim()) ||
+                          "—"}
+                      </span>
+                    </p>
                   </div>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-2 hover:bg-accent rounded-full transition-colors shrink-0"
+                  aria-label="Fechar"
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Tabs Navigation */}
-              <div className="flex items-center px-6 border-b border-border bg-card/50">
-                {[
-                  { id: "info", label: "Informações", icon: Info },
-                  { id: "bom", label: "Estrutura (BOM)", icon: Layers },
-                  { id: "routing", label: "Processo (Roteiro)", icon: Settings },
-                  { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
-                  { id: "cost", label: "Análise de Custo", icon: DollarSign },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveFormTab(tab.id as any)}
-                    className={cn(
-                      "flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all",
-                      activeFormTab === tab.id 
-                        ? "border-primary text-primary bg-primary/5" 
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                    )}
-                  >
-                    <tab.icon className="h-4 w-4" />
-                    {tab.label}
-                  </button>
-                ))}
+              <div
+                className="px-5 pt-3 border-b border-border bg-gradient-to-b from-accent/60 to-accent/20"
+                data-tour="products-modal-tabs"
+              >
+                <div
+                  className="flex items-end gap-1.5 overflow-x-auto pb-0.5 -mb-px"
+                  role="tablist"
+                  aria-label="Navegação de engenharia"
+                >
+                  {visibleFormTabs.map((tab) => {
+                    const isActive = activeFormTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        aria-current={isActive ? "page" : undefined}
+                        onClick={() => setActiveFormTab(tab.id as any)}
+                        className={cn(
+                          "relative inline-flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap rounded-t-xl border border-transparent border-b-0 transition-[color,background-color,box-shadow,transform] duration-200",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-1",
+                          isActive
+                            ? "bg-card text-foreground border-border shadow-[0_8px_20px_-14px_rgba(0,0,0,0.5)] -mb-px"
+                            : "text-muted-foreground hover:text-foreground hover:bg-background/80"
+                        )}
+                      >
+                        <tab.icon className={cn("h-4 w-4", isActive ? "text-primary" : "opacity-80")} />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               
               <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
                 <div className="flex-1 overflow-y-auto p-6">
+                  {costPublicationSuccess ? (
+                    <AppAlert variant="success" role="status" className="mb-4">
+                      {costPublicationSuccess}
+                    </AppAlert>
+                  ) : null}
+                  {editingItem?.id &&
+                  formData.type === "PRODUCT" &&
+                  !costPublicationLoading &&
+                  costPublicationStatus?.pendingDraft ? (
+                    <div className="mb-6">
+                      <ProductCostPublicationPendingCard
+                        status={costPublicationStatus}
+                        canPublish={canPublishProductionCost}
+                        onPublished={handleCostPublished}
+                      />
+                    </div>
+                  ) : null}
+                  {visibleFormTabs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-12">
+                      Você não possui permissão para nenhuma aba de engenharia deste produto.
+                    </p>
+                  ) : null}
                   {/* Tab: Info */}
-                  {activeFormTab === "info" && (
+                  {activeFormTab === "info" && visibleFormTabs.some((t) => t.id === "info") && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">
@@ -728,13 +1741,26 @@ export const ProductModule = () => {
                           </h4>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-xs font-bold text-muted-foreground uppercase">SKU / Código</label>
+                              <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                                SKU / Código
+                                {editingItem?.isNomusControlled ? (
+                                  <span className="text-[10px] text-blue-700 normal-case font-semibold">
+                                    🔒 Nomus
+                                  </span>
+                                ) : null}
+                              </label>
                               <input
                                 required
                                 type="text"
-                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono"
+                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono disabled:bg-muted disabled:cursor-not-allowed"
                                 value={formData.sku}
                                 onChange={(e) => setFormData({...formData, sku: e.target.value})}
+                                disabled={Boolean(editingItem?.isNomusControlled)}
+                                title={
+                                  editingItem?.isNomusControlled
+                                    ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                    : undefined
+                                }
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -749,22 +1775,44 @@ export const ProductModule = () => {
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Nome do Item</label>
+                            <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                              Nome do Item
+                              {editingItem?.isNomusControlled ? (
+                                <span className="text-[10px] text-blue-700 normal-case font-semibold">🔒 Nomus</span>
+                              ) : null}
+                            </label>
                             <input
                               required
                               type="text"
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm disabled:bg-muted disabled:cursor-not-allowed"
                               value={formData.name}
                               onChange={(e) => setFormData({...formData, name: e.target.value})}
+                              disabled={Boolean(editingItem?.isNomusControlled)}
+                              title={
+                                editingItem?.isNomusControlled
+                                  ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                  : undefined
+                              }
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Descrição</label>
+                            <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                              Descrição
+                              {editingItem?.isNomusControlled ? (
+                                <span className="text-[10px] text-blue-700 normal-case font-semibold">🔒 Nomus</span>
+                              ) : null}
+                            </label>
                             <textarea
                               rows={3}
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none disabled:bg-muted disabled:cursor-not-allowed"
                               value={formData.description}
                               onChange={(e) => setFormData({...formData, description: e.target.value})}
+                              disabled={Boolean(editingItem?.isNomusControlled)}
+                              title={
+                                editingItem?.isNomusControlled
+                                  ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                  : undefined
+                              }
                             />
                           </div>
                         </div>
@@ -785,12 +1833,20 @@ export const ProductModule = () => {
                                   key={type.id}
                                   type="button"
                                   onClick={() => {
+                                    const targetId = type.id as ItemType;
+                                    if (formData.type === targetId) return;
+                                    // Em criação (sem editingItem.id) trocar é livre — não há registro no banco.
+                                    // Em edição, qualquer troca de tipo passa pelo fluxo de reclassificação
+                                    // (modal de impacto + confirmação textual + endpoint /reclassify).
+                                    if (editingItem?.id) {
+                                      setReclassifyTargetKind(targetId);
+                                      return;
+                                    }
                                     setFormData({
-                                      ...formData, 
-                                      type: type.id as ItemType,
-                                      // Reset BOM/Routing if switching to Material
-                                      bom: type.id === "MATERIAL" ? [] : formData.bom,
-                                      routing: type.id === "MATERIAL" ? [] : formData.routing
+                                      ...formData,
+                                      type: targetId,
+                                      bom: targetId === "MATERIAL" ? [] : formData.bom,
+                                      routing: targetId === "MATERIAL" ? [] : formData.routing,
                                     });
                                   }}
                                   className={cn(
@@ -799,6 +1855,11 @@ export const ProductModule = () => {
                                       ? "border-primary bg-primary/5 text-primary" 
                                       : "border-border hover:border-primary/50 hover:bg-accent"
                                   )}
+                                  title={
+                                    editingItem?.id && formData.type !== type.id
+                                      ? `Reclassificar item para ${type.label}: abre análise de impacto antes de aplicar.`
+                                      : type.desc
+                                  }
                                 >
                                   <type.icon className={cn("h-6 w-6", formData.type === type.id ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
                                   <div>
@@ -823,13 +1884,83 @@ export const ProductModule = () => {
                         </div>
                       </div>
                       
-                      {formData.type === "COMPONENT" && (
+                      {formData.type !== "MATERIAL" && (
                         <div className="mt-6 border border-border rounded-xl bg-card overflow-hidden">
+                          <div className="bg-muted px-4 py-3 border-b border-border">
+                            <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                              <Cpu className="h-4 w-4 text-primary"/> Modo de custeio do item
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Define se o motor de custo deve adicionar HH/HM próprio neste nível. O custo dos itens da BOM é sempre somado normalmente.
+                            </p>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 bg-muted/30">
+                            {(
+                              [
+                                {
+                                  id: "OWN_PROCESS" as const,
+                                  label: "Processo próprio",
+                                  desc:
+                                    "Usa BOM + processo/roteiro próprio. Recomendado para itens fabricados neste nível.",
+                                },
+                                {
+                                  id: "BOM_ONLY" as const,
+                                  label: "Somente composição da BOM",
+                                  desc:
+                                    "Usa apenas os custos dos itens da BOM. Não adiciona HH/HM próprio.",
+                                },
+                                {
+                                  id: "FINISHING_SERVICE" as const,
+                                  label: "Acabamento / beneficiamento",
+                                  desc:
+                                    "Use para itens derivados (cromagem, pintura, retrabalho). O custo deve vir do componente base + serviço/insumo na BOM.",
+                                },
+                              ] as const
+                            ).map((opt) => {
+                              const isActive = (formData.costingMode ?? "OWN_PROCESS") === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => setFormData({ ...formData, costingMode: opt.id })}
+                                  className={cn(
+                                    "text-left rounded-xl border-2 p-3 transition-all bg-background",
+                                    isActive
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border hover:border-primary/50 hover:bg-accent"
+                                  )}
+                                >
+                                  <p className={cn("text-xs font-bold", isActive ? "text-primary" : "text-foreground")}>
+                                    {opt.label}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground leading-tight mt-1">{opt.desc}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.type === "COMPONENT" && (
+                        <>
+                        <div
+                          className={cn(
+                            "mt-6 border border-border rounded-xl bg-card overflow-hidden",
+                            (formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"
+                              ? "opacity-60"
+                              : ""
+                          )}
+                        >
                           <div className="bg-muted px-4 py-3 border-b border-border">
                             <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
                               <Cpu className="h-4 w-4 text-primary"/> Processo Padrão de Produção
                             </h4>
                             <p className="text-[10px] text-muted-foreground mt-0.5">Parâmetros formadores do Custo do Componente (Substitui Roteiro e Herda a Carga Indireta Global).</p>
+                            {(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS" ? (
+                              <p className="text-[11px] mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                                O processo padrão está cadastrado, mas não será usado no custo enquanto o modo "{formData.costingMode === "FINISHING_SERVICE" ? "Acabamento / beneficiamento" : "Somente composição da BOM"}" estiver ativo.
+                              </p>
+                            ) : null}
                           </div>
                           <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-muted/30">
                             <div>
@@ -838,7 +1969,8 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.cycleTimeSeconds ?? ""}
                                 onChange={(e) => setFormData({...formData, cycleTimeSeconds: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Tempo limpo" 
                               />
                             </div>
@@ -848,7 +1980,8 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.cavities ?? ""}
                                 onChange={(e) => setFormData({...formData, cavities: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="1"
                               />
                             </div>
@@ -858,7 +1991,8 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.setupTimeMin ?? ""}
                                 onChange={(e) => setFormData({...formData, setupTimeMin: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                               />
                             </div>
                             <div>
@@ -867,12 +2001,20 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.efficiencyExpected ?? ""}
                                 onChange={(e) => setFormData({...formData, efficiencyExpected: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Ex: 95" 
                               />
                             </div>
                           </div>
                         </div>
+                        <ComponentInjectionCalculationBreakdown
+                          cycleTimeSeconds={formData.cycleTimeSeconds}
+                          cavities={formData.cavities}
+                          efficiencyExpectedPercent={formData.efficiencyExpected}
+                          disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                        />
+                        </>
                       )}
                       
                     </div>
@@ -901,9 +2043,9 @@ export const ProductModule = () => {
                                 <Layers className="h-4 w-4" /> Composição do Item
                               </h4>
                               <p className="text-xs text-muted-foreground mt-1">
-                                {formData.type === "PRODUCT" 
-                                  ? "Produtos só podem conter COMPONENTES." 
-                                  : "Componentes podem conter COMPONENTES e MATERIAIS."}
+                                {formData.type === "PRODUCT"
+                                  ? "Produtos finais podem listar outros PRODUTOS ou COMPONENTES fabricados e/ou MATERIAIS comprados (custo aterrissado)."
+                                  : "Componentes podem conter PRODUTOS, outros COMPONENTES e MATERIAIS."}
                               </p>
                             </div>
                             <button
@@ -916,7 +2058,20 @@ export const ProductModule = () => {
                             </button>
                           </div>
 
+                          {canCompareNomusBom ? (
+                            <NomusBomComparisonPanel
+                              productId={editingItem?.id}
+                              disabled={bomOptionsLoading}
+                            />
+                          ) : null}
+
                           <div className="space-y-3">
+                            {bomOptionsLoading ? (
+                              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Carregando catálogo de itens da estrutura…
+                              </p>
+                            ) : null}
                             {formData.bom.length === 0 ? (
                               <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
                                 <p className="text-sm text-muted-foreground">Nenhum item adicionado à estrutura.</p>
@@ -925,41 +2080,22 @@ export const ProductModule = () => {
                               formData.bom.map((item, idx) => (
                                 <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
                                   <div className="col-span-4 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Item / Componente</label>
-                                    <select
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                      value={item.materialId || item.childProductId || ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        const isMaterial = materials.some(m => m.id === val);
-                                        if (isMaterial) {
-                                          updateBOMItem(idx, "materialId", val);
-                                        } else {
-                                          updateBOMItem(idx, "childProductId", val);
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Selecione um item...</option>
-                                      
-                                      {/* Only show components if parent is PRODUCT */}
-                                      <optgroup label="Componentes">
-                                        {items
-                                          .filter(i => i.type === "COMPONENT" && i.id !== editingItem?.id)
-                                          .map(i => (
-                                            <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>
-                                          ))
-                                        }
-                                      </optgroup>
-
-                                      {/* Only show materials if parent is COMPONENT */}
-                                      {formData.type === "COMPONENT" && (
-                                        <optgroup label="Materiais">
-                                          {materials.map(m => (
-                                            <option key={m.id} value={m.id}>{m.code} - {m.description}</option>
-                                          ))}
-                                        </optgroup>
-                                      )}
-                                    </select>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                                      Item (matéria-prima, produto ou componente)
+                                    </label>
+                                    <SearchableSelect
+                                      placeholder="Selecione um item..."
+                                      options={bomSelectOptions}
+                                      value={
+                                        item.materialId
+                                          ? `material:${item.materialId}`
+                                          : item.childProductId
+                                            ? `product:${item.childProductId}`
+                                            : ""
+                                      }
+                                      onChange={(val) => setBomLineMaterialOrChild(idx, val)}
+                                      disabled={bomOptionsLoading}
+                                    />
                                   </div>
                                   <div className="col-span-2 space-y-1.5">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Qtd. Líquida</label>
@@ -1080,9 +2216,9 @@ export const ProductModule = () => {
                                         placeholder="Selecione..."
                                         options={machines.map(m => ({
                                           value: m.id,
-                                          label: m.name,
-                                          sublabel: m.code,
-                                          searchTerms: m.code
+                                          label: `${m.code} — ${m.name}`,
+                                          sublabel: "Máquina / centro",
+                                          searchTerms: `${m.code} ${m.name}`,
                                         }))}
                                         value={step.machineId || ""}
                                         onChange={(val) => updateRoutingStep(idx, "machineId", val)}
@@ -1094,7 +2230,8 @@ export const ProductModule = () => {
                                         placeholder="Selecione..."
                                         options={roles.map(r => ({
                                           value: r.id,
-                                          label: r.name
+                                          label: r.name,
+                                          searchTerms: r.name,
                                         }))}
                                         value={step.roleId || ""}
                                         onChange={(val) => updateRoutingStep(idx, "roleId", val)}
@@ -1157,163 +2294,467 @@ export const ProductModule = () => {
                             <p className="text-sm text-muted-foreground">Materiais não possuem sub-estrutura.</p>
                           </div>
                         </div>
+                      ) : editingItem?.id ? (
+                        <ProductBomTreeContextPanel
+                          treeData={treeData}
+                          loadingTree={loadingTree}
+                          rootProductId={editingItem.id}
+                          rootName={formData.name || editingItem.name}
+                          rootSku={formData.sku || editingItem.sku}
+                          rootType={formData.type}
+                          onReloadTree={reloadTree}
+                          onAfterMutation={() => {
+                            // Mutações na árvore (BOM/processo) invalidam o resumo de custo
+                            // exibido no rodapé/cards do modal.
+                            reloadCostSummary();
+                            fetchData();
+                          }}
+                          onOpenFullProductEdit={(p) => handleOpenModal(p)}
+                        />
                       ) : (
-                        <div className="bg-card border border-border rounded-xl p-6">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-6 flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4" /> Visualização Hierárquica
-                          </h4>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
-                              {formData.type === "PRODUCT" ? <Package className="h-5 w-5 text-primary" /> : <Layers className="h-5 w-5 text-primary" />}
-                              <div>
-                                <p className="text-sm font-bold">{formData.name || "Novo Item"}</p>
-                                <p className="text-[10px] text-primary font-mono">{formData.sku || "SEM SKU"}</p>
-                              </div>
-                            </div>
-                            
-                            <div className="ml-6 border-l-2 border-border pl-6 space-y-4 pt-4">
-                              {loadingTree ? (
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  <span className="text-xs">Carregando estrutura completa...</span>
-                                </div>
-                              ) : !treeData || !treeData.children || treeData.children.length === 0 ? (
-                                <p className="text-xs text-muted-foreground italic">Nenhum item na estrutura salva.</p>
-                              ) : (
-                                treeData.children.map((node: any, idx: number) => (
-                                  <TreeNode key={idx} node={node} />
-                                ))
-                              )}
-                            </div>
-
-                          </div>
-                        </div>
+                        <p className="text-sm text-muted-foreground">Salve o item para visualizar a árvore.</p>
                       )}
                     </div>
                   )}
 
                   {/* Tab: Cost Analysis */}
+                  {activeFormTab === "composition" && (
+                    <OpenBookCompositionTab
+                      loading={loadingCost}
+                      costAnalysisPartial={displayCost.costAnalysisPartial}
+                      openBook={displayCost.openBook as OpenBookPayload | null}
+                    />
+                  )}
+
+                  {activeFormTab === "history" && (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <ProductHistoryTab productId={editingItem?.id ?? null} />
+                    </div>
+                  )}
+
                   {activeFormTab === "cost" && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      {costAnalysisError && (
+                        <AppAlert variant="destructive" title="Análise de custo indisponível" role="alert">
+                          <p className="text-xs whitespace-pre-wrap break-words opacity-95">{costAnalysisError}</p>
+                        </AppAlert>
+                      )}
+                      {!costAnalysisError && displayCost.ownProcessSkipped && (
+                        <AppAlert variant="info" role="status" showIcon={false} className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="info">
+                              {displayCost.costingMode === "FINISHING_SERVICE"
+                                ? "Acabamento / beneficiamento"
+                                : "Sem processo próprio"}
+                            </Badge>
+                            <span className="font-semibold">
+                              O custo de transformação próprio deste item não é calculado neste nível.
+                            </span>
+                          </div>
+                          <p className="text-xs opacity-95">
+                            {displayCost.ownProcessSkipReason ??
+                              "Quando houver componentes fabricados na BOM, a conversão deles é exibida separadamente para conciliação."}
+                          </p>
+                        </AppAlert>
+                      )}
+                      {!costAnalysisError && displayCost.costAnalysisPartial && (
+                        <AppAlert variant="warning" role="status" showIcon={false} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="warning">Cálculo parcial</Badge>
+                            <span className="font-semibold">Um ou mais itens da BOM não foram custeados.</span>
+                          </div>
+                          <p className="text-xs opacity-95">
+                            O total exibido nos cards soma apenas os itens com cadastro suficiente para custeio.
+                            Itens excluídos aparecem em vermelho na tabela abaixo; passe o mouse para ver o motivo e o que
+                            corrigir.
+                          </p>
+                          {displayCost.excludedBomLines.length > 0 && (
+                            <p className="text-[11px] mt-2 font-mono opacity-95">
+                              Exclusões: {displayCost.excludedBomLines.length} linha(s)
+                            </p>
+                          )}
+                        </AppAlert>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-blue-600 uppercase">Custo de Materiais (BOM)</p>
+                            <p className="text-xs font-bold text-blue-600 uppercase">
+                              {displayCost.hasBomChildConversionRollup
+                                ? "Custo da estrutura (BOM) — parcela MP"
+                                : "Custo da estrutura (BOM)"}
+                            </p>
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
-                          <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
-                          <p className="text-[10px] text-blue-600/60">Baseado no custo atual dos materiais</p>
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalMaterialCost ?? null}>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-blue-700/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                {COST_SUMMARY_LABELS.error}
+                              </p>
+                            ) : (
+                              <p className="text-3xl font-black text-blue-700">
+                                {formatCurrency(displayCost.bomCost)}
+                              </p>
+                            )}
+                          </CalculatedValue>
+                          <p className="text-[10px] text-blue-600/60">
+                            {displayCost.hasBomChildConversionRollup
+                              ? "MP direta + MP dos componentes fabricados. A conversão (HH/HM) dos filhos aparece separada no card Conversão."
+                              : "Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor."}
+                          </p>
                         </div>
                         <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-purple-600 uppercase">Custo de Processo (MOD/GIF)</p>
+                            <p className="text-xs font-bold text-purple-600 uppercase">
+                              {displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup
+                                ? "Conversão (HH + HM) — componentes fabricados"
+                                : "Conversão (HH + HM)"}
+                            </p>
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
-                          <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
-                          <p className="text-[10px] text-purple-600/60">Baseado em taxas de máquina e mão de obra</p>
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalConversionCost ?? null}>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-purple-700/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                {COST_SUMMARY_LABELS.error}
+                              </p>
+                            ) : (
+                              <p className="text-3xl font-black text-purple-700">
+                                {formatCurrency(displayCost.routingCost)}
+                              </p>
+                            )}
+                          </CalculatedValue>
+                          <p className="text-[10px] text-purple-600/60">
+                            {displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup
+                              ? "Inclui conversão de componentes fabricados da BOM. Sem CIF rateado."
+                              : "Processo padrão ou roteiro; sem CIF rateado"}
+                          </p>
+                          {!(displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup) && (
+                            <p className="text-[10px] text-muted-foreground leading-snug">
+                              O motor usa primeiro o <strong>processo padrão</strong> do componente (ciclo/cavidades na aba
+                              Informações). Só se ele estiver vazio é que entra o <strong>roteiro</strong> (aba Processo).
+                              Remover só o roteiro não zera a conversão se o processo padrão continuar preenchido.
+                            </p>
+                          )}
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-primary uppercase">Custo Total Industrial</p>
+                            <div>
+                              <p className="text-xs font-bold text-primary uppercase">{MODAL_CURRENT_COST_LABEL}</p>
+                              <p className="text-[10px] text-primary/70 mt-0.5">{MODAL_CURRENT_COST_SUBTEXT}</p>
+                            </div>
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
-                          <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                          <p className="text-[10px] text-primary/60">Custo unitário estimado de produção</p>
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalIndustrialCost ?? null}>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-primary/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <div className="flex items-center gap-2">
+                                <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                  {COST_SUMMARY_LABELS.error}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={reloadCostSummary}
+                                  className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                                >
+                                  {COST_SUMMARY_LABELS.retry}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-3xl font-black text-primary">{formatProductCiu(displayCost.total)}</p>
+                            )}
+                          </CalculatedValue>
+                          {displayCost.costAnalysisPartial && costSummaryView.kind !== "loading" && costSummaryView.kind !== "error" && (
+                            <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
+                              Total parcial — exclui itens não custeados na BOM.
+                            </p>
+                          )}
+                          <p className="text-[10px] text-primary/60 flex flex-wrap items-center gap-1">
+                            <span>MP + HH + HM (CIF referência: </span>
+                            <CalculatedValue meta={displayCost.calculationExplainability?.totalCIF_Unit ?? null} hideIcon>
+                              <span>{formatCurrency(displayCost.cifCost)}</span>
+                            </CalculatedValue>
+                            <span>)</span>
+                          </p>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* BOM Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento BOM
-                          </h4>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Item</th>
-                                  <th className="p-3 font-bold text-right">Qtd</th>
-                                  <th className="p-3 font-bold text-right">Custo Unit.</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
+                      {!loadingCost && displayCost.warningCount > 0 && (
+                        <AppAlert variant="warning" role="alert" className="space-y-2">
+                          <div className="space-y-1.5 min-w-0">
+                            <p className="text-sm font-semibold">
+                              A análise foi concluída, mas existem {displayCost.warningCount}{" "}
+                              {displayCost.warningCount === 1 ? "alerta" : "alertas"} que exigem revisão.
+                            </p>
+                            <ul className="text-xs space-y-1.5 list-disc pl-4 marker:text-amber-800 dark:marker:text-amber-400">
+                              {(displayCost.warnings as Array<{ message?: string }>).map((w, i) => (
+                                <li key={i}>{typeof w?.message === "string" ? w.message : String(w)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </AppAlert>
+                      )}
+
+                      <p className="text-[11px] text-muted-foreground text-center px-2">
+                        {PRODUCT_COST_MOTOR_HINT} Conciliação: MP + HH + HM = CIU; CIF não entra no total (
+                        <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>
+                        ).
+                      </p>
+
+                      <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-6 xl:gap-8">
+                        {/* BOM Breakdown — coluna mais estreita (mais números, menos texto) */}
+                        <div className="min-w-0 space-y-3 lg:col-span-2">
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              Detalhamento BOM
+                            </h4>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">
+                              Estrutura salva: quantidades com perda e custo por linha (MP ou CIU do componente).
+                            </p>
+                            {displayCost.hasBomChildConversionRollup && (
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                Componentes fabricados aparecem na tabela com CIU completo. Nos cards, MP e conversão
+                                podem ser separados para explicar a composição do total.
+                              </p>
+                            )}
+                          </div>
+                          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-border/30">
+                            <div className="max-h-[min(52vh,26rem)] overflow-auto overscroll-y-contain">
+                              <table className="w-full table-fixed border-collapse text-left text-[13px] leading-snug">
+                                <colgroup>
+                                  <col style={{ width: "46%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "20%" }} />
+                                  <col style={{ width: "20%" }} />
+                                </colgroup>
+                                <thead className="sticky top-0 z-10 border-b border-border bg-accent/95 backdrop-blur-sm supports-[backdrop-filter]:bg-accent/85">
                                   <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
+                                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Item
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Qtd
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo unit.
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Total
+                                    </th>
                                   </tr>
-                                ) : displayCost.details.materials.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum material ou componente na estrutura salva.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  displayCost.details.materials.map((item: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="p-3 font-medium">{item.description}</td>
-                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 5)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(item.basePrice)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(item.unitCost)}</td>
+                                </thead>
+                                <tbody className="divide-y divide-border [&>tr:nth-child(even)]:bg-muted/15">
+                                  {loadingCost ? (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Carregando análise do backend...
+                                      </td>
                                     </tr>
-                                  ))
-                                )}
-                              </tbody>
-                            </table>
+                                  ) : displayCost.details.materials.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Nenhum material ou componente na estrutura salva.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    displayCost.details.materials.map((item: BomCostDetailRowData, idx: number) => (
+                                      <React.Fragment key={`${item.description}-${idx}`}>
+                                        <BomCostDetailRow
+                                          item={item}
+                                          isFabricatedComponent={Boolean(
+                                            item.sku &&
+                                              displayCost.fabricatedChildSkus.includes(String(item.sku).trim())
+                                          )}
+                                        />
+                                      </React.Fragment>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Processing Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento Processo
-                          </h4>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Operação</th>
-                                  <th className="p-3 font-bold text-right">Tempo (min)</th>
-                                  <th className="p-3 font-bold text-right">Custo Máq.</th>
-                                  <th className="p-3 font-bold text-right">Custo HH</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
+                        {/* Processamento — coluna mais larga (mais texto e contexto) */}
+                        <div className="min-w-0 space-y-3 lg:col-span-3">
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              Detalhamento processo
+                            </h4>
+                            <div className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                              {displayCost.productType === "PRODUCT" ? (
+                                <>
+                                  <span className="font-semibold text-foreground/85">Produto: </span>
+                                  {displayCost.hasBomChildConversionRollup ? (
+                                    <>
+                                      as linhas abaixo pertencem a componentes fabricados da BOM, não ao processo
+                                      próprio deste produto. São exibidas para conciliar MP + HH + HM sem duplicar
+                                      custo.
+                                    </>
+                                  ) : (
+                                    <>
+                                      mostra o processo próprio (ciclo/roteiro), quando houver, e linhas{" "}
+                                      <span className="font-semibold text-foreground/85">“Estrutura (BOM)”</span> com a
+                                      conversão (HH/HM) dos componentes fabricados na unidade do produto — mesma parcela
+                                      do motor, sem duplicar.
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-semibold text-foreground/85">Componente: </span>
+                                  origem do custo na linha abaixo (processo padrão ou roteiro). Detalhe técnico permanece
+                                  no ícone de memória de cálculo.
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-border/30">
+                            <div className="max-h-[min(56vh,30rem)] overflow-auto overscroll-y-contain">
+                              <table className="w-full table-fixed border-collapse text-left text-[13px] leading-snug">
+                                <colgroup>
+                                  <col style={{ width: "44%" }} />
+                                  <col style={{ width: "11%" }} />
+                                  <col style={{ width: "15%" }} />
+                                  <col style={{ width: "15%" }} />
+                                  <col style={{ width: "15%" }} />
+                                </colgroup>
+                                <thead className="sticky top-0 z-10 border-b border-border bg-accent/95 backdrop-blur-sm supports-[backdrop-filter]:bg-accent/85">
                                   <tr>
-                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
+                                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Operação / componente
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Tempo (min)
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo máq.
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo HH
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Total
+                                    </th>
                                   </tr>
-                                ) : !displayCost.details.processBreakdown || displayCost.details.processBreakdown.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum processo configurado.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  displayCost.details.processBreakdown.map((step: any, idx: number) => (
-                                    <tr key={idx} className="group relative">
-                                      <td className="p-3 font-medium">
-                                        <div className="flex items-center gap-2">
-                                          {step.description}
+                                </thead>
+                                <tbody className="divide-y divide-border [&>tr:nth-child(even)]:bg-muted/15">
+                                  {loadingCost ? (
+                                    <tr>
+                                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Carregando análise do backend...
+                                      </td>
+                                    </tr>
+                                  ) : !displayCost.details.processBreakdown ||
+                                    displayCost.details.processBreakdown.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Nenhum processo configurado.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                  displayCost.details.processBreakdown.map((step: any, idx: number) => {
+                                    const rollupBom = Boolean(step?.rollupFromBom || step?.calculationDetails?.rollupFromBom);
+                                    const processOriginLabel =
+                                      step?.source === "ROUTING"
+                                        ? "Roteiro"
+                                        : step?.source === "STANDARD_PROCESS"
+                                          ? "Processo padrão"
+                                          : "—";
+                                    const timeCell =
+                                      step?.timeMin != null && Number.isFinite(Number(step.timeMin))
+                                        ? formatNumber(Number(step.timeMin), 2)
+                                        : "—";
+                                    const tooltipBadge = rollupBom
+                                      ? "ESTRUTURA (BOM)"
+                                      : step?.source === "STANDARD_PROCESS"
+                                        ? "PROCESSO PADRÃO"
+                                        : "ROTEIRO";
+                                    return (
+                                    <tr key={idx} className="group align-top">
+                                      <td className="px-3 py-2.5 align-top">
+                                        <div className="flex items-start gap-2">
+                                          <div className="min-w-0 flex-1 pr-1">
+                                            <div className="break-words font-medium text-foreground leading-snug">
+                                              {step.description}
+                                            </div>
+                                            <div className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                                              {rollupBom ? (
+                                                <>
+                                                  <span className="text-muted-foreground/90">Origem no componente:</span>{" "}
+                                                  <span className="font-medium text-foreground/90">{processOriginLabel}</span>
+                                                  <span className="mx-1.5 text-border">·</span>
+                                                  <span className="font-medium text-amber-900/85 dark:text-amber-200/90">
+                                                    Conversão na unidade do produto
+                                                  </span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <span className="text-muted-foreground/90">Origem do custo:</span>{" "}
+                                                  <span className="font-medium text-foreground/90">{processOriginLabel}</span>
+                                                </>
+                                              )}
+                                            </div>
+                                          </div>
                                           {step.calculationDetails && (
-                                            <div className="group/tooltip relative">
-                                              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help hover:text-primary transition-colors" />
+                                            <div className="group/tooltip relative shrink-0 pt-0.5">
+                                              <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help hover:text-primary transition-colors" />
                                               <div className="fixed z-[99] invisible group-hover/tooltip:visible bg-popover text-popover-foreground border shadow-xl rounded-xl p-4 w-80 text-[11px] pointer-events-none -translate-x-1/2 left-1/2 bottom-full mb-2 animate-in fade-in zoom-in-95 duration-200">
                                                 <div className="space-y-3">
                                                   <div className="flex items-center justify-between border-b pb-2 mb-2">
                                                     <span className="font-bold uppercase text-[9px]">Memória de Cálculo</span>
                                                     <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[8px] font-mono">
-                                                      {step.source === "STANDARD_PROCESS" ? "PROCESSO PADRÃO" : "ROTEIRO"}
+                                                      {tooltipBadge}
                                                     </span>
                                                   </div>
-                                                  
+
+                                                  {rollupBom ? (
+                                                    <div className="space-y-2 text-[11px] leading-relaxed">
+                                                      <p>
+                                                        Parcela de <b>HH/HM</b> do componente{" "}
+                                                        <b>{String(step.calculationDetails?.childSku ?? "")}</b>{" "}
+                                                        incorporada na <b>unidade do produto pai</b>, com a mesma escala
+                                                        usada no motor (<code className="text-[10px]">scaleChildContribution</code>
+                                                        ).
+                                                      </p>
+                                                      <p>
+                                                        Qtd estrutura (com perda):{" "}
+                                                        <b>{formatNumber(Number(step.calculationDetails?.requiredQty ?? 0), 4)}</b>
+                                                      </p>
+                                                      <p>
+                                                        Tempo produtivo do componente (h/unid.):{" "}
+                                                        <b>
+                                                          {Number(step.calculationDetails?.childOwnProductiveTimeH_Unit) > 0
+                                                            ? formatNumber(
+                                                                Number(step.calculationDetails.childOwnProductiveTimeH_Unit),
+                                                                4
+                                                              )
+                                                            : "—"}
+                                                        </b>
+                                                      </p>
+                                                      <p>
+                                                        Origem do processo no componente:{" "}
+                                                        <b>
+                                                          {step.calculationDetails?.processSource === "ROUTING"
+                                                            ? "Roteiro"
+                                                            : "Processo padrão"}
+                                                        </b>
+                                                      </p>
+                                                    </div>
+                                                  ) : (
+                                                    <>
                                                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                                     <div>
                                                       <p className="opacity-50 uppercase text-[8px] font-bold">Variáveis Entrada</p>
@@ -1334,6 +2775,8 @@ export const ProductModule = () => {
                                                     <p>Custo Transf: <b>{formatCurrency(step.calculationDetails.unitTransform)}</b></p>
                                                     <p>Custo Setup: <b>{formatCurrency(step.calculationDetails.setupCost)}</b></p>
                                                   </div>
+                                                    </>
+                                                  )}
 
                                                   <div className="pt-2 border-t flex justify-between items-center text-[10px]">
                                                     <span className="font-bold">TOTAL OPERAÇÃO</span>
@@ -1346,15 +2789,25 @@ export const ProductModule = () => {
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-3 text-right">{formatNumber(step.timeMin, 5)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.machineCost)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.laborCost)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(step.total)}</td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums text-muted-foreground">
+                                        {timeCell}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums">
+                                        {formatCurrency(step.machineCost)}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums">
+                                        {formatCurrency(step.laborCost)}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums font-semibold text-foreground">
+                                        {formatCurrency(step.total)}
+                                      </td>
                                     </tr>
-                                  ))
-                                )}
-                              </tbody>
-                            </table>
+                                    );
+                                  })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1367,7 +2820,57 @@ export const ProductModule = () => {
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
-                      <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
+                      {costSummaryView.kind === "loading" ? (
+                        <p
+                          className="text-sm font-semibold text-muted-foreground inline-flex items-center gap-1.5"
+                          aria-live="polite"
+                          aria-busy="true"
+                          data-testid="cost-summary-loading"
+                        >
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          {costSummaryView.message}
+                        </p>
+                      ) : costSummaryView.kind === "error" ? (
+                        <div
+                          className="flex items-center gap-2"
+                          role="alert"
+                          data-testid="cost-summary-error"
+                        >
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                            {costSummaryView.message}
+                          </p>
+                          {costSummaryView.showRetry && (
+                            <button
+                              type="button"
+                              onClick={reloadCostSummary}
+                              className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                            >
+                              {COST_SUMMARY_LABELS.retry}
+                            </button>
+                          )}
+                        </div>
+                      ) : costSummaryView.kind === "idle" ? (
+                        <p className="text-sm font-semibold text-muted-foreground" data-testid="cost-summary-idle">
+                          {costSummaryView.message}
+                        </p>
+                      ) : (
+                        <div data-testid="cost-summary-loaded" className="flex items-baseline gap-2">
+                          <p className="text-lg font-black text-primary">
+                            {formatCurrency(costSummaryView.totalIndustrialCost ?? 0)}
+                          </p>
+                          {costSummaryView.kind === "stale" && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {costSummaryView.message || COST_SUMMARY_LABELS.loading}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {costSummaryView.partial && costSummaryView.totalIndustrialCost != null && (
+                        <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
+                          {COST_SUMMARY_LABELS.partial}
+                        </span>
+                      )}
                     </div>
                     <div className="h-8 w-px bg-border" />
                     <div className="flex flex-col">
@@ -1397,6 +2900,17 @@ export const ProductModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {reclassifyOpen && editingItem?.id && reclassifyTargetKind && (
+        <ItemReclassificationModal
+          open={reclassifyOpen}
+          sourceId={editingItem.id}
+          sourceKind={(editingItem.type === "MATERIAL" ? "MATERIAL" : editingItem.type) as ItemReclassificationKind}
+          targetKind={reclassifyTargetKind}
+          onClose={() => setReclassifyTargetKind(null)}
+          onApplied={(result) => handleReclassifyApplied(result)}
+        />
+      )}
     </div>
   );
 };

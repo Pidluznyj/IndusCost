@@ -1,0 +1,336 @@
+/* Impressão — proposta comercial para cliente (layout compacto = mesmo na tela e no PDF)
+ *
+ * - Rota /proposals/:id/print: body.proposal-print-route
+ * - Modal ProposalClientPreview: body.printing-proposal-client-preview
+ *
+ * reports-print.css usa `body * { visibility: hidden }` no @media print; na rota
+ * proposal-print-route é obrigatório restaurar visibility, senão PDF em branco.
+ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  .proposal-print-no-print {
+    display: none !important;
+  }
+
+  body.proposal-print-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.proposal-print-route,
+  body.proposal-print-route * {
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .print-doc-header,
+  body.proposal-print-route .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .print-doc-header-grid {
+    display: grid !important;
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .print-doc-logo-wrap,
+  body.proposal-print-route .print-doc-company-text,
+  body.proposal-print-route .print-doc-meta {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .proposal-print-no-print {
+    display: none !important;
+  }
+
+  .proposal-print-page,
+  .proposal-print-route-page,
+  .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.proposal-print-route .proposal-print-page,
+  body.proposal-print-route .proposal-print-route-page,
+  body.proposal-print-route .proposal-print-scroll {
+    position: static !important;
+    inset: auto !important;
+  }
+
+  .proposal-print-document,
+  body.proposal-print-route .proposal-print-document,
+  body.printing-proposal-client-preview .proposal-print-document {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .proposal-print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  .proposal-print-document-inner {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  body.proposal-print-route .proposal-print-document-inner,
+  body.printing-proposal-client-preview .proposal-print-document-inner {
+    overflow: visible !important;
+  }
+
+  .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  body.proposal-print-route .proposal-print-table-wrap,
+  body.printing-proposal-client-preview .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  .proposal-print-section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  header.proposal-compact-header,
+  .print-doc-header.proposal-compact-header {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .proposal-print-items-section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .proposal-compact-table thead {
+    display: table-header-group !important;
+  }
+
+  .proposal-compact-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  .proposal-compact-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .proposal-compact-table tbody tr {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Espaçamento entre blocos (só impressão; tela mantém Tailwind) */
+  .proposal-compact-document .proposal-compact-section {
+    margin-top: 3mm !important;
+  }
+
+  .proposal-compact-document .proposal-compact-section-title {
+    margin-bottom: 1.5mm !important;
+    padding-top: 1.5mm !important;
+  }
+
+  .proposal-compact-document .proposal-compact-totals {
+    margin-bottom: 3mm !important;
+  }
+
+  /* Logo do cabeçalho um pouco maior no PDF */
+  .proposal-compact-company img {
+    max-height: 24mm !important;
+    max-width: 58mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  /* Tabela: mais densa, mais itens por página */
+  .proposal-compact-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 7.2pt !important;
+    line-height: 1.08 !important;
+  }
+
+  .proposal-compact-table th,
+  .proposal-compact-table td {
+    padding: 1.1mm 1.2mm !important;
+    vertical-align: middle !important;
+  }
+
+  .proposal-compact-table th {
+    font-size: 6.8pt !important;
+    line-height: 1.05 !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  .proposal-compact-table td {
+    line-height: 1.08 !important;
+  }
+
+  .proposal-compact-table .proposal-col-item {
+    width: 11mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-code {
+    width: 18mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-unit {
+    width: 9mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-qty {
+    width: 11mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-unit-price {
+    width: 20mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-total {
+    width: 22mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-delivery {
+    width: 16mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-description {
+    width: auto !important;
+  }
+
+  .proposal-compact-table .proposal-cell-item,
+  .proposal-compact-table .proposal-cell-code,
+  .proposal-compact-table .proposal-cell-unit,
+  .proposal-compact-table .proposal-cell-qty,
+  .proposal-compact-table .proposal-cell-money,
+  .proposal-compact-table .proposal-cell-delivery {
+    white-space: nowrap !important;
+  }
+
+  .proposal-compact-table .proposal-cell-description {
+    font-size: 7.2pt !important;
+    line-height: 1.08 !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    hyphens: auto !important;
+    white-space: normal !important;
+  }
+
+  .proposal-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* --- Modal: só o conteúdo da proposta visível --- */
+  html.printing-proposal-client-preview {
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+
+  body.printing-proposal-client-preview {
+    background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+
+  body.printing-proposal-client-preview * {
+    visibility: hidden !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-page,
+  body.printing-proposal-client-preview .proposal-print-page * {
+    visibility: visible !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-page {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    visibility: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    z-index: auto !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    flex: none !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    flex-basis: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-document {
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-document-inner {
+    max-height: none !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-table-wrap {
+    max-height: none !important;
+  }
+}

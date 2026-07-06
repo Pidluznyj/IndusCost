@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   Plus, 
   Search, 
@@ -17,19 +17,44 @@ import {
   DollarSign
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Material, CreateMaterialInput } from "@/src/types/material";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
+import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { MATERIAL_TOUR_STEPS } from "@/src/tours/materialTourSteps";
+
+const MATERIAL_CATEGORY_OPTIONS = [
+  { value: "MATERIA_PRIMA", label: "Matéria-Prima", searchTerms: "MATERIA_PRIMA materia prima" },
+  { value: "INSUMO", label: "Insumo", searchTerms: "INSUMO insumo" },
+  { value: "EMBALAGEM", label: "Embalagem", searchTerms: "EMBALAGEM embalagem" },
+];
 
 export const MaterialModule = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listCategoryFilter, setListCategoryFilter] = useState<"" | Material["category"]>("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Material | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<
+    | null
+    | {
+        kind: "duplicate";
+        code: string;
+        message: string;
+        existingMaterialId: string | null;
+      }
+    | { kind: "generic"; message: string }
+  >(null);
 
   // Form State
   const [formData, setFormData] = useState<CreateMaterialInput>({
@@ -49,11 +74,11 @@ export const MaterialModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/materials");
-      const data = await res.json();
-      setMaterials(data);
+      const data = await fetchJsonOk<Material[]>("/api/materials");
+      setMaterials(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar materiais:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar materiais.");
     } finally {
       setLoading(false);
     }
@@ -64,6 +89,7 @@ export const MaterialModule = () => {
   }, []);
 
   const handleOpenModal = (material?: Material) => {
+    setFormError(null);
     if (material) {
       setEditingMaterial(material);
       setFormData({
@@ -103,56 +129,185 @@ export const MaterialModule = () => {
     const method = editingMaterial ? "PUT" : "POST";
     const url = editingMaterial ? `/api/materials/${editingMaterial.id}` : "/api/materials";
 
+    setFormError(null);
+    setSubmitting(true);
     try {
+      const payload = { ...formData, code: formData.code.trim() };
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
+
+      if (!res.ok) {
+        let body: Record<string, unknown> | null = null;
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          try {
+            body = (await res.json()) as Record<string, unknown>;
+          } catch {
+            body = null;
+          }
+        }
+
+        const errorCode = typeof body?.error === "string" ? body.error : "";
+        const message =
+          typeof body?.message === "string" && body.message.trim()
+            ? body.message.trim()
+            : `Erro HTTP ${res.status}`;
+
+        if (res.status === 409 && errorCode === "MATERIAL_CODE_ALREADY_EXISTS") {
+          const dupCode =
+            typeof body?.code === "string" && body.code ? body.code : payload.code;
+          const existingMaterialId =
+            typeof body?.existingMaterialId === "string"
+              ? body.existingMaterialId
+              : null;
+          setFormError({
+            kind: "duplicate",
+            code: dupCode,
+            message: `Já existe um material com o código ${dupCode}. Abra o cadastro existente para editar ou use outro código.`,
+            existingMaterialId,
+          });
+          return;
+        }
+
+        setFormError({ kind: "generic", message });
+        return;
       }
+
+      setIsModalOpen(false);
+      setFormError(null);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      setFormError({
+        kind: "generic",
+        message:
+          error instanceof Error
+            ? `Falha de comunicação com o servidor: ${error.message}`
+            : "Falha de comunicação com o servidor.",
+      });
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const handleOpenExistingByCode = (existingMaterialId: string | null, code: string) => {
+    const existing =
+      (existingMaterialId && materials.find((m) => m.id === existingMaterialId)) ||
+      materials.find((m) => m.code.trim().toLowerCase() === code.trim().toLowerCase());
+    if (existing) {
+      setFormError(null);
+      handleOpenModal(existing);
+      return;
+    }
+    fetchData().then(() => {
+      setFormError({
+        kind: "generic",
+        message:
+          "Material existente recarregado na lista. Clique em editar para abrir o cadastro.",
+      });
+    });
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      await fetch(`/api/materials/${id}/status`, {
+      await fetchOk(`/api/materials/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      fetchData();
+      await fetchData();
     } catch (error) {
       console.error("Erro ao alterar status:", error);
+      alert(error instanceof Error ? error.message : "Erro de conexão ao alterar status do material.");
     }
   };
 
-  const filteredMaterials = materials.filter(mat => 
-    mat.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    mat.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    mat.supplier?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMaterials = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return materials.filter((mat) => {
+      if (listCategoryFilter && mat.category !== listCategoryFilter) return false;
+      if (listStatusFilter && mat.status !== listStatusFilter) return false;
+      if (!q) return true;
+      return (
+        mat.description.toLowerCase().includes(q) ||
+        mat.code.toLowerCase().includes(q) ||
+        (mat.supplier ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [materials, searchTerm, listCategoryFilter, listStatusFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListCategoryFilter("");
+    setListStatusFilter("");
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="materials-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por código, descrição ou fornecedor..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="materials-toolbar"
+      >
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="relative flex-1 max-w-md min-w-[260px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por código, descrição ou fornecedor..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[170px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listCategoryFilter}
+              onChange={(e) => setListCategoryFilter(e.target.value as any)}
+            >
+              <option value="">Todas as categorias</option>
+              {MATERIAL_CATEGORY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="min-w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listCategoryFilter && !listStatusFilter}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+              title="Limpar filtros"
+            >
+              <X className="h-4 w-4" />
+              Limpar
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Exibindo <span className="font-bold text-foreground">{filteredMaterials.length}</span> de{" "}
+            <span className="font-bold text-foreground">{materials.length}</span> material(is).
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -182,7 +337,10 @@ export const MaterialModule = () => {
       />
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="materials-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -351,15 +509,12 @@ export const MaterialModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Categoria</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                        <SearchableSelect
+                          placeholder="Categoria..."
+                          options={MATERIAL_CATEGORY_OPTIONS}
                           value={formData.category}
-                          onChange={(e) => setFormData({...formData, category: e.target.value})}
-                        >
-                          <option value="MATERIA_PRIMA">Matéria-Prima</option>
-                          <option value="INSUMO">Insumo</option>
-                          <option value="EMBALAGEM">Embalagem</option>
-                        </select>
+                          onChange={(v) => setFormData({ ...formData, category: v })}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor</label>
@@ -481,18 +636,54 @@ export const MaterialModule = () => {
                 </div>
               </div>
 
+              {formError ? (
+                <div
+                  role="alert"
+                  className={cn(
+                    "rounded-lg border px-4 py-3 text-sm",
+                    formError.kind === "duplicate"
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-red-300 bg-red-50 text-red-900"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <p className="font-semibold">{formError.message}</p>
+                      {formError.kind === "duplicate" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleOpenExistingByCode(
+                              formError.existingMaterialId,
+                              formError.code
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 text-xs font-bold underline hover:no-underline"
+                        >
+                          Abrir material existente ({formError.code})
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-end gap-3 pt-6 border-t border-border">
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+                  disabled={submitting}
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit"
-                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm"
+                  disabled={submitting}
+                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {editingMaterial ? "Salvar Alterações" : "Cadastrar Material"}
                 </button>
               </div>
@@ -547,6 +738,13 @@ export const MaterialModule = () => {
           </motion.div>
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={MATERIAL_TOUR_STEPS}
+        tourName="Tour de Materiais"
+      />
     </div>
   );
 };

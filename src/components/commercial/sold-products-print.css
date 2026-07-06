@@ -1,0 +1,329 @@
+#sold-products-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.sold-products-print-route #root {
+    display: none !important;
+  }
+
+  body.sold-products-print-route * {
+    visibility: hidden;
+  }
+
+  body.sold-products-print-route #sold-products-print-root,
+  body.sold-products-print-route #sold-products-print-root * {
+    visibility: visible;
+  }
+
+  .sold-products-no-print,
+  nav,
+  aside,
+  button {
+    display: none !important;
+  }
+
+  #sold-products-print-root {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #sold-products-print-root * {
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #sold-products-print-root .sold-products-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8pt;
+    line-height: 1.35;
+    color: #111;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
+  }
+
+  /* Cabeçalho — grid 3 colunas (não forçar display:block em todos os descendentes) */
+  #sold-products-print-root .print-doc-header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 4mm;
+  }
+
+  #sold-products-print-root .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: 28mm minmax(0, 1fr) 58mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
+  }
+
+  #sold-products-print-root .print-doc-logo-wrap {
+    display: block !important;
+  }
+
+  #sold-products-print-root .print-doc-logo {
+    max-height: 22mm !important;
+    max-width: 28mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    object-position: left top !important;
+  }
+
+  #sold-products-print-root .print-doc-company-text {
+    font-size: 7.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  #sold-products-print-root .print-doc-company-name {
+    font-size: 10pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 1mm !important;
+  }
+
+  #sold-products-print-root .print-doc-company-slogan {
+    font-size: 7pt !important;
+  }
+
+  #sold-products-print-root .print-doc-meta {
+    border-left: 1px solid #cbd5e1 !important;
+    padding-left: 3mm !important;
+    font-size: 7.5pt !important;
+    line-height: 1.4 !important;
+  }
+
+  #sold-products-print-root .print-doc-meta-title {
+    font-size: 9.5pt !important;
+    font-weight: 800 !important;
+    margin-bottom: 2mm !important;
+    white-space: normal !important;
+  }
+
+  #sold-products-print-root .print-doc-meta-line {
+    margin-bottom: 1mm !important;
+  }
+
+  #sold-products-print-root .print-doc-header-rule {
+    margin-top: 3mm !important;
+    border-top: 1px solid #94a3b8 !important;
+  }
+
+  #sold-products-print-root .sold-products-print-main-title {
+    font-size: 12pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 4mm 0 2mm;
+  }
+
+  #sold-products-print-root table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    page-break-inside: auto;
+    box-sizing: border-box !important;
+  }
+
+  #sold-products-print-root thead {
+    display: table-header-group !important;
+  }
+
+  #sold-products-print-root tfoot {
+    display: table-footer-group !important;
+  }
+
+  #sold-products-print-root th,
+  #sold-products-print-root td {
+    border: 1px solid #94a3b8;
+    padding: 1.2mm 1.4mm;
+    vertical-align: top;
+    box-sizing: border-box !important;
+  }
+
+  #sold-products-print-root .sold-products-print-meta-table {
+    font-size: 7.5pt;
+    margin-bottom: 3mm;
+  }
+
+  #sold-products-print-root .sold-products-print-meta-table th {
+    width: 14%;
+    background: #f1f5f9;
+    font-weight: 700;
+    text-align: left;
+  }
+
+  #sold-products-print-root .sold-products-print-section {
+    margin-bottom: 3mm;
+  }
+
+  #sold-products-print-root .print-section-title {
+    font-size: 8.5pt;
+    margin: 3mm 0 2mm;
+  }
+
+  #sold-products-print-root .sold-products-print-kpi-table th {
+    background: #f1f5f9;
+    font-weight: 700;
+    width: 12%;
+    font-size: 7pt;
+  }
+
+  #sold-products-print-root .sold-products-print-kpi-table td {
+    font-weight: 600;
+    width: 21%;
+    font-size: 7.5pt;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table thead th {
+    background: #e2e8f0;
+    font-weight: 700;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    vertical-align: bottom;
+    line-height: 1.15;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  /* Larguras em mm — A4 landscape ~281mm útil */
+  #sold-products-print-root .sold-products-print-ranking-table col.col-rank {
+    width: 8mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-code {
+    width: 18mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-product {
+    width: auto;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-qty {
+    width: 16mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-money {
+    width: 22mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-count {
+    width: 12mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-date {
+    width: 18mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table col.col-pct {
+    width: 12mm;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table th.col-rank,
+  #sold-products-print-root .sold-products-print-ranking-table td.col-rank {
+    text-align: center !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    min-width: 8mm !important;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #sold-products-print-root .col-num {
+    text-align: center !important;
+  }
+
+  #sold-products-print-root .col-money,
+  #sold-products-print-root td.col-money {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #sold-products-print-root .col-date {
+    text-align: center !important;
+  }
+
+  #sold-products-print-root .col-nowrap {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #sold-products-print-root td.col-product {
+    font-size: 7.5pt;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: auto;
+    white-space: normal !important;
+  }
+
+  #sold-products-print-root td.col-code,
+  #sold-products-print-root th.col-code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 7pt;
+    white-space: nowrap !important;
+    min-width: 18mm !important;
+  }
+
+  #sold-products-print-root .sold-products-print-empty {
+    font-size: 8pt;
+    color: #555;
+    margin: 0;
+  }
+
+  #sold-products-print-root .print-document-footer {
+    margin-top: 5mm;
+    padding-top: 2mm;
+    border-top: 1px solid #94a3b8;
+    font-size: 7pt;
+    color: #475569;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #sold-products-print-root .sold-products-print-footer-note {
+    margin-top: 1mm;
+    font-size: 6.5pt;
+    font-style: italic;
+    color: #64748b;
+  }
+}

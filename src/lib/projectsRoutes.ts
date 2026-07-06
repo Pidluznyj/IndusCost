@@ -1,0 +1,1434 @@
+import type express from "express";
+import type { RequestHandler } from "express";
+import { Prisma, type ProjectStatus, type ProjectType } from "@prisma/client";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import { prisma } from "@/src/lib/prisma.js";
+
+type AuthGuards = {
+  requireAppAuth: RequestHandler;
+  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+};
+import { buildProjectsDashboard } from "@/src/lib/projectsDashboard.js";
+import {
+  buildProjectsCustomerLookupWhere,
+  PROJECTS_CUSTOMER_LOOKUP_LIMIT,
+  serializeCustomerLookupItem,
+} from "@/src/lib/projectsCustomerLookup.js";
+import {
+  buildCommercialOwnerSearchWhere,
+  COMMERCIAL_ROLES,
+  PROJECTS_COMMERCIAL_OWNER_LOOKUP_LIMIT,
+  serializeCommercialOwnerLookupItem,
+} from "@/src/lib/projectsCommercialOwnerLookup.js";
+import {
+  assertProjectsDeleteSuperAdmin,
+  PROJECTS_LOOKUP_PERMISSIONS,
+  PROJECTS_MANAGE_PERMISSIONS,
+  PROJECTS_VIEW_PERMISSIONS,
+  ProjectsAccessError,
+} from "@/src/lib/projectsPermissions.js";
+import {
+  getProjectsProductCostResolver,
+  setProjectsProductCostResolver,
+  type ProjectsProductCostResolver,
+} from "@/src/lib/projectsProductCostResolver.js";
+import { extractOfficialProductFinalUnitCost } from "@/src/lib/productOfficialFinalCost.js";
+import { toFiniteNumber } from "@/src/lib/projectsCalculations.js";
+import {
+  importProductEngineeringSnapshotToProject,
+  loadOfficialProductEngineeringSnapshot,
+} from "@/src/lib/projectsProductEngineeringSnapshot.js";
+import {
+  importProductSnapshotToProject,
+  loadOfficialProductSnapshot,
+} from "@/src/lib/projectsProductSnapshot.js";
+import {
+  PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION,
+  projectInProjectProductCreationDisabledPayload,
+} from "@/src/lib/projectsAddItemPolicy.js";
+import { isGuidedOtherCostItem, parseOtherCostMeta } from "@/src/lib/projectsOtherCostGroups.js";
+import {
+  addSimulationReferenceToProject,
+  lookupProjectSimulations,
+} from "@/src/lib/projectsSimulationItemService.js";
+import {
+  buildStructureLineTotal,
+  copyVersionFromCurrent,
+  createProjectWithVersion,
+  dec,
+  deleteProject,
+  deleteProjectStructureSnapshot,
+  isValidProjectStatus,
+  isValidProjectType,
+  loadProjectDetail,
+  recalculateAndPersistVersionCosts,
+  requireProjectAndVersion,
+  resolveMoldAmortizedCost,
+  resolveStructureLineSnapshots,
+  serializeMold,
+  PROJECT_LIST_CURRENT_VERSION_INCLUDE,
+  serializeProjectListRow,
+  serializeSimulatedItem,
+  serializeSimulatedProduct,
+  serializeStructureLine,
+  serializeVersion,
+} from "@/src/lib/projectsService.js";
+import {
+  buildProjectStructureLineFromContext,
+  ProjectStructureLineValidationError,
+  resolveProjectStructureLineCostSource,
+} from "@/src/lib/projectsStructureLineBuilder.js";
+import {
+  deleteProjectCostAmortizationBySource,
+  loadProjectCostAmortizations,
+  removeAmortizationAllocationsForTargetItem,
+  upsertProjectCostAmortization,
+  type UpsertProjectCostAmortizationPayload,
+} from "@/src/lib/projectsCostAmortizationService.js";
+import {
+  loadProjectPricingPayload,
+  upsertProjectPricing,
+} from "@/src/lib/projectsPricingService.js";
+import {
+  buildProjectCostAmortizationSummary,
+  validateAmortizationSourceRef,
+} from "@/src/lib/projectsCostAmortization.js";
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function parsePage(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
+function parsePageSize(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 20;
+  return Math.min(100, Math.max(1, Math.floor(n)));
+}
+
+function optStr(value: unknown): string | null {
+  if (value == null) return null;
+  const t = String(value).trim();
+  return t.length ? t : null;
+}
+
+function optNum(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function optBool(value: unknown, fallback = false): boolean {
+  if (value === true || value === "true" || value === 1 || value === "1") return true;
+  if (value === false || value === "false" || value === 0 || value === "0") return false;
+  return fallback;
+}
+
+export type ProjectsRoutesDeps = {
+  resolveOfficialProductCostAnalysis?: ProjectsProductCostResolver;
+};
+
+export function registerProjectsRoutes(
+  app: express.Express,
+  auth: AuthGuards,
+  deps: ProjectsRoutesDeps = {}
+) {
+  if (deps.resolveOfficialProductCostAnalysis) {
+    setProjectsProductCostResolver(deps.resolveOfficialProductCostAnalysis);
+  }
+  const view = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_VIEW_PERMISSIONS])] as const;
+  const lookup = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_LOOKUP_PERMISSIONS])] as const;
+  const manage = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_MANAGE_PERMISSIONS])] as const;
+
+  app.get("/api/projects/dashboard", ...view, async (_req, res) => {
+    try {
+      res.json(await buildProjectsDashboard());
+    } catch (e: unknown) {
+      console.error("GET /api/projects/dashboard", e);
+      res.status(500).json({ error: "Erro ao carregar dashboard de projetos." });
+    }
+  });
+
+  app.get("/api/projects", ...view, async (req, res) => {
+    try {
+      const search = String(req.query.search ?? "").trim();
+      const statusQ = String(req.query.status ?? "").trim();
+      const typeQ = String(req.query.projectType ?? "").trim();
+      const customerQ = String(req.query.customer ?? "").trim();
+      const page = parsePage(req.query.page);
+      const pageSize = parsePageSize(req.query.pageSize);
+      const skip = (page - 1) * pageSize;
+
+      if (statusQ && !isValidProjectStatus(statusQ)) {
+        return res.status(400).json({ error: "Status inválido." });
+      }
+      if (typeQ && !isValidProjectType(typeQ)) {
+        return res.status(400).json({ error: "Tipo de projeto inválido." });
+      }
+
+      const where: Prisma.ProjectWhereInput = {
+        ...(statusQ && isValidProjectStatus(statusQ)
+          ? { status: statusQ as ProjectStatus }
+          : {}),
+        ...(typeQ && isValidProjectType(typeQ) ? { projectType: typeQ as ProjectType } : {}),
+        ...(customerQ
+          ? { customerName: { contains: customerQ, mode: "insensitive" } }
+          : {}),
+        ...(search
+          ? {
+              OR: [
+                { code: { contains: search, mode: "insensitive" } },
+                { title: { contains: search, mode: "insensitive" } },
+                { customerName: { contains: search, mode: "insensitive" } },
+                { commercialOwner: { contains: search, mode: "insensitive" } },
+                { technicalOwner: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
+
+      const [rows, total] = await Promise.all([
+        prisma.project.findMany({
+          where,
+          orderBy: { updatedAt: "desc" },
+          skip,
+          take: pageSize,
+          include: { versions: PROJECT_LIST_CURRENT_VERSION_INCLUDE },
+        }),
+        prisma.project.count({ where }),
+      ]);
+
+      const serialized = await Promise.all(rows.map(serializeProjectListRow));
+      res.json({
+        rows: serialized,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/projects", e);
+      res.status(500).json({ error: "Erro ao listar projetos." });
+    }
+  });
+
+  app.get("/api/projects/lookup/commercial-owners", ...lookup, async (req, res) => {
+    try {
+      const query = String(req.query.query ?? req.query.q ?? "").trim();
+      if (!query) {
+        return res.json({ rows: [] });
+      }
+      const searchWhere = buildCommercialOwnerSearchWhere(query);
+      const rows = await prisma.appUser.findMany({
+        where: {
+          isActive: true,
+          role: { in: COMMERCIAL_ROLES },
+          ...(searchWhere ?? {}),
+        },
+        take: PROJECTS_COMMERCIAL_OWNER_LOOKUP_LIMIT,
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          sellerResponsibleName: true,
+        },
+      });
+      res.json({ rows: rows.map(serializeCommercialOwnerLookupItem) });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/commercial-owners", e);
+      res.status(500).json({ error: "Erro na busca de responsáveis comerciais." });
+    }
+  });
+
+  app.get("/api/projects/lookup/customers", ...lookup, async (req, res) => {
+    try {
+      const query = String(req.query.query ?? req.query.q ?? "").trim();
+      if (!query) {
+        return res.json({ rows: [] });
+      }
+      const rows = await prisma.customer.findMany({
+        where: {
+          status: "ACTIVE",
+          ...buildProjectsCustomerLookupWhere(query),
+        },
+        take: PROJECTS_CUSTOMER_LOOKUP_LIMIT,
+        orderBy: { companyName: "asc" },
+        select: {
+          id: true,
+          companyName: true,
+          tradeName: true,
+          taxId: true,
+        },
+      });
+      res.json({ rows: rows.map(serializeCustomerLookupItem) });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/customers", e);
+      res.status(500).json({ error: "Erro na busca de clientes." });
+    }
+  });
+
+  app.get("/api/projects/lookup/products", ...lookup, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const rows = await prisma.product.findMany({
+        where: q
+          ? {
+              OR: [
+                { sku: { contains: q, mode: "insensitive" } },
+                { name: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : undefined,
+        take: 30,
+        orderBy: { sku: "asc" },
+        select: { id: true, sku: true, name: true, type: true },
+      });
+      res.json({ rows });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/products", e);
+      res.status(500).json({ error: "Erro na busca de produtos." });
+    }
+  });
+
+  app.get("/api/projects/lookup/products/:productId/snapshot", ...lookup, async (req, res) => {
+    try {
+      if (!isUuid(req.params.productId)) {
+        return res.status(400).json({ error: "ID de produto inválido." });
+      }
+      const snapshot = await loadOfficialProductSnapshot(req.params.productId);
+      if (!snapshot) return res.status(404).json({ error: "Produto não encontrado." });
+      res.json(snapshot);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/products/:productId/snapshot", e);
+      res.status(500).json({ error: "Erro ao carregar snapshot do produto." });
+    }
+  });
+
+  app.get("/api/projects/lookup/products/:productId/engineering-snapshot", ...lookup, async (req, res) => {
+    try {
+      if (!isUuid(req.params.productId)) {
+        return res.status(400).json({ error: "ID de produto inválido." });
+      }
+      const snapshot = await loadOfficialProductEngineeringSnapshot(req.params.productId);
+      if (!snapshot) return res.status(404).json({ error: "Produto não encontrado." });
+      res.json(snapshot);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/products/:productId/engineering-snapshot", e);
+      res.status(500).json({ error: "Erro ao carregar engenharia do produto." });
+    }
+  });
+
+  app.get("/api/projects/lookup/simulations", ...lookup, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const rows = await lookupProjectSimulations(q);
+      res.json({ rows });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/simulations", e);
+      res.status(500).json({ error: "Erro ao buscar simulações." });
+    }
+  });
+
+  app.post("/api/projects/:id/simulation-references", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const simulationId = typeof req.body?.simulationId === "string" ? req.body.simulationId.trim() : "";
+      if (!isUuid(simulationId)) {
+        return res.status(400).json({ error: "simulationId inválido." });
+      }
+      const row = await addSimulationReferenceToProject({
+        projectId: req.params.id,
+        versionId: ctx.version.id,
+        simulationId,
+      });
+      res.status(201).json(row);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Erro ao adicionar simulação ao projeto.";
+      console.error("POST simulation-references", e);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.post("/api/projects/:id/import-product-snapshot", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const body = req.body ?? {};
+      const productId = typeof body.productId === "string" ? body.productId : "";
+      if (!isUuid(productId)) return res.status(400).json({ error: "productId inválido." });
+
+      const result = await importProductSnapshotToProject(req.params.id, productId, {
+        includeBom: body.includeBom !== false,
+        includeRouting: body.includeRouting !== false,
+        replaceExisting: body.replaceExisting !== false,
+      });
+      const detail = await loadProjectDetail(req.params.id);
+      res.status(201).json({
+        createdCount: result.createdCount,
+        lineIds: result.lineIds,
+        project: detail,
+      });
+    } catch (e: unknown) {
+      console.error("POST /api/projects/:id/import-product-snapshot", e);
+      res.status(500).json({
+        error: e instanceof Error ? e.message : "Erro ao importar snapshot do produto.",
+      });
+    }
+  });
+
+  app.get("/api/projects/lookup/materials", ...lookup, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const rows = await prisma.material.findMany({
+        where: q
+          ? {
+              OR: [
+                { code: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : undefined,
+        take: 30,
+        orderBy: { code: "asc" },
+        select: {
+          id: true,
+          code: true,
+          description: true,
+          unit: true,
+          category: true,
+          supplier: true,
+          currentCost: true,
+          averageCost: true,
+          standardCost: true,
+          standardLoss: true,
+        },
+      });
+      res.json({
+        rows: rows.map((r) => ({
+          id: r.id,
+          code: r.code,
+          description: r.description,
+          unit: r.unit,
+          category: r.category,
+          supplier: r.supplier,
+          currentCost: dec(r.currentCost),
+          averageCost: dec(r.averageCost),
+          standardCost: dec(r.standardCost),
+          standardLoss: dec(r.standardLoss),
+        })),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/materials", e);
+      res.status(500).json({ error: "Erro na busca de materiais." });
+    }
+  });
+
+  app.get("/api/projects/:id/client-report", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const { loadProjectClientReport } = await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(payload);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-report", e);
+      res.status(500).json({ error: "Erro ao gerar relatório comercial para cliente." });
+    }
+  });
+
+  app.get("/api/projects/:id/client-report.pdf", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const { loadProjectClientReport, buildProjectClientReportPdfBuffer, buildProjectClientReportPdfFilename } =
+        await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      const buffer = buildProjectClientReportPdfBuffer(payload);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${buildProjectClientReportPdfFilename(payload.project.code)}"`
+      );
+      res.send(buffer);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-report.pdf", e);
+      res.status(500).json({ error: "Erro ao gerar PDF comercial para cliente." });
+    }
+  });
+
+  app.get("/api/projects/:id/client-proposal-pptx", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const {
+        loadProjectClientReport,
+        buildProjectClientProposalPptxExportBuffer,
+        buildProjectClientProposalPptxFilename,
+      } = await import("./projectsClientReportService.js");
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      const buffer = await buildProjectClientProposalPptxExportBuffer(payload);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${buildProjectClientProposalPptxFilename(payload.project.code)}"`
+      );
+      res.send(buffer);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/client-proposal-pptx", e);
+      res.status(500).json({ error: "Erro ao gerar apresentação PPT da proposta comercial." });
+    }
+  });
+
+  app.put("/api/projects/:id/client-report/quantities", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const { upsertProjectClientProposalQuantities } = await import(
+        "./projectsClientProposalService.js"
+      );
+      const { loadProjectClientReport } = await import("./projectsClientReportService.js");
+
+      await upsertProjectClientProposalQuantities(
+        req.params.id,
+        items.map((row: Record<string, unknown>) => ({
+          targetItemId: String(row.targetItemId ?? row.id ?? ""),
+          quantityPerSet: Number(row.quantityPerSet),
+        }))
+      );
+
+      const payload = await loadProjectClientReport(req.params.id);
+      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(payload);
+    } catch (e: unknown) {
+      console.error("PUT /api/projects/:id/client-report/quantities", e);
+      const message = e instanceof Error ? e.message : "Erro ao salvar quantidades da proposta.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/projects/:id", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(detail);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id", e);
+      res.status(500).json({ error: "Erro ao carregar projeto." });
+    }
+  });
+
+  app.post("/api/projects", ...manage, async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
+      const customerDocument =
+        body.customerDocument === undefined || body.customerDocument === null
+          ? null
+          : optStr(body.customerDocument);
+      const projectType = body.projectType;
+
+      if (!title) return res.status(400).json({ error: "Título é obrigatório." });
+      if (!customerName) return res.status(400).json({ error: "Cliente é obrigatório." });
+      if (!isValidProjectType(projectType)) {
+        return res.status(400).json({ error: "Tipo de projeto inválido." });
+      }
+      if (body.status != null && !isValidProjectStatus(body.status)) {
+        return res.status(400).json({ error: "Status inválido." });
+      }
+
+      const project = await createProjectWithVersion({
+        title,
+        customerName,
+        customerDocument,
+        description: optStr(body.description),
+        projectType,
+        status: body.status,
+        commercialOwner: optStr(body.commercialOwner),
+        technicalOwner: optStr(body.technicalOwner),
+        expectedMonthlyVolume: optNum(body.expectedMonthlyVolume),
+        targetPrice: optNum(body.targetPrice),
+        targetMarginPercent: optNum(body.targetMarginPercent),
+        notes: optStr(body.notes),
+      });
+
+      const detail = await loadProjectDetail(project.id);
+      res.status(201).json(detail);
+    } catch (e: unknown) {
+      console.error("POST /api/projects", e);
+      res.status(500).json({ error: "Erro ao criar projeto." });
+    }
+  });
+
+  app.patch("/api/projects/:id", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const body = req.body ?? {};
+      if (body.status != null && !isValidProjectStatus(body.status)) {
+        return res.status(400).json({ error: "Status inválido." });
+      }
+      if (body.projectType != null && !isValidProjectType(body.projectType)) {
+        return res.status(400).json({ error: "Tipo de projeto inválido." });
+      }
+
+      const data: Prisma.ProjectUpdateInput = {};
+      if (body.title != null) data.title = String(body.title).trim();
+      if (body.customerName != null) data.customerName = String(body.customerName).trim();
+      if (body.customerDocument !== undefined) data.customerDocument = optStr(body.customerDocument);
+      if (body.description !== undefined) data.description = optStr(body.description);
+      if (body.projectType != null) data.projectType = body.projectType;
+      if (body.status != null) data.status = body.status;
+      if (body.commercialOwner !== undefined) data.commercialOwner = optStr(body.commercialOwner);
+      if (body.technicalOwner !== undefined) data.technicalOwner = optStr(body.technicalOwner);
+      if (body.expectedMonthlyVolume !== undefined) {
+        data.expectedMonthlyVolume = optNum(body.expectedMonthlyVolume);
+      }
+      if (body.targetPrice !== undefined) data.targetPrice = optNum(body.targetPrice);
+      if (body.targetMarginPercent !== undefined) {
+        data.targetMarginPercent = optNum(body.targetMarginPercent);
+      }
+      if (body.notes !== undefined) data.notes = optStr(body.notes);
+
+      await prisma.project.update({ where: { id: req.params.id }, data });
+      const version = await requireProjectAndVersion(req.params.id);
+      if (version.version) {
+        await recalculateAndPersistVersionCosts(version.version.id);
+      }
+      const detail = await loadProjectDetail(req.params.id);
+      res.json(detail);
+    } catch (e: unknown) {
+      console.error("PATCH /api/projects/:id", e);
+      res.status(500).json({ error: "Erro ao atualizar projeto." });
+    }
+  });
+
+  app.delete("/api/projects/:id", auth.requireAppAuth, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      assertProjectsDeleteSuperAdmin(user);
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const result = await deleteProject(req.params.id);
+      res.json({ ok: true, code: result.code });
+    } catch (e: unknown) {
+      if (e instanceof ProjectsAccessError) {
+        return res.status(403).json({ error: e.message, code: "PROJECTS_DELETE_FORBIDDEN" });
+      }
+      if (e instanceof Error && e.message === "Projeto não encontrado.") {
+        return res.status(404).json({ error: e.message });
+      }
+      console.error("DELETE /api/projects/:id", e);
+      res.status(500).json({ error: "Erro ao excluir projeto." });
+    }
+  });
+
+  app.post("/api/projects/:id/versions", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const last = await prisma.projectVersion.findFirst({
+        where: { projectId: req.params.id },
+        orderBy: { versionNumber: "desc" },
+      });
+      const nextNumber = (last?.versionNumber ?? 0) + 1;
+      const version = await copyVersionFromCurrent(req.params.id, nextNumber);
+      res.status(201).json(serializeVersion(version));
+    } catch (e: unknown) {
+      console.error("POST /api/projects/:id/versions", e);
+      res.status(500).json({ error: "Erro ao criar nova versão." });
+    }
+  });
+
+  app.get("/api/projects/:id/versions/:versionId", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.versionId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const version = await prisma.projectVersion.findFirst({
+        where: { id: req.params.versionId, projectId: req.params.id },
+      });
+      if (!version) return res.status(404).json({ error: "Versão não encontrada." });
+      res.json(serializeVersion(version));
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/versions/:versionId", e);
+      res.status(500).json({ error: "Erro ao carregar versão." });
+    }
+  });
+
+  app.post("/api/projects/:id/simulated-products", ...manage, async (req, res) => {
+    if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION) {
+      return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+    }
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const body = req.body ?? {};
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      if (!description) return res.status(400).json({ error: "Descrição é obrigatória." });
+
+      const row = await prisma.projectSimulatedProduct.create({
+        data: {
+          projectId: req.params.id,
+          versionId: ctx.version.id,
+          provisionalCode: optStr(body.provisionalCode),
+          description,
+          unit: optStr(body.unit) ?? "UN",
+          estimatedWeight: optNum(body.estimatedWeight),
+          expectedVolume: optNum(body.expectedVolume),
+          batchSize: optNum(body.batchSize),
+          notes: optStr(body.notes),
+        },
+      });
+      res.status(201).json(serializeSimulatedProduct(row));
+    } catch (e: unknown) {
+      console.error("POST simulated-products", e);
+      res.status(500).json({ error: "Erro ao criar produto simulado." });
+    }
+  });
+
+  app.patch("/api/projects/:id/simulated-products/:simulatedProductId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedProductId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const body = req.body ?? {};
+      const row = await prisma.projectSimulatedProduct.update({
+        where: { id: req.params.simulatedProductId, projectId: req.params.id },
+        data: {
+          ...(body.provisionalCode !== undefined
+            ? { provisionalCode: optStr(body.provisionalCode) }
+            : {}),
+          ...(body.description != null ? { description: String(body.description).trim() } : {}),
+          ...(body.unit != null ? { unit: String(body.unit).trim() } : {}),
+          ...(body.estimatedWeight !== undefined
+            ? { estimatedWeight: optNum(body.estimatedWeight) }
+            : {}),
+          ...(body.expectedVolume !== undefined
+            ? { expectedVolume: optNum(body.expectedVolume) }
+            : {}),
+          ...(body.batchSize !== undefined ? { batchSize: optNum(body.batchSize) } : {}),
+          ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
+        },
+      });
+      res.json(serializeSimulatedProduct(row));
+    } catch (e: unknown) {
+      console.error("PATCH simulated-products", e);
+      res.status(500).json({ error: "Erro ao atualizar produto simulado." });
+    }
+  });
+
+  app.delete("/api/projects/:id/simulated-products/:simulatedProductId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedProductId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectSimulatedProduct.findFirst({
+        where: { id: req.params.simulatedProductId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Produto simulado não encontrado." });
+      await removeAmortizationAllocationsForTargetItem(
+        req.params.id,
+        req.params.simulatedProductId
+      );
+      await prisma.projectSimulatedProduct.delete({ where: { id: req.params.simulatedProductId } });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if (!("error" in ctx) && ctx.version) {
+        await recalculateAndPersistVersionCosts(ctx.version.id);
+      }
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE simulated-products", e);
+      res.status(500).json({ error: "Erro ao excluir produto simulado." });
+    }
+  });
+
+  app.post("/api/projects/:id/simulated-items", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const body = req.body ?? {};
+      const notes = typeof body.notes === "string" ? body.notes : null;
+      if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION && !isGuidedOtherCostItem(notes)) {
+        return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+      }
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      if (!description) return res.status(400).json({ error: "Descrição é obrigatória." });
+
+      const row = await prisma.projectSimulatedItem.create({
+        data: {
+          projectId: req.params.id,
+          versionId: ctx.version.id,
+          provisionalCode: optStr(body.provisionalCode),
+          description,
+          itemType: body.itemType ?? "OTHER",
+          unit: optStr(body.unit) ?? "UN",
+          estimatedUnitCost: optNum(body.estimatedUnitCost),
+          quotedUnitCost: optNum(body.quotedUnitCost),
+          supplierName: optStr(body.supplierName),
+          leadTimeDays: body.leadTimeDays != null ? Number(body.leadTimeDays) : null,
+          estimatedWeight: optNum(body.estimatedWeight),
+          lossPercent: optNum(body.lossPercent) ?? 0,
+          requiresQuotation: optBool(body.requiresQuotation),
+          requiresEngineeringReview: optBool(body.requiresEngineeringReview),
+          canBecomeOfficial: body.canBecomeOfficial !== false,
+          notes: optStr(body.notes),
+        },
+      });
+      res.status(201).json(serializeSimulatedItem(row));
+    } catch (e: unknown) {
+      console.error("POST simulated-items", e);
+      res.status(500).json({ error: "Erro ao criar item simulado." });
+    }
+  });
+
+  app.patch("/api/projects/:id/simulated-items/:simulatedItemId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedItemId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const body = req.body ?? {};
+      const row = await prisma.projectSimulatedItem.update({
+        where: { id: req.params.simulatedItemId, projectId: req.params.id },
+        data: {
+          ...(body.provisionalCode !== undefined
+            ? { provisionalCode: optStr(body.provisionalCode) }
+            : {}),
+          ...(body.description != null ? { description: String(body.description).trim() } : {}),
+          ...(body.itemType != null ? { itemType: body.itemType } : {}),
+          ...(body.unit != null ? { unit: String(body.unit).trim() } : {}),
+          ...(body.estimatedUnitCost !== undefined
+            ? { estimatedUnitCost: optNum(body.estimatedUnitCost) }
+            : {}),
+          ...(body.quotedUnitCost !== undefined
+            ? { quotedUnitCost: optNum(body.quotedUnitCost) }
+            : {}),
+          ...(body.supplierName !== undefined ? { supplierName: optStr(body.supplierName) } : {}),
+          ...(body.leadTimeDays !== undefined
+            ? { leadTimeDays: body.leadTimeDays != null ? Number(body.leadTimeDays) : null }
+            : {}),
+          ...(body.estimatedWeight !== undefined
+            ? { estimatedWeight: optNum(body.estimatedWeight) }
+            : {}),
+          ...(body.lossPercent !== undefined ? { lossPercent: optNum(body.lossPercent) } : {}),
+          ...(body.requiresQuotation !== undefined
+            ? { requiresQuotation: optBool(body.requiresQuotation) }
+            : {}),
+          ...(body.requiresEngineeringReview !== undefined
+            ? { requiresEngineeringReview: optBool(body.requiresEngineeringReview) }
+            : {}),
+          ...(body.canBecomeOfficial !== undefined
+            ? { canBecomeOfficial: body.canBecomeOfficial !== false }
+            : {}),
+          ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
+        },
+      });
+      res.json(serializeSimulatedItem(row));
+    } catch (e: unknown) {
+      console.error("PATCH simulated-items", e);
+      res.status(500).json({ error: "Erro ao atualizar item simulado." });
+    }
+  });
+
+  app.delete("/api/projects/:id/simulated-items/:simulatedItemId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedItemId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectSimulatedItem.findFirst({
+        where: { id: req.params.simulatedItemId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Item simulado não encontrado." });
+      await removeAmortizationAllocationsForTargetItem(req.params.id, req.params.simulatedItemId);
+      if (isGuidedOtherCostItem(existing.notes)) {
+        const batchId = parseOtherCostMeta(existing.notes).batchId ?? existing.id;
+        await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+        const remaining = await prisma.projectSimulatedItem.count({
+          where: {
+            projectId: req.params.id,
+            notes: { contains: `"batchId":"${batchId}"` },
+          },
+        });
+        if (remaining === 0) {
+          await deleteProjectCostAmortizationBySource(req.params.id, "OTHER_COST", batchId);
+        }
+      } else {
+        await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+      }
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if (!("error" in ctx) && ctx.version) {
+        await recalculateAndPersistVersionCosts(ctx.version.id);
+      }
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE simulated-items", e);
+      res.status(500).json({ error: "Erro ao excluir item simulado." });
+    }
+  });
+
+  app.post("/api/projects/:id/structure-lines", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const body = req.body ?? {};
+      const sourceType = String(body.sourceType ?? "MANUAL") as import("@/src/types/projects.js").ProjectStructureSourceType;
+      const quantity = optNum(body.quantity) ?? 0;
+      const lossPercent = optNum(body.lossPercent) ?? 0;
+
+      let parentLineId: string | null = null;
+      if (isUuid(body.parentLineId)) {
+        const parent = await prisma.projectStructureLine.findFirst({
+          where: {
+            id: body.parentLineId,
+            projectId: req.params.id,
+            versionId: ctx.version.id,
+          },
+        });
+        if (!parent) return res.status(400).json({ error: "Linha pai não encontrada neste projeto." });
+        parentLineId = parent.id;
+      }
+
+      let simulatedProductId: string | null = null;
+      if (isUuid(body.simulatedProductId)) {
+        if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION) {
+          return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+        }
+        const simulatedProduct = await prisma.projectSimulatedProduct.findFirst({
+          where: { id: body.simulatedProductId, projectId: req.params.id },
+        });
+        if (!simulatedProduct) {
+          return res.status(400).json({ error: "Produto simulado do projeto não encontrado." });
+        }
+        simulatedProductId = simulatedProduct.id;
+      }
+
+      let existingProduct: { id: string; name: string; sku: string } | null = null;
+      let existingMaterial = null;
+      let simulatedItem = null;
+
+      if (sourceType === "EXISTING_PRODUCT") {
+        if (!isUuid(body.existingProductId)) {
+          return res.status(400).json({ error: "existingProductId é obrigatório." });
+        }
+        if (!simulatedProductId && !parentLineId) {
+          return res.status(400).json({
+            error:
+              "Para estrutura oficial na raiz use importação de produto. Adicione componentes oficiais dentro de um produto do projeto.",
+          });
+        }
+        existingProduct = await prisma.product.findUnique({
+          where: { id: body.existingProductId },
+          select: { id: true, name: true, sku: true },
+        });
+        if (!existingProduct) return res.status(400).json({ error: "Produto oficial não encontrado." });
+      }
+
+      if (sourceType === "EXISTING_MATERIAL") {
+        if (!isUuid(body.existingMaterialId)) {
+          return res.status(400).json({ error: "existingMaterialId é obrigatório." });
+        }
+        existingMaterial = await prisma.material.findUnique({
+          where: { id: body.existingMaterialId },
+        });
+        if (!existingMaterial) return res.status(400).json({ error: "Material não encontrado." });
+      }
+      if (sourceType === "SIMULATED_ITEM") {
+        if (!isUuid(body.simulatedItemId)) {
+          return res.status(400).json({ error: "simulatedItemId é obrigatório." });
+        }
+        simulatedItem = await prisma.projectSimulatedItem.findFirst({
+          where: { id: body.simulatedItemId, projectId: req.params.id },
+        });
+        if (!simulatedItem) return res.status(400).json({ error: "Item simulado não encontrado." });
+      }
+
+      let unitCostOverride = body.unitCost != null ? optNum(body.unitCost) : null;
+      if (
+        sourceType === "EXISTING_PRODUCT" &&
+        existingProduct &&
+        (unitCostOverride == null || unitCostOverride <= 0)
+      ) {
+        const resolver = getProjectsProductCostResolver();
+        if (resolver) {
+          try {
+            const analysis = await resolver(existingProduct.id);
+            const officialUnit = extractOfficialProductFinalUnitCost(analysis);
+            if (officialUnit != null && officialUnit > 0) {
+              unitCostOverride = toFiniteNumber(officialUnit);
+            }
+          } catch {
+            /* custo oficial indisponível — linha seguirá com isMissingCost */
+          }
+        }
+      }
+
+      const built = buildProjectStructureLineFromContext({
+        sourceType,
+        lineType: body.lineType ?? (sourceType === "EXISTING_PRODUCT" ? "COMPONENT" : undefined),
+        quantity,
+        lossPercent,
+        unitCostOverride,
+        manualDescription: body.description,
+        manualUnit: body.unit,
+        manualUnitCost: optNum(body.unitCost) ?? 0,
+        supplierName: optStr(body.supplierName),
+        existingProduct,
+        existingMaterial,
+        simulatedItem,
+      });
+
+      const row = await prisma.projectStructureLine.create({
+        data: {
+          projectId: req.params.id,
+          versionId: ctx.version.id,
+          simulatedProductId,
+          parentLineId,
+          lineType: built.lineType,
+          sourceType,
+          existingProductId: existingProduct?.id ?? null,
+          existingMaterialId: existingMaterial?.id ?? null,
+          simulatedItemId: simulatedItem?.id ?? null,
+          descriptionSnapshot: built.descriptionSnapshot,
+          unitSnapshot: built.unitSnapshot,
+          quantity,
+          lossPercent,
+          unitCostSnapshot: built.unitCostSnapshot,
+          totalCost: built.totalCost,
+          costSource: built.costSource,
+          isMissingCost: built.isMissingCost,
+          countsInSimulatedProductCost: built.countsInSimulatedProductCost,
+          supplierNameSnapshot: built.supplierNameSnapshot,
+          notes: optStr(body.notes),
+          sortOrder: Number(body.sortOrder) || 0,
+        },
+      });
+
+      await recalculateAndPersistVersionCosts(ctx.version.id);
+      res.status(201).json(serializeStructureLine(row));
+    } catch (e: unknown) {
+      if (e instanceof ProjectStructureLineValidationError) {
+        return res.status(400).json({ error: e.message });
+      }
+      console.error("POST structure-lines", e);
+      res.status(500).json({ error: "Erro ao criar linha de estrutura." });
+    }
+  });
+
+  app.patch("/api/projects/:id/structure-lines/:lineId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.lineId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectStructureLine.findFirst({
+        where: { id: req.params.lineId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Linha não encontrada." });
+
+      const body = req.body ?? {};
+      const quantity = body.quantity != null ? (optNum(body.quantity) ?? 0) : dec(existing.quantity) ?? 0;
+      const unitCost =
+        body.unitCost != null ? (optNum(body.unitCost) ?? 0) : dec(existing.unitCostSnapshot) ?? 0;
+      const lossPercent =
+        body.lossPercent != null ? (optNum(body.lossPercent) ?? 0) : dec(existing.lossPercent) ?? 0;
+      const totalCost = buildStructureLineTotal(quantity, unitCost, lossPercent);
+
+      const descriptionSnapshot =
+        body.descriptionSnapshot != null
+          ? String(body.descriptionSnapshot).trim()
+          : body.description != null
+            ? String(body.description).trim()
+            : undefined;
+      const unitSnapshot =
+        body.unitSnapshot != null
+          ? String(body.unitSnapshot).trim()
+          : body.unit != null
+            ? String(body.unit).trim()
+            : undefined;
+
+      const officialQty = dec(existing.officialQuantitySnapshot);
+      const officialLoss = dec(existing.officialLossPercentSnapshot);
+      const officialUnit = dec(existing.officialUnitCostSnapshot);
+      const changed =
+        (officialQty != null && Math.abs(officialQty - quantity) > 0.000001) ||
+        (officialLoss != null && Math.abs(officialLoss - lossPercent) > 0.000001) ||
+        (officialUnit != null && Math.abs(officialUnit - unitCost) > 0.000001) ||
+        (officialUnit == null && unitCost > 0);
+
+      const isMissingCost = !Number.isFinite(unitCost) || unitCost <= 0;
+      const costSource =
+        isMissingCost
+          ? "MISSING"
+          : existing.costSource === "MISSING"
+            ? resolveProjectStructureLineCostSource(existing.sourceType)
+            : existing.costSource;
+
+      const row = await prisma.projectStructureLine.update({
+        where: { id: req.params.lineId },
+        data: {
+          ...(body.lineType != null ? { lineType: body.lineType } : {}),
+          ...(descriptionSnapshot != null ? { descriptionSnapshot } : {}),
+          ...(unitSnapshot != null ? { unitSnapshot } : {}),
+          ...(body.quantity != null ? { quantity } : {}),
+          ...(body.lossPercent != null ? { lossPercent } : {}),
+          ...(body.unitCost != null ? { unitCostSnapshot: unitCost } : {}),
+          totalCost,
+          isChangedFromOfficial: changed,
+          isMissingCost,
+          costSource,
+          ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
+          ...(body.sortOrder != null ? { sortOrder: Number(body.sortOrder) || 0 } : {}),
+        },
+      });
+
+      await recalculateAndPersistVersionCosts(existing.versionId);
+      res.json(serializeStructureLine(row));
+    } catch (e: unknown) {
+      console.error("PATCH structure-lines", e);
+      res.status(500).json({ error: "Erro ao atualizar linha de estrutura." });
+    }
+  });
+
+  app.delete("/api/projects/:id/structure-lines/:lineId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.lineId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectStructureLine.findFirst({
+        where: { id: req.params.lineId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Linha não encontrada." });
+      await prisma.projectStructureLine.delete({ where: { id: req.params.lineId } });
+      await recalculateAndPersistVersionCosts(existing.versionId);
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE structure-lines", e);
+      res.status(500).json({ error: "Erro ao excluir linha de estrutura." });
+    }
+  });
+
+  app.delete(
+    "/api/projects/:id/structure-snapshot/:snapshotRootProductId",
+    ...manage,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.id) || !isUuid(req.params.snapshotRootProductId)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const result = await deleteProjectStructureSnapshot(
+          req.params.id,
+          req.params.snapshotRootProductId
+        );
+        const detail = await loadProjectDetail(req.params.id);
+        res.json({ ok: true, deletedCount: result.deletedCount, project: detail });
+      } catch (e: unknown) {
+        console.error("DELETE structure-snapshot", e);
+        res.status(500).json({
+          error: e instanceof Error ? e.message : "Erro ao remover snapshot de engenharia.",
+        });
+      }
+    }
+  );
+
+  app.post("/api/projects/:id/molds", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const body = req.body ?? {};
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name) return res.status(400).json({ error: "Nome do molde é obrigatório." });
+
+      const constructionCost = optNum(body.constructionCost) ?? 0;
+      const chargeMode = body.chargeMode ?? "CHARGED_SEPARATELY";
+      const amortizationQuantity = optNum(body.amortizationQuantity);
+      const amortizedCostPerUnit =
+        body.amortizedCostPerUnit != null
+          ? optNum(body.amortizedCostPerUnit)
+          : resolveMoldAmortizedCost(constructionCost, chargeMode, amortizationQuantity);
+
+      const row = await prisma.projectMold.create({
+        data: {
+          projectId: req.params.id,
+          versionId: ctx.version.id,
+          name,
+          moldType: optStr(body.moldType),
+          cavities: body.cavities != null ? Number(body.cavities) : null,
+          estimatedLifeCycles:
+            body.estimatedLifeCycles != null ? Number(body.estimatedLifeCycles) : null,
+          supplierName: optStr(body.supplierName),
+          constructionCost,
+          maintenanceCost: optNum(body.maintenanceCost),
+          changeCost: optNum(body.changeCost),
+          leadTimeDays: body.leadTimeDays != null ? Number(body.leadTimeDays) : null,
+          chargeMode,
+          amortizationQuantity,
+          amortizedCostPerUnit,
+          ownership: body.ownership ?? "UNDEFINED",
+          notes: optStr(body.notes),
+        },
+      });
+
+      await recalculateAndPersistVersionCosts(ctx.version.id);
+      res.status(201).json(serializeMold(row));
+    } catch (e: unknown) {
+      console.error("POST molds", e);
+      res.status(500).json({ error: "Erro ao criar molde." });
+    }
+  });
+
+  app.patch("/api/projects/:id/molds/:moldId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.moldId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectMold.findFirst({
+        where: { id: req.params.moldId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Molde não encontrado." });
+
+      const body = req.body ?? {};
+      const constructionCost =
+        body.constructionCost != null
+          ? (optNum(body.constructionCost) ?? 0)
+          : (dec(existing.constructionCost) ?? 0);
+      const chargeMode = body.chargeMode ?? existing.chargeMode;
+      const amortizationQuantity =
+        body.amortizationQuantity !== undefined
+          ? optNum(body.amortizationQuantity)
+          : dec(existing.amortizationQuantity);
+      const amortizedCostPerUnit =
+        body.amortizedCostPerUnit != null
+          ? optNum(body.amortizedCostPerUnit)
+          : resolveMoldAmortizedCost(constructionCost, chargeMode, amortizationQuantity);
+
+      const row = await prisma.projectMold.update({
+        where: { id: req.params.moldId },
+        data: {
+          ...(body.name != null ? { name: String(body.name).trim() } : {}),
+          ...(body.moldType !== undefined ? { moldType: optStr(body.moldType) } : {}),
+          ...(body.cavities !== undefined
+            ? { cavities: body.cavities != null ? Number(body.cavities) : null }
+            : {}),
+          ...(body.estimatedLifeCycles !== undefined
+            ? {
+                estimatedLifeCycles:
+                  body.estimatedLifeCycles != null ? Number(body.estimatedLifeCycles) : null,
+              }
+            : {}),
+          ...(body.supplierName !== undefined ? { supplierName: optStr(body.supplierName) } : {}),
+          ...(body.constructionCost != null ? { constructionCost } : {}),
+          ...(body.maintenanceCost !== undefined
+            ? { maintenanceCost: optNum(body.maintenanceCost) }
+            : {}),
+          ...(body.changeCost !== undefined ? { changeCost: optNum(body.changeCost) } : {}),
+          ...(body.leadTimeDays !== undefined
+            ? { leadTimeDays: body.leadTimeDays != null ? Number(body.leadTimeDays) : null }
+            : {}),
+          ...(body.chargeMode != null ? { chargeMode } : {}),
+          ...(body.amortizationQuantity !== undefined ? { amortizationQuantity } : {}),
+          amortizedCostPerUnit,
+          ...(body.ownership != null ? { ownership: body.ownership } : {}),
+          ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
+        },
+      });
+
+      await recalculateAndPersistVersionCosts(existing.versionId);
+      res.json(serializeMold(row));
+    } catch (e: unknown) {
+      console.error("PATCH molds", e);
+      res.status(500).json({ error: "Erro ao atualizar molde." });
+    }
+  });
+
+  app.delete("/api/projects/:id/molds/:moldId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.moldId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectMold.findFirst({
+        where: { id: req.params.moldId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Molde não encontrado." });
+      await deleteProjectCostAmortizationBySource(req.params.id, "MOLD", req.params.moldId);
+      await prisma.projectMold.delete({ where: { id: req.params.moldId } });
+      await recalculateAndPersistVersionCosts(existing.versionId);
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE molds", e);
+      res.status(500).json({ error: "Erro ao excluir molde." });
+    }
+  });
+
+  app.get("/api/projects/:id/cost-amortizations", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+      const saved = await loadProjectCostAmortizations(req.params.id);
+      const summary = buildProjectCostAmortizationSummary(detail, saved);
+      res.json({ amortizations: saved, summary, projectCostSummary: summary });
+    } catch (e: unknown) {
+      console.error("GET cost-amortizations", e);
+      res.status(500).json({ error: "Erro ao carregar amortizações." });
+    }
+  });
+
+  app.put("/api/projects/:id/cost-amortizations", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const sourceType = body.sourceType;
+      const sourceId = typeof body.sourceId === "string" ? body.sourceId : "";
+      if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
+        return res.status(400).json({ error: "sourceType inválido." });
+      }
+
+      const sourceRef = validateAmortizationSourceRef(detail, sourceType, sourceId);
+      if (sourceRef.ok === false) {
+        return res.status(400).json({ error: sourceRef.error });
+      }
+
+      const passThroughPercent = optNum(body.passThroughPercent);
+      if (passThroughPercent == null) {
+        return res.status(400).json({ error: "Percentual repassado é obrigatório." });
+      }
+
+      const allocations = Array.isArray(body.allocations) ? body.allocations : [];
+      const payload: UpsertProjectCostAmortizationPayload = {
+        sourceType,
+        sourceId,
+        sourceBatchId:
+          typeof body.sourceBatchId === "string"
+            ? body.sourceBatchId
+            : sourceRef.source.sourceBatchId ?? null,
+        passThroughPercent,
+        allocations: allocations.map((row: Record<string, unknown>) => ({
+          targetItemType: String(row.targetItemType ?? "LEGACY"),
+          targetItemId: String(row.targetItemId ?? ""),
+          targetSnapshotRootProductId:
+            typeof row.targetSnapshotRootProductId === "string"
+              ? row.targetSnapshotRootProductId
+              : null,
+          allocationPercent: optNum(row.allocationPercent) ?? 0,
+          amortizationQuantity: optNum(row.amortizationQuantity) ?? 0,
+        })),
+      };
+
+      const result = await upsertProjectCostAmortization(req.params.id, detail, payload);
+      const refreshed = await loadProjectDetail(req.params.id);
+      res.json({ ...result, project: refreshed });
+    } catch (e: unknown) {
+      console.error("PUT cost-amortizations", e);
+      res.status(400).json({
+        error: e instanceof Error ? e.message : "Erro ao salvar amortização.",
+      });
+    }
+  });
+
+  app.delete(
+    "/api/projects/:id/cost-amortizations/:sourceType/:sourceId",
+    ...manage,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.id)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const sourceType = req.params.sourceType;
+        if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
+          return res.status(400).json({ error: "sourceType inválido." });
+        }
+        const detail = await loadProjectDetail(req.params.id);
+        if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+        const sourceRef = validateAmortizationSourceRef(
+          detail,
+          sourceType,
+          req.params.sourceId
+        );
+        if (sourceRef.ok === false) {
+          return res.status(400).json({ error: sourceRef.error });
+        }
+
+        await deleteProjectCostAmortizationBySource(
+          req.params.id,
+          sourceType,
+          req.params.sourceId
+        );
+        const refreshed = await loadProjectDetail(req.params.id);
+        res.json({ ok: true, project: refreshed });
+      } catch (e: unknown) {
+        console.error("DELETE cost-amortizations", e);
+        res.status(500).json({ error: "Erro ao remover amortização." });
+      }
+    }
+  );
+
+  app.get("/api/projects/:id/pricing", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+      const pricing = await loadProjectPricingPayload(req.params.id, detail);
+      res.json(pricing);
+    } catch (e: unknown) {
+      console.error("GET project pricing", e);
+      res.status(500).json({ error: "Erro ao carregar precificação do projeto." });
+    }
+  });
+
+  app.put("/api/projects/:id/pricing", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const pricing = await upsertProjectPricing(req.params.id, detail, {
+        fiscalRuleId:
+          body.fiscalRuleId === null || typeof body.fiscalRuleId === "string"
+            ? body.fiscalRuleId
+            : undefined,
+        defaultMarginPercent: optNum(body.defaultMarginPercent),
+        items: items.map((row: Record<string, unknown>) => ({
+          targetItemId: String(row.targetItemId ?? ""),
+          targetItemType: String(row.targetItemType ?? "SIMULATION"),
+          fiscalRuleId:
+            row.fiscalRuleId === null || typeof row.fiscalRuleId === "string"
+              ? row.fiscalRuleId
+              : undefined,
+          targetMarginPercent: optNum(row.targetMarginPercent),
+        })),
+      });
+
+      const refreshed = await loadProjectDetail(req.params.id);
+      res.json({ ...pricing, project: refreshed });
+    } catch (e: unknown) {
+      console.error("PUT project pricing", e);
+      res.status(400).json({
+        error: e instanceof Error ? e.message : "Erro ao salvar precificação.",
+      });
+    }
+  });
+}

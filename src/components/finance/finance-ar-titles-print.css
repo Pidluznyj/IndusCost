@@ -1,0 +1,362 @@
+#ar-titles-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.ar-titles-print-route #root {
+    visibility: hidden !important;
+  }
+
+  body.ar-titles-print-route #ar-titles-print-root {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+  }
+
+  body.ar-titles-print-route #ar-titles-print-root * {
+    visibility: visible !important;
+  }
+
+  .ar-titles-no-print,
+  button {
+    display: none !important;
+  }
+
+  body.ar-titles-print-route nav,
+  body.ar-titles-print-route aside,
+  body.ar-titles-print-route main > header {
+    display: none !important;
+  }
+
+  body.ar-titles-print-route .flex.h-screen,
+  body.ar-titles-print-route .flex.h-screen > main,
+  body.ar-titles-print-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #ar-titles-print-root {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #ar-titles-print-root * {
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.5px;
+    line-height: 1.3;
+    color: #111;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-doc-header {
+    border-bottom: 2px solid #333;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-brand-main {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-brand-sub {
+    font-size: 8px;
+    color: #555;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-doc-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 2px;
+    color: #000;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-doc-subtitle {
+    font-size: 9px;
+    color: #444;
+    margin: 0 0 6px;
+  }
+
+  #ar-titles-print-root table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    page-break-inside: auto;
+  }
+
+  #ar-titles-print-root thead {
+    display: table-header-group;
+  }
+
+  #ar-titles-print-root tfoot {
+    display: table-footer-group;
+  }
+
+  #ar-titles-print-root tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  #ar-titles-print-root th,
+  #ar-titles-print-root td {
+    border: 1px solid #bbb;
+    padding: 2px 3px;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-table {
+    font-size: 7px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-table th {
+    width: 12%;
+    background: #f3f4f6;
+    font-weight: 700;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-section {
+    margin-bottom: 8px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    margin: 0 0 3px;
+    color: #000;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-kpi-table th {
+    background: #f3f4f6;
+    font-weight: 700;
+    width: 11%;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-kpi-table td {
+    font-weight: 600;
+    width: 22%;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-data-table thead th {
+    background: #e5e7eb;
+    font-weight: 700;
+    font-size: 7px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-data-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+  }
+
+  #ar-titles-print-root .col-num,
+  #ar-titles-print-root .col-date {
+    text-align: center !important;
+  }
+
+  #ar-titles-print-root .col-money {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #ar-titles-print-root .col-client {
+    width: 16%;
+  }
+
+  #ar-titles-print-root .col-company {
+    width: 10%;
+  }
+
+  #ar-titles-print-root .col-doc {
+    width: 9%;
+  }
+
+  #ar-titles-print-root .col-status {
+    width: 8%;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-empty {
+    font-size: 8px;
+    color: #555;
+    margin: 4px 0;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-footer {
+    margin-top: 8px;
+    padding-top: 4px;
+    border-top: 1px solid #ccc;
+    font-size: 7px;
+    color: #666;
+    text-align: center;
+  }
+
+  /* Capa executiva */
+  #ar-titles-print-root .finance-ar-titles-print-cover-page {
+    break-after: page;
+    page-break-after: always;
+    min-height: 185mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12mm 10mm;
+    box-sizing: border-box;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-inner {
+    width: 100%;
+    max-width: 260mm;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-title {
+    font-size: 22px;
+    font-weight: 800;
+    margin: 8px 0 4px;
+    color: #000;
+    line-height: 1.15;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-subtitle {
+    font-size: 11px;
+    color: #444;
+    margin: 0 0 14px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    margin-bottom: 12px;
+    font-size: 9px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-label {
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #666;
+    margin: 0 0 2px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-value {
+    font-size: 10px;
+    font-weight: 600;
+    color: #111;
+    margin: 0;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-filters {
+    font-size: 8px;
+    color: #333;
+    margin: 0 0 12px;
+    line-height: 1.4;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-panel {
+    border: 1px solid #ccc;
+    padding: 8px;
+    margin-bottom: 12px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-heading {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 6px;
+    color: #333;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card {
+    border: 1px solid #ddd;
+    padding: 6px;
+    background: #fafafa;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--wide {
+    grid-column: span 3;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-label {
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #666;
+    margin: 0 0 2px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #000;
+    margin: 0;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-contents {
+    margin-top: 10px;
+    font-size: 8px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-contents-list {
+    margin: 4px 0 0 16px;
+    padding: 0;
+  }
+}

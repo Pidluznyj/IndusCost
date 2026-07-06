@@ -1,0 +1,96 @@
+/* IndusCost — impressão / PDF (navegador) da aba Relatórios e relatório novo produto */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  /*
+   * Relatório novo produto: modal em createPortal(document.body).
+   * Esconde o app (#root) para não aparecer sidebar "IndusCost" nem o shell.
+   */
+  body.np-report-printing #root,
+  body.material-demand-printing #root,
+  body.cnpj-intelligence-printing #root {
+    display: none !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #reports-print-root,
+  #reports-print-root *,
+  #material-demand-print-root,
+  #material-demand-print-root *,
+  #new-product-report-print-portal,
+  #new-product-report-print-portal *,
+  #new-product-report-print-root,
+  #new-product-report-print-root *,
+  #pricing-simulator-print-portal,
+  #pricing-simulator-print-portal *,
+  #pricing-simulator-print-root,
+  #pricing-simulator-print-root *,
+  #cnpj-intelligence-print-root,
+  #cnpj-intelligence-print-root * {
+    visibility: visible !important;
+  }
+  /* Aba Relatórios: único bloco absoluto na página */
+  #reports-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    background: white !important;
+    color: black !important;
+  }
+  /*
+   * Relatório novo produto (modal): NÃO usar position:absolute no print-root.
+   * Com a toolbar .reports-no-print em display:none, o pai perde altura no fluxo
+   * e o conteúdo absoluto fica em região de altura 0 → folha em branco no Chrome/PDF.
+   */
+  .new-product-report-print-shell {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .new-product-report-print-panel {
+    position: static !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+  #new-product-report-print-root,
+  #pricing-simulator-print-root {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    background: white !important;
+    color: black !important;
+  }
+  .reports-no-print {
+    display: none !important;
+  }
+  .reports-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .reports-table-wrap {
+    overflow: visible !important;
+  }
+  table {
+    font-size: 9pt !important;
+  }
+  .recharts-responsive-container {
+    min-height: 220px !important;
+  }
+}
