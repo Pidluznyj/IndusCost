@@ -5,9 +5,12 @@ import {
   buildReceiptClosingBySeller,
   buildReceiptClosingExportCsv,
   buildReceiptClosingMaterializationCards,
+  buildReceiptClosingMaterializationSummary,
   buildReceiptClosingPageFromLedger,
   buildReceiptClosingPageFromPreview,
   buildReceiptClosingReconciliationFromApiLines,
+  COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
+  mapPreviewLineToApiLine,
   RECEIPT_CLOSING_EXPORT_HEADERS,
 } from "./commissionReceiptClosingApi.js";
 import {
@@ -304,7 +307,7 @@ describe("commissionReceiptClosingApi", () => {
         grossCommissionAmount: 0,
         commissionableBaseAmount: 0,
         commissionReceivableScheduleId: null,
-        source: "CALCULATED",
+        source: "EXCEPTION",
         statusReason: "Sem schedule materializado",
       }),
     ];
@@ -322,6 +325,117 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(payload.lines[0]?.status, "NO_SCHEDULE");
     assert.match(payload.lines[0]?.statusReason ?? "", /schedule/i);
     assert.equal(payload.requiresCriticalConfirmation, true);
+    assert.equal(payload.materializationSummary.pendingMaterialization, true);
+    assert.equal(
+      payload.materializationSummary.pendingMaterializationMessage,
+      COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE
+    );
+    assert.equal(payload.materializationSummary.receivablesWithoutScheduleCount, 1);
+    assert.equal(payload.materializationSummary.receivablesWithScheduleCount, 0);
+    assert.match(payload.materializationSummary.rebuildScriptHint ?? "", /rebuild-commission-materialization/);
+  });
+
+  it("preview com schedule e excluído expõe resumo auditável", () => {
+    const lines = [
+      previewLine({ ledgerLineKey: "k1", nomusReceivableId: 100 }),
+      previewLine({
+        ledgerLineKey: "k2",
+        nomusReceivableId: 200,
+        status: "CUSTOMER_EXCLUDED",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 10,
+        exclusionReason: "Política",
+        commissionReceivableScheduleId: "sched-2",
+      }),
+      previewLine({
+        ledgerLineKey: "k3",
+        nomusReceivableId: 300,
+        status: "NO_SCHEDULE",
+        source: "EXCEPTION",
+        commissionReceivableScheduleId: null,
+        releasedCommissionAmount: 0,
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: {
+        ...previewResult(lines),
+        totalReceivables: 3,
+        countByStatus: { COMMISSIONABLE: 1, CUSTOMER_EXCLUDED: 1, NO_SCHEDULE: 1 },
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    assert.equal(payload.materializationSummary.totalReceivablesCount, 3);
+    assert.equal(payload.materializationSummary.receivablesWithScheduleCount, 2);
+    assert.equal(payload.materializationSummary.receivablesWithoutScheduleCount, 1);
+    assert.equal(payload.materializationSummary.excludedCustomerCount, 1);
+    assert.equal(payload.materializationSummary.totalExpectedCommission, 20);
+    assert.equal(payload.materializationSummary.totalReleasedCommission, 20);
+  });
+
+  it("CSV inclui status, motivo e resumo de materialização", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "k1",
+        nomusReceivableId: 300,
+        status: "NO_SCHEDULE",
+        statusReason: "Sem schedule",
+        source: "EXCEPTION",
+        commissionReceivableScheduleId: null,
+      }),
+    ];
+    const page = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    const csv = buildReceiptClosingExportCsv({
+      year: 2026,
+      month: 6,
+      closing: null,
+      exportMode: "PREVIEW",
+      lines: page.lines,
+      cards: page.cards,
+      materializationSummary: page.materializationSummary,
+    });
+    assert.match(csv, /lineStatus/);
+    assert.match(csv, /exceptionReason/);
+    assert.match(csv, /NO_SCHEDULE/);
+    assert.match(csv, /# materializationSummary/);
+    assert.match(csv, /# receivablesWithoutScheduleCount,1/);
+  });
+
+  it("buildReceiptClosingMaterializationSummary separa pendência de dados de totais", () => {
+    const previewLines = [
+      previewLine({ ledgerLineKey: "k1", nomusReceivableId: 1 }),
+      previewLine({
+        ledgerLineKey: "k2",
+        nomusReceivableId: 2,
+        status: "SELLER_UNRESOLVED",
+        source: "MATERIALIZED_SCHEDULE",
+        commissionReceivableScheduleId: "sched-2",
+      }),
+    ];
+    const lines = previewLines.map(mapPreviewLineToApiLine);
+    const reconciliation = buildReceiptClosingReconciliationFromApiLines({
+      lines,
+      nomusBase: null,
+      nomusCommission: null,
+    });
+    const summary = buildReceiptClosingMaterializationSummary({
+      lines,
+      reconciliation,
+      year: 2026,
+      month: 6,
+      totalReceivedAmount: 2000,
+      totalExpectedCommission: 20,
+      totalReleasedCommission: 20,
+    });
+    assert.equal(summary.receivablesWithScheduleCount, 2);
+    assert.equal(summary.sellerUnresolvedCount, 1);
+    assert.equal(summary.pendingMaterialization, false);
   });
 
   it("parseReceiptClosingApplyBody exige confirmação", () => {

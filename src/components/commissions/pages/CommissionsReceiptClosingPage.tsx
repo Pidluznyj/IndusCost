@@ -374,6 +374,35 @@ export function CommissionsReceiptClosingPage() {
         />
       ) : null}
 
+      {data?.materializationSummary?.pendingMaterialization ? (
+        <ExecutiveAlert
+          variant="attention"
+          density="compact"
+          title="Materialização pendente"
+          description={
+            <>
+              <p data-testid="commissions-receipt-closing-materialization-pending">
+                {data.materializationSummary.pendingMaterializationMessage}
+              </p>
+              <p className="mt-2 text-xs">
+                {data.materializationSummary.receivablesWithoutScheduleCount} título(s) sem schedule
+                {data.materializationSummary.staleScheduleCount > 0
+                  ? ` · ${data.materializationSummary.staleScheduleCount} com schedule desatualizado`
+                  : ""}
+                {data.materializationSummary.sellerUnresolvedCount > 0
+                  ? ` · ${data.materializationSummary.sellerUnresolvedCount} com vendedor não resolvido`
+                  : ""}
+              </p>
+              {data.materializationSummary.rebuildScriptHint ? (
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
+                  {data.materializationSummary.rebuildScriptHint}
+                </p>
+              ) : null}
+            </>
+          }
+        />
+      ) : null}
+
       {error ? <CommissionsErrorBanner message={error} /> : null}
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-white p-4">
@@ -456,6 +485,26 @@ export function CommissionsReceiptClosingPage() {
       {cards && data && data.mode !== "EMPTY" ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <FinanceKpiCard
+              label="Títulos recebidos"
+              value={String(data.materializationSummary.totalReceivablesCount)}
+            />
+            <FinanceKpiCard
+              label="Com schedule"
+              value={String(data.materializationSummary.receivablesWithScheduleCount)}
+            />
+            <FinanceKpiCard
+              label="Sem schedule"
+              value={String(data.materializationSummary.receivablesWithoutScheduleCount)}
+            />
+            <FinanceKpiCard
+              label="Clientes excluídos"
+              value={String(data.materializationSummary.excludedCustomerCount)}
+            />
+            <FinanceKpiCard
+              label="Vendedor não resolvido"
+              value={String(data.materializationSummary.sellerUnresolvedCount)}
+            />
             <FinanceKpiCard
               label="Total recebido no mês"
               value={formatFinanceCurrency(cards.totalReceivedAmount)}

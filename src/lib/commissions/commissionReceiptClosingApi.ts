@@ -33,6 +33,25 @@ export type ReceiptClosingMaterializationCards = {
   reportStatus: "PREVIEW" | "CLOSED";
 };
 
+/** Mensagem exibida na tela quando há CR recebidos sem schedule materializado. */
+export const COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE =
+  "Existem títulos recebidos sem schedule de comissão. Rode a materialização para concluir a prévia.";
+
+export type ReceiptClosingMaterializationSummary = {
+  totalReceivablesCount: number;
+  receivablesWithScheduleCount: number;
+  receivablesWithoutScheduleCount: number;
+  excludedCustomerCount: number;
+  sellerUnresolvedCount: number;
+  staleScheduleCount: number;
+  totalReceivedAmount: number;
+  totalExpectedCommission: number;
+  totalReleasedCommission: number;
+  pendingMaterialization: boolean;
+  pendingMaterializationMessage: string | null;
+  rebuildScriptHint: string | null;
+};
+
 export type ReceiptClosingReconciliationSummary = {
   nomusBase: number | null;
   nomusCommission: number | null;
@@ -113,6 +132,7 @@ export type ReceiptClosingPagePayload = {
   criticalDivergenceReason: string | null;
   requiresCriticalConfirmation: boolean;
   cards: ReceiptClosingMaterializationCards;
+  materializationSummary: ReceiptClosingMaterializationSummary;
   reconciliation: ReceiptClosingReconciliationSummary;
   summary: {
     totalReceivables: number;
@@ -259,6 +279,99 @@ export function markReceivableReceivedAnchors(
     seen.add(line.nomusReceivableId);
     return { ...line, uniqueReceivedAmount: line.receivedAmount };
   });
+}
+
+const SELLER_UNRESOLVED_STATUSES = new Set(["SELLER_UNRESOLVED", "NO_SELLER"]);
+
+function countUniqueReceivablesByBucket(
+  lines: ReceiptClosingApiLine[],
+  bucket: ReceivableBucket
+): number {
+  const seen = new Set<number>();
+  const byReceivable = new Map<number, ReceiptClosingApiLine[]>();
+  for (const line of lines) {
+    if (line.nomusReceivableId == null) continue;
+    const group = byReceivable.get(line.nomusReceivableId) ?? [];
+    group.push(line);
+    byReceivable.set(line.nomusReceivableId, group);
+  }
+  for (const [id, group] of byReceivable) {
+    if (receivableBucketForGroup(group) === bucket && !seen.has(id)) {
+      seen.add(id);
+    }
+  }
+  return seen.size;
+}
+
+function countReceivablesWithMaterializedSchedule(lines: ReceiptClosingApiLine[]): number {
+  const seen = new Set<number>();
+  for (const line of lines) {
+    if (line.nomusReceivableId == null) continue;
+    if (line.status === "NO_SCHEDULE" || line.status === "STALE_SCHEDULE") continue;
+    if (
+      line.commissionReceivableScheduleId != null ||
+      SCHEDULE_SOURCES.has(line.source)
+    ) {
+      seen.add(line.nomusReceivableId);
+    }
+  }
+  return seen.size;
+}
+
+function countUniqueReceivablesWithStatus(
+  lines: ReceiptClosingApiLine[],
+  statuses: Set<string>
+): number {
+  const seen = new Set<number>();
+  for (const line of lines) {
+    if (line.nomusReceivableId == null || !statuses.has(line.status)) continue;
+    seen.add(line.nomusReceivableId);
+  }
+  return seen.size;
+}
+
+export function buildReceiptClosingMaterializationSummary(input: {
+  lines: ReceiptClosingApiLine[];
+  reconciliation: ReceiptClosingReconciliationSummary;
+  year: number;
+  month: number;
+  totalReceivedAmount: number;
+  totalExpectedCommission: number;
+  totalReleasedCommission: number;
+}): ReceiptClosingMaterializationSummary {
+  const uniqueReceivableIds = new Set<number>();
+  for (const line of input.lines) {
+    if (line.nomusReceivableId != null) uniqueReceivableIds.add(line.nomusReceivableId);
+  }
+
+  const receivablesWithScheduleCount = countReceivablesWithMaterializedSchedule(input.lines);
+  const receivablesWithoutScheduleCount = countUniqueReceivablesByBucket(input.lines, "NO_SCHEDULE");
+  const sellerUnresolvedCount = countUniqueReceivablesWithStatus(
+    input.lines,
+    SELLER_UNRESOLVED_STATUSES
+  );
+
+  const pendingMaterialization =
+    receivablesWithoutScheduleCount > 0 || input.reconciliation.staleScheduleCount > 0;
+
+  return {
+    totalReceivablesCount: uniqueReceivableIds.size,
+    receivablesWithScheduleCount,
+    receivablesWithoutScheduleCount,
+    excludedCustomerCount: input.reconciliation.excludedCustomerCount,
+    sellerUnresolvedCount,
+    staleScheduleCount: input.reconciliation.staleScheduleCount,
+    totalReceivedAmount: round2(input.totalReceivedAmount),
+    totalExpectedCommission: round2(input.totalExpectedCommission),
+    totalReleasedCommission: round2(input.totalReleasedCommission),
+    pendingMaterialization,
+    pendingMaterializationMessage: pendingMaterialization
+      ? COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE
+      : null,
+    rebuildScriptHint: pendingMaterialization
+      ? `npx tsx scripts/rebuild-commission-materialization.ts --year=${input.year} --month=${input.month} --preview`
+      : null,
+  };
 }
 
 export function buildReceiptClosingMaterializationCards(
@@ -738,10 +851,32 @@ function emptyCards(reportStatus: "PREVIEW" | "CLOSED"): ReceiptClosingMateriali
   };
 }
 
+function emptyMaterializationSummary(): ReceiptClosingMaterializationSummary {
+  return {
+    totalReceivablesCount: 0,
+    receivablesWithScheduleCount: 0,
+    receivablesWithoutScheduleCount: 0,
+    excludedCustomerCount: 0,
+    sellerUnresolvedCount: 0,
+    staleScheduleCount: 0,
+    totalReceivedAmount: 0,
+    totalExpectedCommission: 0,
+    totalReleasedCommission: 0,
+    pendingMaterialization: false,
+    pendingMaterializationMessage: null,
+    rebuildScriptHint: null,
+  };
+}
+
 export function enrichReceiptClosingPagePayload(
   base: Omit<
     ReceiptClosingPagePayload,
-    "cards" | "reconciliation" | "criticalDivergence" | "criticalDivergenceReason" | "requiresCriticalConfirmation"
+    | "cards"
+    | "materializationSummary"
+    | "reconciliation"
+    | "criticalDivergence"
+    | "criticalDivergenceReason"
+    | "requiresCriticalConfirmation"
   >,
   options: {
     previewLines?: CommissionReceiptPreviewLine[];
@@ -766,12 +901,22 @@ export function enrichReceiptClosingPagePayload(
           nomusCommission: options.nomusCommission ?? null,
         });
   const cards = buildReceiptClosingMaterializationCards(lines, reportStatus, reconciliation);
+  const materializationSummary = buildReceiptClosingMaterializationSummary({
+    lines,
+    reconciliation,
+    year: base.year,
+    month: base.month,
+    totalReceivedAmount: base.summary.totalReceivedAmount,
+    totalExpectedCommission: base.summary.totalExpectedCommission,
+    totalReleasedCommission: base.summary.totalReleasedCommission,
+  });
   const critical = assessReceiptClosingCriticalDivergence({ reconciliation });
   return {
     ...base,
     lines,
     bySeller: buildReceiptClosingBySeller(lines),
     cards,
+    materializationSummary,
     reconciliation,
     criticalDivergence: critical.criticalDivergence,
     criticalDivergenceReason: critical.criticalDivergenceReason,
@@ -863,6 +1008,7 @@ export function buildReceiptClosingPageEmpty(year: number, month: number): Recei
     criticalDivergenceReason: null,
     requiresCriticalConfirmation: false,
     cards: emptyCards("PREVIEW"),
+    materializationSummary: emptyMaterializationSummary(),
     reconciliation: emptyReconciliation(),
     summary: {
       totalReceivables: 0,
@@ -894,6 +1040,7 @@ export function buildReceiptClosingExportCsv(input: {
   exportMode: "PREVIEW" | "CLOSED";
   lines: ReceiptClosingApiLine[];
   cards?: ReceiptClosingMaterializationCards;
+  materializationSummary?: ReceiptClosingMaterializationSummary;
   calculationHash?: string | null;
 }): string {
   const header = RECEIPT_CLOSING_EXPORT_HEADERS.join(",");
@@ -922,6 +1069,26 @@ export function buildReceiptClosingExportCsv(input: {
     cardLines.push(`# reportStatus,${input.cards.reportStatus}`);
     if (input.cards.nomusDiffExplanation) {
       cardLines.push(`# nomusDiffExplanation,${escapeCsvCell(input.cards.nomusDiffExplanation)}`);
+    }
+  }
+  if (input.materializationSummary) {
+    const m = input.materializationSummary;
+    cardLines.push("# materializationSummary");
+    cardLines.push(`# totalReceivablesCount,${m.totalReceivablesCount}`);
+    cardLines.push(`# receivablesWithScheduleCount,${m.receivablesWithScheduleCount}`);
+    cardLines.push(`# receivablesWithoutScheduleCount,${m.receivablesWithoutScheduleCount}`);
+    cardLines.push(`# excludedCustomerCount,${m.excludedCustomerCount}`);
+    cardLines.push(`# sellerUnresolvedCount,${m.sellerUnresolvedCount}`);
+    cardLines.push(`# staleScheduleCount,${m.staleScheduleCount}`);
+    cardLines.push(`# totalExpectedCommission,${m.totalExpectedCommission.toFixed(2)}`);
+    cardLines.push(`# totalReleasedCommission,${m.totalReleasedCommission.toFixed(2)}`);
+    if (m.pendingMaterializationMessage) {
+      cardLines.push(
+        `# pendingMaterializationMessage,${escapeCsvCell(m.pendingMaterializationMessage)}`
+      );
+    }
+    if (m.rebuildScriptHint) {
+      cardLines.push(`# rebuildScriptHint,${escapeCsvCell(m.rebuildScriptHint)}`);
     }
   }
 

@@ -4,6 +4,7 @@ import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js
 import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import {
   buildCommissionReceiptPreview,
+  COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
   filterSettledReceivablesForPreview,
   type CommissionReceiptReceivableInput,
 } from "./commissionReceiptEngine.js";
@@ -534,6 +535,9 @@ describe("commissionReceiptEngine", () => {
       identityCtx: OK_IDENTITY,
     });
     assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
+    assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_NO_SCHEDULE_REASON);
+    assert.equal(result.lines[0]?.source, "EXCEPTION");
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
   });
 
   it("schedule stale não libera sem reprocessar", () => {

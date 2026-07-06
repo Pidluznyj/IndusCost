@@ -47,6 +47,10 @@ export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineS
   "ERROR",
 ];
 
+/** Motivo padrão quando CR recebido não possui CommissionReceivableSchedule materializado. */
+export const COMMISSION_RECEIPT_NO_SCHEDULE_REASON =
+  "Título recebido sem schedule de comissão materializado — rode a materialização antes do fechamento";
+
 export type MaterializedReceivableScheduleInput = {
   id: string;
   orderSnapshotId: string;
@@ -721,8 +725,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
         year: input.year,
         month: input.month,
         status: "NO_SCHEDULE",
-        statusReason:
-          "Sem CommissionReceivableSchedule ativo — materialize a comissão antes do fechamento",
+        statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
       }),
     ];
   }
@@ -1178,8 +1181,7 @@ export function buildCommissionReceiptPreview(
           year: input.year,
           month: input.month,
           status: "NO_SCHEDULE",
-          statusReason:
-            "Sem schedule materializado — use materialização ou fallback explícito de auditoria",
+          statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
           order,
         })
       );

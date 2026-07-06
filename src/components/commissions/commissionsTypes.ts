@@ -984,6 +984,21 @@ export type CommissionsReceiptClosingMaterializationCards = {
   reportStatus: "PREVIEW" | "CLOSED";
 };
 
+export type CommissionsReceiptClosingMaterializationSummary = {
+  totalReceivablesCount: number;
+  receivablesWithScheduleCount: number;
+  receivablesWithoutScheduleCount: number;
+  excludedCustomerCount: number;
+  sellerUnresolvedCount: number;
+  staleScheduleCount: number;
+  totalReceivedAmount: number;
+  totalExpectedCommission: number;
+  totalReleasedCommission: number;
+  pendingMaterialization: boolean;
+  pendingMaterializationMessage: string | null;
+  rebuildScriptHint: string | null;
+};
+
 export type CommissionsReceiptClosingReconciliation = {
   nomusBase: number | null;
   nomusCommission: number | null;
@@ -1063,6 +1078,7 @@ export type CommissionsReceiptClosingPayload = {
   criticalDivergenceReason: string | null;
   requiresCriticalConfirmation: boolean;
   cards: CommissionsReceiptClosingMaterializationCards;
+  materializationSummary: CommissionsReceiptClosingMaterializationSummary;
   reconciliation: CommissionsReceiptClosingReconciliation;
   summary: {
     totalReceivables: number;
