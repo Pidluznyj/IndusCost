@@ -77,14 +77,3 @@ export async function fetchCostToCashTrace(
 ): Promise<CostToCashTraceApiPayload> {
   return fetchJsonOk<CostToCashTraceApiPayload>(buildCostToCashTraceApiUrl(filters));
 }
-
-export function downloadTraceJson(payload: unknown, filenamePrefix = "cost-to-cash-trace"): void {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${filenamePrefix}-${stamp}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}

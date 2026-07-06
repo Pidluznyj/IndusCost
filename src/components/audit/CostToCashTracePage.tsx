@@ -1,4 +1,4 @@
-import { Download, Search } from "lucide-react";
+import { Copy, Download, FileSpreadsheet, Search } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -14,7 +14,12 @@ import {
   type TraceTabId,
 } from "@/src/components/audit/CostToCashTraceSections";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { downloadTraceJson } from "@/src/lib/audit/costToCashTraceClient";
+import {
+  CostToCashTraceDossierError,
+  copyCostToCashDiagnostics,
+  exportCostToCashDossierCsv,
+  exportCostToCashDossierJson,
+} from "@/src/lib/audit/costToCashTraceExport";
 import { canViewCostToCashTracePage } from "@/src/lib/audit/costToCashTracePermissions";
 import { useCostToCashTraceSearch } from "@/src/lib/audit/useCostToCashTraceSearch";
 import { financeBiButtonOutlineClass, financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
@@ -27,6 +32,7 @@ export function CostToCashTracePage() {
   const canView = canViewCostToCashTracePage(auth);
   const {
     draftFilters,
+    appliedFilters,
     data,
     loading,
     error,
@@ -37,6 +43,52 @@ export function CostToCashTracePage() {
     clearError,
   } = useCostToCashTraceSearch();
   const [activeTab, setActiveTab] = useState<TraceTabId>("product");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  function handleExportError(err: unknown): void {
+    if (err instanceof CostToCashTraceDossierError) {
+      setExportError(err.message);
+      return;
+    }
+    setExportError("Não foi possível exportar o dossiê. Tente novamente.");
+  }
+
+  function handleExportJson(): void {
+    setExportError(null);
+    setExportNotice(null);
+    try {
+      if (!data) throw new CostToCashTraceDossierError("Realize uma consulta antes de exportar o dossiê.");
+      exportCostToCashDossierJson(data, appliedFilters);
+      setExportNotice("Dossiê JSON baixado — mesma fonte exibida na tela.");
+    } catch (err) {
+      handleExportError(err);
+    }
+  }
+
+  function handleExportCsv(): void {
+    setExportError(null);
+    setExportNotice(null);
+    try {
+      if (!data) throw new CostToCashTraceDossierError("Realize uma consulta antes de exportar o dossiê.");
+      exportCostToCashDossierCsv(data, appliedFilters);
+      setExportNotice("Dossiê CSV baixado — resumo por seção.");
+    } catch (err) {
+      handleExportError(err);
+    }
+  }
+
+  async function handleCopyDiagnostics(): Promise<void> {
+    setExportError(null);
+    setExportNotice(null);
+    try {
+      if (!data) throw new CostToCashTraceDossierError("Realize uma consulta antes de copiar diagnósticos.");
+      await copyCostToCashDiagnostics(data);
+      setExportNotice("Diagnósticos copiados para a área de transferência.");
+    } catch (err) {
+      handleExportError(err);
+    }
+  }
 
   if (!canView) {
     return (
@@ -64,14 +116,35 @@ export function CostToCashTracePage() {
           <h4 className="text-sm font-semibold">Busca global</h4>
           <div className="flex flex-wrap gap-2">
             {data ? (
-              <button
-                type="button"
-                className={financeBiButtonOutlineClass}
-                onClick={() => downloadTraceJson(data)}
-              >
-                <Download className="h-4 w-4" />
-                Export JSON
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={financeBiButtonOutlineClass}
+                  onClick={handleExportJson}
+                  data-testid="trace-export-dossier-json"
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar dossiê (JSON)
+                </button>
+                <button
+                  type="button"
+                  className={financeBiButtonOutlineClass}
+                  onClick={handleExportCsv}
+                  data-testid="trace-export-dossier-csv"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Exportar dossiê (CSV)
+                </button>
+                <button
+                  type="button"
+                  className={financeBiButtonOutlineClass}
+                  onClick={() => void handleCopyDiagnostics()}
+                  data-testid="trace-copy-diagnostics"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copiar diagnósticos
+                </button>
+              </>
             ) : null}
             <button type="button" className={financeBiButtonOutlineClass} onClick={reset}>
               Limpar
@@ -167,6 +240,22 @@ export function CostToCashTracePage() {
             {validationError}
           </p>
         ) : null}
+        {exportError ? (
+          <p
+            className="mt-3 text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+            data-testid="trace-export-error"
+          >
+            {exportError}
+          </p>
+        ) : null}
+        {exportNotice ? (
+          <p
+            className="mt-3 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"
+            data-testid="trace-export-notice"
+          >
+            {exportNotice}
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -205,7 +294,11 @@ export function CostToCashTracePage() {
 
           <FinanceDetailTabs tabs={TRACE_TABS} activeId={activeTab} onChange={setActiveTab} />
 
-          <CostToCashTraceSections data={data} activeTab={activeTab} />
+          <CostToCashTraceSections
+            data={data}
+            activeTab={activeTab}
+            onCopyDiagnostics={() => void handleCopyDiagnostics()}
+          />
         </div>
       ) : null}
     </div>

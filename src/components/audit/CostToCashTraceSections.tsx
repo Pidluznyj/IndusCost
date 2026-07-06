@@ -1,15 +1,11 @@
-import { AlertTriangle, Download, Search } from "lucide-react";
-import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
+import { AlertTriangle, Copy } from "lucide-react";
 import {
   CommissionsEmptyState,
-  CommissionsErrorBanner,
-  CommissionsLoading,
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
-import { downloadTraceJson } from "@/src/lib/audit/costToCashTraceClient";
 import {
   TRACE_PAGE_UNAVAILABLE,
   apiStatusChipClass,
@@ -25,6 +21,7 @@ import {
 } from "@/src/lib/audit/costToCashTracePageView";
 import type { CostToCashTracePageData } from "@/src/lib/audit/costToCashTracePageView";
 import { cn } from "@/src/lib/utils";
+import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 
 type TraceTabId = "product" | "cost" | "price" | "sales" | "commission" | "diagnostics";
 
@@ -112,9 +109,11 @@ function SimpleTable({
 export function CostToCashTraceSections({
   data,
   activeTab,
+  onCopyDiagnostics,
 }: {
   data: CostToCashTracePageData;
   activeTab: TraceTabId;
+  onCopyDiagnostics?: () => void;
 }) {
   const { sections } = data;
   const product = sections.product;
@@ -382,6 +381,14 @@ export function CostToCashTraceSections({
 
   return (
     <div className="space-y-3">
+      {onCopyDiagnostics ? (
+        <div className="flex justify-end">
+          <button type="button" className={financeBiButtonOutlineClass} onClick={onCopyDiagnostics}>
+            <Copy className="h-4 w-4" />
+            Copiar diagnósticos
+          </button>
+        </div>
+      ) : null}
       {data.diagnostics.length === 0 && data.warnings.length === 0 && data.errors.length === 0 ? (
         <CommissionsEmptyState title="Sem diagnósticos" description="Nenhum alerta para esta consulta." />
       ) : null}
