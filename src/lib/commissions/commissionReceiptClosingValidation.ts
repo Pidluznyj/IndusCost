@@ -3,6 +3,11 @@
  */
 import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import type { CommissionMonthlyPayableDetailLine, CommissionMonthlyPayableSummary } from "./commissionMonthlyPayable.js";
+import {
+  buildNomusReceiptReconciliationReport,
+  formatNomusReconciliationCsvSummary,
+  type NomusReceiptReconciliationReport,
+} from "./commissionNomusReceiptReconciliation.js";
 import { roundMoney } from "./commission-money.js";
 
 export type PayableSummarySnapshot = {
@@ -134,6 +139,7 @@ export type CommissionReceiptClosingValidationReport = {
   summaryLegacy: PayableSummarySnapshot | null;
   diffNewVsLegacy: PayableDiffSnapshot | null;
   nomusComparison: NomusValidationComparison | null;
+  nomusReconciliation: NomusReceiptReconciliationReport | null;
   breakdownByStatus: StatusBreakdownRow[];
   breakdownBySeller: SellerBreakdownRow[];
   breakdownByCustomer: CustomerBreakdownRow[];
@@ -274,6 +280,8 @@ export function buildNomusValidationComparison(input: {
 
 export function buildBreakdownByStatus(lines: CommissionReceiptPreviewLine[]): StatusBreakdownRow[] {
   const map = new Map<string, StatusBreakdownRow>();
+  const seenReceivable = new Set<number>();
+
   for (const line of lines) {
     const row = map.get(line.status) ?? {
       status: line.status,
@@ -283,10 +291,20 @@ export function buildBreakdownByStatus(lines: CommissionReceiptPreviewLine[]): S
       commissionAmount: 0,
     };
     row.count += 1;
-    row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+
+    if (!seenReceivable.has(line.nomusReceivableId)) {
+      seenReceivable.add(line.nomusReceivableId);
+      row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+    }
+
     if (line.status === "COMMISSIONABLE") {
       row.allocatedBase = roundMoney(row.allocatedBase + line.commissionableBaseAmount);
       row.commissionAmount = roundMoney(row.commissionAmount + line.releasedCommissionAmount);
+    } else if (line.status === "CUSTOMER_EXCLUDED") {
+      row.allocatedBase = roundMoney(row.allocatedBase + line.commissionableBaseAmount);
+      row.commissionAmount = roundMoney(
+        row.commissionAmount + (line.grossCommissionAmount ?? 0)
+      );
     }
     map.set(line.status, row);
   }
@@ -610,6 +628,14 @@ export function buildCommissionReceiptClosingValidationReport(input: {
       newSummary: summaryNew,
       legacySummary: summaryLegacy,
     }),
+    nomusReconciliation:
+      input.nomusBase != null || input.nomusCommission != null
+        ? buildNomusReceiptReconciliationReport({
+            lines: input.preview.lines,
+            nomusBase: input.nomusBase,
+            nomusCommission: input.nomusCommission,
+          })
+        : null,
     breakdownByStatus: buildBreakdownByStatus(input.preview.lines),
     breakdownBySeller: buildBreakdownBySeller(
       input.preview.lines,
@@ -634,6 +660,9 @@ function escapeCsvCell(value: unknown): string {
 
 export function buildValidationCsv(compareLines: ValidationCompareLine[], report: CommissionReceiptClosingValidationReport): string {
   const header = [
+    ...(report.nomusReconciliation
+      ? formatNomusReconciliationCsvSummary(report.nomusReconciliation)
+      : []),
     `# preview_only=true`,
     `# calculation_hash=${report.calculationHash}`,
     `# report_status=PREVIEW`,

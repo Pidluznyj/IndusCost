@@ -65,6 +65,8 @@ export type MaterializedReceivableScheduleInput = {
   receivableSharePercent: number;
   scheduledCommissionAmount: number;
   scheduleStatus: CommissionReceivableScheduleStatusValue;
+  /** Comissão bruta antes da exclusão (quando schedule CUSTOMER_EXCLUDED). */
+  grossScheduledCommissionAmount?: number | null;
   sellerResolutionStatus: string | null;
   exclusionRuleId: string | null;
   exclusionReason: string | null;
@@ -146,6 +148,8 @@ export type CommissionReceiptPreviewLine = {
   commissionableBaseAmount: number;
   expectedCommissionAmount: number;
   releasedCommissionAmount: number;
+  /** Comissão bruta antes de exclusão de cliente (auditoria Nomus). */
+  grossCommissionAmount: number;
   status: CommissionReceiptLedgerLineStatus;
   statusReason: string | null;
   exclusionRuleId: string | null;
@@ -443,6 +447,15 @@ function previewLineFromMaterializedSchedule(
     status === "COMMISSIONABLE"
       ? release.expectedCommissionAmount
       : 0;
+  const grossCommissionAmount =
+    schedule.scheduleStatus === "CUSTOMER_EXCLUDED"
+      ? roundMoney(
+          schedule.grossScheduledCommissionAmount ??
+            (schedule.scheduledCommissionAmount > 0
+              ? schedule.scheduledCommissionAmount
+              : release.expectedCommissionAmount)
+        )
+      : release.expectedCommissionAmount;
 
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
@@ -493,6 +506,8 @@ function previewLineFromMaterializedSchedule(
     commissionableBaseAmount: release.commissionableBaseAmount,
     expectedCommissionAmount: release.expectedCommissionAmount,
     releasedCommissionAmount: released,
+    grossCommissionAmount:
+      status === "CUSTOMER_EXCLUDED" ? grossCommissionAmount : release.expectedCommissionAmount,
     status,
     statusReason: reason,
     exclusionRuleId: schedule.exclusionRuleId,
@@ -562,6 +577,7 @@ function previewLineFromAuditRow(
     commissionableBaseAmount: normalizeCommissionLedgerMoney(row.allocatedBaseAmount),
     expectedCommissionAmount: expected,
     releasedCommissionAmount: released,
+    grossCommissionAmount: expected,
     status,
     statusReason: reason,
     exclusionRuleId: row.exclusionRuleId,
@@ -629,6 +645,7 @@ function buildExceptionLine(input: {
     commissionableBaseAmount: normalizeCommissionLedgerMoney(receivable.amountReceived),
     expectedCommissionAmount: 0,
     releasedCommissionAmount: 0,
+    grossCommissionAmount: 0,
     status,
     statusReason,
     exclusionRuleId: null,
@@ -765,6 +782,7 @@ function calculatePreviewLinesForReceivable(input: {
     let statusReason: string | null = rateResult.reason;
     let ratePercent = rateResult.ratePercent;
     let expected = computeCommissionAmount(receivedBase, ratePercent);
+    const grossCommissionAmount = expected;
 
     if (exclusion) {
       const applied = applyCustomerExclusionToCommission({
@@ -840,6 +858,7 @@ function calculatePreviewLinesForReceivable(input: {
       commissionableBaseAmount: receivedBase,
       expectedCommissionAmount: expected,
       releasedCommissionAmount: released,
+      grossCommissionAmount,
       status,
       statusReason,
       exclusionRuleId: exclusion?.rule.id ?? null,

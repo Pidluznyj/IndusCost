@@ -360,6 +360,8 @@ describe("commissionReceiptClosingValidation", () => {
     assert.equal(report.previewOnly, true);
     assert.ok(report.diffNewVsLegacy);
     assert.ok(report.nomusComparison);
+    assert.ok(report.nomusReconciliation);
+    assert.equal(report.nomusReconciliation?.nomusBase, 808107.32);
     assert.ok(report.breakdownByStatus.length > 0);
     assert.ok(report.lines && report.lines.length > 0);
 

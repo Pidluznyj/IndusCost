@@ -63,6 +63,7 @@ function previewLine(
     commissionableBaseAmount: 1000,
     expectedCommissionAmount: 20,
     releasedCommissionAmount: 20,
+    grossCommissionAmount: 20,
     status: "COMMISSIONABLE",
     statusReason: null,
     exclusionRuleId: null,

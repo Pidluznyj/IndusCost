@@ -7,7 +7,7 @@
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --compare-legacy
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --compare-legacy --recalc-fallback
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --seller=GISLENE --json
- *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --csv --include-lines
+ *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --seller=GISLENE --compare-legacy --nomus-base=808107.32 --nomus-commission=20926.56 --json --csv --include-lines
  */
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
@@ -60,15 +60,21 @@ async function main(): Promise<void> {
   if (asCsv) {
     const csv = buildValidationCsv(compareLines, report);
     writeFileSync(`${outputPath}.csv`, csv, "utf8");
-    console.log(csv);
-    return;
+    if (!asJson) {
+      console.log(csv);
+      return;
+    }
   }
 
   const jsonPayload = includeLines ? report : { ...report, lines: undefined };
 
   if (asJson) {
     writeFileSync(`${outputPath}.json`, JSON.stringify(jsonPayload, null, 2), "utf8");
-    console.log(JSON.stringify(jsonPayload, null, 2));
+    if (!asCsv) {
+      console.log(JSON.stringify(jsonPayload, null, 2));
+      return;
+    }
+    console.log(`Arquivos gravados: ${outputPath}.csv e ${outputPath}.json`);
     return;
   }
 
@@ -110,7 +116,46 @@ async function main(): Promise<void> {
     console.log("\n(dica: use --compare-legacy para diff vs motor antigo)");
   }
 
-  if (report.nomusComparison) {
+  if (report.nomusReconciliation) {
+    const r = report.nomusReconciliation;
+    console.log("\n--- Conciliação Nomus ---");
+    console.log(`Base Nomus: ${r.nomusBase != null ? fmtBrl(r.nomusBase) : "—"}`);
+    console.log(`Comissão Nomus: ${r.nomusCommission != null ? fmtBrl(r.nomusCommission) : "—"}`);
+    console.log(`Base IndusCost (antes exclusões): ${fmtBrl(r.indusCostBaseBeforeExclusions)}`);
+    console.log(`Comissão IndusCost (antes exclusões): ${fmtBrl(r.indusCostCommissionBeforeExclusions)}`);
+    console.log(
+      `Diff antes exclusões — base: ${r.diffBaseBeforeExclusions != null ? fmtBrl(r.diffBaseBeforeExclusions) : "—"} | comissão: ${r.diffCommissionBeforeExclusions != null ? fmtBrl(r.diffCommissionBeforeExclusions) : "—"}`
+    );
+    console.log(`Clientes excluídos: ${r.excludedCustomers.length}`);
+    console.log(`Base excluída: ${fmtBrl(r.excludedBaseTotal)}`);
+    console.log(`Comissão excluída: ${fmtBrl(r.excludedCommissionTotal)}`);
+    console.log(`Comissão final IndusCost: ${fmtBrl(r.indusCostFinalCommission)}`);
+    console.log(
+      `Diff final — comissão: ${r.diffCommissionFinal != null ? fmtBrl(r.diffCommissionFinal) : "—"} | base: ${r.diffBaseFinal != null ? fmtBrl(r.diffBaseFinal) : "—"}`
+    );
+    console.log(`CR divergentes: ${r.divergentReceivableCodes.length}`);
+    console.log(`Sem schedule: ${r.receivablesWithoutSchedule.length}`);
+    console.log(`Schedule stale: ${r.staleSchedules.length}`);
+    console.log(`Recebidos duplicados: ${r.duplicateReceived.length}`);
+
+    if (r.excludedCustomers.length > 0) {
+      console.log("\n--- Clientes excluídos ---");
+      for (const row of r.excludedCustomers.slice(0, 10)) {
+        console.log(
+          `  ${row.customerName ?? "—"} | base ${fmtBrl(row.excludedBase)} | comissão bruta ${fmtBrl(row.excludedCommission)} | ${row.exclusionReason ?? ""}`
+        );
+      }
+    }
+
+    if (r.divergentReceivableCodes.length > 0) {
+      console.log("\n--- CR divergentes (amostra) ---");
+      for (const row of r.divergentReceivableCodes.slice(0, 10)) {
+        console.log(
+          `  CR ${row.nomusReceivableId} ${row.receivableNumber ?? ""} | ${row.status} | ${fmtBrl(row.receivedAmount)} | ${row.statusReason ?? ""}`
+        );
+      }
+    }
+  } else if (report.nomusComparison) {
     const nc = report.nomusComparison;
     console.log("\n--- Nomus ---");
     if (nc.nomusBase != null) {
