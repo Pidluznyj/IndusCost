@@ -12,6 +12,12 @@ function read(rel: string): string {
 }
 
 describe("productProductionCostPublicationStatus", () => {
+  it("diferença zero dentro da tolerância retorna amount 0", () => {
+    const diff = computeProductionCostPublicationDifference(0.912785, 0.912785);
+    assert.equal(diff.amount, 0);
+    assert.equal(diff.percent, 0);
+  });
+
   it("calcula diferença em R$ e % entre oficial e DRAFT", () => {
     const diff = computeProductionCostPublicationDifference(2.828818, 5.478818);
     assert.ok(Math.abs(diff.amount - 2.65) < 0.000001);

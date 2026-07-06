@@ -3,6 +3,7 @@
  */
 
 import type { ProductEngineeringCostWarningResult } from "./productEngineeringCostWarning.js";
+import { hasProductionCostDifference } from "./productEngineeringCostWarning.js";
 
 export type ProductionCostPublicationCostSlice = {
   versionId: string;
@@ -36,6 +37,9 @@ export function computeProductionCostPublicationDifference(
   officialUnitCost: number | null | undefined,
   draftUnitCost: number
 ): { amount: number; percent: number } {
+  if (!hasProductionCostDifference(officialUnitCost, draftUnitCost)) {
+    return { amount: 0, percent: 0 };
+  }
   const official = officialUnitCost ?? 0;
   const amount = round6(draftUnitCost - official);
   const percent =

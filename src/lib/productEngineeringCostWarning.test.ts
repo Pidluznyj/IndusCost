@@ -75,4 +75,34 @@ describe("resolveProductEngineeringCostWarning", () => {
     assert.equal(warning.warningStatus, "TECHNICAL_SNAPSHOT_PENDING_NO_COST_IMPACT");
     assert.notEqual(warning.warningStatus, "COST_DIFF_PENDING_PUBLICATION");
   });
+
+  it("draft equivalente (mesmo custo e hash) não gera alerta de pendência", () => {
+    const warning = resolveProductEngineeringCostWarning({
+      officialCost: 0.912785,
+      calculatedCost: 0.912785,
+      officialHash: "hash-618",
+      calculatedHash: "hash-618",
+      hasDraft: true,
+      hasOfficialPublished: true,
+    });
+    assert.equal(warning.hasCostImpact, false);
+    assert.equal(warning.hasTechnicalSnapshotPending, false);
+    assert.ok(
+      warning.warningStatus === "NONE" || warning.warningStatus === "COST_PUBLISHED_OK"
+    );
+    assert.notEqual(warning.message, "Custo pendente para publicação");
+  });
+
+  it("tolerância ignora micro-diferença de ponto flutuante", () => {
+    assert.equal(hasProductionCostDifference(0.912785, 0.9127850000004), false);
+    const warning = resolveProductEngineeringCostWarning({
+      officialCost: 0.912785,
+      calculatedCost: 0.9127850000004,
+      hasDraft: true,
+      hasOfficialPublished: true,
+      officialHash: "h1",
+      calculatedHash: "h1",
+    });
+    assert.notEqual(warning.warningStatus, "COST_DIFF_PENDING_PUBLICATION");
+  });
 });

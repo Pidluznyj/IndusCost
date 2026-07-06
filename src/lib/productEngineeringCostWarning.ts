@@ -75,14 +75,12 @@ export function hasTechnicalSnapshotPending(input: {
   hasCostImpact: boolean;
 }): boolean {
   if (input.hasCostImpact) return false;
-  if (input.hasDraft) return true;
-  if (
-    input.officialHash &&
-    input.calculatedHash &&
-    input.officialHash.trim() !== "" &&
-    input.calculatedHash.trim() !== "" &&
-    input.officialHash !== input.calculatedHash
-  ) {
+  const officialHash = input.officialHash?.trim() ?? "";
+  const calculatedHash = input.calculatedHash?.trim() ?? "";
+  if (officialHash && calculatedHash) {
+    return officialHash !== calculatedHash;
+  }
+  if (input.hasDraft && (!officialHash || !calculatedHash)) {
     return true;
   }
   return false;

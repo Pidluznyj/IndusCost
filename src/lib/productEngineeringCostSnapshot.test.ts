@@ -84,6 +84,20 @@ describe("productEngineeringCostSnapshot", () => {
     assert.equal(status, "CUSTO_DIVERGENTE");
   });
 
+  it("status ATUALIZADO quando draft equivalente (mesmo custo e hash)", () => {
+    const status = resolveFrozenCostTraceStatus({
+      liveCiu: 0.912785,
+      liveHash: "hash-618",
+      publishedCost: 0.912785,
+      publishedHash: "hash-618",
+      publishedVersionStatus: "PUBLISHED",
+      draftHash: "hash-618",
+      draftVersionStatus: "DRAFT",
+      draftUnitCost: 0.912785,
+    });
+    assert.equal(status, "ATUALIZADO");
+  });
+
   it("status SNAPSHOT_TECNICO_SEM_IMPACTO quando custo igual e hash difere", () => {
     const status = resolveFrozenCostTraceStatus({
       liveCiu: 0.912785,
