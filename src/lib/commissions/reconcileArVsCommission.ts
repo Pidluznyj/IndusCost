@@ -2,6 +2,7 @@
  * Reconciliação AR financeiro x Comissão PAYABLE — lógica pura.
  */
 import { roundMoney } from "./commission-money.js";
+import type { CommissionMonthlyPayableSummary } from "./commissionMonthlyPayable.js";
 import {
   resolveCommissionSellerIdentity,
   type CommissionSellerIdentityContext,
@@ -123,6 +124,9 @@ export type ArCommissionReconcileSummary = {
     baseDiff: number | null;
     commissionDiff: number | null;
   };
+  reportSource?: import("./commissionReportSource.js").CommissionReportDataSource;
+  reportStatus?: import("./commissionReportSource.js").CommissionReportStatus;
+  reportWarnings?: string[];
 };
 
 const CATEGORY_LABELS: Record<ArCommissionBreakdownCategory, string> = {
@@ -375,9 +379,24 @@ export function buildArCommissionReconcile(input: {
   identityCtx: CommissionSellerIdentityContext;
   referenceDate?: Date;
   nomusReference?: { base: number | null; commission: number | null };
+  officialPayableSummary?: CommissionMonthlyPayableSummary | null;
 }): { summary: ArCommissionReconcileSummary; details: ArCommissionDetailLine[] } {
-  const { year, month, periodFrom, periodTo, arRows, payableRows, payableCards, identityCtx } =
-    input;
+  const { year, month, periodFrom, periodTo, arRows, payableRows, identityCtx } = input;
+  const official = input.officialPayableSummary;
+  const payableCards =
+    official &&
+    (official.reportSource === "RECEIPT_CLOSED" || official.reportSource === "RECEIPT_PREVIEW")
+      ? {
+          receivableAmountTotal: official.receivedAmountTotal,
+          receivedAmountTotal: official.receivedAmountTotal,
+          commissionableBaseTotal: official.allocatedBaseAmountTotal,
+          commissionExpectedTotal: official.expectedCommissionAmountTotal,
+          commissionReleasedTotal: official.payableCommissionTotal,
+          commissionPendingTotal: official.pendingCommissionAmountTotal,
+          averageRatePercent: official.averageCommissionRate,
+          receivableCount: official.uniqueReceivablesCount,
+        }
+      : input.payableCards;
   const referenceDate = input.referenceDate ?? periodTo;
 
   const arByDue = aggregateArMetrics(
@@ -559,6 +578,9 @@ export function buildArCommissionReconcile(input: {
               : null,
         }
       : undefined,
+    reportSource: official?.reportSource,
+    reportStatus: official?.reportStatus,
+    reportWarnings: official?.warnings,
   };
 
   return { summary, details };

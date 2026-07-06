@@ -4,6 +4,12 @@
  */
 import { roundMoney } from "./commission-money.js";
 import {
+  formatReportSourceCsvHeaders,
+  mergeReportWarnings,
+  type CommissionReportSourceMeta,
+  type CommissionReportSourceMode,
+} from "./commissionReportSource.js";
+import {
   resolveReceivableUniqueKey,
   type VisualAuditRow,
 } from "./commissionVisualAudit.js";
@@ -112,6 +118,11 @@ export type CommissionMonthlyPayableSummary = {
   warnings: string[];
   sellers: CommissionMonthlyPayableSellerSummary[];
   details: CommissionMonthlyPayableDetailLine[];
+  reportSource: import("./commissionReportSource.js").CommissionReportDataSource;
+  reportStatus: import("./commissionReportSource.js").CommissionReportStatus;
+  reportDeprecationNotice: string | null;
+  closingId: string | null;
+  calculationHash: string | null;
 };
 
 const PT_MONTHS = [
@@ -431,11 +442,32 @@ export function aggregateMonthlyPayableFromRows(
     warnings,
     sellers,
     details: filtered.map((row) => mapRowToPayableDetail(row, monthKey)),
+    reportSource: "LEGACY_VISUAL_AUDIT",
+    reportStatus: "LEGADO",
+    reportDeprecationNotice: null,
+    closingId: null,
+    calculationHash: null,
   };
 }
 
-function csvSummaryHeader(summary: CommissionMonthlyPayableSummary): string[] {
+function csvSummaryHeader(
+  summary: CommissionMonthlyPayableSummary,
+  meta?: CommissionReportSourceMeta
+): string[] {
+  const reportMeta: CommissionReportSourceMeta =
+    meta ??
+    ({
+      sourceMode: "auto",
+      dataSource: summary.reportSource,
+      reportStatus: summary.reportStatus,
+      closingId: summary.closingId,
+      calculationHash: summary.calculationHash,
+      deprecationNotice: summary.reportDeprecationNotice,
+      warnings: summary.warnings,
+    } satisfies CommissionReportSourceMeta);
+
   return [
+    ...formatReportSourceCsvHeaders(reportMeta),
     `# comissao_a_pagar_mes=${summary.monthKey}`,
     `# total_liberado=${summary.payableCommissionTotal.toFixed(2)}`,
     `# base_rateada=${summary.allocatedBaseAmountTotal.toFixed(2)}`,
@@ -443,6 +475,39 @@ function csvSummaryHeader(summary: CommissionMonthlyPayableSummary): string[] {
     `# titulos_recebidos=${summary.uniqueReceivablesCount}`,
     `# percentual_medio=${summary.averageCommissionRate.toFixed(4)}`,
   ];
+}
+
+export function enrichMonthlyPayableSummaryWithReportMeta(
+  summary: CommissionMonthlyPayableSummary,
+  meta: CommissionReportSourceMeta
+): CommissionMonthlyPayableSummary {
+  return {
+    ...summary,
+    reportSource: meta.dataSource,
+    reportStatus: meta.reportStatus,
+    reportDeprecationNotice: meta.deprecationNotice,
+    closingId: meta.closingId,
+    calculationHash: meta.calculationHash,
+    warnings: mergeReportWarnings(meta, summary.warnings),
+  };
+}
+
+export function resolveLegacyPayableDeprecation(
+  summary: CommissionMonthlyPayableSummary,
+  sourceMode: CommissionReportSourceMode
+): CommissionMonthlyPayableSummary {
+  if (summary.reportSource !== "LEGACY_VISUAL_AUDIT") return summary;
+  const meta = {
+    sourceMode,
+    dataSource: "LEGACY_VISUAL_AUDIT" as const,
+    reportStatus: "LEGADO" as const,
+    closingId: null,
+    calculationHash: null,
+    deprecationNotice:
+      "Este relatório usa cálculo legado (CommissionRecord/CommissionPaymentSchedule). Para pagamento oficial use Fechamento por Recebimento.",
+    warnings: [],
+  };
+  return enrichMonthlyPayableSummaryWithReportMeta(summary, meta);
 }
 
 export function buildMonthlyPayableSellerSummaryCsv(

@@ -1,4 +1,5 @@
 import { prisma } from "@/src/lib/prisma.js";
+import { resolveMonthlyPayableReport } from "./commissionReportSource.server.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
 import {
   buildCommissionDashboardYtd,
@@ -48,6 +49,13 @@ export type CommissionDashboardPayload = {
   }>;
   auditSummary: { total: number; critical: number; warning: number; unresolved: number };
   ytd: CommissionDashboardYtdPayload | null;
+  monthlyOfficialPayable?: {
+    reportSource: string;
+    reportStatus: string;
+    payableCommissionTotal: number;
+    warnings: string[];
+    deprecationNotice: string | null;
+  } | null;
 };
 
 export function emptyCommissionDashboard(): CommissionDashboardPayload {
@@ -233,6 +241,25 @@ export async function buildCommissionDashboard(
     query.month
   );
 
+  const monthlyOfficialPayable =
+    query.year != null && query.month != null
+      ? await resolveMonthlyPayableReport(
+          {
+            year: query.year,
+            month: query.month,
+            sellerId: query.commissionPersonId ?? null,
+          },
+          scope,
+          "auto"
+        ).then((summary) => ({
+          reportSource: summary.reportSource,
+          reportStatus: summary.reportStatus,
+          payableCommissionTotal: summary.payableCommissionTotal,
+          warnings: summary.warnings,
+          deprecationNotice: summary.reportDeprecationNotice,
+        }))
+      : null;
+
   return {
     cards: {
       forecastAmount,
@@ -269,5 +296,6 @@ export async function buildCommissionDashboard(
       unresolved: auditUnresolved,
     },
     ytd,
+    monthlyOfficialPayable,
   };
 }

@@ -13,7 +13,7 @@ import {
   arCommissionDetailCsvHeader,
   arCommissionDetailToCsvRow,
 } from "../src/lib/commissions/reconcileArVsCommission.ts";
-import { csvLine, fmtBrl, fmtPct, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { csvLine, fmtBrl, fmtPct, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
@@ -24,6 +24,7 @@ async function main(): Promise<void> {
   const customer = parseArg("customer");
   const nomusBaseRaw = parseArg("nomus-base");
   const nomusCommissionRaw = parseArg("nomus-commission");
+  const sourceMode = parseCommissionReportSourceMode(parseArg("source"));
   const asJson = process.argv.includes("--json");
   const asCsv = process.argv.includes("--csv");
   const withDetails = process.argv.includes("--details");
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
     seller,
     customer,
     nomusReference,
+    sourceMode,
   });
 
   const outputPath = `reconcile-ar-vs-commission-${year}-${String(month).padStart(2, "0")}`;
@@ -54,7 +56,16 @@ async function main(): Promise<void> {
   }
 
   console.log("=== Reconciliação AR x Comissão PAYABLE ===");
-  console.log(`Período: ${month}/${year}\n`);
+  console.log(`Período: ${month}/${year}`);
+  if (summary.reportStatus) {
+    console.log(`Fonte comissão: ${summary.reportStatus} (${summary.reportSource ?? "—"})`);
+  }
+  if (summary.reportWarnings?.length) {
+    for (const warning of summary.reportWarnings) {
+      console.log(`  ⚠ ${warning}`);
+    }
+  }
+  console.log("");
 
   console.log("--- A) AR por vencimento ---");
   console.log(`CRs únicos: ${summary.arByDue.uniqueReceivableCount}`);

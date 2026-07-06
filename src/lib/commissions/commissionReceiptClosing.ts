@@ -365,6 +365,188 @@ export function mapLedgerRowToSnapshot(row: {
   };
 }
 
+export function mapPreviewLineToPayableDetail(
+  row: CommissionReceiptPreviewLine,
+  monthKey: string
+): CommissionMonthlyPayableDetailLine {
+  return {
+    lineId: row.ledgerLineKey,
+    sellerId: row.canonicalSellerId ?? row.canonicalSellerName ?? "—",
+    sellerName: row.canonicalSellerName ?? row.rawSellerName ?? "—",
+    month: monthKey,
+    nomusReceivableId: row.nomusReceivableId,
+    installmentNumber: row.installmentNumber,
+    orderCode: row.orderCode,
+    nfeNumber: row.nfeNumber,
+    nomusNfeId: row.nomusNfeId,
+    customerName: row.customerName,
+    productCode: row.productCode,
+    confirmedAt: null,
+    dueDate: row.dueDate,
+    settlementDate: row.settlementDate,
+    receivedAmount: row.receivedAmount,
+    receivableAmount: row.receivableAmount,
+    allocatedBaseAmount: row.commissionableBaseAmount,
+    expectedCommissionAmount: row.expectedCommissionAmount,
+    releasedCommissionAmount: row.releasedCommissionAmount,
+    pendingCommissionAmount: roundMoney(
+      Math.max(0, row.expectedCommissionAmount - row.releasedCommissionAmount)
+    ),
+    itemRatePercent: row.ratePercent,
+    alerts:
+      row.status === "COMMISSIONABLE"
+        ? []
+        : [row.statusReason ?? row.exclusionReason ?? row.status],
+  };
+}
+
+function matchesPreviewFilters(
+  row: CommissionReceiptPreviewLine,
+  query: CommissionMonthlyPayableQuery
+): boolean {
+  if (query.sellerId?.trim()) {
+    const needle = query.sellerId.trim().toLowerCase();
+    const haystacks = [row.canonicalSellerId, row.canonicalSellerName, row.rawSellerName]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase());
+    if (!haystacks.some((value) => value.includes(needle) || needle.includes(value))) {
+      return false;
+    }
+  }
+  if (query.customer?.trim()) {
+    const needle = query.customer.trim().toLowerCase();
+    const haystack = (row.customerName ?? "").toLowerCase();
+    if (!haystack.includes(needle)) return false;
+  }
+  if (query.orderCode?.trim()) {
+    const needle = query.orderCode.trim().toLowerCase();
+    if (!(row.orderCode ?? "").toLowerCase().includes(needle)) return false;
+  }
+  if (query.nfeNumber?.trim()) {
+    const needle = query.nfeNumber.trim().toLowerCase();
+    if (!(row.nfeNumber ?? "").toLowerCase().includes(needle)) return false;
+  }
+  if (query.nomusReceivableId != null && row.nomusReceivableId !== query.nomusReceivableId) {
+    return false;
+  }
+  if (query.onlyDivergences && row.status === "COMMISSIONABLE") return false;
+  return true;
+}
+
+export function aggregateMonthlyPayableFromReceiptPreview(
+  preview: CommissionReceiptPreviewResult,
+  query: CommissionMonthlyPayableQuery
+): CommissionMonthlyPayableSummary {
+  const monthKey = buildMonthKey(query.year, query.month);
+  const filtered = preview.lines.filter((row) => matchesPreviewFilters(row, query));
+  const details = filtered.map((row) => mapPreviewLineToPayableDetail(row, monthKey));
+
+  const sellerMap = new Map<string, CommissionMonthlyPayableSummary["sellers"][number]>();
+  const receivableKeys = new Set<string>();
+
+  let receivedAmountTotal = 0;
+  let allocatedBaseAmountTotal = 0;
+  let expectedCommissionAmountTotal = 0;
+  let releasedCommissionAmountTotal = 0;
+
+  for (const row of filtered) {
+    receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    if (row.status === "COMMISSIONABLE") {
+      allocatedBaseAmountTotal = roundMoney(
+        allocatedBaseAmountTotal + row.commissionableBaseAmount
+      );
+      expectedCommissionAmountTotal = roundMoney(
+        expectedCommissionAmountTotal + row.expectedCommissionAmount
+      );
+      releasedCommissionAmountTotal = roundMoney(
+        releasedCommissionAmountTotal + row.releasedCommissionAmount
+      );
+    }
+
+    const sellerKey = row.canonicalSellerId ?? row.canonicalSellerName ?? row.rawSellerName ?? "—";
+    const seller = sellerMap.get(sellerKey) ?? {
+      sellerId: row.canonicalSellerId ?? sellerKey,
+      sellerName: row.canonicalSellerName ?? row.rawSellerName ?? sellerKey,
+      month: monthKey,
+      receivedTitlesCount: 0,
+      uniqueReceivablesCount: 0,
+      uniqueOrdersCount: 0,
+      uniqueNfeCount: 0,
+      uniqueCustomersCount: 0,
+      receivedAmount: 0,
+      allocatedBaseAmount: 0,
+      expectedCommissionAmount: 0,
+      releasedCommissionAmount: 0,
+      pendingCommissionAmount: 0,
+      averageCommissionRate: 0,
+      receivedVsBaseDiff: 0,
+      warnings: [],
+    };
+    seller.receivedAmount = roundMoney(seller.receivedAmount + row.receivedAmount);
+    if (row.status === "COMMISSIONABLE") {
+      seller.allocatedBaseAmount = roundMoney(
+        seller.allocatedBaseAmount + row.commissionableBaseAmount
+      );
+      seller.expectedCommissionAmount = roundMoney(
+        seller.expectedCommissionAmount + row.expectedCommissionAmount
+      );
+      seller.releasedCommissionAmount = roundMoney(
+        seller.releasedCommissionAmount + row.releasedCommissionAmount
+      );
+    }
+    sellerMap.set(sellerKey, seller);
+
+    if (row.nomusReceivableId != null) {
+      receivableKeys.add(`cr:${row.nomusReceivableId}`);
+    }
+  }
+
+  const sellers = [...sellerMap.values()].map((seller) => ({
+    ...seller,
+    pendingCommissionAmount: roundMoney(
+      Math.max(0, seller.expectedCommissionAmount - seller.releasedCommissionAmount)
+    ),
+    averageCommissionRate:
+      seller.allocatedBaseAmount > 0
+        ? roundMoney((seller.releasedCommissionAmount / seller.allocatedBaseAmount) * 100)
+        : 0,
+    receivedVsBaseDiff: roundMoney(seller.receivedAmount - seller.allocatedBaseAmount),
+  }));
+
+  const payableCommissionTotal = releasedCommissionAmountTotal;
+  const pendingCommissionAmountTotal = roundMoney(
+    Math.max(0, expectedCommissionAmountTotal - releasedCommissionAmountTotal)
+  );
+  const averageCommissionRate =
+    allocatedBaseAmountTotal > 0
+      ? roundMoney((releasedCommissionAmountTotal / allocatedBaseAmountTotal) * 100)
+      : 0;
+
+  return {
+    year: query.year,
+    month: query.month,
+    monthKey,
+    monthLabelPt: formatMonthLabelPt(query.year, query.month),
+    payableCommissionTotal,
+    receivedAmountTotal,
+    allocatedBaseAmountTotal,
+    expectedCommissionAmountTotal,
+    pendingCommissionAmountTotal,
+    uniqueReceivablesCount: receivableKeys.size,
+    uniqueSellersCount: sellers.length,
+    averageCommissionRate,
+    receivedVsBaseDiff: roundMoney(receivedAmountTotal - allocatedBaseAmountTotal),
+    warnings: [],
+    sellers,
+    details,
+    reportSource: "RECEIPT_PREVIEW",
+    reportStatus: "PREVIEW",
+    reportDeprecationNotice: null,
+    closingId: null,
+    calculationHash: null,
+  };
+}
+
 export function mapLedgerLineToPayableDetail(
   row: ReceiptClosingLedgerLineSnapshot,
   monthKey: string
@@ -528,6 +710,11 @@ export function aggregateMonthlyPayableFromLedgerLines(
     warnings: ["Fonte: fechamento persistido (ledger por recebimento)."],
     sellers,
     details,
+    reportSource: "RECEIPT_CLOSED",
+    reportStatus: "FECHADO",
+    reportDeprecationNotice: null,
+    closingId: null,
+    calculationHash: null,
   };
 }
 

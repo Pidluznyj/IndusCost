@@ -7,6 +7,11 @@ import { hasFlag, parseArg, parseYearPeriod } from "./commission-audit-args.ts";
 
 export { parseArg, hasFlag, parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
 export {
+  parseCommissionReportSourceMode,
+  formatReportSourceLabel,
+  type CommissionReportSourceMode,
+} from "../src/lib/commissions/commissionReportSource.ts";
+export {
   activeCommissionRecordWhere,
   INACTIVE_COMMISSION_RECORD_STATUSES,
 } from "../src/lib/commissions/commission-record-status.ts";

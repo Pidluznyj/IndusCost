@@ -12,7 +12,7 @@ import "dotenv/config";
 import { getCommissionMonthlyPayableSummary } from "../src/lib/commissions/commissionMonthlyPayable.server.ts";
 import { buildMonthlyPayableCsv } from "../src/lib/commissions/commissionMonthlyPayable.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
-import { fmtBrl, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
   dataScope: "global",
@@ -29,13 +29,15 @@ async function main(): Promise<void> {
   const year = Number.parseInt(parseArg("year") ?? String(new Date().getFullYear()), 10);
   const month = Number.parseInt(parseArg("month") ?? String(new Date().getMonth() + 1), 10);
   const seller = parseArg("seller");
+  const sourceMode = parseCommissionReportSourceMode(parseArg("source"));
   const asJson = process.argv.includes("--json");
   const asCsv = process.argv.includes("--csv");
   const withDetail = process.argv.includes("--detail");
 
   const summary = await getCommissionMonthlyPayableSummary(
     { year, month, sellerId: seller },
-    GLOBAL_SCOPE
+    GLOBAL_SCOPE,
+    sourceMode
   );
 
   if (asCsv) {
@@ -53,6 +55,17 @@ async function main(): Promise<void> {
 
   console.log("=== Auditoria Mensal — Comissão a Pagar por Recebimento ===");
   console.log(`Período: ${summary.monthLabelPt} (baixa CR: settlementDate)`);
+  console.log(
+    `Fonte: ${formatReportSourceLabel({
+      sourceMode,
+      dataSource: summary.reportSource,
+      reportStatus: summary.reportStatus,
+      closingId: summary.closingId,
+      calculationHash: summary.calculationHash,
+      deprecationNotice: summary.reportDeprecationNotice,
+      warnings: summary.warnings,
+    })}`
+  );
   console.log("");
   console.log(
     `Comissão a pagar em ${summary.monthLabelPt}: ${fmtBrl(summary.payableCommissionTotal)}`

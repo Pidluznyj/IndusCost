@@ -24,6 +24,8 @@ import { listPayableVisualAuditRows } from "./commissionVisualAudit.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { decimalToNumber } from "./commission-money.js";
 import { getMonthlyPayableFromClosedReceiptLedger } from "./commissionReceiptClosing.server.js";
+import { resolveMonthlyPayableReport } from "./commissionReportSource.server.js";
+import type { CommissionReportSourceMode } from "./commissionReportSource.js";
 
 export type { CommissionMonthlyPayableQuery, CommissionMonthlyPayableSummary };
 export {
@@ -108,6 +110,11 @@ export function buildMonthlyClosingOfficialSummaryCsv(
   workflow: MonthlyClosingWorkflowMeta
 ): string {
   const headerLines = [
+    `# report_source=${summary.reportSource}`,
+    `# report_status=${summary.reportStatus}`,
+    summary.closingId ? `# closing_id=${summary.closingId}` : "# closing_id=",
+    summary.calculationHash ? `# calculation_hash=${summary.calculationHash}` : "# calculation_hash=",
+    summary.reportDeprecationNotice ? `# deprecation=${summary.reportDeprecationNotice}` : "",
     `# fechamento_mes=${summary.monthKey}`,
     `# status_geral=${workflow.overallStatusLabel}`,
     `# persistencia_aprovacao=nao`,
@@ -168,6 +175,15 @@ async function loadMonthlyClosingRows(
  */
 export async function getCommissionMonthlyPayableSummary(
   query: CommissionMonthlyPayableQuery,
+  scope: CommissionAccessScope,
+  sourceMode: CommissionReportSourceMode = "auto"
+): Promise<CommissionMonthlyPayableSummary> {
+  return resolveMonthlyPayableReport(query, scope, sourceMode);
+}
+
+/** @deprecated Use resolveMonthlyPayableReport — mantido para chamadas internas legadas. */
+export async function getCommissionMonthlyPayableSummaryLedgerFirst(
+  query: CommissionMonthlyPayableQuery,
   scope: CommissionAccessScope
 ): Promise<CommissionMonthlyPayableSummary> {
   const fromLedger = await getMonthlyPayableFromClosedReceiptLedger(query);
@@ -179,11 +195,11 @@ export async function getCommissionMonthlyPayableSummary(
 
 export async function getCommissionMonthlyClosingPage(
   query: CommissionMonthlyPayableQuery & { page: number; pageSize: number },
-  scope: CommissionAccessScope
+  scope: CommissionAccessScope,
+  sourceMode: CommissionReportSourceMode = "auto"
 ): Promise<CommissionMonthlyClosingPayload> {
-  const fromLedger = await getMonthlyPayableFromClosedReceiptLedger(query);
-  if (fromLedger) {
-    const summary = fromLedger;
+  const summary = await resolveMonthlyPayableReport(query, scope, sourceMode);
+  if (summary.reportSource === "RECEIPT_CLOSED" || summary.reportSource === "RECEIPT_PREVIEW") {
     const divergenceCount = summary.details.filter((d) => d.alerts.length > 0).length;
     const cards = buildMonthlyClosingCards(summary, divergenceCount);
     const auditCards = {
@@ -261,9 +277,9 @@ export async function getCommissionMonthlyClosingPage(
   }
 
   const rows = await loadMonthlyClosingRows(query, scope);
-  const summary = aggregateMonthlyPayableFromRows(rows, query);
+  const effectiveSummary = summary;
   const divergenceCount = rows.filter((r) => r.alerts.length > 0).length;
-  const cards = buildMonthlyClosingCards(summary, divergenceCount);
+  const cards = buildMonthlyClosingCards(effectiveSummary, divergenceCount);
   const auditCards = computeVisualAuditCards(rows, "PAYABLE");
   const nomusReference = buildVisualAuditNomusReference({
     mode: "PAYABLE",
@@ -271,28 +287,28 @@ export async function getCommissionMonthlyClosingPage(
     nomusBase: query.nomusReferenceBase ?? null,
     nomusCommission: query.nomusReferenceCommission ?? null,
   });
-  const groupings = buildMonthlyClosingGroupings(rows, summary.monthKey);
-  const total = summary.details.length;
+  const groupings = buildMonthlyClosingGroupings(rows, effectiveSummary.monthKey);
+  const total = effectiveSummary.details.length;
   const skip = (query.page - 1) * query.pageSize;
-  const detailRows = summary.details.slice(skip, skip + query.pageSize);
+  const detailRows = effectiveSummary.details.slice(skip, skip + query.pageSize);
 
-  const sellerIds = summary.sellers.map((s) => s.sellerId);
+  const sellerIds = effectiveSummary.sellers.map((s) => s.sellerId);
   const paymentBatchesBySeller = await loadPaymentBatchesBySeller(
     query.year,
     query.month,
     sellerIds
   );
   const workflow = buildMonthlyClosingWorkflowMeta({
-    sellers: summary.sellers,
+    sellers: effectiveSummary.sellers,
     divergenceCount,
-    warnings: summary.warnings,
+    warnings: effectiveSummary.warnings,
     nomusReference,
     paymentBatchesBySeller,
     sellerLineAlertCounts: countSellerLineAlerts(rows),
   });
 
   return {
-    ...summary,
+    ...effectiveSummary,
     cards,
     nomusReference,
     groupings,
@@ -305,17 +321,19 @@ export async function getCommissionMonthlyClosingPage(
 export async function exportCommissionMonthlyClosingCsv(
   query: CommissionMonthlyPayableQuery,
   scope: CommissionAccessScope,
-  format: "summary" | "detail" | "full" | "official"
+  format: "summary" | "detail" | "full" | "official",
+  sourceMode: CommissionReportSourceMode = "auto"
 ): Promise<string> {
   if (format === "official") {
     const page = await getCommissionMonthlyClosingPage(
       { ...query, page: 1, pageSize: 100000 },
-      scope
+      scope,
+      sourceMode
     );
     return `${buildMonthlyClosingOfficialSummaryCsv(page, page.workflow)}\n\n${buildMonthlyPayableDetailCsv(page)}`;
   }
 
-  const summary = await getCommissionMonthlyPayableSummary(query, scope);
+  const summary = await getCommissionMonthlyPayableSummary(query, scope, sourceMode);
   if (format === "summary") return buildMonthlyPayableSellerSummaryCsv(summary);
   if (format === "detail") return buildMonthlyPayableDetailCsv(summary);
   return `${buildMonthlyPayableSellerSummaryCsv(summary)}\n\n${buildMonthlyPayableDetailCsv(summary)}`;

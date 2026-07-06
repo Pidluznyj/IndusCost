@@ -13,7 +13,8 @@ import { listCommissionVisualAuditPage } from "../src/lib/commissions/commission
 import { buildVisualAuditCsv } from "../src/lib/commissions/commissionVisualAudit.ts";
 import { parseCommissionVisualAuditQuery } from "../src/lib/commissions/commissionQuery.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
-import { fmtBrl, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { getCommissionMonthlyPayableSummary } from "../src/lib/commissions/commissionMonthlyPayable.server.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
   dataScope: "global",
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
   const year = Number.parseInt(parseArg("year") ?? String(new Date().getFullYear()), 10);
   const month = Number.parseInt(parseArg("month") ?? String(new Date().getMonth() + 1), 10);
   const mode = parseArg("mode") ?? "generated";
+  const sourceMode = parseCommissionReportSourceMode(parseArg("source"));
   const seller = parseArg("seller");
   const nomusBaseRaw = parseArg("nomus-base");
   const nomusCommissionRaw = parseArg("nomus-commission");
@@ -50,6 +52,15 @@ async function main(): Promise<void> {
   const payload = await listCommissionVisualAuditPage(query, GLOBAL_SCOPE);
   const { cards, rows, nomusReference } = payload;
 
+  const payableOfficial =
+    mode === "payable"
+      ? await getCommissionMonthlyPayableSummary(
+          { year, month, sellerId: seller },
+          GLOBAL_SCOPE,
+          sourceMode
+        )
+      : null;
+
   const output = {
     mode: cards.appraisalMode,
     year,
@@ -67,6 +78,15 @@ async function main(): Promise<void> {
     commissionPendingTotal: cards.commissionPendingTotal,
     averageRatePercent: cards.averageRatePercent,
     nomusReference,
+    officialPayable:
+      payableOfficial == null
+        ? undefined
+        : {
+            reportSource: payableOfficial.reportSource,
+            reportStatus: payableOfficial.reportStatus,
+            payableCommissionTotal: payableOfficial.payableCommissionTotal,
+            warnings: payableOfficial.warnings,
+          },
   };
 
   if (asJson) {
@@ -84,6 +104,27 @@ async function main(): Promise<void> {
 
   console.log("=== Auditoria Visual de Comissões ===");
   console.log(`Período: ${month}/${year} | Modo: ${cards.appraisalMode}`);
+  if (payableOfficial) {
+    console.log(
+      `Fonte oficial pagamento: ${formatReportSourceLabel({
+        sourceMode,
+        dataSource: payableOfficial.reportSource,
+        reportStatus: payableOfficial.reportStatus,
+        closingId: payableOfficial.closingId,
+        calculationHash: payableOfficial.calculationHash,
+        deprecationNotice: payableOfficial.reportDeprecationNotice,
+        warnings: payableOfficial.warnings,
+      })}`
+    );
+    console.log(
+      `Comissão oficial a pagar: ${fmtBrl(payableOfficial.payableCommissionTotal)} (motor ${payableOfficial.reportSource})`
+    );
+    if (payableOfficial.reportSource !== "LEGACY_VISUAL_AUDIT") {
+      console.log(
+        "Nota: cards acima usam visual audit legado; use officialPayable no JSON para número oficial."
+      );
+    }
+  }
   console.log(`Linhas: ${rows.length}`);
   console.log(`NFs únicas: ${cards.documentCount} | CRs únicos: ${cards.receivableCount} | Parcelas: ${cards.scheduleCount}`);
   console.log(`Valor NF único: ${fmtBrl(cards.documentAmountTotal)}`);

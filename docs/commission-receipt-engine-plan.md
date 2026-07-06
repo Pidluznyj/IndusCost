@@ -554,3 +554,37 @@ Migration `20260708120000_commission_receipt_ledger`:
 
 O fechamento calculado em tela (`commissionMonthlyPayable`) permanece consultável; o ledger persistido é camada adicional para auditoria e reprocessamento.
 
+---
+
+## 16. Fonte oficial de pagamento (implementado 2026-07-06)
+
+### Resolver unificado
+
+`resolveMonthlyPayableReport()` em `commissionReportSource.server.ts`:
+
+| `--source` | Comportamento |
+|------------|---------------|
+| `auto` | Ledger CLOSED → prévia receipt → legado com aviso |
+| `receipt` | Ledger CLOSED → prévia receipt (nunca legado) |
+| `legacy` | Visual audit PAYABLE (`CommissionRecord` + schedules) |
+
+### O que continua legado
+
+- Apuração, confirmadas, forecast, liberação, pagamentos, dashboard cards (`CommissionRecord`)
+- Visual audit GENERATED/FORECAST
+- `export-commission-june-comparison.ts`
+
+### O que usa ledger/preview receipt
+
+- Tela **Fechamento por Recebimento** (`CommissionsReceiptClosingPage`)
+- `GET /api/commissions/receipt-closing/*`
+- `GET /api/commissions/monthly-closing` (via `resolveMonthlyPayableReport`)
+- Scripts: `audit-commission-monthly-payable`, `reconcile-ar-vs-commission` (com `--source=auto`)
+- Dashboard: campo `monthlyOfficialPayable` quando year+month informados
+
+### Identificação preview vs fechado
+
+- API/CSV: `reportSource`, `reportStatus` (`FECHADO` | `PREVIEW` | `LEGADO`)
+- UI: alertas na tela de fechamento por recebimento
+- Scripts: linha `Fonte:` no stdout
+

@@ -10,9 +10,53 @@ Documentação dos totais exibidos nos scripts de auditoria visual, conciliaçã
 | **FORECAST** | `dueDate` do título | Títulos em aberto / a liberar |
 | **PAYABLE** | `settlementDate` do CR Nomus | Comissão oficial a pagar no mês (comparável ao Nomus) |
 
-A comissão **oficial do mês** usa sempre **PAYABLE** com `settlementDate` (data de baixa do contas a receber).
+A comissão **oficial do mês** usa **PAYABLE** com `settlementDate` (data de baixa do contas a receber).
 
-## Campos de resumo
+### Fonte oficial de pagamento (2026-07)
+
+| Prioridade (`--source=auto`) | Origem | Status exibido |
+|------------------------------|--------|----------------|
+| 1 | Ledger `RECEIPT_BASED` fechado (`CommissionReceiptLedgerLine`) | **FECHADO** |
+| 2 | Prévia do motor por recebimento (`commissionReceiptEngine`) | **PREVIEW** (aviso: prévia não fechada) |
+| 3 | Visual audit legado (`CommissionRecord` + `CommissionPaymentSchedule`) | **LEGADO** (deprecation) |
+
+**Regra:** quando existir fechamento RECEIPT_BASED `CLOSED` para o mês, relatórios e exports oficiais de pagamento usam o ledger gravado — não somam `CommissionPaymentSchedule` legado.
+
+Scripts e APIs aceitam `--source=auto|receipt|legacy`:
+- `auto` — ledger fechado se existir; senão prévia receipt; `--source=legacy` força visual audit.
+- `receipt` — ledger fechado ou prévia; nunca legado.
+- `legacy` — mantém comportamento antigo com aviso de depreciação.
+
+Telas/APIs:
+- **Fechamento por Recebimento** (`/commissions`) — fonte oficial.
+- **Fechamento mensal legado** (`/api/commissions/monthly-closing`) — usa `resolveMonthlyPayableReport` com `auto`.
+- **Previstas/Confirmadas/Liberação/Pagamentos** — continuam em `CommissionRecord` (previsão/geração); não substituem pagamento oficial.
+- **Dashboard** — cards por `CommissionRecord`; quando `year`+`month` informados, inclui `monthlyOfficialPayable`.
+
+## Diferença entre comissão gerada, prevista e pagável
+
+| Conceito | Eixo | Uso |
+|----------|------|-----|
+| **Gerada** | `confirmedAt` / NF | Apuração, confirmadas |
+| **Prevista** | `dueDate` título em aberto | Forecast |
+| **Pagável no mês** | `settlementDate` CR baixado | Fechamento oficial, Nomus |
+
+## Cliente excluído
+
+Cliente com regra de exclusão: base e recebido aparecem; comissão zero; motivo em `exclusionReason` / status `CUSTOMER_EXCLUDED`.
+
+## Título sem vínculo
+
+Sem pedido/NF: status `NO_SALES_LINK` / `NO_ORDER_NFE_LINK`; comissão zero; aparece em cards de exceção.
+
+## Reprocessar fechamento
+
+UI **Fechamento por Recebimento** → Reprocessar (exige `REPROCESSAR COMISSAO` + motivo). Fechamento anterior vira `REPROCESSED`; novo fica `CLOSED`.
+
+## Comparar com Nomus
+
+Use `--nomus-base` e `--nomus-commission` nos scripts. Compare sempre com fonte **FECHADO** ou **PREVIEW receipt**, não legado.
+
 
 ### `receivedAmountTotal`
 Soma dos valores **efetivamente recebidos** no período, considerando títulos únicos (`nomusReceivableId`) com `settlementDate` no mês (modo PAYABLE).
@@ -40,7 +84,7 @@ Percentual médio ponderado: `commissionReleasedTotal / commissionableBaseTotal 
 
 ## Conciliação AR × Comissão
 
-Script: `npx tsx scripts/reconcile-ar-vs-commission.ts --year=YYYY --month=M [--json] [--csv] [--details] [--seller=] [--customer=]`
+Script: `npx tsx scripts/reconcile-ar-vs-commission.ts --year=YYYY --month=M [--source=auto|receipt|legacy] [--json] [--csv] [--details] [--seller=] [--customer=]`
 
 Categorias de títulos **fora da comissão** ou com divergência:
 
