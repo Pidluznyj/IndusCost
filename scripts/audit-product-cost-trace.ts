@@ -14,11 +14,11 @@ import { prisma } from "../src/lib/prisma.ts";
 import {
   buildProductCostTraceCsv,
   formatProductCostTraceText,
-} from "../src/lib/productCostTraceAudit.ts";
+} from "../src/lib/audit/productCostTrace.ts";
 import {
-  buildProductCostTraceAudit,
+  buildProductCostTrace,
   parseProductCostTraceReferenceDate,
-} from "../src/lib/productCostTraceAudit.server.ts";
+} from "../src/lib/audit/costToCashTrace.server.ts";
 import { hasFlag, parseArg, requireDatabaseUrl } from "./commission-audit-args.ts";
 
 function parseProductIdArg(): string | undefined {
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
 
   await prisma.$connect();
 
-  const report = await buildProductCostTraceAudit(prisma, {
+  const report = await buildProductCostTrace(prisma, {
     sku,
     productId,
     referenceDate,

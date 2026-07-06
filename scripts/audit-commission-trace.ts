@@ -15,8 +15,8 @@ import { prisma } from "../src/lib/prisma.ts";
 import {
   buildCommissionTraceCsv,
   formatCommissionTraceText,
-} from "../src/lib/commissions/commissionTraceAudit.ts";
-import { buildCommissionTraceAudit } from "../src/lib/commissions/commissionTraceAudit.server.ts";
+} from "../src/lib/audit/commissionTrace.ts";
+import { buildCommissionTrace } from "../src/lib/audit/costToCashTrace.server.ts";
 import { hasFlag, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
 
 function parseOptionalInt(name: string): number | null {
@@ -57,7 +57,7 @@ function defaultCsvOutDir(orderNumber: string | null): string {
 async function main(): Promise<void> {
   requireDatabaseUrl();
 
-  const report = await buildCommissionTraceAudit(prisma, {
+  const report = await buildCommissionTrace(prisma, {
     year: parseOptionalInt("year"),
     month: parseOptionalInt("month"),
     seller: parseArg("seller")?.trim() || null,

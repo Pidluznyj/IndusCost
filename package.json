@@ -90,6 +90,7 @@
     "audit:product-cost-trace": "tsx scripts/audit-product-cost-trace.ts",
     "audit:sales-order-trace": "tsx scripts/audit-sales-order-trace.ts",
     "audit:commission-trace": "tsx scripts/audit-commission-trace.ts",
+    "test:cost-to-cash-trace": "tsx --test src/lib/audit/costToCashTrace.test.ts src/lib/audit/traceDiagnostic.test.ts",
     "audit:component-performance-cost-impact": "tsx scripts/audit-component-performance-cost-impact.ts",
     "audit:component-performance-coverage": "tsx scripts/audit-component-performance-coverage.ts",
     "audit:production-cost-material-table-link": "tsx scripts/audit-production-cost-material-table-link.ts",

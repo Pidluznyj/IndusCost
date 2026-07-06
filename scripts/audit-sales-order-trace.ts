@@ -15,8 +15,8 @@ import { prisma } from "../src/lib/prisma.ts";
 import {
   buildSalesOrderTraceCsv,
   formatSalesOrderTraceText,
-} from "../src/lib/salesOrderTraceAudit.ts";
-import { buildSalesOrderTraceAudit } from "../src/lib/salesOrderTraceAudit.server.ts";
+} from "../src/lib/audit/salesOrderTrace.ts";
+import { buildSalesOrderTrace } from "../src/lib/audit/costToCashTrace.server.ts";
 import { hasFlag, parseArg, requireDatabaseUrl } from "./commission-audit-args.ts";
 
 function parseSalesOrderIdArg(): string | undefined {
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
   await prisma.$connect();
 
-  const report = await buildSalesOrderTraceAudit(prisma, {
+  const report = await buildSalesOrderTrace(prisma, {
     salesOrderId,
     orderNumber,
     nfeNumber,
