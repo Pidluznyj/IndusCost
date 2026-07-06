@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildCommissionMonthlyClosingHash,
   buildCommissionReceiptLedgerLineKey,
+  buildPersistedCommissionReceiptLedgerLineKey,
   COMMISSION_MONTHLY_CLOSING_STATUSES,
   COMMISSION_RECEIPT_LEDGER_LINE_STATUSES,
   isCommissionMonthlyClosingStatus,
@@ -71,6 +72,23 @@ describe("commissionReceiptLedger", () => {
       assert.equal(isCommissionReceiptLedgerLineStatus(status), true);
     }
     assert.equal(isCommissionReceiptLedgerLineStatus("PAID"), false);
+  });
+
+  it("buildPersistedCommissionReceiptLedgerLineKey inclui closingId", () => {
+    const base = {
+      year: 2026,
+      month: 6,
+      nomusReceivableId: 9001,
+      commissionRecordId: null,
+      commissionPaymentScheduleId: null,
+      installmentNumber: 1,
+      nomusOrderItemId: 42,
+      ruleId: "rule-1",
+    };
+    const a = buildPersistedCommissionReceiptLedgerLineKey({ ...base, closingId: "closing-a" });
+    const b = buildPersistedCommissionReceiptLedgerLineKey({ ...base, closingId: "closing-b" });
+    assert.notEqual(a, b);
+    assert.notEqual(a, buildCommissionReceiptLedgerLineKey(base));
   });
 
   it("serializa e parseia ruleSnapshotJson", () => {

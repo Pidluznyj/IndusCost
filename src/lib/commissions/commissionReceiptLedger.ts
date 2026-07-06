@@ -115,6 +115,24 @@ export function buildCommissionReceiptLedgerLineKey(
   return createHash("sha256").update(payload).digest("hex");
 }
 
+/** Chave persistida no ledger — inclui closingId para permitir reprocessamento sem colidir no unique. */
+export function buildPersistedCommissionReceiptLedgerLineKey(
+  input: CommissionReceiptLedgerLineKeyInput & { closingId: string }
+): string {
+  const payload = [
+    input.closingId,
+    input.year,
+    input.month,
+    input.nomusReceivableId ?? "",
+    input.commissionRecordId ?? "",
+    input.commissionPaymentScheduleId ?? "",
+    input.installmentNumber ?? "",
+    input.nomusOrderItemId ?? "",
+    input.ruleId ?? "",
+  ].join("|");
+  return createHash("sha256").update(payload).digest("hex");
+}
+
 /** Hash do fechamento mensal (snapshot das linhas ordenadas). */
 export function buildCommissionMonthlyClosingHash(
   input: CommissionMonthlyClosingHashInput

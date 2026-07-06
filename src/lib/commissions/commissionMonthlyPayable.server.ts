@@ -23,6 +23,7 @@ import { paginatedMeta } from "./commissionQuery.js";
 import { listPayableVisualAuditRows } from "./commissionVisualAudit.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { decimalToNumber } from "./commission-money.js";
+import { getMonthlyPayableFromClosedReceiptLedger } from "./commissionReceiptClosing.server.js";
 
 export type { CommissionMonthlyPayableQuery, CommissionMonthlyPayableSummary };
 export {
@@ -169,6 +170,9 @@ export async function getCommissionMonthlyPayableSummary(
   query: CommissionMonthlyPayableQuery,
   scope: CommissionAccessScope
 ): Promise<CommissionMonthlyPayableSummary> {
+  const fromLedger = await getMonthlyPayableFromClosedReceiptLedger(query);
+  if (fromLedger) return fromLedger;
+
   const rows = await loadMonthlyClosingRows(query, scope);
   return aggregateMonthlyPayableFromRows(rows, query);
 }
@@ -177,6 +181,85 @@ export async function getCommissionMonthlyClosingPage(
   query: CommissionMonthlyPayableQuery & { page: number; pageSize: number },
   scope: CommissionAccessScope
 ): Promise<CommissionMonthlyClosingPayload> {
+  const fromLedger = await getMonthlyPayableFromClosedReceiptLedger(query);
+  if (fromLedger) {
+    const summary = fromLedger;
+    const divergenceCount = summary.details.filter((d) => d.alerts.length > 0).length;
+    const cards = buildMonthlyClosingCards(summary, divergenceCount);
+    const auditCards = {
+      appraisalMode: "PAYABLE" as const,
+      documentAmountTotal: 0,
+      receivableAmountTotal: summary.receivedAmountTotal,
+      receivedAmountTotal: summary.receivedAmountTotal,
+      commissionableBaseTotal: summary.allocatedBaseAmountTotal,
+      commissionCalculatedTotal: summary.expectedCommissionAmountTotal,
+      commissionExpectedTotal: summary.expectedCommissionAmountTotal,
+      commissionReleasedTotal: summary.payableCommissionTotal,
+      commissionPendingTotal: summary.pendingCommissionAmountTotal,
+      commissionFutureTotal: 0,
+      commissionBlockedTotal: 0,
+      documentCount: 0,
+      receivableCount: summary.uniqueReceivablesCount,
+      scheduleCount: summary.details.length,
+      divergenceCount,
+      averageRatePercent: summary.averageCommissionRate,
+    };
+    const nomusReference = buildVisualAuditNomusReference({
+      mode: "PAYABLE",
+      cards: auditCards,
+      nomusBase: query.nomusReferenceBase ?? null,
+      nomusCommission: query.nomusReferenceCommission ?? null,
+    });
+    const groupings: MonthlyClosingGroupings = {
+      bySeller: summary.sellers.map((seller) => ({
+        groupKey: seller.sellerId,
+        groupLabel: seller.sellerName,
+        lineCount: summary.details.filter((d) => d.sellerId === seller.sellerId).length,
+        receivedTitlesCount: seller.uniqueReceivablesCount,
+        receivedAmount: seller.receivedAmount,
+        allocatedBaseAmount: seller.allocatedBaseAmount,
+        releasedCommissionAmount: seller.releasedCommissionAmount,
+        averageCommissionRate: seller.averageCommissionRate,
+      })),
+      byCustomer: [],
+      byNfe: [],
+      byReceivable: [],
+      byProduct: [],
+    };
+    const total = summary.details.length;
+    const skip = (query.page - 1) * query.pageSize;
+    const detailRows = summary.details.slice(skip, skip + query.pageSize);
+    const sellerIds = summary.sellers.map((s) => s.sellerId);
+    const paymentBatchesBySeller = await loadPaymentBatchesBySeller(
+      query.year,
+      query.month,
+      sellerIds
+    );
+    const workflow = buildMonthlyClosingWorkflowMeta({
+      sellers: summary.sellers,
+      divergenceCount,
+      warnings: summary.warnings,
+      nomusReference,
+      paymentBatchesBySeller,
+      sellerLineAlertCounts: new Map(
+        summary.sellers.map((seller) => [
+          seller.sellerId,
+          summary.details.filter((d) => d.sellerId === seller.sellerId && d.alerts.length > 0)
+            .length,
+        ])
+      ),
+    });
+    return {
+      ...summary,
+      cards,
+      nomusReference,
+      groupings,
+      detailRows,
+      pagination: paginatedMeta(query.page, query.pageSize, total),
+      workflow,
+    };
+  }
+
   const rows = await loadMonthlyClosingRows(query, scope);
   const summary = aggregateMonthlyPayableFromRows(rows, query);
   const divergenceCount = rows.filter((r) => r.alerts.length > 0).length;
