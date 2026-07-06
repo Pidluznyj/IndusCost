@@ -129,6 +129,21 @@ describe("generateChatGptDiagnosticReport", () => {
     assert.equal(summaryAgain.bundleId, report.summary.bundleId);
   });
 
+  it("ZIP SYSTEM gerado passa validateChatGptDiagnosticZip", async () => {
+    const { validateChatGptDiagnosticZip } = await import(
+      "../../../scripts/validate-chatgpt-diagnostic-zip.ts"
+    );
+    const args = parseChatGptDiagnosticReportCliArgs(["--scope=SYSTEM"]);
+    const report = await generateChatGptDiagnosticReport(null, args);
+    const validation = await validateChatGptDiagnosticZip(report.summary.zipPath);
+    assert.equal(validation.ok, true, validation.errors.join("; "));
+    assert.equal(validation.missingRequired.length, 0);
+    assert.equal(validation.findingsValid, true);
+    assert.equal(validation.redactionReportPresent, true);
+    assert.ok(validation.sizeBytes < 25 * 1024 * 1024);
+    assert.ok(validation.executiveSummarySections.length >= 3);
+  });
+
   it("PRODUCT_ENGINEERING exige sku ou product-id", async () => {
     await assert.rejects(
       () =>
