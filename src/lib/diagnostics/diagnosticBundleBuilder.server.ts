@@ -35,6 +35,11 @@ import {
   sanitizeDiagnosticPayload,
   sanitizeDiagnosticText,
 } from "./sanitizeDiagnosticPayload.server.js";
+import {
+  buildChatGptAnalysisPromptMarkdown,
+  buildReadmeForChatGptBundle,
+  CHATGPT_ANALYSIS_PROMPT_FILENAME,
+} from "./chatgptAnalysisPrompt.js";
 
 export type BuildDiagnosticBundleInput = {
   scope: DiagnosticScope;
@@ -73,36 +78,8 @@ function mediaType(path: string): string {
   return "application/octet-stream";
 }
 
-function buildReadmeForChatGpt(): string {
-  return `# README for ChatGPT — IndusCost Diagnostic Bundle
-
-Você está recebendo um pacote diagnóstico do sistema **IndusCost / My Industry**.
-
-## Ordem de leitura
-
-1. \`01_EXECUTIVE_SUMMARY.md\`
-2. \`03_DIAGNOSTIC_INDEX.json\`
-3. \`04_DIAGNOSTICS.json\`
-4. \`05_REPRODUCTION_STEPS.md\`
-5. Arquivos de evidência em \`evidence/\` conforme \`sourceRefs\` de cada finding
-
-## Regras
-
-- **Não assuma dados fora deste pacote.**
-- Aponte incertezas explicitamente.
-- Diferencie:
-  - erro de **cálculo**
-  - erro de **dados**
-  - erro **visual**
-  - erro de **configuração**
-  - erro de **regra de negócio**
-- Todo número relevante deve ter \`sourceRefs\` ou \`source\` em \`09_DATABASE_EVIDENCE.json\`.
-- O pacote é **read-only** — não altera custo, preço, comissão nem fechamento.
-
-## Pergunta sugerida ao analista
-
-> Analise este relatório e diga a causa provável do erro, citando arquivos e evidências do pacote.
-`;
+function buildReadmeForChatGpt(scope: DiagnosticScope): string {
+  return buildReadmeForChatGptBundle(scope);
 }
 
 function buildExecutiveSummary(scope: DiagnosticScope, context: DiagnosticScopeContext): string {
@@ -352,7 +329,8 @@ export function buildChatGptDiagnosticBundle(
   const redactionReport = contextToRedactionReport(sanitizeCtx);
 
   const entries: Record<string, string> = {
-    "00_README_FOR_CHATGPT.md": buildReadmeForChatGpt(),
+    "00_README_FOR_CHATGPT.md": buildReadmeForChatGpt(input.scope),
+    [CHATGPT_ANALYSIS_PROMPT_FILENAME]: buildChatGptAnalysisPromptMarkdown(input.scope),
     "01_EXECUTIVE_SUMMARY.md": sanitizeDiagnosticText(
       input.executiveSummaryMarkdown ?? buildExecutiveSummary(input.scope, context),
       sanitizeCtx

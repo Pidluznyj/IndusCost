@@ -23,6 +23,7 @@ describe("chatgptDiagnosticBundle", () => {
       assert.ok(bundle.entries[path], `ausente: ${path}`);
     }
     assert.match(bundle.entries["00_README_FOR_CHATGPT.md"], /ChatGPT/);
+    assert.match(bundle.entries["CHATGPT_ANALYSIS_PROMPT.md"], /IndusCost/);
   });
 
   it("manifest.json lista todos os arquivos do bundle", () => {

@@ -130,6 +130,7 @@ export type DiagnosticBundle = {
 /** Paths obrigatórios na raiz do ZIP (exceto subpastas dinâmicas). */
 export const REQUIRED_BUNDLE_ROOT_FILES = [
   "00_README_FOR_CHATGPT.md",
+  "CHATGPT_ANALYSIS_PROMPT.md",
   "01_EXECUTIVE_SUMMARY.md",
   "02_PROBLEM_CONTEXT.md",
   "03_DIAGNOSTIC_INDEX.json",
