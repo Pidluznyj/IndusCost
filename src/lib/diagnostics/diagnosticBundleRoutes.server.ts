@@ -10,11 +10,22 @@ import {
   buildAndWriteProductEngineeringDiagnosticBundle,
   parseProductEngineeringDiagnosticRequest,
 } from "./productEngineeringDiagnostic.server.js";
+import {
+  PublishedPriceDiagnosticValidationError,
+  buildAndWritePublishedPriceDiagnosticBundle,
+  parsePublishedPriceDiagnosticRequest,
+} from "./pricingDiagnostic.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
+
+const DIAGNOSTIC_BUNDLE_PERMISSIONS = [
+  ...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
+  "pricing.view",
+  "settings.price_tables.view",
+] as const;
 
 export function registerDiagnosticBundleRoutes(
   app: express.Express,
@@ -24,35 +35,64 @@ export function registerDiagnosticBundleRoutes(
 
   const guard = [
     requireAppAuth,
-    requireAnyPermission([...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS]),
+    requireAnyPermission([...DIAGNOSTIC_BUNDLE_PERMISSIONS]),
   ] as const;
 
   app.post("/api/diagnostics/chatgpt-bundle", ...guard, async (req, res) => {
     try {
-      const parsed = parseProductEngineeringDiagnosticRequest(req.body);
-      if (parsed.scope !== "PRODUCT_ENGINEERING") {
-        res.status(400).json({ error: "Escopo não suportado nesta rota." });
+      const raw = req.body as Record<string, unknown> | null;
+      const scope = String(raw?.scope ?? "").trim().toUpperCase();
+
+      if (scope === "PRODUCT_ENGINEERING") {
+        const parsed = parseProductEngineeringDiagnosticRequest(req.body);
+        const result = await buildAndWriteProductEngineeringDiagnosticBundle(
+          prisma,
+          parsed.context
+        );
+        res.status(200).json({
+          ok: true,
+          scope: parsed.scope,
+          bundleId: result.bundle.manifest.bundleId,
+          generatedAt: result.bundle.manifest.generatedAt,
+          outputDir: result.outputDir,
+          zipPath: result.zipPath,
+          fileCount: result.bundle.manifest.files.length,
+          sku: parsed.context.sku ?? null,
+          productId: parsed.context.productId ?? null,
+        });
         return;
       }
 
-      const result = await buildAndWriteProductEngineeringDiagnosticBundle(
-        prisma,
-        parsed.context
-      );
+      if (scope === "PUBLISHED_PRICE") {
+        const parsed = parsePublishedPriceDiagnosticRequest(req.body);
+        const result = await buildAndWritePublishedPriceDiagnosticBundle(
+          prisma,
+          parsed.context
+        );
+        res.status(200).json({
+          ok: true,
+          scope: parsed.scope,
+          bundleId: result.bundle.manifest.bundleId,
+          generatedAt: result.bundle.manifest.generatedAt,
+          outputDir: result.outputDir,
+          zipPath: result.zipPath,
+          fileCount: result.bundle.manifest.files.length,
+          sku: parsed.context.sku ?? null,
+          productId: parsed.context.productId ?? null,
+          tableCode: parsed.context.tableCode ?? null,
+          priceItemId: parsed.context.priceItemId ?? null,
+        });
+        return;
+      }
 
-      res.status(200).json({
-        ok: true,
-        scope: parsed.scope,
-        bundleId: result.bundle.manifest.bundleId,
-        generatedAt: result.bundle.manifest.generatedAt,
-        outputDir: result.outputDir,
-        zipPath: result.zipPath,
-        fileCount: result.bundle.manifest.files.length,
-        sku: parsed.context.sku ?? null,
-        productId: parsed.context.productId ?? null,
+      res.status(400).json({
+        error: 'scope deve ser "PRODUCT_ENGINEERING" ou "PUBLISHED_PRICE".',
       });
     } catch (error) {
-      if (error instanceof ProductEngineeringDiagnosticValidationError) {
+      if (
+        error instanceof ProductEngineeringDiagnosticValidationError ||
+        error instanceof PublishedPriceDiagnosticValidationError
+      ) {
         res.status(400).json({ error: error.message });
         return;
       }
