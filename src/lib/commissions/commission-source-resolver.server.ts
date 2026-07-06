@@ -307,3 +307,29 @@ export async function loadCommissionOrderSourcesByNfeExternalIds(
   });
   return buildCommissionOrderSourceBundlesFromOrders(db, orders);
 }
+
+export async function loadCommissionOrderSourceBySalesOrderId(
+  db: Pick<
+    PrismaClient,
+    "salesOrder" | "nomusNfe" | "nomusAccountsReceivable" | "inventoryMovement"
+  >,
+  salesOrderId: string
+): Promise<{ bundle: CommissionOrderSourceBundle; customerId: string } | null> {
+  const order = await db.salesOrder.findUnique({
+    where: { id: salesOrderId },
+    select: {
+      ...SALES_ORDER_SOURCE_SELECT,
+      customerId: true,
+    },
+  });
+  if (!order) return null;
+
+  const { customerId, ...orderRow } = order;
+  const [bundle] = await buildCommissionOrderSourceBundlesFromOrders(
+    db,
+    [orderRow as SalesOrderSourceRow]
+  );
+  if (!bundle) return null;
+
+  return { bundle, customerId };
+}
