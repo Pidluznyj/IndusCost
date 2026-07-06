@@ -19,6 +19,11 @@ import {
 
 export type RebuildCommissionMaterializationInput = {
   since?: Date | null;
+  year?: number | null;
+  month?: number | null;
+  seller?: string | null;
+  customer?: string | null;
+  limit?: number | null;
   salesOrderIds?: string[];
   nfeIds?: number[];
   receivableIds?: number[];
@@ -265,6 +270,134 @@ export async function discoverAffectedSalesOrderRefsSince(
   return mergeAffectedSalesOrderRefs(bucket);
 }
 
+export async function discoverSalesOrderRefsForReceiptMonth(
+  db: Pick<PrismaClient, "nomusAccountsReceivable" | "salesOrderNfeLink">,
+  year: number,
+  month: number
+): Promise<AffectedSalesOrderRef[]> {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59, 999);
+
+  const receivables = await db.nomusAccountsReceivable.findMany({
+    where: {
+      settlementDate: { gte: from, lte: to },
+      amountReceived: { gt: 0 },
+    },
+    select: { sourceInvoiceId: true },
+  });
+
+  const nfeIds = [
+    ...new Set(
+      receivables
+        .map((row) => row.sourceInvoiceId)
+        .filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ];
+  if (nfeIds.length === 0) return [];
+
+  const refs = await resolveSalesOrderIdsFromNfeExternalIds(db, nfeIds);
+  return refs.map((ref) => ({
+    salesOrderId: ref.salesOrderId,
+    sources: [...new Set<AffectedSalesOrderSource>([...ref.sources, "RECEIVABLE"])],
+  }));
+}
+
+export async function filterAffectedSalesOrderRefs(
+  db: Pick<PrismaClient, "salesOrder">,
+  refs: AffectedSalesOrderRef[],
+  filters: { seller?: string | null; customer?: string | null }
+): Promise<AffectedSalesOrderRef[]> {
+  const sellerNeedle = filters.seller?.trim().toLowerCase();
+  const customerNeedle = filters.customer?.trim().toLowerCase();
+  if (!sellerNeedle && !customerNeedle) return refs;
+
+  const orderIds = refs.map((ref) => ref.salesOrderId);
+  if (orderIds.length === 0) return [];
+
+  const orders = await db.salesOrder.findMany({
+    where: { id: { in: orderIds } },
+    select: {
+      id: true,
+      externalSellerId: true,
+      responsible: true,
+      customerId: true,
+      Customer: { select: { name: true } },
+    },
+  });
+
+  const allowed = new Set(
+    orders
+      .filter((order) => {
+        if (sellerNeedle) {
+          const haystacks = [String(order.externalSellerId ?? ""), order.responsible ?? ""]
+            .map((value) => value.toLowerCase())
+            .filter(Boolean);
+          if (
+            !haystacks.some(
+              (value) => value.includes(sellerNeedle) || sellerNeedle.includes(value)
+            )
+          ) {
+            return false;
+          }
+        }
+        if (customerNeedle) {
+          const name = (order.Customer?.name ?? "").toLowerCase();
+          const customerId = (order.customerId ?? "").toLowerCase();
+          if (
+            !name.includes(customerNeedle) &&
+            !customerNeedle.includes(name) &&
+            !customerId.includes(customerNeedle)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((order) => order.id)
+  );
+
+  return refs.filter((ref) => allowed.has(ref.salesOrderId));
+}
+
+async function loadMaterializationArtifactCounts(
+  db: Pick<PrismaClient, "commissionOrderSnapshot" | "commissionReceivableSchedule">,
+  salesOrderIds: string[]
+): Promise<{ activeSnapshots: number; activeSchedules: number }> {
+  if (salesOrderIds.length === 0) {
+    return { activeSnapshots: 0, activeSchedules: 0 };
+  }
+  const [activeSnapshots, activeSchedules] = await Promise.all([
+    db.commissionOrderSnapshot.count({
+      where: { salesOrderId: { in: salesOrderIds }, status: "ACTIVE" },
+    }),
+    db.commissionReceivableSchedule.count({
+      where: { salesOrderId: { in: salesOrderIds }, status: "ACTIVE" },
+    }),
+  ]);
+  return { activeSnapshots, activeSchedules };
+}
+
+async function loadClosedReceiptClosings(
+  db: Pick<PrismaClient, "commissionMonthlyClosing">,
+  year?: number | null,
+  month?: number | null
+): Promise<Array<{ closingId: string; year: number; month: number }>> {
+  const rows = await db.commissionMonthlyClosing.findMany({
+    where: {
+      status: "CLOSED",
+      ...(year != null ? { year } : {}),
+      ...(month != null ? { month } : {}),
+    },
+    select: { id: true, year: true, month: true },
+    orderBy: [{ year: "asc" }, { month: "asc" }],
+  });
+  return rows.map((row) => ({
+    closingId: row.id,
+    year: row.year,
+    month: row.month,
+  }));
+}
+
 async function resolveAffectedSalesOrderRefs(
   db: PrismaClient,
   input: RebuildCommissionMaterializationInput
@@ -294,7 +427,21 @@ async function resolveAffectedSalesOrderRefs(
     bucket.push(...(await discoverAffectedSalesOrderRefsSince(db, input.since)));
   }
 
-  return mergeAffectedSalesOrderRefs(bucket);
+  if (input.year != null && input.month != null) {
+    bucket.push(...(await discoverSalesOrderRefsForReceiptMonth(db, input.year, input.month)));
+  }
+
+  let merged = mergeAffectedSalesOrderRefs(bucket);
+  merged = await filterAffectedSalesOrderRefs(db, merged, {
+    seller: input.seller,
+    customer: input.customer,
+  });
+
+  if (input.limit != null && input.limit > 0) {
+    merged = merged.slice(0, input.limit);
+  }
+
+  return merged;
 }
 
 async function processSalesOrderMaterialization(
@@ -326,7 +473,11 @@ async function processSalesOrderMaterialization(
     return buildMaterializationOrderResult({
       salesOrderId: ref.salesOrderId,
       sources: ref.sources,
-      snapshot: { action: snapshot.action, snapshotId: snapshot.snapshotId },
+      snapshot: {
+        action: snapshot.action,
+        snapshotId: snapshot.snapshotId,
+        preview: snapshot.preview,
+      },
       schedule,
     });
   } catch (error) {
@@ -358,15 +509,32 @@ export async function rebuildCommissionMaterializationForAffectedSales(
 ): Promise<CommissionMaterializationRunSummary> {
   const dryRun = input.apply !== true;
   const affected = await resolveAffectedSalesOrderRefs(db, input);
-  const orders: CommissionMaterializationOrderResult[] = [];
+  const salesOrderIds = affected.map((ref) => ref.salesOrderId);
+  const baseline = await loadMaterializationArtifactCounts(db, salesOrderIds);
+  const closedClosingsPreserved = await loadClosedReceiptClosings(
+    db,
+    input.year,
+    input.month
+  );
 
+  const orders: CommissionMaterializationOrderResult[] = [];
   for (const ref of affected) {
     orders.push(await processSalesOrderMaterialization(db, ref, dryRun, deps));
   }
 
+  const after = await loadMaterializationArtifactCounts(db, salesOrderIds);
+
   return aggregateMaterializationRunSummary({
     dryRun,
     since: input.since ?? null,
+    year: input.year ?? null,
+    month: input.month ?? null,
+    sellerFilter: input.seller ?? null,
+    customerFilter: input.customer ?? null,
+    limit: input.limit ?? null,
+    closedClosingsPreserved,
+    baseline,
+    after,
     orders,
   });
 }

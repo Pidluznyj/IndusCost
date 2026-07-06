@@ -4,8 +4,12 @@ import type { CommissionOrderMaterializationResult } from "./commissionOrderMate
 import type { CommissionReceivableScheduleRebuildResult } from "./commissionReceivableScheduler.js";
 import {
   aggregateMaterializationRunSummary,
+  buildMaterializationRebuildCsv,
+  COMMISSION_MATERIALIZATION_REBUILD_CONFIRMATION,
   mergeAffectedSalesOrderRefs,
+  parseMaterializationLimit,
   resolveMaterializationDryRun,
+  validateMaterializationRebuildApply,
 } from "./commissionMaterializationOrchestrator.js";
 import {
   rebuildCommissionMaterializationForAffectedSales,
@@ -15,6 +19,7 @@ import {
 
 const ORDER_A = "880e8400-e29b-41d4-a716-446655440004";
 const ORDER_B = "880e8400-e29b-41d4-a716-446655440005";
+const ORDER_C = "880e8400-e29b-41d4-a716-446655440006";
 
 function snapshotResult(
   overrides: Partial<CommissionOrderMaterializationResult> = {}
@@ -49,8 +54,60 @@ function scheduleResult(
     schedulesStaled: 0,
     schedulesUnchanged: 0,
     dryRun: false,
-    preview: [],
+    preview: [
+      {
+        orderSnapshotId: "snap-1",
+        receivableId: 1,
+        receivableCode: "CR-1",
+        installmentNumber: 1,
+        nfeId: 1001,
+        salesOrderId: ORDER_A,
+        customerId: "cust-1",
+        canonicalSellerId: "seller-1",
+        receivableNominalAmount: 5000,
+        receivableSharePercent: 50,
+        scheduledCommissionAmount: 80,
+        status: "ACTIVE",
+        sourceHash: "sched-hash",
+      },
+    ],
     ...overrides,
+  };
+}
+
+function mockDb(overrides: Record<string, unknown> = {}) {
+  return {
+    commissionMonthlyClosing: {
+      findMany: async () => [],
+    },
+    commissionOrderSnapshot: {
+      count: async () => 1,
+    },
+    commissionReceivableSchedule: {
+      count: async () => 2,
+    },
+    ...overrides,
+  };
+}
+
+function orderRow(
+  partial: Partial<import("./commissionMaterializationOrchestrator.js").CommissionMaterializationOrderResult>
+): import("./commissionMaterializationOrchestrator.js").CommissionMaterializationOrderResult {
+  return {
+    salesOrderId: ORDER_A,
+    sources: ["SALES_ORDER"],
+    snapshotAction: "created",
+    scheduleAction: "created",
+    snapshotId: "s1",
+    schedulesCreated: 2,
+    schedulesSuperseded: 0,
+    schedulesStaled: 0,
+    schedulesUnchanged: 0,
+    changed: true,
+    excludedCustomerItems: 0,
+    unresolvedSeller: false,
+    receivablesWithoutLink: 0,
+    ...partial,
   };
 }
 
@@ -86,10 +143,10 @@ describe("commissionMaterializationOrchestrator", () => {
 
   it("pedido alterado recalcula snapshot e schedule", async () => {
     const calls: string[] = [];
-    const db = {} as never;
+    const db = mockDb();
 
     const summary = await rebuildCommissionMaterializationForAffectedSales(
-      db,
+      db as never,
       { salesOrderIds: [ORDER_A], apply: true },
       {
         materialize: async (_db, input) => {
@@ -106,15 +163,17 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.deepEqual(calls, [`materialize:${ORDER_A}:false`, `schedule:${ORDER_A}:false`]);
     assert.equal(summary.ordersProcessed, 1);
     assert.equal(summary.snapshotsSuperseded, 1);
+    assert.equal(summary.snapshotsUpdated, 1);
     assert.equal(summary.schedulesUpdated, 1);
+    assert.equal(summary.ordersChanged, 1);
     assert.equal(summary.orders[0].snapshotAction, "superseded");
     assert.equal(summary.orders[0].scheduleAction, "updated");
   });
 
   it("preview não grava", async () => {
-    const db = {} as never;
+    const db = mockDb();
     const summary = await rebuildCommissionMaterializationForAffectedSales(
-      db,
+      db as never,
       { salesOrderIds: [ORDER_A], preview: true },
       {
         materialize: async (_db, input) => {
@@ -131,12 +190,23 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(summary.dryRun, true);
     assert.equal(summary.snapshotsUnchanged, 1);
     assert.equal(summary.schedulesUnchanged, 2);
+    assert.equal(summary.ordersChanged, 0);
   });
 
-  it("apply grava", async () => {
-    const db = {} as never;
+  it("apply sem confirm bloqueia na validação CLI", () => {
+    const blocked = validateMaterializationRebuildApply({ apply: true, confirm: "errado" });
+    assert.equal(blocked.ok, false);
+    const allowed = validateMaterializationRebuildApply({
+      apply: true,
+      confirm: COMMISSION_MATERIALIZATION_REBUILD_CONFIRMATION,
+    });
+    assert.equal(allowed.ok, true);
+  });
+
+  it("apply com confirm grava", async () => {
+    const db = mockDb();
     const summary = await rebuildCommissionMaterializationForAffectedSales(
-      db,
+      db as never,
       { salesOrderIds: [ORDER_A], apply: true },
       {
         materialize: async (_db, input) => {
@@ -155,44 +225,80 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(summary.schedulesCreated, 2);
   });
 
-  it("fechamento fechado não é alterado", async () => {
+  it("limit funciona", async () => {
+    const processed: string[] = [];
+    const db = mockDb();
+    const summary = await rebuildCommissionMaterializationForAffectedSales(
+      db as never,
+      {
+        salesOrderIds: [ORDER_A, ORDER_B, ORDER_C],
+        limit: 2,
+        preview: true,
+      },
+      {
+        materialize: async (_db, input) => {
+          processed.push(input.salesOrderId);
+          return snapshotResult({ preview: { ...snapshotResult().preview, salesOrderId: input.salesOrderId } });
+        },
+        rebuildSchedule: async () => scheduleResult({ action: "unchanged", schedulesUnchanged: 1 }),
+      }
+    );
+
+    assert.equal(processed.length, 2);
+    assert.equal(summary.ordersEvaluated, 2);
+    assert.equal(summary.limit, 2);
+  });
+
+  it("fechamento fechado é preservado", async () => {
     const closing = {
       id: "closing-1",
       year: 2026,
       month: 6,
-      status: "CLOSED",
-      source: "RECEIPT_BASED",
-      calculationHash: "closed-hash",
-      lineCount: 3,
     };
-    const db = {
+    const db = mockDb({
+      nomusAccountsReceivable: {
+        findMany: async () => [],
+      },
       commissionMonthlyClosing: {
         findMany: async () => [closing],
         update: async () => {
           throw new Error("fechamento não deve ser alterado");
         },
-        updateMany: async () => {
-          throw new Error("fechamento não deve ser alterado");
-        },
-        create: async () => {
-          throw new Error("fechamento não deve ser alterado");
-        },
       },
-    };
+    });
 
     const summary = await rebuildCommissionMaterializationForAffectedSales(
       db as never,
-      { salesOrderIds: [ORDER_A], apply: true },
+      { salesOrderIds: [ORDER_A], year: 2026, month: 6, apply: true },
       {
         materialize: async () => snapshotResult(),
         rebuildSchedule: async () => scheduleResult(),
       }
     );
 
-    const closings = await db.commissionMonthlyClosing.findMany();
-    assert.equal(closings[0].status, "CLOSED");
-    assert.equal(closings[0].calculationHash, "closed-hash");
+    assert.equal(summary.closedClosingsPreserved.length, 1);
+    assert.equal(summary.closedClosingsPreserved[0].closingId, "closing-1");
     assert.equal(summary.ordersProcessed, 1);
+  });
+
+  it("CSV é gerado com colunas esperadas", () => {
+    const summary = aggregateMaterializationRunSummary({
+      dryRun: true,
+      since: new Date("2026-06-01T00:00:00.000Z"),
+      orders: [
+        orderRow({ salesOrderId: ORDER_A }),
+        orderRow({
+          salesOrderId: ORDER_B,
+          snapshotAction: "unchanged",
+          scheduleAction: "unchanged",
+          changed: false,
+        }),
+      ],
+    });
+    const csv = buildMaterializationRebuildCsv(summary);
+    assert.match(csv, /salesOrderId,sources,changed/);
+    assert.match(csv, new RegExp(ORDER_A));
+    assert.match(csv, /yes/);
   });
 
   it("mergeAffectedSalesOrderRefs deduplica fontes", () => {
@@ -205,35 +311,28 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(merged.length, 2);
     assert.deepEqual(merged[0].sources, ["SALES_ORDER", "RECEIVABLE"]);
     assert.throws(() => resolveMaterializationDryRun({ preview: true, apply: true }));
+    assert.equal(parseMaterializationLimit("25"), 25);
   });
 
-  it("aggregateMaterializationRunSummary soma totais", () => {
+  it("aggregateMaterializationRunSummary soma totais e issues", () => {
     const summary = aggregateMaterializationRunSummary({
       dryRun: false,
       since: new Date("2026-06-01T00:00:00.000Z"),
       orders: [
-        {
+        orderRow({
           salesOrderId: ORDER_A,
-          sources: ["SALES_ORDER"],
-          snapshotAction: "created",
-          scheduleAction: "created",
-          snapshotId: "s1",
-          schedulesCreated: 2,
-          schedulesSuperseded: 0,
-          schedulesStaled: 0,
-          schedulesUnchanged: 0,
-        },
-        {
+          excludedCustomerItems: 2,
+          unresolvedSeller: true,
+          receivablesWithoutLink: 1,
+        }),
+        orderRow({
           salesOrderId: ORDER_B,
-          sources: ["NFE"],
           snapshotAction: "unchanged",
           scheduleAction: "unchanged",
-          snapshotId: "s2",
+          changed: false,
           schedulesCreated: 0,
-          schedulesSuperseded: 0,
-          schedulesStaled: 0,
           schedulesUnchanged: 3,
-        },
+        }),
       ],
     });
 
@@ -241,5 +340,9 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(summary.snapshotsUnchanged, 1);
     assert.equal(summary.schedulesCreated, 2);
     assert.equal(summary.schedulesUnchanged, 3);
+    assert.equal(summary.ordersChanged, 1);
+    assert.equal(summary.excludedCustomers, 1);
+    assert.equal(summary.unresolvedSellers, 1);
+    assert.equal(summary.receivablesWithoutLink, 1);
   });
 });
