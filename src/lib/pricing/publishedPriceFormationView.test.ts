@@ -368,6 +368,13 @@ describe("pricingModulePublishedFormationModal", () => {
     assert.match(src, /PUBLISHED_DETAIL_UNAVAILABLE_NOTE/);
   });
 
+  it("modal publicado inclui aba Fonte do Preço", () => {
+    const src = moduleSrc();
+    assert.match(src, /Fonte do Preço/);
+    assert.match(src, /PublishedPriceSourceTraceTab/);
+    assert.match(src, /buildPublishedPriceSourceTraceUrl/);
+  });
+
   it("simulação ao vivo continua separada do clique publicado", () => {
     const src = moduleSrc();
     assert.match(src, /setPublishedFormationMeta\(null\)/);

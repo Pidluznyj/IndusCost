@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
-  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer, Package, ClipboardCheck
+  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer, Package, ClipboardCheck, GitBranch
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -51,6 +51,11 @@ import {
   COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 import type { CommercialPublishedPriceGridRow } from "@/src/lib/pricing/commercialPublishedPrices.types";
+import { PublishedPriceSourceTraceTab } from "@/src/components/pricing/PublishedPriceSourceTraceTab";
+import {
+  buildPublishedPriceSourceTraceUrl,
+} from "@/src/lib/pricing/publishedPriceSourceTraceApi";
+import type { PublishedPriceSourceTrace } from "@/src/lib/pricing/publishedPriceSourceTrace";
 import {
   buildPublishedPriceRequestUrl,
   formatPublishedFormationPercent,
@@ -207,8 +212,11 @@ export const PricingModule = () => {
   const [calculating, setCalculating] = useState(false);
   const [calculationResult, setCalculationResult] = useState<any | null>(null);
   const [publishedFormationMeta, setPublishedFormationMeta] = useState<PublishedFormationMeta | null>(null);
+  const [publishedSourceTrace, setPublishedSourceTrace] = useState<PublishedPriceSourceTrace | null>(null);
+  const [publishedSourceTraceLoading, setPublishedSourceTraceLoading] = useState(false);
+  const [publishedSourceTraceError, setPublishedSourceTraceError] = useState<string | null>(null);
   const [openingPublishedRowId, setOpeningPublishedRowId] = useState<string | null>(null);
-  const [resultTab, setResultTab] = useState<"summary" | "composition" | "detailed">("summary");
+  const [resultTab, setResultTab] = useState<"summary" | "composition" | "detailed" | "source">("summary");
   
   const [searchTermBatch, setSearchTermBatch] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -519,6 +527,8 @@ export const PricingModule = () => {
   // --- UNITARY LOGIC ---
   const handleCalculateUnit = async (productId: string, taxRuleId: string) => {
     setPublishedFormationMeta(null);
+    setPublishedSourceTrace(null);
+    setPublishedSourceTraceError(null);
     setCalculating(true);
     try {
       const data = await fetchJsonOk(`/api/pricing/${productId}/${taxRuleId}/calculate`);
@@ -580,6 +590,9 @@ export const PricingModule = () => {
   const closeFormationResultModal = () => {
     setCalculationResult(null);
     setPublishedFormationMeta(null);
+    setPublishedSourceTrace(null);
+    setPublishedSourceTraceError(null);
+    setPublishedSourceTraceLoading(false);
   };
 
   const handleOpenPublishedFormation = async (
@@ -618,7 +631,32 @@ export const PricingModule = () => {
       });
       setPublishedFormationMeta(mapped.publishedMeta);
       setCalculationResult(mapped);
-      setResultTab("summary");
+      setResultTab(preferredTableId != null && preferredTableId.trim() !== "" ? "source" : "summary");
+
+      setPublishedSourceTrace(null);
+      setPublishedSourceTraceError(null);
+      setPublishedSourceTraceLoading(true);
+      try {
+        const trace = await fetchJsonOk<PublishedPriceSourceTrace>(
+          buildPublishedPriceSourceTraceUrl({
+            priceItemId: selection.price.priceItemId!,
+            tableId: selection.table.tableId,
+            versionId: selection.table.versionId,
+            productId: row.productId,
+          })
+        );
+        setPublishedSourceTrace(trace);
+      } catch (traceError) {
+        console.error("GET /api/pricing/published-price-source-trace", traceError);
+        setPublishedSourceTrace(null);
+        setPublishedSourceTraceError(
+          traceError instanceof Error
+            ? traceError.message
+            : "Não foi possível carregar a rastreabilidade do preço publicado."
+        );
+      } finally {
+        setPublishedSourceTraceLoading(false);
+      }
     } catch (error) {
       console.error("Erro ao abrir preço publicado:", error);
       window.alert(error instanceof Error ? error.message : "Não foi possível carregar o preço publicado.");
@@ -2974,6 +3012,9 @@ export const PricingModule = () => {
                   <div className="flex items-end gap-1 overflow-x-auto -mb-px">
                     {[
                       { id: "summary" as const, label: "Resumo da Formação", icon: BarChart3 },
+                      ...(publishedFormationMeta
+                        ? [{ id: "source" as const, label: "Fonte do Preço", icon: GitBranch }]
+                        : []),
                       { id: "composition" as const, label: "Composição do Preço", icon: BookOpen },
                       { id: "detailed" as const, label: "Composição Detalhada do Preço", icon: Layers },
                     ].map((tab) => {
@@ -3001,12 +3042,12 @@ export const PricingModule = () => {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                  {publishedFormationMeta ? (
+                  {publishedFormationMeta && resultTab !== "source" ? (
                     <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                       {publishedFormationMeta.detailUnavailableNote}
                     </div>
                   ) : null}
-                  {publishedFormationMeta?.compositionFallbackNote && resultTab !== "summary" ? (
+                  {publishedFormationMeta?.compositionFallbackNote && resultTab !== "summary" && resultTab !== "source" ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                       {publishedFormationMeta.compositionFallbackNote}
                     </div>
@@ -3301,6 +3342,15 @@ export const PricingModule = () => {
                       />
                     )
                   )}
+
+                  {resultTab === "source" && publishedFormationMeta ? (
+                    <PublishedPriceSourceTraceTab
+                      trace={publishedSourceTrace}
+                      loading={publishedSourceTraceLoading}
+                      error={publishedSourceTraceError}
+                      clickedSalePrice={publishedFormationMeta.clickedSalePrice}
+                    />
+                  ) : null}
 
                   {resultTab === "detailed" && (
                     publishedFormationMeta && calculationResult.pricingBreakdown == null ? (

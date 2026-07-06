@@ -34,6 +34,8 @@ import {
   buildCommercialPublishedPricesApiResponse,
   parseCommercialPublishedPricesQuery,
 } from "./src/lib/pricing/commercialPublishedPricesApi.js";
+import { buildPublishedPriceSourceTrace } from "./src/lib/pricing/publishedPriceSourceTrace.server.js";
+import { parsePublishedPriceSourceTraceQuery } from "./src/lib/pricing/publishedPriceSourceTraceApi.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
@@ -7436,6 +7438,26 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: "Erro ao listar formações de preço." });
     }
   });
+
+  app.get(
+    "/api/pricing/published-price-source-trace",
+    requireAppAuth,
+    requirePermission("pricing.view"),
+    async (req, res) => {
+      try {
+        const query = parsePublishedPriceSourceTraceQuery(req.query as Record<string, unknown>);
+        const trace = await buildPublishedPriceSourceTrace(prisma, query);
+        return res.json(trace);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao consultar rastreabilidade.";
+        const status = message.includes("obrigatório") || message.includes("não corresponde") ? 400 : message.includes("não encontrado") ? 404 : 500;
+        if (status === 500) {
+          console.error("GET /api/pricing/published-price-source-trace:", error);
+        }
+        return res.status(status).json({ error: message });
+      }
+    }
+  );
 
   app.get(
     "/api/pricing/commercial-published-prices",
