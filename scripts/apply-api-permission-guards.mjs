@@ -93,6 +93,7 @@ const rules = [
 
   // Pricing
   ["get", '"/api/pricing"', "requireAppAuth, requirePermission(\"pricing.view\"), "],
+  ["get", '"/api/pricing/commercial-published-prices"', "requireAppAuth, requirePermission(\"pricing.view\"), "],
   ["post", '"/api/pricing"', "requireAppAuth, requirePermission(\"pricing.view\"), "],
   ["post", '"/api/pricing/bulk-delete"', "requireAppAuth, requirePermission(\"pricing.view\"), "],
   ["delete", '"/api/pricing/:id"', "requireAppAuth, requirePermission(\"pricing.view\"), "],

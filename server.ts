@@ -29,6 +29,11 @@ import {
   previewProductionCostTableSourceForPriceDraft,
   resolvePublishedPriceTableVersionForDate,
 } from "./src/lib/priceTablePublication.server.js";
+import { buildCommercialPublishedPriceGridSnapshot } from "./src/lib/pricing/commercialPublishedPrices.server.js";
+import {
+  buildCommercialPublishedPricesApiResponse,
+  parseCommercialPublishedPricesQuery,
+} from "./src/lib/pricing/commercialPublishedPricesApi.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
@@ -7428,6 +7433,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: "Erro ao listar formações de preço." });
     }
   });
+
+  app.get(
+    "/api/pricing/commercial-published-prices",
+    requireAppAuth,
+    requirePermission("pricing.view"),
+    async (req, res) => {
+      try {
+        const query = parseCommercialPublishedPricesQuery(req.query as Record<string, unknown>);
+        const snapshot = await buildCommercialPublishedPriceGridSnapshot(prisma, query);
+        return res.json(buildCommercialPublishedPricesApiResponse(snapshot));
+      } catch (error) {
+        console.error("GET /api/pricing/commercial-published-prices:", error);
+        return res.status(500).json({ error: "Erro ao consultar preços comerciais publicados." });
+      }
+    }
+  );
 
   app.post("/api/pricing", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
     const { productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
