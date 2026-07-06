@@ -269,6 +269,57 @@ Não há republicação automática nem recálculo do grid.
 
 ---
 
+## 5.3 Fonte oficial do grid (implementado)
+
+| Camada | Artefato |
+|--------|----------|
+| Endpoint | `GET /api/pricing/commercial-published-prices` |
+| Service | `buildCommercialPublishedPriceGridSnapshot` (`src/lib/pricing/commercialPublishedPrices.server.ts`) |
+| Versão vigente | `resolvePublishedPriceTableVersionForDate` |
+| Preço exibido | `PriceTableItem.salePrice` (congelado) via `readPublishedPriceItemMetrics` |
+| Recálculo | **Proibido** no grid — não chama `getProductCostAnalysis` nem motor de formação |
+
+O grid da tela (`CommercialPublishedPricesGrid` + `useCommercialPublishedPrices`) consome o mesmo endpoint. Premissas `ProductPricing` ficam em painel secundário.
+
+### Regra: preço publicado sem recálculo
+
+- Publicar grava `PriceTableItem` com `salePrice`, custos e snapshots JSON.
+- O grid **lê** esses valores; qualquer divergência indica bug de mapeamento, não nova simulação.
+- Simulação ao vivo permanece isolada no modal via `/api/pricing/:productId/:taxRuleId/calculate`.
+
+---
+
+## 5.4 Como auditar o grid
+
+Script read-only: `scripts/audit-commercial-price-grid.ts`  
+Service: `buildCommercialPublishedPriceGridAudit` (`src/lib/pricing/commercialPublishedPriceGridAudit.server.ts`)
+
+**Comandos:**
+
+```bash
+npm run audit:commercial-price-grid
+npm run audit:commercial-price-grid -- --sku=309.01AA
+npm run audit:commercial-price-grid -- --search=alpha
+npm run audit:commercial-price-grid -- --product-id=<uuid>
+npm run audit:commercial-price-grid -- --json
+npm run audit:commercial-price-grid -- --csv
+```
+
+**O que valida:**
+
+1. Tabelas comerciais vigentes e versões usadas.
+2. Quantidade de produtos no grid e com preço por tabela.
+3. Produtos sem preço em alguma coluna (`PARTIAL` / `NO_PRICE`).
+4. Divergências célula do grid vs `PriceTableItem` (`salePrice`, `priceItemId`, `versionId`).
+5. Top produtos por maior `salePrice` publicado.
+6. Status final **PASS** (sem divergências) ou **FAIL**.
+
+**Export CSV** (`--csv`): grava em `tmp/commercial-published-price-grid-<timestamp>.csv` com colunas SKU, Produto, Info tributária, Tabela 1–4 preço, Última publicação, Status — mesma fonte do grid (`buildCommercialPublishedPriceGridCsv`).
+
+**Auditar um SKU:** `--sku=CODIGO` filtra o produto e compara cada célula publicada com o item congelado no banco. Exit code `1` em FAIL.
+
+---
+
 ## 7. Plano incremental de implementação
 
 ### Fase A — Consulta read-only (YAGNI)
