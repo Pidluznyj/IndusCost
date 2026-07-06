@@ -150,4 +150,16 @@ describe("pricingModulePublishedGrid", () => {
     assert.doesNotMatch(src, /suggestedPrice/);
     assert.match(src, /formatCurrency\(price\.salePrice/);
   });
+
+  it("publicação comercial recarrega o grid publicado", () => {
+    const module = moduleSrc();
+    assert.match(module, /COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE/);
+    assert.match(module, /setPublishedGridPage\(1\)/);
+    assert.match(module, /await reloadPublishedPrices\(\)/);
+  });
+
+  it("reload manual do grid usa cache-bust", () => {
+    const src = hookSrc();
+    assert.match(src, /_r=\$\{Date\.now\(\)\}/);
+  });
 });

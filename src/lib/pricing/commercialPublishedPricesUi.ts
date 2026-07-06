@@ -7,6 +7,9 @@ import type {
 
 export const COMMERCIAL_PUBLISHED_PRICES_ENDPOINT = "/api/pricing/commercial-published-prices";
 
+export const COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE =
+  "Tabela publicada. Preços disponíveis no grid.";
+
 export const NO_PUBLISHED_COMMERCIAL_TABLES_EMPTY_MESSAGE =
   "Nenhuma tabela comercial publicada vigente.";
 

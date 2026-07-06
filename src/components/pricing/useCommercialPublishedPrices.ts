@@ -57,7 +57,8 @@ export function useCommercialPublishedPrices(filters: CommercialPublishedPricesF
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchJsonOk<CommercialPublishedPricesApiResponse>(requestUrl);
+      const cacheBust = `${requestUrl}${requestUrl.includes("?") ? "&" : "?"}_r=${Date.now()}`;
+      const payload = await fetchJsonOk<CommercialPublishedPricesApiResponse>(cacheBust);
       setData(payload);
     } catch (e: unknown) {
       setData(null);

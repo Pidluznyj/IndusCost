@@ -1,5 +1,13 @@
 export const MAX_COMMERCIAL_PUBLISHED_TABLES = 4;
 
+/** Ordem oficial de prioridade no grid (tabela principal/default primeiro). */
+export const COMMERCIAL_TABLE_CODE_PRIORITY = [
+  "ATACADO",
+  "VAREJO_1",
+  "VAREJO_2",
+  "VAREJO_3",
+] as const;
+
 export type CommercialPublishedPriceGridSort =
   | "SKU_ASC"
   | "SKU_DESC"

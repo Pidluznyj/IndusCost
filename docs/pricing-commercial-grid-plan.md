@@ -243,6 +243,32 @@ Arquitetura documentada: *“Margem e preço comercial não chamam o motor vivo 
 
 ---
 
+## 5.1 Seleção das até 4 tabelas no grid
+
+Quando existem mais de 4 tabelas comerciais ACTIVE com versão vigente, `resolveCommercialPublishedTableContexts` aplica:
+
+1. **Prioridade oficial** — códigos `ATACADO`, `VAREJO_1`, `VAREJO_2`, `VAREJO_3` (nessa ordem).
+2. **Demais tabelas** — ordenadas por `publishedAt` mais recente; empate por `code` (locale `pt-BR`).
+3. **Limite** — no máximo `MAX_COMMERCIAL_PUBLISHED_TABLES` (4) colunas no grid.
+4. **Principal** — `ATACADO` recebe `isPrimary: true` no payload (usado no modal de detalhe).
+
+Versões **DRAFT** nunca entram: o resolver só considera versões vigentes retornadas por `resolvePublishedPriceTableVersionForDate` (`PUBLISHED` / `ARCHIVED` com janela de vigência válida).
+
+---
+
+## 5.2 Publicação → grid
+
+Fluxo após `POST /api/price-table-versions/:id/publish`:
+
+1. Versão DRAFT → `PUBLISHED`; versão anterior da mesma tabela → `ARCHIVED`.
+2. Itens já criados na DRAFT permanecem em `PriceTableItem` (congelados).
+3. `GET /api/pricing/commercial-published-prices` lê esses itens na versão vigente.
+4. Frontend (`PricingModule`): mensagem *“Tabela publicada. Preços disponíveis no grid.”*, `setPublishedGridPage(1)` e `reloadPublishedPrices()` com cache-bust (`_r=timestamp`).
+
+Não há republicação automática nem recálculo do grid.
+
+---
+
 ## 7. Plano incremental de implementação
 
 ### Fase A — Consulta read-only (YAGNI)

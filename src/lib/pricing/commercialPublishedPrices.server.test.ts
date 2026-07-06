@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildCommercialPublishedPriceGridSnapshot,
+  compareCommercialPublishedTableCandidates,
   MAX_COMMERCIAL_PUBLISHED_TABLES,
   readPublishedPriceItemMetrics,
   resolveCommercialPublishedTableContexts,
@@ -355,6 +356,85 @@ describe("commercialPublishedPrices.server", () => {
     const tables = await resolveCommercialPublishedTableContexts(db as never, { referenceDate: ref });
     assert.equal(tables.length, MAX_COMMERCIAL_PUBLISHED_TABLES);
     assert.equal(tables.some((t) => t.tableCode === "VAREJO_4"), false);
+    assert.equal(tables[0]?.tableCode, "ATACADO");
+    assert.equal(tables[0]?.isPrimary, true);
+  });
+
+  it("DRAFT sem versão publicada vigente não entra no grid", async () => {
+    const tables = [{ id: "t-atacado", code: "ATACADO", name: "Atacado" }];
+    const versions: VersionRow[] = [
+      {
+        id: "draft-only",
+        priceTableId: "t-atacado",
+        versionNumber: 2,
+        status: "DRAFT",
+        taxRuleId: "tax-1",
+        effectiveFrom: null,
+        effectiveTo: null,
+        publishedAt: null,
+      },
+    ];
+    const db = createGridDb(tables, versions, []);
+    const contexts = await resolveCommercialPublishedTableContexts(db as never, { referenceDate: ref });
+    assert.equal(contexts.length, 0);
+
+    const snapshot = await buildCommercialPublishedPriceGridSnapshot(db as never, { referenceDate: ref });
+    assert.equal(snapshot.tables.length, 0);
+    assert.equal(snapshot.rows.length, 0);
+  });
+
+  it("versão publicada vigente alimenta o grid com itens congelados", async () => {
+    const tables = [{ id: "t-atacado", code: "ATACADO", name: "Atacado" }];
+    const versions: VersionRow[] = [
+      {
+        id: "ver-published",
+        priceTableId: "t-atacado",
+        versionNumber: 3,
+        status: "PUBLISHED",
+        taxRuleId: "tax-1",
+        effectiveFrom: new Date("2026-01-01"),
+        effectiveTo: null,
+        publishedAt: new Date("2026-07-06T10:00:00.000Z"),
+      },
+    ];
+    const items: ItemRow[] = [
+      {
+        id: "item-new",
+        priceTableVersionId: "ver-published",
+        productId: "prod-new",
+        sku: "SKU-PUB-01",
+        productName: "Produto Publicado",
+        frozenTotalCost: 12,
+        marginPct: 25,
+        salePrice: 28.97,
+        commissionPerc: 2,
+        formulaSnapshotJson: formulaSnapshot(),
+      },
+    ];
+    const db = createGridDb(tables, versions, items);
+    const snapshot = await buildCommercialPublishedPriceGridSnapshot(db as never, {
+      referenceDate: ref,
+      search: "sku-pub",
+    });
+    assert.equal(snapshot.tables.length, 1);
+    assert.equal(snapshot.tables[0]?.status, "PUBLISHED");
+    assert.equal(snapshot.rows.length, 1);
+    assert.equal(snapshot.rows[0]?.sku, "SKU-PUB-01");
+    assert.equal(snapshot.rows[0]?.prices[0]?.salePrice, 28.97);
+    assert.equal(snapshot.rows[0]?.prices[0]?.status, "PUBLISHED");
+  });
+
+  it("prioriza tabelas oficiais e exclui extras além do limite", () => {
+    const ranked = [
+      { tableCode: "ZZ_EXTRA", publishedAt: new Date("2026-06-10T10:00:00.000Z") },
+      { tableCode: "ATACADO", publishedAt: new Date("2026-01-01T10:00:00.000Z") },
+      { tableCode: "VAREJO_1", publishedAt: new Date("2026-02-01T10:00:00.000Z") },
+      { tableCode: "AA_EXTRA", publishedAt: new Date("2026-03-01T10:00:00.000Z") },
+    ].sort(compareCommercialPublishedTableCandidates);
+    assert.deepEqual(
+      ranked.map((entry) => entry.tableCode),
+      ["ATACADO", "VAREJO_1", "ZZ_EXTRA", "AA_EXTRA"]
+    );
   });
 
   it("readPublishedPriceItemMetrics lê salePrice e taxa do snapshot publicado", () => {

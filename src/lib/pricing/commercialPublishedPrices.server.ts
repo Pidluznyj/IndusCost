@@ -6,6 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 import { normalizeSearchString } from "../utils.js";
 import { resolvePublishedPriceTableVersionForDate } from "../priceTablePublication.server.js";
 import {
+  COMMERCIAL_TABLE_CODE_PRIORITY,
   MAX_COMMERCIAL_PUBLISHED_TABLES,
   type CommercialPublishedPriceCell,
   type CommercialPublishedPriceGridQuery,
@@ -16,6 +17,7 @@ import {
 } from "./commercialPublishedPrices.types.js";
 
 export {
+  COMMERCIAL_TABLE_CODE_PRIORITY,
   MAX_COMMERCIAL_PUBLISHED_TABLES,
   type CommercialPublishedPriceCell,
   type CommercialPublishedPriceGridQuery,
@@ -143,6 +145,33 @@ function compareStrings(a: string, b: string): number {
   return a.localeCompare(b, "pt-BR", { sensitivity: "base" });
 }
 
+export function compareCommercialPublishedTableCandidates(
+  a: { tableCode: string; publishedAt: Date | null },
+  b: { tableCode: string; publishedAt: Date | null }
+): number {
+  const aPriority = COMMERCIAL_TABLE_CODE_PRIORITY.indexOf(
+    a.tableCode as (typeof COMMERCIAL_TABLE_CODE_PRIORITY)[number]
+  );
+  const bPriority = COMMERCIAL_TABLE_CODE_PRIORITY.indexOf(
+    b.tableCode as (typeof COMMERCIAL_TABLE_CODE_PRIORITY)[number]
+  );
+  const aKnown = aPriority >= 0;
+  const bKnown = bPriority >= 0;
+
+  if (aKnown && bKnown) return aPriority - bPriority;
+  if (aKnown) return -1;
+  if (bKnown) return 1;
+
+  const aTime = a.publishedAt?.getTime() ?? 0;
+  const bTime = b.publishedAt?.getTime() ?? 0;
+  if (bTime !== aTime) return bTime - aTime;
+  return compareStrings(a.tableCode, b.tableCode);
+}
+
+function isPrimaryCommercialTableCode(tableCode: string): boolean {
+  return tableCode === COMMERCIAL_TABLE_CODE_PRIORITY[0];
+}
+
 function sortRows(
   rows: CommercialPublishedPriceGridRow[],
   sort: CommercialPublishedPriceGridSort
@@ -229,21 +258,36 @@ export async function resolveCommercialPublishedTableContexts(
       status: "ACTIVE",
       ...(options?.tableId?.trim() ? { id: options.tableId.trim() } : {}),
     },
-    orderBy: { code: "asc" },
     select: { id: true, code: true, name: true },
   });
 
-  const contexts: PublishedTableContext[] = [];
+  const candidates: Array<{
+    table: { id: string; code: string; name: string };
+    version: NonNullable<Awaited<ReturnType<typeof resolvePublishedPriceTableVersionForDate>>>;
+  }> = [];
 
   for (const table of catalog) {
-    if (contexts.length >= maxTables) break;
-
     const version = await resolvePublishedPriceTableVersionForDate(db, table.id, referenceDate);
     if (!version) continue;
 
     if (options?.taxRuleId?.trim() && version.taxRuleId !== options.taxRuleId.trim()) {
       continue;
     }
+
+    candidates.push({ table, version });
+  }
+
+  candidates.sort((left, right) =>
+    compareCommercialPublishedTableCandidates(
+      { tableCode: left.table.code, publishedAt: left.version.publishedAt },
+      { tableCode: right.table.code, publishedAt: right.version.publishedAt }
+    )
+  );
+
+  const contexts: PublishedTableContext[] = [];
+
+  for (const candidate of candidates.slice(0, maxTables)) {
+    const { table, version } = candidate;
 
     let taxRuleName: string | null = null;
     if (version.taxRuleId) {
@@ -265,6 +309,7 @@ export async function resolveCommercialPublishedTableContexts(
       taxRuleId: version.taxRuleId,
       taxRuleName,
       status: version.status,
+      isPrimary: isPrimaryCommercialTableCode(table.code),
     });
   }
 

@@ -48,6 +48,7 @@ import { useCommercialPublishedPrices } from "@/src/components/pricing/useCommer
 import {
   formatPublishedAtLabel,
   resolveCommercialPublishedEmptyMessage,
+  COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 import type { CommercialPublishedPriceGridRow } from "@/src/lib/pricing/commercialPublishedPrices.types";
 import {
@@ -1046,14 +1047,13 @@ export const PricingModule = () => {
 
       if (errorsAccepted) {
         alert(
-          `Tabela ${result.priceTableCode} ${versionLabel} publicada com pendências. Produtos sem preço publicado precisarão ser tratados como preço manual nas propostas.`
+          `${COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE} Atenção: publicação parcial — produtos sem preço publicado precisarão de preço manual nas propostas.`
         );
       } else {
-        alert(
-          `Tabela ${result.priceTableCode} ${versionLabel} publicada com sucesso. Ela agora ficará disponível nas propostas.`
-        );
+        alert(COMMERCIAL_TABLE_PUBLISHED_GRID_SUCCESS_MESSAGE);
       }
 
+      setPublishedGridPage(1);
       try {
         const pt = await fetchJsonOk<PriceTableLite[]>("/api/price-tables");
         if (Array.isArray(pt)) {
@@ -1062,7 +1062,7 @@ export const PricingModule = () => {
       } catch (reloadErr) {
         console.warn("GET /api/price-tables after publish failed:", reloadErr);
       }
-      void reloadPublishedPrices();
+      await reloadPublishedPrices();
     } catch (error) {
       console.error("POST /api/price-table-versions/:id/publish", error);
       alert(error instanceof Error ? error.message : "Falha ao publicar a versão DRAFT.");
