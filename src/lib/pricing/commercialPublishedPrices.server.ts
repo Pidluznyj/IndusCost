@@ -5,87 +5,25 @@
 import type { PrismaClient } from "@prisma/client";
 import { normalizeSearchString } from "../utils.js";
 import { resolvePublishedPriceTableVersionForDate } from "../priceTablePublication.server.js";
+import {
+  MAX_COMMERCIAL_PUBLISHED_TABLES,
+  type CommercialPublishedPriceCell,
+  type CommercialPublishedPriceGridQuery,
+  type CommercialPublishedPriceGridRow,
+  type CommercialPublishedPriceGridSnapshot,
+  type CommercialPublishedPriceGridSort,
+  type CommercialPublishedPriceGridTable,
+} from "./commercialPublishedPrices.types.js";
 
-export const MAX_COMMERCIAL_PUBLISHED_TABLES = 4;
-
-export type CommercialPublishedPriceGridSort =
-  | "SKU_ASC"
-  | "SKU_DESC"
-  | "NAME_ASC"
-  | "NAME_DESC"
-  | "LAST_PUBLISHED_DESC";
-
-export type CommercialPublishedPriceGridQuery = {
-  search?: string | null;
-  taxRuleId?: string | null;
-  /** Filtra linhas com margem publicada (%) igual ao valor informado. */
-  marginRuleId?: string | null;
-  /** Filtra linhas com comissão publicada (%) igual ao valor informado. */
-  commissionRuleId?: string | null;
-  tableId?: string | null;
-  referenceDate?: Date | null;
-  page?: number;
-  limit?: number;
-  sort?: CommercialPublishedPriceGridSort;
-};
-
-export type CommercialPublishedPriceGridTable = {
-  tableId: string;
-  tableName: string;
-  tableCode: string;
-  versionId: string;
-  versionNumber: number;
-  publishedAt: string | null;
-  effectiveFrom: string | null;
-  taxRuleId: string | null;
-  taxRuleName: string | null;
-  status: string;
-};
-
-export type CommercialPublishedPriceCell = {
-  tableId: string;
-  tableName: string;
-  versionId: string;
-  priceItemId: string | null;
-  salePrice: number | null;
-  marginPercent: number | null;
-  markup: number | null;
-  commissionPercent: number | null;
-  taxPercent: number | null;
-  status: "PUBLISHED" | "NO_PRICE";
-};
-
-export type CommercialPublishedPriceGridRow = {
-  productId: string;
-  sku: string;
-  productName: string;
-  taxInfo: {
-    fiscalRuleId: string | null;
-    fiscalRuleName: string | null;
-    taxPercent: number | null;
-  } | null;
-  prices: CommercialPublishedPriceCell[];
-  lastPublishedAt: string | null;
-  status: "OK" | "PARTIAL" | "NO_PRICE";
-};
-
-export type CommercialPublishedPriceGridSnapshot = {
-  referenceDate: string;
-  tables: CommercialPublishedPriceGridTable[];
-  rows: CommercialPublishedPriceGridRow[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  totals: {
-    tableCount: number;
-    rowCount: number;
-    pricedCellCount: number;
-    emptyCellCount: number;
-  };
-};
+export {
+  MAX_COMMERCIAL_PUBLISHED_TABLES,
+  type CommercialPublishedPriceCell,
+  type CommercialPublishedPriceGridQuery,
+  type CommercialPublishedPriceGridRow,
+  type CommercialPublishedPriceGridSnapshot,
+  type CommercialPublishedPriceGridSort,
+  type CommercialPublishedPriceGridTable,
+} from "./commercialPublishedPrices.types.js";
 
 type PublishedTableContext = CommercialPublishedPriceGridTable;
 

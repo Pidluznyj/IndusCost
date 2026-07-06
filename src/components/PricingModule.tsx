@@ -43,6 +43,11 @@ import {
   type ProductionCostDraftItemScope,
 } from "@/src/lib/productionCostDraftItemScope";
 import { buildProductionCostDraftGenerationSummaryLines, buildProductionCostPublicationPendencyLines, type ProductionCostPublicationFeedback } from "@/src/lib/productionCostTablesUi";
+import { CommercialPublishedPricesGrid } from "@/src/components/pricing/CommercialPublishedPricesGrid";
+import { useCommercialPublishedPrices } from "@/src/components/pricing/useCommercialPublishedPrices";
+import {
+  resolveCommercialPublishedEmptyMessage,
+} from "@/src/lib/pricing/commercialPublishedPricesUi";
 
 type PriceTableLite = {
   id: string;
@@ -195,6 +200,9 @@ export const PricingModule = () => {
   const [pricingMarginBand, setPricingMarginBand] = useState<PricingMarginBand>("ALL");
   const [pricingCommissionBand, setPricingCommissionBand] = useState<PricingCommissionBand>("ALL");
   const [pricingSortBy, setPricingSortBy] = useState<PricingSortKey>("NAME_ASC");
+  const [publishedGridPage, setPublishedGridPage] = useState(1);
+  const [showPremissasPanel, setShowPremissasPanel] = useState(false);
+  const publishedPageSize = 50;
   const [simulatorForm, setSimulatorForm] = useState({
     productId: "",
     taxRuleId: "",
@@ -403,12 +411,68 @@ export const PricingModule = () => {
     pricingCommissionBand !== "ALL" ||
     pricingSortBy !== "NAME_ASC";
 
+  const {
+    loading: publishedPricesLoading,
+    error: publishedPricesError,
+    reload: reloadPublishedPrices,
+    tables: publishedTables,
+    rows: publishedRows,
+    pagination: publishedPagination,
+    message: publishedPricesMessage,
+  } = useCommercialPublishedPrices({
+    search: pricingSearchTerm,
+    taxRuleId: pricingTaxRuleFilter,
+    marginBand: pricingMarginBand,
+    commissionBand: pricingCommissionBand,
+    sortBy: pricingSortBy,
+    page: publishedGridPage,
+    pageSize: publishedPageSize,
+  });
+
+  const publishedEmptyMessage = useMemo(
+    () =>
+      resolveCommercialPublishedEmptyMessage(
+        publishedTables.length === 0
+          ? {
+              referenceDate: "",
+              tables: [],
+              rows: [],
+              pagination: publishedPagination,
+              totals: { tableCount: 0, rowCount: 0, pricedCellCount: 0, emptyCellCount: 0 },
+              message: publishedPricesMessage,
+            }
+          : {
+              referenceDate: "",
+              tables: publishedTables,
+              rows: publishedRows,
+              pagination: publishedPagination,
+              totals: {
+                tableCount: publishedTables.length,
+                rowCount: publishedRows.length,
+                pricedCellCount: 0,
+                emptyCellCount: 0,
+              },
+              message: publishedPricesMessage,
+            },
+        publishedRows.length,
+        hasActivePricingFilters
+      ),
+    [
+      hasActivePricingFilters,
+      publishedPagination,
+      publishedPricesMessage,
+      publishedRows.length,
+      publishedTables,
+    ]
+  );
+
   const clearPricingFilters = () => {
     setPricingSearchTerm("");
     setPricingTaxRuleFilter("");
     setPricingMarginBand("ALL");
     setPricingCommissionBand("ALL");
     setPricingSortBy("NAME_ASC");
+    setPublishedGridPage(1);
   };
 
   const batchScopeProducts = useMemo(
@@ -475,6 +539,34 @@ export const PricingModule = () => {
       window.alert(error instanceof Error ? error.message : "Falha ao excluir a formação de preço.");
     }
   };
+
+  const handleEditPremissaFromGrid = (premissa: any) => {
+    setFormData({
+      productId: premissa.productId,
+      taxRuleId: premissa.taxRuleId ?? "",
+      desiredMargin: Number(premissa.desiredMargin ?? 15),
+      commission: Number(premissa.commission ?? 5),
+      freightOut: Number(premissa.freightOut ?? 0),
+      otherVariables: Number(premissa.otherVariables ?? 0),
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleCreatePremissaFromGrid = (productId: string, taxRuleId: string | null) => {
+    setFormData({
+      productId,
+      taxRuleId: taxRuleId ?? "",
+      desiredMargin: 15,
+      commission: 5,
+      freightOut: 0,
+      otherVariables: 0,
+    });
+    setIsModalOpen(true);
+  };
+
+  useEffect(() => {
+    setPublishedGridPage(1);
+  }, [pricingSearchTerm, pricingTaxRuleFilter, pricingMarginBand, pricingCommissionBand, pricingSortBy]);
 
   const togglePricingSelection = (id: string) => {
     setSelectedPricings(prev => prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]);
@@ -896,6 +988,7 @@ export const PricingModule = () => {
       } catch (reloadErr) {
         console.warn("GET /api/price-tables after publish failed:", reloadErr);
       }
+      void reloadPublishedPrices();
     } catch (error) {
       console.error("POST /api/price-table-versions/:id/publish", error);
       alert(error instanceof Error ? error.message : "Falha ao publicar a versão DRAFT.");
@@ -1997,11 +2090,14 @@ export const PricingModule = () => {
         </div>
       </div>
 
-      {loading && viewMode === "UNIT" ? (
-        <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
-      ) : viewMode === "UNIT" ? (
+      {viewMode === "UNIT" ? (
         // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
+          {loading ? (
+            <div className="p-8 text-center">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+            </div>
+          ) : null}
           <div className="flex justify-end gap-2">
              {allowSimulate ? (
               <button
@@ -2023,16 +2119,6 @@ export const PricingModule = () => {
           </div>
 
      <div className="space-y-4">
-       {/* UI Header Customizado pro Lote selecionado */}
-       {selectedPricings.length > 0 && (
-         <div className="bg-red-50 text-red-900 border border-red-200 rounded-xl p-3 flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-           <span className="text-sm font-bold">{selectedPricings.length} Formação(ões) selecionada(s)</span>
-           <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
-              Excluir Selecionados
-           </button>
-         </div>
-       )}
-
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -2098,8 +2184,9 @@ export const PricingModule = () => {
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Exibindo <span className="font-bold text-foreground">{filteredPricings.length}</span> de{" "}
-              <span className="font-bold text-foreground">{pricings.length}</span> premissa(s).
+              Exibindo <span className="font-bold text-foreground">{publishedRows.length}</span> de{" "}
+              <span className="font-bold text-foreground">{publishedPagination.total}</span> produto(s) com preço
+              publicado · <span className="font-bold text-foreground">{publishedTables.length}</span> tabela(s) vigente(s).
             </p>
             <button
               type="button"
@@ -2113,83 +2200,201 @@ export const PricingModule = () => {
         </div>
       </div>
 
-       {/* Tabela de Leitura */}
-       <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-muted">
-                 <tr>
-                   <th className="p-4 w-10">
-                      <input type="checkbox" className="rounded accent-primary w-4 h-4 cursor-pointer" 
-                             checked={filteredPricings.length > 0 && filteredPricings.every((pricing: any) => selectedPricings.includes(pricing.id))} 
-                             onChange={toggleAllPricings} />
-                   </th>
-                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground w-1/4">Produto</th>
-                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground">Inf. Trib</th>
-                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Precificação Base</th>
-                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-right">Preço</th>
-                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Ações Lógicas</th>
-                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {pricings.length === 0 ? (
-                  <tr><td colSpan={6} className="p-12 text-center text-muted-foreground">Nenhuma premissa configurada.</td></tr>
-                ) : filteredPricings.length === 0 ? (
-                  <tr><td colSpan={6} className="p-12 text-center text-muted-foreground">Nenhum resultado encontrado com os filtros aplicados.</td></tr>
-                ) : (
-                  filteredPricings.map((pricing: any) => (
-                     <tr key={pricing.id} className="hover:bg-accent/20 cursor-pointer" onClick={(e) => {
-                        if((e.target as HTMLElement).closest('.btn-acoes')) return;
-                        togglePricingSelection(pricing.id);
-                     }}>
-                       <td className="p-4 text-center btn-acoes">
-                         <input type="checkbox" className="rounded accent-primary w-4 h-4 cursor-pointer" 
-                                checked={selectedPricings.includes(pricing.id)} 
-                                onChange={() => togglePricingSelection(pricing.id)} />
-                       </td>
-                       <td className="p-4">
-                         <p className="font-bold text-sm tracking-tight">{pricing.Product?.name ?? "—"}</p>
-                         <p className="text-[10px] font-mono text-muted-foreground">SKU: {pricing.Product?.sku ?? "—"}</p>
-                       </td>
-                       <td className="p-4">
-                         <span className="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest">{pricing.TaxRule?.name ?? "—"}</span>
-                       </td>
-                       <td className="p-4 text-center">
-                         <div className="flex flex-col items-center gap-1">
-                           <span className="text-xs text-muted-foreground">Mg. <span className="font-bold text-green-600">{pricingListSafeNumber(pricing.desiredMargin) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.desiredMargin) ?? 0, 2)}%`}</span></span>
-                           <span className="text-xs text-muted-foreground">Comissão. <span className="font-bold text-orange-600">{pricingListSafeNumber(pricing.commission) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.commission) ?? 0, 2)}%`}</span></span>
-                         </div>
-                       </td>
-                       <td className="p-4 text-right">
-                         {pricingListSafeNumber(pricing.suggestedPrice) == null ? (
-                           <span className="text-muted-foreground">—</span>
-                         ) : (
-                           <span className="font-bold text-primary">
-                             {formatCurrency(pricingListSafeNumber(pricing.suggestedPrice) ?? 0, 2)}
-                           </span>
-                         )}
-                       </td>
-                       <td className="p-4 btn-acoes">
-                         <div className="flex gap-2 justify-center">
-                           <button title="Calcular Simulação Unitária" onClick={() => handleCalculateUnit(pricing.productId, pricing.taxRuleId)} className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"><Calculator className="h-4 w-4" /></button>
-                           <button title="Editar Parametria" onClick={() => { 
-                             setFormData({
-                              productId: pricing.productId, taxRuleId: pricing.taxRuleId,
-                              desiredMargin: Number(pricing.desiredMargin), commission: Number(pricing.commission),
-                              freightOut: Number(pricing.freightOut), otherVariables: Number(pricing.otherVariables),
-                             });
-                             setIsModalOpen(true);
-                            }} className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
-                           <button title="Excluir Restrito" onClick={() => handleDeleteUnit(pricing)} className="p-2 text-muted-foreground hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"><Trash2 className="h-4 w-4" /></button>
-                         </div>
-                       </td>
-                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      {publishedPricesError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {publishedPricesError}
+        </div>
+      ) : null}
+
+      <CommercialPublishedPricesGrid
+        tables={publishedTables}
+        rows={publishedRows}
+        loading={publishedPricesLoading}
+        emptyMessage={publishedEmptyMessage}
+        allowSimulate={allowSimulate}
+        pricings={pricings}
+        onCalculate={handleCalculateUnit}
+        onEditPremissa={handleEditPremissaFromGrid}
+        onCreatePremissa={handleCreatePremissaFromGrid}
+      />
+
+      {publishedPagination.totalPages > 1 ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Página <span className="font-bold text-foreground">{publishedPagination.page}</span> de{" "}
+            <span className="font-bold text-foreground">{publishedPagination.totalPages}</span>
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={publishedPagination.page <= 1 || publishedPricesLoading}
+              onClick={() => setPublishedGridPage((page) => Math.max(1, page - 1))}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={publishedPagination.page >= publishedPagination.totalPages || publishedPricesLoading}
+              onClick={() => setPublishedGridPage((page) => page + 1)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+            >
+              Próxima
+            </button>
           </div>
-       </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowPremissasPanel((open) => !open)}
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-accent/30 transition-colors"
+        >
+          <div>
+            <p className="text-sm font-bold">Premissas de formação de preço</p>
+            <p className="text-xs text-muted-foreground">
+              Parametrização manual por produto e regra fiscal ({pricings.length} cadastrada(s)).
+            </p>
+          </div>
+          <ChevronRight className={cn("h-4 w-4 text-muted-foreground transition-transform", showPremissasPanel && "rotate-90")} />
+        </button>
+
+        {showPremissasPanel ? (
+          <div className="border-t border-border p-4 space-y-4">
+            {selectedPricings.length > 0 ? (
+              <div className="bg-red-50 text-red-900 border border-red-200 rounded-xl p-3 flex justify-between items-center">
+                <span className="text-sm font-bold">{selectedPricings.length} premissa(s) selecionada(s)</span>
+                <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+                  Excluir selecionadas
+                </button>
+              </div>
+            ) : null}
+
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="p-4 w-10">
+                      <input
+                        type="checkbox"
+                        className="rounded accent-primary w-4 h-4 cursor-pointer"
+                        checked={filteredPricings.length > 0 && filteredPricings.every((pricing: any) => selectedPricings.includes(pricing.id))}
+                        onChange={toggleAllPricings}
+                      />
+                    </th>
+                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground">Produto</th>
+                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground">Inf. Trib</th>
+                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Precificação Base</th>
+                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-right">Preço sugerido</th>
+                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pricings.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        Nenhuma premissa cadastrada.
+                      </td>
+                    </tr>
+                  ) : filteredPricings.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        Nenhuma premissa encontrada com os filtros aplicados.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPricings.map((pricing: any) => (
+                      <tr
+                        key={pricing.id}
+                        className="hover:bg-accent/20 cursor-pointer"
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest(".btn-acoes")) return;
+                          togglePricingSelection(pricing.id);
+                        }}
+                      >
+                        <td className="p-4 text-center btn-acoes">
+                          <input
+                            type="checkbox"
+                            className="rounded accent-primary w-4 h-4 cursor-pointer"
+                            checked={selectedPricings.includes(pricing.id)}
+                            onChange={() => togglePricingSelection(pricing.id)}
+                          />
+                        </td>
+                        <td className="p-4">
+                          <p className="font-bold text-sm tracking-tight">{pricing.Product?.name ?? "—"}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground">SKU: {pricing.Product?.sku ?? "—"}</p>
+                        </td>
+                        <td className="p-4">
+                          <span className="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest">
+                            {pricing.TaxRule?.name ?? "—"}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-xs text-muted-foreground">
+                              Mg.{" "}
+                              <span className="font-bold text-green-600">
+                                {pricingListSafeNumber(pricing.desiredMargin) == null
+                                  ? "—"
+                                  : `${formatNumber(pricingListSafeNumber(pricing.desiredMargin) ?? 0, 2)}%`}
+                              </span>
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Comissão.{" "}
+                              <span className="font-bold text-orange-600">
+                                {pricingListSafeNumber(pricing.commission) == null
+                                  ? "—"
+                                  : `${formatNumber(pricingListSafeNumber(pricing.commission) ?? 0, 2)}%`}
+                              </span>
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          {pricingListSafeNumber(pricing.suggestedPrice) == null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span className="font-bold text-primary">
+                              {formatCurrency(pricingListSafeNumber(pricing.suggestedPrice) ?? 0, 2)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 btn-acoes">
+                          <div className="flex gap-2 justify-center">
+                            {allowSimulate ? (
+                              <button
+                                title="Calcular Simulação Unitária"
+                                onClick={() => handleCalculateUnit(pricing.productId, pricing.taxRuleId)}
+                                className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"
+                              >
+                                <Calculator className="h-4 w-4" />
+                              </button>
+                            ) : null}
+                            <button
+                              title="Editar Parametria"
+                              onClick={() => handleEditPremissaFromGrid(pricing)}
+                              className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              title="Excluir premissa"
+                              onClick={() => handleDeleteUnit(pricing)}
+                              className="p-2 text-muted-foreground hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </div>
      </div>
         </div>
       ) : (

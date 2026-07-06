@@ -2,14 +2,13 @@ import type {
   CommercialPublishedPriceGridQuery,
   CommercialPublishedPriceGridSnapshot,
   CommercialPublishedPriceGridSort,
-} from "./commercialPublishedPrices.server.js";
+  CommercialPublishedPricesApiResponse,
+} from "./commercialPublishedPrices.types.js";
 
 export const NO_PUBLISHED_COMMERCIAL_PRICE_TABLES_MESSAGE =
   "Nenhuma tabela comercial publicada vigente encontrada.";
 
-export type CommercialPublishedPricesApiResponse = CommercialPublishedPriceGridSnapshot & {
-  message: string | null;
-};
+export type { CommercialPublishedPricesApiResponse } from "./commercialPublishedPrices.types.js";
 
 const SORT_VALUES: CommercialPublishedPriceGridSort[] = [
   "SKU_ASC",
