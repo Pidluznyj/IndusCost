@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import {
+  buildReceiptClosingBySeller,
   buildReceiptClosingExportCsv,
+  buildReceiptClosingMaterializationCards,
   buildReceiptClosingPageFromLedger,
   buildReceiptClosingPageFromPreview,
+  buildReceiptClosingReconciliationFromApiLines,
   RECEIPT_CLOSING_EXPORT_HEADERS,
 } from "./commissionReceiptClosingApi.js";
 import {
@@ -45,17 +48,19 @@ function previewLine(
     sellerResolutionStatus: "OK_CANONICAL",
     commissionRecordId: null,
     commissionPaymentScheduleId: null,
+    commissionReceivableScheduleId: "sched-1",
     ruleId: "rule-1",
     ruleName: "2%",
     ratePercent: 2,
     commissionableBaseAmount: 1000,
     expectedCommissionAmount: 20,
     releasedCommissionAmount: 20,
+    grossCommissionAmount: 20,
     status: "COMMISSIONABLE",
     statusReason: null,
     exclusionRuleId: null,
     exclusionReason: null,
-    source: "CALCULATED",
+    source: "MATERIALIZED_SCHEDULE",
     ...partial,
   };
 }
@@ -79,7 +84,7 @@ function previewResult(lines: CommissionReceiptPreviewLine[]): CommissionReceipt
 }
 
 describe("commissionReceiptClosingApi", () => {
-  it("preview page payload expõe resumo e linhas", () => {
+  it("preview page payload expõe cards e linhas materializadas", () => {
     const preview = previewResult([previewLine({ ledgerLineKey: "k1" })]);
     const payload = buildReceiptClosingPageFromPreview({
       preview,
@@ -89,8 +94,9 @@ describe("commissionReceiptClosingApi", () => {
     });
     assert.equal(payload.mode, "PREVIEW");
     assert.equal(payload.lines.length, 1);
-    assert.equal(payload.summary.totalReleasedCommission, 20);
+    assert.equal(payload.cards.finalCommissionAmount, 20);
     assert.equal(payload.bySeller.length, 1);
+    assert.equal(payload.bySeller[0]?.grossCommission, 20);
   });
 
   it("ledger page payload usa modo CLOSED", () => {
@@ -134,22 +140,111 @@ describe("commissionReceiptClosingApi", () => {
           exceptionReason: null,
           exclusionReason: null,
           ruleNameSnapshot: "2%",
-          ruleSnapshotJson: { ruleId: "rule-1" },
+          ruleSnapshotJson: { ruleId: "rule-1", commissionReceivableScheduleId: "sched-1" },
         },
       ],
     });
     assert.equal(payload.mode, "CLOSED");
     assert.equal(payload.exportMode, "CLOSED");
     assert.equal(payload.canApply, false);
+    assert.equal(payload.cards.reportStatus, "CLOSED");
   });
 
-  it("CSV contém colunas obrigatórias", () => {
+  it("card recebido = soma única dos títulos (sem duplicar multi-item)", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "k1",
+        nomusReceivableId: 100,
+        receivedAmount: 1000,
+        commissionableBaseAmount: 600,
+        releasedCommissionAmount: 12,
+        grossCommissionAmount: 12,
+        nomusOrderItemId: 1,
+      }),
+      previewLine({
+        ledgerLineKey: "k2",
+        nomusReceivableId: 100,
+        receivedAmount: 1000,
+        commissionableBaseAmount: 400,
+        releasedCommissionAmount: 8,
+        grossCommissionAmount: 8,
+        nomusOrderItemId: 2,
+      }),
+      previewLine({
+        ledgerLineKey: "k3",
+        nomusReceivableId: 200,
+        receivedAmount: 500,
+        commissionableBaseAmount: 500,
+        releasedCommissionAmount: 10,
+        grossCommissionAmount: 10,
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    assert.equal(payload.cards.totalReceivedAmount, 1500);
+    assert.equal(payload.lines[0]?.uniqueReceivedAmount, 1000);
+    assert.equal(payload.lines[1]?.uniqueReceivedAmount, 0);
+    assert.equal(payload.lines[2]?.uniqueReceivedAmount, 500);
+  });
+
+  it("tabela vendedor bate com detalhe", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "k1",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "A",
+        commissionableBaseAmount: 600,
+        releasedCommissionAmount: 12,
+        grossCommissionAmount: 12,
+      }),
+      previewLine({
+        ledgerLineKey: "k2",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "A",
+        nomusOrderItemId: 2,
+        commissionableBaseAmount: 400,
+        releasedCommissionAmount: 8,
+        grossCommissionAmount: 8,
+      }),
+      previewLine({
+        ledgerLineKey: "k3",
+        nomusReceivableId: 200,
+        canonicalSellerId: "seller-2",
+        canonicalSellerName: "B",
+        receivedAmount: 500,
+        commissionableBaseAmount: 500,
+        releasedCommissionAmount: 10,
+        grossCommissionAmount: 10,
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    const sellerA = payload.bySeller.find((row) => row.sellerId === "seller-1");
+    assert.ok(sellerA);
+    const detailA = payload.lines.filter((line) => line.canonicalSellerId === "seller-1");
+    const sumBase = detailA.reduce((acc, line) => acc + line.commissionableBaseAmount, 0);
+    const sumFinal = detailA.reduce((acc, line) => acc + line.releasedCommissionAmount, 0);
+    assert.equal(sellerA.receivedAmount, 1000);
+    assert.equal(sellerA.commissionableBase, sumBase);
+    assert.equal(sellerA.releasedCommission, sumFinal);
+  });
+
+  it("CSV contém cards e colunas alinhadas à tela", () => {
     const preview = previewResult([previewLine({ ledgerLineKey: "k1" })]);
     const page = buildReceiptClosingPageFromPreview({
       preview,
       closing: null,
       canApply: true,
       applyBlockedReason: null,
+      nomusCommission: 20,
     });
     const csv = buildReceiptClosingExportCsv({
       year: 2026,
@@ -157,13 +252,76 @@ describe("commissionReceiptClosingApi", () => {
       closing: null,
       exportMode: "PREVIEW",
       lines: page.lines,
+      cards: page.cards,
       calculationHash: "hash-test",
     });
     for (const col of RECEIPT_CLOSING_EXPORT_HEADERS) {
       assert.match(csv, new RegExp(col));
     }
-    assert.match(csv, /exportMode=PREVIEW/);
+    assert.match(csv, /# totalReceivedAmount,1000\.00/);
+    assert.match(csv, /# finalCommissionAmount,20\.00/);
+    assert.match(csv, /uniqueReceivedAmount/);
+    assert.match(csv, /grossCommissionAmount/);
     assert.match(csv, /CR-100/);
+    assert.equal(page.cards.totalReceivedAmount, 1000);
+  });
+
+  it("cliente excluído aparece em card próprio", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "k1",
+        status: "CUSTOMER_EXCLUDED",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 15,
+        commissionableBaseAmount: 0,
+        exclusionReason: "Cliente bloqueado",
+        commissionReceivableScheduleId: "sched-x",
+        source: "MATERIALIZED_SCHEDULE",
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: {
+        ...previewResult(lines),
+        countByStatus: { CUSTOMER_EXCLUDED: 1 },
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    assert.equal(payload.cards.receivedExcludedCustomerAmount, 1000);
+    assert.equal(payload.cards.excludedCommissionAmount, 15);
+    assert.equal(payload.bySeller[0]?.excludedCommission, 15);
+    assert.equal(payload.bySeller[0]?.exceptionCount, 0);
+  });
+
+  it("sem schedule aparece como exceção clara", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "k1",
+        nomusReceivableId: 300,
+        status: "NO_SCHEDULE",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 0,
+        commissionableBaseAmount: 0,
+        commissionReceivableScheduleId: null,
+        source: "CALCULATED",
+        statusReason: "Sem schedule materializado",
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: {
+        ...previewResult(lines),
+        countByStatus: { NO_SCHEDULE: 1 },
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    assert.equal(payload.cards.receivedWithoutScheduleAmount, 1000);
+    assert.equal(payload.bySeller[0]?.exceptionCount, 1);
+    assert.equal(payload.lines[0]?.status, "NO_SCHEDULE");
+    assert.match(payload.lines[0]?.statusReason ?? "", /schedule/i);
+    assert.equal(payload.requiresCriticalConfirmation, true);
   });
 
   it("parseReceiptClosingApplyBody exige confirmação", () => {
@@ -178,6 +336,16 @@ describe("commissionReceiptClosingApi", () => {
     });
     assert.equal(body.year, 2026);
     assert.equal(body.month, 6);
+  });
+
+  it("parseReceiptClosingApplyBody aceita confirmação de divergência crítica", () => {
+    const body = parseReceiptClosingApplyBody({
+      year: 2026,
+      month: 6,
+      confirm: "FECHAR COMISSAO",
+      criticalConfirm: "DIVERGENCIA CRITICA",
+    });
+    assert.equal(body.acknowledgeCriticalDivergence, true);
   });
 
   it("parseReceiptClosingReprocessBody exige REPROCESSAR COMISSAO", () => {
@@ -198,5 +366,38 @@ describe("commissionReceiptClosingApi", () => {
       reason: "correção de regra",
     });
     assert.equal(body.reason, "correção de regra");
+  });
+
+  it("buildReceiptClosingBySeller deduplica recebido por título", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: previewResult([
+        previewLine({ ledgerLineKey: "a", nomusReceivableId: 1, receivedAmount: 800 }),
+        previewLine({ ledgerLineKey: "b", nomusReceivableId: 1, receivedAmount: 800, nomusOrderItemId: 2 }),
+      ]),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    const rows = buildReceiptClosingBySeller(page.lines);
+    assert.equal(rows[0]?.receivedAmount, 800);
+    assert.equal(rows[0]?.receivableCount, 1);
+  });
+
+  it("buildReceiptClosingMaterializationCards exige explicação quando há Nomus", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: previewResult([previewLine({ ledgerLineKey: "k1", releasedCommissionAmount: 18 })]),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+      nomusCommission: 20,
+    });
+    const reconciliation = buildReceiptClosingReconciliationFromApiLines({
+      lines: page.lines,
+      nomusBase: null,
+      nomusCommission: 20,
+    });
+    const cards = buildReceiptClosingMaterializationCards(page.lines, "PREVIEW", reconciliation);
+    assert.equal(cards.nomusCommissionDiff, -2);
+    assert.ok(cards.nomusDiffExplanation);
   });
 });

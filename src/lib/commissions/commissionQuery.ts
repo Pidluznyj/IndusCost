@@ -1078,6 +1078,8 @@ export type ReceiptClosingQueryParsed = {
   month: number;
   seller?: string | null;
   customer?: string | null;
+  nomusBase?: number | null;
+  nomusCommission?: number | null;
 };
 
 export function parseReceiptClosingQuery(
@@ -1095,7 +1097,9 @@ export function parseReceiptClosingQuery(
     typeof query.seller === "string" && query.seller.trim() ? query.seller.trim() : null;
   const customer =
     typeof query.customer === "string" && query.customer.trim() ? query.customer.trim() : null;
-  return { year, month, seller, customer };
+  const nomusBase = parseOptionalFloat(query.nomusBase);
+  const nomusCommission = parseOptionalFloat(query.nomusCommission);
+  return { year, month, seller, customer, nomusBase, nomusCommission };
 }
 
 export function parseReceiptClosingPeriodParams(params: {

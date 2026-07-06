@@ -29,6 +29,8 @@ export type ReceiptClosingFilters = {
   month: number;
   seller?: string | null;
   customer?: string | null;
+  nomusBase?: number | null;
+  nomusCommission?: number | null;
   includeExcluded?: boolean;
   includeExceptions?: boolean;
 };

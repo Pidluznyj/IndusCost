@@ -789,11 +789,20 @@ export function parseReceiptClosingApplyBody(body: unknown) {
       'Confirmação obrigatória: digite "FECHAR COMISSAO".'
     );
   }
+  const criticalConfirm = optionalString(record.criticalConfirm);
+  if (criticalConfirm != null && criticalConfirm !== "DIVERGENCIA CRITICA") {
+    throw new CommissionValidationError(
+      "CRITICAL_DIVERGENCE",
+      'Divergência crítica exige digitar "DIVERGENCIA CRITICA".'
+    );
+  }
   return {
     year,
     month,
     confirm,
     notes: optionalString(record.notes),
+    acknowledgeCriticalDivergence:
+      record.acknowledgeCriticalDivergence === true || criticalConfirm === "DIVERGENCIA CRITICA",
   };
 }
 

@@ -460,6 +460,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         month: body.month,
         userId: ctx.user.id,
         notes: body.notes,
+        acknowledgeCriticalDivergence: body.acknowledgeCriticalDivergence,
       });
       const payload = await getReceiptClosingPage(body.year, body.month);
       return res.status(201).json({ result, payload });
@@ -479,7 +480,15 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
       const { year, month } = parseReceiptClosingPeriodParams(req.params);
-      const payload = await getReceiptClosingPage(year, month);
+      const nomusQuery = parseReceiptClosingQuery({
+        year,
+        month,
+        ...req.query,
+      });
+      const payload = await getReceiptClosingPage(year, month, {
+        nomusBase: nomusQuery.nomusBase,
+        nomusCommission: nomusQuery.nomusCommission,
+      });
       return res.json(payload);
     } catch (error) {
       try {
@@ -499,7 +508,17 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
         if (!ctx) return;
         const { year, month } = parseReceiptClosingPeriodParams(req.params);
-        const { csv, filename } = await exportReceiptClosingCsv({ year, month });
+        const nomusQuery = parseReceiptClosingQuery({
+          year,
+          month,
+          ...req.query,
+        });
+        const { csv, filename } = await exportReceiptClosingCsv({
+          year,
+          month,
+          nomusBase: nomusQuery.nomusBase,
+          nomusCommission: nomusQuery.nomusCommission,
+        });
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         return res.send(csv);

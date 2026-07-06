@@ -970,6 +970,34 @@ export type CommissionsReceiptClosingSnapshot = {
   notes: string | null;
 };
 
+export type CommissionsReceiptClosingMaterializationCards = {
+  totalReceivedAmount: number;
+  receivedWithScheduleAmount: number;
+  receivedExcludedCustomerAmount: number;
+  receivedWithoutScheduleAmount: number;
+  commissionableBaseAmount: number;
+  grossCommissionAmount: number;
+  excludedCommissionAmount: number;
+  finalCommissionAmount: number;
+  nomusCommissionDiff: number | null;
+  nomusDiffExplanation: string | null;
+  reportStatus: "PREVIEW" | "CLOSED";
+};
+
+export type CommissionsReceiptClosingReconciliation = {
+  nomusBase: number | null;
+  nomusCommission: number | null;
+  diffCommissionFinal: number | null;
+  diffCommissionBeforeExclusions: number | null;
+  diffExplanation: string | null;
+  excludedCustomerCount: number;
+  receivablesWithoutScheduleCount: number;
+  staleScheduleCount: number;
+  divergentReceivableCount: number;
+  duplicateReceivedCount: number;
+  comparable: boolean;
+};
+
 export type CommissionsReceiptClosingLine = {
   lineKey: string;
   nomusReceivableId: number | null;
@@ -994,10 +1022,14 @@ export type CommissionsReceiptClosingLine = {
   canonicalSellerName: string | null;
   sellerResolutionStatus: string | null;
   receivedAmount: number;
+  uniqueReceivedAmount: number;
   commissionableBaseAmount: number;
   ratePercent: number;
   expectedCommissionAmount: number;
   releasedCommissionAmount: number;
+  grossCommissionAmount: number;
+  scheduledCommissionAmount: number | null;
+  commissionReceivableScheduleId: string | null;
   ruleId: string | null;
   ruleName: string | null;
   exclusionReason: string | null;
@@ -1012,6 +1044,8 @@ export type CommissionsReceiptClosingSellerRow = {
   receivableCount: number;
   receivedAmount: number;
   commissionableBase: number;
+  grossCommission: number;
+  excludedCommission: number;
   expectedCommission: number;
   releasedCommission: number;
   exceptionCount: number;
@@ -1025,6 +1059,11 @@ export type CommissionsReceiptClosingPayload = {
   closing: CommissionsReceiptClosingSnapshot | null;
   canApply: boolean;
   applyBlockedReason: string | null;
+  criticalDivergence: boolean;
+  criticalDivergenceReason: string | null;
+  requiresCriticalConfirmation: boolean;
+  cards: CommissionsReceiptClosingMaterializationCards;
+  reconciliation: CommissionsReceiptClosingReconciliation;
   summary: {
     totalReceivables: number;
     totalReceivedAmount: number;
