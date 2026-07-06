@@ -24,10 +24,17 @@ import {
 } from "./chatgptDiagnosticTypes.js";
 import {
   DEFAULT_CODE_REFERENCES,
-  buildRedactionReportFromPayload,
   createDiagnosticSourceRef,
-  sanitizeDiagnosticPayload,
 } from "./diagnosticSourceRefs.server.js";
+import {
+  assertBundleContainsNoForbiddenSecrets,
+  buildSafeEnvironmentFlags,
+  contextToRedactionReport,
+  createSanitizationContext,
+  sanitizeDiagnosticLogLines,
+  sanitizeDiagnosticPayload,
+  sanitizeDiagnosticText,
+} from "./sanitizeDiagnosticPayload.server.js";
 
 export type BuildDiagnosticBundleInput = {
   scope: DiagnosticScope;
@@ -211,6 +218,7 @@ export function buildChatGptDiagnosticBundle(
 
   const bundleId = randomUUID();
   const generatedAt = new Date().toISOString();
+  const sanitizeCtx = createSanitizationContext();
 
   const systemSnapshot = sanitizeDiagnosticPayload(
     input.systemSnapshot ?? {
@@ -222,7 +230,7 @@ export function buildChatGptDiagnosticBundle(
       },
       environment: {
         nodeEnv: process.env.NODE_ENV ?? "development",
-        hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+        ...buildSafeEnvironmentFlags(),
       },
       auditServicesAvailable: [
         "buildProductCostTrace",
@@ -231,7 +239,8 @@ export function buildChatGptDiagnosticBundle(
         "buildCommissionTrace",
         "buildCostToCashTrace",
       ],
-    }
+    },
+    sanitizeCtx
   );
 
   const databaseEvidence = sanitizeDiagnosticPayload(
@@ -241,7 +250,8 @@ export function buildChatGptDiagnosticBundle(
       publishedPrice: null,
       salesOrder: null,
       commission: null,
-    }
+    },
+    sanitizeCtx
   );
 
   const calculationTrace = sanitizeDiagnosticPayload(
@@ -250,27 +260,32 @@ export function buildChatGptDiagnosticBundle(
       recalculatedInFrontend: false,
       publishedPriceRecalculated: false,
       traces: [],
-    }
+    },
+    sanitizeCtx
   );
 
-  const apiTrace = sanitizeDiagnosticPayload({
-    calls: context.apiCalls ?? [],
-    note: "Chamadas capturadas no contexto da tela ou script gerador.",
-  });
+  const apiTrace = sanitizeDiagnosticPayload(
+    {
+      calls: context.apiCalls ?? [],
+      note: "Chamadas capturadas no contexto da tela ou script gerador.",
+    },
+    sanitizeCtx
+  );
 
-  const screenContext = sanitizeDiagnosticPayload(context);
+  const screenContext = sanitizeDiagnosticPayload(context, sanitizeCtx);
 
-  const warningsAndErrors = {
-    findings: findings.filter((f) => f.severity === "warning" || f.severity === "error" || f.severity === "critical"),
-    contextError: context.errorMessage ?? null,
-  };
-
-  const redactionReport = buildRedactionReportFromPayload({
-    systemSnapshot,
-    databaseEvidence,
-    apiTrace,
-    screenContext,
-  });
+  const warningsAndErrors = sanitizeDiagnosticPayload(
+    {
+      findings: findings.filter(
+        (f) =>
+          f.severity === "warning" ||
+          f.severity === "error" ||
+          f.severity === "critical"
+      ),
+      contextError: context.errorMessage ?? null,
+    },
+    sanitizeCtx
+  );
 
   const diagnosticIndex = {
     bundleId,
@@ -303,41 +318,89 @@ export function buildChatGptDiagnosticBundle(
     evidenceMap.set(path, emptyEvidencePlaceholder(input.scope, path));
   }
   for (const ev of input.evidence ?? []) {
-    evidenceMap.set(ev.bundlePath, sanitizeDiagnosticPayload(ev.payload));
+    evidenceMap.set(
+      ev.bundlePath,
+      sanitizeDiagnosticPayload(ev.payload, sanitizeCtx)
+    );
   }
   evidenceMap.set(
     "evidence/system/bundle-meta.json",
-    sanitizeDiagnosticPayload({ bundleId, generatedAt, scope: input.scope })
+    sanitizeDiagnosticPayload({ bundleId, generatedAt, scope: input.scope }, sanitizeCtx)
   );
+
+  const sanitizedLogs = sanitizeDiagnosticLogLines(input.logs ?? [], sanitizeCtx);
+  sanitizeCtx.filesSanitized.add("12_LOGS_SANITIZED.log");
+
+  const jsonEntryPaths = [
+    "03_DIAGNOSTIC_INDEX.json",
+    "04_DIAGNOSTICS.json",
+    "06_SYSTEM_SNAPSHOT.json",
+    "07_SCREEN_CONTEXT.json",
+    "08_API_TRACE.json",
+    "09_DATABASE_EVIDENCE.json",
+    "10_CALCULATION_TRACE.json",
+    "13_CODE_REFERENCES.json",
+    "14_WARNINGS_AND_ERRORS.json",
+  ] as const;
+  for (const path of jsonEntryPaths) {
+    sanitizeCtx.filesSanitized.add(path);
+  }
+
+  const redactionReport = contextToRedactionReport(sanitizeCtx);
 
   const entries: Record<string, string> = {
     "00_README_FOR_CHATGPT.md": buildReadmeForChatGpt(),
-    "01_EXECUTIVE_SUMMARY.md": buildExecutiveSummary(input.scope, context),
-    "02_PROBLEM_CONTEXT.md": buildProblemContext(context),
+    "01_EXECUTIVE_SUMMARY.md": sanitizeDiagnosticText(
+      buildExecutiveSummary(input.scope, context),
+      sanitizeCtx
+    ),
+    "02_PROBLEM_CONTEXT.md": sanitizeDiagnosticText(
+      buildProblemContext(context),
+      sanitizeCtx
+    ),
     "03_DIAGNOSTIC_INDEX.json": JSON.stringify(diagnosticIndex, null, 2),
     "04_DIAGNOSTICS.json": JSON.stringify({ findings }, null, 2),
-    "04_DIAGNOSTICS.jsonl": buildDiagnosticsJsonl(findings),
+    "04_DIAGNOSTICS.jsonl": sanitizeDiagnosticText(
+      buildDiagnosticsJsonl(findings),
+      sanitizeCtx
+    ),
     "05_REPRODUCTION_STEPS.md": buildReproductionMarkdown(reproduction),
     "06_SYSTEM_SNAPSHOT.json": JSON.stringify(systemSnapshot, null, 2),
     "07_SCREEN_CONTEXT.json": JSON.stringify(screenContext, null, 2),
     "08_API_TRACE.json": JSON.stringify(apiTrace, null, 2),
     "09_DATABASE_EVIDENCE.json": JSON.stringify(databaseEvidence, null, 2),
     "10_CALCULATION_TRACE.json": JSON.stringify(calculationTrace, null, 2),
-    "11_BUSINESS_RULES_APPLIED.md":
-      input.businessRulesMarkdown ??
-      buildDefaultBusinessRulesMarkdown(input.scope),
-    "12_LOGS_SANITIZED.log": sanitizeLogs(input.logs ?? []),
+    "11_BUSINESS_RULES_APPLIED.md": sanitizeDiagnosticText(
+      input.businessRulesMarkdown ?? buildDefaultBusinessRulesMarkdown(input.scope),
+      sanitizeCtx
+    ),
+    "12_LOGS_SANITIZED.log": sanitizedLogs,
     "13_CODE_REFERENCES.json": JSON.stringify({ references: codeRefs }, null, 2),
     "14_WARNINGS_AND_ERRORS.json": JSON.stringify(warningsAndErrors, null, 2),
-    "15_REDACTION_REPORT.json": JSON.stringify(redactionReport, null, 2),
+    "15_REDACTION_REPORT.json": JSON.stringify(
+      contextToRedactionReport(sanitizeCtx),
+      null,
+      2
+    ),
     "exports/summary.csv": buildSummaryCsv(findings),
     "exports/diagnostics.csv": buildSummaryCsv(findings),
     "evidence/raw-limited/.gitkeep": "",
   };
 
   for (const [path, payload] of evidenceMap.entries()) {
+    sanitizeCtx.filesSanitized.add(path);
     entries[path] = JSON.stringify(payload, null, 2);
   }
+
+  // Atualiza report final com todos os arquivos sanitizados
+  entries["15_REDACTION_REPORT.json"] = JSON.stringify(
+    {
+      ...redactionReport,
+      filesSanitized: [...sanitizeCtx.filesSanitized].sort(),
+    },
+    null,
+    2
+  );
 
   const manifest: DiagnosticManifest = {
     bundleVersion: CHATGPT_DIAGNOSTIC_BUNDLE_VERSION,
@@ -374,6 +437,17 @@ export function buildChatGptDiagnosticBundle(
   );
   entries["manifest.json"] = JSON.stringify(manifest, null, 2);
 
+  for (const [path, content] of Object.entries(entries)) {
+    if (path.endsWith(".gitkeep")) continue;
+    try {
+      assertBundleContainsNoForbiddenSecrets(content);
+    } catch (err) {
+      throw new Error(
+        `${err instanceof Error ? err.message : String(err)} (arquivo: ${path})`
+      );
+    }
+  }
+
   return { manifest, entries };
 }
 
@@ -402,18 +476,6 @@ function buildDefaultBusinessRulesMarkdown(scope: DiagnosticScope): string {
 - Cliente excluído: \`CUSTOMER_EXCLUDED\` (comissão final zero, base preservada).
 - Sem schedule: \`NO_SCHEDULE\` (status auditável, não erro 500).
 `;
-}
-
-function sanitizeLogs(lines: string[]): string {
-  if (lines.length === 0) {
-    return "# No logs captured in this bundle.\n";
-  }
-  const redacted = lines.map((line) =>
-    line
-      .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
-      .replace(/postgresql:\/\/\S+/gi, "postgresql://[REDACTED]")
-  );
-  return redacted.join("\n") + (redacted.length ? "\n" : "");
 }
 
 export function assertRequiredBundleStructure(bundle: DiagnosticBundle): void {

@@ -77,10 +77,12 @@ export type DiagnosticCodeReference = {
 };
 
 export type DiagnosticRedactionReport = {
-  redactedFieldCount: number;
-  patternsMatched: string[];
-  redactedKeys: string[];
-  notes: string[];
+  redactedFieldsCount: number;
+  redactedPatterns: string[];
+  filesSanitized: string[];
+  warnings: string[];
+  /** Detalhe interno opcional para auditoria */
+  redactedKeys?: string[];
 };
 
 export type DiagnosticScopeContext = {

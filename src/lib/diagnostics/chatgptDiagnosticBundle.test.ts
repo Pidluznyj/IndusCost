@@ -10,7 +10,10 @@ import {
   buildChatGptDiagnosticBundle,
   buildMinimalSystemDiagnosticBundle,
 } from "./diagnosticBundleBuilder.server.js";
-import { sanitizeDiagnosticPayload } from "./diagnosticSourceRefs.server.js";
+import {
+  redactionMask,
+  sanitizeDiagnosticPayload,
+} from "./sanitizeDiagnosticPayload.server.js";
 
 describe("chatgptDiagnosticBundle", () => {
   it("gera bundle mínimo SYSTEM com arquivos obrigatórios", () => {
@@ -60,8 +63,8 @@ describe("chatgptDiagnosticBundle", () => {
       nested: { token: "secret-value" },
     });
     const obj = sanitized as Record<string, unknown>;
-    assert.equal(obj.DATABASE_URL, "[REDACTED]");
-    assert.equal((obj.nested as Record<string, unknown>).token, "[REDACTED]");
+    assert.equal(obj.DATABASE_URL, redactionMask("DATABASE_URL"));
+    assert.equal((obj.nested as Record<string, unknown>).token, redactionMask("token"));
   });
 
   it("builder grava apenas em tmp/diagnostic-bundles", async () => {
