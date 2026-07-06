@@ -82,6 +82,8 @@ Resposta padronizada: `{ status, summary, sections, diagnostics, warnings, error
 
 Registro: `registerCostToCashTraceRoutes` em `server.ts`.
 
+**Tela:** `/reports/cost-to-cash-trace` — `CostToCashTracePage` (read-only, consome `/api/audit/cost-to-cash-trace`).
+
 ---
 
 ## APIs e telas (futuro)

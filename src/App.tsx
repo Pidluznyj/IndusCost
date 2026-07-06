@@ -56,7 +56,8 @@ import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView"
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, BarChart3, ClipboardList, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
+import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
+import { AlertCircle, BarChart3, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -797,6 +798,13 @@ export default function App() {
                     <Factory className="h-4 w-4 text-primary" />
                     Inteligência de Matéria-Prima
                   </Link>
+                  <Link
+                    to="/reports/cost-to-cash-trace"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <GitBranch className="h-4 w-4 text-primary" />
+                    Rastreabilidade
+                  </Link>
                   <ModuleIndicatorsButton to="/sales-orders/indicators" />
                 </>
               }
@@ -911,11 +919,39 @@ export default function App() {
           }
         />
         <Route
+          path="reports/cost-to-cash-trace"
+          element={
+            <ModulePageShell
+              title="Rastreabilidade"
+              description="Auditoria executiva Custo → Preço → Venda → Comissão (read-only)."
+              headerActions={
+                <Link
+                  to="/reports"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  Relatórios e BI
+                </Link>
+              }
+            >
+              <CostToCashTracePage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="reports"
           element={
             <ModulePageShell
               title="Relatórios e BI"
               description="Analise indicadores e exporte dados estratégicos."
+              headerActions={
+                <Link
+                  to="/reports/cost-to-cash-trace"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  <GitBranch className="h-4 w-4 text-primary" />
+                  Rastreabilidade
+                </Link>
+              }
             >
               <ReportsModule />
             </ModulePageShell>
