@@ -358,6 +358,7 @@ model Customer {
   proposals                         Proposal[]
   salesOrders                       SalesOrder[]
   commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
+  commissionReceiptLedgerLines      CommissionReceiptLedgerLine[]
 }
 
 model Proposal {
@@ -3895,6 +3896,29 @@ enum CommissionPersonAliasSource {
   OTHER
 }
 
+enum CommissionMonthlyClosingStatus {
+  DRAFT
+  PREVIEWED
+  CLOSED
+  CANCELLED
+  REPROCESSED
+}
+
+enum CommissionMonthlyClosingSource {
+  RECEIPT_BASED
+}
+
+enum CommissionReceiptLedgerLineStatus {
+  COMMISSIONABLE
+  CUSTOMER_EXCLUDED
+  NO_SALES_LINK
+  NO_SELLER
+  SELLER_UNRESOLVED
+  NO_RULE
+  ZERO_AMOUNT
+  ERROR
+}
+
 model CommissionPerson {
   id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nomusPersonId Int?
@@ -3913,6 +3937,7 @@ model CommissionPerson {
   paymentBatches       CommissionPaymentBatch[]
   customerExceptions   CommissionCustomerException[]
   sellerAliases        CommissionPersonAlias[]
+  receiptLedgerLines   CommissionReceiptLedgerLine[] @relation("ReceiptLedgerCanonicalSeller")
 
   @@index([nomusPersonId])
   @@index([type])
@@ -3962,6 +3987,7 @@ model CommissionRule {
 
   fixedCommissionPerson CommissionPerson?       @relation("CommissionRuleFixedPerson", fields: [fixedCommissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   conditions            CommissionRuleCondition[]
+  receiptLedgerLines    CommissionReceiptLedgerLine[]
 
   @@index([active])
   @@index([priority])
@@ -4067,6 +4093,7 @@ model CommissionRecord {
   commissionPerson  CommissionPerson           @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   paymentSchedules  CommissionPaymentSchedule[]
   paymentBatchItems CommissionPaymentBatchItem[]
+  receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([orderCode])
   @@index([nomusOrderId])
@@ -4101,6 +4128,7 @@ model CommissionPaymentSchedule {
 
   commissionRecord  CommissionRecord             @relation(fields: [commissionRecordId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   paymentBatchItems CommissionPaymentBatchItem[]
+  receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([commissionRecordId])
   @@index([nomusReceivableId])
@@ -4232,6 +4260,7 @@ model CommissionCustomerExclusionRule {
   updatedAt              DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
 
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([status])
   @@index([customerId])
@@ -4240,4 +4269,106 @@ model CommissionCustomerExclusionRule {
   @@index([effectiveFrom, effectiveTo])
 }
 
+/// Fechamento mensal persistido de comissão por recebimento (ledger auditável).
+model CommissionMonthlyClosing {
+  id                      String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  year                    Int
+  month                   Int
+  status                  CommissionMonthlyClosingStatus @default(DRAFT)
+  source                  CommissionMonthlyClosingSource @default(RECEIPT_BASED)
+  totalReceivedAmount     Decimal                        @default(0) @db.Decimal(20, 2)
+  totalCommissionableBase Decimal                        @default(0) @db.Decimal(20, 2)
+  totalExpectedCommission Decimal                        @default(0) @db.Decimal(20, 2)
+  totalReleasedCommission Decimal                        @default(0) @db.Decimal(20, 2)
+  totalExcludedAmount     Decimal                        @default(0) @db.Decimal(20, 2)
+  totalExceptionAmount    Decimal                        @default(0) @db.Decimal(20, 2)
+  lineCount               Int                            @default(0)
+  calculationHash         String?
+  notes                   String?
+  createdBy               String?
+  closedBy                String?
+  supersededByClosingId   String?                        @db.Uuid
+  createdAt               DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+  closedAt                DateTime?                      @db.Timestamptz(6)
+
+  supersededBy  CommissionMonthlyClosing?  @relation("CommissionClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersedes    CommissionMonthlyClosing[] @relation("CommissionClosingSupersession")
+  ledgerLines   CommissionReceiptLedgerLine[]
+
+  @@index([year, month])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@index([supersededByClosingId])
+}
+
+/// Linha do ledger de comissão por título recebido (snapshot auditável por baixa).
+model CommissionReceiptLedgerLine {
+  id                          String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId                   String?                           @db.Uuid
+  year                        Int
+  month                       Int
+  ledgerLineKey               String                            @unique
+  nomusReceivableId           Int?
+  receivableNumber            String?
+  installmentNumber           Int?
+  settlementDate              DateTime?                         @db.Timestamptz(6)
+  dueDate                     DateTime?                         @db.Timestamptz(6)
+  customerId                  String?                           @db.Uuid
+  customerExternalId          Int?
+  customerNameSnapshot        String?
+  customerDocumentSnapshot    String?
+  nomusOrderId                Int?
+  orderCode                   String?
+  nomusNfeId                  Int?
+  nfeNumber                   String?
+  nomusOrderItemId            Int?
+  nomusProductId              Int?
+  productCode                 String?
+  productNameSnapshot         String?
+  rawSellerId                 Int?
+  rawSellerName               String?
+  canonicalSellerId           String?                           @db.Uuid
+  canonicalSellerName         String?
+  sellerResolutionStatus      String?
+  receivedAmount              Decimal                           @default(0) @db.Decimal(20, 2)
+  receivableNominalAmount     Decimal                           @default(0) @db.Decimal(20, 2)
+  allocatedReceivedAmount     Decimal                           @default(0) @db.Decimal(20, 2)
+  allocatedCommercialBase     Decimal                           @default(0) @db.Decimal(20, 2)
+  commissionRatePercent       Decimal                           @default(0) @db.Decimal(10, 4)
+  expectedCommissionAmount    Decimal                           @default(0) @db.Decimal(20, 2)
+  releasedCommissionAmount    Decimal                           @default(0) @db.Decimal(20, 2)
+  commissionRecordId          String?                           @db.Uuid
+  commissionPaymentScheduleId String?                           @db.Uuid
+  ruleId                      String?                           @db.Uuid
+  ruleNameSnapshot            String?
+  ruleSnapshotJson            Json?
+  customerExclusionRuleId     String?                           @db.Uuid
+  exclusionReason             String?
+  status                      CommissionReceiptLedgerLineStatus
+  exceptionReason             String?
+  calculationHash             String?
+  createdAt                   DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  closing                   CommissionMonthlyClosing?          @relation(fields: [closingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionRecord          CommissionRecord?                  @relation(fields: [commissionRecordId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionPaymentSchedule CommissionPaymentSchedule?         @relation(fields: [commissionPaymentScheduleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  rule                      CommissionRule?                    @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  canonicalSeller           CommissionPerson?                  @relation("ReceiptLedgerCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customerExclusionRule     CommissionCustomerExclusionRule?   @relation(fields: [customerExclusionRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer                  Customer?                          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([year, month])
+  @@index([closingId])
+  @@index([nomusReceivableId])
+  @@index([canonicalSellerId])
+  @@index([customerExternalId])
+  @@index([customerId])
+  @@index([status])
+  @@index([commissionRecordId])
+  @@index([commissionPaymentScheduleId])
+  @@index([settlementDate])
+}
 

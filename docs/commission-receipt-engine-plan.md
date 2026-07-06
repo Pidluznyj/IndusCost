@@ -543,4 +543,14 @@ npm run test:commissions
 
 ---
 
-_Documento gerado na fase de auditoria. Nenhuma migration, sync ou regra de negócio foi alterada._
+## 15. Modelagem persistida (2026-07-08)
+
+Migration `20260708120000_commission_receipt_ledger`:
+
+- `CommissionMonthlyClosing` — fechamento mensal auditável (`DRAFT` → `PREVIEWED` → `CLOSED`)
+- `CommissionReceiptLedgerLine` — linha por título recebido com snapshot de regra/vendedor
+- Partial unique: um fechamento `CLOSED` por `(year, month, source)`
+- Helpers: `src/lib/commissions/commissionReceiptLedger.ts`
+
+O fechamento calculado em tela (`commissionMonthlyPayable`) permanece consultável; o ledger persistido é camada adicional para auditoria e reprocessamento.
+
