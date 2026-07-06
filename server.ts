@@ -64,6 +64,10 @@ import {
   MATERIAL_COST_TABLE_VIEW_PERMISSIONS,
 } from "./src/lib/materialCostTablesUi.js";
 import { resolveServerAppBuildInfo } from "./src/lib/appVersion.js";
+import { getBrandingSettings } from "./src/lib/brandingSettings.server.js";
+import { fetchProposalPptxData } from "./src/lib/projects/clientProposalPptxData.js";
+import { createTheme } from "./src/lib/projects/clientProposalPptxTheme.js";
+import { generateClientProposalPptx } from "./src/lib/projects/clientProposalPptx.server.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
@@ -11512,6 +11516,44 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const { id } = req.params;
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
+  });
+
+  app.get("/api/projects/:projectId/client-proposal-pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const data = await fetchProposalPptxData(projectId);
+      if (!data) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Proposta de cliente não encontrada." });
+      }
+      const branding = await getBrandingSettings();
+      const theme = createTheme(branding);
+      const buffer = await generateClientProposalPptx(data, theme);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+      res.setHeader("Content-Disposition", `attachment; filename="proposta_${data.projectCode}.pptx"`);
+      res.send(buffer);
+    } catch (e: any) {
+      console.error("GET /api/projects/:projectId/client-proposal-pptx", e);
+      res.status(500).json({ error: "INTERNAL_ERROR", message: e.message || "Erro desconhecido." });
+    }
+  });
+
+  app.get("/api/proposals/:id/pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = await fetchProposalPptxData(id);
+      if (!data) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Proposta de cliente não encontrada." });
+      }
+      const branding = await getBrandingSettings();
+      const theme = createTheme(branding);
+      const buffer = await generateClientProposalPptx(data, theme);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+      res.setHeader("Content-Disposition", `attachment; filename="proposta_${data.projectCode}.pptx"`);
+      res.send(buffer);
+    } catch (e: any) {
+      console.error("GET /api/proposals/:id/pptx", e);
+      res.status(500).json({ error: "INTERNAL_ERROR", message: e.message || "Erro desconhecido." });
+    }
   });
 
   // --- API: Pedidos de venda internos (origem: proposta aprovada; envio Nomus em etapa futura) ---

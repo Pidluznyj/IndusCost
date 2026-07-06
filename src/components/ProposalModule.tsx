@@ -983,6 +983,14 @@ export const ProposalModule = () => {
     [navigate, loadProposalListPage, currentPage]
   );
 
+  const handleDownloadPptx = (proposalId: string) => {
+    const link = document.createElement("a");
+    link.href = `/api/projects/${proposalId}/client-proposal-pptx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
@@ -1490,6 +1498,15 @@ export const ProposalModule = () => {
                 onChange={(v) => setFormData({ ...formData, status: v as ProposalStatus })}
               />
             </div>
+            {editingProposal && (
+              <button 
+                onClick={() => handleDownloadPptx(editingProposal.id)}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg"
+              >
+                <FileText className="h-4 w-4" />
+                Gerar PPT Executivo
+              </button>
+            )}
             <button 
               onClick={handleSave}
               disabled={saving}
@@ -2516,6 +2533,13 @@ export const ProposalModule = () => {
                             <Printer className="h-4 w-4" />
                           </button>
                         ) : null}
+                        <button 
+                          onClick={() => handleDownloadPptx(p.id)}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-orange-500 transition-all"
+                          title="Gerar PPT Executivo"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </button>
                         {allowDelete ? (
                           <button
                             onClick={() => handleDelete(p.id)}

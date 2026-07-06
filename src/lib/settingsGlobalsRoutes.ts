@@ -94,17 +94,8 @@ export function registerSettingsGlobalsRoutes(
 
   app.get("/api/branding-settings", ...viewGuard, async (_req, res) => {
     try {
-      let settings = await prisma.brandingSettings.findFirst();
-      if (!settings) {
-        settings = await prisma.brandingSettings.create({
-          data: {
-            companyName: "Lazarios Koppetel",
-            slogan: "Soluções e qualidade em plásticos",
-            primaryColor: "#0EA5E9",
-            secondaryColor: "#1D4ED8",
-          }
-        });
-      }
+      const { getBrandingSettings } = await import("./brandingSettings.server.js");
+      const settings = await getBrandingSettings();
       return res.json(settings);
     } catch (error) {
       console.error("GET /api/branding-settings", error);
@@ -116,9 +107,14 @@ export function registerSettingsGlobalsRoutes(
     try {
       const {
         companyName,
+        tradeName,
         slogan,
+        document,
+        logoUrl,
+        logoBase64,
         primaryColor,
         secondaryColor,
+        accentColor,
         systemCompactLogoDataUrl,
         systemExpandedLogoDataUrl,
         proposalLogoDataUrl,
@@ -126,7 +122,15 @@ export function registerSettingsGlobalsRoutes(
         faviconDataUrl,
         proposalCoverDataUrl,
         proposalSideImageDataUrl,
-        watermarkDataUrl
+        watermarkDataUrl,
+        address,
+        phone,
+        email,
+        website,
+        proposalFooterText,
+        commercialContactName,
+        commercialContactEmail,
+        commercialContactPhone
       } = req.body;
 
       if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
@@ -140,44 +144,38 @@ export function registerSettingsGlobalsRoutes(
       if (secondaryColor && !hexRegex.test(secondaryColor)) {
         return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor secundária inválida. Deve ser um código hexadecimal." });
       }
-
-      let settings = await prisma.brandingSettings.findFirst();
-      if (settings) {
-        settings = await prisma.brandingSettings.update({
-          where: { id: settings.id },
-          data: {
-            companyName: companyName.trim(),
-            slogan: slogan?.trim() || null,
-            primaryColor: primaryColor || "#0EA5E9",
-            secondaryColor: secondaryColor || "#1D4ED8",
-            systemCompactLogoDataUrl: systemCompactLogoDataUrl || null,
-            systemExpandedLogoDataUrl: systemExpandedLogoDataUrl || null,
-            proposalLogoDataUrl: proposalLogoDataUrl || null,
-            darkLogoDataUrl: darkLogoDataUrl || null,
-            faviconDataUrl: faviconDataUrl || null,
-            proposalCoverDataUrl: proposalCoverDataUrl || null,
-            proposalSideImageDataUrl: proposalSideImageDataUrl || null,
-            watermarkDataUrl: watermarkDataUrl || null,
-          }
-        });
-      } else {
-        settings = await prisma.brandingSettings.create({
-          data: {
-            companyName: companyName.trim(),
-            slogan: slogan?.trim() || null,
-            primaryColor: primaryColor || "#0EA5E9",
-            secondaryColor: secondaryColor || "#1D4ED8",
-            systemCompactLogoDataUrl: systemCompactLogoDataUrl || null,
-            systemExpandedLogoDataUrl: systemExpandedLogoDataUrl || null,
-            proposalLogoDataUrl: proposalLogoDataUrl || null,
-            darkLogoDataUrl: darkLogoDataUrl || null,
-            faviconDataUrl: faviconDataUrl || null,
-            proposalCoverDataUrl: proposalCoverDataUrl || null,
-            proposalSideImageDataUrl: proposalSideImageDataUrl || null,
-            watermarkDataUrl: watermarkDataUrl || null,
-          }
-        });
+      if (accentColor && !hexRegex.test(accentColor)) {
+        return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor de destaque inválida. Deve ser um código hexadecimal." });
       }
+
+      const { updateBrandingSettings } = await import("./brandingSettings.server.js");
+      const settings = await updateBrandingSettings({
+        companyName: companyName.trim(),
+        tradeName: tradeName?.trim() || companyName.trim(),
+        slogan: slogan?.trim() || null,
+        document: document?.trim() || null,
+        logoUrl: logoUrl?.trim() || null,
+        logoBase64: logoBase64 || null,
+        primaryColor: primaryColor || "#0EA5E9",
+        secondaryColor: secondaryColor || "#1D4ED8",
+        accentColor: accentColor || "#3b82f6",
+        systemCompactLogoDataUrl: systemCompactLogoDataUrl || null,
+        systemExpandedLogoDataUrl: systemExpandedLogoDataUrl || null,
+        proposalLogoDataUrl: proposalLogoDataUrl || null,
+        darkLogoDataUrl: darkLogoDataUrl || null,
+        faviconDataUrl: faviconDataUrl || null,
+        proposalCoverDataUrl: proposalCoverDataUrl || null,
+        proposalSideImageDataUrl: proposalSideImageDataUrl || null,
+        watermarkDataUrl: watermarkDataUrl || null,
+        address: address?.trim() || null,
+        phone: phone?.trim() || null,
+        email: email?.trim() || null,
+        website: website?.trim() || null,
+        proposalFooterText: proposalFooterText?.trim() || null,
+        commercialContactName: commercialContactName?.trim() || null,
+        commercialContactEmail: commercialContactEmail?.trim() || null,
+        commercialContactPhone: commercialContactPhone?.trim() || null,
+      });
 
       return res.json(settings);
     } catch (error) {

@@ -477,9 +477,14 @@ model ProposalItem {
 model BrandingSettings {
   id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyName               String?  @default("Lazarios Koppetel")
+  tradeName                 String?  @default("Lazarios")
   slogan                    String?  @default("Soluções e qualidade em plásticos")
+  document                  String?
+  logoUrl                   String?
+  logoBase64                String?  @db.Text
   primaryColor              String?  @default("#0EA5E9")
   secondaryColor            String?  @default("#1D4ED8")
+  accentColor               String?  @default("#3b82f6")
   systemCompactLogoDataUrl  String?  @db.Text
   systemExpandedLogoDataUrl String?  @db.Text
   proposalLogoDataUrl       String?  @db.Text
@@ -488,9 +493,18 @@ model BrandingSettings {
   proposalCoverDataUrl      String?  @db.Text
   proposalSideImageDataUrl  String?  @db.Text
   watermarkDataUrl          String?  @db.Text
+  address                   String?
+  phone                     String?
+  email                     String?
+  website                   String?
+  proposalFooterText        String?
+  commercialContactName     String?
+  commercialContactEmail    String?
+  commercialContactPhone    String?
   createdAt                 DateTime @default(now()) @db.Timestamptz(6)
   updatedAt                 DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
+
 
 model SalesOrder {
   id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
