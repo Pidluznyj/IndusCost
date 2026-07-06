@@ -3827,6 +3827,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
                 publishedVersionStatus: frozenBase.frozenVersionStatus,
                 draftHash: frozenBase.draftHash,
                 draftVersionStatus: frozenBase.draftVersionId ? "DRAFT" : null,
+                draftUnitCost: frozenBase.draftUnitCost,
               })
             : liveCiu == null
               ? ("SEM_CUSTO" as const)

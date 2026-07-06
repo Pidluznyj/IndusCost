@@ -2,6 +2,8 @@
  * Tipos e helpers puros — status de publicação de custo por produto (sem Prisma).
  */
 
+import type { ProductEngineeringCostWarningResult } from "./productEngineeringCostWarning.js";
+
 export type ProductionCostPublicationCostSlice = {
   versionId: string;
   versionCode: string;
@@ -23,6 +25,7 @@ export type ProductProductionCostPublicationStatus = {
   officialCost: ProductionCostPublicationCostSlice | null;
   pendingDraft: ProductionCostPublicationCostSlice | null;
   difference: { amount: number; percent: number } | null;
+  warning: ProductEngineeringCostWarningResult;
 };
 
 function round6(value: number): number {

@@ -9,6 +9,10 @@ import {
   type ProductProductionCostPublicationStatus,
   type ProductionCostPublicationCostSlice,
 } from "./productProductionCostPublicationStatus.js";
+import {
+  resolveProductEngineeringCostWarning,
+  type ProductEngineeringCostWarningResult,
+} from "./productEngineeringCostWarning.js";
 
 function decimalToNumber(value: unknown): number {
   if (value == null) return 0;
@@ -127,11 +131,21 @@ export async function getProductProductionCostPublicationStatus(
       )
     : null;
 
+  const warning: ProductEngineeringCostWarningResult = resolveProductEngineeringCostWarning({
+    officialCost: officialCost?.unitProductionCost ?? null,
+    calculatedCost: pendingDraft?.unitProductionCost ?? null,
+    officialHash: officialCost?.calculationHash ?? null,
+    calculatedHash: pendingDraft?.calculationHash ?? null,
+    hasDraft: pendingDraft != null,
+    hasOfficialPublished: officialCost != null,
+  });
+
   return {
     productId: product.id,
     sku: product.sku,
     officialCost,
     pendingDraft,
     difference,
+    warning,
   };
 }

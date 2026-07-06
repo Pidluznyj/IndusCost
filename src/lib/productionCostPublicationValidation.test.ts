@@ -125,6 +125,7 @@ describe("productionCostPublicationValidation — publicação parcial", () => {
           }
           return { count: where.id.in.length };
         },
+        findMany: async () => [],
       },
       $transaction: async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
     };
@@ -247,7 +248,7 @@ describe("productionCostPublicationValidation — publicação parcial", () => {
             return row;
           },
         },
-        productionCostTableItem: { deleteMany: async () => ({ count: 0 }) },
+        productionCostTableItem: { deleteMany: async () => ({ count: 0 }), findMany: async () => [] },
         $transaction: async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
       };
       return { db: mockDb, draft };

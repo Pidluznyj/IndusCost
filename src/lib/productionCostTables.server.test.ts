@@ -142,6 +142,50 @@ function createMockDb() {
           }
           return { count: where.id.in.length };
         },
+        findMany: async ({
+          where,
+          include,
+        }: {
+          where: {
+            productId?: string;
+            costTableVersionId?: string;
+            costTableVersion?: { status: string; id?: { not: string } };
+          };
+          include?: { costTableVersion?: { select: { id: boolean; code: boolean } } };
+        }) => {
+          let rows = [...items.values()];
+          if (where.productId) {
+            rows = rows.filter((row) => row.productId === where.productId);
+          }
+          if (where.costTableVersionId) {
+            rows = rows.filter((row) => row.costTableVersionId === where.costTableVersionId);
+          }
+          if (where.costTableVersion) {
+            rows = rows.filter((row) => {
+              const version = versions.get(row.costTableVersionId);
+              if (!version) return false;
+              if (where.costTableVersion!.status && version.status !== where.costTableVersion!.status) {
+                return false;
+              }
+              if (where.costTableVersion!.id?.not && version.id === where.costTableVersion!.id.not) {
+                return false;
+              }
+              return true;
+            });
+          }
+          return rows.map((row) => {
+            const version = versions.get(row.costTableVersionId);
+            if (include?.costTableVersion) {
+              return {
+                ...row,
+                costTableVersion: version
+                  ? { id: version.id, code: version.code }
+                  : null,
+              };
+            }
+            return row;
+          });
+        },
       },
     product: {
       findUnique: async ({ where }: { where: { id: string } }) =>
@@ -248,5 +292,37 @@ describe("productionCostTables.server", () => {
 
     assert.equal(versions.get(v1.id)?.status, "SUPERSEDED");
     assert.equal(versions.get(v2.id)?.status, "PUBLISHED");
+  });
+
+  it("publicação arquiva DRAFT AUTO com mesmo custo do produto publicado", async () => {
+    const { db, versions } = createMockDb();
+    const staleDraft = await createProductionCostTableDraft(db as never, {
+      code: "AUTO-2026-07-01-618.08AA",
+      name: "Snapshot engenharia",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, staleDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.912785,
+    });
+
+    const officialDraft = await createProductionCostTableDraft(db as never, {
+      code: "2026-07",
+      name: "Custo Jul/2026",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, officialDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.912785,
+    });
+
+    await publishProductionCostTableVersion(db as never, { versionId: officialDraft.id });
+
+    assert.equal(versions.get(staleDraft.id)?.status, "ARCHIVED");
+    assert.equal(versions.get(officialDraft.id)?.status, "PUBLISHED");
   });
 });

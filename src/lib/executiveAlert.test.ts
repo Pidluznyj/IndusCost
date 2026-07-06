@@ -66,6 +66,7 @@ describe("executiveAlertStyles", () => {
     assert.equal(frozenCostTraceToExecutiveVariant("ATUALIZADO"), "success");
     assert.equal(frozenCostTraceToExecutiveVariant("PENDENTE_PUBLICACAO"), "attention");
     assert.equal(frozenCostTraceToExecutiveVariant("CUSTO_DIVERGENTE"), "attention");
+    assert.equal(frozenCostTraceToExecutiveVariant("SNAPSHOT_TECNICO_SEM_IMPACTO"), "info");
     assert.equal(frozenCostTraceToExecutiveVariant("SEM_CUSTO"), "info");
   });
 });

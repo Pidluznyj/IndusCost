@@ -21,6 +21,7 @@ import {
   productionCostDecimalToNumber,
 } from "./productionCostVersioning.js";
 import { startOfCivilDate } from "./financeCivilDate.js";
+import { hasProductionCostDifference } from "./productEngineeringCostWarning.js";
 
 export type {
   EffectiveProductProductionCostResult,
@@ -397,6 +398,20 @@ export async function publishProductionCostTableVersion(
     return row;
   });
 
+  const publishedItems = published.items
+    .filter((row) => validItemIds.includes(row.id))
+    .map((row) => ({
+      productId: row.productId,
+      unitProductionCost: productionCostDecimalToNumber(row.unitProductionCost),
+    }));
+
+  if (publishedItems.length > 0) {
+    await archiveEquivalentProductionCostDrafts(db, {
+      publishedVersionId: published.id,
+      publishedItems,
+    });
+  }
+
   return {
     version: published,
     itemsPublished: validItemIds.length,
@@ -404,6 +419,77 @@ export async function publishProductionCostTableVersion(
     pendencies,
     partialPublication: invalidItemIds.length > 0,
   };
+}
+
+export async function archiveEquivalentProductionCostDrafts(
+  db: PrismaClient,
+  input: {
+    publishedVersionId: string;
+    publishedItems: Array<{ productId: string; unitProductionCost: number }>;
+  }
+): Promise<string[]> {
+  const publishedByProduct = new Map(
+    input.publishedItems.map((row) => [row.productId, row.unitProductionCost])
+  );
+  const archived = new Set<string>();
+
+  for (const [productId, publishedCost] of publishedByProduct) {
+    const draftItems = await db.productionCostTableItem.findMany({
+      where: {
+        productId,
+        costTableVersion: {
+          status: "DRAFT",
+          id: { not: input.publishedVersionId },
+        },
+      },
+      include: {
+        costTableVersion: {
+          select: { id: true, code: true },
+        },
+      },
+    });
+
+    for (const draftItem of draftItems) {
+      const draftCost = productionCostDecimalToNumber(draftItem.unitProductionCost);
+      if (hasProductionCostDifference(publishedCost, draftCost)) continue;
+
+      const versionId = draftItem.costTableVersionId;
+      if (archived.has(versionId)) continue;
+
+      if (draftItem.costTableVersion.code.startsWith("AUTO-")) {
+        await db.productionCostTableVersion.update({
+          where: { id: versionId },
+          data: { status: "ARCHIVED" },
+        });
+        archived.add(versionId);
+        continue;
+      }
+
+      const versionItems = await db.productionCostTableItem.findMany({
+        where: { costTableVersionId: versionId },
+        select: { productId: true, unitProductionCost: true },
+      });
+      const allResolved =
+        versionItems.length > 0 &&
+        versionItems.every((row) => {
+          const expected = publishedByProduct.get(row.productId);
+          if (expected == null) return false;
+          return !hasProductionCostDifference(
+            expected,
+            productionCostDecimalToNumber(row.unitProductionCost)
+          );
+        });
+      if (allResolved) {
+        await db.productionCostTableVersion.update({
+          where: { id: versionId },
+          data: { status: "ARCHIVED" },
+        });
+        archived.add(versionId);
+      }
+    }
+  }
+
+  return [...archived];
 }
 
 async function loadResolverCatalog(

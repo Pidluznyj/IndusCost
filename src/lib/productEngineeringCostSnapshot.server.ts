@@ -467,6 +467,7 @@ export type ProductFrozenCostTrace = {
   frozenItemId: string | null;
   draftVersionId: string | null;
   draftHash: string | null;
+  draftUnitCost: number | null;
   traceStatus: FrozenCostTraceStatus;
 };
 
@@ -543,6 +544,7 @@ export async function getProductFrozenCostTracesBatch(
       frozenItemId: effective?.status === "OK" ? effective.costTableItemId : null,
       draftVersionId: draftItem?.costTableVersionId ?? null,
       draftHash: draftItem?.calculationHash ?? null,
+      draftUnitCost: draftItem ? decimalToNumber(draftItem.unitProductionCost) : null,
       traceStatus: "SEM_CUSTO_CONGELADO",
     });
   }
@@ -582,6 +584,7 @@ export async function getProductFrozenCostTrace(
     publishedVersionStatus: effective.status === "OK" ? "PUBLISHED" : null,
     draftHash: draftItem?.calculationHash ?? null,
     draftVersionStatus: draftItem?.costTableVersion.status ?? null,
+    draftUnitCost: draftItem ? decimalToNumber(draftItem.unitProductionCost) : null,
   });
 
   // published hash from item row when available
@@ -600,6 +603,7 @@ export async function getProductFrozenCostTrace(
       publishedVersionStatus: "PUBLISHED",
       draftHash: draftItem?.calculationHash ?? null,
       draftVersionStatus: draftItem?.costTableVersion.status ?? null,
+      draftUnitCost: draftItem ? decimalToNumber(draftItem.unitProductionCost) : null,
     });
     return {
       productId: product.id,
@@ -617,6 +621,7 @@ export async function getProductFrozenCostTrace(
       frozenItemId: effective.status === "OK" ? effective.costTableItemId : null,
       draftVersionId: draftItem?.costTableVersionId ?? null,
       draftHash: draftItem?.calculationHash ?? null,
+      draftUnitCost: draftItem ? decimalToNumber(draftItem.unitProductionCost) : null,
       traceStatus: refinedStatus,
     };
   }
@@ -636,6 +641,7 @@ export async function getProductFrozenCostTrace(
     frozenItemId: null,
     draftVersionId: draftItem?.costTableVersionId ?? null,
     draftHash: draftItem?.calculationHash ?? null,
+    draftUnitCost: draftItem ? decimalToNumber(draftItem.unitProductionCost) : null,
     traceStatus,
   };
 }

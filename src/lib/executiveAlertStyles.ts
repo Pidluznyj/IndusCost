@@ -128,6 +128,8 @@ export function frozenCostTraceToExecutiveVariant(
     case "PENDENTE_PUBLICACAO":
     case "CUSTO_DIVERGENTE":
       return "attention";
+    case "SNAPSHOT_TECNICO_SEM_IMPACTO":
+      return "info";
     case "SEM_CUSTO_CONGELADO":
     case "SEM_CUSTO":
       return "info";

@@ -39,6 +39,9 @@ export function formatFrozenCostSummaryLine(summary: ProductFrozenCostSummary | 
 export const FROZEN_COST_DIVERGENCE_ALERT =
   "O custo atual da engenharia difere do custo publicado. Gere ou publique uma nova versão para refletir a alteração em margens futuras.";
 
+export const FROZEN_COST_TECHNICAL_SNAPSHOT_ALERT =
+  "Snapshot técnico pendente sem impacto de custo";
+
 export const GRID_FROZEN_COST_COLUMN_LABEL = "Custo congelado";
 export const GRID_FROZEN_COST_COLUMN_TOOLTIP =
   "Custo oficial versionado vigente (tabela de produção). Compare com CIU atual.";

@@ -74,6 +74,7 @@ import {
 } from "@/src/lib/productCostSummaryView";
 import {
   FROZEN_COST_DIVERGENCE_ALERT,
+  FROZEN_COST_TECHNICAL_SNAPSHOT_ALERT,
   frozenCostTraceBadgeClass,
   GRID_FROZEN_COST_COLUMN_LABEL,
   GRID_FROZEN_COST_COLUMN_TOOLTIP,
@@ -331,7 +332,12 @@ export const ProductModule = () => {
       const data = await fetchJsonOk<ProductProductionCostPublicationStatus>(
         `/api/products/${productId}/production-cost-publication-status`
       );
-      setCostPublicationStatus(data.pendingDraft ? data : null);
+      setCostPublicationStatus(
+        data.warning.warningStatus === "COST_DIFF_PENDING_PUBLICATION" ||
+          data.warning.warningStatus === "TECHNICAL_SNAPSHOT_PENDING_NO_COST_IMPACT"
+          ? data
+          : null
+      );
     } catch {
       setCostPublicationStatus(null);
     } finally {
@@ -1486,6 +1492,14 @@ export const ProductModule = () => {
                                   DRAFT pendente — abra o produto para publicar o novo custo oficial.
                                 </p>
                               ) : null}
+                              {fc.traceStatus === "SNAPSHOT_TECNICO_SEM_IMPACTO" ? (
+                                <p
+                                  className={executiveAlertInlineTextClass("info")}
+                                  data-testid="frozen-cost-technical-snapshot-alert"
+                                >
+                                  {FROZEN_COST_TECHNICAL_SNAPSHOT_ALERT}
+                                </p>
+                              ) : null}
                               {fc.traceStatus === "CUSTO_DIVERGENTE" ? (
                                 <p
                                   className={executiveAlertInlineTextClass("attention")}
@@ -1717,7 +1731,7 @@ export const ProductModule = () => {
                   {editingItem?.id &&
                   formData.type === "PRODUCT" &&
                   !costPublicationLoading &&
-                  costPublicationStatus?.pendingDraft ? (
+                  costPublicationStatus ? (
                     <div className="mb-6">
                       <ProductCostPublicationPendingCard
                         status={costPublicationStatus}

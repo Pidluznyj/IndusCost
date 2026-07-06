@@ -259,6 +259,7 @@ function createMockDb(
         }
         return { count: where.id.in.length };
       },
+      findMany: async () => [],
     },
     product: {
       findMany: async ({

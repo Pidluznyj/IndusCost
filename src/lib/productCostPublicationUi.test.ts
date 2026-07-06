@@ -49,12 +49,15 @@ describe("productCostPublicationUi", () => {
     assert.doesNotMatch(src, /SQL/i);
   });
 
-  it("card só aparece com DRAFT pendente", () => {
+  it("card só aparece com pendência de custo ou snapshot técnico", () => {
     const src = card();
     assert.match(src, /if \(!pendingDraft\) return null/);
+    assert.match(src, /COST_DIFF_PENDING_PUBLICATION/);
+    assert.match(src, /TECHNICAL_SNAPSHOT_PENDING_NO_COST_IMPACT/);
     const mod = productModule();
-    assert.match(mod, /costPublicationStatus\?\.pendingDraft/);
+    assert.match(mod, /costPublicationStatus/);
     assert.match(mod, /ProductCostPublicationPendingCard/);
+    assert.match(mod, /COST_DIFF_PENDING_PUBLICATION/);
   });
 
   it("botão respeita permissões de publicação", () => {
@@ -72,12 +75,13 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /production-cost-snapshot/);
   });
 
-  it("alerta de pendência usa componente ExecutiveAlert com paleta âmbar", () => {
+  it("alerta de pendência usa componente ExecutiveAlert com paleta executiva", () => {
     const src = card();
     const styles = read("src/lib/executiveAlertStyles.ts");
     assert.match(src, /engineering-pending-cost-alert/);
+    assert.match(src, /engineering-technical-snapshot-alert/);
     assert.match(src, /ExecutiveAlert/);
-    assert.match(src, /variant="attention"/);
+    assert.match(src, /variant=\{isTechnicalOnly \? "info" : "attention"\}/);
     assert.match(styles, /bg-\[#FFFBEB\]/);
     assert.match(styles, /border-\[#F59E0B\]/);
     assert.match(styles, /text-\[#92400E\]/);

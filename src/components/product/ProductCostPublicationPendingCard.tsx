@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Info, Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
@@ -53,12 +53,23 @@ export function ProductCostPublicationPendingCard({
   compact = false,
   onPublished,
 }: Props) {
-  const { pendingDraft, officialCost, difference, sku } = status;
+  const { pendingDraft, officialCost, difference, sku, warning } = status;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
   if (!pendingDraft) return null;
+
+  if (warning.warningStatus === "COST_PUBLISHED_OK" || warning.warningStatus === "NONE") {
+    return null;
+  }
+
+  const isTechnicalOnly = warning.warningStatus === "TECHNICAL_SNAPSHOT_PENDING_NO_COST_IMPACT";
+  const isCostDiff = warning.warningStatus === "COST_DIFF_PENDING_PUBLICATION";
+
+  if (!isTechnicalOnly && !isCostDiff) {
+    return null;
+  }
 
   const delta = formatProductionCostPublicationDelta(difference);
   const officialUnit = officialCost?.unitProductionCost ?? 0;
@@ -93,41 +104,60 @@ export function ProductCostPublicationPendingCard({
   return (
     <>
       <ExecutiveAlert
-        variant="attention"
+        variant={isTechnicalOnly ? "info" : "attention"}
         density={compact ? "compact" : "default"}
-        testId="engineering-pending-cost-alert"
-        title="Custo pendente para publicação"
-        badge="DRAFT"
-        icon={<AlertCircle className="h-4 w-4" aria-hidden />}
+        testId={
+          isTechnicalOnly
+            ? "engineering-technical-snapshot-alert"
+            : "engineering-pending-cost-alert"
+        }
+        title={warning.message ?? (isTechnicalOnly ? "Snapshot técnico pendente" : "Custo pendente para publicação")}
+        badge={isTechnicalOnly ? "INFO" : "DRAFT"}
+        icon={
+          isTechnicalOnly ? (
+            <Info className="h-4 w-4" aria-hidden />
+          ) : (
+            <AlertCircle className="h-4 w-4" aria-hidden />
+          )
+        }
         description={
-          <>
-            O snapshot da engenharia foi atualizado, mas o custo oficial publicado ainda não mudou.
-            Publique este DRAFT para que o novo custo passe a valer nas margens conforme a vigência.
-            Atualizar snapshot recalcula o custo. Publicar novo custo oficial altera a tabela usada nas
-            margens.
-          </>
+          isTechnicalOnly ? (
+            <>
+              O snapshot técnico da engenharia foi recalculado, mas o custo oficial publicado permanece
+              o mesmo. Não é necessário publicar novo custo para refletir margens — apenas a composição
+              técnica interna mudou.
+            </>
+          ) : (
+            <>
+              O custo calculado difere do custo oficial publicado. Publique este DRAFT para que o novo
+              custo passe a valer nas margens conforme a vigência. Atualizar snapshot recalcula o custo.
+              Publicar novo custo oficial altera a tabela usada nas margens.
+            </>
+          )
         }
         actions={
-          <button
-            type="button"
-            disabled={!canPublish || publishing}
-            title={
-              canPublish ? undefined : "Você não tem permissão para publicar custos oficiais."
-            }
-            onClick={() => {
-              setPublishError(null);
-              setConfirmOpen(true);
-            }}
-            className={cn(
-              "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
-              "bg-primary text-primary-foreground hover:bg-primary/90",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
-              "disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
-            )}
-          >
-            {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Publicar novo custo oficial
-          </button>
+          isCostDiff ? (
+            <button
+              type="button"
+              disabled={!canPublish || publishing}
+              title={
+                canPublish ? undefined : "Você não tem permissão para publicar custos oficiais."
+              }
+              onClick={() => {
+                setPublishError(null);
+                setConfirmOpen(true);
+              }}
+              className={cn(
+                "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                "bg-primary text-primary-foreground hover:bg-primary/90",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
+                "disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+              )}
+            >
+              {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Publicar novo custo oficial
+            </button>
+          ) : undefined
         }
       >
         <div className={cn("grid grid-cols-1 gap-4", !compact && "mt-5 md:grid-cols-2")}>
@@ -175,7 +205,7 @@ export function ProductCostPublicationPendingCard({
             </dl>
           </ExecutiveAlertPanel>
 
-          {!compact ? (
+          {!compact && isCostDiff ? (
             <ExecutiveAlertPanel title="Quebra do custo (oficial → DRAFT)">
               <div className="space-y-2">
                 <CostBreakdownRow

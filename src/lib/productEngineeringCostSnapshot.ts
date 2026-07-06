@@ -3,6 +3,7 @@
  */
 import { toCivilDateKey } from "./financeCivilDate.js";
 import type { OfficialProductFinalCostSuccess } from "./productOfficialFinalCost.js";
+import { resolveProductEngineeringCostWarning } from "./productEngineeringCostWarning.js";
 
 export const PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE = "PRODUCT_ENGINEERING_CHANGE" as const;
 
@@ -29,6 +30,7 @@ export type FrozenCostTraceStatus =
   | "PENDENTE_PUBLICACAO"
   | "SEM_CUSTO_CONGELADO"
   | "CUSTO_DIVERGENTE"
+  | "SNAPSHOT_TECNICO_SEM_IMPACTO"
   | "SEM_CUSTO";
 
 export type ProductEngineeringCostSnapshotConfig = {
@@ -107,38 +109,47 @@ export function resolveFrozenCostTraceStatus(input: {
   publishedVersionStatus: string | null;
   draftHash: string | null;
   draftVersionStatus: string | null;
+  draftUnitCost?: number | null;
 }): FrozenCostTraceStatus {
   if (input.liveCiu == null) return "SEM_CUSTO";
 
   const hasPublished =
-    input.publishedHash != null &&
     input.publishedVersionStatus === "PUBLISHED" &&
     input.publishedCost != null &&
     input.publishedCost > 0;
 
-  const hasDraft = input.draftHash != null && input.draftVersionStatus === "DRAFT";
+  const hasDraft = input.draftVersionStatus === "DRAFT" && input.draftHash != null;
 
   if (!hasPublished && !hasDraft) return "SEM_CUSTO_CONGELADO";
 
-  if (hasPublished && input.liveHash && input.publishedHash === input.liveHash) {
-    return "ATUALIZADO";
+  const calculatedCost =
+    hasDraft && input.draftUnitCost != null && input.draftUnitCost > 0
+      ? input.draftUnitCost
+      : input.liveCiu;
+  const calculatedHash = hasDraft ? input.draftHash : input.liveHash;
+
+  const warning = resolveProductEngineeringCostWarning({
+    officialCost: hasPublished ? input.publishedCost : null,
+    calculatedCost,
+    officialHash: input.publishedHash,
+    calculatedHash,
+    hasDraft,
+    hasOfficialPublished: hasPublished,
+  });
+
+  switch (warning.warningStatus) {
+    case "COST_DIFF_PENDING_PUBLICATION":
+      return hasDraft ? "PENDENTE_PUBLICACAO" : "CUSTO_DIVERGENTE";
+    case "TECHNICAL_SNAPSHOT_PENDING_NO_COST_IMPACT":
+      return "SNAPSHOT_TECNICO_SEM_IMPACTO";
+    case "MISSING_OFFICIAL_COST":
+      return hasDraft ? "PENDENTE_PUBLICACAO" : "SEM_CUSTO_CONGELADO";
+    case "COST_PUBLISHED_OK":
+    case "NONE":
+      return "ATUALIZADO";
+    default:
+      return "SEM_CUSTO_CONGELADO";
   }
-
-  if (hasDraft && input.liveHash && input.draftHash === input.liveHash && !hasPublished) {
-    return "PENDENTE_PUBLICACAO";
-  }
-
-  if (hasPublished && input.liveHash && input.publishedHash !== input.liveHash) {
-    return "CUSTO_DIVERGENTE";
-  }
-
-  if (hasDraft && input.liveHash && input.draftHash !== input.liveHash) {
-    return "CUSTO_DIVERGENTE";
-  }
-
-  if (hasDraft) return "PENDENTE_PUBLICACAO";
-
-  return "SEM_CUSTO_CONGELADO";
 }
 
 export function frozenCostTraceStatusLabel(status: FrozenCostTraceStatus): string {
@@ -151,6 +162,8 @@ export function frozenCostTraceStatusLabel(status: FrozenCostTraceStatus): strin
       return "Sem custo congelado";
     case "CUSTO_DIVERGENTE":
       return "Custo divergente";
+    case "SNAPSHOT_TECNICO_SEM_IMPACTO":
+      return "Snapshot técnico pendente";
     case "SEM_CUSTO":
       return "Sem custo";
     default:
