@@ -24,9 +24,11 @@ export const COMMISSION_RECEIPT_LEDGER_LINE_STATUSES = [
   "COMMISSIONABLE",
   "CUSTOMER_EXCLUDED",
   "NO_SALES_LINK",
+  "NO_SCHEDULE",
   "NO_SELLER",
   "SELLER_UNRESOLVED",
   "NO_RULE",
+  "STALE_SCHEDULE",
   "ZERO_AMOUNT",
   "ERROR",
 ] as const;
@@ -58,6 +60,7 @@ export type CommissionReceiptLedgerLineKeyInput = {
   nomusReceivableId: number | null;
   commissionRecordId: string | null;
   commissionPaymentScheduleId: string | null;
+  commissionReceivableScheduleId?: string | null;
   installmentNumber: number | null;
   nomusOrderItemId: number | null;
   ruleId: string | null;
@@ -108,6 +111,7 @@ export function buildCommissionReceiptLedgerLineKey(
     input.nomusReceivableId ?? "",
     input.commissionRecordId ?? "",
     input.commissionPaymentScheduleId ?? "",
+    input.commissionReceivableScheduleId ?? "",
     input.installmentNumber ?? "",
     input.nomusOrderItemId ?? "",
     input.ruleId ?? "",
@@ -126,6 +130,7 @@ export function buildPersistedCommissionReceiptLedgerLineKey(
     input.nomusReceivableId ?? "",
     input.commissionRecordId ?? "",
     input.commissionPaymentScheduleId ?? "",
+    input.commissionReceivableScheduleId ?? "",
     input.installmentNumber ?? "",
     input.nomusOrderItemId ?? "",
     input.ruleId ?? "",

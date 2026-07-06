@@ -6,6 +6,7 @@
  *   npx tsx scripts/preview-commission-receipt.ts --year=2026 --month=6
  *   npx tsx scripts/preview-commission-receipt.ts --year=2026 --month=6 --seller=GISLENE --json
  *   npx tsx scripts/preview-commission-receipt.ts --year=2026 --month=6 --csv
+ *   npx tsx scripts/preview-commission-receipt.ts --year=2026 --month=6 --recalc-fallback
  */
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
@@ -14,7 +15,7 @@ import {
   receiptPreviewCsvHeader,
   receiptPreviewLineToCsvRow,
 } from "../src/lib/commissions/commissionReceiptEngine.ts";
-import { csvLine, fmtBrl, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { csvLine, fmtBrl, hasFlag, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
     customer,
     includeExcluded: true,
     includeExceptions: true,
+    allowItemRecalculationFallback: hasFlag("recalc-fallback"),
   });
 
   const outputPath = `preview-commission-receipt-${year}-${String(month).padStart(2, "0")}`;

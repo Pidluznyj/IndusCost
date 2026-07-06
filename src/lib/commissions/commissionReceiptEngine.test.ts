@@ -134,6 +134,38 @@ function exclusionRule(
   };
 }
 
+const LEGACY_ITEM_FALLBACK = { allowItemRecalculationFallback: true as const };
+
+function materializedSchedule(
+  partial: Partial<import("./commissionReceiptEngine.js").MaterializedReceivableScheduleInput> &
+    Pick<
+      import("./commissionReceiptEngine.js").MaterializedReceivableScheduleInput,
+      "receivableId" | "scheduledCommissionAmount"
+    >
+): import("./commissionReceiptEngine.js").MaterializedReceivableScheduleInput {
+  return {
+    id: partial.id ?? `sched-${partial.receivableId}`,
+    orderSnapshotId: "snap-1",
+    receivableCode: null,
+    installmentNumber: 1,
+    nfeId: 100,
+    salesOrderId: "order-1",
+    customerId: "cust-1",
+    canonicalSellerId: "person-seller",
+    canonicalSellerName: "GISLENE LIMA",
+    rawSellerId: 464,
+    rawSellerName: "GISLENE LIMA",
+    orderCode: "PED-1",
+    receivableNominalAmount: 10000,
+    receivableSharePercent: 100,
+    scheduleStatus: "ACTIVE",
+    sellerResolutionStatus: "OK_CANONICAL",
+    exclusionRuleId: null,
+    exclusionReason: null,
+    ...partial,
+  };
+}
+
 describe("commissionReceiptEngine", () => {
   it("exemplo obrigatório: dois itens com % diferentes e parcela recebida", () => {
     const order = makeOrderBundle([item("item-a", 6000, "A"), item("item-b", 4000, "B")]);
@@ -149,6 +181,7 @@ describe("commissionReceiptEngine", () => {
         ["item-a", 2],
         ["item-b", 1],
       ]),
+      ...LEGACY_ITEM_FALLBACK,
     });
 
     const lineA = result.lines.find((row) => row.localItemId === "item-a");
@@ -187,6 +220,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
     const july = buildCommissionReceiptPreview({
       year: 2026,
@@ -210,6 +244,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
 
     assert.equal(june.totalReceivables, 1);
@@ -230,6 +265,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [exclusionRule({ id: "ex-1" })],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
 
     assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
@@ -266,6 +302,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: EMPTY_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
     assert.equal(result.lines[0]?.status, "SELLER_UNRESOLVED");
   });
@@ -280,6 +317,7 @@ describe("commissionReceiptEngine", () => {
       rules: [],
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
+      ...LEGACY_ITEM_FALLBACK,
     });
     assert.equal(result.lines[0]?.status, "NO_RULE");
   });
@@ -301,6 +339,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
     assert.equal(result.lines[0]?.commissionableBaseAmount, 2500);
     assert.equal(result.lines[0]?.expectedCommissionAmount, 50);
@@ -317,6 +356,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
     const line = result.lines[0]!;
     assert.ok(line.expectedCommissionAmount <= line.commissionableBaseAmount);
@@ -348,6 +388,7 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
       itemRateOverrides: new Map([["item-a", 2]]),
+      ...LEGACY_ITEM_FALLBACK,
     });
     const first = june.lines.find((row) => row.nomusReceivableId === 81);
     const second = june.lines.find((row) => row.nomusReceivableId === 82);
@@ -415,12 +456,147 @@ describe("commissionReceiptEngine", () => {
       rules: [],
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
+      ...LEGACY_ITEM_FALLBACK,
     });
 
     assert.equal(result.lines.length, 1);
     assert.equal(result.lines[0]?.source, "PERSISTED_SCHEDULE");
     assert.equal(result.lines[0]?.expectedCommissionAmount, 100);
     assert.equal(result.lines[0]?.releasedCommissionAmount, 100);
+  });
+
+  it("título recebido com schedule ativo libera comissão correta", () => {
+    const sched = materializedSchedule({
+      receivableId: 501,
+      scheduledCommissionAmount: 200,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 501,
+          amountReceivable: 10000,
+          amountReceived: 10000,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[501, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+
+    assert.equal(result.lines.length, 1);
+    assert.equal(result.lines[0]?.source, "MATERIALIZED_SCHEDULE");
+    assert.equal(result.lines[0]?.status, "COMMISSIONABLE");
+    assert.equal(result.lines[0]?.expectedCommissionAmount, 200);
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 200);
+  });
+
+  it("título recebido parcial libera comissão proporcional via schedule", () => {
+    const sched = materializedSchedule({
+      receivableId: 502,
+      scheduledCommissionAmount: 200,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 502,
+          amountReceivable: 10000,
+          amountReceived: 2500,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[502, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+
+    assert.equal(result.lines[0]?.expectedCommissionAmount, 50);
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 50);
+  });
+
+  it("título sem schedule vira NO_SCHEDULE", () => {
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 503 })],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
+  });
+
+  it("schedule stale não libera sem reprocessar", () => {
+    const sched = materializedSchedule({
+      receivableId: 504,
+      scheduledCommissionAmount: 100,
+      scheduleStatus: "STALE",
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 504 })],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[504, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "STALE_SCHEDULE");
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+  });
+
+  it("cliente excluído no schedule entra com comissão zero e motivo", () => {
+    const sched = materializedSchedule({
+      receivableId: 505,
+      scheduledCommissionAmount: 0,
+      scheduleStatus: "CUSTOMER_EXCLUDED",
+      exclusionRuleId: "ex-1",
+      exclusionReason: "Política comercial",
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 505 })],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[505, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+    assert.equal(result.lines[0]?.exclusionReason, "Política comercial");
+  });
+
+  it("valor recebido é somado por título único", () => {
+    const order = makeOrderBundle([item("item-a", 6000), item("item-b", 4000)]);
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 506, amountReceivable: 10000, amountReceived: 5000 })],
+      ordersByNfeId: new Map([[100, order]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+      itemRateOverrides: new Map([
+        ["item-a", 2],
+        ["item-b", 1],
+      ]),
+      ...LEGACY_ITEM_FALLBACK,
+    });
+    assert.equal(result.lines.length, 2);
+    assert.equal(result.totalReceivedAmount, 5000);
   });
 
   it("filterSettledReceivablesForPreview ignora cancelados e sem recebimento", () => {

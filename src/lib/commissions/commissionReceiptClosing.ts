@@ -248,6 +248,7 @@ export function mapPreviewLineToLedgerCreateData(
     nomusReceivableId: line.nomusReceivableId,
     commissionRecordId: line.commissionRecordId,
     commissionPaymentScheduleId: line.commissionPaymentScheduleId,
+    commissionReceivableScheduleId: line.commissionReceivableScheduleId,
     installmentNumber: line.installmentNumber,
     nomusOrderItemId: line.nomusOrderItemId,
     ruleId: line.ruleId,
@@ -255,7 +256,14 @@ export function mapPreviewLineToLedgerCreateData(
   });
 
   const ruleSnapshotJson =
-    line.ruleId != null
+    line.commissionReceivableScheduleId != null
+      ? {
+          commissionReceivableScheduleId: line.commissionReceivableScheduleId,
+          ratePercent: line.ratePercent,
+          source: line.source,
+          capturedAt: new Date().toISOString(),
+        }
+      : line.ruleId != null
       ? {
           ruleId: line.ruleId,
           ruleName: line.ruleName,

@@ -4,6 +4,7 @@ import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerEx
 import {
   buildCommissionReceiptPreview,
   type CommissionReceiptPreviewResult,
+  type MaterializedReceivableScheduleInput,
 } from "./commissionReceiptEngine.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
@@ -17,6 +18,7 @@ import {
 } from "./commission-source-resolver.server.js";
 import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
 import { decimalToNumber } from "./commission-money.js";
+import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
 import {
   enrichVisualAuditRowsWithSellerIdentity,
   filterRowsByAppraisalMode,
@@ -39,7 +41,87 @@ export type LoadCommissionReceiptPreviewInput = {
   customer?: string | null;
   includeExcluded?: boolean;
   includeExceptions?: boolean;
+  /** Fallback explícito: recalcular comissão por item (auditoria legada). */
+  allowItemRecalculationFallback?: boolean;
 };
+
+function mapPrismaScheduleStatus(
+  value: string
+): CommissionReceivableScheduleStatusValue {
+  const allowed: CommissionReceivableScheduleStatusValue[] = [
+    "ACTIVE",
+    "STALE",
+    "SUPERSEDED",
+    "ORPHAN",
+    "CUSTOMER_EXCLUDED",
+    "ERROR",
+  ];
+  return allowed.includes(value as CommissionReceivableScheduleStatusValue)
+    ? (value as CommissionReceivableScheduleStatusValue)
+    : "ERROR";
+}
+
+export async function loadMaterializedSchedulesByReceivableId(
+  receivableIds: number[]
+): Promise<Map<number, MaterializedReceivableScheduleInput[]>> {
+  const map = new Map<number, MaterializedReceivableScheduleInput[]>();
+  if (receivableIds.length === 0) return map;
+
+  const rows = await prisma.commissionReceivableSchedule.findMany({
+    where: { receivableId: { in: receivableIds } },
+    include: {
+      orderSnapshot: {
+        select: {
+          rawSellerId: true,
+          rawSellerName: true,
+          canonicalSellerName: true,
+          sellerResolutionStatus: true,
+          items: {
+            select: {
+              exclusionRuleId: true,
+              exclusionReason: true,
+              status: true,
+            },
+            take: 1,
+          },
+        },
+      },
+      salesOrder: { select: { orderCode: true } },
+      canonicalSeller: { select: { id: true, name: true } },
+    },
+  });
+
+  for (const row of rows) {
+    const itemSnapshot = row.orderSnapshot.items[0];
+    const list = map.get(row.receivableId) ?? [];
+    list.push({
+      id: row.id,
+      orderSnapshotId: row.orderSnapshotId,
+      receivableId: row.receivableId,
+      receivableCode: row.receivableCode,
+      installmentNumber: row.installmentNumber,
+      nfeId: row.nfeId,
+      salesOrderId: row.salesOrderId,
+      customerId: row.customerId,
+      canonicalSellerId: row.canonicalSellerId,
+      canonicalSellerName:
+        row.canonicalSeller?.name ?? row.orderSnapshot.canonicalSellerName,
+      rawSellerId: row.orderSnapshot.rawSellerId,
+      rawSellerName: row.orderSnapshot.rawSellerName,
+      orderCode: row.salesOrder.orderCode,
+      receivableNominalAmount: decimalToNumber(row.receivableNominalAmount),
+      receivableSharePercent: decimalToNumber(row.receivableSharePercent),
+      scheduledCommissionAmount: decimalToNumber(row.scheduledCommissionAmount),
+      scheduleStatus: mapPrismaScheduleStatus(row.status),
+      sellerResolutionStatus: row.orderSnapshot.sellerResolutionStatus,
+      exclusionRuleId: itemSnapshot?.exclusionRuleId ?? null,
+      exclusionReason: itemSnapshot?.exclusionReason ?? null,
+    });
+    map.set(row.receivableId, list);
+  }
+
+  return map;
+}
 
 export async function loadCommissionReceiptPreview(
   input: LoadCommissionReceiptPreviewInput
@@ -95,6 +177,7 @@ export async function loadCommissionReceiptPreview(
     })
     .filter((row): row is NonNullable<typeof row> => row != null);
 
+  const receivableIds = receivables.map((row) => row.nomusReceivableId);
   const nfeIds = [
     ...new Set(
       receivables
@@ -103,30 +186,46 @@ export async function loadCommissionReceiptPreview(
     ),
   ];
 
-  const [orderBundles, identityCtx, rules, exclusionRules, auditPayload] = await Promise.all([
-    loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds),
+  const useLegacyFallback = input.allowItemRecalculationFallback === true;
+
+  const [
+    materializedSchedulesByReceivableId,
+    orderBundles,
+    identityCtx,
+    rules,
+    exclusionRules,
+    auditPayload,
+  ] = await Promise.all([
+    loadMaterializedSchedulesByReceivableId(receivableIds),
+    useLegacyFallback
+      ? loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds)
+      : Promise.resolve([]),
     loadCommissionSellerIdentityContext(prisma),
-    loadActiveCommissionRules(prisma),
-    loadActiveCustomerExclusionRuleSnapshots(),
-    listCommissionVisualAuditPage(
-      parseCommissionVisualAuditQuery({
-        year: input.year,
-        month: input.month,
-        appraisalMode: "payable",
-        page: 1,
-        pageSize: 500000,
-        customer: input.customer,
-        commissionPersonId: input.seller,
-      }),
-      GLOBAL_SCOPE
-    ),
+    useLegacyFallback ? loadActiveCommissionRules(prisma) : Promise.resolve([]),
+    useLegacyFallback ? loadActiveCustomerExclusionRuleSnapshots() : Promise.resolve([]),
+    useLegacyFallback
+      ? listCommissionVisualAuditPage(
+          parseCommissionVisualAuditQuery({
+            year: input.year,
+            month: input.month,
+            appraisalMode: "payable",
+            page: 1,
+            pageSize: 500000,
+            customer: input.customer,
+            commissionPersonId: input.seller,
+          }),
+          GLOBAL_SCOPE
+        )
+      : Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 0 }),
   ]);
 
   const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
-  const persistedAuditRows = enrichVisualAuditRowsWithSellerIdentity(
-    filterRowsByAppraisalMode(auditPayload.rows, "PAYABLE", period),
-    identityCtx
-  );
+  const persistedAuditRows = useLegacyFallback
+    ? enrichVisualAuditRowsWithSellerIdentity(
+        filterRowsByAppraisalMode(auditPayload.rows, "PAYABLE", period),
+        identityCtx
+      )
+    : [];
 
   return buildCommissionReceiptPreview({
     year: input.year,
@@ -137,6 +236,8 @@ export async function loadCommissionReceiptPreview(
     includeExceptions: input.includeExceptions,
     receivables,
     ordersByNfeId,
+    materializedSchedulesByReceivableId,
+    allowItemRecalculationFallback: useLegacyFallback,
     persistedAuditRows,
     rules,
     exclusionRules,
@@ -181,6 +282,15 @@ export function mapNomusArRowToReceiptReceivableInput(row: {
   };
 }
 
-export function receivableReceivedTotal(rows: ReturnType<typeof mapNomusArRowToReceiptReceivableInput>[]): number {
-  return rows.reduce((sum, row) => sum + (row ? decimalToNumber(row.amountReceived) : 0), 0);
+export function receivableReceivedTotal(
+  rows: ReturnType<typeof mapNomusArRowToReceiptReceivableInput>[]
+): number {
+  const seen = new Set<number>();
+  let total = 0;
+  for (const row of rows) {
+    if (!row || seen.has(row.nomusReceivableId)) continue;
+    seen.add(row.nomusReceivableId);
+    total += decimalToNumber(row.amountReceived);
+  }
+  return total;
 }

@@ -19,6 +19,7 @@ export type LoadCommissionReceiptClosingValidationInput = {
   includeLines?: boolean;
   nomusBase?: number | null;
   nomusCommission?: number | null;
+  allowItemRecalculationFallback?: boolean;
   scope: CommissionAccessScope;
 };
 
@@ -49,6 +50,7 @@ export async function loadCommissionReceiptClosingValidation(
       customer: input.customer ?? null,
       includeExcluded: true,
       includeExceptions: true,
+      allowItemRecalculationFallback: input.allowItemRecalculationFallback === true,
     }),
     findClosedReceiptClosing(prisma, input.year, input.month),
     input.compareLegacy

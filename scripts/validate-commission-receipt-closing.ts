@@ -5,7 +5,7 @@
  *
  * Uso:
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --compare-legacy
- *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --compare-legacy --nomus-base=808107.32 --nomus-commission=20926.56
+ *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --compare-legacy --recalc-fallback
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --seller=GISLENE --json
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --csv --include-lines
  */
@@ -51,6 +51,7 @@ async function main(): Promise<void> {
     includeLines,
     nomusBase,
     nomusCommission,
+    allowItemRecalculationFallback: hasFlag("recalc-fallback"),
     scope: GLOBAL_SCOPE,
   });
 

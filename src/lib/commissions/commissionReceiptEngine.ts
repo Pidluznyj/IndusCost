@@ -32,16 +32,43 @@ import type {
   CommissionOrderItemSource,
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
+import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
+
 import type { VisualAuditRow } from "./commissionVisualAudit.js";
 
 export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineStatus[] = [
   "NO_SALES_LINK",
+  "NO_SCHEDULE",
   "NO_SELLER",
   "SELLER_UNRESOLVED",
   "NO_RULE",
+  "STALE_SCHEDULE",
   "ZERO_AMOUNT",
   "ERROR",
 ];
+
+export type MaterializedReceivableScheduleInput = {
+  id: string;
+  orderSnapshotId: string;
+  receivableId: number;
+  receivableCode: string | null;
+  installmentNumber: number;
+  nfeId: number | null;
+  salesOrderId: string;
+  customerId: string;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  rawSellerId: number | null;
+  rawSellerName: string | null;
+  orderCode: string | null;
+  receivableNominalAmount: number;
+  receivableSharePercent: number;
+  scheduledCommissionAmount: number;
+  scheduleStatus: CommissionReceivableScheduleStatusValue;
+  sellerResolutionStatus: string | null;
+  exclusionRuleId: string | null;
+  exclusionReason: string | null;
+};
 
 export type CommissionReceiptReceivableInput = {
   nomusReceivableId: number;
@@ -71,6 +98,10 @@ export type CommissionReceiptPreviewContext = {
   receivables: CommissionReceiptReceivableInput[];
   ordersByNfeId: Map<number, CommissionOrderSourceBundle>;
   persistedAuditRows?: VisualAuditRow[];
+  /** Schedules materializados por receivableId — quando definido, fechamento usa schedule (não recalcula itens). */
+  materializedSchedulesByReceivableId?: Map<number, MaterializedReceivableScheduleInput[]>;
+  /** Fallback explícito: recalcular por item (preview/auditoria legada). */
+  allowItemRecalculationFallback?: boolean;
   rules: CommissionActiveRule[];
   exclusionRules: CustomerExclusionRuleSnapshot[];
   identityCtx: CommissionSellerIdentityContext;
@@ -108,6 +139,7 @@ export type CommissionReceiptPreviewLine = {
   sellerResolutionStatus: string | null;
   commissionRecordId: string | null;
   commissionPaymentScheduleId: string | null;
+  commissionReceivableScheduleId: string | null;
   ruleId: string | null;
   ruleName: string | null;
   ratePercent: number;
@@ -118,7 +150,7 @@ export type CommissionReceiptPreviewLine = {
   statusReason: string | null;
   exclusionRuleId: string | null;
   exclusionReason: string | null;
-  source: "PERSISTED_SCHEDULE" | "CALCULATED" | "EXCEPTION";
+  source: "MATERIALIZED_SCHEDULE" | "PERSISTED_SCHEDULE" | "CALCULATED" | "EXCEPTION";
 };
 
 export type CommissionReceiptPreviewBucket = {
@@ -229,9 +261,11 @@ function emptyStatusCounts(): Record<CommissionReceiptLedgerLineStatus, number> 
     COMMISSIONABLE: 0,
     CUSTOMER_EXCLUDED: 0,
     NO_SALES_LINK: 0,
+    NO_SCHEDULE: 0,
     NO_SELLER: 0,
     SELLER_UNRESOLVED: 0,
     NO_RULE: 0,
+    STALE_SCHEDULE: 0,
     ZERO_AMOUNT: 0,
     ERROR: 0,
   };
@@ -306,6 +340,167 @@ function mapAuditRowStatus(row: VisualAuditRow): {
   return { status: "COMMISSIONABLE", reason: null };
 }
 
+export function releaseCommissionFromMaterializedSchedule(input: {
+  schedule: MaterializedReceivableScheduleInput;
+  receivable: CommissionReceiptReceivableInput;
+}): {
+  receivedSharePercent: number;
+  commissionableBaseAmount: number;
+  expectedCommissionAmount: number;
+  effectiveRatePercent: number;
+} {
+  const nominal = roundMoney(
+    input.schedule.receivableNominalAmount > 0
+      ? input.schedule.receivableNominalAmount
+      : input.receivable.amountReceivable
+  );
+  const received = roundMoney(input.receivable.amountReceived);
+  const share = nominal > 0 ? Math.min(1, received / nominal) : 0;
+  const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
+  const released = normalizeCommissionLedgerMoney(scheduled * share);
+  const effectiveRatePercent =
+    nominal > 0 ? roundMoney((scheduled / nominal) * 100) : 0;
+
+  return {
+    receivedSharePercent: roundMoney(share * 100),
+    commissionableBaseAmount: received,
+    expectedCommissionAmount: released,
+    effectiveRatePercent,
+  };
+}
+
+export function mapMaterializedScheduleToLedgerStatus(
+  schedule: MaterializedReceivableScheduleInput
+): { status: CommissionReceiptLedgerLineStatus; reason: string | null } {
+  if (schedule.scheduleStatus === "STALE" || schedule.scheduleStatus === "SUPERSEDED") {
+    return {
+      status: "STALE_SCHEDULE",
+      reason: "Schedule desatualizado — reprocessar materialização antes do fechamento",
+    };
+  }
+  if (schedule.scheduleStatus === "ORPHAN") {
+    return {
+      status: "NO_SALES_LINK",
+      reason: "Título órfão sem vínculo com pedido/NF",
+    };
+  }
+  if (schedule.scheduleStatus === "CUSTOMER_EXCLUDED") {
+    return {
+      status: "CUSTOMER_EXCLUDED",
+      reason: schedule.exclusionReason ?? "Cliente excluído de comissão",
+    };
+  }
+  if (schedule.scheduleStatus === "ERROR") {
+    return {
+      status: "ERROR",
+      reason: "Erro na materialização do schedule",
+    };
+  }
+  if (schedule.scheduleStatus !== "ACTIVE") {
+    return {
+      status: "STALE_SCHEDULE",
+      reason: `Schedule em status ${schedule.scheduleStatus}`,
+    };
+  }
+  const sellerStatus = schedule.sellerResolutionStatus;
+  if (
+    sellerStatus === "UNRESOLVED" ||
+    sellerStatus === "CONFLICT" ||
+    sellerStatus === "MULTIPLE_CANONICALS"
+  ) {
+    return {
+      status: "SELLER_UNRESOLVED",
+      reason: `Vendedor não resolvido (${sellerStatus})`,
+    };
+  }
+  if (!schedule.canonicalSellerId && !schedule.rawSellerName?.trim()) {
+    return { status: "NO_SELLER", reason: "Schedule sem vendedor" };
+  }
+  if (schedule.scheduledCommissionAmount <= 0 && schedule.scheduleStatus === "ACTIVE") {
+    return { status: "ZERO_AMOUNT", reason: "Comissão programada zerada" };
+  }
+  return { status: "COMMISSIONABLE", reason: null };
+}
+
+function pickMaterializedScheduleForReceivable(
+  schedules: MaterializedReceivableScheduleInput[]
+): MaterializedReceivableScheduleInput | null {
+  if (schedules.length === 0) return null;
+  const active = schedules.find((row) => row.scheduleStatus === "ACTIVE");
+  if (active) return active;
+  return schedules[0] ?? null;
+}
+
+function previewLineFromMaterializedSchedule(
+  schedule: MaterializedReceivableScheduleInput,
+  receivable: CommissionReceiptReceivableInput,
+  year: number,
+  month: number
+): CommissionReceiptPreviewLine {
+  const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
+  const release = releaseCommissionFromMaterializedSchedule({ schedule, receivable });
+  const released =
+    status === "COMMISSIONABLE"
+      ? release.expectedCommissionAmount
+      : 0;
+
+  return {
+    ledgerLineKey: buildCommissionReceiptLedgerLineKey({
+      year,
+      month,
+      nomusReceivableId: receivable.nomusReceivableId,
+      commissionRecordId: null,
+      commissionPaymentScheduleId: null,
+      commissionReceivableScheduleId: schedule.id,
+      installmentNumber: schedule.installmentNumber,
+      nomusOrderItemId: null,
+      ruleId: null,
+    }),
+    year,
+    month,
+    nomusReceivableId: receivable.nomusReceivableId,
+    receivableNumber: receivable.receivableNumber ?? schedule.receivableCode,
+    installmentNumber: schedule.installmentNumber,
+    settlementDate: isoDate(receivable.settlementDate) ?? "",
+    dueDate: isoDate(receivable.dueDate),
+    receivableAmount: normalizeCommissionLedgerMoney(
+      schedule.receivableNominalAmount || receivable.amountReceivable
+    ),
+    receivedAmount: normalizeCommissionLedgerMoney(receivable.amountReceived),
+    receivedSharePercent: release.receivedSharePercent,
+    customerExternalId: receivable.customerExternalId ?? null,
+    customerId: schedule.customerId ?? receivable.customerId ?? null,
+    customerName: receivable.customerName,
+    nomusNfeId: schedule.nfeId ?? receivable.nomusNfeId ?? null,
+    nfeNumber: receivable.nfeNumber,
+    orderCode: schedule.orderCode,
+    localOrderId: schedule.salesOrderId,
+    nomusOrderItemId: null,
+    localItemId: null,
+    productCode: null,
+    productName: null,
+    rawSellerId: schedule.rawSellerId,
+    rawSellerName: schedule.rawSellerName,
+    canonicalSellerId: schedule.canonicalSellerId,
+    canonicalSellerName: schedule.canonicalSellerName,
+    sellerResolutionStatus: schedule.sellerResolutionStatus,
+    commissionRecordId: null,
+    commissionPaymentScheduleId: null,
+    commissionReceivableScheduleId: schedule.id,
+    ruleId: null,
+    ruleName: null,
+    ratePercent: release.effectiveRatePercent,
+    commissionableBaseAmount: release.commissionableBaseAmount,
+    expectedCommissionAmount: release.expectedCommissionAmount,
+    releasedCommissionAmount: released,
+    status,
+    statusReason: reason,
+    exclusionRuleId: schedule.exclusionRuleId,
+    exclusionReason: schedule.exclusionReason,
+    source: "MATERIALIZED_SCHEDULE",
+  };
+}
+
 function previewLineFromAuditRow(
   row: VisualAuditRow,
   year: number,
@@ -360,6 +555,7 @@ function previewLineFromAuditRow(
     sellerResolutionStatus: row.sellerResolutionStatus,
     commissionRecordId: row.recordId,
     commissionPaymentScheduleId: row.scheduleId,
+    commissionReceivableScheduleId: null,
     ruleId: null,
     ruleName: null,
     ratePercent: normalizeCommissionLedgerMoney(row.itemRatePercent),
@@ -426,6 +622,7 @@ function buildExceptionLine(input: {
     sellerResolutionStatus: null,
     commissionRecordId: null,
     commissionPaymentScheduleId: null,
+    commissionReceivableScheduleId: null,
     ruleId: null,
     ruleName: null,
     ratePercent: 0,
@@ -438,6 +635,35 @@ function buildExceptionLine(input: {
     exclusionReason: null,
     source: "EXCEPTION",
   };
+}
+
+function buildLinesForReceivableWithMaterializedSchedule(input: {
+  receivable: CommissionReceiptReceivableInput;
+  schedules: MaterializedReceivableScheduleInput[];
+  year: number;
+  month: number;
+}): CommissionReceiptPreviewLine[] {
+  const schedule = pickMaterializedScheduleForReceivable(input.schedules);
+  if (!schedule) {
+    return [
+      buildExceptionLine({
+        receivable: input.receivable,
+        year: input.year,
+        month: input.month,
+        status: "NO_SCHEDULE",
+        statusReason:
+          "Sem CommissionReceivableSchedule ativo — materialize a comissão antes do fechamento",
+      }),
+    ];
+  }
+  return [
+    previewLineFromMaterializedSchedule(
+      schedule,
+      input.receivable,
+      input.year,
+      input.month
+    ),
+  ];
 }
 
 function calculatePreviewLinesForReceivable(input: {
@@ -607,6 +833,7 @@ function calculatePreviewLinesForReceivable(input: {
       sellerResolutionStatus: sellerResolution.resolutionStatus,
       commissionRecordId: null,
       commissionPaymentScheduleId: null,
+      commissionReceivableScheduleId: null,
       ruleId: ruleSnapshot?.ruleId ?? null,
       ruleName: ruleSnapshot?.ruleName ?? null,
       ratePercent: normalizeCommissionLedgerMoney(ratePercent),
@@ -659,6 +886,9 @@ export function aggregateCommissionReceiptPreview(
     string,
     CommissionReceiptPreviewResult["byCustomer"][number]
   >();
+  const seenReceivableForReceived = new Set<number>();
+  const seenSellerReceivableReceived = new Set<string>();
+  const seenCustomerReceivableReceived = new Set<string>();
 
   for (const line of lines) {
     countByStatus[line.status] = (countByStatus[line.status] ?? 0) + 1;
@@ -668,7 +898,10 @@ export function aggregateCommissionReceiptPreview(
     const countsForTotals =
       (includeExcluded || !isExcluded) && (includeExceptions || !isException);
 
-    totalReceivedAmount = roundMoney(totalReceivedAmount + line.receivedAmount);
+    if (!seenReceivableForReceived.has(line.nomusReceivableId)) {
+      seenReceivableForReceived.add(line.nomusReceivableId);
+      totalReceivedAmount = roundMoney(totalReceivedAmount + line.receivedAmount);
+    }
 
     if (countsForTotals) {
       if (isExcluded) {
@@ -695,6 +928,7 @@ export function aggregateCommissionReceiptPreview(
     }
 
     const sellerKey = line.canonicalSellerId ?? line.rawSellerName ?? "—";
+    const sellerReceivableKey = `${sellerKey}|${line.nomusReceivableId}`;
     const sellerBucket = sellerMap.get(sellerKey) ?? {
       sellerId: line.canonicalSellerId,
       sellerName: line.canonicalSellerName ?? line.rawSellerName,
@@ -704,9 +938,12 @@ export function aggregateCommissionReceiptPreview(
       expectedCommission: 0,
       releasedCommission: 0,
     };
-    sellerBucket.receivedAmount = roundMoney(
-      sellerBucket.receivedAmount + line.receivedAmount
-    );
+    if (!seenSellerReceivableReceived.has(sellerReceivableKey)) {
+      seenSellerReceivableReceived.add(sellerReceivableKey);
+      sellerBucket.receivedAmount = roundMoney(
+        sellerBucket.receivedAmount + line.receivedAmount
+      );
+    }
     if (line.status === "COMMISSIONABLE" && countsForTotals) {
       sellerBucket.commissionableBase = roundMoney(
         sellerBucket.commissionableBase + line.commissionableBaseAmount
@@ -721,6 +958,7 @@ export function aggregateCommissionReceiptPreview(
     sellerMap.set(sellerKey, sellerBucket);
 
     const customerKey = String(line.customerExternalId ?? line.customerName ?? "—");
+    const customerReceivableKey = `${customerKey}|${line.nomusReceivableId}`;
     const customerBucket = customerMap.get(customerKey) ?? {
       customerExternalId: line.customerExternalId,
       customerName: line.customerName,
@@ -730,9 +968,12 @@ export function aggregateCommissionReceiptPreview(
       expectedCommission: 0,
       releasedCommission: 0,
     };
-    customerBucket.receivedAmount = roundMoney(
-      customerBucket.receivedAmount + line.receivedAmount
-    );
+    if (!seenCustomerReceivableReceived.has(customerReceivableKey)) {
+      seenCustomerReceivableReceived.add(customerReceivableKey);
+      customerBucket.receivedAmount = roundMoney(
+        customerBucket.receivedAmount + line.receivedAmount
+      );
+    }
     if (line.status === "COMMISSIONABLE" && countsForTotals) {
       customerBucket.commissionableBase = roundMoney(
         customerBucket.commissionableBase + line.commissionableBaseAmount
@@ -784,7 +1025,7 @@ export function buildCommissionReceiptPreview(
   );
 
   const ordersByNfeId = input.ordersByNfeId;
-
+  const useMaterializedSchedules = input.materializedSchedulesByReceivableId !== undefined;
   const auditByReceivable = groupAuditRowsByReceivable(input.persistedAuditRows ?? []);
   const lines: CommissionReceiptPreviewLine[] = [];
 
@@ -796,6 +1037,30 @@ export function buildCommissionReceiptPreview(
         input.customer
       )
     ) {
+      continue;
+    }
+
+    if (useMaterializedSchedules) {
+      const schedules =
+        input.materializedSchedulesByReceivableId!.get(receivable.nomusReceivableId) ?? [];
+      const scheduleLines = buildLinesForReceivableWithMaterializedSchedule({
+        receivable,
+        schedules,
+        year: input.year,
+        month: input.month,
+      });
+      for (const line of scheduleLines) {
+        if (
+          !sellerMatchesFilter(
+            line.canonicalSellerName,
+            line.rawSellerName,
+            input.seller
+          )
+        ) {
+          continue;
+        }
+        lines.push(line);
+      }
       continue;
     }
 
@@ -818,6 +1083,7 @@ export function buildCommissionReceiptPreview(
 
     const nfeId = receivable.nomusNfeId ?? null;
     const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
+
     if (!order) {
       lines.push(
         buildExceptionLine({
@@ -826,6 +1092,21 @@ export function buildCommissionReceiptPreview(
           month: input.month,
           status: "NO_SALES_LINK",
           statusReason: "Título sem vínculo com pedido/NF",
+        })
+      );
+      continue;
+    }
+
+    if (!input.allowItemRecalculationFallback) {
+      lines.push(
+        buildExceptionLine({
+          receivable,
+          year: input.year,
+          month: input.month,
+          status: "NO_SCHEDULE",
+          statusReason:
+            "Sem schedule materializado — use materialização ou fallback explícito de auditoria",
+          order,
         })
       );
       continue;

@@ -1,7 +1,7 @@
 /**
  * Fonte oficial de relatórios PAYABLE — lógica pura.
  *
- * Regra: fechamento RECEIPT_BASED CLOSED > prévia do motor por recebimento > legado (visual audit).
+ * Regra: fechamento RECEIPT_BASED CLOSED > prévia por schedule materializado > legado (visual audit).
  */
 export type CommissionReportSourceMode = "auto" | "receipt" | "legacy";
 
@@ -26,7 +26,7 @@ export const LEGACY_PAYABLE_DEPRECATION_NOTICE =
   "Este relatório usa cálculo legado (CommissionRecord/CommissionPaymentSchedule). Para pagamento oficial use Fechamento por Recebimento.";
 
 export const RECEIPT_PREVIEW_WARNING =
-  "Prévia não fechada — valores calculados pelo motor por recebimento, ainda não gravados no ledger oficial.";
+  "Prévia não fechada — comissão liberada a partir de CommissionReceivableSchedule materializado (fallback por item apenas com flag explícita).";
 
 export const RECEIPT_CLOSED_NOTICE =
   "Fonte oficial: ledger RECEIPT_BASED fechado para o período.";

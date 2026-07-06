@@ -153,6 +153,7 @@ function previewCtx(
     exclusionRules: [],
     identityCtx: OK_IDENTITY,
     itemRateOverrides: new Map([["A", 2]]),
+    allowItemRecalculationFallback: true,
     ...overrides,
   };
 }
