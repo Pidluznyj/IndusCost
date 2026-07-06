@@ -45,9 +45,12 @@ export type BuildDiagnosticBundleInput = {
   codeReferences?: DiagnosticCodeReference[];
   logs?: string[];
   businessRulesMarkdown?: string;
+  executiveSummaryMarkdown?: string;
+  problemContextMarkdown?: string;
   databaseEvidence?: Record<string, unknown>;
   calculationTrace?: Record<string, unknown>;
   systemSnapshot?: Record<string, unknown>;
+  rawLimitedEvidence?: Record<string, unknown>;
 };
 
 export type BuildDiagnosticBundleResult = {
@@ -351,11 +354,11 @@ export function buildChatGptDiagnosticBundle(
   const entries: Record<string, string> = {
     "00_README_FOR_CHATGPT.md": buildReadmeForChatGpt(),
     "01_EXECUTIVE_SUMMARY.md": sanitizeDiagnosticText(
-      buildExecutiveSummary(input.scope, context),
+      input.executiveSummaryMarkdown ?? buildExecutiveSummary(input.scope, context),
       sanitizeCtx
     ),
     "02_PROBLEM_CONTEXT.md": sanitizeDiagnosticText(
-      buildProblemContext(context),
+      input.problemContextMarkdown ?? buildProblemContext(context),
       sanitizeCtx
     ),
     "03_DIAGNOSTIC_INDEX.json": JSON.stringify(diagnosticIndex, null, 2),
@@ -390,6 +393,12 @@ export function buildChatGptDiagnosticBundle(
   for (const [path, payload] of evidenceMap.entries()) {
     sanitizeCtx.filesSanitized.add(path);
     entries[path] = JSON.stringify(payload, null, 2);
+  }
+
+  if (input.rawLimitedEvidence) {
+    const rawPath = "evidence/raw-limited/product-engineering-summary.json";
+    sanitizeCtx.filesSanitized.add(rawPath);
+    entries[rawPath] = JSON.stringify(input.rawLimitedEvidence, null, 2);
   }
 
   // Atualiza report final com todos os arquivos sanitizados

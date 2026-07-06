@@ -12316,6 +12316,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     prisma,
   });
 
+  const { registerDiagnosticBundleRoutes } = await import(
+    "./src/lib/diagnostics/diagnosticBundleRoutes.server.js"
+  );
+  registerDiagnosticBundleRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    prisma,
+  });
+
   registerComponentPerformanceRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
