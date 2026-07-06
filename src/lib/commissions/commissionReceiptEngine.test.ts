@@ -577,6 +577,37 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
     assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
     assert.equal(result.lines[0]?.exclusionReason, "Política comercial");
+    assert.equal(result.lines[0]?.exclusionRuleId, "ex-1");
+  });
+
+  it("schedule CUSTOMER_EXCLUDED sem exclusionRuleId resolve regra ativa no preview", () => {
+    const sched = materializedSchedule({
+      receivableId: 506,
+      scheduledCommissionAmount: 0,
+      scheduleStatus: "CUSTOMER_EXCLUDED",
+      exclusionReason: "Política comercial",
+      customerId: "cust-ex",
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 506,
+          customerId: "cust-ex",
+          customerName: "ESMALTEC",
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[506, [sched]]]),
+      rules: [],
+      exclusionRules: [
+        exclusionRule({ id: "ex-esmaltec", customerId: "cust-ex", customerExternalId: null }),
+      ],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
+    assert.equal(result.lines[0]?.exclusionRuleId, "ex-esmaltec");
   });
 
   it("valor recebido é somado por título único", () => {

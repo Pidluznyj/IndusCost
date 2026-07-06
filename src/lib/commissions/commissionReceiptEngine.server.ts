@@ -5,6 +5,7 @@ import {
   buildCommissionReceiptPreview,
   type CommissionReceiptPreviewResult,
   type MaterializedReceivableScheduleInput,
+  resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
@@ -78,9 +79,9 @@ export async function loadMaterializedSchedulesByReceivableId(
           sellerResolutionStatus: true,
           items: {
             select: {
-              exclusionRuleId: true,
               exclusionReason: true,
               status: true,
+              ruleSnapshotJson: true,
             },
             take: 1,
           },
@@ -93,6 +94,7 @@ export async function loadMaterializedSchedulesByReceivableId(
 
   for (const row of rows) {
     const itemSnapshot = row.orderSnapshot.items[0];
+    const exclusionMeta = resolveMaterializedItemExclusionMeta(itemSnapshot);
     const list = map.get(row.receivableId) ?? [];
     list.push({
       id: row.id,
@@ -114,8 +116,12 @@ export async function loadMaterializedSchedulesByReceivableId(
       scheduledCommissionAmount: decimalToNumber(row.scheduledCommissionAmount),
       scheduleStatus: mapPrismaScheduleStatus(row.status),
       sellerResolutionStatus: row.orderSnapshot.sellerResolutionStatus,
-      exclusionRuleId: itemSnapshot?.exclusionRuleId ?? null,
-      exclusionReason: itemSnapshot?.exclusionReason ?? null,
+      exclusionRuleId: exclusionMeta.exclusionRuleId,
+      exclusionReason:
+        exclusionMeta.exclusionReason ??
+        (mapPrismaScheduleStatus(row.status) === "CUSTOMER_EXCLUDED"
+          ? "Cliente excluído de comissão"
+          : null),
     });
     map.set(row.receivableId, list);
   }
@@ -202,7 +208,7 @@ export async function loadCommissionReceiptPreview(
       : Promise.resolve([]),
     loadCommissionSellerIdentityContext(prisma),
     useLegacyFallback ? loadActiveCommissionRules(prisma) : Promise.resolve([]),
-    useLegacyFallback ? loadActiveCustomerExclusionRuleSnapshots() : Promise.resolve([]),
+    loadActiveCustomerExclusionRuleSnapshots(),
     useLegacyFallback
       ? listCommissionVisualAuditPage(
           parseCommissionVisualAuditQuery({

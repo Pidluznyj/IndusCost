@@ -72,6 +72,52 @@ export type MaterializedReceivableScheduleInput = {
   exclusionReason: string | null;
 };
 
+export function resolveMaterializedItemExclusionMeta(
+  itemSnapshot:
+    | {
+        exclusionReason: string | null;
+        status: string;
+        ruleSnapshotJson: unknown;
+      }
+    | null
+    | undefined
+): { exclusionRuleId: string | null; exclusionReason: string | null } {
+  if (!itemSnapshot) {
+    return { exclusionRuleId: null, exclusionReason: null };
+  }
+  const exclusionReason = itemSnapshot.exclusionReason?.trim() || null;
+  if (itemSnapshot.ruleSnapshotJson != null && typeof itemSnapshot.ruleSnapshotJson === "object") {
+    const raw = (itemSnapshot.ruleSnapshotJson as Record<string, unknown>).exclusionRuleId;
+    if (typeof raw === "string" && raw.trim()) {
+      return { exclusionRuleId: raw.trim(), exclusionReason };
+    }
+  }
+  return { exclusionRuleId: null, exclusionReason };
+}
+
+export function resolveMaterializedScheduleExclusionRuleId(input: {
+  schedule: Pick<
+    MaterializedReceivableScheduleInput,
+    "customerId" | "scheduleStatus" | "exclusionRuleId"
+  >;
+  receivable: Pick<
+    CommissionReceiptReceivableInput,
+    "customerId" | "customerExternalId" | "customerName" | "settlementDate"
+  >;
+  exclusionRules: CustomerExclusionRuleSnapshot[];
+}): string | null {
+  if (input.schedule.exclusionRuleId) return input.schedule.exclusionRuleId;
+  if (input.schedule.scheduleStatus !== "CUSTOMER_EXCLUDED") return null;
+  const exclusion = resolveCustomerExclusionForSale({
+    customerId: input.schedule.customerId ?? input.receivable.customerId,
+    customerExternalId: input.receivable.customerExternalId,
+    customerName: input.receivable.customerName,
+    referenceDate: input.receivable.settlementDate,
+    rules: input.exclusionRules,
+  });
+  return exclusion?.rule.id ?? null;
+}
+
 export type CommissionReceiptReceivableInput = {
   nomusReceivableId: number;
   receivableNumber?: string | null;
@@ -439,7 +485,8 @@ function previewLineFromMaterializedSchedule(
   schedule: MaterializedReceivableScheduleInput,
   receivable: CommissionReceiptReceivableInput,
   year: number,
-  month: number
+  month: number,
+  exclusionRules: CustomerExclusionRuleSnapshot[] = []
 ): CommissionReceiptPreviewLine {
   const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
   const release = releaseCommissionFromMaterializedSchedule({ schedule, receivable });
@@ -456,6 +503,11 @@ function previewLineFromMaterializedSchedule(
               : release.expectedCommissionAmount)
         )
       : release.expectedCommissionAmount;
+  const exclusionRuleId = resolveMaterializedScheduleExclusionRuleId({
+    schedule,
+    receivable,
+    exclusionRules,
+  });
 
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
@@ -510,7 +562,7 @@ function previewLineFromMaterializedSchedule(
       status === "CUSTOMER_EXCLUDED" ? grossCommissionAmount : release.expectedCommissionAmount,
     status,
     statusReason: reason,
-    exclusionRuleId: schedule.exclusionRuleId,
+    exclusionRuleId,
     exclusionReason: schedule.exclusionReason,
     source: "MATERIALIZED_SCHEDULE",
   };
@@ -659,6 +711,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
   schedules: MaterializedReceivableScheduleInput[];
   year: number;
   month: number;
+  exclusionRules: CustomerExclusionRuleSnapshot[];
 }): CommissionReceiptPreviewLine[] {
   const schedule = pickMaterializedScheduleForReceivable(input.schedules);
   if (!schedule) {
@@ -678,7 +731,8 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
       schedule,
       input.receivable,
       input.year,
-      input.month
+      input.month,
+      input.exclusionRules
     ),
   ];
 }
@@ -1067,6 +1121,7 @@ export function buildCommissionReceiptPreview(
         schedules,
         year: input.year,
         month: input.month,
+        exclusionRules: input.exclusionRules,
       });
       for (const line of scheduleLines) {
         if (

@@ -445,7 +445,13 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         return handleQueryError(res, error);
       } catch {
         console.error("GET /api/commissions/receipt-closing/preview", error);
-        return res.status(500).json({ error: "Erro ao gerar prévia do fechamento por recebimento." });
+        const auditMessage =
+          error instanceof Error ? error.message.trim() : "Erro ao gerar prévia do fechamento por recebimento.";
+        return res.status(500).json({
+          error: auditMessage.includes("Unknown field")
+            ? "Erro de consulta ao materializar fechamento por recebimento. Contate o suporte com o período informado."
+            : auditMessage,
+        });
       }
     }
   });
