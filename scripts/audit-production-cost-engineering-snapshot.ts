@@ -23,7 +23,13 @@ function parseArg(name: string): string | undefined {
   return undefined;
 }
 
+import { warnTraceLegacyMode } from "./commission-audit-args.ts";
+
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-production-cost-engineering-snapshot",
+    "scripts/audit-product-cost-trace.ts (modo DIAGNOSTIC para engenharia ao vivo)"
+  );
   if (!process.env.DATABASE_URL?.trim()) {
     console.error("DATABASE_URL ausente.");
     process.exit(1);

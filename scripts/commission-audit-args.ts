@@ -53,3 +53,12 @@ export function requireDatabaseUrl(): void {
     );
   }
 }
+
+/** Aviso padrão para scripts legados de custo/preço/comissão fora do motor trace. */
+export const TRACE_LEGACY_SCRIPT_WARNING =
+  "LEGACY MODE — não usar como fonte oficial de pagamento/preço/custo.";
+
+export function warnTraceLegacyMode(context: string, officialHint?: string): void {
+  console.warn(`⚠ ${TRACE_LEGACY_SCRIPT_WARNING} (${context})`);
+  if (officialHint) console.warn(`  Fonte oficial: ${officialHint}`);
+}

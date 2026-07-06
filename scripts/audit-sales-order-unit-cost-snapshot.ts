@@ -205,7 +205,13 @@ function printRankCustomers(title: string, rows: RankCustomer[], limit: number):
   }
 }
 
+import { warnTraceLegacyMode } from "./commission-audit-args.ts";
+
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-sales-order-unit-cost-snapshot",
+    "unitCost Nomus ≠ custo industrial — use audit-sales-order-trace.ts"
+  );
   const args = parseCliArgs();
   const period = buildPeriodFilter(args);
 

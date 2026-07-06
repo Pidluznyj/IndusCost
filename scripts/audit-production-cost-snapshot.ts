@@ -15,7 +15,7 @@ import {
   PRODUCTION_COST_SNAPSHOT_KIND,
   PRODUCTION_COST_SNAPSHOT_LIVE_BOM_NOTICE,
 } from "../src/lib/productionCostCalculationSnapshotAudit.ts";
-import { parseArg, hasFlag, requireDatabaseUrl } from "./commission-audit-args.ts";
+import { parseArg, hasFlag, requireDatabaseUrl, warnTraceLegacyMode } from "./commission-audit-args.ts";
 
 type SnapshotRecord = Record<string, unknown>;
 
@@ -25,6 +25,10 @@ function readSnapshot(value: unknown): SnapshotRecord {
 }
 
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-production-cost-snapshot",
+    "scripts/audit-product-cost-trace.ts e GET /api/audit/product-cost-trace"
+  );
   requireDatabaseUrl();
   const json = hasFlag("json");
   const sku = parseArg("sku")?.trim() || null;

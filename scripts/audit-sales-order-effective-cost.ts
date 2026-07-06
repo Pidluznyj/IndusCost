@@ -38,7 +38,13 @@ function assertDatabaseUrl(): void {
   }
 }
 
+import { warnTraceLegacyMode } from "./commission-audit-args.ts";
+
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-sales-order-effective-cost",
+    "scripts/audit-sales-order-trace.ts e GET /api/audit/sales-order-trace"
+  );
   assertDatabaseUrl();
   await prisma.$connect();
 

@@ -106,7 +106,8 @@ Erros retornam envelope amigável — sem stack trace ao cliente (`costToCashTra
 | `commission-calculation-service.server.ts` | **DEPRECATED** | Substituir por materialização |
 | Recalcular no frontend | **REPLACE_WITH_TRACE_SERVICES** | Tela/export consomem só API payload |
 
-Detalhamento comissões legado: `docs/commission-legacy-deactivation-plan.md`.
+Detalhamento comissões legado: `docs/commission-legacy-deactivation-plan.md`.  
+Mapeamento completo pós-rastreabilidade: `docs/cost-to-cash-legacy-deactivation-plan.md`.
 
 ---
 

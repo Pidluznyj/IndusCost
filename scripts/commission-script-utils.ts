@@ -3,9 +3,9 @@ import {
   activeCommissionRecordWhere,
   INACTIVE_COMMISSION_RECORD_STATUSES,
 } from "../src/lib/commissions/commission-record-status.ts";
-import { hasFlag, parseArg, parseYearPeriod } from "./commission-audit-args.ts";
+import { hasFlag, parseArg, parseYearPeriod, TRACE_LEGACY_SCRIPT_WARNING, warnTraceLegacyMode } from "./commission-audit-args.ts";
 
-export { parseArg, hasFlag, parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
+export { parseArg, hasFlag, parseYearPeriod, requireDatabaseUrl, warnTraceLegacyMode, TRACE_LEGACY_SCRIPT_WARNING } from "./commission-audit-args.ts";
 export {
   parseCommissionReportSourceMode,
   formatReportSourceLabel,
@@ -88,14 +88,14 @@ export function csvLine(cols: unknown[]): string {
   return cols.map(escapeCsv).join(",");
 }
 
-/** Aviso padrão para scripts que usam CommissionRecord / CommissionPaymentSchedule. */
-export const COMMISSION_LEGACY_SCRIPT_WARNING =
-  "LEGACY MODE: não usar para pagamento oficial.";
+/** @deprecated Use TRACE_LEGACY_SCRIPT_WARNING from commission-audit-args.ts */
+export const COMMISSION_LEGACY_SCRIPT_WARNING = TRACE_LEGACY_SCRIPT_WARNING;
 
 export function warnCommissionLegacyMode(context?: string): void {
-  const suffix = context ? ` (${context})` : "";
-  console.warn(`⚠ ${COMMISSION_LEGACY_SCRIPT_WARNING}${suffix}`);
-  console.warn(`  Fonte oficial: Fechamento por Recebimento (/commissions → receipt-closing).`);
+  warnTraceLegacyMode(
+    context ?? "commission",
+    "Fechamento por Recebimento (/commissions → receipt-closing) e scripts/audit-commission-trace.ts"
+  );
 }
 
 export function warnCommissionLegacyReportSource(input: {

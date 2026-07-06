@@ -12,6 +12,21 @@ Service único de rastreabilidade read-only que alimenta **scripts**, **APIs**, 
 
 ---
 
+## Fontes oficiais
+
+| Domínio | Fonte oficial | Entrada principal |
+|---------|---------------|-------------------|
+| Custo de produto | `ProductionCostTable` versão **PUBLISHED** vigente | `buildProductCostTrace`, `/api/audit/product-cost-trace` |
+| Preço publicado | `PriceTableItem` congelado (snapshots JSON) | `buildPublishedPriceTrace`, `/api/audit/published-price-trace`, modal **Fonte do Preço** |
+| Venda / margem | Custo oficial IndusCost versionado + Nomus | `buildSalesOrderTrace`, `/api/audit/sales-order-trace` |
+| Comissão (pagamento) | Materialização + fechamento por recebimento (ledger) | `/api/commissions/receipt-closing/*` |
+| Comissão (rastreio) | Snapshots + schedules + ledger (read-only) | `buildCommissionTrace`, `/api/audit/commission-trace` |
+| Rastreabilidade completa | Orquestrador cost-to-cash | `buildCostToCashTrace`, `/reports/cost-to-cash-trace` |
+
+Legado mapeado (sem remoção): `docs/cost-to-cash-legacy-deactivation-plan.md`.
+
+---
+
 ## Arquitetura
 
 ```

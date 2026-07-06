@@ -7,11 +7,15 @@
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
-import { parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
+import { parseYearPeriod, requireDatabaseUrl, warnTraceLegacyMode } from "./commission-audit-args.ts";
 import { getEffectiveProductProductionCostsForPairs } from "../src/lib/productionCostTables.server.ts";
 import { civilDateToLocalDate, toCivilDateKey } from "../src/lib/financeCivilDate.ts";
 
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-sales-margin-cost-coverage",
+    "scripts/audit-sales-order-trace.ts (margem por pedido com custo oficial versionado)"
+  );
   requireDatabaseUrl();
   const { from, to, label } = parseYearPeriod();
   await prisma.$connect();

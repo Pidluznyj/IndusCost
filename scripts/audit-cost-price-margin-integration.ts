@@ -8,7 +8,7 @@
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
-import { hasFlag, parseArg, parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
+import { hasFlag, parseArg, parseYearPeriod, requireDatabaseUrl, warnTraceLegacyMode } from "./commission-audit-args.ts";
 import { buildCostPriceMarginIntegratedAudit } from "../src/lib/costPriceMarginIntegratedAudit.server.ts";
 import type { CostPriceMarginAuditPayload } from "../src/lib/costPriceMarginIntegratedAudit.ts";
 
@@ -92,6 +92,10 @@ function printHumanReport(payload: CostPriceMarginAuditPayload): void {
 }
 
 async function main(): Promise<void> {
+  warnTraceLegacyMode(
+    "audit-cost-price-margin-integration",
+    "/reports/cost-to-cash-trace e scripts/audit-*-trace.ts"
+  );
   requireDatabaseUrl();
   const { from, to, label } = parseYearPeriod();
   const seller = parseArg("seller");
