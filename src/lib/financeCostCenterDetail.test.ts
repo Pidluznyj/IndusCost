@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildCostCenterDetailSummaryFromRows,
+  buildCostCenterDetailViewFromRows,
   matchesCostCenterDetailFilters,
   paginateRows,
   sortCostCenterDetailRows,
@@ -114,6 +115,26 @@ describe("financeCostCenterDetail", () => {
     assert.equal(summary.allocationSourceBreakdown.MANUAL, 200);
   });
 
+  it("view alinha summary.totalAllocatedAmount com totals.allocatedAmount", () => {
+    const center = {
+      id: "cc-1",
+      code: "ADM",
+      name: "Admin",
+      parentId: null,
+      parentCode: null,
+      parentName: null,
+      status: "ACTIVE" as const,
+    };
+    const rows = [
+      row({ allocatedAmount: 300 }),
+      row({ allocationId: "a2", accountsPayableId: 101, allocatedAmount: 200 }),
+    ];
+    const view = buildCostCenterDetailViewFromRows(center, rows);
+    assert.equal(view.summary.totalAllocatedAmount, 500);
+    assert.equal(view.totals.allocatedAmount, 500);
+    assert.equal(view.summary.totalAllocatedAmount, view.totals.allocatedAmount);
+  });
+
   it("rotas e navegação de detalhe", () => {
     const id = "550e8400-e29b-41d4-a716-446655440000";
     const path = buildFinanceCostCenterDetailPath(id);
@@ -136,6 +157,7 @@ describe("financeCostCenterDetail", () => {
     assert.match(server, /registerFinanceCostCenterDetailRoutes/);
     assert.match(page, /finance-cost-center-detail-page/);
     assert.match(page, /reallocation\/preview/);
+    assert.doesNotMatch(page, /\/summary\?/);
     assert.doesNotMatch(page, /@prisma\/client/);
   });
 

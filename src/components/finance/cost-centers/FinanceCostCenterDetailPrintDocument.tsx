@@ -66,7 +66,7 @@ export function FinanceCostCenterDetailPrintDocument({
             <tbody>
               <tr>
                 <th>Total alocado</th>
-                <td>{formatFinanceCurrency(summary.totalAllocatedAmount)}</td>
+                <td>{formatFinanceCurrency(payload.summary.totalAllocatedAmount)}</td>
                 <th>Títulos</th>
                 <td>{formatFinanceInteger(summary.titlesCount)}</td>
                 <th>Pago/liquidado</th>
@@ -121,6 +121,7 @@ export function FinanceCostCenterDetailPrintDocument({
                   <th>Status</th>
                   <th className="col-money">Valor</th>
                   <th className="col-money">Saldo</th>
+                  <th className="col-money">Alocado</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,15 +138,16 @@ export function FinanceCostCenterDetailPrintDocument({
                     <td>{displayFinanceText(row.statusLabel)}</td>
                     <td className="col-money">{formatFinanceCurrency(row.amountPayable)}</td>
                     <td className="col-money">{formatFinanceCurrency(row.balancePayable)}</td>
+                    <td className="col-money">{formatFinanceCurrency(row.allocatedAmount)}</td>
                   </tr>
                 ))}
                 <tr className="finance-cc-detail-print-total-row">
                   <td colSpan={9}>
-                    Total ({formatFinanceInteger(payload.rows.length)} título(s)) · Fonte:{" "}
-                    {payload.rows.map((r) => sourceLabel(r.allocationSource)).join(", ")}
+                    Total ({formatFinanceInteger(payload.rows.length)} título(s))
                   </td>
                   <td className="col-money">{formatFinanceCurrency(payload.totals.amountPayable)}</td>
                   <td className="col-money">{formatFinanceCurrency(payload.totals.balancePayable)}</td>
+                  <td className="col-money">{formatFinanceCurrency(payload.totals.allocatedAmount)}</td>
                 </tr>
               </tbody>
             </table>

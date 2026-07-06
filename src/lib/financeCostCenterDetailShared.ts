@@ -101,6 +101,8 @@ export type CostCenterDetailListPayload = {
   limit: number;
   totalItems: number;
   totalPages: number;
+  /** KPIs derivados das mesmas linhas filtradas (não paginadas) que alimentam totals. */
+  summary: CostCenterDetailSummary;
   totals: {
     allocatedAmount: number;
     balancePayable: number;

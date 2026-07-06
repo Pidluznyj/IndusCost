@@ -219,18 +219,12 @@ export function FinanceCostCenterExpenseMapSection({
     setError(null);
     try {
       const qs = buildCostCenterExpenseMapAllocationsQuery(appliedFilters, drilldown);
-      const [summaryRes, listRes] = await Promise.all([
-        fetchJsonOk<{ summary: CostCenterDetailSummary }>(
-          `/api/finance/cost-centers/${selectedId}/summary?${qs}`,
-          { credentials: "include" }
-        ),
-        fetchJsonOk<CostCenterDetailListPayload>(
-          `/api/finance/cost-centers/${selectedId}/allocations?${qs}`,
-          { credentials: "include" }
-        ),
-      ]);
-      setSummary(summaryRes.summary);
+      const listRes = await fetchJsonOk<CostCenterDetailListPayload>(
+        `/api/finance/cost-centers/${selectedId}/allocations?${qs}`,
+        { credentials: "include" }
+      );
       setList(listRes);
+      setSummary(listRes.summary);
     } catch (e) {
       setSummary(null);
       setList(null);
@@ -458,7 +452,9 @@ export function FinanceCostCenterExpenseMapSection({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
               <div>
                 <p className="text-muted-foreground">Total alocado</p>
-                <p className="font-bold">{formatFinanceCurrency(summary.totalAllocatedAmount)}</p>
+                <p className="font-bold">
+                  {formatFinanceCurrency(list?.totals.allocatedAmount ?? summary.totalAllocatedAmount)}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Títulos</p>
@@ -750,10 +746,6 @@ export function FinanceCostCenterExpenseMapSection({
                       <span className="font-semibold text-foreground">
                         {formatFinanceCurrency(list.totals.allocatedAmount)}
                       </span>
-                      {summary &&
-                      Math.abs(summary.totalAllocatedAmount - list.totals.allocatedAmount) > 0.009 ? (
-                        <span className="text-amber-700"> · divergência cabeçalho</span>
-                      ) : null}
                     </p>
                   ) : null}
                   <FinanceCostCenterGridPagination

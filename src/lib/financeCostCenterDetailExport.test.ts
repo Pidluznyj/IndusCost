@@ -271,13 +271,22 @@ describe("financeCostCenterDetailExport", () => {
     );
   });
 
-  it("PDF usa documento de impressão com filtros e tabela", () => {
+  it("PDF usa documento de impressão com filtros, coluna alocado e tabela", () => {
     const printDoc = read(
       "src/components/finance/cost-centers/FinanceCostCenterDetailPrintDocument.tsx"
     );
     assert.ok(printDoc.includes("Filtros aplicados"));
     assert.ok(printDoc.includes("finance-cc-detail-print-data-table"));
     assert.ok(printDoc.includes("FINANCE_CC_DETAIL_EXPORT_TITLE"));
+    assert.ok(printDoc.includes(">Alocado<"));
+    assert.ok(printDoc.includes("payload.totals.allocatedAmount"));
+  });
+
+  it("detalhe do mapa usa summary da listagem (uma única fonte)", () => {
+    const ui = read("src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx");
+    assert.doesNotMatch(ui, /\/summary\?/);
+    assert.ok(ui.includes("setSummary(listRes.summary)"));
+    assert.ok(ui.includes("list.totals.allocatedAmount"));
   });
 
   it("exportação não reintroduz Prisma no componente de detalhe", () => {
@@ -288,6 +297,7 @@ describe("financeCostCenterDetailExport", () => {
   it("grid e export compartilham resolveCostCenterDetailFilteredRows", () => {
     const lib = read("src/lib/financeCostCenterDetail.ts");
     assert.ok(lib.includes("resolveCostCenterDetailFilteredRows"));
+    assert.ok(lib.includes("buildCostCenterDetailViewFromRows"));
     assert.ok(lib.includes("buildCostCenterDetailExportPayloadDefault"));
     assert.ok(lib.includes("listCostCenterDetailAllocationsDefault"));
   });

@@ -751,6 +751,31 @@ function sumCostCenterDetailRowTotals(rows: CostCenterDetailAllocationRow[]) {
   );
 }
 
+/** Garante que resumo, totals e linhas usam a mesma base agregada. */
+export function buildCostCenterDetailViewFromRows(
+  center: Parameters<typeof buildCostCenterDetailSummaryFromRows>[0],
+  rows: CostCenterDetailAllocationRow[]
+): {
+  summary: CostCenterDetailSummary;
+  totals: CostCenterDetailListPayload["totals"];
+} {
+  const summary = buildCostCenterDetailSummaryFromRows(center, rows);
+  const totals = sumCostCenterDetailRowTotals(rows);
+  const alignedTotals = {
+    allocatedAmount: finiteMoney(totals.allocatedAmount),
+    balancePayable: finiteMoney(totals.balancePayable),
+    amountPayable: finiteMoney(totals.amountPayable),
+  };
+  return {
+    summary: {
+      ...summary,
+      totalAllocatedAmount: alignedTotals.allocatedAmount,
+      titlesCount: new Set(rows.map((row) => row.accountsPayableId)).size,
+    },
+    totals: alignedTotals,
+  };
+}
+
 function isApEligibleForCostCenterExpenseDetail(
   ap: FinanceApDashboardRow,
   officialApIds: Set<number>,
@@ -937,6 +962,7 @@ export async function resolveCostCenterDetailFilteredRows(
 ): Promise<{
   center: Awaited<ReturnType<typeof loadCostCenterMeta>>;
   rows: CostCenterDetailAllocationRow[];
+  summary: CostCenterDetailSummary;
   totals: CostCenterDetailListPayload["totals"];
 }> {
   const center = await loadCostCenterMeta(costCenterId);
@@ -947,15 +973,12 @@ export async function resolveCostCenterDetailFilteredRows(
     referenceDate,
   });
 
-  const totals = sumCostCenterDetailRowTotals(snapshot.displayRows);
+  const view = buildCostCenterDetailViewFromRows(center, snapshot.displayRows);
   return {
     center,
     rows: snapshot.displayRows,
-    totals: {
-      allocatedAmount: finiteMoney(totals.allocatedAmount),
-      balancePayable: finiteMoney(totals.balancePayable),
-      amountPayable: finiteMoney(totals.amountPayable),
-    },
+    summary: view.summary,
+    totals: view.totals,
   };
 }
 
@@ -964,12 +987,12 @@ export async function buildCostCenterDetailSummaryDefault(
   filters: CostCenterDetailListFilters,
   referenceDate: Date = new Date()
 ): Promise<CostCenterDetailSummary> {
-  const { center, rows } = await resolveCostCenterDetailFilteredRows(
+  const { summary } = await resolveCostCenterDetailFilteredRows(
     costCenterId,
     filters,
     referenceDate
   );
-  return buildCostCenterDetailSummaryFromRows(center, rows);
+  return summary;
 }
 
 export async function listCostCenterDetailAllocationsDefault(
@@ -978,7 +1001,7 @@ export async function listCostCenterDetailAllocationsDefault(
   referenceDate: Date = new Date()
 ): Promise<CostCenterDetailListPayload> {
   const { page, limit, sortBy, sortDirection, ...filters } = query;
-  const { rows: allRows, totals } = await resolveCostCenterDetailFilteredRows(
+  const { rows: allRows, summary, totals } = await resolveCostCenterDetailFilteredRows(
     costCenterId,
     filters,
     referenceDate
@@ -993,6 +1016,7 @@ export async function listCostCenterDetailAllocationsDefault(
     limit: pageResult.limit,
     totalItems: pageResult.totalItems,
     totalPages: pageResult.totalPages,
+    summary,
     totals,
   };
 }
@@ -1005,13 +1029,12 @@ export async function buildCostCenterDetailExportPayloadDefault(
   appliedFilters: CostCenterDetailExportPayload["appliedFilters"] = []
 ): Promise<CostCenterDetailExportPayload> {
   const { sortBy, sortDirection, ...filters } = query;
-  const { center, rows: unsorted, totals } = await resolveCostCenterDetailFilteredRows(
+  const { center, rows: unsorted, summary, totals } = await resolveCostCenterDetailFilteredRows(
     costCenterId,
     filters,
     referenceDate
   );
   const rows = sortCostCenterDetailRows(unsorted, sortBy, sortDirection);
-  const summary = buildCostCenterDetailSummaryFromRows(center, rows);
 
   return {
     generatedAt: new Date().toISOString(),

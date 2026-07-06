@@ -147,13 +147,9 @@ export function FinanceCostCenterDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [centerRes, summaryRes, listRes] = await Promise.all([
+      const [centerRes, listRes] = await Promise.all([
         fetchJsonOk<{ item: FinanceCostCenterDto }>(
           `/api/finance/cost-centers/${costCenterId}`,
-          { credentials: "include" }
-        ),
-        fetchJsonOk<{ summary: CostCenterDetailSummary }>(
-          `/api/finance/cost-centers/${costCenterId}/summary?${queryString}`,
           { credentials: "include" }
         ),
         fetchJsonOk<CostCenterDetailListPayload>(
@@ -162,7 +158,7 @@ export function FinanceCostCenterDetailPage() {
         ),
       ]);
       setCenter(centerRes.item);
-      setSummary(summaryRes.summary);
+      setSummary(listRes.summary);
       setList(listRes);
     } catch (e) {
       setError(buildFinanceTabLoadError("Não foi possível carregar o centro de custo.", e));
@@ -309,7 +305,10 @@ export function FinanceCostCenterDetailPage() {
 
       {summary ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <FinanceKpiCard label="Total alocado no filtro" value={formatFinanceKpiCurrency(summary.totalAllocatedAmount)} />
+          <FinanceKpiCard
+            label="Total alocado no filtro"
+            value={formatFinanceKpiCurrency(list?.totals.allocatedAmount ?? summary.totalAllocatedAmount)}
+          />
           <FinanceKpiCard label="Títulos" value={String(summary.titlesCount)} />
           <FinanceKpiCard label="Fornecedores" value={String(summary.suppliersCount)} />
           <FinanceKpiCard label="Status" value={summary.status === "ACTIVE" ? "Ativo" : "Inativo"} />

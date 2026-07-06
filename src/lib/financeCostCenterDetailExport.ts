@@ -124,7 +124,7 @@ export function buildCostCenterDetailExportWorkbook(
     { Campo: "Centro pai", Valor: center.parentName ?? "—" },
     { Campo: "Gerado em", Valor: generatedLabel },
     { Campo: "Usuário", Valor: payload.userName ?? "—" },
-    { Campo: "Total alocado", Valor: summary.totalAllocatedAmount },
+    { Campo: "Total alocado", Valor: payload.totals.allocatedAmount },
     { Campo: "Pago/liquidado", Valor: summary.paidAmount },
     { Campo: "Vencido", Valor: summary.overdueAmount },
     { Campo: "A vencer", Valor: summary.upcomingAmount },
