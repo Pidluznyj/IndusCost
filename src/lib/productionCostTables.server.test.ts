@@ -65,6 +65,9 @@ function createMockDb() {
         findUnique: async ({ where, select, include }: { where: { id: string }; select?: unknown; include?: unknown }) => {
           const row = versions.get(where.id);
           if (!row) return null;
+          if (select && typeof select === "object" && "notes" in select) {
+            return { notes: row.notes };
+          }
           if (include && typeof include === "object" && "items" in include) {
             const versionItems = [...items.values()].filter((i) => i.costTableVersionId === row.id);
             return { ...row, items: versionItems };
@@ -145,6 +148,7 @@ function createMockDb() {
         findMany: async ({
           where,
           include,
+          select,
         }: {
           where: {
             productId?: string;
@@ -152,6 +156,7 @@ function createMockDb() {
             costTableVersion?: { status: string; id?: { not: string } };
           };
           include?: { costTableVersion?: { select: { id: boolean; code: boolean } } };
+          select?: { productId: boolean; unitProductionCost: boolean };
         }) => {
           let rows = [...items.values()];
           if (where.productId) {
@@ -174,17 +179,32 @@ function createMockDb() {
             });
           }
           return rows.map((row) => {
+            const mapped = select
+              ? {
+                  productId: row.productId,
+                  unitProductionCost: row.unitProductionCost,
+                }
+              : row;
             const version = versions.get(row.costTableVersionId);
             if (include?.costTableVersion) {
               return {
-                ...row,
+                ...(select ? mapped : row),
                 costTableVersion: version
                   ? { id: version.id, code: version.code }
                   : null,
               };
             }
-            return row;
+            return mapped;
           });
+        },
+        delete: async ({ where }: { where: { id: string } }) => {
+          for (const [key, row] of items.entries()) {
+            if (row.id === where.id) {
+              items.delete(key);
+              return row;
+            }
+          }
+          throw new Error("item not found");
         },
       },
     product: {
@@ -324,5 +344,80 @@ describe("productionCostTables.server", () => {
 
     assert.equal(versions.get(staleDraft.id)?.status, "ARCHIVED");
     assert.equal(versions.get(officialDraft.id)?.status, "PUBLISHED");
+    assert.match(versions.get(staleDraft.id)?.notes ?? "", /ARCHIVED — custo equivalente publicado/);
+  });
+
+  it("publicação não arquiva DRAFT AUTO quando custo difere", async () => {
+    const { db, versions } = createMockDb();
+    const staleDraft = await createProductionCostTableDraft(db as never, {
+      code: "AUTO-2026-07-01-618.08AA",
+      name: "Snapshot engenharia",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, staleDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.889728,
+    });
+
+    const officialDraft = await createProductionCostTableDraft(db as never, {
+      code: "2026-07",
+      name: "Custo Jul/2026",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, officialDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.912785,
+    });
+
+    const result = await publishProductionCostTableVersion(db as never, {
+      versionId: officialDraft.id,
+    });
+
+    assert.equal(versions.get(staleDraft.id)?.status, "DRAFT");
+    assert.deepEqual(result.archivedEquivalentDraftVersionIds, []);
+  });
+
+  it("publicação remove linha equivalente de DRAFT misto e preserva SKU pendente", async () => {
+    const { db, versions, items } = createMockDb();
+    const mixedDraft = await createProductionCostTableDraft(db as never, {
+      code: "2026-07-mixed",
+      name: "Revisão mista",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, mixedDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.912785,
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, mixedDraft.id, {
+      productId: "prod-other",
+      productCodeSnapshot: "999.99AA",
+      productNameSnapshot: "Outro",
+      unitProductionCost: 1.5,
+    });
+
+    const officialDraft = await createProductionCostTableDraft(db as never, {
+      code: "2026-07",
+      name: "Custo Jul/2026",
+      effectiveDate: civilDateToLocalDate("2026-07-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, officialDraft.id, {
+      productId: "prod-618",
+      productCodeSnapshot: "618.08AA",
+      productNameSnapshot: "618.08AA",
+      unitProductionCost: 0.912785,
+    });
+
+    await publishProductionCostTableVersion(db as never, { versionId: officialDraft.id });
+
+    assert.equal(versions.get(mixedDraft.id)?.status, "DRAFT");
+    const remaining = [...items.values()].filter((row) => row.costTableVersionId === mixedDraft.id);
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0]?.productId, "prod-other");
   });
 });

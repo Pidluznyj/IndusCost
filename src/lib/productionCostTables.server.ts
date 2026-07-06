@@ -315,6 +315,8 @@ export type PublishProductionCostTableVersionResult = {
   itemsExcluded: number;
   pendencies: ProductionCostPublicationPendency[];
   partialPublication: boolean;
+  /** DRAFTs arquivados após publicação por equivalência de custo (histórico preservado). */
+  archivedEquivalentDraftVersionIds: string[];
 };
 
 export async function publishProductionCostTableVersion(
@@ -405,12 +407,13 @@ export async function publishProductionCostTableVersion(
       unitProductionCost: productionCostDecimalToNumber(row.unitProductionCost),
     }));
 
-  if (publishedItems.length > 0) {
-    await archiveEquivalentProductionCostDrafts(db, {
-      publishedVersionId: published.id,
-      publishedItems,
-    });
-  }
+  const archivedEquivalentDraftIds =
+    publishedItems.length > 0
+      ? await archiveEquivalentProductionCostDrafts(db, {
+          publishedVersionId: published.id,
+          publishedItems,
+        })
+      : [];
 
   return {
     version: published,
@@ -418,7 +421,79 @@ export async function publishProductionCostTableVersion(
     itemsExcluded: invalidItemIds.length,
     pendencies,
     partialPublication: invalidItemIds.length > 0,
+    archivedEquivalentDraftVersionIds: archivedEquivalentDraftIds,
   };
+}
+
+function buildArchivedEquivalentDraftNote(publishedVersionId: string): string {
+  const stamp = new Date().toISOString();
+  return `[${stamp}] ARCHIVED — custo equivalente publicado na versão ${publishedVersionId}. Histórico preservado; tabela publicada vigente inalterada.`;
+}
+
+async function archiveProductionCostDraftVersion(
+  db: PrismaClient,
+  versionId: string,
+  publishedVersionId: string,
+  archived: Set<string>
+): Promise<void> {
+  if (archived.has(versionId)) return;
+  const version = await db.productionCostTableVersion.findUnique({
+    where: { id: versionId },
+    select: { notes: true },
+  });
+  const note = buildArchivedEquivalentDraftNote(publishedVersionId);
+  await db.productionCostTableVersion.update({
+    where: { id: versionId },
+    data: {
+      status: "ARCHIVED",
+      notes: version?.notes?.trim() ? `${version.notes.trim()}\n${note}` : note,
+    },
+  });
+  archived.add(versionId);
+}
+
+async function reconcileNonAutoDraftAfterEquivalentPublication(
+  db: PrismaClient,
+  input: {
+    versionId: string;
+    publishedVersionId: string;
+    publishedByProduct: Map<string, number>;
+    archived: Set<string>;
+    resolvedItemId: string;
+  }
+): Promise<void> {
+  await db.productionCostTableItem.delete({ where: { id: input.resolvedItemId } });
+
+  const remaining = await db.productionCostTableItem.findMany({
+    where: { costTableVersionId: input.versionId },
+    select: { productId: true, unitProductionCost: true },
+  });
+  if (remaining.length === 0) {
+    await archiveProductionCostDraftVersion(
+      db,
+      input.versionId,
+      input.publishedVersionId,
+      input.archived
+    );
+    return;
+  }
+
+  const allResolved = remaining.every((row) => {
+    const expected = input.publishedByProduct.get(row.productId);
+    if (expected == null) return false;
+    return !hasProductionCostDifference(
+      expected,
+      productionCostDecimalToNumber(row.unitProductionCost)
+    );
+  });
+  if (allResolved) {
+    await archiveProductionCostDraftVersion(
+      db,
+      input.versionId,
+      input.publishedVersionId,
+      input.archived
+    );
+  }
 }
 
 export async function archiveEquivalentProductionCostDrafts(
@@ -457,35 +532,22 @@ export async function archiveEquivalentProductionCostDrafts(
       if (archived.has(versionId)) continue;
 
       if (draftItem.costTableVersion.code.startsWith("AUTO-")) {
-        await db.productionCostTableVersion.update({
-          where: { id: versionId },
-          data: { status: "ARCHIVED" },
-        });
-        archived.add(versionId);
+        await archiveProductionCostDraftVersion(
+          db,
+          versionId,
+          input.publishedVersionId,
+          archived
+        );
         continue;
       }
 
-      const versionItems = await db.productionCostTableItem.findMany({
-        where: { costTableVersionId: versionId },
-        select: { productId: true, unitProductionCost: true },
+      await reconcileNonAutoDraftAfterEquivalentPublication(db, {
+        versionId,
+        publishedVersionId: input.publishedVersionId,
+        publishedByProduct,
+        archived,
+        resolvedItemId: draftItem.id,
       });
-      const allResolved =
-        versionItems.length > 0 &&
-        versionItems.every((row) => {
-          const expected = publishedByProduct.get(row.productId);
-          if (expected == null) return false;
-          return !hasProductionCostDifference(
-            expected,
-            productionCostDecimalToNumber(row.unitProductionCost)
-          );
-        });
-      if (allResolved) {
-        await db.productionCostTableVersion.update({
-          where: { id: versionId },
-          data: { status: "ARCHIVED" },
-        });
-        archived.add(versionId);
-      }
     }
   }
 
