@@ -18,6 +18,8 @@ import {
   type NomusSyncItemWriteRow,
   type NomusSyncUpdatePreview,
 } from "../src/lib/salesOrderNomusSync.server.ts";
+import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
+import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -1080,12 +1082,14 @@ async function runApply(
   itemsCreated: number;
   itemsUpdated: number;
   itemsStale: number;
+  affectedSalesOrderIds: string[];
 }> {
   let created = 0;
   let updated = 0;
   let itemsCreated = 0;
   let itemsUpdated = 0;
   let itemsStale = 0;
+  const affectedSalesOrderIds: string[] = [];
 
   for (const plan of eligible) {
     await prisma.$transaction(async (tx) => {
@@ -1277,10 +1281,19 @@ async function runApply(
         },
         tx
       );
+
+      affectedSalesOrderIds.push(salesOrderId);
     });
   }
 
-  return { created, updated, itemsCreated, itemsUpdated, itemsStale };
+  return {
+    created,
+    updated,
+    itemsCreated,
+    itemsUpdated,
+    itemsStale,
+    affectedSalesOrderIds: [...new Set(affectedSalesOrderIds)],
+  };
 }
 
 async function main(): Promise<void> {
@@ -1521,6 +1534,17 @@ async function main(): Promise<void> {
       2
     )
   );
+
+  if (isApply && applied?.affectedSalesOrderIds?.length) {
+    await runCommissionMaterializationAfterNomusSync(
+      prisma,
+      buildNomusSyncMaterializationTrigger({
+        source: "sales-orders",
+        syncMode: "apply",
+        salesOrderIds: applied.affectedSalesOrderIds,
+      })
+    );
+  }
 }
 
 main()

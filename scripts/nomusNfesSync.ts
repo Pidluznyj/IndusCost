@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
+import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import {
   NFE_DISCARD_REASON_LABELS,
   summarizeNfeBillingPreview,
@@ -204,6 +206,7 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
   let updated = 0;
   let unchanged = 0;
   let errors = 0;
+  const affectedNfeIds: number[] = [];
 
   for (const row of rows) {
     try {
@@ -216,6 +219,7 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
       if (!existing) {
         await prisma.nomusNfe.create({ data });
         created += 1;
+        affectedNfeIds.push(row.externalId);
         continue;
       }
 
@@ -233,12 +237,19 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
         data,
       });
       updated += 1;
+      affectedNfeIds.push(row.externalId);
     } catch {
       errors += 1;
     }
   }
 
-  return { created, updated, unchanged, errors };
+  return {
+    created,
+    updated,
+    unchanged,
+    errors,
+    affectedNfeIds: [...new Set(affectedNfeIds)],
+  };
 }
 
 async function main(): Promise<void> {
@@ -355,6 +366,17 @@ async function main(): Promise<void> {
   };
 
   console.log(JSON.stringify(payload, null, 2));
+
+  if (options.mode === "apply" && applied?.affectedNfeIds?.length) {
+    await runCommissionMaterializationAfterNomusSync(
+      prisma,
+      buildNomusSyncMaterializationTrigger({
+        source: "nfes",
+        syncMode: "apply",
+        nfeIds: applied.affectedNfeIds,
+      })
+    );
+  }
 
   if (options.mode === "apply") {
     await persistNfesIntegrationRun({

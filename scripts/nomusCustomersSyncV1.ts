@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
+import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { normalizeTaxId } from "./nomusNumberParser.ts";
 
 const prisma = new PrismaClient();
@@ -207,9 +209,14 @@ async function runDry(eligible: EligibleCustomer[]) {
   return { createsPreview: createsPreview.slice(0, 50), updatesPreview: updatesPreview.slice(0, 50) };
 }
 
-async function runApply(eligible: EligibleCustomer[]): Promise<{ created: number; updated: number }> {
+async function runApply(eligible: EligibleCustomer[]): Promise<{
+  created: number;
+  updated: number;
+  affectedCustomerIds: string[];
+}> {
   let created = 0;
   let updated = 0;
+  const affectedCustomerIds: string[] = [];
   for (const c of eligible) {
     const current = await prisma.customer.findUnique({ where: { taxId: c.taxId }, select: { id: true } });
     const data = {
@@ -226,12 +233,21 @@ async function runApply(eligible: EligibleCustomer[]): Promise<{ created: number
     if (current) {
       await prisma.customer.update({ where: { id: current.id }, data });
       updated += 1;
+      affectedCustomerIds.push(current.id);
     } else {
-      await prisma.customer.create({ data: { ...data, taxId: c.taxId, country: "Brasil" } });
+      const createdCustomer = await prisma.customer.create({
+        data: { ...data, taxId: c.taxId, country: "Brasil" },
+        select: { id: true },
+      });
       created += 1;
+      affectedCustomerIds.push(createdCustomer.id);
     }
   }
-  return { created, updated };
+  return {
+    created,
+    updated,
+    affectedCustomerIds: [...new Set(affectedCustomerIds)],
+  };
 }
 
 async function main(): Promise<void> {
@@ -263,6 +279,17 @@ async function main(): Promise<void> {
       2
     )
   );
+
+  if (isApply && applied?.affectedCustomerIds?.length) {
+    await runCommissionMaterializationAfterNomusSync(
+      prisma,
+      buildNomusSyncMaterializationTrigger({
+        source: "customers",
+        syncMode: "apply",
+        customerIds: applied.affectedCustomerIds,
+      })
+    );
+  }
 }
 
 main()

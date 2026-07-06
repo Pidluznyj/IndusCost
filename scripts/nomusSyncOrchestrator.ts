@@ -1,3 +1,10 @@
+/**
+ * Orquestrador Nomus (customers, products, bom-components, proposals, sales-orders).
+ *
+ * Materialização de comissão pós-sync: quando COMMISSION_MATERIALIZATION_AFTER_SYNC=true,
+ * os scripts filhos (ex.: nomusSalesOrdersSyncV1, nomusCustomersSyncV1) disparam o hook
+ * após apply com IDs afetados. NF-e e Contas a Receber usam scripts dedicados com o mesmo hook.
+ */
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";

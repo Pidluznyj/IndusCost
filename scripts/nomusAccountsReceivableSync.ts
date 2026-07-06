@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
+import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import {
   persistAccountsReceivableIntegrationRun,
   disconnectAccountsReceivableIntegrationPrisma,
@@ -132,6 +134,7 @@ async function runApply(rows: MappedNomusAccountsReceivable[], syncedAt: Date) {
   let updated = 0;
   let unchanged = 0;
   let errors = 0;
+  const affectedReceivableIds: number[] = [];
 
   for (const row of rows) {
     try {
@@ -144,6 +147,7 @@ async function runApply(rows: MappedNomusAccountsReceivable[], syncedAt: Date) {
       if (!existing) {
         await prisma.nomusAccountsReceivable.create({ data });
         created += 1;
+        affectedReceivableIds.push(row.externalId);
         continue;
       }
 
@@ -161,12 +165,19 @@ async function runApply(rows: MappedNomusAccountsReceivable[], syncedAt: Date) {
         data,
       });
       updated += 1;
+      affectedReceivableIds.push(row.externalId);
     } catch {
       errors += 1;
     }
   }
 
-  return { created, updated, unchanged, errors };
+  return {
+    created,
+    updated,
+    unchanged,
+    errors,
+    affectedReceivableIds: [...new Set(affectedReceivableIds)],
+  };
 }
 
 async function main(): Promise<void> {
@@ -249,6 +260,17 @@ async function main(): Promise<void> {
   };
 
   console.log(JSON.stringify(payload, null, 2));
+
+  if (options.mode === "apply" && applied?.affectedReceivableIds?.length) {
+    await runCommissionMaterializationAfterNomusSync(
+      prisma,
+      buildNomusSyncMaterializationTrigger({
+        source: "accounts-receivable",
+        syncMode: "apply",
+        receivableIds: applied.affectedReceivableIds,
+      })
+    );
+  }
 
   if (options.mode === "apply") {
     await persistAccountsReceivableIntegrationRun({
