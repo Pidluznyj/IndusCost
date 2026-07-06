@@ -36,6 +36,33 @@ function allocationAmount(
   return finiteMoney((titleAmount * decimalToNumber(allocation.percentage)) / 100);
 }
 
+export type CappedCostCenterAllocationAmount = {
+  allocatedAmount: number;
+  rawAllocatedAmount: number;
+  staleExcludedAmount: number;
+};
+
+/** Alocação limitada ao valor atual do título AP (evita snapshot stale no banco). */
+export function resolveCappedCostCenterAllocationAmount(
+  allocation: CostCenterAllocationRow,
+  titleAmount: number
+): CappedCostCenterAllocationAmount {
+  const rawAllocatedAmount = allocationAmount(allocation, titleAmount);
+  if (titleAmount <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) {
+    return {
+      allocatedAmount: 0,
+      rawAllocatedAmount,
+      staleExcludedAmount: finiteMoney(rawAllocatedAmount),
+    };
+  }
+  const allocatedAmount = finiteMoney(Math.min(rawAllocatedAmount, titleAmount));
+  return {
+    allocatedAmount,
+    rawAllocatedAmount,
+    staleExcludedAmount: finiteMoney(Math.max(0, rawAllocatedAmount - allocatedAmount)),
+  };
+}
+
 export function parseFinanceCostCenterApScope(value: unknown): FinanceCostCenterApScope {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (raw === "all" || raw === "all_in_filter" || raw === "periodo" || raw === "competencia") {

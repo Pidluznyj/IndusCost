@@ -10,10 +10,21 @@ import {
 } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { filterOfficialApTitlesForCostCenter } from "@/src/lib/financeAccountsPayableRulesAdapter.js";
 import { FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE } from "@/src/lib/financeApAllocationShared.js";
+import { isFinanceApCancelledTitle } from "@/src/lib/financeAccountsPayableRules.js";
 import {
+  isCostCenterTitleInScope,
+  resolveCostCenterApScopeFromStatus,
   resolveCostCenterTitleAmount,
+  resolveCappedCostCenterAllocationAmount,
   resolveTitleUnallocatedGap,
+  type FinanceCostCenterApScope,
 } from "@/src/lib/financeCostCenterAllocationMetrics.js";
+import type {
+  CostCenterExpenseDetailEntry,
+  CostCenterExpenseDetailExcludedLine,
+  CostCenterExpenseDetailExclusionReason,
+  CostCenterExpenseDetailSnapshot,
+} from "@/src/lib/financeCostCenterExpenseDetailTypes.js";
 import {
   FINANCE_CC_REALLOCATION_AUDIT_ACTION,
   FINANCE_CC_REALLOCATION_MANUAL_CONFIRMATION_TEXT,
@@ -142,9 +153,13 @@ function resolveAllocatedLineAmount(
   allocation: AllocationWithAp["allocation"],
   titleAmount: number
 ): number {
-  const explicit = decimalFieldToNumber(allocation.amount);
-  if (explicit > 0) return finiteMoney(explicit);
-  return finiteMoney((titleAmount * decimalFieldToNumber(allocation.percentage)) / 100);
+  return resolveCappedCostCenterAllocationAmount(
+    {
+      amount: allocation.amount,
+      percentage: allocation.percentage,
+    },
+    titleAmount
+  ).allocatedAmount;
 }
 
 function resolveStatusLabel(row: FinanceApDashboardRow, referenceDate: Date): {
@@ -177,14 +192,18 @@ function resolveAllocationRuleSourceLabel(entry: AllocationWithAp): string | nul
 
 export function buildCostCenterDetailAllocationRow(
   entry: AllocationWithAp,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  apScope: FinanceCostCenterApScope = "open_only",
+  allocatedAmountOverride?: number
 ): CostCenterDetailAllocationRow {
-  const titleAmount = resolveCostCenterTitleAmount(entry.ap, "open_only");
+  const titleAmount = resolveCostCenterTitleAmount(entry.ap, apScope);
   const gap = resolveTitleUnallocatedGap(
     [{ amount: entry.allocation.amount, percentage: entry.allocation.percentage }],
     resolveCostCenterTitleAmount(entry.ap, "all_in_filter")
   );
-  const allocatedAmount = resolveAllocatedLineAmount(entry.allocation, titleAmount);
+  const allocatedAmount =
+    allocatedAmountOverride ??
+    resolveAllocatedLineAmount(entry.allocation, titleAmount);
   const status = resolveStatusLabel(entry.ap, referenceDate);
 
   return {
@@ -732,6 +751,184 @@ function sumCostCenterDetailRowTotals(rows: CostCenterDetailAllocationRow[]) {
   );
 }
 
+function isApEligibleForCostCenterExpenseDetail(
+  ap: FinanceApDashboardRow,
+  officialApIds: Set<number>,
+  scope: FinanceCostCenterApScope
+): { eligible: boolean; reason: CostCenterExpenseDetailExclusionReason | null } {
+  if (!officialApIds.has(ap.externalId)) {
+    return { eligible: false, reason: "AP_NOT_OFFICIAL" };
+  }
+  if (isFinanceApCancelledTitle(ap)) {
+    return { eligible: false, reason: "AP_CANCELLED" };
+  }
+  if (!isCostCenterTitleInScope(ap, scope)) {
+    return { eligible: false, reason: "AP_OUT_OF_SCOPE" };
+  }
+  return { eligible: true, reason: null };
+}
+
+/** Fonte única: linhas exibíveis do detalhe a partir de AP atual + alocação válida. */
+export function buildCostCenterExpenseDetailSnapshot(input: {
+  entries: CostCenterExpenseDetailEntry[];
+  filters: CostCenterDetailListFilters;
+  referenceDate?: Date;
+}): CostCenterExpenseDetailSnapshot {
+  const referenceDate = input.referenceDate ?? new Date();
+  const apScope = resolveCostCenterApScopeFromStatus(input.filters.status);
+  const apFilters: FinanceApDashboardFilters = {
+    ...input.filters,
+    status: input.filters.status ?? "all",
+  };
+  const officialApRows = filterOfficialApTitlesForCostCenter(
+    input.entries.map((entry) => entry.ap),
+    apFilters,
+    referenceDate
+  );
+  const officialApIds = new Set(officialApRows.map((row) => row.externalId));
+
+  const displayRows: CostCenterDetailAllocationRow[] = [];
+  const excluded: CostCenterExpenseDetailExcludedLine[] = [];
+  const overAllocatedLines: CostCenterExpenseDetailSnapshot["audit"]["overAllocatedLines"] =
+    [];
+
+  for (const entry of input.entries) {
+    const titleAmount = resolveCostCenterTitleAmount(entry.ap, apScope);
+    const capped = resolveCappedCostCenterAllocationAmount(entry.allocation, titleAmount);
+    const baseExcluded: Omit<CostCenterExpenseDetailExcludedLine, "reason"> = {
+      allocationId: entry.allocation.id,
+      accountsPayableId: entry.ap.externalId,
+      rawAllocatedAmount: capped.rawAllocatedAmount,
+      currentTitleAmount: titleAmount,
+      personName: entry.ap.personName,
+      description: entry.ap.description,
+    };
+
+    const eligibility = isApEligibleForCostCenterExpenseDetail(entry.ap, officialApIds, apScope);
+    if (isFinanceApCancelledTitle(entry.ap)) {
+      excluded.push({ ...baseExcluded, reason: "AP_CANCELLED" });
+      continue;
+    }
+    if (!eligibility.eligible) {
+      excluded.push({ ...baseExcluded, reason: eligibility.reason! });
+      continue;
+    }
+
+    if (capped.staleExcludedAmount > FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) {
+      overAllocatedLines.push({
+        allocationId: entry.allocation.id,
+        accountsPayableId: entry.ap.externalId,
+        rawAllocatedAmount: capped.rawAllocatedAmount,
+        currentTitleAmount: titleAmount,
+        excludedStaleAmount: capped.staleExcludedAmount,
+      });
+    }
+
+    if (capped.allocatedAmount <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE) {
+      excluded.push({
+        ...baseExcluded,
+        reason:
+          titleAmount <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE
+            ? "ZERO_CURRENT_TITLE"
+            : "STALE_ALLOCATION_ONLY",
+      });
+      continue;
+    }
+
+    const row = buildCostCenterDetailAllocationRow(
+      entry as AllocationWithAp,
+      referenceDate,
+      apScope,
+      capped.allocatedAmount
+    );
+
+    if (!matchesCostCenterDetailFilters(row, input.filters, referenceDate)) {
+      excluded.push({ ...baseExcluded, reason: "DETAIL_FILTER" });
+      continue;
+    }
+
+    displayRows.push(row);
+  }
+
+  const totals = displayRows.reduce(
+    (acc, row) => {
+      acc.allocatedAmount += row.allocatedAmount;
+      acc.titleIds.add(row.accountsPayableId);
+      return acc;
+    },
+    { allocatedAmount: 0, titleIds: new Set<number>() }
+  );
+  const rowTotals = sumCostCenterDetailRowTotals(displayRows);
+  const headerAllocatedTotal = finiteMoney(totals.allocatedAmount);
+
+  return {
+    apScope,
+    displayRows,
+    excluded,
+    totals: {
+      allocatedAmount: headerAllocatedTotal,
+      balancePayable: finiteMoney(rowTotals.balancePayable),
+      amountPayable: finiteMoney(rowTotals.amountPayable),
+      titlesCount: totals.titleIds.size,
+    },
+    audit: {
+      headerAllocatedTotal,
+      linesAllocatedSum: headerAllocatedTotal,
+      difference: 0,
+      orphanAllocations: excluded.filter((line) => line.reason === "ORPHAN_ALLOCATION"),
+      staleAllocationAmountExcluded: finiteMoney(
+        overAllocatedLines.reduce((sum, line) => sum + line.excludedStaleAmount, 0) +
+          excluded
+            .filter(
+              (line) =>
+                line.reason === "STALE_ALLOCATION_ONLY" || line.reason === "ZERO_CURRENT_TITLE"
+            )
+            .reduce((sum, line) => sum + line.rawAllocatedAmount, 0)
+      ),
+      cancelledApAllocations: excluded.filter((line) => line.reason === "AP_CANCELLED"),
+      overAllocatedLines,
+    },
+  };
+}
+
+export async function loadCostCenterDetailOrphanAllocations(costCenterId: string) {
+  const center = await prisma.financialCostCenter.findUnique({
+    where: { id: costCenterId },
+    select: { id: true, code: true, name: true },
+  });
+  if (!center) {
+    throw new FinanceCostCenterValidationError("NOT_FOUND", "Centro de custo não encontrado.");
+  }
+
+  const allocations = await prisma.accountsPayableCostCenterAllocation.findMany({
+    where: { costCenterId },
+    select: {
+      id: true,
+      accountsPayableId: true,
+      amount: true,
+      percentage: true,
+      updatedAt: true,
+    },
+  });
+  if (allocations.length === 0) return [];
+
+  const externalIds = [...new Set(allocations.map((row) => row.accountsPayableId))];
+  const apRows = await prisma.nomusAccountsPayable.findMany({
+    where: { externalId: { in: externalIds } },
+    select: { externalId: true },
+  });
+  const existing = new Set(apRows.map((row) => row.externalId));
+
+  return allocations
+    .filter((allocation) => !existing.has(allocation.accountsPayableId))
+    .map((allocation) => ({
+      allocationId: allocation.id,
+      accountsPayableId: allocation.accountsPayableId,
+      rawAllocatedAmount: finiteMoney(decimalFieldToNumber(allocation.amount)),
+      updatedAt: allocation.updatedAt.toISOString(),
+    }));
+}
+
 /** Linhas filtradas do detalhe (sem paginação) — base única para grid, resumo e exportação. */
 export async function resolveCostCenterDetailFilteredRows(
   costCenterId: string,
@@ -744,24 +941,16 @@ export async function resolveCostCenterDetailFilteredRows(
 }> {
   const center = await loadCostCenterMeta(costCenterId);
   const entries = await loadCostCenterDetailEntries(costCenterId);
-  const apFilters: FinanceApDashboardFilters = { ...filters, status: filters.status ?? "all" };
-  const allowedApIds = new Set(
-    filterOfficialApTitlesForCostCenter(
-      entries.map((e) => e.ap),
-      apFilters,
-      referenceDate
-    ).map((row) => row.externalId)
-  );
+  const snapshot = buildCostCenterExpenseDetailSnapshot({
+    entries: entries as CostCenterExpenseDetailEntry[],
+    filters,
+    referenceDate,
+  });
 
-  const rows = entries
-    .filter((entry) => allowedApIds.has(entry.ap.externalId))
-    .map((entry) => buildCostCenterDetailAllocationRow(entry, referenceDate))
-    .filter((row) => matchesCostCenterDetailFilters(row, filters, referenceDate));
-
-  const totals = sumCostCenterDetailRowTotals(rows);
+  const totals = sumCostCenterDetailRowTotals(snapshot.displayRows);
   return {
     center,
-    rows,
+    rows: snapshot.displayRows,
     totals: {
       allocatedAmount: finiteMoney(totals.allocatedAmount),
       balancePayable: finiteMoney(totals.balancePayable),

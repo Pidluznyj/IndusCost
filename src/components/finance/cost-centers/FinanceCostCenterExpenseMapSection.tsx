@@ -743,13 +743,27 @@ export function FinanceCostCenterExpenseMapSection({
                 </tr>
               }
               footer={
-                <FinanceCostCenterGridPagination
-                  page={list.page}
-                  totalPages={list.totalPages}
-                  pageSize={drilldown.pageSize}
-                  onPageChange={(page) => patchDrilldown({ page })}
-                  onPageSizeChange={(pageSize) => patchDrilldown({ pageSize, page: 1 })}
-                />
+                <div className="space-y-2 border-t border-border px-3 py-2">
+                  {list ? (
+                    <p className="text-xs text-muted-foreground">
+                      {formatFinanceInteger(list.totalItems)} registro(s) · Total alocado filtrado:{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatFinanceCurrency(list.totals.allocatedAmount)}
+                      </span>
+                      {summary &&
+                      Math.abs(summary.totalAllocatedAmount - list.totals.allocatedAmount) > 0.009 ? (
+                        <span className="text-amber-700"> · divergência cabeçalho</span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  <FinanceCostCenterGridPagination
+                    page={list.page}
+                    totalPages={list.totalPages}
+                    pageSize={drilldown.pageSize}
+                    onPageChange={(page) => patchDrilldown({ page })}
+                    onPageSizeChange={(pageSize) => patchDrilldown({ pageSize, page: 1 })}
+                  />
+                </div>
               }
             >
               {list.items.map((row: CostCenterDetailAllocationRow) => (

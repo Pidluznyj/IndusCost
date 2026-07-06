@@ -24,6 +24,7 @@ import {
   resolveCostCenterApScopeFromStatus,
   resolveCostCenterTitleAmount,
   resolveTitleAllocatedAmount,
+  resolveCappedCostCenterAllocationAmount,
   resolveTitleUnallocatedGap,
   type FinanceCostCenterApScope,
 } from "@/src/lib/financeCostCenterAllocationMetrics.js";
@@ -351,9 +352,7 @@ function resolveAllocationShareAmount(
   allocation: AllocationDashboardRow,
   titleAmount: number
 ): number {
-  const explicit = decimalFieldToNumber(allocation.amount);
-  if (explicit > 0) return finiteMoney(explicit);
-  return prorateByShare(titleAmount, decimalFieldToNumber(allocation.percentage));
+  return resolveCappedCostCenterAllocationAmount(allocation, titleAmount).allocatedAmount;
 }
 
 function resolveFinancialSupplier(
