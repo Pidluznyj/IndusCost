@@ -38,10 +38,10 @@ export type SellerIdentityAuditSummary = {
   month: number;
   sellerFilter: string | null;
   groups: SellerIdentityGroupSummary[];
-  gisleneAudit: GisleneSellerAudit | null;
+  sellerFocusAudit: SellerFocusAudit | null;
 };
 
-export type GisleneSellerAudit = {
+export type SellerFocusAudit = {
   displayName: string;
   status: string;
   rawIds: number[];
@@ -63,6 +63,108 @@ export type GisleneSellerAudit = {
   };
   warnings: string[];
 };
+
+/** @deprecated Use SellerFocusAudit */
+export type GisleneSellerAudit = SellerFocusAudit;
+
+export function buildSellerFocusAudit(input: {
+  sellerFilter: string;
+  groups: SellerIdentityGroupSummary[];
+  payableRows: VisualAuditRow[];
+  generatedRows: VisualAuditRow[];
+  forecastRows: VisualAuditRow[];
+  identityCtx: CommissionSellerIdentityContext;
+}): SellerFocusAudit | null {
+  const matchedGroups = input.groups.filter((g) =>
+    sellerNameMatchesFilter(g.normalizedSellerName, input.sellerFilter)
+  );
+  if (matchedGroups.length === 0) return null;
+
+  const rawIds = [...new Set(matchedGroups.flatMap((g) => g.rawSellerIds))].sort((a, b) => a - b);
+  const rawNames = [...new Set(matchedGroups.flatMap((g) => g.rawSellerNames))];
+  const internalPersonIds = [
+    ...new Set(
+      matchedGroups.map((g) => g.canonicalSellerId).filter(Boolean) as string[]
+    ),
+  ];
+
+  const canonicalGroup =
+    matchedGroups.find((g) => g.status === "OK_CANONICAL") ??
+    matchedGroups.find((g) => g.canonicalSellerId) ??
+    matchedGroups[0]!;
+
+  const canonicalPersonId = canonicalGroup.canonicalSellerId;
+  const canonicalPersonName = canonicalGroup.canonicalSellerName;
+
+  const filterRows = (rows: VisualAuditRow[]) =>
+    rows.filter((row) =>
+      sellerNameMatchesFilter(
+        normalizeCommissionPersonName(row.canonicalSellerName ?? row.commissionPersonName),
+        input.sellerFilter
+      )
+    );
+
+  const sumField = (rows: VisualAuditRow[], field: "commissionExpected" | "commissionReleased") =>
+    roundMoney(rows.reduce((sum, row) => sum + row[field], 0));
+
+  const payable = filterRows(input.payableRows);
+  const generated = filterRows(input.generatedRows);
+  const forecast = filterRows(input.forecastRows);
+
+  const outsideCanonical = payable.filter(
+    (row) => canonicalPersonId && row.canonicalSellerId !== canonicalPersonId
+  ).length;
+
+  const withoutSeller = payable.filter((row) => !row.canonicalSellerId && !row.commissionPersonId).length;
+
+  const status =
+    internalPersonIds.length > 1 ? "MULTIPLE_CANONICALS" : canonicalGroup.status;
+
+  const warnings: string[] = [];
+  if (internalPersonIds.length > 1) {
+    warnings.push(`Múltiplos cadastros internos: ${internalPersonIds.join(", ")}`);
+  }
+  if (rawIds.length > 1) {
+    warnings.push(`Múltiplos raw seller IDs: ${rawIds.join(", ")}`);
+  }
+  if (rawNames.some((n) => !n)) {
+    warnings.push("Existem registros sem nome de vendedor");
+  }
+
+  return {
+    displayName: canonicalPersonName ?? input.sellerFilter,
+    status,
+    rawIds,
+    rawNames,
+    internalPersonIds,
+    canonicalPersonId,
+    canonicalPersonName,
+    commission: {
+      generatedExpected: sumField(generated, "commissionExpected"),
+      generatedReleased: sumField(generated, "commissionReleased"),
+      forecastExpected: sumField(forecast, "commissionExpected"),
+      payableExpected: sumField(payable, "commissionExpected"),
+      payableReleased: sumField(payable, "commissionReleased"),
+    },
+    pending: {
+      withoutSeller,
+      outsideCanonical,
+      duplicatedRecords: internalPersonIds.length > 1 ? payable.length : 0,
+    },
+    warnings,
+  };
+}
+
+/** Mantido por compatibilidade — use buildSellerFocusAudit com filtro explícito. */
+export function buildGisleneAudit(input: {
+  groups: SellerIdentityGroupSummary[];
+  payableRows: VisualAuditRow[];
+  generatedRows: VisualAuditRow[];
+  forecastRows: VisualAuditRow[];
+  identityCtx: CommissionSellerIdentityContext;
+}): SellerFocusAudit | null {
+  return buildSellerFocusAudit({ ...input, sellerFilter: "GISLENE" });
+}
 
 function addObservation(
   bucket: Map<string, SellerSourceObservation[]>,
@@ -155,90 +257,6 @@ export function buildSellerIdentityGroups(input: {
   }
 
   return groups.sort((a, b) => b.releasedCommission - a.releasedCommission);
-}
-
-export function buildGisleneAudit(input: {
-  groups: SellerIdentityGroupSummary[];
-  payableRows: VisualAuditRow[];
-  generatedRows: VisualAuditRow[];
-  forecastRows: VisualAuditRow[];
-  identityCtx: CommissionSellerIdentityContext;
-}): GisleneSellerAudit | null {
-  const gisleneGroups = input.groups.filter((g) =>
-    sellerNameMatchesFilter(g.normalizedSellerName, "GISLENE")
-  );
-  if (gisleneGroups.length === 0) return null;
-
-  const rawIds = [...new Set(gisleneGroups.flatMap((g) => g.rawSellerIds))].sort((a, b) => a - b);
-  const rawNames = [...new Set(gisleneGroups.flatMap((g) => g.rawSellerNames))];
-  const internalPersonIds = [
-    ...new Set(
-      gisleneGroups.map((g) => g.canonicalSellerId).filter(Boolean) as string[]
-    ),
-  ];
-
-  const canonicalGroup =
-    gisleneGroups.find((g) => g.status === "OK_CANONICAL") ??
-    gisleneGroups.find((g) => g.canonicalSellerId) ??
-    gisleneGroups[0]!;
-
-  const canonicalPersonId = canonicalGroup.canonicalSellerId;
-  const canonicalPersonName = canonicalGroup.canonicalSellerName;
-
-  const filterRows = (rows: VisualAuditRow[]) =>
-    rows.filter((row) => sellerNameMatchesFilter(normalizeCommissionPersonName(row.commissionPersonName), "GISLENE"));
-
-  const sumField = (rows: VisualAuditRow[], field: "commissionExpected" | "commissionReleased") =>
-    roundMoney(rows.reduce((sum, row) => sum + row[field], 0));
-
-  const payable = filterRows(input.payableRows);
-  const generated = filterRows(input.generatedRows);
-  const forecast = filterRows(input.forecastRows);
-
-  const outsideCanonical = payable.filter(
-    (row) => canonicalPersonId && row.commissionPersonId !== canonicalPersonId
-  ).length;
-
-  const withoutSeller = payable.filter((row) => !row.commissionPersonId).length;
-
-  const status =
-    internalPersonIds.length > 1
-      ? "MULTIPLE_CANONICALS"
-      : canonicalGroup.status;
-
-  const warnings: string[] = [];
-  if (internalPersonIds.length > 1) {
-    warnings.push(`Múltiplos cadastros internos: ${internalPersonIds.join(", ")}`);
-  }
-  if (rawIds.length > 1) {
-    warnings.push(`Múltiplos raw seller IDs: ${rawIds.join(", ")}`);
-  }
-  if (rawNames.some((n) => !n)) {
-    warnings.push("Existem registros sem nome de vendedor");
-  }
-
-  return {
-    displayName: canonicalPersonName ?? "GISLENE LIMA",
-    status,
-    rawIds,
-    rawNames,
-    internalPersonIds,
-    canonicalPersonId,
-    canonicalPersonName,
-    commission: {
-      generatedExpected: sumField(generated, "commissionExpected"),
-      generatedReleased: sumField(generated, "commissionReleased"),
-      forecastExpected: sumField(forecast, "commissionExpected"),
-      payableExpected: sumField(payable, "commissionExpected"),
-      payableReleased: sumField(payable, "commissionReleased"),
-    },
-    pending: {
-      withoutSeller,
-      outsideCanonical,
-      duplicatedRecords: internalPersonIds.length > 1 ? payable.length : 0,
-    },
-    warnings,
-  };
 }
 
 export function sellerIdentityDetailCsvHeader(): string[] {

@@ -10,7 +10,7 @@ import {
   sellerNameMatchesFilter,
 } from "./commissionSellerIdentity.js";
 import {
-  buildGisleneAudit,
+  buildSellerFocusAudit,
   buildSellerIdentityGroups,
   type SellerIdentityAuditSummary,
   type SellerSourceObservation,
@@ -253,30 +253,16 @@ export async function runCommissionSellerIdentityAudit(
     ? groups.filter((g) => sellerNameMatchesFilter(g.normalizedSellerName, query.seller))
     : groups;
 
-  const gisleneAudit =
-    query.seller && sellerNameMatchesFilter("GISLENE", query.seller)
-      ? buildGisleneAudit({
-          groups: filteredGroups,
-          payableRows,
-          generatedRows,
-          forecastRows,
-          identityCtx,
-        })
-      : !query.seller
-        ? buildGisleneAudit({
-            groups,
-            payableRows,
-            generatedRows,
-            forecastRows,
-            identityCtx,
-          })
-        : buildGisleneAudit({
-            groups: filteredGroups,
-            payableRows,
-            generatedRows,
-            forecastRows,
-            identityCtx,
-          });
+  const sellerFocusAudit = query.seller
+    ? buildSellerFocusAudit({
+        sellerFilter: query.seller,
+        groups: filteredGroups,
+        payableRows,
+        generatedRows,
+        forecastRows,
+        identityCtx,
+      })
+    : null;
 
   return {
     summary: {
@@ -284,7 +270,7 @@ export async function runCommissionSellerIdentityAudit(
       month: query.month,
       sellerFilter: query.seller ?? null,
       groups: filteredGroups,
-      gisleneAudit,
+      sellerFocusAudit,
     },
     details: observations,
   };
