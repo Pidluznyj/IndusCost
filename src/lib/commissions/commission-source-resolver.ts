@@ -245,6 +245,39 @@ export function filterAuthorizedOutputNfes(nfes: CommissionLinkedNfeSource[]): C
   return nfes.filter((n) => n.isAuthorized && n.isOutputOperation && !n.isCancelled);
 }
 
+/** Primeira ocorrência de bundle por NF externa (para vínculo AR → pedido). */
+export function indexOrderBundlesByNfeId(
+  bundles: CommissionOrderSourceBundle[]
+): Map<number, CommissionOrderSourceBundle> {
+  const map = new Map<number, CommissionOrderSourceBundle>();
+  for (const bundle of bundles) {
+    for (const nfe of bundle.linkedNfes) {
+      if (!map.has(nfe.nfeExternalId)) {
+        map.set(nfe.nfeExternalId, bundle);
+      }
+    }
+  }
+  return map;
+}
+
+/** Data de referência para regra de comissão (NF autorizada ou emissão do pedido). */
+export function resolveCommissionRuleReferenceDate(
+  bundle: CommissionOrderSourceBundle,
+  nomusNfeId: number | null
+): Date {
+  if (nomusNfeId != null) {
+    const linked = bundle.linkedNfes.find((nfe) => nfe.nfeExternalId === nomusNfeId);
+    if (linked?.dataProcessamento) return linked.dataProcessamento;
+    const authorized = bundle.authorizedOutputNfes.find(
+      (nfe) => nfe.nfeExternalId === nomusNfeId
+    );
+    if (authorized?.dataProcessamento) return authorized.dataProcessamento;
+  }
+  const firstAuthorized = bundle.authorizedOutputNfes[0];
+  if (firstAuthorized?.dataProcessamento) return firstAuthorized.dataProcessamento;
+  return bundle.issueDate;
+}
+
 export function mapReceivableSource(row: {
   externalId: number;
   sourceInvoiceId: number | null;

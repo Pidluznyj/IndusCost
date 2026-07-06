@@ -19,6 +19,84 @@ const EXIT_MOVEMENT_TYPES = [
   "SCRAP",
 ] as const;
 
+const SALES_ORDER_SOURCE_SELECT = {
+  id: true,
+  externalSalesOrderId: true,
+  orderCode: true,
+  issueDate: true,
+  status: true,
+  paymentTerms: true,
+  paymentMethod: true,
+  externalCompanyId: true,
+  externalCustomerId: true,
+  externalSellerId: true,
+  responsible: true,
+  totalNetValue: true,
+  nomusRawResponse: true,
+  Customer: { select: { companyName: true, tradeName: true } },
+  items: {
+    select: {
+      id: true,
+      productId: true,
+      externalProductId: true,
+      skuSnapshot: true,
+      productNameSnapshot: true,
+      quantity: true,
+      negotiatedPrice: true,
+      totalNetValue: true,
+      notes: true,
+    },
+  },
+  nfeLinks: {
+    select: {
+      nfeExternalId: true,
+      nfeNumber: true,
+      nfeStatus: true,
+      tipoOperacao: true,
+      dataProcessamento: true,
+      nomusNfeId: true,
+      rawPayload: true,
+    },
+  },
+} as const;
+
+type SalesOrderSourceRow = {
+  id: string;
+  externalSalesOrderId: number | null;
+  orderCode: string;
+  issueDate: Date;
+  status: string;
+  paymentTerms: string | null;
+  paymentMethod: string | null;
+  externalCompanyId: number | null;
+  externalCustomerId: number | null;
+  externalSellerId: number | null;
+  responsible: string | null;
+  totalNetValue: import("@prisma/client").Prisma.Decimal;
+  nomusRawResponse: unknown;
+  Customer: { companyName: string; tradeName: string | null };
+  items: Array<{
+    id: string;
+    productId: string;
+    externalProductId: number | null;
+    skuSnapshot: string;
+    productNameSnapshot: string;
+    quantity: import("@prisma/client").Prisma.Decimal;
+    negotiatedPrice: import("@prisma/client").Prisma.Decimal;
+    totalNetValue: import("@prisma/client").Prisma.Decimal;
+    notes: string | null;
+  }>;
+  nfeLinks: Array<{
+    nfeExternalId: number;
+    nfeNumber: string | null;
+    nfeStatus: number | null;
+    tipoOperacao: number | null;
+    dataProcessamento: Date | null;
+    nomusNfeId: string | null;
+    rawPayload: unknown;
+  }>;
+};
+
 export function resolveCommissionPeriod(input: CommissionPeriodInput): { from: Date; to: Date } {
   if (input.from && input.to) {
     return { from: input.from, to: input.to };
@@ -36,60 +114,13 @@ export function resolveCommissionPeriod(input: CommissionPeriodInput): { from: D
   };
 }
 
-export async function loadCommissionOrderSources(
+async function buildCommissionOrderSourceBundlesFromOrders(
   db: Pick<
     PrismaClient,
-    "salesOrder" | "nomusNfe" | "nomusAccountsReceivable" | "inventoryMovement"
+    "nomusNfe" | "nomusAccountsReceivable" | "inventoryMovement"
   >,
-  period: CommissionPeriodInput
+  orders: SalesOrderSourceRow[]
 ): Promise<CommissionOrderSourceBundle[]> {
-  const { from, to } = resolveCommissionPeriod(period);
-
-  const orders = await db.salesOrder.findMany({
-    where: { issueDate: { gte: from, lte: to } },
-    select: {
-      id: true,
-      externalSalesOrderId: true,
-      orderCode: true,
-      issueDate: true,
-      status: true,
-      paymentTerms: true,
-      paymentMethod: true,
-      externalCompanyId: true,
-      externalCustomerId: true,
-      externalSellerId: true,
-      responsible: true,
-      totalNetValue: true,
-      nomusRawResponse: true,
-      Customer: { select: { companyName: true, tradeName: true } },
-      items: {
-        select: {
-          id: true,
-          productId: true,
-          externalProductId: true,
-          skuSnapshot: true,
-          productNameSnapshot: true,
-          quantity: true,
-          negotiatedPrice: true,
-          totalNetValue: true,
-          notes: true,
-        },
-      },
-      nfeLinks: {
-        select: {
-          nfeExternalId: true,
-          nfeNumber: true,
-          nfeStatus: true,
-          tipoOperacao: true,
-          dataProcessamento: true,
-          nomusNfeId: true,
-          rawPayload: true,
-        },
-      },
-    },
-    orderBy: { issueDate: "asc" },
-  });
-
   const allNfeExternalIds = [...new Set(orders.flatMap((o) => o.nfeLinks.map((l) => l.nfeExternalId)))];
 
   const nomusNfes =
@@ -242,4 +273,37 @@ export async function loadCommissionOrderSources(
       receivablesByNfeId: orderReceivables,
     });
   });
+}
+
+export async function loadCommissionOrderSources(
+  db: Pick<
+    PrismaClient,
+    "salesOrder" | "nomusNfe" | "nomusAccountsReceivable" | "inventoryMovement"
+  >,
+  period: CommissionPeriodInput
+): Promise<CommissionOrderSourceBundle[]> {
+  const { from, to } = resolveCommissionPeriod(period);
+  const orders = await db.salesOrder.findMany({
+    where: { issueDate: { gte: from, lte: to } },
+    select: SALES_ORDER_SOURCE_SELECT,
+    orderBy: { issueDate: "asc" },
+  });
+  return buildCommissionOrderSourceBundlesFromOrders(db, orders);
+}
+
+export async function loadCommissionOrderSourcesByNfeExternalIds(
+  db: Pick<
+    PrismaClient,
+    "salesOrder" | "nomusNfe" | "nomusAccountsReceivable" | "inventoryMovement"
+  >,
+  nfeExternalIds: number[]
+): Promise<CommissionOrderSourceBundle[]> {
+  const unique = [...new Set(nfeExternalIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (unique.length === 0) return [];
+  const orders = await db.salesOrder.findMany({
+    where: { nfeLinks: { some: { nfeExternalId: { in: unique } } } },
+    select: SALES_ORDER_SOURCE_SELECT,
+    orderBy: { issueDate: "asc" },
+  });
+  return buildCommissionOrderSourceBundlesFromOrders(db, orders);
 }
