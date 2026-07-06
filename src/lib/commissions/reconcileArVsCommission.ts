@@ -38,6 +38,7 @@ export type ArCommissionBreakdownCategory =
 export type ArCommissionDetailLine = {
   receivableId: string;
   externalReceivableId: number;
+  clientId: number | null;
   customer: string | null;
   rawSellerName: string | null;
   canonicalSellerName: string | null;
@@ -49,13 +50,13 @@ export type ArCommissionDetailLine = {
   settlementDate: string | null;
   titleAmount: number;
   receivedAmount: number;
-  inArByDueJune: boolean;
-  inArBySettlementJune: boolean;
-  inCommissionPayableJune: boolean;
+  inArByDuePeriod: boolean;
+  inArBySettlementPeriod: boolean;
+  inCommissionPayablePeriod: boolean;
   commissionableBase: number;
   expectedCommission: number;
   releasedCommission: number;
-  nonCommissionReason: string | null;
+  reasonExcluded: string | null;
   divergenceReason: string | null;
   breakdownCategory: ArCommissionBreakdownCategory;
   sellerResolutionStatus: string | null;
@@ -97,10 +98,31 @@ export type ArCommissionReconcileSummary = {
   breakdownByCategory: Array<{
     category: ArCommissionBreakdownCategory;
     count: number;
+    titleAmount: number;
     receivedAmount: number;
+    expectedCommission: number;
+    releasedCommission: number;
     label: string;
   }>;
   topExclusionReasons: Array<{ reason: string; count: number; receivedAmount: number }>;
+  /** Resumo dos campos de comissão e diferença esperado × liberado no período. */
+  fieldSummary: {
+    receivedAmountTotal: number;
+    receivableAmountTotal: number;
+    commissionableBaseTotal: number;
+    commissionExpectedTotal: number;
+    commissionReleasedTotal: number;
+    commissionPendingTotal: number;
+    expectedMinusReleased: number;
+    averageRatePercent: number;
+    commissionOverBasePercent: number;
+  };
+  nomusComparison?: {
+    nomusBase: number | null;
+    nomusCommission: number | null;
+    baseDiff: number | null;
+    commissionDiff: number | null;
+  };
 };
 
 const CATEGORY_LABELS: Record<ArCommissionBreakdownCategory, string> = {
@@ -174,6 +196,7 @@ type CommissionReceivableAgg = {
   receivableAmount: number;
   rawSellerId: number | null;
   rawSellerName: string | null;
+  customerExternalId: number | null;
   sellerResolution: CommissionSellerIdentityResolution | null;
 };
 
@@ -182,6 +205,7 @@ function aggregateCommissionByReceivable(
   identityCtx: CommissionSellerIdentityContext
 ): Map<number, CommissionReceivableAgg> {
   const map = new Map<number, CommissionReceivableAgg>();
+  const receivedKeys = new Set<string>();
 
   for (const row of payableRows) {
     const rid = row.nomusReceivableId;
@@ -193,8 +217,9 @@ function aggregateCommissionByReceivable(
       releasedCommission: 0,
       receivedAmount: 0,
       receivableAmount: 0,
-      rawSellerId: null,
-      rawSellerName: row.commissionPersonName,
+      rawSellerId: row.nomusSellerId ?? null,
+      rawSellerName: row.rawSellerName ?? row.commissionPersonName,
+      customerExternalId: row.customerExternalId ?? null,
       sellerResolution: null,
     };
 
@@ -210,27 +235,29 @@ function aggregateCommissionByReceivable(
     );
 
     const receivableKey = resolveReceivableUniqueKey(row);
-    if (receivableKey && !existing.rows.some((r, i) => i < existing.rows.length - 1 && resolveReceivableUniqueKey(r) === receivableKey)) {
+    if (receivableKey && !receivedKeys.has(`${rid}:${receivableKey}`)) {
+      receivedKeys.add(`${rid}:${receivableKey}`);
       existing.receivedAmount = roundMoney(existing.receivedAmount + row.receivedAmount);
       existing.receivableAmount = roundMoney(existing.receivableAmount + row.receivableAmount);
     }
 
-    existing.sellerResolution = resolveCommissionSellerIdentity(
+    if (existing.rawSellerId == null && row.nomusSellerId != null) {
+      existing.rawSellerId = row.nomusSellerId;
+    }
+
+    const resolution = resolveCommissionSellerIdentity(
       {
-        rawSellerId: row.commissionPersonId ? null : null,
-        rawSellerName: row.commissionPersonName,
+        rawSellerId: row.nomusSellerId,
+        rawSellerName: row.rawSellerName ?? row.commissionPersonName,
         source: "COMMISSION_RECORD",
       },
       identityCtx
     );
     existing.sellerResolution = {
-      ...existing.sellerResolution,
-      canonicalSellerId: row.commissionPersonId,
-      canonicalSellerName: row.commissionPersonName,
-      resolutionStatus:
-        existing.sellerResolution.resolutionStatus === "UNRESOLVED"
-          ? "OK_CANONICAL"
-          : existing.sellerResolution.resolutionStatus,
+      ...resolution,
+      canonicalSellerId: row.canonicalSellerId ?? resolution.canonicalSellerId,
+      canonicalSellerName: row.canonicalSellerName ?? resolution.canonicalSellerName,
+      resolutionStatus: row.sellerResolutionStatus ?? resolution.resolutionStatus,
     };
 
     map.set(rid, existing);
@@ -347,6 +374,7 @@ export function buildArCommissionReconcile(input: {
   };
   identityCtx: CommissionSellerIdentityContext;
   referenceDate?: Date;
+  nomusReference?: { base: number | null; commission: number | null };
 }): { summary: ArCommissionReconcileSummary; details: ArCommissionDetailLine[] } {
   const { year, month, periodFrom, periodTo, arRows, payableRows, payableCards, identityCtx } =
     input;
@@ -369,7 +397,10 @@ export function buildArCommissionReconcile(input: {
   );
 
   const details: ArCommissionDetailLine[] = [];
-  const categoryAcc = new Map<ArCommissionBreakdownCategory, { count: number; receivedAmount: number }>();
+  const categoryAcc = new Map<
+    ArCommissionBreakdownCategory,
+    { count: number; titleAmount: number; receivedAmount: number; expectedCommission: number; releasedCommission: number }
+  >();
   const exclusionAcc = new Map<string, { count: number; receivedAmount: number }>();
 
   let arWithCommissionReceived = 0;
@@ -388,9 +419,22 @@ export function buildArCommissionReconcile(input: {
       arWithCommissionReceived = roundMoney(arWithCommissionReceived + receivedAmount);
     }
 
-    const catBucket = categoryAcc.get(category) ?? { count: 0, receivedAmount: 0 };
+    const catBucket = categoryAcc.get(category) ?? {
+      count: 0,
+      titleAmount: 0,
+      receivedAmount: 0,
+      expectedCommission: 0,
+      releasedCommission: 0,
+    };
     catBucket.count += 1;
+    catBucket.titleAmount = roundMoney(catBucket.titleAmount + ar.amountReceivable);
     catBucket.receivedAmount = roundMoney(catBucket.receivedAmount + receivedAmount);
+    catBucket.expectedCommission = roundMoney(
+      catBucket.expectedCommission + (commission?.expectedCommission ?? 0)
+    );
+    catBucket.releasedCommission = roundMoney(
+      catBucket.releasedCommission + (commission?.releasedCommission ?? 0)
+    );
     categoryAcc.set(category, catBucket);
 
     if (nonCommissionReason) {
@@ -404,27 +448,30 @@ export function buildArCommissionReconcile(input: {
     details.push({
       receivableId: String(ar.externalId),
       externalReceivableId: ar.externalId,
+      clientId: commission?.customerExternalId ?? ar.personId,
       customer: ar.personName,
-      rawSellerName: firstRow?.commissionPersonName ?? null,
-      canonicalSellerName: sellerResolution?.canonicalSellerName ?? firstRow?.commissionPersonName ?? null,
-      rawSellerId: null,
-      canonicalSellerId: firstRow?.commissionPersonId ?? sellerResolution?.canonicalSellerId ?? null,
+      rawSellerName: commission?.rawSellerName ?? firstRow?.rawSellerName ?? firstRow?.commissionPersonName ?? null,
+      canonicalSellerName:
+        sellerResolution?.canonicalSellerName ?? firstRow?.canonicalSellerName ?? firstRow?.commissionPersonName ?? null,
+      rawSellerId: commission?.rawSellerId ?? firstRow?.nomusSellerId ?? null,
+      canonicalSellerId:
+        firstRow?.canonicalSellerId ?? sellerResolution?.canonicalSellerId ?? firstRow?.commissionPersonId ?? null,
       orderCode: firstRow?.orderCode ?? null,
       nfeNumber: firstRow?.nfeNumber ?? ar.sourceInvoiceNumber,
       dueDate: isoDate(ar.dueDate),
       settlementDate: isoDate(ar.settlementDate),
       titleAmount: ar.amountReceivable,
       receivedAmount,
-      inArByDueJune: inPeriod(ar.dueDate, periodFrom, periodTo),
-      inArBySettlementJune: true,
-      inCommissionPayableJune: Boolean(commission && commission.rows.length > 0),
+      inArByDuePeriod: inPeriod(ar.dueDate, periodFrom, periodTo),
+      inArBySettlementPeriod: true,
+      inCommissionPayablePeriod: Boolean(commission && commission.rows.length > 0),
       commissionableBase: commission?.commissionableBase ?? 0,
       expectedCommission: commission?.expectedCommission ?? 0,
       releasedCommission: commission?.releasedCommission ?? 0,
-      nonCommissionReason,
+      reasonExcluded: nonCommissionReason,
       divergenceReason,
       breakdownCategory: category,
-      sellerResolutionStatus: sellerResolution?.resolutionStatus ?? null,
+      sellerResolutionStatus: sellerResolution?.resolutionStatus ?? firstRow?.sellerResolutionStatus ?? null,
     });
   }
 
@@ -467,7 +514,10 @@ export function buildArCommissionReconcile(input: {
       .map(([category, stats]) => ({
         category,
         count: stats.count,
+        titleAmount: stats.titleAmount,
         receivedAmount: stats.receivedAmount,
+        expectedCommission: stats.expectedCommission,
+        releasedCommission: stats.releasedCommission,
         label: CATEGORY_LABELS[category],
       }))
       .sort((a, b) => b.receivedAmount - a.receivedAmount),
@@ -475,6 +525,40 @@ export function buildArCommissionReconcile(input: {
       .map(([reason, stats]) => ({ reason, ...stats }))
       .sort((a, b) => b.receivedAmount - a.receivedAmount)
       .slice(0, 15),
+    fieldSummary: {
+      receivedAmountTotal: payableCards.receivedAmountTotal,
+      receivableAmountTotal: payableCards.receivableAmountTotal,
+      commissionableBaseTotal: payableCards.commissionableBaseTotal,
+      commissionExpectedTotal: payableCards.commissionExpectedTotal,
+      commissionReleasedTotal: payableCards.commissionReleasedTotal,
+      commissionPendingTotal: payableCards.commissionPendingTotal,
+      expectedMinusReleased: roundMoney(
+        payableCards.commissionExpectedTotal - payableCards.commissionReleasedTotal
+      ),
+      averageRatePercent: payableCards.averageRatePercent,
+      commissionOverBasePercent:
+        payableCards.commissionableBaseTotal > 0
+          ? roundMoney(
+              (payableCards.commissionReleasedTotal / payableCards.commissionableBaseTotal) * 100
+            )
+          : 0,
+    },
+    nomusComparison: input.nomusReference
+      ? {
+          nomusBase: input.nomusReference.base,
+          nomusCommission: input.nomusReference.commission,
+          baseDiff:
+            input.nomusReference.base != null
+              ? roundMoney(payableCards.commissionableBaseTotal - input.nomusReference.base)
+              : null,
+          commissionDiff:
+            input.nomusReference.commission != null
+              ? roundMoney(
+                  payableCards.commissionReleasedTotal - input.nomusReference.commission
+                )
+              : null,
+        }
+      : undefined,
   };
 
   return { summary, details };
@@ -483,55 +567,41 @@ export function buildArCommissionReconcile(input: {
 export function arCommissionDetailCsvHeader(): string[] {
   return [
     "receivableId",
-    "externalReceivableId",
-    "cliente",
-    "vendedor bruto",
-    "vendedor canônico",
+    "clientId",
+    "clientName",
+    "dueDate",
+    "settlementDate",
+    "amount",
+    "receivedAmount",
     "rawSellerId",
     "canonicalSellerId",
-    "pedido",
-    "NF",
-    "vencimento",
-    "settlementDate",
-    "valor título",
-    "valor recebido",
-    "entra no AR por vencimento junho?",
-    "entra no AR por baixa junho?",
-    "entra na comissão payable junho?",
-    "base comissionável",
-    "comissão esperada",
-    "comissão liberada",
-    "motivo se não comissiona",
-    "motivo se diverge",
-    "categoria",
-    "status vendedor",
+    "rawSellerName",
+    "canonicalSellerName",
+    "resolutionStatus",
+    "commissionExpected",
+    "commissionReleased",
+    "reasonExcluded",
+    "breakdownCategory",
   ];
 }
 
 export function arCommissionDetailToCsvRow(line: ArCommissionDetailLine): unknown[] {
   return [
     line.receivableId,
-    line.externalReceivableId,
+    line.clientId,
     line.customer,
-    line.rawSellerName,
-    line.canonicalSellerName,
-    line.rawSellerId,
-    line.canonicalSellerId,
-    line.orderCode,
-    line.nfeNumber,
     line.dueDate,
     line.settlementDate,
     line.titleAmount,
     line.receivedAmount,
-    line.inArByDueJune ? "sim" : "não",
-    line.inArBySettlementJune ? "sim" : "não",
-    line.inCommissionPayableJune ? "sim" : "não",
-    line.commissionableBase,
+    line.rawSellerId,
+    line.canonicalSellerId,
+    line.rawSellerName,
+    line.canonicalSellerName,
+    line.sellerResolutionStatus,
     line.expectedCommission,
     line.releasedCommission,
-    line.nonCommissionReason,
-    line.divergenceReason,
+    line.reasonExcluded,
     line.breakdownCategory,
-    line.sellerResolutionStatus,
   ];
 }

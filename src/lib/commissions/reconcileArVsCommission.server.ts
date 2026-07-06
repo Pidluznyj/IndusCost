@@ -39,6 +39,7 @@ export type ReconcileArVsCommissionQuery = {
   month: number;
   seller?: string | null;
   customer?: string | null;
+  nomusReference?: { base: number | null; commission: number | null };
 };
 
 export async function runArVsCommissionReconcile(query: ReconcileArVsCommissionQuery) {
@@ -107,5 +108,6 @@ export async function runArVsCommissionReconcile(query: ReconcileArVsCommissionQ
     },
     identityCtx,
     referenceDate: periodTo,
+    nomusReference: query.nomusReference,
   });
 }
