@@ -188,5 +188,7 @@ describe("auditCommercialPriceGridScript", () => {
     assert.match(scriptSrc(), /--product-id/);
     assert.match(scriptSrc(), /--json/);
     assert.match(scriptSrc(), /--csv/);
+    assert.match(scriptSrc(), /emitJson/);
+    assert.match(scriptSrc(), /emitCsv/);
   });
 });

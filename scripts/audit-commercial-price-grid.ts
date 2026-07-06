@@ -10,7 +10,7 @@
  *   npx tsx scripts/audit-commercial-price-grid.ts --product-id=<uuid> --csv
  */
 import "dotenv/config";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma.ts";
 import {
@@ -100,17 +100,26 @@ async function main(): Promise<void> {
     productId,
   });
 
-  if (hasFlag("json")) {
+  const emitJson = hasFlag("json");
+  const emitCsv = hasFlag("csv");
+
+  if (emitJson) {
     const { gridSnapshot: _grid, ...payload } = result;
     console.log(JSON.stringify(payload, null, 2));
-  } else if (hasFlag("csv")) {
+  }
+
+  if (emitCsv) {
     const csv = buildCommercialPublishedPriceGridCsv(result.gridSnapshot);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const outputPath = join(process.cwd(), "tmp", `commercial-published-price-grid-${stamp}.csv`);
+    const outputDir = join(process.cwd(), "tmp");
+    mkdirSync(outputDir, { recursive: true });
+    const outputPath = join(outputDir, `commercial-published-price-grid-${stamp}.csv`);
     writeFileSync(outputPath, csv, "utf8");
-    console.log(`CSV exportado: ${outputPath} (${result.gridSnapshot.rows.length} linha(s))`);
-    console.log(`Status da auditoria: ${result.status}`);
-  } else {
+    console.error(`CSV exportado: ${outputPath} (${result.gridSnapshot.rows.length} linha(s))`);
+    console.error(`Status da auditoria: ${result.status}`);
+  }
+
+  if (!emitJson && !emitCsv) {
     printHumanReport(result);
   }
 
