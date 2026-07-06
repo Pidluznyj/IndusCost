@@ -10,10 +10,21 @@ import {
   computeProjectCostSetTotal,
   resolveProjectCostFinalUnitPrice,
 } from "./projectsCostSnapshot.js";
+import { computeLiveProjectPricingView } from "./projectsPricing.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
+
+const PRICING_TAX_RULES = [{ id: "tax-0", name: "Zerada", description: null, taxPercent: 0 }];
+
+function simulationItemNotes(id: string) {
+  return `guided-origin:SIMULATION\nguided-simulation-id:${id}`;
+}
 
 function buildPricedDetail(margins: number[], prices: number[]): ProjectDetail {
   const ids = margins.map((_, index) => `${index + 1}${"0".repeat(35)}${index + 1}`);
+  const unitCosts = prices.map((price, index) => {
+    const margin = margins[index] ?? 30;
+    return Math.round(price * (1 - margin / 100) * 1000000) / 1000000;
+  });
   return {
     id: "proj-snapshot-test",
     code: "PRJ-SNAP",
@@ -33,17 +44,24 @@ function buildPricedDetail(margins: number[], prices: number[]): ProjectDetail {
     updatedAt: "2026-06-01T00:00:00.000Z",
     currentVersion: null,
     versions: [],
-    simulatedProducts: ids.map((id, index) => ({
+    simulatedProducts: [],
+    simulatedItems: ids.map((id, index) => ({
       id,
       provisionalCode: `SKU-${index + 1}`,
       description: `Item ${index + 1}`,
+      itemType: "COMPONENT" as const,
       unit: "UN",
+      estimatedUnitCost: unitCosts[index]!,
+      quotedUnitCost: null,
+      supplierName: null,
+      leadTimeDays: null,
       estimatedWeight: null,
-      expectedVolume: 1,
-      batchSize: null,
-      notes: null,
+      lossPercent: 0,
+      requiresQuotation: false,
+      requiresEngineeringReview: false,
+      canBecomeOfficial: false,
+      notes: simulationItemNotes(id),
     })),
-    simulatedItems: [],
     structureLines: [],
     molds: [],
     snapshotRootProducts: {},
@@ -64,18 +82,18 @@ function buildPricedDetail(margins: number[], prices: number[]): ProjectDetail {
     alerts: [],
     conversionAvailable: false,
     projectPricing: {
-      config: { fiscalRuleId: null, defaultMarginPercent: 30 },
-      taxRules: [],
+      config: { fiscalRuleId: "tax-0", defaultMarginPercent: 30 },
+      taxRules: PRICING_TAX_RULES,
       hasSavedPricing: true,
       items: ids.map((targetItemId, index) => ({
         targetItemId,
         targetItemType: "SIMULATION" as const,
         displayName: `Item ${index + 1}`,
-        costBaseUnit: 2,
+        costBaseUnit: unitCosts[index]!,
         amortizationUnitCost: 0,
-        finalUnitCost: 2,
-        fiscalRuleId: null,
-        fiscalRuleName: null,
+        finalUnitCost: unitCosts[index]!,
+        fiscalRuleId: "tax-0",
+        fiscalRuleName: "Zerada",
         taxPercent: 0,
         targetMarginPercent: margins[index]!,
         suggestedPrice: prices[index]!,
@@ -123,15 +141,15 @@ describe("projectsCostSnapshot", () => {
   it("margem alterada no grid reflete no relatório após atualizar projectPricing", () => {
     const detail = buildPricedDetail([30, 30], [3.2, 4.8]);
     const updatedItem = detail.projectPricing!.items[0]!;
+    detail.simulatedItems[0]!.estimatedUnitCost = 2.1;
     detail.projectPricing = {
       ...detail.projectPricing!,
       items: [
         {
           ...updatedItem,
           targetMarginPercent: 40,
-          suggestedPrice: 3.5,
-          suggestedPriceWithAmortization: 3.5,
-          suggestedPriceWithoutAmortization: 3.5,
+          costBaseUnit: 2.1,
+          finalUnitCost: 2.1,
         },
         detail.projectPricing!.items[1]!,
       ],
@@ -160,6 +178,33 @@ describe("projectsCostSnapshot", () => {
       computeProjectCostSetTotal(snapshot.pricing.view.items),
       report.summary.finalSetPrice
     );
+  });
+
+  it("relatório gerencial usa imposto vigente da regra fiscal, não snapshot salvo", () => {
+    const detail = buildPricedDetail([30], [10]);
+    const taxRules = [{ id: "tax-1", name: "MI", description: null, taxPercent: 27.25 }];
+    detail.projectPricing = {
+      ...detail.projectPricing!,
+      taxRules,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 30 },
+      items: detail.projectPricing!.items.map((item) => ({
+        ...item,
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "MI",
+        taxPercent: 10,
+        taxAmount: 1,
+      })),
+    };
+
+    const live = computeLiveProjectPricingView(detail);
+    const snapshot = buildProjectCostSnapshot(detail);
+    const report = buildProjectExecutiveReport(detail);
+
+    assert.equal(live.items.length, 1);
+    assert.equal(live.items[0]?.taxPercent, 27.25);
+    assert.equal(snapshot.pricing.view.items[0]?.taxPercent, 27.25);
+    assert.equal(report.economicAnalysis.taxPercent, 27.25);
+    assert.notEqual(report.economicAnalysis.taxPercent, 10);
   });
 
   it("PDF e PPTX usam o mesmo preço final do snapshot", () => {

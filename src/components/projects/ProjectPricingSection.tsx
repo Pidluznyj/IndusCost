@@ -2,15 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
-  buildProjectPricingView,
   buildProjectCommercialPricingSummary,
-  computeProjectPricingItem,
+  computeLiveProjectPricingView,
   resolveProjectCommercialPricingWeights,
-  resolveProjectPricingItemCosts,
   type ProjectPricingItemView,
 } from "@/src/lib/projectsPricing";
 import { ProjectCommercialPricingSummaryCards } from "@/src/components/projects/ProjectCommercialPricingSummaryCards";
-import type { ProjectCostAmortizationRow } from "@/src/lib/projectsCostAmortization";
 import type { ProjectDetail, ProjectPricingView } from "@/src/types/projects";
 
 function formatMoney(value: number | null | undefined, digits = 6) {
@@ -210,54 +207,24 @@ export function ProjectPricingSection({
   const computedItems = useMemo(() => {
     if (!pricingView) return [];
     const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
-    const savedAmortizations = (detail.costAmortizations ?? []) as ProjectCostAmortizationRow[];
-    const draft = buildProjectPricingView({
-      detail,
+    const itemMarginsNumeric: Record<string, number> = {};
+    for (const item of pricingView.items) {
+      const raw = itemMargins[item.targetItemId];
+      if (raw != null && raw.trim() !== "") {
+        const n = Number(raw);
+        if (Number.isFinite(n)) itemMarginsNumeric[item.targetItemId] = n;
+      }
+    }
+
+    return computeLiveProjectPricingView(detail, {
       taxRules,
       config: {
         fiscalRuleId: fiscalRuleId || null,
         defaultMarginPercent: Number.isFinite(marginDefault) ? marginDefault : detail.targetMarginPercent,
       },
-      savedItems: [],
-      savedAmortizations,
-    });
-
-    return draft.items.map((item) => {
-      const itemMarginRaw = itemMargins[item.targetItemId];
-      const itemRule = itemFiscalRules[item.targetItemId] || fiscalRuleId || null;
-      const taxRule = taxRules.find((rule) => rule.id === itemRule);
-      const margin =
-        itemMarginRaw != null && itemMarginRaw.trim() !== ""
-          ? Number(itemMarginRaw)
-          : Number.isFinite(marginDefault)
-            ? marginDefault
-            : item.targetMarginPercent;
-      const costs = resolveProjectPricingItemCosts(
-        { targetItemId: item.targetItemId, baseUnitCost: item.costBaseUnit },
-        {
-          baseUnitCost: item.costBaseUnit,
-          unitAmortizedCost: item.amortizationUnitCost,
-          finalUnitCost: item.finalUnitCost,
-        }
-      );
-
-      return computeProjectPricingItem(
-        {
-          targetItemId: item.targetItemId,
-          targetItemType: item.targetItemType,
-          displayName: item.displayName,
-          baseUnitCost: costs.costBaseUnit,
-          unitAmortizedCost: costs.amortizationUnitCost,
-          finalUnitCost: costs.pricingCost,
-        },
-        {
-          fiscalRuleId: itemRule,
-          fiscalRuleName: taxRule?.name ?? null,
-          taxPercent: taxRule?.taxPercent ?? 0,
-          targetMarginPercent: margin,
-        }
-      );
-    });
+      itemMargins: itemMarginsNumeric,
+      itemFiscalRules,
+    }).items;
   }, [
     pricingView,
     detail,

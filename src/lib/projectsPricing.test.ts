@@ -13,11 +13,13 @@ import { calculateSalePriceFromCost } from "./pricingCalculations.js";
 import {
   buildProjectPricingView,
   buildProjectCommercialPricingSummary,
+  computeLiveProjectPricingView,
   computeProjectPricingItem,
   listProjectPricingEligibleTargets,
   resolveProjectCommercialPricingWeights,
   resolveProjectPricingItemCosts,
 } from "./projectsPricing.js";
+import { resolveProjectCostFinalUnitPrice } from "./projectsCostSnapshot.js";
 import { buildProjectExecutiveReport } from "./projectsExecutiveReport.js";
 import { canManageProjects, canViewProjects } from "./projectsPermissions.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
@@ -463,13 +465,12 @@ describe("projectsPricing — integração", () => {
     assert.equal(view.items[0]?.amortizationUnitCost, MANGOTE_AMORT);
   });
 
-  it("ProjectPricingSection repassa costAmortizations para buildProjectPricingView", () => {
+  it("ProjectPricingSection usa motor vivo com amortizações do projeto", () => {
     const section = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
       "utf8"
     );
-    assert.match(section, /detail\.costAmortizations/);
-    assert.match(section, /savedAmortizations/);
+    assert.match(section, /computeLiveProjectPricingView/);
   });
 
   it("item sem amortização continua usando custo base", () => {
@@ -587,11 +588,15 @@ describe("projectsPricing — integração", () => {
       items: priced.items,
     };
     const report = buildProjectExecutiveReport(detail);
+    const liveItem = computeLiveProjectPricingView(detail).items[0]!;
     assert.equal(report.economicAnalysis.pending, false);
     assert.ok(report.economicAnalysis.suggestedPrice != null);
     assert.equal(report.economicAnalysis.pricingItems.length, 1);
     assert.equal(report.economicAnalysis.pricingItems[0]?.finalUnitCost, rollup.finalUnitCost);
-    assert.equal(report.economicAnalysis.suggestedPrice, pricedItem.suggestedPrice);
+    assert.equal(
+      report.economicAnalysis.suggestedPrice,
+      resolveProjectCostFinalUnitPrice(liveItem)
+    );
   });
 
   it("relatório gerencial mostra pendente quando não há precificação", () => {

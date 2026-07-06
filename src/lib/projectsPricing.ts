@@ -305,6 +305,100 @@ export function computeProjectPricingItem(
   };
 }
 
+export type LiveProjectPricingOptions = {
+  taxRules?: ProjectPricingTaxRuleOption[];
+  config?: ProjectPricingConfigView;
+  /** Margem por item (formulário). Ausente = usa config salva. */
+  itemMargins?: Record<string, number | null | undefined>;
+  /** Regra fiscal por item (formulário). Ausente = usa config salva. */
+  itemFiscalRules?: Record<string, string | null | undefined>;
+};
+
+/**
+ * Motor vivo da aba Custos do Projeto — custos atuais + regras fiscais vigentes.
+ * Relatórios e grid comercial devem usar esta função (não snapshots persistidos).
+ */
+export function computeLiveProjectPricingView(
+  detail: ProjectDetail,
+  options?: LiveProjectPricingOptions
+): ProjectPricingView {
+  const saved = detail.projectPricing;
+  const taxRules = options?.taxRules ?? saved?.taxRules ?? [];
+  const config = options?.config ??
+    saved?.config ?? {
+      fiscalRuleId: null,
+      defaultMarginPercent: detail.targetMarginPercent,
+    };
+  const defaultFiscalRuleId = config.fiscalRuleId ?? null;
+  const defaultMargin = config.defaultMarginPercent ?? detail.targetMarginPercent ?? null;
+  const savedByTarget = new Map((saved?.items ?? []).map((row) => [row.targetItemId, row]));
+  const savedAmortizations = (detail.costAmortizations ?? []) as ProjectCostAmortizationRow[];
+
+  const draft = buildProjectPricingView({
+    detail,
+    taxRules,
+    config,
+    savedItems: [],
+    savedAmortizations,
+  });
+
+  const items = draft.items.map((item) => {
+    const savedItem = savedByTarget.get(item.targetItemId);
+    const itemMarginRaw = options?.itemMargins?.[item.targetItemId];
+    const margin =
+      itemMarginRaw != null && Number.isFinite(itemMarginRaw)
+        ? itemMarginRaw
+        : savedItem?.targetMarginPercent ?? defaultMargin ?? item.targetMarginPercent;
+
+    const itemRuleRaw = options?.itemFiscalRules?.[item.targetItemId];
+    const fiscalRuleId =
+      options?.itemFiscalRules && item.targetItemId in options.itemFiscalRules
+        ? itemRuleRaw || defaultFiscalRuleId || null
+        : savedItem?.fiscalRuleId ?? defaultFiscalRuleId;
+    const taxRule = taxRules.find((rule) => rule.id === fiscalRuleId);
+
+    const costs = resolveProjectPricingItemCosts(
+      { targetItemId: item.targetItemId, baseUnitCost: item.costBaseUnit },
+      {
+        baseUnitCost: item.costBaseUnit,
+        unitAmortizedCost: item.amortizationUnitCost,
+        finalUnitCost: item.finalUnitCost,
+      }
+    );
+
+    return computeProjectPricingItem(
+      {
+        targetItemId: item.targetItemId,
+        targetItemType: item.targetItemType,
+        displayName: item.displayName,
+        baseUnitCost: costs.costBaseUnit,
+        unitAmortizedCost: costs.amortizationUnitCost,
+        finalUnitCost: costs.pricingCost,
+      },
+      {
+        fiscalRuleId: fiscalRuleId || null,
+        fiscalRuleName: taxRule?.name ?? savedItem?.fiscalRuleName ?? null,
+        taxPercent: taxRule?.taxPercent ?? 0,
+        targetMarginPercent: margin,
+      }
+    );
+  });
+
+  const hasSavedPricing =
+    saved?.hasSavedPricing ??
+    (saved?.items ?? []).some((row) => row.suggestedPrice != null && row.suggestedPrice > 0);
+
+  return {
+    config: {
+      fiscalRuleId: defaultFiscalRuleId,
+      defaultMarginPercent: defaultMargin,
+    },
+    items,
+    taxRules,
+    hasSavedPricing,
+  };
+}
+
 export function buildProjectPricingView(input: {
   detail: ProjectDetail;
   taxRules: ProjectPricingTaxRuleOption[];
@@ -330,7 +424,10 @@ export function buildProjectPricingView(input: {
     const saved = savedByTarget.get(target.targetItemId);
     const fiscalRuleId = saved?.fiscalRuleId ?? defaultFiscalRuleId;
     const taxRule = taxRules.find((rule) => rule.id === fiscalRuleId);
-    const taxPercent = saved?.taxPercentSnapshot ?? resolveTaxRulePercentFromOption(taxRule);
+    const taxPercent =
+      taxRule != null
+        ? resolveTaxRulePercentFromOption(taxRule)
+        : saved?.taxPercentSnapshot ?? 0;
     const margin = saved?.targetMarginPercent ?? defaultMargin;
     const costs = resolveProjectPricingItemCosts(target, rollup);
 

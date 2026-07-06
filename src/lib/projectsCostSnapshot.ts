@@ -8,11 +8,10 @@ import {
 import { computeProjectGuidedCosts } from "./projectsGuidedFlow.js";
 import {
   buildProjectCommercialPricingSummary,
-  buildProjectPricingView,
+  computeLiveProjectPricingView,
   resolveProjectCommercialPricingWeights,
   type ProjectCommercialPricingSummary,
   type ProjectPricingItemView,
-  type ProjectPricingView,
 } from "./projectsPricing.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
@@ -84,17 +83,8 @@ function resolveCostAmortizationSummary(detail: ProjectDetail): ProjectCostAmort
   return buildProjectCostAmortizationSummary(detail, saved);
 }
 
-function resolvePricingView(detail: ProjectDetail): ProjectPricingView {
-  if (detail.projectPricing) {
-    return detail.projectPricing;
-  }
-  return buildProjectPricingView({
-    detail,
-    taxRules: [],
-    config: null,
-    savedItems: [],
-    savedAmortizations: (detail.costAmortizations ?? []) as ProjectCostAmortizationRow[],
-  });
+function resolvePricingView(detail: ProjectDetail) {
+  return computeLiveProjectPricingView(detail);
 }
 
 export function resolveProjectPricingItemSku(

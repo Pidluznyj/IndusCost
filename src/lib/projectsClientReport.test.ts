@@ -22,9 +22,17 @@ import {
 } from "./projectsClientReportPptx.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
+const CLIENT_REPORT_TAX_RULES = [{ id: "tax-0", name: "Zerada", description: null, taxPercent: 0 }];
+
+function simulationItemNotes(id: string) {
+  return `guided-origin:SIMULATION\nguided-simulation-id:${id}`;
+}
+
 function buildDetailWithPricing(): ProjectDetail {
   const productA = "aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa";
   const productB = "bbbbbbbb-bbbb-4111-8111-bbbbbbbbbbbb";
+  const costs = [2.24, 3.36];
+  const prices = [3.2, 4.8];
   return {
     id: "dddddddd-dddd-4111-8111-dddddddddddd",
     code: "PRJ-0100",
@@ -44,29 +52,43 @@ function buildDetailWithPricing(): ProjectDetail {
     updatedAt: "2026-06-01T00:00:00.000Z",
     currentVersion: null,
     versions: [],
-    simulatedProducts: [
+    simulatedProducts: [],
+    simulatedItems: [
       {
         id: productA,
         provisionalCode: "PEC-A",
         description: "Tampa superior",
+        itemType: "COMPONENT",
         unit: "UN",
+        estimatedUnitCost: costs[0]!,
+        quotedUnitCost: null,
+        supplierName: null,
+        leadTimeDays: null,
         estimatedWeight: null,
-        expectedVolume: 1,
-        batchSize: null,
-        notes: null,
+        lossPercent: 0,
+        requiresQuotation: false,
+        requiresEngineeringReview: false,
+        canBecomeOfficial: false,
+        notes: simulationItemNotes(productA),
       },
       {
         id: productB,
         provisionalCode: "PEC-B",
         description: "Base inferior",
+        itemType: "COMPONENT",
         unit: "UN",
+        estimatedUnitCost: costs[1]!,
+        quotedUnitCost: null,
+        supplierName: null,
+        leadTimeDays: null,
         estimatedWeight: null,
-        expectedVolume: 1,
-        batchSize: null,
-        notes: null,
+        lossPercent: 0,
+        requiresQuotation: false,
+        requiresEngineeringReview: false,
+        canBecomeOfficial: false,
+        notes: simulationItemNotes(productB),
       },
     ],
-    simulatedItems: [],
     structureLines: [],
     molds: [],
     snapshotRootProducts: {},
@@ -87,22 +109,24 @@ function buildDetailWithPricing(): ProjectDetail {
     alerts: [],
     conversionAvailable: false,
     projectPricing: {
-      config: { fiscalRuleId: null, defaultMarginPercent: null },
-      taxRules: [],
+      config: { fiscalRuleId: "tax-0", defaultMarginPercent: 30 },
+      taxRules: CLIENT_REPORT_TAX_RULES,
       hasSavedPricing: true,
       items: [
         {
           targetItemId: productA,
           targetItemType: "SIMULATION",
           displayName: "Tampa superior",
-          costBaseUnit: 2,
-          amortizationUnitCost: 0.2,
-          finalUnitCost: 2.2,
-          fiscalRuleId: null,
-          fiscalRuleName: null,
+          costBaseUnit: costs[0]!,
+          amortizationUnitCost: 0,
+          finalUnitCost: costs[0]!,
+          fiscalRuleId: "tax-0",
+          fiscalRuleName: "Zerada",
           taxPercent: 0,
           targetMarginPercent: 30,
-          suggestedPrice: 3.2,
+          suggestedPrice: prices[0]!,
+          suggestedPriceWithoutAmortization: prices[0]!,
+          suggestedPriceWithAmortization: prices[0]!,
           taxAmount: 0,
           marginAmount: 1,
           status: "CALCULATED",
@@ -113,14 +137,16 @@ function buildDetailWithPricing(): ProjectDetail {
           targetItemId: productB,
           targetItemType: "SIMULATION",
           displayName: "Base inferior",
-          costBaseUnit: 3,
-          amortizationUnitCost: 0.8,
-          finalUnitCost: 3.8,
-          fiscalRuleId: null,
-          fiscalRuleName: null,
+          costBaseUnit: costs[1]!,
+          amortizationUnitCost: 0,
+          finalUnitCost: costs[1]!,
+          fiscalRuleId: "tax-0",
+          fiscalRuleName: "Zerada",
           taxPercent: 0,
           targetMarginPercent: 30,
-          suggestedPrice: 4.8,
+          suggestedPrice: prices[1]!,
+          suggestedPriceWithoutAmortization: prices[1]!,
+          suggestedPriceWithAmortization: prices[1]!,
           taxAmount: 0,
           marginAmount: 1,
           status: "CALCULATED",
@@ -143,6 +169,7 @@ function buildDetailPrj00008Iris(): ProjectDetail {
   const prices = [3.28, 3.28, 3.28, 3.29];
   const skus = ["IRIS-A", "IRIS-B", "IRIS-C", "IRIS-D"];
   const names = ["Componente A", "Componente B", "Componente C", "Componente D"];
+  const unitCosts = prices.map((price) => Math.round(price * 0.7 * 1000000) / 1000000);
 
   return {
     ...buildDetailWithPricing(),
@@ -152,32 +179,42 @@ function buildDetailPrj00008Iris(): ProjectDetail {
     customerName: "Esmaltec S/A",
     commercialOwner: "Comercial Lazarios",
     expectedMonthlyVolume: 500,
-    simulatedProducts: ids.map((id, index) => ({
+    simulatedProducts: [],
+    simulatedItems: ids.map((id, index) => ({
       id,
       provisionalCode: skus[index]!,
       description: names[index]!,
+      itemType: "COMPONENT" as const,
       unit: "UN",
+      estimatedUnitCost: unitCosts[index]!,
+      quotedUnitCost: null,
+      supplierName: null,
+      leadTimeDays: null,
       estimatedWeight: null,
-      expectedVolume: 1,
-      batchSize: null,
-      notes: null,
+      lossPercent: 0,
+      requiresQuotation: false,
+      requiresEngineeringReview: false,
+      canBecomeOfficial: false,
+      notes: simulationItemNotes(id),
     })),
     projectPricing: {
-      config: { fiscalRuleId: null, defaultMarginPercent: null },
-      taxRules: [],
+      config: { fiscalRuleId: "tax-0", defaultMarginPercent: 30 },
+      taxRules: CLIENT_REPORT_TAX_RULES,
       hasSavedPricing: true,
       items: ids.map((targetItemId, index) => ({
         targetItemId,
         targetItemType: "SIMULATION" as const,
         displayName: names[index]!,
-        costBaseUnit: 2,
-        amortizationUnitCost: 0.1,
-        finalUnitCost: 2.1,
-        fiscalRuleId: null,
-        fiscalRuleName: null,
+        costBaseUnit: unitCosts[index]!,
+        amortizationUnitCost: 0,
+        finalUnitCost: unitCosts[index]!,
+        fiscalRuleId: "tax-0",
+        fiscalRuleName: "Zerada",
         taxPercent: 0,
         targetMarginPercent: 30,
         suggestedPrice: prices[index]!,
+        suggestedPriceWithoutAmortization: prices[index]!,
+        suggestedPriceWithAmortization: prices[index]!,
         taxAmount: 0,
         marginAmount: 1,
         status: "CALCULATED" as const,
@@ -209,7 +246,7 @@ describe("projectsClientReport", () => {
 
   it("usa preço final da peça quando há um produto", () => {
     const detail = buildDetailWithPricing();
-    detail.simulatedProducts = detail.simulatedProducts.slice(0, 1);
+    detail.simulatedItems = detail.simulatedItems.slice(0, 1);
     detail.projectPricing!.items = detail.projectPricing!.items.slice(0, 1);
     const report = buildProjectClientReport(detail);
     assert.equal(report.summary.productsCount, 1);
@@ -335,8 +372,9 @@ describe("projectsClientReport", () => {
   });
 
   it("PDF inclui quantidade editada", () => {
-    const report = applyProjectClientReportQuantities(buildProjectClientReport(buildDetailWithPricing()), {
-      [buildDetailWithPricing().simulatedProducts[1]!.id]: 2,
+    const detail = buildDetailWithPricing();
+    const report = applyProjectClientReportQuantities(buildProjectClientReport(detail), {
+      [detail.simulatedItems[1]!.id]: 2,
     });
     const buffer = buildProjectClientReportPdfBuffer(report);
     const text = buffer.toString("latin1");
