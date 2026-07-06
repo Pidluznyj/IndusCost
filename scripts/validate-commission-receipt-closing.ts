@@ -10,7 +10,8 @@
  *   npx tsx scripts/validate-commission-receipt-closing.ts --year=2026 --month=6 --seller=GISLENE --compare-legacy --nomus-base=808107.32 --nomus-commission=20926.56 --json --csv --include-lines
  */
 import "dotenv/config";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
 import { buildValidationCsv } from "../src/lib/commissions/commissionReceiptClosingValidation.ts";
 import { loadCommissionReceiptClosingValidation } from "../src/lib/commissions/commissionReceiptClosingValidation.server.ts";
@@ -55,11 +56,18 @@ async function main(): Promise<void> {
     scope: GLOBAL_SCOPE,
   });
 
-  const outputPath = `validate-commission-receipt-closing-${year}-${String(month).padStart(2, "0")}`;
+  const outDir = join("tmp", "commission-receipt-closing-validation");
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const outputPath = join(
+    outDir,
+    `validate-commission-receipt-closing-${year}-${String(month).padStart(2, "0")}`
+  );
 
   if (asCsv) {
     const csv = buildValidationCsv(compareLines, report);
-    writeFileSync(`${outputPath}.csv`, csv, "utf8");
+    const csvPath = `${outputPath}.csv`;
+    writeFileSync(csvPath, csv, "utf8");
+    console.error(`CSV salvo em: ${csvPath}`);
     if (!asJson) {
       console.log(csv);
       return;
@@ -69,12 +77,14 @@ async function main(): Promise<void> {
   const jsonPayload = includeLines ? report : { ...report, lines: undefined };
 
   if (asJson) {
-    writeFileSync(`${outputPath}.json`, JSON.stringify(jsonPayload, null, 2), "utf8");
+    const jsonPath = `${outputPath}.json`;
+    writeFileSync(jsonPath, JSON.stringify(jsonPayload, null, 2), "utf8");
+    console.error(`JSON salvo em: ${jsonPath}`);
     if (!asCsv) {
       console.log(JSON.stringify(jsonPayload, null, 2));
       return;
     }
-    console.log(`Arquivos gravados: ${outputPath}.csv e ${outputPath}.json`);
+    console.log(`Arquivos gravados: ${outputPath}.csv e ${outputPath}.json (pasta tmp/, gitignored)`);
     return;
   }
 
