@@ -279,6 +279,26 @@ export function ProjectPricingSection({
     });
   }, [computedItems, detail, defaultMargin]);
 
+  const hasUnsavedPricingChanges = useMemo(() => {
+    const saved = detail.projectPricing;
+    if (!saved || computedItems.length === 0) return false;
+
+    const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
+    if ((saved.config.fiscalRuleId ?? null) !== (fiscalRuleId || null)) return true;
+    if ((saved.config.defaultMarginPercent ?? null) !== (Number.isFinite(marginDefault) ? marginDefault : null)) {
+      return true;
+    }
+
+    for (const item of computedItems) {
+      const savedItem = saved.items.find((row) => row.targetItemId === item.targetItemId);
+      if (!savedItem) return true;
+      if (Math.abs(item.targetMarginPercent - savedItem.targetMarginPercent) > 0.0001) return true;
+      const draftRule = itemFiscalRules[item.targetItemId] ?? fiscalRuleId ?? null;
+      if ((savedItem.fiscalRuleId ?? null) !== (draftRule || null)) return true;
+    }
+    return false;
+  }, [computedItems, detail.projectPricing, defaultMargin, fiscalRuleId, itemFiscalRules]);
+
   const applyToAll = () => {
     const next: Record<string, string> = {};
     for (const item of computedItems) {
@@ -404,6 +424,16 @@ export function ProjectPricingSection({
           ) : null}
         </div>
       </div>
+
+      {hasUnsavedPricingChanges ? (
+        <div
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="project-pricing-unsaved-warning"
+        >
+          Há alterações de margem ou regra fiscal não salvas. Salve a precificação antes de emitir
+          relatórios para garantir que os valores coincidam com a aba Custos do Projeto.
+        </div>
+      ) : null}
 
       {computedItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">

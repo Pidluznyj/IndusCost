@@ -11,6 +11,7 @@ import {
   type ProjectCostAmortizationTargetType,
 } from "./projectsCostAmortization.js";
 import { buildProjectGuidedItems, computeProjectGuidedCosts } from "./projectsGuidedFlow.js";
+import { buildProjectCostSnapshot, resolveProjectCostFinalUnitPrice } from "./projectsCostSnapshot.js";
 import {
   findOtherCostBatchItems,
   loadOtherCostBatchLines,
@@ -258,6 +259,9 @@ function resolveItemStatus(
 }
 
 function resolveCostSummary(detail: ProjectDetail): ProjectCostAmortizationSummary {
+  if (detail.costAmortizationSummary) {
+    return detail.costAmortizationSummary as ProjectCostAmortizationSummary;
+  }
   const saved = (detail.costAmortizations ?? []) as ProjectCostAmortizationRow[];
   return buildProjectCostAmortizationSummary(detail, saved);
 }
@@ -293,8 +297,9 @@ export function buildProjectExecutiveReport(
   options?: { generatedAt?: Date }
 ): ProjectExecutiveReportPayload {
   const generatedAt = (options?.generatedAt ?? new Date()).toISOString();
-  const summary = resolveCostSummary(detail);
-  const guided = computeProjectGuidedCosts(detail);
+  const costSnapshot = buildProjectCostSnapshot(detail, { generatedAt: new Date(generatedAt) });
+  const summary = costSnapshot.costAmortizationSummary;
+  const guided = costSnapshot.guidedCosts;
   const targets = buildProjectAmortizationTargets(detail);
   const guidedItems = buildProjectGuidedItems(detail);
   const guidedById = new Map(guidedItems.map((row) => [row.id, row]));
@@ -460,14 +465,15 @@ export function buildProjectExecutiveReport(
       message: "Valor absorvido internamente maior que zero.",
     });
   }
-  const suggestedPrice = detail.costBreakdown.suggestedPrice;
-  const savedPricing = detail.projectPricing;
-  const pricingPrimary =
-    savedPricing?.items.find((item) => item.suggestedPrice != null && item.suggestedPrice > 0) ??
-    null;
-  const hasSavedProjectPricing = savedPricing?.hasSavedPricing === true;
+  const savedPricing = costSnapshot.pricing.view;
+  const commercialSummary = costSnapshot.pricing.commercialSummary;
+  const hasSavedProjectPricing = savedPricing.hasSavedPricing === true;
+  const calculatedPricingItems = savedPricing.items.filter(
+    (item) => resolveProjectCostFinalUnitPrice(item) != null
+  );
+  const pricingPrimary = calculatedPricingItems[0] ?? null;
 
-  if (!hasSavedProjectPricing && (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0)) {
+  if (!hasSavedProjectPricing && calculatedPricingItems.length === 0) {
     alerts.push({
       code: "PRICE_MARGIN_UNDEFINED",
       message: "Preço/margem não definidos.",
@@ -494,28 +500,33 @@ export function buildProjectExecutiveReport(
     summary.totalAbsorbedAmount
   )} absorvidos internamente pela empresa.`;
 
-  const finalUnitCost = pricingPrimary?.finalUnitCost ?? summary.finalItemsUnitCostWithAmortization;
-  const economicPending = !hasSavedProjectPricing;
-  const reportSuggestedPrice = pricingPrimary?.suggestedPrice ?? null;
-  const estimatedMarginPercent = pricingPrimary?.targetMarginPercent ?? null;
+  const finalUnitCost =
+    commercialSummary.averageFinalUnitCost ??
+    pricingPrimary?.finalUnitCost ??
+    summary.finalItemsUnitCostWithAmortization;
+  const economicPending = costSnapshot.totals.pricingPending || !hasSavedProjectPricing;
+  const reportSuggestedPrice = costSnapshot.totals.finalSetPrice;
+  const estimatedMarginPercent =
+    commercialSummary.hasMultipleMargins
+      ? null
+      : pricingPrimary?.targetMarginPercent ??
+        savedPricing.config.defaultMarginPercent ??
+        null;
   const amortizationBaseQuantity =
     amortizationMemory.length > 0
       ? Math.max(...amortizationMemory.map((row) => row.amortizationQuantity))
       : null;
 
-  const pricingItems =
-    savedPricing?.items
-      .filter((item) => item.suggestedPrice != null && item.suggestedPrice > 0)
-      .map((item) => ({
-        displayName: item.displayName,
-        finalUnitCost: item.finalUnitCost,
-        suggestedPrice: item.suggestedPrice!,
-        taxPercent: item.taxPercent,
-        targetMarginPercent: item.targetMarginPercent,
-        taxAmount: item.taxAmount,
-        marginAmount: item.marginAmount,
-        fiscalRuleName: item.fiscalRuleName,
-      })) ?? [];
+  const pricingItems = calculatedPricingItems.map((item) => ({
+    displayName: item.displayName,
+    finalUnitCost: item.finalUnitCost,
+    suggestedPrice: resolveProjectCostFinalUnitPrice(item)!,
+    taxPercent: item.taxPercent,
+    targetMarginPercent: item.targetMarginPercent,
+    taxAmount: item.taxAmount,
+    marginAmount: item.marginAmount,
+    fiscalRuleName: item.fiscalRuleName,
+  }));
 
   const versionLabel = detail.currentVersion
     ? `v${detail.currentVersion.versionNumber}`

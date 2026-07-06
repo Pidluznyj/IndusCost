@@ -3,6 +3,13 @@ import {
   roundProjectMoney,
 } from "./projectsCostAmortization.js";
 import {
+  buildProjectCostSnapshot,
+  computeProjectCostSetTotal,
+  resolveProjectCostFinalUnitPrice,
+  resolveProjectCostSetPriceLabel,
+  resolveProjectPricingItemSku,
+} from "./projectsCostSnapshot.js";
+import {
   PROJECT_CLIENT_REPORT_BUTTON_LABEL,
   PROJECT_CLIENT_REPORT_DISCLAIMER,
   PROJECT_CLIENT_REPORT_EXECUTIVE_SUMMARY,
@@ -169,65 +176,56 @@ export function buildProjectClientReportProducts(
   detail: ProjectDetail,
   savedQuantities?: Map<string, number> | Record<string, number>
 ): ProjectClientReportProduct[] {
-  const pricingByTargetId = new Map(
-    (detail.projectPricing?.items ?? []).map((item) => [item.targetItemId, item])
-  );
+  const snapshot = buildProjectCostSnapshot(detail, { quantitiesByTargetId: savedQuantities });
 
-  return buildProjectAmortizationTargets(detail)
-    .filter(
-      (target) =>
-        target.entityKind === "product" ||
-        target.entityKind === "engineering_clone" ||
-        target.entityKind === "simulation_ref"
-    )
-    .map((target) => {
-      const pricing = pricingByTargetId.get(target.targetItemId);
-      const quantityPerSet = resolveClientProposalQuantityPerSet(
-        target.targetItemId,
-        savedQuantities
-      );
-      const finalUnitPrice =
-        pricing?.suggestedPrice != null && Number.isFinite(pricing.suggestedPrice)
-          ? roundProjectMoney(pricing.suggestedPrice)
-          : null;
-      const finalTotalPrice =
-        finalUnitPrice != null
-          ? roundProjectMoney(finalUnitPrice * quantityPerSet)
-          : null;
+  return snapshot.pricing.view.items.map((item) => {
+    const quantityPerSet = resolveClientProposalQuantityPerSet(
+      item.targetItemId,
+      savedQuantities
+    );
+    const finalUnitPrice = resolveProjectCostFinalUnitPrice(item);
+    const finalTotalPrice =
+      finalUnitPrice != null
+        ? roundProjectMoney(finalUnitPrice * quantityPerSet)
+        : null;
 
-      return {
-        id: target.targetItemId,
-        sku: target.displayCode,
-        name: target.displayName,
-        description: target.displayName,
-        quantityPerSet,
-        unit: resolveProductUnit(detail, target.targetItemId),
-        finalUnitPrice,
-        finalTotalPrice,
-        notes: resolveProductNotes(detail, target.targetItemId),
-      } satisfies ProjectClientReportProduct;
-    });
+    return {
+      id: item.targetItemId,
+      sku: resolveProjectPricingItemSku(detail, item.targetItemId),
+      name: item.displayName,
+      description: item.displayName,
+      quantityPerSet,
+      unit: resolveProductUnit(detail, item.targetItemId),
+      finalUnitPrice,
+      finalTotalPrice,
+      notes: resolveProductNotes(detail, item.targetItemId),
+    } satisfies ProjectClientReportProduct;
+  });
 }
 
 export function computeProjectClientReportFinalSetPrice(
   products: ProjectClientReportProduct[]
 ): number | null {
-  const priced = products.filter(
-    (product) => product.finalTotalPrice != null && Number.isFinite(product.finalTotalPrice)
-  );
-  if (priced.length === 0) return null;
-  if (priced.length !== products.length) return null;
-  return roundProjectMoney(
-    priced.reduce((sum, product) => sum + (product.finalTotalPrice ?? 0), 0)
-  );
+  if (products.length === 0) return null;
+  const lines: number[] = [];
+  for (const product of products) {
+    if (product.finalTotalPrice == null || !Number.isFinite(product.finalTotalPrice)) {
+      return null;
+    }
+    lines.push(product.finalTotalPrice);
+  }
+  return roundProjectMoney(lines.reduce((sum, value) => sum + value, 0));
 }
 
 export function buildProjectClientReport(
   detail: ProjectDetail,
   savedQuantities?: Map<string, number> | Record<string, number>
 ): ProjectClientReportPayload {
+  const snapshot = buildProjectCostSnapshot(detail, { quantitiesByTargetId: savedQuantities });
   const products = buildProjectClientReportProducts(detail, savedQuantities);
-  const finalSetPrice = computeProjectClientReportFinalSetPrice(products);
+  const finalSetPrice =
+    snapshot.totals.finalSetPrice ??
+    computeProjectCostSetTotal(snapshot.pricing.view.items, savedQuantities);
   const estimatedQuantity =
     detail.expectedMonthlyVolume != null && Number.isFinite(detail.expectedMonthlyVolume)
       ? detail.expectedMonthlyVolume
@@ -238,12 +236,8 @@ export function buildProjectClientReport(
       : finalSetPrice;
 
   const productsCount = products.length;
-  const finalSetPriceLabel =
-    productsCount <= 1 ? "Preço final da peça" : "Preço final do conjunto";
-
-  const pricingPending =
-    products.length > 0 &&
-    products.some((product) => product.finalUnitPrice == null || product.finalUnitPrice <= 0);
+  const finalSetPriceLabel = resolveProjectCostSetPriceLabel(productsCount);
+  const pricingPending = snapshot.totals.pricingPending;
 
   return {
     generatedAt: new Date().toISOString(),
