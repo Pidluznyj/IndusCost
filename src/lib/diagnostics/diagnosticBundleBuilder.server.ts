@@ -282,7 +282,7 @@ export function buildChatGptDiagnosticBundle(
     [
       {
         label: "Validar bundle SYSTEM",
-        command: "npx tsx scripts/generate-diagnostic-bundle.ts --scope=SYSTEM",
+        command: "npx tsx scripts/generate-chatgpt-diagnostic-report.ts --scope=SYSTEM",
         note: "Read-only; grava em tmp/diagnostic-bundles/",
       },
       {
@@ -528,22 +528,51 @@ export async function writeDiagnosticBundleZip(
   writeFileSync(zipPath, buffer);
 }
 
+export type BuildAndWriteDiagnosticBundleOptions = {
+  /** Deve ficar em tmp/ (gitignored). Se omitido, usa tmp/diagnostic-bundles/{scope}-{stamp}. */
+  outputDir?: string | null;
+};
+
+export function resolveDiagnosticBundleOutputPaths(
+  scope: DiagnosticScope,
+  generatedAt: string,
+  customOutputDir?: string | null
+): { outputDir: string; zipPath: string } {
+  if (customOutputDir?.trim()) {
+    const normalized = customOutputDir.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!normalized.startsWith("tmp/")) {
+      throw new Error(
+        "outputDir deve ficar em tmp/ (gitignored) — use --output-dir=tmp/diagnostic-bundles/..."
+      );
+    }
+    const zipPath = normalized.endsWith(".zip") ? normalized : `${normalized}.zip`;
+    const outputDir = normalized.endsWith(".zip")
+      ? normalized.slice(0, -4)
+      : normalized;
+    return { outputDir, zipPath };
+  }
+
+  const stamp = generatedAt.replace(/[:.]/g, "-");
+  const outputDir = join("tmp", "diagnostic-bundles", `${scope.toLowerCase()}-${stamp}`);
+  return { outputDir: outputDir.replace(/\\/g, "/"), zipPath: `${outputDir.replace(/\\/g, "/")}.zip` };
+}
+
 export async function buildAndWriteDiagnosticBundle(
-  input: BuildDiagnosticBundleInput
+  input: BuildDiagnosticBundleInput,
+  options: BuildAndWriteDiagnosticBundleOptions = {}
 ): Promise<BuildDiagnosticBundleResult> {
   const bundle = buildChatGptDiagnosticBundle(input);
   assertRequiredBundleStructure(bundle);
 
-  const stamp = bundle.manifest.generatedAt.replace(/[:.]/g, "-");
-  const outputDir = join(
-    "tmp",
-    "diagnostic-bundles",
-    `${input.scope.toLowerCase()}-${stamp}`
+  const { outputDir, zipPath } = resolveDiagnosticBundleOutputPaths(
+    input.scope,
+    bundle.manifest.generatedAt,
+    options.outputDir
   );
-  const zipPath = `${outputDir}.zip`;
 
-  if (!existsSync(join("tmp", "diagnostic-bundles"))) {
-    mkdirSync(join("tmp", "diagnostic-bundles"), { recursive: true });
+  const bundlesRoot = join("tmp", "diagnostic-bundles");
+  if (!existsSync(bundlesRoot)) {
+    mkdirSync(bundlesRoot, { recursive: true });
   }
 
   writeDiagnosticBundleToDirectory(bundle, outputDir);
