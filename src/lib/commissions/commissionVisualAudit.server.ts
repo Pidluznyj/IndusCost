@@ -7,12 +7,14 @@ import {
   buildVisualAuditNomusReference,
   buildVisualAuditRow,
   computeVisualAuditCards,
+  enrichVisualAuditRowsWithSellerIdentity,
   filterRowsByAppraisalMode,
   type VisualAuditNomusReference,
   type VisualAuditRow,
   type VisualAuditRowInput,
 } from "./commissionVisualAudit.js";
 import { resolveVisualAuditCustomerExclusion } from "./commissionCustomerExclusionApply.js";
+import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
 import {
   buildCommissionRecordsWhere,
   COMMISSION_CONFIRMED_STATUSES,
@@ -301,6 +303,8 @@ async function buildVisualAuditRows(
         scheduleId: null,
         commissionPersonId: record.commissionPersonId,
         commissionPersonName: record.commissionPerson.name,
+        nomusSellerId: record.nomusSellerId,
+        customerExternalId: record.customerExternalId,
         customerName: record.customerName,
         orderCode: record.orderCode,
         nfeNumber: record.nfeNumber,
@@ -361,6 +365,8 @@ async function buildVisualAuditRows(
         scheduleId: schedule.id,
         commissionPersonId: record.commissionPersonId,
         commissionPersonName: record.commissionPerson.name,
+        nomusSellerId: record.nomusSellerId,
+        customerExternalId: record.customerExternalId,
         customerName: record.customerName,
         orderCode: record.orderCode,
         nfeNumber: record.nfeNumber,
@@ -400,7 +406,8 @@ async function buildVisualAuditRows(
     }
   }
 
-  return inputs.map(buildVisualAuditRow);
+  const identityCtx = await loadCommissionSellerIdentityContext(prisma);
+  return enrichVisualAuditRowsWithSellerIdentity(inputs.map(buildVisualAuditRow), identityCtx);
 }
 
 async function listFilteredVisualAuditRows(
