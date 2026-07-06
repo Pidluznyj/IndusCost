@@ -9,7 +9,7 @@ import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { listCommissionApuracaoPage } from "../src/lib/commissions/commissionApuracao.server.ts";
 import { parseCommissionApuracaoQuery } from "../src/lib/commissions/commissionQuery.ts";
-import { requireDatabaseUrl } from "./commission-script-utils.ts";
+import { requireDatabaseUrl, warnCommissionLegacyMode } from "./commission-script-utils.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
@@ -29,6 +29,7 @@ function parseArg(name: string): string | undefined {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-apuracao");
   const year = Number.parseInt(parseArg("year") ?? String(new Date().getFullYear()), 10);
   const month = Number.parseInt(parseArg("month") ?? "6", 10);
   const sellerName = parseArg("seller") ?? "";

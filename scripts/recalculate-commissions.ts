@@ -18,6 +18,7 @@ import {
   parseScriptMode,
   parseYearPeriod,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 function printPreview(result: Awaited<ReturnType<typeof previewCommissionCalculation>>): void {
@@ -65,6 +66,7 @@ function printPreview(result: Awaited<ReturnType<typeof previewCommissionCalcula
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("recalculate-commissions");
   const range = parseYearPeriod();
   const mode = parseScriptMode();
 

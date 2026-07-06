@@ -22,7 +22,7 @@ import {
   parseNomusReconciliationCliArgs,
 } from "../src/lib/commissions/commissionNomusReconciliation.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
-import { fmtBrl, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { fmtBrl, requireDatabaseUrl, warnCommissionLegacyMode } from "./commission-script-utils.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
   dataScope: "global",
@@ -51,7 +51,7 @@ async function resolveSellerIdByName(sellerName: string): Promise<string | null>
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
-  const args = parseNomusReconciliationCliArgs();
+  warnCommissionLegacyMode("reconcile-commission-nomus-june-2026");
 
   let sellerId: string | null = null;
   if (args.sellerName) {

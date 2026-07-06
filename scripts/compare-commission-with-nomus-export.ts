@@ -17,6 +17,7 @@ import {
   parseArg,
   parseYearPeriod,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 type CompareClass = "OK" | "DIVERGENTE" | "FALTANDO_NO_INDUSCOST" | "FALTANDO_NO_NOMUS";
@@ -69,6 +70,7 @@ function matchKey(orderCode: string | null, invoiceNumber: string | null): strin
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("compare-commission-with-nomus-export");
   const range = parseYearPeriod();
   const nomusFile = parseArg("nomusFile");
   const outDir = parseArg("outDir") ?? "tmp/commissions-june-2026";

@@ -8,6 +8,7 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { parseYearPeriod, requireDatabaseUrl } from "./commission-audit-args.ts";
+import { warnCommissionLegacyMode } from "./commission-script-utils.ts";
 
 type LinkIssue = {
   tipo: string;
@@ -24,6 +25,7 @@ function toNumber(value: unknown): number {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-links");
   const range = parseYearPeriod();
   const dryRun = true;
 

@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { listCommissionApuracaoPage } from "../src/lib/commissions/commissionApuracao.server.ts";
 import { parseCommissionApuracaoQuery } from "../src/lib/commissions/commissionQuery.ts";
-import { requireDatabaseUrl, parseArg, csvLine } from "./commission-script-utils.ts";
+import { requireDatabaseUrl, parseArg, csvLine, warnCommissionLegacyMode } from "./commission-script-utils.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
@@ -79,6 +79,7 @@ function matchKey(row: { nfe: string; receivable: string; customer: string }): s
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-apuracao-nomus-comparison");
   const year = parseArg("year") ?? "2026";
   const month = parseArg("month") ?? "6";
   const seller = parseArg("seller") ?? "";

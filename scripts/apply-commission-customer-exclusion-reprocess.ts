@@ -20,10 +20,12 @@ import {
   hasFlag,
   parseArg,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("apply-commission-customer-exclusion-reprocess");
 
   const ruleId = parseArg("rule-id") ?? parseArg("ruleId");
   if (!ruleId?.trim()) {

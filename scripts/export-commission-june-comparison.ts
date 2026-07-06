@@ -17,6 +17,7 @@ import {
   parseArg,
   parseYearPeriod,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 type ExportRow = Record<string, string | number | null>;
@@ -36,6 +37,7 @@ function metaNum(metadataJson: unknown, key: string): number | null {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("export-commission-june-comparison");
   const range = parseYearPeriod();
   const outDir = parseArg("outDir") ?? "tmp/commissions-june-2026";
   mkdirSync(outDir, { recursive: true });

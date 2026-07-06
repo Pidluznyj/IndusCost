@@ -13,10 +13,12 @@ import {
   fmtBrl,
   parseYearPeriod,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-rules-coverage");
   const range = parseYearPeriod();
 
   console.log("=== Cobertura de regras — Comissões ===");

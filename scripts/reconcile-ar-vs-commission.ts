@@ -13,7 +13,7 @@ import {
   arCommissionDetailCsvHeader,
   arCommissionDetailToCsvRow,
 } from "../src/lib/commissions/reconcileArVsCommission.ts";
-import { csvLine, fmtBrl, fmtPct, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { csvLine, fmtBrl, fmtPct, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl, warnCommissionLegacyReportSource } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
@@ -44,6 +44,10 @@ async function main(): Promise<void> {
     customer,
     nomusReference,
     sourceMode,
+  });
+  warnCommissionLegacyReportSource({
+    sourceMode,
+    dataSource: summary.reportSource ?? null,
   });
 
   const outputPath = `reconcile-ar-vs-commission-${year}-${String(month).padStart(2, "0")}`;

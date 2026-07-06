@@ -13,7 +13,7 @@ import { listCommissionVisualAuditPage } from "../src/lib/commissions/commission
 import { buildVisualAuditCsv } from "../src/lib/commissions/commissionVisualAudit.ts";
 import { parseCommissionVisualAuditQuery } from "../src/lib/commissions/commissionQuery.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
-import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl, warnCommissionLegacyMode } from "./commission-script-utils.ts";
 import { getCommissionMonthlyPayableSummary } from "../src/lib/commissions/commissionMonthlyPayable.server.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
@@ -27,6 +27,7 @@ const GLOBAL_SCOPE: CommissionAccessScope = {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-visual-summary");
 
   const year = Number.parseInt(parseArg("year") ?? String(new Date().getFullYear()), 10);
   const month = Number.parseInt(parseArg("month") ?? String(new Date().getMonth() + 1), 10);

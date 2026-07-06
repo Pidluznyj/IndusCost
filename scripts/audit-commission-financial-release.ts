@@ -12,6 +12,7 @@ import {
   activeCommissionRecordWhere,
   parseYearPeriod,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 type ReleaseIssue = {
@@ -27,6 +28,7 @@ function fmtBrl(value: number): string {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-financial-release");
   const range = parseYearPeriod();
 
   console.log("=== Auditoria de liberação financeira — Comissões ===");

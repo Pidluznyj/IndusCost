@@ -19,12 +19,14 @@ import {
   parseYearPeriod,
   printFindings,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
   toNumber,
   type ReadinessFinding,
 } from "./commission-script-utils.ts";
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-june-readiness");
   const range = parseYearPeriod();
   const findings: ReadinessFinding[] = [];
 

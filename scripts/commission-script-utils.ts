@@ -9,7 +9,9 @@ export { parseArg, hasFlag, parseYearPeriod, requireDatabaseUrl } from "./commis
 export {
   parseCommissionReportSourceMode,
   formatReportSourceLabel,
+  LEGACY_PAYABLE_DEPRECATION_NOTICE,
   type CommissionReportSourceMode,
+  type CommissionReportDataSource,
 } from "../src/lib/commissions/commissionReportSource.ts";
 export {
   activeCommissionRecordWhere,
@@ -84,4 +86,25 @@ export function escapeCsv(value: unknown): string {
 
 export function csvLine(cols: unknown[]): string {
   return cols.map(escapeCsv).join(",");
+}
+
+/** Aviso padrão para scripts que usam CommissionRecord / CommissionPaymentSchedule. */
+export const COMMISSION_LEGACY_SCRIPT_WARNING =
+  "LEGACY MODE: não usar para pagamento oficial.";
+
+export function warnCommissionLegacyMode(context?: string): void {
+  const suffix = context ? ` (${context})` : "";
+  console.warn(`⚠ ${COMMISSION_LEGACY_SCRIPT_WARNING}${suffix}`);
+  console.warn(`  Fonte oficial: Fechamento por Recebimento (/commissions → receipt-closing).`);
+}
+
+export function warnCommissionLegacyReportSource(input: {
+  sourceMode?: string;
+  dataSource?: CommissionReportDataSource | string | null;
+}): void {
+  if (input.sourceMode === "legacy" || input.dataSource === "LEGACY_VISUAL_AUDIT") {
+    warnCommissionLegacyMode(
+      input.sourceMode === "legacy" ? "--source=legacy" : "LEGACY_VISUAL_AUDIT"
+    );
+  }
 }

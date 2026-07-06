@@ -19,6 +19,7 @@ import {
   hasFlag,
   parseArg,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 function printPreviewHuman(
@@ -104,8 +105,7 @@ function printPreviewHuman(
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
-
-  const customerFilter = parseExclusionReprocessCustomerFilter({
+  warnCommissionLegacyMode("preview-commission-customer-exclusion-impact");
     customer: parseArg("customer"),
     customerExternalId: parseArg("customerExternalId"),
   });

@@ -8,7 +8,7 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { parseCommissionApuracaoQuery, buildCommissionRecordsWhere } from "../src/lib/commissions/commissionQuery.ts";
-import { requireDatabaseUrl } from "./commission-script-utils.ts";
+import { requireDatabaseUrl, warnCommissionLegacyMode } from "./commission-script-utils.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
@@ -28,6 +28,7 @@ function parseArg(name: string): string | undefined {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("audit-commission-missing-links");
   const year = parseArg("year") ?? "2026";
   const month = parseArg("month") ?? "6";
 

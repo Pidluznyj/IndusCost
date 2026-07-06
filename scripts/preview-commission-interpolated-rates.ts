@@ -33,6 +33,7 @@ import {
   parseArg,
   parseScriptMode,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 
 type SimRow = {
@@ -271,6 +272,7 @@ async function applyRecordUpdate(
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("preview-commission-interpolated-rates");
   const mode = parseScriptMode();
   const year = parseArg("year") ?? "2026";
   const month = parseArg("month") ?? "6";

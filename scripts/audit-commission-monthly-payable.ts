@@ -12,7 +12,7 @@ import "dotenv/config";
 import { getCommissionMonthlyPayableSummary } from "../src/lib/commissions/commissionMonthlyPayable.server.ts";
 import { buildMonthlyPayableCsv } from "../src/lib/commissions/commissionMonthlyPayable.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
-import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl } from "./commission-script-utils.ts";
+import { fmtBrl, parseArg, parseCommissionReportSourceMode, formatReportSourceLabel, requireDatabaseUrl, warnCommissionLegacyReportSource } from "./commission-script-utils.ts";
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
   dataScope: "global",
@@ -39,6 +39,10 @@ async function main(): Promise<void> {
     GLOBAL_SCOPE,
     sourceMode
   );
+  warnCommissionLegacyReportSource({
+    sourceMode,
+    dataSource: summary.reportSource,
+  });
 
   if (asCsv) {
     console.log(buildMonthlyPayableCsv(summary));

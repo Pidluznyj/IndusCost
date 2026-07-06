@@ -17,6 +17,7 @@ import {
   parseArg,
   parseScriptMode,
   requireDatabaseUrl,
+  warnCommissionLegacyMode,
 } from "./commission-script-utils.ts";
 import { buildCommissionRecordPeriodWhere } from "../src/lib/commissions/commissionQuery.ts";
 
@@ -36,6 +37,7 @@ type ChangeRow = {
 
 async function main(): Promise<void> {
   requireDatabaseUrl();
+  warnCommissionLegacyMode("reconcile-commission-release-amounts");
   const mode = parseScriptMode();
   const year = parseArg("year") ?? "2026";
   const month = parseArg("month") ?? "6";
