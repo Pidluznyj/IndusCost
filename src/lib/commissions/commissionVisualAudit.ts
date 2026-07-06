@@ -6,6 +6,11 @@ import {
   customerExclusionAlertLabel,
 } from "./commissionCustomerExclusionApply.js";
 import {
+  resolveCanonicalCommissionPersonId,
+  resolveCommissionSellerIdentity,
+  type CommissionSellerIdentityContext,
+} from "./commissionSellerIdentity.js";
+import {
   VISUAL_AUDIT_MODE_LABELS,
   type VisualAuditAppraisalMode,
 } from "./commissionVisualAudit.shared.js";
@@ -52,6 +57,9 @@ export type VisualAuditRowInput = {
   scheduleId: string | null;
   commissionPersonId: string;
   commissionPersonName: string;
+  /** ID externo Nomus do vendedor no pedido/registro (bruto). */
+  nomusSellerId?: number | null;
+  customerExternalId?: number | null;
   customerName: string | null;
   orderCode: string | null;
   nfeNumber: string | null;
@@ -90,6 +98,11 @@ export type VisualAuditRow = VisualAuditRowInput & {
   financialSharePercent: number | null;
   alerts: VisualAuditAlertCode[];
   alertLabels: string[];
+  /** Nome bruto do vendedor na origem (geralmente igual a commissionPersonName). */
+  rawSellerName: string | null;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  sellerResolutionStatus: string | null;
 };
 
 export type VisualAuditCards = {
@@ -257,6 +270,8 @@ export function buildVisualAuditRow(input: VisualAuditRowInput): VisualAuditRow 
 
   return {
     ...input,
+    nomusSellerId: input.nomusSellerId ?? null,
+    customerExternalId: input.customerExternalId ?? null,
     allocatedBaseAmount,
     receivableTitleStatus,
     commissionStatus,
@@ -264,7 +279,62 @@ export function buildVisualAuditRow(input: VisualAuditRowInput): VisualAuditRow 
     financialSharePercent,
     alerts,
     alertLabels,
+    rawSellerName: input.commissionPersonName,
+    canonicalSellerId: input.commissionPersonId,
+    canonicalSellerName: input.commissionPersonName,
+    sellerResolutionStatus: null,
   };
+}
+
+/** Enriquece linhas com vendedor canônico resolvido via aliases/cadastro. */
+export function enrichVisualAuditRowsWithSellerIdentity(
+  rows: VisualAuditRow[],
+  identityCtx: CommissionSellerIdentityContext
+): VisualAuditRow[] {
+  return rows.map((row) => {
+    const resolution = resolveCommissionSellerIdentity(
+      {
+        rawSellerId: row.nomusSellerId,
+        rawSellerName: row.commissionPersonName,
+        source: "COMMISSION_RECORD",
+      },
+      identityCtx
+    );
+    const canonicalSellerId =
+      resolution.canonicalSellerId ??
+      resolveCanonicalCommissionPersonId(row.commissionPersonId, identityCtx);
+    const canonicalSellerName =
+      resolution.canonicalSellerName ??
+      identityCtx.persons.find((person) => person.id === canonicalSellerId)?.name ??
+      row.commissionPersonName;
+
+    return {
+      ...row,
+      rawSellerName: row.commissionPersonName,
+      canonicalSellerId,
+      canonicalSellerName,
+      sellerResolutionStatus: resolution.resolutionStatus,
+    };
+  });
+}
+
+export function filterRowsByCanonicalSeller(
+  rows: VisualAuditRow[],
+  sellerFilter: string | null | undefined
+): VisualAuditRow[] {
+  if (!sellerFilter?.trim()) return rows;
+  const needle = sellerFilter.trim().toLowerCase();
+  return rows.filter((row) => {
+    const haystacks = [
+      row.canonicalSellerName,
+      row.commissionPersonName,
+      row.rawSellerName,
+      row.canonicalSellerId,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase());
+    return haystacks.some((value) => value.includes(needle) || needle.includes(value));
+  });
 }
 
 export function filterRowsByAppraisalMode(
@@ -430,7 +500,13 @@ export function visualAuditRowToCsv(
 ): Record<string, string | number> {
   return {
     apuracao: VISUAL_AUDIT_MODE_LABELS[mode],
+    rawSellerId: row.nomusSellerId ?? "",
+    rawSellerName: row.rawSellerName ?? row.commissionPersonName,
+    canonicalSellerId: row.canonicalSellerId ?? row.commissionPersonId,
+    canonicalSellerName: row.canonicalSellerName ?? row.commissionPersonName,
+    resolutionStatus: row.sellerResolutionStatus ?? "",
     vendedor: row.commissionPersonName,
+    clienteId: row.customerExternalId ?? "",
     cliente: row.customerName ?? "",
     pedido: row.orderCode ?? "",
     nfe: row.nfeNumber ?? "",

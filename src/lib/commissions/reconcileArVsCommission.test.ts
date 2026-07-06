@@ -181,7 +181,39 @@ describe("reconcileArVsCommission", () => {
     });
 
     assert.equal(details[0]?.breakdownCategory, "CUSTOMER_EXCLUDED");
-    assert.match(details[0]?.nonCommissionReason ?? "", /ESMALTEC/);
+    assert.match(details[0]?.reasonExcluded ?? "", /ESMALTEC/);
+  });
+
+  it("explica diferença entre comissão esperada e liberada no período", () => {
+    const payableRows = [
+      buildVisualAuditRow(
+        payableInput({
+          nomusReceivableId: 5010,
+          commissionExpected: 20926.56,
+          commissionReleased: 17145.83,
+        })
+      ),
+    ];
+    const { summary } = buildArCommissionReconcile({
+      ...period(),
+      arRows: [arRow(5010)],
+      payableRows,
+      payableCards: {
+        receivableAmountTotal: 808107.32,
+        receivedAmountTotal: 808107.32,
+        commissionableBaseTotal: 808107.32,
+        commissionExpectedTotal: 20926.56,
+        commissionReleasedTotal: 17145.83,
+        commissionPendingTotal: 3780.73,
+        averageRatePercent: 2.59,
+        receivableCount: 1,
+      },
+      identityCtx: emptyIdentity,
+    });
+
+    assert.equal(summary.fieldSummary.expectedMinusReleased, 3780.73);
+    assert.equal(summary.fieldSummary.commissionPendingTotal, 3780.73);
+    assert.equal(summary.breakdownByCategory[0]?.expectedCommission, 20926.56);
   });
 
   it("ponte explica diferença entre AR financeiro e comissão", () => {

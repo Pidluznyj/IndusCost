@@ -8,7 +8,9 @@
  *   npx tsx scripts/audit-commission-visual-summary.ts --year=2026 --month=6 --mode=payable --nomus-base=808107.32 --nomus-commission=20926.56
  */
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
 import { listCommissionVisualAuditPage } from "../src/lib/commissions/commissionVisualAudit.server.ts";
+import { buildVisualAuditCsv } from "../src/lib/commissions/commissionVisualAudit.ts";
 import { parseCommissionVisualAuditQuery } from "../src/lib/commissions/commissionQuery.ts";
 import type { CommissionAccessScope } from "../src/lib/commissions/commissionAccessScope.ts";
 import { fmtBrl, parseArg, requireDatabaseUrl } from "./commission-script-utils.ts";
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
   const nomusBaseRaw = parseArg("nomus-base");
   const nomusCommissionRaw = parseArg("nomus-commission");
   const asJson = process.argv.includes("--json");
+  const asCsv = process.argv.includes("--csv");
 
   const query = parseCommissionVisualAuditQuery({
     year,
@@ -68,6 +71,14 @@ async function main(): Promise<void> {
 
   if (asJson) {
     console.log(JSON.stringify(output, null, 2));
+    return;
+  }
+
+  const outputPath = `audit-commission-visual-${year}-${String(month).padStart(2, "0")}-${mode}`;
+  if (asCsv) {
+    const csv = buildVisualAuditCsv(rows, cards);
+    writeFileSync(`${outputPath}.csv`, csv, "utf8");
+    console.log(`CSV exportado: ${outputPath}.csv (${rows.length} linhas)`);
     return;
   }
 

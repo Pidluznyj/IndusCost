@@ -22,19 +22,34 @@ async function main(): Promise<void> {
   const month = Number.parseInt(parseArg("month") ?? String(new Date().getMonth() + 1), 10);
   const seller = parseArg("seller");
   const customer = parseArg("customer");
+  const nomusBaseRaw = parseArg("nomus-base");
+  const nomusCommissionRaw = parseArg("nomus-commission");
   const asJson = process.argv.includes("--json");
   const asCsv = process.argv.includes("--csv");
   const withDetails = process.argv.includes("--details");
+
+  const nomusReference =
+    nomusBaseRaw || nomusCommissionRaw
+      ? {
+          base: nomusBaseRaw ? Number(nomusBaseRaw) : null,
+          commission: nomusCommissionRaw ? Number(nomusCommissionRaw) : null,
+        }
+      : undefined;
 
   const { summary, details } = await runArVsCommissionReconcile({
     year,
     month,
     seller,
     customer,
+    nomusReference,
   });
 
+  const outputPath = `reconcile-ar-vs-commission-${year}-${String(month).padStart(2, "0")}`;
+
   if (asJson) {
-    console.log(JSON.stringify({ summary, details: withDetails ? details : undefined }, null, 2));
+    const payload = { summary, details: withDetails ? details : undefined };
+    writeFileSync(`${outputPath}.json`, JSON.stringify(payload, null, 2), "utf8");
+    console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
@@ -61,8 +76,22 @@ async function main(): Promise<void> {
   console.log(`Comissão esperada: ${fmtBrl(summary.commissionPayable.expectedCommissionTotal)}`);
   console.log(`Comissão liberada: ${fmtBrl(summary.commissionPayable.releasedCommissionTotal)}`);
   console.log(`Comissão pendente: ${fmtBrl(summary.commissionPayable.pendingCommissionTotal)}`);
+  console.log(`Diferença esperado − liberado: ${fmtBrl(summary.fieldSummary.expectedMinusReleased)}`);
   console.log(`% médio: ${summary.commissionPayable.averageRatePercent.toFixed(4)}%`);
+  console.log(`% comissão/base: ${summary.fieldSummary.commissionOverBasePercent.toFixed(4)}%`);
   console.log(`CRs baixados sem schedule: ${summary.commissionPayable.receivablesWithoutSchedule}`);
+
+  if (summary.nomusComparison) {
+    console.log("\n--- Comparação Nomus ---");
+    if (summary.nomusComparison.nomusBase != null) {
+      console.log(`Base Nomus: ${fmtBrl(summary.nomusComparison.nomusBase)} | diff: ${fmtBrl(summary.nomusComparison.baseDiff)}`);
+    }
+    if (summary.nomusComparison.nomusCommission != null) {
+      console.log(
+        `Comissão Nomus: ${fmtBrl(summary.nomusComparison.nomusCommission)} | diff: ${fmtBrl(summary.nomusComparison.commissionDiff)}`
+      );
+    }
+  }
 
   console.log("\n--- Ponte AR financeiro x Comissão ---");
   console.log(`AR recebido em ${month}/${year}: ${fmtBrl(summary.bridge.arSettlementReceived)}`);
@@ -75,7 +104,7 @@ async function main(): Promise<void> {
   console.log("\n--- D) Quebras por categoria ---");
   for (const row of summary.breakdownByCategory) {
     console.log(
-      `  ${row.label}: ${row.count} título(s) | ${fmtBrl(row.receivedAmount)} (${fmtPct(row.receivedAmount, summary.bridge.arSettlementReceived)})`
+      `  ${row.label}: ${row.count} título(s) | recebido ${fmtBrl(row.receivedAmount)} | esperado ${fmtBrl(row.expectedCommission)} | liberado ${fmtBrl(row.releasedCommission)}`
     );
   }
 
@@ -91,7 +120,7 @@ async function main(): Promise<void> {
     for (const line of details) {
       lines.push(csvLine(arCommissionDetailToCsvRow(line)));
     }
-    const path = `reconcile-ar-vs-commission-${year}-${String(month).padStart(2, "0")}.csv`;
+    const path = `${outputPath}.csv`;
     writeFileSync(path, lines.join("\n"), "utf8");
     console.log(`\nCSV detalhado: ${path}`);
   }

@@ -73,23 +73,23 @@ async function main(): Promise<void> {
     }
   }
 
-  if (summary.gisleneAudit) {
-    const g = summary.gisleneAudit;
-    console.log("\n========== GISLENE LIMA ==========");
-    console.log(`Status: ${g.status}`);
-    console.log(`Raw IDs: ${g.rawIds.join(", ") || "sem ID"}`);
-    console.log(`Nomes: ${g.rawNames.join(" | ")}`);
-    console.log(`Cadastros internos: ${g.internalPersonIds.join(", ") || "—"}`);
-    console.log(`Canônico: ${g.canonicalPersonName ?? "—"} / ${g.canonicalPersonId ?? "—"}`);
-    console.log(`Comissão gerada (expected): ${fmtBrl(g.commission.generatedExpected)}`);
-    console.log(`Comissão prevista (expected): ${fmtBrl(g.commission.forecastExpected)}`);
-    console.log(`Comissão a pagar Junho (expected): ${fmtBrl(g.commission.payableExpected)}`);
-    console.log(`Comissão a pagar Junho (liberada): ${fmtBrl(g.commission.payableReleased)}`);
+  if (summary.sellerFocusAudit) {
+    const focus = summary.sellerFocusAudit;
+    console.log(`\n========== Foco: ${focus.displayName} ==========`);
+    console.log(`Status: ${focus.status}`);
+    console.log(`Raw IDs: ${focus.rawIds.join(", ") || "sem ID"}`);
+    console.log(`Nomes: ${focus.rawNames.join(" | ")}`);
+    console.log(`Cadastros internos: ${focus.internalPersonIds.join(", ") || "—"}`);
+    console.log(`Canônico: ${focus.canonicalPersonName ?? "—"} / ${focus.canonicalPersonId ?? "—"}`);
+    console.log(`Comissão gerada (expected): ${fmtBrl(focus.commission.generatedExpected)}`);
+    console.log(`Comissão prevista (expected): ${fmtBrl(focus.commission.forecastExpected)}`);
+    console.log(`Comissão a pagar (expected): ${fmtBrl(focus.commission.payableExpected)}`);
+    console.log(`Comissão a pagar (liberada): ${fmtBrl(focus.commission.payableReleased)}`);
     console.log(
-      `Pendências: sem vendedor=${g.pending.withoutSeller} | fora canônico=${g.pending.outsideCanonical} | duplicados=${g.pending.duplicatedRecords}`
+      `Pendências: sem vendedor=${focus.pending.withoutSeller} | fora canônico=${focus.pending.outsideCanonical} | duplicados=${focus.pending.duplicatedRecords}`
     );
-    if (g.warnings.length > 0) {
-      console.log(`Avisos: ${g.warnings.join("; ")}`);
+    if (focus.warnings.length > 0) {
+      console.log(`Avisos: ${focus.warnings.join("; ")}`);
     }
   }
 
