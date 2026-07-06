@@ -11,6 +11,7 @@
  */
 import "dotenv/config";
 import { buildAndWriteDiagnosticBundle } from "../src/lib/diagnostics/diagnosticBundleBuilder.server.ts";
+import { buildSystemDiagnosticBundleInput } from "../src/lib/diagnostics/systemDiagnostic.server.ts";
 import { buildProductEngineeringDiagnosticBundleInput } from "../src/lib/diagnostics/productEngineeringDiagnostic.server.ts";
 import { buildCommissionReceiptClosingDiagnosticBundleInput } from "../src/lib/diagnostics/commissionDiagnostic.server.ts";
 import { buildPublishedPriceDiagnosticBundleInput } from "../src/lib/diagnostics/pricingDiagnostic.server.ts";
@@ -57,7 +58,19 @@ async function main(): Promise<void> {
     await prisma.$connect();
   }
 
-  if (scope === "PRODUCT_ENGINEERING") {
+  if (scope === "SYSTEM") {
+    if (process.env.DATABASE_URL?.trim()) {
+      await prisma.$connect();
+    }
+    const input = await buildSystemDiagnosticBundleInput(
+      process.env.DATABASE_URL?.trim() ? prisma : null,
+      {
+        screenTitle: "Gerar Relatório Analisável",
+        screenRoute: "/settings/diagnostic-bundle",
+      }
+    );
+    result = await buildAndWriteDiagnosticBundle(input);
+  } else if (scope === "PRODUCT_ENGINEERING") {
     if (!sku && !productId) {
       console.error("[generate-diagnostic-bundle] Informe --sku ou --product-id para PRODUCT_ENGINEERING.");
       process.exit(1);
@@ -113,7 +126,6 @@ async function main(): Promise<void> {
       },
     });
   }
-
   console.log("=== ChatGPT Analyzable Diagnostic Bundle ===");
   console.log(`Escopo: ${scope}`);
   console.log(`Bundle ID: ${result.bundle.manifest.bundleId}`);
@@ -140,6 +152,13 @@ async function main(): Promise<void> {
     console.log(`Preview OK: ${evidence.capture?.ok ?? "—"}`);
     console.log(`Erro: ${evidence.capture?.error?.classification ?? "—"}`);
     console.log(`Recebido único: ${evidence.uniqueReceivedTotal ?? "—"}`);
+  }
+
+  if (scope === "SYSTEM") {
+    const snapshot = JSON.parse(result.bundle.entries["06_SYSTEM_SNAPSHOT.json"] ?? "{}");
+    console.log(`Commit: ${snapshot.git?.commit ?? snapshot.app?.commit ?? "—"}`);
+    console.log(`Branch: ${snapshot.git?.branch ?? "—"}`);
+    console.log(`Migrations pendentes: ${snapshot.database?.pendingCount ?? "—"}`);
   }
 }
 

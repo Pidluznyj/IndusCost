@@ -397,7 +397,9 @@ export function buildChatGptDiagnosticBundle(
 
   if (input.rawLimitedEvidence) {
     const rawPath =
-      input.scope === "COMMISSION_RECEIPT_CLOSING"
+      input.scope === "SYSTEM"
+        ? "evidence/raw-limited/system-summary.json"
+        : input.scope === "COMMISSION_RECEIPT_CLOSING"
         ? "evidence/raw-limited/commission-receipt-closing-summary.json"
         : input.scope === "PUBLISHED_PRICE"
           ? "evidence/raw-limited/published-price-summary.json"
@@ -570,15 +572,12 @@ export async function buildAndWriteDiagnosticBundle(
   return { bundle, outputDir, zipPath };
 }
 
-/** Bundle mínimo SYSTEM para smoke test do formato. */
+/** Bundle SYSTEM completo para smoke test do formato. */
 export async function buildMinimalSystemDiagnosticBundle(): Promise<BuildDiagnosticBundleResult> {
-  return buildAndWriteDiagnosticBundle({
-    scope: "SYSTEM",
-    context: {
-      scope: "SYSTEM",
-      screenTitle: "Validação do formato",
-      screenRoute: "/internal/diagnostic-bundle",
-      notes: "Bundle gerado automaticamente — read-only.",
-    },
+  const { buildAndWriteSystemDiagnosticBundle } = await import("./systemDiagnostic.server.js");
+  return buildAndWriteSystemDiagnosticBundle(null, {
+    screenTitle: "Validação do formato",
+    screenRoute: "/internal/diagnostic-bundle",
+    notes: "Bundle gerado automaticamente — read-only.",
   });
 }

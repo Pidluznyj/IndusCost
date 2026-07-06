@@ -21,6 +21,11 @@ import {
   buildAndWritePublishedPriceDiagnosticBundle,
   parsePublishedPriceDiagnosticRequest,
 } from "./pricingDiagnostic.server.js";
+import {
+  SystemDiagnosticValidationError,
+  buildAndWriteSystemDiagnosticBundle,
+  parseSystemDiagnosticRequest,
+} from "./systemDiagnostic.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -49,6 +54,24 @@ export function registerDiagnosticBundleRoutes(
     try {
       const raw = req.body as Record<string, unknown> | null;
       const scope = String(raw?.scope ?? "").trim().toUpperCase();
+
+      if (scope === "SYSTEM") {
+        const parsed = parseSystemDiagnosticRequest(req.body);
+        const result = await buildAndWriteSystemDiagnosticBundle(prisma, parsed.context ?? {});
+        res.status(200).json({
+          ok: true,
+          scope: parsed.scope,
+          bundleId: result.bundle.manifest.bundleId,
+          generatedAt: result.bundle.manifest.generatedAt,
+          outputDir: result.outputDir,
+          zipPath: result.zipPath,
+          fileCount: result.bundle.manifest.files.length,
+          commit: result.bundle.entries["06_SYSTEM_SNAPSHOT.json"]
+            ? JSON.parse(result.bundle.entries["06_SYSTEM_SNAPSHOT.json"]).git?.commit ?? null
+            : null,
+        });
+        return;
+      }
 
       if (scope === "PRODUCT_ENGINEERING") {
         const parsed = parseProductEngineeringDiagnosticRequest(req.body);
@@ -115,13 +138,14 @@ export function registerDiagnosticBundleRoutes(
 
       res.status(400).json({
         error:
-          'scope deve ser "PRODUCT_ENGINEERING", "PUBLISHED_PRICE" ou "COMMISSION_RECEIPT_CLOSING".',
+          'scope deve ser "SYSTEM", "PRODUCT_ENGINEERING", "PUBLISHED_PRICE" ou "COMMISSION_RECEIPT_CLOSING".',
       });
     } catch (error) {
       if (
         error instanceof ProductEngineeringDiagnosticValidationError ||
         error instanceof PublishedPriceDiagnosticValidationError ||
-        error instanceof CommissionReceiptClosingDiagnosticValidationError
+        error instanceof CommissionReceiptClosingDiagnosticValidationError ||
+        error instanceof SystemDiagnosticValidationError
       ) {
         res.status(400).json({ error: error.message });
         return;
