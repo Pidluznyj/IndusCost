@@ -181,7 +181,14 @@ describe("projectsClientReport", () => {
     assert.ok(buffer.length > 1000);
     assert.equal(buffer[0], 0x50);
     assert.equal(buffer[1], 0x4b);
-    assert.equal(buildProjectClientProposalPptxFilename("PRJ-0100"), "proposta-cliente-PRJ-0100.pptx");
+    assert.equal(
+      buildProjectClientProposalPptxFilename("PRJ-00008", "IRIS"),
+      "PRJ-00008-IRIS-Proposta-Cliente.pptx"
+    );
+    assert.equal(
+      buildProjectClientProposalPptxFilename("PRJ-0100"),
+      "proposta-cliente-PRJ-0100.pptx"
+    );
   });
 
   it("PPTX não quebra com projeto sem alguns dados comerciais", async () => {
@@ -251,6 +258,9 @@ describe("projectsClientReport", () => {
     assert.match(page, /Salvar quantidades/);
     assert.match(page, /client-proposal-pptx/);
     assert.match(page, /Baixar PowerPoint/);
+    assert.match(page, /fetch\(`\/api\/projects\/\$\{projectId\}\/client-proposal-pptx`/);
+    assert.match(page, /createObjectURL/);
+    assert.doesNotMatch(page, /window\.open\([^)]*client-proposal-pptx/);
     const report = readFileSync(
       join(process.cwd(), "src/components/projects/ProjectClientReport.tsx"),
       "utf8"
@@ -279,7 +289,15 @@ describe("projectsClientReport wiring", () => {
     assert.match(routes, /client-report/);
     assert.match(routes, /client-report\.pdf/);
     assert.match(routes, /client-proposal-pptx/);
+    assert.match(routes, /loadProjectClientReport/);
+    assert.match(routes, /buildProjectClientProposalPptxExportBuffer/);
+    assert.match(routes, /application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation/);
     assert.match(routes, /client-report\/quantities/);
+    const serverSrc = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    assert.doesNotMatch(
+      serverSrc,
+      /\/api\/projects\/:projectId\/client-proposal-pptx/
+    );
   });
 
   it("UI cliente não importa Prisma", () => {

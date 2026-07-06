@@ -11518,25 +11518,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     res.json({ success: true });
   });
 
-  app.get("/api/projects/:projectId/client-proposal-pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
-    try {
-      const { projectId } = req.params;
-      const data = await fetchProposalPptxData(projectId);
-      if (!data) {
-        return res.status(404).json({ error: "NOT_FOUND", message: "Proposta de cliente não encontrada." });
-      }
-      const branding = await getBrandingSettings();
-      const theme = createTheme(branding);
-      const buffer = await generateClientProposalPptx(data, theme);
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-      res.setHeader("Content-Disposition", `attachment; filename="proposta_${data.projectCode}.pptx"`);
-      res.send(buffer);
-    } catch (e: any) {
-      console.error("GET /api/projects/:projectId/client-proposal-pptx", e);
-      res.status(500).json({ error: "INTERNAL_ERROR", message: e.message || "Erro desconhecido." });
-    }
-  });
-
   app.get("/api/proposals/:id/pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
     try {
       const { id } = req.params;

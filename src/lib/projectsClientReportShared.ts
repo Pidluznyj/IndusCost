@@ -15,6 +15,24 @@ export const PROJECT_CLIENT_REPORT_EXECUTIVE_SUMMARY =
 
 export const CLIENT_PROPOSAL_DEFAULT_QUANTITY_PER_SET = 1;
 
+/** Nome de arquivo seguro para download da proposta cliente (PPTX). */
+export function buildProjectClientProposalPptxFilename(
+  code: string,
+  projectName?: string | null
+): string {
+  const safeCode = code.replace(/[^\w.-]+/g, "_");
+  const safeName = (projectName ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  if (safeName) {
+    return `${safeCode}-${safeName}-Proposta-Cliente.pptx`;
+  }
+  return `proposta-cliente-${safeCode}.pptx`;
+}
+
 export type ProjectClientProposalQuantityRow = {
   targetItemId: string;
   quantityPerSet: number;

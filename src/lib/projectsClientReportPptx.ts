@@ -8,8 +8,11 @@ import {
 } from "./projectsClientReport.js";
 import {
   PROJECT_CLIENT_REPORT_NOT_INFORMED,
+  buildProjectClientProposalPptxFilename,
   type ProjectClientReportPayload,
 } from "./projectsClientReportShared.js";
+
+export { buildProjectClientProposalPptxFilename } from "./projectsClientReportShared.js";
 
 const SLIDE_W = 10;
 const SLIDE_H = 5.625;
@@ -582,11 +585,6 @@ function buildClosingSlide(
     margin: 0,
     lineSpacingMultiple: 1.25,
   });
-}
-
-export function buildProjectClientProposalPptxFilename(code: string): string {
-  const safe = code.replace(/[^\w.-]+/g, "_");
-  return `proposta-cliente-${safe}.pptx`;
 }
 
 export async function buildProjectClientProposalPptxBuffer(

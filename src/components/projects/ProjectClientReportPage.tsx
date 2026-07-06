@@ -5,7 +5,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { canManageProjects, canViewProjects } from "@/src/lib/projectsPermissions";
 import { PROJECT_DETAIL_PATH } from "@/src/lib/projectsNavigation";
-import { PROJECT_CLIENT_REPORT_TITLE } from "@/src/lib/projectsClientReportShared";
+import { PROJECT_CLIENT_REPORT_TITLE, buildProjectClientProposalPptxFilename } from "@/src/lib/projectsClientReportShared";
 import type { ProjectClientReportPayload } from "@/src/lib/projectsClientReportShared";
 import {
   applyProjectClientReportQuantities,
@@ -51,6 +51,8 @@ export function ProjectClientReportPage() {
   const [savedQuantityDrafts, setSavedQuantityDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [pptxError, setPptxError] = useState<string | null>(null);
+  const [pptxDownloading, setPptxDownloading] = useState(false);
   const routeEntryTitleRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -196,10 +198,46 @@ export function ProjectClientReportPage() {
     window.open(`/api/projects/${projectId}/client-report.pdf`, "_blank", "noopener,noreferrer");
   }, [projectId, exportBlocked]);
 
-  const handleDownloadPptx = useCallback(() => {
-    if (!projectId || exportBlocked) return;
-    window.open(`/api/projects/${projectId}/client-proposal-pptx`, "_blank", "noopener,noreferrer");
-  }, [projectId, exportBlocked]);
+  const handleDownloadPptx = useCallback(async () => {
+    if (!projectId || exportBlocked || !displayReport) return;
+    setPptxDownloading(true);
+    setPptxError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/client-proposal-pptx`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let message = "Não foi possível gerar o PowerPoint.";
+        try {
+          const body = (await res.json()) as { message?: string; error?: string };
+          if (body.message) message = body.message;
+          else if (body.error) message = body.error;
+        } catch {
+          /* resposta não-JSON */
+        }
+        if (res.status === 404) {
+          message = "Projeto não encontrado.";
+        }
+        setPptxError(message);
+        return;
+      }
+      const blob = await res.blob();
+      const filename = buildProjectClientProposalPptxFilename(
+        displayReport.project.code,
+        displayReport.project.name
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setPptxError("Não foi possível gerar o PowerPoint. Tente novamente.");
+    } finally {
+      setPptxDownloading(false);
+    }
+  }, [projectId, exportBlocked, displayReport]);
 
   const handleBack = useCallback(() => {
     if (projectId) {
@@ -259,12 +297,16 @@ export function ProjectClientReportPage() {
           ) : null}
           <button
             type="button"
-            onClick={handleDownloadPptx}
-            disabled={exportBlocked}
+            onClick={() => void handleDownloadPptx()}
+            disabled={exportBlocked || pptxDownloading}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
             data-testid="project-client-report-download-pptx"
           >
-            <Presentation className="h-4 w-4" />
+            {pptxDownloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Presentation className="h-4 w-4" />
+            )}
             Baixar PowerPoint
           </button>
           <button
@@ -296,6 +338,12 @@ export function ProjectClientReportPage() {
       {saveError ? (
         <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {saveError}
+        </div>
+      ) : null}
+
+      {pptxError ? (
+        <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {pptxError}
         </div>
       ) : null}
 

@@ -483,7 +483,7 @@ export function registerProjectsRoutes(
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${buildProjectClientProposalPptxFilename(payload.project.code)}"`
+        `attachment; filename="${buildProjectClientProposalPptxFilename(payload.project.code, payload.project.name)}"`
       );
       res.send(buffer);
     } catch (e: unknown) {
