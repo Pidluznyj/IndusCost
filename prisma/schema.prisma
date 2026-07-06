@@ -3865,6 +3865,22 @@ enum CommissionCustomerExclusionRuleStatus {
   INACTIVE
 }
 
+enum CommissionPersonAliasStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum CommissionPersonAliasSource {
+  NOMUS_ORDER
+  NOMUS_NFE
+  NOMUS_AR
+  COMMISSION_RECORD
+  MANUAL
+  IMPORT
+  OTHER
+}
+
 model CommissionPerson {
   id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nomusPersonId Int?
@@ -3882,11 +3898,35 @@ model CommissionPerson {
   commissionRecords    CommissionRecord[]
   paymentBatches       CommissionPaymentBatch[]
   customerExceptions   CommissionCustomerException[]
+  sellerAliases        CommissionPersonAlias[]
 
   @@index([nomusPersonId])
   @@index([type])
   @@index([active])
   @@index([name])
+}
+
+model CommissionPersonAlias {
+  id                   String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commissionedPersonId String                      @db.Uuid
+  source               CommissionPersonAliasSource @default(MANUAL)
+  rawSellerId          Int?
+  rawSellerName        String
+  normalizedSellerName String
+  status               CommissionPersonAliasStatus @default(ACTIVE)
+  confidence           Decimal?                    @db.Decimal(5, 4)
+  notes                String?
+  createdBy            String?
+  createdAt            DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  commissionedPerson CommissionPerson @relation(fields: [commissionedPersonId], references: [id], onDelete: Cascade)
+
+  @@index([commissionedPersonId])
+  @@index([rawSellerId])
+  @@index([normalizedSellerName])
+  @@index([status])
+  @@index([source, rawSellerId])
 }
 
 model CommissionRule {
