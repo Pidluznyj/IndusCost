@@ -198,3 +198,80 @@ export function deriveOtherVariablesAmount(input: {
   const derived = input.frozenOtherCost - freight - commission;
   return derived > 0 ? derived : 0;
 }
+
+function escapePublishedTraceCsv(value: unknown): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function publishedTraceCsvLine(cols: unknown[]): string {
+  return cols.map(escapePublishedTraceCsv).join(",");
+}
+
+export function buildPublishedPriceTraceCsv(trace: PublishedPriceSourceTrace): string {
+  const lines: string[] = [];
+  lines.push(publishedTraceCsvLine(["section", "field", "value"]));
+  lines.push(publishedTraceCsvLine(["product", "sku", trace.product.sku]));
+  lines.push(publishedTraceCsvLine(["product", "name", trace.product.name]));
+  lines.push(publishedTraceCsvLine(["commercialPrice", "tableCode", trace.commercialPrice.tableCode]));
+  lines.push(publishedTraceCsvLine(["commercialPrice", "versionNumber", trace.commercialPrice.versionNumber]));
+  lines.push(publishedTraceCsvLine(["commercialPrice", "salePrice", trace.commercialPrice.salePrice]));
+  lines.push(publishedTraceCsvLine(["commercialPrice", "publishedAt", trace.commercialPrice.publishedAt]));
+  lines.push(publishedTraceCsvLine(["costSource", "industrialCost", trace.costSource.industrialCost]));
+  lines.push(publishedTraceCsvLine(["costSource", "factoryCost", trace.costSource.factoryCost]));
+  lines.push(
+    publishedTraceCsvLine(["costSource", "productionCostRevision", trace.costSource.productionCostRevision])
+  );
+  lines.push(
+    publishedTraceCsvLine(["materialSource", "materialCostAmount", trace.materialSource.materialCostAmount])
+  );
+  lines.push(publishedTraceCsvLine(["taxSource", "taxPercent", trace.taxSource.taxPercent]));
+  lines.push(publishedTraceCsvLine(["taxSource", "taxAmount", trace.taxSource.taxAmount]));
+  lines.push(
+    publishedTraceCsvLine(["marginSource", "publishedMarginPercent", trace.marginSource.publishedMarginPercent])
+  );
+  lines.push(publishedTraceCsvLine(["marginSource", "markup", trace.marginSource.markup]));
+  lines.push(
+    publishedTraceCsvLine(["commissionSource", "commissionPercent", trace.commissionSource.commissionPercent])
+  );
+  lines.push(
+    publishedTraceCsvLine(["commissionSource", "commissionAmount", trace.commissionSource.commissionAmount])
+  );
+  if (trace.costSource.newerPublishedVersionWarning) {
+    lines.push(
+      publishedTraceCsvLine(["warning", "NEWER_COST_VERSION", trace.costSource.newerPublishedVersionWarning])
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatPublishedPriceTraceText(trace: PublishedPriceSourceTrace): string {
+  const out: string[] = [];
+  out.push("=== Auditoria — Rastreabilidade de preço publicado ===\n");
+  out.push(`SKU: ${trace.product.sku}`);
+  out.push(`Produto: ${trace.product.name}`);
+  out.push(`Tabela: ${trace.commercialPrice.tableCode} (${trace.commercialPrice.tableName})`);
+  out.push(`Versão: ${trace.commercialPrice.versionNumber}`);
+  out.push(`Preço publicado: ${trace.commercialPrice.salePrice ?? PUBLISHED_TRACE_UNAVAILABLE_LABEL}`);
+  out.push(`Publicado em: ${trace.commercialPrice.publishedAt ?? "—"}`);
+  out.push("\n--- Custo usado na publicação ---");
+  out.push(`Custo industrial: ${trace.costSource.industrialCost ?? PUBLISHED_TRACE_UNAVAILABLE_LABEL}`);
+  out.push(`Custo fábrica: ${trace.costSource.factoryCost ?? "—"}`);
+  out.push(`Revisão custo produção: ${trace.costSource.productionCostRevision ?? "—"}`);
+  out.push("\n--- Matéria-prima ---");
+  out.push(`MP congelada: ${trace.materialSource.materialCostAmount ?? PUBLISHED_TRACE_UNAVAILABLE_LABEL}`);
+  out.push("\n--- Margem / markup ---");
+  out.push(`Margem publicada: ${trace.marginSource.publishedMarginPercent ?? "—"}%`);
+  out.push(`Markup: ${trace.marginSource.markup ?? "—"}`);
+  out.push("\n--- Comissão / imposto ---");
+  out.push(`Comissão %: ${trace.commissionSource.commissionPercent ?? "—"}`);
+  out.push(`Comissão R$: ${trace.commissionSource.commissionAmount ?? "—"}`);
+  out.push(`Imposto %: ${trace.taxSource.taxPercent ?? "—"}`);
+  out.push(`Imposto R$: ${trace.taxSource.taxAmount ?? "—"}`);
+  if (trace.costSource.newerPublishedVersionWarning) {
+    out.push(`\nAviso: ${trace.costSource.newerPublishedVersionWarning}`);
+  }
+  return out.join("\n");
+}

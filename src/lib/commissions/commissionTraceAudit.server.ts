@@ -157,6 +157,8 @@ function mapReceivableInput(row: {
     suspended: false,
   };
 }
+
+export async function buildCommissionTraceAudit(
   db: PrismaClient,
   query: CommissionTraceAuditQuery
 ): Promise<CommissionTraceAuditReport> {

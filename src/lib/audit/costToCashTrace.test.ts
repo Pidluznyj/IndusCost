@@ -210,10 +210,13 @@ describe("costToCashTrace services", () => {
 describe("costToCashTrace script wiring", () => {
   it("scripts de auditoria importam services do motor audit", () => {
     const productScript = readFileSync("scripts/audit-product-cost-trace.ts", "utf8");
+    const priceScript = readFileSync("scripts/audit-published-price-trace.ts", "utf8");
     const salesScript = readFileSync("scripts/audit-sales-order-trace.ts", "utf8");
     const commissionScript = readFileSync("scripts/audit-commission-trace.ts", "utf8");
     assert.match(productScript, /src\/lib\/audit\/productCostTrace/);
     assert.match(productScript, /src\/lib\/audit\/costToCashTrace\.server/);
+    assert.match(priceScript, /src\/lib\/audit\/publishedPriceTrace/);
+    assert.match(priceScript, /src\/lib\/audit\/costToCashTrace\.server/);
     assert.match(salesScript, /src\/lib\/audit\/salesOrderTrace/);
     assert.match(salesScript, /src\/lib\/audit\/costToCashTrace\.server/);
     assert.match(commissionScript, /src\/lib\/audit\/commissionTrace/);

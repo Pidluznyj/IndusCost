@@ -61,6 +61,7 @@ src/lib/audit/
 | Script | Service |
 |--------|---------|
 | `scripts/audit-product-cost-trace.ts` | `buildProductCostTrace` |
+| `scripts/audit-published-price-trace.ts` | `buildPublishedPriceTrace` |
 | `scripts/audit-sales-order-trace.ts` | `buildSalesOrderTrace` |
 | `scripts/audit-commission-trace.ts` | `buildCommissionTrace` |
 

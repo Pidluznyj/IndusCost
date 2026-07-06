@@ -11,9 +11,11 @@ export type {
 export {
   PUBLISHED_TRACE_NEWER_COST_WARNING,
   PUBLISHED_TRACE_UNAVAILABLE_LABEL,
+  buildPublishedPriceTraceCsv,
   computePublishedMarkup,
   decTrace,
   deriveOtherVariablesAmount,
+  formatPublishedPriceTraceText,
   readCostSnapshotFields,
   readFormulaSnapshotFields,
   toIsoTrace,
