@@ -1,6 +1,5 @@
 import type { PricingOpenBookPayload } from "../pricingOpenBook.js";
 import { naturePercentages } from "../openBookMaterialExplosion.js";
-import { buildPricingUnitCalculationBreakdown } from "../pricingUnitCalculationBreakdown.js";
 import type {
   CommercialPublishedPriceCell,
   CommercialPublishedPriceGridRow,
@@ -10,10 +9,31 @@ import type {
 export const PUBLISHED_COMPOSITION_FALLBACK_NOTE =
   "Composição detalhada de MP/BOM não está congelada neste item publicado. Exibindo custos industriais publicados (MP/HH/HM) e taxas do snapshot da tabela.";
 
+export const PUBLISHED_DETAIL_UNAVAILABLE_NOTE =
+  "Detalhe publicado indisponível para esta versão. Exibindo resumo publicado.";
+
+export const PUBLISHED_FIELD_UNAVAILABLE_LABEL = "Não disponível nesta versão";
+
 export const NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE =
   "Este produto não possui preço publicado em nenhuma tabela comercial vigente.";
 
+export type PublishedFormationViewMode = "PUBLISHED" | "LIVE_SIMULATION";
+
+export type PublishedUnavailableField =
+  | "taxRatePercent"
+  | "commissionRatePercent"
+  | "otherRatePercent"
+  | "freight"
+  | "markup"
+  | "contributionMargin"
+  | "operationalMargin"
+  | "custoGerencial"
+  | "otherDeductions"
+  | "detailedComposition"
+  | "productionCostReference";
+
 export type PublishedFormationMeta = {
+  viewMode: "PUBLISHED";
   source: "PUBLISHED_PRICE_TABLE";
   productId: string;
   sku: string;
@@ -27,6 +47,18 @@ export type PublishedFormationMeta = {
   publishedAt: string | null;
   clickedSalePrice: number | null;
   compositionFallbackNote: string | null;
+  detailUnavailableNote: string;
+  unavailableFields: PublishedUnavailableField[];
+  hasDetailedComposition: false;
+  publishedSummary: {
+    salePrice: number;
+    marginPercent: number | null;
+    commissionPercent: number | null;
+    commissionValue: number | null;
+    taxAmount: number | null;
+    frozenTotalCost: number | null;
+    frozenOtherCost: number | null;
+  };
 };
 
 export type PublishedPriceApiResponse = {
@@ -72,28 +104,30 @@ export type PublishedPriceApiResponse = {
 };
 
 export type PublishedFormationCalculationResult = {
+  viewMode: "PUBLISHED";
   product: string;
   sku: string;
   ciu: number;
   custoFabril: number;
-  custoGerencial: number;
+  custoGerencial: number | null;
   premissas: {
-    taxRate: number;
-    commRate: number;
-    marginRate: number;
-    freight: number;
-    otherRate?: number;
+    taxRate: number | null;
+    commRate: number | null;
+    marginRate: number | null;
+    freight: number | null;
+    otherRate: number | null;
   };
   resultados: {
     suggestedPrice: number;
-    totalTaxes: number;
-    totalCommission: number;
-    contributionMargin: number;
-    operationalMargin: number;
-    markup: number;
+    totalTaxes: number | null;
+    totalCommission: number | null;
+    contributionMargin: number | null;
+    operationalMargin: number | null;
+    markup: number | null;
+    frozenOtherCost: number | null;
   };
   openBook?: PricingOpenBookPayload | null;
-  pricingBreakdown?: ReturnType<typeof buildPricingUnitCalculationBreakdown> | null;
+  pricingBreakdown: null;
   publishedMeta: PublishedFormationMeta;
 };
 
@@ -106,14 +140,43 @@ function readRatesFromFormula(formulaSnapshotJson: Record<string, unknown> | nul
   const commissionRate = Number(rates.commissionRate);
   const otherRate = Number(rates.otherRate);
   const freight = Number(formulaSnapshotJson?.freight);
-  const divisor = Number(formulaSnapshotJson?.divisor);
   return {
     taxRate: Number.isFinite(taxRate) ? taxRate : null,
     commissionRate: Number.isFinite(commissionRate) ? commissionRate : null,
     otherRate: Number.isFinite(otherRate) ? otherRate : null,
     freight: Number.isFinite(freight) ? freight : 0,
-    divisor: Number.isFinite(divisor) ? divisor : null,
   };
+}
+
+export function isPublishedFieldUnavailable(
+  meta: Pick<PublishedFormationMeta, "unavailableFields"> | null | undefined,
+  field: PublishedUnavailableField
+): boolean {
+  return meta?.unavailableFields.includes(field) ?? false;
+}
+
+export function formatPublishedFormationValue(
+  meta: Pick<PublishedFormationMeta, "unavailableFields"> | null | undefined,
+  field: PublishedUnavailableField,
+  value: number | null | undefined,
+  format: (amount: number) => string
+): string {
+  if (meta && isPublishedFieldUnavailable(meta, field)) {
+    return PUBLISHED_FIELD_UNAVAILABLE_LABEL;
+  }
+  if (value == null || !Number.isFinite(value)) {
+    return PUBLISHED_FIELD_UNAVAILABLE_LABEL;
+  }
+  return format(value);
+}
+
+export function formatPublishedFormationPercent(
+  meta: Pick<PublishedFormationMeta, "unavailableFields"> | null | undefined,
+  field: PublishedUnavailableField,
+  value: number | null | undefined,
+  decimals = 2
+): string {
+  return formatPublishedFormationValue(meta, field, value, (amount) => `${amount.toFixed(decimals)}%`);
 }
 
 export function resolveDefaultPublishedTableSelection(
@@ -199,6 +262,11 @@ function buildPublishedOpenBookFromFrozenItem(item: NonNullable<PublishedPriceAp
   } satisfies PricingOpenBookPayload & { compositionFallbackNote?: string };
 }
 
+function readNullableNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function mapPublishedPriceApiToFormationResult(
   api: PublishedPriceApiResponse,
   selection: {
@@ -217,68 +285,64 @@ export function mapPublishedPriceApiToFormationResult(
     throw new Error("Resposta de preço publicado sem item.");
   }
 
-  const salePrice = Number(item.salePrice);
-  const custoFabril = Number(item.frozenTotalCost);
-  const marginRate = Number(item.marginPct) / 100;
-  const commRateFromColumn = Number(item.commissionPerc) / 100;
-  const formulaRates = readRatesFromFormula(item.formulaSnapshotJson ?? null);
-  const commRate =
-    commRateFromColumn > 0
-      ? commRateFromColumn
-      : formulaRates.commissionRate != null
-        ? formulaRates.commissionRate
-        : salePrice > 0
-          ? Number(item.commissionValue) / salePrice
-          : 0;
-  const taxRate =
-    formulaRates.taxRate != null
-      ? formulaRates.taxRate
-      : salePrice > 0
-        ? Number(item.frozenTaxCost) / salePrice
-        : 0;
-  const otherRate = formulaRates.otherRate ?? 0;
-  const freight = formulaRates.freight || Number(api.proposalDefaults?.freightValue ?? 0);
-  const divisor =
-    formulaRates.divisor ??
-    1 - taxRate - commRate - otherRate - marginRate;
+  const unavailableFields: PublishedUnavailableField[] = [
+    "operationalMargin",
+    "custoGerencial",
+    "detailedComposition",
+  ];
 
-  const totalTaxes = Number(item.frozenTaxCost);
-  const totalCommission = Number(item.commissionValue);
-  const totalOther = salePrice * otherRate;
-  const contributionMargin = salePrice - totalTaxes - totalCommission - freight - custoFabril;
-  const opex = 0;
-  const custoGerencial = custoFabril + opex;
-  const operationalMargin = contributionMargin - opex;
+  const salePrice = readNullableNumber(item.salePrice);
+  if (salePrice == null) {
+    throw new Error("Item publicado sem preço de venda congelado.");
+  }
+
+  const custoFabril = readNullableNumber(item.frozenTotalCost);
+  const frozenTaxCost = readNullableNumber(item.frozenTaxCost);
+  const commissionValue = readNullableNumber(item.commissionValue);
+  const frozenOtherCost = readNullableNumber(item.frozenOtherCost);
+  const marginPct = readNullableNumber(item.marginPct);
+  const commissionPerc = readNullableNumber(item.commissionPerc);
+
+  const formulaRates = readRatesFromFormula(item.formulaSnapshotJson ?? null);
+  const hasFormulaSnapshot = item.formulaSnapshotJson != null && typeof item.formulaSnapshotJson === "object";
+
+  const taxRate = formulaRates.taxRate;
+  if (taxRate == null) unavailableFields.push("taxRatePercent");
+
+  const commRate =
+    commissionPerc != null && commissionPerc > 0
+      ? commissionPerc / 100
+      : formulaRates.commissionRate;
+  if (commRate == null) unavailableFields.push("commissionRatePercent");
+
+  const otherRate = formulaRates.otherRate;
+  if (otherRate == null) unavailableFields.push("otherRatePercent");
+
+  const freight = hasFormulaSnapshot ? formulaRates.freight : null;
+  if (!hasFormulaSnapshot || freight == null) unavailableFields.push("freight");
+
+  const markup = custoFabril != null && custoFabril > 0 ? salePrice / custoFabril : null;
+  if (markup == null) unavailableFields.push("markup");
+
+  let contributionMargin: number | null = null;
+  if (
+    frozenTaxCost != null &&
+    commissionValue != null &&
+    custoFabril != null &&
+    freight != null
+  ) {
+    contributionMargin = salePrice - frozenTaxCost - commissionValue - freight - custoFabril;
+  } else {
+    unavailableFields.push("contributionMargin");
+  }
+
+  if (frozenOtherCost == null) unavailableFields.push("otherDeductions");
+  if (item.costSnapshotJson == null) unavailableFields.push("productionCostReference");
+
   const openBook = buildPublishedOpenBookFromFrozenItem(item);
 
-  const pricingBreakdown = buildPricingUnitCalculationBreakdown({
-    custoFabril,
-    custoGerencial,
-    totalMaterialCost: Number(item.frozenMaterialCost),
-    totalHH_Unit: Number(item.frozenHhCost),
-    totalHM_Unit: Number(item.frozenHmCost),
-    totalCIF_Unit: 0,
-    totalOPEX_Unit: opex,
-    taxRuleName: selection.taxRuleName ?? null,
-    taxRuleId: selection.taxRuleId ?? "published",
-    taxRate,
-    commRate,
-    marginRate,
-    otherRate,
-    freight,
-    divisor,
-    suggestedPrice: salePrice,
-    totalTaxes,
-    totalCommission,
-    totalOther,
-    contributionMargin,
-    operationalMargin,
-    openBookConsolidatedMaterials: null,
-    bomMaterialsDetail: null,
-    processBreakdown: null,
-  });
-
   const publishedMeta: PublishedFormationMeta = {
+    viewMode: "PUBLISHED",
     source: "PUBLISHED_PRICE_TABLE",
     productId: selection.productId,
     sku: selection.sku,
@@ -292,31 +356,45 @@ export function mapPublishedPriceApiToFormationResult(
     publishedAt: selection.table.publishedAt,
     clickedSalePrice: selection.clickedSalePrice ?? salePrice,
     compositionFallbackNote: openBook ? PUBLISHED_COMPOSITION_FALLBACK_NOTE : null,
+    detailUnavailableNote: PUBLISHED_DETAIL_UNAVAILABLE_NOTE,
+    unavailableFields: [...new Set(unavailableFields)],
+    hasDetailedComposition: false,
+    publishedSummary: {
+      salePrice,
+      marginPercent: marginPct,
+      commissionPercent: commissionPerc,
+      commissionValue,
+      taxAmount: frozenTaxCost,
+      frozenTotalCost: custoFabril,
+      frozenOtherCost,
+    },
   };
 
   return {
+    viewMode: "PUBLISHED",
     product: selection.productName,
     sku: selection.sku,
-    ciu: custoFabril,
-    custoFabril,
-    custoGerencial,
+    ciu: custoFabril ?? 0,
+    custoFabril: custoFabril ?? 0,
+    custoGerencial: null,
     premissas: {
-      taxRate: taxRate * 100,
-      commRate: commRate * 100,
-      marginRate: marginRate * 100,
+      taxRate: taxRate != null ? taxRate * 100 : null,
+      commRate: commRate != null ? commRate * 100 : null,
+      marginRate: marginPct,
       freight,
-      otherRate: otherRate * 100,
+      otherRate: otherRate != null ? otherRate * 100 : null,
     },
     resultados: {
       suggestedPrice: salePrice,
-      totalTaxes,
-      totalCommission,
+      totalTaxes: frozenTaxCost,
+      totalCommission: commissionValue,
       contributionMargin,
-      operationalMargin,
-      markup: custoFabril > 0 ? salePrice / custoFabril : 0,
+      operationalMargin: null,
+      markup,
+      frozenOtherCost,
     },
     openBook,
-    pricingBreakdown,
+    pricingBreakdown: null,
     publishedMeta,
   };
 }

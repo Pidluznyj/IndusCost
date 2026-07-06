@@ -7,6 +7,8 @@ import {
   isPublishedPriceCellClickable,
   mapPublishedPriceApiToFormationResult,
   NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE,
+  PUBLISHED_DETAIL_UNAVAILABLE_NOTE,
+  PUBLISHED_FIELD_UNAVAILABLE_LABEL,
   resolveDefaultPublishedTableSelection,
   resolvePublishedPriceCellSelection,
   resolvePublishedPriceSelectionForRow,
@@ -219,13 +221,14 @@ describe("publishedPriceFormationView", () => {
             freight: 0,
             divisor: 0.68,
           },
+          costSnapshotJson: { costSource: "VERSIONED_PRODUCTION_COST_TABLE" },
         },
         proposalDefaults: { freightValue: 0 },
       },
       {
         table: tables[0]!,
         priceItemId: "item-1",
-        clickedSalePrice: 28.97,
+        clickedSalePrice: 100,
         sku: "SKU-001",
         productName: "Produto A",
         productId: "prod-1",
@@ -234,12 +237,101 @@ describe("publishedPriceFormationView", () => {
       }
     );
 
+    assert.equal(mapped.viewMode, "PUBLISHED");
     assert.equal(mapped.resultados.suggestedPrice, 100);
-    assert.equal(mapped.publishedMeta.clickedSalePrice, 28.97);
+    assert.equal(mapped.publishedMeta.clickedSalePrice, 100);
     assert.equal(mapped.publishedMeta.source, "PUBLISHED_PRICE_TABLE");
     assert.equal(mapped.publishedMeta.tableName, "Atacado");
     assert.equal(mapped.publishedMeta.versionNumber, 3);
-    assert.equal(mapped.pricingBreakdown?.methodology, "MARKUP_DIVISOR");
+    assert.equal(mapped.pricingBreakdown, null);
+    assert.equal(mapped.publishedMeta.hasDetailedComposition, false);
+    assert.equal(mapped.publishedMeta.detailUnavailableNote, PUBLISHED_DETAIL_UNAVAILABLE_NOTE);
+    assert.equal(mapped.resultados.totalTaxes, 10);
+    assert.equal(mapped.resultados.totalCommission, 2);
+    assert.equal(mapped.premissas.marginRate, 20);
+  });
+
+  it("valor do modal publicado coincide com a célula do grid", () => {
+    const cellPrice = 28.97;
+    const mapped = mapPublishedPriceApiToFormationResult(
+      {
+        item: {
+          priceTableItemId: "item-1",
+          frozenTotalCost: 19.31,
+          frozenMaterialCost: 12,
+          frozenHhCost: 4,
+          frozenHmCost: 3.31,
+          frozenTaxCost: 2.9,
+          frozenOtherCost: 1.2,
+          marginPct: 20,
+          salePrice: cellPrice,
+          commissionPerc: 2,
+          commissionValue: 0.58,
+          formulaSnapshotJson: {
+            rates: { taxRate: 0.1, commissionRate: 0.02, otherRate: 0 },
+            freight: 0,
+          },
+          costSnapshotJson: { costSource: "VERSIONED_PRODUCTION_COST_TABLE" },
+        },
+      },
+      {
+        table: tables[0]!,
+        priceItemId: "item-1",
+        clickedSalePrice: cellPrice,
+        sku: "SKU-001",
+        productName: "Produto A",
+        productId: "prod-1",
+      }
+    );
+
+    assert.equal(mapped.resultados.suggestedPrice, cellPrice);
+    assert.equal(mapped.publishedMeta.clickedSalePrice, cellPrice);
+    assert.equal(mapped.publishedMeta.publishedSummary.salePrice, cellPrice);
+  });
+
+  it("não monta pricingBreakdown nem chama motor de cálculo ao vivo", () => {
+    const viewSrc = read("src/lib/pricing/publishedPriceFormationView.ts");
+    assert.doesNotMatch(viewSrc, /buildPricingUnitCalculationBreakdown/);
+    assert.doesNotMatch(viewSrc, /getProductCostAnalysis/);
+    assert.doesNotMatch(viewSrc, /\/api\/pricing\//);
+  });
+
+  it("campos ausentes no snapshot ficam marcados como indisponíveis", () => {
+    const mapped = mapPublishedPriceApiToFormationResult(
+      {
+        item: {
+          priceTableItemId: "item-legacy",
+          frozenTotalCost: 50,
+          frozenMaterialCost: 30,
+          frozenHhCost: 10,
+          frozenHmCost: 10,
+          frozenTaxCost: 10,
+          frozenOtherCost: 5,
+          marginPct: 20,
+          salePrice: 100,
+          commissionPerc: 2,
+          commissionValue: 2,
+          formulaSnapshotJson: null,
+          costSnapshotJson: null,
+        },
+      },
+      {
+        table: tables[0]!,
+        priceItemId: "item-legacy",
+        clickedSalePrice: 100,
+        sku: "SKU-001",
+        productName: "Produto A",
+        productId: "prod-1",
+      }
+    );
+
+    assert.ok(mapped.publishedMeta.unavailableFields.includes("taxRatePercent"));
+    assert.ok(mapped.publishedMeta.unavailableFields.includes("freight"));
+    assert.ok(mapped.publishedMeta.unavailableFields.includes("detailedComposition"));
+    assert.ok(mapped.publishedMeta.unavailableFields.includes("productionCostReference"));
+    assert.equal(mapped.premissas.taxRate, null);
+    assert.equal(mapped.premissas.freight, null);
+    assert.equal(mapped.pricingBreakdown, null);
   });
 });
 
@@ -265,6 +357,15 @@ describe("pricingModulePublishedFormationModal", () => {
     assert.match(src, /Composição Detalhada do Preço/);
     assert.match(src, /publishedFormationMeta/);
     assert.match(src, /Preço publicado/);
+    assert.match(src, /Simulação ao vivo/);
+    assert.match(src, /PUBLISHED_DETAIL_UNAVAILABLE_NOTE/);
+    assert.match(src, /PUBLISHED_FIELD_UNAVAILABLE_LABEL/);
+  });
+
+  it("modal publicado não recalcula composição detalhada", () => {
+    const src = moduleSrc();
+    assert.match(src, /calculationResult\.pricingBreakdown == null/);
+    assert.match(src, /PUBLISHED_DETAIL_UNAVAILABLE_NOTE/);
   });
 
   it("simulação ao vivo continua separada do clique publicado", () => {

@@ -52,8 +52,12 @@ import {
 import type { CommercialPublishedPriceGridRow } from "@/src/lib/pricing/commercialPublishedPrices.types";
 import {
   buildPublishedPriceRequestUrl,
+  formatPublishedFormationPercent,
+  formatPublishedFormationValue,
   mapPublishedPriceApiToFormationResult,
   NO_PUBLISHED_PRICE_FOR_ROW_MESSAGE,
+  PUBLISHED_DETAIL_UNAVAILABLE_NOTE,
+  PUBLISHED_FIELD_UNAVAILABLE_LABEL,
   type PublishedFormationMeta,
   type PublishedPriceApiResponse,
   resolvePublishedPriceCellSelection,
@@ -2953,7 +2957,13 @@ export const PricingModule = () => {
                           {formatPublishedAtLabel(publishedFormationMeta.publishedAt)}
                         </span>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="mt-2">
+                        <span className="inline-flex rounded-full bg-white/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide">
+                          Simulação ao vivo
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <button onClick={closeFormationResultModal} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                     <X className="h-5 w-5" />
@@ -2991,7 +3001,12 @@ export const PricingModule = () => {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                  {publishedFormationMeta?.compositionFallbackNote ? (
+                  {publishedFormationMeta ? (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                      {publishedFormationMeta.detailUnavailableNote}
+                    </div>
+                  ) : null}
+                  {publishedFormationMeta?.compositionFallbackNote && resultTab !== "summary" ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                       {publishedFormationMeta.compositionFallbackNote}
                     </div>
@@ -3007,14 +3022,82 @@ export const PricingModule = () => {
                      </p>
                      <div className="flex items-center gap-4 text-sm font-bold text-muted-foreground">
                        <span className="flex items-center gap-1">
-                         <TrendingUp className="h-4 w-4 text-green-500" /> Markup: {formatNumber(calculationResult.resultados.markup)}x
+                         <TrendingUp className="h-4 w-4 text-green-500" /> Markup:{" "}
+                         {publishedFormationMeta
+                           ? formatPublishedFormationValue(
+                               publishedFormationMeta,
+                               "markup",
+                               calculationResult.resultados.markup,
+                               (value) => `${formatNumber(value)}x`
+                             )
+                           : `${formatNumber(calculationResult.resultados.markup)}x`}
                        </span>
                        <span className="h-4 w-px bg-border" />
                        <span className="flex items-center gap-1">
-                         <ShieldCheck className="h-4 w-4 text-blue-500" /> Margem: {formatNumber(calculationResult.premissas.marginRate, 2)}%
+                         <ShieldCheck className="h-4 w-4 text-blue-500" /> Margem:{" "}
+                         {publishedFormationMeta
+                           ? publishedFormationMeta.publishedSummary.marginPercent != null
+                             ? `${formatNumber(publishedFormationMeta.publishedSummary.marginPercent, 2)}%`
+                             : PUBLISHED_FIELD_UNAVAILABLE_LABEL
+                           : `${formatNumber(calculationResult.premissas.marginRate, 2)}%`}
                        </span>
                      </div>
                    </div>
+
+                   {publishedFormationMeta ? (
+                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                       {[
+                         { label: "Tabela", value: publishedFormationMeta.tableName },
+                         { label: "Versão", value: `v${publishedFormationMeta.versionNumber}` },
+                         {
+                           label: "Publicado em",
+                           value: formatPublishedAtLabel(publishedFormationMeta.publishedAt),
+                         },
+                         {
+                           label: "Preço publicado",
+                           value: formatCurrency(publishedFormationMeta.publishedSummary.salePrice, 2),
+                         },
+                         {
+                           label: "Margem publicada",
+                           value:
+                             publishedFormationMeta.publishedSummary.marginPercent != null
+                               ? `${formatNumber(publishedFormationMeta.publishedSummary.marginPercent, 2)}%`
+                               : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
+                         },
+                         {
+                           label: "Comissão publicada",
+                           value:
+                             publishedFormationMeta.publishedSummary.commissionPercent != null
+                               ? `${formatNumber(publishedFormationMeta.publishedSummary.commissionPercent, 2)}%`
+                               : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
+                         },
+                         {
+                           label: "Impostos publicados",
+                           value:
+                             publishedFormationMeta.publishedSummary.taxAmount != null
+                               ? formatCurrency(publishedFormationMeta.publishedSummary.taxAmount, 2)
+                               : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
+                         },
+                         {
+                           label: "Custo usado",
+                           value:
+                             publishedFormationMeta.publishedSummary.frozenTotalCost != null
+                               ? formatCurrency(publishedFormationMeta.publishedSummary.frozenTotalCost, 2)
+                               : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
+                         },
+                       ].map((entry) => (
+                         <div
+                           key={entry.label}
+                           className="rounded-xl border border-border bg-accent/20 px-3 py-2"
+                         >
+                           <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                             {entry.label}
+                           </p>
+                           <p className="text-sm font-semibold">{entry.value}</p>
+                         </div>
+                       ))}
+                     </div>
+                   ) : null}
 
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                      <div className="space-y-4">
@@ -3032,7 +3115,16 @@ export const PricingModule = () => {
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-accent/20 border border-border">
                            <span className="text-xs font-medium">Custo Gerencial Total</span>
-                           <span className="text-sm font-bold">{formatCurrency(calculationResult.custoGerencial, 5)}</span>
+                           <span className="text-sm font-bold">
+                             {publishedFormationMeta
+                               ? formatPublishedFormationValue(
+                                   publishedFormationMeta,
+                                   "custoGerencial",
+                                   calculationResult.custoGerencial,
+                                   (value) => formatCurrency(value, 5)
+                                 )
+                               : formatCurrency(calculationResult.custoGerencial, 5)}
+                           </span>
                          </div>
                        </div>
                      </div>
@@ -3043,18 +3135,83 @@ export const PricingModule = () => {
                        </h4>
                        <div className="space-y-3">
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
-                           <span className="text-xs font-medium">Impostos ({calculationResult.premissas.taxRate}%)</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalTaxes, 5)}</span>
+                           <span className="text-xs font-medium">
+                             Impostos (
+                             {publishedFormationMeta
+                               ? formatPublishedFormationPercent(
+                                   publishedFormationMeta,
+                                   "taxRatePercent",
+                                   calculationResult.premissas.taxRate
+                                 )
+                               : `${calculationResult.premissas.taxRate}%`}
+                             )
+                           </span>
+                           <span className="text-sm font-bold">
+                             -
+                             {publishedFormationMeta
+                               ? calculationResult.resultados.totalTaxes != null
+                                 ? formatCurrency(calculationResult.resultados.totalTaxes, 5)
+                                 : PUBLISHED_FIELD_UNAVAILABLE_LABEL
+                               : formatCurrency(calculationResult.resultados.totalTaxes, 5)}
+                           </span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
-                           <span className="text-xs font-medium">Comissão ({calculationResult.premissas.commRate}%)</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalCommission, 5)}</span>
+                           <span className="text-xs font-medium">
+                             Comissão (
+                             {publishedFormationMeta
+                               ? formatPublishedFormationPercent(
+                                   publishedFormationMeta,
+                                   "commissionRatePercent",
+                                   calculationResult.premissas.commRate
+                                 )
+                               : `${calculationResult.premissas.commRate}%`}
+                             )
+                           </span>
+                           <span className="text-sm font-bold">
+                             -
+                             {publishedFormationMeta
+                               ? calculationResult.resultados.totalCommission != null
+                                 ? formatCurrency(calculationResult.resultados.totalCommission, 5)
+                                 : PUBLISHED_FIELD_UNAVAILABLE_LABEL
+                               : formatCurrency(calculationResult.resultados.totalCommission, 5)}
+                           </span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                            <span className="text-xs font-medium">Frete Saída</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.premissas.freight, 5)}</span>
+                           <span className="text-sm font-bold">
+                             -
+                             {publishedFormationMeta
+                               ? formatPublishedFormationValue(
+                                   publishedFormationMeta,
+                                   "freight",
+                                   calculationResult.premissas.freight,
+                                   (value) => formatCurrency(value, 5)
+                                 )
+                               : formatCurrency(calculationResult.premissas.freight, 5)}
+                           </span>
                          </div>
-                         {calculationResult.pricingBreakdown?.deductions?.otherVariables != null && (
+                         {publishedFormationMeta ? (
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
+                             <span className="text-xs font-medium">
+                               Outras deduções congeladas (
+                               {formatPublishedFormationPercent(
+                                 publishedFormationMeta,
+                                 "otherRatePercent",
+                                 calculationResult.premissas.otherRate
+                               )}
+                               )
+                             </span>
+                             <span className="text-sm font-bold">
+                               -
+                               {formatPublishedFormationValue(
+                                 publishedFormationMeta,
+                                 "otherDeductions",
+                                 calculationResult.resultados.frozenOtherCost,
+                                 (value) => formatCurrency(value, 5)
+                               )}
+                             </span>
+                           </div>
+                         ) : calculationResult.pricingBreakdown?.deductions?.otherVariables != null ? (
                            <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                              <span className="text-xs font-medium">
                                Outras variáveis (
@@ -3072,7 +3229,7 @@ export const PricingModule = () => {
                                )}
                              </span>
                            </div>
-                         )}
+                         ) : null}
                        </div>
                      </div>
                    </div>
@@ -3082,11 +3239,29 @@ export const PricingModule = () => {
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div className="p-4 rounded-xl bg-white border border-border">
                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">M. Contribuição</p>
-                         <p className="text-xl font-black text-primary">{formatCurrency(calculationResult.resultados.contributionMargin, 5)}</p>
+                         <p className="text-xl font-black text-primary">
+                           {publishedFormationMeta
+                             ? formatPublishedFormationValue(
+                                 publishedFormationMeta,
+                                 "contributionMargin",
+                                 calculationResult.resultados.contributionMargin,
+                                 (value) => formatCurrency(value, 5)
+                               )
+                             : formatCurrency(calculationResult.resultados.contributionMargin, 5)}
+                         </p>
                        </div>
                        <div className="p-4 rounded-xl bg-white border border-border">
                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">M. Operacional</p>
-                         <p className="text-xl font-black text-green-600">{formatCurrency(calculationResult.resultados.operationalMargin, 5)}</p>
+                         <p className="text-xl font-black text-green-600">
+                           {publishedFormationMeta
+                             ? formatPublishedFormationValue(
+                                 publishedFormationMeta,
+                                 "operationalMargin",
+                                 calculationResult.resultados.operationalMargin,
+                                 (value) => formatCurrency(value, 5)
+                               )
+                             : formatCurrency(calculationResult.resultados.operationalMargin, 5)}
+                         </p>
                        </div>
                      </div>
                       </div>
@@ -3094,19 +3269,47 @@ export const PricingModule = () => {
                   )}
 
                   {resultTab === "composition" && (
-                    <PricingOpenBookTab
-                      openBook={(calculationResult.openBook as PricingOpenBookPayload | undefined) ?? null}
-                      premissas={{
-                        taxRate: Number(calculationResult.premissas?.taxRate ?? 0),
-                        commRate: Number(calculationResult.premissas?.commRate ?? 0),
-                        marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
-                        freight: Number(calculationResult.premissas?.freight ?? 0),
-                      }}
-                    />
+                    publishedFormationMeta && !publishedFormationMeta.hasDetailedComposition ? (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                          {publishedFormationMeta.detailUnavailableNote}
+                        </div>
+                        {publishedFormationMeta.compositionFallbackNote ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                            {publishedFormationMeta.compositionFallbackNote}
+                          </div>
+                        ) : null}
+                        <PricingOpenBookTab
+                          openBook={(calculationResult.openBook as PricingOpenBookPayload | undefined) ?? null}
+                          premissas={{
+                            taxRate: Number(calculationResult.premissas?.taxRate ?? 0),
+                            commRate: Number(calculationResult.premissas?.commRate ?? 0),
+                            marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
+                            freight: Number(calculationResult.premissas?.freight ?? 0),
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <PricingOpenBookTab
+                        openBook={(calculationResult.openBook as PricingOpenBookPayload | undefined) ?? null}
+                        premissas={{
+                          taxRate: Number(calculationResult.premissas?.taxRate ?? 0),
+                          commRate: Number(calculationResult.premissas?.commRate ?? 0),
+                          marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
+                          freight: Number(calculationResult.premissas?.freight ?? 0),
+                        }}
+                      />
+                    )
                   )}
 
                   {resultTab === "detailed" && (
-                    <PricingDetailedCompositionTab breakdown={calculationResult.pricingBreakdown} />
+                    publishedFormationMeta && calculationResult.pricingBreakdown == null ? (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        {PUBLISHED_DETAIL_UNAVAILABLE_NOTE}
+                      </div>
+                    ) : (
+                      <PricingDetailedCompositionTab breakdown={calculationResult.pricingBreakdown} />
+                    )
                   )}
                 </div>
              </motion.div>
