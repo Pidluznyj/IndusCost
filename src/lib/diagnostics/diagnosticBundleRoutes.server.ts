@@ -25,6 +25,11 @@ import {
   parsePublishedPriceDiagnosticRequest,
 } from "./pricingDiagnostic.server.js";
 import {
+  CostToCashDiagnosticValidationError,
+  buildAndWriteCostToCashDiagnosticBundle,
+  parseCostToCashDiagnosticRequest,
+} from "./costToCashDiagnostic.server.js";
+import {
   SystemDiagnosticValidationError,
   buildAndWriteSystemDiagnosticBundle,
   parseSystemDiagnosticRequest,
@@ -82,8 +87,14 @@ async function buildScopeDiagnosticBundle(
     return { scope: parsed.scope, result };
   }
 
+  if (scope === "COST_TO_CASH") {
+    const parsed = parseCostToCashDiagnosticRequest(body);
+    const result = await buildAndWriteCostToCashDiagnosticBundle(prisma, parsed.context);
+    return { scope: parsed.scope, result };
+  }
+
   throw new Error(
-    'scope deve ser "SYSTEM", "PRODUCT_ENGINEERING", "PUBLISHED_PRICE" ou "COMMISSION_RECEIPT_CLOSING".'
+    'scope deve ser "SYSTEM", "PRODUCT_ENGINEERING", "PUBLISHED_PRICE", "COMMISSION_RECEIPT_CLOSING" ou "COST_TO_CASH".'
   );
 }
 
@@ -92,7 +103,8 @@ function isDiagnosticValidationError(error: unknown): error is Error {
     error instanceof ProductEngineeringDiagnosticValidationError ||
     error instanceof PublishedPriceDiagnosticValidationError ||
     error instanceof CommissionReceiptClosingDiagnosticValidationError ||
-    error instanceof SystemDiagnosticValidationError
+    error instanceof SystemDiagnosticValidationError ||
+    error instanceof CostToCashDiagnosticValidationError
   );
 }
 

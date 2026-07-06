@@ -13,6 +13,7 @@ import {
   TRACE_TABS,
   type TraceTabId,
 } from "@/src/components/audit/CostToCashTraceSections";
+import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
   CostToCashTraceDossierError,
@@ -117,6 +118,27 @@ export function CostToCashTracePage() {
           <div className="flex flex-wrap gap-2">
             {data ? (
               <>
+                <DiagnosticReportButton
+                  scope="COST_TO_CASH"
+                  context={{
+                    sku: appliedFilters.sku || null,
+                    productId: appliedFilters.productId || null,
+                    tableCode: appliedFilters.tableCode || null,
+                    salesOrderId: appliedFilters.salesOrderId || null,
+                    orderNumber: appliedFilters.orderNumber || null,
+                    nfeNumber: appliedFilters.nfeNumber || null,
+                    receivableCode: appliedFilters.receivableCode || null,
+                    year: appliedFilters.year ? Number(appliedFilters.year) : null,
+                    month: appliedFilters.month ? Number(appliedFilters.month) : null,
+                    seller: appliedFilters.seller || null,
+                    customer: appliedFilters.customer || null,
+                    screenTitle: "Rastreabilidade Custo → Caixa",
+                    screenRoute: "/reports/cost-to-cash-trace",
+                    errorMessage: error ?? validationError ?? null,
+                  }}
+                  size="sm"
+                  data-testid="cost-to-cash-diagnostic-report-button"
+                />
                 <button
                   type="button"
                   className={financeBiButtonOutlineClass}

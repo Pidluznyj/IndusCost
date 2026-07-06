@@ -30,6 +30,8 @@ export { buildSalesOrderTraceAudit as buildSalesOrderTrace } from "../salesOrder
 
 export { buildCommissionTraceAudit as buildCommissionTrace } from "../commissions/commissionTraceAudit.server.js";
 
+export { assembleCostToCashTrace } from "./costToCashTrace.js";
+
 function wantsSalesOrCommission(query: CostToCashTraceQuery): boolean {
   return Boolean(
     query.salesOrderId?.trim() ||

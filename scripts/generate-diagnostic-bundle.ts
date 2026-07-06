@@ -15,6 +15,7 @@ import { buildSystemDiagnosticBundleInput } from "../src/lib/diagnostics/systemD
 import { buildProductEngineeringDiagnosticBundleInput } from "../src/lib/diagnostics/productEngineeringDiagnostic.server.ts";
 import { buildCommissionReceiptClosingDiagnosticBundleInput } from "../src/lib/diagnostics/commissionDiagnostic.server.ts";
 import { buildPublishedPriceDiagnosticBundleInput } from "../src/lib/diagnostics/pricingDiagnostic.server.ts";
+import { buildCostToCashDiagnosticBundleInput } from "../src/lib/diagnostics/costToCashDiagnostic.server.ts";
 import type { DiagnosticScope } from "../src/lib/diagnostics/chatgptDiagnosticTypes.ts";
 import { prisma } from "../src/lib/prisma.ts";
 
@@ -48,7 +49,12 @@ async function main(): Promise<void> {
 
   let result;
 
-  if (scope === "PRODUCT_ENGINEERING" || scope === "PUBLISHED_PRICE" || scope === "COMMISSION_RECEIPT_CLOSING") {
+  if (
+    scope === "PRODUCT_ENGINEERING" ||
+    scope === "PUBLISHED_PRICE" ||
+    scope === "COMMISSION_RECEIPT_CLOSING" ||
+    scope === "COST_TO_CASH"
+  ) {
     if (!process.env.DATABASE_URL?.trim()) {
       console.error(
         `[generate-diagnostic-bundle] DATABASE_URL ausente — configure .env para ${scope}.`
@@ -115,6 +121,49 @@ async function main(): Promise<void> {
       screenRoute: "/commissions/receipt-closing",
     });
     result = await buildAndWriteDiagnosticBundle(input);
+  } else if (scope === "COST_TO_CASH") {
+    const orderNumber = parseArg("--order-number");
+    const salesOrderId = parseArg("--sales-order-id");
+    const nfeNumber = parseArg("--nfe-number");
+    const receivableCode = parseArg("--receivable-code");
+    const yearRaw = parseArg("--year");
+    const monthRaw = parseArg("--month");
+    const year = yearRaw ? Number(yearRaw) : null;
+    const month = monthRaw ? Number(monthRaw) : null;
+
+    if (
+      !sku &&
+      !productId &&
+      !parseArg("--price-item-id") &&
+      !salesOrderId &&
+      !orderNumber &&
+      !nfeNumber &&
+      !receivableCode &&
+      !(parseArg("--customer") && year != null)
+    ) {
+      console.error(
+        "[generate-diagnostic-bundle] Informe --sku, --order-number, --nfe-number, --receivable-code ou --customer com --year para COST_TO_CASH."
+      );
+      process.exit(1);
+    }
+
+    const input = await buildCostToCashDiagnosticBundleInput(prisma, {
+      sku,
+      productId,
+      tableCode,
+      priceItemId: parseArg("--price-item-id"),
+      salesOrderId,
+      orderNumber,
+      nfeNumber,
+      receivableCode,
+      year: Number.isInteger(year) ? year : null,
+      month: Number.isInteger(month) ? month : null,
+      seller: parseArg("--seller"),
+      customer: parseArg("--customer"),
+      screenTitle: "Rastreabilidade Custo → Caixa",
+      screenRoute: "/reports/cost-to-cash-trace",
+    });
+    result = await buildAndWriteDiagnosticBundle(input);
   } else {
     result = await buildAndWriteDiagnosticBundle({
       scope,
@@ -152,6 +201,19 @@ async function main(): Promise<void> {
     console.log(`Preview OK: ${evidence.capture?.ok ?? "—"}`);
     console.log(`Erro: ${evidence.capture?.error?.classification ?? "—"}`);
     console.log(`Recebido único: ${evidence.uniqueReceivedTotal ?? "—"}`);
+  }
+
+  if (scope === "COST_TO_CASH") {
+    const evidence = JSON.parse(result.bundle.entries["evidence/cost-to-cash-timeline.json"] ?? "{}");
+    const raw = JSON.parse(
+      result.bundle.entries["evidence/raw-limited/cost-to-cash-summary.json"] ?? "{}"
+    );
+    console.log(`SKU: ${raw.sku ?? sku ?? "—"}`);
+    console.log(
+      `Timeline: ${raw.completedSteps ?? evidence.timeline?.completedSteps ?? "—"}/${raw.totalSteps ?? evidence.timeline?.totalSteps ?? "—"}`
+    );
+    console.log(`Cadeia: ${raw.chainBreakDescription ?? evidence.chainBreakDescription ?? "—"}`);
+    console.log(`Diagnósticos: ${(raw.diagnosticCodes ?? []).join(", ") || "—"}`);
   }
 
   if (scope === "SYSTEM") {
