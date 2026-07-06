@@ -38,6 +38,36 @@ export function resolvePrintCoverLogoSrc(branding: BrandingSettingsDTO): string 
   return resolvePrintLogoSrc(branding);
 }
 
+/**
+ * Capa institucional da proposta (Administração > Identidade Visual).
+ * Usada em PPTX/PDF comercial de proposta ao cliente.
+ */
+export function resolveProposalInstitutionalCoverLogoSrc(
+  branding: BrandingSettingsDTO
+): string | null {
+  const candidates = [
+    branding.proposalCoverDataUrl,
+    branding.proposalLogoDataUrl,
+    branding.darkLogoDataUrl,
+    branding.systemExpandedLogoDataUrl,
+    branding.systemCompactLogoDataUrl,
+  ];
+  for (const src of candidates) {
+    if (isDataImageUrl(src)) return src.trim();
+  }
+  return null;
+}
+
+export function resolveBrandingPrimaryColor(branding: BrandingSettingsDTO): string {
+  const raw = branding.secondaryColor?.trim() || branding.primaryColor?.trim() || "#1D4ED8";
+  return raw.replace(/^#/, "").toUpperCase();
+}
+
+export function resolveBrandingAccentColor(branding: BrandingSettingsDTO): string {
+  const raw = branding.primaryColor?.trim() || "#0EA5E9";
+  return raw.replace(/^#/, "").toUpperCase();
+}
+
 export function isPrintCoverLogoLightOnDark(
   branding: BrandingSettingsDTO,
   logoSrc: string | null

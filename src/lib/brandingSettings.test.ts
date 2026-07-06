@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getBrandingSettings, updateBrandingSettings } from "./brandingSettings.server.js";
+import { getBrandingSettings, getBrandingSettingsDto, toBrandingSettingsDto, updateBrandingSettings } from "./brandingSettings.server.js";
 import { prisma } from "./prisma.js";
 
 describe("Branding Settings Service", () => {
@@ -23,6 +23,13 @@ describe("Branding Settings Service", () => {
     assert.ok(defaults.id);
     assert.equal(defaults.companyName, "Lazarios Koppetel");
     assert.equal(defaults.primaryColor, "#0EA5E9");
+
+    const dto = toBrandingSettingsDto(defaults);
+    assert.equal(dto.companyName, "Lazarios Koppetel");
+    assert.equal(dto.primaryColor, "#0EA5E9");
+
+    const loaded = await getBrandingSettingsDto();
+    assert.equal(loaded.companyName, "Lazarios Koppetel");
 
     // 2. Update branding settings
     const updated = await updateBrandingSettings({

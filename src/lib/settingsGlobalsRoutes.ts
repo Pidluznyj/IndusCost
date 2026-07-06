@@ -22,6 +22,16 @@ export const SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS = [
   "users.manage",
 ] as const;
 
+export const SETTINGS_BRANDING_VIEW_PERMISSIONS = [
+  "settings.branding.view",
+  "settings.view",
+] as const;
+
+export const SETTINGS_BRANDING_EDIT_PERMISSIONS = [
+  "settings.branding.edit",
+  "users.manage",
+] as const;
+
 export async function buildSettingsGlobalsPayload(
   initAnalysisCache: () => Promise<AnalysisCache>
 ) {
@@ -87,15 +97,20 @@ export function registerSettingsGlobalsRoutes(
     }
   });
 
-  const editGuard = [
+  const brandingViewGuard = [
     requireAppAuth,
-    requireBootstrapOrAnyPermission([...SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS]),
+    requireBootstrapOrAnyPermission([...SETTINGS_BRANDING_VIEW_PERMISSIONS]),
   ] as const;
 
-  app.get("/api/branding-settings", ...viewGuard, async (_req, res) => {
+  const brandingEditGuard = [
+    requireAppAuth,
+    requireBootstrapOrAnyPermission([...SETTINGS_BRANDING_EDIT_PERMISSIONS]),
+  ] as const;
+
+  app.get("/api/branding-settings", ...brandingViewGuard, async (_req, res) => {
     try {
-      const { getBrandingSettings } = await import("./brandingSettings.server.js");
-      const settings = await getBrandingSettings();
+      const { getBrandingSettingsDto } = await import("./brandingSettings.server.js");
+      const settings = await getBrandingSettingsDto();
       return res.json(settings);
     } catch (error) {
       console.error("GET /api/branding-settings", error);
@@ -103,7 +118,7 @@ export function registerSettingsGlobalsRoutes(
     }
   });
 
-  app.put("/api/branding-settings", ...editGuard, async (req, res) => {
+  app.put("/api/branding-settings", ...brandingEditGuard, async (req, res) => {
     try {
       const {
         companyName,
@@ -148,7 +163,9 @@ export function registerSettingsGlobalsRoutes(
         return res.status(400).json({ error: "VALIDATION_FAILED", message: "Cor de destaque inválida. Deve ser um código hexadecimal." });
       }
 
-      const { updateBrandingSettings } = await import("./brandingSettings.server.js");
+      const { updateBrandingSettings, toBrandingSettingsDto } = await import(
+        "./brandingSettings.server.js"
+      );
       const settings = await updateBrandingSettings({
         companyName: companyName.trim(),
         tradeName: tradeName?.trim() || companyName.trim(),
@@ -177,7 +194,7 @@ export function registerSettingsGlobalsRoutes(
         commercialContactPhone: commercialContactPhone?.trim() || null,
       });
 
-      return res.json(settings);
+      return res.json(toBrandingSettingsDto(settings));
     } catch (error) {
       console.error("PUT /api/branding-settings", error);
       return res.status(500).json({ error: "Erro ao salvar identidade visual." });

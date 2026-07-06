@@ -12,9 +12,12 @@ import {
   recalculateProjectClientReportProduct,
 } from "./projectsClientReport.js";
 import { buildProjectClientReportPdfBuffer } from "./projectsClientReportService.js";
+import { DEFAULT_BRANDING } from "@/src/types/branding.js";
 import {
   buildProjectClientProposalPptxBuffer,
   buildProjectClientProposalPptxFilename,
+  extractProjectClientProposalPptxText,
+  projectClientProposalPptxHasEmbeddedMedia,
 } from "./projectsClientReportPptx.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
@@ -128,6 +131,62 @@ function buildDetailWithPricing(): ProjectDetail {
   };
 }
 
+/** Cenário PRJ-00008 IRIS — 4 itens, preço final do conjunto R$ 13,13. */
+function buildDetailPrj00008Iris(): ProjectDetail {
+  const ids = [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4111-8111-222222222222",
+    "33333333-3333-4111-8111-333333333333",
+    "44444444-4444-4111-8111-444444444444",
+  ];
+  const prices = [3.28, 3.28, 3.28, 3.29];
+  const skus = ["IRIS-A", "IRIS-B", "IRIS-C", "IRIS-D"];
+  const names = ["Componente A", "Componente B", "Componente C", "Componente D"];
+
+  return {
+    ...buildDetailWithPricing(),
+    id: "88888888-8888-4111-8111-888888888888",
+    code: "PRJ-00008",
+    title: "IRIS",
+    customerName: "Esmaltec S/A",
+    commercialOwner: "Comercial Lazarios",
+    expectedMonthlyVolume: 500,
+    simulatedProducts: ids.map((id, index) => ({
+      id,
+      provisionalCode: skus[index]!,
+      description: names[index]!,
+      unit: "UN",
+      estimatedWeight: null,
+      expectedVolume: 1,
+      batchSize: null,
+      notes: null,
+    })),
+    projectPricing: {
+      config: { fiscalRuleId: null, defaultMarginPercent: null },
+      taxRules: [],
+      hasSavedPricing: true,
+      items: ids.map((targetItemId, index) => ({
+        targetItemId,
+        targetItemType: "SIMULATION" as const,
+        displayName: names[index]!,
+        costBaseUnit: 2,
+        amortizationUnitCost: 0.1,
+        finalUnitCost: 2.1,
+        fiscalRuleId: null,
+        fiscalRuleName: null,
+        taxPercent: 0,
+        targetMarginPercent: 30,
+        suggestedPrice: prices[index]!,
+        taxAmount: 0,
+        marginAmount: 1,
+        status: "CALCULATED" as const,
+        statusLabel: "Calculado",
+        errorMessage: null,
+      })),
+    },
+  };
+}
+
 describe("projectsClientReport", () => {
   it("carrega produtos e preços comerciais finais", () => {
     const detail = buildDetailWithPricing();
@@ -209,6 +268,41 @@ describe("projectsClientReport", () => {
     assert.equal(buffer[1], 0x4b);
   });
 
+  it("PPTX PRJ-00008 IRIS reflete 4 itens e valor R$ 13,13", async () => {
+    const report = buildProjectClientReport(buildDetailPrj00008Iris());
+    assert.equal(report.summary.finalSetPrice, 13.13);
+    assert.equal(report.products.length, 4);
+
+    const branding = {
+      ...DEFAULT_BRANDING,
+      proposalCoverDataUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    };
+    const buffer = await buildProjectClientProposalPptxBuffer(report, branding);
+    const text = await extractProjectClientProposalPptxText(buffer);
+
+    assert.match(text, /13,13/);
+    assert.match(text, /IRIS-A/);
+    assert.match(text, /IRIS-B/);
+    assert.match(text, /IRIS-C/);
+    assert.match(text, /IRIS-D/);
+    assert.match(text, /Esmaltec/);
+    assert.match(text, /Proposta Comercial/);
+    assert.equal(await projectClientProposalPptxHasEmbeddedMedia(buffer), true);
+  });
+
+  it("PPTX usa capa institucional da identidade visual quando configurada", async () => {
+    const report = buildProjectClientReport(buildDetailWithPricing());
+    const withLogo = await buildProjectClientProposalPptxBuffer(report, {
+      ...DEFAULT_BRANDING,
+      proposalCoverDataUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    });
+    const withoutLogo = await buildProjectClientProposalPptxBuffer(report, DEFAULT_BRANDING);
+    assert.equal(await projectClientProposalPptxHasEmbeddedMedia(withLogo), true);
+    assert.equal(await projectClientProposalPptxHasEmbeddedMedia(withoutLogo), false);
+  });
+
   it("quantidade padrão é 1 por item", () => {
     const detail = buildDetailWithPricing();
     const products = buildProjectClientReportProducts(detail);
@@ -256,8 +350,11 @@ describe("projectsClientReport", () => {
     assert.match(page, /client-report\/quantities/);
     assert.match(page, /applyProjectClientReportQuantities/);
     assert.match(page, /Salvar quantidades/);
-    assert.match(page, /client-proposal-pptx/);
-    assert.match(page, /Baixar PowerPoint/);
+    const pptx = readFileSync(join(process.cwd(), "src/lib/projectsClientReportPptx.ts"), "utf8");
+    assert.match(pptx, /resolveProposalInstitutionalCoverLogoSrc/);
+    assert.match(pptx, /Resumo executivo/);
+    assert.match(pptx, /Composição do conjunto/);
+    assert.match(pptx, /Próximos passos/);
     assert.match(page, /fetch\(`\/api\/projects\/\$\{projectId\}\/client-proposal-pptx`/);
     assert.match(page, /createObjectURL/);
     assert.doesNotMatch(page, /window\.open\([^)]*client-proposal-pptx/);

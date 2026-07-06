@@ -5,9 +5,11 @@ import {
   isPrintCoverLogoLightOnDark,
   resolvePrintCoverLogoSrc,
   resolvePrintLogoSrc,
+  resolveProposalInstitutionalCoverLogoSrc,
 } from "./printBranding.js";
 
 const PNG = "data:image/png;base64,abc";
+const COVER = "data:image/png;base64,cover";
 
 describe("printBranding", () => {
   it("capa prioriza darkLogoDataUrl (logo para fundo escuro)", () => {
@@ -29,5 +31,15 @@ describe("printBranding", () => {
     };
     assert.equal(resolvePrintLogoSrc(branding), "data:image/png;base64,proposal");
     assert.equal(resolvePrintCoverLogoSrc(branding), PNG);
+  });
+
+  it("capa institucional da proposta prioriza proposalCoverDataUrl", () => {
+    const branding = {
+      ...DEFAULT_BRANDING,
+      proposalCoverDataUrl: COVER,
+      proposalLogoDataUrl: "data:image/png;base64,proposal",
+      darkLogoDataUrl: PNG,
+    };
+    assert.equal(resolveProposalInstitutionalCoverLogoSrc(branding), COVER);
   });
 });
