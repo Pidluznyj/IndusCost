@@ -131,6 +131,9 @@ export type CostCenterDetailExportPayload = {
   sortDirection: CostCenterDetailSortDirection;
   appliedFilters: CostCenterDetailAppliedFilterLine[];
   userName: string | null;
+  /** Consolidação de múltiplos centros (mapa de gastos). */
+  consolidated?: boolean;
+  selectedCenterNames?: string[];
 };
 
 export type CostCenterReallocationPreviewItem = {

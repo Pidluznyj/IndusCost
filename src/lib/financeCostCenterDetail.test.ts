@@ -7,6 +7,7 @@ import {
   buildCostCenterDetailViewFromRows,
   matchesCostCenterDetailFilters,
   paginateRows,
+  parseCostCenterIdsParam,
   sortCostCenterDetailRows,
   type CostCenterDetailListFilters,
 } from "./financeCostCenterDetail.js";
@@ -51,6 +52,12 @@ function row(overrides: Partial<CostCenterDetailAllocationRow>): CostCenterDetai
 }
 
 describe("financeCostCenterDetail", () => {
+  it("parseCostCenterIdsParam aceita lista separada por vírgula", () => {
+    assert.deepEqual(parseCostCenterIdsParam("cc-1, cc-2 ,cc-1"), ["cc-1", "cc-2"]);
+    assert.deepEqual(parseCostCenterIdsParam(["cc-3", "cc-4,cc-5"]), ["cc-3", "cc-4", "cc-5"]);
+    assert.deepEqual(parseCostCenterIdsParam(""), []);
+  });
+
   it("filtro por fonte manual e locked", () => {
     const filters: CostCenterDetailListFilters = { status: "all", manualOnly: true };
     assert.equal(matchesCostCenterDetailFilters(row({ allocationSource: "MANUAL" }), filters), true);
@@ -152,6 +159,8 @@ describe("financeCostCenterDetail", () => {
     );
     assert.match(routes, /\/api\/finance\/cost-centers\/:id\/summary/);
     assert.match(routes, /\/api\/finance\/cost-centers\/:id\/allocations/);
+    assert.match(routes, /\/api\/finance\/cost-centers\/allocations/);
+    assert.match(routes, /\/api\/finance\/cost-centers\/detail\/export\.xlsx/);
     assert.match(routes, /\/api\/finance\/cost-centers\/reallocation\/preview/);
     assert.match(routes, /\/api\/finance\/cost-centers\/reallocation\/apply/);
     assert.match(server, /registerFinanceCostCenterDetailRoutes/);

@@ -4,10 +4,13 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   applyCostCenterReallocationDefault,
   buildCostCenterDetailExportPayloadDefault,
+  buildCostCenterDetailExportPayloadForCenters,
   buildCostCenterDetailSummaryDefault,
   FinanceCostCenterDetailError,
   listCostCenterDetailAllocationsDefault,
+  listCostCenterDetailAllocationsForCenters,
   parseCostCenterDetailListQuery,
+  parseCostCenterIdsParam,
   parseCostCenterReallocationBody,
   previewCostCenterReallocationDefault,
 } from "@/src/lib/financeCostCenterDetail.js";
@@ -17,6 +20,7 @@ import {
 import {
   buildCostCenterDetailAppliedFilterLinesFromQuery,
   buildCostCenterDetailExportFilename,
+  buildCostCenterSelectionExportFilename,
 } from "@/src/lib/financeCostCenterDetailExportMeta.js";
 import { FinanceCostCenterValidationError } from "@/src/lib/financeCostCenters.js";
 import { FINANCE_COST_CENTERS_VIEW_PERMISSIONS } from "@/src/lib/financeCostCentersRoutes.js";
@@ -116,6 +120,122 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       console.error("POST /api/finance/cost-centers/reallocation/apply", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao aplicar realocação.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/allocations", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const costCenterIds = parseCostCenterIdsParam(req.query.costCenterIds);
+      if (costCenterIds.length < 2) {
+        return res.status(400).json({
+          error: "Informe ao menos dois centros de custo em costCenterIds.",
+          code: "INVALID_FILTER",
+        });
+      }
+
+      const query = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
+      const payload = await listCostCenterDetailAllocationsForCenters(costCenterIds, query);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/allocations", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao listar alocações consolidadas dos centros de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/detail/export-data", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const costCenterIds = parseCostCenterIdsParam(req.query.costCenterIds);
+      if (costCenterIds.length < 2) {
+        return res.status(400).json({
+          error: "Informe ao menos dois centros de custo em costCenterIds.",
+          code: "INVALID_FILTER",
+        });
+      }
+
+      const rawQuery = req.query as Record<string, unknown>;
+      const query = parseCostCenterDetailListQuery(rawQuery);
+      const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);
+      const payload = await buildCostCenterDetailExportPayloadForCenters(
+        costCenterIds,
+        query,
+        { userId: user.id, userName: user.name },
+        new Date(),
+        appliedFilters
+      );
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/detail/export-data", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar exportação consolidada dos centros de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/detail/export.xlsx", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const costCenterIds = parseCostCenterIdsParam(req.query.costCenterIds);
+      if (costCenterIds.length < 2) {
+        return res.status(400).json({
+          error: "Informe ao menos dois centros de custo em costCenterIds.",
+          code: "INVALID_FILTER",
+        });
+      }
+
+      const rawQuery = req.query as Record<string, unknown>;
+      const query = parseCostCenterDetailListQuery(rawQuery);
+      const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);
+      const payload = await buildCostCenterDetailExportPayloadForCenters(
+        costCenterIds,
+        query,
+        { userId: user.id, userName: user.name },
+        new Date(),
+        appliedFilters
+      );
+      const buffer = buildCostCenterDetailExportBuffer(payload);
+      const filename = buildCostCenterSelectionExportFilename(costCenterIds.length);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/detail/export.xlsx", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao exportar detalhe consolidado dos centros de custo.", error)
       );
     }
   });

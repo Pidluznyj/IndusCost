@@ -11,9 +11,11 @@ import {
   buildCostCenterExpenseMapAllocationsQuery,
   buildCostCenterExpenseMapCards,
   buildCostCenterExpenseMapExportQuery,
+  buildExpenseMapDetailTitle,
   DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
   expenseMapCategoryLabel,
   filterCostCenterExpenseMapCards,
+  formatExpenseMapSelectedCenterNames,
   type CostCenterExpenseMapCard,
   type CostCenterExpenseMapCategoryFilter,
   type CostCenterExpenseMapDrilldownFilters,
@@ -29,6 +31,8 @@ import type {
 import {
   buildCostCenterDetailExportFilename,
   buildCostCenterDetailPdfFilename,
+  buildCostCenterSelectionExportFilename,
+  buildCostCenterSelectionPdfFilename,
 } from "@/src/lib/financeCostCenterDetailExportMeta";
 import { FinanceCostCenterDetailPrintDocument } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPrintDocument";
 import "./finance-cc-detail-print.css";
@@ -214,6 +218,7 @@ export function FinanceCostCenterExpenseMapSection({
   const [cardFilter, setCardFilter] = useState<CostCenterExpenseMapCategoryFilter>("all");
   const [selectedCenterIds, setSelectedCenterIds] = useState<string[]>([]);
   const [drilldownId, setDrilldownId] = useState<string | null>(null);
+  const [detailPanelSuppressed, setDetailPanelSuppressed] = useState(false);
   const [drilldown, setDrilldown] = useState<CostCenterExpenseMapDrilldownFilters>(
     DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS
   );
@@ -243,12 +248,35 @@ export function FinanceCostCenterExpenseMapSection({
   const selectedCenterIdSet = useMemo(() => new Set(selectedCenterIds), [selectedCenterIds]);
   const hasCardSelection = selectedCenterIds.length > 0;
 
+  const detailCenterIds = useMemo(() => {
+    if (selectedCenterIds.length > 0) return selectedCenterIds;
+    if (drilldownId) return [drilldownId];
+    return [];
+  }, [selectedCenterIds, drilldownId]);
+
+  const isMultiCenterDetail = detailCenterIds.length > 1;
+  const showDetailPanel = detailCenterIds.length > 0 && !detailPanelSuppressed;
+  const detailCard =
+    detailCenterIds.length === 1
+      ? (cards.find((card) => card.costCenterId === detailCenterIds[0]) ?? null)
+      : null;
+  const selectedCenterNamesLabel = useMemo(
+    () => formatExpenseMapSelectedCenterNames(cards, detailCenterIds),
+    [cards, detailCenterIds]
+  );
+  const detailTitle = useMemo(
+    () => buildExpenseMapDetailTitle(cards, detailCenterIds),
+    [cards, detailCenterIds]
+  );
+
   const executiveTotals = useMemo(
     () => aggregateCostCenterExpenseMapTotals(cards, hasCardSelection ? selectedCenterIdSet : null),
     [cards, hasCardSelection, selectedCenterIdSet]
   );
 
-  const drilldownCard = cards.find((card) => card.costCenterId === drilldownId) ?? null;
+  useEffect(() => {
+    setDetailPanelSuppressed(false);
+  }, [selectedCenterIds.join(",")]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -257,8 +285,8 @@ export function FinanceCostCenterExpenseMapSection({
     return () => window.clearTimeout(timer);
   }, [searchDraft]);
 
-  const loadDrilldown = useCallback(async () => {
-    if (!drilldownId) {
+  const loadDetail = useCallback(async () => {
+    if (detailCenterIds.length === 0) {
       setSummary(null);
       setList(null);
       setError(null);
@@ -267,9 +295,15 @@ export function FinanceCostCenterExpenseMapSection({
     setLoading(true);
     setError(null);
     try {
-      const qs = buildCostCenterExpenseMapAllocationsQuery(appliedFilters, drilldown);
+      const qs = buildCostCenterExpenseMapAllocationsQuery(
+        appliedFilters,
+        drilldown,
+        isMultiCenterDetail ? detailCenterIds : undefined
+      );
       const listRes = await fetchJsonOk<CostCenterDetailListPayload>(
-        `/api/finance/cost-centers/${drilldownId}/allocations?${qs}`,
+        isMultiCenterDetail
+          ? `/api/finance/cost-centers/allocations?${qs}`
+          : `/api/finance/cost-centers/${detailCenterIds[0]}/allocations?${qs}`,
         { credentials: "include" }
       );
       setList(listRes);
@@ -281,19 +315,21 @@ export function FinanceCostCenterExpenseMapSection({
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, drilldown, drilldownId]);
+  }, [appliedFilters, detailCenterIds, drilldown, isMultiCenterDetail]);
 
   useEffect(() => {
-    void loadDrilldown();
-  }, [loadDrilldown]);
+    void loadDetail();
+  }, [loadDetail]);
 
   const handleDrilldownClick = (card: CostCenterExpenseMapCard) => {
+    setDetailPanelSuppressed(false);
     setDrilldownId((current) => (current === card.costCenterId ? null : card.costCenterId));
     setDrilldown(DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS);
     setSearchDraft("");
   };
 
   const handleToggleCardSelection = (costCenterId: string) => {
+    setDetailPanelSuppressed(false);
     setSelectedCenterIds((current) =>
       current.includes(costCenterId)
         ? current.filter((id) => id !== costCenterId)
@@ -303,6 +339,15 @@ export function FinanceCostCenterExpenseMapSection({
 
   const handleClearSelection = () => {
     setSelectedCenterIds([]);
+    setDetailPanelSuppressed(false);
+  };
+
+  const handleCloseDetail = () => {
+    if (hasCardSelection) {
+      setDetailPanelSuppressed(true);
+      return;
+    }
+    setDrilldownId(null);
   };
 
   const patchDrilldown = (patch: Partial<CostCenterExpenseMapDrilldownFilters>) => {
@@ -322,19 +367,24 @@ export function FinanceCostCenterExpenseMapSection({
   };
 
   const exportQuery = useMemo(
-    () => buildCostCenterExpenseMapExportQuery(appliedFilters, drilldown),
-    [appliedFilters, drilldown]
+    () =>
+      buildCostCenterExpenseMapExportQuery(
+        appliedFilters,
+        drilldown,
+        isMultiCenterDetail ? detailCenterIds : undefined
+      ),
+    [appliedFilters, detailCenterIds, drilldown, isMultiCenterDetail]
   );
 
   const handleExportExcel = async () => {
-    if (!drilldownId || !drilldownCard || exportingExcel) return;
+    if (detailCenterIds.length === 0 || exportingExcel) return;
     setExportingExcel(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/finance/cost-centers/${drilldownId}/detail/export.xlsx?${exportQuery}`,
-        { credentials: "include" }
-      );
+      const exportPath = isMultiCenterDetail
+        ? `/api/finance/cost-centers/detail/export.xlsx?${exportQuery}`
+        : `/api/finance/cost-centers/${detailCenterIds[0]}/detail/export.xlsx?${exportQuery}`;
+      const res = await fetch(exportPath, { credentials: "include" });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? "Não foi possível exportar o Excel.");
@@ -343,7 +393,9 @@ export function FinanceCostCenterExpenseMapSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = buildCostCenterDetailExportFilename(drilldownCard.name);
+      a.download = isMultiCenterDetail
+        ? buildCostCenterSelectionExportFilename(detailCenterIds.length)
+        : buildCostCenterDetailExportFilename(detailCard?.name ?? "centro");
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -356,14 +408,16 @@ export function FinanceCostCenterExpenseMapSection({
   };
 
   const handleExportPdf = async () => {
-    if (!drilldownId || exportingPdf) return;
+    if (detailCenterIds.length === 0 || exportingPdf) return;
     setExportingPdf(true);
     setError(null);
     try {
-      const payload = await fetchJsonOk<CostCenterDetailExportPayload>(
-        `/api/finance/cost-centers/${drilldownId}/detail/export-data?${exportQuery}`,
-        { credentials: "include" }
-      );
+      const exportPath = isMultiCenterDetail
+        ? `/api/finance/cost-centers/detail/export-data?${exportQuery}`
+        : `/api/finance/cost-centers/${detailCenterIds[0]}/detail/export-data?${exportQuery}`;
+      const payload = await fetchJsonOk<CostCenterDetailExportPayload>(exportPath, {
+        credentials: "include",
+      });
       setPrintPayload(payload);
       document.body.classList.add("cc-detail-print-route");
       await new Promise<void>((resolve) => {
@@ -458,23 +512,51 @@ export function FinanceCostCenterExpenseMapSection({
         </div>
       )}
 
-      {drilldownCard ? (
+      {showDetailPanel ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-4")} data-testid="finance-cc-expense-map-drilldown">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-bold text-foreground">
-                Detalhamento de gastos — {drilldownCard.name}
-              </h4>
-              <p className="text-[11px] text-muted-foreground">
-                {drilldownCard.code}
-                {drilldownCard.parentName ? ` · Pai: ${drilldownCard.parentName}` : ""}
-              </p>
-              <Link
-                to={buildFinanceCostCenterDetailPath(drilldownCard.costCenterId)}
-                className="text-[11px] font-semibold text-primary hover:underline mt-1 inline-block"
-              >
-                Abrir página completa do centro
-              </Link>
+            <div className="min-w-0">
+              {isMultiCenterDetail ? (
+                <span
+                  className="inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
+                  data-testid="finance-cc-expense-map-detail-selection-badge"
+                >
+                  {detailCenterIds.length} centros selecionados
+                </span>
+              ) : null}
+              <h4 className="text-sm font-bold text-foreground mt-1">{detailTitle}</h4>
+              {isMultiCenterDetail ? (
+                <>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Consolidado dos títulos vinculados aos centros selecionados.
+                  </p>
+                  <p className="text-[11px] font-medium text-foreground/80 mt-1">
+                    Resumo consolidado da seleção
+                  </p>
+                  {selectedCenterNamesLabel ? (
+                    <p
+                      className="text-[10px] text-muted-foreground mt-1 truncate"
+                      title={selectedCenterNamesLabel}
+                      data-testid="finance-cc-expense-map-detail-center-list"
+                    >
+                      {selectedCenterNamesLabel}
+                    </p>
+                  ) : null}
+                </>
+              ) : detailCard ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {detailCard.code}
+                  {detailCard.parentName ? ` · Pai: ${detailCard.parentName}` : ""}
+                </p>
+              ) : null}
+              {!isMultiCenterDetail && detailCard ? (
+                <Link
+                  to={buildFinanceCostCenterDetailPath(detailCard.costCenterId)}
+                  className="text-[11px] font-semibold text-primary hover:underline mt-1 inline-block"
+                >
+                  Abrir página completa do centro
+                </Link>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -497,7 +579,11 @@ export function FinanceCostCenterExpenseMapSection({
                 disabled={exportingPdf || loading}
                 onClick={() => void handleExportPdf()}
                 className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40 disabled:opacity-60"
-                title={buildCostCenterDetailPdfFilename(drilldownCard.name)}
+                title={
+                  isMultiCenterDetail
+                    ? buildCostCenterSelectionPdfFilename(detailCenterIds.length)
+                    : buildCostCenterDetailPdfFilename(detailCard?.name ?? "centro")
+                }
               >
                 {exportingPdf ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -509,7 +595,7 @@ export function FinanceCostCenterExpenseMapSection({
               <button
                 type="button"
                 data-testid="finance-cc-expense-map-close-drilldown"
-                onClick={() => setDrilldownId(null)}
+                onClick={handleCloseDetail}
                 className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
               >
                 <X className="h-3.5 w-3.5" />
@@ -720,20 +806,29 @@ export function FinanceCostCenterExpenseMapSection({
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando títulos do centro…
+              {isMultiCenterDetail
+                ? "Carregando títulos dos centros selecionados…"
+                : "Carregando títulos do centro…"}
             </div>
           ) : error ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : list && list.totalItems === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center rounded-lg border border-dashed border-border">
-              Nenhum título encontrado para este centro com os filtros atuais.
+              {isMultiCenterDetail
+                ? "Nenhum título encontrado para os centros selecionados com os filtros atuais."
+                : "Nenhum título encontrado para este centro com os filtros atuais."}
             </p>
           ) : list ? (
             <FinanceCostCenterGridTableShell
-              tableClassName="min-w-[1400px]"
+              tableClassName={isMultiCenterDetail ? "min-w-[1520px]" : "min-w-[1400px]"}
               head={
                 <tr>
                   <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">AP</th>
+                  {isMultiCenterDetail ? (
+                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground">
+                      Centro
+                    </th>
+                  ) : null}
                   <FinanceCostCenterSortableTh
                     label="Empresa"
                     sortKey="company"
@@ -831,6 +926,11 @@ export function FinanceCostCenterExpenseMapSection({
               {list.items.map((row: CostCenterDetailAllocationRow) => (
                 <tr key={row.allocationId} className="border-t border-border text-xs">
                   <td className="px-3 py-2 tabular-nums font-semibold">{row.accountsPayableId}</td>
+                  {isMultiCenterDetail ? (
+                    <td className="px-3 py-2 max-w-[140px] truncate" title={row.costCenterName}>
+                      {displayFinanceText(row.costCenterName)}
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2 max-w-[120px] truncate">{displayFinanceText(row.companyName)}</td>
                   <td className="px-3 py-2 max-w-[140px] truncate">
                     {displayFinanceText(row.personName ?? row.supplierName)}

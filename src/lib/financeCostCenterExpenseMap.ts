@@ -192,11 +192,44 @@ function appendIfPresent(qs: URLSearchParams, key: string, value: string | numbe
   qs.set(key, raw);
 }
 
+function appendCostCenterIds(qs: URLSearchParams, costCenterIds?: string[]) {
+  if (!costCenterIds || costCenterIds.length < 2) return;
+  qs.set("costCenterIds", costCenterIds.join(","));
+}
+
+export function formatExpenseMapSelectedCenterNames(
+  cards: CostCenterExpenseMapCard[],
+  selectedIds: string[],
+  maxVisible = 4
+): string {
+  const names = selectedIds
+    .map((id) => cards.find((card) => card.costCenterId === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  if (names.length === 0) return "";
+  if (names.length <= maxVisible) return names.join(", ");
+  const visible = names.slice(0, maxVisible).join(", ");
+  return `${visible} + ${names.length - maxVisible} centros`;
+}
+
+export function buildExpenseMapDetailTitle(
+  cards: CostCenterExpenseMapCard[],
+  detailCenterIds: string[]
+): string {
+  if (detailCenterIds.length > 1) {
+    return `Detalhamento de gastos — ${detailCenterIds.length} centros selecionados`;
+  }
+  const card = cards.find((item) => item.costCenterId === detailCenterIds[0]);
+  return `Detalhamento de gastos — ${card?.name ?? "Centro"}`;
+}
+
 export function buildCostCenterExpenseMapAllocationsQuery(
   pageFilters: FinanceCostCentersUiFilters,
-  drilldown: CostCenterExpenseMapDrilldownFilters
+  drilldown: CostCenterExpenseMapDrilldownFilters,
+  costCenterIds?: string[]
 ): string {
   const qs = new URLSearchParams(buildFinanceCostCentersDashboardQuery(pageFilters));
+
+  appendCostCenterIds(qs, costCenterIds);
 
   appendIfPresent(qs, "search", drilldown.search);
   appendIfPresent(qs, "companyName", drilldown.companyName);
@@ -225,9 +258,12 @@ export function buildCostCenterExpenseMapAllocationsQuery(
 /** Query para exportação — mesmos filtros do grid, sem paginação. */
 export function buildCostCenterExpenseMapExportQuery(
   pageFilters: FinanceCostCentersUiFilters,
-  drilldown: CostCenterExpenseMapDrilldownFilters
+  drilldown: CostCenterExpenseMapDrilldownFilters,
+  costCenterIds?: string[]
 ): string {
   const qs = new URLSearchParams(buildFinanceCostCentersDashboardQuery(pageFilters));
+
+  appendCostCenterIds(qs, costCenterIds);
 
   appendIfPresent(qs, "search", drilldown.search);
   appendIfPresent(qs, "companyName", drilldown.companyName);

@@ -168,13 +168,17 @@ describe("financeCostCenterDetailExport", () => {
     const ui = read("src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx");
     assert.ok(ui.includes("/detail/export.xlsx?"));
     assert.ok(ui.includes("/detail/export-data?"));
-    assert.ok(ui.includes("${selectedId}"));
+    assert.ok(ui.includes("${detailCenterIds[0]}"));
+    assert.ok(ui.includes("/api/finance/cost-centers/detail/export.xlsx?"));
+    assert.ok(ui.includes("buildCostCenterSelectionExportFilename"));
   });
 
   it("rotas expõem export.xlsx e export-data", () => {
     const routes = read("src/lib/financeCostCenterDetailRoutes.ts");
     assert.ok(routes.includes("/api/finance/cost-centers/:id/detail/export.xlsx"));
     assert.ok(routes.includes("/api/finance/cost-centers/:id/detail/export-data"));
+    assert.ok(routes.includes("/api/finance/cost-centers/detail/export.xlsx"));
+    assert.ok(routes.includes("/api/finance/cost-centers/detail/export-data"));
   });
 
   it("filtros aplicados são exibidos no relatório", () => {

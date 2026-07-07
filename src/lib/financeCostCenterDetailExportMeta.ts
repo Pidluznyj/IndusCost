@@ -112,6 +112,21 @@ export function buildCostCenterDetailPdfFilename(
   return buildCostCenterDetailExportFilename(centerName, referenceDate).replace(/\.xlsx$/, ".pdf");
 }
 
+export function buildCostCenterSelectionExportFilename(
+  centersCount: number,
+  referenceDate = new Date()
+): string {
+  const year = referenceDate.getFullYear();
+  return `centro-custo-centros-selecionados-${centersCount}-${year}.xlsx`;
+}
+
+export function buildCostCenterSelectionPdfFilename(
+  centersCount: number,
+  referenceDate = new Date()
+): string {
+  return buildCostCenterSelectionExportFilename(centersCount, referenceDate).replace(/\.xlsx$/, ".pdf");
+}
+
 export function buildCostCenterDetailAppliedFilterLines(input: {
   pageFilters: FinanceCostCentersUiFilters;
   drilldown: CostCenterExpenseMapDrilldownFilters;

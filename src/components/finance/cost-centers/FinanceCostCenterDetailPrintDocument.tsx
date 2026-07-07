@@ -28,6 +28,10 @@ export function FinanceCostCenterDetailPrintDocument({
   payload: CostCenterDetailExportPayload;
 }) {
   const { summary, center } = payload;
+  const isConsolidated = payload.consolidated === true;
+  const selectedCenters =
+    payload.selectedCenterNames?.join(", ") ??
+    (center.parentName && isConsolidated ? center.parentName : "");
 
   return (
     <div id="cc-detail-print-root">
@@ -37,24 +41,41 @@ export function FinanceCostCenterDetailPrintDocument({
             <span className="finance-cc-detail-print-brand-main">IndusCost</span>
             <span className="finance-cc-detail-print-brand-sub">Grupo Lazarios</span>
           </div>
-          <h1 className="finance-cc-detail-print-doc-title">{FINANCE_CC_DETAIL_EXPORT_TITLE}</h1>
+          <h1 className="finance-cc-detail-print-doc-title">
+            {isConsolidated ? `${FINANCE_CC_DETAIL_EXPORT_TITLE} — Centros selecionados` : FINANCE_CC_DETAIL_EXPORT_TITLE}
+          </h1>
           <table className="finance-cc-detail-print-meta-table">
             <tbody>
               <tr>
-                <th>Centro de custo</th>
+                <th>{isConsolidated ? "Escopo" : "Centro de custo"}</th>
                 <td>{displayFinanceText(center.name)}</td>
                 <th>Código</th>
                 <td>{displayFinanceText(center.code)}</td>
               </tr>
-              <tr>
-                <th>Pai</th>
-                <td>{displayFinanceText(center.parentName)}</td>
-                <th>Emitido em</th>
-                <td>{formatFinanceDateTime(payload.generatedAt)}</td>
-              </tr>
+              {isConsolidated && selectedCenters ? (
+                <tr>
+                  <th>Centros</th>
+                  <td colSpan={3}>{displayFinanceText(selectedCenters)}</td>
+                </tr>
+              ) : (
+                <tr>
+                  <th>Pai</th>
+                  <td>{displayFinanceText(center.parentName)}</td>
+                  <th>Emitido em</th>
+                  <td>{formatFinanceDateTime(payload.generatedAt)}</td>
+                </tr>
+              )}
               <tr>
                 <th>Emitido por</th>
-                <td colSpan={3}>{displayFinanceText(payload.userName)}</td>
+                <td colSpan={isConsolidated && selectedCenters ? 1 : 3}>
+                  {displayFinanceText(payload.userName)}
+                </td>
+                {isConsolidated && selectedCenters ? (
+                  <>
+                    <th>Emitido em</th>
+                    <td>{formatFinanceDateTime(payload.generatedAt)}</td>
+                  </>
+                ) : null}
               </tr>
             </tbody>
           </table>
@@ -111,6 +132,7 @@ export function FinanceCostCenterDetailPrintDocument({
               <thead>
                 <tr>
                   <th>AP</th>
+                  {isConsolidated ? <th>Centro</th> : null}
                   <th>Empresa</th>
                   <th>Fornecedor</th>
                   <th>Classificação</th>
@@ -128,6 +150,7 @@ export function FinanceCostCenterDetailPrintDocument({
                 {payload.rows.map((row) => (
                   <tr key={row.allocationId}>
                     <td>{row.accountsPayableId}</td>
+                    {isConsolidated ? <td>{displayFinanceText(row.costCenterName)}</td> : null}
                     <td>{displayFinanceText(row.companyName)}</td>
                     <td>{displayFinanceText(row.supplierName ?? row.personName)}</td>
                     <td>{displayFinanceText(row.nomusClassification)}</td>
@@ -142,7 +165,7 @@ export function FinanceCostCenterDetailPrintDocument({
                   </tr>
                 ))}
                 <tr className="finance-cc-detail-print-total-row">
-                  <td colSpan={9}>
+                  <td colSpan={isConsolidated ? 10 : 9}>
                     Total ({formatFinanceInteger(payload.rows.length)} título(s))
                   </td>
                   <td className="col-money">{formatFinanceCurrency(payload.totals.amountPayable)}</td>

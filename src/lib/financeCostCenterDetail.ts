@@ -634,19 +634,38 @@ function appendReallocationNote(
   return existing ? `${existing}\n${line}` : line;
 }
 
-export async function loadCostCenterDetailEntries(
-  costCenterId: string
+export function parseCostCenterIdsParam(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return [
+      ...new Set(
+        raw
+          .flatMap((value) => String(value ?? "").split(","))
+          .map((id) => id.trim())
+          .filter(Boolean)
+      ),
+    ];
+  }
+  const text = typeof raw === "string" ? raw : "";
+  return [...new Set(text.split(",").map((id) => id.trim()).filter(Boolean))];
+}
+
+export async function loadCostCenterDetailEntriesForCenters(
+  costCenterIds: string[]
 ): Promise<AllocationWithAp[]> {
-  const center = await prisma.financialCostCenter.findUnique({
-    where: { id: costCenterId },
+  const uniqueIds = [...new Set(costCenterIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  const centers = await prisma.financialCostCenter.findMany({
+    where: { id: { in: uniqueIds } },
     select: { id: true, code: true, name: true },
   });
-  if (!center) {
+  if (centers.length !== uniqueIds.length) {
     throw new FinanceCostCenterValidationError("NOT_FOUND", "Centro de custo não encontrado.");
   }
+  const centerById = new Map(centers.map((center) => [center.id, center]));
 
   const allocations = await prisma.accountsPayableCostCenterAllocation.findMany({
-    where: { costCenterId },
+    where: { costCenterId: { in: uniqueIds } },
     orderBy: { updatedAt: "desc" },
   });
   if (allocations.length === 0) return [];
@@ -683,7 +702,8 @@ export async function loadCostCenterDetailEntries(
   return allocations
     .map((allocation) => {
       const ap = apById.get(allocation.accountsPayableId);
-      if (!ap) return null;
+      const center = centerById.get(allocation.costCenterId);
+      if (!ap || !center) return null;
       return {
         allocation: {
           id: allocation.id,
@@ -711,6 +731,12 @@ export async function loadCostCenterDetailEntries(
       } satisfies AllocationWithAp;
     })
     .filter((row): row is AllocationWithAp => row != null);
+}
+
+export async function loadCostCenterDetailEntries(
+  costCenterId: string
+): Promise<AllocationWithAp[]> {
+  return loadCostCenterDetailEntriesForCenters([costCenterId]);
 }
 
 async function loadCostCenterMeta(costCenterId: string) {
@@ -954,6 +980,36 @@ export async function loadCostCenterDetailOrphanAllocations(costCenterId: string
     }));
 }
 
+async function loadCostCenterMetaForSelection(costCenterIds: string[]) {
+  const uniqueIds = [...new Set(costCenterIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    throw new FinanceCostCenterValidationError("NOT_FOUND", "Centro de custo não encontrado.");
+  }
+  if (uniqueIds.length === 1) {
+    return loadCostCenterMeta(uniqueIds[0]);
+  }
+
+  const centers = await prisma.financialCostCenter.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  if (centers.length !== uniqueIds.length) {
+    throw new FinanceCostCenterValidationError("NOT_FOUND", "Centro de custo não encontrado.");
+  }
+
+  return {
+    id: uniqueIds.join(","),
+    code: "SELEÇÃO",
+    name: `${uniqueIds.length} centros selecionados`,
+    parentId: null,
+    parentCode: null,
+    parentName: null,
+    status: "ACTIVE",
+    selectedCenterNames: centers.map((center) => center.name),
+  };
+}
+
 /** Linhas filtradas do detalhe (sem paginação) — base única para grid, resumo e exportação. */
 export async function resolveCostCenterDetailFilteredRows(
   costCenterId: string,
@@ -964,9 +1020,53 @@ export async function resolveCostCenterDetailFilteredRows(
   rows: CostCenterDetailAllocationRow[];
   summary: CostCenterDetailSummary;
   totals: CostCenterDetailListPayload["totals"];
+  selectedCenterNames?: string[];
+  consolidated: boolean;
 }> {
-  const center = await loadCostCenterMeta(costCenterId);
-  const entries = await loadCostCenterDetailEntries(costCenterId);
+  const result = await resolveCostCenterDetailFilteredRowsForCenters(
+    [costCenterId],
+    filters,
+    referenceDate
+  );
+  return {
+    center: result.center,
+    rows: result.rows,
+    summary: result.summary,
+    totals: result.totals,
+    selectedCenterNames: result.selectedCenterNames,
+    consolidated: result.consolidated,
+  };
+}
+
+export async function resolveCostCenterDetailFilteredRowsForCenters(
+  costCenterIds: string[],
+  filters: CostCenterDetailListFilters,
+  referenceDate: Date = new Date()
+): Promise<{
+  center: Awaited<ReturnType<typeof loadCostCenterMeta>>;
+  rows: CostCenterDetailAllocationRow[];
+  summary: CostCenterDetailSummary;
+  totals: CostCenterDetailListPayload["totals"];
+  selectedCenterNames?: string[];
+  consolidated: boolean;
+}> {
+  const uniqueIds = [...new Set(costCenterIds.map((id) => id.trim()).filter(Boolean))];
+  const centerMeta = await loadCostCenterMetaForSelection(uniqueIds);
+  const selectedCenterNames =
+    "selectedCenterNames" in centerMeta
+      ? (centerMeta.selectedCenterNames as string[])
+      : undefined;
+  const center = {
+    id: centerMeta.id,
+    code: centerMeta.code,
+    name: centerMeta.name,
+    parentId: centerMeta.parentId,
+    parentCode: centerMeta.parentCode,
+    parentName: centerMeta.parentName,
+    status: centerMeta.status,
+  };
+
+  const entries = await loadCostCenterDetailEntriesForCenters(uniqueIds);
   const snapshot = buildCostCenterExpenseDetailSnapshot({
     entries: entries as CostCenterExpenseDetailEntry[],
     filters,
@@ -979,6 +1079,8 @@ export async function resolveCostCenterDetailFilteredRows(
     rows: snapshot.displayRows,
     summary: view.summary,
     totals: view.totals,
+    selectedCenterNames,
+    consolidated: uniqueIds.length > 1,
   };
 }
 
@@ -1000,9 +1102,17 @@ export async function listCostCenterDetailAllocationsDefault(
   query: ReturnType<typeof parseCostCenterDetailListQuery>,
   referenceDate: Date = new Date()
 ): Promise<CostCenterDetailListPayload> {
+  return listCostCenterDetailAllocationsForCenters([costCenterId], query, referenceDate);
+}
+
+export async function listCostCenterDetailAllocationsForCenters(
+  costCenterIds: string[],
+  query: ReturnType<typeof parseCostCenterDetailListQuery>,
+  referenceDate: Date = new Date()
+): Promise<CostCenterDetailListPayload> {
   const { page, limit, sortBy, sortDirection, ...filters } = query;
-  const { rows: allRows, summary, totals } = await resolveCostCenterDetailFilteredRows(
-    costCenterId,
+  const { rows: allRows, summary, totals } = await resolveCostCenterDetailFilteredRowsForCenters(
+    costCenterIds,
     filters,
     referenceDate
   );
@@ -1028,12 +1138,31 @@ export async function buildCostCenterDetailExportPayloadDefault(
   referenceDate: Date = new Date(),
   appliedFilters: CostCenterDetailExportPayload["appliedFilters"] = []
 ): Promise<CostCenterDetailExportPayload> {
-  const { sortBy, sortDirection, ...filters } = query;
-  const { center, rows: unsorted, summary, totals } = await resolveCostCenterDetailFilteredRows(
-    costCenterId,
-    filters,
-    referenceDate
+  return buildCostCenterDetailExportPayloadForCenters(
+    [costCenterId],
+    query,
+    userContext,
+    referenceDate,
+    appliedFilters
   );
+}
+
+export async function buildCostCenterDetailExportPayloadForCenters(
+  costCenterIds: string[],
+  query: ReturnType<typeof parseCostCenterDetailListQuery>,
+  userContext: CostCenterDetailUserContext,
+  referenceDate: Date = new Date(),
+  appliedFilters: CostCenterDetailExportPayload["appliedFilters"] = []
+): Promise<CostCenterDetailExportPayload> {
+  const { sortBy, sortDirection, ...filters } = query;
+  const {
+    center,
+    rows: unsorted,
+    summary,
+    totals,
+    selectedCenterNames,
+    consolidated,
+  } = await resolveCostCenterDetailFilteredRowsForCenters(costCenterIds, filters, referenceDate);
   const rows = sortCostCenterDetailRows(unsorted, sortBy, sortDirection);
 
   return {
@@ -1052,6 +1181,8 @@ export async function buildCostCenterDetailExportPayloadDefault(
     sortDirection,
     appliedFilters,
     userName: userContext.userName,
+    consolidated,
+    selectedCenterNames,
   };
 }
 

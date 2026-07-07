@@ -6,6 +6,8 @@ import {
   aggregateCostCenterExpenseMapTotals,
   formatCostCenterExpenseMapSummaryCurrency,
   buildCostCenterExpenseMapAllocationsQuery,
+  buildExpenseMapDetailTitle,
+  formatExpenseMapSelectedCenterNames,
   buildCostCenterExpenseMapCards,
   DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
   filterCostCenterExpenseMapCards,
@@ -204,6 +206,62 @@ describe("financeCostCenterExpenseMap", () => {
     assert.ok(qs.includes("sortBy=allocatedAmount"));
   });
 
+  it("drilldown lista títulos por centro único ou consolidado na seleção", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
+      "utf8"
+    );
+    const routes = readFileSync(
+      join(process.cwd(), "src/lib/financeCostCenterDetailRoutes.ts"),
+      "utf8"
+    );
+    assert.ok(section.includes("/api/finance/cost-centers/${detailCenterIds[0]}/allocations"));
+    assert.ok(section.includes("/api/finance/cost-centers/allocations?"));
+    assert.ok(section.includes("finance-cc-expense-map-detail-selection-badge"));
+    assert.ok(section.includes("finance-cc-expense-map-detail-center-list"));
+    assert.ok(routes.includes('app.get("/api/finance/cost-centers/allocations"'));
+    assert.ok(routes.includes("listCostCenterDetailAllocationsForCenters"));
+  });
+
+  it("formata título e lista de centros selecionados no detalhe", () => {
+    const cards = buildCostCenterExpenseMapCards(
+      [
+        metrics({ costCenterId: "cc-1", amount: 100 }),
+        metrics({ costCenterId: "cc-2", amount: 200 }),
+        metrics({ costCenterId: "cc-3", amount: 300 }),
+        metrics({ costCenterId: "cc-4", amount: 400 }),
+        metrics({ costCenterId: "cc-5", amount: 500 }),
+      ],
+      [
+        center({ id: "cc-1", name: "FOLHA" }),
+        center({ id: "cc-2", name: "MATÉRIA PRIMA", code: "MP" }),
+        center({ id: "cc-3", name: "MÃO DE OBRA", code: "MO" }),
+        center({ id: "cc-4", name: "FERRAMENTARIA", code: "FER" }),
+        center({ id: "cc-5", name: "IMPOSTO", code: "IMP" }),
+      ]
+    );
+    assert.equal(
+      buildExpenseMapDetailTitle(cards, ["cc-1", "cc-2", "cc-3", "cc-4"]),
+      "Detalhamento de gastos — 4 centros selecionados"
+    );
+    assert.equal(buildExpenseMapDetailTitle(cards, ["cc-1"]), "Detalhamento de gastos — FOLHA");
+    assert.equal(
+      formatExpenseMapSelectedCenterNames(cards, ["cc-1", "cc-2", "cc-3", "cc-4"]),
+      "FOLHA, MATÉRIA PRIMA, MÃO DE OBRA, FERRAMENTARIA"
+    );
+    assert.equal(
+      formatExpenseMapSelectedCenterNames(cards, ["cc-1", "cc-2", "cc-3", "cc-4", "cc-5"]),
+      "FOLHA, MATÉRIA PRIMA, MÃO DE OBRA, FERRAMENTARIA + 1 centros"
+    );
+
+    const qs = buildCostCenterExpenseMapAllocationsQuery(
+      { year: "2026", month: "", status: "all", companyName: "", costCenterId: "", supplierId: "", classification: "all" },
+      DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
+      ["cc-1", "cc-2"]
+    );
+    assert.ok(qs.includes("costCenterIds=cc-1%2Ccc-2") || qs.includes("costCenterIds=cc-1,cc-2"));
+  });
+
   it("drilldown lista apenas títulos do centro via API path por id", () => {
     const section = readFileSync(
       join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
@@ -216,7 +274,6 @@ describe("financeCostCenterExpenseMap", () => {
       ),
       "utf8"
     );
-    assert.ok(section.includes("/api/finance/cost-centers/${drilldownId}/allocations"));
     assert.ok(section.includes("FinanceCostCenterExpenseMapExecutiveSummary"));
     assert.ok(section.includes("finance-cc-expense-map-select-"));
     assert.ok(summary.includes("finance-cc-expense-map-executive-summary"));
