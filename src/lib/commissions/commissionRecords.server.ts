@@ -8,6 +8,12 @@ import {
   paginatedMeta,
   type CommissionRecordsQuery,
 } from "./commissionQuery.js";
+import {
+  type CommissionSellerDisplayDto,
+  resolveCommissionSellerDisplay,
+} from "./commissionSellerDisplay.js";
+
+export type { CommissionSellerDisplayDto } from "./commissionSellerDisplay.js";
 
 export type CommissionRecordDto = {
   id: string;
@@ -20,6 +26,7 @@ export type CommissionRecordDto = {
   productName: string | null;
   commissionPersonId: string;
   commissionPersonName: string;
+  seller: CommissionSellerDisplayDto;
   customerName: string | null;
   baseAmount: number;
   ratePercent: number;
@@ -63,9 +70,20 @@ function serializeRecord(
     balanceAmount: unknown;
     calculatedAt: Date;
     confirmedAt: Date | null;
-    commissionPerson: { name: string };
+    commissionPerson: { name: string; nomusPersonId: number | null };
+    nomusSellerId: number | null;
   }
 ): CommissionRecordDto {
+  const seller = resolveCommissionSellerDisplay({
+    commissionPersonId: row.commissionPersonId,
+    commissionPerson: {
+      id: row.commissionPersonId,
+      name: row.commissionPerson.name,
+      nomusPersonId: row.commissionPerson.nomusPersonId,
+    },
+    nomusSellerId: row.nomusSellerId,
+  });
+
   return {
     id: row.id,
     status: row.status,
@@ -76,7 +94,8 @@ function serializeRecord(
     productCode: row.productCode,
     productName: row.productName,
     commissionPersonId: row.commissionPersonId,
-    commissionPersonName: row.commissionPerson.name,
+    commissionPersonName: seller.name ?? row.commissionPerson.name,
+    seller,
     customerName: row.customerName,
     baseAmount: decimalToNumber(row.baseAmount),
     ratePercent: decimalToNumber(row.ratePercent),
@@ -109,7 +128,7 @@ export async function listCommissionRecords(
     }),
     prisma.commissionRecord.findMany({
       where,
-      include: { commissionPerson: { select: { name: true } } },
+      include: { commissionPerson: { select: { name: true, nomusPersonId: true } } },
       orderBy: [{ calculatedAt: "desc" }, { orderCode: "asc" }],
       skip,
       take: query.pageSize,

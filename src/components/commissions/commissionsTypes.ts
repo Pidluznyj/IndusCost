@@ -1,5 +1,18 @@
 /** Tipos de payload das APIs de comissões (frontend — sem imports server-only). */
 
+export type CommissionSellerDisplayDto = {
+  id: string | null;
+  name: string | null;
+  nomusPersonId: number | null;
+  resolutionStatus:
+    | "RESOLVED"
+    | "BROKEN_COMMISSION_PERSON_REFERENCE"
+    | "SELLER_UNRESOLVED"
+    | "NO_SELLER";
+  source: "COMMISSION_PERSON" | "UNRESOLVED";
+  label: string;
+};
+
 export type CommissionsPagination = {
   page: number;
   pageSize: number;
@@ -151,6 +164,7 @@ export type CommissionsRecordItem = {
   productName: string | null;
   commissionPersonId: string;
   commissionPersonName: string;
+  seller: CommissionSellerDisplayDto;
   customerName: string | null;
   baseAmount: number;
   ratePercent: number;
@@ -178,6 +192,7 @@ export type CommissionsForecastRow = {
   localOrderId: string | null;
   orderDate: string | null;
   customerName: string | null;
+  seller: CommissionSellerDisplayDto;
   sellerLabel: string | null;
   representativeLabel: string | null;
   orderAmount: number;
@@ -205,6 +220,7 @@ export type CommissionsForecastDetailPayload = {
   localOrderId: string | null;
   orderDate: string | null;
   customerName: string | null;
+  seller: CommissionSellerDisplayDto;
   sellerLabel: string | null;
   representativeLabel: string | null;
   paymentTerms: string | null;

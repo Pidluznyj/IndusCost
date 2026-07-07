@@ -119,6 +119,7 @@ function expandRecordsToInputs(
       confirmedAt: row.confirmedAt?.toISOString() ?? null,
       commissionPersonId: row.commissionPersonId,
       commissionPersonName: row.commissionPerson.name,
+      nomusSellerId: row.nomusSellerId,
       metadataJson: row.metadataJson,
       hasOpenAuditIssue: auditByRecordId.has(row.id),
       hasBlockingAuditIssue: hasBlockingCommissionAuditTypes(

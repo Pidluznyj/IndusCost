@@ -516,7 +516,9 @@ export function buildCommissionDashboardWhere(
       },
     });
   } else if (query.type === "SELLER") {
-    parts.push({ nomusSellerId: { not: null } });
+    parts.push({
+      commissionPerson: { type: "SELLER" },
+    });
   } else if (query.type === "REPRESENTATIVE") {
     parts.push({ nomusRepresentativeId: { not: null } });
   }

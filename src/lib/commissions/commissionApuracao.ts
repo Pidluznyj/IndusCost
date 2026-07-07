@@ -9,6 +9,10 @@ import {
   hasBlockingCommissionAuditTypes,
   isOutOfTablePriceMetadata,
 } from "./commissionOutOfTable.js";
+import {
+  isCommissionRecordWithoutResolvedSeller,
+  resolveCommissionSellerDisplay,
+} from "./commissionSellerDisplay.js";
 
 export type CommissionApuracaoLineStatus =
   | "CALCULADA"
@@ -50,6 +54,7 @@ export type CommissionApuracaoRecordInput = {
   confirmedAt: string | null;
   commissionPersonId: string;
   commissionPersonName: string;
+  nomusSellerId?: number | null;
   metadataJson: unknown;
   schedule?: {
     id: string;
@@ -179,8 +184,24 @@ export function resolveBlockReason(
   if (types.includes("NFE_WITHOUT_RECEIVABLE")) return "NF-e sem conta a receber";
   if (types.includes("NFE_WITHOUT_OUTPUT_DOCUMENT")) return "NF-e sem documento de saída";
   if (types.includes("RECEIVED_WITHOUT_RELEASE")) return "Recebimento sem liberação";
-  if (record.commissionPersonName.trim() === "" || record.commissionPersonName === "Comissionado") {
-    return "Sem vendedor identificado";
+  if (
+    isCommissionRecordWithoutResolvedSeller({
+      commissionPersonId: record.commissionPersonId,
+      commissionPerson: {
+        id: record.commissionPersonId,
+        name: record.commissionPersonName,
+      },
+      nomusSellerId: record.nomusSellerId ?? null,
+    })
+  ) {
+    return resolveCommissionSellerDisplay({
+      commissionPersonId: record.commissionPersonId,
+      commissionPerson: {
+        id: record.commissionPersonId,
+        name: record.commissionPersonName,
+      },
+      nomusSellerId: record.nomusSellerId ?? null,
+    }).label;
   }
   if (apuracaoStatus === "BLOQUEADA") return "Registro cancelado ou estornado";
   if (apuracaoStatus === "DIVERGENTE") return "Divergência de auditoria em aberto";

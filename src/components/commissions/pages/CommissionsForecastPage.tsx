@@ -41,6 +41,7 @@ import {
   useCommissionsForecastData,
   useCommissionsForecastDetail,
 } from "@/src/components/commissions/forecast/useCommissionsForecastData";
+import { formatCommissionSellerLabel } from "@/src/components/commissions/commissionSellerUi";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -308,7 +309,9 @@ export function CommissionsForecastPage() {
                     <td className="px-3 py-2 font-medium">{row.orderCode ?? row.orderKey}</td>
                     <td className="px-3 py-2">{formatDate(row.orderDate)}</td>
                     <td className="px-3 py-2">{row.customerName ?? "—"}</td>
-                    <td className="px-3 py-2">{row.sellerLabel ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {formatCommissionSellerLabel(row.seller, row.sellerLabel)}
+                    </td>
                     <td className="px-3 py-2">{row.representativeLabel ?? "—"}</td>
                     <td className="px-3 py-2 text-right">
                       {formatFinanceCurrency(row.orderAmount)}

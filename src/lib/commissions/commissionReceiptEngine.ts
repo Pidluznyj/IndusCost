@@ -402,15 +402,24 @@ function mapAuditRowStatus(row: VisualAuditRow): {
       reason: row.exclusionReason ?? "Cliente excluído de comissão",
     };
   }
-  const sellerStatus = row.sellerResolutionStatus;
-  if (sellerStatus === "UNRESOLVED" || sellerStatus === "CONFLICT" || sellerStatus === "MULTIPLE_CANONICALS") {
-    return {
-      status: "SELLER_UNRESOLVED",
-      reason: `Vendedor não resolvido (${sellerStatus})`,
-    };
-  }
-  if (!row.nomusSellerId && !row.commissionPersonName?.trim()) {
-    return { status: "NO_SELLER", reason: "Pedido/NF sem vendedor" };
+  const hasResolvedPerson = Boolean(
+    row.commissionPersonId && row.commissionPersonName?.trim()
+  );
+  if (!hasResolvedPerson) {
+    const sellerStatus = row.sellerResolutionStatus;
+    if (
+      sellerStatus === "UNRESOLVED" ||
+      sellerStatus === "CONFLICT" ||
+      sellerStatus === "MULTIPLE_CANONICALS"
+    ) {
+      return {
+        status: "SELLER_UNRESOLVED",
+        reason: `Vendedor não resolvido (${sellerStatus})`,
+      };
+    }
+    if (!row.nomusSellerId && !row.commissionPersonName?.trim()) {
+      return { status: "NO_SELLER", reason: "Pedido/NF sem vendedor" };
+    }
   }
   if (row.itemRatePercent <= 0 && row.commissionExpected <= 0 && row.allocatedBaseAmount > 0) {
     return { status: "NO_RULE", reason: "Sem regra ou percentual zerado" };

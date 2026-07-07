@@ -9,6 +9,12 @@ import {
   resolveForecastStatusIn,
   type CommissionForecastQuery,
 } from "./commissionQuery.js";
+import {
+  type CommissionSellerDisplayDto,
+  commissionSellerDisplayLabel,
+  isCommissionRecordWithoutResolvedSeller,
+  resolveCommissionSellerDisplay,
+} from "./commissionSellerDisplay.js";
 
 export type CommissionForecastCards = {
   totalForecastAmount: number;
@@ -26,6 +32,7 @@ export type CommissionForecastOrderRow = {
   localOrderId: string | null;
   orderDate: string | null;
   customerName: string | null;
+  seller: CommissionSellerDisplayDto;
   sellerLabel: string | null;
   representativeLabel: string | null;
   orderAmount: number;
@@ -53,6 +60,7 @@ export type CommissionForecastDetailPayload = {
   localOrderId: string | null;
   orderDate: string | null;
   customerName: string | null;
+  seller: CommissionSellerDisplayDto;
   sellerLabel: string | null;
   representativeLabel: string | null;
   paymentTerms: string | null;
@@ -103,7 +111,7 @@ type RecordWithRelations = {
   commissionAmount: unknown;
   calculatedAt: Date;
   metadataJson: unknown;
-  commissionPerson: { id: string; name: string };
+  commissionPerson: { id: string; name: string; nomusPersonId: number | null };
   paymentSchedules: Array<{
     installmentNumber: number | null;
     dueDate: Date | null;
@@ -119,6 +127,9 @@ type OrderAggregate = {
   customerName: string | null;
   nomusSellerId: number | null;
   nomusRepresentativeId: number | null;
+  commissionPersonId: string | null;
+  commissionPersonName: string | null;
+  commissionPersonNomusId: number | null;
   statuses: Set<CommissionRecordStatus>;
   baseAmount: number;
   commissionAmount: number;
@@ -224,6 +235,9 @@ function aggregateRecords(rows: RecordWithRelations[]): OrderAggregate[] {
         customerName: row.customerName,
         nomusSellerId: row.nomusSellerId,
         nomusRepresentativeId: row.nomusRepresentativeId,
+        commissionPersonId: row.commissionPerson.id,
+        commissionPersonName: row.commissionPerson.name,
+        commissionPersonNomusId: row.commissionPerson.nomusPersonId,
         statuses: new Set(),
         baseAmount: 0,
         commissionAmount: 0,
@@ -248,6 +262,11 @@ function aggregateRecords(rows: RecordWithRelations[]): OrderAggregate[] {
     if (row.nomusSellerId != null) agg.nomusSellerId = row.nomusSellerId;
     if (row.nomusRepresentativeId != null) {
       agg.nomusRepresentativeId = row.nomusRepresentativeId;
+    }
+    if (row.commissionPerson.id) {
+      agg.commissionPersonId = row.commissionPerson.id;
+      agg.commissionPersonName = row.commissionPerson.name;
+      agg.commissionPersonNomusId = row.commissionPerson.nomusPersonId;
     }
     if (row.customerName) agg.customerName = row.customerName;
     if (recordHasRule(row.metadataJson)) agg.hasRule = true;
@@ -321,15 +340,19 @@ async function resolveSalesOrderMap(orderCodes: string[]) {
   return new Map(orders.map((order) => [order.orderCode, order]));
 }
 
-function resolveSellerLabel(
-  nomusSellerId: number | null,
-  personMap: Map<number, string>,
-  nomusSellerName: string | null
-): string | null {
-  if (nomusSellerId != null) {
-    return personMap.get(nomusSellerId) ?? `Vendedor #${nomusSellerId}`;
-  }
-  return nomusSellerName?.trim() || null;
+function resolveOrderSellerDisplay(agg: OrderAggregate): CommissionSellerDisplayDto {
+  return resolveCommissionSellerDisplay({
+    commissionPersonId: agg.commissionPersonId,
+    commissionPerson:
+      agg.commissionPersonId && agg.commissionPersonName
+        ? {
+            id: agg.commissionPersonId,
+            name: agg.commissionPersonName,
+            nomusPersonId: agg.commissionPersonNomusId,
+          }
+        : null,
+    nomusSellerId: agg.nomusSellerId,
+  });
 }
 
 function resolveRepresentativeLabel(
@@ -416,7 +439,7 @@ async function fetchForecastRecords(
   return prisma.commissionRecord.findMany({
     where,
     include: {
-      commissionPerson: { select: { id: true, name: true } },
+      commissionPerson: { select: { id: true, name: true, nomusPersonId: true } },
       paymentSchedules: {
         where: { source: "SALES_ORDER_INSTALLMENT" },
         orderBy: [{ installmentNumber: "asc" }, { dueDate: "asc" }],
@@ -443,6 +466,8 @@ async function buildOrderRows(
         ? Math.round((agg.commissionAmount / agg.baseAmount) * 10000) / 100
         : 0;
 
+    const seller = resolveOrderSellerDisplay(agg);
+
     return {
       orderKey: agg.orderKey,
       orderCode: agg.orderCode,
@@ -450,11 +475,8 @@ async function buildOrderRows(
       localOrderId: salesOrder?.id ?? null,
       orderDate: salesOrder?.issueDate.toISOString() ?? agg.latestCalculatedAt.toISOString(),
       customerName: agg.customerName,
-      sellerLabel: resolveSellerLabel(
-        agg.nomusSellerId,
-        personMap,
-        salesOrder?.nomusSellerName ?? null
-      ),
+      seller,
+      sellerLabel: commissionSellerDisplayLabel(seller),
       representativeLabel: resolveRepresentativeLabel(
         agg.nomusRepresentativeId,
         personMap
@@ -489,7 +511,19 @@ function buildCards(
     if (agg.statuses.has("WAITING_NFE")) {
       orderKeysWaitingNfe.add(agg.orderKey);
     }
-    if (agg.nomusSellerId == null && agg.nomusRepresentativeId == null) {
+    const sellerMissing = isCommissionRecordWithoutResolvedSeller({
+      commissionPersonId: agg.commissionPersonId,
+      commissionPerson:
+        agg.commissionPersonId && agg.commissionPersonName
+          ? {
+              id: agg.commissionPersonId,
+              name: agg.commissionPersonName,
+              nomusPersonId: agg.commissionPersonNomusId,
+            }
+          : null,
+      nomusSellerId: agg.nomusSellerId,
+    });
+    if (sellerMissing && agg.nomusRepresentativeId == null) {
       orderKeysWithoutSellerOrRep.add(agg.orderKey);
     }
   }
@@ -556,7 +590,7 @@ export async function getCommissionForecastOrderDetail(
   const filtered = await prisma.commissionRecord.findMany({
     where: { AND: [baseWhere, orderWhere] },
     include: {
-      commissionPerson: { select: { id: true, name: true } },
+      commissionPerson: { select: { id: true, name: true, nomusPersonId: true } },
       paymentSchedules: {
         where: { source: "SALES_ORDER_INSTALLMENT" },
         orderBy: [{ installmentNumber: "asc" }, { dueDate: "asc" }],
@@ -595,6 +629,7 @@ export async function getCommissionForecastOrderDetail(
 
   const salesOrder = orderCode ? salesOrderMap.get(orderCode) : undefined;
   const status = resolveOrderStatus(agg.statuses);
+  const seller = resolveOrderSellerDisplay(agg);
 
   const installments = [...agg.schedules].sort((a, b) => {
     if (!a.dueDate && !b.dueDate) return 0;
@@ -610,11 +645,8 @@ export async function getCommissionForecastOrderDetail(
     localOrderId: salesOrder?.id ?? null,
     orderDate: salesOrder?.issueDate.toISOString() ?? agg.latestCalculatedAt.toISOString(),
     customerName: agg.customerName,
-    sellerLabel: resolveSellerLabel(
-      agg.nomusSellerId,
-      personMap,
-      salesOrder?.nomusSellerName ?? null
-    ),
+    seller,
+    sellerLabel: commissionSellerDisplayLabel(seller),
     representativeLabel: resolveRepresentativeLabel(
       agg.nomusRepresentativeId,
       personMap

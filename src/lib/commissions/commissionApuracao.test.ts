@@ -108,6 +108,27 @@ describe("commissionApuracao", () => {
     assert.ok(Number.isFinite(line.ratePercent));
     assert.ok(Number.isFinite(line.commissionCalculated));
   });
+
+  it("não bloqueia por vendedor quando commissionPerson está resolvido", () => {
+    const line = buildApuracaoLine({
+      ...baseRecord,
+      commissionPersonName: "GISLENE LIMA",
+      nomusSellerId: null,
+      schedule: null,
+    });
+    assert.equal(line.blockReason, null);
+  });
+
+  it("bloqueia com SELLER_UNRESOLVED quando nomusSellerId sem pessoa", () => {
+    const line = buildApuracaoLine({
+      ...baseRecord,
+      commissionPersonId: "",
+      commissionPersonName: "",
+      nomusSellerId: 1189,
+      schedule: null,
+    });
+    assert.match(line.blockReason ?? "", /Vendedor Nomus não mapeado/);
+  });
 });
 
 describe("buildCommissionRecordPeriodWhere confirmedAt", () => {

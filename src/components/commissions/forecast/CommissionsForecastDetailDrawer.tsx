@@ -11,6 +11,7 @@ import {
 import { formatCommissionStatus } from "@/src/components/commissions/dashboard/commissionsDashboardLabels";
 import { CommissionOutOfTableFlag } from "@/src/components/commissions/CommissionOutOfTableBadge";
 import type { CommissionsForecastDetailPayload } from "@/src/components/commissions/commissionsTypes";
+import { formatCommissionSellerLabel } from "@/src/components/commissions/commissionSellerUi";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -108,7 +109,9 @@ export function CommissionsForecastDetailDrawer({
                 </div>
                 <div>
                   <p className="text-xs text-[#6B7280]">Vendedor</p>
-                  <p className="font-medium">{detail.sellerLabel ?? "—"}</p>
+                  <p className="font-medium">
+                    {formatCommissionSellerLabel(detail.seller, detail.sellerLabel)}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-[#6B7280]">Representante</p>

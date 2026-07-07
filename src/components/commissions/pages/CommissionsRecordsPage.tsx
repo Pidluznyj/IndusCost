@@ -9,6 +9,7 @@ import {
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
 import { useCommissionsFetch } from "@/src/components/commissions/useCommissionsFetch";
+import { formatCommissionSellerLabel } from "@/src/components/commissions/commissionSellerUi";
 
 type CommissionsRecordsPageProps = {
   title: string;
@@ -68,7 +69,9 @@ export function CommissionsRecordsPage({
                 {data.items.map((row) => (
                   <tr key={row.id}>
                     <td className="px-3 py-2">{row.orderCode ?? "—"}</td>
-                    <td className="px-3 py-2">{row.commissionPersonName}</td>
+                    <td className="px-3 py-2">
+                      {formatCommissionSellerLabel(row.seller, row.commissionPersonName)}
+                    </td>
                     <td className="px-3 py-2">{row.status}</td>
                     <td className="px-3 py-2 text-right">
                       {formatCurrency(row.commissionAmount, 2)}
