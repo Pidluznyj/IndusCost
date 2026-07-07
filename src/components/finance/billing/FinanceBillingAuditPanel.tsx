@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import { formatExecutiveCurrency, formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
 import type { BillingAuditResult } from "@/src/lib/financeBillingAuditTypes";
 import { FinanceApErrorBanner, FinanceApLoadingBlock } from "@/src/components/finance/FinanceAccountsPayableUiShared";
@@ -54,83 +56,113 @@ export function FinanceBillingAuditPanel({ audit, loading, error, onRetry }: Pro
         </div>
       ) : null}
 
-      <section>
-        <h3 className="text-sm font-bold text-[#111827]">Comparação NF-e fiscal × SalesOrder</h3>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <DiagCard
-            label="Total NF-e fiscal"
-            value={formatExecutiveCurrency(summary.nfeFiscalTotal)}
-          />
-          <DiagCard
-            label="Total SalesOrder"
-            value={formatExecutiveCurrency(summary.salesOrderTotal)}
-          />
-          <DiagCard
-            label="Diferença (NF-e − pedidos)"
-            value={formatExecutiveCurrency(summary.sourceComparisonDifference)}
-          />
-        </div>
-        {audit.divergences.some((d) => d.nfNumber === "7052") ? (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-            <strong>NF 7052</strong> — 08/06/2026 — R$ 168.075,00: presente na base NF-e fiscal,
-            ausente no total por SalesOrder.
-          </p>
-        ) : null}
-        {audit.dailySourceComparison.length > 0 ? (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-            <table className="w-full min-w-[480px] text-xs">
-              <thead className="border-b bg-muted/40 text-left">
-                <tr>
-                  <th className="px-3 py-2">Dia</th>
-                  <th className="px-3 py-2 text-right">NF-e</th>
-                  <th className="px-3 py-2 text-right">SalesOrder</th>
-                  <th className="px-3 py-2 text-right">Diferença</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audit.dailySourceComparison.map((row) => (
-                  <tr
-                    key={row.date}
-                    className={cn(
-                      "border-b border-border/60",
-                      Math.abs(row.difference) > 10000 && "bg-amber-50/60"
-                    )}
-                  >
-                    <td className="px-3 py-2">{row.date}</td>
-                    <td className="px-3 py-2 text-right">{formatExecutiveCurrency(row.nfeTotal)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {formatExecutiveCurrency(row.salesOrderTotal)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-semibold">
-                      {formatExecutiveCurrency(row.difference)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
+      <AdminKpiSection
+        title="Comparação NF-e fiscal × SalesOrder"
+        eyebrow="Auditoria de faturamento"
+        minColumnWidth={200}
+        testId="finance-billing-audit-source-kpi"
+      >
+        <MetricCard
+          label="Total NF-e fiscal"
+          value={formatExecutiveCurrency(summary.nfeFiscalTotal)}
+          variant="money"
+        />
+        <MetricCard
+          label="Total SalesOrder"
+          value={formatExecutiveCurrency(summary.salesOrderTotal)}
+          variant="money"
+        />
+        <MetricCard
+          label="Diferença (NF-e − pedidos)"
+          value={formatExecutiveCurrency(summary.sourceComparisonDifference)}
+          variant={Math.abs(summary.sourceComparisonDifference) > 0 ? "warning" : "success"}
+        />
+      </AdminKpiSection>
 
-      <section>
-        <h3 className="text-sm font-bold text-[#111827]">Diagnóstico do cálculo</h3>
-        <p className="mt-1 text-[11px] text-[#6B7280]">
-          Fonte oficial: <strong>{summary.dataSourceOfficial}</strong> · Data base:{" "}
-          <strong>{summary.dateBaseLabel}</strong> · Valor: <strong>{summary.valueFieldLabel}</strong> ·
-          Período: <strong>{summary.periodLabel}</strong>
+      {audit.divergences.some((d) => d.nfNumber === "7052") ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <strong>NF 7052</strong> — 08/06/2026 — R$ 168.075,00: presente na base NF-e fiscal,
+          ausente no total por SalesOrder.
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <DiagCard label="Total dashboard" value={formatExecutiveCurrency(summary.dashboardDisplayedTotal)} />
-          <DiagCard label="Total bruto encontrado" value={formatExecutiveCurrency(summary.grossFoundTotal)} />
-          <DiagCard label="Total excluído" value={formatExecutiveCurrency(summary.excludedTotal)} />
-          <DiagCard label="NF incluídas" value={formatExecutiveInteger(summary.includedCount)} />
-          <DiagCard label="NF excluídas" value={formatExecutiveInteger(summary.excludedCount)} />
-          <DiagCard
-            label="Última sync Nomus"
-            value={summary.lastNomusSyncAt ? summary.lastNomusSyncAt.slice(0, 16).replace("T", " ") : "—"}
-          />
+      ) : null}
+      {audit.dailySourceComparison.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full min-w-[480px] text-xs">
+            <thead className="border-b bg-muted/40 text-left">
+              <tr>
+                <th className="px-3 py-2">Dia</th>
+                <th className="px-3 py-2 text-right">NF-e</th>
+                <th className="px-3 py-2 text-right">SalesOrder</th>
+                <th className="px-3 py-2 text-right">Diferença</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audit.dailySourceComparison.map((row) => (
+                <tr
+                  key={row.date}
+                  className={cn(
+                    "border-b border-border/60",
+                    Math.abs(row.difference) > 10000 && "bg-amber-50/60"
+                  )}
+                >
+                  <td className="px-3 py-2">{row.date}</td>
+                  <td className="px-3 py-2 text-right">{formatExecutiveCurrency(row.nfeTotal)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {formatExecutiveCurrency(row.salesOrderTotal)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold">
+                    {formatExecutiveCurrency(row.difference)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </section>
+      ) : null}
+
+      <AdminKpiSection
+        title="Diagnóstico do cálculo"
+        eyebrow={`Fonte: ${summary.dataSourceOfficial} · ${summary.periodLabel}`}
+        minColumnWidth={168}
+        testId="finance-billing-audit-diag-kpi"
+        footer={
+          <p className="text-[11px] text-muted-foreground">
+            Data base: <strong>{summary.dateBaseLabel}</strong> · Valor:{" "}
+            <strong>{summary.valueFieldLabel}</strong>
+          </p>
+        }
+      >
+        <MetricCard
+          label="Total dashboard"
+          value={formatExecutiveCurrency(summary.dashboardDisplayedTotal)}
+          variant="money"
+        />
+        <MetricCard
+          label="Total bruto encontrado"
+          value={formatExecutiveCurrency(summary.grossFoundTotal)}
+          variant="info"
+        />
+        <MetricCard
+          label="Total excluído"
+          value={formatExecutiveCurrency(summary.excludedTotal)}
+          variant="warning"
+        />
+        <MetricCard
+          label="NF incluídas"
+          value={formatExecutiveInteger(summary.includedCount)}
+          variant="success"
+        />
+        <MetricCard
+          label="NF excluídas"
+          value={formatExecutiveInteger(summary.excludedCount)}
+          variant={summary.excludedCount > 0 ? "warning" : "neutral"}
+        />
+        <MetricCard
+          label="Última sync Nomus"
+          value={summary.lastNomusSyncAt ? summary.lastNomusSyncAt.slice(0, 16).replace("T", " ") : "—"}
+          variant="info"
+        />
+      </AdminKpiSection>
 
       <section>
         <h4 className="text-xs font-bold uppercase text-muted-foreground">Possíveis causas da divergência</h4>
@@ -208,15 +240,6 @@ export function FinanceBillingAuditPanel({ audit, loading, error, onRetry }: Pro
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function DiagCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white px-3 py-3">
-      <p className="text-[10px] font-bold uppercase text-[#6B7280]">{label}</p>
-      <p className="mt-1 text-sm font-bold text-[#111827]">{value}</p>
     </div>
   );
 }

@@ -3,9 +3,10 @@ import {
   CommissionsEmptyState,
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
   TRACE_PAGE_UNAVAILABLE,
   apiStatusChipClass,
@@ -329,12 +330,12 @@ export function CostToCashTraceSections({
     }
     return (
       <div className="space-y-4">
-        <MetricCardGrid>
-          <MetricCard label="Comissão bruta" value={formatTraceMoney(commission?.totals.totalGrossCommission)} />
-          <MetricCard label="Comissão final" value={formatTraceMoney(commission?.totals.totalFinalCommission)} />
-          <MetricCard label="Liberada" value={formatTraceMoney(commission?.totals.totalReleasedCommission)} />
-          <MetricCard label="Pendente" value={formatTraceMoney(commission?.totals.totalPendingCommission)} />
-        </MetricCardGrid>
+        <SummaryKpiGrid minColumnWidth={180}>
+          <MetricCard label="Comissão bruta" value={formatTraceMoney(commission?.totals.totalGrossCommission)} variant="money" />
+          <MetricCard label="Comissão final" value={formatTraceMoney(commission?.totals.totalFinalCommission)} variant="money" />
+          <MetricCard label="Liberada" value={formatTraceMoney(commission?.totals.totalReleasedCommission)} variant="success" />
+          <MetricCard label="Pendente" value={formatTraceMoney(commission?.totals.totalPendingCommission)} variant="warning" />
+        </SummaryKpiGrid>
 
         <TraceSectionCard title="Comissão por item">
           <SimpleTable
@@ -467,11 +468,16 @@ export function CostToCashTraceSummary({
         </div>
       ) : null}
 
-      <MetricCardGrid>
+      <AdminKpiSection
+        title="Resumo da rastreabilidade"
+        eyebrow={`Auditado em ${formatTraceDate(data.summary.auditedAt)}`}
+        minColumnWidth={180}
+        testId="cost-to-cash-trace-summary-kpi"
+      >
         {cards.map((card) => (
           <MetricCard key={card.label} label={card.label} value={card.value} subtitle={card.meta} />
         ))}
-      </MetricCardGrid>
+      </AdminKpiSection>
     </div>
   );
 }

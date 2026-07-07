@@ -1,29 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Clock, Shield } from "lucide-react";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import type { FinanceCashFlowAuditPayload } from "@/src/lib/financeCashFlowDataset";
 import type { FinanceCashFlowReconciliation } from "@/src/lib/financeCashFlowDashboardTypes";
 import type { FinanceDataSanitization } from "@/src/lib/financeInternalGroupExclusions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import { cn } from "@/src/lib/utils";
-
-function AuditMetric({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7280]">{label}</p>
-      <p className="text-sm font-bold text-[#111827] tabular-nums mt-0.5">{value}</p>
-      {hint ? <p className="text-[10px] text-[#6B7280] mt-1">{hint}</p> : null}
-    </div>
-  );
-}
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -98,9 +82,11 @@ export function FinanceCashFlowNumbersAuditPanel({
         (dataSanitization.ignoredPurchaseOrderAgendaPayables ?? 0)
       : audit?.exclusions.apIntercompanyOrPurchaseOrder;
 
+  const syncLoadingValue = loading && !audit ? "…" : undefined;
+
   return (
     <div className="space-y-4" data-testid="cash-flow-numbers-audit-content">
-      <p className="text-[11px] text-[#6B7280] leading-relaxed">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
         Qualidade dos dados e conferência técnica com Contas a Receber e Contas a Pagar. Os
         números da tela não mudam — esta seção só explica origem e exclusões.
       </p>
@@ -110,69 +96,82 @@ export function FinanceCashFlowNumbersAuditPanel({
         <StatusPill ok={portfolioOk} label="Carteira × AR/AP" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        <AuditMetric
+      <AdminKpiSection
+        title="Freshness e cutoff Nomus"
+        eyebrow="Auditoria técnica · fluxo de caixa"
+        minColumnWidth={180}
+        testId="cash-flow-audit-sync-kpi"
+      >
+        <MetricCard
           label="Última sync (visão combinada)"
           value={lastSyncAt ? formatFinanceDateTime(lastSyncAt) : "—"}
-          hint="Maior syncedAt entre CR e CP no recorte carregado."
+          subtitle="Maior syncedAt entre CR e CP no recorte carregado"
+          variant="info"
+          icon={<Clock className="h-3.5 w-3.5" />}
         />
-        <AuditMetric
+        <MetricCard
           label="Cutoff AR (Nomus)"
           value={
-            loading && !audit ? (
-              <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
-            ) : audit?.syncCutoffs.ar ? (
-              formatFinanceDateTime(audit.syncCutoffs.ar)
-            ) : (
-              "—"
-            )
+            syncLoadingValue ??
+            (audit?.syncCutoffs.ar ? formatFinanceDateTime(audit.syncCutoffs.ar) : "—")
           }
+          subtitle="Data-base da última sync de Contas a Receber"
+          variant="neutral"
+          loading={loading && !audit}
+          icon={<Clock className="h-3.5 w-3.5" />}
         />
-        <AuditMetric
+        <MetricCard
           label="Cutoff AP (Nomus)"
           value={
-            loading && !audit ? (
-              <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
-            ) : audit?.syncCutoffs.ap ? (
-              formatFinanceDateTime(audit.syncCutoffs.ap)
-            ) : (
-              "—"
-            )
+            syncLoadingValue ??
+            (audit?.syncCutoffs.ap ? formatFinanceDateTime(audit.syncCutoffs.ap) : "—")
           }
+          subtitle="Data-base da última sync de Contas a Pagar"
+          variant="neutral"
+          loading={loading && !audit}
+          icon={<Clock className="h-3.5 w-3.5" />}
         />
-      </div>
+      </AdminKpiSection>
 
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280] mb-2">
-          Exclusões gerenciais (escopo filtrado)
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          <AuditMetric
-            label="AR stale"
-            value={dataSanitization?.ignoredStaleReceivables ?? audit?.exclusions.arStale ?? "—"}
-          />
-          <AuditMetric
-            label="AR vencido sem NF"
-            value={
-              dataSanitization?.ignoredOverdueWithoutFiscalDocumentReceivables ??
+      <AdminKpiSection
+        title="Exclusões gerenciais"
+        eyebrow="Escopo filtrado · saneamento AR/AP"
+        minColumnWidth={160}
+        testId="cash-flow-audit-exclusions-kpi"
+      >
+        <MetricCard
+          label="AR stale"
+          value={String(dataSanitization?.ignoredStaleReceivables ?? audit?.exclusions.arStale ?? "—")}
+          variant="warning"
+          icon={<Shield className="h-3.5 w-3.5" />}
+        />
+        <MetricCard
+          label="AR vencido sem NF"
+          value={String(
+            dataSanitization?.ignoredOverdueWithoutFiscalDocumentReceivables ??
               audit?.exclusions.arOverdueWithoutFiscalDocument ??
               "—"
-            }
-          />
-          <AuditMetric
-            label="AP stale"
-            value={dataSanitization?.ignoredStalePayables ?? audit?.exclusions.apStale ?? "—"}
-          />
-          <AuditMetric
-            label="AP intercompany / PC"
-            value={apIntercompanyExcluded ?? "—"}
-            hint="Intercompany e pedido de compra (type=2) na agenda gerencial."
-          />
-        </div>
-      </div>
+          )}
+          variant="warning"
+          icon={<Shield className="h-3.5 w-3.5" />}
+        />
+        <MetricCard
+          label="AP stale"
+          value={String(dataSanitization?.ignoredStalePayables ?? audit?.exclusions.apStale ?? "—")}
+          variant="warning"
+          icon={<Shield className="h-3.5 w-3.5" />}
+        />
+        <MetricCard
+          label="AP intercompany / PC"
+          value={String(apIntercompanyExcluded ?? "—")}
+          subtitle="Intercompany e pedido de compra (type=2) na agenda gerencial"
+          variant="neutral"
+          icon={<Shield className="h-3.5 w-3.5" />}
+        />
+      </AdminKpiSection>
 
       {audit ? (
-        <div className="text-[10px] text-[#6B7280] space-y-1">
+        <div className="text-[10px] text-muted-foreground space-y-1">
           <p>
             Portfólio carregado: {audit.counts.arPortfolio} CR · {audit.counts.apPortfolio} CP ·
             Período: {audit.counts.arPeriod} CR · {audit.counts.apPeriod} CP
@@ -180,7 +179,11 @@ export function FinanceCashFlowNumbersAuditPanel({
         </div>
       ) : null}
 
-      {error ? <p className="text-[11px] text-red-700">{error}</p> : null}
+      {error ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

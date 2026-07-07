@@ -25,6 +25,9 @@ import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
 import { AccessProfilesModule } from "@/src/components/AccessProfilesModule";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
@@ -1010,6 +1013,23 @@ export const SettingsModule = () => {
     }
   };
 
+  const nomusHealthCardAccent = (health: NomusIntegrationHealthState): string => {
+    switch (health) {
+      case "OK":
+        return "border-l-emerald-500";
+      case "WARNING":
+        return "border-l-amber-500";
+      case "FAILED":
+        return "border-l-red-500";
+      case "STALE":
+        return "border-l-orange-500";
+      case "NO_DATA":
+        return "border-l-slate-400";
+      default:
+        return "border-l-slate-400";
+    }
+  };
+
   const nomusHealthBadgeClass = (health: NomusIntegrationHealthState): string => {
     switch (health) {
       case "OK":
@@ -1549,19 +1569,18 @@ export const SettingsModule = () => {
               )}
 
               {nomusHealth && nomusHealth.targets.length > 0 ? (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Saúde por destino</p>
+                <ExecutiveSummarySection
+                  title="Saúde por destino"
+                  eyebrow="Integrações Nomus — última apply registrada"
+                  testId="settings-nomus-health-summary"
+                >
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                     {nomusHealth.targets.map((t) => (
                       <div
                         key={t.target}
                         className={cn(
-                          "min-w-0 rounded-xl border p-4 flex flex-col gap-2 min-h-[200px]",
-                          t.health === "OK" && "border-green-200 bg-green-50/40",
-                          t.health === "WARNING" && "border-amber-200 bg-amber-50/40",
-                          t.health === "FAILED" && "border-red-200 bg-red-50/40",
-                          t.health === "STALE" && "border-orange-200 bg-orange-50/40",
-                          t.health === "NO_DATA" && "border-border bg-card/50"
+                          "min-w-0 rounded-xl border border-border bg-card p-4 flex flex-col gap-3 min-h-[200px] border-l-4 shadow-sm",
+                          nomusHealthCardAccent(t.health)
                         )}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -1629,7 +1648,7 @@ export const SettingsModule = () => {
                       </div>
                     ))}
                   </div>
-                </div>
+                </ExecutiveSummarySection>
               ) : null}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -1780,28 +1799,42 @@ export const SettingsModule = () => {
                       Copiar log
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    <div className="rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Elegíveis</p>
-                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.eligibleCount)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Bloqueados</p>
-                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.blockedCount)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Criados</p>
-                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.created)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Atualizados</p>
-                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.updated)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Itens criados</p>
-                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.itemsCreated)}</p>
-                    </div>
-                  </div>
+                  <AdminKpiSection
+                    title="Métricas do log selecionado"
+                    eyebrow={nomusSelectedDetail.fileName}
+                    minColumnWidth={140}
+                    testId="settings-nomus-log-detail-kpi"
+                  >
+                    <MetricCard
+                      label="Elegíveis"
+                      value={formatIntOrDash(nomusSelectedDetail.summary?.metrics?.eligibleCount)}
+                      variant="info"
+                    />
+                    <MetricCard
+                      label="Bloqueados"
+                      value={formatIntOrDash(nomusSelectedDetail.summary?.metrics?.blockedCount)}
+                      variant={
+                        (nomusSelectedDetail.summary?.metrics?.blockedCount ?? 0) > 0
+                          ? "warning"
+                          : "success"
+                      }
+                    />
+                    <MetricCard
+                      label="Criados"
+                      value={formatIntOrDash(nomusSelectedDetail.summary?.metrics?.created)}
+                      variant="success"
+                    />
+                    <MetricCard
+                      label="Atualizados"
+                      value={formatIntOrDash(nomusSelectedDetail.summary?.metrics?.updated)}
+                      variant="info"
+                    />
+                    <MetricCard
+                      label="Itens criados"
+                      value={formatIntOrDash(nomusSelectedDetail.summary?.metrics?.itemsCreated)}
+                      variant="neutral"
+                    />
+                  </AdminKpiSection>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                     <div>
                       <p className="font-semibold">Status</p>
@@ -1994,28 +2027,46 @@ export const SettingsModule = () => {
                           <p className="text-sm text-muted-foreground">Resumo de geração não disponível para esta versão.</p>
                         ) : (
                           <>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
-                              <div className="rounded-lg border border-border bg-background px-3 py-2">
-                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Produtos lidos</p>
-                                <p className="font-semibold">{Number.isFinite(Number(selectedVersionSummaryRaw.productsRead)) ? Number(selectedVersionSummaryRaw.productsRead) : "—"}</p>
-                              </div>
-                              <div className="rounded-lg border border-border bg-background px-3 py-2">
-                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Itens criados</p>
-                                <p className="font-semibold">{selectedVersionSummaryCounts.itemsCreated ?? "—"}</p>
-                              </div>
-                              <div className="rounded-lg border border-border bg-background px-3 py-2">
-                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Itens ignorados</p>
-                                <p className="font-semibold">{Number.isFinite(Number(selectedVersionSummaryRaw.itemsSkipped)) ? Number(selectedVersionSummaryRaw.itemsSkipped) : "—"}</p>
-                              </div>
-                              <div className="rounded-lg border border-border bg-background px-3 py-2">
-                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Warnings</p>
-                                <p className="font-semibold">{selectedVersionSummaryCounts.warnings}</p>
-                              </div>
-                              <div className="rounded-lg border border-border bg-background px-3 py-2">
-                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Errors</p>
-                                <p className="font-semibold">{selectedVersionSummaryCounts.errors}</p>
-                              </div>
-                            </div>
+                            <AdminKpiSection
+                              title="Resumo da geração"
+                              eyebrow={`Versão selecionada · ${selectedPriceTableVersion?.versionNumber ? `v${selectedPriceTableVersion.versionNumber}` : "—"}`}
+                              minColumnWidth={140}
+                              testId="settings-price-generation-kpi"
+                            >
+                              <MetricCard
+                                label="Produtos lidos"
+                                value={
+                                  Number.isFinite(Number(selectedVersionSummaryRaw.productsRead))
+                                    ? String(Number(selectedVersionSummaryRaw.productsRead))
+                                    : "—"
+                                }
+                                variant="info"
+                              />
+                              <MetricCard
+                                label="Itens criados"
+                                value={String(selectedVersionSummaryCounts.itemsCreated ?? "—")}
+                                variant="success"
+                              />
+                              <MetricCard
+                                label="Itens ignorados"
+                                value={
+                                  Number.isFinite(Number(selectedVersionSummaryRaw.itemsSkipped))
+                                    ? String(Number(selectedVersionSummaryRaw.itemsSkipped))
+                                    : "—"
+                                }
+                                variant="neutral"
+                              />
+                              <MetricCard
+                                label="Warnings"
+                                value={String(selectedVersionSummaryCounts.warnings)}
+                                variant={selectedVersionSummaryCounts.warnings > 0 ? "warning" : "success"}
+                              />
+                              <MetricCard
+                                label="Errors"
+                                value={String(selectedVersionSummaryCounts.errors)}
+                                variant={selectedVersionSummaryCounts.errors > 0 ? "danger" : "success"}
+                              />
+                            </AdminKpiSection>
 
                             {selectedVersionWarningsPreview.length > 0 && (
                               <div className="space-y-2">

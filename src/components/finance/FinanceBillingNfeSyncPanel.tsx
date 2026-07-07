@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CircleCheck, Loader2, Play, RefreshCw } from "lucide-react";
+import { AlertTriangle, CircleCheck, Clock, Database, Loader2, Play, RefreshCw, Settings2 } from "lucide-react";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn } from "@/src/lib/utils";
 import { NOMUS_NFE_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusNfesSyncConstants";
 import type { NomusNfesSyncStatusPayload } from "@/src/lib/nomusNfesSyncStatusTypes";
 import {
-  nfeOverallStatusBadgeClass,
   nfeOverallStatusLabel,
   nfePrimaryButtonLabel,
 } from "@/src/lib/nomusNfesSyncStatusTypes";
@@ -159,41 +159,52 @@ export function FinanceBillingNfeSyncPanel({
       ) : null}
 
       {status ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Status</p>
-            <span
-              className={cn(
-                "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold",
-                nfeOverallStatusBadgeClass(overall)
-              )}
-            >
-              {nfeOverallStatusLabel(overall)}
-            </span>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Última execução</p>
-            <p className="font-semibold text-foreground">
-              {status.lastSuccess?.finishedAt
+        <AdminKpiSection
+          title="Status da sincronização NF-e"
+          eyebrow="Nomus · faturamento fiscal"
+          minColumnWidth={180}
+          testId="finance-billing-nfe-sync-kpi"
+        >
+          <MetricCard
+            label="Status"
+            value={nfeOverallStatusLabel(overall)}
+            variant={
+              overall === "SUCCESS"
+                ? "success"
+                : overall === "FAILED" || overall === "STALE"
+                  ? "danger"
+                  : "neutral"
+            }
+            icon={<CircleCheck className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Última execução"
+            value={
+              status.lastSuccess?.finishedAt
                 ? formatFinanceDateTime(status.lastSuccess.finishedAt)
                 : status.finishedAt
                   ? formatFinanceDateTime(status.finishedAt)
-                  : "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Registros</p>
-            <p className="font-semibold text-foreground">
-              {formatIntOrDash(status.metrics.mapped)} mapeados ·{" "}
-              {formatIntOrDash(status.metrics.created)} novos ·{" "}
-              {formatIntOrDash(status.metrics.updated)} atualizados
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Estratégia</p>
-            <p className="font-semibold text-foreground">{status.syncStrategy ?? "—"}</p>
-          </div>
-        </div>
+                  : "—"
+            }
+            subtitle="Conclusão da última sync bem-sucedida ou tentativa"
+            variant="info"
+            icon={<Clock className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Registros"
+            value={`${formatIntOrDash(status.metrics.mapped)} mapeados`}
+            subtitle={`${formatIntOrDash(status.metrics.created)} novos · ${formatIntOrDash(status.metrics.updated)} atualizados`}
+            variant="info"
+            icon={<Database className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Estratégia"
+            value={status.syncStrategy ?? "—"}
+            subtitle="Modo de sincronização Nomus"
+            variant="neutral"
+            icon={<Settings2 className="h-3.5 w-3.5" />}
+          />
+        </AdminKpiSection>
       ) : null}
 
       {!canRun ? (

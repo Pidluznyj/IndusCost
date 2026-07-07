@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CircleCheck, Loader2, Play, RefreshCw } from "lucide-react";
+import { AlertTriangle, CircleCheck, Clock, FileText, Loader2, Play, RefreshCw, Timer } from "lucide-react";
+import { AdminKpiSection, AdminMetricGrid } from "@/src/components/admin/adminUi";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { NOMUS_AR_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusAccountsReceivableSyncConstants";
@@ -212,50 +214,30 @@ export function NomusAccountsReceivableSyncCard({
             {status.recommendedAction ? (
               <p className="text-xs leading-snug font-medium">{status.recommendedAction}</p>
             ) : null}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1">
-              <div>
-                <span className="opacity-70">Início</span>
-                <p className="font-semibold">{formatDateTimeSafe(status.startedAt)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Fim</span>
-                <p className="font-semibold">{formatDateTimeSafe(status.finishedAt)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Duração</span>
-                <p className="font-semibold">{formatDurationMs(status.durationMs)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Erros</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.errors)}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
-              <div>
-                <span className="opacity-70">Páginas</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.pagesRead)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Lidos</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.recordsRead)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Mapeados</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.mapped)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Criados</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.created)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Atualizados</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.updated)}</p>
-              </div>
-              <div>
-                <span className="opacity-70">Inalterados</span>
-                <p className="font-semibold">{formatIntOrDash(metrics?.unchanged)}</p>
-              </div>
-            </div>
+            <AdminMetricGrid
+              minColumnWidth={140}
+              items={[
+                { label: "Início", value: formatDateTimeSafe(status.startedAt), variant: "neutral" },
+                { label: "Fim", value: formatDateTimeSafe(status.finishedAt), variant: "neutral" },
+                { label: "Duração", value: formatDurationMs(status.durationMs), variant: "info" },
+                {
+                  label: "Erros",
+                  value: formatIntOrDash(metrics?.errors),
+                  variant: (metrics?.errors ?? 0) > 0 ? "danger" : "success",
+                },
+              ]}
+            />
+            <AdminMetricGrid
+              minColumnWidth={120}
+              items={[
+                { label: "Páginas", value: formatIntOrDash(metrics?.pagesRead), variant: "neutral" },
+                { label: "Lidos", value: formatIntOrDash(metrics?.recordsRead), variant: "info" },
+                { label: "Mapeados", value: formatIntOrDash(metrics?.mapped), variant: "info" },
+                { label: "Criados", value: formatIntOrDash(metrics?.created), variant: "success" },
+                { label: "Atualizados", value: formatIntOrDash(metrics?.updated), variant: "info" },
+                { label: "Inalterados", value: formatIntOrDash(metrics?.unchanged), variant: "neutral" },
+              ]}
+            />
             <p className="text-[10px] opacity-80">
               Processo vivo: {status.hasLiveProcess ? "sim" : "não"} · Lock ativo:{" "}
               {status.hasActiveLock ? "sim" : "não"}
@@ -275,46 +257,47 @@ export function NomusAccountsReceivableSyncCard({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg border border-border bg-background px-3 py-2">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Última execução</p>
-            {status?.lastRun ? (
-              <>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)}
-                </p>
-                {status.lastRun.exitCode != null ? (
-                  <p className="text-xs font-mono">exit {status.lastRun.exitCode}</p>
-                ) : null}
-              </>
-            ) : (
-              <p className="mt-1 text-sm text-muted-foreground">Nenhuma execução encontrada</p>
-            )}
-          </div>
-          <div className="rounded-lg border border-border bg-background px-3 py-2">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Último sucesso</p>
-            <p className="mt-1 text-xs font-mono break-all">{status?.lastSuccess?.fileName ?? "—"}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-background px-3 py-2 min-w-0">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Último log</p>
-            <p
-              className="mt-1 text-xs font-mono break-all"
-              title={status?.lastRunnerLogFile ?? undefined}
-            >
-              {status?.lastRunnerLogFile ?? "—"}
-            </p>
-            <p className="text-[10px] text-muted-foreground truncate" title={status?.runnerLogDir}>
-              {status?.runnerLogDir ?? "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-background px-3 py-2">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Periodicidade</p>
-            <p className="mt-1 text-xs">Automática a cada 2 horas (cron no servidor)</p>
-          </div>
-        </div>
+        <AdminKpiSection
+          title="Referência da sync Contas a Receber"
+          eyebrow="Histórico, logs e periodicidade"
+          minColumnWidth={180}
+          testId="nomus-ar-sync-kpi"
+        >
+          <MetricCard
+            label="Última execução"
+            value={
+              status?.lastRun
+                ? formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)
+                : "Nenhuma execução encontrada"
+            }
+            subtitle={
+              status?.lastRun?.exitCode != null ? `exit ${status.lastRun.exitCode}` : undefined
+            }
+            variant="info"
+            icon={<Clock className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Último sucesso"
+            value={status?.lastSuccess?.fileName ?? "—"}
+            subtitle={formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
+            variant="success"
+            icon={<FileText className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Último log"
+            value={status?.lastRunnerLogFile ?? "—"}
+            subtitle={status?.runnerLogDir ?? "—"}
+            variant="neutral"
+            icon={<FileText className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Periodicidade"
+            value="A cada 2 horas"
+            subtitle="Cron automático no servidor"
+            variant="info"
+            icon={<Timer className="h-3.5 w-3.5" />}
+          />
+        </AdminKpiSection>
 
         {!canRun ? (
           <p className="text-xs text-muted-foreground">

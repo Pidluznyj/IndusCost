@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { AdminMetricGrid } from "@/src/components/admin/adminUi";
 import type { FinanceDataAuditSection } from "@/src/lib/financeDataAudit";
 import { FINANCE_AUDIT_DRAWER_TITLE } from "@/src/lib/financeDataAuditCopy";
 import { cn } from "@/src/lib/utils";
@@ -13,21 +14,17 @@ function AuditListSection({
   items: Array<{ label: string; value: React.ReactNode; hint?: string }>;
 }) {
   return (
-    <section className="space-y-2" data-testid="finance-audit-section-list">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">{title}</h3>
-      <dl className="space-y-2">
-        {items.map((item) => (
-          <div key={item.label} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
-            <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7280]">
-              {item.label}
-            </dt>
-            <dd className="text-sm font-semibold text-[#111827] mt-0.5 tabular-nums">{item.value}</dd>
-            {item.hint ? (
-              <p className="text-[10px] text-[#6B7280] mt-1 leading-snug">{item.hint}</p>
-            ) : null}
-          </div>
-        ))}
-      </dl>
+    <section className="space-y-3" data-testid="finance-audit-section-list">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <AdminMetricGrid
+        minColumnWidth={160}
+        items={items.map((item) => ({
+          label: item.label,
+          value: String(item.value ?? "—"),
+          subtitle: item.hint,
+          variant: "neutral" as const,
+        }))}
+      />
     </section>
   );
 }

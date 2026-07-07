@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AdminKpiSection } from "@/src/components/admin/adminUi";
+import { MetricCard } from "@/src/components/ui/MetricCard";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import type { CostPriceMarginAuditPayload } from "@/src/lib/costPriceMarginIntegratedAudit";
 
 type Props = {
@@ -11,31 +13,6 @@ type Props = {
 function pct(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${formatNumber(value, 1)}%`;
-}
-
-function CoverageCard(props: {
-  title: string;
-  metrics: { total: number; withCoverage: number; withoutCoverage: number; coveragePercent: number | null };
-  tone?: "default" | "warning";
-}) {
-  const { title, metrics, tone = "default" } = props;
-  return (
-    <div
-      className={cn(
-        "rounded-xl border p-4 bg-card",
-        tone === "warning" && metrics.withoutCoverage > 0 ? "border-amber-500/40" : "border-border"
-      )}
-    >
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className="text-2xl font-bold mt-1">{pct(metrics.coveragePercent)}</p>
-      <p className="text-xs text-muted-foreground mt-1">
-        {metrics.withCoverage}/{metrics.total} cobertos
-        {metrics.withoutCoverage > 0 ? (
-          <span className="text-amber-700 dark:text-amber-400"> · {metrics.withoutCoverage} pendente(s)</span>
-        ) : null}
-      </p>
-    </div>
-  );
 }
 
 export function CostPriceMarginAuditPanel({ canView }: Props) {
@@ -125,59 +102,69 @@ export function CostPriceMarginAuditPanel({ canView }: Props) {
             {new Date(payload.generatedAt).toLocaleString("pt-BR")}
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <CoverageCard title="Cobertura MP" metrics={payload.materials} />
-            <CoverageCard title="Cobertura custo produtos" metrics={payload.products.activeProducts} />
-            <CoverageCard title="Cobertura custo componentes" metrics={payload.products.activeComponents} />
-            <CoverageCard
-              title="Cobertura preço (produtos)"
-              metrics={{
-                total: payload.officialPrice.activeProductsTotal,
-                withCoverage: payload.officialPrice.productsWithOfficialPrice,
-                withoutCoverage:
-                  payload.officialPrice.activeProductsTotal -
-                  payload.officialPrice.productsWithOfficialPrice,
-                coveragePercent:
-                  payload.officialPrice.activeProductsTotal > 0
-                    ? Math.round(
-                        (payload.officialPrice.productsWithOfficialPrice /
-                          payload.officialPrice.activeProductsTotal) *
-                          10000
-                      ) / 100
-                    : null,
-              }}
+          <AdminKpiSection
+            title="Cobertura integrada Custo → Preço → Margem"
+            eyebrow={`Período ${payload.period.label} · referência ${payload.referenceDate}`}
+            minColumnWidth={180}
+            testId="cost-price-margin-audit-kpi"
+          >
+            <MetricCard
+              label="Cobertura MP"
+              value={pct(payload.materials.coveragePercent)}
+              subtitle={`${payload.materials.withCoverage}/${payload.materials.total} cobertos`}
+              variant={payload.materials.withoutCoverage > 0 ? "warning" : "success"}
             />
-            <div className="rounded-xl border border-border p-4 bg-card">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Pedidos margem OK
-              </p>
-              <p className="text-2xl font-bold mt-1">{payload.salesOrders.marginOk}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                de {payload.salesOrders.itemsSold} itens em {payload.salesOrders.ordersTotal} pedido(s)
-              </p>
-            </div>
-            <div
-              className={cn(
-                "rounded-xl border p-4 bg-card",
-                payload.criticalPendingCount > 0 ? "border-amber-500/40" : "border-emerald-500/30"
+            <MetricCard
+              label="Cobertura custo produtos"
+              value={pct(payload.products.activeProducts.coveragePercent)}
+              subtitle={`${payload.products.activeProducts.withCoverage}/${payload.products.activeProducts.total} cobertos`}
+              variant={payload.products.activeProducts.withoutCoverage > 0 ? "warning" : "success"}
+            />
+            <MetricCard
+              label="Cobertura custo componentes"
+              value={pct(payload.products.activeComponents.coveragePercent)}
+              subtitle={`${payload.products.activeComponents.withCoverage}/${payload.products.activeComponents.total} cobertos`}
+              variant={payload.products.activeComponents.withoutCoverage > 0 ? "warning" : "success"}
+            />
+            <MetricCard
+              label="Cobertura preço (produtos)"
+              value={pct(
+                payload.officialPrice.activeProductsTotal > 0
+                  ? Math.round(
+                      (payload.officialPrice.productsWithOfficialPrice /
+                        payload.officialPrice.activeProductsTotal) *
+                        10000
+                    ) / 100
+                  : null
               )}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
-                {payload.criticalPendingCount > 0 ? (
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+              subtitle={`${payload.officialPrice.productsWithOfficialPrice}/${payload.officialPrice.activeProductsTotal} com preço oficial`}
+              variant={
+                payload.officialPrice.productsWithOfficialPrice <
+                payload.officialPrice.activeProductsTotal
+                  ? "warning"
+                  : "success"
+              }
+            />
+            <MetricCard
+              label="Pedidos margem OK"
+              value={String(payload.salesOrders.marginOk)}
+              subtitle={`de ${payload.salesOrders.itemsSold} itens em ${payload.salesOrders.ordersTotal} pedido(s)`}
+              variant="info"
+            />
+            <MetricCard
+              label="Pendências críticas"
+              value={String(payload.criticalPendingCount)}
+              subtitle={`SEM_CUSTO: ${payload.salesOrders.semCusto} · SEM_PRECO_TABELA: ${payload.salesOrders.semPrecoTabela} · PRECO_INDISPONIVEL: ${payload.salesOrders.precoIndisponivel}`}
+              variant={payload.criticalPendingCount > 0 ? "danger" : "success"}
+              icon={
+                payload.criticalPendingCount > 0 ? (
+                  <AlertCircle className="h-3.5 w-3.5" />
                 ) : (
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                )}
-                Pendências críticas
-              </p>
-              <p className="text-2xl font-bold mt-1">{payload.criticalPendingCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                SEM_CUSTO: {payload.salesOrders.semCusto} · SEM_PRECO_TABELA:{" "}
-                {payload.salesOrders.semPrecoTabela} · PRECO_INDISPONIVEL:{" "}
-                {payload.salesOrders.precoIndisponivel}
-              </p>
-            </div>
-          </div>
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                )
+              }
+            />
+          </AdminKpiSection>
 
           {(payload.topSoldWithoutCost.length > 0 || payload.topSoldWithoutOfficialPrice.length > 0) && (
             <div className="grid gap-4 lg:grid-cols-2">

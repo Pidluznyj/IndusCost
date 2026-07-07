@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CircleCheck, Loader2, Play, RefreshCw } from "lucide-react";
+import { AdminMetricGrid } from "@/src/components/admin/adminUi";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { NOMUS_AR_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusAccountsReceivableSyncConstants";
@@ -195,16 +196,24 @@ export function FinanceAccountsReceivableSyncPanel({
           </div>
 
           {status ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-[11px]">
-              <Metric label="Última sync" value={formatFinanceDateTime(lastSyncAt)} />
-              <Metric label="Duração" value={formatFinanceArSyncDurationMs(status.durationMs)} />
-              <Metric label="Lidos" value={formatIntOrDash(metrics?.recordsRead)} />
-              <Metric label="Criados" value={formatIntOrDash(metrics?.created)} />
-              <Metric label="Atualizados" value={formatIntOrDash(metrics?.updated)} />
-              <Metric label="Inalterados" value={formatIntOrDash(metrics?.unchanged)} />
-              <Metric label="Erros" value={formatIntOrDash(metrics?.errors)} />
-              <Metric label="Estratégia" value={status.syncStrategy ?? "—"} mono />
-            </div>
+            <AdminMetricGrid
+              minColumnWidth={132}
+              testId="finance-ar-sync-metrics"
+              items={[
+                { label: "Última sync", value: formatFinanceDateTime(lastSyncAt), variant: "info" },
+                { label: "Duração", value: formatFinanceArSyncDurationMs(status.durationMs), variant: "neutral" },
+                { label: "Lidos", value: formatIntOrDash(metrics?.recordsRead), variant: "info" },
+                { label: "Criados", value: formatIntOrDash(metrics?.created), variant: "success" },
+                { label: "Atualizados", value: formatIntOrDash(metrics?.updated), variant: "info" },
+                { label: "Inalterados", value: formatIntOrDash(metrics?.unchanged), variant: "neutral" },
+                {
+                  label: "Erros",
+                  value: formatIntOrDash(metrics?.errors),
+                  variant: (metrics?.errors ?? 0) > 0 ? "danger" : "success",
+                },
+                { label: "Estratégia", value: status.syncStrategy ?? "—", variant: "neutral" },
+              ]}
+            />
           ) : null}
 
           {status?.recommendedAction ? (
@@ -280,22 +289,5 @@ export function FinanceAccountsReceivableSyncPanel({
         </div>
       ) : null}
     </>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-md border border-border/60 bg-background/80 px-2 py-1.5 min-w-0">
-      <p className="text-[10px] uppercase opacity-70 truncate">{label}</p>
-      <p className={cn("font-semibold truncate", mono ? "font-mono text-[10px]" : "text-xs")}>{value}</p>
-    </div>
   );
 }
