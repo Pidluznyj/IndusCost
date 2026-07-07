@@ -1,6 +1,9 @@
 import React from "react";
 import { Loader2 } from "lucide-react";
 import { HttpError } from "@/src/lib/http";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { FinanceKpiCard, type FinanceKpiTone } from "@/src/components/finance/shared/FinanceKpiCard";
 
 export function formatCommissionsApiError(error: unknown, fallback: string): string {
   if (error instanceof HttpError) return error.message || fallback;
@@ -125,30 +128,78 @@ export function commissionsTableClassName(): string {
   return "min-w-full divide-y divide-border text-sm";
 }
 
-export function CommissionsSummaryGrid({
-  items,
+/** Bloco executivo de KPI — padrão "Resumo geral dos centros filtrados". */
+export function CommissionsKpiSection({
+  title,
+  eyebrow,
+  children,
+  testId,
+  className,
+  minColumnWidth = 200,
 }: {
-  items: Array<{ label: string; value: string; hint?: string; valueTitle?: string }>;
+  title: string;
+  eyebrow?: string;
+  children: React.ReactNode;
+  testId?: string;
+  className?: string;
+  minColumnWidth?: number;
 }) {
   return (
-    <div className="indus-kpi-grid commercial-kpi-grid">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="indus-kpi-card commercial-kpi-card rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {item.label}
-          </p>
-          <p
-            className="indus-kpi-value commercial-kpi-value mt-1 font-bold text-foreground"
-            title={item.valueTitle}
-          >
-            {item.value}
-          </p>
-          {item.hint ? <p className="mt-1 text-xs text-muted-foreground">{item.hint}</p> : null}
-        </div>
-      ))}
-    </div>
+    <ExecutiveSummarySection
+      title={title}
+      eyebrow={eyebrow}
+      testId={testId ?? "commissions-kpi-summary"}
+      className={className}
+    >
+      <SummaryKpiGrid
+        minColumnWidth={minColumnWidth}
+        testId={testId ? `${testId}-grid` : undefined}
+      >
+        {children}
+      </SummaryKpiGrid>
+    </ExecutiveSummarySection>
+  );
+}
+
+export function CommissionsSummaryGrid({
+  title,
+  eyebrow,
+  items,
+  testId,
+}: {
+  title?: string;
+  eyebrow?: string;
+  items: Array<{
+    label: string;
+    value: string;
+    hint?: string;
+    valueTitle?: string;
+    tone?: FinanceKpiTone;
+  }>;
+  testId?: string;
+}) {
+  const cards = items.map((item) => (
+    <FinanceKpiCard
+      key={item.label}
+      label={item.label}
+      value={item.value}
+      valueTitle={item.valueTitle}
+      helperText={item.hint}
+      tone={item.tone}
+    />
+  ));
+
+  if (title) {
+    return (
+      <CommissionsKpiSection title={title} eyebrow={eyebrow} testId={testId}>
+        {cards}
+      </CommissionsKpiSection>
+    );
+  }
+
+  return (
+    <SummaryKpiGrid minColumnWidth={200} testId={testId}>
+      {cards}
+    </SummaryKpiGrid>
   );
 }

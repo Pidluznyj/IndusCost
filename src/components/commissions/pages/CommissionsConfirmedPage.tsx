@@ -20,6 +20,7 @@ import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
@@ -158,7 +159,11 @@ export function CommissionsConfirmedPage({
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de comissões confirmadas"
+          eyebrow="Indicadores do filtro aplicado"
+          testId="commissions-confirmed-kpi"
+        >
           <FinanceKpiCard
             label="Comissão confirmada"
             value=""
@@ -213,7 +218,7 @@ export function CommissionsConfirmedPage({
             value={String(cards.inconsistentDocumentsCount)}
             icon={AlertTriangle}
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {!loading && !error && data ? (

@@ -22,6 +22,7 @@ import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -233,7 +234,11 @@ export function CommissionsForecastPage() {
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de comissões previstas"
+          eyebrow="Indicadores do filtro aplicado"
+          testId="commissions-forecast-kpi"
+        >
           <FinanceKpiCard
             label="Comissão prevista total"
             value=""
@@ -268,7 +273,7 @@ export function CommissionsForecastPage() {
             value={String(cards.orderCount)}
             icon={ClipboardList}
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {!loading && !error && data ? (

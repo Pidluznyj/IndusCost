@@ -8,6 +8,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -153,7 +154,11 @@ function VisualAuditCards({
   const money = formatFinanceCurrency;
   if (mode === "GENERATED") {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <CommissionsKpiSection
+        title="Resumo — comissão gerada"
+        eyebrow="Valores consolidados do filtro aplicado"
+        testId="commissions-visual-audit-generated-kpi"
+      >
         <FinanceKpiCard label="Valor NFs/documentos" value={money(cards.documentAmountTotal)} />
         <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
         <FinanceKpiCard label="Base comissionável gerada" value={money(cards.commissionableBaseTotal)} />
@@ -162,13 +167,17 @@ function VisualAuditCards({
         <FinanceKpiCard label="Documentos/NFs" value={String(cards.documentCount)} />
         <FinanceKpiCard label="Títulos únicos" value={String(cards.receivableCount)} />
         <FinanceKpiCard label="Parcelas" value={String(cards.scheduleCount)} />
-      </div>
+      </CommissionsKpiSection>
     );
   }
 
   if (mode === "FORECAST") {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <CommissionsKpiSection
+        title="Resumo — comissão prevista"
+        eyebrow="Títulos em aberto e projeções do filtro"
+        testId="commissions-visual-audit-forecast-kpi"
+      >
         <FinanceKpiCard label="Títulos em aberto/futuros" value={String(cards.receivableCount)} />
         <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
         <FinanceKpiCard label="Base pendente" value={money(cards.commissionableBaseTotal)} />
@@ -177,12 +186,16 @@ function VisualAuditCards({
         <FinanceKpiCard label="Vencido / bloqueada" value={money(cards.commissionBlockedTotal)} />
         <FinanceKpiCard label="Parcelas" value={String(cards.scheduleCount)} />
         <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
-      </div>
+      </CommissionsKpiSection>
     );
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <CommissionsKpiSection
+      title="Resumo — comissão a pagar"
+      eyebrow="Títulos baixados no período filtrado"
+      testId="commissions-visual-audit-payable-kpi"
+    >
       <FinanceKpiCard label="Títulos baixados no mês" value={String(cards.receivableCount)} />
       <FinanceKpiCard label="Valor recebido/baixado" value={money(cards.receivedAmountTotal)} />
       <FinanceKpiCard label="Base comissionável baixada" value={money(cards.commissionableBaseTotal)} />
@@ -191,7 +204,7 @@ function VisualAuditCards({
       <FinanceKpiCard label="Valor títulos únicos" value={money(cards.receivableAmountTotal)} />
       <FinanceKpiCard label="Comissão pendente" value={money(cards.commissionPendingTotal)} />
       <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
-    </div>
+    </CommissionsKpiSection>
   );
 }
 

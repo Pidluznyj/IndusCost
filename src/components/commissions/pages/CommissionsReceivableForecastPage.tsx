@@ -7,6 +7,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -251,7 +252,11 @@ export function CommissionsReceivableForecastPage() {
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="forecast-cards">
+        <CommissionsKpiSection
+          title="Resumo de comissões previstas"
+          eyebrow="Projeção por vencimento de títulos"
+          testId="forecast-cards"
+        >
           <FinanceKpiCard
             label="Comissão prevista (a vencer)"
             value={formatFinanceCurrency(cards.futureCommissionTotal)}
@@ -280,7 +285,7 @@ export function CommissionsReceivableForecastPage() {
             label="Próximo mês previsto"
             value={`${cards.nextMonthLabelPt ?? "—"} · ${formatFinanceCurrency(cards.nextMonthCommission)}`}
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {loading && !data ? <CommissionsLoading label="Carregando previsão…" /> : null}

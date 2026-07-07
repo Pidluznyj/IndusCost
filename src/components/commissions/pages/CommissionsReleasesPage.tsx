@@ -21,6 +21,7 @@ import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermis
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -236,7 +237,11 @@ export function CommissionsReleasesPage() {
       {loading && !data ? <CommissionsLoading /> : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de liberações"
+          eyebrow="Indicadores do filtro aplicado"
+          testId="commissions-releases-kpi"
+        >
           <FinanceKpiCard
             label="Comissão a liberar"
             value=""
@@ -278,7 +283,7 @@ export function CommissionsReleasesPage() {
             value={String(cards.upcomingReleasesCount)}
             icon={CalendarClock}
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {!loading && !error && data ? (

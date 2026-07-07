@@ -16,6 +16,7 @@ import { COMMISSIONS_RULES_MANAGE_PERMISSIONS } from "@/src/lib/commissionsPermi
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -250,7 +251,11 @@ export function CommissionsRulesPage() {
       ) : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de regras de comissão"
+          eyebrow="Regras cadastradas no sistema"
+          testId="commissions-rules-kpi"
+        >
           <FinanceKpiCard
             label="Total de regras"
             value={String(cards.totalCount)}
@@ -281,7 +286,7 @@ export function CommissionsRulesPage() {
             icon={Copy}
             tone="neutral"
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       <CommissionsRulesFiltersPanel

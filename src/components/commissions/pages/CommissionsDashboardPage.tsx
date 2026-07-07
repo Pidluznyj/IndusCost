@@ -23,6 +23,7 @@ import { getCommissionsSectionPath } from "@/src/lib/commissionsNavigation";
 import {
   CommissionsErrorBanner,
   CommissionsEmptyState,
+  CommissionsKpiSection,
   CommissionsTableScroll,
   formatCommissionsApiError,
 } from "@/src/components/commissions/commissionsUi";
@@ -157,12 +158,12 @@ export function CommissionsDashboardPage() {
       ) : null}
 
       {dashboard?.ytd ? (
-        <div>
-          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#6B7280]">
-            YTD {dashboard.ytd.year}
-          </p>
-          <div className="indus-kpi-grid commercial-kpi-grid">
-            <FinanceKpiCard
+        <CommissionsKpiSection
+          title={`Resumo YTD ${dashboard.ytd.year}`}
+          eyebrow="Indicadores acumulados no ano"
+          testId="commissions-dashboard-ytd-kpi"
+        >
+          <FinanceKpiCard
               label="Comissão gerada no ano"
               value=""
               amount={dashboard.ytd.generatedYtd}
@@ -216,11 +217,14 @@ export function CommissionsDashboardPage() {
               tone="neutral"
               loading={loading}
             />
-          </div>
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
-      <div className="indus-kpi-grid commercial-kpi-grid">
+      <CommissionsKpiSection
+        title="Resumo das comissões"
+        eyebrow="Indicadores do período filtrado"
+        testId="commissions-dashboard-kpi"
+      >
         <FinanceKpiCard
           label="Comissão prevista"
           value=""
@@ -298,7 +302,7 @@ export function CommissionsDashboardPage() {
           }
           loading={loading}
         />
-      </div>
+      </CommissionsKpiSection>
 
       <div className="flex flex-wrap gap-2">
         {[

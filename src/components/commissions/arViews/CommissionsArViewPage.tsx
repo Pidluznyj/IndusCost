@@ -6,6 +6,7 @@ import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsSectionIntro,
   CommissionsTableScroll,
@@ -116,12 +117,16 @@ export function CommissionsArViewPage({ mode }: { mode: CommissionsArViewMode })
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <CommissionsKpiSection
+          title={`Resumo — ${cfg.title}`}
+          eyebrow="Indicadores do filtro aplicado"
+          testId={`${cfg.testId}-kpi`}
+        >
           <FinanceKpiCard label="Comissão prevista" value={formatFinanceCurrency(cards.totalCommission)} />
           <FinanceKpiCard label="Comissão liberada" value={formatFinanceCurrency(cards.totalReleased)} />
           <FinanceKpiCard label="Comissão bloqueada" value={formatFinanceCurrency(cards.totalBlocked)} />
           <FinanceKpiCard label="Linhas" value={String(cards.rowCount)} />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {loading && !data ? <CommissionsLoading label="Carregando…" /> : null}

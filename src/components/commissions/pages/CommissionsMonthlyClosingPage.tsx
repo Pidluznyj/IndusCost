@@ -8,6 +8,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -540,7 +541,11 @@ export function CommissionsMonthlyClosingPage() {
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
       {cards ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="monthly-closing-cards">
+        <CommissionsKpiSection
+          title="Resumo do fechamento mensal"
+          eyebrow="Títulos baixados no mês selecionado"
+          testId="monthly-closing-cards"
+        >
           <FinanceKpiCard
             label="Comissão a pagar no mês"
             value={formatFinanceCurrency(cards.payableCommissionTotal)}
@@ -556,7 +561,7 @@ export function CommissionsMonthlyClosingPage() {
           <FinanceKpiCard label="Títulos recebidos" value={String(cards.uniqueReceivablesCount)} />
           <FinanceKpiCard label="% médio" value={`${cards.averageCommissionRate.toFixed(2)}%`} />
           <FinanceKpiCard label="Divergências" value={String(cards.divergenceCount)} />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {data && data.receivedVsBaseDiff !== 0 ? (

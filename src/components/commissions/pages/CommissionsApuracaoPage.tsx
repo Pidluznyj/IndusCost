@@ -12,6 +12,7 @@ import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
 } from "@/src/components/commissions/commissionsUi";
@@ -122,7 +123,11 @@ export function CommissionsApuracaoPage() {
       {loading && !data ? <CommissionsLoading label="Carregando apuração…" /> : null}
 
       {totals ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo da apuração"
+          eyebrow="Totais consolidados do período filtrado"
+          testId="commissions-apuracao-kpi"
+        >
           <FinanceKpiCard
             label="Base calculada"
             value=""
@@ -174,7 +179,7 @@ export function CommissionsApuracaoPage() {
               helperText={`Ref. Nomus: ${formatFinanceCurrency(totals.nomusReferenceCommission)}`}
             />
           ) : null}
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {!loading && !error && data ? (

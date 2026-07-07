@@ -10,6 +10,7 @@ import { canManageReceiptClosing } from "@/src/lib/commissionsModulePermissions"
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -727,7 +728,12 @@ export function CommissionsReceiptClosingPage() {
 
       {cards && data && data.mode !== "EMPTY" ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <CommissionsKpiSection
+            title="Resumo do fechamento por recebimento"
+            eyebrow="Materialização e totais do período selecionado"
+            testId="commissions-receipt-closing-kpi"
+            minColumnWidth={168}
+          >
             <FinanceKpiCard
               label="Títulos recebidos"
               value={String(data.materializationSummary.totalReceivablesCount)}
@@ -800,7 +806,7 @@ export function CommissionsReceiptClosingPage() {
               helperText={cards.nomusDiffExplanation ?? undefined}
             />
             <FinanceKpiCard label="Status" value={cards.reportStatus} />
-          </div>
+          </CommissionsKpiSection>
 
           <section className="space-y-2">
             <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">

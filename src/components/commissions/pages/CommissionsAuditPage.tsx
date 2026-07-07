@@ -17,6 +17,7 @@ import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermis
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -228,7 +229,11 @@ export function CommissionsAuditPage() {
       />
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de auditoria"
+          eyebrow="Apontamentos e pendências do filtro"
+          testId="commissions-audit-kpi"
+        >
           <FinanceKpiCard
             label="Críticas abertas"
             value={String(cards.criticalOpenCount)}
@@ -271,7 +276,7 @@ export function CommissionsAuditPage() {
             icon={FileWarning}
             tone={cards.nfesWithoutReceivableCount > 0 ? "warning" : "neutral"}
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       {loading ? <CommissionsLoading /> : null}

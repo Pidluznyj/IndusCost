@@ -18,6 +18,7 @@ import { COMMISSIONS_PEOPLE_MANAGE_PERMISSIONS } from "@/src/lib/commissionsPerm
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -270,7 +271,11 @@ export function CommissionsPersonsPage() {
       ) : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de pessoas comissionadas"
+          eyebrow="Cadastro e vínculos ativos"
+          testId="commissions-persons-kpi"
+        >
           <FinanceKpiCard
             label="Total de pessoas"
             value={String(cards.totalCount)}
@@ -301,7 +306,7 @@ export function CommissionsPersonsPage() {
             icon={Wallet}
             tone="success"
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       <CommissionsPersonsFiltersPanel

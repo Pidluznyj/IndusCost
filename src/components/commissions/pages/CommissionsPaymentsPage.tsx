@@ -14,6 +14,7 @@ import { COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS } from "@/src/lib/commissionsPe
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsTableScroll,
   formatCommissionsApiError,
@@ -131,7 +132,11 @@ export function CommissionsPaymentsPage() {
       ) : null}
 
       {cards ? (
-        <div className="indus-kpi-grid commercial-kpi-grid">
+        <CommissionsKpiSection
+          title="Resumo de pagamentos"
+          eyebrow="Lotes e saldos do período filtrado"
+          testId="commissions-payments-kpi"
+        >
           <FinanceKpiCard
             label="Liberadas não pagas"
             value=""
@@ -172,7 +177,7 @@ export function CommissionsPaymentsPage() {
             icon={Wallet}
             tone="info"
           />
-        </div>
+        </CommissionsKpiSection>
       ) : null}
 
       <CommissionsPaymentsFiltersPanel
