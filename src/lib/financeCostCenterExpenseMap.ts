@@ -262,3 +262,62 @@ export function expenseMapCategoryLabel(category: CostCenterExpenseMapCategory):
       return "Outros";
   }
 }
+
+export type CostCenterExpenseMapAggregateTotals = {
+  centersCount: number;
+  amount: number;
+  overdueAmount: number;
+  upcomingAmount: number;
+  paidAmount: number;
+  titlesCount: number;
+  /** Percentual sobre o total filtrado (100% quando nenhum centro selecionado). */
+  participationPercent: number;
+  totalFilteredCentersCount: number;
+  totalFilteredAmount: number;
+};
+
+function safeAmount(value: number | null | undefined): number {
+  return Number.isFinite(value) ? (value as number) : 0;
+}
+
+/** Soma métricas dos cards visíveis — opcionalmente restrito à seleção do usuário. */
+export function aggregateCostCenterExpenseMapTotals(
+  filteredCards: CostCenterExpenseMapCard[],
+  selectedCenterIds?: ReadonlySet<string> | readonly string[] | null
+): CostCenterExpenseMapAggregateTotals {
+  const selectedSet =
+    selectedCenterIds instanceof Set
+      ? selectedCenterIds
+      : selectedCenterIds?.length
+        ? new Set(selectedCenterIds)
+        : null;
+  const hasSelection = Boolean(selectedSet && selectedSet.size > 0);
+  const considered = hasSelection
+    ? filteredCards.filter((card) => selectedSet!.has(card.costCenterId))
+    : filteredCards;
+
+  const totalFilteredAmount = filteredCards.reduce((sum, card) => sum + safeAmount(card.amount), 0);
+  const amount = considered.reduce((sum, card) => sum + safeAmount(card.amount), 0);
+  const overdueAmount = considered.reduce((sum, card) => sum + safeAmount(card.overdueAmount), 0);
+  const upcomingAmount = considered.reduce((sum, card) => sum + safeAmount(card.upcomingAmount), 0);
+  const paidAmount = considered.reduce((sum, card) => sum + safeAmount(card.paidAmount), 0);
+  const titlesCount = considered.reduce((sum, card) => sum + safeAmount(card.titlesCount), 0);
+
+  const participationPercent = hasSelection
+    ? totalFilteredAmount > 0
+      ? Math.round((amount / totalFilteredAmount) * 10000) / 100
+      : 0
+    : 100;
+
+  return {
+    centersCount: considered.length,
+    amount,
+    overdueAmount,
+    upcomingAmount,
+    paidAmount,
+    titlesCount,
+    participationPercent,
+    totalFilteredCentersCount: filteredCards.length,
+    totalFilteredAmount,
+  };
+}

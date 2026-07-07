@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  aggregateCostCenterExpenseMapTotals,
   buildCostCenterExpenseMapAllocationsQuery,
   buildCostCenterExpenseMapCards,
   DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
@@ -207,8 +208,40 @@ describe("financeCostCenterExpenseMap", () => {
       join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
       "utf8"
     );
-    assert.ok(section.includes("/api/finance/cost-centers/${selectedId}/allocations"));
-    assert.ok(section.includes("/api/finance/cost-centers/${selectedId}/summary"));
+    const summary = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.ok(section.includes("/api/finance/cost-centers/${drilldownId}/allocations"));
+    assert.ok(section.includes("FinanceCostCenterExpenseMapExecutiveSummary"));
+    assert.ok(section.includes("finance-cc-expense-map-select-"));
+    assert.ok(summary.includes("finance-cc-expense-map-executive-summary"));
+    assert.ok(summary.includes("finance-cc-expense-map-clear-selection"));
+  });
+
+  it("totalizador executivo soma cards filtrados e seleção", () => {
+    const cards = buildCostCenterExpenseMapCards(
+      [
+        metrics({ costCenterId: "cc-1", amount: 1000, overdueAmount: 200, paidAmount: 300, openAmount: 700 }),
+        metrics({ costCenterId: "cc-2", amount: 500, overdueAmount: 50, paidAmount: 100, openAmount: 400 }),
+      ],
+      [center({ id: "cc-1" }), center({ id: "cc-2", code: "FAB" })]
+    );
+    const all = aggregateCostCenterExpenseMapTotals(cards);
+    assert.equal(all.centersCount, 2);
+    assert.equal(all.amount, 1500);
+    assert.equal(all.overdueAmount, 250);
+    assert.equal(all.upcomingAmount, 850);
+    assert.equal(all.paidAmount, 400);
+    assert.equal(all.participationPercent, 100);
+
+    const selected = aggregateCostCenterExpenseMapTotals(cards, new Set(["cc-2"]));
+    assert.equal(selected.centersCount, 1);
+    assert.equal(selected.amount, 500);
+    assert.equal(selected.participationPercent, 33.33);
   });
 
   it("filtros do drilldown e totalizadores respeitam escopo", () => {
@@ -273,5 +306,14 @@ describe("financeCostCenterExpenseMap", () => {
       "utf8"
     );
     assert.match(expenseMap, /finance-cc-expense-map-section/);
+    assert.match(expenseMap, /FinanceCostCenterExpenseMapExecutiveSummary/);
+    const executive = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(executive, /finance-cc-expense-map-clear-selection/);
   });
 });

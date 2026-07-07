@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, Link, Loader2, Printer, X } from "lucide-react";
+import { Download, Link, Loader2, Printer, X, Check } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
 import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
 import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import {
+  aggregateCostCenterExpenseMapTotals,
   buildCostCenterExpenseMapAllocationsQuery,
   buildCostCenterExpenseMapCards,
   buildCostCenterExpenseMapExportQuery,
@@ -17,6 +18,7 @@ import {
   type CostCenterExpenseMapCategoryFilter,
   type CostCenterExpenseMapDrilldownFilters,
 } from "@/src/lib/financeCostCenterExpenseMap";
+import { FinanceCostCenterExpenseMapExecutiveSummary } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary";
 import type {
   CostCenterDetailAllocationRow,
   CostCenterDetailExportPayload,
@@ -96,74 +98,103 @@ function sourceBadge(source: string) {
 
 function ExpenseMapCard({
   card,
-  active,
-  onSelect,
+  drilldownActive,
+  selectionChecked,
+  onDrilldown,
+  onToggleSelection,
 }: {
   card: CostCenterExpenseMapCard;
-  active: boolean;
-  onSelect: () => void;
+  drilldownActive: boolean;
+  selectionChecked: boolean;
+  onDrilldown: () => void;
+  onToggleSelection: () => void;
 }) {
   const shareWidth = Math.min(100, Math.max(0, card.sharePercentage));
   return (
-    <button
-      type="button"
+    <article
       data-testid={`finance-cc-expense-map-card-${card.costCenterId}`}
-      aria-pressed={active}
-      onClick={onSelect}
-      title="Clique para detalhar"
       className={cn(
         financeBiCardClass,
-        "p-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-        active && "ring-2 ring-primary shadow-sm"
+        "relative p-4 text-left transition-shadow",
+        selectionChecked && "ring-2 ring-primary/80 border-primary/30 bg-primary/5 shadow-sm",
+        drilldownActive && !selectionChecked && "ring-2 ring-primary shadow-sm",
+        drilldownActive && selectionChecked && "ring-2 ring-primary shadow-md"
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {card.code}
-          </p>
-          <h4 className="text-sm font-bold text-foreground truncate">{card.name}</h4>
-          {card.parentName ? (
-            <p className="text-[10px] text-muted-foreground truncate">Pai: {card.parentName}</p>
+      <button
+        type="button"
+        aria-label={selectionChecked ? "Remover do resumo" : "Incluir no resumo"}
+        aria-pressed={selectionChecked}
+        data-testid={`finance-cc-expense-map-select-${card.costCenterId}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleSelection();
+        }}
+        className={cn(
+          "absolute top-3 right-3 z-10 flex h-6 w-6 items-center justify-center rounded-md border transition-colors",
+          selectionChecked
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-primary/5"
+        )}
+      >
+        {selectionChecked ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : null}
+      </button>
+
+      <button
+        type="button"
+        aria-pressed={drilldownActive}
+        onClick={onDrilldown}
+        title="Clique para detalhar"
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md pr-8"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 pr-8">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {card.code}
+            </p>
+            <h4 className="text-sm font-bold text-foreground truncate">{card.name}</h4>
+            {card.parentName ? (
+              <p className="text-[10px] text-muted-foreground truncate">Pai: {card.parentName}</p>
+            ) : null}
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0 mr-6">
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                card.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"
+              )}
+            >
+              {card.status === "ACTIVE" ? "Ativo" : "Inativo"}
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {expenseMapCategoryLabel(card.category)}
+            </span>
+          </div>
+        </div>
+
+        <p className="mt-3 text-xl font-bold tabular-nums">{formatFinanceCurrency(card.amount)}</p>
+        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full bg-primary/70" style={{ width: `${shareWidth}%` }} />
+        </div>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          {formatFinancePercent(card.sharePercentage)} do total · {formatFinanceInteger(card.titlesCount)} título(s)
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+            Vencido {formatFinanceCurrency(card.overdueAmount)}
+          </span>
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+            A vencer {formatFinanceCurrency(card.upcomingAmount)}
+          </span>
+          {card.paidAmount > 0 ? (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+              Pago {formatFinanceCurrency(card.paidAmount)}
+            </span>
           ) : null}
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-              card.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"
-            )}
-          >
-            {card.status === "ACTIVE" ? "Ativo" : "Inativo"}
-          </span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {expenseMapCategoryLabel(card.category)}
-          </span>
-        </div>
-      </div>
-
-      <p className="mt-3 text-xl font-bold tabular-nums">{formatFinanceCurrency(card.amount)}</p>
-      <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-        <div className="h-full rounded-full bg-primary/70" style={{ width: `${shareWidth}%` }} />
-      </div>
-      <p className="mt-1 text-[10px] text-muted-foreground">
-        {formatFinancePercent(card.sharePercentage)} do total · {formatFinanceInteger(card.titlesCount)} título(s)
-      </p>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-          Vencido {formatFinanceCurrency(card.overdueAmount)}
-        </span>
-        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
-          A vencer {formatFinanceCurrency(card.upcomingAmount)}
-        </span>
-        {card.paidAmount > 0 ? (
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-            Pago {formatFinanceCurrency(card.paidAmount)}
-          </span>
-        ) : null}
-      </div>
-    </button>
+      </button>
+    </article>
   );
 }
 
@@ -181,7 +212,8 @@ export function FinanceCostCenterExpenseMapSection({
   dashboardLoading = false,
 }: Props) {
   const [cardFilter, setCardFilter] = useState<CostCenterExpenseMapCategoryFilter>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedCenterIds, setSelectedCenterIds] = useState<string[]>([]);
+  const [drilldownId, setDrilldownId] = useState<string | null>(null);
   const [drilldown, setDrilldown] = useState<CostCenterExpenseMapDrilldownFilters>(
     DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS
   );
@@ -199,7 +231,24 @@ export function FinanceCostCenterExpenseMapSection({
     return filterCostCenterExpenseMapCards(built, cardFilter);
   }, [dashboard?.byCostCenter, centers, cardFilter]);
 
-  const selectedCard = cards.find((card) => card.costCenterId === selectedId) ?? null;
+  const filterScopeKey = useMemo(
+    () => JSON.stringify({ appliedFilters, cardFilter }),
+    [appliedFilters, cardFilter]
+  );
+
+  useEffect(() => {
+    setSelectedCenterIds([]);
+  }, [filterScopeKey]);
+
+  const selectedCenterIdSet = useMemo(() => new Set(selectedCenterIds), [selectedCenterIds]);
+  const hasCardSelection = selectedCenterIds.length > 0;
+
+  const executiveTotals = useMemo(
+    () => aggregateCostCenterExpenseMapTotals(cards, hasCardSelection ? selectedCenterIdSet : null),
+    [cards, hasCardSelection, selectedCenterIdSet]
+  );
+
+  const drilldownCard = cards.find((card) => card.costCenterId === drilldownId) ?? null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -209,7 +258,7 @@ export function FinanceCostCenterExpenseMapSection({
   }, [searchDraft]);
 
   const loadDrilldown = useCallback(async () => {
-    if (!selectedId) {
+    if (!drilldownId) {
       setSummary(null);
       setList(null);
       setError(null);
@@ -220,7 +269,7 @@ export function FinanceCostCenterExpenseMapSection({
     try {
       const qs = buildCostCenterExpenseMapAllocationsQuery(appliedFilters, drilldown);
       const listRes = await fetchJsonOk<CostCenterDetailListPayload>(
-        `/api/finance/cost-centers/${selectedId}/allocations?${qs}`,
+        `/api/finance/cost-centers/${drilldownId}/allocations?${qs}`,
         { credentials: "include" }
       );
       setList(listRes);
@@ -232,16 +281,28 @@ export function FinanceCostCenterExpenseMapSection({
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, drilldown, selectedId]);
+  }, [appliedFilters, drilldown, drilldownId]);
 
   useEffect(() => {
     void loadDrilldown();
   }, [loadDrilldown]);
 
-  const handleCardClick = (card: CostCenterExpenseMapCard) => {
-    setSelectedId((current) => (current === card.costCenterId ? null : card.costCenterId));
+  const handleDrilldownClick = (card: CostCenterExpenseMapCard) => {
+    setDrilldownId((current) => (current === card.costCenterId ? null : card.costCenterId));
     setDrilldown(DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS);
     setSearchDraft("");
+  };
+
+  const handleToggleCardSelection = (costCenterId: string) => {
+    setSelectedCenterIds((current) =>
+      current.includes(costCenterId)
+        ? current.filter((id) => id !== costCenterId)
+        : [...current, costCenterId]
+    );
+  };
+
+  const handleClearSelection = () => {
+    setSelectedCenterIds([]);
   };
 
   const patchDrilldown = (patch: Partial<CostCenterExpenseMapDrilldownFilters>) => {
@@ -266,12 +327,12 @@ export function FinanceCostCenterExpenseMapSection({
   );
 
   const handleExportExcel = async () => {
-    if (!selectedId || !selectedCard || exportingExcel) return;
+    if (!drilldownId || !drilldownCard || exportingExcel) return;
     setExportingExcel(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/finance/cost-centers/${selectedId}/detail/export.xlsx?${exportQuery}`,
+        `/api/finance/cost-centers/${drilldownId}/detail/export.xlsx?${exportQuery}`,
         { credentials: "include" }
       );
       if (!res.ok) {
@@ -282,7 +343,7 @@ export function FinanceCostCenterExpenseMapSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = buildCostCenterDetailExportFilename(selectedCard.name);
+      a.download = buildCostCenterDetailExportFilename(drilldownCard.name);
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -295,12 +356,12 @@ export function FinanceCostCenterExpenseMapSection({
   };
 
   const handleExportPdf = async () => {
-    if (!selectedId || exportingPdf) return;
+    if (!drilldownId || exportingPdf) return;
     setExportingPdf(true);
     setError(null);
     try {
       const payload = await fetchJsonOk<CostCenterDetailExportPayload>(
-        `/api/finance/cost-centers/${selectedId}/detail/export-data?${exportQuery}`,
+        `/api/finance/cost-centers/${drilldownId}/detail/export-data?${exportQuery}`,
         { credentials: "include" }
       );
       setPrintPayload(payload);
@@ -338,11 +399,18 @@ export function FinanceCostCenterExpenseMapSection({
       data-testid="finance-cc-expense-map-section"
       aria-label="Mapa de Gastos por Centro de Custo"
     >
+      <FinanceCostCenterExpenseMapExecutiveSummary
+        totals={executiveTotals}
+        hasSelection={hasCardSelection}
+        onClearSelection={handleClearSelection}
+        loading={dashboardLoading && !dashboard}
+      />
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold text-foreground">Mapa de Gastos por Centro de Custo</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Clique em um centro para visualizar todos os títulos, pagamentos e vencimentos vinculados.
+            Use o check no canto do card para montar o resumo executivo. Clique no corpo do card para detalhar títulos.
           </p>
           <p className="text-[10px] text-muted-foreground mt-1" data-testid="finance-cc-expense-map-scope-note">
             Valores conforme filtros atuais da tela.
@@ -381,26 +449,28 @@ export function FinanceCostCenterExpenseMapSection({
             <ExpenseMapCard
               key={card.costCenterId}
               card={card}
-              active={selectedId === card.costCenterId}
-              onSelect={() => handleCardClick(card)}
+              drilldownActive={drilldownId === card.costCenterId}
+              selectionChecked={selectedCenterIdSet.has(card.costCenterId)}
+              onDrilldown={() => handleDrilldownClick(card)}
+              onToggleSelection={() => handleToggleCardSelection(card.costCenterId)}
             />
           ))}
         </div>
       )}
 
-      {selectedCard ? (
+      {drilldownCard ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-4")} data-testid="finance-cc-expense-map-drilldown">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h4 className="text-sm font-bold text-foreground">
-                Detalhamento de gastos — {selectedCard.name}
+                Detalhamento de gastos — {drilldownCard.name}
               </h4>
               <p className="text-[11px] text-muted-foreground">
-                {selectedCard.code}
-                {selectedCard.parentName ? ` · Pai: ${selectedCard.parentName}` : ""}
+                {drilldownCard.code}
+                {drilldownCard.parentName ? ` · Pai: ${drilldownCard.parentName}` : ""}
               </p>
               <Link
-                to={buildFinanceCostCenterDetailPath(selectedCard.costCenterId)}
+                to={buildFinanceCostCenterDetailPath(drilldownCard.costCenterId)}
                 className="text-[11px] font-semibold text-primary hover:underline mt-1 inline-block"
               >
                 Abrir página completa do centro
@@ -427,7 +497,7 @@ export function FinanceCostCenterExpenseMapSection({
                 disabled={exportingPdf || loading}
                 onClick={() => void handleExportPdf()}
                 className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40 disabled:opacity-60"
-                title={buildCostCenterDetailPdfFilename(selectedCard.name)}
+                title={buildCostCenterDetailPdfFilename(drilldownCard.name)}
               >
                 {exportingPdf ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -439,7 +509,7 @@ export function FinanceCostCenterExpenseMapSection({
               <button
                 type="button"
                 data-testid="finance-cc-expense-map-close-drilldown"
-                onClick={() => setSelectedId(null)}
+                onClick={() => setDrilldownId(null)}
                 className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
               >
                 <X className="h-3.5 w-3.5" />
