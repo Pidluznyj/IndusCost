@@ -20,10 +20,9 @@ mkdir -p "$LOG_DIR"
 RUN_STAMP="$(date -u +%Y-%m-%dT%H-%M-%S-%NZ)"
 RUN_LOG="$LOG_DIR/runner-sales-orders_${MODE}_${RUN_STAMP}.log"
 
-# Mostra no terminal quando rodado manualmente e também grava log.
 exec > >(tee -a "$RUN_LOG") 2>&1
 
-echo "=== NOMUS SALES ORDERS RUNNER ==="
+echo "=== NOMUS SALES ORDERS RUNNER (recent-window) ==="
 echo "MODE=$MODE"
 echo "APP_DIR=$APP_DIR"
 echo "LOG_DIR=$LOG_DIR"
@@ -51,19 +50,22 @@ fi
 echo "[nomus-sales-orders-runner] Lock adquirido: $LOCK_FILE"
 
 echo
-echo "=== CONFIGURAÇÃO SEGURA DO BLOCO ==="
+echo "=== CONFIGURAÇÃO JANELA RECENTE (7 meses / dataEmissao) ==="
 export NOMUS_SYNC_LOG_DIR="$LOG_DIR"
-export NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE="${NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE:-/tmp/induscost-nomus-sales-orders-page.cursor}"
-export NOMUS_SALES_ORDERS_MAX_PAGES="${NOMUS_SALES_ORDERS_MAX_PAGES:-5}"
+export NOMUS_SALES_ORDERS_SYNC_STRATEGY="${NOMUS_SALES_ORDERS_SYNC_STRATEGY:-recent-window}"
+export NOMUS_SALES_ORDERS_RECENT_WINDOW_MONTHS="${NOMUS_SALES_ORDERS_RECENT_WINDOW_MONTHS:-7}"
+export NOMUS_SALES_ORDERS_RECENT_MAX_PAGES="${NOMUS_SALES_ORDERS_RECENT_MAX_PAGES:-30}"
+unset NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE
 
 echo "NOMUS_SYNC_LOG_DIR=$NOMUS_SYNC_LOG_DIR"
-echo "NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE=$NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE"
-echo "NOMUS_SALES_ORDERS_MAX_PAGES=$NOMUS_SALES_ORDERS_MAX_PAGES"
+echo "NOMUS_SALES_ORDERS_SYNC_STRATEGY=$NOMUS_SALES_ORDERS_SYNC_STRATEGY"
+echo "NOMUS_SALES_ORDERS_RECENT_WINDOW_MONTHS=$NOMUS_SALES_ORDERS_RECENT_WINDOW_MONTHS"
+echo "NOMUS_SALES_ORDERS_RECENT_MAX_PAGES=$NOMUS_SALES_ORDERS_RECENT_MAX_PAGES"
 
 echo
 echo "=== EXECUÇÃO ==="
 set +e
-npm run "sync:nomus:all:${MODE}" -- --only=sales-orders
+npm run "sync:nomus:sales-orders:${MODE}"
 EXIT_CODE=$?
 set -e
 

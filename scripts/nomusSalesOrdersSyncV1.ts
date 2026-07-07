@@ -28,6 +28,16 @@ import {
   type SalesOrdersFetchWindowMeta,
   type SalesOrdersPaginationWindow,
 } from "../src/lib/nomusSalesOrdersPaginationCursor.ts";
+import {
+  describeNomusSalesOrdersSyncMode,
+  extractPedidoDataEmissao,
+  filterPedidosByEmissaoWindow,
+  formatNomusPedidoDateBr,
+  parseNomusSalesOrdersSyncStrategy,
+  resolveNomusSalesOrdersEmissaoWindow,
+  type NomusSalesOrdersEmissaoWindow,
+  type NomusSalesOrdersSyncStrategy,
+} from "../src/lib/nomusSalesOrdersSyncWindow.ts";
 
 const prisma = new PrismaClient();
 
@@ -35,6 +45,8 @@ const SOURCE_SYSTEM = NOMUS_SALES_ORDER_SOURCE;
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_MAX_RETRIES = 6;
 const DEFAULT_RETRY_BASE_MS = 700;
+
+const syncHttpStats = { http429Count: 0 };
 
 type JsonObject = Record<string, unknown>;
 
@@ -226,6 +238,7 @@ async function fetchJsonWithRetry(url: URL, maxRetries: number, retryBaseMs: num
 
     const body = await res.text().catch(() => "");
     const isRetryable = res.status === 429 || res.status >= 500;
+    if (res.status === 429) syncHttpStats.http429Count += 1;
     if (!isRetryable || attempt === maxRetries) {
       throw new Error(`Falha HTTP ${res.status} em ${url.toString()}: ${body.slice(0, 300)}`);
     }
@@ -296,11 +309,33 @@ function parseCliArg(name: string): string | undefined {
   return undefined;
 }
 
-function readSalesOrdersPaginationWindow(): SalesOrdersPaginationWindow & { cursorNote: string } {
+function parseCliStrategy(): NomusSalesOrdersSyncStrategy {
+  return parseNomusSalesOrdersSyncStrategy(parseCliArg("strategy"));
+}
+
+function readSalesOrdersPaginationWindow(strategy: NomusSalesOrdersSyncStrategy): SalesOrdersPaginationWindow & {
+  cursorNote: string;
+} {
   const maxPages = Math.max(
     1,
     toInt(process.env.NOMUS_SALES_ORDERS_MAX_PAGES) ?? toInt(process.env.NOMUS_MAX_PAGES) ?? 200
   );
+  if (strategy === "recent-window") {
+    const recentMaxPages = Math.max(
+      1,
+      toInt(process.env.NOMUS_SALES_ORDERS_RECENT_MAX_PAGES) ?? maxPages
+    );
+    const window: SalesOrdersPaginationWindow = {
+      startPage: 1,
+      maxPages: recentMaxPages,
+      cursorFile: null,
+    };
+    return {
+      ...window,
+      cursorNote: `recent-window: páginas 1..${recentMaxPages} (sem cursor)`,
+    };
+  }
+
   const cursorFile = (process.env.NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE ?? "").trim() || null;
   const defaultStartPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
 
@@ -346,10 +381,23 @@ function commitSalesOrdersPaginationCursor(
   }
 }
 
+type SalesOrdersFetchResultMeta = SalesOrdersFetchWindowMeta & {
+  strategy: NomusSalesOrdersSyncStrategy;
+  emissaoWindow: NomusSalesOrdersEmissaoWindow | null;
+  stoppedBecauseWindowExceeded: boolean;
+  excludedOlderThanWindow: number;
+  dataEmissaoFilterApplied: boolean;
+};
+
 async function fetchNomusPedidoPages(
   baseUrl: string,
-  options: SalesOrdersPaginationWindow
-): Promise<{ pedidos: JsonObject[]; meta: SalesOrdersFetchWindowMeta }> {
+  options: SalesOrdersPaginationWindow,
+  fetchOpts: {
+    strategy: NomusSalesOrdersSyncStrategy;
+    emissaoWindow: NomusSalesOrdersEmissaoWindow | null;
+    referenceNow: Date;
+  }
+): Promise<{ pedidos: JsonObject[]; meta: SalesOrdersFetchResultMeta }> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
@@ -357,8 +405,14 @@ async function fetchNomusPedidoPages(
   const maxPages = options.maxPages;
   const lastPage = startPage + maxPages - 1;
 
-  const dataEmissaoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
-  const dataEmissaoFinal = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_FINAL", "31/12/2030");
+  const dataEmissaoInicial =
+    fetchOpts.emissaoWindow != null
+      ? formatNomusPedidoDateBr(fetchOpts.emissaoWindow.startDate)
+      : getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
+  const dataEmissaoFinal =
+    fetchOpts.emissaoWindow != null
+      ? formatNomusPedidoDateBr(fetchOpts.emissaoWindow.endDate)
+      : getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_FINAL", "31/12/2030");
   const dataVencimentoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_VENCIMENTO_INICIAL", "01/01/2023");
   const dataVencimentoFinal = getEnvOrDefault("NOMUS_PEDIDO_DATA_VENCIMENTO_FINAL", "31/12/2030");
 
@@ -366,6 +420,8 @@ async function fetchNomusPedidoPages(
   let page = startPage;
   let stoppedBecauseEmpty = false;
   let completedWindow = false;
+  let stoppedBecauseWindowExceeded = false;
+  let excludedOlderThanWindow = 0;
   let lastPageFetched = startPage - 1;
 
   while (true) {
@@ -388,11 +444,35 @@ async function fetchNomusPedidoPages(
       break;
     }
 
-    pedidos.push(...arr);
+    let pageRows = arr;
+    if (fetchOpts.emissaoWindow) {
+      const filtered = filterPedidosByEmissaoWindow(arr, fetchOpts.emissaoWindow.startDate);
+      excludedOlderThanWindow += filtered.excludedOlder;
+      pageRows = filtered.kept;
+
+      const hasOlderOnPage = arr.some(
+        (row) =>
+          extractPedidoDataEmissao(row) != null &&
+          extractPedidoDataEmissao(row)!.getTime() < fetchOpts.emissaoWindow!.startDate.getTime()
+      );
+      if (hasOlderOnPage) {
+        stoppedBecauseWindowExceeded = true;
+      }
+    }
+
+    pedidos.push(...pageRows);
 
     console.warn(
-      `[nomus-sales-orders-v1] página ${page} lida com ${arr.length} pedidos; acumulado=${pedidos.length}.`
+      `[nomus-sales-orders-v1] página ${page} lida com ${arr.length} pedidos; ` +
+        `na janela=${pageRows.length}; acumulado=${pedidos.length}.`
     );
+
+    if (stoppedBecauseWindowExceeded) {
+      console.warn(
+        `[nomus-sales-orders-v1] parada: pedidos mais antigos que ${dataEmissaoInicial} detectados na página ${page}.`
+      );
+      break;
+    }
 
     if (page >= lastPage) {
       completedWindow = true;
@@ -415,25 +495,53 @@ async function fetchNomusPedidoPages(
       totalPedidos: pedidos.length,
       stoppedBecauseEmpty,
       completedWindow,
+      strategy: fetchOpts.strategy,
+      emissaoWindow: fetchOpts.emissaoWindow,
+      stoppedBecauseWindowExceeded,
+      excludedOlderThanWindow,
+      dataEmissaoFilterApplied: fetchOpts.emissaoWindow != null,
     },
   };
 }
 
-async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
-  const window = readSalesOrdersPaginationWindow();
+async function fetchAllNomusPedidos(
+  baseUrl: string,
+  strategy: NomusSalesOrdersSyncStrategy,
+  referenceNow: Date
+): Promise<{ pedidos: JsonObject[]; meta: SalesOrdersFetchResultMeta }> {
+  const window = readSalesOrdersPaginationWindow(strategy);
+  const emissaoWindow =
+    strategy === "recent-window" ? resolveNomusSalesOrdersEmissaoWindow(referenceNow) : null;
+
+  console.warn(`[nomus-sales-orders-v1] modo=${describeNomusSalesOrdersSyncMode(strategy)}`);
   console.warn(`[nomus-sales-orders-v1] paginação: ${window.cursorNote}`);
-  const result = await fetchNomusPedidoPages(baseUrl, window);
-  commitSalesOrdersPaginationCursor(window, result.meta);
+  if (emissaoWindow) {
+    console.warn(
+      `[nomus-sales-orders-v1] janela dataEmissao: ${emissaoWindow.label}; ` +
+        `início=${formatNomusPedidoDateBr(emissaoWindow.startDate)}; ` +
+        `fim=${formatNomusPedidoDateBr(emissaoWindow.endDate)}`
+    );
+  }
+
+  const result = await fetchNomusPedidoPages(baseUrl, window, {
+    strategy,
+    emissaoWindow,
+    referenceNow,
+  });
+
+  if (strategy === "full-reconciliation") {
+    commitSalesOrdersPaginationCursor(window, result.meta);
+  }
 
   if (result.meta.totalPedidos === 0) {
     console.warn(
       `[nomus-sales-orders-v1] AVISO: nenhum pedido retornado pelo Nomus na janela ` +
         `${window.startPage}..${window.startPage + window.maxPages - 1}. ` +
-        `Verifique cursor e disponibilidade da API.`
+        `Verifique cursor, dataEmissao e disponibilidade da API.`
     );
   }
 
-  return result.pedidos;
+  return result;
 }
 
 async function fetchNomusPedidoByOrderCode(
@@ -1306,15 +1414,20 @@ async function runApply(
 }
 
 async function main(): Promise<void> {
+  const startedAt = Date.now();
+  syncHttpStats.http429Count = 0;
   const isApply = process.argv.includes("--apply");
   const targetOrderCode = parseCliArg("orderCode");
+  const strategy = parseCliStrategy();
+  const referenceNow = new Date();
 
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
   timeLog("INICIO fetchAllNomusPedidos");
-  let pedidos = await fetchAllNomusPedidos(nomusBaseUrl);
+  const fetchResult = await fetchAllNomusPedidos(nomusBaseUrl, strategy, referenceNow);
+  let pedidos = fetchResult.pedidos;
 
   if (targetOrderCode) {
     const targetKey = canonicalNomusOrderCodeKey(targetOrderCode);
@@ -1528,9 +1641,34 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         mode: isApply ? "apply" : "dry-run",
+        syncStrategy: strategy,
+        syncModeLabel: describeNomusSalesOrdersSyncMode(strategy),
         targetOrderCode: targetOrderCode ?? null,
+        fetch: {
+          emissaoWindow: fetchResult.meta.emissaoWindow
+            ? {
+                label: fetchResult.meta.emissaoWindow.label,
+                startDate: formatNomusPedidoDateBr(fetchResult.meta.emissaoWindow.startDate),
+                endDate: formatNomusPedidoDateBr(fetchResult.meta.emissaoWindow.endDate),
+                windowMonths: fetchResult.meta.emissaoWindow.windowMonths,
+                windowDays: fetchResult.meta.emissaoWindow.windowDays,
+                dataEmissaoFilterApplied: fetchResult.meta.dataEmissaoFilterApplied,
+                excludedOlderThanWindow: fetchResult.meta.excludedOlderThanWindow,
+                stoppedBecauseWindowExceeded: fetchResult.meta.stoppedBecauseWindowExceeded,
+              }
+            : null,
+          pagination: {
+            startPage: fetchResult.meta.startPage,
+            maxPages: fetchResult.meta.maxPages,
+            lastPageFetched: fetchResult.meta.lastPageFetched,
+            stoppedBecauseEmpty: fetchResult.meta.stoppedBecauseEmpty,
+            completedWindow: fetchResult.meta.completedWindow,
+          },
+        },
         summary: result,
         applied,
+        http429Count: syncHttpStats.http429Count,
+        durationMs: Date.now() - startedAt,
         commercialNote:
           "SalesOrderItem.unitCost recebe preço unitário comercial Nomus — custo de produção é calculado apenas pelo motor de margem IndusCost.",
       },

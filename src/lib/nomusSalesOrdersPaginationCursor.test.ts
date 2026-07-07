@@ -84,6 +84,9 @@ describe("nomusSalesOrdersPaginationCursor", () => {
     assert.match(sync, /readSalesOrdersPaginationWindow/);
     assert.match(sync, /commitSalesOrdersPaginationCursor/);
     assert.match(sync, /resolveNextSalesOrdersPageCursor/);
+    assert.match(sync, /parseNomusSalesOrdersSyncStrategy/);
+    assert.match(sync, /recent-window/);
+    assert.match(sync, /dataEmissaoInicial/);
     assert.doesNotMatch(sync, /resolveSalesOrdersPaginationWindow/);
     assert.doesNotMatch(sync, /nextStart = startPage \+ maxPages[\s\S]*writeFileSync\(cursorFile, String\(nextStart\)/);
   });
