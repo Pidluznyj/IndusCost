@@ -46,10 +46,11 @@ describe("kpiSummaryCardsVisualAudit", () => {
     assert.match(content, /ExpenseMapCard/);
   });
 
-  it("referência usa MetricCard + MetricCardGrid", () => {
+  it("referência usa ExecutiveSummarySection + SummaryKpiGrid + MetricCard", () => {
     const ref = read(REFERENCE_SUMMARY);
+    assert.match(ref, /ExecutiveSummarySection/);
+    assert.match(ref, /SummaryKpiGrid/);
     assert.match(ref, /MetricCard/);
-    assert.match(ref, /MetricCardGrid/);
     assert.match(ref, /Resumo geral dos centros filtrados/);
   });
 

@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import { CheckCircle2, Clock, DollarSign, Layers, Percent } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { CostCenterExpenseMapAggregateTotals } from "@/src/lib/financeCostCenterExpenseMap";
 import { formatCostCenterExpenseMapSummaryCurrency } from "@/src/lib/financeCostCenterExpenseMap";
 import { formatFinanceInteger, formatFinancePercent } from "@/src/lib/financeAccountsReceivableFormat";
@@ -47,18 +48,12 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
   );
 
   return (
-    <div
-      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
-      data-testid="finance-cc-expense-map-executive-summary"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {scopeHint}
-          </p>
-          <h3 className="text-sm font-bold text-foreground mt-0.5">{headline}</h3>
-        </div>
-        {hasSelection && onClearSelection ? (
+    <ExecutiveSummarySection
+      title={headline}
+      eyebrow={scopeHint}
+      testId="finance-cc-expense-map-executive-summary"
+      actions={
+        hasSelection && onClearSelection ? (
           <button
             type="button"
             onClick={onClearSelection}
@@ -67,10 +62,20 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
           >
             Limpar seleção
           </button>
-        ) : null}
-      </div>
-
-      <MetricCardGrid minColumnWidth={168} className="finance-cc-expense-map-metric-grid">
+        ) : undefined
+      }
+      footer={
+        <p
+          className={cn(hasSelection && "text-primary/80 font-medium")}
+          data-testid="finance-cc-expense-map-summary-scope"
+        >
+          {hasSelection
+            ? `${formatFinanceInteger(totals.centersCount)} centros selecionados · ${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total filtrado`
+            : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total`}
+        </p>
+      }
+    >
+      <SummaryKpiGrid minColumnWidth={168} className="finance-cc-expense-map-metric-grid">
         <MetricCard
           label="Centros"
           value={formatFinanceInteger(totals.centersCount)}
@@ -125,19 +130,7 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
           loading={loading}
           className="finance-cc-expense-map-metric-card--short"
         />
-      </MetricCardGrid>
-
-      <p
-        className={cn(
-          "text-[10px] text-muted-foreground",
-          hasSelection && "text-primary/80 font-medium"
-        )}
-        data-testid="finance-cc-expense-map-summary-scope"
-      >
-        {hasSelection
-          ? `${formatFinanceInteger(totals.centersCount)} centros selecionados · ${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total filtrado`
-          : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total`}
-      </p>
-    </div>
+      </SummaryKpiGrid>
+    </ExecutiveSummarySection>
   );
 }

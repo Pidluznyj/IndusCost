@@ -1,0 +1,91 @@
+/**
+ * Bloco executivo de resumo/KPI — seção com título + grid de MetricCard.
+ * Referência visual: FinanceCostCenterExpenseMapExecutiveSummary.
+ */
+
+.executive-summary-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border, hsl(214.3 31.8% 91.4%));
+  border-radius: 0.75rem;
+  background: var(--color-card, hsl(0 0% 100%));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.executive-summary-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.executive-summary-section__titles {
+  min-width: 0;
+}
+
+.executive-summary-section__eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: hsl(215.4 16.3% 46.9%);
+}
+
+.executive-summary-section__title {
+  margin-top: 0.125rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: hsl(222.2 84% 4.9%);
+}
+
+.executive-summary-section__actions {
+  flex-shrink: 0;
+}
+
+.executive-summary-section__footer {
+  font-size: 10px;
+  line-height: 1.35;
+  color: hsl(215.4 16.3% 46.9%);
+}
+
+.summary-kpi-grid {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .summary-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--metric-card-min, 220px)), 1fr));
+  }
+}
+
+@media print {
+  .executive-summary-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .executive-summary-section .summary-kpi-grid,
+  .executive-summary-section .metric-card-grid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-summary-section .metric-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none;
+  }
+
+  @media (min-width: 768px) {
+    .executive-summary-section .summary-kpi-grid,
+    .executive-summary-section .metric-card-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+}
