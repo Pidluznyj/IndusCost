@@ -199,14 +199,22 @@ export async function loadCommissionReceiptPreview(
   const [
     materializedSchedulesByReceivableId,
     orderBundles,
+    snapshotRows,
     identityCtx,
     rules,
     exclusionRules,
     auditPayload,
   ] = await Promise.all([
     loadMaterializedSchedulesByReceivableId(receivableIds),
-    useLegacyFallback
-      ? loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds)
+    loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds),
+    nfeIds.length > 0
+      ? prisma.commissionOrderSnapshot.findMany({
+          where: { nfeId: { in: nfeIds }, status: "ACTIVE" },
+          select: {
+            nfeId: true,
+            items: { select: { status: true } },
+          },
+        })
       : Promise.resolve([]),
     loadCommissionSellerIdentityContext(prisma),
     useLegacyFallback ? loadActiveCommissionRules(prisma) : Promise.resolve([]),
@@ -228,6 +236,17 @@ export async function loadCommissionReceiptPreview(
   ]);
 
   const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+  const orderSnapshotDiagnosisByNfeId = new Map(
+    snapshotRows
+      .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
+      .map((row) => [
+        row.nfeId,
+        {
+          exists: true,
+          itemStatuses: row.items.map((item) => item.status),
+        },
+      ])
+  );
   const persistedAuditRows = useLegacyFallback
     ? enrichVisualAuditRowsWithSellerIdentity(
         filterRowsByAppraisalMode(auditPayload.rows, "PAYABLE", period),
@@ -245,6 +264,7 @@ export async function loadCommissionReceiptPreview(
     receivables,
     ordersByNfeId,
     materializedSchedulesByReceivableId,
+    orderSnapshotDiagnosisByNfeId,
     allowItemRecalculationFallback: useLegacyFallback,
     persistedAuditRows,
     rules,

@@ -80,6 +80,10 @@ export type CommissionMaterializationRunSummary = {
   baseline: CommissionMaterializationArtifactCounts;
   after: CommissionMaterializationArtifactCounts;
   orders: CommissionMaterializationOrderResult[];
+  receiptMonthReceivablesChecked?: number;
+  receiptMonthReceivablesMissingBefore?: number;
+  receiptMonthSchedulesEnsured?: number;
+  receiptMonthUnlinkedReceivables?: number;
 };
 
 export const COMMISSION_MATERIALIZATION_REBUILD_CONFIRMATION = "REBUILD COMMISSION";
@@ -188,6 +192,11 @@ export function aggregateMaterializationRunSummary(input: {
   baseline?: CommissionMaterializationArtifactCounts;
   after?: CommissionMaterializationArtifactCounts;
   orders: CommissionMaterializationOrderResult[];
+  extraErrors?: Array<{ salesOrderId: string; message: string }>;
+  receiptMonthReceivablesChecked?: number;
+  receiptMonthReceivablesMissingBefore?: number;
+  receiptMonthSchedulesEnsured?: number;
+  receiptMonthUnlinkedReceivables?: number;
 }): CommissionMaterializationRunSummary {
   let snapshotsCreated = 0;
   let snapshotsUnchanged = 0;
@@ -228,6 +237,14 @@ export function aggregateMaterializationRunSummary(input: {
     }
   }
 
+  if (input.extraErrors?.length) {
+    errors.push(...input.extraErrors);
+  }
+
+  if (input.receiptMonthSchedulesEnsured != null && input.receiptMonthSchedulesEnsured > 0) {
+    schedulesCreated += input.receiptMonthSchedulesEnsured;
+  }
+
   return {
     dryRun: input.dryRun,
     since: input.since?.toISOString() ?? null,
@@ -255,6 +272,10 @@ export function aggregateMaterializationRunSummary(input: {
     baseline: input.baseline ?? { activeSnapshots: 0, activeSchedules: 0 },
     after: input.after ?? { activeSnapshots: 0, activeSchedules: 0 },
     orders: input.orders,
+    receiptMonthReceivablesChecked: input.receiptMonthReceivablesChecked,
+    receiptMonthReceivablesMissingBefore: input.receiptMonthReceivablesMissingBefore,
+    receiptMonthSchedulesEnsured: input.receiptMonthSchedulesEnsured,
+    receiptMonthUnlinkedReceivables: input.receiptMonthUnlinkedReceivables,
   };
 }
 

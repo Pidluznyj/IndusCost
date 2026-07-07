@@ -477,7 +477,14 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         return handleReceiptClosingError(res, error);
       } catch {
         console.error("POST /api/commissions/receipt-closing/apply", error);
-        return res.status(500).json({ error: "Erro ao aplicar fechamento por recebimento." });
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "Erro ao aplicar fechamento por recebimento.";
+        return res.status(500).json({
+          error: message,
+          code: "RECEIPT_CLOSING_APPLY_FAILED",
+        });
       }
     }
   });

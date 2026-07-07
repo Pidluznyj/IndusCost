@@ -523,7 +523,7 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.releasedCommissionAmount, 50);
   });
 
-  it("título sem schedule vira NO_SCHEDULE", () => {
+  it("título sem schedule e sem pedido vira NO_SALES_LINK", () => {
     const result = buildCommissionReceiptPreview({
       year: 2026,
       month: 6,
@@ -534,10 +534,26 @@ describe("commissionReceiptEngine", () => {
       exclusionRules: [],
       identityCtx: OK_IDENTITY,
     });
-    assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
-    assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_NO_SCHEDULE_REASON);
+    assert.equal(result.lines[0]?.status, "NO_SALES_LINK");
+    assert.match(result.lines[0]?.statusReason ?? "", /pedido de venda/i);
     assert.equal(result.lines[0]?.source, "EXCEPTION");
     assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+  });
+
+  it("título com pedido mas sem schedule materializado vira NO_SCHEDULE", () => {
+    const order = makeOrderBundle([item("i1", 5000)]);
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 503 })],
+      ordersByNfeId: new Map([[100, order]]),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
+    assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_NO_SCHEDULE_REASON);
   });
 
   it("schedule stale não libera sem reprocessar", () => {

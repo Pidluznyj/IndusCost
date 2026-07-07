@@ -52,6 +52,17 @@ function printHumanSummary(
   console.log(`Schedules stale: ${summary.schedulesStaled}`);
   console.log(`Schedules atualizados: ${summary.schedulesUpdated}`);
   console.log(`Títulos sem vínculo: ${summary.receivablesWithoutLink}`);
+  if (summary.receiptMonthReceivablesChecked != null) {
+    console.log("\n--- Recebimentos do mês (passagem por título) ---");
+    console.log(`Títulos comerciais no mês: ${summary.receiptMonthReceivablesChecked}`);
+    console.log(
+      `Sem schedule antes da passagem: ${summary.receiptMonthReceivablesMissingBefore ?? 0}`
+    );
+    console.log(`Schedules garantidos na passagem: ${summary.receiptMonthSchedulesEnsured ?? 0}`);
+    console.log(
+      `Títulos sem vínculo pedido/NF: ${summary.receiptMonthUnlinkedReceivables ?? 0}`
+    );
+  }
   console.log(`Clientes excluídos: ${summary.excludedCustomers}`);
   console.log(`Vendedores sem resolução: ${summary.unresolvedSellers}`);
   console.log(`Erros: ${summary.errors.length}`);

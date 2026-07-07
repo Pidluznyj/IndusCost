@@ -55,6 +55,15 @@ export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineS
 export const COMMISSION_RECEIPT_NO_SCHEDULE_REASON =
   "Título recebido sem schedule de comissão materializado — rode a materialização antes do fechamento";
 
+/** Motivo quando a NF do título não está vinculada a um pedido de venda local. */
+export const COMMISSION_RECEIPT_NO_SALES_ORDER_REASON =
+  "Título recebido sem vínculo com pedido de venda";
+
+export type CommissionOrderSnapshotDiagnosis = {
+  exists: boolean;
+  itemStatuses: string[];
+};
+
 export type MaterializedReceivableScheduleInput = {
   id: string;
   orderSnapshotId: string;
@@ -157,6 +166,8 @@ export type CommissionReceiptPreviewContext = {
   persistedAuditRows?: VisualAuditRow[];
   /** Schedules materializados por receivableId — quando definido, fechamento usa schedule (não recalcula itens). */
   materializedSchedulesByReceivableId?: Map<number, MaterializedReceivableScheduleInput[]>;
+  /** Snapshot ACTIVE por NF — diagnóstico quando schedule ausente. */
+  orderSnapshotDiagnosisByNfeId?: Map<number, CommissionOrderSnapshotDiagnosis>;
   /** Fallback explícito: recalcular por item (preview/auditoria legada). */
   allowItemRecalculationFallback?: boolean;
   rules: CommissionActiveRule[];
@@ -491,6 +502,76 @@ function pickMaterializedScheduleForReceivable(
   return schedules[0] ?? null;
 }
 
+/** Classifica título comercial sem schedule materializado (cadeia Recebimento → Pedido → Snapshot). */
+export function diagnoseReceivableWithoutMaterializedSchedule(input: {
+  receivable: CommissionReceiptReceivableInput;
+  order: CommissionOrderSourceBundle | undefined;
+  orderSnapshotDiagnosis: CommissionOrderSnapshotDiagnosis | undefined;
+  identityCtx: CommissionSellerIdentityContext;
+}): { status: CommissionReceiptLedgerLineStatus; statusReason: string } {
+  if (input.receivable.nomusNfeId == null) {
+    return {
+      status: "NO_SALES_LINK",
+      statusReason: "Título sem NF de origem (sourceInvoiceId)",
+    };
+  }
+  if (!input.order) {
+    return {
+      status: "NO_SALES_LINK",
+      statusReason: COMMISSION_RECEIPT_NO_SALES_ORDER_REASON,
+    };
+  }
+
+  if (!input.order.seller.nomusSellerId && !input.order.seller.responsibleName?.trim()) {
+    return { status: "NO_SELLER", statusReason: "Pedido sem vendedor" };
+  }
+
+  const sellerResolution = resolveCommissionSellerIdentity(
+    {
+      rawSellerId: input.order.seller.nomusSellerId,
+      rawSellerName: input.order.seller.responsibleName,
+      source: "SALES_ORDER",
+    },
+    input.identityCtx
+  );
+  if (
+    ["UNRESOLVED", "CONFLICT", "MULTIPLE_CANONICALS"].includes(
+      sellerResolution.resolutionStatus
+    )
+  ) {
+    return {
+      status: "SELLER_UNRESOLVED",
+      statusReason:
+        sellerResolution.warnings.join("; ") ||
+        `Vendedor não resolvido (${sellerResolution.resolutionStatus})`,
+    };
+  }
+
+  const snap = input.orderSnapshotDiagnosis;
+  if (snap?.exists) {
+    if (
+      snap.itemStatuses.length > 0 &&
+      snap.itemStatuses.every((status) => status === "NO_RULE")
+    ) {
+      return {
+        status: "NO_RULE",
+        statusReason: "Nenhuma regra de comissão aplicável ao pedido/NF",
+      };
+    }
+    if (snap.itemStatuses.some((status) => status === "SELLER_UNRESOLVED")) {
+      return {
+        status: "SELLER_UNRESOLVED",
+        statusReason: "Vendedor não resolvido no snapshot materializado",
+      };
+    }
+  }
+
+  return {
+    status: "NO_SCHEDULE",
+    statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
+  };
+}
+
 function previewLineFromMaterializedSchedule(
   schedule: MaterializedReceivableScheduleInput,
   receivable: CommissionReceiptReceivableInput,
@@ -741,16 +822,26 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
   year: number;
   month: number;
   exclusionRules: CustomerExclusionRuleSnapshot[];
+  order?: CommissionOrderSourceBundle;
+  orderSnapshotDiagnosis?: CommissionOrderSnapshotDiagnosis;
+  identityCtx: CommissionSellerIdentityContext;
 }): CommissionReceiptPreviewLine[] {
   const schedule = pickMaterializedScheduleForReceivable(input.schedules);
   if (!schedule) {
+    const diagnosis = diagnoseReceivableWithoutMaterializedSchedule({
+      receivable: input.receivable,
+      order: input.order,
+      orderSnapshotDiagnosis: input.orderSnapshotDiagnosis,
+      identityCtx: input.identityCtx,
+    });
     return [
       buildExceptionLine({
         receivable: input.receivable,
         year: input.year,
         month: input.month,
-        status: "NO_SCHEDULE",
-        statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
+        status: diagnosis.status,
+        statusReason: diagnosis.statusReason,
+        order: input.order,
       }),
     ];
   }
@@ -1157,12 +1248,18 @@ export function buildCommissionReceiptPreview(
     if (useMaterializedSchedules) {
       const schedules =
         input.materializedSchedulesByReceivableId!.get(receivable.nomusReceivableId) ?? [];
+      const nfeId = receivable.nomusNfeId ?? null;
+      const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
       const scheduleLines = buildLinesForReceivableWithMaterializedSchedule({
         receivable,
         schedules,
         year: input.year,
         month: input.month,
         exclusionRules: input.exclusionRules,
+        order,
+        orderSnapshotDiagnosis:
+          nfeId != null ? input.orderSnapshotDiagnosisByNfeId?.get(nfeId) : undefined,
+        identityCtx: input.identityCtx,
       });
       for (const line of scheduleLines) {
         if (

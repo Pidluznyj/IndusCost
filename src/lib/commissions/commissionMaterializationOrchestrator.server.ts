@@ -12,6 +12,7 @@ import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupEx
 import type { CommissionReceivableScheduleRebuildResult } from "./commissionReceivableScheduler.js";
 import {
   materializeCommissionForSalesOrder,
+  SalesOrderCustomerMissingError,
   SalesOrderNotFoundError,
 } from "./commissionOrderMaterializer.server.js";
 import {
@@ -521,6 +522,181 @@ function mergeScheduleRebuildResults(
   };
 }
 
+async function rebuildScheduleAfterMaterialize(
+  db: PrismaClient,
+  deps: MaterializationOrchestratorDeps,
+  input: {
+    salesOrderId: string;
+    requestedNfeId: number | null;
+    materializedNfeId: number | null;
+    dryRun: boolean;
+  }
+): Promise<CommissionReceivableScheduleRebuildResult | null> {
+  const candidates = [
+    input.materializedNfeId,
+    input.requestedNfeId,
+    null,
+  ].filter((value, index, arr) => arr.indexOf(value) === index);
+
+  for (const nfeId of candidates) {
+    try {
+      return await deps.rebuildSchedule(db, {
+        salesOrderId: input.salesOrderId,
+        ...(nfeId != null ? { nfeId } : {}),
+        dryRun: input.dryRun,
+      });
+    } catch (error) {
+      if (error instanceof OrderSnapshotNotFoundError) continue;
+      throw error;
+    }
+  }
+  return null;
+}
+
+type ReceiptMonthReceivableRef = {
+  receivableId: number;
+  sourceInvoiceId: number | null;
+};
+
+export async function loadCommercialReceiptMonthReceivableRefs(
+  db: Pick<PrismaClient, "nomusAccountsReceivable">,
+  year: number,
+  month: number
+): Promise<ReceiptMonthReceivableRef[]> {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59, 999);
+
+  const receivables = await db.nomusAccountsReceivable.findMany({
+    where: {
+      settlementDate: { gte: from, lte: to },
+      amountReceived: { gt: 0 },
+    },
+    select: {
+      externalId: true,
+      sourceInvoiceId: true,
+      personName: true,
+      personCnpj: true,
+    },
+  });
+
+  return receivables
+    .filter(
+      (row) =>
+        !isCommissionInternalGroupReceivable({
+          customerName: row.personName,
+          customerCnpj: row.personCnpj,
+        })
+    )
+    .map((row) => ({
+      receivableId: row.externalId,
+      sourceInvoiceId: row.sourceInvoiceId,
+    }));
+}
+
+async function ensureReceiptMonthReceivableSchedules(
+  db: PrismaClient,
+  input: {
+    year: number;
+    month: number;
+    dryRun: boolean;
+    processedPairs: Set<string>;
+    deps: MaterializationOrchestratorDeps;
+  }
+): Promise<{
+  receivablesChecked: number;
+  receivablesMissingBefore: number;
+  schedulesEnsured: number;
+  unlinkedReceivables: number;
+  errors: Array<{ receivableId: number; message: string }>;
+}> {
+  const receivables = await loadCommercialReceiptMonthReceivableRefs(
+    db,
+    input.year,
+    input.month
+  );
+  if (receivables.length === 0) {
+    return {
+      receivablesChecked: 0,
+      receivablesMissingBefore: 0,
+      schedulesEnsured: 0,
+      unlinkedReceivables: 0,
+      errors: [],
+    };
+  }
+
+  const receivableIds = receivables.map((row) => row.receivableId);
+  const activeSchedules = await db.commissionReceivableSchedule.findMany({
+    where: { receivableId: { in: receivableIds }, status: "ACTIVE" },
+    select: { receivableId: true },
+  });
+  const scheduled = new Set(activeSchedules.map((row) => row.receivableId));
+  const missing = receivables.filter((row) => !scheduled.has(row.receivableId));
+
+  let schedulesEnsured = 0;
+  let unlinkedReceivables = 0;
+  const errors: Array<{ receivableId: number; message: string }> = [];
+
+  for (const receivable of missing) {
+    if (receivable.sourceInvoiceId == null) {
+      unlinkedReceivables += 1;
+      continue;
+    }
+
+    const link = await db.salesOrderNfeLink.findFirst({
+      where: { nfeExternalId: receivable.sourceInvoiceId },
+      select: { salesOrderId: true, nfeExternalId: true },
+    });
+    if (!link) {
+      unlinkedReceivables += 1;
+      continue;
+    }
+
+    const pairKey = `${link.salesOrderId}|${link.nfeExternalId}`;
+    input.processedPairs.add(pairKey);
+
+    try {
+      const snapshot = await input.deps.materialize(db, {
+        salesOrderId: link.salesOrderId,
+        nfeId: link.nfeExternalId,
+        dryRun: input.dryRun,
+      });
+      const schedule = await rebuildScheduleAfterMaterialize(db, input.deps, {
+        salesOrderId: link.salesOrderId,
+        requestedNfeId: link.nfeExternalId,
+        materializedNfeId: snapshot.preview.nfeId,
+        dryRun: input.dryRun,
+      });
+      if (schedule && schedule.schedulesCreated > 0) {
+        schedulesEnsured += 1;
+        continue;
+      }
+
+      const after = await db.commissionReceivableSchedule.findFirst({
+        where: { receivableId: receivable.receivableId, status: "ACTIVE" },
+        select: { id: true },
+      });
+      if (after) schedulesEnsured += 1;
+    } catch (error) {
+      const message =
+        error instanceof SalesOrderNotFoundError ||
+        error instanceof SalesOrderCustomerMissingError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      errors.push({ receivableId: receivable.receivableId, message });
+    }
+  }
+
+  return {
+    receivablesChecked: receivables.length,
+    receivablesMissingBefore: missing.length,
+    schedulesEnsured,
+    unlinkedReceivables,
+    errors,
+  };
+}
+
 async function processSalesOrderMaterialization(
   db: PrismaClient,
   ref: AffectedSalesOrderRef,
@@ -541,19 +717,16 @@ async function processSalesOrderMaterialization(
       });
       lastSnapshot = snapshot;
 
-      try {
-        const schedule = await deps.rebuildSchedule(db, {
-          salesOrderId: ref.salesOrderId,
-          ...(nfeId != null ? { nfeId } : {}),
-          dryRun,
-        });
+      const schedule = await rebuildScheduleAfterMaterialize(db, deps, {
+        salesOrderId: ref.salesOrderId,
+        requestedNfeId: nfeId,
+        materializedNfeId: snapshot.preview.nfeId,
+        dryRun,
+      });
+      if (schedule) {
         mergedSchedule = mergedSchedule
           ? mergeScheduleRebuildResults(mergedSchedule, schedule)
           : schedule;
-      } catch (error) {
-        if (!(error instanceof OrderSnapshotNotFoundError)) {
-          throw error;
-        }
       }
     }
 
@@ -573,9 +746,11 @@ async function processSalesOrderMaterialization(
     const message =
       error instanceof SalesOrderNotFoundError
         ? error.message
-        : error instanceof Error
+        : error instanceof SalesOrderCustomerMissingError
           ? error.message
-          : String(error);
+          : error instanceof Error
+            ? error.message
+            : String(error);
 
     return buildMaterializationOrderResult({
       salesOrderId: ref.salesOrderId,
@@ -607,11 +782,33 @@ export async function rebuildCommissionMaterializationForAffectedSales(
   );
 
   const orders: CommissionMaterializationOrderResult[] = [];
+  const processedPairs = new Set<string>();
   for (const ref of affected) {
+    for (const nfeId of ref.nfeIds ?? []) {
+      processedPairs.add(`${ref.salesOrderId}|${nfeId}`);
+    }
     orders.push(await processSalesOrderMaterialization(db, ref, dryRun, deps));
   }
 
-  const after = await loadMaterializationArtifactCounts(db, salesOrderIds);
+  let receiptMonthPass: Awaited<ReturnType<typeof ensureReceiptMonthReceivableSchedules>> | null =
+    null;
+  if (input.year != null && input.month != null) {
+    receiptMonthPass = await ensureReceiptMonthReceivableSchedules(db, {
+      year: input.year,
+      month: input.month,
+      dryRun,
+      processedPairs,
+      deps,
+    });
+  }
+
+  const expandedOrderIds = [
+    ...new Set([
+      ...salesOrderIds,
+      ...[...processedPairs].map((pair) => pair.split("|")[0]!).filter(Boolean),
+    ]),
+  ];
+  const after = await loadMaterializationArtifactCounts(db, expandedOrderIds);
 
   return aggregateMaterializationRunSummary({
     dryRun,
@@ -625,5 +822,14 @@ export async function rebuildCommissionMaterializationForAffectedSales(
     baseline,
     after,
     orders,
+    extraErrors:
+      receiptMonthPass?.errors.map((error) => ({
+        salesOrderId: `receivable:${error.receivableId}`,
+        message: error.message,
+      })) ?? [],
+    receiptMonthReceivablesChecked: receiptMonthPass?.receivablesChecked,
+    receiptMonthReceivablesMissingBefore: receiptMonthPass?.receivablesMissingBefore,
+    receiptMonthSchedulesEnsured: receiptMonthPass?.schedulesEnsured,
+    receiptMonthUnlinkedReceivables: receiptMonthPass?.unlinkedReceivables,
   });
 }

@@ -32,6 +32,13 @@ export class SalesOrderNotFoundError extends Error {
   }
 }
 
+export class SalesOrderCustomerMissingError extends Error {
+  constructor(public readonly salesOrderId: string) {
+    super(`Pedido de venda sem cliente vinculado: ${salesOrderId}`);
+    this.name = "SalesOrderCustomerMissingError";
+  }
+}
+
 export type MaterializeCommissionForSalesOrderInput = {
   salesOrderId: string;
   /** NF específica vinculada ao recebimento — sobrescreve a NF primária do pedido. */
@@ -223,6 +230,9 @@ export async function materializeCommissionForSalesOrder(
   }
 
   const { bundle, customerId } = loaded;
+  if (!customerId) {
+    throw new SalesOrderCustomerMissingError(input.salesOrderId);
+  }
   const preferredNfeId = input.nfeId ?? null;
   const context = await loadOrderCalculationContext(db, bundle, preferredNfeId);
   const lines = calculateCommissionForSalesOrderItems({ orders: [bundle], context });
