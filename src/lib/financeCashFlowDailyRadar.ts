@@ -1,6 +1,6 @@
 /**
  * Radar Diário de Caixa — agregação independente dos filtros globais da página.
- * Usa data operacional de caixa (AR: dueDate; AP: scheduleDate/dueDate via getAccountsPayableOperationalDueDate).
+ * Usa vencimento (dueDate) para AR e AP no radar diário.
  */
 import { classifyFinanceArTitle, roundMoney, startOfLocalDay } from "./financeAccountsReceivableDashboard.js";
 import { classifyFinanceApTitle } from "./financeAccountsPayableDashboard.js";
@@ -641,27 +641,14 @@ function mapPayableRow(row: FinanceCashFlowApRow, referenceDate: Date): DailyRad
   const due = row.dueDate;
   const schedule = row.scheduleDate ?? null;
   const payment = row.paymentDate ?? row.settlementDate ?? null;
-  const operational = getAccountsPayableOperationalDueDate(row);
   const vencimentoOficial = toCivilDateKey(due);
   const dataAgendada = toCivilDateKey(schedule);
   const dataPagamento = toCivilDateKey(payment);
-  let fonteDataFluxo: DailyRadarPayableRow["fonteDataFluxo"] = "vencimento";
-  if (operational && schedule && due) {
-    const dueKey = toCivilDateKey(due);
-    const schedKey = toCivilDateKey(schedule);
-    if (dueKey && schedKey && schedKey > dueKey) {
-      fonteDataFluxo = "agendamento";
-    }
-  } else if (operational && schedule && !due) {
-    fonteDataFluxo = "agendamento";
-  } else if (operational && payment && toCivilDateKey(operational) === dataPagamento) {
-    fonteDataFluxo = "pagamento";
-  }
+  const dataUsadaNoFluxo = vencimentoOficial ?? "";
   const rescheduled =
     due != null &&
     schedule != null &&
     startOfCivilDate(schedule).getTime() > startOfCivilDate(due).getTime();
-  const dataUsadaNoFluxo = toCivilDateKey(operational) ?? "";
   return {
     id: `ap-${row.externalId}`,
     supplier: row.personName,
@@ -679,7 +666,7 @@ function mapPayableRow(row: FinanceCashFlowApRow, referenceDate: Date): DailyRad
     dataAgendada,
     dataPagamento,
     dataUsadaNoFluxo,
-    fonteDataFluxo,
+    fonteDataFluxo: due ? "vencimento" : schedule ? "agendamento" : payment ? "pagamento" : "vencimento",
   };
 }
 

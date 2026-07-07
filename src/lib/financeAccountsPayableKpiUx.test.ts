@@ -90,9 +90,9 @@ describe("financeAccountsPayableKpiUx", () => {
     });
     assert.equal(
       getAccountsPayableOperationalDueDate(operational)?.toISOString(),
-      operational.scheduleDate?.toISOString()
+      operational.dueDate?.toISOString()
     );
-    assert.equal(isAccountsPayableOverdue(operational, ref), false);
+    assert.equal(isAccountsPayableOverdue(operational, ref), true);
   });
 });
 

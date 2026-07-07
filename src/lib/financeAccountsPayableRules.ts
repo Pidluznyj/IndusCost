@@ -213,4 +213,4 @@ export function resolveFinanceApOpenAmount(row: FinanceApRulesInput): number {
 }
 
 export const FINANCE_AP_CASH_FLOW_RULES_NOTE =
-  "Contas a Pagar são alocadas por vencimento para fins gerenciais. A data de baixa/pagamento é mantida apenas para auditoria operacional." as const;
+  "Fluxo de Caixa AP: agrupamento sempre por data de vencimento (dueDate). scheduleDate, competência e baixa são apenas informativos." as const;

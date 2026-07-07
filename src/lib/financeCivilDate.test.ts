@@ -117,18 +117,19 @@ describe("financeCashFlowDailyRadar civil dates", () => {
     assert.equal(mapped.dataUsadaNoFluxo, mapped.vencimentoOficial);
   });
 
-  it("AP com agendamento posterior usa data agendada no fluxo", () => {
+  it("AP com agendamento posterior mantém vencimento no fluxo", () => {
     const row = ap13335Row();
     row.scheduleDate = prismaDate("2026-07-25");
     const mapped = buildFinanceCashFlowDailyRadar(
       [],
       [row],
-      { baseDate: BASE, rangeKey: "8-15" },
+      { baseDate: BASE, rangeKey: "0-7", day: "2026-07-20" },
       BASE
     ).selectedDetail!.payables.rows[0]!;
-    assert.equal(mapped.fonteDataFluxo, "agendamento");
-    assert.equal(mapped.dataUsadaNoFluxo, "2026-07-25");
-    assert.equal(mapped.operationalDate, "2026-07-25");
+    assert.equal(mapped.fonteDataFluxo, "vencimento");
+    assert.equal(mapped.dataUsadaNoFluxo, "2026-07-20");
+    assert.equal(mapped.operationalDate, "2026-07-20");
+    assert.equal(mapped.dataAgendada, "2026-07-25");
   });
 
   it("exportação Excel/PDF usa a mesma data civil corrigida", () => {

@@ -254,7 +254,7 @@ describe("financeCashFlowAudit", () => {
     assert.equal(payload.topCustomers[0]!.amount, 98000);
   });
 
-  it("Pagamentos vencidos respeitam data operacional AP", () => {
+  it("Pagamentos vencidos respeitam vencimento AP", () => {
     const row = apRow({
       externalId: 100,
       dueDate: new Date(2026, 4, 10),
@@ -262,8 +262,8 @@ describe("financeCashFlowAudit", () => {
       balancePayable: 900,
     });
     const dataset = buildDataset({ ap: [row] });
-    assert.equal(isFinanceCashFlowApOverdueRow(row, REF), false);
-    assert.equal(dataset.blocks.overduePayables.length, 0);
+    assert.equal(isFinanceCashFlowApOverdueRow(row, REF), true);
+    assert.equal(dataset.blocks.overduePayables.length, 1);
   });
 
   it("AP stale não aparece em nenhum bloco", () => {

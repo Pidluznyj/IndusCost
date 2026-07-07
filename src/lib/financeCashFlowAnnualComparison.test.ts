@@ -158,7 +158,7 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[11]?.paidAmount, 0);
   });
 
-  it("3. AR recebido entra em receivedAmount pelo vencimento", () => {
+  it("3. AR recebido entra em receivedAmount pela data de realização (baixa)", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -169,8 +169,8 @@ describe("financeCashFlowAnnualComparison", () => {
       }),
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivedAmount, 0);
-    assert.equal(payload.months[2]?.receivedAmount, 800);
+    assert.equal(payload.months[0]?.receivedAmount, 800);
+    assert.equal(payload.months[2]?.receivedAmount, 0);
     assert.equal(payload.months[0]?.receivableOpenAmount, 0);
   });
 
@@ -222,6 +222,7 @@ describe("financeCashFlowAnnualComparison", () => {
       arRow({
         externalId: 1,
         dueDate: new Date(2026, 0, 5),
+        settlementDate: new Date(2026, 0, 5),
         amountReceived: 500,
         balanceReceivable: 0,
       }),
@@ -262,6 +263,7 @@ describe("financeCashFlowAnnualComparison", () => {
       arRow({
         externalId: 1,
         dueDate: new Date(2026, 0, 5),
+        settlementDate: new Date(2026, 0, 5),
         amountReceived: 1000,
         balanceReceivable: 0,
       }),
@@ -369,6 +371,7 @@ describe("financeCashFlowAnnualComparison", () => {
       arRow({
         externalId: 1,
         dueDate: new Date(2025, 0, 10),
+        settlementDate: new Date(2025, 0, 10),
         amountReceived: 1000,
         balanceReceivable: 0,
       }),

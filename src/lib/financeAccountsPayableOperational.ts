@@ -30,20 +30,11 @@ export function startOfLocalDay(date: Date): Date {
 }
 
 /**
- * Data operacional de pagamento: agendamento pode postergar o atraso,
- * mas não antecipar vencimento antes do vencimento original.
+ * Eixo financeiro padrão de Contas a Pagar: data de vencimento (dueDate).
+ * scheduleDate existe apenas como informação/auditoria — não posterga agrupamento.
  */
 export function getAccountsPayableOperationalDueDate(row: FinanceApOperationalRow): Date | null {
-  const dueDate = row.dueDate ?? null;
-  const scheduleDate = row.scheduleDate ?? null;
-
-  if (dueDate && scheduleDate) {
-    const due = startOfCivilDate(dueDate).getTime();
-    const sched = startOfCivilDate(scheduleDate).getTime();
-    return sched > due ? scheduleDate : dueDate;
-  }
-
-  return scheduleDate ?? dueDate;
+  return row.dueDate ?? row.scheduleDate ?? null;
 }
 
 export function isAccountsPayablePurchaseOrderSchedule(row: FinanceApOperationalRow): boolean {

@@ -125,7 +125,7 @@ describe("financeHorizonBuckets", () => {
 });
 
 describe("financeHorizonAggregation AP", () => {
-  it("usa data operacional max(dueDate, scheduleDate)", () => {
+  it("usa data de vencimento mesmo com scheduleDate posterior", () => {
     const row = apRow({
       externalId: 1,
       dueDate: addDays(REF, 2),
@@ -134,7 +134,7 @@ describe("financeHorizonAggregation AP", () => {
     });
     const rows = buildFinanceApHorizonRows([row], { status: "all" }, REF);
     const agg = bucketizeFinanceHorizonRows(rows, REF);
-    assert.equal(agg.buckets.find((b) => b.key === "8_15")?.amount, 250);
+    assert.equal(agg.buckets.find((b) => b.key === "0_7")?.amount, 250);
   });
 
   it("exclui pedido de compra da visão gerencial", () => {

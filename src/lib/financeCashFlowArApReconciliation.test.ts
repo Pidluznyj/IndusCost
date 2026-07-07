@@ -237,7 +237,7 @@ describe("financeCashFlowArApReconciliation — Contas a Pagar", () => {
     assert.equal(cf.overduePayables[0]!.externalId, 1);
   });
 
-  it("saídas previstas respeitam data operacional AP (scheduleDate > dueDate)", () => {
+  it("saídas previstas respeitam vencimento AP mesmo com scheduleDate posterior", () => {
     const rows = [
       apRow({
         externalId: 1,
@@ -247,9 +247,9 @@ describe("financeCashFlowArApReconciliation — Contas a Pagar", () => {
       }),
     ];
     const jun = buildFinanceCashFlowDashboard([], rows, { ...BASE_CF_FILTERS, month: 6 }, REF, null, apCutoff());
-    assert.equal(jun.cards.outflowAmount, 0);
+    assert.equal(jun.cards.outflowAmount, 2500);
     const ago = buildFinanceCashFlowDashboard([], rows, { ...BASE_CF_FILTERS, month: 8 }, REF, null, apCutoff());
-    assert.equal(ago.cards.outflowAmount, 2500);
+    assert.equal(ago.cards.outflowAmount, 0);
   });
 
   it("top fornecedores e maiores saídas usam portfólio AP aberto", () => {

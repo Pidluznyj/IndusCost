@@ -51,7 +51,7 @@ import type {
 export const FINANCE_AP_RULES_ENGINE_VERSION = "1.0.0";
 
 export const FINANCE_AP_RULES_ENGINE_NOTE =
-  "Contas a Pagar gerencial: carteira aberta e aging por vencimento operacional; pago por data efetiva (dueDate para quitados). Agenda de pedido de compra excluída da visão gerencial." as const;
+  "Contas a Pagar gerencial: carteira aberta e aging por data de vencimento; pago alocado por vencimento (dueDate). Agenda de pedido de compra excluída da visão gerencial." as const;
 
 export type {
   FinanceAccountsPayableDayBucket,

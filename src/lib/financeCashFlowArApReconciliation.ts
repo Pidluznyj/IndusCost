@@ -562,7 +562,7 @@ export function auditCashFlowCalendarProjectedParity(
   return { ok: mismatches.length === 0, mismatches };
 }
 
-/** AP aberto usa data operacional (scheduleDate > dueDate). */
+/** AP aberto no fluxo usa data de vencimento (dueDate). */
 export function auditCashFlowApOperationalDateParity(
   apRows: FinanceApDashboardRow[],
   cfFilters: FinanceCashFlowDashboardFilters,
@@ -573,15 +573,17 @@ export function auditCashFlowApOperationalDateParity(
   const row = apRows[0];
   if (!row) return { ok: true, mismatches: [] };
 
-  const operational = getAccountsPayableOperationalDueDate(row);
+  const dueDate = row.dueDate;
+  if (!dueDate) return { ok: true, mismatches: [] };
+
   const cf = buildFinanceCashFlowDashboard([], apRows as FinanceCashFlowApRow[], cfFilters, referenceDate, null, apSyncCutoff);
 
-  if (cfFilters.month != null && operational) {
-    const inMonth = operational.getMonth() + 1 === cfFilters.month;
+  if (cfFilters.month != null) {
+    const inMonth = dueDate.getMonth() + 1 === cfFilters.month;
     const inPortfolio = cf.largestProjectedOutflows.some((r) => r.externalId === row.externalId);
     if (!inMonth && inPortfolio && cfFilters.viewMode === "projected") {
       mismatches.push(
-        `AP ${row.externalId} com data operacional fora do mês filtrado apareceu em saídas previstas`
+        `AP ${row.externalId} com vencimento fora do mês filtrado apareceu em saídas previstas`
       );
     }
   }

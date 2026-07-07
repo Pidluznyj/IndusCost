@@ -9,10 +9,8 @@ import {
   isFinanceCashFlowArOpenRow,
   type FinanceCashFlowDatasetBlocks,
 } from "./financeCashFlowDataset.js";
-import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   isFinanceApCancelledTitle,
-  resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
   resolveFinanceApRealizedAmount,
   FINANCE_AP_CASH_FLOW_RULES_NOTE,
@@ -72,15 +70,13 @@ export function resolveCashFlowArMovementDate(
   return row.dueDate ?? null;
 }
 
+/** Previsto/Realizado no Fluxo planejado: sempre aloca AP pelo vencimento (dueDate). */
 export function resolveCashFlowApMovementDate(
   row: FinanceCashFlowApRow,
-  slice: CashFlowMovementSlice,
+  _slice: CashFlowMovementSlice,
   _dateBase: FinanceCashFlowDateBase
 ): Date | null {
-  if (slice === "projected") {
-    return getAccountsPayableOperationalDueDate(row);
-  }
-  return resolveFinanceApEffectivePaymentDate(row) ?? row.dueDate ?? null;
+  return row.dueDate ?? null;
 }
 
 export function resolveCashFlowArAmount(
@@ -124,8 +120,7 @@ export function shouldIncludeCashFlowApMovement(
     return isFinanceApOpen(row) && !row.suspendPayment && resolveFinanceApOpenAmount(row) > 0;
   }
   const realized = resolveFinanceApRealizedAmount(row);
-  const payDate = resolveFinanceApEffectivePaymentDate(row);
-  return realized > 0 && payDate != null;
+  return realized > 0 && row.dueDate != null;
 }
 
 export type CashFlowPeriodBounds = {

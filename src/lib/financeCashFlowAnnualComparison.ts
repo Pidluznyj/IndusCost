@@ -269,10 +269,8 @@ export function isApOpenDueInAnnualPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
-  if (!isFinanceApOpen(row) || row.suspendPayment) return false;
-  const operationalDueDate = getAccountsPayableOperationalDueDate(row);
-  if (!operationalDueDate) return false;
-  return isDateInPeriod(operationalDueDate, startDate, endDate);
+  if (!isFinanceApOpen(row) || row.suspendPayment || row.dueDate == null) return false;
+  return isDateInPeriod(row.dueDate, startDate, endDate);
 }
 
 export function sumApOpenDueInAnnualPeriod(
@@ -452,19 +450,28 @@ export function buildCashFlowAnnualComparison(
     apSyncCutoff
   );
 
-  const timeline = buildExecutiveMonthlyTimeline(
-    arFiltered,
-    apFiltered,
-    year,
+  const ytdFilters = buildYtdDashboardFilters(
+    { ...createAnnualComparisonBaseFilters(), year },
     referenceDate
   );
+
+  const timeline = buildExecutiveMonthlyTimeline(arFiltered, apFiltered, year, referenceDate, {
+    filters: ytdFilters,
+    arSyncCutoff,
+    apSyncCutoff,
+  });
 
   const previousYear = year - 1;
   const previousTimeline = buildExecutiveMonthlyTimeline(
     arFiltered,
     apFiltered,
     previousYear,
-    referenceDate
+    referenceDate,
+    {
+      filters: { ...ytdFilters, year: previousYear },
+      arSyncCutoff,
+      apSyncCutoff,
+    }
   );
 
   const months: FinanceCashFlowAnnualComparisonMonth[] = timeline.map((row, idx) => {

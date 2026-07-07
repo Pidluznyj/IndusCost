@@ -48,19 +48,19 @@ function row(
 }
 
 describe("financeAccountsPayableOperational", () => {
-  it("dueDate vencido com scheduleDate futuro não entra como atrasado até scheduleDate", () => {
+  it("dueDate vencido com scheduleDate futuro entra como atrasado pelo vencimento", () => {
     const title = row({
       externalId: 1,
       dueDate: new Date(2026, 5, 2),
       scheduleDate: new Date(2026, 5, 21),
       balancePayable: 13649.24,
     });
-    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "upcoming");
-    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), false);
-    assert.equal(computeFinanceApDaysOverdue(title, REF_JUN_9), 0);
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "overdue");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), true);
+    assert.ok(computeFinanceApDaysOverdue(title, REF_JUN_9) > 0);
     assert.equal(
       getAccountsPayableOperationalDueDate(title)?.toISOString(),
-      title.scheduleDate?.toISOString()
+      title.dueDate?.toISOString()
     );
   });
 

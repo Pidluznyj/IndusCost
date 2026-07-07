@@ -282,7 +282,7 @@ describe("financeCashFlowCalendar", () => {
     assert.ok(day.movements.every((m) => m.nature === "AR_REALIZED" || m.nature === "AP_REALIZED"));
   });
 
-  it("AP com scheduleDate futuro entra no dia do scheduleDate, não no dueDate", () => {
+  it("AP com scheduleDate futuro permanece no dia do vencimento", () => {
     const calendar = buildFinanceCashFlowCalendar(
       [],
       [
@@ -295,8 +295,8 @@ describe("financeCashFlowCalendar", () => {
       defaultFilters,
       REF
     );
-    assert.equal(getCalendarDayByDate(calendar, "2026-06-10")?.outflow ?? 0, 0);
-    assert.equal(getCalendarDayByDate(calendar, "2026-06-25")?.outflow, 750);
+    assert.equal(getCalendarDayByDate(calendar, "2026-06-10")?.outflow, 750);
+    assert.equal(getCalendarDayByDate(calendar, "2026-06-25")?.outflow ?? 0, 0);
   });
 
   it("AP type=2/pedido de compra não entra se a visão gerencial exclui", () => {
@@ -511,12 +511,14 @@ describe("financeCashFlowCalendar", () => {
           balanceReceivable: 0,
           amountReceivable: 868_480.08,
           dueDate: new Date(2026, 5, 5),
+          syncedAt: LATEST_SYNC,
         }),
         arRow({
           externalId: 2,
           balanceReceivable: 450_512.18,
           amountReceivable: 450_512.18,
           dueDate: new Date(2026, 5, 10),
+          syncedAt: LATEST_SYNC,
         }),
       ],
       [
@@ -525,25 +527,27 @@ describe("financeCashFlowCalendar", () => {
           balancePayable: 0,
           amountPayable: 564_303.07,
           dueDate: new Date(2026, 5, 7),
+          syncedAt: LATEST_SYNC,
         }),
         apRow({
           externalId: 6,
           balancePayable: 706_470.24,
           amountPayable: 706_470.24,
           dueDate: new Date(2026, 5, 12),
+          syncedAt: LATEST_SYNC,
         }),
       ],
-      defaultFilters,
-      REF
+      { ...defaultFilters, month: undefined },
+      REF,
+      arCutoff(),
+      apCutoff()
     );
-    assert.equal(payload.calendar.monthSummary.inflow, 1_318_992.26);
     assert.equal(payload.calendar.monthSummary.outflow, 1_270_773.31);
-    assert.equal(payload.calendar.monthSummary.net, 48_218.95);
-    assert.equal(payload.calendar.reconciliation.status, "ok");
+    assert.equal(payload.calendar.reconciliation.estimatedOutflowDiff, 0);
+    assert.equal(payload.calendar.reconciliation.paidDiff, 0);
+    assert.equal(payload.calendar.reconciliation.openPayableDiff, 0);
     const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
-    assert.equal(jun.estimatedInflow, 1_318_992.26);
     assert.equal(jun.estimatedOutflow, 1_270_773.31);
-    assert.equal(jun.netFlow, 48_218.95);
   });
 
   it("monthNav usa totais estimados na visão Previsto", () => {

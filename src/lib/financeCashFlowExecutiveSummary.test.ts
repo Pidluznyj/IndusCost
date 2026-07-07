@@ -697,7 +697,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(payload.executiveSummary.receivable.openFromTodayToYearEnd, 0);
   });
 
-  it("linha do tempo mensal não aloca AP aberto remarcado (9745/9748/9749) em Jan/Abr/Mai 2026", () => {
+  it("linha do tempo mensal aloca AP aberto remarcado pelo vencimento (9745/9748/9749)", () => {
     const rescheduledRows: FinanceCashFlowApRow[] = [
       apRow({
         externalId: 9745,
@@ -738,12 +738,42 @@ describe("financeCashFlowExecutiveSummary", () => {
     const apr = timeline.find((r) => r.month === 4);
     const mai = timeline.find((r) => r.month === 5);
 
-    assert.equal(jan?.payableOpenDue, 0);
-    assert.equal(apr?.payableOpenDue, 0);
-    assert.equal(mai?.payableOpenDue, 0);
-    assert.equal(jan?.estimatedOutflow, 0);
-    assert.equal(apr?.estimatedOutflow, 0);
-    assert.equal(mai?.estimatedOutflow, 0);
+    assert.equal(jan?.payableOpenDue, 299.83);
+    assert.equal(apr?.payableOpenDue, 299.83);
+    assert.equal(mai?.payableOpenDue, 299.83);
+    assert.equal(jan?.estimatedOutflow, 299.83);
+    assert.equal(apr?.estimatedOutflow, 299.83);
+    assert.equal(mai?.estimatedOutflow, 299.83);
+  });
+
+  it("setembro/2026: saídas do período seguem vencimento Nomus mesmo com agendamento futuro", () => {
+    const refJul = new Date(2026, 6, 7);
+    const sepOutflow = 892_945.9;
+    const scheduledOnly = 120_000;
+    const apRows = [
+      apRow({
+        externalId: 201,
+        balancePayable: sepOutflow - scheduledOnly,
+        dueDate: new Date(2026, 8, 10),
+      }),
+      apRow({
+        externalId: 202,
+        balancePayable: scheduledOnly,
+        dueDate: new Date(2026, 8, 20),
+        scheduleDate: new Date(2026, 9, 5),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 1_177_464.85, dueDate: new Date(2026, 8, 15) })],
+      apRows,
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026, month: 9 },
+      refJul
+    );
+    assert.equal(payload.executiveSummary.period.outflowAmount, sepOutflow);
+    assert.equal(payload.executiveSummary.period.inflowAmount, 1_177_464.85);
+    assert.equal(payload.executiveSummary.period.netFlowAmount, 284_518.95);
+    const sepChart = payload.monthlySeries.find((p) => p.month === 9);
+    assert.equal(sepChart?.outflowAmount, sepOutflow);
   });
 
   it("AP aberto fresh sem scheduleDate futuro entra no mês do dueDate", () => {
@@ -761,7 +791,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(mar?.estimatedOutflow, 450);
   });
 
-  it("AP aberto com scheduleDate futuro entra no mês do scheduleDate quando dentro do ano", () => {
+  it("AP aberto com scheduleDate futuro permanece no mês do vencimento", () => {
     const row = apRow({
       balancePayable: 750,
       dueDate: new Date(2026, 4, 25),
@@ -772,16 +802,16 @@ describe("financeCashFlowExecutiveSummary", () => {
     const mayEnd = new Date(2026, 4, 31);
     const julStart = new Date(2026, 6, 1);
     const julEnd = new Date(2026, 6, 31);
-    assert.equal(isApOpenDueInPeriod(row, mayStart, mayEnd), false);
-    assert.equal(isApOpenDueInPeriod(row, julStart, julEnd), true);
+    assert.equal(isApOpenDueInPeriod(row, mayStart, mayEnd), true);
+    assert.equal(isApOpenDueInPeriod(row, julStart, julEnd), false);
 
     const timeline = buildExecutiveMonthlyTimeline([], [row], 2026, REF);
     const may = timeline.find((r) => r.month === 5);
     const jul = timeline.find((r) => r.month === 7);
-    assert.equal(may?.payableOpenDue, 0);
-    assert.equal(jul?.payableOpenDue, 750);
-    assert.equal(may?.estimatedOutflow, 0);
-    assert.equal(jul?.estimatedOutflow, 750);
+    assert.equal(may?.payableOpenDue, 750);
+    assert.equal(jul?.payableOpenDue, 0);
+    assert.equal(may?.estimatedOutflow, 750);
+    assert.equal(jul?.estimatedOutflow, 0);
   });
 
   it("AP pago na timeline continua alocado por dueDate, não scheduleDate", () => {

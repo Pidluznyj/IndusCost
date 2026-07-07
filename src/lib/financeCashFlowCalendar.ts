@@ -269,8 +269,8 @@ function mapApMovement(
     status,
     ruleNotes:
       slice === "projected"
-        ? ["Previsto: saldo em aberto alocado pela data operacional AP."]
-        : ["Realizado: valor pago alocado pela data efetiva de pagamento."],
+        ? ["Previsto: saldo em aberto alocado pela data de vencimento AP."]
+        : ["Realizado: valor pago alocado pela data de vencimento AP."],
   };
 }
 
