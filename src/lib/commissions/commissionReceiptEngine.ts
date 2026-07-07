@@ -33,6 +33,10 @@ import type {
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
+import {
+  COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
+  isCommissionInternalGroupReceivable,
+} from "./commissionInternalGroupExclusion.js";
 
 import type { VisualAuditRow } from "./commissionVisualAudit.js";
 
@@ -136,6 +140,7 @@ export type CommissionReceiptReceivableInput = {
   customerExternalId?: number | null;
   customerId?: string | null;
   customerName?: string | null;
+  customerCnpj?: string | null;
   cancelled?: boolean;
   suspended?: boolean;
 };
@@ -314,6 +319,7 @@ function emptyStatusCounts(): Record<CommissionReceiptLedgerLineStatus, number> 
   return {
     COMMISSIONABLE: 0,
     CUSTOMER_EXCLUDED: 0,
+    GROUP_COMPANY_EXCLUDED: 0,
     NO_SALES_LINK: 0,
     NO_SCHEDULE: 0,
     NO_SELLER: 0,
@@ -710,6 +716,25 @@ function buildExceptionLine(input: {
   };
 }
 
+function buildGroupCompanyExcludedLine(input: {
+  receivable: CommissionReceiptReceivableInput;
+  year: number;
+  month: number;
+}): CommissionReceiptPreviewLine {
+  const line = buildExceptionLine({
+    receivable: input.receivable,
+    year: input.year,
+    month: input.month,
+    status: "GROUP_COMPANY_EXCLUDED",
+    statusReason: COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
+  });
+  return {
+    ...line,
+    commissionableBaseAmount: 0,
+    exclusionReason: COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
+  };
+}
+
 function buildLinesForReceivableWithMaterializedSchedule(input: {
   receivable: CommissionReceiptReceivableInput;
   schedules: MaterializedReceivableScheduleInput[];
@@ -969,7 +994,8 @@ export function aggregateCommissionReceiptPreview(
   for (const line of lines) {
     countByStatus[line.status] = (countByStatus[line.status] ?? 0) + 1;
 
-    const isExcluded = line.status === "CUSTOMER_EXCLUDED";
+    const isGroupExcluded = line.status === "GROUP_COMPANY_EXCLUDED";
+    const isExcluded = line.status === "CUSTOMER_EXCLUDED" || isGroupExcluded;
     const isException = isExceptionStatus(line.status);
     const countsForTotals =
       (includeExcluded || !isExcluded) && (includeExceptions || !isException);
@@ -982,7 +1008,8 @@ export function aggregateCommissionReceiptPreview(
     if (countsForTotals) {
       if (isExcluded) {
         totalExcludedAmount = roundMoney(
-          totalExcludedAmount + line.commissionableBaseAmount
+          totalExcludedAmount +
+            (isGroupExcluded ? line.receivedAmount : line.commissionableBaseAmount)
         );
       }
       if (isException) {
@@ -1113,6 +1140,17 @@ export function buildCommissionReceiptPreview(
         input.customer
       )
     ) {
+      continue;
+    }
+
+    if (isCommissionInternalGroupReceivable(receivable)) {
+      lines.push(
+        buildGroupCompanyExcludedLine({
+          receivable,
+          year: input.year,
+          month: input.month,
+        })
+      );
       continue;
     }
 

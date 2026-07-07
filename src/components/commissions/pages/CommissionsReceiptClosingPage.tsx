@@ -45,6 +45,7 @@ function formatDate(iso: string | null): string {
 function statusBadgeClass(status: string): string {
   if (status === "COMMISSIONABLE") return "bg-emerald-100 text-emerald-800";
   if (status === "CUSTOMER_EXCLUDED") return "bg-slate-200 text-slate-800";
+  if (status === "GROUP_COMPANY_EXCLUDED") return "bg-slate-100 text-slate-700";
   if (status === "EXCLUDED") return "bg-slate-100 text-slate-700";
   if (status === "NO_SCHEDULE" || status === "STALE_SCHEDULE") {
     return "bg-amber-100 text-amber-900";
@@ -554,6 +555,16 @@ export function CommissionsReceiptClosingPage() {
             <FinanceKpiCard
               label="Clientes excluídos"
               value={String(data.materializationSummary.excludedCustomerCount)}
+            />
+            <FinanceKpiCard
+              label="Empresas do grupo excluídas"
+              value={String(data.materializationSummary.groupCompanyExcludedCount)}
+            />
+            <FinanceKpiCard
+              label="Recebido grupo (auditoria)"
+              value={formatFinanceCurrency(
+                data.materializationSummary.groupCompanyExcludedReceivedAmount
+              )}
             />
             <FinanceKpiCard
               label="Vendedor não resolvido"

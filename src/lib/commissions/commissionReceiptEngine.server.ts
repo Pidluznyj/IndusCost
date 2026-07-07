@@ -145,6 +145,7 @@ export async function loadCommissionReceiptPreview(
       externalId: true,
       personId: true,
       personName: true,
+      personCnpj: true,
       sourceInvoiceId: true,
       sourceInvoiceNumber: true,
       dueDate: true,
@@ -177,6 +178,7 @@ export async function loadCommissionReceiptPreview(
         customerExternalId: row.personId,
         customerId: null,
         customerName: row.personName,
+        customerCnpj: row.personCnpj,
         cancelled: row.status === false,
         suspended: row.suspendCollection === true,
       };
@@ -258,6 +260,7 @@ export function mapNomusArRowToReceiptReceivableInput(row: {
   sourceInvoiceNumber: string | null;
   personId: number | null;
   personName: string | null;
+  personCnpj?: string | null;
   dueDate: Date | null;
   settlementDate: Date | null;
   amountReceivable: import("@prisma/client").Prisma.Decimal | null;
@@ -283,6 +286,7 @@ export function mapNomusArRowToReceiptReceivableInput(row: {
     customerExternalId: row.personId,
     customerId: null,
     customerName: row.personName,
+    customerCnpj: row.personCnpj ?? null,
     cancelled: row.status === false,
     suspended: row.suspendCollection === true,
   };

@@ -23,6 +23,7 @@ export type CommissionMonthlyClosingSource =
 export const COMMISSION_RECEIPT_LEDGER_LINE_STATUSES = [
   "COMMISSIONABLE",
   "CUSTOMER_EXCLUDED",
+  "GROUP_COMPANY_EXCLUDED",
   "NO_SALES_LINK",
   "NO_SCHEDULE",
   "NO_SELLER",

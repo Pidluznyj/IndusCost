@@ -23,6 +23,7 @@ export type ReceiptClosingMaterializationCards = {
   totalReceivedAmount: number;
   receivedWithScheduleAmount: number;
   receivedExcludedCustomerAmount: number;
+  receivedGroupCompanyExcludedAmount: number;
   receivedWithoutScheduleAmount: number;
   commissionableBaseAmount: number;
   grossCommissionAmount: number;
@@ -42,6 +43,7 @@ export type ReceiptClosingMaterializationSummary = {
   receivablesWithScheduleCount: number;
   receivablesWithoutScheduleCount: number;
   excludedCustomerCount: number;
+  groupCompanyExcludedCount: number;
   sellerUnresolvedCount: number;
   staleScheduleCount: number;
   totalReceivedAmount: number;
@@ -59,6 +61,8 @@ export type ReceiptClosingReconciliationSummary = {
   diffCommissionBeforeExclusions: number | null;
   diffExplanation: string | null;
   excludedCustomerCount: number;
+  groupCompanyExcludedCount: number;
+  groupCompanyExcludedReceivedAmount: number;
   receivablesWithoutScheduleCount: number;
   staleScheduleCount: number;
   divergentReceivableCount: number;
@@ -219,9 +223,15 @@ function lineGrossCommissionApi(line: ReceiptClosingApiLine): number {
   return 0;
 }
 
-type ReceivableBucket = "CUSTOMER_EXCLUDED" | "NO_SCHEDULE" | "WITH_SCHEDULE" | "OTHER";
+type ReceivableBucket =
+  | "GROUP_COMPANY_EXCLUDED"
+  | "CUSTOMER_EXCLUDED"
+  | "NO_SCHEDULE"
+  | "WITH_SCHEDULE"
+  | "OTHER";
 
 function classifyReceivableBucket(line: ReceiptClosingApiLine): ReceivableBucket {
+  if (line.status === "GROUP_COMPANY_EXCLUDED") return "GROUP_COMPANY_EXCLUDED";
   if (line.status === "CUSTOMER_EXCLUDED") return "CUSTOMER_EXCLUDED";
   if (line.status === "NO_SCHEDULE" || line.status === "STALE_SCHEDULE") return "NO_SCHEDULE";
   if (
@@ -235,6 +245,7 @@ function classifyReceivableBucket(line: ReceiptClosingApiLine): ReceivableBucket
 
 function receivableBucketForGroup(lines: ReceiptClosingApiLine[]): ReceivableBucket {
   const priority: ReceivableBucket[] = [
+    "GROUP_COMPANY_EXCLUDED",
     "CUSTOMER_EXCLUDED",
     "NO_SCHEDULE",
     "WITH_SCHEDULE",
@@ -351,6 +362,14 @@ export function buildReceiptClosingMaterializationSummary(input: {
 
   const receivablesWithScheduleCount = countReceivablesWithMaterializedSchedule(input.lines);
   const receivablesWithoutScheduleCount = countUniqueReceivablesByBucket(input.lines, "NO_SCHEDULE");
+  const groupCompanyExcludedCount = countUniqueReceivablesByBucket(
+    input.lines,
+    "GROUP_COMPANY_EXCLUDED"
+  );
+  const groupCompanyExcludedReceivedAmount = sumUniqueReceivableReceived(
+    input.lines,
+    (line) => line.status === "GROUP_COMPANY_EXCLUDED"
+  );
   const sellerUnresolvedCount = countUniqueReceivablesWithStatus(
     input.lines,
     SELLER_UNRESOLVED_STATUSES
@@ -364,6 +383,8 @@ export function buildReceiptClosingMaterializationSummary(input: {
     receivablesWithScheduleCount,
     receivablesWithoutScheduleCount,
     excludedCustomerCount: input.reconciliation.excludedCustomerCount,
+    groupCompanyExcludedCount,
+    groupCompanyExcludedReceivedAmount,
     sellerUnresolvedCount,
     staleScheduleCount: input.reconciliation.staleScheduleCount,
     totalReceivedAmount: round2(input.totalReceivedAmount),
@@ -394,13 +415,16 @@ export function buildReceiptClosingMaterializationCards(
 
   let receivedWithScheduleAmount = 0;
   let receivedExcludedCustomerAmount = 0;
+  let receivedGroupCompanyExcludedAmount = 0;
   let receivedWithoutScheduleAmount = 0;
 
   for (const group of byReceivable.values()) {
     const amount = group[0]?.receivedAmount ?? 0;
     const bucket = receivableBucketForGroup(group);
     if (bucket === "WITH_SCHEDULE") receivedWithScheduleAmount = round2(receivedWithScheduleAmount + amount);
-    else if (bucket === "CUSTOMER_EXCLUDED") {
+    else if (bucket === "GROUP_COMPANY_EXCLUDED") {
+      receivedGroupCompanyExcludedAmount = round2(receivedGroupCompanyExcludedAmount + amount);
+    } else if (bucket === "CUSTOMER_EXCLUDED") {
       receivedExcludedCustomerAmount = round2(receivedExcludedCustomerAmount + amount);
     } else if (bucket === "NO_SCHEDULE") {
       receivedWithoutScheduleAmount = round2(receivedWithoutScheduleAmount + amount);
@@ -429,6 +453,7 @@ export function buildReceiptClosingMaterializationCards(
     totalReceivedAmount,
     receivedWithScheduleAmount,
     receivedExcludedCustomerAmount,
+    receivedGroupCompanyExcludedAmount,
     receivedWithoutScheduleAmount,
     commissionableBaseAmount,
     grossCommissionAmount,
@@ -488,6 +513,8 @@ export function summarizeNomusReceiptReconciliation(
     diffCommissionBeforeExclusions: report.diffCommissionBeforeExclusions,
     diffExplanation: hasDiff || report.nomusCommission != null ? buildNomusDiffExplanation(report) : null,
     excludedCustomerCount: report.excludedCustomers.length,
+    groupCompanyExcludedCount: report.groupCompanyExcludedReceivables.length,
+    groupCompanyExcludedReceivedAmount: report.groupCompanyExcludedReceivedTotal,
     receivablesWithoutScheduleCount: report.receivablesWithoutSchedule.length,
     staleScheduleCount: report.staleSchedules.length,
     divergentReceivableCount: report.divergentReceivableCodes.length,
@@ -553,6 +580,19 @@ export function buildReceiptClosingReconciliationFromApiLines(input: {
   const excludedCustomerIds = new Set(
     excluded.map((line) => line.customerId ?? String(line.customerExternalId ?? line.customerName ?? ""))
   );
+  const seenGroupCompany = new Set<number>();
+  let groupCompanyExcludedCount = 0;
+  let groupCompanyExcludedReceivedAmount = 0;
+  for (const line of input.lines) {
+    if (line.nomusReceivableId == null || line.status !== "GROUP_COMPANY_EXCLUDED") continue;
+    if (!seenGroupCompany.has(line.nomusReceivableId)) {
+      seenGroupCompany.add(line.nomusReceivableId);
+      groupCompanyExcludedCount += 1;
+      groupCompanyExcludedReceivedAmount = round2(
+        groupCompanyExcludedReceivedAmount + line.receivedAmount
+      );
+    }
+  }
 
   const parts: string[] = [];
   if (diffCommissionFinal != null && Math.abs(diffCommissionFinal) > 0.005) {
@@ -563,6 +603,11 @@ export function buildReceiptClosingReconciliationFromApiLines(input: {
   if (excludedCommission > 0) {
     parts.push(
       `Exclusões de cliente: ${excludedCustomerIds.size} cliente(s), comissão excluída R$ ${excludedCommission.toFixed(2)}.`
+    );
+  }
+  if (groupCompanyExcludedReceivedAmount > 0) {
+    parts.push(
+      `Empresas do grupo excluídas: ${groupCompanyExcludedCount} título(s), recebido R$ ${groupCompanyExcludedReceivedAmount.toFixed(2)}.`
     );
   }
   if (receivablesWithoutScheduleCount > 0) {
@@ -588,6 +633,8 @@ export function buildReceiptClosingReconciliationFromApiLines(input: {
           : "Totais conferem com o relatório Nomus informado."
         : null,
     excludedCustomerCount: excludedCustomerIds.size,
+    groupCompanyExcludedCount,
+    groupCompanyExcludedReceivedAmount,
     receivablesWithoutScheduleCount,
     staleScheduleCount,
     divergentReceivableCount,
@@ -832,6 +879,8 @@ function emptyReconciliation(): ReceiptClosingReconciliationSummary {
     diffCommissionBeforeExclusions: null,
     diffExplanation: null,
     excludedCustomerCount: 0,
+    groupCompanyExcludedCount: 0,
+    groupCompanyExcludedReceivedAmount: 0,
     receivablesWithoutScheduleCount: 0,
     staleScheduleCount: 0,
     divergentReceivableCount: 0,
@@ -845,6 +894,7 @@ function emptyCards(reportStatus: "PREVIEW" | "CLOSED"): ReceiptClosingMateriali
     totalReceivedAmount: 0,
     receivedWithScheduleAmount: 0,
     receivedExcludedCustomerAmount: 0,
+    receivedGroupCompanyExcludedAmount: 0,
     receivedWithoutScheduleAmount: 0,
     commissionableBaseAmount: 0,
     grossCommissionAmount: 0,
@@ -862,6 +912,8 @@ function emptyMaterializationSummary(): ReceiptClosingMaterializationSummary {
     receivablesWithScheduleCount: 0,
     receivablesWithoutScheduleCount: 0,
     excludedCustomerCount: 0,
+    groupCompanyExcludedCount: 0,
+    groupCompanyExcludedReceivedAmount: 0,
     sellerUnresolvedCount: 0,
     staleScheduleCount: 0,
     totalReceivedAmount: 0,
@@ -1062,6 +1114,9 @@ export function buildReceiptClosingExportCsv(input: {
       `# receivedExcludedCustomerAmount,${input.cards.receivedExcludedCustomerAmount.toFixed(2)}`
     );
     cardLines.push(
+      `# receivedGroupCompanyExcludedAmount,${input.cards.receivedGroupCompanyExcludedAmount.toFixed(2)}`
+    );
+    cardLines.push(
       `# receivedWithoutScheduleAmount,${input.cards.receivedWithoutScheduleAmount.toFixed(2)}`
     );
     cardLines.push(`# commissionableBaseAmount,${input.cards.commissionableBaseAmount.toFixed(2)}`);
@@ -1083,6 +1138,10 @@ export function buildReceiptClosingExportCsv(input: {
     cardLines.push(`# receivablesWithScheduleCount,${m.receivablesWithScheduleCount}`);
     cardLines.push(`# receivablesWithoutScheduleCount,${m.receivablesWithoutScheduleCount}`);
     cardLines.push(`# excludedCustomerCount,${m.excludedCustomerCount}`);
+    cardLines.push(`# groupCompanyExcludedCount,${m.groupCompanyExcludedCount}`);
+    cardLines.push(
+      `# groupCompanyExcludedReceivedAmount,${m.groupCompanyExcludedReceivedAmount.toFixed(2)}`
+    );
     cardLines.push(`# sellerUnresolvedCount,${m.sellerUnresolvedCount}`);
     cardLines.push(`# staleScheduleCount,${m.staleScheduleCount}`);
     cardLines.push(`# totalExpectedCommission,${m.totalExpectedCommission.toFixed(2)}`);

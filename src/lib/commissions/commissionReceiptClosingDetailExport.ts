@@ -39,6 +39,7 @@ function formatCurrencyBr(value: number): string {
 }
 
 function formatCustomerExcluded(line: ReceiptClosingApiLine): string {
+  if (line.status === "GROUP_COMPANY_EXCLUDED") return "Empresa do grupo";
   return line.status === "CUSTOMER_EXCLUDED" || line.exclusionReason != null ? "Sim" : "Não";
 }
 
@@ -110,6 +111,14 @@ function buildResumoRows(payload: ReceiptClosingPagePayload) {
     { Campo: "Com schedule", Valor: materializationSummary.receivablesWithScheduleCount },
     { Campo: "Sem schedule", Valor: materializationSummary.receivablesWithoutScheduleCount },
     { Campo: "Clientes excluídos", Valor: materializationSummary.excludedCustomerCount },
+    {
+      Campo: "Empresas do grupo excluídas",
+      Valor: materializationSummary.groupCompanyExcludedCount,
+    },
+    {
+      Campo: "Recebido empresas do grupo (auditoria)",
+      Valor: formatCurrencyBr(materializationSummary.groupCompanyExcludedReceivedAmount),
+    },
     { Campo: "Vendedor não resolvido", Valor: materializationSummary.sellerUnresolvedCount },
     { Campo: "Total recebido no mês", Valor: formatCurrencyBr(cards.totalReceivedAmount) },
     { Campo: "Recebido com schedule", Valor: formatCurrencyBr(cards.receivedWithScheduleAmount) },

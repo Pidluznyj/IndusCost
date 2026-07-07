@@ -614,6 +614,40 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.exclusionRuleId, "ex-esmaltec");
   });
 
+  it("empresa do grupo é excluída da base comissionável com motivo EMPRESA_GRUPO_EXCLUIDA", () => {
+    const market = receivable({
+      nomusReceivableId: 1,
+      amountReceived: 1000,
+      customerName: "Cliente Mercado",
+      customerCnpj: "12.345.678/0001-90",
+    });
+    const group = receivable({
+      nomusReceivableId: 2,
+      amountReceived: 500,
+      customerName: "Koppetel Comercio de Plasticos LTDA",
+      customerCnpj: "14.055.501/0001-80",
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [market, group],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    const groupLine = result.lines.find((line) => line.nomusReceivableId === 2);
+    assert.equal(groupLine?.status, "GROUP_COMPANY_EXCLUDED");
+    assert.equal(groupLine?.statusReason, "EMPRESA_GRUPO_EXCLUIDA");
+    assert.equal(groupLine?.exclusionReason, "EMPRESA_GRUPO_EXCLUIDA");
+    assert.equal(groupLine?.commissionableBaseAmount, 0);
+    assert.equal(groupLine?.releasedCommissionAmount, 0);
+    assert.equal(result.totalReceivedAmount, 1500);
+    assert.equal(result.totalCommissionableBase, 0);
+    assert.equal(result.countByStatus.GROUP_COMPANY_EXCLUDED, 1);
+  });
+
   it("valor recebido é somado por título único", () => {
     const order = makeOrderBundle([item("item-a", 6000), item("item-b", 4000)]);
     const result = buildCommissionReceiptPreview({

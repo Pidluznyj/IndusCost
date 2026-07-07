@@ -57,6 +57,9 @@ export type NomusReceiptReconciliationReport = {
   duplicateReceived: DuplicateReceivedRow[];
   uniqueReceivablesCount: number;
   ruleLineCount: number;
+  groupCompanyExcludedReceivables: ReceivableIssueRow[];
+  groupCompanyExcludedReceivedTotal: number;
+  indusCostMarketReceivedTotal: number;
 };
 
 function lineGrossCommission(line: CommissionReceiptPreviewLine): number {
@@ -211,10 +214,20 @@ export function buildNomusReceiptReconciliationReport(input: {
 }): NomusReceiptReconciliationReport {
   const commissionableLines = input.lines.filter((line) => line.status === "COMMISSIONABLE");
   const excludedLines = input.lines.filter((line) => line.status === "CUSTOMER_EXCLUDED");
+  const groupCompanyLines = input.lines.filter((line) => line.status === "GROUP_COMPANY_EXCLUDED");
   const operationalLines = [...commissionableLines, ...excludedLines];
 
   const indusCostFinalBase = sumBaseByRuleLine(commissionableLines);
   const indusCostFinalCommission = sumCommissionByRuleLine(commissionableLines);
+
+  const groupCompanyExcludedReceivables = uniqueReceivableIssues(
+    input.lines,
+    (line) => line.status === "GROUP_COMPANY_EXCLUDED"
+  );
+  const groupCompanyExcludedReceivedTotal = sumReceivedByUniqueReceivable(groupCompanyLines);
+  const indusCostMarketReceivedTotal = sumReceivedByUniqueReceivable(
+    input.lines.filter((line) => line.status !== "GROUP_COMPANY_EXCLUDED")
+  );
 
   const excludedCustomers = buildExcludedCustomerRows(input.lines);
   const excludedBaseTotal = roundMoney(
@@ -257,7 +270,7 @@ export function buildNomusReceiptReconciliationReport(input: {
         : null,
     diffBaseFinal:
       input.nomusBase != null
-        ? roundMoney(indusCostFinalBase - input.nomusBase)
+        ? roundMoney(indusCostMarketReceivedTotal - input.nomusBase)
         : null,
     divergentReceivableCodes: uniqueReceivableIssues(input.lines, (line) =>
       DIVERGENT_STATUSES.has(line.status)
@@ -273,6 +286,9 @@ export function buildNomusReceiptReconciliationReport(input: {
     duplicateReceived: detectDuplicateReceived(input.lines),
     uniqueReceivablesCount: uniqueReceivableIds.size,
     ruleLineCount: input.lines.length,
+    groupCompanyExcludedReceivables,
+    groupCompanyExcludedReceivedTotal,
+    indusCostMarketReceivedTotal,
   };
 }
 
@@ -300,6 +316,9 @@ export function formatNomusReconciliationCsvSummary(
     `duplicate_received_count,${reconciliation.duplicateReceived.length}`,
     `unique_receivables,${reconciliation.uniqueReceivablesCount}`,
     `rule_lines,${reconciliation.ruleLineCount}`,
+    `group_company_excluded_count,${reconciliation.groupCompanyExcludedReceivables.length}`,
+    `group_company_excluded_received,${reconciliation.groupCompanyExcludedReceivedTotal.toFixed(2)}`,
+    `indus_market_received_total,${reconciliation.indusCostMarketReceivedTotal.toFixed(2)}`,
     "",
   ];
 

@@ -974,6 +974,7 @@ export type CommissionsReceiptClosingMaterializationCards = {
   totalReceivedAmount: number;
   receivedWithScheduleAmount: number;
   receivedExcludedCustomerAmount: number;
+  receivedGroupCompanyExcludedAmount: number;
   receivedWithoutScheduleAmount: number;
   commissionableBaseAmount: number;
   grossCommissionAmount: number;
@@ -989,6 +990,8 @@ export type CommissionsReceiptClosingMaterializationSummary = {
   receivablesWithScheduleCount: number;
   receivablesWithoutScheduleCount: number;
   excludedCustomerCount: number;
+  groupCompanyExcludedCount: number;
+  groupCompanyExcludedReceivedAmount: number;
   sellerUnresolvedCount: number;
   staleScheduleCount: number;
   totalReceivedAmount: number;
@@ -1006,6 +1009,8 @@ export type CommissionsReceiptClosingReconciliation = {
   diffCommissionBeforeExclusions: number | null;
   diffExplanation: string | null;
   excludedCustomerCount: number;
+  groupCompanyExcludedCount: number;
+  groupCompanyExcludedReceivedAmount: number;
   receivablesWithoutScheduleCount: number;
   staleScheduleCount: number;
   divergentReceivableCount: number;
