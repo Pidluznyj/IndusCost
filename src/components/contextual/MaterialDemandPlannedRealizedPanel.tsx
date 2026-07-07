@@ -53,7 +53,8 @@ import {
 import { RAW_MATERIAL_DEMAND_STATUS_LABELS, type RawMaterialDemandStatus } from "@/src/lib/salesOrderRawMaterialEstimation";
 import type { RawMaterialIntelligenceBlock } from "@/src/lib/salesOrderRawMaterialIntelligenceTypes";
 import { cn, formatNumberAdaptive } from "@/src/lib/utils";
-import "@/src/styles/indus-kpi-grid.css";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 
 type PlannedRealizedResponse = {
   summary: MaterialUsagePlannedRealizedSummary;
@@ -427,7 +428,12 @@ export function MaterialDemandPlannedRealizedPanel({
       ) : null}
 
       {showIntelligence && intelligenceSummary ? (
-        <div className="indus-kpi-grid indus-kpi-grid--wide" data-testid="material-intelligence-kpi-grid">
+        <ExecutiveSummarySection
+          title="Resumo da inteligência de matéria-prima"
+          eyebrow="Demanda · estimativa recomendada"
+          testId="material-intelligence-kpi-grid"
+        >
+          <SummaryKpiGrid minColumnWidth={180}>
           <FinanceBiKpiCard
             label="Necessidade recomendada"
             amount={safeDisplayNumber(intelligenceSummary.recommendedDemandValue)}
@@ -471,7 +477,8 @@ export function MaterialDemandPlannedRealizedPanel({
             label="Confiabilidade"
             value={formatConfidenceLabel(intelligenceSummary.confidence)}
           />
-        </div>
+          </SummaryKpiGrid>
+        </ExecutiveSummarySection>
       ) : null}
 
       {showIntelligence && filteredIntelligence ? (
@@ -566,7 +573,11 @@ export function MaterialDemandPlannedRealizedPanel({
       ) : null}
 
       {(!showIntelligence || showLegacyTable) && summary ? (
-        <div className="indus-kpi-grid indus-kpi-grid--wide">
+        <ExecutiveSummarySection
+          title="Comparativo previsto × faturado"
+          eyebrow="Referência legada · matérias-primas"
+        >
+          <SummaryKpiGrid minColumnWidth={180}>
           <FinanceBiKpiCard label="Matérias-primas analisadas" value={String(summary.materialsCount)} />
           <FinanceBiKpiCard
             label={`${quantityLabel} prevista total`}
@@ -617,7 +628,8 @@ export function MaterialDemandPlannedRealizedPanel({
             amountFormat="currency"
             value={money(summary.costVarianceTotal)}
           />
-        </div>
+          </SummaryKpiGrid>
+        </ExecutiveSummarySection>
       ) : null}
 
       {(!showIntelligence || showLegacyTable) && data?.dataQuality ? (

@@ -32,13 +32,10 @@ import {
   resolveSalesOrderMarginMoneyLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
-import {
-  formatKpiCompactCurrency,
-  formatKpiCompactNumber,
-  formatKpiDisplayValue,
-} from "@/src/lib/kpiDisplayFormat";
-import "@/src/styles/indus-kpi-grid.css";
 import { fetchJsonOk } from "@/src/lib/http";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -513,41 +510,65 @@ export const ReportsModule = () => {
                 (issueDate) e filtros globais. Pedidos de venda registrados no IndusCost não representam necessariamente
                 NF ou faturamento fiscal.
               </ReportsContextNote>
-              <div className="indus-kpi-grid indus-kpi-grid--wide">
-                <KpiCard label="Pedidos (período)" value={String(data.commercial.orderCount)} />
-                <KpiCard
-                  label="Valor líq. total"
-                  value="—"
-                  amount={data.commercial.totalNet}
-                  amountFormat="currency"
-                />
-                <KpiCard
-                  label="Enviados ao Nomus (líq.)"
-                  value="—"
-                  amount={data.commercial.sentToNomusNet}
-                  amountFormat="currency"
-                  hint="Status Enviado ao Nomus"
-                />
-                <KpiCard
-                  label="Pedidos em aberto (líq.)"
-                  value="—"
-                  amount={data.commercial.openOrdersNet}
-                  amountFormat="currency"
-                />
-                <KpiCard
-                  label="Ticket médio"
-                  value="—"
-                  amount={data.commercial.ticketAvg}
-                  amountFormat="currency"
-                />
-                <KpiCard
-                  label="Pedidos enviados ao Nomus"
-                  value={String(data.commercial.sentToNomusCount)}
-                />
-                <KpiCard label="Pedidos em aberto" value={String(data.commercial.openOrdersCount)} />
-                <KpiCard label="Pedidos cancelados" value={String(data.commercial.cancelledCount)} />
-                <KpiCard label="Pedidos parados (alerta)" value={String(data.commercial.staleOrders.length)} />
-              </div>
+              <ExecutiveSummarySection
+                title="Resumo comercial do período"
+                eyebrow="Relatórios · pedidos de venda"
+                className="reports-print-break"
+                testId="reports-executive-kpi"
+              >
+                <SummaryKpiGrid minColumnWidth={180}>
+                  <MetricCard
+                    label="Pedidos (período)"
+                    value={String(data.commercial.orderCount)}
+                    variant="info"
+                  />
+                  <MetricCard
+                    label="Valor líq. total"
+                    amount={data.commercial.totalNet}
+                    amountFormat="currency"
+                    variant="money"
+                  />
+                  <MetricCard
+                    label="Enviados ao Nomus (líq.)"
+                    amount={data.commercial.sentToNomusNet}
+                    amountFormat="currency"
+                    subtitle="Status Enviado ao Nomus"
+                    variant="success"
+                  />
+                  <MetricCard
+                    label="Pedidos em aberto (líq.)"
+                    amount={data.commercial.openOrdersNet}
+                    amountFormat="currency"
+                    variant="warning"
+                  />
+                  <MetricCard
+                    label="Ticket médio"
+                    amount={data.commercial.ticketAvg}
+                    amountFormat="currency"
+                    variant="money"
+                  />
+                  <MetricCard
+                    label="Pedidos enviados ao Nomus"
+                    value={String(data.commercial.sentToNomusCount)}
+                    variant="neutral"
+                  />
+                  <MetricCard
+                    label="Pedidos em aberto"
+                    value={String(data.commercial.openOrdersCount)}
+                    variant="warning"
+                  />
+                  <MetricCard
+                    label="Pedidos cancelados"
+                    value={String(data.commercial.cancelledCount)}
+                    variant="danger"
+                  />
+                  <MetricCard
+                    label="Pedidos parados (alerta)"
+                    value={String(data.commercial.staleOrders.length)}
+                    variant={data.commercial.staleOrders.length > 0 ? "danger" : "success"}
+                  />
+                </SummaryKpiGrid>
+              </ExecutiveSummarySection>
 
               {data.executive.previousPeriod && (
                 <div className="rounded-xl border border-border p-4 reports-print-break">
@@ -828,41 +849,6 @@ function ReportsContextNote({ children }: { children: React.ReactNode }) {
     <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground flex gap-2 reports-print-break">
       <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary" aria-hidden />
       <p className="leading-relaxed">{children}</p>
-    </div>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  hint,
-  amount,
-  amountFormat,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  amount?: number | null;
-  amountFormat?: "currency" | "number";
-}) {
-  let display = value;
-  let valueTitle: string | undefined;
-  if (amount != null && amountFormat) {
-    const formatted =
-      amountFormat === "currency"
-        ? formatKpiCompactCurrency(amount)
-        : formatKpiCompactNumber(amount);
-    const displayValue = formatKpiDisplayValue(formatted, label);
-    display = displayValue.value;
-    valueTitle = displayValue.valueTitle;
-  }
-  return (
-    <div className="indus-kpi-card rounded-xl border border-border bg-card p-4 reports-print-break">
-      <p className="text-[10px] font-bold uppercase text-muted-foreground leading-tight">{label}</p>
-      <p className="indus-kpi-value text-lg font-black mt-1" title={valueTitle ?? value}>
-        {display}
-      </p>
-      {hint ? <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{hint}</p> : null}
     </div>
   );
 }

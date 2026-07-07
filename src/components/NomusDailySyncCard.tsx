@@ -278,6 +278,7 @@ export function NomusDailySyncCard({
           eyebrow="Status consolidado, histórico e logs"
           minColumnWidth={180}
           testId="nomus-daily-sync-kpi"
+          embedded
         >
           <MetricCard
             label="Resultado geral"
@@ -313,6 +314,7 @@ export function NomusDailySyncCard({
             subtitle={formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
             variant="success"
             icon={<FileText className="h-3.5 w-3.5" />}
+            valueWrap
           />
           <MetricCard
             label="Último log diário"
@@ -320,6 +322,7 @@ export function NomusDailySyncCard({
             subtitle={status?.runnerLogDir ?? "—"}
             variant="neutral"
             icon={<FileText className="h-3.5 w-3.5" />}
+            valueWrap
           />
         </AdminKpiSection>
 

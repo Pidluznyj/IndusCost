@@ -54,6 +54,8 @@ export type MetricCardProps = {
   loading?: boolean;
   compact?: boolean;
   className?: string;
+  /** Permite quebra de linha em valores técnicos longos (logs, caminhos, nomes de arquivo). */
+  valueWrap?: boolean;
 };
 
 export function MetricCard({
@@ -72,6 +74,7 @@ export function MetricCard({
   loading = false,
   compact = false,
   className,
+  valueWrap = false,
 }: MetricCardProps) {
   const resolved = resolveMetricDisplay({
     label,
@@ -115,7 +118,8 @@ export function MetricCard({
         <p
           className={cn(
             "metric-card-value min-w-0 w-full",
-            isCompactDisplay && "metric-card-value--compact"
+            isCompactDisplay && "metric-card-value--compact",
+            valueWrap && "metric-card-value--wrap"
           )}
           title={displayTitle}
           data-testid="metric-card-value"

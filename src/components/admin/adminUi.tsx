@@ -13,6 +13,7 @@ export function AdminKpiSection({
   footer,
   actions,
   minColumnWidth = 200,
+  embedded = false,
 }: {
   title: string;
   eyebrow?: string;
@@ -22,6 +23,7 @@ export function AdminKpiSection({
   footer?: React.ReactNode;
   actions?: React.ReactNode;
   minColumnWidth?: number;
+  embedded?: boolean;
 }) {
   return (
     <ExecutiveSummarySection
@@ -31,6 +33,7 @@ export function AdminKpiSection({
       className={className}
       footer={footer}
       actions={actions}
+      embedded={embedded}
     >
       <SummaryKpiGrid
         minColumnWidth={minColumnWidth}

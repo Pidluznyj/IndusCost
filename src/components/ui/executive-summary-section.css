@@ -14,6 +14,15 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
+.executive-summary-section--embedded {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 0.625rem;
+}
+
 .executive-summary-section__header {
   display: flex;
   flex-wrap: wrap;

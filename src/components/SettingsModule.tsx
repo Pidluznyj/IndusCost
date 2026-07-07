@@ -1804,6 +1804,7 @@ export const SettingsModule = () => {
                     eyebrow={nomusSelectedDetail.fileName}
                     minColumnWidth={140}
                     testId="settings-nomus-log-detail-kpi"
+                    embedded
                   >
                     <MetricCard
                       label="Elegíveis"
@@ -2032,6 +2033,7 @@ export const SettingsModule = () => {
                               eyebrow={`Versão selecionada · ${selectedPriceTableVersion?.versionNumber ? `v${selectedPriceTableVersion.versionNumber}` : "—"}`}
                               minColumnWidth={140}
                               testId="settings-price-generation-kpi"
+                              embedded
                             >
                               <MetricCard
                                 label="Produtos lidos"

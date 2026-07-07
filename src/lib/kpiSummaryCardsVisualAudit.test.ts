@@ -14,7 +14,6 @@ const REFERENCE_SUMMARY =
 const EXPENSE_MAP_CARDS =
   "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx";
 
-/** Telas financeiras migradas para ExecutiveSummarySection + MetricCard. */
 const FINANCE_KPI_ALIGNED = [
   REFERENCE_SUMMARY,
   "src/components/finance/FinanceAccountsReceivablePage.tsx",
@@ -28,6 +27,20 @@ const FINANCE_KPI_ALIGNED = [
   "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx",
   "src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel.tsx",
   "src/components/finance/executive-report/ExecutiveKpiCard.tsx",
+];
+
+/** Telas migradas para ExecutiveSummarySection + MetricCard / SummaryKpiGrid. */
+const KPI_ALIGNED_SCREENS = [
+  REFERENCE_SUMMARY,
+  "src/components/DashboardModule.tsx",
+  "src/components/ReportsModule.tsx",
+  "src/components/admin/adminUi.tsx",
+  "src/components/commissions/commissionsUi.tsx",
+  "src/components/contextual/MaterialDemandPlannedRealizedPanel.tsx",
+  "src/components/NomusDailySyncCard.tsx",
+  "src/components/pricing/CostPriceMarginAuditPanel.tsx",
+  "src/components/audit/CostToCashTraceSections.tsx",
+  ...FINANCE_KPI_ALIGNED,
 ];
 
 function read(path: string): string {
@@ -58,8 +71,8 @@ describe("kpiSummaryCardsVisualAudit", () => {
     assert.match(section, /finance-cc-expense-map-card-/);
   });
 
-  it("telas financeiras alinhadas usam ExecutiveSummarySection ou MetricCard", () => {
-    for (const file of FINANCE_KPI_ALIGNED) {
+  it("telas alinhadas usam ExecutiveSummarySection ou MetricCard", () => {
+    for (const file of KPI_ALIGNED_SCREENS) {
       const src = read(file);
       const aligned =
         /ExecutiveSummarySection/.test(src) ||
@@ -79,5 +92,19 @@ describe("kpiSummaryCardsVisualAudit", () => {
     const css = read("src/components/ui/metric-card.css");
     assert.match(css, /border-left-width/);
     assert.match(css, /text-transform: uppercase/);
+  });
+
+  it("MetricCard suporta quebra de valor técnico longo", () => {
+    const metric = read("src/components/ui/MetricCard.tsx");
+    const css = read("src/components/ui/metric-card.css");
+    assert.match(metric, /valueWrap/);
+    assert.match(css, /metric-card-value--wrap/);
+  });
+
+  it("ExecutiveSummarySection suporta modo embedded aninhado", () => {
+    const section = read("src/components/ui/ExecutiveSummarySection.tsx");
+    const css = read("src/components/ui/executive-summary-section.css");
+    assert.match(section, /embedded/);
+    assert.match(css, /executive-summary-section--embedded/);
   });
 });

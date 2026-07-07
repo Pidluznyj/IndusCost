@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from "react";
-import "@/src/styles/indus-kpi-grid.css";
 import {
   Users,
   Cpu,
@@ -36,6 +35,9 @@ import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardType
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { DASHBOARD_TOUR_STEPS } from "@/src/tours/dashboardTourSteps";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 
 interface DashboardData {
   kpis: {
@@ -264,32 +266,46 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-8">
-      <div data-tour="dashboard-kpi-cards" className="indus-kpi-grid">
-        <KPICard
-          title="Custo médio folha / colaborador"
-          value={formatCurrency(data.kpis.avgEmployeeCost)}
-          icon={Users}
-          subtitle={`Média de custo mensal estimado por colaborador (não é a taxa HH global do motor de custo). ${data.kpis.totalEmployees} ativos.`}
-        />
-        <KPICard
-          title="Tarifa HM global (energia ÷ h úteis)"
-          value={formatCurrency(data.kpis.avgHM)}
-          icon={Cpu}
-          subtitle={`Mesma base ENERGY_COST ÷ WORKING_HOURS usada no custeio de máquina. ${data.kpis.totalMachines} máquinas cadastradas.`}
-        />
-        <KPICard
-          title="CIF Mensal Total"
-          value={formatCurrency(data.kpis.totalCIF)}
-          icon={Factory}
-          subtitle="Absorvido na produção"
-        />
-        <KPICard
-          title="OPEX Mensal Total"
-          value={formatCurrency(data.kpis.totalOPEX)}
-          icon={PieChart}
-          subtitle="Despesas administrativas"
-        />
-      </div>
+      <ExecutiveSummarySection
+        title="Indicadores operacionais do motor de custo"
+        eyebrow="Dashboard · operação"
+        testId="dashboard-kpi-cards"
+      >
+        <SummaryKpiGrid minColumnWidth={220}>
+          <MetricCard
+            label="Custo médio folha / colaborador"
+            amount={data.kpis.avgEmployeeCost}
+            amountFormat="currency"
+            subtitle={`Média de custo mensal estimado por colaborador (não é a taxa HH global do motor de custo). ${data.kpis.totalEmployees} ativos.`}
+            variant="money"
+            icon={<Users className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="Tarifa HM global (energia ÷ h úteis)"
+            amount={data.kpis.avgHM}
+            amountFormat="currency"
+            subtitle={`Mesma base ENERGY_COST ÷ WORKING_HOURS usada no custeio de máquina. ${data.kpis.totalMachines} máquinas cadastradas.`}
+            variant="info"
+            icon={<Cpu className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="CIF Mensal Total"
+            amount={data.kpis.totalCIF}
+            amountFormat="currency"
+            subtitle="Absorvido na produção"
+            variant="neutral"
+            icon={<Factory className="h-3.5 w-3.5" />}
+          />
+          <MetricCard
+            label="OPEX Mensal Total"
+            amount={data.kpis.totalOPEX}
+            amountFormat="currency"
+            subtitle="Despesas administrativas"
+            variant="neutral"
+            icon={<PieChart className="h-3.5 w-3.5" />}
+          />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
       <div data-tour="dashboard-charts-block" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1 bg-card rounded-3xl border border-border p-8 shadow-sm flex flex-col">
@@ -455,38 +471,5 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
         </div>
       </div>
     </div>
-  );
-}
-
-type KpiIcon = React.ComponentType<{ className?: string }>;
-
-function KPICard({
-  title,
-  value,
-  icon: Icon,
-  subtitle,
-}: {
-  title: string;
-  value: string;
-  icon: KpiIcon;
-  subtitle: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-card rounded-3xl border border-border p-6 shadow-sm hover:shadow-md transition-all"
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-          <Icon className="h-6 w-6" />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
-        <p className="text-2xl font-black">{value}</p>
-        <p className="text-[10px] text-muted-foreground">{subtitle}</p>
-      </div>
-    </motion.div>
   );
 }

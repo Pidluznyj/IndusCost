@@ -22,6 +22,8 @@ export type ExecutiveSummarySectionProps = {
   className?: string;
   /** data-testid da seção — padrão executive-summary-section. */
   testId?: string;
+  /** Sem borda/sombra própria — quando aninhado em outro painel (ex.: sync Nomus). */
+  embedded?: boolean;
 };
 
 export function ExecutiveSummarySection({
@@ -32,10 +34,15 @@ export function ExecutiveSummarySection({
   children,
   className,
   testId = "executive-summary-section",
+  embedded = false,
 }: ExecutiveSummarySectionProps) {
   return (
     <section
-      className={cn("executive-summary-section", className)}
+      className={cn(
+        "executive-summary-section",
+        embedded && "executive-summary-section--embedded",
+        className
+      )}
       data-testid={testId}
       aria-label={title}
     >

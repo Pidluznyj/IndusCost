@@ -262,6 +262,7 @@ export function NomusAccountsPayableSyncCard({
           eyebrow="Histórico, logs e periodicidade"
           minColumnWidth={180}
           testId="nomus-ap-sync-kpi"
+          embedded
         >
           <MetricCard
             label="Última execução"
@@ -282,6 +283,7 @@ export function NomusAccountsPayableSyncCard({
             subtitle={formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
             variant="success"
             icon={<FileText className="h-3.5 w-3.5" />}
+            valueWrap
           />
           <MetricCard
             label="Último log"
@@ -289,6 +291,7 @@ export function NomusAccountsPayableSyncCard({
             subtitle={status?.runnerLogDir ?? "—"}
             variant="neutral"
             icon={<FileText className="h-3.5 w-3.5" />}
+            valueWrap
           />
           <MetricCard
             label="Periodicidade"

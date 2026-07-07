@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import "@/src/components/ui/executive-summary-section.css";
 
 export function SalesOrderKpiSection({
   title,
@@ -62,15 +63,29 @@ export function SalesOrderKpiSection({
 
   return (
     <section
-      className={cn(panelClass, panel && "p-4 min-w-0 overflow-hidden", className)}
+      className={cn(
+        panel && "executive-summary-section min-w-0 overflow-hidden",
+        className
+      )}
       data-testid={testId}
       data-panel={panel ? "true" : "false"}
     >
-      <div className={cn(panel ? "mb-3" : "mb-2")}>
-        <h2 className="text-sm font-bold text-foreground">{title}</h2>
-        {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p> : null}
+      <div className={cn(panel ? "executive-summary-section__header mb-0" : "mb-2")}>
+        {panel ? (
+          <div className="executive-summary-section__titles">
+            {subtitle ? (
+              <p className="executive-summary-section__eyebrow">{subtitle}</p>
+            ) : null}
+            <h2 className="executive-summary-section__title">{title}</h2>
+          </div>
+        ) : (
+          <>
+            <h2 className="text-sm font-bold text-foreground">{title}</h2>
+            {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p> : null}
+          </>
+        )}
       </div>
-      {children}
+      <div className={cn(panel && "mt-3")}>{children}</div>
     </section>
   );
 }
