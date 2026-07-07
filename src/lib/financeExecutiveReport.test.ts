@@ -121,13 +121,13 @@ describe("financeExecutiveReport", () => {
       "utf8"
     );
     assert.ok(src.includes("loadFinanceArManagementRowsFromPrisma"));
-    assert.ok(src.includes("buildFinanceAccountsReceivableDashboard"));
+    assert.ok(src.includes("buildOfficialAccountsReceivableDashboard"));
   });
 
-  it("serviço AP usa buildFinanceApPrismaWhere e buildFinanceAccountsPayableDashboard", () => {
+  it("serviço AP usa buildFinanceApPrismaWhere e buildOfficialAccountsPayableDashboard", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
     assert.ok(src.includes("buildFinanceApPrismaWhere"));
-    assert.ok(src.includes("buildFinanceAccountsPayableDashboard"));
+    assert.ok(src.includes("buildOfficialAccountsPayableDashboard"));
   });
 
   it("serviço Fluxo usa buildFinanceCashFlowDashboard", () => {

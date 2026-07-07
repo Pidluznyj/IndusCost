@@ -41,21 +41,21 @@ export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
 
 export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
   summary: "Números principais do mês selecionado.",
-  "billing-comparison": "Vendas com nota fiscal mês a mês.",
-  "billing-projection": "Realizado, projeção e meta do período.",
-  "accounts-receivable": "Valores a receber dos clientes.",
-  "accounts-payable": "Valores a pagar a fornecedores.",
-  "cash-flow": "Entradas, saídas e saldo previsto no ano (jan–dez).",
+  "billing-comparison": "Vendas com nota fiscal mês a mês. · Fonte: NF-e Nomus",
+  "billing-projection": "Realizado, projeção e meta do período. · Fonte: NF-e Nomus",
+  "accounts-receivable": "Valores a receber dos clientes. · Fonte: Contas a Receber Nomus",
+  "accounts-payable": "Valores a pagar a fornecedores. · Fonte: Contas a Pagar (vencimento)",
+  "cash-flow": "Entradas, saídas e saldo previsto no ano (jan–dez). · Fonte: Fluxo de Caixa",
   "cost-center-spending":
-    "Distribuição do AP gerencial por centro de custo no ano/filtro selecionado.",
-  "sales-orders": "Pedidos registrados no período.",
+    "Distribuição do AP gerencial por centro de custo no ano/filtro selecionado. · Fonte: Centros de Custo",
+  "sales-orders": "Pedidos registrados no período. · Fonte: Pedidos de Venda Nomus",
   conclusion: "Leitura rápida para apoiar a decisão.",
-  "cash-radar": "Vencidos e próximos 90 dias — faixa 0 a 7 dias aberta por padrão.",
+  "cash-radar": "Vencidos e próximos 90 dias — faixa 0 a 7 dias aberta por padrão. · Fonte: Fluxo de Caixa",
 };
 
 /** Tooltip curto — responde “O que é isso?” */
 export const EXECUTIVE_REPORT_KPI_HINTS: Record<string, string> = {
-  "Faturamento mês": "Valor das notas fiscais emitidas no mês.",
+  "Faturamento mês": "Valor das notas fiscais emitidas no mês. Fonte: NF-e Nomus.",
   "Atingimento meta mês": "Percentual da meta de faturamento já alcançado.",
   "Realizado mês": "Total já faturado com nota fiscal no mês.",
   "Projetado mês": "Estimativa de faturamento até o fim do mês.",
@@ -66,21 +66,21 @@ export const EXECUTIVE_REPORT_KPI_HINTS: Record<string, string> = {
   Projetado: "Estimativa de faturamento até o fim do mês.",
   "Meta do ano": "Meta de faturamento para o ano.",
   Atingimento: "Percentual da meta já alcançado.",
-  "A receber": "Valores em aberto que os clientes ainda precisam pagar.",
-  Recebido: "Valores já recebidos dos clientes.",
-  "Em aberto": "Valores que ainda não foram quitados.",
+  "A receber": "Valores em aberto que os clientes ainda precisam pagar. Fonte: Contas a Receber Nomus.",
+  Recebido: "Valores já recebidos dos clientes. Fonte: Contas a Receber Nomus.",
+  "Em aberto": "Valores que ainda não foram quitados. Fonte: Contas a Receber ou a Pagar Nomus.",
   Atrasados: "Valores vencidos que ainda não foram recebidos.",
-  "A pagar total": "Total de contas em aberto com fornecedores.",
-  Pago: "Valores já pagos a fornecedores.",
-  Vencidos: "Contas vencidas que ainda precisam ser pagas.",
-  "Entradas previstas": "Dinheiro que deve entrar no caixa.",
-  "Saídas previstas": "Dinheiro que deve sair do caixa.",
+  "A pagar total": "Total de contas em aberto com fornecedores. Fonte: Contas a Pagar (vencimento).",
+  Pago: "Valores já pagos a fornecedores. Fonte: Contas a Pagar Nomus.",
+  Vencidos: "Contas vencidas que ainda precisam ser pagas. Fonte: Contas a Pagar (vencimento).",
+  "Entradas previstas": "Dinheiro que deve entrar no caixa. Fonte: Fluxo de Caixa (AR).",
+  "Saídas previstas": "Dinheiro que deve sair do caixa. Fonte: Fluxo de Caixa (AP por vencimento).",
   "Saldo líquido": "Entradas previstas menos saídas previstas.",
   "Saldo acumulado": "Saldo previsto acumulado no período.",
   "Realizado YTD": "Total de pedidos acumulado no ano.",
   "Projeção mês": "Estimativa de pedidos até o fim do mês.",
   "Vendido no mês":
-    "Soma dos pedidos de venda válidos emitidos no mês selecionado. Não considera propostas.",
+    "Soma dos pedidos de venda válidos emitidos no mês selecionado. Fonte: Pedidos de Venda Nomus. Não considera propostas.",
   "Atingimento mês pedidos": "Percentual do vendido no mês sobre a meta do mês.",
 };
 
