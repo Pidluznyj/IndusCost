@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   aggregateCostCenterExpenseMapTotals,
+  formatCostCenterExpenseMapSummaryCurrency,
   buildCostCenterExpenseMapAllocationsQuery,
   buildCostCenterExpenseMapCards,
   DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
@@ -222,6 +223,22 @@ describe("financeCostCenterExpenseMap", () => {
     assert.ok(summary.includes("finance-cc-expense-map-clear-selection"));
   });
 
+  it("formata moeda do totalizador em versão compacta a partir de R$ 1 mil", () => {
+    const compact = formatCostCenterExpenseMapSummaryCurrency(309_700);
+    assert.equal(compact.display, "R$ 309,7 mil");
+    assert.match(compact.fullValue, /309\.700,00/);
+
+    const medium = formatCostCenterExpenseMapSummaryCurrency(3_968.6);
+    assert.equal(medium.display, "R$ 3,97 mil");
+
+    const small = formatCostCenterExpenseMapSummaryCurrency(850.5);
+    assert.match(small.display, /850,50/);
+    assert.equal(small.display, small.fullValue);
+
+    const million = formatCostCenterExpenseMapSummaryCurrency(2_490_000);
+    assert.equal(million.display, "R$ 2,49 Mi");
+  });
+
   it("totalizador executivo soma cards filtrados e seleção", () => {
     const cards = buildCostCenterExpenseMapCards(
       [
@@ -315,5 +332,8 @@ describe("financeCostCenterExpenseMap", () => {
       "utf8"
     );
     assert.match(executive, /finance-cc-expense-map-clear-selection/);
+    assert.match(executive, /finance-cc-expense-map-executive-summary\.css/);
+    assert.match(executive, /finance-cc-expense-map-metric-grid/);
+    assert.match(executive, /formatCostCenterExpenseMapSummaryCurrency/);
   });
 });

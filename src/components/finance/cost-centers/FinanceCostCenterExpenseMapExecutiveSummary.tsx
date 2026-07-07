@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { CheckCircle2, Clock, DollarSign, Layers, Percent } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
 import type { CostCenterExpenseMapAggregateTotals } from "@/src/lib/financeCostCenterExpenseMap";
+import { formatCostCenterExpenseMapSummaryCurrency } from "@/src/lib/financeCostCenterExpenseMap";
 import { formatFinanceInteger, formatFinancePercent } from "@/src/lib/financeAccountsReceivableFormat";
 import { cn } from "@/src/lib/utils";
+import "./finance-cc-expense-map-executive-summary.css";
 
 type Props = {
   totals: CostCenterExpenseMapAggregateTotals;
@@ -26,6 +28,23 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
   const scopeHint = hasSelection
     ? "Total dos centros selecionados"
     : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total · Total geral dos centros filtrados`;
+
+  const amountDisplay = useMemo(
+    () => formatCostCenterExpenseMapSummaryCurrency(totals.amount),
+    [totals.amount]
+  );
+  const overdueDisplay = useMemo(
+    () => formatCostCenterExpenseMapSummaryCurrency(totals.overdueAmount),
+    [totals.overdueAmount]
+  );
+  const upcomingDisplay = useMemo(
+    () => formatCostCenterExpenseMapSummaryCurrency(totals.upcomingAmount),
+    [totals.upcomingAmount]
+  );
+  const paidDisplay = useMemo(
+    () => formatCostCenterExpenseMapSummaryCurrency(totals.paidAmount),
+    [totals.paidAmount]
+  );
 
   return (
     <div
@@ -51,49 +70,50 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
         ) : null}
       </div>
 
-      <MetricCardGrid minColumnWidth={180}>
+      <MetricCardGrid minColumnWidth={168} className="finance-cc-expense-map-metric-grid">
         <MetricCard
           label="Centros"
           value={formatFinanceInteger(totals.centersCount)}
           subtitle="Centros considerados no resumo"
           variant="info"
-          icon={<Layers className="h-4 w-4" />}
+          icon={<Layers className="h-3.5 w-3.5" />}
           loading={loading}
+          className="finance-cc-expense-map-metric-card--short"
         />
         <MetricCard
           label="Valor total"
-          amount={totals.amount}
-          amountFormat="currency"
+          formattedValue={amountDisplay.display}
+          fullValue={amountDisplay.fullValue}
           subtitle="Soma dos títulos vinculados"
           variant="money"
-          icon={<DollarSign className="h-4 w-4" />}
+          icon={<DollarSign className="h-3.5 w-3.5" />}
           loading={loading}
         />
         <MetricCard
           label="Vencido"
-          amount={totals.overdueAmount}
-          amountFormat="currency"
+          formattedValue={overdueDisplay.display}
+          fullValue={overdueDisplay.fullValue}
           subtitle="Títulos vencidos"
           variant="danger"
-          icon={<Clock className="h-4 w-4" />}
+          icon={<Clock className="h-3.5 w-3.5" />}
           loading={loading}
         />
         <MetricCard
           label="A vencer"
-          amount={totals.upcomingAmount}
-          amountFormat="currency"
+          formattedValue={upcomingDisplay.display}
+          fullValue={upcomingDisplay.fullValue}
           subtitle="Títulos ainda em aberto"
           variant="warning"
-          icon={<Clock className="h-4 w-4" />}
+          icon={<Clock className="h-3.5 w-3.5" />}
           loading={loading}
         />
         <MetricCard
           label="Pago"
-          amount={totals.paidAmount}
-          amountFormat="currency"
+          formattedValue={paidDisplay.display}
+          fullValue={paidDisplay.fullValue}
           subtitle="Títulos já pagos"
           variant="success"
-          icon={<CheckCircle2 className="h-4 w-4" />}
+          icon={<CheckCircle2 className="h-3.5 w-3.5" />}
           loading={loading}
         />
         <MetricCard
@@ -101,8 +121,9 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
           formattedValue={formatFinancePercent(totals.participationPercent)}
           subtitle="Participação sobre o total filtrado"
           variant="neutral"
-          icon={<Percent className="h-4 w-4" />}
+          icon={<Percent className="h-3.5 w-3.5" />}
           loading={loading}
+          className="finance-cc-expense-map-metric-card--short"
         />
       </MetricCardGrid>
 

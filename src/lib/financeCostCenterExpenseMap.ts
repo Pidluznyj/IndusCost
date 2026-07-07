@@ -1,3 +1,4 @@
+import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
 import type { FinanceCostCenterDashboardByCostCenterRow } from "./financeCostCenterDashboard.js";
 import type { FinanceCostCenterDto } from "./financeCostCenters.js";
 import type { FinanceCostCentersUiFilters } from "./financeCostCentersPageTypes.js";
@@ -320,4 +321,31 @@ export function aggregateCostCenterExpenseMapTotals(
     totalFilteredCentersCount: filteredCards.length,
     totalFilteredAmount,
   };
+}
+
+/** Moeda compacta para cards estreitos do totalizador (≥ R$ 1 mil usa mil/Mi). */
+export function formatCostCenterExpenseMapSummaryCurrency(value: number | null | undefined): {
+  display: string;
+  fullValue: string;
+} {
+  if (value == null || !Number.isFinite(value)) {
+    return { display: "—", fullValue: "—" };
+  }
+  const fullValue = formatFinanceCurrency(value);
+  const abs = Math.abs(value);
+  const compact = (scaled: number, decimals: number) =>
+    new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(scaled);
+  if (abs >= 1_000_000) {
+    return { display: `R$ ${compact(value / 1_000_000, 2)} Mi`, fullValue };
+  }
+  if (abs >= 10_000) {
+    return { display: `R$ ${compact(value / 1_000, 1)} mil`, fullValue };
+  }
+  if (abs >= 1_000) {
+    return { display: `R$ ${compact(value / 1_000, 2)} mil`, fullValue };
+  }
+  return { display: fullValue, fullValue };
 }

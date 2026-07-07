@@ -1,0 +1,44 @@
+/* Totalizador do mapa de centros — cards mais estreitos que Pedidos de Venda. */
+.finance-cc-expense-map-metric-grid {
+  --metric-card-min: 168px;
+}
+
+.finance-cc-expense-map-metric-grid .metric-card {
+  min-height: 104px;
+  padding: 12px 14px 10px 16px;
+}
+
+.finance-cc-expense-map-metric-grid .metric-card-value {
+  margin-top: 6px;
+  font-size: clamp(1.0625rem, 0.75vw + 0.42rem, 1.3125rem);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.finance-cc-expense-map-metric-grid .finance-cc-expense-map-metric-card--short .metric-card-value {
+  font-size: clamp(1.1875rem, 0.9vw + 0.48rem, 1.5rem);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.finance-cc-expense-map-metric-grid .metric-card-subtitle {
+  padding-top: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.finance-cc-expense-map-metric-grid .metric-card-icon-wrap {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.finance-cc-expense-map-metric-grid .metric-card-icon-wrap svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
