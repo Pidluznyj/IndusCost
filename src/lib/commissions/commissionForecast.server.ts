@@ -304,7 +304,7 @@ async function resolveSalesOrderMap(orderCodes: string[]) {
     paymentTerms: string | null;
     paymentMethod: string | null;
     totalNetValue: unknown;
-    responsible: string | null;
+    nomusSellerName: string | null;
   }>();
   const orders = await prisma.salesOrder.findMany({
     where: { orderCode: { in: unique } },
@@ -315,7 +315,7 @@ async function resolveSalesOrderMap(orderCodes: string[]) {
       paymentTerms: true,
       paymentMethod: true,
       totalNetValue: true,
-      responsible: true,
+      nomusSellerName: true,
     },
   });
   return new Map(orders.map((order) => [order.orderCode, order]));
@@ -324,12 +324,12 @@ async function resolveSalesOrderMap(orderCodes: string[]) {
 function resolveSellerLabel(
   nomusSellerId: number | null,
   personMap: Map<number, string>,
-  salesOrderResponsible: string | null
+  nomusSellerName: string | null
 ): string | null {
   if (nomusSellerId != null) {
     return personMap.get(nomusSellerId) ?? `Vendedor #${nomusSellerId}`;
   }
-  return salesOrderResponsible?.trim() || null;
+  return nomusSellerName?.trim() || null;
 }
 
 function resolveRepresentativeLabel(
@@ -453,7 +453,7 @@ async function buildOrderRows(
       sellerLabel: resolveSellerLabel(
         agg.nomusSellerId,
         personMap,
-        salesOrder?.responsible ?? null
+        salesOrder?.nomusSellerName ?? null
       ),
       representativeLabel: resolveRepresentativeLabel(
         agg.nomusRepresentativeId,
@@ -613,7 +613,7 @@ export async function getCommissionForecastOrderDetail(
     sellerLabel: resolveSellerLabel(
       agg.nomusSellerId,
       personMap,
-      salesOrder?.responsible ?? null
+      salesOrder?.nomusSellerName ?? null
     ),
     representativeLabel: resolveRepresentativeLabel(
       agg.nomusRepresentativeId,

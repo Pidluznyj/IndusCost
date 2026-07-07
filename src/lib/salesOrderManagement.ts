@@ -365,7 +365,7 @@ export function buildManagementRowsFromOrders(
         issueDate: order.issueDate.toISOString(),
         expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() ?? null,
         totalNetValue: order.totalNetValue,
-        responsible: order.nomusSellerName ?? order.responsible,
+        responsible: order.nomusSellerName ?? null,
         nomusSellerName: order.nomusSellerName ?? null,
         externalSellerId: order.externalSellerId ?? null,
         companyIssuer: order.companyIssuer,

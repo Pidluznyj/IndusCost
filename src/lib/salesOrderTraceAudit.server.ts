@@ -373,7 +373,7 @@ export async function buildSalesOrderTraceAudit(
       customerId: order.customerId,
       customerName,
       rawSellerId: order.externalSellerId,
-      rawSellerName: order.responsible,
+      rawSellerName: sellerInfo.responsibleName,
       canonicalSellerId: sellerResolution.canonicalSellerId,
       canonicalSellerName: sellerResolution.canonicalSellerName,
       sellerResolutionStatus: sellerResolution.resolutionStatus,

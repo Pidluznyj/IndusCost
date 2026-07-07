@@ -175,7 +175,7 @@ export async function buildCommissionTraceAudit(
       orderCode: true,
       customerId: true,
       externalSellerId: true,
-      responsible: true,
+      nomusSellerName: true,
       issueDate: true,
       Customer: { select: { companyName: true, tradeName: true } },
       nfeLinks: {
@@ -451,7 +451,7 @@ export async function buildCommissionTraceAudit(
       customerName:
         order.Customer.tradeName?.trim() || order.Customer.companyName?.trim() || "—",
       rawSellerId: snapshot?.rawSellerId ?? order.externalSellerId,
-      rawSellerName: snapshot?.rawSellerName ?? order.responsible,
+      rawSellerName: snapshot?.rawSellerName ?? order.nomusSellerName,
       canonicalSellerId: snapshot?.canonicalSellerId ?? null,
       canonicalSellerName: snapshot?.canonicalSellerName ?? null,
       sellerResolutionStatus: snapshot?.sellerResolutionStatus ?? null,

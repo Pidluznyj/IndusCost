@@ -79,7 +79,7 @@ export async function runCommissionSellerIdentityAudit(
           id: true,
           orderCode: true,
           externalSellerId: true,
-          responsible: true,
+          nomusSellerName: true,
           issueDate: true,
           Customer: { select: { name: true } },
         },
@@ -108,13 +108,14 @@ export async function runCommissionSellerIdentityAudit(
   const observations: SellerSourceObservation[] = [];
 
   for (const order of salesOrders) {
-    const normalized = normalizeCommissionPersonName(order.responsible);
+    const sellerName = order.nomusSellerName?.trim() || null;
+    const normalized = normalizeCommissionPersonName(sellerName);
     if (query.seller && !sellerNameMatchesFilter(normalized, query.seller)) continue;
 
     const resolution = resolveCommissionSellerIdentity(
       {
         rawSellerId: order.externalSellerId,
-        rawSellerName: order.responsible,
+        rawSellerName: sellerName,
         source: "NOMUS_ORDER",
       },
       identityCtx
@@ -126,7 +127,7 @@ export async function runCommissionSellerIdentityAudit(
           sourceTable: "SalesOrder",
           sourceId: order.id,
           rawSellerId: order.externalSellerId,
-          rawSellerName: order.responsible,
+          rawSellerName: sellerName,
           normalizedSellerName: normalized || "SEM_NOME",
           issueDate: order.issueDate?.toISOString() ?? null,
           settlementDate: null,

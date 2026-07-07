@@ -339,7 +339,7 @@ export async function filterAffectedSalesOrderRefs(
     select: {
       id: true,
       externalSellerId: true,
-      responsible: true,
+      nomusSellerName: true,
       customerId: true,
       Customer: { select: { name: true } },
     },
@@ -349,7 +349,7 @@ export async function filterAffectedSalesOrderRefs(
     orders
       .filter((order) => {
         if (sellerNeedle) {
-          const haystacks = [String(order.externalSellerId ?? ""), order.responsible ?? ""]
+          const haystacks = [String(order.externalSellerId ?? ""), order.nomusSellerName ?? ""]
             .map((value) => value.toLowerCase())
             .filter(Boolean);
           if (
