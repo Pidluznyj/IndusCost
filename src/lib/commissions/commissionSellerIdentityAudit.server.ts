@@ -10,6 +10,10 @@ import {
   sellerNameMatchesFilter,
 } from "./commissionSellerIdentity.js";
 import {
+  nomusOrderSellerToIdentityResolution,
+  resolveNomusOrderSeller,
+} from "./commissionNomusOrderSellerResolver.js";
+import {
   buildSellerFocusAudit,
   buildSellerIdentityGroups,
   type SellerIdentityAuditSummary,
@@ -80,6 +84,7 @@ export async function runCommissionSellerIdentityAudit(
           orderCode: true,
           externalSellerId: true,
           nomusSellerName: true,
+          responsible: true,
           issueDate: true,
           Customer: { select: { name: true } },
         },
@@ -112,14 +117,17 @@ export async function runCommissionSellerIdentityAudit(
     const normalized = normalizeCommissionPersonName(sellerName);
     if (query.seller && !sellerNameMatchesFilter(normalized, query.seller)) continue;
 
-    const resolution = resolveCommissionSellerIdentity(
+    const nomusResolution = resolveNomusOrderSeller(
       {
-        rawSellerId: order.externalSellerId,
-        rawSellerName: sellerName,
-        source: "NOMUS_ORDER",
+        externalSellerId: order.externalSellerId,
+        issueDate: order.issueDate,
+        nomusSellerName: sellerName,
+        legacyResponsible: order.responsible,
+        aliasSource: "NOMUS_ORDER",
       },
       identityCtx
     );
+    const resolution = nomusOrderSellerToIdentityResolution(nomusResolution, sellerName);
 
     observations.push(
       observationFromResolution(

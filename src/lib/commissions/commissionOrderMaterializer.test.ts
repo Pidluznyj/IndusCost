@@ -11,7 +11,7 @@ import {
   resolveMaterializationAction,
 } from "./commissionOrderMaterializer.js";
 import { persistCommissionOrderMaterialization } from "./commissionOrderMaterializer.server.js";
-import { resolveCommissionSellerIdentity } from "./commissionSellerIdentity.js";
+import { resolveOrderCommissionSeller } from "./commissionNomusOrderSellerResolver.js";
 import type {
   CommissionActiveRule,
   CommissionOrderSourceBundle,
@@ -141,14 +141,13 @@ function buildDraft(overrides: {
   const order = overrides.order ?? orderBundle({ quantity: 1, unitPrice: 12, itemNetAmount: 12 });
   const context = overrides.context ?? baseContext({});
   const lines = calculateCommissionForSalesOrderItems({ orders: [order], context });
-  const sellerResolution = resolveCommissionSellerIdentity(
-    {
-      rawSellerId: order.seller.nomusSellerId,
-      rawSellerName: order.seller.responsibleName,
-      source: "NOMUS_ORDER",
-    },
-    context.sellerIdentity
-  );
+  const { identity: sellerResolution } = resolveOrderCommissionSeller({
+    externalSellerId: order.seller.nomusSellerId,
+    issueDate: order.issueDate,
+    nomusSellerName: order.seller.responsibleName,
+    aliasSource: "NOMUS_ORDER",
+    identityCtx: context.sellerIdentity,
+  });
   return buildCommissionOrderSnapshotDraft({
     order,
     customerId: CUSTOMER_ID,

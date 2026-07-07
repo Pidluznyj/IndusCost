@@ -22,7 +22,7 @@ import {
   type CommissionOrderSourceBundle,
 } from "./commission-source-resolver.server.js";
 import { resolveCommissionRuleReferenceDate } from "./commission-source-resolver.js";
-import { resolveCommissionSellerIdentity } from "./commissionSellerIdentity.js";
+import { resolveOrderCommissionSeller } from "./commissionNomusOrderSellerResolver.js";
 import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
 
 export class SalesOrderNotFoundError extends Error {
@@ -236,14 +236,13 @@ export async function materializeCommissionForSalesOrder(
   const preferredNfeId = input.nfeId ?? null;
   const context = await loadOrderCalculationContext(db, bundle, preferredNfeId);
   const lines = calculateCommissionForSalesOrderItems({ orders: [bundle], context });
-  const sellerResolution = resolveCommissionSellerIdentity(
-    {
-      rawSellerId: bundle.seller.nomusSellerId,
-      rawSellerName: bundle.seller.responsibleName,
-      source: "NOMUS_ORDER",
-    },
-    context.sellerIdentity
-  );
+  const { identity: sellerResolution } = resolveOrderCommissionSeller({
+    externalSellerId: bundle.seller.nomusSellerId,
+    issueDate: bundle.issueDate,
+    nomusSellerName: bundle.seller.responsibleName,
+    aliasSource: "NOMUS_ORDER",
+    identityCtx: context.sellerIdentity,
+  });
 
   const draft = buildCommissionOrderSnapshotDraft({
     order: bundle,

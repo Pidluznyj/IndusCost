@@ -338,6 +338,8 @@ function toManagementOrderInput(order: SalesOrderRulesOrderInput) {
     expectedDeliveryDate: order.expectedDeliveryDate ?? null,
     totalNetValue: order.totalNetValue,
     responsible: order.responsible ?? null,
+    nomusSellerName: order.nomusSellerName ?? order.responsible ?? null,
+    externalSellerId: order.externalSellerId ?? null,
     nomusRawResponse: order.nomusRawResponse ?? null,
     companyIssuer: order.companyIssuer ?? null,
     Customer: order.Customer,
@@ -651,10 +653,14 @@ export function buildSalesOrderRulesResult(
   );
 
   const management = buildManagementRowsFromOrders(
-    orders.map(toManagementOrderInput),
+    orders.map((order) => ({
+      ...toManagementOrderInput(order),
+      legacyResponsible: order.legacyResponsible ?? null,
+    })),
     context.filters.management,
     context.referenceDate,
-    linkedMap
+    linkedMap,
+    input.sellerIdentityCtx
   );
 
   const metrics = buildSalesOrderMetrics({

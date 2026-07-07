@@ -10,7 +10,7 @@
  *   (commission-commercial-tier.server — aqui injetada via commercialTiersByProductId).
  * - Regra vigente: commission-rule-engine.selectBestMatchingRule na data NF ou pedido
  *   (resolveCommissionRuleReferenceDate).
- * - Vendedor canônico: commissionSellerIdentity.resolveCommissionSellerIdentity.
+ * - Vendedor canônico: commissionNomusOrderSellerResolver.resolveOrderCommissionSeller.
  * - Exclusão de cliente: commissionCustomerExclusionApply.
  */
 import { buildRuleMatchContext } from "./commission-calculation-hash.js";
@@ -32,9 +32,13 @@ import {
   type CommissionOrderSourceBundle,
 } from "./commission-source-resolver.js";
 import {
-  resolveCommissionSellerIdentity,
-  type CommissionSellerIdentityContext,
-  type CommissionSellerIdentityResolution,
+  isNomusOrderSellerResolved,
+  resolveOrderCommissionSeller,
+  type NomusOrderSellerResolution,
+} from "./commissionNomusOrderSellerResolver.js";
+import type {
+  CommissionSellerIdentityContext,
+  CommissionSellerIdentityResolution,
 } from "./commissionSellerIdentity.js";
 import {
   serializeCommissionRuleSnapshot,
@@ -86,11 +90,11 @@ export type CommissionOrderCalculationContext = {
   beneficiaryType?: "SELLER" | "REPRESENTATIVE";
 };
 
-function isSellerResolved(resolution: CommissionSellerIdentityResolution): boolean {
-  return (
-    resolution.canonicalSellerId != null &&
-    resolution.resolutionStatus === "OK_CANONICAL"
-  );
+function isSellerResolved(
+  resolution: CommissionSellerIdentityResolution,
+  nomusResolution: NomusOrderSellerResolution
+): boolean {
+  return isNomusOrderSellerResolved(nomusResolution) && resolution.canonicalSellerId != null;
 }
 
 function resolveItemMarginPercent(input: {
@@ -181,6 +185,7 @@ function calculateItemCommission(input: {
   item: CommissionOrderSourceBundle["items"][number];
   context: CommissionOrderCalculationContext;
   sellerResolution: CommissionSellerIdentityResolution;
+  nomusSellerResolution: NomusOrderSellerResolution;
 }): CommissionOrderItemCalculationResult {
   const nfeId = pickPrimaryNfeId(input.order);
   const referenceDate = resolveCommissionRuleReferenceDate(input.order, nfeId);
@@ -220,7 +225,12 @@ function calculateItemCommission(input: {
     referenceDate: referenceDate.toISOString(),
   };
 
-  if (!isSellerResolved(input.sellerResolution)) {
+  if (!isSellerResolved(input.sellerResolution, input.nomusSellerResolution)) {
+    const statusReason =
+      input.nomusSellerResolution.status === "NO_SELLER"
+        ? "Pedido sem vendedor Nomus (externalSellerId ausente)"
+        : input.sellerResolution.warnings[0] ??
+          `Vendedor não resolvido (${input.nomusSellerResolution.status})`;
     return {
       ...baseResult,
       commissionRatePercent: 0,
@@ -230,10 +240,11 @@ function calculateItemCommission(input: {
       ruleSnapshot: null,
       exclusionStatus: "NONE",
       exclusionReason: null,
-      status: "SELLER_UNRESOLVED",
-      statusReason:
-        input.sellerResolution.warnings[0] ??
-        `Vendedor não resolvido (${input.sellerResolution.resolutionStatus})`,
+      status:
+        input.nomusSellerResolution.status === "NO_SELLER"
+          ? "SELLER_UNRESOLVED"
+          : "SELLER_UNRESOLVED",
+      statusReason,
       tierMetadata: null,
     };
   }
@@ -353,14 +364,14 @@ export function calculateCommissionForSalesOrderItems(input: {
   const results: CommissionOrderItemCalculationResult[] = [];
 
   for (const order of input.orders) {
-    const sellerResolution = resolveCommissionSellerIdentity(
-      {
-        rawSellerId: order.seller.nomusSellerId,
-        rawSellerName: order.seller.responsibleName,
-        source: "NOMUS_ORDER",
-      },
-      input.context.sellerIdentity
-    );
+    const { identity: sellerResolution, nomus: nomusSellerResolution } =
+      resolveOrderCommissionSeller({
+        externalSellerId: order.seller.nomusSellerId,
+        issueDate: order.issueDate,
+        nomusSellerName: order.seller.responsibleName,
+        aliasSource: "NOMUS_ORDER",
+        identityCtx: input.context.sellerIdentity,
+      });
 
     for (const item of order.items) {
       results.push(
@@ -369,6 +380,7 @@ export function calculateCommissionForSalesOrderItems(input: {
           item,
           context: input.context,
           sellerResolution,
+          nomusSellerResolution,
         })
       );
     }

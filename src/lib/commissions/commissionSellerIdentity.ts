@@ -72,10 +72,14 @@ function personById(
 function personsByNomusId(
   ctx: CommissionSellerIdentityContext,
   nomusId: number,
-  type = "SELLER"
+  type = "SELLER",
+  activeOnly = true
 ): CommissionPersonIdentityRow[] {
   return ctx.persons.filter(
-    (row) => row.type === type && row.nomusPersonId === nomusId
+    (row) =>
+      row.type === type &&
+      row.nomusPersonId === nomusId &&
+      (!activeOnly || row.active)
   );
 }
 
@@ -163,12 +167,18 @@ export function resolveCommissionSellerIdentity(
   };
 
   if (rawSellerId != null) {
+    const byNomus = personsByNomusId(ctx, rawSellerId);
+    const fromPerson = resolveFromPersons(byNomus);
+    if (fromPerson) {
+      return { ...fromPerson, rawSellerId, rawSellerName, normalizedSellerName: base.normalizedSellerName };
+    }
+
     const aliasById = activeAliases(ctx).filter(
       (row) => row.rawSellerId === rawSellerId && (row.source === source || row.source === "OTHER")
     );
     if (aliasById.length === 1) {
       const person = personById(ctx, aliasById[0]!.commissionedPersonId);
-      if (person) {
+      if (person?.active) {
         return {
           ...base,
           canonicalSellerId: person.id,
@@ -188,12 +198,6 @@ export function resolveCommissionSellerIdentity(
         resolutionMethod: null,
         warnings: [`Múltiplos aliases ativos para rawSellerId ${rawSellerId}`],
       };
-    }
-
-    const byNomus = personsByNomusId(ctx, rawSellerId);
-    const fromPerson = resolveFromPersons(byNomus);
-    if (fromPerson) {
-      return { ...fromPerson, rawSellerId, rawSellerName, normalizedSellerName: base.normalizedSellerName };
     }
   }
 

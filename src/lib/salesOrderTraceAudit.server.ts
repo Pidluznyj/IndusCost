@@ -7,7 +7,7 @@ import { resolveCustomerExclusionForSale } from "./commissions/commissionCustome
 import { loadActiveCustomerExclusionRuleSnapshots } from "./commissions/commissionCustomerExclusionRules.server.js";
 import { extractSellerFromOrder } from "./commissions/commission-source-resolver.js";
 import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
-import { resolveCommissionSellerIdentity } from "./commissions/commissionSellerIdentity.js";
+import { resolveOrderCommissionSeller } from "./commissions/commissionNomusOrderSellerResolver.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 import { parseSalesOrderItemStoredUnitCost } from "./salesOrderMarginResolver.js";
 import {
@@ -251,14 +251,15 @@ export async function buildSalesOrderTraceAudit(
     externalSellerId: order.externalSellerId,
     nomusSellerName: order.nomusSellerName,
   });
-  const sellerResolution = resolveCommissionSellerIdentity(
-    {
-      rawSellerId: sellerInfo.nomusSellerId,
-      rawSellerName: sellerInfo.responsibleName,
-      source: "SALES_ORDER",
-    },
-    sellerContext
-  );
+  const { identity: sellerResolution, nomus: nomusSellerResolution } =
+    resolveOrderCommissionSeller({
+      externalSellerId: sellerInfo.nomusSellerId,
+      issueDate: order.issueDate,
+      nomusSellerName: sellerInfo.responsibleName,
+      legacyResponsible: order.responsible,
+      aliasSource: "SALES_ORDER",
+      identityCtx: sellerContext,
+    });
 
   const customerName =
     order.Customer.tradeName?.trim() || order.Customer.companyName?.trim() || "—";
@@ -331,7 +332,7 @@ export async function buildSalesOrderTraceAudit(
     },
     {
       field: "seller",
-      source: "resolveCommissionSellerIdentity",
+      source: "resolveNomusOrderSeller",
     },
     {
       field: "commissionSnapshot",
@@ -376,7 +377,7 @@ export async function buildSalesOrderTraceAudit(
       rawSellerName: sellerInfo.responsibleName,
       canonicalSellerId: sellerResolution.canonicalSellerId,
       canonicalSellerName: sellerResolution.canonicalSellerName,
-      sellerResolutionStatus: sellerResolution.resolutionStatus,
+      sellerResolutionStatus: nomusSellerResolution.status,
       issueDate: toCivilDateKey(order.issueDate) ?? order.issueDate.toISOString().slice(0, 10),
       totalNetValue: decimalToNumber(order.totalNetValue),
       orderStatus: order.status,

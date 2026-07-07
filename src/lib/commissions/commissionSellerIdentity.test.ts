@@ -66,7 +66,7 @@ describe("resolveCommissionSellerIdentity", () => {
     );
     assert.equal(r464.canonicalSellerId, "person-gislene");
     assert.equal(r464.resolutionStatus, "OK_CANONICAL");
-    assert.equal(r464.resolutionMethod, "ALIAS_RAW_SELLER_ID");
+    assert.equal(r464.resolutionMethod, "COMMISSION_PERSON");
   });
 
   it("mesmo nome sem raw ID usa fallback por nome normalizado", () => {

@@ -24,9 +24,13 @@ import {
   resolveCommissionRuleReferenceDate,
 } from "./commission-source-resolver.js";
 import {
-  resolveCommissionSellerIdentity,
+  isNomusOrderSellerResolved,
+  resolveOrderCommissionSeller,
+} from "./commissionNomusOrderSellerResolver.js";
+import {
   sellerNameMatchesFilter,
   type CommissionSellerIdentityContext,
+  type CommissionSellerIdentityResolution,
 } from "./commissionSellerIdentity.js";
 import type {
   CommissionActiveRule,
@@ -616,24 +620,19 @@ export function diagnoseReceivableWithoutMaterializedSchedule(input: {
     return { status: "NO_SELLER", statusReason: COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON };
   }
 
-  const sellerResolution = resolveCommissionSellerIdentity(
-    {
-      rawSellerId: input.order.seller.nomusSellerId,
-      rawSellerName: input.order.seller.responsibleName,
-      source: "SALES_ORDER",
-    },
-    input.identityCtx
-  );
-  if (
-    ["UNRESOLVED", "CONFLICT", "MULTIPLE_CANONICALS"].includes(
-      sellerResolution.resolutionStatus
-    )
-  ) {
+  const { identity: sellerResolution, nomus: nomusResolution } = resolveOrderCommissionSeller({
+    externalSellerId: input.order.seller.nomusSellerId,
+    issueDate: input.order.issueDate,
+    nomusSellerName: input.order.seller.responsibleName,
+    aliasSource: "SALES_ORDER",
+    identityCtx: input.identityCtx,
+  });
+  if (!isNomusOrderSellerResolved(nomusResolution)) {
     return {
       status: "SELLER_UNRESOLVED",
       statusReason:
         sellerResolution.warnings.join("; ") ||
-        `Vendedor não resolvido (${sellerResolution.resolutionStatus})`,
+        `Vendedor não resolvido (${nomusResolution.status})`,
     };
   }
 
@@ -980,18 +979,17 @@ function calculatePreviewLinesForReceivable(input: {
     ? order.linkedNfes.find((nfe) => nfe.nfeExternalId === nomusNfeId)
     : order.linkedNfes[0];
 
-  const sellerResolution = resolveCommissionSellerIdentity(
-    {
-      rawSellerId: order.seller.nomusSellerId,
-      rawSellerName: order.seller.responsibleName,
-      source: "SALES_ORDER",
-    },
-    identityCtx
-  );
+  const { identity: sellerResolution, nomus: nomusResolution } = resolveOrderCommissionSeller({
+    externalSellerId: order.seller.nomusSellerId,
+    issueDate: order.issueDate,
+    nomusSellerName: order.seller.responsibleName,
+    aliasSource: "SALES_ORDER",
+    identityCtx,
+  });
 
   const canonicalSellerId = sellerResolution.canonicalSellerId;
 
-  if (!order.seller.nomusSellerId) {
+  if (nomusResolution.status === "NO_SELLER" || !order.seller.nomusSellerId) {
     return [
       buildExceptionLine({
         receivable,
@@ -1004,11 +1002,7 @@ function calculatePreviewLinesForReceivable(input: {
     ];
   }
 
-  if (
-    ["UNRESOLVED", "CONFLICT", "MULTIPLE_CANONICALS"].includes(
-      sellerResolution.resolutionStatus
-    )
-  ) {
+  if (!isNomusOrderSellerResolved(nomusResolution)) {
     return [
       buildExceptionLine({
         receivable,
@@ -1017,7 +1011,7 @@ function calculatePreviewLinesForReceivable(input: {
         status: "SELLER_UNRESOLVED",
         statusReason:
           sellerResolution.warnings.join("; ") ||
-          `Vendedor não resolvido (${sellerResolution.resolutionStatus})`,
+          `Vendedor não resolvido (${nomusResolution.status})`,
         order,
       }),
     ];

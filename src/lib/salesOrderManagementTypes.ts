@@ -5,6 +5,7 @@ import type {
   SalesOrderOperationalStatus,
   SalesOrderRiskFlag,
 } from "./salesOrderLifecycleTypes.js";
+import type { NomusOrderSellerResolutionStatus } from "./commissions/commissionNomusOrderSellerResolver.js";
 
 import type {
   ManagementStatusCardId,
@@ -107,7 +108,15 @@ export type SalesOrderManagementRow = {
   responsible: string | null;
   crmCommercialResponsible: string | null;
   nomusSellerName: string | null;
-  nomusSellerStatus: "OK" | "NOT_INFORMED";
+  /** Vendedor canônico resolvido para comissão (Nomus ID / alias / regra histórica). */
+  canonicalSellerName: string | null;
+  nomusSellerDisplayName: string;
+  nomusSellerResolutionStatus: NomusOrderSellerResolutionStatus | null;
+  nomusSellerHistoricalRule: boolean;
+  externalSellerId: number | null;
+  /** Legado CRM — somente auditoria na UI detalhada. */
+  legacyResponsibleAudit: string | null;
+  nomusSellerStatus: "OK" | "NOT_INFORMED" | "RESOLVED" | "HISTORICAL" | "UNRESOLVED";
   nomusSellerStatusLabel: string;
 
   executiveStatusLabel: string;

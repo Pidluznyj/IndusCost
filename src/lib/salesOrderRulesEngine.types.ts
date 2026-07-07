@@ -78,6 +78,10 @@ export type SalesOrderRulesOrderInput = {
   totalGrossValue?: unknown;
   totalItems: number;
   responsible?: string | null;
+  nomusSellerName?: string | null;
+  externalSellerId?: number | null;
+  /** Legado CRM — auditoria apenas. */
+  legacyResponsible?: string | null;
   nomusRawResponse?: unknown;
   companyIssuer?: string | null;
   externalSalesOrderId?: number | null;
@@ -240,4 +244,5 @@ export type SalesOrderRulesBuildInput = {
   month?: number;
   scope?: SalesOrderRulesScope;
   linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>;
+  sellerIdentityCtx?: import("./commissions/commissionSellerIdentity.js").CommissionSellerIdentityContext | null;
 };

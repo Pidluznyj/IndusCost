@@ -318,6 +318,7 @@ export function buildManagementRowsFromOrders(
     responsible: string | null;
     nomusSellerName?: string | null;
     externalSellerId?: number | null;
+    legacyResponsible?: string | null;
     nomusRawResponse: unknown;
     companyIssuer?: string | null;
     Customer?: {
@@ -334,7 +335,8 @@ export function buildManagementRowsFromOrders(
   }>,
   filters: SalesOrderManagementFilters,
   referenceDate = new Date(),
-  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>,
+  sellerIdentityCtx?: import("./commissions/commissionSellerIdentity.js").CommissionSellerIdentityContext | null
 ): {
   rows: SalesOrderManagementRow[];
   cards: SalesOrderManagementCards;
@@ -374,7 +376,7 @@ export function buildManagementRowsFromOrders(
         Customer: order.Customer,
       },
       lifecycle,
-      { items, referenceDate, linkedNfeContext }
+      { items, referenceDate, linkedNfeContext, sellerIdentityCtx, legacyResponsible: order.legacyResponsible ?? null }
     );
     return { row, lifecycle };
   });

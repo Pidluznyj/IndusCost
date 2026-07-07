@@ -12,6 +12,15 @@ import type {
   SalesOrderLifecycleSummary,
 } from "./salesOrderLifecycleTypes.js";
 import type { SalesOrderTimelineEvent } from "./salesOrderLifecycleTypes.js";
+import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
+import {
+  formatNomusOrderSellerDisplayName,
+  formatNomusOrderSellerStatusLabel,
+  isNomusOrderSellerHistoricalRule,
+  resolveNomusOrderSeller,
+  type NomusOrderSellerResolutionStatus,
+} from "./commissions/commissionNomusOrderSellerResolver.js";
+import type { CommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.js";
 import {
   formatSalesOrderNomusSellerStatusLabel,
   resolveCrmCommercialResponsibleName,
@@ -793,6 +802,75 @@ function resolveProductionOrderRowFields(
   return { productionOrderStatus: status, productionOrderLabel: "Com OP" };
 }
 
+export function enrichManagementRowWithNomusSellerResolution(
+  row: {
+    id: string;
+    issueDate?: string | null;
+    nomusSellerName: string | null;
+    externalSellerId?: number | null;
+    responsible: string | null;
+    sellerName?: string | null;
+    canonicalSellerName?: string | null;
+    nomusSellerDisplayName?: string;
+    nomusSellerResolutionStatus?: NomusOrderSellerResolutionStatus | null;
+    nomusSellerHistoricalRule?: boolean;
+    legacyResponsibleAudit?: string | null;
+    nomusSellerStatus?: SalesOrderManagementRow["nomusSellerStatus"];
+    nomusSellerStatusLabel?: string;
+  },
+  input: {
+    externalSellerId?: number | null;
+    issueDate?: Date | string | null;
+    nomusSellerName?: string | null;
+    legacyResponsible?: string | null;
+  },
+  identityCtx?: CommissionSellerIdentityContext | null
+): void {
+  const externalSellerId = input.externalSellerId ?? null;
+  row.externalSellerId = externalSellerId;
+  row.legacyResponsibleAudit = input.legacyResponsible?.trim() || null;
+
+  if (!identityCtx) {
+    const legacyStatus = resolveSalesOrderNomusSellerStatus({
+      externalSellerId,
+      nomusSellerName: input.nomusSellerName ?? null,
+    });
+    row.nomusSellerDisplayName = row.nomusSellerName ?? "—";
+    row.canonicalSellerName = null;
+    row.nomusSellerResolutionStatus = null;
+    row.nomusSellerHistoricalRule = false;
+    row.nomusSellerStatus = legacyStatus;
+    row.nomusSellerStatusLabel = formatSalesOrderNomusSellerStatusLabel(legacyStatus);
+    return;
+  }
+
+  const resolution = resolveNomusOrderSeller(
+    {
+      externalSellerId,
+      issueDate: input.issueDate ?? row.issueDate,
+      nomusSellerName: input.nomusSellerName,
+      legacyResponsible: input.legacyResponsible,
+      aliasSource: "NOMUS_ORDER",
+    },
+    identityCtx
+  );
+
+  row.nomusSellerResolutionStatus = resolution.status;
+  row.canonicalSellerName = resolution.canonicalSellerName;
+  row.nomusSellerDisplayName = formatNomusOrderSellerDisplayName(resolution);
+  row.nomusSellerHistoricalRule = isNomusOrderSellerHistoricalRule(resolution);
+  row.sellerName = resolution.canonicalSellerName ?? row.nomusSellerDisplayName;
+  row.nomusSellerStatusLabel = formatNomusOrderSellerStatusLabel(resolution);
+  row.nomusSellerStatus =
+    resolution.status === "NO_SELLER"
+      ? "NOT_INFORMED"
+      : resolution.status === "SELLER_UNRESOLVED"
+        ? "UNRESOLVED"
+        : resolution.status === "RESOLVED_BY_HISTORICAL_RULE"
+          ? "HISTORICAL"
+          : "RESOLVED";
+}
+
 export function mapLifecycleToManagementRow(
   order: {
     id: string;
@@ -822,6 +900,8 @@ export function mapLifecycleToManagementRow(
     items?: EnrichedLifecycleItem[];
     referenceDate?: Date;
     linkedNfeContext?: SalesOrderLinkedNfeContext | null;
+    sellerIdentityCtx?: CommissionSellerIdentityContext | null;
+    legacyResponsible?: string | null;
   }
 ) {
   const referenceDate = context?.referenceDate ?? new Date();
@@ -842,12 +922,7 @@ export function mapLifecycleToManagementRow(
     totalNetValue: decimalToNumber(order.totalNetValue),
   });
 
-  const nomusSellerStatus = resolveSalesOrderNomusSellerStatus({
-    externalSellerId: order.externalSellerId ?? null,
-    nomusSellerName: order.nomusSellerName ?? null,
-  });
-
-  return {
+  const row: SalesOrderManagementRow = {
     id: order.id,
     number: order.orderCode,
     orderCode: order.orderCode,
@@ -861,8 +936,14 @@ export function mapLifecycleToManagementRow(
       order.Customer?.CrmCustomerCommercialOwner
     ),
     nomusSellerName: order.nomusSellerName?.trim() || null,
-    nomusSellerStatus,
-    nomusSellerStatusLabel: formatSalesOrderNomusSellerStatusLabel(nomusSellerStatus),
+    canonicalSellerName: null,
+    nomusSellerDisplayName: order.nomusSellerName?.trim() || "—",
+    nomusSellerResolutionStatus: null,
+    nomusSellerHistoricalRule: false,
+    externalSellerId: order.externalSellerId ?? null,
+    legacyResponsibleAudit: context?.legacyResponsible?.trim() || null,
+    nomusSellerStatus: "NOT_INFORMED",
+    nomusSellerStatusLabel: "Vendedor não informado no Nomus",
     sellerName: order.nomusSellerName?.trim() || null,
     companyName: order.companyIssuer ?? null,
     responsible: order.nomusSellerName?.trim() || null,
@@ -902,6 +983,19 @@ export function mapLifecycleToManagementRow(
     riskFlags: lifecycle.riskFlags,
     suggestedActionLabel: suggestedActions[0]?.label ?? risks[0]?.title ?? null,
   };
+
+  enrichManagementRowWithNomusSellerResolution(
+    row,
+    {
+      externalSellerId: order.externalSellerId ?? null,
+      issueDate: order.issueDate,
+      nomusSellerName: order.nomusSellerName ?? null,
+      legacyResponsible: context?.legacyResponsible ?? null,
+    },
+    context?.sellerIdentityCtx
+  );
+
+  return row;
 }
 
 export function isIntelligencePayloadFinite(payload: SalesOrderIntelligencePayload): boolean {

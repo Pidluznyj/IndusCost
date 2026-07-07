@@ -1032,13 +1032,24 @@ export function SalesOrderManagementPage() {
                     </td>
                     <td className="p-3">{row.customerName}</td>
                     <td className="p-3">{row.crmCommercialResponsible ?? "—"}</td>
-                    <td className="p-3">{row.nomusSellerName ?? "—"}</td>
+                    <td className="p-3">
+                      <div className="font-medium">{row.nomusSellerDisplayName}</div>
+                      {row.nomusSellerHistoricalRule ? (
+                        <span className="mt-1 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-900">
+                          Regra histórica anterior a 02/2026
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="p-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          row.nomusSellerStatus === "OK"
+                          row.nomusSellerStatus === "RESOLVED"
                             ? "bg-emerald-100 text-emerald-900"
-                            : "bg-amber-100 text-amber-900"
+                            : row.nomusSellerStatus === "HISTORICAL"
+                              ? "bg-violet-100 text-violet-900"
+                              : row.nomusSellerStatus === "UNRESOLVED"
+                                ? "bg-red-100 text-red-900"
+                                : "bg-amber-100 text-amber-900"
                         }`}
                         data-testid="sales-order-nomus-seller-status"
                       >

@@ -19,6 +19,7 @@ import {
   mapPrismaOrderToSalesOrderRulesInput,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./salesOrderRulesAdapter.js";
+import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
 import {
   attachMarginsToSalesOrders,
   calculateSalesOrderMarginsForOrders,
@@ -124,11 +125,13 @@ export async function loadSalesOrderManagementPage(
   );
 
   const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
+  const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
   const officialCore = buildOfficialSalesOrderManagementCore({
     orders: rulesOrders,
     managementFilters: filters,
     referenceDate: undefined,
     linkedNfeContextMap,
+    sellerIdentityCtx,
   });
 
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
