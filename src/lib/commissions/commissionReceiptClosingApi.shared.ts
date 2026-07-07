@@ -10,10 +10,32 @@ export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY = "—";
 
 export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL = "Sem vendedor / Excluído";
 
-const RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES = new Set([
-  "CUSTOMER_EXCLUDED",
-  "GROUP_COMPANY_EXCLUDED",
-]);
+const RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES = new Set(["CUSTOMER_EXCLUDED"]);
+
+export const RECEIPT_CLOSING_GROUP_COMPANY_STATUS = "GROUP_COMPANY_EXCLUDED" as const;
+
+export function isReceiptClosingGroupCompanyLine(line: { status: string }): boolean {
+  return line.status === RECEIPT_CLOSING_GROUP_COMPANY_STATUS;
+}
+
+export function isReceiptClosingManagerialLine(line: { status: string }): boolean {
+  return !isReceiptClosingGroupCompanyLine(line);
+}
+
+export function partitionReceiptClosingLinesByGroupCompany<T extends { status: string }>(
+  lines: T[]
+): { managerialLines: T[]; groupCompanyAuditLines: T[] } {
+  const managerialLines: T[] = [];
+  const groupCompanyAuditLines: T[] = [];
+  for (const line of lines) {
+    if (isReceiptClosingGroupCompanyLine(line)) {
+      groupCompanyAuditLines.push(line);
+    } else {
+      managerialLines.push(line);
+    }
+  }
+  return { managerialLines, groupCompanyAuditLines };
+}
 
 export function isReceiptClosingSellerExcludedFromCommission(status: string): boolean {
   return RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES.has(status);
@@ -185,7 +207,10 @@ export type ReceiptClosingPagePayload = {
     countByStatus: Record<string, number>;
   };
   bySeller: ReceiptClosingApiSellerRow[];
+  /** Linhas gerenciais (exclui empresas do grupo). */
   lines: ReceiptClosingApiLine[];
+  /** Empresas do grupo — somente para auditoria técnica opcional na UI. */
+  groupCompanyAuditLines: ReceiptClosingApiLine[];
 };
 
 /** Soma dos valores exibidos na coluna "Valor recebido" do detalhamento (âncoras por título). */

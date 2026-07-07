@@ -20,11 +20,13 @@ import type {
 } from "./commissionReceiptClosing.js";
 import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
+  isReceiptClosingGroupCompanyLine,
   isReceiptClosingSellerExcludedFromCommission,
+  partitionReceiptClosingLinesByGroupCompany,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
   resolveReceiptClosingSellerGroupKey,
+  sumUniqueReceivedFromLines,
   type ReceiptClosingApiLine,
-  type ReceiptClosingApiSellerRow,
   type ReceiptClosingMaterializationCards,
   type ReceiptClosingMaterializationSummary,
   type ReceiptClosingPageMode,
@@ -37,7 +39,10 @@ function clearCanonicalSellerForExcludedApiLine(line: {
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
 }): { canonicalSellerId: string | null; canonicalSellerName: string | null } {
-  if (isReceiptClosingSellerExcludedFromCommission(line.status)) {
+  if (
+    isReceiptClosingSellerExcludedFromCommission(line.status) ||
+    isReceiptClosingGroupCompanyLine(line)
+  ) {
     return { canonicalSellerId: null, canonicalSellerName: null };
   }
   return {
@@ -236,7 +241,8 @@ function countUniqueReceivablesWithStatus(
 }
 
 export function buildReceiptClosingMaterializationSummary(input: {
-  lines: ReceiptClosingApiLine[];
+  managerialLines: ReceiptClosingApiLine[];
+  groupCompanyAuditLines: ReceiptClosingApiLine[];
   reconciliation: ReceiptClosingReconciliationSummary;
   year: number;
   month: number;
@@ -245,22 +251,27 @@ export function buildReceiptClosingMaterializationSummary(input: {
   totalReleasedCommission: number;
 }): ReceiptClosingMaterializationSummary {
   const uniqueReceivableIds = new Set<number>();
-  for (const line of input.lines) {
+  for (const line of input.managerialLines) {
     if (line.nomusReceivableId != null) uniqueReceivableIds.add(line.nomusReceivableId);
   }
 
-  const receivablesWithScheduleCount = countReceivablesWithMaterializedSchedule(input.lines);
-  const receivablesWithoutScheduleCount = countUniqueReceivablesByBucket(input.lines, "NO_SCHEDULE");
+  const receivablesWithScheduleCount = countReceivablesWithMaterializedSchedule(
+    input.managerialLines
+  );
+  const receivablesWithoutScheduleCount = countUniqueReceivablesByBucket(
+    input.managerialLines,
+    "NO_SCHEDULE"
+  );
   const groupCompanyExcludedCount = countUniqueReceivablesByBucket(
-    input.lines,
+    input.groupCompanyAuditLines,
     "GROUP_COMPANY_EXCLUDED"
   );
   const groupCompanyExcludedReceivedAmount = sumUniqueReceivableReceived(
-    input.lines,
-    (line) => line.status === "GROUP_COMPANY_EXCLUDED"
+    input.groupCompanyAuditLines,
+    () => true
   );
   const sellerUnresolvedCount = countUniqueReceivablesWithStatus(
-    input.lines,
+    input.managerialLines,
     SELLER_UNRESOLVED_STATUSES
   );
 
@@ -292,7 +303,8 @@ export function buildReceiptClosingMaterializationSummary(input: {
 export function buildReceiptClosingMaterializationCards(
   lines: ReceiptClosingApiLine[],
   reportStatus: "PREVIEW" | "CLOSED",
-  reconciliation: ReceiptClosingReconciliationSummary
+  reconciliation: ReceiptClosingReconciliationSummary,
+  groupCompanyAuditReceivedAmount = 0
 ): ReceiptClosingMaterializationCards {
   const byReceivable = new Map<number, ReceiptClosingApiLine[]>();
   for (const line of lines) {
@@ -304,16 +316,13 @@ export function buildReceiptClosingMaterializationCards(
 
   let receivedWithScheduleAmount = 0;
   let receivedExcludedCustomerAmount = 0;
-  let receivedGroupCompanyExcludedAmount = 0;
   let receivedWithoutScheduleAmount = 0;
 
   for (const group of byReceivable.values()) {
     const amount = group[0]?.receivedAmount ?? 0;
     const bucket = receivableBucketForGroup(group);
     if (bucket === "WITH_SCHEDULE") receivedWithScheduleAmount = round2(receivedWithScheduleAmount + amount);
-    else if (bucket === "GROUP_COMPANY_EXCLUDED") {
-      receivedGroupCompanyExcludedAmount = round2(receivedGroupCompanyExcludedAmount + amount);
-    } else if (bucket === "CUSTOMER_EXCLUDED") {
+    else if (bucket === "CUSTOMER_EXCLUDED") {
       receivedExcludedCustomerAmount = round2(receivedExcludedCustomerAmount + amount);
     } else if (bucket === "NO_SCHEDULE") {
       receivedWithoutScheduleAmount = round2(receivedWithoutScheduleAmount + amount);
@@ -342,7 +351,7 @@ export function buildReceiptClosingMaterializationCards(
     totalReceivedAmount,
     receivedWithScheduleAmount,
     receivedExcludedCustomerAmount,
-    receivedGroupCompanyExcludedAmount,
+    receivedGroupCompanyExcludedAmount: round2(groupCompanyAuditReceivedAmount),
     receivedWithoutScheduleAmount,
     commissionableBaseAmount,
     grossCommissionAmount,
@@ -711,6 +720,7 @@ export function buildReceiptClosingBySeller(
     ReceiptClosingApiSellerRow & { seenReceivables: Set<number>; seenExceptions: Set<string> }
   >();
   for (const line of lines) {
+    if (line.status === "GROUP_COMPANY_EXCLUDED") continue;
     const key = resolveReceiptClosingSellerGroupKey(line);
     const isUnassignedBucket = key === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
     const row = map.get(key) ?? {
@@ -817,6 +827,49 @@ function emptyMaterializationSummary(): ReceiptClosingMaterializationSummary {
   };
 }
 
+function summarizeManagerialReceiptClosingSummary(lines: ReceiptClosingApiLine[]): {
+  totalReceivables: number;
+  totalReceivedAmount: number;
+  totalCommissionableBase: number;
+  totalExpectedCommission: number;
+  totalReleasedCommission: number;
+  totalExcludedAmount: number;
+} {
+  const uniqueReceivables = new Set<number>();
+  const seenReceived = new Set<number>();
+  let totalReceivedAmount = 0;
+  let totalCommissionableBase = 0;
+  let totalExpectedCommission = 0;
+  let totalReleasedCommission = 0;
+  let totalExcludedAmount = 0;
+
+  for (const line of lines) {
+    if (line.nomusReceivableId != null) {
+      uniqueReceivables.add(line.nomusReceivableId);
+      if (!seenReceived.has(line.nomusReceivableId)) {
+        seenReceived.add(line.nomusReceivableId);
+        totalReceivedAmount = round2(totalReceivedAmount + line.receivedAmount);
+      }
+    }
+    if (line.status === "COMMISSIONABLE") {
+      totalCommissionableBase = round2(totalCommissionableBase + line.commissionableBaseAmount);
+      totalExpectedCommission = round2(totalExpectedCommission + line.expectedCommissionAmount);
+      totalReleasedCommission = round2(totalReleasedCommission + line.releasedCommissionAmount);
+    } else if (line.status === "CUSTOMER_EXCLUDED") {
+      totalExcludedAmount = round2(totalExcludedAmount + lineGrossCommissionApi(line));
+    }
+  }
+
+  return {
+    totalReceivables: uniqueReceivables.size,
+    totalReceivedAmount,
+    totalCommissionableBase,
+    totalExpectedCommission,
+    totalReleasedCommission,
+    totalExcludedAmount,
+  };
+}
+
 export function enrichReceiptClosingPagePayload(
   base: Omit<
     ReceiptClosingPagePayload,
@@ -834,7 +887,11 @@ export function enrichReceiptClosingPagePayload(
   } = {}
 ): ReceiptClosingPagePayload {
   const reportStatus: "PREVIEW" | "CLOSED" = base.exportMode === "CLOSED" ? "CLOSED" : "PREVIEW";
-  const lines = markReceivableReceivedAnchors(base.lines);
+  const anchored = markReceivableReceivedAnchors(base.lines);
+  const { managerialLines, groupCompanyAuditLines } =
+    partitionReceiptClosingLinesByGroupCompany(anchored);
+  const managerialSummary = summarizeManagerialReceiptClosingSummary(managerialLines);
+  const groupAuditReceived = sumUniqueReceivableReceived(groupCompanyAuditLines, () => true);
   const reconciliation =
     options.previewLines != null
       ? summarizeNomusReceiptReconciliation(
@@ -845,25 +902,41 @@ export function enrichReceiptClosingPagePayload(
           })
         )
       : buildReceiptClosingReconciliationFromApiLines({
-          lines,
+          lines: anchored,
           nomusBase: options.nomusBase ?? null,
           nomusCommission: options.nomusCommission ?? null,
         });
-  const cards = buildReceiptClosingMaterializationCards(lines, reportStatus, reconciliation);
+  const cards = buildReceiptClosingMaterializationCards(
+    managerialLines,
+    reportStatus,
+    reconciliation,
+    groupAuditReceived
+  );
   const materializationSummary = buildReceiptClosingMaterializationSummary({
-    lines,
+    managerialLines,
+    groupCompanyAuditLines,
     reconciliation,
     year: base.year,
     month: base.month,
-    totalReceivedAmount: base.summary.totalReceivedAmount,
-    totalExpectedCommission: base.summary.totalExpectedCommission,
-    totalReleasedCommission: base.summary.totalReleasedCommission,
+    totalReceivedAmount: cards.totalReceivedAmount,
+    totalExpectedCommission: managerialSummary.totalExpectedCommission,
+    totalReleasedCommission: managerialSummary.totalReleasedCommission,
   });
   const critical = assessReceiptClosingCriticalDivergence({ reconciliation });
   return {
     ...base,
-    lines,
-    bySeller: buildReceiptClosingBySeller(lines),
+    lines: managerialLines,
+    groupCompanyAuditLines,
+    bySeller: buildReceiptClosingBySeller(managerialLines),
+    summary: {
+      ...base.summary,
+      totalReceivables: managerialSummary.totalReceivables,
+      totalReceivedAmount: managerialSummary.totalReceivedAmount,
+      totalCommissionableBase: managerialSummary.totalCommissionableBase,
+      totalExpectedCommission: managerialSummary.totalExpectedCommission,
+      totalReleasedCommission: managerialSummary.totalReleasedCommission,
+      totalExcludedAmount: managerialSummary.totalExcludedAmount,
+    },
     cards,
     materializationSummary,
     reconciliation,
@@ -902,6 +975,7 @@ export function buildReceiptClosingPageFromPreview(input: {
     },
     bySeller: buildReceiptClosingBySeller(lines),
     lines,
+    groupCompanyAuditLines: [],
   };
   return enrichReceiptClosingPagePayload(base, {
     previewLines: input.preview.lines,
@@ -937,6 +1011,7 @@ export function buildReceiptClosingPageFromLedger(input: {
     },
     bySeller: buildReceiptClosingBySeller(lines),
     lines,
+    groupCompanyAuditLines: [],
   };
   return enrichReceiptClosingPagePayload(base, {
     nomusBase: input.nomusBase,
@@ -971,6 +1046,7 @@ export function buildReceiptClosingPageEmpty(year: number, month: number): Recei
     },
     bySeller: [],
     lines: [],
+    groupCompanyAuditLines: [],
   };
 }
 

@@ -475,6 +475,50 @@ describe("commissionReceiptClosingApi", () => {
     assert.match(csv, /# receivablesWithoutScheduleCount,1/);
   });
 
+  it("empresas do grupo ficam fora da prévia gerencial", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "ok",
+        nomusReceivableId: 1,
+        receivedAmount: 5000,
+        commissionableBaseAmount: 5000,
+        releasedCommissionAmount: 100,
+        grossCommissionAmount: 100,
+      }),
+      previewLine({
+        ledgerLineKey: "grp",
+        nomusReceivableId: 2,
+        customerName: "Koppetel Comercio de Plasticos LTDA",
+        receivedAmount: 700_000,
+        status: "GROUP_COMPANY_EXCLUDED",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 0,
+        commissionableBaseAmount: 0,
+        exclusionReason: "EMPRESA_GRUPO_EXCLUIDA",
+        rawSellerName: "GISLENE",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "GISLENE LIMA",
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    assert.equal(payload.lines.length, 1);
+    assert.equal(payload.groupCompanyAuditLines.length, 1);
+    assert.equal(payload.groupCompanyAuditLines[0]?.customerName, "Koppetel Comercio de Plasticos LTDA");
+    assert.equal(payload.cards.totalReceivedAmount, 5000);
+    assert.equal(payload.materializationSummary.groupCompanyExcludedReceivedAmount, 700_000);
+    assert.equal(payload.materializationSummary.totalReceivablesCount, 1);
+    const gislene = payload.bySeller.find((row) => row.sellerId === "seller-1");
+    assert.ok(gislene);
+    assert.equal(gislene?.receivedAmount, 5000);
+    const unassigned = payload.bySeller.find((row) => row.sellerId == null && row.sellerName == null);
+    assert.equal(unassigned, undefined);
+  });
+
   it("buildReceiptClosingMaterializationSummary separa pendência de dados de totais", () => {
     const previewLines = [
       previewLine({ ledgerLineKey: "k1", nomusReceivableId: 1 }),
@@ -493,7 +537,8 @@ describe("commissionReceiptClosingApi", () => {
       nomusCommission: null,
     });
     const summary = buildReceiptClosingMaterializationSummary({
-      lines,
+      managerialLines: lines,
+      groupCompanyAuditLines: [],
       reconciliation,
       year: 2026,
       month: 6,

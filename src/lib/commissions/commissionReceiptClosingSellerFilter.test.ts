@@ -100,6 +100,18 @@ describe("commissionReceiptClosingSellerFilter", () => {
     );
   });
 
+  it("GROUP_COMPANY_EXCLUDED não entra no bucket Sem vendedor / Excluído", () => {
+    assert.equal(
+      receiptClosingLineSellerKey({
+        status: "GROUP_COMPANY_EXCLUDED",
+        canonicalSellerId: null,
+        canonicalSellerName: null,
+        rawSellerName: "GISLENE",
+      }),
+      "GISLENE"
+    );
+  });
+
   it("filtra linhas por vendedor e limpa com null", () => {
     const lines = [
       line({

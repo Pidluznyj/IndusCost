@@ -236,23 +236,31 @@ export function CommissionsReceiptClosingPage() {
   const [reprocessReason, setReprocessReason] = useState("");
   const [reprocessing, setReprocessing] = useState(false);
   const [sellerFilterKey, setSellerFilterKey] = useState<string | null>(null);
+  const [showGroupCompanyAudit, setShowGroupCompanyAudit] = useState(false);
 
   function clearSellerFilter() {
     setSellerFilterKey(null);
   }
 
+  const detailSourceLines = useMemo(() => {
+    if (!data) return [];
+    if (!showGroupCompanyAudit || data.groupCompanyAuditLines.length === 0) {
+      return data.lines;
+    }
+    return [...data.lines, ...data.groupCompanyAuditLines];
+  }, [data, showGroupCompanyAudit]);
+
+  const filteredDetailLines = useMemo(() => {
+    return filterReceiptClosingLinesBySellerKey(
+      detailSourceLines as ReceiptClosingPagePayload["lines"],
+      sellerFilterKey
+    ) as CommissionsReceiptClosingLine[];
+  }, [detailSourceLines, sellerFilterKey]);
+
   function handleSellerRowClick(row: CommissionsReceiptClosingSellerRow) {
     const key = receiptClosingSellerRowKey(row);
     setSellerFilterKey((current) => (current === key ? null : key));
   }
-
-  const filteredDetailLines = useMemo(() => {
-    if (!data) return [];
-    return filterReceiptClosingLinesBySellerKey(
-      data.lines as ReceiptClosingPagePayload["lines"],
-      sellerFilterKey
-    ) as CommissionsReceiptClosingLine[];
-  }, [data, sellerFilterKey]);
 
   const detailTotals = useMemo(
     () => computeReceiptClosingDetailTotals(filteredDetailLines as ReceiptClosingPagePayload["lines"]),
@@ -300,6 +308,7 @@ export function CommissionsReceiptClosingPage() {
         `/api/commissions/receipt-closing/${encodeURIComponent(y)}/${encodeURIComponent(m)}?${qs}`
       );
       setSellerFilterKey(null);
+      setShowGroupCompanyAudit(false);
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível carregar o fechamento."));
@@ -317,6 +326,7 @@ export function CommissionsReceiptClosingPage() {
         `/api/commissions/receipt-closing/preview?${nomusQueryParams()}`
       );
       setSellerFilterKey(null);
+      setShowGroupCompanyAudit(false);
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível gerar a prévia."));
@@ -378,7 +388,7 @@ export function CommissionsReceiptClosingPage() {
   }
 
   async function exportDetailXlsx() {
-    if (sellerFilterKey) {
+    if (sellerFilterKey || showGroupCompanyAudit) {
       exportDetailXlsxFiltered();
       return;
     }
@@ -719,7 +729,7 @@ export function CommissionsReceiptClosingPage() {
               value={String(data.materializationSummary.sellerUnresolvedCount)}
             />
             <FinanceKpiCard
-              label="Total recebido no mês"
+              label="Total recebido gerencial"
               value={formatFinanceCurrency(cards.totalReceivedAmount)}
             />
             <FinanceKpiCard
@@ -803,6 +813,20 @@ export function CommissionsReceiptClosingPage() {
                     Limpar
                   </button>
                 </div>
+              ) : null}
+              {data.groupCompanyAuditLines.length > 0 ? (
+                <label
+                  className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+                  data-testid="commissions-receipt-closing-show-group-audit"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-[#E5E7EB]"
+                    checked={showGroupCompanyAudit}
+                    onChange={(e) => setShowGroupCompanyAudit(e.target.checked)}
+                  />
+                  Mostrar empresas do grupo na auditoria
+                </label>
               ) : null}
             </div>
             <DetailTable rows={filteredDetailLines} totals={detailTotals} />

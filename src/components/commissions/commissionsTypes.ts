@@ -1097,4 +1097,5 @@ export type CommissionsReceiptClosingPayload = {
   };
   bySeller: CommissionsReceiptClosingSellerRow[];
   lines: CommissionsReceiptClosingLine[];
+  groupCompanyAuditLines: CommissionsReceiptClosingLine[];
 };

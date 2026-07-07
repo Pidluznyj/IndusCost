@@ -33,4 +33,13 @@ describe("commissionReceiptClosingUi", () => {
     assert.match(page, /commissions-receipt-closing-detail-totals/);
     assert.match(page, /RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL/);
   });
+
+  it("empresas do grupo ficam fora do detalhamento padrão com toggle de auditoria", () => {
+    const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
+    assert.match(page, /showGroupCompanyAudit/);
+    assert.match(page, /groupCompanyAuditLines/);
+    assert.match(page, /detailSourceLines/);
+    assert.match(page, /commissions-receipt-closing-show-group-audit/);
+    assert.match(page, /Mostrar empresas do grupo na auditoria/);
+  });
 });
