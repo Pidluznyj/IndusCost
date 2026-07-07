@@ -38,7 +38,7 @@ import { ExecutiveCashFlowChart } from "@/src/components/finance/executive-repor
 import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-report/charts/ExecutiveSalesOrdersChart";
 import { ExecutiveReportReceivablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportReceivablesChart";
 import { ExecutiveReportPayablesChart } from "@/src/components/finance/executive-report/charts/ExecutiveReportPayablesChart";
-import { ExecutiveCostCenterAnnualSpendingChart } from "@/src/components/finance/executive-report/charts/ExecutiveCostCenterAnnualSpendingChart";
+import { ExecutiveCostCenterTopCardsGrid } from "@/src/components/finance/executive-report/ExecutiveCostCenterTopCardsGrid";
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { ExecutiveReportCashRadarSection } from "@/src/components/finance/executive-report/ExecutiveReportCashRadarSection";
@@ -760,13 +760,15 @@ export function ExecutiveReportDocument({
         <ExecutiveReportSection
           id="cost-center-spending"
           eyebrow="Centro de Custo"
-          title="Gastos por Centro de Custo"
-          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cost-center-spending"]}
+          title="Principais Centros de Custo"
+          subtitle="Top 12 centros por valor no período filtrado"
           intro={EXECUTIVE_REPORT_SECTION_INTROS["cost-center-spending"]}
-          withChart
         >
-          <div className="mt-3 executive-chart-region">
-            <ExecutiveCostCenterAnnualSpendingChart chart={report.costCenterSpending.chart} />
+          <div className="mt-3">
+            <ExecutiveCostCenterTopCardsGrid
+              topCards={report.costCenterSpending.topCards}
+              summary={report.costCenterSpending.summary}
+            />
           </div>
         </ExecutiveReportSection>
       </ExecutivePrintPageShell>

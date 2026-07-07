@@ -151,10 +151,10 @@ export const PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX: PresidentialAuditRow[] 
   },
   {
     section: "Centros de Custo",
-    indicator: "Gastos por centro (gráfico)",
-    componentOrBuilder: "buildFinanceCostCenterDashboardDefault",
-    currentSource: "AP alocado por centro",
-    officialMotor: "financeCostCenterAnnualSpendingChart.ts",
+    indicator: "Top 12 cards por valor",
+    componentOrBuilder: "buildFinanceCostCenterDashboardDefault → buildExecutiveReportCostCenterTopCards",
+    currentSource: "AP alocado por centro (byCostCenter.amount)",
+    officialMotor: "financeCostCenterDashboard.ts",
     status: "OK_USA_MOTOR_OFICIAL",
   },
   {

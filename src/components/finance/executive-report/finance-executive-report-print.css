@@ -797,6 +797,37 @@
     display: none !important;
   }
 
+  .executive-cc-top-cards-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executive-cc-top-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    border-color: #d1d5db !important;
+  }
+
+  .executive-cc-top-cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .executive-cc-top-card h4 {
+    font-size: 0.72rem;
+    line-height: 1.2;
+  }
+
+  .executive-cc-top-card .text-lg {
+    font-size: 0.85rem;
+  }
+
+  .executive-cc-chip {
+    font-size: 8px !important;
+    padding: 1px 6px !important;
+  }
+
   .recharts-tooltip-wrapper,
   .executive-chart-tooltip,
   .executive-report-pdf-mode .recharts-tooltip-wrapper {

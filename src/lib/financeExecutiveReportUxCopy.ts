@@ -32,7 +32,7 @@ export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
   "accounts-payable": "Mostra as obrigações da empresa com fornecedores.",
   "cash-flow": "Mostra se o caixa tende a ficar positivo ou negativo no ano selecionado.",
   "cost-center-spending":
-    "Mostra quanto foi gasto por centro de custo com base nas contas a pagar classificadas.",
+    "Principais centros de custo por valor, com base nas contas a pagar classificadas no período.",
   "sales-orders": "Mostra o volume de pedidos registrados.",
   conclusion: "Principais pontos de atenção para decisão.",
   "cash-radar":
@@ -47,7 +47,7 @@ export const EXECUTIVE_REPORT_SECTION_SUBTITLES: Record<string, string> = {
   "accounts-payable": "Valores a pagar a fornecedores. · Fonte: Contas a Pagar (vencimento)",
   "cash-flow": "Entradas, saídas e saldo previsto no ano (jan–dez). · Fonte: Fluxo de Caixa",
   "cost-center-spending":
-    "Distribuição do AP gerencial por centro de custo no ano/filtro selecionado. · Fonte: Centros de Custo",
+    "Top 12 centros por valor no período filtrado. · Fonte: Centros de Custo",
   "sales-orders": "Pedidos registrados no período. · Fonte: Pedidos de Venda Nomus",
   conclusion: "Leitura rápida para apoiar a decisão.",
   "cash-radar": "Vencidos e próximos 90 dias — faixa 0 a 7 dias aberta por padrão. · Fonte: Fluxo de Caixa",

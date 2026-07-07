@@ -115,7 +115,7 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
   },
   costCenterDashboard: {
     module: "financeCostCenterDashboard.ts",
-    builder: "buildFinanceCostCenterDashboardDefault → buildCostCenterAnnualSpendingChart",
+    builder: "buildFinanceCostCenterDashboardDefault → buildExecutiveReportCostCenterTopCards",
     description:
       "AP gerencial alocado por centro de custo — mesma base da Visão Gerencial de Centro de Custo.",
   },
@@ -374,7 +374,8 @@ export type FinanceExecutiveReportSalesOrders = {
 /** Gastos por centro de custo — Visão Gerencial CC / alocação AP oficial. */
 export type FinanceExecutiveReportCostCenterSpending = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard;
-  chart: import("./financeCostCenterAnnualSpendingChart.js").CostCenterAnnualSpendingChartPayload;
+  topCards: import("./financeExecutiveReportCostCenterTopCards.js").FinanceExecutiveReportCostCenterTopCard[];
+  summary: import("./financeExecutiveReportCostCenterTopCards.js").FinanceExecutiveReportCostCenterTopCardsSummary;
 };
 
 /** Narrativa executiva — reservada; preenchimento futuro (manual ou assistida). */

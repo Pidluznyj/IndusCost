@@ -73,12 +73,18 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
 import { buildFinanceCostCenterDashboardDefault } from "./financeCostCenterDashboard.js";
 import {
-  buildCostCenterAnnualSpendingChart,
   buildExecutiveReportCostCenterDashboardFilters,
-  type CostCenterAnnualSpendingChartPayload,
 } from "./financeCostCenterAnnualSpendingChart.js";
+import {
+  buildEmptyExecutiveReportCostCenterTopCards,
+  buildExecutiveReportCostCenterTopCards,
+  EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_LIMIT,
+  type FinanceExecutiveReportCostCenterTopCardsSummary,
+  type FinanceExecutiveReportCostCenterTopCard,
+} from "./financeExecutiveReportCostCenterTopCards.js";
+import { listFinancialCostCentersDefault } from "./financeCostCenters.js";
 
-export const EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N = 10;
+export { EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_LIMIT } from "./financeExecutiveReportCostCenterTopCards.js";
 
 export class FinanceExecutiveReportParseError extends Error {
   constructor(message: string) {
@@ -543,14 +549,19 @@ export function buildExecutiveReportCostCenterSpendingFilters(
   });
 }
 
-export async function loadExecutiveReportCostCenterSpendingChart(
+export async function loadExecutiveReportCostCenterSpending(
   filters: FinanceExecutiveReportFilters,
   referenceDate: Date
-): Promise<CostCenterAnnualSpendingChartPayload> {
+): Promise<{
+  topCards: FinanceExecutiveReportCostCenterTopCard[];
+  summary: FinanceExecutiveReportCostCenterTopCardsSummary;
+}> {
   const ccFilters = buildExecutiveReportCostCenterSpendingFilters(filters);
   const dashboard = await buildFinanceCostCenterDashboardDefault(ccFilters, referenceDate);
-  return buildCostCenterAnnualSpendingChart(dashboard.byCostCenter, ccFilters, {
-    topN: EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N,
+  const { items: centers } = await listFinancialCostCentersDefault();
+  return buildExecutiveReportCostCenterTopCards(dashboard.byCostCenter, centers, {
+    limit: EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_LIMIT,
+    classifiedTotal: dashboard.summary.totalAmount,
   });
 }
 
@@ -690,20 +701,24 @@ export async function buildFinanceExecutiveReport(
     annualPortfolioLoad.apSyncCutoff
   );
 
-  let costCenterSpendingChart: CostCenterAnnualSpendingChartPayload;
+  let costCenterSpending: FinanceExecutiveReport["costCenterSpending"];
   try {
-    costCenterSpendingChart = await loadExecutiveReportCostCenterSpendingChart(
-      filters,
-      referenceDate
-    );
+    const loaded = await loadExecutiveReportCostCenterSpending(filters, referenceDate);
+    costCenterSpending = {
+      source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
+      topCards: loaded.topCards,
+      summary: loaded.summary,
+    };
   } catch (error) {
     console.error("executive-report costCenterSpending", error);
     unavailableSections.push("costCenterSpending");
-    const ccFilters = buildExecutiveReportCostCenterSpendingFilters(filters);
-    costCenterSpendingChart = buildCostCenterAnnualSpendingChart([], ccFilters, {
-      topN: EXECUTIVE_REPORT_COST_CENTER_SPENDING_TOP_N,
-    });
-    warnings.push("Gastos por centro de custo indisponíveis nesta geração.");
+    const empty = buildEmptyExecutiveReportCostCenterTopCards();
+    costCenterSpending = {
+      source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
+      topCards: empty.topCards,
+      summary: empty.summary,
+    };
+    warnings.push("Centros de custo indisponíveis nesta geração.");
   }
 
   const billingTab = billingPayload?.tab ?? null;
@@ -1028,10 +1043,7 @@ export async function buildFinanceExecutiveReport(
             periodLabel: periodLabel,
           },
     },
-    costCenterSpending: {
-      source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
-      chart: costCenterSpendingChart,
-    },
+    costCenterSpending,
     cashRadar,
     executiveNarrative: narrative,
   };

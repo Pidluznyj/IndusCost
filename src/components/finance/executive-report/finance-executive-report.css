@@ -126,3 +126,40 @@
 .finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-label {
   line-height: 1.25;
 }
+
+.executive-cc-top-cards-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .executive-cc-top-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .executive-cc-top-cards-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.executive-cc-top-card {
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.executive-cc-chip--overdue {
+  background: rgb(255 241 242);
+  color: rgb(190 18 60);
+}
+
+.executive-cc-chip--upcoming {
+  background: rgb(240 249 255);
+  color: rgb(7 89 133);
+}
+
+.executive-cc-chip--paid {
+  background: rgb(236 253 245);
+  color: rgb(6 95 70);
+}
