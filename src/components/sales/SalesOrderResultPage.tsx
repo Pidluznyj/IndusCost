@@ -19,7 +19,8 @@ import {
   formatSalesOrderMarginPercent,
 } from "@/src/lib/salesOrderMarginDisplay";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderResultMonthlyMarginChart } from "@/src/components/sales/SalesOrderResultMonthlyMarginChart";
 import { SalesOrderResultProjectionChart } from "@/src/components/sales/SalesOrderResultProjectionChart";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
@@ -175,8 +176,22 @@ export function SalesOrderResultPage() {
 
       {totals ? (
         <>
-          <div className="flex items-start justify-between gap-3">
-            <MetricCardGrid columns={6} data-testid="sales-order-result-kpis">
+          <ExecutiveSummarySection
+            title="Resumo do resultado"
+            eyebrow="Totais consolidados do filtro aplicado"
+            testId="sales-order-result-kpi-summary"
+            actions={
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-[#E5E7EB] p-2 text-[#6B7280] hover:bg-[#F9FAFB]"
+                aria-label="Explicação da margem"
+                onClick={() => setShowTooltip((v) => !v)}
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            }
+          >
+            <SummaryKpiGrid minColumnWidth={168} testId="sales-order-result-kpis">
               <MetricCard
                 label="R$ Pedidos"
                 formattedValue={formatSalesOrderMarginMoney(totals.salesAmount)}
@@ -212,16 +227,8 @@ export function SalesOrderResultPage() {
                 formattedValue={String(totals.ordersCount)}
                 icon={<ShoppingBag className="h-4 w-4" />}
               />
-            </MetricCardGrid>
-            <button
-              type="button"
-              className="shrink-0 rounded-lg border border-[#E5E7EB] p-2 text-[#6B7280] hover:bg-[#F9FAFB]"
-              aria-label="Explicação da margem"
-              onClick={() => setShowTooltip((v) => !v)}
-            >
-              <Info className="h-4 w-4" />
-            </button>
-          </div>
+            </SummaryKpiGrid>
+          </ExecutiveSummarySection>
 
           {showTooltip && marginTooltipText ? (
             <div className={`${financeBiCardClass} p-4 text-sm text-[#374151]`} data-testid="sales-order-result-margin-tooltip">

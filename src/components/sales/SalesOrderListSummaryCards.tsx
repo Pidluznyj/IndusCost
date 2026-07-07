@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { Package, Percent, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import { SALES_ORDER_LIST_KPI_SECTION } from "@/src/lib/salesOrderManagementKpiLabels";
@@ -39,7 +39,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
       title={SALES_ORDER_LIST_KPI_SECTION.title}
       subtitle={SALES_ORDER_LIST_KPI_SECTION.subtitle}
     >
-      <MetricCardGrid minColumnWidth={180}>
+      <SummaryKpiGrid minColumnWidth={180}>
         <MetricCard
           label="Pedidos filtrados"
           amount={loading ? null : summary.totalOrders}
@@ -119,7 +119,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
             ) : null}
           </div>
         ) : null}
-      </MetricCardGrid>
+      </SummaryKpiGrid>
     </SalesOrderKpiSection>
   );
 });

@@ -6,7 +6,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CustomerIntelligenceReport } from "./customerIntelligenceTypes.js";
 import { CustomerIntelligenceDataQuality } from "../components/crm/customer-intelligence/CustomerIntelligenceDataQuality.js";
-import { CustomerIntelligenceKpiGrid } from "../components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.js";
+import { buildCustomerIntelligenceKpiItems } from "./customerIntelligenceKpiItems.js";
 import { CustomerIntelligenceTabs } from "../components/crm/customer-intelligence/CustomerIntelligenceTabs.js";
 import { CustomerIntelligenceHeader } from "../components/crm/customer-intelligence/CustomerIntelligenceHeader.js";
 import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
@@ -396,12 +396,13 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
   });
 
   it("mostra cards principais a partir do payload", () => {
-    const html = renderToStaticMarkup(<CustomerIntelligenceKpiGrid report={mockReport()} />);
-    assert.ok(html.includes("Receita (filtro)"));
-    assert.ok(html.includes("Pedidos válidos"));
-    assert.ok(html.includes("Ticket médio"));
-    assert.ok(html.includes("Carteira em aberto (AR)"));
-    assert.ok(html.includes("Status financeiro"));
+    const items = buildCustomerIntelligenceKpiItems(mockReport());
+    const labels = items.map((item) => item.label);
+    assert.ok(labels.includes("Receita (filtro)"));
+    assert.ok(labels.includes("Pedidos válidos"));
+    assert.ok(labels.includes("Ticket médio"));
+    assert.ok(labels.includes("Carteira em aberto (AR)"));
+    assert.ok(labels.includes("Status financeiro"));
   });
 
   it("mostra abas", () => {
@@ -429,6 +430,9 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     );
     assert.ok(!kpiSrc.includes("customerIntelligence.ts"));
     assert.ok(!kpiSrc.includes("prisma"));
+    assert.match(kpiSrc, /ExecutiveSummarySection/);
+    assert.match(kpiSrc, /SummaryKpiGrid/);
+    assert.match(kpiSrc, /MetricCard/);
   });
 
   it("aba Compras exibe tabela anual e leitura gerencial", () => {

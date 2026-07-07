@@ -20,7 +20,7 @@ import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 
 export function SalesOrderResultProjectionChart({
   rows,
@@ -38,7 +38,7 @@ export function SalesOrderResultProjectionChart({
 
   return (
     <div className="space-y-4" data-testid="sales-order-result-projection-chart">
-      <MetricCardGrid columns={5}>
+      <SummaryKpiGrid minColumnWidth={180}>
         <MetricCard
           label="Média diária (mês)"
           formattedValue={
@@ -71,7 +71,7 @@ export function SalesOrderResultProjectionChart({
               : "—"
           }
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
       <div className={`${financeBiCardClass} p-5`}>
         <h3 className="text-sm font-bold text-[#111827]">Realizado vs Projetado</h3>

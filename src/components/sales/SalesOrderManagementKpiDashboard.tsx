@@ -8,7 +8,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { SalesOrderManagementKpiSecondaryPanel } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
 import type { SalesOrderManagementSecondaryTab } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
@@ -287,7 +287,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         title={SALES_ORDER_MGMT_KPI_SECTIONS.overview.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.overview.subtitle}
       >
-        <MetricCardGrid minColumnWidth={200}>
+        <SummaryKpiGrid minColumnWidth={200}>
           <MetricCard
             label="Total de pedidos"
             amount={totalOrders}
@@ -336,7 +336,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
             icon={<Percent className="h-4 w-4" />}
             loading={loading}
           />
-        </MetricCardGrid>
+        </SummaryKpiGrid>
       </SalesOrderKpiSection>
 
       {showMarginOverview ? (
@@ -352,7 +352,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         title={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.subtitle}
       >
-        <MetricCardGrid minColumnWidth={160}>
+        <SummaryKpiGrid minColumnWidth={160}>
           {alertCards.map((alert) => (
             <AlertCardButton
               key={alert.key}
@@ -377,7 +377,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
               />
             </AlertCardButton>
           ))}
-        </MetricCardGrid>
+        </SummaryKpiGrid>
       </SalesOrderKpiSection>
 
       <SalesOrderManagementKpiSecondaryPanel

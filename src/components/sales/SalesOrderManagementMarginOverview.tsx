@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { ChevronRight, DollarSign, Percent, Scale, TrendingUp } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { SALES_ORDER_MGMT_KPI_SECTIONS } from "@/src/lib/salesOrderManagementKpiLabels";
 import {
@@ -82,7 +82,7 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
       }
       subtitle={marginEconomics?.scopeNote ?? SALES_ORDER_MGMT_KPI_SECTIONS.margin.subtitle}
     >
-      <MetricCardGrid minColumnWidth={200}>
+      <SummaryKpiGrid minColumnWidth={200}>
         <DrillCardButton
           testId="sales-order-management-margin-percent-card"
           onClick={onOpenEconomicsDetail}
@@ -139,7 +139,7 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
           compact
           loading={loading}
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
     </SalesOrderKpiSection>
   );
 });

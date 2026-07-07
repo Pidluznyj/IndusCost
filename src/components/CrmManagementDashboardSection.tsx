@@ -1,8 +1,13 @@
 import React from "react";
 import { LayoutDashboard, Loader2, RefreshCw } from "lucide-react";
-import { cn } from "@/src/lib/utils";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { ManagementDashboardResponse } from "@/src/components/crmManagementTypes";
-import type { ManagementKpiCard } from "@/src/components/crmManagementUi";
+import {
+  resolveManagementKpiMetricVariant,
+  type ManagementKpiCard,
+} from "@/src/components/crmManagementUi";
 
 type ManagementListPanelProps = {
   title: string;
@@ -105,29 +110,31 @@ export const CrmManagementDashboardSection: React.FC<CrmManagementDashboardSecti
       </div>
     ) : data ? (
       <div className="space-y-8">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {kpiCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <div
-                key={card.label}
-                className={cn(
-                  "rounded-2xl border p-4 shadow-sm flex flex-col gap-2.5 min-h-[118px]",
-                  card.cardClass
-                )}
-              >
-                <div className={cn("rounded-lg p-2 w-fit shrink-0", card.iconClass)}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold tabular-nums leading-none text-foreground">{card.value}</p>
-                  <p className="text-xs font-semibold text-foreground mt-2 leading-snug">{card.label}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{card.description}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <ExecutiveSummarySection
+          title="Resumo da gestão comercial"
+          eyebrow={
+            data.generatedAt
+              ? `Atualizado em ${formatDateTimePt(data.generatedAt)}`
+              : "Indicadores agregados da operação comercial"
+          }
+          testId="crm-management-kpi-summary"
+        >
+          <SummaryKpiGrid minColumnWidth={200}>
+            {kpiCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <MetricCard
+                  key={card.label}
+                  label={card.label}
+                  formattedValue={card.value}
+                  helperText={card.description}
+                  variant={resolveManagementKpiMetricVariant(card.cardClass)}
+                  icon={<Icon className="h-3.5 w-3.5" />}
+                />
+              );
+            })}
+          </SummaryKpiGrid>
+        </ExecutiveSummarySection>
         {children}
       </div>
     ) : null}

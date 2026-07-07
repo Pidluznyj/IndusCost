@@ -20,7 +20,9 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import "@/src/styles/indus-kpi-grid.css";
+import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
@@ -797,81 +799,126 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 </div>
               </div>
 
-              <div className="indus-kpi-grid indus-kpi-grid--wide">
-                <MiniCard label="Receita de pedidos (filtro)" value={formatCurrency(metrics.totalNet)} hint={metrics.usesOfficialOrderMetrics ? "Motor oficial de Pedidos de Venda" : "Escopo filtrado localmente"} />
-                <MiniCard label="Pedidos (filtro)" value={String(metrics.count)} />
-                <MiniCard label="Pedidos válidos (filtro)" value={String(metrics.validCount)} />
-                <MiniCard label="Faturados (filtro)" value={String(metrics.invoicedCount)} />
-                <MiniCard label="Ticket médio (filtro)" value={formatCurrency(metrics.ticket)} />
-                <MiniCard
-                  label={resolveSalesOrderMarginPercentLabel(metrics.marginCoverage)}
-                  value={
-                    metrics.usesOfficialMarginMetrics
-                      ? formatSalesOrderMarginPercent(metrics.marginAvg)
-                      : "—"
-                  }
-                  valueTitle={
-                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
-                      ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
-                      : undefined
-                  }
-                  hint={
-                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
-                      ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
-                      : "Margem indisponível para o filtro atual"
-                  }
-                />
-                <MiniCard
-                  label={resolveSalesOrderMarginMoneyLabel(metrics.marginCoverage)}
-                  value={
-                    metrics.usesOfficialMarginMetrics
-                      ? formatCurrency(metrics.totalMargin)
-                      : "—"
-                  }
-                  valueTitle={
-                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
-                      ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
-                      : undefined
-                  }
-                  hint={
-                    metrics.usesOfficialMarginMetrics && metrics.marginCoverage
-                      ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
-                      : "Margem indisponível para o filtro atual"
-                  }
-                />
-                <MiniCard
-                  label="Maior / menor pedido (líq.)"
-                  value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`}
-                />
-                <MiniCard label="Média itens / pedido" value={formatNumber(metrics.avgItems, 2)} />
-                <MiniCard
-                  label="Carteira em aberto (filtro)"
-                  value={formatCurrency(metrics.openNet)}
-                  hint={`${metrics.openCount} pedido(s)`}
-                />
-                <MiniCard
-                  label="Último pedido"
-                  value={
-                    metrics.lastOrderDate
-                      ? new Date(metrics.lastOrderDate).toLocaleDateString("pt-BR")
-                      : "—"
-                  }
-                />
-                <MiniCard
-                  label="Dias desde último pedido"
-                  value={metrics.daysSinceLastOrder != null ? `${Math.round(metrics.daysSinceLastOrder)}` : "—"}
-                />
-                <MiniCard
-                  label="Média dias entre pedidos"
-                  value={metrics.avgRepurchase != null ? `${Math.round(metrics.avgRepurchase)}` : "—"}
-                  hint="≥2 pedidos válidos"
-                />
-                <MiniCard
-                  label="Produto líder (receita filtro)"
-                  value={mixRows[0] ? `${mixRows[0].sku}` : "—"}
-                  hint={mixRows[0]?.name}
-                />
-              </div>
+              <ExecutiveSummarySection
+                title="Resumo comercial do cliente"
+                eyebrow="Indicadores do escopo filtrado"
+                testId="customer-commercial-360-kpi-summary"
+              >
+                <SummaryKpiGrid minColumnWidth={200}>
+                  <FinanceBiKpiCard
+                    icon={TrendingUp}
+                    label="Receita de pedidos (filtro)"
+                    value={formatCurrency(metrics.totalNet)}
+                    hint={
+                      metrics.usesOfficialOrderMetrics
+                        ? "Motor oficial de Pedidos de Venda"
+                        : "Escopo filtrado localmente"
+                    }
+                  />
+                  <FinanceBiKpiCard icon={Package} label="Pedidos (filtro)" value={String(metrics.count)} />
+                  <FinanceBiKpiCard
+                    icon={CheckCircle2}
+                    label="Pedidos válidos (filtro)"
+                    value={String(metrics.validCount)}
+                  />
+                  <FinanceBiKpiCard
+                    icon={FileText}
+                    label="Faturados (filtro)"
+                    value={String(metrics.invoicedCount)}
+                  />
+                  <FinanceBiKpiCard
+                    icon={BarChart3}
+                    label="Ticket médio (filtro)"
+                    value={formatCurrency(metrics.ticket)}
+                  />
+                  <FinanceBiKpiCard
+                    icon={TrendingUp}
+                    label={resolveSalesOrderMarginPercentLabel(metrics.marginCoverage)}
+                    value={
+                      metrics.usesOfficialMarginMetrics
+                        ? formatSalesOrderMarginPercent(metrics.marginAvg)
+                        : "—"
+                    }
+                    valueTitle={
+                      metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                        ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
+                        : undefined
+                    }
+                    hint={
+                      metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                        ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
+                        : "Margem indisponível para o filtro atual"
+                    }
+                  />
+                  <FinanceBiKpiCard
+                    icon={TrendingUp}
+                    label={resolveSalesOrderMarginMoneyLabel(metrics.marginCoverage)}
+                    value={
+                      metrics.usesOfficialMarginMetrics
+                        ? formatCurrency(metrics.totalMargin)
+                        : "—"
+                    }
+                    valueTitle={
+                      metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                        ? buildOfficialSalesOrderMarginTooltipText({ summary: metrics.marginCoverage })
+                        : undefined
+                    }
+                    hint={
+                      metrics.usesOfficialMarginMetrics && metrics.marginCoverage
+                        ? buildSalesOrderMarginCoverageHint(metrics.marginCoverage, formatCurrency)
+                        : "Margem indisponível para o filtro atual"
+                    }
+                  />
+                  <FinanceBiKpiCard
+                    icon={BarChart3}
+                    label="Maior / menor pedido (líq.)"
+                    value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`}
+                  />
+                  <FinanceBiKpiCard
+                    icon={Package}
+                    label="Média itens / pedido"
+                    value={formatNumber(metrics.avgItems, 2)}
+                  />
+                  <FinanceBiKpiCard
+                    icon={Clock}
+                    label="Carteira em aberto (filtro)"
+                    value={formatCurrency(metrics.openNet)}
+                    hint={`${metrics.openCount} pedido(s)`}
+                  />
+                  <FinanceBiKpiCard
+                    icon={Calendar}
+                    label="Último pedido"
+                    value={
+                      metrics.lastOrderDate
+                        ? new Date(metrics.lastOrderDate).toLocaleDateString("pt-BR")
+                        : "—"
+                    }
+                  />
+                  <FinanceBiKpiCard
+                    icon={Clock}
+                    label="Dias desde último pedido"
+                    value={
+                      metrics.daysSinceLastOrder != null
+                        ? `${Math.round(metrics.daysSinceLastOrder)}`
+                        : "—"
+                    }
+                  />
+                  <FinanceBiKpiCard
+                    icon={Calendar}
+                    label="Média dias entre pedidos"
+                    value={
+                      metrics.avgRepurchase != null ? `${Math.round(metrics.avgRepurchase)}` : "—"
+                    }
+                    hint="≥2 pedidos válidos"
+                  />
+                  <FinanceBiKpiCard
+                    icon={Target}
+                    label="Produto líder (receita filtro)"
+                    value={mixRows[0] ? `${mixRows[0].sku}` : "—"}
+                    hint={mixRows[0]?.name}
+                  />
+                </SummaryKpiGrid>
+              </ExecutiveSummarySection>
 
               <div className="rounded-xl border border-border p-4 flex flex-wrap gap-6 items-center bg-primary/5">
                 <div className="flex items-center gap-2">
@@ -1031,28 +1078,6 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     </div>
   );
 };
-
-function MiniCard({
-  label,
-  value,
-  hint,
-  valueTitle,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  valueTitle?: string;
-}) {
-  return (
-    <div className="indus-kpi-card rounded-xl border border-border bg-card p-3 min-w-0">
-      <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight truncate">{label}</p>
-      <p className="indus-kpi-value text-sm font-black mt-1" title={valueTitle ?? value}>
-        {value}
-      </p>
-      {hint && <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{hint}</p>}
-    </div>
-  );
-}
 
 function IntelCard({
   title,

@@ -82,6 +82,6 @@ describe("kpiCardLayoutAudit", () => {
   it("getKpiLayoutAuditById retorna entrada conhecida", () => {
     const entry = getKpiLayoutAuditById("sold-product-customers");
     assert.equal(entry?.status, "fixed");
-    assert.match(entry?.fix ?? "", /indus-kpi-grid/);
+    assert.match(entry?.fix ?? "", /ExecutiveSummarySection|SummaryKpiGrid/);
   });
 });

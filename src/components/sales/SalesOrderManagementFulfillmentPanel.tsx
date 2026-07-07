@@ -22,7 +22,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
 import {
   resolveFulfillmentKpiVariant,
@@ -223,7 +223,7 @@ export function SalesOrderManagementFulfillmentKpis({
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Indicadores de fulfillment (NF-e)
       </p>
-      <MetricCardGrid className="mt-2">
+      <SummaryKpiGrid className="mt-2">
         {cards.map((card) => {
           const Icon = card.icon;
           const numericForVariant =
@@ -248,7 +248,7 @@ export function SalesOrderManagementFulfillmentKpis({
             />
           );
         })}
-      </MetricCardGrid>
+      </SummaryKpiGrid>
     </div>
   );
 }

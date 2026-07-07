@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
 import {
   AlertTriangle,
   CalendarDays,
@@ -29,6 +30,14 @@ export const MANAGEMENT_RISK_REASON_LABELS: Record<string, string> = {
   PROPOSAL_WITHOUT_FOLLOW_UP: "Proposta sem follow-up",
   OPEN_PROPOSALS: "Propostas abertas",
 };
+
+export function resolveManagementKpiMetricVariant(cardClass: string): MetricCardVariant {
+  if (cardClass.includes("red")) return "danger";
+  if (cardClass.includes("emerald")) return "money";
+  if (cardClass.includes("amber") || cardClass.includes("orange")) return "warning";
+  if (cardClass.includes("violet") || cardClass.includes("sky")) return "info";
+  return "neutral";
+}
 
 export function formatManagementRiskReason(code: string): string {
   return MANAGEMENT_RISK_REASON_LABELS[code] ?? code.replace(/_/g, " ").toLowerCase();

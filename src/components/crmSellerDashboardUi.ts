@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
 import {
   Ban,
   Link2,
@@ -122,6 +123,15 @@ export function formatSellerOptionDetail(option: SellerOption): string | null {
     return "Inclui pedidos com e sem ID Nomus";
   }
   return null;
+}
+
+export function resolveSellerKpiMetricVariant(cardClass: string): MetricCardVariant {
+  if (cardClass.includes("red")) return "danger";
+  if (cardClass.includes("green")) return "success";
+  if (cardClass.includes("emerald")) return "money";
+  if (cardClass.includes("amber") || cardClass.includes("orange")) return "warning";
+  if (cardClass.includes("violet") || cardClass.includes("sky")) return "info";
+  return "neutral";
 }
 
 export function buildSellerKpiCards(

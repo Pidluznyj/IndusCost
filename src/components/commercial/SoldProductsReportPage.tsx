@@ -50,6 +50,8 @@ import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDa
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
@@ -964,40 +966,46 @@ export function SoldProductsReportPage() {
               loading={loading}
             />
 
-            <div className="indus-kpi-grid indus-kpi-grid--wide">
-              <FinanceBiKpiCard
-                icon={Package}
-                label="Quantidade total vendida"
-                value="—"
-                amount={loading ? undefined : summary?.totalQuantity}
-                amountFormat="number"
-                loading={loading}
-              />
-              <FinanceBiKpiCard
-                icon={TrendingUp}
-                label="Valor total vendido"
-                value="—"
-                amount={loading ? undefined : summary?.totalAmount}
-                amountFormat="currency"
-                loading={loading}
-              />
-              <FinanceBiKpiCard
-                icon={BarChart3}
-                label="Produtos no ranking"
-                value="—"
-                amount={loading ? undefined : summary?.productsCount}
-                amountFormat="number"
-                loading={loading}
-              />
-              <FinanceBiKpiCard
-                icon={Users}
-                label="Clientes compradores"
-                value="—"
-                amount={loading ? undefined : summary?.customersCount}
-                amountFormat="number"
-                loading={loading}
-              />
-            </div>
+            <ExecutiveSummarySection
+              title="Resumo de produtos vendidos"
+              eyebrow="Indicadores consolidados do período filtrado"
+              testId="sold-products-kpi-summary"
+            >
+              <SummaryKpiGrid minColumnWidth={200}>
+                <FinanceBiKpiCard
+                  icon={Package}
+                  label="Quantidade total vendida"
+                  value="—"
+                  amount={loading ? undefined : summary?.totalQuantity}
+                  amountFormat="number"
+                  loading={loading}
+                />
+                <FinanceBiKpiCard
+                  icon={TrendingUp}
+                  label="Valor total vendido"
+                  value="—"
+                  amount={loading ? undefined : summary?.totalAmount}
+                  amountFormat="currency"
+                  loading={loading}
+                />
+                <FinanceBiKpiCard
+                  icon={BarChart3}
+                  label="Produtos no ranking"
+                  value="—"
+                  amount={loading ? undefined : summary?.productsCount}
+                  amountFormat="number"
+                  loading={loading}
+                />
+                <FinanceBiKpiCard
+                  icon={Users}
+                  label="Clientes compradores"
+                  value="—"
+                  amount={loading ? undefined : summary?.customersCount}
+                  amountFormat="number"
+                  loading={loading}
+                />
+              </SummaryKpiGrid>
+            </ExecutiveSummarySection>
 
             <div className="flex gap-3 overflow-x-auto pb-1">
               <SecondaryStat label="Pedidos" value={String(summary?.ordersCount ?? "—")} />

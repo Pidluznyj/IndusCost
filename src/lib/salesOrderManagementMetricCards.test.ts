@@ -24,7 +24,7 @@ describe("salesOrderManagementMetricCards", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     assert.match(page, /SalesOrderManagementKpiDashboard/);
     assert.match(dashboard, /MetricCard/);
-    assert.match(dashboard, /MetricCardGrid/);
+    assert.match(dashboard, /SummaryKpiGrid/);
     assert.doesNotMatch(page, /FinanceBiKpiCard/);
   });
 

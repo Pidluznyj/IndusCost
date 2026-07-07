@@ -17,11 +17,11 @@ describe("salesOrderManagementPage", () => {
 
   it("cards Status Logístico BI com clique para filtrar", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(page, /displayDashboardCards/);
-    assert.match(dashboard, /onToggleLogisticStatus/);
-    assert.match(dashboard, /management-status-card-/);
+    assert.match(secondary, /onToggleLogisticStatus/);
+    assert.match(secondary, /management-status-card-/);
     assert.match(logistic, /Total no filtro/);
     assert.match(page, /logisticStatus/);
   });
@@ -119,7 +119,7 @@ describe("salesOrderManagementPage", () => {
 
   it("UI contém os 7 cards Status Logístico BI obrigatórios", () => {
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
     const required = [
       "Total no filtro",
       "Entregue no Prazo",
@@ -132,8 +132,8 @@ describe("salesOrderManagementPage", () => {
     for (const label of required) {
       assert.match(logistic, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
-    assert.match(dashboard, /management-status-card-total/);
-    assert.match(dashboard, /management-status-card-\$\{card\.key\}/);
+    assert.match(secondary, /management-status-card-total/);
+    assert.match(secondary, /management-status-card-\$\{card\.key\}/);
     assert.match(logistic, /deliveredOnTime/);
     assert.match(logistic, /deliveredLate/);
     assert.match(logistic, /overduePending/);
@@ -143,23 +143,23 @@ describe("salesOrderManagementPage", () => {
   });
 
   it("primeiro card é Total no filtro com quantidade e valor", () => {
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
     const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(logistic, /Total no filtro/);
-    assert.match(dashboard, /management-status-card-total/);
-    assert.match(dashboard, /formatCompactCurrency\(card\.totalNetValue\)/);
-    assert.match(dashboard, /pedido/);
+    assert.match(secondary, /management-status-card-total/);
+    assert.match(secondary, /formatCompactCurrency\(card\.totalNetValue\)/);
+    assert.match(secondary, /pedido/);
   });
 
   it("clique no card total limpa filtro de status", () => {
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    assert.match(dashboard, /onClearLogisticStatus/);
-    assert.match(dashboard, /isTotal/);
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
+    assert.match(secondary, /onClearLogisticStatus/);
+    assert.match(secondary, /isTotal/);
   });
 
   it("cards KPI usam MetricCard do design system", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    assert.match(dashboard, /MetricCardGrid/);
+    assert.match(dashboard, /SummaryKpiGrid/);
     assert.match(dashboard, /MetricCard/);
     assert.doesNotMatch(dashboard, /FinanceBiKpiCard/);
     assert.doesNotMatch(dashboard, /indus-kpi-grid/);

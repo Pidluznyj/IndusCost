@@ -11,7 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import { formatCurrency } from "@/src/lib/utils";
 import { cn } from "@/src/lib/utils";
@@ -90,7 +90,7 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
 }: LogisticsBlockProps) {
   return (
     <div data-testid="sales-order-management-logistics">
-      <MetricCardGrid minColumnWidth={180}>
+      <SummaryKpiGrid minColumnWidth={180}>
         {displayDashboardCards.map((card) => {
           const Icon = kpiIcons[card.key] ?? FileText;
           const isTotal = card.isTotal === true;
@@ -141,9 +141,9 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
             </button>
           );
         })}
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
-      <MetricCardGrid className="mt-4" minColumnWidth={160}>
+      <SummaryKpiGrid className="mt-4" minColumnWidth={160}>
         <MetricCard
           label="SLA médio"
           formattedValue={
@@ -180,7 +180,7 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
           compact
           loading={loading}
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
       {!loading && !loadError && validPortfolioCount != null ? (
         <p className="mt-3 text-xs text-muted-foreground">
@@ -263,7 +263,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
           testId="sales-order-management-economic-margin-tooltip"
         />
       </div>
-      <MetricCardGrid minColumnWidth={200}>
+      <SummaryKpiGrid minColumnWidth={200}>
         <MetricCard
           label={resolveSalesOrderMarginMoneyLabel(consolidated)}
           amount={toFiniteMetricNumber(consolidated.marginValue)}
@@ -298,12 +298,12 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
           icon={<TrendingUp className="h-4 w-4" />}
           loading={loading}
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
       <p className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         Drill-down por status de margem
       </p>
-      <MetricCardGrid minColumnWidth={150}>
+      <SummaryKpiGrid minColumnWidth={150}>
         {drillCards.map((card) => {
           const active = marginStatusFilter === card.key;
           return (
@@ -331,7 +331,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
             </button>
           );
         })}
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
       {marginEconomics.itemCounts.itemsWithoutCost > 0 ||
       marginEconomics.itemCounts.itemsWithoutProduct > 0 ||
@@ -377,7 +377,7 @@ const FulfillmentKpiBlock = memo(function FulfillmentKpiBlock({
 }: FulfillmentBlockProps) {
   return (
     <div data-testid="sales-order-management-fulfillment">
-      <MetricCardGrid minColumnWidth={160}>
+      <SummaryKpiGrid minColumnWidth={160}>
         <MetricCard
           label="Com NF"
           formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithNfe)}
@@ -420,7 +420,7 @@ const FulfillmentKpiBlock = memo(function FulfillmentKpiBlock({
           compact
           loading={loading}
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
     </div>
   );
 });

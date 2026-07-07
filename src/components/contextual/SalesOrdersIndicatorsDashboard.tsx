@@ -15,6 +15,8 @@ import {
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import {
   buildOfficialSalesOrderMarginTooltipText,
@@ -309,87 +311,90 @@ export function SalesOrdersIndicatorsDashboard() {
         <ContextualDashboardEmpty message="Não há pedidos no período/filtro para consolidar indicadores de margem." />
       ) : (
         <>
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Margem gerencial consolidada
-            </p>
-            <SalesOrderMarginInfoTooltip
-              summary={summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload}
-              testId="sales-order-indicators-margin-tooltip"
-            />
-          </div>
-          <div className="indus-kpi-grid" data-testid="sales-order-margin-indicator-summary">
-            <FinanceBiKpiCard
-              icon={DollarSign}
-              label="Valor vendido (total)"
-              value={formatSalesOrderMarginMoney(summary.totalSalesRevenueInScope)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={Wallet}
-              label="Receita com custo"
-              value={formatSalesOrderMarginMoney(summary.marginRevenueCovered)}
-              loading={false}
-              hint={
-                summary.costCoverageStatus === "PARTIAL"
-                  ? `${summary.marginCoveragePercent ?? 0}% da receita vendida`
-                  : undefined
-              }
-            />
-            <FinanceBiKpiCard
-              icon={Scale}
-              label="Custo estimado"
-              value={formatSalesOrderMarginMoney(summary.totalCost)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={DollarSign}
-              label={resolveSalesOrderMarginMoneyLabel(summary)}
-              value={formatSalesOrderMarginMoney(summary.marginValue)}
-              loading={false}
-              valueTitle={buildOfficialSalesOrderMarginTooltipText({
-                summary: summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload,
-              })}
-              hint={buildSalesOrderMarginCoverageHint(summary, formatCurrency)}
-            />
-            <FinanceBiKpiCard
-              icon={Percent}
-              label={resolveSalesOrderMarginPercentLabel(summary)}
-              value={formatSalesOrderMarginPercent(summary.marginPercent)}
-              loading={false}
-              hint="Ponderada por receita com custo"
-            />
-            <FinanceBiKpiCard
-              icon={TrendingUp}
-              label="Markup"
-              value={formatSalesOrderMarkup(summary.markup)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={Package}
-              label="Pedidos"
-              value={String(summary.ordersCount)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={TrendingDown}
-              label="Itens margem negativa"
-              value={String(summary.itemsWithNegativeMargin)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={AlertTriangle}
-              label="Itens sem custo"
-              value={String(summary.itemsWithoutCost)}
-              loading={false}
-            />
-            <FinanceBiKpiCard
-              icon={Users}
-              label="Itens sem produto"
-              value={String(summary.itemsWithoutProduct)}
-              loading={false}
-            />
-          </div>
+          <ExecutiveSummarySection
+            title="Margem gerencial consolidada"
+            eyebrow="Indicadores consolidados do filtro aplicado"
+            testId="sales-order-margin-indicator-summary"
+            actions={
+              <SalesOrderMarginInfoTooltip
+                summary={summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload}
+                testId="sales-order-indicators-margin-tooltip"
+              />
+            }
+          >
+            <SummaryKpiGrid minColumnWidth={200}>
+              <FinanceBiKpiCard
+                icon={DollarSign}
+                label="Valor vendido (total)"
+                value={formatSalesOrderMarginMoney(summary.totalSalesRevenueInScope)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={Wallet}
+                label="Receita com custo"
+                value={formatSalesOrderMarginMoney(summary.marginRevenueCovered)}
+                loading={false}
+                hint={
+                  summary.costCoverageStatus === "PARTIAL"
+                    ? `${summary.marginCoveragePercent ?? 0}% da receita vendida`
+                    : undefined
+                }
+              />
+              <FinanceBiKpiCard
+                icon={Scale}
+                label="Custo estimado"
+                value={formatSalesOrderMarginMoney(summary.totalCost)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={DollarSign}
+                label={resolveSalesOrderMarginMoneyLabel(summary)}
+                value={formatSalesOrderMarginMoney(summary.marginValue)}
+                loading={false}
+                valueTitle={buildOfficialSalesOrderMarginTooltipText({
+                  summary: summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload,
+                })}
+                hint={buildSalesOrderMarginCoverageHint(summary, formatCurrency)}
+              />
+              <FinanceBiKpiCard
+                icon={Percent}
+                label={resolveSalesOrderMarginPercentLabel(summary)}
+                value={formatSalesOrderMarginPercent(summary.marginPercent)}
+                loading={false}
+                hint="Ponderada por receita com custo"
+              />
+              <FinanceBiKpiCard
+                icon={TrendingUp}
+                label="Markup"
+                value={formatSalesOrderMarkup(summary.markup)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={Package}
+                label="Pedidos"
+                value={String(summary.ordersCount)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={TrendingDown}
+                label="Itens margem negativa"
+                value={String(summary.itemsWithNegativeMargin)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={AlertTriangle}
+                label="Itens sem custo"
+                value={String(summary.itemsWithoutCost)}
+                loading={false}
+              />
+              <FinanceBiKpiCard
+                icon={Users}
+                label="Itens sem produto"
+                value={String(summary.itemsWithoutProduct)}
+                loading={false}
+              />
+            </SummaryKpiGrid>
+          </ExecutiveSummarySection>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <RankingTable

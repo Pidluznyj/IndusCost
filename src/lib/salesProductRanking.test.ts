@@ -286,7 +286,8 @@ describe("salesProductRanking", () => {
     assert.ok(page.includes('type="date"'));
     assert.ok(page.includes("formatSoldProductsIsoDateDisplay"));
     assert.ok(page.includes("prepareRankingTableRows"));
-    assert.ok(page.includes("indus-kpi-grid"));
+    assert.ok(page.includes("ExecutiveSummarySection"));
+    assert.ok(page.includes("SummaryKpiGrid"));
     assert.ok(page.includes("amountFormat"));
     assert.ok(printDoc.includes("rootId=\"sold-products-print-root\""));
     assert.ok(printDoc.includes("PrintHeader"));

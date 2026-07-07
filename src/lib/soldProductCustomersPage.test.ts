@@ -122,7 +122,8 @@ describe("soldProductCustomersPage", () => {
       "utf8"
     );
     assert.ok(kpiSrc.includes("FinanceBiKpiCard"));
-    assert.ok(kpiSrc.includes("commercial-kpi-grid"));
+    assert.ok(kpiSrc.includes("ExecutiveSummarySection"));
+    assert.ok(kpiSrc.includes("SummaryKpiGrid"));
     assert.ok(kpiSrc.includes("formatCommercialCompactCurrency"));
     assert.equal(kpiSrc.includes("xl:grid-cols-8"), false);
     assert.ok(kpiSrc.includes("Clientes compradores do produto"));
@@ -155,8 +156,8 @@ describe("soldProductCustomersPage", () => {
       "utf8"
     );
     assert.ok(cardSrc.includes("valueTitle"));
-    assert.match(cardSrc, /title=\{displayTitle/);
-    assert.ok(cardSrc.includes("indus-kpi-value"));
+    assert.match(cardSrc, /fullValue=\{displayTitle\}/);
+    assert.ok(cardSrc.includes("MetricCard"));
   });
 
   it("export filename usa código do produto", () => {

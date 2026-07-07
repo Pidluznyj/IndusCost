@@ -24,7 +24,7 @@ export const KPI_CARD_LAYOUT_AUDIT: KpiLayoutAuditEntry[] = [
     file: "src/components/commercial/SoldProductCustomersPage.tsx",
     issue: "8 cards em linha única (xl:grid-cols-8)",
     status: "fixed",
-    fix: "indus-kpi-grid + formatKpiCompact* + title",
+    fix: "ExecutiveSummarySection + SummaryKpiGrid + FinanceBiKpiCard",
   },
   {
     id: "sold-products-report",
@@ -33,7 +33,7 @@ export const KPI_CARD_LAYOUT_AUDIT: KpiLayoutAuditEntry[] = [
     file: "src/components/commercial/SoldProductsReportPage.tsx",
     issue: "KPIs com valores longos sem title",
     status: "fixed",
-    fix: "indus-kpi-grid + amountFormat nos cards",
+    fix: "ExecutiveSummarySection + SummaryKpiGrid + amountFormat nos cards",
   },
   {
     id: "sales-orders",
@@ -105,7 +105,7 @@ export const KPI_CARD_LAYOUT_AUDIT: KpiLayoutAuditEntry[] = [
     file: "src/components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.tsx",
     issue: "minmax(10.5rem) estreito demais",
     status: "fixed",
-    fix: "indus-kpi-grid 220px + formatKpiCompact",
+    fix: "ExecutiveSummarySection + SummaryKpiGrid + MetricCard",
   },
   {
     id: "dashboard-main",
@@ -132,7 +132,7 @@ export const KPI_CARD_LAYOUT_AUDIT: KpiLayoutAuditEntry[] = [
     file: "src/components/customers/CustomerCommercial360.tsx",
     issue: "lg:grid-cols-5 comprime cards",
     status: "fixed",
-    fix: "indus-kpi-grid",
+    fix: "ExecutiveSummarySection + SummaryKpiGrid + FinanceBiKpiCard",
   },
   {
     id: "finance-horizon",

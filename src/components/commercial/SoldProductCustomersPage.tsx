@@ -23,6 +23,8 @@ import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDa
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
@@ -525,20 +527,27 @@ export function SoldProductCustomersPage() {
       ) : null}
 
       {data ? (
-        <div className="commercial-kpi-grid mb-4">
-          <FinanceBiKpiCard label="Clientes" value={String(data.summary.customersCount)} icon={Users} />
-          <CommercialKpiQty label="Quantidade" value={data.summary.totalQuantity} icon={Package} />
-          <CommercialKpiMoney label="Receita" value={data.summary.totalRevenue} />
-          <CommercialKpiMoney label="Preço médio" value={data.summary.averageUnitPrice} />
-          <CommercialKpiMoney label="Menor preço" value={data.summary.minUnitPrice} />
-          <CommercialKpiMoney label="Maior preço" value={data.summary.maxUnitPrice} />
-          <CommercialKpiDate label="Última venda" iso={data.summary.lastSaleDate} />
-          <FinanceBiKpiCard
-            label="Inativos"
-            value={String(data.summary.inactiveCustomersCount)}
-            hint="> 180 dias sem comprar"
-          />
-        </div>
+        <ExecutiveSummarySection
+          title="Resumo de clientes compradores"
+          eyebrow="Clientes compradores do produto"
+          testId="sold-product-customers-kpi-summary"
+          className="mb-4"
+        >
+          <SummaryKpiGrid minColumnWidth={200}>
+            <FinanceBiKpiCard label="Clientes" value={String(data.summary.customersCount)} icon={Users} />
+            <CommercialKpiQty label="Quantidade" value={data.summary.totalQuantity} icon={Package} />
+            <CommercialKpiMoney label="Receita" value={data.summary.totalRevenue} />
+            <CommercialKpiMoney label="Preço médio" value={data.summary.averageUnitPrice} />
+            <CommercialKpiMoney label="Menor preço" value={data.summary.minUnitPrice} />
+            <CommercialKpiMoney label="Maior preço" value={data.summary.maxUnitPrice} />
+            <CommercialKpiDate label="Última venda" iso={data.summary.lastSaleDate} />
+            <FinanceBiKpiCard
+              label="Inativos"
+              value={String(data.summary.inactiveCustomersCount)}
+              hint="> 180 dias sem comprar"
+            />
+          </SummaryKpiGrid>
+        </ExecutiveSummarySection>
       ) : null}
 
       <div className={cn(financeBiCardClass, "p-4")}>

@@ -1,7 +1,7 @@
 import React from "react";
 import { DollarSign, Percent, Scale, TrendingUp, Wallet } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
   resolveMarginMoneyVariant,
   resolveMarginPercentVariant,
@@ -41,7 +41,7 @@ export function SalesOrderMarginMetricGrid({
 
   return (
     <div data-testid={testId}>
-      <MetricCardGrid>
+      <SummaryKpiGrid>
       <MetricCard
         label={revenueLabel}
         amount={toFiniteMetricNumber(summary?.netRevenue)}
@@ -89,7 +89,7 @@ export function SalesOrderMarginMetricGrid({
           loading={loading}
         />
       ) : null}
-      </MetricCardGrid>
+      </SummaryKpiGrid>
     </div>
   );
 }

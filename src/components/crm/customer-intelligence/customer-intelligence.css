@@ -1,17 +1,9 @@
-@import "../../../styles/indus-kpi-grid.css";
-
 .customer-intelligence-page {
   --ci-card-radius: 1rem;
 }
 
 .customer-intelligence-header {
   border-radius: var(--ci-card-radius);
-}
-
-.customer-intelligence-kpi-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .customer-intelligence-tab-panel {
@@ -88,7 +80,7 @@
     break-inside: avoid;
   }
 
-  .customer-intelligence-kpi-grid {
+  .customer-intelligence-page .summary-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
