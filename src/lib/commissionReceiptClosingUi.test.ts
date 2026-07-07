@@ -42,4 +42,11 @@ describe("commissionReceiptClosingUi", () => {
     assert.match(page, /commissions-receipt-closing-show-group-audit/);
     assert.match(page, /Mostrar empresas do grupo na auditoria/);
   });
+
+  it("resumo por vendedor exibe linha de totalização no rodapé", () => {
+    const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
+    assert.match(page, /computeReceiptClosingSellerTotals/);
+    assert.match(page, /commissions-receipt-closing-seller-totals/);
+    assert.match(page, /Total geral/);
+  });
 });

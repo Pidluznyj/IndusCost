@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { ReceiptClosingApiLine } from "./commissionReceiptClosingApi.js";
 import {
   computeReceiptClosingDetailTotals,
+  computeReceiptClosingSellerTotals,
   filterReceiptClosingLinesBySellerKey,
   receiptClosingLineSellerKey,
   receiptClosingSellerFilterLabel,
@@ -178,5 +179,52 @@ describe("commissionReceiptClosingSellerFilter", () => {
     assert.equal(totals.receivedAmount, 500);
     assert.equal(totals.scheduledCommissionAmount, 15);
     assert.equal(totals.releasedCommissionAmount, 15);
+  });
+
+  it("totais por vendedor somam colunas numéricas exibidas", () => {
+    const totals = computeReceiptClosingSellerTotals([
+      {
+        receivedAmount: 1000,
+        commissionableBase: 800,
+        grossCommission: 40,
+        excludedCommission: 5,
+        releasedCommission: 35,
+        exceptionCount: 2,
+      },
+      {
+        receivedAmount: 2500.5,
+        commissionableBase: 2000.25,
+        grossCommission: 100.1,
+        excludedCommission: 0,
+        releasedCommission: 100.1,
+        exceptionCount: 1,
+      },
+    ]);
+    assert.equal(totals.rowCount, 2);
+    assert.equal(totals.receivedAmount, 3500.5);
+    assert.equal(totals.commissionableBase, 2800.25);
+    assert.equal(totals.grossCommission, 140.1);
+    assert.equal(totals.excludedCommission, 5);
+    assert.equal(totals.releasedCommission, 135.1);
+    assert.equal(totals.exceptionCount, 3);
+  });
+
+  it("totais por vendedor tratam nulos como zero", () => {
+    const totals = computeReceiptClosingSellerTotals([
+      {
+        receivedAmount: 100,
+        commissionableBase: undefined as unknown as number,
+        grossCommission: null as unknown as number,
+        excludedCommission: NaN,
+        releasedCommission: 10,
+        exceptionCount: undefined as unknown as number,
+      },
+    ]);
+    assert.equal(totals.receivedAmount, 100);
+    assert.equal(totals.commissionableBase, 0);
+    assert.equal(totals.grossCommission, 0);
+    assert.equal(totals.excludedCommission, 0);
+    assert.equal(totals.releasedCommission, 10);
+    assert.equal(totals.exceptionCount, 0);
   });
 });

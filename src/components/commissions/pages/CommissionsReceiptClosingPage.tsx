@@ -29,11 +29,13 @@ import {
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 import {
   computeReceiptClosingDetailTotals,
+  computeReceiptClosingSellerTotals,
   filterReceiptClosingLinesBySellerKey,
   findReceiptClosingSellerRowByKey,
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
   type ReceiptClosingDetailTotals,
+  type ReceiptClosingSellerTotals,
 } from "@/src/lib/commissions/commissionReceiptClosingSellerFilter.shared";
 import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 
@@ -69,10 +71,12 @@ function statusBadgeClass(status: string): string {
 
 function SellerTable({
   rows,
+  totals,
   selectedKey,
   onRowClick,
 }: {
   rows: CommissionsReceiptClosingSellerRow[];
+  totals: ReceiptClosingSellerTotals;
   selectedKey: string | null;
   onRowClick: (row: CommissionsReceiptClosingSellerRow) => void;
 }) {
@@ -126,6 +130,24 @@ function SellerTable({
             );
           })}
         </tbody>
+        <tfoot>
+          <tr
+            className="border-t-2 bg-muted/20 font-semibold"
+            data-testid="commissions-receipt-closing-seller-totals"
+          >
+            <td className="px-2 py-2">Total geral</td>
+            <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.receivedAmount)}</td>
+            <td className="px-2 py-2 text-right">
+              {formatFinanceCurrency(totals.commissionableBase)}
+            </td>
+            <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.grossCommission)}</td>
+            <td className="px-2 py-2 text-right">
+              {formatFinanceCurrency(totals.excludedCommission)}
+            </td>
+            <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.releasedCommission)}</td>
+            <td className="px-2 py-2 text-right">{totals.exceptionCount}</td>
+          </tr>
+        </tfoot>
       </table>
     </CommissionsTableScroll>
   );
@@ -265,6 +287,14 @@ export function CommissionsReceiptClosingPage() {
   const detailTotals = useMemo(
     () => computeReceiptClosingDetailTotals(filteredDetailLines as ReceiptClosingPagePayload["lines"]),
     [filteredDetailLines]
+  );
+
+  const sellerTotals = useMemo(
+    () =>
+      computeReceiptClosingSellerTotals(
+        (data?.bySeller ?? []) as ReceiptClosingPagePayload["bySeller"]
+      ),
+    [data?.bySeller]
   );
 
   const sellerFilterLabel = useMemo(() => {
@@ -781,6 +811,7 @@ export function CommissionsReceiptClosingPage() {
             </p>
             <SellerTable
               rows={data.bySeller}
+              totals={sellerTotals}
               selectedKey={sellerFilterKey}
               onRowClick={handleSellerRowClick}
             />

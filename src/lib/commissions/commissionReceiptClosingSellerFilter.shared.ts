@@ -8,6 +8,7 @@ import {
   resolveReceiptClosingSellerGroupKey,
   sumUniqueReceivedFromLines,
 } from "./commissionReceiptClosingApi.shared.js";
+import { roundMoney } from "./commission-money.shared.js";
 
 /** Chave estável de agrupamento — espelha `buildReceiptClosingBySeller`. */
 export function receiptClosingSellerRowKey(row: {
@@ -69,7 +70,60 @@ export function computeReceiptClosingDetailTotals(
   return {
     lineCount: lines.length,
     receivedAmount: sumUniqueReceivedFromLines(lines),
-    scheduledCommissionAmount: Math.round(scheduledCommissionAmount * 100) / 100,
-    releasedCommissionAmount: Math.round(releasedCommissionAmount * 100) / 100,
+    scheduledCommissionAmount: roundMoney(scheduledCommissionAmount),
+    releasedCommissionAmount: roundMoney(releasedCommissionAmount),
+  };
+}
+
+export type ReceiptClosingSellerTotals = {
+  rowCount: number;
+  receivedAmount: number;
+  commissionableBase: number;
+  grossCommission: number;
+  excludedCommission: number;
+  releasedCommission: number;
+  exceptionCount: number;
+};
+
+function safeSellerMetric(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Soma colunas numéricas do resumo Por vendedor (linhas já agregadas pelo backend). */
+export function computeReceiptClosingSellerTotals(
+  rows: Pick<
+    ReceiptClosingApiSellerRow,
+    | "receivedAmount"
+    | "commissionableBase"
+    | "grossCommission"
+    | "excludedCommission"
+    | "releasedCommission"
+    | "exceptionCount"
+  >[]
+): ReceiptClosingSellerTotals {
+  let receivedAmount = 0;
+  let commissionableBase = 0;
+  let grossCommission = 0;
+  let excludedCommission = 0;
+  let releasedCommission = 0;
+  let exceptionCount = 0;
+
+  for (const row of rows) {
+    receivedAmount += safeSellerMetric(row.receivedAmount);
+    commissionableBase += safeSellerMetric(row.commissionableBase);
+    grossCommission += safeSellerMetric(row.grossCommission);
+    excludedCommission += safeSellerMetric(row.excludedCommission);
+    releasedCommission += safeSellerMetric(row.releasedCommission);
+    exceptionCount += Math.trunc(safeSellerMetric(row.exceptionCount));
+  }
+
+  return {
+    rowCount: rows.length,
+    receivedAmount: roundMoney(receivedAmount),
+    commissionableBase: roundMoney(commissionableBase),
+    grossCommission: roundMoney(grossCommission),
+    excludedCommission: roundMoney(excludedCommission),
+    releasedCommission: roundMoney(releasedCommission),
+    exceptionCount,
   };
 }
