@@ -167,6 +167,7 @@ export function CommissionsReceiptClosingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingDetail, setExportingDetail] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyConfirm, setApplyConfirm] = useState("");
   const [criticalConfirm, setCriticalConfirm] = useState("");
@@ -220,6 +221,33 @@ export function CommissionsReceiptClosingPage() {
       setLoading(false);
     }
   }, [year, month, nomusBase, nomusCommission]);
+
+  async function exportDetailXlsx() {
+    setExportingDetail(true);
+    try {
+      const qs = nomusQueryParams();
+      const res = await fetch(
+        `/api/commissions/receipt-closing/${encodeURIComponent(year)}/${encodeURIComponent(month)}/export-detail.xlsx?${qs}`
+      );
+      if (!res.ok) throw new Error("Falha ao exportar detalhamento.");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] ??
+        `commission-receipt-closing-detalhamento-${year}-${month.padStart(2, "0")}-previa.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível exportar o detalhamento."));
+    } finally {
+      setExportingDetail(false);
+    }
+  }
 
   async function exportCsv() {
     setExporting(true);
@@ -458,6 +486,20 @@ export function CommissionsReceiptClosingPage() {
           disabled={loading}
         >
           Carregar fechamento
+        </button>
+        <button
+          type="button"
+          className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+          onClick={() => void exportDetailXlsx()}
+          disabled={exportingDetail || !data || data.lines.length === 0}
+          data-testid="commissions-receipt-closing-export-detail"
+        >
+          {exportingDetail ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
+          Exportar detalhamento
         </button>
         {canManage && data?.canApply && data.mode === "PREVIEW" ? (
           <button

@@ -142,6 +142,7 @@ import {
 import {
   applyReceiptClosingFromApi,
   exportReceiptClosingCsv,
+  exportReceiptClosingDetailXlsx,
   getReceiptClosingPage,
   getReceiptClosingPreviewPage,
   reprocessReceiptClosingApplyFromApi,
@@ -534,6 +535,45 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         } catch {
           console.error("GET /api/commissions/receipt-closing/:year/:month/export.csv", error);
           return res.status(500).json({ error: "Erro ao exportar fechamento por recebimento." });
+        }
+      }
+    }
+  );
+
+  app.get(
+    "/api/commissions/receipt-closing/:year/:month/export-detail.xlsx",
+    ...viewAnyGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const { year, month } = parseReceiptClosingPeriodParams(req.params);
+        const nomusQuery = parseReceiptClosingQuery({
+          year,
+          month,
+          ...req.query,
+        });
+        const { buffer, filename } = await exportReceiptClosingDetailXlsx({
+          year,
+          month,
+          nomusBase: nomusQuery.nomusBase,
+          nomusCommission: nomusQuery.nomusCommission,
+        });
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(buffer);
+      } catch (error) {
+        try {
+          return handleQueryError(res, error);
+        } catch {
+          console.error(
+            "GET /api/commissions/receipt-closing/:year/:month/export-detail.xlsx",
+            error
+          );
+          return res.status(500).json({ error: "Erro ao exportar detalhamento da prévia." });
         }
       }
     }

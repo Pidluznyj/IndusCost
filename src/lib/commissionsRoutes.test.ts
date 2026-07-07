@@ -87,6 +87,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/receipt-closing/apply",
       "/api/commissions/receipt-closing/:year/:month",
       "/api/commissions/receipt-closing/:year/:month/export.csv",
+      "/api/commissions/receipt-closing/:year/:month/export-detail.xlsx",
       "/api/commissions/receipt-closing/reprocess-preview",
       "/api/commissions/receipt-closing/reprocess-apply",
       "/api/commissions/receivable-forecast",

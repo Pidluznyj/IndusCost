@@ -8,6 +8,10 @@ import {
   type ReceiptClosingPagePayload,
 } from "./commissionReceiptClosingApi.js";
 import {
+  buildReceiptClosingDetailExportBuffer,
+  buildReceiptClosingDetailExportFilename,
+} from "./commissionReceiptClosingDetailExport.js";
+import {
   applyCommissionReceiptClosing,
   findClosedReceiptClosing,
   loadReceiptClosingLedgerLines,
@@ -66,40 +70,44 @@ export async function exportReceiptClosingCsv(
   filters: ReceiptClosingFilters
 ): Promise<{ csv: string; filename: string }> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
-  if (closing) {
-    const page = await getReceiptClosingPage(filters.year, filters.month, {
-      nomusBase: filters.nomusBase,
-      nomusCommission: filters.nomusCommission,
-    });
-    return {
-      csv: buildReceiptClosingExportCsv({
-        year: filters.year,
-        month: filters.month,
-        closing,
-        exportMode: "CLOSED",
-        lines: page.lines,
-        cards: page.cards,
-        materializationSummary: page.materializationSummary,
-        calculationHash: closing.calculationHash,
-      }),
-      filename: `commission-receipt-closing-${filters.year}-${String(filters.month).padStart(2, "0")}-closed.csv`,
-    };
-  }
-
-  const page = await getReceiptClosingPreviewPage(filters);
-  const hash = page.closing?.calculationHash ?? null;
+  const page = await loadReceiptClosingExportPage(filters);
+  const exportMode = closing ? "CLOSED" : "PREVIEW";
+  const hash = closing?.calculationHash ?? page.closing?.calculationHash ?? null;
   return {
     csv: buildReceiptClosingExportCsv({
       year: filters.year,
       month: filters.month,
-      closing: null,
-      exportMode: "PREVIEW",
+      closing,
+      exportMode,
       lines: page.lines,
       cards: page.cards,
       materializationSummary: page.materializationSummary,
       calculationHash: hash,
     }),
-    filename: `commission-receipt-closing-${filters.year}-${String(filters.month).padStart(2, "0")}-preview.csv`,
+    filename: `commission-receipt-closing-${filters.year}-${String(filters.month).padStart(2, "0")}-${exportMode === "CLOSED" ? "closed" : "preview"}.csv`,
+  };
+}
+
+async function loadReceiptClosingExportPage(
+  filters: ReceiptClosingFilters
+): Promise<ReceiptClosingPagePayload> {
+  const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
+  if (closing) {
+    return getReceiptClosingPage(filters.year, filters.month, {
+      nomusBase: filters.nomusBase,
+      nomusCommission: filters.nomusCommission,
+    });
+  }
+  return getReceiptClosingPreviewPage(filters);
+}
+
+export async function exportReceiptClosingDetailXlsx(
+  filters: ReceiptClosingFilters
+): Promise<{ buffer: Buffer; filename: string }> {
+  const page = await loadReceiptClosingExportPage(filters);
+  return {
+    buffer: buildReceiptClosingDetailExportBuffer(page),
+    filename: buildReceiptClosingDetailExportFilename(page.year, page.month, page.exportMode),
   };
 }
 

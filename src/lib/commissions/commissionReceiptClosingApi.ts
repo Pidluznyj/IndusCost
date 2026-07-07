@@ -281,6 +281,11 @@ export function markReceivableReceivedAnchors(
   });
 }
 
+/** Soma dos valores exibidos na coluna "Valor recebido" do detalhamento (âncoras por título). */
+export function sumUniqueReceivedFromLines(lines: ReceiptClosingApiLine[]): number {
+  return lines.reduce((sum, line) => round2(sum + line.uniqueReceivedAmount), 0);
+}
+
 const SELLER_UNRESOLVED_STATUSES = new Set(["SELLER_UNRESOLVED", "NO_SELLER"]);
 
 function countUniqueReceivablesByBucket(
