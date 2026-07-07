@@ -355,6 +355,31 @@ describe("commissionReceiptClosing", () => {
     assert.equal(data.exclusionReason, "EMPRESA_GRUPO_EXCLUIDA");
   });
 
+  it("cliente excluído sem schedule não bloqueia apply", () => {
+    const preview = previewResult([
+      previewLine({
+        ledgerLineKey: "k-excl",
+        nomusReceivableId: 201,
+        status: "CUSTOMER_EXCLUDED",
+        statusReason: "CLIENTE_EXCLUIDO_POR_REGRA",
+        exclusionRuleId: "ex-1",
+        exclusionReason: "Política",
+        commissionableBaseAmount: 1000,
+        expectedCommissionAmount: 0,
+        releasedCommissionAmount: 0,
+      }),
+      previewLine({
+        ledgerLineKey: "k-ok",
+        nomusReceivableId: 202,
+        status: "COMMISSIONABLE",
+      }),
+    ]);
+    const readiness = assessReceiptClosingApplyReadiness(preview);
+    assert.equal(readiness.canApply, true);
+    const payload = buildReceiptClosingPreviewPayload(preview, null);
+    assert.equal(payload.canApply, true);
+  });
+
   it("reprocess preview mostra diferença de totais", () => {
     const before = {
       closingId: "c1",

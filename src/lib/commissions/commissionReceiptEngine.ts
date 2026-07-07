@@ -6,6 +6,7 @@ import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusio
 import {
   applyCustomerExclusionToCommission,
   resolveCustomerExclusionForSale,
+  type FindApplicableCustomerExclusionResult,
 } from "./commissionCustomerExclusionApply.js";
 import {
   allocateProportional,
@@ -58,6 +59,10 @@ export const COMMISSION_RECEIPT_NO_SCHEDULE_REASON =
 /** Motivo quando a NF do título não está vinculada a um pedido de venda local. */
 export const COMMISSION_RECEIPT_NO_SALES_ORDER_REASON =
   "Título recebido sem vínculo com pedido de venda";
+
+/** Motivo padrão na exportação/prévia quando a exclusão vem de regra cadastrada. */
+export const COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON =
+  "CLIENTE_EXCLUIDO_POR_REGRA";
 
 export type CommissionOrderSnapshotDiagnosis = {
   exists: boolean;
@@ -502,13 +507,97 @@ function pickMaterializedScheduleForReceivable(
   return schedules[0] ?? null;
 }
 
+function resolveReceivableExclusionReferenceDate(
+  receivable: CommissionReceiptReceivableInput,
+  order?: CommissionOrderSourceBundle
+): Date {
+  if (order && receivable.nomusNfeId != null) {
+    return resolveCommissionRuleReferenceDate(order, receivable.nomusNfeId);
+  }
+  if (receivable.settlementDate) return receivable.settlementDate;
+  if (receivable.dueDate) return receivable.dueDate;
+  return new Date();
+}
+
+/** Resolve exclusão de cliente para um título recebido (id, externalId ou nome normalizado). */
+export function resolveCustomerExclusionForReceivable(input: {
+  receivable: CommissionReceiptReceivableInput;
+  order?: CommissionOrderSourceBundle;
+  exclusionRules: CustomerExclusionRuleSnapshot[];
+}): FindApplicableCustomerExclusionResult | null {
+  return resolveCustomerExclusionForSale({
+    customerId: input.receivable.customerId ?? null,
+    customerExternalId:
+      input.receivable.customerExternalId ?? input.order?.customerExternalId ?? null,
+    customerName: input.receivable.customerName ?? input.order?.customerName ?? null,
+    referenceDate: resolveReceivableExclusionReferenceDate(input.receivable, input.order),
+    rules: input.exclusionRules,
+  });
+}
+
+function buildCustomerExcludedReceiptLine(input: {
+  receivable: CommissionReceiptReceivableInput;
+  year: number;
+  month: number;
+  exclusion: FindApplicableCustomerExclusionResult;
+  order?: CommissionOrderSourceBundle;
+}): CommissionReceiptPreviewLine {
+  const line = buildExceptionLine({
+    receivable: input.receivable,
+    year: input.year,
+    month: input.month,
+    status: "CUSTOMER_EXCLUDED",
+    statusReason: COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
+    order: input.order,
+  });
+  return {
+    ...line,
+    commissionableBaseAmount: normalizeCommissionLedgerMoney(input.receivable.amountReceived),
+    expectedCommissionAmount: 0,
+    releasedCommissionAmount: 0,
+    grossCommissionAmount: 0,
+    exclusionRuleId: input.exclusion.rule.id,
+    exclusionReason: input.exclusion.reason,
+    ruleId: input.exclusion.rule.id,
+    ruleName: input.exclusion.rule.customerNameSnapshot,
+  };
+}
+
 /** Classifica título comercial sem schedule materializado (cadeia Recebimento → Pedido → Snapshot). */
 export function diagnoseReceivableWithoutMaterializedSchedule(input: {
   receivable: CommissionReceiptReceivableInput;
   order: CommissionOrderSourceBundle | undefined;
   orderSnapshotDiagnosis: CommissionOrderSnapshotDiagnosis | undefined;
   identityCtx: CommissionSellerIdentityContext;
+  exclusionRules?: CustomerExclusionRuleSnapshot[];
 }): { status: CommissionReceiptLedgerLineStatus; statusReason: string } {
+  const exclusion =
+    input.exclusionRules != null
+      ? resolveCustomerExclusionForReceivable({
+          receivable: input.receivable,
+          order: input.order,
+          exclusionRules: input.exclusionRules,
+        })
+      : null;
+  if (exclusion) {
+    return {
+      status: "CUSTOMER_EXCLUDED",
+      statusReason: COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
+    };
+  }
+
+  const snap = input.orderSnapshotDiagnosis;
+  if (
+    snap?.exists &&
+    snap.itemStatuses.length > 0 &&
+    snap.itemStatuses.every((status) => status === "CUSTOMER_EXCLUDED")
+  ) {
+    return {
+      status: "CUSTOMER_EXCLUDED",
+      statusReason: COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
+    };
+  }
+
   if (input.receivable.nomusNfeId == null) {
     return {
       status: "NO_SALES_LINK",
@@ -547,7 +636,6 @@ export function diagnoseReceivableWithoutMaterializedSchedule(input: {
     };
   }
 
-  const snap = input.orderSnapshotDiagnosis;
   if (snap?.exists) {
     if (
       snap.itemStatuses.length > 0 &&
@@ -828,11 +916,29 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
 }): CommissionReceiptPreviewLine[] {
   const schedule = pickMaterializedScheduleForReceivable(input.schedules);
   if (!schedule) {
+    const exclusion = resolveCustomerExclusionForReceivable({
+      receivable: input.receivable,
+      order: input.order,
+      exclusionRules: input.exclusionRules,
+    });
+    if (exclusion) {
+      return [
+        buildCustomerExcludedReceiptLine({
+          receivable: input.receivable,
+          year: input.year,
+          month: input.month,
+          exclusion,
+          order: input.order,
+        }),
+      ];
+    }
+
     const diagnosis = diagnoseReceivableWithoutMaterializedSchedule({
       receivable: input.receivable,
       order: input.order,
       orderSnapshotDiagnosis: input.orderSnapshotDiagnosis,
       identityCtx: input.identityCtx,
+      exclusionRules: input.exclusionRules,
     });
     return [
       buildExceptionLine({

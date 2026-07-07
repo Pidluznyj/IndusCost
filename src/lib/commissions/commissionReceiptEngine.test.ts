@@ -4,6 +4,7 @@ import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js
 import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import {
   buildCommissionReceiptPreview,
+  COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
   COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
   filterSettledReceivablesForPreview,
   type CommissionReceiptReceivableInput,
@@ -554,6 +555,68 @@ describe("commissionReceiptEngine", () => {
     });
     assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
     assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_NO_SCHEDULE_REASON);
+  });
+
+  it("cliente excluído sem schedule vira CUSTOMER_EXCLUDED no modo materializado", () => {
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 506,
+          customerName: "Britania Eletrodomesticos SA",
+          customerExternalId: 991,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [
+        exclusionRule({
+          id: "ex-britania",
+          customerExternalId: null,
+          normalizedCustomerName: "britania eletrodomesticos sa",
+          customerNameSnapshot: "Britania Eletrodomesticos SA",
+          reason: "Contrato sem comissão",
+        }),
+      ],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
+    assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON);
+    assert.equal(result.lines[0]?.exclusionRuleId, "ex-britania");
+    assert.equal(result.lines[0]?.exclusionReason, "Contrato sem comissão");
+    assert.equal(result.countByStatus.NO_SCHEDULE, 0);
+    assert.equal(result.countByStatus.CUSTOMER_EXCLUDED, 1);
+  });
+
+  it("cliente excluído por nome tolera variação sem pedido vinculado", () => {
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 507,
+          customerName: "Esmaltec S/A",
+          nomusNfeId: 999,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [
+        exclusionRule({
+          id: "ex-esmaltec",
+          customerExternalId: null,
+          normalizedCustomerName: "esmaltec s a",
+          customerNameSnapshot: "Esmaltec S/A",
+          reason: "Exceção comercial",
+        }),
+      ],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
+    assert.equal(result.countByStatus.NO_SCHEDULE, 0);
   });
 
   it("schedule stale não libera sem reprocessar", () => {
