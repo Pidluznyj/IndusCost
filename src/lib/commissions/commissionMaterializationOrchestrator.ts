@@ -21,6 +21,8 @@ export type AffectedSalesOrderSource =
 export type AffectedSalesOrderRef = {
   salesOrderId: string;
   sources: AffectedSalesOrderSource[];
+  /** NFes que dispararam a descoberta (ex.: recebimento no mês). */
+  nfeIds?: number[];
 };
 
 export type CommissionMaterializationOrderResult = {
@@ -95,20 +97,28 @@ const SOURCE_PRIORITY: Record<AffectedSalesOrderSource, number> = {
 export function mergeAffectedSalesOrderRefs(
   refs: AffectedSalesOrderRef[]
 ): AffectedSalesOrderRef[] {
-  const map = new Map<string, Set<AffectedSalesOrderSource>>();
+  const map = new Map<
+    string,
+    { sources: Set<AffectedSalesOrderSource>; nfeIds: Set<number> }
+  >();
 
   for (const ref of refs) {
-    const set = map.get(ref.salesOrderId) ?? new Set<AffectedSalesOrderSource>();
-    for (const source of ref.sources) set.add(source);
-    map.set(ref.salesOrderId, set);
+    const entry =
+      map.get(ref.salesOrderId) ?? { sources: new Set<AffectedSalesOrderSource>(), nfeIds: new Set() };
+    for (const source of ref.sources) entry.sources.add(source);
+    for (const nfeId of ref.nfeIds ?? []) {
+      if (Number.isFinite(nfeId) && nfeId > 0) entry.nfeIds.add(nfeId);
+    }
+    map.set(ref.salesOrderId, entry);
   }
 
   return [...map.entries()]
-    .map(([salesOrderId, sources]) => ({
+    .map(([salesOrderId, { sources, nfeIds }]) => ({
       salesOrderId,
       sources: [...sources].sort(
         (a, b) => SOURCE_PRIORITY[a] - SOURCE_PRIORITY[b]
       ),
+      ...(nfeIds.size > 0 ? { nfeIds: [...nfeIds].sort((a, b) => a - b) } : {}),
     }))
     .sort((a, b) => a.salesOrderId.localeCompare(b.salesOrderId));
 }

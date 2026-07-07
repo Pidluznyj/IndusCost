@@ -8,6 +8,8 @@ import {
   buildReceiptClosingPreviewPayload,
   buildReceiptClosingReprocessPreview,
   mapPreviewLineToLedgerCreateData,
+  assessReceiptClosingApplyReadiness,
+  validateReceiptClosingPreviewForApply,
   ReceiptClosingDuplicateError,
   ReceiptClosingValidationError,
   RECEIPT_CLOSING_CONFIRM_APPLY,
@@ -313,6 +315,44 @@ describe("commissionReceiptClosing", () => {
     });
     assert.equal(payload.canApply, false);
     assert.match(payload.applyBlockedReason ?? "", /CLOSED/);
+  });
+
+  it("preview bloqueia apply quando há título comercial sem schedule", () => {
+    const preview = previewResult([
+      previewLine({ ledgerLineKey: "k-no-sched", status: "NO_SCHEDULE", statusReason: "sem schedule" }),
+    ]);
+    const payload = buildReceiptClosingPreviewPayload(preview, null);
+    assert.equal(payload.canApply, false);
+    assert.match(payload.applyBlockedReason ?? "", /sem schedule materializado/i);
+    assert.throws(
+      () => validateReceiptClosingPreviewForApply(preview),
+      ReceiptClosingValidationError
+    );
+  });
+
+  it("preview permite apply com empresa do grupo excluída e comissão com schedule", () => {
+    const preview = previewResult([
+      previewLine({
+        ledgerLineKey: "k-group",
+        nomusReceivableId: 101,
+        status: "GROUP_COMPANY_EXCLUDED",
+        statusReason: "EMPRESA_GRUPO_EXCLUIDA",
+        exclusionReason: "EMPRESA_GRUPO_EXCLUIDA",
+        commissionableBaseAmount: 0,
+        expectedCommissionAmount: 0,
+        releasedCommissionAmount: 0,
+      }),
+      previewLine({
+        ledgerLineKey: "k-ok",
+        nomusReceivableId: 102,
+        status: "COMMISSIONABLE",
+      }),
+    ]);
+    const readiness = assessReceiptClosingApplyReadiness(preview);
+    assert.equal(readiness.canApply, true);
+    const data = mapPreviewLineToLedgerCreateData(preview.lines[0], "closing-1");
+    assert.equal(data.status, "GROUP_COMPANY_EXCLUDED");
+    assert.equal(data.exclusionReason, "EMPRESA_GRUPO_EXCLUIDA");
   });
 
   it("reprocess preview mostra diferença de totais", () => {

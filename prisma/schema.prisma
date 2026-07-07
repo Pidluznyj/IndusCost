@@ -3917,6 +3917,7 @@ enum CommissionMonthlyClosingSource {
 enum CommissionReceiptLedgerLineStatus {
   COMMISSIONABLE
   CUSTOMER_EXCLUDED
+  GROUP_COMPANY_EXCLUDED
   NO_SALES_LINK
   NO_SCHEDULE
   NO_SELLER

@@ -110,8 +110,23 @@ export function buildCommissionOrderMaterializationPreview(
   };
 }
 
-function pickPrimaryNfeId(order: CommissionOrderSourceBundle): number | null {
+function pickPrimaryNfeId(
+  order: CommissionOrderSourceBundle,
+  preferredNfeId?: number | null
+): number | null {
+  if (preferredNfeId != null) {
+    const linked = order.linkedNfes.some((nfe) => nfe.nfeExternalId === preferredNfeId);
+    if (linked) return preferredNfeId;
+  }
   return order.authorizedOutputNfes[0]?.nfeExternalId ?? null;
+}
+
+/** NF usada no snapshot/schedule — respeita override quando vinculada ao pedido. */
+export function resolveMaterializationNfeId(
+  order: CommissionOrderSourceBundle,
+  preferredNfeId?: number | null
+): number | null {
+  return pickPrimaryNfeId(order, preferredNfeId);
 }
 
 /** Monta o rascunho do snapshot (cabeçalho + itens + sourceHash) a partir do cálculo puro. */
@@ -121,8 +136,9 @@ export function buildCommissionOrderSnapshotDraft(input: {
   customerNameSnapshot: string;
   lines: CommissionOrderItemCalculationResult[];
   sellerResolution: CommissionSellerIdentityResolution;
+  nfeId?: number | null;
 }): CommissionOrderSnapshotDraft {
-  const nfeId = pickPrimaryNfeId(input.order);
+  const nfeId = pickPrimaryNfeId(input.order, input.nfeId);
   const saleDate = resolveCommissionRuleReferenceDate(input.order, nfeId);
   const itemNamesById = new Map(
     input.order.items.map((item) => [item.localItemId, item.productName])

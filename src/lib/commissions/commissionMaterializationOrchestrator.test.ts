@@ -86,6 +86,9 @@ function mockDb(overrides: Record<string, unknown> = {}) {
     commissionReceivableSchedule: {
       count: async () => 2,
     },
+    salesOrderNfeLink: {
+      findMany: async () => [],
+    },
     ...overrides,
   };
 }
@@ -118,7 +121,7 @@ describe("commissionMaterializationOrchestrator", () => {
         findMany: async () => [{ externalId: 9001, sourceInvoiceId: 555 }],
       },
       salesOrderNfeLink: {
-        findMany: async () => [{ salesOrderId: ORDER_A }],
+        findMany: async () => [{ salesOrderId: ORDER_A, nfeExternalId: 555 }],
       },
     };
 
@@ -312,6 +315,15 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.deepEqual(merged[0].sources, ["SALES_ORDER", "RECEIVABLE"]);
     assert.throws(() => resolveMaterializationDryRun({ preview: true, apply: true }));
     assert.equal(parseMaterializationLimit("25"), 25);
+  });
+
+  it("mergeAffectedSalesOrderRefs une nfeIds por pedido", () => {
+    const merged = mergeAffectedSalesOrderRefs([
+      { salesOrderId: ORDER_A, sources: ["RECEIVABLE"], nfeIds: [1001] },
+      { salesOrderId: ORDER_A, sources: ["NFE"], nfeIds: [1002, 1001] },
+    ]);
+    assert.equal(merged.length, 1);
+    assert.deepEqual(merged[0].nfeIds, [1001, 1002]);
   });
 
   it("aggregateMaterializationRunSummary soma totais e issues", () => {

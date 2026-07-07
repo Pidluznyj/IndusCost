@@ -11,6 +11,7 @@ import {
   buildCommissionOrderMaterializationPreview,
   buildCommissionOrderSnapshotDraft,
   resolveMaterializationAction,
+  resolveMaterializationNfeId,
   type CommissionOrderMaterializationResult,
   type CommissionOrderSnapshotDraft,
 } from "./commissionOrderMaterializer.js";
@@ -33,6 +34,8 @@ export class SalesOrderNotFoundError extends Error {
 
 export type MaterializeCommissionForSalesOrderInput = {
   salesOrderId: string;
+  /** NF específica vinculada ao recebimento — sobrescreve a NF primária do pedido. */
+  nfeId?: number | null;
   reason?: string | null;
   dryRun?: boolean;
 };
@@ -101,7 +104,8 @@ async function findActiveOrderSnapshot(
 
 async function loadOrderCalculationContext(
   db: PrismaClient,
-  order: CommissionOrderSourceBundle
+  order: CommissionOrderSourceBundle,
+  preferredNfeId?: number | null
 ): Promise<CommissionOrderCalculationContext> {
   const [rules, exclusionRules, sellerIdentity] = await Promise.all([
     loadActiveCommissionRules(db),
@@ -109,7 +113,10 @@ async function loadOrderCalculationContext(
     loadCommissionSellerIdentityContext(db),
   ]);
 
-  const nfeId = order.authorizedOutputNfes[0]?.nfeExternalId ?? null;
+  const nfeId =
+    resolveMaterializationNfeId(order, preferredNfeId) ??
+    order.authorizedOutputNfes[0]?.nfeExternalId ??
+    null;
   const referenceDate = resolveCommissionRuleReferenceDate(order, nfeId);
   const productIds = [...new Set(order.items.map((item) => item.localProductId))];
 
@@ -216,7 +223,8 @@ export async function materializeCommissionForSalesOrder(
   }
 
   const { bundle, customerId } = loaded;
-  const context = await loadOrderCalculationContext(db, bundle);
+  const preferredNfeId = input.nfeId ?? null;
+  const context = await loadOrderCalculationContext(db, bundle, preferredNfeId);
   const lines = calculateCommissionForSalesOrderItems({ orders: [bundle], context });
   const sellerResolution = resolveCommissionSellerIdentity(
     {
@@ -233,6 +241,7 @@ export async function materializeCommissionForSalesOrder(
     customerNameSnapshot: bundle.customerName,
     lines,
     sellerResolution,
+    nfeId: preferredNfeId,
   });
 
   const existingActive = await findActiveOrderSnapshot(db, draft.salesOrderId, draft.nfeId);

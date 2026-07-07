@@ -22,6 +22,7 @@ import {
   type ReceiptClosingReprocessPreview,
   type ReceiptClosingSnapshot,
   validateReceiptClosingCancelReason,
+  validateReceiptClosingPreviewForApply,
 } from "./commissionReceiptClosing.js";
 
 export type ReceiptClosingFilters = {
@@ -189,6 +190,7 @@ export async function applyCommissionReceiptClosing(
   }
 
   const preview = await loadCommissionReceiptPreview(input);
+  validateReceiptClosingPreviewForApply(preview);
   const calculationHash = buildReceiptClosingHashFromPreview(preview);
 
   try {

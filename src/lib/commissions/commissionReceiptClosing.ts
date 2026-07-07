@@ -162,6 +162,55 @@ export function validateReceiptClosingCancelReason(reason: string | null | undef
   return trimmed;
 }
 
+const RECEIPT_CLOSING_NON_BLOCKING_STATUSES = new Set<CommissionReceiptLedgerLineStatus>([
+  "GROUP_COMPANY_EXCLUDED",
+  "CUSTOMER_EXCLUDED",
+]);
+
+const RECEIPT_CLOSING_SCHEDULE_BLOCKING_STATUSES = new Set<CommissionReceiptLedgerLineStatus>([
+  "NO_SCHEDULE",
+  "STALE_SCHEDULE",
+]);
+
+export function assessReceiptClosingApplyReadiness(
+  preview: CommissionReceiptPreviewResult
+): { canApply: boolean; applyBlockedReason: string | null } {
+  const seenReceivable = new Set<number>();
+  let commercialWithoutSchedule = 0;
+
+  for (const line of preview.lines) {
+    if (line.nomusReceivableId == null) continue;
+    if (seenReceivable.has(line.nomusReceivableId)) continue;
+    seenReceivable.add(line.nomusReceivableId);
+
+    if (RECEIPT_CLOSING_NON_BLOCKING_STATUSES.has(line.status)) continue;
+    if (RECEIPT_CLOSING_SCHEDULE_BLOCKING_STATUSES.has(line.status)) {
+      commercialWithoutSchedule += 1;
+    }
+  }
+
+  if (commercialWithoutSchedule > 0) {
+    return {
+      canApply: false,
+      applyBlockedReason: `${commercialWithoutSchedule} título(s) comercial(is) sem schedule materializado. Rode a materialização (scripts/rebuild-commission-materialization.ts) antes de fechar.`,
+    };
+  }
+
+  return { canApply: true, applyBlockedReason: null };
+}
+
+export function validateReceiptClosingPreviewForApply(
+  preview: CommissionReceiptPreviewResult
+): void {
+  const readiness = assessReceiptClosingApplyReadiness(preview);
+  if (!readiness.canApply && readiness.applyBlockedReason) {
+    throw new ReceiptClosingValidationError(
+      "COMMERCIAL_WITHOUT_SCHEDULE",
+      readiness.applyBlockedReason
+    );
+  }
+}
+
 export function appendReceiptClosingNote(
   existing: string | null | undefined,
   entry: string
@@ -227,14 +276,21 @@ export function buildReceiptClosingPreviewPayload(
   preview: CommissionReceiptPreviewResult,
   existingClosing: ReceiptClosingSnapshot | null
 ): ReceiptClosingPreviewPayload {
-  const canApply = existingClosing == null;
+  if (existingClosing != null) {
+    return {
+      preview,
+      existingClosing,
+      canApply: false,
+      applyBlockedReason: `Fechamento CLOSED já existe (id=${existingClosing.closingId}). Use reprocessamento explícito.`,
+    };
+  }
+
+  const readiness = assessReceiptClosingApplyReadiness(preview);
   return {
     preview,
-    existingClosing,
-    canApply,
-    applyBlockedReason: canApply
-      ? null
-      : `Fechamento CLOSED já existe (id=${existingClosing.closingId}). Use reprocessamento explícito.`,
+    existingClosing: null,
+    canApply: readiness.canApply,
+    applyBlockedReason: readiness.applyBlockedReason,
   };
 }
 

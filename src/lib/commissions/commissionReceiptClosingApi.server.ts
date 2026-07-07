@@ -119,6 +119,12 @@ export async function applyReceiptClosingFromApi(input: {
   acknowledgeCriticalDivergence?: boolean;
 }) {
   const preview = await getReceiptClosingPreviewPage({ year: input.year, month: input.month });
+  if (!preview.canApply) {
+    throw new CommissionValidationError(
+      "CLOSING_BLOCKED",
+      preview.applyBlockedReason ?? "Fechamento bloqueado para este período."
+    );
+  }
   if (preview.requiresCriticalConfirmation && !input.acknowledgeCriticalDivergence) {
     throw new CommissionValidationError(
       "CRITICAL_DIVERGENCE",

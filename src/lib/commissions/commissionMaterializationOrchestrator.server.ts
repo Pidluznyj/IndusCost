@@ -8,6 +8,8 @@ import {
   type CommissionMaterializationOrderResult,
   type CommissionMaterializationRunSummary,
 } from "./commissionMaterializationOrchestrator.js";
+import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupExclusion.js";
+import type { CommissionReceivableScheduleRebuildResult } from "./commissionReceivableScheduler.js";
 import {
   materializeCommissionForSalesOrder,
   SalesOrderNotFoundError,
@@ -57,6 +59,7 @@ export async function resolveSalesOrderIdsFromNfeExternalIds(
     links.map((link) => ({
       salesOrderId: link.salesOrderId,
       sources: ["NFE"] as AffectedSalesOrderSource[],
+      nfeIds: [link.nfeExternalId],
     }))
   );
 }
@@ -84,13 +87,14 @@ export async function resolveSalesOrderIdsFromReceivableExternalIds(
 
   const links = await db.salesOrderNfeLink.findMany({
     where: { nfeExternalId: { in: nfeIds } },
-    select: { salesOrderId: true },
+    select: { salesOrderId: true, nfeExternalId: true },
   });
 
   return mergeAffectedSalesOrderRefs(
     links.map((link) => ({
       salesOrderId: link.salesOrderId,
       sources: ["RECEIVABLE"] as AffectedSalesOrderSource[],
+      nfeIds: [link.nfeExternalId],
     }))
   );
 }
@@ -283,23 +287,38 @@ export async function discoverSalesOrderRefsForReceiptMonth(
       settlementDate: { gte: from, lte: to },
       amountReceived: { gt: 0 },
     },
-    select: { sourceInvoiceId: true },
+    select: { sourceInvoiceId: true, personName: true, personCnpj: true },
   });
+
+  const commercialReceivables = receivables.filter(
+    (row) =>
+      !isCommissionInternalGroupReceivable({
+        customerName: row.personName,
+        customerCnpj: row.personCnpj,
+      })
+  );
 
   const nfeIds = [
     ...new Set(
-      receivables
+      commercialReceivables
         .map((row) => row.sourceInvoiceId)
         .filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
     ),
   ];
   if (nfeIds.length === 0) return [];
 
-  const refs = await resolveSalesOrderIdsFromNfeExternalIds(db, nfeIds);
-  return refs.map((ref) => ({
-    salesOrderId: ref.salesOrderId,
-    sources: [...new Set<AffectedSalesOrderSource>([...ref.sources, "RECEIVABLE"])],
-  }));
+  const links = await db.salesOrderNfeLink.findMany({
+    where: { nfeExternalId: { in: nfeIds } },
+    select: { salesOrderId: true, nfeExternalId: true },
+  });
+
+  return mergeAffectedSalesOrderRefs(
+    links.map((link) => ({
+      salesOrderId: link.salesOrderId,
+      sources: ["RECEIVABLE"] as AffectedSalesOrderSource[],
+      nfeIds: [link.nfeExternalId],
+    }))
+  );
 }
 
 export async function filterAffectedSalesOrderRefs(
@@ -444,6 +463,64 @@ async function resolveAffectedSalesOrderRefs(
   return merged;
 }
 
+async function resolveTargetNfeIdsForMaterialization(
+  db: Pick<PrismaClient, "salesOrderNfeLink">,
+  ref: AffectedSalesOrderRef
+): Promise<Array<number | null>> {
+  if (ref.nfeIds?.length) {
+    return [...new Set(ref.nfeIds)];
+  }
+  const links = await db.salesOrderNfeLink.findMany({
+    where: { salesOrderId: ref.salesOrderId },
+    select: { nfeExternalId: true },
+  });
+  if (links.length === 0) return [null];
+  return [...new Set(links.map((link) => link.nfeExternalId))];
+}
+
+function mergeScheduleRebuildResults(
+  left: CommissionReceivableScheduleRebuildResult,
+  right: CommissionReceivableScheduleRebuildResult
+): CommissionReceivableScheduleRebuildResult {
+  const schedulesCreated = left.schedulesCreated + right.schedulesCreated;
+  const schedulesSuperseded = left.schedulesSuperseded + right.schedulesSuperseded;
+  const schedulesStaled = left.schedulesStaled + right.schedulesStaled;
+  const schedulesUnchanged = left.schedulesUnchanged + right.schedulesUnchanged;
+
+  let action: CommissionReceivableScheduleRebuildResult["action"] = "unchanged";
+  if (schedulesCreated > 0 && schedulesSuperseded === 0 && schedulesStaled === 0) {
+    action = schedulesUnchanged > 0 ? "mixed" : "created";
+  } else if (schedulesSuperseded > 0 || schedulesStaled > 0) {
+    action = schedulesCreated > 0 || schedulesStaled > 0 ? "updated" : "unchanged";
+  }
+  if (schedulesCreated === 0 && schedulesSuperseded === 0 && schedulesStaled === 0) {
+    action = "unchanged";
+  } else if (
+    schedulesCreated > 0 &&
+    (schedulesSuperseded > 0 || schedulesStaled > 0 || schedulesUnchanged > 0)
+  ) {
+    action = "mixed";
+  }
+  if (left.action !== right.action && left.action !== "unchanged" && right.action !== "unchanged") {
+    action = "mixed";
+  } else if (left.action !== "unchanged") {
+    action = left.action;
+  } else if (right.action !== "unchanged") {
+    action = right.action;
+  }
+
+  return {
+    action,
+    orderSnapshotId: right.orderSnapshotId || left.orderSnapshotId,
+    schedulesCreated,
+    schedulesSuperseded,
+    schedulesStaled,
+    schedulesUnchanged,
+    dryRun: left.dryRun,
+    preview: [...left.preview, ...right.preview],
+  };
+}
+
 async function processSalesOrderMaterialization(
   db: PrismaClient,
   ref: AffectedSalesOrderRef,
@@ -451,34 +528,46 @@ async function processSalesOrderMaterialization(
   deps: MaterializationOrchestratorDeps
 ): Promise<CommissionMaterializationOrderResult> {
   try {
-    const snapshot = await deps.materialize(db, {
-      salesOrderId: ref.salesOrderId,
-      dryRun,
-    });
+    const targetNfeIds = await resolveTargetNfeIdsForMaterialization(db, ref);
+    let lastSnapshot: Awaited<ReturnType<MaterializationOrchestratorDeps["materialize"]>> | null =
+      null;
+    let mergedSchedule: CommissionReceivableScheduleRebuildResult | null = null;
 
-    let schedule = null;
-    try {
-      schedule = await deps.rebuildSchedule(db, {
+    for (const nfeId of targetNfeIds) {
+      const snapshot = await deps.materialize(db, {
         salesOrderId: ref.salesOrderId,
+        ...(nfeId != null ? { nfeId } : {}),
         dryRun,
       });
-    } catch (error) {
-      if (error instanceof OrderSnapshotNotFoundError) {
-        schedule = null;
-      } else {
-        throw error;
+      lastSnapshot = snapshot;
+
+      try {
+        const schedule = await deps.rebuildSchedule(db, {
+          salesOrderId: ref.salesOrderId,
+          ...(nfeId != null ? { nfeId } : {}),
+          dryRun,
+        });
+        mergedSchedule = mergedSchedule
+          ? mergeScheduleRebuildResults(mergedSchedule, schedule)
+          : schedule;
+      } catch (error) {
+        if (!(error instanceof OrderSnapshotNotFoundError)) {
+          throw error;
+        }
       }
     }
 
     return buildMaterializationOrderResult({
       salesOrderId: ref.salesOrderId,
       sources: ref.sources,
-      snapshot: {
-        action: snapshot.action,
-        snapshotId: snapshot.snapshotId,
-        preview: snapshot.preview,
-      },
-      schedule,
+      snapshot: lastSnapshot
+        ? {
+            action: lastSnapshot.action,
+            snapshotId: lastSnapshot.snapshotId,
+            preview: lastSnapshot.preview,
+          }
+        : null,
+      schedule: mergedSchedule,
     });
   } catch (error) {
     const message =
