@@ -73,6 +73,18 @@ describe("commissionReceiptClosingSellerFilter", () => {
     );
   });
 
+  it("NO_SCHEDULE com vendedor canônico usa chave da pessoa, não bucket —", () => {
+    assert.equal(
+      receiptClosingLineSellerKey({
+        status: "NO_SCHEDULE",
+        canonicalSellerId: "seller-gislene",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerName: null,
+      }),
+      "seller-gislene"
+    );
+  });
+
   it("linha sem vendedor canônico usa chave —", () => {
     assert.equal(
       receiptClosingLineSellerKey({

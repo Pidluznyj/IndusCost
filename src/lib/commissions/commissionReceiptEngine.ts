@@ -24,8 +24,10 @@ import {
   resolveCommissionRuleReferenceDate,
 } from "./commission-source-resolver.js";
 import {
+  formatNomusOrderSellerDisplayName,
   isNomusOrderSellerResolved,
   resolveOrderCommissionSeller,
+  type NomusOrderSellerResolution,
 } from "./commissionNomusOrderSellerResolver.js";
 import {
   sellerNameMatchesFilter,
@@ -555,6 +557,7 @@ function buildCustomerExcludedReceiptLine(input: {
   month: number;
   exclusion: FindApplicableCustomerExclusionResult;
   order?: CommissionOrderSourceBundle;
+  identityCtx?: CommissionSellerIdentityContext;
 }): CommissionReceiptPreviewLine {
   const line = buildExceptionLine({
     receivable: input.receivable,
@@ -563,6 +566,7 @@ function buildCustomerExcludedReceiptLine(input: {
     status: "CUSTOMER_EXCLUDED",
     statusReason: COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
     order: input.order,
+    identityCtx: input.identityCtx,
   });
   return {
     ...line,
@@ -826,6 +830,69 @@ function previewLineFromAuditRow(
   };
 }
 
+/** Preenche vendedor raw/canônico em linhas de exceção (NO_SCHEDULE, etc.) sem alterar status. */
+export function resolveReceiptExceptionLineSellerFields(input: {
+  order?: CommissionOrderSourceBundle | null;
+  identityCtx?: CommissionSellerIdentityContext;
+  preResolved?: {
+    identity: CommissionSellerIdentityResolution;
+    nomus: NomusOrderSellerResolution;
+  };
+}): {
+  rawSellerId: number | null;
+  rawSellerName: string | null;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  sellerResolutionStatus: string | null;
+} {
+  const order = input.order;
+  if (!order) {
+    return {
+      rawSellerId: null,
+      rawSellerName: null,
+      canonicalSellerId: null,
+      canonicalSellerName: null,
+      sellerResolutionStatus: null,
+    };
+  }
+
+  const resolved =
+    input.preResolved ??
+    (input.identityCtx
+      ? resolveOrderCommissionSeller({
+          externalSellerId: order.seller.nomusSellerId,
+          issueDate: order.issueDate,
+          nomusSellerName: order.seller.responsibleName,
+          aliasSource: "SALES_ORDER",
+          identityCtx: input.identityCtx,
+        })
+      : null);
+
+  if (resolved) {
+    const { identity, nomus } = resolved;
+    const rawSellerId = nomus.rawSellerId ?? order.seller.nomusSellerId;
+    const rawSellerName =
+      identity.rawSellerName?.trim() ||
+      order.seller.responsibleName?.trim() ||
+      (rawSellerId != null ? formatNomusOrderSellerDisplayName(nomus) : null);
+    return {
+      rawSellerId,
+      rawSellerName,
+      canonicalSellerId: identity.canonicalSellerId,
+      canonicalSellerName: identity.canonicalSellerName,
+      sellerResolutionStatus: identity.resolutionStatus,
+    };
+  }
+
+  return {
+    rawSellerId: order.seller.nomusSellerId,
+    rawSellerName: order.seller.responsibleName,
+    canonicalSellerId: null,
+    canonicalSellerName: null,
+    sellerResolutionStatus: order.seller.nomusSellerId ? "UNRESOLVED" : null,
+  };
+}
+
 function buildExceptionLine(input: {
   receivable: CommissionReceiptReceivableInput;
   year: number;
@@ -833,8 +900,18 @@ function buildExceptionLine(input: {
   status: CommissionReceiptLedgerLineStatus;
   statusReason: string;
   order?: CommissionOrderSourceBundle | null;
+  identityCtx?: CommissionSellerIdentityContext;
+  preResolvedSeller?: {
+    identity: CommissionSellerIdentityResolution;
+    nomus: NomusOrderSellerResolution;
+  };
 }): CommissionReceiptPreviewLine {
   const { receivable, year, month, status, statusReason, order } = input;
+  const seller = resolveReceiptExceptionLineSellerFields({
+    order,
+    identityCtx: input.identityCtx,
+    preResolved: input.preResolvedSeller,
+  });
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
       year,
@@ -871,11 +948,11 @@ function buildExceptionLine(input: {
     localItemId: null,
     productCode: null,
     productName: null,
-    rawSellerId: order?.seller.nomusSellerId ?? null,
-    rawSellerName: order?.seller.responsibleName ?? null,
-    canonicalSellerId: null,
-    canonicalSellerName: null,
-    sellerResolutionStatus: null,
+    rawSellerId: seller.rawSellerId,
+    rawSellerName: seller.rawSellerName,
+    canonicalSellerId: seller.canonicalSellerId,
+    canonicalSellerName: seller.canonicalSellerName,
+    sellerResolutionStatus: seller.sellerResolutionStatus,
     commissionRecordId: null,
     commissionPaymentScheduleId: null,
     commissionReceivableScheduleId: null,
@@ -938,6 +1015,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
           month: input.month,
           exclusion,
           order: input.order,
+          identityCtx: input.identityCtx,
         }),
       ];
     }
@@ -957,6 +1035,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
         status: diagnosis.status,
         statusReason: diagnosis.statusReason,
         order: input.order,
+        identityCtx: input.identityCtx,
       }),
     ];
   }
@@ -1007,6 +1086,8 @@ function calculatePreviewLinesForReceivable(input: {
         status: "NO_SELLER",
         statusReason: COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON,
         order,
+        identityCtx,
+        preResolvedSeller: { identity: sellerResolution, nomus: nomusResolution },
       }),
     ];
   }
@@ -1022,6 +1103,8 @@ function calculatePreviewLinesForReceivable(input: {
           sellerResolution.warnings.join("; ") ||
           `Vendedor não resolvido (${nomusResolution.status})`,
         order,
+        identityCtx,
+        preResolvedSeller: { identity: sellerResolution, nomus: nomusResolution },
       }),
     ];
   }
@@ -1428,6 +1511,7 @@ export function buildCommissionReceiptPreview(
           status: "NO_SCHEDULE",
           statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
           order,
+          identityCtx: input.identityCtx,
         })
       );
       continue;

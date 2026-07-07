@@ -555,6 +555,30 @@ describe("commissionReceiptEngine", () => {
     });
     assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
     assert.equal(result.lines[0]?.statusReason, COMMISSION_RECEIPT_NO_SCHEDULE_REASON);
+    assert.equal(result.lines[0]?.canonicalSellerId, "person-seller");
+    assert.equal(result.lines[0]?.canonicalSellerName, "GISLENE LIMA");
+    assert.equal(result.lines[0]?.rawSellerId, 464);
+  });
+
+  it("NO_SCHEDULE resolve vendedor canônico só por externalSellerId (sem nomusSellerName)", () => {
+    const order = makeOrderBundle([item("i1", 5000)], {
+      seller: { nomusSellerId: 464, responsibleName: null },
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 504 })],
+      ordersByNfeId: new Map([[100, order]]),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
+    assert.equal(result.lines[0]?.canonicalSellerId, "person-seller");
+    assert.equal(result.lines[0]?.canonicalSellerName, "GISLENE LIMA");
+    assert.equal(result.bySeller[0]?.sellerId, "person-seller");
+    assert.equal(result.bySeller[0]?.sellerName, "GISLENE LIMA");
   });
 
   it("cliente excluído sem schedule vira CUSTOMER_EXCLUDED no modo materializado", () => {

@@ -625,6 +625,37 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(rows[0]?.receivableCount, 1);
   });
 
+  it("NO_SCHEDULE com vendedor canônico não agrupa em Sem vendedor / Excluído", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: previewResult([
+        previewLine({
+          ledgerLineKey: "no-sched",
+          status: "NO_SCHEDULE",
+          statusReason: "sem schedule",
+          commissionReceivableScheduleId: null,
+          scheduledCommissionAmount: undefined as unknown as null,
+          releasedCommissionAmount: 0,
+          expectedCommissionAmount: 0,
+          commissionableBaseAmount: 1000,
+          canonicalSellerId: "seller-gislene",
+          canonicalSellerName: "GISLENE LIMA",
+          rawSellerId: 464,
+          rawSellerName: null,
+          source: "EXCEPTION",
+        }),
+      ]),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    const rows = buildReceiptClosingBySeller(page.lines);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.sellerId, "seller-gislene");
+    assert.equal(rows[0]?.sellerName, "GISLENE LIMA");
+    assert.equal(rows[0]?.exceptionCount, 1);
+    assert.notEqual(rows[0]?.sellerName, null);
+  });
+
   it("buildReceiptClosingMaterializationCards exige explicação quando há Nomus", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: previewResult([previewLine({ ledgerLineKey: "k1", releasedCommissionAmount: 18 })]),
