@@ -109,21 +109,29 @@ function buildTargetBlock(
   };
 }
 
-async function loadOrdersForExecutiveYear(year: number) {
+async function loadOrdersForExecutiveYear(year: number, companyIssuer?: string) {
   const from = startOfYear(new Date(year, 0, 1));
   const to = endOfYear(new Date(year, 0, 1));
   return prisma.salesOrder.findMany({
     where: {
       issueDate: { gte: from, lte: to },
+      ...(companyIssuer
+        ? { companyIssuer: { contains: companyIssuer, mode: "insensitive" } }
+        : {}),
     },
     select: SALES_ORDER_RULES_PRISMA_SELECT,
   });
 }
 
+export type SalesOrdersDashboardTabOptions = {
+  companyIssuer?: string;
+};
+
 function resolveExecutiveRulesMetrics(
   yearCtx: ExecutiveDashboardYearContext,
   orders: Awaited<ReturnType<typeof loadOrdersForExecutiveYear>>,
-  linkedMap: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>
+  linkedMap: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>,
+  companyIssuer?: string
 ) {
   const ref = yearCtx.referenceDate;
   const month = ref.getMonth() + 1;
@@ -132,7 +140,8 @@ function resolveExecutiveRulesMetrics(
     ref,
     yearCtx.selectedYear,
     month,
-    linkedMap
+    linkedMap,
+    { companyIssuer }
   );
 }
 
@@ -198,8 +207,10 @@ async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
 }
 
 export async function buildSalesOrdersDashboardTab(
-  yearCtx: ExecutiveDashboardYearContext
+  yearCtx: ExecutiveDashboardYearContext,
+  options: SalesOrdersDashboardTabOptions = {}
 ): Promise<SalesOrdersDashboardTab> {
+  const companyIssuer = options.companyIssuer?.trim() || undefined;
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
   const previousYear = yearCtx.previousYear;
@@ -208,8 +219,8 @@ export async function buildSalesOrdersDashboardTab(
   const monthCompareLabel = `${ref.toLocaleDateString("pt-BR", { month: "long" })}/${previousYear}`;
 
   const [currentYearOrders, previousYearOrders] = await Promise.all([
-    loadOrdersForExecutiveYear(year),
-    loadOrdersForExecutiveYear(previousYear),
+    loadOrdersForExecutiveYear(year, companyIssuer),
+    loadOrdersForExecutiveYear(previousYear, companyIssuer),
   ]);
 
   const linkedMap = await loadSalesOrderLinkedNfeContextMap(
@@ -223,14 +234,15 @@ export async function buildSalesOrdersDashboardTab(
     ref
   );
 
-  const official = resolveExecutiveRulesMetrics(yearCtx, currentYearOrders, linkedMap);
+  const official = resolveExecutiveRulesMetrics(yearCtx, currentYearOrders, linkedMap, companyIssuer);
   const prevYearRef = new Date(previousYear, ref.getMonth(), ref.getDate(), 23, 59, 59, 999);
   const prevOfficial = resolveOfficialSalesOrderExecutiveMetrics(
     previousYearOrders.map(mapPrismaOrderToSalesOrderRulesInput),
     prevYearRef,
     previousYear,
     ref.getMonth() + 1,
-    linkedMap
+    linkedMap,
+    { companyIssuer }
   );
 
   const monthAgg = { count: official.metrics.ordersMonth, net: official.metrics.soldAmountMonth };

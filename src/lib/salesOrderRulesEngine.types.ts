@@ -126,6 +126,8 @@ export type SalesOrderRulesContext = {
   monthStart: Date;
   monthEnd: Date;
   excludeCancelledExecutive: boolean;
+  /** Exclui clientes do grupo econômico (Lazarios/Koppetel/SM) — padrão executivo/comercial. */
+  excludeGroupCompanyCustomers: boolean;
 };
 
 export type SalesOrderMetricDefinition = {
@@ -245,4 +247,6 @@ export type SalesOrderRulesBuildInput = {
   scope?: SalesOrderRulesScope;
   linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>;
   sellerIdentityCtx?: import("./commissions/commissionSellerIdentity.js").CommissionSellerIdentityContext | null;
+  /** Padrão true — clientes do grupo não entram em KPIs comerciais/executivos. */
+  excludeGroupCompanyCustomers?: boolean;
 };

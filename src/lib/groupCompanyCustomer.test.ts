@@ -39,6 +39,13 @@ describe("groupCompanyCustomer", () => {
     assert.equal(isGroupCompanyCustomer({ companyName: "Koppetel Comércio" }), true);
   });
 
+  it("excludes SM by CNPJ", () => {
+    assert.equal(
+      isGroupCompanyCustomer({ taxId: "55.717.719/0001-30", companyName: "Outro" }),
+      true
+    );
+  });
+
   it("excludes SM by name patterns without CNPJ", () => {
     assert.equal(
       isGroupCompanyCustomer({ companyName: "SM Comércio de Plásticos Ltda" }),

@@ -42,6 +42,7 @@ import {
   summarizeSalesOrderListRows,
   type SalesOrderListFilters,
 } from "./salesOrdersListSummary.js";
+import { isSalesOrderMarketCustomer } from "./groupCompanyCustomer.js";
 import type {
   NormalizedSalesOrderRecord,
   SalesOrderGridRow,
@@ -303,7 +304,27 @@ export function buildSalesOrderRulesContext(
     monthStart,
     monthEnd,
     excludeCancelledExecutive: true,
+    excludeGroupCompanyCustomers: input.excludeGroupCompanyCustomers ?? true,
   };
+}
+
+/** Universo comercial padrão — mercado externo e filtro opcional de empresa emitente. */
+export function applySalesOrderRulesUniverseFilters(
+  orders: SalesOrderRulesOrderInput[],
+  context: SalesOrderRulesContext
+): SalesOrderRulesOrderInput[] {
+  let universe = orders;
+  if (context.excludeGroupCompanyCustomers) {
+    universe = universe.filter((order) => isSalesOrderMarketCustomer(order));
+  }
+  const companyIssuer = context.filters.management.companyIssuer?.trim();
+  if (companyIssuer) {
+    const needle = companyIssuer.toLowerCase();
+    universe = universe.filter((order) =>
+      (order.companyIssuer ?? "").toLowerCase().includes(needle)
+    );
+  }
+  return universe;
 }
 
 export function filterSalesOrderListRows(
@@ -643,8 +664,9 @@ export function buildSalesOrderRulesResult(
 ): SalesOrderRulesResult {
   const context = buildSalesOrderRulesContext(input);
   const linkedMap = input.linkedNfeContextMap;
+  const universe = applySalesOrderRulesUniverseFilters(orders, context);
 
-  const listFiltered = filterSalesOrderListRows(orders, context.filters.list);
+  const listFiltered = filterSalesOrderListRows(universe, context.filters.list);
   const listSummary = summarizeSalesOrderListRows(
     listFiltered.map((o) => ({
       totalNetValue: o.totalNetValue,
@@ -653,7 +675,7 @@ export function buildSalesOrderRulesResult(
   );
 
   const management = buildManagementRowsFromOrders(
-    orders.map((order) => ({
+    universe.map((order) => ({
       ...toManagementOrderInput(order),
       legacyResponsible: order.legacyResponsible ?? null,
     })),
@@ -664,16 +686,16 @@ export function buildSalesOrderRulesResult(
   );
 
   const metrics = buildSalesOrderMetrics({
-    orders,
+    orders: universe,
     context,
     listSummary,
     fulfillmentKpis: management.fulfillmentKpis,
     managementRows: management.rows,
   });
 
-  const ordersById = new Map(orders.map((o) => [o.id, o]));
+  const ordersById = new Map(universe.map((o) => [o.id, o]));
   const gridRows = buildSalesOrderGridRows(management.rows, ordersById);
-  const monthlyTimeline = buildSalesOrderMonthlyTimeline(orders, context.year);
+  const monthlyTimeline = buildSalesOrderMonthlyTimeline(universe, context.year);
 
   const result: SalesOrderRulesResult = {
     engineVersion: SALES_ORDER_RULES_ENGINE_VERSION,

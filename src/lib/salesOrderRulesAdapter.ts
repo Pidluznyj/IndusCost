@@ -16,14 +16,18 @@ import {
 import type { SalesOrderManagementFilters } from "./salesOrderManagement.js";
 import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
 import {
+  applySalesOrderRulesUniverseFilters,
+  buildSalesOrderRulesContext,
   buildSalesOrderRulesResult,
   filterSalesOrderListRows,
   normalizeSalesOrderListFilters,
   SALES_ORDER_RULES_ENGINE_VERSION,
-  type SalesOrderRulesBuildInput,
-  type SalesOrderRulesOrderInput,
-  type SalesOrderRulesResult,
 } from "./salesOrderRulesEngine.js";
+import type {
+  SalesOrderRulesBuildInput,
+  SalesOrderRulesOrderInput,
+  SalesOrderRulesResult,
+} from "./salesOrderRulesEngine.types.js";
 import type { SalesOrderListSummary } from "./salesOrdersListSummary.js";
 import type { SalesOrderMetrics, SalesOrderMonthlyTimelinePoint } from "./salesOrderRulesEngine.types.js";
 
@@ -38,6 +42,7 @@ export type OfficialSalesOrderRulesBuildInput = {
   month?: number;
   linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>;
   scope?: SalesOrderRulesBuildInput["scope"];
+  excludeGroupCompanyCustomers?: boolean;
 };
 
 function toRulesBuildInput(input: OfficialSalesOrderRulesBuildInput): SalesOrderRulesBuildInput {
@@ -49,6 +54,7 @@ function toRulesBuildInput(input: OfficialSalesOrderRulesBuildInput): SalesOrder
     month: input.month,
     scope: input.scope,
     linkedNfeContextMap: input.linkedNfeContextMap,
+    excludeGroupCompanyCustomers: input.excludeGroupCompanyCustomers,
   };
 }
 
@@ -116,7 +122,8 @@ export function resolveOfficialSalesOrderExecutiveMetrics(
   referenceDate: Date,
   year: number,
   month: number,
-  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>,
+  opts?: { companyIssuer?: string; excludeGroupCompanyCustomers?: boolean }
 ) {
   const rules = buildOfficialSalesOrderRulesResult({
     orders,
@@ -125,6 +132,10 @@ export function resolveOfficialSalesOrderExecutiveMetrics(
     month,
     linkedNfeContextMap,
     scope: "executive",
+    excludeGroupCompanyCustomers: opts?.excludeGroupCompanyCustomers,
+    managementFilters: opts?.companyIssuer
+      ? { companyIssuer: opts.companyIssuer }
+      : undefined,
   });
   return {
     metrics: rules.metrics,
@@ -287,9 +298,16 @@ export function mapOfficialFinancePortfolioFromManagementRows(
 export function buildOfficialTopCustomersFromRulesOrders(
   orders: SalesOrderRulesOrderInput[],
   listFilters: Partial<SalesOrderListFilters>,
-  limit = 10
+  limit = 10,
+  opts?: { companyIssuer?: string; excludeGroupCompanyCustomers?: boolean }
 ): FinanceSalesOrdersTopCustomerRow[] {
-  const filtered = filterSalesOrderListRows(orders, normalizeSalesOrderListFilters(listFilters));
+  const context = buildSalesOrderRulesContext({
+    listFilters,
+    managementFilters: opts?.companyIssuer ? { companyIssuer: opts.companyIssuer } : undefined,
+    excludeGroupCompanyCustomers: opts?.excludeGroupCompanyCustomers,
+  });
+  const universe = applySalesOrderRulesUniverseFilters(orders, context);
+  const filtered = filterSalesOrderListRows(universe, normalizeSalesOrderListFilters(listFilters));
   const byCustomer = new Map<
     string,
     { customerName: string; orderCount: number; amount: number }

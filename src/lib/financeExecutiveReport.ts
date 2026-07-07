@@ -87,7 +87,17 @@ export class FinanceExecutiveReportParseError extends Error {
   }
 }
 
-export type FinanceExecutiveReportCompany = "all" | "lazarios" | "koppetel" | "sm";
+
+export type FinanceExecutiveReportCompany = import("./financeExecutiveReportCompany.js").FinanceExecutiveReportCompany;
+import {
+  mapExecutiveReportCompanyToFilter,
+  parseFinanceExecutiveReportCompany,
+} from "./financeExecutiveReportCompany.js";
+export {
+  mapExecutiveReportCompanyToEmitterCnpj,
+  mapExecutiveReportCompanyToFilter,
+  parseFinanceExecutiveReportCompany,
+} from "./financeExecutiveReportCompany.js";
 export type FinanceExecutiveReportCustomerType = "external" | "all";
 export type FinanceExecutiveReportNfeFilter = "all" | "with-nfe" | "without-nfe";
 export type FinanceExecutiveReportTopN = number | "all";
@@ -106,27 +116,6 @@ function parseIsoDateOnly(value: unknown): Date | null {
 
 function endOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-}
-
-export function parseFinanceExecutiveReportCompany(value: unknown): FinanceExecutiveReportCompany {
-  const raw = String(value ?? "all").trim().toLowerCase();
-  if (raw === "lazarios" || raw === "koppetel" || raw === "sm") return raw;
-  return "all";
-}
-
-export function mapExecutiveReportCompanyToFilter(
-  company: FinanceExecutiveReportCompany
-): string | undefined {
-  switch (company) {
-    case "lazarios":
-      return "Lazarios";
-    case "koppetel":
-      return "Koppetel";
-    case "sm":
-      return "SM";
-    default:
-      return undefined;
-  }
 }
 
 export function parseFinanceExecutiveReportCustomerType(
@@ -579,6 +568,9 @@ export async function buildFinanceExecutiveReport(
   const topN = filters.topN;
   const unavailableSections: string[] = [];
   const warnings: string[] = [];
+  const companyIssuer = mapExecutiveReportCompanyToFilter(
+    (filters.company as FinanceExecutiveReportCompany | undefined) ?? "all"
+  );
 
   const [
     arLoad,
@@ -601,14 +593,19 @@ export async function buildFinanceExecutiveReport(
     loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
     loadAnnualComparisonPortfolioRows(db, referenceDate, cashFlowFilters),
     buildFinanceBillingDashboard(
-      { year: String(filters.year), billingSource: "nfe", dateBase: "processamento" },
+      {
+        year: String(filters.year),
+        billingSource: "nfe",
+        dateBase: "processamento",
+        company: filters.company ?? "all",
+      },
       referenceDate
     ).catch((e) => {
       console.error("executive-report billing", e);
       unavailableSections.push("billing");
       return null;
     }),
-    buildSalesOrdersDashboardTab(yearCtx).catch((e) => {
+    buildSalesOrdersDashboardTab(yearCtx, { companyIssuer }).catch((e) => {
       console.error("executive-report salesOrders", e);
       unavailableSections.push("salesOrders");
       return null;

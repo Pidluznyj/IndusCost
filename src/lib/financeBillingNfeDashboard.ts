@@ -69,13 +69,21 @@ function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase): Prisma.Sql {
   return Prisma.sql`COALESCE("xmlDhEmi", "dataProcessamento")`;
 }
 
-function fiscalNfeWhereSql(dateBase: FinanceBillingDateBase): Prisma.Sql {
+function fiscalNfeWhereSql(
+  dateBase: FinanceBillingDateBase,
+  emitterCnpjDigits?: string
+): Prisma.Sql {
+  const emitterFilter =
+    emitterCnpjDigits && emitterCnpjDigits.length > 0
+      ? Prisma.sql`AND regexp_replace(COALESCE("cnpjEmitente", ''), '[^0-9]', '', 'g') = ${emitterCnpjDigits}`
+      : Prisma.empty;
   return Prisma.sql`
     "status" = ${NOMUS_NFE_STATUS_AUTHORIZED}
     AND "isMarketSale" = true
     AND "billingClassification" = ${NomusNfeBillingClassification.MARKET_REVENUE}::"NomusNfeBillingClassification"
     AND ${nfeCompetenceDateSql(dateBase)} IS NOT NULL
     AND "valorLiquido" IS NOT NULL
+    ${emitterFilter}
   `;
 }
 
@@ -123,14 +131,15 @@ function buildTargetBlock(actual: number | null, previousPeriod: number | null):
 export async function queryFiscalNfeInPeriod(
   from: Date,
   to: Date,
-  dateBase: FinanceBillingDateBase = "emissao"
+  dateBase: FinanceBillingDateBase = "emissao",
+  emitterCnpjDigits?: string
 ): Promise<{ count: number | null; net: number | null }> {
   const dateExpr = nfeCompetenceDateSql(dateBase);
   const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
     Prisma.sql`
       SELECT COUNT(*)::bigint AS c, COALESCE(SUM("valorLiquido"), 0) AS v
       FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase)}
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
         AND ${dateExpr} >= ${from}
         AND ${dateExpr} <= ${to}
     `
@@ -140,7 +149,8 @@ export async function queryFiscalNfeInPeriod(
 
 export async function queryMonthlyFiscalNfe(
   year: number,
-  dateBase: FinanceBillingDateBase = "emissao"
+  dateBase: FinanceBillingDateBase = "emissao",
+  emitterCnpjDigits?: string
 ): Promise<Map<number, number>> {
   const from = startOfYear(new Date(year, 0, 1));
   const to = endOfYear(new Date(year, 0, 1));
@@ -151,7 +161,7 @@ export async function queryMonthlyFiscalNfe(
         EXTRACT(MONTH FROM ${dateExpr})::int AS month,
         COALESCE(SUM("valorLiquido"), 0) AS total
       FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase)}
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
         AND ${dateExpr} >= ${from}
         AND ${dateExpr} <= ${to}
       GROUP BY 1
@@ -166,7 +176,8 @@ export async function queryMonthlyFiscalNfe(
 }
 
 async function queryRecentFiscalNfes(
-  dateBase: FinanceBillingDateBase
+  dateBase: FinanceBillingDateBase,
+  emitterCnpjDigits?: string
 ): Promise<RecentInvoicedOrderRow[]> {
   const dateExpr = nfeCompetenceDateSql(dateBase);
   const rows = await prisma.$queryRaw<
@@ -188,7 +199,7 @@ async function queryRecentFiscalNfes(
         "valorLiquido" AS valor,
         status
       FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase)}
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
       ORDER BY ${dateExpr} DESC
       LIMIT ${RECENT_NFE_LIMIT}
     `
@@ -206,7 +217,8 @@ async function queryRecentFiscalNfes(
 async function queryTopFiscalNfeCustomers(
   from: Date,
   to: Date,
-  dateBase: FinanceBillingDateBase
+  dateBase: FinanceBillingDateBase,
+  emitterCnpjDigits?: string
 ): Promise<BillingTopCustomerRow[]> {
   const dateExpr = nfeCompetenceDateSql(dateBase);
   const rows = await prisma.$queryRaw<
@@ -219,7 +231,7 @@ async function queryTopFiscalNfeCustomers(
         COUNT(*)::bigint AS order_count,
         COALESCE(SUM("valorLiquido"), 0) AS total
       FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase)}
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
         AND ${dateExpr} >= ${from}
         AND ${dateExpr} <= ${to}
       GROUP BY 1, 2
@@ -248,10 +260,17 @@ function toCumulativeBillingPoints(
   }));
 }
 
+export type BillingDashboardNfeOptions = {
+  /** CNPJ emitente (somente dígitos) — filtra NF-e por empresa do grupo. */
+  emitterCnpjDigits?: string;
+};
+
 export async function buildBillingDashboardFromNfes(
   yearCtx: ExecutiveDashboardYearContext,
-  dateBase: FinanceBillingDateBase = "emissao"
+  dateBase: FinanceBillingDateBase = "emissao",
+  options: BillingDashboardNfeOptions = {}
 ): Promise<BillingDashboardTab> {
+  const emitterCnpjDigits = options.emitterCnpjDigits?.replace(/\D/g, "") || undefined;
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
   const monthStart = startOfMonth(ref);
@@ -288,17 +307,17 @@ export async function buildBillingDashboardFromNfes(
     topCustomers,
     ...extraYearMonthlies
   ] = await Promise.all([
-    queryFiscalNfeInPeriod(monthStart, monthEnd, dateBase),
-    queryFiscalNfeInPeriod(yearStart, yearEnd, dateBase),
-    queryFiscalNfeInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd, dateBase),
-    queryFiscalNfeInPeriod(prevYearStart, prevYearEnd, dateBase),
-    queryFiscalNfeInPeriod(yearStart, ref, dateBase),
-    queryFiscalNfeInPeriod(prevYearStart, ytdPrevEnd, dateBase),
-    queryMonthlyFiscalNfe(year, dateBase),
-    queryMonthlyFiscalNfe(yearCtx.previousYear, dateBase),
-    queryRecentFiscalNfes(dateBase),
-    queryTopFiscalNfeCustomers(yearStart, yearEnd, dateBase),
-    ...extraYears.map((y) => queryMonthlyFiscalNfe(y, dateBase)),
+    queryFiscalNfeInPeriod(monthStart, monthEnd, dateBase, emitterCnpjDigits),
+    queryFiscalNfeInPeriod(yearStart, yearEnd, dateBase, emitterCnpjDigits),
+    queryFiscalNfeInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd, dateBase, emitterCnpjDigits),
+    queryFiscalNfeInPeriod(prevYearStart, prevYearEnd, dateBase, emitterCnpjDigits),
+    queryFiscalNfeInPeriod(yearStart, ref, dateBase, emitterCnpjDigits),
+    queryFiscalNfeInPeriod(prevYearStart, ytdPrevEnd, dateBase, emitterCnpjDigits),
+    queryMonthlyFiscalNfe(year, dateBase, emitterCnpjDigits),
+    queryMonthlyFiscalNfe(yearCtx.previousYear, dateBase, emitterCnpjDigits),
+    queryRecentFiscalNfes(dateBase, emitterCnpjDigits),
+    queryTopFiscalNfeCustomers(yearStart, yearEnd, dateBase, emitterCnpjDigits),
+    ...extraYears.map((y) => queryMonthlyFiscalNfe(y, dateBase, emitterCnpjDigits)),
   ]);
 
   const yearMaps = new Map<number, Map<number, number>>();

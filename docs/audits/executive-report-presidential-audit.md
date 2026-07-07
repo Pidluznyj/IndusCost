@@ -12,11 +12,11 @@
 
 | Status | Qtd |
 |--------|-----|
-| OK_USA_MOTOR_OFICIAL | 13 |
-| PRECISA_VALIDACAO | 2 |
+| OK_USA_MOTOR_OFICIAL | 15 |
+| PRECISA_VALIDACAO | 0 |
 | NAO_APLICAVEL | 2 |
 
-**Conclusão:** indicadores financeiros críticos (AR, AP, Fluxo, Faturamento NF-e, Pedidos Nomus, Centros de Custo) usam motores oficiais com testes de paridade. Pendências documentadas: exclusão de grupo no motor de **Pedidos** e filtro **empresa** em Pedidos/Faturamento no contexto do relatório.
+**Conclusão:** exclusão de grupo em Pedidos e filtro empresa em Pedidos/Faturamento aplicados nos motores oficiais. Indicadores financeiros críticos delegam aos motores com testes de paridade.
 
 ---
 
@@ -29,8 +29,8 @@
 | Vendido mês / YTD / variação | `buildSalesOrdersDashboardTab` | `salesOrderRulesEngine` | OK |
 | Gráfico mensal | `monthlySeries` do tab | Mesmo motor | OK |
 | Status breakdown | `statusBreakdown` | `buildOfficialStatusBreakdownFromOrders` | OK |
-| Exclusão grupo (cliente) | — | `isGroupCompanyCustomer` (faturamento) | PRECISA_VALIDACAO |
-| Filtro empresa no relatório | `buildFinanceExecutiveReport` | `financeSalesOrdersDashboard` | PRECISA_VALIDACAO |
+| Exclusão grupo (cliente) | `applySalesOrderRulesUniverseFilters` | `isGroupCompanyCustomer` | OK |
+| Filtro empresa | `buildSalesOrdersDashboardTab` + motor | `companyIssuer` | OK |
 
 - **Não usa** `Proposal` nem `responsible` para KPIs.
 - **Fonte:** `SalesOrder` / `SalesOrderItem` sincronizados do Nomus.
@@ -40,6 +40,7 @@
 | Indicador | Builder | Motor oficial | Status |
 |-----------|---------|---------------|--------|
 | Faturado mês / YTD / comparativo | `buildFinanceBillingDashboard` | `buildBillingDashboardFromNfes` | OK |
+| Filtro empresa NF-e | `cnpjEmitente` via `mapExecutiveReportCompanyToEmitterCnpj` | OK |
 | Gráfico multi-ano | `multiYearMonthly` | `financeBillingNfeDashboard` | OK |
 | Exclusão intercompany | `intercompanyExclusionApplied` | `billingMarketCustomerSql` / grupo | OK |
 
@@ -94,7 +95,7 @@
 
 - AR / AP / Fluxo: `financeInternalGroupExclusions.ts` (contraparte + intercompany AP).
 - Faturamento NF-e: exclusão de mercado intercompany.
-- Pedidos: **validar** alinhamento com política de mercado.
+- Pedidos: **exclui clientes do grupo** via `isSalesOrderMarketCustomer` no motor oficial.
 
 CNPJs excluídos: Lazarios `72.569.510/0001-95`, Koppetel `14.055.501/0001-80`, SM `55.717.719/0001-30`.
 

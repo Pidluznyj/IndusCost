@@ -4,10 +4,11 @@ import { normalizeSearchString } from "@/src/lib/utils";
 export const GROUP_COMPANY_CNPJ_DIGITS = [
   "14055501000180", // Koppetel — 14.055.501/0001-80
   "72569510000195", // Lazarios — 72.569.510/0001-95
+  "55717719000130", // SM — 55.717.719/0001-30
 ] as const;
 
-/** SM: CNPJ ainda não confirmado no cadastro — fallback por nome normalizado. */
-export const GROUP_COMPANY_SM_CNPJ_PENDING = true;
+/** SM: CNPJ confirmado no cadastro financeiro interno. */
+export const GROUP_COMPANY_SM_CNPJ_PENDING = false;
 
 export type GroupCompanyCustomerInput = {
   taxId?: string | null;
@@ -58,4 +59,17 @@ export function isGroupCompanyCustomer(customer: GroupCompanyCustomerInput): boo
 /** Cliente elegível para faturamento gerencial de mercado. */
 export function isMarketBillingCustomer(customer: GroupCompanyCustomerInput): boolean {
   return !isGroupCompanyCustomer(customer);
+}
+
+/** Cliente de pedido de venda — usa dados do Customer vinculado. */
+export function isSalesOrderMarketCustomer(order: {
+  Customer?: GroupCompanyCustomerInput | null;
+}): boolean {
+  const customer = order.Customer;
+  if (!customer) return true;
+  return isMarketBillingCustomer({
+    taxId: customer.taxId,
+    companyName: customer.companyName,
+    tradeName: customer.tradeName,
+  });
 }

@@ -7,6 +7,10 @@ import {
   parseFinanceBillingSource,
 } from "./financeBillingSourceTypes.js";
 import type { BillingDashboardTab } from "./executiveDashboardTypes.js";
+import {
+  mapExecutiveReportCompanyToEmitterCnpj,
+  parseFinanceExecutiveReportCompany,
+} from "./financeExecutiveReportCompany.js";
 
 export async function buildFinanceBillingDashboard(
   query: Record<string, unknown> = {},
@@ -15,9 +19,11 @@ export async function buildFinanceBillingDashboard(
   const billingSource = parseFinanceBillingSource(query.billingSource);
   const dateBase = parseFinanceBillingDateBase(query.dateBase);
   const yearCtx = resolveExecutiveDashboardYearContext(query.year, now);
+  const company = parseFinanceExecutiveReportCompany(query.company);
+  const emitterCnpjDigits = mapExecutiveReportCompanyToEmitterCnpj(company);
   const tab =
     billingSource === "nfe"
-      ? await buildBillingDashboardFromNfes(yearCtx, dateBase)
+      ? await buildBillingDashboardFromNfes(yearCtx, dateBase, { emitterCnpjDigits })
       : await buildBillingDashboardTab(yearCtx);
   const lastInvoicedAt = tab.recentInvoicedOrders[0]?.invoiceDate ?? null;
   return {
