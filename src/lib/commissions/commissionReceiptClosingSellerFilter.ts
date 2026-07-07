@@ -1,27 +1,33 @@
 import type { ReceiptClosingApiLine, ReceiptClosingApiSellerRow } from "./commissionReceiptClosingApi.js";
-import { sumUniqueReceivedFromLines } from "./commissionReceiptClosingApi.js";
+import {
+  RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
+  RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
+  resolveReceiptClosingSellerGroupKey,
+  sumUniqueReceivedFromLines,
+} from "./commissionReceiptClosingApi.js";
 
 /** Chave estável de agrupamento — espelha `buildReceiptClosingBySeller`. */
 export function receiptClosingSellerRowKey(row: {
   sellerId: string | null;
   sellerName: string | null;
 }): string {
-  return row.sellerId ?? row.sellerName ?? "—";
+  return row.sellerId ?? row.sellerName ?? RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
 }
 
 export function receiptClosingLineSellerKey(line: {
+  status: string;
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
   rawSellerName: string | null;
 }): string {
-  return line.canonicalSellerId ?? line.canonicalSellerName ?? line.rawSellerName ?? "—";
+  return resolveReceiptClosingSellerGroupKey(line);
 }
 
 export function receiptClosingSellerFilterLabel(row: {
   sellerId: string | null;
   sellerName: string | null;
 }): string {
-  return row.sellerName?.trim() || "—";
+  return row.sellerName?.trim() || RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL;
 }
 
 export function filterReceiptClosingLinesBySellerKey(

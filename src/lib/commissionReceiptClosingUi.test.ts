@@ -31,5 +31,6 @@ describe("commissionReceiptClosingUi", () => {
     const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
     assert.match(page, /computeReceiptClosingDetailTotals/);
     assert.match(page, /commissions-receipt-closing-detail-totals/);
+    assert.match(page, /RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL/);
   });
 });

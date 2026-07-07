@@ -8,6 +8,7 @@ import {
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
 } from "./commissionReceiptClosingSellerFilter.js";
+import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY } from "./commissionReceiptClosingApi.js";
 
 function line(
   partial: Partial<ReceiptClosingApiLine> & Pick<ReceiptClosingApiLine, "lineKey">
@@ -62,6 +63,7 @@ describe("commissionReceiptClosingSellerFilter", () => {
     assert.equal(key, "seller-gislene");
     assert.equal(
       receiptClosingLineSellerKey({
+        status: "COMMISSIONABLE",
         canonicalSellerId: "seller-gislene",
         canonicalSellerName: "GISLENE LIMA",
         rawSellerName: "GISLENE",
@@ -73,15 +75,28 @@ describe("commissionReceiptClosingSellerFilter", () => {
   it("linha sem vendedor canônico usa chave —", () => {
     assert.equal(
       receiptClosingLineSellerKey({
+        status: "NO_SELLER",
         canonicalSellerId: null,
         canonicalSellerName: null,
         rawSellerName: null,
       }),
-      "—"
+      RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY
     );
     assert.equal(
       receiptClosingSellerFilterLabel({ sellerId: null, sellerName: null }),
-      "—"
+      "Sem vendedor / Excluído"
+    );
+  });
+
+  it("CUSTOMER_EXCLUDED com vendedor raw agrupa no bucket — e não na vendedora", () => {
+    assert.equal(
+      receiptClosingLineSellerKey({
+        status: "CUSTOMER_EXCLUDED",
+        canonicalSellerId: "seller-gislene",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerName: "GISLENE",
+      }),
+      RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY
     );
   });
 
@@ -89,33 +104,46 @@ describe("commissionReceiptClosingSellerFilter", () => {
     const lines = [
       line({
         lineKey: "g1",
+        status: "COMMISSIONABLE",
         canonicalSellerId: "seller-gislene",
         canonicalSellerName: "GISLENE LIMA",
         nomusReceivableId: 1,
       }),
       line({
-        lineKey: "r1",
-        canonicalSellerId: "seller-rodrigo",
-        canonicalSellerName: "RODRIGO",
+        lineKey: "ex1",
+        status: "CUSTOMER_EXCLUDED",
+        canonicalSellerId: "seller-gislene",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerName: "GISLENE",
         nomusReceivableId: 2,
       }),
       line({
+        lineKey: "r1",
+        canonicalSellerId: "seller-rodrigo",
+        canonicalSellerName: "RODRIGO",
+        nomusReceivableId: 3,
+      }),
+      line({
         lineKey: "n1",
+        status: "NO_SELLER",
         canonicalSellerId: null,
         canonicalSellerName: null,
         rawSellerName: null,
-        nomusReceivableId: 3,
+        nomusReceivableId: 4,
       }),
     ];
     const gislene = filterReceiptClosingLinesBySellerKey(lines, "seller-gislene");
     assert.equal(gislene.length, 1);
     assert.equal(gislene[0]?.lineKey, "g1");
 
-    const noSeller = filterReceiptClosingLinesBySellerKey(lines, "—");
-    assert.equal(noSeller.length, 1);
-    assert.equal(noSeller[0]?.lineKey, "n1");
+    const noSeller = filterReceiptClosingLinesBySellerKey(lines, RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY);
+    assert.equal(noSeller.length, 2);
+    assert.deepEqual(
+      noSeller.map((row) => row.lineKey).sort(),
+      ["ex1", "n1"]
+    );
 
-    assert.equal(filterReceiptClosingLinesBySellerKey(lines, null).length, 3);
+    assert.equal(filterReceiptClosingLinesBySellerKey(lines, null).length, 4);
   });
 
   it("totais do detalhe somam colunas visíveis com âncora de recebido", () => {

@@ -35,6 +35,7 @@ import {
   receiptClosingSellerRowKey,
   type ReceiptClosingDetailTotals,
 } from "@/src/lib/commissions/commissionReceiptClosingSellerFilter";
+import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -106,7 +107,9 @@ function SellerTable({
                 data-testid={`commissions-receipt-closing-seller-row-${rowKey}`}
                 aria-selected={isSelected}
               >
-                <td className="px-2 py-2 font-medium">{row.sellerName ?? "—"}</td>
+                <td className="px-2 py-2 font-medium">
+                  {row.sellerName ?? RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL}
+                </td>
                 <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
                 <td className="px-2 py-2 text-right">
                   {formatFinanceCurrency(row.commissionableBase)}

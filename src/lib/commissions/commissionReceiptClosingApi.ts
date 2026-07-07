@@ -19,6 +19,52 @@ import type {
 
 export type ReceiptClosingPageMode = "EMPTY" | "PREVIEW" | "CLOSED";
 
+/** Chave do bucket de resumo para linhas sem vendedor comissionável ou excluídas por regra. */
+export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY = "—";
+
+export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL = "Sem vendedor / Excluído";
+
+const RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES = new Set([
+  "CUSTOMER_EXCLUDED",
+  "GROUP_COMPANY_EXCLUDED",
+]);
+
+export function isReceiptClosingSellerExcludedFromCommission(status: string): boolean {
+  return RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES.has(status);
+}
+
+/** Chave de agrupamento do resumo Por vendedor (não altera vendedor raw do detalhe). */
+export function resolveReceiptClosingSellerGroupKey(line: {
+  status: string;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  rawSellerName: string | null;
+}): string {
+  if (isReceiptClosingSellerExcludedFromCommission(line.status)) {
+    return RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
+  }
+  return (
+    line.canonicalSellerId ??
+    line.canonicalSellerName ??
+    line.rawSellerName ??
+    RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY
+  );
+}
+
+function clearCanonicalSellerForExcludedApiLine(line: {
+  status: string;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+}): { canonicalSellerId: string | null; canonicalSellerName: string | null } {
+  if (isReceiptClosingSellerExcludedFromCommission(line.status)) {
+    return { canonicalSellerId: null, canonicalSellerName: null };
+  }
+  return {
+    canonicalSellerId: line.canonicalSellerId,
+    canonicalSellerName: line.canonicalSellerName,
+  };
+}
+
 export type ReceiptClosingMaterializationCards = {
   totalReceivedAmount: number;
   receivedWithScheduleAmount: number;
@@ -712,6 +758,7 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
         ? line.grossCommissionAmount
         : line.expectedCommissionAmount
       : null;
+  const canonicalSeller = clearCanonicalSellerForExcludedApiLine(line);
   return {
     lineKey: line.ledgerLineKey,
     nomusReceivableId: line.nomusReceivableId,
@@ -732,8 +779,8 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     productName: line.productName,
     rawSellerId: line.rawSellerId,
     rawSellerName: line.rawSellerName,
-    canonicalSellerId: line.canonicalSellerId,
-    canonicalSellerName: line.canonicalSellerName,
+    canonicalSellerId: canonicalSeller.canonicalSellerId,
+    canonicalSellerName: canonicalSeller.canonicalSellerName,
     sellerResolutionStatus: line.sellerResolutionStatus,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
@@ -771,6 +818,7 @@ export function mapLedgerLineToApiLine(
         ? line.expectedCommissionAmount
         : line.releasedCommissionAmount
       : line.releasedCommissionAmount;
+  const canonicalSeller = clearCanonicalSellerForExcludedApiLine(line);
   return {
     lineKey: line.ledgerLineKey,
     nomusReceivableId: line.nomusReceivableId,
@@ -791,8 +839,8 @@ export function mapLedgerLineToApiLine(
     productName: null,
     rawSellerId: null,
     rawSellerName: null,
-    canonicalSellerId: line.canonicalSellerId,
-    canonicalSellerName: line.canonicalSellerName,
+    canonicalSellerId: canonicalSeller.canonicalSellerId,
+    canonicalSellerName: canonicalSeller.canonicalSellerName,
     sellerResolutionStatus: null,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
@@ -820,10 +868,11 @@ export function buildReceiptClosingBySeller(
     ReceiptClosingApiSellerRow & { seenReceivables: Set<number>; seenExceptions: Set<string> }
   >();
   for (const line of lines) {
-    const key = line.canonicalSellerId ?? line.canonicalSellerName ?? line.rawSellerName ?? "—";
+    const key = resolveReceiptClosingSellerGroupKey(line);
+    const isUnassignedBucket = key === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
     const row = map.get(key) ?? {
-      sellerId: line.canonicalSellerId,
-      sellerName: line.canonicalSellerName ?? line.rawSellerName,
+      sellerId: isUnassignedBucket ? null : line.canonicalSellerId,
+      sellerName: isUnassignedBucket ? null : (line.canonicalSellerName ?? line.rawSellerName),
       receivableCount: 0,
       receivedAmount: 0,
       commissionableBase: 0,

@@ -13,6 +13,7 @@ import {
   mapPreviewLineToApiLine,
   RECEIPT_CLOSING_EXPORT_HEADERS,
 } from "./commissionReceiptClosingApi.js";
+import { filterReceiptClosingLinesBySellerKey } from "./commissionReceiptClosingSellerFilter.js";
 import {
   parseReceiptClosingApplyBody,
   parseReceiptClosingReprocessBody,
@@ -293,8 +294,75 @@ describe("commissionReceiptClosingApi", () => {
     });
     assert.equal(payload.cards.receivedExcludedCustomerAmount, 1000);
     assert.equal(payload.cards.excludedCommissionAmount, 15);
-    assert.equal(payload.bySeller[0]?.excludedCommission, 15);
-    assert.equal(payload.bySeller[0]?.exceptionCount, 0);
+    const unassigned = payload.bySeller.find((row) => row.sellerId == null && row.sellerName == null);
+    assert.ok(unassigned);
+    assert.equal(unassigned?.excludedCommission, 15);
+    assert.equal(unassigned?.receivedAmount, 1000);
+    assert.equal(unassigned?.exceptionCount, 0);
+    assert.equal(payload.lines[0]?.canonicalSellerName, null);
+    assert.equal(payload.lines[0]?.rawSellerName, "GISLENE");
+  });
+
+  it("cliente excluído com vendedor raw não infla total da vendedora", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "ok",
+        nomusReceivableId: 1,
+        receivedAmount: 5000,
+        commissionableBaseAmount: 5000,
+        releasedCommissionAmount: 100,
+        grossCommissionAmount: 100,
+      }),
+      previewLine({
+        ledgerLineKey: "ex-esmaltec",
+        nomusReceivableId: 2,
+        customerName: "Esmaltec S/A",
+        status: "CUSTOMER_EXCLUDED",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 25,
+        commissionableBaseAmount: 0,
+        exclusionReason: "Exceção comercial",
+        rawSellerName: "GISLENE",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "GISLENE LIMA",
+      }),
+      previewLine({
+        ledgerLineKey: "ex-britania",
+        nomusReceivableId: 3,
+        customerName: "Britania Eletrodomesticos SA",
+        receivedAmount: 800,
+        status: "CUSTOMER_EXCLUDED",
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 10,
+        commissionableBaseAmount: 0,
+        exclusionReason: "Contrato sem comissão",
+        rawSellerName: "GISLENE",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "GISLENE LIMA",
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+    const gislene = payload.bySeller.find((row) => row.sellerId === "seller-1");
+    const unassigned = payload.bySeller.find((row) => row.sellerId == null && row.sellerName == null);
+    assert.ok(gislene);
+    assert.ok(unassigned);
+    assert.equal(gislene?.receivedAmount, 5000);
+    assert.equal(gislene?.releasedCommission, 100);
+    assert.equal(unassigned?.receivedAmount, 1800);
+    assert.equal(unassigned?.excludedCommission, 35);
+    assert.equal(
+      filterReceiptClosingLinesBySellerKey(payload.lines, "seller-1").length,
+      1
+    );
+    assert.equal(
+      filterReceiptClosingLinesBySellerKey(payload.lines, "—").length,
+      2
+    );
   });
 
   it("sem schedule aparece como exceção clara", () => {
@@ -480,6 +548,21 @@ describe("commissionReceiptClosingApi", () => {
       reason: "correção de regra",
     });
     assert.equal(body.reason, "correção de regra");
+  });
+
+  it("mapPreviewLineToApiLine zera vendedor canônico em linhas excluídas", () => {
+    const api = mapPreviewLineToApiLine(
+      previewLine({
+        ledgerLineKey: "ex",
+        status: "GROUP_COMPANY_EXCLUDED",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerName: "GISLENE",
+      })
+    );
+    assert.equal(api.canonicalSellerId, null);
+    assert.equal(api.canonicalSellerName, null);
+    assert.equal(api.rawSellerName, "GISLENE");
   });
 
   it("buildReceiptClosingBySeller deduplica recebido por título", () => {
