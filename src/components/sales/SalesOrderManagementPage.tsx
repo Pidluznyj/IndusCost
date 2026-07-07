@@ -76,7 +76,7 @@ import {
   type SalesOrderManagementAdvancedFilterChip,
 } from "@/src/lib/salesOrderManagementFilterUx";
 
-const TABLE_COLSPAN = 21;
+const TABLE_COLSPAN = 23;
 
 type ManagementResponse = {
   page: number;
@@ -921,11 +921,13 @@ export function SalesOrderManagementPage() {
                     Cliente{sortIndicator("customerName")}
                   </button>
                 </th>
+                <th className="p-3 font-semibold">Responsável CRM</th>
                 <th className="p-3 font-semibold">
                   <button type="button" className="hover:underline" onClick={() => toggleSort("sellerName")}>
-                    Vendedor{sortIndicator("sellerName")}
+                    Vendedor Nomus{sortIndicator("sellerName")}
                   </button>
                 </th>
+                <th className="p-3 font-semibold">Status vendedor</th>
                 <th className="p-3 font-semibold">
                   <button type="button" className="hover:underline" onClick={() => toggleSort("issueDate")}>
                     Emissão{sortIndicator("issueDate")}
@@ -1029,7 +1031,20 @@ export function SalesOrderManagementPage() {
                       <div className="text-[10px] text-muted-foreground">Ver detalhes</div>
                     </td>
                     <td className="p-3">{row.customerName}</td>
-                    <td className="p-3">{row.sellerName ?? row.responsible ?? "—"}</td>
+                    <td className="p-3">{row.crmCommercialResponsible ?? "—"}</td>
+                    <td className="p-3">{row.nomusSellerName ?? "—"}</td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          row.nomusSellerStatus === "OK"
+                            ? "bg-emerald-100 text-emerald-900"
+                            : "bg-amber-100 text-amber-900"
+                        }`}
+                        data-testid="sales-order-nomus-seller-status"
+                      >
+                        {row.nomusSellerStatusLabel}
+                      </span>
+                    </td>
                     <td className="p-3">{formatSalesOrderDate(row.issueDate)}</td>
                     <td className="p-3">{formatSalesOrderDate(row.expectedDeliveryDate)}</td>
                     <td className="p-3">

@@ -328,7 +328,7 @@ async function processBeneficiaryForItem(
 ): Promise<void> {
   const { order, item, beneficiaryType } = input;
 
-  if (beneficiaryType === "SELLER" && !order.seller.nomusSellerId && !order.seller.responsibleName) {
+  if (beneficiaryType === "SELLER" && !order.seller.nomusSellerId) {
     return;
   }
   if (

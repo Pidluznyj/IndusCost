@@ -521,6 +521,7 @@ model SalesOrder {
   externalCustomerId     Int?
   responsible            String?
   externalSellerId       Int?
+  nomusSellerName        String?
   companyIssuer          String?
   externalCompanyId      Int?
   status                 SalesOrderStatus     @default(READY_TO_SEND)

@@ -146,10 +146,21 @@ export function mapPrismaOrderToSalesOrderRulesInput(order: {
   totalGrossValue?: unknown;
   totalItems: number;
   responsible?: string | null;
+  nomusSellerName?: string | null;
+  externalSellerId?: number | null;
   nomusRawResponse?: unknown;
   companyIssuer?: string | null;
   externalSalesOrderId?: number | null;
-  Customer?: { companyName?: string | null; tradeName?: string | null; taxId?: string | null };
+  Customer?: {
+    companyName?: string | null;
+    tradeName?: string | null;
+    taxId?: string | null;
+    CrmCustomerCommercialOwner?: {
+      sellerCanonicalName?: string | null;
+      sellerResponsibleName?: string | null;
+      isActive?: boolean;
+    } | null;
+  };
   items: Array<{
     id: string;
     externalProductId?: number | null;
@@ -169,7 +180,7 @@ export function mapPrismaOrderToSalesOrderRulesInput(order: {
     totalNetValue: order.totalNetValue,
     totalGrossValue: order.totalGrossValue,
     totalItems: order.totalItems,
-    responsible: order.responsible ?? null,
+    responsible: order.nomusSellerName ?? null,
     nomusRawResponse: order.nomusRawResponse ?? null,
     companyIssuer: order.companyIssuer ?? null,
     externalSalesOrderId: order.externalSalesOrderId ?? null,
@@ -932,10 +943,25 @@ export const SALES_ORDER_RULES_PRISMA_SELECT = {
   totalGrossValue: true,
   totalItems: true,
   responsible: true,
+  nomusSellerName: true,
+  externalSellerId: true,
   nomusRawResponse: true,
   companyIssuer: true,
   externalSalesOrderId: true,
-  Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+  Customer: {
+    select: {
+      companyName: true,
+      tradeName: true,
+      taxId: true,
+      CrmCustomerCommercialOwner: {
+        select: {
+          sellerCanonicalName: true,
+          sellerResponsibleName: true,
+          isActive: true,
+        },
+      },
+    },
+  },
   items: {
     select: {
       id: true,

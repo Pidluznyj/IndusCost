@@ -87,6 +87,8 @@ export async function loadSalesOrderIntelligence(orderId: string) {
       issueDate: order.issueDate,
       expectedDeliveryDate: order.expectedDeliveryDate,
       totalNetValue: order.totalNetValue,
+      nomusSellerName: order.nomusSellerName,
+      externalSellerId: order.externalSellerId,
       responsible: order.responsible,
       companyIssuer: order.companyIssuer,
       nomusRawResponse: order.nomusRawResponse,

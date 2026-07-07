@@ -65,11 +65,13 @@ function parseDate(value: unknown): Date | null {
 
 export function extractSellerFromOrder(input: {
   externalSellerId: number | null;
-  responsible: string | null;
+  nomusSellerName?: string | null;
+  /** Legado — não usado para comissão. */
+  responsible?: string | null;
 }): CommissionSellerInfo {
   return {
     nomusSellerId: input.externalSellerId,
-    responsibleName: input.responsible?.trim() || null,
+    responsibleName: input.nomusSellerName?.trim() || null,
   };
 }
 
@@ -355,7 +357,7 @@ export function assembleOrderSourceBundle(input: {
   externalCustomerId: number | null;
   customerName: string | null;
   externalSellerId: number | null;
-  responsible: string | null;
+  nomusSellerName: string | null;
   totalNetValue: number;
   nomusRawResponse: unknown;
   items: CommissionOrderItemSource[];
@@ -365,7 +367,7 @@ export function assembleOrderSourceBundle(input: {
 }): CommissionOrderSourceBundle {
   const seller = extractSellerFromOrder({
     externalSellerId: input.externalSellerId,
-    responsible: input.responsible,
+    nomusSellerName: input.nomusSellerName,
   });
   const representative = extractRepresentativeFromNomusRaw(input.nomusRawResponse);
   const authorizedOutputNfes = filterAuthorizedOutputNfes(input.linkedNfes);

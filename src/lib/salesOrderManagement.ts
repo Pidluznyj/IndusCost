@@ -316,9 +316,20 @@ export function buildManagementRowsFromOrders(
     expectedDeliveryDate: Date | null;
     totalNetValue: unknown;
     responsible: string | null;
+    nomusSellerName?: string | null;
+    externalSellerId?: number | null;
     nomusRawResponse: unknown;
     companyIssuer?: string | null;
-    Customer?: { companyName?: string | null; tradeName?: string | null; taxId?: string | null };
+    Customer?: {
+      companyName?: string | null;
+      tradeName?: string | null;
+      taxId?: string | null;
+      CrmCustomerCommercialOwner?: {
+        sellerCanonicalName?: string | null;
+        sellerResponsibleName?: string | null;
+        isActive?: boolean;
+      } | null;
+    };
     items: SalesOrderLifecycleInput["items"];
   }>,
   filters: SalesOrderManagementFilters,
@@ -354,7 +365,9 @@ export function buildManagementRowsFromOrders(
         issueDate: order.issueDate.toISOString(),
         expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() ?? null,
         totalNetValue: order.totalNetValue,
-        responsible: order.responsible,
+        responsible: order.nomusSellerName ?? order.responsible,
+        nomusSellerName: order.nomusSellerName ?? null,
+        externalSellerId: order.externalSellerId ?? null,
         companyIssuer: order.companyIssuer,
         nomusRawResponse: order.nomusRawResponse,
         itemsCount: order.items.length,

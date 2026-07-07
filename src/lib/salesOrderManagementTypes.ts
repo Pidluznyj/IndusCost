@@ -105,6 +105,10 @@ export type SalesOrderManagementRow = {
   sellerName?: string | null;
   companyName?: string | null;
   responsible: string | null;
+  crmCommercialResponsible: string | null;
+  nomusSellerName: string | null;
+  nomusSellerStatus: "OK" | "NOT_INFORMED";
+  nomusSellerStatusLabel: string;
 
   executiveStatusLabel: string;
   /** Status Logístico BI — card/filtro principal da gestão. */

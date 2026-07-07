@@ -34,6 +34,7 @@ import type {
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
+import { COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON } from "../salesOrderNomusSeller.shared.js";
 import {
   COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
   isCommissionInternalGroupReceivable,
@@ -611,8 +612,8 @@ export function diagnoseReceivableWithoutMaterializedSchedule(input: {
     };
   }
 
-  if (!input.order.seller.nomusSellerId && !input.order.seller.responsibleName?.trim()) {
-    return { status: "NO_SELLER", statusReason: "Pedido sem vendedor" };
+  if (!input.order.seller.nomusSellerId) {
+    return { status: "NO_SELLER", statusReason: COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON };
   }
 
   const sellerResolution = resolveCommissionSellerIdentity(
@@ -990,14 +991,14 @@ function calculatePreviewLinesForReceivable(input: {
 
   const canonicalSellerId = sellerResolution.canonicalSellerId;
 
-  if (!order.seller.nomusSellerId && !order.seller.responsibleName?.trim()) {
+  if (!order.seller.nomusSellerId) {
     return [
       buildExceptionLine({
         receivable,
         year,
         month,
         status: "NO_SELLER",
-        statusReason: "Pedido sem vendedor",
+        statusReason: COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON,
         order,
       }),
     ];

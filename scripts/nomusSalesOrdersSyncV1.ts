@@ -20,6 +20,7 @@ import {
 } from "../src/lib/salesOrderNomusSync.server.ts";
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
+import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 
 const prisma = new PrismaClient();
 
@@ -71,7 +72,7 @@ type EligibleSalesOrderPlan = {
   customerId: string;
   externalCustomerId: number | null;
   externalSellerId: number | null;
-  responsible: string | null;
+  nomusSellerName: string | null;
   lineCount: number;
   lines: EligibleSalesOrderLine[];
 };
@@ -558,10 +559,7 @@ type ProposalItemJoin = {
   productId: string;
   externalProductId: number;
   customerId: string;
-  proposalResponsible: string | null;
 };
-
-type SellerResponsibleMap = Map<number, string>;
 
 async function loadProposalItemIndex(): Promise<Map<string, ProposalItemJoin[]>> {
   const rows = await prisma.proposalItem.findMany({
@@ -571,7 +569,7 @@ async function loadProposalItemIndex(): Promise<Map<string, ProposalItemJoin[]>>
       proposalId: true,
       productId: true,
       externalProductId: true,
-      Proposal: { select: { customerId: true, responsible: true } },
+      Proposal: { select: { customerId: true } },
     },
   });
 
@@ -585,10 +583,6 @@ async function loadProposalItemIndex(): Promise<Map<string, ProposalItemJoin[]>>
       productId: r.productId,
       externalProductId: ext,
       customerId: r.Proposal.customerId,
-      proposalResponsible:
-        typeof r.Proposal.responsible === "string" && r.Proposal.responsible.trim()
-          ? r.Proposal.responsible.trim()
-          : null,
     };
     const k = `${r.Proposal.customerId}|${ext}`;
     const arr = index.get(k) ?? [];
@@ -596,37 +590,6 @@ async function loadProposalItemIndex(): Promise<Map<string, ProposalItemJoin[]>>
     index.set(k, arr);
   }
   return index;
-}
-
-async function loadSellerResponsibleMap(): Promise<SellerResponsibleMap> {
-  const rows = await prisma.proposal.findMany({
-    where: {
-      sourceSystem: SOURCE_SYSTEM,
-      externalSellerId: { not: null },
-      responsible: { not: null },
-    },
-    select: {
-      externalSellerId: true,
-      responsible: true,
-      updatedAt: true,
-    },
-    orderBy: [{ externalSellerId: "asc" }, { updatedAt: "desc" }],
-  });
-
-  const map: SellerResponsibleMap = new Map();
-
-  for (const row of rows) {
-    const sellerId = row.externalSellerId;
-    const responsible =
-      typeof row.responsible === "string" && row.responsible.trim()
-        ? row.responsible.trim()
-        : null;
-
-    if (sellerId == null || !responsible) continue;
-    if (!map.has(sellerId)) map.set(sellerId, responsible);
-  }
-
-  return map;
 }
 
 async function loadProductMapFromProposalItems(
@@ -681,8 +644,7 @@ function analyzeOrder(
   proposalIndex: Map<string, ProposalItemJoin[]>,
   nomusProductById: Map<number, JsonObject>,
   productBySku: Map<string, { id: string; sku: string; name: string }>,
-  productById: Map<string, { id: string; sku: string; name: string }>,
-  sellerResponsibleMap: SellerResponsibleMap
+  productById: Map<string, { id: string; sku: string; name: string }>
 ): { eligible: EligibleSalesOrderPlan | null; blocked: BlockedSalesOrder | null; lineReasons: BlockReason[][] } {
   const externalSalesOrderId = toInt(pedido.id);
   const codigoPedido = asString(pedido.codigoPedido);
@@ -704,7 +666,7 @@ function analyzeOrder(
   }
 
   const idPessoaCliente = toInt(pedido.idPessoaCliente);
-  const externalSellerId = toInt(pedido.idPessoaVendedor);
+  const { externalSellerId, nomusSellerName } = extractNomusSellerFromPedido(pedido);
   const bridge = idPessoaCliente != null ? customerBridge.get(idPessoaCliente) : undefined;
   const customerId = bridge?.customerId ?? null;
 
@@ -728,7 +690,6 @@ function analyzeOrder(
 
   const lineReasons: BlockReason[][] = [];
   const resolvedLines: EligibleSalesOrderLine[] = [];
-  let fallbackProposalResponsible: string | null = null;
 
   for (const item of itemsRaw) {
     const lineR = new Set<BlockReason>();
@@ -786,10 +747,6 @@ function analyzeOrder(
         mergeReasons(reasons, ["MISSING_PRODUCT_SKU"]);
         lineReasons.push([...lineR]);
         continue;
-      }
-
-      if (!fallbackProposalResponsible && candidates[0].proposalResponsible) {
-        fallbackProposalResponsible = candidates[0].proposalResponsible;
       }
 
       resolvedLines.push({
@@ -909,9 +866,7 @@ function analyzeOrder(
       customerId: customerId!,
       externalCustomerId: idPessoaCliente,
       externalSellerId,
-      responsible:
-        (externalSellerId != null ? sellerResponsibleMap.get(externalSellerId) ?? null : null) ??
-        fallbackProposalResponsible,
+      nomusSellerName,
       lineCount: resolvedLines.length,
       lines: resolvedLines,
     },
@@ -1103,6 +1058,7 @@ async function runApply(
       const totalNetValue = moneyNumber(pedido.valorTotal);
       const totalFreight = moneyNumber(pedido.valorTotalFrete);
       const externalSellerId = plan.externalSellerId ?? toInt(pedido.idPessoaVendedor);
+      const nomusSellerName = plan.nomusSellerName;
       const externalCompanyId = toInt(pedido.idEmpresa);
 
       const existingMatch = findExistingSalesOrderForNomusSync(existingIndexes, plan);
@@ -1132,8 +1088,9 @@ async function runApply(
         orderCode: plan.codigoPedido,
         customerId: plan.customerId,
         externalCustomerId: plan.externalCustomerId,
-        responsible: plan.responsible,
+        responsible: null,
         externalSellerId,
+        nomusSellerName,
         companyIssuer: externalCompanyId != null ? String(externalCompanyId) : null,
         externalCompanyId,
         status: "SENT_TO_NOMUS" as const,
@@ -1414,10 +1371,6 @@ async function main(): Promise<void> {
   const proposalIndex = await loadProposalItemIndex();
   timeLog(`FIM loadProposalItemIndex keys=${proposalIndex.size}`);
 
-  timeLog("INICIO loadSellerResponsibleMap");
-  const sellerResponsibleMap = await loadSellerResponsibleMap();
-  timeLog(`FIM loadSellerResponsibleMap sellers=${sellerResponsibleMap.size}`);
-
   const eligible: EligibleSalesOrderPlan[] = [];
   const blocked: BlockedSalesOrder[] = [];
 
@@ -1428,8 +1381,7 @@ async function main(): Promise<void> {
       proposalIndex,
       nomusProductById,
       productBySku,
-      productById,
-      sellerResponsibleMap
+      productById
     );
     if (el) eligible.push(el);
     if (bl) blocked.push(bl);
@@ -1497,7 +1449,7 @@ async function main(): Promise<void> {
   timeLog("FIM runDry");
 
   const criticalSchemaNote =
-    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente. SalesOrder.responsible é resolvido por Proposal.externalSellerId -> Proposal.responsible e, como fallback, por Proposal.responsible vinculada ao item.";
+    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente. Vendedor comissionável: apenas idPessoaVendedor/nomeVendedor do pedido Nomus (SalesOrder.externalSellerId + nomusSellerName). Responsável comercial CRM não é usado para comissão.";
 
   const result: DryRunResult = {
     totalRead: pedidos.length,

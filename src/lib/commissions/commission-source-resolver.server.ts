@@ -30,6 +30,7 @@ const SALES_ORDER_SOURCE_SELECT = {
   externalCompanyId: true,
   externalCustomerId: true,
   externalSellerId: true,
+  nomusSellerName: true,
   responsible: true,
   totalNetValue: true,
   nomusRawResponse: true,
@@ -71,6 +72,7 @@ type SalesOrderSourceRow = {
   externalCompanyId: number | null;
   externalCustomerId: number | null;
   externalSellerId: number | null;
+  nomusSellerName: string | null;
   responsible: string | null;
   totalNetValue: import("@prisma/client").Prisma.Decimal;
   nomusRawResponse: unknown;
@@ -264,7 +266,7 @@ async function buildCommissionOrderSourceBundlesFromOrders(
       externalCustomerId: order.externalCustomerId,
       customerName: order.Customer.tradeName ?? order.Customer.companyName,
       externalSellerId: order.externalSellerId,
-      responsible: order.responsible,
+      nomusSellerName: order.nomusSellerName,
       totalNetValue: decimalToNumber(order.totalNetValue),
       nomusRawResponse: order.nomusRawResponse,
       items,

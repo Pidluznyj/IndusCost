@@ -334,7 +334,7 @@ type ImportCandidate = {
 function collectCandidatesFromOrders(
   orders: Array<{
     externalSellerId: number | null;
-    responsible: string | null;
+    nomusSellerName: string | null;
     nomusRawResponse: unknown;
   }>
 ): { candidates: Map<string, ImportCandidate>; skippedNoName: number; skippedNoNomusId: number } {
@@ -357,7 +357,7 @@ function collectCandidatesFromOrders(
   for (const order of orders) {
     const seller = extractSellerFromOrder({
       externalSellerId: order.externalSellerId,
-      responsible: order.responsible,
+      nomusSellerName: order.nomusSellerName,
     });
     if (seller.nomusSellerId != null || seller.responsibleName) {
       sellerRows.push({
@@ -481,6 +481,7 @@ async function loadOrdersForPersonImport(period?: { from: Date; to: Date }) {
     where: buildPersonImportOrderWhere(period),
     select: {
       externalSellerId: true,
+      nomusSellerName: true,
       responsible: true,
       nomusRawResponse: true,
     },

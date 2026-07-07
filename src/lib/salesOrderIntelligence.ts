@@ -13,6 +13,11 @@ import type {
 } from "./salesOrderLifecycleTypes.js";
 import type { SalesOrderTimelineEvent } from "./salesOrderLifecycleTypes.js";
 import {
+  formatSalesOrderNomusSellerStatusLabel,
+  resolveCrmCommercialResponsibleName,
+  resolveSalesOrderNomusSellerStatus,
+} from "./salesOrderNomusSeller.shared.js";
+import {
   buildAuditMeta,
   buildIntelligenceInvoices,
   buildLifecycleRuleTrace,
@@ -544,6 +549,8 @@ export function buildSalesOrderIntelligencePayload(input: {
     expectedDeliveryDate?: Date | string | null;
     totalNetValue: unknown;
     responsible?: string | null;
+    nomusSellerName?: string | null;
+    externalSellerId?: number | null;
     companyIssuer?: string | null;
     nomusRawResponse?: unknown;
     customer?: { companyName?: string | null; tradeName?: string | null; taxId?: string | null };
@@ -699,7 +706,7 @@ export function buildSalesOrderIntelligencePayload(input: {
       issueDate: lifecycle.issueDate,
       expectedDeliveryDate: lifecycle.expectedDeliveryDate,
       totalNetValue: decimalToNumber(input.order.totalNetValue) ?? 0,
-      sellerName: input.order.responsible ?? null,
+      sellerName: input.order.nomusSellerName ?? null,
       companyName: input.order.companyIssuer ?? null,
     },
     lifecycle: lifecycleWithAudit,
@@ -794,6 +801,8 @@ export function mapLifecycleToManagementRow(
     expectedDeliveryDate: string | null;
     totalNetValue: unknown;
     responsible: string | null;
+    nomusSellerName?: string | null;
+    externalSellerId?: number | null;
     companyIssuer?: string | null;
     nomusRawResponse?: unknown;
     itemsCount?: number;
@@ -801,6 +810,11 @@ export function mapLifecycleToManagementRow(
       companyName?: string | null;
       tradeName?: string | null;
       taxId?: string | null;
+      CrmCustomerCommercialOwner?: {
+        sellerCanonicalName?: string | null;
+        sellerResponsibleName?: string | null;
+        isActive?: boolean;
+      } | null;
     };
   },
   lifecycle: SalesOrderLifecycleSummary,
@@ -828,6 +842,11 @@ export function mapLifecycleToManagementRow(
     totalNetValue: decimalToNumber(order.totalNetValue),
   });
 
+  const nomusSellerStatus = resolveSalesOrderNomusSellerStatus({
+    externalSellerId: order.externalSellerId ?? null,
+    nomusSellerName: order.nomusSellerName ?? null,
+  });
+
   return {
     id: order.id,
     number: order.orderCode,
@@ -838,9 +857,15 @@ export function mapLifecycleToManagementRow(
     issueDate: order.issueDate,
     expectedDeliveryDate: order.expectedDeliveryDate,
     totalNetValue: decimalToNumber(order.totalNetValue) ?? 0,
-    sellerName: order.responsible,
+    crmCommercialResponsible: resolveCrmCommercialResponsibleName(
+      order.Customer?.CrmCustomerCommercialOwner
+    ),
+    nomusSellerName: order.nomusSellerName?.trim() || null,
+    nomusSellerStatus,
+    nomusSellerStatusLabel: formatSalesOrderNomusSellerStatusLabel(nomusSellerStatus),
+    sellerName: order.nomusSellerName?.trim() || null,
     companyName: order.companyIssuer ?? null,
-    responsible: order.responsible,
+    responsible: order.nomusSellerName?.trim() || null,
     executiveStatusLabel: lifecycle.executiveStatusLabel,
     logisticStatusCardId: logistic.cardId,
     logisticStatusLabel: logistic.label,

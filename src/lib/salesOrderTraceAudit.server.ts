@@ -51,6 +51,7 @@ const ORDER_SELECT = {
   orderCode: true,
   customerId: true,
   externalSellerId: true,
+  nomusSellerName: true,
   responsible: true,
   issueDate: true,
   totalNetValue: true,
@@ -248,7 +249,7 @@ export async function buildSalesOrderTraceAudit(
 
   const sellerInfo = extractSellerFromOrder({
     externalSellerId: order.externalSellerId,
-    responsible: order.responsible,
+    nomusSellerName: order.nomusSellerName,
   });
   const sellerResolution = resolveCommissionSellerIdentity(
     {
