@@ -24,7 +24,11 @@ import {
   resolveCommissionRuleReferenceDate,
 } from "./commission-source-resolver.js";
 import {
-  formatNomusOrderSellerDisplayName,
+  mapCommissionReceiptSellerToLineFields,
+  resolveCommissionReceiptSeller,
+  type CommissionReceiptSellerRecordInput,
+} from "./commissionReceiptSeller.js";
+import {
   isNomusOrderSellerResolved,
   resolveOrderCommissionSeller,
   type NomusOrderSellerResolution,
@@ -180,6 +184,8 @@ export type CommissionReceiptPreviewContext = {
   materializedSchedulesByReceivableId?: Map<number, MaterializedReceivableScheduleInput[]>;
   /** Snapshot ACTIVE por NF — diagnóstico quando schedule ausente. */
   orderSnapshotDiagnosisByNfeId?: Map<number, CommissionOrderSnapshotDiagnosis>;
+  /** Vendedor via CommissionRecord por NF (fallback quando schedule ausente). */
+  commissionRecordsByNfeId?: Map<number, CommissionReceiptSellerRecordInput>;
   /** Fallback explícito: recalcular por item (preview/auditoria legada). */
   allowItemRecalculationFallback?: boolean;
   rules: CommissionActiveRule[];
@@ -832,6 +838,13 @@ function previewLineFromAuditRow(
 
 /** Preenche vendedor raw/canônico em linhas de exceção (NO_SCHEDULE, etc.) sem alterar status. */
 export function resolveReceiptExceptionLineSellerFields(input: {
+  schedule?: {
+    canonicalSellerId: string | null;
+    canonicalSellerName: string | null;
+    rawSellerId?: number | null;
+    rawSellerName?: string | null;
+  } | null;
+  commissionRecord?: CommissionReceiptSellerRecordInput | null;
   order?: CommissionOrderSourceBundle | null;
   identityCtx?: CommissionSellerIdentityContext;
   preResolved?: {
@@ -845,52 +858,39 @@ export function resolveReceiptExceptionLineSellerFields(input: {
   canonicalSellerName: string | null;
   sellerResolutionStatus: string | null;
 } {
-  const order = input.order;
-  if (!order) {
-    return {
-      rawSellerId: null,
-      rawSellerName: null,
-      canonicalSellerId: null,
-      canonicalSellerName: null,
-      sellerResolutionStatus: null,
-    };
+  if (input.preResolved) {
+    const { identity, nomus } = input.preResolved;
+    if (
+      identity.canonicalSellerId &&
+      identity.canonicalSellerName &&
+      isNomusOrderSellerResolved(nomus)
+    ) {
+      return mapCommissionReceiptSellerToLineFields({
+        rawSellerId: nomus.rawSellerId ?? input.order?.seller.nomusSellerId ?? null,
+        rawSellerName:
+          identity.rawSellerName?.trim() || input.order?.seller.responsibleName?.trim() || null,
+        canonicalSellerId: identity.canonicalSellerId,
+        canonicalSellerName: identity.canonicalSellerName,
+        nomusPersonId: nomus.rawSellerId,
+        sellerResolutionStatus: "RESOLVED_FROM_SALES_ORDER",
+        sellerLabel: identity.canonicalSellerName,
+      });
+    }
   }
 
-  const resolved =
-    input.preResolved ??
-    (input.identityCtx
-      ? resolveOrderCommissionSeller({
-          externalSellerId: order.seller.nomusSellerId,
-          issueDate: order.issueDate,
-          nomusSellerName: order.seller.responsibleName,
-          aliasSource: "SALES_ORDER",
-          identityCtx: input.identityCtx,
-        })
-      : null);
-
-  if (resolved) {
-    const { identity, nomus } = resolved;
-    const rawSellerId = nomus.rawSellerId ?? order.seller.nomusSellerId;
-    const rawSellerName =
-      identity.rawSellerName?.trim() ||
-      order.seller.responsibleName?.trim() ||
-      (rawSellerId != null ? formatNomusOrderSellerDisplayName(nomus) : null);
-    return {
-      rawSellerId,
-      rawSellerName,
-      canonicalSellerId: identity.canonicalSellerId,
-      canonicalSellerName: identity.canonicalSellerName,
-      sellerResolutionStatus: identity.resolutionStatus,
-    };
-  }
-
-  return {
-    rawSellerId: order.seller.nomusSellerId,
-    rawSellerName: order.seller.responsibleName,
-    canonicalSellerId: null,
-    canonicalSellerName: null,
-    sellerResolutionStatus: order.seller.nomusSellerId ? "UNRESOLVED" : null,
-  };
+  const resolution = resolveCommissionReceiptSeller({
+    schedule: input.schedule,
+    commissionRecord: input.commissionRecord,
+    salesOrder: input.order
+      ? {
+          externalSellerId: input.order.seller.nomusSellerId,
+          issueDate: input.order.issueDate,
+          nomusSellerName: input.order.seller.responsibleName,
+        }
+      : null,
+    identityCtx: input.identityCtx,
+  });
+  return mapCommissionReceiptSellerToLineFields(resolution);
 }
 
 function buildExceptionLine(input: {
@@ -901,6 +901,7 @@ function buildExceptionLine(input: {
   statusReason: string;
   order?: CommissionOrderSourceBundle | null;
   identityCtx?: CommissionSellerIdentityContext;
+  commissionRecord?: CommissionReceiptSellerRecordInput | null;
   preResolvedSeller?: {
     identity: CommissionSellerIdentityResolution;
     nomus: NomusOrderSellerResolution;
@@ -908,6 +909,7 @@ function buildExceptionLine(input: {
 }): CommissionReceiptPreviewLine {
   const { receivable, year, month, status, statusReason, order } = input;
   const seller = resolveReceiptExceptionLineSellerFields({
+    commissionRecord: input.commissionRecord,
     order,
     identityCtx: input.identityCtx,
     preResolved: input.preResolvedSeller,
@@ -999,6 +1001,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
   order?: CommissionOrderSourceBundle;
   orderSnapshotDiagnosis?: CommissionOrderSnapshotDiagnosis;
   identityCtx: CommissionSellerIdentityContext;
+  commissionRecord?: CommissionReceiptSellerRecordInput | null;
 }): CommissionReceiptPreviewLine[] {
   const schedule = pickMaterializedScheduleForReceivable(input.schedules);
   if (!schedule) {
@@ -1036,6 +1039,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
         statusReason: diagnosis.statusReason,
         order: input.order,
         identityCtx: input.identityCtx,
+        commissionRecord: input.commissionRecord,
       }),
     ];
   }
@@ -1443,6 +1447,8 @@ export function buildCommissionReceiptPreview(
         input.materializedSchedulesByReceivableId!.get(receivable.nomusReceivableId) ?? [];
       const nfeId = receivable.nomusNfeId ?? null;
       const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
+      const commissionRecord =
+        nfeId != null ? input.commissionRecordsByNfeId?.get(nfeId) : undefined;
       const scheduleLines = buildLinesForReceivableWithMaterializedSchedule({
         receivable,
         schedules,
@@ -1453,6 +1459,7 @@ export function buildCommissionReceiptPreview(
         orderSnapshotDiagnosis:
           nfeId != null ? input.orderSnapshotDiagnosisByNfeId?.get(nfeId) : undefined,
         identityCtx: input.identityCtx,
+        commissionRecord,
       });
       for (const line of scheduleLines) {
         if (
@@ -1512,6 +1519,8 @@ export function buildCommissionReceiptPreview(
           statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
           order,
           identityCtx: input.identityCtx,
+          commissionRecord:
+            nfeId != null ? input.commissionRecordsByNfeId?.get(nfeId) : undefined,
         })
       );
       continue;

@@ -4,6 +4,7 @@
 export * from "./commissionReceiptClosingApi.shared.js";
 
 import { roundMoney } from "./commission-money.js";
+import { receiptClosingSellerGroupLabelFromLine } from "./commissionReceiptSeller.js";
 import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import {
   buildNomusReceiptReconciliationReport,
@@ -723,9 +724,12 @@ export function buildReceiptClosingBySeller(
     if (line.status === "GROUP_COMPANY_EXCLUDED") continue;
     const key = resolveReceiptClosingSellerGroupKey(line);
     const isUnassignedBucket = key === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
+    const resolvedSellerName = receiptClosingSellerGroupLabelFromLine(line);
     const row = map.get(key) ?? {
       sellerId: isUnassignedBucket ? null : line.canonicalSellerId,
-      sellerName: isUnassignedBucket ? null : (line.canonicalSellerName ?? line.rawSellerName),
+      sellerName: isUnassignedBucket
+        ? null
+        : resolvedSellerName ?? line.canonicalSellerName ?? line.rawSellerName,
       receivableCount: 0,
       receivedAmount: 0,
       commissionableBase: 0,

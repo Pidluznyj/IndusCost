@@ -39,6 +39,10 @@ import {
   type ReceiptClosingSellerTotals,
 } from "@/src/lib/commissions/commissionReceiptClosingSellerFilter.shared";
 import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
+import {
+  formatReceiptClosingCanonicalSellerDisplay,
+  formatReceiptClosingRawSellerDisplay,
+} from "@/src/lib/commissions/commissionReceiptSeller";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -189,8 +193,8 @@ function DetailTable({
               <td className="px-2 py-2">{row.nfeNumber ?? "—"}</td>
               <td className="px-2 py-2">{row.orderCode ?? "—"}</td>
               <td className="px-2 py-2">{row.customerName ?? "—"}</td>
-              <td className="px-2 py-2">{row.rawSellerName ?? "—"}</td>
-              <td className="px-2 py-2">{row.canonicalSellerName ?? "—"}</td>
+              <td className="px-2 py-2">{formatReceiptClosingRawSellerDisplay(row)}</td>
+              <td className="px-2 py-2">{formatReceiptClosingCanonicalSellerDisplay(row)}</td>
               <td className="px-2 py-2 text-right">
                 {row.uniqueReceivedAmount > 0
                   ? formatFinanceCurrency(row.uniqueReceivedAmount)

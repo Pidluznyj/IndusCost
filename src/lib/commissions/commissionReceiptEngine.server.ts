@@ -7,6 +7,7 @@ import {
   type MaterializedReceivableScheduleInput,
   resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
+import type { CommissionReceiptSellerRecordInput } from "./commissionReceiptSeller.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
 import {
@@ -129,6 +130,39 @@ export async function loadMaterializedSchedulesByReceivableId(
   return map;
 }
 
+export async function loadCommissionRecordSellersByNfeId(
+  nfeIds: number[]
+): Promise<Map<number, CommissionReceiptSellerRecordInput>> {
+  const map = new Map<number, CommissionReceiptSellerRecordInput>();
+  const unique = [...new Set(nfeIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (unique.length === 0) return map;
+
+  const rows = await prisma.commissionRecord.findMany({
+    where: { nomusNfeId: { in: unique } },
+    select: {
+      nomusNfeId: true,
+      commissionPersonId: true,
+      nomusSellerId: true,
+      commissionPerson: {
+        select: { id: true, name: true, nomusPersonId: true },
+      },
+    },
+    orderBy: { calculatedAt: "desc" },
+  });
+
+  for (const row of rows) {
+    if (row.nomusNfeId == null || map.has(row.nomusNfeId)) continue;
+    map.set(row.nomusNfeId, {
+      commissionPersonId: row.commissionPersonId,
+      commissionPersonName: row.commissionPerson.name,
+      nomusSellerId: row.nomusSellerId,
+      nomusPersonId: row.commissionPerson.nomusPersonId,
+    });
+  }
+
+  return map;
+}
+
 export async function loadCommissionReceiptPreview(
   input: LoadCommissionReceiptPreviewInput
 ): Promise<CommissionReceiptPreviewResult> {
@@ -199,6 +233,7 @@ export async function loadCommissionReceiptPreview(
   const [
     materializedSchedulesByReceivableId,
     orderBundles,
+    commissionRecordsByNfeId,
     snapshotRows,
     identityCtx,
     rules,
@@ -207,6 +242,7 @@ export async function loadCommissionReceiptPreview(
   ] = await Promise.all([
     loadMaterializedSchedulesByReceivableId(receivableIds),
     loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds),
+    loadCommissionRecordSellersByNfeId(nfeIds),
     nfeIds.length > 0
       ? prisma.commissionOrderSnapshot.findMany({
           where: { nfeId: { in: nfeIds }, status: "ACTIVE" },
@@ -264,6 +300,7 @@ export async function loadCommissionReceiptPreview(
     receivables,
     ordersByNfeId,
     materializedSchedulesByReceivableId,
+    commissionRecordsByNfeId,
     orderSnapshotDiagnosisByNfeId,
     allowItemRecalculationFallback: useLegacyFallback,
     persistedAuditRows,

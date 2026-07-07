@@ -46,13 +46,21 @@ export function resolveReceiptClosingSellerGroupKey(line: {
   status: string;
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
+  rawSellerId?: number | null;
   rawSellerName: string | null;
+  sellerResolutionStatus?: string | null;
 }): string {
   if (isReceiptClosingSellerExcludedFromCommission(line.status)) {
     return RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
   }
+  if (line.canonicalSellerId) return line.canonicalSellerId;
+  if (line.sellerResolutionStatus === "SELLER_UNRESOLVED" && line.rawSellerId != null) {
+    return `nomus-unresolved:${line.rawSellerId}`;
+  }
+  if (line.sellerResolutionStatus === "NO_SELLER") {
+    return "no-seller";
+  }
   return (
-    line.canonicalSellerId ??
     line.canonicalSellerName ??
     line.rawSellerName ??
     RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY

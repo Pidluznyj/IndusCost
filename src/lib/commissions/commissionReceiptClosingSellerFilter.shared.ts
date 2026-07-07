@@ -22,7 +22,9 @@ export function receiptClosingLineSellerKey(line: {
   status: string;
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
+  rawSellerId?: number | null;
   rawSellerName: string | null;
+  sellerResolutionStatus?: string | null;
 }): string {
   return resolveReceiptClosingSellerGroupKey(line);
 }
