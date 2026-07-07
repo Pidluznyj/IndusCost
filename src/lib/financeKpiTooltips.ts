@@ -129,7 +129,7 @@ export const FINANCE_KPI_CF_RECEIVED_YTD =
   "Soma dos valores recebidos em Contas a Receber no ano selecionado, alocados pelo vencimento (dueDate). settlementDate permanece apenas para auditoria operacional. Fórmula: SUM(amountReceived) de 01/01 até a data de corte." as const;
 
 export const FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END =
-  "Soma dos saldos em aberto (balanceReceivable) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(balanceReceivable) por dueDate. Não inclui títulos liquidados. Respeita origem Com NF/Sem NF e filtros de AR." as const;
+  "Saldo em aberto a receber no restante do ano selecionado (de hoje até 31/12). Ignora filtro de mês. Fórmula: SUM(balanceReceivable) por dueDate no intervalo futuro. Não inclui títulos liquidados." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
   "Estimativa total de entradas do ano: Recebido YTD + saldo em aberto a receber até 31/12. Fórmula: Recebido YTD + A receber até fim do ano." as const;
@@ -138,10 +138,13 @@ export const FINANCE_KPI_CF_PAID_YTD =
   "Soma dos valores realizados em Contas a Pagar no ano selecionado, alocados pela data de vencimento (dueDate). Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. A data de baixa/pagamento é mantida apenas para auditoria operacional. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
 
 export const FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END =
-  "Soma dos saldos em aberto saneados (openAmount) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(openAmount) por dueDate. Não inclui títulos baixados nem baixas especiais." as const;
+  "Saldo em aberto a pagar no restante do ano selecionado (de hoje até 31/12). Ignora filtro de mês — distinto de Saídas do período. Fórmula: SUM(openAmount) por vencimento operacional no intervalo futuro. Não inclui títulos baixados." as const;
+
+export const FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN =
+  "Composição mensal do saldo em aberto futuro no ano. Soma dos meses incluídos no intervalo deve igualar o card A pagar restante no ano." as const;
 
 export const FINANCE_KPI_CF_PERIOD_OUTFLOW =
-  "Saídas do período filtrado, conforme modo e filtros aplicados. Fonte: Contas a Pagar alocadas por vencimento para fins gerenciais." as const;
+  "Saídas do mês ou ano filtrado, conforme modo Previsto/Realizado/Combinado. Respeita filtro de mês. Distinto do card anual A pagar restante no ano (que ignora o mês filtrado)." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AP_YEAR =
   "Estimativa total de saídas do ano: Pago YTD + saldo em aberto a pagar até 31/12. Fórmula: Pago YTD + A pagar até fim do ano." as const;

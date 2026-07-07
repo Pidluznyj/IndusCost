@@ -170,7 +170,7 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
   },
   {
     key: "openUntilYearEnd",
-    label: "A pagar até 31/12",
+    label: "A pagar restante no ano",
     description: "Saldo em aberto com vencimento operacional entre hoje e fim do ano.",
     valueField: "balancePayable",
     dateField: "operationalDueDate",

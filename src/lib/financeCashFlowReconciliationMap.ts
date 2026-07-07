@@ -346,7 +346,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       uiBlock: "FinanceCashFlowExecutiveSummaryPanel",
       uiTab: "overview",
       payloadPath: "executiveSummary.payable.openFromTodayToYearEnd",
-      label: "A pagar até 31/12",
+      label: "A pagar restante no ano",
       sourceModule: "financeCashFlowExecutiveSummary.ts",
       sourceFunction: "sumApOpenDueInPeriod (operational date forward)",
       rowScope: "ytd_period",

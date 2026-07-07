@@ -8,6 +8,7 @@ import {
 } from "./financeAccountsPayableDashboard.js";
 import {
   buildExecutiveMonthlyTimeline,
+  buildApOpenForwardMonthlyBreakdown,
   buildFinanceCashFlowExecutiveSummary,
   executiveSummaryMetricsAreFinite,
   filterApRowsForCashFlowExecutiveTimeline,
@@ -384,13 +385,91 @@ describe("financeCashFlowExecutiveSummary", () => {
       withMonth.executiveSummary.receivable,
       withoutMonth.executiveSummary.receivable
     );
-    assert.deepEqual(withMonth.executiveSummary.payable, withoutMonth.executiveSummary.payable);
+    assert.equal(
+      withMonth.executiveSummary.payable.openFromTodayToYearEnd,
+      withoutMonth.executiveSummary.payable.openFromTodayToYearEnd
+    );
+    assert.equal(
+      withMonth.executiveSummary.payable.estimatedYearTotal,
+      withoutMonth.executiveSummary.payable.estimatedYearTotal
+    );
+    assert.equal(
+      withMonth.executiveSummary.payable.paidYtd,
+      withoutMonth.executiveSummary.payable.paidYtd
+    );
     assert.deepEqual(withMonth.executiveSummary.net, withoutMonth.executiveSummary.net);
     assert.notEqual(
       withMonth.executiveSummary.period.inflowAmount,
       withoutMonth.executiveSummary.period.inflowAmount
     );
     assert.equal(withMonth.executiveSummary.period.monthFiltered, true);
+  });
+
+  it("com mês Setembro filtrado, A pagar restante no ano inclui meses futuros fora do período", () => {
+    const refSepAudit = new Date(2026, 6, 7);
+    const sepOutflow = 772_945.9;
+    const futureMonthsOpen = 120_000;
+    const apRows = [
+      apRow({
+        externalId: 101,
+        balancePayable: sepOutflow,
+        dueDate: new Date(2026, 8, 15),
+      }),
+      apRow({
+        externalId: 102,
+        balancePayable: 50_000,
+        dueDate: new Date(2026, 9, 5),
+      }),
+      apRow({
+        externalId: 103,
+        balancePayable: 40_000,
+        dueDate: new Date(2026, 10, 10),
+      }),
+      apRow({
+        externalId: 104,
+        balancePayable: 30_000,
+        dueDate: new Date(2026, 11, 20),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      apRows,
+      { ...filters, year: 2026, month: 9, viewMode: "projected" },
+      refSepAudit
+    );
+    const { payable, period } = payload.executiveSummary;
+
+    assert.equal(payable.openFromTodayToYearEnd, sepOutflow + futureMonthsOpen);
+    assert.equal(period.outflowAmount, sepOutflow);
+    assert.equal(
+      payable.openFromTodayToYearEnd - period.outflowAmount,
+      futureMonthsOpen
+    );
+
+    const breakdownTotal = payable.openForwardByMonth
+      .filter((row) => row.includedInForwardRange)
+      .reduce((sum, row) => sum + row.openAmount, 0);
+    assert.equal(breakdownTotal, payable.openFromTodayToYearEnd);
+
+    const comparison = payable.periodVsForward;
+    assert.ok(comparison);
+    assert.equal(comparison!.gapVsPeriodOutflow, futureMonthsOpen);
+    assert.equal(comparison!.forwardOpenOutsideFilteredMonth, futureMonthsOpen);
+    assert.equal(comparison!.annualScopeIgnoresMonthFilter, true);
+    assert.equal(comparison!.filteredMonth, 9);
+
+    const breakdown = buildApOpenForwardMonthlyBreakdown(
+      apRows,
+      2026,
+      resolveForwardYearRange(2026, refSepAudit)
+    );
+    assert.equal(breakdown.find((row) => row.month === 9)?.openAmount, sepOutflow);
+    assert.equal(
+      breakdown
+        .filter((row) => row.includedInForwardRange && row.month !== 9)
+        .reduce((sum, row) => sum + row.openAmount, 0),
+      futureMonthsOpen
+    );
   });
 
   it("cards do período continuam batendo com cards do dashboard", () => {
@@ -885,6 +964,8 @@ describe("FinanceCashFlowExecutiveSummary UI", () => {
       "utf8"
     );
     assert.match(panel, /Recebido YTD/);
+    assert.match(panel, /A pagar restante no ano/);
+    assert.match(panel, /exec-kpi-ap-forward-breakdown/);
     assert.match(panel, /Estimativa líquida anual/);
     assert.match(panel, /Período filtrado/);
     assert.match(panel, /Faturamento não é caixa/);

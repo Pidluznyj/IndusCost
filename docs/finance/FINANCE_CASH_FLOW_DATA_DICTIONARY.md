@@ -135,7 +135,7 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 | **A receber até 31/12** | `receivable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balanceReceivable)` | AR | `dueDate` hoje → 31/12 |
 | **Estimativa AR do ano** | `receivable.estimatedYearTotal` | Entrada total estimada | Recebido YTD + A receber até 31/12 | AR | Misto |
 | **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano (gerencial) | `SUM(realizedAmount)` | `NomusAccountsPayable` | `dueDate` (via `effectivePaymentDate`) 01/01 → corte |
-| **A pagar até 31/12** | `payable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balancePayable)` | AP | `dueDate` hoje → 31/12 |
+| **A pagar restante no ano** | `payable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano (ignora filtro de mês) | `SUM(balancePayable)` | AP | `dueDate` hoje → 31/12 |
 | **Estimativa AP do ano** | `payable.estimatedYearTotal` | Saída total estimada | Pago YTD + A pagar até 31/12 | AP | Misto |
 | **Saldo realizado YTD** | `net.realizedYtd` | Caixa líquido realizado | Recebido YTD − Pago YTD | AR + AP | Liquidação |
 | **Saldo projetado restante** | `net.projectedRemaining` | Fluxo futuro no ano | A receber até 31/12 − A pagar até 31/12 | AR + AP | Vencimento |

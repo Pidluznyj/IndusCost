@@ -15,6 +15,7 @@ import {
   FINANCE_KPI_CF_ESTIMATED_AP_YEAR,
   FINANCE_KPI_CF_ESTIMATED_AR_YEAR,
   FINANCE_KPI_CF_ESTIMATED_YEAR_NET,
+  FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN,
   FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END,
   FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END,
   FINANCE_KPI_CF_PAID_YTD,
@@ -63,6 +64,13 @@ export function FinanceCashFlowExecutiveSummaryPanel({
   const forwardHint = metadata.forwardRangeActive
     ? metadata.forwardRangeLabel
     : "Sem projeção futura — ano já encerrado";
+  const annualScopeNote = metadata.annualScopeIgnoresMonthFilter
+    ? "Ignora filtro de mês — visão do restante do ano"
+    : "Projeção até 31/12 do ano selecionado";
+  const forwardApMonths = payable.openForwardByMonth.filter(
+    (row) => row.includedInForwardRange && row.openAmount > 0
+  );
+  const periodVsForward = payable.periodVsForward;
 
   return (
     <section
@@ -99,7 +107,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
         <div>
           <BlockTitle
             title="Contas a Receber — Entradas"
-            subtitle={`Realizado YTD e projeção até 31/12 · Origem: ${metadata.receivableOrigin}`}
+            subtitle={`Realizado YTD e ${annualScopeNote} · Origem: ${metadata.receivableOrigin}`}
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <FinanceCashFlowKpiCard
@@ -114,8 +122,8 @@ export function FinanceCashFlowExecutiveSummaryPanel({
             />
             <FinanceCashFlowKpiCard
               testId="exec-kpi-open-ar-year-end"
-              label="A receber até 31/12"
-              hint={`${FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END} Período: ${forwardHint}.`}
+              label="A receber restante no ano"
+              hint={`${FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END} Intervalo: ${forwardHint}.`}
               value={formatFinanceCurrency(receivable.openFromTodayToYearEnd)}
               valueFull={formatFinanceCurrency(receivable.openFromTodayToYearEnd)}
               icon={ArrowDownRight}
@@ -139,7 +147,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
         <div>
           <BlockTitle
             title="Contas a Pagar — Saídas"
-            subtitle="Realizado YTD e projeção até 31/12"
+            subtitle={`Realizado YTD e ${annualScopeNote}`}
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <FinanceCashFlowKpiCard
@@ -154,8 +162,8 @@ export function FinanceCashFlowExecutiveSummaryPanel({
             />
             <FinanceCashFlowKpiCard
               testId="exec-kpi-open-ap-year-end"
-              label="A pagar até 31/12"
-              hint={`${FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END} Período: ${forwardHint}.`}
+              label="A pagar restante no ano"
+              hint={`${FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END} Intervalo: ${forwardHint}.`}
               value={formatFinanceCurrency(payable.openFromTodayToYearEnd)}
               valueFull={formatFinanceCurrency(payable.openFromTodayToYearEnd)}
               icon={ArrowUpRight}
@@ -174,6 +182,38 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               featured
             />
           </div>
+          {forwardApMonths.length > 0 ? (
+            <div
+              data-testid="exec-kpi-ap-forward-breakdown"
+              className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2"
+              title={FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN}
+            >
+              <p className="text-[10px] font-semibold text-[#991B1B]">
+                Composição do saldo a pagar restante ({forwardHint})
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[#7F1D1D]">
+                {forwardApMonths.map((row) => (
+                  <span key={row.month} className="tabular-nums">
+                    {row.monthLabel}: {formatFinanceCurrency(row.openAmount)}
+                  </span>
+                ))}
+                <span className="font-semibold tabular-nums">
+                  Total: {formatFinanceCurrency(payable.openFromTodayToYearEnd)}
+                </span>
+              </div>
+              {periodVsForward && periodVsForward.gapVsPeriodOutflow > 0 ? (
+                <p
+                  data-testid="exec-kpi-ap-period-gap-note"
+                  className="mt-1.5 text-[10px] text-[#92400E]"
+                >
+                  Diferença de {formatFinanceCurrency(periodVsForward.gapVsPeriodOutflow)} em
+                  relação a Saídas do período ({periodVsForward.filteredMonthLabel}):{" "}
+                  {formatFinanceCurrency(periodVsForward.forwardOpenOutsideFilteredMonth)} em meses
+                  fora do mês filtrado no intervalo {periodVsForward.forwardRangeLabel}.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div>

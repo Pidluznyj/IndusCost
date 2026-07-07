@@ -49,6 +49,7 @@ export type FinanceCashFlowExecutiveSummaryMetadata = {
   yearEnd: string;
   forwardRangeLabel: string;
   forwardRangeActive: boolean;
+  annualScopeIgnoresMonthFilter: boolean;
   receivableOrigin: string;
   viewMode: string;
   ytdScopeLabel: string;
@@ -60,6 +61,25 @@ export type FinanceCashFlowExecutiveSummarySide = {
   paidYtd?: number;
   openFromTodayToYearEnd: number;
   estimatedYearTotal: number;
+};
+
+export type FinanceCashFlowPayableForwardMonthBreakdown = {
+  month: number;
+  monthLabel: string;
+  openAmount: number;
+  includedInForwardRange: boolean;
+};
+
+export type FinanceCashFlowPeriodVsForwardPayable = {
+  filteredMonth: number;
+  filteredMonthLabel: string;
+  periodOutflowAmount: number;
+  forwardOpenTotal: number;
+  forwardOpenInFilteredMonth: number;
+  forwardOpenOutsideFilteredMonth: number;
+  gapVsPeriodOutflow: number;
+  annualScopeIgnoresMonthFilter: true;
+  forwardRangeLabel: string;
 };
 
 export type FinanceCashFlowExecutiveSummaryNet = {
@@ -102,6 +122,8 @@ export type FinanceCashFlowExecutiveSummary = {
     paidYtd: number;
     openFromTodayToYearEnd: number;
     estimatedYearTotal: number;
+    openForwardByMonth: FinanceCashFlowPayableForwardMonthBreakdown[];
+    periodVsForward: FinanceCashFlowPeriodVsForwardPayable | null;
   };
   net: FinanceCashFlowExecutiveSummaryNet;
   period: FinanceCashFlowExecutiveSummaryPeriod;
@@ -289,6 +311,73 @@ function calendarMonthEnd(year: number, month: number): Date {
   return startOfLocalDay(new Date(year, month, 0));
 }
 
+/** Saldo AP em aberto por mês calendário, recortado ao intervalo futuro (hoje → 31/12). */
+export function buildApOpenForwardMonthlyBreakdown(
+  rows: FinanceCashFlowApRow[],
+  year: number,
+  forward: ReturnType<typeof resolveForwardYearRange>
+): FinanceCashFlowPayableForwardMonthBreakdown[] {
+  if (!forward.isActive) {
+    return MONTH_LABELS.map((monthLabel, index) => ({
+      month: index + 1,
+      monthLabel,
+      openAmount: 0,
+      includedInForwardRange: false,
+    }));
+  }
+
+  const breakdown: FinanceCashFlowPayableForwardMonthBreakdown[] = [];
+  for (let m = 1; m <= 12; m += 1) {
+    const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
+    const monthEnd = calendarMonthEnd(year, m);
+    const rangeStart =
+      forward.fromDate.getTime() > monthStart.getTime() ? forward.fromDate : monthStart;
+    const rangeEnd = forward.toDate.getTime() < monthEnd.getTime() ? forward.toDate : monthEnd;
+    const includedInForwardRange = rangeStart.getTime() <= rangeEnd.getTime();
+    const openAmount = includedInForwardRange
+      ? sumApOpenDueInPeriod(rows, rangeStart, rangeEnd)
+      : 0;
+    breakdown.push({
+      month: m,
+      monthLabel: MONTH_LABELS[m - 1]!,
+      openAmount,
+      includedInForwardRange,
+    });
+  }
+  return breakdown;
+}
+
+export function buildPeriodVsForwardPayableComparison(input: {
+  filters: FinanceCashFlowDashboardFilters;
+  periodOutflowAmount: number;
+  forwardOpenTotal: number;
+  openForwardByMonth: FinanceCashFlowPayableForwardMonthBreakdown[];
+  forwardRangeLabel: string;
+}): FinanceCashFlowPeriodVsForwardPayable | null {
+  const filteredMonth = input.filters.month;
+  if (filteredMonth == null) return null;
+
+  const forwardOpenInFilteredMonth =
+    input.openForwardByMonth.find((row) => row.month === filteredMonth)?.openAmount ?? 0;
+  const forwardOpenOutsideFilteredMonth = roundMoney(
+    input.openForwardByMonth
+      .filter((row) => row.includedInForwardRange && row.month !== filteredMonth)
+      .reduce((sum, row) => sum + row.openAmount, 0)
+  );
+
+  return {
+    filteredMonth,
+    filteredMonthLabel: MONTH_LABELS[filteredMonth - 1] ?? String(filteredMonth),
+    periodOutflowAmount: input.periodOutflowAmount,
+    forwardOpenTotal: input.forwardOpenTotal,
+    forwardOpenInFilteredMonth,
+    forwardOpenOutsideFilteredMonth,
+    gapVsPeriodOutflow: roundMoney(input.forwardOpenTotal - input.periodOutflowAmount),
+    annualScopeIgnoresMonthFilter: true,
+    forwardRangeLabel: input.forwardRangeLabel,
+  };
+}
+
 export function buildExecutiveMonthlyTimeline(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -431,6 +520,15 @@ export function buildFinanceCashFlowExecutiveSummary(
     apSyncCutoff,
   });
 
+  const openForwardByMonth = buildApOpenForwardMonthlyBreakdown(apYtd, year, forward);
+  const periodVsForward = buildPeriodVsForwardPayableComparison({
+    filters,
+    periodOutflowAmount: period.outflowAmount,
+    forwardOpenTotal: openApForward,
+    openForwardByMonth,
+    forwardRangeLabel: forward.label,
+  });
+
   return {
     receivable: {
       receivedYtd,
@@ -441,6 +539,8 @@ export function buildFinanceCashFlowExecutiveSummary(
       paidYtd,
       openFromTodayToYearEnd: openApForward,
       estimatedYearTotal: estimatedApYear,
+      openForwardByMonth,
+      periodVsForward,
     },
     net: {
       realizedYtd,
@@ -464,6 +564,7 @@ export function buildFinanceCashFlowExecutiveSummary(
       yearEnd: forward.toDate.toISOString(),
       forwardRangeLabel: forward.label,
       forwardRangeActive: forward.isActive,
+      annualScopeIgnoresMonthFilter: filters.month != null,
       receivableOrigin: resolveReceivableOriginLabel(filters.invoiceIssued),
       viewMode: filters.viewMode,
       ytdScopeLabel: `${scopeLabel} — AR por data de baixa e AP por data efetiva (motor oficial)`,
@@ -482,6 +583,7 @@ export function executiveSummaryMetricsAreFinite(
     summary.payable.paidYtd,
     summary.payable.openFromTodayToYearEnd,
     summary.payable.estimatedYearTotal,
+    ...summary.payable.openForwardByMonth.map((row) => row.openAmount),
     summary.net.realizedYtd,
     summary.net.projectedRemaining,
     summary.net.estimatedYearNet,
