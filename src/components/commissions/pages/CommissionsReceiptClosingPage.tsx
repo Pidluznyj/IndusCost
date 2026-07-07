@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { Download, Loader2, Lock, RefreshCw, ShieldCheck } from "lucide-react";
+import React, { useCallback, useMemo, useState } from "react";
+import { Download, Loader2, Lock, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
@@ -22,6 +22,19 @@ import type {
   CommissionsReceiptClosingSellerRow,
 } from "@/src/components/commissions/commissionsTypes";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
+import {
+  buildReceiptClosingDetailExportArrayBuffer,
+  buildReceiptClosingDetailExportFilename,
+} from "@/src/lib/commissions/commissionReceiptClosingDetailExport";
+import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi";
+import {
+  computeReceiptClosingDetailTotals,
+  filterReceiptClosingLinesBySellerKey,
+  findReceiptClosingSellerRowByKey,
+  receiptClosingSellerFilterLabel,
+  receiptClosingSellerRowKey,
+  type ReceiptClosingDetailTotals,
+} from "@/src/lib/commissions/commissionReceiptClosingSellerFilter";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -53,13 +66,21 @@ function statusBadgeClass(status: string): string {
   return "bg-amber-100 text-amber-900";
 }
 
-function SellerTable({ rows }: { rows: CommissionsReceiptClosingSellerRow[] }) {
+function SellerTable({
+  rows,
+  selectedKey,
+  onRowClick,
+}: {
+  rows: CommissionsReceiptClosingSellerRow[];
+  selectedKey: string | null;
+  onRowClick: (row: CommissionsReceiptClosingSellerRow) => void;
+}) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum vendedor no período.</p>;
   }
   return (
     <CommissionsTableScroll>
-      <table className="min-w-[1100px] text-xs">
+      <table className="min-w-[1100px] text-xs" data-testid="commissions-receipt-closing-seller-table">
         <thead>
           <tr className="border-b text-left uppercase text-muted-foreground">
             <th className="px-2 py-2">Vendedor canônico</th>
@@ -72,36 +93,54 @@ function SellerTable({ rows }: { rows: CommissionsReceiptClosingSellerRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, idx) => (
-            <tr key={row.sellerId ?? row.sellerName ?? idx} className="border-b">
-              <td className="px-2 py-2 font-medium">{row.sellerName ?? "—"}</td>
-              <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
-              <td className="px-2 py-2 text-right">
-                {formatFinanceCurrency(row.commissionableBase)}
-              </td>
-              <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.grossCommission)}</td>
-              <td className="px-2 py-2 text-right">
-                {formatFinanceCurrency(row.excludedCommission)}
-              </td>
-              <td className="px-2 py-2 text-right font-semibold">
-                {formatFinanceCurrency(row.releasedCommission)}
-              </td>
-              <td className="px-2 py-2 text-right">{row.exceptionCount}</td>
-            </tr>
-          ))}
+          {rows.map((row, idx) => {
+            const rowKey = receiptClosingSellerRowKey(row);
+            const isSelected = selectedKey === rowKey;
+            return (
+              <tr
+                key={rowKey ?? idx}
+                className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${
+                  isSelected ? "bg-[#2563EB]/10 ring-1 ring-inset ring-[#2563EB]/30" : ""
+                }`}
+                onClick={() => onRowClick(row)}
+                data-testid={`commissions-receipt-closing-seller-row-${rowKey}`}
+                aria-selected={isSelected}
+              >
+                <td className="px-2 py-2 font-medium">{row.sellerName ?? "—"}</td>
+                <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
+                <td className="px-2 py-2 text-right">
+                  {formatFinanceCurrency(row.commissionableBase)}
+                </td>
+                <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.grossCommission)}</td>
+                <td className="px-2 py-2 text-right">
+                  {formatFinanceCurrency(row.excludedCommission)}
+                </td>
+                <td className="px-2 py-2 text-right font-semibold">
+                  {formatFinanceCurrency(row.releasedCommission)}
+                </td>
+                <td className="px-2 py-2 text-right">{row.exceptionCount}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </CommissionsTableScroll>
   );
 }
 
-function DetailTable({ rows }: { rows: CommissionsReceiptClosingLine[] }) {
+function DetailTable({
+  rows,
+  totals,
+}: {
+  rows: CommissionsReceiptClosingLine[];
+  totals: ReceiptClosingDetailTotals;
+}) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma linha no período.</p>;
   }
   return (
     <CommissionsTableScroll>
-      <table className="min-w-[1500px] text-xs">
+      <table className="min-w-[1500px] text-xs" data-testid="commissions-receipt-closing-detail-table">
         <thead>
           <tr className="border-b text-left uppercase text-muted-foreground">
             <th className="px-2 py-2">CR</th>
@@ -150,6 +189,21 @@ function DetailTable({ rows }: { rows: CommissionsReceiptClosingLine[] }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 bg-muted/20 font-semibold" data-testid="commissions-receipt-closing-detail-totals">
+            <td className="px-2 py-2" colSpan={6}>
+              Totais ({totals.lineCount} linha{totals.lineCount === 1 ? "" : "s"})
+            </td>
+            <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.receivedAmount)}</td>
+            <td className="px-2 py-2 text-right">
+              {formatFinanceCurrency(totals.scheduledCommissionAmount)}
+            </td>
+            <td className="px-2 py-2 text-right">
+              {formatFinanceCurrency(totals.releasedCommissionAmount)}
+            </td>
+            <td className="px-2 py-2" colSpan={2} />
+          </tr>
+        </tfoot>
       </table>
     </CommissionsTableScroll>
   );
@@ -178,6 +232,50 @@ export function CommissionsReceiptClosingPage() {
   const [reprocessConfirm, setReprocessConfirm] = useState("");
   const [reprocessReason, setReprocessReason] = useState("");
   const [reprocessing, setReprocessing] = useState(false);
+  const [sellerFilterKey, setSellerFilterKey] = useState<string | null>(null);
+
+  function clearSellerFilter() {
+    setSellerFilterKey(null);
+  }
+
+  function handleSellerRowClick(row: CommissionsReceiptClosingSellerRow) {
+    const key = receiptClosingSellerRowKey(row);
+    setSellerFilterKey((current) => (current === key ? null : key));
+  }
+
+  const filteredDetailLines = useMemo(() => {
+    if (!data) return [];
+    return filterReceiptClosingLinesBySellerKey(
+      data.lines as ReceiptClosingPagePayload["lines"],
+      sellerFilterKey
+    ) as CommissionsReceiptClosingLine[];
+  }, [data, sellerFilterKey]);
+
+  const detailTotals = useMemo(
+    () => computeReceiptClosingDetailTotals(filteredDetailLines as ReceiptClosingPagePayload["lines"]),
+    [filteredDetailLines]
+  );
+
+  const sellerFilterLabel = useMemo(() => {
+    if (!sellerFilterKey || !data) return null;
+    const row = findReceiptClosingSellerRowByKey(
+      data.bySeller as ReceiptClosingPagePayload["bySeller"],
+      sellerFilterKey
+    );
+    return row ? receiptClosingSellerFilterLabel(row) : sellerFilterKey;
+  }, [data, sellerFilterKey]);
+
+  function downloadDetailXlsxBuffer(buffer: ArrayBuffer, filename: string) {
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function nomusQueryParams(): URLSearchParams {
     const qs = new URLSearchParams({ year, month });
@@ -198,6 +296,7 @@ export function CommissionsReceiptClosingPage() {
       const payload = await fetchJsonOk<CommissionsReceiptClosingPayload>(
         `/api/commissions/receipt-closing/${encodeURIComponent(y)}/${encodeURIComponent(m)}?${qs}`
       );
+      setSellerFilterKey(null);
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível carregar o fechamento."));
@@ -214,6 +313,7 @@ export function CommissionsReceiptClosingPage() {
       const payload = await fetchJsonOk<CommissionsReceiptClosingPayload>(
         `/api/commissions/receipt-closing/preview?${nomusQueryParams()}`
       );
+      setSellerFilterKey(null);
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível gerar a prévia."));
@@ -223,7 +323,7 @@ export function CommissionsReceiptClosingPage() {
     }
   }, [year, month, nomusBase, nomusCommission]);
 
-  async function exportDetailXlsx() {
+  async function exportDetailXlsxAll() {
     setExportingDetail(true);
     try {
       const qs = nomusQueryParams();
@@ -248,6 +348,38 @@ export function CommissionsReceiptClosingPage() {
     } finally {
       setExportingDetail(false);
     }
+  }
+
+  function exportDetailXlsxFiltered() {
+    if (!data || filteredDetailLines.length === 0) return;
+    setExportingDetail(true);
+    try {
+      const payload = data as unknown as ReceiptClosingPagePayload;
+      const buffer = buildReceiptClosingDetailExportArrayBuffer(
+        payload,
+        filteredDetailLines as ReceiptClosingPagePayload["lines"]
+      );
+      const baseName = buildReceiptClosingDetailExportFilename(
+        Number(year),
+        Number(month),
+        data.exportMode === "NONE" ? "PREVIEW" : data.exportMode
+      );
+      const suffix = sellerFilterLabel?.replace(/[^\w\-]+/g, "_") ?? "filtrado";
+      const filename = baseName.replace(/\.xlsx$/, `-${suffix}.xlsx`);
+      downloadDetailXlsxBuffer(buffer, filename);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível exportar o detalhamento filtrado."));
+    } finally {
+      setExportingDetail(false);
+    }
+  }
+
+  async function exportDetailXlsx() {
+    if (sellerFilterKey) {
+      exportDetailXlsxFiltered();
+      return;
+    }
+    await exportDetailXlsxAll();
   }
 
   async function exportCsv() {
@@ -500,8 +632,21 @@ export function CommissionsReceiptClosingPage() {
           ) : (
             <Download className="mr-2 h-4 w-4" />
           )}
-          Exportar detalhamento
+          {sellerFilterKey
+            ? `Exportar filtrado (${filteredDetailLines.length})`
+            : "Exportar detalhamento"}
         </button>
+        {sellerFilterKey ? (
+          <button
+            type="button"
+            className={financeBiButtonOutlineClass}
+            onClick={() => void exportDetailXlsxAll()}
+            disabled={exportingDetail || !data || data.lines.length === 0}
+            data-testid="commissions-receipt-closing-export-detail-all"
+          >
+            Exportar tudo
+          </button>
+        ) : null}
         {canManage && data?.canApply && data.mode === "PREVIEW" ? (
           <button
             type="button"
@@ -618,14 +763,46 @@ export function CommissionsReceiptClosingPage() {
             <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
               Por vendedor
             </h4>
-            <SellerTable rows={data.bySeller} />
+            <p className="text-xs text-muted-foreground">
+              Clique em um vendedor para filtrar o detalhamento abaixo. Clique novamente para limpar.
+            </p>
+            <SellerTable
+              rows={data.bySeller}
+              selectedKey={sellerFilterKey}
+              onRowClick={handleSellerRowClick}
+            />
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-              Detalhamento ({data.lines.length} linhas)
-            </h4>
-            <DetailTable rows={data.lines} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4
+                className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
+                data-testid="commissions-receipt-closing-detail-heading"
+              >
+                Detalhamento ({filteredDetailLines.length} linha
+                {filteredDetailLines.length === 1 ? "" : "s"})
+              </h4>
+              {sellerFilterKey && sellerFilterLabel ? (
+                <div
+                  className="flex items-center gap-2"
+                  data-testid="commissions-receipt-closing-seller-filter-chip"
+                >
+                  <span className="inline-flex items-center rounded-full bg-[#2563EB]/10 px-3 py-1 text-xs font-semibold text-[#2563EB]">
+                    Filtro: {sellerFilterLabel}
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#E5E7EB] px-2 py-1 text-xs font-medium text-[#374151] hover:bg-muted/40"
+                    onClick={clearSellerFilter}
+                    data-testid="commissions-receipt-closing-seller-filter-clear"
+                  >
+                    <X className="h-3 w-3" />
+                    Limpar
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <DetailTable rows={filteredDetailLines} totals={detailTotals} />
           </section>
         </>
       ) : null}

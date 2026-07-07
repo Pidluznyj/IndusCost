@@ -201,3 +201,15 @@ export function buildReceiptClosingDetailExportBuffer(payload: ReceiptClosingPag
   const wb = buildReceiptClosingDetailExportWorkbook(payload);
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
+
+/** Gera bytes XLSX no browser (detalhamento opcionalmente filtrado; resumo permanece oficial). */
+export function buildReceiptClosingDetailExportArrayBuffer(
+  payload: ReceiptClosingPagePayload,
+  lines?: ReceiptClosingApiLine[]
+): ArrayBuffer {
+  const wb = buildReceiptClosingDetailExportWorkbook({
+    ...payload,
+    lines: lines ?? payload.lines,
+  });
+  return XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+}
