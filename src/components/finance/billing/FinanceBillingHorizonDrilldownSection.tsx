@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -173,7 +174,7 @@ export function FinanceBillingHorizonDrilldownSection({
 
   return (
     <div className="space-y-4">
-      <div className="indus-kpi-grid indus-kpi-grid--wide">
+      <SummaryKpiGrid minColumnWidth={180}>
         {loadingCards
           ? Array.from({ length: Math.min(cards.length || 6, 8) }, (_, index) => (
               <React.Fragment key={`billing-horizon-skeleton-${index}`}>
@@ -191,7 +192,7 @@ export function FinanceBillingHorizonDrilldownSection({
                 />
               </React.Fragment>
             ))}
-      </div>
+      </SummaryKpiGrid>
 
       {selectedCard ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-3")}>

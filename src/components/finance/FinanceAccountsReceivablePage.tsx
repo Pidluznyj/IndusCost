@@ -128,6 +128,8 @@ import {
   FINANCE_KPI_AR_RECEIVED,
   FINANCE_KPI_AR_TOTAL_RECEIVABLE,
 } from "@/src/lib/financeKpiTooltips";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceArOpenHorizonSection } from "@/src/components/finance/FinanceArOpenHorizonSection";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
@@ -863,14 +865,12 @@ export function FinanceAccountsReceivablePage() {
       </FinanceFilterScopeNote>
 
       {/* ─── RESUMO EXECUTIVO ─── */}
-      <section className={financeBiSectionClass}>
-        <div className="px-5 py-4 border-b border-[#E5E7EB]">
-          <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
-          </p>
-        </div>
-        <div className="p-5 indus-kpi-grid indus-kpi-grid--wide">
+      <ExecutiveSummarySection
+        title="Resumo executivo"
+        eyebrow="KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas"
+        testId="finance-ar-executive-summary"
+      >
+        <SummaryKpiGrid minColumnWidth={200}>
           <FinanceBiKpiCard
             icon={Wallet}
             label="Total a Receber"
@@ -985,8 +985,8 @@ export function FinanceAccountsReceivablePage() {
             }
             loading={loading}
           />
-        </div>
-      </section>
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
       <FinanceArOpenHorizonSection horizon={data?.financialHorizon} loading={loading} />
 

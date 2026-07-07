@@ -13,67 +13,12 @@ import type {
 } from "@/src/lib/financeCashFlowExecutiveYtd";
 import { formatCashFlowKpiDisplay } from "@/src/lib/financeCashFlowDisplay";
 import { FINANCE_CASH_FLOW_SANITIZED_SCOPE } from "@/src/lib/financeFilterScope";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceCashFlowYtdTrendChart } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTrendChart";
 import { FinanceCashFlowYtdTotalsPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTotalsPanel";
-import "@/src/styles/indus-kpi-grid.css";
+import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
 import { cn } from "@/src/lib/utils";
-
-function CompactYtdCard({
-  testId,
-  label,
-  value,
-  valueFull,
-  sub,
-  icon: Icon,
-  colorClass,
-  featured = false,
-  titleExtra,
-}: {
-  testId: string;
-  label: string;
-  value: string;
-  valueFull: string;
-  sub: string;
-  icon: React.ElementType;
-  colorClass: string;
-  featured?: boolean;
-  titleExtra?: string;
-}) {
-  return (
-    <div
-      data-testid={testId}
-      title={titleExtra ? `${valueFull}\n${titleExtra}` : valueFull}
-      className={cn(
-        "indus-kpi-card rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 min-h-[88px] flex flex-col justify-between min-w-0",
-        featured && "ring-1 ring-[#2563EB]/20 border-[#BFDBFE]"
-      )}
-    >
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280] leading-tight">
-          {label}
-        </span>
-        <Icon className={cn("h-3.5 w-3.5 shrink-0", colorClass)} />
-      </div>
-      <p
-        className={cn(
-          "indus-kpi-value text-lg sm:text-xl font-bold tabular-nums leading-tight mt-1",
-          colorClass
-        )}
-      >
-        {value}
-      </p>
-      <p
-        className={cn(
-          "text-[10px] text-[#6B7280] leading-snug mt-0.5",
-          titleExtra && "whitespace-pre-line"
-        )}
-      >
-        {sub}
-      </p>
-    </div>
-  );
-}
 
 export function FinanceCashFlowYtdSummary({
   executiveYtd,
@@ -160,70 +105,81 @@ export function FinanceCashFlowYtdSummary({
       </div>
 
       <div className="p-4 space-y-3">
-        <div className="indus-kpi-grid indus-kpi-grid--wide">
-          <CompactYtdCard
-            testId="ytd-kpi-net-position"
-            label="Posição líquida YTD"
-            value={netKpi.display}
-            valueFull={netKpi.full}
-            sub={isDeficit ? "Déficit projetado" : "Superávit projetado"}
-            icon={isDeficit ? ArrowDownRight : ArrowUpRight}
-            colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
-            featured
-          />
-          <CompactYtdCard
-            testId="ytd-kpi-receivable"
-            label="A receber YTD"
-            value={receivableKpi.display}
-            valueFull={receivableKpi.full}
-            sub="Saldo AR em aberto"
-            icon={ArrowDownRight}
-            colorClass="text-[#059669]"
-          />
-          <CompactYtdCard
-            testId="ytd-kpi-received"
-            label="Recebido YTD"
-            value={receivedKpi.display}
-            valueFull={receivedKpi.full}
-            sub={receivedSub.short}
-            icon={
-              executiveYtd.received.direction === "up"
-                ? TrendingUp
-                : executiveYtd.received.direction === "down"
-                  ? TrendingDown
-                  : CircleDollarSign
-            }
-            colorClass={receivedComparisonColor(executiveYtd.received.direction)}
-            titleExtra={receivedSub.full}
-          />
-          <CompactYtdCard
-            testId="ytd-kpi-payable"
-            label="A pagar YTD"
-            value={payableKpi.display}
-            valueFull={payableKpi.full}
-            sub="Saldo AP em aberto"
-            icon={ArrowUpRight}
-            colorClass="text-[#DC2626]"
-          />
-          <CompactYtdCard
-            testId="ytd-kpi-cash-need"
-            label={isDeficit ? "Necessidade YTD" : "Folga YTD"}
-            value={needKpi.display}
-            valueFull={needKpi.full}
-            sub={isDeficit ? "Para zerar déficit" : "Excesso projetado"}
-            icon={CircleDollarSign}
-            colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
-          />
-          <CompactYtdCard
-            testId="ytd-kpi-trend"
-            label="Tendência do ano"
-            value={executiveYtd.trend.label}
-            valueFull={executiveYtd.trend.label}
-            sub={`${executiveYtd.negativeMonthsCount} mês(es) negativo(s)`}
-            icon={trendIcon}
-            colorClass={trendColor}
-          />
-        </div>
+        <SummaryKpiGrid minColumnWidth={180}>
+          <div data-testid="ytd-kpi-net-position" className={cn(isDeficit ? "" : "")}>
+            <FinanceCashFlowKpiCard
+              label="Posição líquida YTD"
+              value={netKpi.display}
+              valueTitle={netKpi.full}
+              sub={isDeficit ? "Déficit projetado" : "Superávit projetado"}
+              icon={isDeficit ? ArrowDownRight : ArrowUpRight}
+              colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
+              featured
+              compact
+            />
+          </div>
+          <div data-testid="ytd-kpi-receivable">
+            <FinanceCashFlowKpiCard
+              label="A receber YTD"
+              value={receivableKpi.display}
+              valueTitle={receivableKpi.full}
+              sub="Saldo AR em aberto"
+              icon={ArrowDownRight}
+              colorClass="text-[#059669]"
+              compact
+            />
+          </div>
+          <div data-testid="ytd-kpi-received" title={receivedSub.full}>
+            <FinanceCashFlowKpiCard
+              label="Recebido YTD"
+              value={receivedKpi.display}
+              valueTitle={receivedKpi.full}
+              sub={receivedSub.short}
+              icon={
+                executiveYtd.received.direction === "up"
+                  ? TrendingUp
+                  : executiveYtd.received.direction === "down"
+                    ? TrendingDown
+                    : CircleDollarSign
+              }
+              colorClass={receivedComparisonColor(executiveYtd.received.direction)}
+              compact
+            />
+          </div>
+          <div data-testid="ytd-kpi-payable">
+            <FinanceCashFlowKpiCard
+              label="A pagar YTD"
+              value={payableKpi.display}
+              valueTitle={payableKpi.full}
+              sub="Saldo AP em aberto"
+              icon={ArrowUpRight}
+              colorClass="text-[#DC2626]"
+              compact
+            />
+          </div>
+          <div data-testid="ytd-kpi-cash-need">
+            <FinanceCashFlowKpiCard
+              label={isDeficit ? "Necessidade YTD" : "Folga YTD"}
+              value={needKpi.display}
+              valueTitle={needKpi.full}
+              sub={isDeficit ? "Para zerar déficit" : "Excesso projetado"}
+              icon={CircleDollarSign}
+              colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
+              compact
+            />
+          </div>
+          <div data-testid="ytd-kpi-trend">
+            <FinanceCashFlowKpiCard
+              label="Tendência do ano"
+              value={executiveYtd.trend.label}
+              valueTitle={executiveYtd.trend.label}
+              sub={`${executiveYtd.negativeMonthsCount} mês(es) negativo(s)`}
+              icon={trendIcon}
+              colorClass={trendColor}
+              compact
+            />
+          </div>
+        </SummaryKpiGrid>
 
         <FinanceCashFlowYtdTotalsPanel totals={executiveYtd.totals} />
 
@@ -251,7 +207,7 @@ export function FinanceCashFlowYtdSummary({
           </div>
         </div>
 
-        <div className="indus-kpi-grid">
+        <SummaryKpiGrid minColumnWidth={140}>
           <MiniStat label="Vencidos AR" value={formatCashFlowKpiDisplay(executiveYtd.overdueReceivableAmount)} tone="in" />
           <MiniStat label="Vencidos AP" value={formatCashFlowKpiDisplay(executiveYtd.overduePayableAmount)} tone="out" />
           <MiniStat
@@ -263,7 +219,7 @@ export function FinanceCashFlowYtdSummary({
             value={overdueKpi}
             tone="warn"
           />
-        </div>
+        </SummaryKpiGrid>
       </div>
     </section>
   );

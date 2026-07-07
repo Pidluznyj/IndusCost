@@ -107,8 +107,8 @@ describe("financeExecutiveReportUx — componentes", () => {
       "utf8"
     );
     assert.ok(card.includes("hint"));
-    assert.ok(card.includes("valueTitle={value}"));
-    assert.ok(card.includes("FinanceBiKpiCard"));
+    assert.ok(card.includes("MetricCard"));
+    assert.ok(card.includes("FinanceBiCalcTooltip"));
   });
 
   it("dataQuality alert traduz warnings", () => {

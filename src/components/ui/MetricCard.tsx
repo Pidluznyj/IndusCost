@@ -47,6 +47,10 @@ export type MetricCardProps = {
   helperText?: string;
   variant?: MetricCardVariant;
   icon?: React.ReactNode;
+  /** Conteúdo ao lado do label (ex.: tooltip de cálculo). */
+  labelAccessory?: React.ReactNode;
+  /** Rodapé opcional abaixo do subtítulo (ex.: badge de tendência). */
+  footer?: React.ReactNode;
   loading?: boolean;
   compact?: boolean;
   className?: string;
@@ -63,6 +67,8 @@ export function MetricCard({
   helperText,
   variant = "default",
   icon,
+  labelAccessory,
+  footer,
   loading = false,
   compact = false,
   className,
@@ -92,7 +98,10 @@ export function MetricCard({
       aria-label={label}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="metric-card-label">{label}</span>
+        <span className="metric-card-label inline-flex min-w-0 items-center gap-1">
+          {label}
+          {labelAccessory}
+        </span>
         {icon ? (
           <span className="metric-card-icon-wrap" aria-hidden="true">
             {icon}
@@ -120,6 +129,8 @@ export function MetricCard({
           {footnote}
         </p>
       ) : null}
+
+      {footer && !loading ? <div className="metric-card-footer">{footer}</div> : null}
     </article>
   );
 }

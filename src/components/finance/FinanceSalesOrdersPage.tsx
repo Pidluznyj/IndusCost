@@ -42,6 +42,8 @@ import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/Fina
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
 import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
@@ -472,7 +474,12 @@ export function FinanceSalesOrdersPage() {
 
       {summary && data ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          <ExecutiveSummarySection
+            title="Resumo do período"
+            eyebrow="Pedidos de venda no escopo filtrado — valores oficiais do módulo financeiro."
+            testId="finance-sales-orders-executive-summary"
+          >
+            <SummaryKpiGrid minColumnWidth={220}>
             <FinanceKpiCard
               icon={Package}
               label="Pedidos emitidos"
@@ -547,7 +554,8 @@ export function FinanceSalesOrdersPage() {
                   : "Nenhuma fonte de meta cadastrada no sistema."
               }
             />
-          </div>
+            </SummaryKpiGrid>
+          </ExecutiveSummarySection>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <FinanceSalesOrdersMonthlyChart

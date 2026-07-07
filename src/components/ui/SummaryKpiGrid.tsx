@@ -13,17 +13,21 @@ export type SummaryKpiGridProps = {
   className?: string;
   /** Largura mínima de cada card — padrão 220px. */
   minColumnWidth?: number;
+  /** data-testid opcional do grid. */
+  testId?: string;
 };
 
 export function SummaryKpiGrid({
   children,
   className,
   minColumnWidth = 220,
+  testId,
 }: SummaryKpiGridProps) {
   return (
     <MetricCardGrid
       minColumnWidth={minColumnWidth}
       className={cn("summary-kpi-grid", className)}
+      testId={testId}
     >
       {children}
     </MetricCardGrid>

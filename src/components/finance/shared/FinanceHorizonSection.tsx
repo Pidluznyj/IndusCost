@@ -1,8 +1,9 @@
 import React from "react";
 import { CalendarRange } from "lucide-react";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceKpiCard, type FinanceKpiCardProps } from "@/src/components/finance/shared/FinanceKpiCard";
 import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation";
-import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBillingHorizonDrilldownSection } from "@/src/components/finance/billing/FinanceBillingHorizonDrilldownSection";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
 import { mapHorizonBucketsToCards } from "@/src/lib/financeAgingBucketDrilldownTypes";
@@ -40,65 +41,57 @@ export function FinanceHorizonSection({
   if (!summary && !loading) return null;
 
   const cards = summary ? mapHorizonBucketsToCards(summary.buckets, summary.total) : [];
+  const title = summary?.title ?? "Horizonte financeiro — próximos 60 dias";
+  const eyebrow =
+    summary?.subtitle ??
+    "Distribuição por janela operacional a partir de hoje. Valores não acumulativos.";
 
   return (
-    <section className={financeBiSectionClass}>
-      <div className="px-5 py-4 border-b border-[#E5E7EB]">
-        <h2 className="text-sm font-bold text-[#111827]">
-          {summary?.title ?? "Horizonte financeiro — próximos 60 dias"}
-        </h2>
-        <p className="text-[11px] text-[#6B7280] mt-0.5">
-          {summary?.subtitle ??
-            "Distribuição por janela operacional a partir de hoje. Valores não acumulativos."}
-        </p>
-        {summary?.scopeNote ? (
-          <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{summary.scopeNote}</p>
-        ) : null}
-      </div>
-      <div className="p-5">
-        {enableDrilldown && variant === "ap" && filters ? (
-          <FinanceAgingBucketDrilldownSection
-            module="ap"
-            cards={cards}
-            filters={filters as FinanceApUiFilters}
-            horizonMode
-            loadingCards={loading && !summary}
-          />
-        ) : enableDrilldown && variant === "billing" && filters ? (
-          <FinanceBillingHorizonDrilldownSection
-            cards={cards}
-            filters={filters as FinanceBillingHorizonDrilldownFilters}
-            countUnitLabel={summary?.countUnitLabel ?? "pedido(s)"}
-            loadingCards={loading && !summary}
-          />
-        ) : loading && !summary ? (
-          <div className="indus-kpi-grid indus-kpi-grid--wide">
-            {HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
-              <React.Fragment key={id}>
-                <FinanceKpiCard {...cardProps} />
-              </React.Fragment>
-            ))}
-          </div>
-        ) : (
-          <div className="indus-kpi-grid indus-kpi-grid--wide">
-            {cards.map((bucket) => (
-              <React.Fragment key={bucket.key}>
-                <FinanceKpiCard
-                  icon={CalendarRange}
-                  label={bucket.label}
-                  value={formatFinanceKpiCurrency(bucket.amount)}
-                  subtitle={
-                    bucket.count > 0
-                      ? `${bucket.count} ${summary?.countUnitLabel ?? "título(s)"}`
-                      : "—"
-                  }
-                  compact
-                />
-              </React.Fragment>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
+    <ExecutiveSummarySection
+      title={title}
+      eyebrow={eyebrow}
+      footer={summary?.scopeNote ? <span>{summary.scopeNote}</span> : undefined}
+      testId={`finance-${variant}-horizon-summary`}
+    >
+      {enableDrilldown && variant === "ap" && filters ? (
+        <FinanceAgingBucketDrilldownSection
+          module="ap"
+          cards={cards}
+          filters={filters as FinanceApUiFilters}
+          horizonMode
+          loadingCards={loading && !summary}
+        />
+      ) : enableDrilldown && variant === "billing" && filters ? (
+        <FinanceBillingHorizonDrilldownSection
+          cards={cards}
+          filters={filters as FinanceBillingHorizonDrilldownFilters}
+          countUnitLabel={summary?.countUnitLabel ?? "pedido(s)"}
+          loadingCards={loading && !summary}
+        />
+      ) : loading && !summary ? (
+        <SummaryKpiGrid minColumnWidth={180}>
+          {HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
+            <FinanceKpiCard key={id} {...cardProps} />
+          ))}
+        </SummaryKpiGrid>
+      ) : (
+        <SummaryKpiGrid minColumnWidth={180}>
+          {cards.map((bucket) => (
+            <FinanceKpiCard
+              key={bucket.key}
+              icon={CalendarRange}
+              label={bucket.label}
+              value={formatFinanceKpiCurrency(bucket.amount)}
+              subtitle={
+                bucket.count > 0
+                  ? `${bucket.count} ${summary?.countUnitLabel ?? "título(s)"}`
+                  : "—"
+              }
+              compact
+            />
+          ))}
+        </SummaryKpiGrid>
+      )}
+    </ExecutiveSummarySection>
   );
 }

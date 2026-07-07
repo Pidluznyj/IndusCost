@@ -26,6 +26,8 @@ import {
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import {
   FinanceArLoadingBlock,
@@ -302,7 +304,12 @@ export function FinanceAccountsReceivableOverdueTab({
           <FinanceArLoadingBlock label="atrasados" />
         ) : (
           <>
-            <div className="indus-kpi-grid indus-kpi-grid--wide">
+            <ExecutiveSummarySection
+              title="Resumo de inadimplência"
+              eyebrow="Carteira vencida no escopo filtrado"
+              testId="finance-ar-overdue-summary"
+            >
+            <SummaryKpiGrid minColumnWidth={200}>
               <FinanceBiKpiCard
                 label="Total vencido"
                 value="—"
@@ -356,7 +363,8 @@ export function FinanceAccountsReceivableOverdueTab({
                 amount={summary?.over90Amount}
                 amountFormat="currency"
               />
-            </div>
+            </SummaryKpiGrid>
+            </ExecutiveSummarySection>
 
             <section className="rounded-xl border border-[#E5E7EB] bg-white p-4">
               <h4 className="text-sm font-bold text-[#111827] mb-3">Aging de atraso</h4>

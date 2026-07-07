@@ -22,6 +22,8 @@ import {
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import {
   FinanceModuleEmptyState,
@@ -304,7 +306,12 @@ export function FinanceCostCenterDetailPage() {
       {loading && !summary ? <FinanceModuleLoadingBlock label="Carregando centro de custo…" /> : null}
 
       {summary ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ExecutiveSummarySection
+          title="Resumo do centro"
+          eyebrow="Totais alocados no filtro aplicado"
+          testId="finance-cc-detail-summary"
+        >
+          <SummaryKpiGrid minColumnWidth={200}>
           <FinanceKpiCard
             label="Total alocado no filtro"
             value={formatFinanceKpiCurrency(list?.totals.allocatedAmount ?? summary.totalAllocatedAmount)}
@@ -320,7 +327,8 @@ export function FinanceCostCenterDetailPage() {
             helperText={summary.topSupplierAmount > 0 ? formatFinanceCurrency(summary.topSupplierAmount) : undefined}
           />
           <FinanceKpiCard label="Maior classificação Nomus" value={summary.topNomusClassification ?? "—"} />
-        </div>
+          </SummaryKpiGrid>
+        </ExecutiveSummarySection>
       ) : null}
 
       <div className={cn(financeBiCardClass, "mt-6 space-y-4 p-4")}>

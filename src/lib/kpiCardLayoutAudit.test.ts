@@ -71,7 +71,7 @@ describe("kpiCardLayoutAudit", () => {
     );
     assert.ok(src.includes("amountFormat"));
     assert.ok(src.includes("formatKpiCompactCurrency"));
-    assert.ok(src.includes("indus-kpi-value"));
+    assert.ok(src.includes("MetricCard"));
   });
 
   it("padrões proibidos documentados para KPI grids", () => {

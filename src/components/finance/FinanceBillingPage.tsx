@@ -117,6 +117,8 @@ import {
 } from "@/src/lib/financeBillingExecutiveKpi";
 import { buildFinanceBillingFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
@@ -739,15 +741,12 @@ export function FinanceBillingPage() {
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
 
-      <section className={financeBiSectionClass}>
-        <div className="px-5 py-4 border-b border-[#E5E7EB]">
-          <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Painel NF-e fiscal — ano {appliedYear}. Comparativo {comparisonLabel}. Meses futuros
-            exibem null, não zero falso.
-          </p>
-        </div>
-        <div className="p-5 space-y-8">
+      <ExecutiveSummarySection
+        title="Resumo executivo"
+        eyebrow={`Painel NF-e fiscal — ano ${appliedYear}. Comparativo ${comparisonLabel}. Meses futuros exibem null, não zero falso.`}
+        testId="finance-billing-executive-summary"
+        className="space-y-8"
+      >
           <FinanceBillingKpiGroup
             title={selectedPeriodTitle}
             subtitle="Fonte NF-e fiscal autorizada."
@@ -890,8 +889,7 @@ export function FinanceBillingPage() {
               loading={loading}
             />
           </FinanceBillingKpiGroup>
-        </div>
-      </section>
+      </ExecutiveSummarySection>
 
       <FinanceHorizonSection
         summary={tab?.forecast?.financialHorizon}
@@ -1016,20 +1014,10 @@ function FinanceBillingKpiGroup({
   columns?: 3 | 4;
   children: React.ReactNode;
 }) {
-  const gridClass = "indus-kpi-grid indus-kpi-grid--wide";
-
   return (
-    <section className="space-y-4">
-      <header>
-        <h3 className="text-xs font-bold text-[#111827]">{title}</h3>
-        <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p>
-      </header>
-      <div className={gridClass}>
-        {React.Children.map(children, (child) =>
-          child ? <div className="min-w-0">{child}</div> : null
-        )}
-      </div>
-    </section>
+    <ExecutiveSummarySection title={title} eyebrow={subtitle} className="border-0 shadow-none p-0 gap-3">
+      <SummaryKpiGrid minColumnWidth={200}>{children}</SummaryKpiGrid>
+    </ExecutiveSummarySection>
   );
 }
 

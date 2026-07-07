@@ -137,6 +137,12 @@
   word-break: break-word;
 }
 
+.metric-card-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  min-height: 1.25rem;
+}
+
 .metric-card--compact {
   min-height: 84px;
   padding: 12px 14px 10px 16px;

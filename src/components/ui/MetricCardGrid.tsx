@@ -20,18 +20,20 @@ type MetricCardGridProps = {
   className?: string;
   /** Largura mínima de cada card — padrão 220px para métricas financeiras. */
   minColumnWidth?: number;
+  testId?: string;
 };
 
 export function MetricCardGrid({
   children,
   className,
   minColumnWidth = 220,
+  testId = "metric-card-grid",
 }: MetricCardGridProps) {
   return (
     <div
       className={cn("metric-card-grid", className)}
       style={{ ["--metric-card-min" as string]: `${minColumnWidth}px` }}
-      data-testid="metric-card-grid"
+      data-testid={testId}
     >
       {children}
     </div>

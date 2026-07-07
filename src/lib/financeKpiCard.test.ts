@@ -39,23 +39,21 @@ describe("financeKpiCard", () => {
     assert.match(src, /FinanceBiKpiCard/);
   });
 
-  it("FinanceKpiCard repassa helperText negocial ao tooltip do ícone de informação", () => {
+  it("FinanceBiKpiCard delega para MetricCard com tooltip de cálculo", () => {
     const bi = readFileSync(biKpiCardPath, "utf8");
     const tooltip = readFileSync(tooltipPath, "utf8");
+    assert.match(bi, /MetricCard/);
     assert.match(bi, /FinanceBiCalcTooltip/);
-    assert.match(bi, /hint \? <FinanceBiCalcTooltip rule={hint} \/>/);
+    assert.match(bi, /labelAccessory/);
     assert.match(tooltip, /title={rule}/);
     assert.match(tooltip, /aria-label={rule}/);
     assert.match(tooltip, /type="button"/);
   });
 
-  it("FinanceKpiCard e FinanceBiKpiCard evitam quebra de valor monetário", () => {
+  it("FinanceBiKpiCard expõe title com valor completo", () => {
     const bi = readFileSync(biKpiCardPath, "utf8");
-    const kpi = readFileSync(kpiCardPath, "utf8");
-    assert.match(bi, /indus-kpi-value/);
-    assert.match(bi, /title=\{displayTitle\}/);
-    assert.match(bi, /tabular-nums/);
-    assert.match(kpi, /text-xl font-semibold sm:text-2xl/);
+    assert.match(bi, /fullValue/);
+    assert.match(bi, /formatKpiDisplayValue/);
   });
 
   it("FinanceKpiCard não importa backend ou Prisma", () => {

@@ -15,6 +15,8 @@ import {
   PieChart,
   TrendingUp,
 } from "lucide-react";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
 import { resolveCostCenterClassificationScopeLabel } from "@/src/lib/financeCostCenterAllocationMetrics";
 import { formatFinanceCurrency, formatFinancePercent } from "@/src/lib/financeAccountsReceivableFormat";
@@ -99,72 +101,90 @@ export function FinanceCostCenterOverviewTab({ data, loading }: Props) {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <FinanceKpiCard
-          label={scopeLabel}
-          value={formatFinanceKpiCurrency(summary?.totalAmount ?? 0)}
-          icon={Layers}
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Total classificado"
-          value={formatFinanceKpiCurrency(summary?.classifiedAmount ?? 0)}
-          icon={PieChart}
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Total sem classificação"
-          value={formatFinanceKpiCurrency(summary?.unclassifiedAmount ?? 0)}
-          helperText="Títulos sem alocação completa no escopo filtrado."
-          icon={TrendingUp}
-          loading={loading}
-        />
-      </div>
+      <ExecutiveSummarySection
+        title="Resumo geral"
+        eyebrow="Totais de classificação no escopo filtrado"
+        testId="finance-cc-overview-summary-primary"
+      >
+        <SummaryKpiGrid minColumnWidth={200}>
+          <FinanceKpiCard
+            label={scopeLabel}
+            value={formatFinanceKpiCurrency(summary?.totalAmount ?? 0)}
+            icon={Layers}
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Total classificado"
+            value={formatFinanceKpiCurrency(summary?.classifiedAmount ?? 0)}
+            icon={PieChart}
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Total sem classificação"
+            value={formatFinanceKpiCurrency(summary?.unclassifiedAmount ?? 0)}
+            helperText="Títulos sem alocação completa no escopo filtrado."
+            icon={TrendingUp}
+            loading={loading}
+          />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <FinanceKpiCard
-          label="Em aberto"
-          value={formatFinanceKpiCurrency(summary?.openAmount ?? 0)}
-          helperText="Indicador auxiliar — não define o escopo da classificação."
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Vencido"
-          value={formatFinanceKpiCurrency(summary?.overdueAmount ?? 0)}
-          helperText="Indicador auxiliar no escopo filtrado."
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Pago/liquidado"
-          value={formatFinanceKpiCurrency(summary?.paidAmount ?? 0)}
-          helperText="Indicador auxiliar no escopo filtrado."
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="% classificado"
-          value={formatFinancePercent(summary?.classifiedPercentage ?? 0)}
-          loading={loading}
-        />
-      </div>
+      <ExecutiveSummarySection
+        title="Indicadores operacionais"
+        eyebrow="Valores auxiliares no escopo filtrado"
+        testId="finance-cc-overview-summary-operational"
+      >
+        <SummaryKpiGrid minColumnWidth={200}>
+          <FinanceKpiCard
+            label="Em aberto"
+            value={formatFinanceKpiCurrency(summary?.openAmount ?? 0)}
+            helperText="Indicador auxiliar — não define o escopo da classificação."
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Vencido"
+            value={formatFinanceKpiCurrency(summary?.overdueAmount ?? 0)}
+            helperText="Indicador auxiliar no escopo filtrado."
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Pago/liquidado"
+            value={formatFinanceKpiCurrency(summary?.paidAmount ?? 0)}
+            helperText="Indicador auxiliar no escopo filtrado."
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="% classificado"
+            value={formatFinancePercent(summary?.classifiedPercentage ?? 0)}
+            loading={loading}
+          />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <FinanceKpiCard
-          label="Centros ativos"
-          value={String(summary?.costCentersCount ?? 0)}
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Fornecedores com regra"
-          value={String(summary?.suppliersWithRules ?? 0)}
-          loading={loading}
-        />
-        <FinanceKpiCard
-          label="Fornecedores sem regra"
-          value={String(summary?.suppliersWithoutRules ?? 0)}
-          helperText="Cadastros ativos sem regra automática (contagem, não valor financeiro)."
-          loading={loading}
-        />
-      </div>
+      <ExecutiveSummarySection
+        title="Cadastro e regras"
+        eyebrow="Contagens gerenciais"
+        testId="finance-cc-overview-summary-registry"
+      >
+        <SummaryKpiGrid minColumnWidth={200}>
+          <FinanceKpiCard
+            label="Centros ativos"
+            value={String(summary?.costCentersCount ?? 0)}
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Fornecedores com regra"
+            value={String(summary?.suppliersWithRules ?? 0)}
+            loading={loading}
+          />
+          <FinanceKpiCard
+            label="Fornecedores sem regra"
+            value={String(summary?.suppliersWithoutRules ?? 0)}
+            helperText="Cadastros ativos sem regra automática (contagem, não valor financeiro)."
+            loading={loading}
+          />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <FinanceBillingChartShell

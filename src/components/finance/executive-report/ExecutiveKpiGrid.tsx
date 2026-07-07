@@ -1,25 +1,24 @@
 import React from "react";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { cn } from "@/src/lib/utils";
-import "@/src/styles/indus-kpi-grid.css";
 
-export function ExecutiveKpiGrid({
-  children,
-  columns = 4,
-  className,
-}: {
+type ExecutiveKpiGridProps = {
   children: React.ReactNode;
-  columns?: 2 | 3 | 4 | 5;
   className?: string;
-}) {
+  compact?: boolean;
+};
+
+export function ExecutiveKpiGrid({ children, className, compact = false }: ExecutiveKpiGridProps) {
   return (
-    <div
+    <SummaryKpiGrid
+      minColumnWidth={compact ? 160 : 200}
       className={cn(
-        "indus-kpi-grid finance-executive-kpi-grid executive-kpi-grid",
+        "finance-executive-kpi-grid executive-kpi-grid",
+        compact && "executive-kpi-grid--compact",
         className
       )}
-      data-columns={columns}
     >
       {children}
-    </div>
+    </SummaryKpiGrid>
   );
 }

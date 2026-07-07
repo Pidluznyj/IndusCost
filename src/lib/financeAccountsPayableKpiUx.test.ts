@@ -44,7 +44,8 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.equal(page.includes("AGENDADOS / REMARCADOS"), false);
     assert.equal(page.includes("Próximos 30 dias"), false);
     assert.equal(page.includes("xl:grid-cols-8"), false);
-    assert.match(page, /indus-kpi-grid/);
+    assert.match(page, /SummaryKpiGrid/);
+    assert.match(page, /ExecutiveSummarySection/);
     assert.match(page, /FinanceKpiCard/);
   });
 
@@ -68,9 +69,9 @@ describe("financeAccountsPayableKpiUx", () => {
       "utf8"
     );
     const kpi = readFileSync(kpiCardPath, "utf8");
-    assert.match(biKpi, /commercial-kpi-value/);
-    assert.match(biKpi, /text-overflow:\s*ellipsis|commercial-kpi-value/);
-    assert.match(kpi, /text-xl font-semibold sm:text-2xl/);
+    assert.match(biKpi, /MetricCard/);
+    assert.match(biKpi, /fullValue/);
+    assert.match(kpi, /FinanceBiKpiCard/);
   });
 
   it("regra operacional AP preservada (max due/schedule, pedido de compra)", () => {

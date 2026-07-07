@@ -1,7 +1,6 @@
 import React from "react";
 import type { LucideIcon } from "lucide-react";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
-import { cn } from "@/src/lib/utils";
 
 export type FinanceKpiTone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -29,7 +28,7 @@ export type FinanceKpiCardProps = {
   trendLabel?: string;
 };
 
-/** Card KPI executivo — somente visual; sem regra de negócio ou backend. */
+/** Card KPI financeiro — delega para FinanceBiKpiCard (MetricCard por baixo). */
 export function FinanceKpiCard({
   label,
   value,
@@ -59,11 +58,7 @@ export function FinanceKpiCard({
       loading={loading}
       trend={trend}
       trendLabel={trendLabel}
-      labelClassName="normal-case tracking-normal font-semibold"
-      valueClassName={cn(
-        "text-xl font-semibold sm:text-2xl",
-        compact && "text-lg sm:text-xl"
-      )}
+      compact={compact}
     />
   );
 }

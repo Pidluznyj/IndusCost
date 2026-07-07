@@ -180,13 +180,13 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(page.includes("FinanceDataAuditButton"));
   });
 
-  it("YTD summary usa grid responsivo indus-kpi-grid", () => {
+  it("YTD summary usa grid responsivo SummaryKpiGrid", () => {
     const ytd = readFileSync(
       join(process.cwd(), "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx"),
       "utf8"
     );
-    assert.ok(ytd.includes("indus-kpi-grid"));
-    assert.ok(ytd.includes("indus-kpi-value"));
+    assert.ok(ytd.includes("SummaryKpiGrid"));
+    assert.ok(ytd.includes("FinanceCashFlowKpiCard"));
     assert.equal(ytd.includes("xl:grid-cols-6"), false);
   });
 });

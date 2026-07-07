@@ -104,16 +104,17 @@ describe("MetricCard design system", () => {
   it("MetricCardGrid é responsivo com auto-fit", () => {
     const css = readFileSync(metricCssPath, "utf8");
     assert.match(css, /repeat\(auto-fit,\s*minmax\(var\(--metric-card-min,\s*220px\)/);
-    assert.match(css, /min-height:\s*118px/);
+    assert.match(css, /min-height:\s*120px/);
     const grid = readFileSync(metricGridPath, "utf8");
     assert.match(grid, /MetricCardGrid/);
-    assert.match(grid, /data-testid="metric-card-grid"/);
+    assert.match(grid, /data-testid=\{testId\}/);
   });
 
   it("aba Contas a Receber → Títulos usa o novo padrão MetricCard", () => {
     const tab = readFileSync(arTitlesTabPath, "utf8");
     assert.match(tab, /MetricCard/);
-    assert.match(tab, /MetricCardGrid/);
+    assert.match(tab, /SummaryKpiGrid/);
+    assert.match(tab, /ExecutiveSummarySection/);
     assert.match(tab, /finance-ar-titles-summary-kpis/);
     assert.match(tab, /variant="info"/);
     assert.match(tab, /variant="danger"/);

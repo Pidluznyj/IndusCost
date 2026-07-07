@@ -7,11 +7,13 @@ export function FinanceCashFlowKpiCard({
   valueFull,
   valueClassName,
   featured,
+  compact,
   ...props
 }: React.ComponentProps<typeof FinanceBiKpiCard> & {
   testId?: string;
   valueFull?: string;
   featured?: boolean;
+  compact?: boolean;
 }) {
   return (
     <div
@@ -21,6 +23,8 @@ export function FinanceCashFlowKpiCard({
     >
       <FinanceBiKpiCard
         {...props}
+        valueTitle={props.valueTitle ?? valueFull}
+        compact={compact}
         valueClassName={
           valueClassName ?? "break-words leading-tight text-xl sm:text-2xl lg:text-3xl"
         }

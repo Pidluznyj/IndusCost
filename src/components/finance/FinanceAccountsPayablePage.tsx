@@ -127,6 +127,8 @@ import {
   FINANCE_KPI_AP_TOP_SUPPLIER,
   FINANCE_KPI_AP_TOTAL_PAYABLE,
 } from "@/src/lib/financeKpiTooltips";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
@@ -868,14 +870,12 @@ export function FinanceAccountsPayablePage() {
 
       <FinanceApPurchaseOrderScheduleAuditNote audit={data?.purchaseOrderScheduleAudit} />
 
-      <section className={financeBiSectionClass}>
-        <div className="px-5 py-4 border-b border-[#E5E7EB]">
-          <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
-          </p>
-        </div>
-        <div className="p-5 indus-kpi-grid indus-kpi-grid--wide">
+      <ExecutiveSummarySection
+        title="Resumo executivo"
+        eyebrow="KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas"
+        testId="finance-ap-executive-summary"
+      >
+        <SummaryKpiGrid minColumnWidth={200}>
           <FinanceKpiCard
             icon={Wallet}
             label="Total a pagar"
@@ -988,13 +988,13 @@ export function FinanceAccountsPayablePage() {
               loading={loading}
             />
           )}
-        </div>
+        </SummaryKpiGrid>
         {data?.classificationSummary ? (
-          <div className="px-5 pb-5 border-t border-[#E5E7EB] pt-4">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-3">
+          <div className="border-t border-border pt-4 mt-1 space-y-3">
+            <p className="text-[10px] font-bold uppercase text-muted-foreground">
               Classificação por centro de custo
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <SummaryKpiGrid minColumnWidth={220}>
               <FinanceKpiCard
                 icon={CheckCircle2}
                 label="Total classificado"
@@ -1029,10 +1029,10 @@ export function FinanceAccountsPayablePage() {
                 tone="neutral"
                 loading={loading}
               />
-            </div>
+            </SummaryKpiGrid>
           </div>
         ) : null}
-      </section>
+      </ExecutiveSummarySection>
 
       <FinanceHorizonSection
         summary={data?.financialHorizon}

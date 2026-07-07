@@ -6,7 +6,8 @@ import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw, Alert
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { StatusBadge } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
 import {
   FinanceArErrorBanner,
@@ -459,7 +460,12 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
       {error ? <FinanceArErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
       {summary ? (
-        <MetricCardGrid data-testid="finance-ar-titles-summary-kpis">
+        <ExecutiveSummarySection
+          title="Resumo dos títulos"
+          eyebrow="Totais da carteira conforme filtros aplicados"
+          testId="finance-ar-titles-executive-summary"
+        >
+        <SummaryKpiGrid testId="finance-ar-titles-summary-kpis">
           <MetricCard
             label="Títulos"
             amount={summary.totalTitles}
@@ -516,7 +522,8 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
             icon={<Scale />}
             loading={loading}
           />
-        </MetricCardGrid>
+        </SummaryKpiGrid>
+        </ExecutiveSummarySection>
       ) : null}
 
       <div className="flex flex-wrap gap-3 items-end ar-titles-no-print">

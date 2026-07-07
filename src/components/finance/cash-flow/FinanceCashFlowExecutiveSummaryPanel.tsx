@@ -26,6 +26,7 @@ import {
   FINANCE_KPI_CF_REALIZED_YTD,
   FINANCE_KPI_CF_RECEIVED_YTD,
 } from "@/src/lib/financeKpiTooltips";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
 import { cn } from "@/src/lib/utils";
@@ -109,7 +110,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
             title="Contas a Receber — Entradas"
             subtitle={`Realizado YTD e ${annualScopeNote} · Origem: ${metadata.receivableOrigin}`}
           />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <SummaryKpiGrid minColumnWidth={200}>
             <FinanceCashFlowKpiCard
               testId="exec-kpi-received-ytd"
               label="Recebido YTD"
@@ -141,7 +142,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               valueClassName="text-[#047857] font-bold tabular-nums text-lg sm:text-xl"
               featured
             />
-          </div>
+          </SummaryKpiGrid>
         </div>
 
         <div>
@@ -149,7 +150,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
             title="Contas a Pagar — Saídas"
             subtitle={`Realizado YTD e ${annualScopeNote}`}
           />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <SummaryKpiGrid minColumnWidth={200}>
             <FinanceCashFlowKpiCard
               testId="exec-kpi-paid-ytd"
               label="Pago YTD"
@@ -181,7 +182,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               valueClassName="text-[#B91C1C] font-bold tabular-nums text-lg sm:text-xl"
               featured
             />
-          </div>
+          </SummaryKpiGrid>
           {forwardApMonths.length > 0 ? (
             <div
               data-testid="exec-kpi-ap-forward-breakdown"
@@ -221,7 +222,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
             title="Resultado do caixa"
             subtitle="Saldo realizado, projeção restante e estimativa líquida anual"
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <SummaryKpiGrid minColumnWidth={200}>
             <FinanceCashFlowKpiCard
               testId="exec-kpi-realized-ytd"
               label="Saldo realizado YTD"
@@ -274,7 +275,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
                 valueClassName="text-[#2563EB] font-bold tabular-nums text-lg sm:text-xl"
               />
             ) : null}
-          </div>
+          </SummaryKpiGrid>
           <p
             data-testid="exec-kpi-year-net-status"
             className={cn(
@@ -296,7 +297,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
                 : `Recorte do ano ${metadata.year} conforme modo ${metadata.viewMode}`
             }
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <SummaryKpiGrid minColumnWidth={200}>
             <FinanceCashFlowKpiCard
               testId="exec-kpi-period-inflow"
               label="Entradas do período"
@@ -340,7 +341,7 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               colorClass="text-[#111827]"
               valueClassName="text-[#111827] font-bold tabular-nums text-lg sm:text-xl"
             />
-          </div>
+          </SummaryKpiGrid>
           <p
             data-testid="exec-kpi-period-status"
             className={cn(

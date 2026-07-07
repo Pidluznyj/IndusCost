@@ -100,6 +100,7 @@
  * KPIs do relatório — valores completos (sem ellipsis/clip do indus-kpi-grid global).
  * Não altera gráficos nem outros módulos que reutilizam FinanceBiKpiCard.
  */
+.finance-executive-report-document .finance-executive-kpi-card.metric-card,
 .finance-executive-report-document .finance-executive-kpi-card.indus-kpi-card,
 .finance-executive-report-document .finance-executive-kpi-card.commercial-kpi-card {
   overflow: visible;
@@ -111,6 +112,7 @@
   padding: 0.875rem 1rem;
 }
 
+.finance-executive-report-document .finance-executive-kpi-card .metric-card-value,
 .finance-executive-report-document .finance-executive-kpi-card .commercial-kpi-value,
 .finance-executive-report-document .finance-executive-kpi-card .indus-kpi-value,
 .finance-executive-report-document .finance-executive-kpi-card .executive-kpi-card-value {

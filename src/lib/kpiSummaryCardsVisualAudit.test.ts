@@ -1,6 +1,5 @@
 /**
  * Auditoria estática — blocos KPI/resumo vs padrão MetricCard (referência CC Mapa).
- * Fase visual: não altera runtime; documenta cobertura para próximas migrações.
  */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -15,21 +14,20 @@ const REFERENCE_SUMMARY =
 const EXPENSE_MAP_CARDS =
   "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx";
 
-/** Telas prioritárias para próxima fase visual (ainda em FinanceKpiCard). */
-const HIGH_PRIORITY_FINANCE_KPI_SCREENS = [
-  "src/components/commissions/pages/CommissionsReceiptClosingPage.tsx",
-  "src/components/commissions/pages/CommissionsVisualAuditPage.tsx",
-  "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
-  "src/components/finance/FinanceAccountsPayablePage.tsx",
-  "src/components/finance/FinanceAccountsReceivablePage.tsx",
-];
-
-/** Telas já no padrão MetricCard (referência ou alinhadas). */
-const METRIC_CARD_ALIGNED = [
+/** Telas financeiras migradas para ExecutiveSummarySection + MetricCard. */
+const FINANCE_KPI_ALIGNED = [
   REFERENCE_SUMMARY,
+  "src/components/finance/FinanceAccountsReceivablePage.tsx",
+  "src/components/finance/FinanceAccountsPayablePage.tsx",
+  "src/components/finance/FinanceBillingPage.tsx",
+  "src/components/finance/FinanceSalesOrdersPage.tsx",
   "src/components/finance/FinanceArAnalyticalTitlesTab.tsx",
-  "src/components/inventory/InventoryDashboardTab.tsx",
-  "src/components/sales/SalesOrderResultPage.tsx",
+  "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
+  "src/components/finance/cost-centers/FinanceCostCenterDetailPage.tsx",
+  "src/components/finance/shared/FinanceHorizonSection.tsx",
+  "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx",
+  "src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel.tsx",
+  "src/components/finance/executive-report/ExecutiveKpiCard.tsx",
 ];
 
 function read(path: string): string {
@@ -60,20 +58,21 @@ describe("kpiSummaryCardsVisualAudit", () => {
     assert.match(section, /finance-cc-expense-map-card-/);
   });
 
-  it("telas prioritárias ainda usam padrão BI legado (próxima fase)", () => {
-    for (const file of HIGH_PRIORITY_FINANCE_KPI_SCREENS) {
+  it("telas financeiras alinhadas usam ExecutiveSummarySection ou MetricCard", () => {
+    for (const file of FINANCE_KPI_ALIGNED) {
       const src = read(file);
-      const usesLegacyBi =
-        /FinanceKpiCard/.test(src) || /FinanceBiKpiCard/.test(src);
-      assert.ok(usesLegacyBi, `${file} ainda em FinanceKpiCard/FinanceBiKpiCard`);
+      const aligned =
+        /ExecutiveSummarySection/.test(src) ||
+        /SummaryKpiGrid/.test(src) ||
+        /MetricCard/.test(src);
+      assert.ok(aligned, `${file} deve usar padrão executivo MetricCard`);
     }
   });
 
-  it("telas alinhadas usam MetricCard", () => {
-    for (const file of METRIC_CARD_ALIGNED) {
-      const src = read(file);
-      assert.match(src, /MetricCard/, `${file} deve usar MetricCard`);
-    }
+  it("FinanceBiKpiCard delega visual para MetricCard", () => {
+    const bi = read("src/components/finance/bi/FinanceBiKpiCard.tsx");
+    assert.match(bi, /MetricCard/);
+    assert.doesNotMatch(bi, /indus-kpi-card commercial-kpi-card/);
   });
 
   it("MetricCard define faixa lateral e label uppercase", () => {

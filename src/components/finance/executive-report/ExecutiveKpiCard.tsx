@@ -1,5 +1,7 @@
 import React from "react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceBiCalcTooltip } from "@/src/components/finance/bi/FinanceBiCalcTooltip";
+import { financeColorClassToVariant } from "@/src/lib/financeKpiMetricVariant";
 import { cn } from "@/src/lib/utils";
 
 const TONE_COLOR_CLASS = {
@@ -23,9 +25,7 @@ export function ExecutiveKpiCard({
   label: string;
   value: string;
   sub?: string;
-  /** Texto explicativo — exibido no tooltip de cálculo */
   hint?: string;
-  /** Alias de hint para compatibilidade */
   tooltip?: string;
   className?: string;
   accent?: boolean;
@@ -33,24 +33,22 @@ export function ExecutiveKpiCard({
   tone?: "default" | "positive" | "negative" | "neutral";
 }) {
   const calcHint = hint ?? tooltip;
+  const colorClass = TONE_COLOR_CLASS[tone];
 
   return (
-    <FinanceBiKpiCard
+    <MetricCard
       label={label}
-      value={value}
-      valueTitle={value}
-      sub={sub}
-      hint={calcHint}
-      colorClass={TONE_COLOR_CLASS[tone]}
-      labelClassName="executive-kpi-card-label normal-case tracking-normal font-semibold text-[11px]"
-      valueClassName="text-lg font-semibold sm:text-xl leading-snug executive-kpi-card-value"
+      formattedValue={value}
+      fullValue={value}
+      subtitle={sub}
+      variant={financeColorClassToVariant(colorClass)}
+      labelAccessory={calcHint ? <FinanceBiCalcTooltip rule={calcHint} /> : undefined}
       className={cn(
-        "finance-executive-kpi-card",
+        "finance-executive-kpi-card executive-kpi-card",
         accent && "border-[#2563EB]/35 bg-[#2563EB]/[0.03]",
         highlight && "ring-1 ring-[#111827]/10",
         tone === "positive" && !accent && "border-[#059669]/25",
         tone === "negative" && !accent && "border-[#DC2626]/25",
-        "!min-h-0",
         className
       )}
     />

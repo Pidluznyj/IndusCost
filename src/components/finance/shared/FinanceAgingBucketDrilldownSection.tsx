@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceArHorizonExportButtons";
 import {
@@ -206,7 +207,7 @@ export function FinanceAgingBucketDrilldownSection({
 
   return (
     <div className="space-y-4">
-      <div className="indus-kpi-grid indus-kpi-grid--wide">
+      <SummaryKpiGrid minColumnWidth={180}>
         {loadingCards
           ? Array.from({ length: Math.min(cards.length || 6, 8) }, (_, index) => (
               <React.Fragment key={`aging-skeleton-${index}`}>
@@ -223,7 +224,7 @@ export function FinanceAgingBucketDrilldownSection({
                 />
               </React.Fragment>
             ))}
-      </div>
+      </SummaryKpiGrid>
 
       {selectedCard ? (
         <div className={cn(financeBiCardClass, "p-4 space-y-3")}>
