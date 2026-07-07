@@ -7,6 +7,12 @@ import {
   sumUniqueReceivedFromLines,
 } from "./commissionReceiptClosingApi.js";
 import {
+  buildReceiptClosingBySeller,
+  buildReceiptClosingExportCsv,
+  buildReceiptClosingPageFromPreview,
+} from "./commissionReceiptClosingApi.js";
+import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "./commissionReceiptClosingApi.shared.js";
+import {
   buildReceiptClosingDetailExportFilename,
   buildReceiptClosingDetailExportWorkbook,
   RECEIPT_CLOSING_DETAIL_EXPORT_TITLE,
@@ -98,6 +104,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const wb = buildReceiptClosingDetailExportWorkbook(page);
     assert.ok(wb.SheetNames.includes("Resumo"));
     assert.ok(wb.SheetNames.includes("Detalhamento"));
+    assert.ok(wb.SheetNames.includes("Por vendedor"));
 
     const resumo = XLSX.utils.sheet_to_json<{ Campo: string; Valor: unknown }>(wb.Sheets["Resumo"]!);
     assert.ok(resumo.some((row) => row.Campo === "Relatório" && row.Valor === RECEIPT_CLOSING_DETAIL_EXPORT_TITLE));
@@ -183,5 +190,148 @@ describe("commissionReceiptClosingDetailExport", () => {
       buildReceiptClosingDetailExportFilename(2026, 6, "CLOSED"),
       "commission-receipt-closing-detalhamento-2026-06-fechado.xlsx"
     );
+  });
+
+  it("NO_SCHEDULE com vendedor por CommissionRecord exporta vendedor correto", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: {
+        year: 2026,
+        month: 6,
+        totalReceivables: 1,
+        totalReceivedAmount: 1000,
+        totalCommissionableBase: 0,
+        totalExpectedCommission: 0,
+        totalReleasedCommission: 0,
+        totalExcludedAmount: 0,
+        totalExceptionAmount: 1000,
+        countByStatus: { NO_SCHEDULE: 1 },
+        bySeller: [],
+        byCustomer: [],
+        lines: [
+          previewLine({
+            ledgerLineKey: "no-sched-record",
+            status: "NO_SCHEDULE",
+            statusReason: "sem schedule",
+            source: "EXCEPTION",
+            commissionReceivableScheduleId: null,
+            releasedCommissionAmount: 0,
+            expectedCommissionAmount: 0,
+            canonicalSellerId: "person-rodrigo",
+            canonicalSellerName: "RODRIGO SILVA",
+            rawSellerId: 512,
+            rawSellerName: "512",
+            sellerResolutionStatus: "RESOLVED_FROM_COMMISSION_RECORD",
+          }),
+        ],
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+
+    const wb = buildReceiptClosingDetailExportWorkbook(page);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    assert.equal(detail[0]?.Status, "NO_SCHEDULE");
+    assert.equal(detail[0]?.["Vendedor Raw"], "512");
+    assert.equal(detail[0]?.["Vendedor Canônico"], "RODRIGO SILVA");
+    assert.equal(detail[0]?.["Vendedor resolvido?"], "Sim");
+
+    const porVendedor = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      wb.Sheets["Por vendedor"]!
+    );
+    assert.equal(porVendedor.length, 1);
+    assert.equal(porVendedor[0]?.["Vendedor canônico"], "RODRIGO SILVA");
+    assert.notEqual(porVendedor[0]?.["Vendedor canônico"], RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL);
+  });
+
+  it("NO_SCHEDULE com vendedor por SalesOrder exporta vendedor resolvido", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: {
+        year: 2026,
+        month: 6,
+        totalReceivables: 1,
+        totalReceivedAmount: 800,
+        totalCommissionableBase: 0,
+        totalExpectedCommission: 0,
+        totalReleasedCommission: 0,
+        totalExcludedAmount: 0,
+        totalExceptionAmount: 800,
+        countByStatus: { NO_SCHEDULE: 1 },
+        bySeller: [],
+        byCustomer: [],
+        lines: [
+          previewLine({
+            ledgerLineKey: "no-sched-order",
+            status: "NO_SCHEDULE",
+            source: "EXCEPTION",
+            commissionReceivableScheduleId: null,
+            receivedAmount: 800,
+            canonicalSellerId: "person-gislene",
+            canonicalSellerName: "GISLENE LIMA",
+            rawSellerId: 464,
+            rawSellerName: "464",
+            sellerResolutionStatus: "RESOLVED_FROM_SALES_ORDER",
+          }),
+        ],
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+
+    const csv = buildReceiptClosingExportCsv({
+      year: 2026,
+      month: 6,
+      closing: null,
+      exportMode: "PREVIEW",
+      lines: page.lines,
+    });
+    assert.match(csv, /NO_SCHEDULE/);
+    assert.match(csv, /GISLENE LIMA/);
+    assert.match(csv, /464/);
+  });
+
+  it("linha sem vendedor exporta labels técnicos e agrupa em Sem vendedor / Excluído", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: {
+        year: 2026,
+        month: 6,
+        totalReceivables: 1,
+        totalReceivedAmount: 500,
+        totalCommissionableBase: 0,
+        totalExpectedCommission: 0,
+        totalReleasedCommission: 0,
+        totalExcludedAmount: 0,
+        totalExceptionAmount: 500,
+        countByStatus: { NO_SELLER: 1 },
+        bySeller: [],
+        byCustomer: [],
+        lines: [
+          previewLine({
+            ledgerLineKey: "no-seller",
+            status: "NO_SELLER",
+            source: "EXCEPTION",
+            commissionReceivableScheduleId: null,
+            canonicalSellerId: null,
+            canonicalSellerName: "Sem vendedor no pedido Nomus",
+            rawSellerId: null,
+            rawSellerName: null,
+            sellerResolutionStatus: "NO_SELLER",
+          }),
+        ],
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+
+    const wb = buildReceiptClosingDetailExportWorkbook(page);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    assert.equal(detail[0]?.["Vendedor Canônico"], "Sem vendedor no pedido Nomus");
+    assert.equal(detail[0]?.["Vendedor resolvido?"], "Não");
+
+    const rows = buildReceiptClosingBySeller(page.lines);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.sellerName, "Sem vendedor no pedido Nomus");
   });
 });

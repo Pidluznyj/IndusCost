@@ -4,7 +4,10 @@
 export * from "./commissionReceiptClosingApi.shared.js";
 
 import { roundMoney } from "./commission-money.js";
-import { receiptClosingSellerGroupLabelFromLine } from "./commissionReceiptSeller.js";
+import {
+  mapReceiptClosingLineToExportSellerColumns,
+  receiptClosingSellerGroupLabelFromLine,
+} from "./commissionReceiptSeller.js";
 import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import {
   buildNomusReceiptReconciliationReport,
@@ -1128,8 +1131,9 @@ export function buildReceiptClosingExportCsv(input: {
     }
   }
 
-  const rows = input.lines.map((line) =>
-    [
+  const rows = input.lines.map((line) => {
+    const seller = mapReceiptClosingLineToExportSellerColumns(line);
+    return [
       input.year,
       input.month,
       closingId,
@@ -1149,9 +1153,9 @@ export function buildReceiptClosingExportCsv(input: {
       line.nomusOrderItemId ?? line.localItemId ?? "",
       line.productName ?? line.productCode ?? "",
       line.rawSellerId ?? "",
-      line.rawSellerName ?? "",
+      seller.vendedorRaw,
       line.canonicalSellerId ?? "",
-      line.canonicalSellerName ?? "",
+      seller.vendedorCanonico,
       line.sellerResolutionStatus ?? "",
       line.receivedAmount.toFixed(2),
       line.uniqueReceivedAmount.toFixed(2),
@@ -1170,8 +1174,8 @@ export function buildReceiptClosingExportCsv(input: {
       hash || line.lineKey,
     ]
       .map(escapeCsvCell)
-      .join(",")
-  );
+      .join(",");
+  });
 
   return [
     `# exportMode=${input.exportMode}`,

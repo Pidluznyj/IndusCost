@@ -1,7 +1,14 @@
 import * as XLSX from "xlsx";
+import {
+  mapReceiptClosingLineToExportSellerColumns,
+  receiptClosingSellerGroupLabelFromLine,
+} from "./commissionReceiptSeller.js";
 import type {
   ReceiptClosingApiLine,
   ReceiptClosingPagePayload,
+} from "./commissionReceiptClosingApi.shared.js";
+import {
+  RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
 } from "./commissionReceiptClosingApi.shared.js";
 
 export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE =
@@ -30,6 +37,16 @@ const DETAIL_COLUMNS = [
   "Origem do dado",
 ] as const;
 
+const POR_VENDEDOR_COLUMNS = [
+  "Vendedor canônico",
+  "Recebido único",
+  "Base",
+  "Comissão bruta",
+  "Comissão excluída",
+  "Comissão final",
+  "Exceções",
+] as const;
+
 function formatDateBr(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -47,11 +64,7 @@ function formatCustomerExcluded(line: ReceiptClosingApiLine): string {
 }
 
 function formatSellerResolved(line: ReceiptClosingApiLine): string {
-  if (line.sellerResolutionStatus === "NO_SELLER" || line.sellerResolutionStatus === "SELLER_UNRESOLVED") {
-    return "Não";
-  }
-  if (line.canonicalSellerId != null || line.canonicalSellerName != null) return "Sim";
-  return "Não";
+  return mapReceiptClosingLineToExportSellerColumns(line).vendedorResolvido ? "Sim" : "Não";
 }
 
 function sourceLabel(source: string): string {
@@ -72,6 +85,7 @@ function sourceLabel(source: string): string {
 }
 
 function mapDetailRow(line: ReceiptClosingApiLine) {
+  const seller = mapReceiptClosingLineToExportSellerColumns(line);
   const receivedDisplay =
     line.uniqueReceivedAmount > 0 ? formatCurrencyBr(line.uniqueReceivedAmount) : "";
   return {
@@ -79,8 +93,8 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     NF: line.nfeNumber ?? "",
     Pedido: line.orderCode ?? "",
     Cliente: line.customerName ?? "",
-    "Vendedor Raw": line.rawSellerName ?? "",
-    "Vendedor Canônico": line.canonicalSellerName ?? "",
+    "Vendedor Raw": seller.vendedorRaw,
+    "Vendedor Canônico": seller.vendedorCanonico,
     "Data de recebimento": formatDateBr(line.settlementDate),
     "Valor recebido": receivedDisplay,
     "Schedule Comissão":
@@ -99,6 +113,24 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     Parcela: line.installmentNumber != null ? String(line.installmentNumber) : "",
     "Origem do dado": sourceLabel(line.source),
   };
+}
+
+function buildPorVendedorRows(payload: ReceiptClosingPagePayload) {
+  return payload.bySeller.map((row) => ({
+    "Vendedor canônico":
+      row.sellerName?.trim() ||
+      receiptClosingSellerGroupLabelFromLine({
+        canonicalSellerId: row.sellerId,
+        canonicalSellerName: row.sellerName,
+      }) ||
+      RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
+    "Recebido único": formatCurrencyBr(row.receivedAmount),
+    Base: formatCurrencyBr(row.commissionableBase),
+    "Comissão bruta": formatCurrencyBr(row.grossCommission),
+    "Comissão excluída": formatCurrencyBr(row.excludedCommission),
+    "Comissão final": formatCurrencyBr(row.releasedCommission),
+    Exceções: row.exceptionCount,
+  }));
 }
 
 function buildResumoRows(payload: ReceiptClosingPagePayload) {
@@ -196,6 +228,21 @@ export function buildReceiptClosingDetailExportWorkbook(
   const lastRow = detailObjects.length + headerRowIndex;
   applyDetailSheetFormatting(detailSheet, headerRowIndex, lastRow);
   XLSX.utils.book_append_sheet(wb, detailSheet, "Detalhamento");
+
+  const porVendedorObjects = buildPorVendedorRows(payload);
+  const porVendedorSheet = XLSX.utils.json_to_sheet(porVendedorObjects, {
+    header: [...POR_VENDEDOR_COLUMNS],
+  });
+  porVendedorSheet["!cols"] = [
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 10 },
+  ];
+  XLSX.utils.book_append_sheet(wb, porVendedorSheet, "Por vendedor");
 
   return wb;
 }

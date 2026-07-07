@@ -255,3 +255,42 @@ export function formatReceiptClosingCanonicalSellerDisplay(line: {
   }
   return "—";
 }
+
+export type ReceiptClosingSellerLineFields = {
+  rawSellerId: number | null;
+  rawSellerName: string | null;
+  canonicalSellerId: string | null;
+  canonicalSellerName: string | null;
+  sellerResolutionStatus?: string | null;
+};
+
+const RECEIPT_SELLER_RESOLVED_STATUSES = new Set([
+  "RESOLVED_FROM_SCHEDULE",
+  "RESOLVED_FROM_COMMISSION_RECORD",
+  "RESOLVED_FROM_SALES_ORDER",
+  "OK_CANONICAL",
+]);
+
+/** Vendedor resolvido para exibição/exportação (independente de NO_SCHEDULE). */
+export function isCommissionReceiptSellerResolved(line: ReceiptClosingSellerLineFields): boolean {
+  if (line.canonicalSellerId) return true;
+  return (
+    line.sellerResolutionStatus != null &&
+    RECEIPT_SELLER_RESOLVED_STATUSES.has(line.sellerResolutionStatus)
+  );
+}
+
+/** Colunas de vendedor alinhadas à tela e às exportações CSV/XLSX. */
+export function mapReceiptClosingLineToExportSellerColumns(line: ReceiptClosingSellerLineFields): {
+  vendedorRaw: string;
+  vendedorCanonico: string;
+  vendedorResolvido: boolean;
+} {
+  const vendedorRaw = formatReceiptClosingRawSellerDisplay(line);
+  const vendedorCanonico = formatReceiptClosingCanonicalSellerDisplay(line);
+  return {
+    vendedorRaw: vendedorRaw === "—" ? "" : vendedorRaw,
+    vendedorCanonico: vendedorCanonico === "—" ? "" : vendedorCanonico,
+    vendedorResolvido: isCommissionReceiptSellerResolved(line),
+  };
+}
