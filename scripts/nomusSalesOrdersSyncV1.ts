@@ -21,6 +21,13 @@ import {
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
+import {
+  formatSalesOrdersPaginationNote,
+  readSalesOrdersPageCursor,
+  resolveNextSalesOrdersPageCursor,
+  type SalesOrdersFetchWindowMeta,
+  type SalesOrdersPaginationWindow,
+} from "../src/lib/nomusSalesOrdersPaginationCursor.ts";
 
 const prisma = new PrismaClient();
 
@@ -289,44 +296,60 @@ function parseCliArg(name: string): string | undefined {
   return undefined;
 }
 
-function resolveSalesOrdersPaginationWindow(): { startPage: number; maxPages: number; cursorNote: string } {
+function readSalesOrdersPaginationWindow(): SalesOrdersPaginationWindow & { cursorNote: string } {
   const maxPages = Math.max(
     1,
     toInt(process.env.NOMUS_SALES_ORDERS_MAX_PAGES) ?? toInt(process.env.NOMUS_MAX_PAGES) ?? 200
   );
-  const cursorFile = (process.env.NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE ?? "").trim();
-  if (!cursorFile) {
-    const startPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
-    return { startPage, maxPages, cursorNote: `startPage=${startPage} (fixo)` };
+  const cursorFile = (process.env.NOMUS_SALES_ORDERS_PAGE_CURSOR_FILE ?? "").trim() || null;
+  const defaultStartPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
+
+  let cursorContent: string | null = null;
+  if (cursorFile) {
+    try {
+      cursorContent = readFileSync(cursorFile, "utf8");
+    } catch {
+      // primeira execução — usa startPage padrão
+    }
   }
 
-  let startPage = Math.max(1, toInt(process.env.NOMUS_SALES_ORDERS_START_PAGE) ?? 1);
-  try {
-    const raw = readFileSync(cursorFile, "utf8").trim();
-    const parsed = toInt(raw);
-    if (parsed != null && parsed >= 1) startPage = parsed;
-  } catch {
-    // primeira execução — usa startPage padrão
-  }
+  const startPage = readSalesOrdersPageCursor({
+    cursorFile,
+    defaultStartPage,
+    cursorContent,
+  });
 
-  const nextStart = startPage + maxPages;
-  try {
-    writeFileSync(cursorFile, String(nextStart), "utf8");
-  } catch (err) {
-    console.warn(`[nomus-sales-orders-v1] não foi possível gravar cursor em ${cursorFile}:`, err);
-  }
-
+  const window: SalesOrdersPaginationWindow = { startPage, maxPages, cursorFile };
   return {
-    startPage,
-    maxPages,
-    cursorNote: `cursor rotativo ${cursorFile}: janela páginas ${startPage}..${startPage + maxPages - 1}, próximo=${nextStart}`,
+    ...window,
+    cursorNote: formatSalesOrdersPaginationNote(window),
   };
+}
+
+function commitSalesOrdersPaginationCursor(
+  window: SalesOrdersPaginationWindow,
+  meta: SalesOrdersFetchWindowMeta
+): void {
+  if (!window.cursorFile) return;
+
+  const { nextStart, reason } = resolveNextSalesOrdersPageCursor(meta);
+  try {
+    writeFileSync(window.cursorFile, String(nextStart), "utf8");
+    console.warn(
+      `[nomus-sales-orders-v1] cursor atualizado (${reason}): próximo startPage=${nextStart}`
+    );
+  } catch (err) {
+    console.warn(
+      `[nomus-sales-orders-v1] não foi possível gravar cursor em ${window.cursorFile}:`,
+      err
+    );
+  }
 }
 
 async function fetchNomusPedidoPages(
   baseUrl: string,
-  options: { startPage: number; maxPages: number }
-): Promise<JsonObject[]> {
+  options: SalesOrdersPaginationWindow
+): Promise<{ pedidos: JsonObject[]; meta: SalesOrdersFetchWindowMeta }> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
@@ -341,8 +364,12 @@ async function fetchNomusPedidoPages(
 
   const pedidos: JsonObject[] = [];
   let page = startPage;
+  let stoppedBecauseEmpty = false;
+  let completedWindow = false;
+  let lastPageFetched = startPage - 1;
 
   while (true) {
+    lastPageFetched = page;
     const url = buildNomusUrl(baseUrl, "pedidos");
     url.searchParams.set("pagina", String(page));
     url.searchParams.set("tamanhoPagina", String(pageSize));
@@ -356,7 +383,10 @@ async function fetchNomusPedidoPages(
       (entry): entry is JsonObject => !!entry && typeof entry === "object"
     );
 
-    if (arr.length === 0) break;
+    if (arr.length === 0) {
+      stoppedBecauseEmpty = true;
+      break;
+    }
 
     pedidos.push(...arr);
 
@@ -365,6 +395,7 @@ async function fetchNomusPedidoPages(
     );
 
     if (page >= lastPage) {
+      completedWindow = true;
       console.warn(
         `[nomus-sales-orders-v1] limite de bloco atingido: startPage=${startPage}, maxPages=${maxPages}, lastPage=${lastPage}.`
       );
@@ -375,13 +406,34 @@ async function fetchNomusPedidoPages(
     page += 1;
   }
 
-  return pedidos;
+  return {
+    pedidos,
+    meta: {
+      startPage,
+      maxPages,
+      lastPageFetched,
+      totalPedidos: pedidos.length,
+      stoppedBecauseEmpty,
+      completedWindow,
+    },
+  };
 }
 
 async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
-  const window = resolveSalesOrdersPaginationWindow();
+  const window = readSalesOrdersPaginationWindow();
   console.warn(`[nomus-sales-orders-v1] paginação: ${window.cursorNote}`);
-  return fetchNomusPedidoPages(baseUrl, window);
+  const result = await fetchNomusPedidoPages(baseUrl, window);
+  commitSalesOrdersPaginationCursor(window, result.meta);
+
+  if (result.meta.totalPedidos === 0) {
+    console.warn(
+      `[nomus-sales-orders-v1] AVISO: nenhum pedido retornado pelo Nomus na janela ` +
+        `${window.startPage}..${window.startPage + window.maxPages - 1}. ` +
+        `Verifique cursor e disponibilidade da API.`
+    );
+  }
+
+  return result.pedidos;
 }
 
 async function fetchNomusPedidoByOrderCode(
