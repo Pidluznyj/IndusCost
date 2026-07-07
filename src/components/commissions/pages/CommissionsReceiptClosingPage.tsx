@@ -25,8 +25,8 @@ import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticR
 import {
   buildReceiptClosingDetailExportArrayBuffer,
   buildReceiptClosingDetailExportFilename,
-} from "@/src/lib/commissions/commissionReceiptClosingDetailExport";
-import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi";
+} from "@/src/lib/commissions/commissionReceiptClosingDetailExport.shared";
+import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 import {
   computeReceiptClosingDetailTotals,
   filterReceiptClosingLinesBySellerKey,
@@ -34,8 +34,8 @@ import {
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
   type ReceiptClosingDetailTotals,
-} from "@/src/lib/commissions/commissionReceiptClosingSellerFilter";
-import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi";
+} from "@/src/lib/commissions/commissionReceiptClosingSellerFilter.shared";
+import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 

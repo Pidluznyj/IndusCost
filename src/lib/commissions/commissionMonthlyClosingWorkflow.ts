@@ -5,6 +5,15 @@
 import { roundMoney } from "./commission-money.js";
 import type { CommissionMonthlyPayableSellerSummary } from "./commissionMonthlyPayable.js";
 import type { VisualAuditNomusReference } from "./commissionVisualAudit.js";
+import {
+  CRITICAL_NOMUS_COMMISSION_DIFF,
+  CRITICAL_NOMUS_COMMISSION_DIFF_PERCENT,
+} from "./commissionMonthlyClosingWorkflow.shared.js";
+
+export {
+  CRITICAL_NOMUS_COMMISSION_DIFF,
+  CRITICAL_NOMUS_COMMISSION_DIFF_PERCENT,
+} from "./commissionMonthlyClosingWorkflow.shared.js";
 
 export const MONTHLY_CLOSING_WORKFLOW_STATUSES = [
   "CALCULATED",
@@ -34,10 +43,7 @@ export const MONTHLY_CLOSING_STATUS_LABELS: Record<MonthlyClosingWorkflowStatus,
 };
 
 /** Limiar de diferença Nomus considerada crítica (R$). */
-export const CRITICAL_NOMUS_COMMISSION_DIFF = 0.02;
-
-/** Limiar percentual de diferença Nomus considerada crítica. */
-export const CRITICAL_NOMUS_COMMISSION_DIFF_PERCENT = 1;
+// Constantes em commissionMonthlyClosingWorkflow.shared.ts
 
 export type MonthlyClosingWorkflowInput = {
   divergenceCount: number;

@@ -8,7 +8,7 @@ import {
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
 } from "./commissionReceiptClosingSellerFilter.js";
-import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY } from "./commissionReceiptClosingApi.js";
+import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY } from "./commissionReceiptClosingApi.shared.js";
 
 function line(
   partial: Partial<ReceiptClosingApiLine> & Pick<ReceiptClosingApiLine, "lineKey">
