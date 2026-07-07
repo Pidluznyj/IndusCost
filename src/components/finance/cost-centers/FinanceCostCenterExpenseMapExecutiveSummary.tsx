@@ -14,6 +14,9 @@ type Props = {
   hasSelection: boolean;
   onClearSelection?: () => void;
   loading?: boolean;
+  titleOverride?: string;
+  eyebrowOverride?: string;
+  footerOverride?: string;
 };
 
 export function FinanceCostCenterExpenseMapExecutiveSummary({
@@ -21,14 +24,21 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
   hasSelection,
   onClearSelection,
   loading = false,
+  titleOverride,
+  eyebrowOverride,
+  footerOverride,
 }: Props) {
-  const headline = hasSelection
-    ? `Resumo de ${formatFinanceInteger(totals.centersCount)} centro(s) selecionado(s)`
-    : "Resumo geral dos centros filtrados";
+  const headline = titleOverride
+    ? titleOverride
+    : hasSelection
+      ? `Resumo de ${formatFinanceInteger(totals.centersCount)} centro(s) selecionado(s)`
+      : "Resumo geral dos centros filtrados";
 
-  const scopeHint = hasSelection
-    ? "Total dos centros selecionados"
-    : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total · Total geral dos centros filtrados`;
+  const scopeHint = eyebrowOverride
+    ? eyebrowOverride
+    : hasSelection
+      ? "Total dos centros selecionados"
+      : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total · Total geral dos centros filtrados`;
 
   const amountDisplay = useMemo(
     () => formatCostCenterExpenseMapSummaryCurrency(totals.amount),
@@ -69,9 +79,11 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
           className={cn(hasSelection && "text-primary/80 font-medium")}
           data-testid="finance-cc-expense-map-summary-scope"
         >
-          {hasSelection
-            ? `${formatFinanceInteger(totals.centersCount)} centros selecionados · ${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total filtrado`
-            : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total`}
+          {footerOverride
+            ? footerOverride
+            : hasSelection
+              ? `${formatFinanceInteger(totals.centersCount)} centros selecionados · ${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total filtrado`
+              : `${formatFinanceInteger(totals.totalFilteredCentersCount)} centros no total`}
         </p>
       }
     >

@@ -8,11 +8,14 @@ import type {
   FinanceExecutiveReportCostCenterTopCard,
   FinanceExecutiveReportCostCenterTopCardsSummary,
 } from "@/src/lib/financeExecutiveReportCostCenterTopCards";
+import type { CostCenterExpenseMapAggregateTotals } from "@/src/lib/financeCostCenterExpenseMap";
+import { FinanceCostCenterExpenseMapExecutiveSummary } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
   topCards: FinanceExecutiveReportCostCenterTopCard[];
   summary: FinanceExecutiveReportCostCenterTopCardsSummary;
+  totals: CostCenterExpenseMapAggregateTotals;
 };
 
 function ExecutiveCostCenterTopCard({ card }: { card: FinanceExecutiveReportCostCenterTopCard }) {
@@ -74,7 +77,7 @@ function ExecutiveCostCenterTopCard({ card }: { card: FinanceExecutiveReportCost
   );
 }
 
-export function ExecutiveCostCenterTopCardsGrid({ topCards, summary }: Props) {
+export function ExecutiveCostCenterTopCardsGrid({ topCards, summary, totals }: Props) {
   if (topCards.length === 0) {
     return (
       <div
@@ -88,7 +91,14 @@ export function ExecutiveCostCenterTopCardsGrid({ topCards, summary }: Props) {
 
   return (
     <div className="executive-cc-top-cards-section" data-testid="executive-cc-top-cards">
-      <p className="text-sm text-muted-foreground mb-3">{summary.headline}</p>
+      <FinanceCostCenterExpenseMapExecutiveSummary
+        totals={totals}
+        hasSelection={false}
+        titleOverride={`Resumo dos ${formatFinanceInteger(totals.centersCount)} principais centros de custo`}
+        eyebrowOverride="Top por valor no período filtrado · Participação sobre o gasto classificado"
+        footerOverride={`${formatFinanceInteger(totals.centersCount)} centros exibidos · ${formatFinanceInteger(totals.totalFilteredCentersCount)} centros com valor no período`}
+      />
+      <p className="text-sm text-muted-foreground mt-4 mb-3">{summary.headline}</p>
       <div className="executive-cc-top-cards-grid">
         {topCards.map((card) => (
           <ExecutiveCostCenterTopCard key={card.id} card={card} />

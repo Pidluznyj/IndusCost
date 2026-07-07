@@ -754,6 +754,7 @@ export function ExecutiveReportDocument({
       <ExecutivePrintPageShell
         pageId="cost-center-spending"
         pageNumber={8}
+        allowContentFlow
         header={printHeader}
         generatedAt={report.generatedAt}
       >
@@ -768,6 +769,7 @@ export function ExecutiveReportDocument({
             <ExecutiveCostCenterTopCardsGrid
               topCards={report.costCenterSpending.topCards}
               summary={report.costCenterSpending.summary}
+              totals={report.costCenterSpending.totals}
             />
           </div>
         </ExecutiveReportSection>

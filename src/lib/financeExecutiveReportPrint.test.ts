@@ -254,8 +254,9 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Fluxo de Caixa \/ Agenda/);
     assert.match(document, /Principais Centros de Custo/);
     assert.match(document, /ExecutiveCostCenterTopCardsGrid/);
-    assert.doesNotMatch(document, /ExecutiveCostCenterAnnualSpendingChart/);
+    assert.match(document, /costCenterSpending\.totals/);
     assert.match(document, /pageId="cost-center-spending"/);
+    assert.match(document, /allowContentFlow/);
     assert.match(document, /executive-report-cash-flow-period-meta/);
     assert.match(document, /Pedidos de Venda/);
     assert.match(document, /Pedidos mês/);

@@ -555,6 +555,7 @@ export async function loadExecutiveReportCostCenterSpending(
 ): Promise<{
   topCards: FinanceExecutiveReportCostCenterTopCard[];
   summary: FinanceExecutiveReportCostCenterTopCardsSummary;
+  totals: import("./financeCostCenterExpenseMap.js").CostCenterExpenseMapAggregateTotals;
 }> {
   const ccFilters = buildExecutiveReportCostCenterSpendingFilters(filters);
   const dashboard = await buildFinanceCostCenterDashboardDefault(ccFilters, referenceDate);
@@ -708,6 +709,7 @@ export async function buildFinanceExecutiveReport(
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
       topCards: loaded.topCards,
       summary: loaded.summary,
+      totals: loaded.totals,
     };
   } catch (error) {
     console.error("executive-report costCenterSpending", error);
@@ -717,6 +719,7 @@ export async function buildFinanceExecutiveReport(
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
       topCards: empty.topCards,
       summary: empty.summary,
+      totals: empty.totals,
     };
     warnings.push("Centros de custo indisponíveis nesta geração.");
   }

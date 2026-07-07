@@ -798,8 +798,31 @@
   }
 
   .executive-cc-top-cards-section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .executive-cc-top-cards-section [data-testid="finance-cc-expense-map-executive-summary"] {
     break-inside: avoid;
     page-break-inside: avoid;
+    margin-bottom: 2mm;
+  }
+
+  .executive-cc-top-cards-section .finance-cc-expense-map-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 1.5mm !important;
+  }
+
+  .executive-cc-top-cards-section .metric-card {
+    padding: 1.5mm 2mm !important;
+  }
+
+  .executive-cc-top-cards-section .metric-card-value {
+    font-size: 8pt !important;
+  }
+
+  .executive-cc-top-cards-section .metric-card-label {
+    font-size: 6.5pt !important;
   }
 
   .executive-cc-top-card {

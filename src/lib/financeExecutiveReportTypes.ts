@@ -376,6 +376,7 @@ export type FinanceExecutiveReportCostCenterSpending = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard;
   topCards: import("./financeExecutiveReportCostCenterTopCards.js").FinanceExecutiveReportCostCenterTopCard[];
   summary: import("./financeExecutiveReportCostCenterTopCards.js").FinanceExecutiveReportCostCenterTopCardsSummary;
+  totals: import("./financeCostCenterExpenseMap.js").CostCenterExpenseMapAggregateTotals;
 };
 
 /** Narrativa executiva — reservada; preenchimento futuro (manual ou assistida). */

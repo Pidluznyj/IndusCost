@@ -82,12 +82,16 @@ describe("financeExecutiveReportCostCenterTopCards", () => {
       row("cc-a", "CC_A", "Centro A", 800, 80),
       row("cc-b", "CC_B", "Centro B", 200, 20),
     ];
-    const { summary } = buildExecutiveReportCostCenterTopCards(byCostCenter, centers, {
+    const { summary, totals } = buildExecutiveReportCostCenterTopCards(byCostCenter, centers, {
       classifiedTotal: 1000,
     });
     assert.equal(summary.topAmount, 1000);
     assert.equal(summary.topSharePercent, 100);
     assert.match(summary.headline, /concentram/);
+    assert.equal(totals.centersCount, 2);
+    assert.equal(totals.amount, 1000);
+    assert.equal(totals.overdueAmount, 100);
+    assert.equal(totals.participationPercent, 100);
   });
 
   it("relatório presidencial usa motor oficial sem cálculo paralelo", () => {
@@ -111,5 +115,7 @@ describe("financeExecutiveReportCostCenterTopCards", () => {
     assert.doesNotMatch(document, /ExecutiveCostCenterAnnualSpendingChart/);
     assert.match(document, /ExecutiveCostCenterTopCardsGrid/);
     assert.match(document, /Principais Centros de Custo/);
+    assert.match(document, /allowContentFlow/);
+    assert.match(document, /costCenterSpending\.totals/);
   });
 });

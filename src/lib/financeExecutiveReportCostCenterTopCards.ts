@@ -8,6 +8,7 @@ import {
   buildCostCenterExpenseMapCards,
   expenseMapCategoryLabel,
   filterCostCenterExpenseMapCards,
+  type CostCenterExpenseMapAggregateTotals,
   type CostCenterExpenseMapCard,
 } from "./financeCostCenterExpenseMap.js";
 import type { FinanceCostCenterDto } from "./financeCostCenters.js";
@@ -39,6 +40,46 @@ export type FinanceExecutiveReportCostCenterTopCardsSummary = {
   headline: string;
 };
 
+export const EMPTY_EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_TOTALS: CostCenterExpenseMapAggregateTotals =
+  {
+    centersCount: 0,
+    amount: 0,
+    overdueAmount: 0,
+    upcomingAmount: 0,
+    paidAmount: 0,
+    titlesCount: 0,
+    participationPercent: 0,
+    totalFilteredCentersCount: 0,
+    totalFilteredAmount: 0,
+  };
+
+export function buildExecutiveReportCostCenterTopCardsTotals(
+  topCards: FinanceExecutiveReportCostCenterTopCard[],
+  options: {
+    classifiedTotal: number;
+    totalFilteredCentersCount: number;
+  }
+): CostCenterExpenseMapAggregateTotals {
+  const amount = roundMoney(topCards.reduce((sum, card) => sum + card.totalAmount, 0));
+  const overdueAmount = roundMoney(topCards.reduce((sum, card) => sum + card.overdueAmount, 0));
+  const upcomingAmount = roundMoney(topCards.reduce((sum, card) => sum + card.upcomingAmount, 0));
+  const paidAmount = roundMoney(topCards.reduce((sum, card) => sum + card.paidAmount, 0));
+  const titlesCount = topCards.reduce((sum, card) => sum + card.titlesCount, 0);
+  const participationPercent = roundMoney(safeRatio(amount, options.classifiedTotal) * 100);
+
+  return {
+    centersCount: topCards.length,
+    amount,
+    overdueAmount,
+    upcomingAmount,
+    paidAmount,
+    titlesCount,
+    participationPercent,
+    totalFilteredCentersCount: options.totalFilteredCentersCount,
+    totalFilteredAmount: options.classifiedTotal,
+  };
+}
+
 export function mapCostCenterExpenseMapCardToExecutiveTopCard(
   card: CostCenterExpenseMapCard
 ): FinanceExecutiveReportCostCenterTopCard {
@@ -69,6 +110,7 @@ export function buildExecutiveReportCostCenterTopCards(
 ): {
   topCards: FinanceExecutiveReportCostCenterTopCard[];
   summary: FinanceExecutiveReportCostCenterTopCardsSummary;
+  totals: CostCenterExpenseMapAggregateTotals;
 } {
   const limit = options.limit ?? EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_LIMIT;
   const sorted = buildCostCenterExpenseMapCards(byCostCenter, centers);
@@ -97,12 +139,17 @@ export function buildExecutiveReportCostCenterTopCards(
       classifiedTotal,
       headline,
     },
+    totals: buildExecutiveReportCostCenterTopCardsTotals(topCards, {
+      classifiedTotal,
+      totalFilteredCentersCount: withValue.length,
+    }),
   };
 }
 
 export function buildEmptyExecutiveReportCostCenterTopCards(): {
   topCards: FinanceExecutiveReportCostCenterTopCard[];
   summary: FinanceExecutiveReportCostCenterTopCardsSummary;
+  totals: CostCenterExpenseMapAggregateTotals;
 } {
   return {
     topCards: [],
@@ -113,5 +160,6 @@ export function buildEmptyExecutiveReportCostCenterTopCards(): {
       classifiedTotal: 0,
       headline: "Nenhum centro de custo com valor classificado no período filtrado.",
     },
+    totals: EMPTY_EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_TOTALS,
   };
 }
