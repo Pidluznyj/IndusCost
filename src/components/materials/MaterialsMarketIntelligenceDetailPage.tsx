@@ -31,6 +31,7 @@ import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/
 import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialIntelligenceImpactedProductsSection } from "@/src/components/materials/MaterialIntelligenceImpactedProductsSection";
+import { MaterialIntelligenceFinancialImpactSection } from "@/src/components/materials/MaterialIntelligenceFinancialImpactSection";
 import { MaterialIntelligenceSimulationPanel } from "@/src/components/materials/MaterialIntelligenceSimulationPanel";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
 
@@ -199,6 +200,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceRecentQuotesSection
               materialId={item.id}
               defaultUnit={item.unit}
+              marketCriticality={item.marketCriticality}
               quotes={quotes}
               loading={quotesLoading}
               onQuoteCreated={() => void handleQuoteCreated()}
@@ -225,6 +227,13 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceAlertsSection materialId={item.id} />
 
             <MaterialIntelligenceImpactedProductsSection materialId={item.id} />
+
+            <MaterialIntelligenceFinancialImpactSection
+              materialId={item.id}
+              unit={item.unit}
+              defaultSimulatedPrice={quotes[0]?.netPrice ?? null}
+              defaultBaselinePrice={item.currentCost ?? null}
+            />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder
