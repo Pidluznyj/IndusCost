@@ -43,6 +43,49 @@ export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): 
   return `/api/materials/market-intelligence/${materialId}/quotes`;
 }
 
+export function getMaterialMarketQuoteAttachmentsApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/attachments`;
+}
+
+export function getMaterialMarketQuoteAttachmentDownloadApiPath(
+  materialId: string,
+  quoteId: string,
+  attachmentId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/attachments/${attachmentId}/download`;
+}
+
+export function getMaterialMarketQuoteSubmitApprovalApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/submit-approval`;
+}
+
+export function getMaterialMarketQuoteApproveApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/approve`;
+}
+
+export function getMaterialMarketQuoteRejectApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/reject`;
+}
+
+export function getMaterialMarketQuoteSetOfficialApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/set-official`;
+}
+
 export function getMaterialMarketIntelligenceSetOfficialQuoteApiPath(
   materialId: string,
   quoteId: string

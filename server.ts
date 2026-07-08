@@ -145,10 +145,6 @@ import {
   buildMaterialMarketFxDecompositionFromRows,
   parseMaterialMarketFxDecompositionPeriod,
 } from "./src/lib/materialMarketFxDecomposition.js";
-import {
-  buildMaterialOfficialQuoteSummary,
-  planSetMaterialOfficialQuote,
-} from "./src/lib/materialOfficialQuote.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -434,6 +430,7 @@ import {
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
 import { registerNomusAutoApplyBomDashboardRoutes } from "./src/lib/nomusAutoApplyBomDashboardRoutes.js";
 import { registerBrentCommodityRoutes } from "./src/lib/brentCommodityRoutes.js";
+import { registerMaterialMarketQuoteAttachmentRoutes } from "./src/lib/materialMarketQuoteAttachmentRoutes.js";
 import { registerMaterialMarketQuoteGovernanceRoutes } from "./src/lib/materialMarketQuoteGovernanceRoutes.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import {
@@ -3113,10 +3110,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const payload = await buildMaterialProductFinancialImpactForApi(prisma, {
           materialId: material.id,
           currentCost: material.currentCost,
-          unit: material.unit,
-          code: material.code,
-          freight: material.freight,
-          standardLoss: material.standardLoss,
           quotes: material.MaterialMarketQuote,
           baselineMaterialPriceBRL,
           simulatedMaterialPriceBRL,
@@ -3133,6 +3126,49 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             error instanceof Error
               ? error.message
               : "Erro ao calcular impacto financeiro nos produtos.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/materials/market-intelligence/:materialId/simulate",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const parsed = parseMaterialMarketSimulationRequest(req.body);
+        if (parsed.ok === false) {
+          return res.status(400).json({ error: parsed.message });
+        }
+
+        const result = await buildMaterialMarketSimulationForMaterial(
+          prisma,
+          costAnalysisEngine,
+          materialId,
+          parsed.value
+        );
+
+        if ("error" in result) {
+          return res.status(result.status).json({ error: result.error });
+        }
+
+        res.json(result);
+      } catch (error) {
+        console.error(
+          "POST /api/materials/market-intelligence/:materialId/simulate",
+          error
+        );
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao executar simulação de mercado.",
         });
       }
     }
@@ -3232,6 +3268,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const quotes = await prisma.materialMarketQuote.findMany({
           where: { materialId },
           orderBy: [{ quoteDate: "desc" }, { createdAt: "desc" }],
+          include: {
+            _count: { select: { Attachments: true } },
+          },
         });
 
         const userIds = collectMaterialMarketQuoteUserIds(quotes);
@@ -6568,6 +6607,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     prisma,
     getCurrentAppUser,
   });
+
+  registerMaterialMarketQuoteAttachmentRoutes(
+    app,
+    {
+      requireAppAuth,
+      requirePermission,
+      getCurrentAppUser,
+      hasPermission,
+    },
+    { prisma, isUuid }
+  );
 
   registerMarketGlobalIndicatorsRoutes(app, {
     requireAppAuth,
