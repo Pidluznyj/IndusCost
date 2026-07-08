@@ -50,7 +50,7 @@ describe("resolveCommissionReceiptSeller", () => {
     assert.equal(r.canonicalSellerName, "GISLENE LIMA");
   });
 
-  it("2 — sem schedule, com CommissionRecord", () => {
+  it("2 — sem schedule e sem SalesOrder, com CommissionRecord", () => {
     const r = resolveCommissionReceiptSeller({
       commissionRecord: {
         commissionPersonId: "person-rodrigo",
@@ -62,6 +62,51 @@ describe("resolveCommissionReceiptSeller", () => {
     assert.equal(r.canonicalSellerId, "person-rodrigo");
     assert.equal(r.canonicalSellerName, "RODRIGO SILVA");
     assert.equal(r.rawSellerId, 512);
+  });
+
+  it("2b — SalesOrder sem vendedor ignora CommissionRecord materializado", () => {
+    const r = resolveCommissionReceiptSeller({
+      commissionRecord: {
+        commissionPersonId: "person-eduardo",
+        commissionPersonName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+        nomusSellerId: 1189,
+      },
+      salesOrder: { externalSellerId: null },
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(r.sellerResolutionStatus, "NO_SELLER");
+    assert.equal(r.rawSellerId, null);
+    assert.equal(r.canonicalSellerName, "Sem vendedor no pedido Nomus");
+    assert.equal(r.canonicalSellerId, null);
+  });
+
+  it("2c — SalesOrder com vendedor prevalece sobre CommissionRecord divergente", () => {
+    const r = resolveCommissionReceiptSeller({
+      commissionRecord: {
+        commissionPersonId: "person-rodrigo",
+        commissionPersonName: "RODRIGO SILVA",
+        nomusSellerId: 512,
+      },
+      salesOrder: { externalSellerId: 464, issueDate: new Date("2026-06-01") },
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(r.sellerResolutionStatus, "RESOLVED_FROM_SALES_ORDER");
+    assert.equal(r.canonicalSellerId, "person-gislene");
+    assert.equal(r.canonicalSellerName, "GISLENE LIMA");
+  });
+
+  it("2d — schedule ignorado quando SalesOrder vinculado sem vendedor", () => {
+    const r = resolveCommissionReceiptSeller({
+      schedule: {
+        canonicalSellerId: "person-eduardo",
+        canonicalSellerName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+        rawSellerId: 1189,
+      },
+      salesOrder: { externalSellerId: null },
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(r.sellerResolutionStatus, "NO_SELLER");
+    assert.equal(r.canonicalSellerId, null);
   });
 
   it("3 — sem schedule/record, SalesOrder.externalSellerId mapeado", () => {
@@ -181,7 +226,7 @@ describe("NO_SCHEDULE + vendedor no motor de fechamento", () => {
     };
   }
 
-  it("NO_SCHEDULE via CommissionRecord mantém status e agrupa no vendedor", () => {
+  it("NO_SCHEDULE com SalesOrder prevalece sobre CommissionRecord divergente", () => {
     const result = buildCommissionReceiptPreview({
       year: 2026,
       month: 6,
@@ -203,12 +248,50 @@ describe("NO_SCHEDULE + vendedor no motor de fechamento", () => {
       identityCtx: OK_IDENTITY,
     });
     assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
-    assert.equal(result.lines[0]?.canonicalSellerId, "person-rodrigo");
-    assert.equal(result.lines[0]?.sellerResolutionStatus, "RESOLVED_FROM_COMMISSION_RECORD");
+    assert.equal(result.lines[0]?.canonicalSellerId, "person-gislene");
+    assert.equal(result.lines[0]?.sellerResolutionStatus, "RESOLVED_FROM_SALES_ORDER");
 
     const key = resolveReceiptClosingSellerGroupKey(result.lines[0]!);
-    assert.equal(key, "person-rodrigo");
+    assert.equal(key, "person-gislene");
     assert.notEqual(key, RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY);
+  });
+
+  it("NO_SCHEDULE sem vendedor no pedido Nomus não usa CommissionRecord", () => {
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable(604)],
+      ordersByNfeId: new Map([
+        [
+          100,
+          order({
+            seller: { nomusSellerId: null, responsibleName: null },
+          }),
+        ],
+      ]),
+      materializedSchedulesByReceivableId: new Map(),
+      commissionRecordsByNfeId: new Map([
+        [
+          100,
+          {
+            commissionPersonId: "person-eduardo",
+            commissionPersonName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+            nomusSellerId: 1189,
+          },
+        ],
+      ]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_SELLER");
+    assert.equal(result.lines[0]?.sellerResolutionStatus, "NO_SELLER");
+    assert.equal(result.lines[0]?.canonicalSellerId, null);
+    assert.equal(result.lines[0]?.canonicalSellerName, "Sem vendedor no pedido Nomus");
+    assert.equal(result.lines[0]?.rawSellerId, null);
+
+    const key = resolveReceiptClosingSellerGroupKey(result.lines[0]!);
+    assert.equal(key, "no-seller");
   });
 
   it("NO_SCHEDULE via SalesOrder agrupa no vendedor resolvido", () => {

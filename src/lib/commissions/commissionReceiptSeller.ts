@@ -2,8 +2,8 @@
  * Resolução de vendedor para o relatório de fechamento por recebimento.
  * Separa status de schedule/comissão (NO_SCHEDULE, etc.) da identidade do vendedor.
  *
- * Ordem: schedule → CommissionRecord → SalesOrder.externalSellerId → SELLER_UNRESOLVED → NO_SELLER.
- * Nunca usa SalesOrder.responsible, Proposal ou CRM.
+ * Com SalesOrder vinculado: `externalSellerId` é trava absoluta — null → NO_SELLER sem fallback.
+ * Sem SalesOrder: schedule → CommissionRecord → NO_SELLER (nunca responsible/Proposal/CRM).
  */
 import {
   formatNomusOrderSellerDisplayName,
@@ -55,6 +55,24 @@ function sellerUnresolvedLabel(nomusId: number): string {
   return `Vendedor Nomus não mapeado: ID ${nomusId}`;
 }
 
+function noSellerFromSalesOrderResolution(): CommissionReceiptSellerResolution {
+  return {
+    rawSellerId: null,
+    rawSellerName: null,
+    canonicalSellerId: null,
+    canonicalSellerName: NO_SELLER_LABEL,
+    nomusPersonId: null,
+    sellerResolutionStatus: "NO_SELLER",
+    sellerLabel: NO_SELLER_LABEL,
+  };
+}
+
+function isSalesOrderWithoutOfficialSeller(
+  salesOrder: CommissionReceiptSellerOrderInput
+): boolean {
+  return salesOrder.externalSellerId == null || salesOrder.externalSellerId <= 0;
+}
+
 function resolvedFromSchedule(
   schedule: CommissionReceiptSellerScheduleInput
 ): CommissionReceiptSellerResolution | null {
@@ -101,16 +119,8 @@ function resolvedFromSalesOrder(input: {
   identityCtx: CommissionSellerIdentityContext;
 }): CommissionReceiptSellerResolution {
   const externalSellerId = input.salesOrder.externalSellerId;
-  if (externalSellerId == null || externalSellerId <= 0) {
-    return {
-      rawSellerId: null,
-      rawSellerName: null,
-      canonicalSellerId: null,
-      canonicalSellerName: null,
-      nomusPersonId: null,
-      sellerResolutionStatus: "NO_SELLER",
-      sellerLabel: NO_SELLER_LABEL,
-    };
+  if (isSalesOrderWithoutOfficialSeller(input.salesOrder)) {
+    return noSellerFromSalesOrderResolution();
   }
 
   const { identity, nomus } = resolveOrderCommissionSeller({
@@ -151,23 +161,19 @@ export function resolveCommissionReceiptSeller(input: {
   salesOrder?: CommissionReceiptSellerOrderInput | null;
   identityCtx?: CommissionSellerIdentityContext;
 }): CommissionReceiptSellerResolution {
-  const fromSchedule = input.schedule ? resolvedFromSchedule(input.schedule) : null;
-  if (fromSchedule) return fromSchedule;
+  if (input.salesOrder) {
+    if (isSalesOrderWithoutOfficialSeller(input.salesOrder)) {
+      return noSellerFromSalesOrderResolution();
+    }
 
-  const fromRecord = input.commissionRecord
-    ? resolvedFromCommissionRecord(input.commissionRecord)
-    : null;
-  if (fromRecord) return fromRecord;
+    if (input.identityCtx) {
+      return resolvedFromSalesOrder({
+        salesOrder: input.salesOrder,
+        identityCtx: input.identityCtx,
+      });
+    }
 
-  if (input.salesOrder && input.identityCtx) {
-    return resolvedFromSalesOrder({
-      salesOrder: input.salesOrder,
-      identityCtx: input.identityCtx,
-    });
-  }
-
-  if (input.salesOrder?.externalSellerId != null && input.salesOrder.externalSellerId > 0) {
-    const id = input.salesOrder.externalSellerId;
+    const id = input.salesOrder.externalSellerId!;
     return {
       rawSellerId: id,
       rawSellerName: null,
@@ -179,15 +185,15 @@ export function resolveCommissionReceiptSeller(input: {
     };
   }
 
-  return {
-    rawSellerId: null,
-    rawSellerName: null,
-    canonicalSellerId: null,
-    canonicalSellerName: null,
-    nomusPersonId: null,
-    sellerResolutionStatus: "NO_SELLER",
-    sellerLabel: NO_SELLER_LABEL,
-  };
+  const fromSchedule = input.schedule ? resolvedFromSchedule(input.schedule) : null;
+  if (fromSchedule) return fromSchedule;
+
+  const fromRecord = input.commissionRecord
+    ? resolvedFromCommissionRecord(input.commissionRecord)
+    : null;
+  if (fromRecord) return fromRecord;
+
+  return noSellerFromSalesOrderResolution();
 }
 
 /** Mapeia resolução para campos da linha de prévia/API. */

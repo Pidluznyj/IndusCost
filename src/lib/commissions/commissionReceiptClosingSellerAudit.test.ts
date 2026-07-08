@@ -105,6 +105,21 @@ describe("commissionReceiptClosingSellerAudit", () => {
     assert.equal(resolved.canonicalSellerName, "GISLENE LIMA");
   });
 
+  it("CommissionRecord não prevalece quando externalSellerId é null", () => {
+    const r = resolveCommissionReceiptSeller({
+      commissionRecord: {
+        commissionPersonId: "person-eduardo",
+        commissionPersonName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+        nomusSellerId: 1189,
+      },
+      salesOrder: { externalSellerId: null },
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(r.sellerResolutionStatus, "NO_SELLER");
+    assert.equal(r.rawSellerId, null);
+    assert.equal(r.canonicalSellerName, "Sem vendedor no pedido Nomus");
+  });
+
   it("NO_SCHEDULE não entra em isReceiptClosingSellerExcludedFromCommission", () => {
     assert.equal(isReceiptClosingSellerExcludedFromCommission("NO_SCHEDULE"), false);
     assert.equal(isReceiptClosingSellerExcludedFromCommission("CUSTOMER_EXCLUDED"), true);

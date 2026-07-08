@@ -684,7 +684,9 @@ function previewLineFromMaterializedSchedule(
   receivable: CommissionReceiptReceivableInput,
   year: number,
   month: number,
-  exclusionRules: CustomerExclusionRuleSnapshot[] = []
+  exclusionRules: CustomerExclusionRuleSnapshot[] = [],
+  order?: CommissionOrderSourceBundle,
+  identityCtx?: CommissionSellerIdentityContext
 ): CommissionReceiptPreviewLine {
   const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
   const release = releaseCommissionFromMaterializedSchedule({ schedule, receivable });
@@ -706,6 +708,21 @@ function previewLineFromMaterializedSchedule(
     receivable,
     exclusionRules,
   });
+
+  const seller =
+    order != null
+      ? resolveReceiptExceptionLineSellerFields({
+          order,
+          identityCtx,
+        })
+      : resolveReceiptExceptionLineSellerFields({
+          schedule: {
+            canonicalSellerId: schedule.canonicalSellerId,
+            canonicalSellerName: schedule.canonicalSellerName,
+            rawSellerId: schedule.rawSellerId,
+            rawSellerName: schedule.rawSellerName,
+          },
+        });
 
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
@@ -742,11 +759,11 @@ function previewLineFromMaterializedSchedule(
     localItemId: null,
     productCode: null,
     productName: null,
-    rawSellerId: schedule.rawSellerId,
-    rawSellerName: schedule.rawSellerName,
-    canonicalSellerId: schedule.canonicalSellerId,
-    canonicalSellerName: schedule.canonicalSellerName,
-    sellerResolutionStatus: schedule.sellerResolutionStatus,
+    rawSellerId: seller.rawSellerId,
+    rawSellerName: seller.rawSellerName,
+    canonicalSellerId: seller.canonicalSellerId,
+    canonicalSellerName: seller.canonicalSellerName,
+    sellerResolutionStatus: seller.sellerResolutionStatus,
     commissionRecordId: null,
     commissionPaymentScheduleId: null,
     commissionReceivableScheduleId: schedule.id,
@@ -858,6 +875,21 @@ export function resolveReceiptExceptionLineSellerFields(input: {
   canonicalSellerName: string | null;
   sellerResolutionStatus: string | null;
 } {
+  if (
+    input.order &&
+    (input.order.seller.nomusSellerId == null || input.order.seller.nomusSellerId <= 0)
+  ) {
+    return mapCommissionReceiptSellerToLineFields(
+      resolveCommissionReceiptSeller({
+        salesOrder: {
+          externalSellerId: input.order.seller.nomusSellerId,
+          issueDate: input.order.issueDate,
+          nomusSellerName: input.order.seller.responsibleName,
+        },
+      })
+    );
+  }
+
   if (input.preResolved) {
     const { identity, nomus } = input.preResolved;
     if (
@@ -1049,7 +1081,9 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
       input.receivable,
       input.year,
       input.month,
-      input.exclusionRules
+      input.exclusionRules,
+      input.order,
+      input.identityCtx
     ),
   ];
 }
