@@ -13,6 +13,7 @@ import {
   resolveSalesOrderListCustomerName,
   SALES_ORDER_LIST_STATUS_LABELS,
 } from "@/src/lib/salesOrderListUi";
+import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import "./sales-order-list-table.css";
 
 export function SalesOrderListTable({
@@ -42,7 +43,7 @@ export function SalesOrderListTable({
             <tr>
               <th>Pedido</th>
               <th>Cliente</th>
-              <th>Responsável</th>
+              <th>Vendedor</th>
               <th>Emissão</th>
               <th>Situação</th>
               <th className="so-value-cell">Valor líquido</th>
@@ -122,9 +123,10 @@ export function SalesOrderListTable({
                     <td>
                       <span
                         className="so-cell-ellipsis block max-w-[10rem]"
-                        title={row.responsible?.trim() || "Sem responsável"}
+                        title={resolveSalesOrderListSellerLabel(row)}
+                        data-testid="sales-order-list-seller"
                       >
-                        {row.responsible?.trim() || "Sem responsável"}
+                        {resolveSalesOrderListSellerLabel(row)}
                       </span>
                     </td>
                     <td className="whitespace-nowrap text-xs tabular-nums">

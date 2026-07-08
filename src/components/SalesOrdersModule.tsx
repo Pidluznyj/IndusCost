@@ -17,6 +17,7 @@ import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js"
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
 import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
+import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
   SALES_ORDER_MONTH_OPTIONS,
   buildSalesOrderYearOptions,
@@ -146,7 +147,7 @@ function SalesOrderList() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (customerId) params.set("customerId", customerId);
-    if (responsible.trim()) params.set("responsible", responsible.trim());
+    if (responsible.trim()) params.set("seller", responsible.trim());
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     if (year) params.set("year", year);
@@ -178,7 +179,7 @@ function SalesOrderList() {
         params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
         if (status) params.set("status", status);
         if (customerId) params.set("customerId", customerId);
-        if (responsible.trim()) params.set("responsible", responsible.trim());
+        if (responsible.trim()) params.set("seller", responsible.trim());
         if (startDate) params.set("startDate", startDate);
         if (endDate) params.set("endDate", endDate);
         if (year) params.set("year", year);
@@ -331,13 +332,14 @@ function SalesOrderList() {
             />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Responsável</label>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Vendedor</label>
             <input
               type="text"
               className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              placeholder="Nome do responsável"
+              placeholder="Nome do vendedor"
               value={responsible}
               onChange={(e) => setResponsible(e.target.value)}
+              data-testid="sales-orders-seller-filter"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -567,8 +569,8 @@ function SalesOrderDetailView({ id }: { id: string }) {
             <p className="font-medium">{row.Customer?.companyName ?? "—"}</p>
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Responsável</p>
-            <p>{row.responsible || "—"}</p>
+            <p className="text-[10px] font-bold uppercase text-muted-foreground">Vendedor</p>
+            <p>{resolveSalesOrderListSellerLabel(row)}</p>
           </div>
           <div>
             <p className="text-[10px] font-bold uppercase text-muted-foreground">Proposta de origem</p>

@@ -206,7 +206,7 @@ export function buildSalesOrderManagementWhere(
   const base = buildSalesOrderListWhere({
     status: filters.status,
     customerId: filters.customerId,
-    responsible: filters.responsible,
+    seller: filters.responsible,
     startDate,
     endDate,
     q: filters.q,

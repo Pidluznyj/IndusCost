@@ -333,13 +333,22 @@ export function filterSalesOrderListRows(
 ): SalesOrderRulesOrderInput[] {
   const status = filters.status?.trim() ?? "";
   const customerId = filters.customerId?.trim() ?? "";
-  const responsible = filters.responsible?.trim() ?? "";
+  const sellerTerm = (filters.seller ?? filters.responsible)?.trim() ?? "";
   const periodRange = resolveSalesOrderIssueDateRange(filters.year ?? null, filters.month ?? null);
 
   return orders.filter((order) => {
     if (status && isValidSalesOrderListStatus(status) && order.status !== status) return false;
     if (customerId && order.customerId !== customerId) return false;
-    if (responsible && (order.responsible ?? "").trim() !== responsible) return false;
+    if (sellerTerm) {
+      const asNum = Number(sellerTerm);
+      const needle = sellerTerm.toLowerCase();
+      const nomusName = (order.nomusSellerName ?? "").trim().toLowerCase();
+      const idMatch =
+        Number.isInteger(asNum) && asNum > 0 && order.externalSellerId === asNum;
+      const nameMatch = nomusName.includes(needle);
+      // Nunca usa SalesOrder.responsible (legado CRM) neste filtro.
+      if (!idMatch && !nameMatch) return false;
+    }
     if (filters.startDate && order.issueDate.getTime() < filters.startDate.getTime()) return false;
     if (filters.endDate && order.issueDate.getTime() > filters.endDate.getTime()) return false;
     if (periodRange) {

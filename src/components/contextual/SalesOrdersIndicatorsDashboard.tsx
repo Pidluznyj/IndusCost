@@ -278,7 +278,7 @@ export function SalesOrdersIndicatorsDashboard() {
             className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             value={responsible}
             onChange={(e) => setResponsible(e.target.value)}
-            placeholder="Nome do responsável"
+            placeholder="Nome do vendedor"
           />
         </label>
         <button

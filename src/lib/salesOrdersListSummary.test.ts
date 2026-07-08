@@ -86,14 +86,25 @@ describe("salesOrdersListSummary", () => {
     const where = buildSalesOrderListWhere({
       status: "SENT_TO_NOMUS",
       customerId: "uuid-client",
-      responsible: "João",
+      seller: "464",
       startDate: start,
       endDate: end,
     });
-    assert.equal(where.status, "SENT_TO_NOMUS");
-    assert.equal(where.customerId, "uuid-client");
-    assert.equal(where.responsible, "João");
-    assert.deepEqual(where.issueDate, { gte: start, lte: end });
+    assert.ok(where.AND);
+    const and = where.AND as Array<Record<string, unknown>>;
+    assert.ok(and.some((c) => c.status === "SENT_TO_NOMUS"));
+    assert.ok(and.some((c) => c.customerId === "uuid-client"));
+    assert.ok(and.some((c) => c.externalSellerId === 464));
+    assert.ok(and.some((c) => JSON.stringify(c).includes("issueDate")));
+    assert.ok(!JSON.stringify(where).includes('"responsible"'));
+  });
+
+  it("buildSalesOrderListWhere com sellerWhere não usa responsible legado", () => {
+    const where = buildSalesOrderListWhere({
+      seller: "João",
+      sellerWhere: { externalSellerId: { in: [464] } },
+    });
+    assert.deepEqual(where, { externalSellerId: { in: [464] } });
   });
 
   it("buildSalesOrderListWhere filtra issueDate por ano", () => {
@@ -184,7 +195,8 @@ describe("salesOrdersListSummary", () => {
     assert.ok(json.includes("orderCode"));
     assert.ok(json.includes("nfeLinks"));
     assert.ok(json.includes("nfeNumber"));
-    assert.ok(json.includes("responsible"));
+    assert.ok(json.includes("nomusSellerName"));
+    assert.ok(!json.includes('"responsible"'));
     assert.ok(json.includes("companyIssuer"));
     assert.ok(json.includes("Customer"));
     assert.ok(json.includes("companyName"));
@@ -194,8 +206,9 @@ describe("salesOrdersListSummary", () => {
 
   it("busca combina com year/month (issueDate + OR juntos)", () => {
     const where = buildSalesOrderListWhere({ q: "02682", year: 2026, month: 6 });
-    assert.ok(where.issueDate, "mantém filtro de período");
-    assert.ok(Array.isArray(where.OR), "mantém busca inteligente");
+    const json = JSON.stringify(where);
+    assert.ok(json.includes("issueDate"), "mantém filtro de período");
+    assert.ok(json.includes("OR") || json.includes("orderCode"), "mantém busca inteligente");
   });
 
   it("busca combina com status e cliente existentes", () => {
@@ -204,9 +217,10 @@ describe("salesOrdersListSummary", () => {
       status: "SENT_TO_NOMUS",
       customerId: "cust-1",
     });
-    assert.equal(where.status, "SENT_TO_NOMUS");
-    assert.equal(where.customerId, "cust-1");
-    assert.ok(Array.isArray(where.OR));
+    const json = JSON.stringify(where);
+    assert.ok(json.includes("SENT_TO_NOMUS"));
+    assert.ok(json.includes("cust-1"));
+    assert.ok(json.includes("OR") || json.includes("orderCode"));
   });
 
   it("sem q → nenhum OR (filtros antigos intactos)", () => {

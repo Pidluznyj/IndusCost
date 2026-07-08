@@ -41,6 +41,12 @@ import {
   formatInternalMarginExportCostConfidence,
   formatInternalMarginExportCostSource,
 } from "./salesOrderInternalMarginExport.js";
+import {
+  buildSalesOrderNomusSellerDto,
+  buildSalesOrderNomusSellerWhereFilter,
+  formatSalesOrderNomusSellerListLabel,
+} from "./salesOrderNomusSellerDisplay.js";
+import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
 
 export type SalesOrderInternalMarginExportScope = "list" | "management" | "indicators";
 
@@ -245,8 +251,8 @@ function buildListExportFilters(query: Record<string, unknown>): SalesOrderInter
   if (status) rows.push({ label: "Status pedido", value: status });
   const customerId = String(query.customerId ?? "").trim();
   if (customerId) rows.push({ label: "Cliente (ID)", value: customerId });
-  const responsible = String(query.responsible ?? "").trim();
-  if (responsible) rows.push({ label: "Vendedor", value: responsible });
+  const seller = String(query.seller ?? query.responsible ?? "").trim();
+  if (seller) rows.push({ label: "Vendedor", value: seller });
   const year = parseSalesOrderYearParam(query.year);
   if (year) rows.push({ label: "Ano emissão", value: String(year) });
   const month = parseSalesOrderMonthParam(query.month);
@@ -361,7 +367,7 @@ export async function loadSalesOrderInternalMarginExportPayload(
           id: row.id,
           orderCode: row.orderCode,
           issueDate: order.issueDate,
-          responsible: order.responsible,
+          responsible: row.nomusSellerDisplayName || row.sellerName || "—",
           customerName: row.customerName,
           logisticStatusLabel: row.logisticStatusLabel,
           items: order.items,
@@ -380,13 +386,14 @@ export async function loadSalesOrderInternalMarginExportPayload(
   if (scope === "indicators") {
     const filters = parseSalesOrderMarginIndicatorFilters(query);
     const where = buildSalesOrderMarginIndicatorWhere(filters);
+    const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
     const orders = await prisma.salesOrder.findMany({
       where,
       select: {
         id: true,
         orderCode: true,
         issueDate: true,
-        responsible: true,
+        externalSellerId: true,
         customerId: true,
         nomusRawResponse: true,
         Customer: { select: { companyName: true, tradeName: true } },
@@ -411,23 +418,32 @@ export async function loadSalesOrderInternalMarginExportPayload(
         }
         return true;
       })
-      .map((order) => ({
-        id: order.id,
-        orderCode: order.orderCode,
-        issueDate: order.issueDate,
-        responsible: order.responsible,
-        customerName: customerDisplayName(order.Customer),
-        items: order.items.filter((item) => {
-          if (filters.productId && item.productId !== filters.productId) return false;
-          if (filters.itemMarginStatus) {
-            const itemResult = marginByOrder
-              .get(order.id)
-              ?.itemResults.find((r) => r.salesOrderItemId === item.id);
-            if (!itemResult || itemResult.status !== filters.itemMarginStatus) return false;
-          }
-          return true;
-        }),
-      }));
+      .map((order) => {
+        const seller = buildSalesOrderNomusSellerDto(
+          {
+            externalSellerId: order.externalSellerId ?? null,
+            issueDate: order.issueDate,
+          },
+          sellerIdentityCtx
+        );
+        return {
+          id: order.id,
+          orderCode: order.orderCode,
+          issueDate: order.issueDate,
+          responsible: formatSalesOrderNomusSellerListLabel(seller),
+          customerName: customerDisplayName(order.Customer),
+          items: order.items.filter((item) => {
+            if (filters.productId && item.productId !== filters.productId) return false;
+            if (filters.itemMarginStatus) {
+              const itemResult = marginByOrder
+                .get(order.id)
+                ?.itemResults.find((r) => r.salesOrderItemId === item.id);
+              if (!itemResult || itemResult.status !== filters.itemMarginStatus) return false;
+            }
+            return true;
+          }),
+        };
+      });
 
     return buildPayloadFromMarginContext({
       scopeLabel: "Indicadores de margem",
@@ -439,17 +455,21 @@ export async function loadSalesOrderInternalMarginExportPayload(
 
   const status = String(query.status ?? "").trim();
   const customerId = String(query.customerId ?? "").trim();
-  const responsible = String(query.responsible ?? "").trim();
+  const sellerFilter = String(query.seller ?? query.responsible ?? "").trim();
   const year = parseSalesOrderYearParam(query.year);
   const month = parseSalesOrderMonthParam(query.month);
   const startDate = parseDateQueryStart(query.startDate);
   const endDate = parseDateQueryEnd(query.endDate);
   const q = String(query.q ?? "").trim();
 
+  const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
+  const sellerWhere = buildSalesOrderNomusSellerWhereFilter(sellerFilter, sellerIdentityCtx);
+
   const where = buildSalesOrderListWhere({
     status: status && isValidSalesOrderListStatus(status) ? status : undefined,
     customerId: customerId || undefined,
-    responsible: responsible || undefined,
+    seller: sellerFilter || undefined,
+    sellerWhere,
     startDate,
     endDate,
     year,
@@ -464,7 +484,7 @@ export async function loadSalesOrderInternalMarginExportPayload(
       id: true,
       orderCode: true,
       issueDate: true,
-      responsible: true,
+      externalSellerId: true,
       nomusRawResponse: true,
       Customer: { select: { companyName: true, tradeName: true } },
       items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
@@ -479,14 +499,23 @@ export async function loadSalesOrderInternalMarginExportPayload(
   return buildPayloadFromMarginContext({
     scopeLabel: "Pedidos de Venda (lista)",
     appliedFilters: buildListExportFilters(query),
-    orders: orders.map((order) => ({
-      id: order.id,
-      orderCode: order.orderCode,
-      issueDate: order.issueDate,
-      responsible: order.responsible,
-      customerName: customerDisplayName(order.Customer),
-      items: order.items,
-    })),
+    orders: orders.map((order) => {
+      const seller = buildSalesOrderNomusSellerDto(
+        {
+          externalSellerId: order.externalSellerId ?? null,
+          issueDate: order.issueDate,
+        },
+        sellerIdentityCtx
+      );
+      return {
+        id: order.id,
+        orderCode: order.orderCode,
+        issueDate: order.issueDate,
+        responsible: formatSalesOrderNomusSellerListLabel(seller),
+        customerName: customerDisplayName(order.Customer),
+        items: order.items,
+      };
+    }),
     marginByOrder,
   });
 }

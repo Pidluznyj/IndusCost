@@ -287,12 +287,14 @@ export function SalesOrderManagementFiltersBar({
               />
             </div>
             <div>
-              <label className={labelClass}>Vendedor / responsável</label>
+              <label className={labelClass}>Vendedor</label>
               <input
                 type="text"
                 className={fieldClass}
                 value={responsible}
                 onChange={(e) => onResponsibleChange(e.target.value)}
+                placeholder="Nome do vendedor"
+                data-testid="sales-order-management-seller-filter"
               />
             </div>
             <div>

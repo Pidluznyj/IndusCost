@@ -20,7 +20,18 @@ export type SalesOrderListStatus = (typeof SALES_ORDER_LIST_STATUS_VALUES)[numbe
 export type SalesOrderListFilters = {
   status?: string;
   customerId?: string;
+  /**
+   * @deprecated Use `seller` / `sellerWhere`. Mantido só para compat de query string
+   * (`?responsible=`); a resolução oficial é por `externalSellerId` Nomus.
+   */
   responsible?: string;
+  /** Filtro de vendedor Nomus (nome resolvido ou ID). Preferir sobre `responsible`. */
+  seller?: string;
+  /**
+   * Restrição Prisma já resolvida (IDs Nomus). Quando informado, prevalece sobre
+   * o filtro textual e **nunca** usa `SalesOrder.responsible`.
+   */
+  sellerWhere?: Prisma.SalesOrderWhereInput | null;
   startDate?: Date | null;
   endDate?: Date | null;
   /** Ano de emissão (filtro executivo) — base em SalesOrder.issueDate. */
@@ -56,8 +67,13 @@ export function buildSalesOrderSearchOr(
     });
   }
 
-  or.push({ responsible: { contains: term, ...insensitive } });
+  or.push({ nomusSellerName: { contains: term, ...insensitive } });
   or.push({ companyIssuer: { contains: term, ...insensitive } });
+  // ID numérico de vendedor Nomus (idPessoaVendedor / externalSellerId)
+  const asNum = Number(term);
+  if (Number.isInteger(asNum) && asNum > 0) {
+    or.push({ externalSellerId: asNum });
+  }
   or.push({ Customer: { is: { companyName: { contains: term, ...insensitive } } } });
   or.push({ Customer: { is: { tradeName: { contains: term, ...insensitive } } } });
   or.push({ Customer: { is: { taxId: { contains: term, ...insensitive } } } });
@@ -88,7 +104,8 @@ export function buildSalesOrderListWhere(
 ): Prisma.SalesOrderWhereInput {
   const status = filters.status?.trim() ?? "";
   const customerId = filters.customerId?.trim() ?? "";
-  const responsible = filters.responsible?.trim() ?? "";
+  const sellerTerm =
+    filters.seller?.trim() || filters.responsible?.trim() || "";
   const startDate = filters.startDate ?? null;
   const endDate = filters.endDate ?? null;
 
@@ -115,13 +132,34 @@ export function buildSalesOrderListWhere(
 
   const searchOr = buildSalesOrderSearchOr(filters.q);
 
-  return {
-    ...(status && isValidSalesOrderListStatus(status) ? { status } : {}),
-    ...(customerId ? { customerId } : {}),
-    ...(responsible ? { responsible } : {}),
-    ...(hasIssueDateFilter ? { issueDate } : {}),
-    ...(searchOr ? { OR: searchOr } : {}),
-  };
+  const sellerWhere =
+    filters.sellerWhere != null
+      ? filters.sellerWhere
+      : sellerTerm
+        ? // Sem contexto de identidade: restringe só por ID numérico / evita responsible legado
+          (() => {
+            const asNum = Number(sellerTerm);
+            if (Number.isInteger(asNum) && asNum > 0) {
+              return { externalSellerId: asNum };
+            }
+            return {
+              OR: [
+                { nomusSellerName: { contains: sellerTerm, mode: "insensitive" as const } },
+              ],
+            };
+          })()
+        : null;
+
+  const and: Prisma.SalesOrderWhereInput[] = [];
+  if (status && isValidSalesOrderListStatus(status)) and.push({ status });
+  if (customerId) and.push({ customerId });
+  if (hasIssueDateFilter) and.push({ issueDate });
+  if (searchOr) and.push({ OR: searchOr });
+  if (sellerWhere) and.push(sellerWhere);
+
+  if (and.length === 0) return {};
+  if (and.length === 1) return and[0]!;
+  return { AND: and };
 }
 
 export function buildSalesOrderListSummary(input: {

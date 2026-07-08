@@ -323,6 +323,11 @@ import {
   buildSalesOrderListWhere,
 } from "./src/lib/salesOrdersListSummary.js";
 import {
+  buildSalesOrderNomusSellerDto,
+  buildSalesOrderNomusSellerWhereFilter,
+} from "./src/lib/salesOrderNomusSellerDisplay.js";
+import { loadCommissionSellerIdentityContext } from "./src/lib/commissions/commissionSellerIdentity.server.js";
+import {
   buildOfficialSalesOrderListPayload,
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialScopedOrderMetrics,
@@ -13328,7 +13333,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       const status = String(req.query.status ?? "").trim();
       const customerId = String(req.query.customerId ?? "").trim();
-      const responsible = String(req.query.responsible ?? "").trim();
+      // Query `responsible` mantida por compat; filtro oficial é vendedor Nomus (externalSellerId).
+      const sellerFilter = String(req.query.seller ?? req.query.responsible ?? "").trim();
       const startDate = parseDateQueryStart(req.query.startDate);
       const endDate = parseDateQueryEnd(req.query.endDate);
       // Filtro executivo Ano/Mês por data de emissão (issueDate); inválidos são ignorados.
@@ -13337,10 +13343,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       // Busca inteligente (pedido/NF/cliente/vendedor/empresa/itens).
       const q = String(req.query.q ?? "").trim();
 
+      const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
+      const sellerWhere = buildSalesOrderNomusSellerWhereFilter(sellerFilter, sellerIdentityCtx);
+
       const where = buildSalesOrderListWhere({
         status: status || undefined,
         customerId: customerId || undefined,
-        responsible: responsible || undefined,
+        seller: sellerFilter || undefined,
+        sellerWhere,
         startDate,
         endDate,
         year,
@@ -13355,7 +13365,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const listFilters = {
         status: status || undefined,
         customerId: customerId || undefined,
-        responsible: responsible || undefined,
+        seller: sellerFilter || undefined,
         startDate,
         endDate,
         year,
@@ -13396,7 +13406,28 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       });
       const summary = officialList.summary;
 
-      const data = await attachMarginsToSalesOrders(prisma, rows);
+      const dataWithMargins = await attachMarginsToSalesOrders(prisma, rows);
+      const data = dataWithMargins.map((order) => {
+        const seller = buildSalesOrderNomusSellerDto(
+          {
+            externalSellerId: order.externalSellerId ?? null,
+            issueDate: order.issueDate,
+          },
+          sellerIdentityCtx
+        );
+        return {
+          ...order,
+          seller,
+          // Compat: clientes antigos liam `responsible` na coluna — agora = rótulo do vendedor Nomus.
+          responsible:
+            seller.resolutionStatus === "NO_SELLER"
+              ? null
+              : seller.name ??
+                (seller.externalSellerId != null
+                  ? `Vendedor Nomus não mapeado: ID ${seller.externalSellerId}`
+                  : null),
+        };
+      });
 
       const marginSummary = canViewMarginEconomics
         ? await buildOfficialSalesOrderListMarginSummary(prisma, marginOrders)

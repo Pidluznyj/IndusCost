@@ -171,7 +171,7 @@ describe("salesOrderManagementPage filter layout", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /setPage/);
     assert.match(page, /displayDashboardCards/);
-    assert.match(page, /toggleManagementStatusCard/);
+    assert.match(page, /onToggleLogisticStatus|setSelectedManagementStatus/);
     assert.doesNotMatch(page, /@prisma\/client/);
   });
 
@@ -185,7 +185,7 @@ describe("salesOrderManagementPage filter layout", () => {
     const bar = read("src/components/sales/SalesOrderManagementFiltersBar.tsx");
     const labels = [
       "Cliente",
-      "Vendedor / responsável",
+      "Vendedor",
       "Empresa",
       "Status gerencial",
       "Prazo",

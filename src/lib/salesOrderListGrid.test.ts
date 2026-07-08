@@ -94,9 +94,9 @@ describe("salesOrderListUi formatters", () => {
     const ok = buildSalesOrderMarginTooltipText(summary());
     assert.match(ok, /Margem gerencial do pedido/);
     assert.match(ok, /Valor vendido:.*5\.301/);
-    assert.match(ok, /Receita líquida gerencial:.*5\.301/);
+    assert.match(ok, /Receita líquida gerencial após impostos:.*5\.301/);
     assert.match(ok, /Custo de produção IndusCost:.*1\.321/);
-    assert.match(ok, /Tabela de Custo vigente/);
+    assert.match(ok, /Tabela de custo vigente/i);
     assert.match(ok, /Margem R\$:.*3\.980/);
     assert.match(ok, /75,08%/);
     assert.match(ok, /Cobertura: FULL/);
@@ -148,7 +148,7 @@ describe("salesOrderListGrid components", () => {
     const css = read("components/sales/sales-order-list-table.css");
     assert.match(tableSrc, />Pedido</);
     assert.match(tableSrc, />Cliente</);
-    assert.match(tableSrc, />Responsável</);
+    assert.match(tableSrc, />Vendedor</);
     assert.match(tableSrc, />Emissão</);
     assert.match(tableSrc, />Situação</);
     assert.match(tableSrc, />Valor líquido</);
@@ -199,7 +199,8 @@ describe("salesOrderListGrid components", () => {
     assert.match(drawerSrc, /Valor líquido/);
     assert.match(drawerSrc, /sales-order-quick-summary-margin/);
     assert.match(drawerSrc, /resolveSalesOrderMarginRevenueLabel/);
-    assert.match(drawerSrc, /Custo estimado/);
+    assert.match(drawerSrc, /SALES_ORDER_MARGIN_DISPLAY_LABELS\.cost/);
+    assert.match(drawerSrc, /label="Vendedor"/);
   });
 
   it("15. resumo oculta margem sem permissão", () => {

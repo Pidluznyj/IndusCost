@@ -158,7 +158,7 @@ export function buildSalesOrderMarginIndicatorWhere(
     endDate: filters.endDate ?? null,
     status: filters.status,
     customerId: filters.customerId,
-    responsible: filters.responsible,
+    seller: filters.responsible,
   });
 
   const baseStatus = listWhere.status;

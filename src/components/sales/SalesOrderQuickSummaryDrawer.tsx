@@ -19,6 +19,7 @@ import {
   resolveSalesOrderListCustomerName,
   SALES_ORDER_LIST_STATUS_LABELS,
 } from "@/src/lib/salesOrderListUi";
+import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
   buildSalesOrderMarginAlerts,
   formatSalesOrderMarginMoney,
@@ -39,6 +40,11 @@ export type SalesOrderListRowSnapshot = {
   status: string;
   issueDate: string;
   responsible: string | null;
+  seller?: {
+    externalSellerId: number | null;
+    name: string | null;
+    resolutionStatus: string;
+  } | null;
   totalItems: number;
   totalNetValue: unknown;
   totalMarginPerc?: unknown;
@@ -182,7 +188,10 @@ export function SalesOrderQuickSummaryDrawer({
             <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-3">
               <SummaryField label="Valor líquido" value={netValue.display} />
               <SummaryField label="Itens" value={items.display} />
-              <SummaryField label="Responsável" value={row.responsible?.trim() || "Sem responsável"} />
+              <SummaryField
+                label="Vendedor"
+                value={resolveSalesOrderListSellerLabel(row)}
+              />
               <SummaryField
                 label="Proposta"
                 value={
