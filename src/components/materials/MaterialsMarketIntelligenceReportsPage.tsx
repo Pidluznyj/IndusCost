@@ -36,6 +36,7 @@ import { ExecutiveReportSection } from "@/src/components/finance/executive-repor
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 
@@ -443,7 +444,7 @@ export function MaterialsMarketIntelligenceReportsPage() {
             eyebrow={`Gerado em ${formatDatePt(report.generatedAt)} · ${report.filters.periodLabel}`}
             testId="materials-market-intelligence-reports-summary"
           >
-            <SummaryKpiGrid minColumnWidth={160}>
+            <SummaryKpiGrid minColumnWidth={160} className={SYSTEM_TOTALIZER_GRID_CLASS}>
               <SummaryKpiCard label="Matérias monitoradas" value={String(report.summary.monitoredCount)} />
               <SummaryKpiCard
                 label="Oportunidades"
@@ -619,7 +620,7 @@ export function MaterialsMarketIntelligenceReportsPage() {
                 <SectionEmpty message={report.sections.brentImpact.message} />
               ) : (
                 <div className="space-y-4">
-                  <SummaryKpiGrid minColumnWidth={160}>
+                  <SummaryKpiGrid minColumnWidth={160} className={SYSTEM_TOTALIZER_GRID_CLASS}>
                     <SummaryKpiCard
                       label="Brent"
                       value={

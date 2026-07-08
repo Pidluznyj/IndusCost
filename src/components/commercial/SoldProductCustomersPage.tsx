@@ -22,7 +22,8 @@ import {
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
@@ -80,7 +81,7 @@ function CommercialKpiMoney({
 }) {
   const formatted = kpiCurrency(value, label);
   return (
-    <FinanceBiKpiCard
+    <FinanceExecutiveTotalizerCard
       label={label}
       value={formatted.value}
       valueTitle={formatted.valueTitle}
@@ -101,7 +102,7 @@ function CommercialKpiQty({
 }) {
   const formatted = kpiNumber(value, label);
   return (
-    <FinanceBiKpiCard
+    <FinanceExecutiveTotalizerCard
       label={label}
       value={formatted.value}
       valueTitle={formatted.valueTitle}
@@ -113,7 +114,7 @@ function CommercialKpiQty({
 function CommercialKpiDate({ label, iso }: { label: string; iso: string | null | undefined }) {
   const formatted = kpiDate(iso, label);
   return (
-    <FinanceBiKpiCard label={label} value={formatted.value} valueTitle={formatted.valueTitle} />
+    <FinanceExecutiveTotalizerCard label={label} value={formatted.value} valueTitle={formatted.valueTitle} />
   );
 }
 
@@ -533,15 +534,15 @@ export function SoldProductCustomersPage() {
           testId="sold-product-customers-kpi-summary"
           className="mb-4"
         >
-          <SummaryKpiGrid minColumnWidth={200}>
-            <FinanceBiKpiCard label="Clientes" value={String(data.summary.customersCount)} icon={Users} />
+          <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+            <FinanceExecutiveTotalizerCard label="Clientes" value={String(data.summary.customersCount)} icon={Users} />
             <CommercialKpiQty label="Quantidade" value={data.summary.totalQuantity} icon={Package} />
             <CommercialKpiMoney label="Receita" value={data.summary.totalRevenue} />
             <CommercialKpiMoney label="Preço médio" value={data.summary.averageUnitPrice} />
             <CommercialKpiMoney label="Menor preço" value={data.summary.minUnitPrice} />
             <CommercialKpiMoney label="Maior preço" value={data.summary.maxUnitPrice} />
             <CommercialKpiDate label="Última venda" iso={data.summary.lastSaleDate} />
-            <FinanceBiKpiCard
+            <FinanceExecutiveTotalizerCard
               label="Inativos"
               value={String(data.summary.inactiveCustomersCount)}
               hint="> 180 dias sem comprar"

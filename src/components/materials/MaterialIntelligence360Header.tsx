@@ -6,6 +6,7 @@ import { MaterialMarketMonitoringBadge } from "@/src/components/materials/Materi
 import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { formatCurrency } from "@/src/lib/utils";
 import { formatMaterialIntelligenceQuoteDate } from "@/src/lib/materialIntelligence360Sections";
 
@@ -88,7 +89,7 @@ export function MaterialIntelligence360Header({ item }: Props) {
         </p>
       </div>
 
-      <SummaryKpiGrid testId="material-intelligence-360-kpis">
+      <SummaryKpiGrid testId="material-intelligence-360-kpis" className={SYSTEM_TOTALIZER_GRID_CLASS}>
         {item.officialQuote ? (
           <SummaryKpiCard
             label="Cotação oficial"

@@ -10,6 +10,7 @@ import {
 } from "@/src/lib/purchaseIndicatorsStats";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 import { cn } from "@/src/lib/utils";
 
@@ -79,7 +80,7 @@ export function PurchaseIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Solicitações" value={String(rows.length)} />
         <ContextualDashboardKpiCard label="Linhas de itens (total)" value={String(lines)} />
         <ContextualDashboardKpiCard
@@ -88,7 +89,7 @@ export function PurchaseIndicatorsDashboard() {
           hint="Status ABERTA no cadastro atual."
         />
         <ContextualDashboardKpiCard label="Rascunhos" value={String(counts!.RASCUNHO)} />
-      </div>
+      </ContextualDashboardKpiGrid>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border bg-card p-6 space-y-4">

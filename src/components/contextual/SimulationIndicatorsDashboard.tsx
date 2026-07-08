@@ -5,6 +5,7 @@ import type { SimulationListRow, NewProductSimulationSummary } from "@/src/lib/s
 import { avgScenarioAdjustments, newProductSnapshotCounts } from "@/src/lib/simulationIndicatorsStats";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 
 export function SimulationIndicatorsDashboard() {
@@ -75,12 +76,12 @@ export function SimulationIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Cenários what-if" value={String(simRows.length)} />
         <ContextualDashboardKpiCard label="Simulações novo produto" value={String(np!.total)} />
         <ContextualDashboardKpiCard label="Snapshots congelados" value={String(np!.saved)} />
         <ContextualDashboardKpiCard label="Rascunhos (novo produto)" value={String(np!.draft)} />
-      </div>
+      </ContextualDashboardKpiGrid>
 
       <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
         <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
@@ -89,13 +90,13 @@ export function SimulationIndicatorsDashboard() {
         <p className="text-xs text-muted-foreground">
           Média simples dos campos materialAdj, laborAdj, indirectAdj, efficiencyAdj e marginAdj na lista de cenários.
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <ContextualDashboardKpiGrid minColumnWidth={140}>
           <ContextualDashboardKpiCard label="MP" value={`${formatNumber(avg!.mp, 2)}%`} />
           <ContextualDashboardKpiCard label="HH" value={`${formatNumber(avg!.hh, 2)}%`} />
           <ContextualDashboardKpiCard label="HM" value={`${formatNumber(avg!.hm, 2)}%`} />
           <ContextualDashboardKpiCard label="Eficiência" value={`${formatNumber(avg!.eff, 2)}%`} />
           <ContextualDashboardKpiCard label="Margem" value={`${formatNumber(avg!.margin, 2)}%`} />
-        </div>
+        </ContextualDashboardKpiGrid>
       </div>
     </ContextualDashboardLayout>
   );

@@ -17,6 +17,9 @@ import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingD
 import { ProductionCostTablesPanel } from "@/src/components/pricing/ProductionCostTablesPanel";
 import { MaterialCostTablesPanel } from "@/src/components/pricing/MaterialCostTablesPanel";
 import { CostPriceMarginAuditPanel } from "@/src/components/pricing/CostPriceMarginAuditPanel";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 import {
   filterAndSortPricingRows,
@@ -2910,27 +2913,26 @@ export const PricingModule = () => {
                       </p>
                       <p className="pt-1 text-xs text-neutral-600">Emitido em {new Date().toLocaleString("pt-BR")}</p>
                     </div>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                      <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs font-bold uppercase text-muted-foreground">Custo para produzir</p>
-                        <p className="text-base font-bold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</p>
-                      </div>
-                      <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs font-bold uppercase text-muted-foreground">Impostos sobre venda</p>
-                        <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</p>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</p>
-                      </div>
-                      <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs font-bold uppercase text-muted-foreground">Margem desejada</p>
-                        <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</p>
-                      </div>
-                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                        <p className="text-xs font-bold uppercase text-primary">Preço sugerido</p>
-                        <p className="text-lg font-black text-primary">
-                          {formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
-                        </p>
-                      </div>
-                    </div>
+                    <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                      <FinanceExecutiveTotalizerCard
+                        label="Custo para produzir"
+                        value={formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}
+                      />
+                      <FinanceExecutiveTotalizerCard
+                        label="Impostos sobre venda"
+                        value={`${formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%`}
+                        subtitle={formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}
+                      />
+                      <FinanceExecutiveTotalizerCard
+                        label="Margem desejada"
+                        value={`${formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%`}
+                      />
+                      <FinanceExecutiveTotalizerCard
+                        label="Preço sugerido"
+                        value={formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
+                        tone="info"
+                      />
+                    </SummaryKpiGrid>
                     <div className="rounded-xl border border-border bg-card/30 p-4">
                       <table className="w-full text-sm">
                         <tbody className="divide-y divide-border">

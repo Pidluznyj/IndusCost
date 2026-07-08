@@ -9,6 +9,7 @@ import {
 } from "@/src/lib/proposalIndicatorsStats";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 import { cn } from "@/src/lib/utils";
 
@@ -80,7 +81,7 @@ export function ProposalIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Propostas" value={String(rows.length)} />
         <ContextualDashboardKpiCard label="Valor líquido total" value={formatCurrency(fin!.totalNet)} />
         <ContextualDashboardKpiCard label="Ticket médio (líquido)" value={formatCurrency(fin!.ticketMedio)} />
@@ -88,7 +89,7 @@ export function ProposalIndicatorsDashboard() {
           label="Margem % média (registros com valor)"
           value={`${formatNumber(fin!.avgMarginPerc, 2)}%`}
         />
-      </div>
+      </ContextualDashboardKpiGrid>
 
       <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
         <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Distribuição por status</h4>

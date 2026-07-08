@@ -27,6 +27,9 @@ import {
   type ComponentPerformanceFilterId,
 } from "@/src/lib/componentPerformanceUi";
 import { cn } from "@/src/lib/utils";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ComponentPerformanceEditDrawer } from "@/src/components/operations/ComponentPerformanceEditDrawer";
 import { ComponentPerformanceHistoryDrawer } from "@/src/components/operations/ComponentPerformanceHistoryDrawer";
 
@@ -218,55 +221,45 @@ export function OperationsPerformanceModule() {
         </div>
       ) : null}
 
-      <div
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-        data-testid="performance-coverage-cards"
+      <SummaryKpiGrid
+        minColumnWidth={200}
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+        testId="performance-coverage-cards"
       >
-        {[
-          {
-            label: "Componentes ativos",
-            value: coverage?.totals.activeComponents,
-            hint: coverage?.periodLabel ?? "—",
-          },
-          {
-            label: "Sem ciclo ou cavidades",
-            value: coverage?.totals.withoutCycleOrCavities,
-            hint: "Pendências operacionais",
-          },
-          {
-            label: "Vendidos sem performance",
-            value: coverage?.totals.soldWithoutCompletePerformance,
-            hint: "Crítico comercial",
-            critical: true,
-          },
-          {
-            label: "Nunca revisados",
-            value: coverage?.totals.neverReviewed,
-            hint: "Sem histórico de alteração",
-          },
-        ].map((card) => (
-          <div
-            key={card.label}
-            className={cn(
-              "rounded-xl border bg-card p-4",
-              card.critical ? "border-amber-300/60" : "border-border"
-            )}
-          >
-            <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
-            <p
-              className={cn(
-                "mt-1 text-2xl font-semibold tabular-nums",
-                card.critical && (coverage?.totals.soldWithoutCompletePerformance ?? 0) > 0
-                  ? "text-amber-700"
-                  : ""
-              )}
-            >
-              {coverageLoading ? "…" : card.value ?? "—"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
-          </div>
-        ))}
-      </div>
+        <FinanceExecutiveTotalizerCard
+          label="Componentes ativos"
+          value={coverageLoading ? undefined : String(coverage?.totals.activeComponents ?? "—")}
+          loading={coverageLoading}
+          subtitle={coverage?.periodLabel ?? "—"}
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Sem ciclo ou cavidades"
+          value={coverageLoading ? undefined : String(coverage?.totals.withoutCycleOrCavities ?? "—")}
+          loading={coverageLoading}
+          subtitle="Pendências operacionais"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Vendidos sem performance"
+          value={
+            coverageLoading
+              ? undefined
+              : String(coverage?.totals.soldWithoutCompletePerformance ?? "—")
+          }
+          loading={coverageLoading}
+          tone={
+            !coverageLoading && (coverage?.totals.soldWithoutCompletePerformance ?? 0) > 0
+              ? "warning"
+              : undefined
+          }
+          subtitle="Crítico comercial"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Nunca revisados"
+          value={coverageLoading ? undefined : String(coverage?.totals.neverReviewed ?? "—")}
+          loading={coverageLoading}
+          subtitle="Sem histórico de alteração"
+        />
+      </SummaryKpiGrid>
 
       {coverageError ? (
         <div className="rounded-xl border border-amber-300/50 bg-amber-50/50 p-3 text-sm text-amber-900">

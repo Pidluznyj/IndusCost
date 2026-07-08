@@ -4,6 +4,7 @@ import type { PricingRow } from "@/src/lib/pricingFormationIndicatorsStats";
 import { pricingFormationRollup } from "@/src/lib/pricingFormationIndicatorsStats";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 
 export function PricingFormationIndicatorsDashboard() {
@@ -60,11 +61,11 @@ export function PricingFormationIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <ContextualDashboardKpiGrid minColumnWidth={180}>
         <ContextualDashboardKpiCard label="Premissas cadastradas" value={String(roll!.premissas)} />
         <ContextualDashboardKpiCard label="Produtos com premissa" value={String(roll!.produtosDistintos)} />
         <ContextualDashboardKpiCard label="Regras fiscais usadas" value={String(roll!.regrasFiscaisDistintas)} />
-      </div>
+      </ContextualDashboardKpiGrid>
     </ContextualDashboardLayout>
   );
 }

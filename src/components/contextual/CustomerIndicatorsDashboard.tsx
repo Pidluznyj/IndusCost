@@ -4,6 +4,7 @@ import { cn, formatNumber } from "@/src/lib/utils";
 import type { CustomerIndicatorsResponse } from "@/src/lib/customerIndicators";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 import {
   Bar,
@@ -143,7 +144,7 @@ export function CustomerIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Clientes cadastrados" value={String(s.totalCustomers)} />
         <ContextualDashboardKpiCard label="Ativos" value={String(s.activeCount)} />
         <ContextualDashboardKpiCard label="Inativos" value={String(s.inactiveCount)} />
@@ -152,9 +153,9 @@ export function CustomerIndicatorsDashboard() {
           value={String(s.withSalesOrderCount)}
           hint="Clientes com pedido de venda válido."
         />
-      </div>
+      </ContextualDashboardKpiGrid>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Sem UF preenchido" value={String(s.withoutStateCount)} />
         <ContextualDashboardKpiCard label="Com e-mail" value={String(s.withEmailCount)} />
         <ContextualDashboardKpiCard label="Com telefone" value={String(s.withPhoneCount)} />
@@ -164,7 +165,7 @@ export function CustomerIndicatorsDashboard() {
           value={String(s.withNegotiationProposalCount)}
           hint="Pré-venda auxiliar — não substitui pedidos."
         />
-      </div>
+      </ContextualDashboardKpiGrid>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">

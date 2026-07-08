@@ -20,7 +20,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
@@ -804,8 +805,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 eyebrow="Indicadores do escopo filtrado"
                 testId="customer-commercial-360-kpi-summary"
               >
-                <SummaryKpiGrid minColumnWidth={200}>
-                  <FinanceBiKpiCard
+                <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                  <FinanceExecutiveTotalizerCard
                     icon={TrendingUp}
                     label="Receita de pedidos (filtro)"
                     value={formatCurrency(metrics.totalNet)}
@@ -815,23 +816,23 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         : "Escopo filtrado localmente"
                     }
                   />
-                  <FinanceBiKpiCard icon={Package} label="Pedidos (filtro)" value={String(metrics.count)} />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard icon={Package} label="Pedidos (filtro)" value={String(metrics.count)} />
+                  <FinanceExecutiveTotalizerCard
                     icon={CheckCircle2}
                     label="Pedidos válidos (filtro)"
                     value={String(metrics.validCount)}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={FileText}
                     label="Faturados (filtro)"
                     value={String(metrics.invoicedCount)}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={BarChart3}
                     label="Ticket médio (filtro)"
                     value={formatCurrency(metrics.ticket)}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={TrendingUp}
                     label={resolveSalesOrderMarginPercentLabel(metrics.marginCoverage)}
                     value={
@@ -850,7 +851,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         : "Margem indisponível para o filtro atual"
                     }
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={TrendingUp}
                     label={resolveSalesOrderMarginMoneyLabel(metrics.marginCoverage)}
                     value={
@@ -869,23 +870,23 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         : "Margem indisponível para o filtro atual"
                     }
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={BarChart3}
                     label="Maior / menor pedido (líq.)"
                     value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Package}
                     label="Média itens / pedido"
                     value={formatNumber(metrics.avgItems, 2)}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Clock}
                     label="Carteira em aberto (filtro)"
                     value={formatCurrency(metrics.openNet)}
                     hint={`${metrics.openCount} pedido(s)`}
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Calendar}
                     label="Último pedido"
                     value={
@@ -894,7 +895,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         : "—"
                     }
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Clock}
                     label="Dias desde último pedido"
                     value={
@@ -903,7 +904,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         : "—"
                     }
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Calendar}
                     label="Média dias entre pedidos"
                     value={
@@ -911,7 +912,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                     }
                     hint="≥2 pedidos válidos"
                   />
-                  <FinanceBiKpiCard
+                  <FinanceExecutiveTotalizerCard
                     icon={Target}
                     label="Produto líder (receita filtro)"
                     value={mixRows[0] ? `${mixRows[0].sku}` : "—"}

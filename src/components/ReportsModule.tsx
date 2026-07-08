@@ -34,7 +34,8 @@ import {
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { fetchJsonOk } from "@/src/lib/http";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -516,56 +517,56 @@ export const ReportsModule = () => {
                 className="reports-print-break"
                 testId="reports-executive-kpi"
               >
-                <SummaryKpiGrid minColumnWidth={180}>
-                  <MetricCard
+                <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos (período)"
                     value={String(data.commercial.orderCount)}
-                    variant="info"
+                    tone="info"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Valor líq. total"
                     amount={data.commercial.totalNet}
                     amountFormat="currency"
-                    variant="money"
+                    tone="money"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Enviados ao Nomus (líq.)"
                     amount={data.commercial.sentToNomusNet}
                     amountFormat="currency"
                     subtitle="Status Enviado ao Nomus"
-                    variant="success"
+                    tone="success"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos em aberto (líq.)"
                     amount={data.commercial.openOrdersNet}
                     amountFormat="currency"
-                    variant="warning"
+                    tone="warning"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Ticket médio"
                     amount={data.commercial.ticketAvg}
                     amountFormat="currency"
-                    variant="money"
+                    tone="money"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos enviados ao Nomus"
                     value={String(data.commercial.sentToNomusCount)}
-                    variant="neutral"
+                    tone="neutral"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos em aberto"
                     value={String(data.commercial.openOrdersCount)}
-                    variant="warning"
+                    tone="warning"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos cancelados"
                     value={String(data.commercial.cancelledCount)}
-                    variant="danger"
+                    tone="danger"
                   />
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     label="Pedidos parados (alerta)"
                     value={String(data.commercial.staleOrders.length)}
-                    variant={data.commercial.staleOrders.length > 0 ? "danger" : "success"}
+                    tone={data.commercial.staleOrders.length > 0 ? "danger" : "success"}
                   />
                 </SummaryKpiGrid>
               </ExecutiveSummarySection>

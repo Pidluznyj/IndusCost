@@ -9,8 +9,9 @@ import {
   ShieldAlert,
   TrendingDown,
 } from "lucide-react";
-import { MetricCard } from "@/src/components/ui/MetricCard";
-import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
 import {
   formatInventoryDateTime,
@@ -142,72 +143,72 @@ function RecentMovementsTable({ rows }: { rows: InventoryDashboardRecentMovement
 export function InventoryDashboardTab({ data, loading = false }: Props) {
   return (
     <div className="space-y-6" data-testid="inventory-dashboard">
-      <MetricCardGrid data-testid="inventory-dashboard-kpis">
-        <MetricCard
+      <SummaryKpiGrid className={SYSTEM_TOTALIZER_GRID_CLASS} testId="inventory-dashboard-kpis">
+        <FinanceExecutiveTotalizerCard
           label="Valor total em estoque"
           amount={data.totalInventoryValue}
           amountFormat="currency"
-          variant="neutral"
-          icon={<Boxes />}
+          tone="neutral"
+          icon={Boxes}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Itens cadastrados"
           amount={data.itemsCount}
           amountFormat="number"
-          variant="info"
-          icon={<Package />}
+          tone="info"
+          icon={Package}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Abaixo do mínimo"
           amount={data.belowMinimumCount}
           amountFormat="number"
-          variant="warning"
-          icon={<TrendingDown />}
+          tone="warning"
+          icon={TrendingDown}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Abaixo do ponto de reposição"
           amount={data.belowReorderPointCount}
           amountFormat="number"
-          variant="warning"
-          icon={<AlertTriangle />}
+          tone="warning"
+          icon={AlertTriangle}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Saldo negativo"
           amount={data.negativeStockCount}
           amountFormat="number"
-          variant="danger"
-          icon={<ShieldAlert />}
+          tone="danger"
+          icon={ShieldAlert}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Bloqueados"
           amount={data.blockedItemsCount}
           amountFormat="number"
-          variant="neutral"
-          icon={<Lock />}
+          tone="neutral"
+          icon={Lock}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Reservados"
           amount={data.reservedItemsCount}
           amountFormat="number"
-          variant="info"
-          icon={<ClipboardList />}
+          tone="info"
+          icon={ClipboardList}
           loading={loading}
         />
-        <MetricCard
+        <FinanceExecutiveTotalizerCard
           label="Quarentena"
           amount={data.quarantineItemsCount}
           amountFormat="number"
-          variant="neutral"
-          icon={<Ban />}
+          tone="neutral"
+          icon={Ban}
           loading={loading}
         />
-      </MetricCardGrid>
+      </SummaryKpiGrid>
 
       <InventoryBalanceGlossary compact />
 

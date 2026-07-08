@@ -36,7 +36,8 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { DASHBOARD_TOUR_STEPS } from "@/src/tours/dashboardTourSteps";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 
 interface DashboardData {
@@ -271,38 +272,38 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
         eyebrow="Dashboard · operação"
         testId="dashboard-kpi-cards"
       >
-        <SummaryKpiGrid minColumnWidth={220}>
-          <MetricCard
+        <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard
             label="Custo médio folha / colaborador"
             amount={data.kpis.avgEmployeeCost}
             amountFormat="currency"
             subtitle={`Média de custo mensal estimado por colaborador (não é a taxa HH global do motor de custo). ${data.kpis.totalEmployees} ativos.`}
-            variant="money"
-            icon={<Users className="h-3.5 w-3.5" />}
+            tone="money"
+            icon={Users}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Tarifa HM global (energia ÷ h úteis)"
             amount={data.kpis.avgHM}
             amountFormat="currency"
             subtitle={`Mesma base ENERGY_COST ÷ WORKING_HOURS usada no custeio de máquina. ${data.kpis.totalMachines} máquinas cadastradas.`}
-            variant="info"
-            icon={<Cpu className="h-3.5 w-3.5" />}
+            tone="info"
+            icon={Cpu}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="CIF Mensal Total"
             amount={data.kpis.totalCIF}
             amountFormat="currency"
             subtitle="Absorvido na produção"
-            variant="neutral"
-            icon={<Factory className="h-3.5 w-3.5" />}
+            tone="neutral"
+            icon={Factory}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="OPEX Mensal Total"
             amount={data.kpis.totalOPEX}
             amountFormat="currency"
             subtitle="Despesas administrativas"
-            variant="neutral"
-            icon={<PieChart className="h-3.5 w-3.5" />}
+            tone="neutral"
+            icon={PieChart}
           />
         </SummaryKpiGrid>
       </ExecutiveSummarySection>

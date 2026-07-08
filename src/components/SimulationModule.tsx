@@ -28,6 +28,9 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -1911,10 +1914,15 @@ export const SimulationModule = () => {
               <div className="space-y-4">
                 <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
                   <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Pré-visualização</h4>
-                  <MetricCard label="MP" value={formatCurrency(simulatedDraftPreview.breakdown.mp, 5)} />
-                  <MetricCard label="HH" value={formatCurrency(simulatedDraftPreview.breakdown.hh, 5)} />
-                  <MetricCard label="HM" value={formatCurrency(simulatedDraftPreview.breakdown.hm, 5)} />
-                  <MetricCard label="Custo total" value={formatCurrency(simulatedDraftPreview.breakdown.costBase, 5)} />
+                  <SummaryKpiGrid minColumnWidth={140} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                    <FinanceExecutiveTotalizerCard label="MP" value={formatCurrency(simulatedDraftPreview.breakdown.mp, 5)} />
+                    <FinanceExecutiveTotalizerCard label="HH" value={formatCurrency(simulatedDraftPreview.breakdown.hh, 5)} />
+                    <FinanceExecutiveTotalizerCard label="HM" value={formatCurrency(simulatedDraftPreview.breakdown.hm, 5)} />
+                    <FinanceExecutiveTotalizerCard
+                      label="Custo total"
+                      value={formatCurrency(simulatedDraftPreview.breakdown.costBase, 5)}
+                    />
+                  </SummaryKpiGrid>
                   <p className="text-xs text-muted-foreground">
                     MP {formatNumber(simulatedDraftPreview.breakdown.mpPct, 2)}% • HH {formatNumber(simulatedDraftPreview.breakdown.hhPct, 2)}% • HM {formatNumber(simulatedDraftPreview.breakdown.hmPct, 2)}%
                   </p>
@@ -1969,12 +1977,15 @@ export const SimulationModule = () => {
 
               <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
                 <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Resumo de viabilidade</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <MetricCard label="MP total" value={formatCurrency(finalProductResult.mp, 5)} />
-                  <MetricCard label="HH total" value={formatCurrency(finalProductResult.hh, 5)} />
-                  <MetricCard label="HM total" value={formatCurrency(finalProductResult.hm, 5)} />
-                  <MetricCard label="Custo base" value={formatCurrency(finalProductResult.costBase, 5)} />
-                </div>
+                <SummaryKpiGrid minColumnWidth={140} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                  <FinanceExecutiveTotalizerCard label="MP total" value={formatCurrency(finalProductResult.mp, 5)} />
+                  <FinanceExecutiveTotalizerCard label="HH total" value={formatCurrency(finalProductResult.hh, 5)} />
+                  <FinanceExecutiveTotalizerCard label="HM total" value={formatCurrency(finalProductResult.hm, 5)} />
+                  <FinanceExecutiveTotalizerCard
+                    label="Custo base"
+                    value={formatCurrency(finalProductResult.costBase, 5)}
+                  />
+                </SummaryKpiGrid>
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
                   <p className="text-[10px] font-bold uppercase text-primary/80">Preço sugerido</p>
                   <p className="text-xl font-black text-primary">{formatCurrency(finalProductResult.price, 5)}</p>
@@ -2780,12 +2791,3 @@ export const SimulationModule = () => {
     </div>
   );
 };
-
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-accent/10 p-2.5">
-      <p className="text-[10px] font-bold uppercase text-muted-foreground">{label}</p>
-      <p className="text-sm font-black">{value}</p>
-    </div>
-  );
-}

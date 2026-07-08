@@ -49,7 +49,8 @@ import {
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
@@ -971,8 +972,8 @@ export function SoldProductsReportPage() {
               eyebrow="Indicadores consolidados do período filtrado"
               testId="sold-products-kpi-summary"
             >
-              <SummaryKpiGrid minColumnWidth={200}>
-                <FinanceBiKpiCard
+              <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                <FinanceExecutiveTotalizerCard
                   icon={Package}
                   label="Quantidade total vendida"
                   value="—"
@@ -980,7 +981,7 @@ export function SoldProductsReportPage() {
                   amountFormat="number"
                   loading={loading}
                 />
-                <FinanceBiKpiCard
+                <FinanceExecutiveTotalizerCard
                   icon={TrendingUp}
                   label="Valor total vendido"
                   value="—"
@@ -988,7 +989,7 @@ export function SoldProductsReportPage() {
                   amountFormat="currency"
                   loading={loading}
                 />
-                <FinanceBiKpiCard
+                <FinanceExecutiveTotalizerCard
                   icon={BarChart3}
                   label="Produtos no ranking"
                   value="—"
@@ -996,7 +997,7 @@ export function SoldProductsReportPage() {
                   amountFormat="number"
                   loading={loading}
                 />
-                <FinanceBiKpiCard
+                <FinanceExecutiveTotalizerCard
                   icon={Users}
                   label="Clientes compradores"
                   value="—"

@@ -158,3 +158,53 @@ describe("SystemTotalizerCard — financeiro fase 2", () => {
     assert.match(src, /SystemTotalizerCard/);
   });
 });
+
+describe("SystemTotalizerCard — módulos operacionais fase 3", () => {
+  const PHASE3_MIGRATED = [
+    "src/components/CrmManagementDashboardSection.tsx",
+    "src/components/CrmSellerDashboardSection.tsx",
+    "src/components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.tsx",
+    "src/components/customers/CustomerCommercial360.tsx",
+    "src/components/commercial/SoldProductsReportPage.tsx",
+    "src/components/commercial/SoldProductCustomersPage.tsx",
+    "src/components/pricing/CostPriceMarginAuditPanel.tsx",
+    "src/components/proposal/ProposalIndicatorsTab.tsx",
+    "src/components/proposal/ProposalAnalysisModal.tsx",
+    "src/components/contextual/SimulationIndicatorsDashboard.tsx",
+    "src/components/SimulationModule.tsx",
+    "src/components/PricingModule.tsx",
+    "src/components/materials/MaterialsMarketIntelligenceReportsPage.tsx",
+    "src/components/contextual/MaterialDemandPlannedRealizedPanel.tsx",
+    "src/components/inventory/InventoryDashboardTab.tsx",
+    "src/components/DashboardModule.tsx",
+    "src/components/fleet/FleetOverviewTab.tsx",
+    "src/components/operations/OperationsPerformanceModule.tsx",
+    "src/components/ReportsModule.tsx",
+  ];
+
+  it("telas migradas usam card executivo e grid padrão", () => {
+    for (const file of PHASE3_MIGRATED) {
+      const src = read(file);
+      assert.match(
+        src,
+        /FinanceExecutiveTotalizerCard|SystemTotalizerCard|ContextualDashboardKpiCard|SummaryKpiCard/,
+        `${file} deve usar card executivo`
+      );
+      assert.match(
+        src,
+        /SYSTEM_TOTALIZER_GRID_CLASS|ContextualDashboardKpiGrid|AdminKpiSection/,
+        `${file} deve usar grid executivo`
+      );
+    }
+  });
+
+  it("SummaryKpiCard delega tipografia executiva", () => {
+    const src = read("src/components/ui/SummaryKpiCard.tsx");
+    assert.match(src, /SYSTEM_TOTALIZER_METRIC_CARD_CLASS/);
+  });
+
+  it("ContextualDashboardKpiCard delega ao padrão", () => {
+    const src = read("src/components/contextual/ContextualDashboardKpiCard.tsx");
+    assert.match(src, /SystemTotalizerCard/);
+  });
+});

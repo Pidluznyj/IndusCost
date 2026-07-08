@@ -3,6 +3,7 @@ import { GitCompareArrows } from "lucide-react";
 import type { MaterialSimulationComparison } from "@/src/lib/materialMarketSimulationComparison";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 
 type Props = {
@@ -71,7 +72,7 @@ export function MaterialIntelligenceSimulationComparison({ comparison, unit }: P
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Preço da matéria-prima
         </p>
-        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-material">
+        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-material" className={SYSTEM_TOTALIZER_GRID_CLASS}>
           <SummaryKpiCard
             label="Atual"
             value={formatCurrency(materialCard?.previous ?? null)}
@@ -99,7 +100,7 @@ export function MaterialIntelligenceSimulationComparison({ comparison, unit }: P
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Margem média dos produtos impactados
         </p>
-        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-margin">
+        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-margin" className={SYSTEM_TOTALIZER_GRID_CLASS}>
           <SummaryKpiCard label="Atual" value={formatMargin(marginCard?.previous ?? null)} />
           <SummaryKpiCard label="Simulado" value={formatMargin(marginCard?.simulated ?? null)} />
           <SummaryKpiCard
@@ -115,7 +116,7 @@ export function MaterialIntelligenceSimulationComparison({ comparison, unit }: P
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Produtos críticos
         </p>
-        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-risk">
+        <SummaryKpiGrid testId="material-intelligence-simulation-comparison-risk" className={SYSTEM_TOTALIZER_GRID_CLASS}>
           <SummaryKpiCard
             label="Atual"
             value={String(comparison.criticalCount)}

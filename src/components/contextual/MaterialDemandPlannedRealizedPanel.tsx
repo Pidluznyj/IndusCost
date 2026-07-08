@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Download, Info, Loader2, Search } from "lucide-react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import {
   MaterialUsageAuditDrawer,
   MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP,
@@ -433,47 +434,47 @@ export function MaterialDemandPlannedRealizedPanel({
           eyebrow="Demanda · estimativa recomendada"
           testId="material-intelligence-kpi-grid"
         >
-          <SummaryKpiGrid minColumnWidth={180}>
-          <FinanceBiKpiCard
+          <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard
             label="Necessidade recomendada"
             amount={safeDisplayNumber(intelligenceSummary.recommendedDemandValue)}
             amountFormat="currency"
             value={money(intelligenceSummary.recommendedDemandValue)}
             hint={`${qty(intelligenceSummary.recommendedDemandQuantity)} em quantidade`}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Necessidade conservadora"
             amount={safeDisplayNumber(intelligenceSummary.conservativeDemandValue)}
             amountFormat="currency"
             value={money(intelligenceSummary.conservativeDemandValue)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Diferença por incerteza"
             amount={safeDisplayNumber(intelligenceSummary.uncertaintyDemandValue)}
             amountFormat="currency"
             value={money(intelligenceSummary.uncertaintyDemandValue)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Itens em revisão"
             value={String(safeDisplayNumber(intelligenceSummary.reviewItemsCount))}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Saldo crítico > 30 dias"
             amount={safeDisplayNumber(intelligenceSummary.criticalUnservedBalanceAmount)}
             amountFormat="currency"
             value={money(intelligenceSummary.criticalUnservedBalanceAmount)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Potencial não realizado"
             amount={safeDisplayNumber(intelligenceSummary.unservedRevenuePotential)}
             amountFormat="currency"
             value={money(intelligenceSummary.unservedRevenuePotential)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Itens sem BOM"
             value={String(safeDisplayNumber(intelligenceSummary.missingBomCount))}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Confiabilidade"
             value={formatConfidenceLabel(intelligenceSummary.confidence)}
           />
@@ -577,9 +578,9 @@ export function MaterialDemandPlannedRealizedPanel({
           title="Comparativo previsto × faturado"
           eyebrow="Referência legada · matérias-primas"
         >
-          <SummaryKpiGrid minColumnWidth={180}>
-          <FinanceBiKpiCard label="Matérias-primas analisadas" value={String(summary.materialsCount)} />
-          <FinanceBiKpiCard
+          <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard label="Matérias-primas analisadas" value={String(summary.materialsCount)} />
+          <FinanceExecutiveTotalizerCard
             label={`${quantityLabel} prevista total`}
             amount={summary.quantityTotalsComparable ? summary.plannedQuantityTotal : null}
             amountFormat="number"
@@ -587,7 +588,7 @@ export function MaterialDemandPlannedRealizedPanel({
               summary.quantityTotalsComparable ? qty(summary.plannedQuantityTotal) : "Várias unidades"
             }
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label={`${quantityLabel} realizada total`}
             amount={summary.quantityTotalsComparable ? summary.realizedQuantityTotal : null}
             amountFormat="number"
@@ -595,7 +596,7 @@ export function MaterialDemandPlannedRealizedPanel({
               summary.quantityTotalsComparable ? qty(summary.realizedQuantityTotal) : "Várias unidades"
             }
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Saldo a realizar"
             amount={summary.quantityTotalsComparable ? summary.remainingQuantityTotal : null}
             amountFormat="number"
@@ -603,26 +604,26 @@ export function MaterialDemandPlannedRealizedPanel({
               summary.quantityTotalsComparable ? qty(summary.remainingQuantityTotal) : "Várias unidades"
             }
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Assertividade média"
             amount={summary.accuracyPercent}
             amountFormat="percent"
             value={pct(summary.accuracyPercent)}
             hint="Soma realizada ÷ soma prevista (mesma unidade no filtro)."
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Custo previsto"
             amount={summary.plannedCostTotal}
             amountFormat="currency"
             value={money(summary.plannedCostTotal)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Custo realizado"
             amount={summary.realizedCostTotal}
             amountFormat="currency"
             value={money(summary.realizedCostTotal)}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             label="Diferença em R$"
             amount={summary.costVarianceTotal}
             amountFormat="currency"

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { AdminKpiSection } from "@/src/components/admin/adminUi";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import type { CostPriceMarginAuditPayload } from "@/src/lib/costPriceMarginIntegratedAudit";
@@ -108,25 +109,25 @@ export function CostPriceMarginAuditPanel({ canView }: Props) {
             minColumnWidth={180}
             testId="cost-price-margin-audit-kpi"
           >
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Cobertura MP"
               value={pct(payload.materials.coveragePercent)}
               subtitle={`${payload.materials.withCoverage}/${payload.materials.total} cobertos`}
-              variant={payload.materials.withoutCoverage > 0 ? "warning" : "success"}
+              tone={payload.materials.withoutCoverage > 0 ? "warning" : "success"}
             />
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Cobertura custo produtos"
               value={pct(payload.products.activeProducts.coveragePercent)}
               subtitle={`${payload.products.activeProducts.withCoverage}/${payload.products.activeProducts.total} cobertos`}
-              variant={payload.products.activeProducts.withoutCoverage > 0 ? "warning" : "success"}
+              tone={payload.products.activeProducts.withoutCoverage > 0 ? "warning" : "success"}
             />
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Cobertura custo componentes"
               value={pct(payload.products.activeComponents.coveragePercent)}
               subtitle={`${payload.products.activeComponents.withCoverage}/${payload.products.activeComponents.total} cobertos`}
-              variant={payload.products.activeComponents.withoutCoverage > 0 ? "warning" : "success"}
+              tone={payload.products.activeComponents.withoutCoverage > 0 ? "warning" : "success"}
             />
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Cobertura preço (produtos)"
               value={pct(
                 payload.officialPrice.activeProductsTotal > 0
@@ -138,31 +139,25 @@ export function CostPriceMarginAuditPanel({ canView }: Props) {
                   : null
               )}
               subtitle={`${payload.officialPrice.productsWithOfficialPrice}/${payload.officialPrice.activeProductsTotal} com preço oficial`}
-              variant={
+              tone={
                 payload.officialPrice.productsWithOfficialPrice <
                 payload.officialPrice.activeProductsTotal
                   ? "warning"
                   : "success"
               }
             />
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Pedidos margem OK"
               value={String(payload.salesOrders.marginOk)}
               subtitle={`de ${payload.salesOrders.itemsSold} itens em ${payload.salesOrders.ordersTotal} pedido(s)`}
-              variant="info"
+              tone="info"
             />
-            <MetricCard
+            <FinanceExecutiveTotalizerCard
               label="Pendências críticas"
               value={String(payload.criticalPendingCount)}
               subtitle={`SEM_CUSTO: ${payload.salesOrders.semCusto} · SEM_PRECO_TABELA: ${payload.salesOrders.semPrecoTabela} · PRECO_INDISPONIVEL: ${payload.salesOrders.precoIndisponivel}`}
-              variant={payload.criticalPendingCount > 0 ? "danger" : "success"}
-              icon={
-                payload.criticalPendingCount > 0 ? (
-                  <AlertCircle className="h-3.5 w-3.5" />
-                ) : (
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                )
-              }
+              tone={payload.criticalPendingCount > 0 ? "danger" : "success"}
+              icon={payload.criticalPendingCount > 0 ? AlertCircle : ShieldCheck}
             />
           </AdminKpiSection>
 

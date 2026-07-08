@@ -116,9 +116,49 @@
 .system-totalizer-grid .metric-card-icon-wrap svg,
 .sales-order-list-summary-grid .metric-card-icon-wrap svg,
 .nomus-sync-metric-grid .metric-card-icon-wrap svg,
-.finance-cash-flow-metric-grid .metric-card-icon-wrap svg {
+.finance-cash-flow-metric-grid .metric-card-icon-wrap svg,
+.metric-card.system-totalizer-metric-card .metric-card-icon-wrap svg {
   width: 0.875rem;
   height: 0.875rem;
+}
+
+/* Card executivo fora de grid dedicado (dashboards contextuais, drawers). */
+.metric-card.system-totalizer-metric-card {
+  min-height: 108px;
+  padding: 12px 14px 10px 16px;
+}
+
+.metric-card.system-totalizer-metric-card .metric-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.metric-card.system-totalizer-metric-card .metric-card-value {
+  margin-top: 6px;
+  font-size: clamp(1.25rem, 0.75vw + 0.45rem, 1.75rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.metric-card.system-totalizer-metric-card .metric-card-subtitle {
+  padding-top: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-card.system-totalizer-metric-card .metric-card-icon-wrap {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .system-totalizer-metric-card--featured .metric-card,

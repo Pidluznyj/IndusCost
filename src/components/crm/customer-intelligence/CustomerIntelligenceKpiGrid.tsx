@@ -2,12 +2,15 @@ import React from "react";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 import { buildCustomerIntelligenceKpiItems } from "@/src/lib/customerIntelligenceKpiItems";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
-import { MetricCard, type MetricCardVariant } from "@/src/components/ui/MetricCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 
 export { buildCustomerIntelligenceKpiItems } from "@/src/lib/customerIntelligenceKpiItems";
 
-function resolveCustomerIntelligenceKpiVariant(label: string): MetricCardVariant {
+function resolveCustomerIntelligenceKpiTone(
+  label: string
+): "neutral" | "success" | "warning" | "danger" | "info" | "money" | "margin" {
   const normalized = label.toLowerCase();
   if (normalized.includes("vencido") || normalized.includes("alto risco")) return "danger";
   if (
@@ -31,15 +34,19 @@ export function CustomerIntelligenceKpiGrid({ report }: { report: CustomerIntell
       eyebrow="Indicadores principais no filtro aplicado"
       testId="customer-intelligence-kpi-summary"
     >
-      <SummaryKpiGrid minColumnWidth={220} testId="customer-intelligence-kpi-grid">
+      <SummaryKpiGrid
+        minColumnWidth={220}
+        testId="customer-intelligence-kpi-grid"
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+      >
         {items.map((item) => (
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             key={item.label}
             label={item.label}
-            formattedValue={item.value}
-            fullValue={item.valueTitle}
+            value={item.value}
+            valueTitle={item.valueTitle}
             helperText={item.hint}
-            variant={resolveCustomerIntelligenceKpiVariant(item.label)}
+            tone={resolveCustomerIntelligenceKpiTone(item.label)}
           />
         ))}
       </SummaryKpiGrid>

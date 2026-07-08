@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/marketGlobalIndicators";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 
@@ -122,7 +123,7 @@ export function MaterialsMarketGlobalIndicatorsSection() {
       ) : null}
 
       {!loading && !error && data?.hasData ? (
-        <SummaryKpiGrid testId="market-global-indicators-grid" minColumnWidth={200}>
+        <SummaryKpiGrid testId="market-global-indicators-grid" minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
           <SummaryKpiCard
             label="Dólar PTAX venda"
             value={data.ptax ? formatUsdRate(data.ptax.sellRate) : "—"}

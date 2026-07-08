@@ -2,7 +2,8 @@ import React from "react";
 import { Briefcase, CalendarRange, Loader2, RefreshCw, Users } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { SellerDashboardResponse, SellerOption } from "@/src/components/crmSellerDashboardTypes";
 import type { SellerKpiCard, SellerPeriodPreset } from "@/src/components/crmSellerDashboardUi";
@@ -12,7 +13,6 @@ import {
   buildSellerOptionKey,
   formatSellerOptionDetail,
   formatSellerOptionLabel,
-  resolveSellerKpiMetricVariant,
 } from "@/src/components/crmSellerDashboardUi";
 
 export type CrmSellerDashboardSectionProps = {
@@ -313,17 +313,27 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             eyebrow="Indicadores do período e escopo selecionado"
             testId="crm-seller-kpi-summary"
           >
-            <SummaryKpiGrid minColumnWidth={200}>
+            <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
               {kpiCards.map((card) => {
                 const Icon = card.icon;
                 return (
-                  <MetricCard
+                  <FinanceExecutiveTotalizerCard
                     key={card.label}
                     label={card.label}
-                    formattedValue={card.value}
+                    value={card.value}
                     helperText={card.description}
-                    variant={resolveSellerKpiMetricVariant(card.cardClass)}
-                    icon={<Icon className="h-3.5 w-3.5" />}
+                    tone={
+                      card.cardClass?.includes("green")
+                        ? "success"
+                        : card.cardClass?.includes("red")
+                          ? "danger"
+                          : card.cardClass?.includes("amber")
+                            ? "warning"
+                            : card.cardClass?.includes("blue")
+                              ? "info"
+                              : "neutral"
+                    }
+                    icon={Icon}
                   />
                 );
               })}

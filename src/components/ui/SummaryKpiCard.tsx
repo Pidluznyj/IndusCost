@@ -1,6 +1,5 @@
 /**
- * Alias semântico de MetricCard para blocos de resumo executivo.
- * Não altera visual nem comportamento — apenas expõe `description` como alias de `subtitle`.
+ * Alias semântico de MetricCard com tipografia Cards Totalizadores Executivos.
  */
 
 import React from "react";
@@ -9,18 +8,21 @@ import {
   type MetricCardProps,
   type MetricCardVariant,
 } from "@/src/components/ui/MetricCard";
+import { SYSTEM_TOTALIZER_METRIC_CARD_CLASS } from "@/src/components/ui/SystemTotalizerCard";
+import { cn } from "@/src/lib/utils";
 
-export type SummaryKpiCardProps = Omit<MetricCardProps, "subtitle" | "helperText"> & {
-  /** Descrição curta abaixo do valor principal. */
+export type SummaryKpiCardProps = Omit<MetricCardProps, "subtitle" | "helperText" | "className"> & {
   description?: string;
   subtitle?: string;
   helperText?: string;
+  className?: string;
 };
 
 export function SummaryKpiCard({
   description,
   subtitle,
   helperText,
+  className,
   ...rest
 }: SummaryKpiCardProps) {
   return (
@@ -28,6 +30,7 @@ export function SummaryKpiCard({
       {...rest}
       subtitle={description ?? subtitle}
       helperText={helperText}
+      className={cn(SYSTEM_TOTALIZER_METRIC_CARD_CLASS, className)}
     />
   );
 }

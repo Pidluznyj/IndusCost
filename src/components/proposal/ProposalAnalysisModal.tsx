@@ -19,6 +19,27 @@ import { motion, AnimatePresence } from "motion/react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { Proposal, ProposalItem, ProposalStatus } from "@/src/types/commercial";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
+import type { FinanceKpiTone } from "@/src/components/finance/shared/FinanceKpiCard";
+
+function proposalKpiTone(
+  tone?: "default" | "primary" | "green" | "amber" | "red"
+): FinanceKpiTone | undefined {
+  switch (tone) {
+    case "primary":
+      return "info";
+    case "green":
+      return "success";
+    case "amber":
+      return "warning";
+    case "red":
+      return "danger";
+    default:
+      return tone === "default" ? "neutral" : undefined;
+  }
+}
 
 const STATUS_LABEL: Record<ProposalStatus, string> = {
   DRAFT: "Rascunho",
@@ -177,58 +198,58 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <KpiCard
+                  <SummaryKpiGrid minColumnWidth={160} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+                    <FinanceExecutiveTotalizerCard
                       icon={Wallet}
                       label="Valor líquido"
                       value={formatCurrency(safeNum(data.totalNetValue))}
-                      tone="primary"
+                      tone="info"
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={DollarSign}
                       label="Custo total"
                       value={formatCurrency(safeNum(data.totalCost))}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={TrendingUp}
                       label="Margem"
                       value={formatCurrency(safeNum(data.totalMarginValue))}
-                      sub={`${formatNumber(safeNum(data.totalMarginPerc), 2)}% sobre líquido`}
-                      tone={
+                      subtitle={`${formatNumber(safeNum(data.totalMarginPerc), 2)}% sobre líquido`}
+                      tone={proposalKpiTone(
                         safeNum(data.totalMarginPerc) >= 20
                           ? "green"
                           : safeNum(data.totalMarginPerc) >= 10
                             ? "amber"
                             : "red"
-                      }
+                      )}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={Receipt}
                       label="Descontos"
                       value={formatCurrency(safeNum(data.totalDiscount))}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={Percent}
                       label="Impostos"
                       value={formatCurrency(safeNum(data.totalTaxes))}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={Building2}
                       label="Comissão"
                       value={formatCurrency(safeNum(data.totalCommission))}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={Truck}
                       label="Frete"
                       value={formatCurrency(safeNum(data.totalFreight))}
                     />
-                    <KpiCard
+                    <FinanceExecutiveTotalizerCard
                       icon={Package}
                       label="Itens"
                       value={String(items.length)}
-                      sub={`Bruto ${formatCurrency(safeNum(data.totalGrossValue))}`}
+                      subtitle={`Bruto ${formatCurrency(safeNum(data.totalGrossValue))}`}
                     />
-                  </div>
+                  </SummaryKpiGrid>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="rounded-xl border border-border bg-accent/20 p-4 space-y-3">
@@ -364,41 +385,5 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
         </div>
       )}
     </AnimatePresence>
-  );
-}
-
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  tone = "default",
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "default" | "primary" | "green" | "amber" | "red";
-}) {
-  const ring =
-    tone === "primary"
-      ? "border-primary/30 bg-primary/5"
-      : tone === "green"
-        ? "border-green-500/25 bg-green-500/5"
-        : tone === "amber"
-          ? "border-amber-500/25 bg-amber-500/5"
-          : tone === "red"
-            ? "border-red-500/25 bg-red-500/5"
-            : "border-border bg-card";
-
-  return (
-    <div className={cn("rounded-xl border p-3 flex flex-col gap-1 min-h-[88px]", ring)}>
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-        {label}
-      </div>
-      <p className="text-base font-black tabular-nums leading-tight">{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground leading-tight">{sub}</p>}
-    </div>
   );
 }

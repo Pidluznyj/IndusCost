@@ -12,6 +12,7 @@ import {
 } from "@/src/lib/materialDemandFilters";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 
 export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
@@ -160,7 +161,7 @@ export function MaterialDemandKpiGrid({
   appliedFilters: AppliedFiltersPanel;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <ContextualDashboardKpiGrid minColumnWidth={160}>
       {summaryData.summary.quantityTotalsComparable ? (
         <ContextualDashboardKpiCard
           label={
@@ -204,7 +205,7 @@ export function MaterialDemandKpiGrid({
           valueClassName="text-base font-semibold leading-snug sm:text-lg normal-nums"
         />
       ) : null}
-    </div>
+    </ContextualDashboardKpiGrid>
   );
 }
 

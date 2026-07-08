@@ -5,6 +5,7 @@ import type { Product } from "@/src/types/product";
 import { productEngineeringRollup } from "@/src/lib/productEngineeringIndicatorsStats";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
+import { ContextualDashboardKpiGrid } from "./ContextualDashboardKpiGrid";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
 
 export function ProductEngineeringIndicatorsDashboard() {
@@ -61,7 +62,7 @@ export function ProductEngineeringIndicatorsDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <ContextualDashboardKpiGrid>
         <ContextualDashboardKpiCard label="Itens no cadastro" value={String(roll!.total)} />
         <ContextualDashboardKpiCard label="Linhas de BOM (total)" value={String(roll!.bomLines)} />
         <ContextualDashboardKpiCard label="Operações de roteiro (total)" value={String(roll!.routingOps)} />
@@ -70,7 +71,7 @@ export function ProductEngineeringIndicatorsDashboard() {
           value={String(roll!.manufacturedWithoutBom)}
           hint="Itens fabricados (não MP) com lista vazia."
         />
-      </div>
+      </ContextualDashboardKpiGrid>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border bg-card p-6 space-y-4">

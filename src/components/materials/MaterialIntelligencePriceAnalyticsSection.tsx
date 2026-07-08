@@ -12,6 +12,7 @@ import { getMaterialMarketIntelligenceAnalyticsApiPath } from "@/src/lib/materia
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { cn, formatCurrency } from "@/src/lib/utils";
 
 type Props = {
@@ -134,7 +135,7 @@ export function MaterialIntelligencePriceAnalyticsSection({ materialId }: Props)
             {analytics.quoteCount} cotação(ões) em {analytics.periodLabel.toLowerCase()}.
           </p>
 
-          <SummaryKpiGrid testId="material-intelligence-analytics-price-grid" minColumnWidth={180}>
+          <SummaryKpiGrid testId="material-intelligence-analytics-price-grid" minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
             <SummaryKpiCard
               label="Preço atual"
               value={formatOptionalCurrency(analytics.currentPrice)}
@@ -177,7 +178,7 @@ export function MaterialIntelligencePriceAnalyticsSection({ materialId }: Props)
             />
           </SummaryKpiGrid>
 
-          <SummaryKpiGrid testId="material-intelligence-analytics-variation-grid" minColumnWidth={180}>
+          <SummaryKpiGrid testId="material-intelligence-analytics-variation-grid" minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
             <SummaryKpiCard
               label="Variação semanal"
               value={formatPercentValue(

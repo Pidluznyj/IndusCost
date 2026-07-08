@@ -21,6 +21,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { AppAlert } from "@/src/components/shared/AppAlert";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 
 function safeNum(value: unknown): number | null {
   const n = Number(value);
@@ -100,42 +103,6 @@ type LineMetrics = {
   warning: string | null;
   openBook: OpenBookLite | null;
 };
-
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  tone = "default",
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "default" | "primary" | "green" | "amber" | "red";
-}) {
-  const ring =
-    tone === "primary"
-      ? "border-primary/30 bg-primary/5"
-      : tone === "green"
-        ? "border-green-500/25 bg-green-500/5"
-        : tone === "amber"
-          ? "border-amber-500/25 bg-amber-500/5"
-          : tone === "red"
-            ? "border-red-500/25 bg-red-500/5"
-            : "border-border bg-card";
-
-  return (
-    <div className={cn("rounded-xl border p-3 flex flex-col gap-1 min-h-[90px]", ring)}>
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-        {label}
-      </div>
-      <p className="text-base font-black tabular-nums leading-tight">{value}</p>
-      {sub ? <p className="text-[10px] text-muted-foreground leading-tight">{sub}</p> : null}
-    </div>
-  );
-}
 
 function StackedBar({
   parts,
@@ -441,26 +408,58 @@ export function ProposalIndicatorsTab({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3">
-        <KpiCard icon={BarChart3} label="Preço total (líquido)" value={formatAdaptiveCurrency(net)} tone="primary" />
-        <KpiCard
+      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+        <FinanceExecutiveTotalizerCard
+          icon={BarChart3}
+          label="Preço total (líquido)"
+          value={formatAdaptiveCurrency(net)}
+          tone="info"
+        />
+        <FinanceExecutiveTotalizerCard
           icon={Layers}
           label="Custo base (MP+HH+HM)"
           value={formatAdaptiveCurrency(totalsByNature.base)}
-          sub={coverage.ok < coverage.total ? `Parcial (${coverage.ok}/${coverage.total})` : undefined}
+          subtitle={coverage.ok < coverage.total ? `Parcial (${coverage.ok}/${coverage.total})` : undefined}
         />
-        <KpiCard icon={Package} label="MP total" value={formatAdaptiveCurrency(totalsByNature.mp)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={Package} label="HH total" value={formatAdaptiveCurrency(totalsByNature.hh)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={Package} label="HM total" value={formatAdaptiveCurrency(totalsByNature.hm)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={AlertCircle} label="Impostos" value={formatAdaptiveCurrency(totals.totalTaxes)} />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
+          icon={Package}
+          label="MP total"
+          value={formatAdaptiveCurrency(totalsByNature.mp)}
+          subtitle={coverage.ok < coverage.total ? "Parcial" : undefined}
+        />
+        <FinanceExecutiveTotalizerCard
+          icon={Package}
+          label="HH total"
+          value={formatAdaptiveCurrency(totalsByNature.hh)}
+          subtitle={coverage.ok < coverage.total ? "Parcial" : undefined}
+        />
+        <FinanceExecutiveTotalizerCard
+          icon={Package}
+          label="HM total"
+          value={formatAdaptiveCurrency(totalsByNature.hm)}
+          subtitle={coverage.ok < coverage.total ? "Parcial" : undefined}
+        />
+        <FinanceExecutiveTotalizerCard
+          icon={AlertCircle}
+          label="Impostos"
+          value={formatAdaptiveCurrency(totals.totalTaxes)}
+        />
+        <FinanceExecutiveTotalizerCard
           icon={AlertCircle}
           label="Margem (R$)"
           value={formatAdaptiveCurrency(totals.totalMarginValue)}
-          tone={safeNum(totals.totalMarginValue) != null && safeNum(totals.totalMarginValue)! >= 0 ? "green" : "red"}
+          tone={
+            safeNum(totals.totalMarginValue) != null && safeNum(totals.totalMarginValue)! >= 0
+              ? "success"
+              : "danger"
+          }
         />
-        <KpiCard icon={AlertCircle} label="Margem (%)" value={marginPerc == null ? "—" : `${formatAdaptiveNumber(marginPerc)}%`} />
-      </div>
+        <FinanceExecutiveTotalizerCard
+          icon={AlertCircle}
+          label="Margem (%)"
+          value={marginPerc == null ? "—" : `${formatAdaptiveNumber(marginPerc)}%`}
+        />
+      </SummaryKpiGrid>
 
       <StackedBar parts={compositionParts} total={net} />
 

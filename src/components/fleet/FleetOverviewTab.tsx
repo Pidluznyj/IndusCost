@@ -22,6 +22,9 @@ import {
   FleetStatusBadge,
   formatFleetKm,
 } from "@/src/components/fleet/fleetUi";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { sortFleetExecutiveGridRows } from "@/src/lib/fleetExecutiveDashboard.presentation";
 import { cn } from "@/src/lib/utils";
 
@@ -50,43 +53,6 @@ const RES_STATUS_LABEL: Record<string, string> = {
 };
 
 type SortKey = "plate" | "monthlyReservations" | "monthlyKm" | "status";
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  tone?: "ok" | "warn" | "danger" | "neutral";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-white p-4 shadow-sm",
-        tone === "danger" && "border-red-200",
-        tone === "warn" && "border-amber-200",
-        tone === "ok" && "border-emerald-200"
-      )}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p
-        className={cn(
-          "mt-1 text-2xl font-bold tabular-nums",
-          tone === "danger" && "text-red-700",
-          tone === "warn" && "text-amber-700",
-          tone === "ok" && "text-emerald-700",
-          !tone && "text-slate-900"
-        )}
-      >
-        {value}
-      </p>
-      {sub ? <p className="mt-1 text-[11px] text-slate-500">{sub}</p> : null}
-    </div>
-  );
-}
 
 type Props = {
   dashboard: FleetDashboardResponse;
@@ -237,51 +203,59 @@ export function FleetOverviewTab({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard
+      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+        <FinanceExecutiveTotalizerCard
           label="Veículos cadastrados"
-          value={s.totalVehicles}
-          sub={`${s.activeVehicles} ativos · ${s.inactiveVehicles} inativos`}
+          value={String(s.totalVehicles)}
+          subtitle={`${s.activeVehicles} ativos · ${s.inactiveVehicles} inativos`}
         />
-        <KpiCard label="Disponíveis agora" value={s.availableVehicles} tone="ok" sub="Status atual" />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
+          label="Disponíveis agora"
+          value={String(s.availableVehicles)}
+          tone="success"
+          subtitle="Status atual"
+        />
+        <FinanceExecutiveTotalizerCard
           label="Em uso / reservados"
-          value={s.inUseVehicles + s.reservedVehicles}
-          sub={`${s.inUseVehicles} em uso · ${s.reservedVehicles} reservados`}
+          value={String(s.inUseVehicles + s.reservedVehicles)}
+          subtitle={`${s.inUseVehicles} em uso · ${s.reservedVehicles} reservados`}
         />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
           label="Em manutenção"
-          value={s.maintenanceVehicles}
-          tone={s.maintenanceVehicles > 0 ? "warn" : undefined}
+          value={String(s.maintenanceVehicles)}
+          tone={s.maintenanceVehicles > 0 ? "warning" : undefined}
         />
-        <KpiCard label="Reservas abertas" value={s.openReservations} />
-        <KpiCard label="Finalizadas no mês" value={s.closedReservationsInMonth} />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard label="Reservas abertas" value={String(s.openReservations)} />
+        <FinanceExecutiveTotalizerCard
+          label="Finalizadas no mês"
+          value={String(s.closedReservationsInMonth)}
+        />
+        <FinanceExecutiveTotalizerCard
           label="KM rodados no mês"
           value={s.monthlyKmDataAvailable ? formatFleetKm(s.monthlyKm) : "—"}
-          sub={s.monthlyKmDataAvailable ? exec.competenceLabel : "Sem dados suficientes"}
+          subtitle={s.monthlyKmDataAvailable ? exec.competenceLabel : "Sem dados suficientes"}
         />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
           label="Mais reservado"
           value={s.topReservedVehicle?.plate ?? "—"}
-          sub={
+          subtitle={
             s.topReservedVehicle
               ? `${s.topReservedVehicle.value} reserva(s)`
               : "Nenhuma reserva no período"
           }
         />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
           label="Mais rodou"
           value={s.topKmVehicle?.plate ?? "—"}
-          sub={s.topKmVehicle ? formatFleetKm(s.topKmVehicle.value) : "Sem km no período"}
+          subtitle={s.topKmVehicle ? formatFleetKm(s.topKmVehicle.value) : "Sem km no período"}
         />
-        <KpiCard
+        <FinanceExecutiveTotalizerCard
           label="Alertas ativos"
-          value={s.activeAlerts}
-          tone={s.criticalAlerts > 0 ? "danger" : s.warningAlerts > 0 ? "warn" : undefined}
-          sub={`${s.criticalAlerts} críticos · ${s.warningAlerts} atenção`}
+          value={String(s.activeAlerts)}
+          tone={s.criticalAlerts > 0 ? "danger" : s.warningAlerts > 0 ? "warning" : undefined}
+          subtitle={`${s.criticalAlerts} críticos · ${s.warningAlerts} atenção`}
         />
-      </div>
+      </SummaryKpiGrid>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <ChartCard title="KM rodado por veículo" subtitle={exec.competenceLabel} empty={kmChartData.length === 0}>
