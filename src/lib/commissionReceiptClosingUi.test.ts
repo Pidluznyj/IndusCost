@@ -49,4 +49,14 @@ describe("commissionReceiptClosingUi", () => {
     assert.match(page, /commissions-receipt-closing-seller-totals/);
     assert.match(page, /Total geral/);
   });
+
+  it("cards de resumo usam grid largo e amountFormat para valores monetários", () => {
+    const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
+    assert.match(page, /minColumnWidth=\{240\}/);
+    assert.match(page, /label="Total recebido gerencial"/);
+    assert.match(page, /amount=\{cards\.totalReceivedAmount\}/);
+    assert.match(page, /amountFormat="currency"/);
+    assert.match(page, /label="Recebido sem schedule"/);
+    assert.match(page, /amount=\{cards\.receivedWithoutScheduleAmount\}/);
+  });
 });

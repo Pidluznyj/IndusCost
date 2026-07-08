@@ -67,6 +67,8 @@ describe("MetricCard design system", () => {
     const css = readFileSync(metricCssPath, "utf8");
     assert.match(css, /text-overflow:\s*clip/);
     assert.doesNotMatch(css, /text-overflow:\s*ellipsis/);
+    assert.doesNotMatch(css, /\.metric-card-value[\s\S]*overflow:\s*hidden/);
+    assert.match(css, /\.metric-card-value[\s\S]*overflow:\s*visible/);
     const src = readFileSync(metricCardPath, "utf8");
     assert.match(src, /title=\{displayTitle\}/);
     assert.match(src, /resolveMetricDisplay/);

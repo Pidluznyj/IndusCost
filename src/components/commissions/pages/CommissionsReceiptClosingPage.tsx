@@ -736,7 +736,7 @@ export function CommissionsReceiptClosingPage() {
             title="Resumo do fechamento por recebimento"
             eyebrow="Materialização e totais do período selecionado"
             testId="commissions-receipt-closing-kpi"
-            minColumnWidth={168}
+            minColumnWidth={240}
           >
             <FinanceKpiCard
               label="Títulos recebidos"
@@ -760,9 +760,9 @@ export function CommissionsReceiptClosingPage() {
             />
             <FinanceKpiCard
               label="Recebido grupo (auditoria)"
-              value={formatFinanceCurrency(
-                data.materializationSummary.groupCompanyExcludedReceivedAmount
-              )}
+              value=""
+              amount={data.materializationSummary.groupCompanyExcludedReceivedAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Vendedor não resolvido"
@@ -770,43 +770,61 @@ export function CommissionsReceiptClosingPage() {
             />
             <FinanceKpiCard
               label="Total recebido gerencial"
-              value={formatFinanceCurrency(cards.totalReceivedAmount)}
+              value=""
+              amount={cards.totalReceivedAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Recebido com schedule"
-              value={formatFinanceCurrency(cards.receivedWithScheduleAmount)}
+              value=""
+              amount={cards.receivedWithScheduleAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Recebido cliente excluído"
-              value={formatFinanceCurrency(cards.receivedExcludedCustomerAmount)}
+              value=""
+              amount={cards.receivedExcludedCustomerAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Recebido sem schedule"
-              value={formatFinanceCurrency(cards.receivedWithoutScheduleAmount)}
+              value=""
+              amount={cards.receivedWithoutScheduleAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Base comissionável"
-              value={formatFinanceCurrency(cards.commissionableBaseAmount)}
+              value=""
+              amount={cards.commissionableBaseAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Comissão bruta"
-              value={formatFinanceCurrency(cards.grossCommissionAmount)}
+              value=""
+              amount={cards.grossCommissionAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Comissão excluída"
-              value={formatFinanceCurrency(cards.excludedCommissionAmount)}
+              value=""
+              amount={cards.excludedCommissionAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Comissão final a pagar"
-              value={formatFinanceCurrency(cards.finalCommissionAmount)}
+              value=""
+              amount={cards.finalCommissionAmount}
+              amountFormat="currency"
             />
             <FinanceKpiCard
               label="Diferença vs Nomus"
               value={
                 cards.nomusCommissionDiff != null
-                  ? formatFinanceCurrency(cards.nomusCommissionDiff)
+                  ? ""
                   : "—"
               }
+              amount={cards.nomusCommissionDiff ?? undefined}
+              amountFormat={cards.nomusCommissionDiff != null ? "currency" : undefined}
               helperText={cards.nomusDiffExplanation ?? undefined}
             />
             <FinanceKpiCard label="Status" value={cards.reportStatus} />
