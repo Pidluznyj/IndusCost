@@ -28,6 +28,7 @@ import {
 import { MaterialIntelligence360Header } from "@/src/components/materials/MaterialIntelligence360Header";
 import { MaterialIntelligenceRecentQuotesSection } from "@/src/components/materials/MaterialIntelligenceRecentQuotesSection";
 import { MaterialIntelligencePriceHistoryChart } from "@/src/components/materials/MaterialIntelligencePriceHistoryChart";
+import { MaterialIntelligencePriceAnalyticsSection } from "@/src/components/materials/MaterialIntelligencePriceAnalyticsSection";
 import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/materials/MaterialIntelligenceSavingsOpportunitySection";
 import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";

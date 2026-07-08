@@ -116,7 +116,7 @@ import {
 } from "./src/lib/materialMarketPriceHistory.js";
 import {
   buildMaterialMarketComparativeChartResponse,
-  collectComparativeChartPtaxDates,
+  collectComparativeChartPtaxDatesToFetch,
   parseMaterialMarketComparativeChartQuery,
 } from "./src/lib/materialMarketComparativeChart.js";
 import { resolvePtaxRatesByDate } from "./src/lib/materialMarketPtax.js";

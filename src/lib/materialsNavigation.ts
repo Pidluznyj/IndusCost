@@ -19,6 +19,9 @@ export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
 export const MATERIALS_MARKET_INTELLIGENCE_OPPORTUNITIES_API =
   "/api/materials/market-intelligence/opportunities" as const;
 
+export const MATERIALS_MARKET_INTELLIGENCE_ALERTS_API =
+  "/api/materials/market-intelligence/alerts" as const;
+
 export const BRENT_COMMODITY_LATEST_API =
   "/api/market-intelligence/commodities/brent/latest" as const;
 
@@ -96,6 +99,14 @@ export function getMaterialMarketIntelligenceComparativeChartApiPath(
   const params = new URLSearchParams();
   params.set("period", query.period.trim());
   return `${base}?${params.toString()}`;
+}
+
+export function getMaterialMarketIntelligenceAlertsApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/alerts`;
+}
+
+export function getMaterialMarketIntelligenceAlertsEvaluateApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/alerts/evaluate`;
 }
 
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {
