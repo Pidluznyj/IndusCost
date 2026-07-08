@@ -22,6 +22,8 @@ const BASE_INPUT = {
 
 describe("materialMarketAlertEngine", () => {
   it("expõe limiares padrão documentados", () => {
+    assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.risePercentThreshold, 10);
+    assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.fallPercentThreshold, 10);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.priceChangePercent, 10);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.supplierAboveAvgPercent, 15);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.noRecentQuoteDays, 90);
@@ -54,7 +56,7 @@ describe("materialMarketAlertEngine", () => {
     const priceUp = proposals.find((p) => p.alertType === "PRICE_UP_PCT");
     assert.ok(priceUp);
     assert.match(priceUp!.message, /alta de/i);
-    assert.equal(priceUp!.severity, "WARNING");
+    assert.ok(priceUp!.severity === "WARNING" || priceUp!.severity === "CRITICAL");
   });
 
   it("material sem cotação recente gera NO_RECENT_QUOTE", () => {

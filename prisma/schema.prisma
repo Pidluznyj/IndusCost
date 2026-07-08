@@ -121,6 +121,11 @@ model Material {
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
   MaterialMarketQuote  MaterialMarketQuote[]
+  MaterialOfficialQuoteAudit MaterialOfficialQuoteAudit[]
+  MaterialMarketAuditEvent MaterialMarketAuditEvent[]
+  MaterialMarketAlert  MaterialMarketAlert[]
+  MaterialMarketAlertConfig MaterialMarketAlertConfig?
+  MaterialMarketPurchaseLink MaterialMarketPurchaseLink[]
   ProductBOM           ProductBOM[]
   PurchaseRequestItem  PurchaseRequestItem[]
   ProjectStructureLine ProjectStructureLine[]
@@ -150,6 +155,23 @@ enum MaterialMarketQuoteStatus {
   CANCELLED
 }
 
+enum MaterialMarketQuoteOfficialStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  OFFICIAL
+  REPLACED
+}
+
+enum MaterialOfficialQuoteAuditAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SET_OFFICIAL
+  REPLACED
+}
+
 enum MaterialMarketQuoteExchangeOrigin {
   BCB_PTAX
   MANUAL
@@ -159,6 +181,22 @@ enum MaterialMarketQuotePtaxFetchStatus {
   SUCCESS
   FAILED
   SKIPPED
+}
+
+enum MaterialMarketQuoteReliabilityLevel {
+  MANUAL
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum MaterialMarketQuoteAttachmentType {
+  PDF
+  IMAGE
+  SPREADSHEET
+  EMAIL
+  PROPOSAL
+  OTHER
 }
 
 /// Cotação manual de mercado — append-only; nunca sobrescreve histórico.
@@ -190,6 +228,21 @@ model MaterialMarketQuote {
   manualExchangeJustification String?
   manualExchangeBy            String?
   manualExchangeAt            DateTime?                           @db.Timestamptz(6)
+  isOfficialReference         Boolean                             @default(false)
+  officialStatus              MaterialMarketQuoteOfficialStatus   @default(DRAFT)
+  rejectionReason             String?
+  submittedForApprovalBy      String?
+  submittedForApprovalAt      DateTime?                           @db.Timestamptz(6)
+  approvedBy                  String?
+  approvedAt                  DateTime?                           @db.Timestamptz(6)
+  setOfficialBy               String?
+  setOfficialAt               DateTime?                           @db.Timestamptz(6)
+  reliabilityLevel            MaterialMarketQuoteReliabilityLevel?
+  reliabilitySuggestedLevel   MaterialMarketQuoteReliabilityLevel?
+  reliabilityOverrideReason   String?
+  reliabilitySetBy            String?
+  reliabilitySetAt            DateTime?                           @db.Timestamptz(6)
+  suggestedReliabilityLevel   MaterialMarketQuoteReliabilityLevel?
   createdBy                   String?
   updatedBy                   String?
   createdAt                   DateTime                            @default(now()) @db.Timestamptz(6)
@@ -197,9 +250,241 @@ model MaterialMarketQuote {
 
   Material          Material           @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   FinancialSupplier FinancialSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  Attachments       MaterialMarketQuoteAttachment[]
+  AuditLogs         MaterialMarketQuoteAuditLog[]
+  purchaseLinks     MaterialMarketPurchaseLink[]
 
   @@index([materialId, quoteDate(sort: Desc)])
+  @@index([materialId, isOfficialReference])
+  @@index([materialId, officialStatus])
   @@index([supplierId])
+}
+
+/// Vínculo cotação de mercado → compra real (manual; PO formal opcional sem FK rígida).
+/// Fórmula: estimatedSavings = (referenceUnitPriceBrl - negotiatedPrice) × quantityPurchased
+/// referenceUnitPriceBrl: netPriceBrl da cotação, senão netPrice (BRL), senão currentCost do material.
+model MaterialMarketPurchaseLink {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId            String   @db.Uuid
+  quoteId               String   @db.Uuid
+  /// ID opcional de pedido externo — sem FK (não há módulo PurchaseOrder formal).
+  purchaseOrderId       String?  @db.Uuid
+  purchaseOrderNumber   String?
+  supplierName          String
+  quantityPurchased     Decimal  @db.Decimal(20, 6)
+  /// Preço unitário negociado em BRL (mesma base que netPriceBrl da cotação).
+  negotiatedPrice       Decimal  @db.Decimal(20, 6)
+  purchaseDate          DateTime @db.Date
+  choiceReason          String?
+  /// Economia obtida em BRL.
+  estimatedSavings      Decimal  @db.Decimal(20, 6)
+  referenceUnitPriceBrl Decimal  @db.Decimal(20, 6)
+  currency              String   @default("BRL")
+  createdBy             String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+
+  Material Material            @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Quote    MaterialMarketQuote @relation(fields: [quoteId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([materialId, purchaseDate(sort: Desc)])
+  @@index([quoteId])
+  @@index([purchaseOrderId])
+}
+
+/// Anexo de evidência vinculado a uma cotação de mercado.
+model MaterialMarketQuoteAttachment {
+  id                        String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId                   String                              @db.Uuid
+  fileName                  String
+  originalFileName          String
+  mimeType                  String
+  fileSize                  Int
+  attachmentType            MaterialMarketQuoteAttachmentType
+  storageKey                String
+  suggestedReliabilityLevel MaterialMarketQuoteReliabilityLevel?
+  notes                     String?
+  uploadedBy                String?
+  uploadedAt                DateTime                            @default(now()) @db.Timestamptz(6)
+
+  MaterialMarketQuote MaterialMarketQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([quoteId, uploadedAt(sort: Desc)])
+}
+
+/// Trilha de auditoria de cotações de mercado (anexos e eventos relacionados).
+model MaterialMarketQuoteAuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId    String   @db.Uuid
+  entityType String
+  entityId   String?  @db.Uuid
+  action     String
+  details    String?
+  userId     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  MaterialMarketQuote MaterialMarketQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([quoteId, createdAt(sort: Desc)])
+}
+
+/// Auditoria de governança da cotação oficial por matéria-prima.
+model MaterialOfficialQuoteAudit {
+  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId      String                         @db.Uuid
+  quoteId         String                         @db.Uuid
+  action          MaterialOfficialQuoteAuditAction
+  previousQuoteId String?                        @db.Uuid
+  newQuoteId      String?                        @db.Uuid
+  changedBy       String?
+  changedAt       DateTime                       @default(now()) @db.Timestamptz(6)
+  reason          String?
+  rejectionReason String?
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId])
+  @@index([quoteId])
+  @@index([changedAt])
+}
+
+enum MaterialMarketAuditEntityType {
+  QUOTE
+  ALERT_CONFIG
+  OFFICIAL_QUOTE
+  APPROVAL
+  GLOBAL_CONFIG
+  PURCHASE_LINK
+}
+
+enum MaterialMarketAuditEventType {
+  CREATED
+  UPDATED
+  PRICE_CHANGED
+  SUPPLIER_CHANGED
+  EXCHANGE_CHANGED
+  STATUS_CHANGED
+  APPROVED
+  REJECTED
+  SET_OFFICIAL
+  REPLACED
+  CONFIG_CHANGED
+  SUBMITTED_FOR_APPROVAL
+  MONITORING_CHANGED
+  ALERT_STATUS_CHANGED
+  PURCHASE_LINKED
+}
+
+/// Trilha unificada de auditoria — Inteligência de Mercado (append-only).
+model MaterialMarketAuditEvent {
+  id         String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId String?                       @db.Uuid
+  entityType MaterialMarketAuditEntityType
+  entityId   String?
+  eventType  MaterialMarketAuditEventType
+  userId     String?
+  userName   String?
+  occurredAt DateTime                      @default(now()) @db.Timestamptz(6)
+  reason     String?
+  beforeJson Json?
+  afterJson  Json?
+  metadata   Json?
+
+  Material Material? @relation(fields: [materialId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([materialId, occurredAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@index([eventType])
+}
+
+enum MaterialMarketAlertType {
+  PRICE_UP_PCT
+  PRICE_DOWN_PCT
+  BREAK_MAX
+  BREAK_MIN
+  NO_RECENT_QUOTE
+  SUPPLIER_ABOVE_AVG
+  SAVINGS_OPPORTUNITY
+}
+
+enum MaterialMarketAlertStatus {
+  OPEN
+  READ
+  RESOLVED
+}
+
+enum MaterialMarketAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Alerta de mercado por matéria-prima — append-only por evento; alertas OPEN do mesmo tipo são atualizados.
+model MaterialMarketAlert {
+  id          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId  String                      @db.Uuid
+  alertType   MaterialMarketAlertType
+  status      MaterialMarketAlertStatus   @default(OPEN)
+  title       String
+  message     String
+  severity    MaterialMarketAlertSeverity
+  metadata    Json?
+  triggeredAt DateTime                    @default(now()) @db.Timestamptz(6)
+  readAt      DateTime?                   @db.Timestamptz(6)
+  resolvedAt  DateTime?                   @db.Timestamptz(6)
+  readBy      String?
+  resolvedBy  String?
+  createdAt   DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId, status])
+  @@index([materialId, alertType, status])
+  @@index([status, triggeredAt(sort: Desc)])
+}
+
+enum MaterialMarketAlertConfigScope {
+  GLOBAL
+  MATERIAL
+}
+
+/// Configuração global de limiares de alertas (singleton — id fixo "GLOBAL").
+model MaterialMarketAlertGlobalConfig {
+  id                   String   @id @default("GLOBAL")
+  risePercentThreshold Decimal  @default(10) @db.Decimal(10, 2)
+  fallPercentThreshold Decimal  @default(10) @db.Decimal(10, 2)
+  daysWithoutQuote     Int      @default(90)
+  alertsEnabled        Boolean  @default(true)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedBy            String?
+}
+
+/// Override de limiares por matéria-prima — campos nulos herdam a configuração global.
+model MaterialMarketAlertConfig {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId           String   @unique @db.Uuid
+  risePercentThreshold Decimal? @db.Decimal(10, 2)
+  fallPercentThreshold Decimal? @db.Decimal(10, 2)
+  daysWithoutQuote     Int?
+  alertsEnabled        Boolean?
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedBy            String?
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// Auditoria de alterações em configurações de alertas de mercado.
+model MaterialMarketAlertConfigAudit {
+  id         String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope      MaterialMarketAlertConfigScope
+  materialId String?                        @db.Uuid
+  beforeJson Json?
+  afterJson  Json?
+  updatedBy  String?
+  createdAt  DateTime                       @default(now()) @db.Timestamptz(6)
+
+  @@index([scope, createdAt(sort: Desc)])
+  @@index([materialId, createdAt(sort: Desc)])
 }
 
 enum CommodityType {
@@ -212,19 +497,52 @@ enum CommoditySnapshotStatus {
 }
 
 /// Snapshot de cotação de commodity (ex.: Brent) — append-only; cada coleta cria nova linha.
+enum CommodityCollectionSlot {
+  MORNING
+  AFTERNOON
+}
+
+enum CommodityCollectionTrigger {
+  SCHEDULED
+  MANUAL
+}
+
 model CommoditySnapshot {
-  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   commodityType         CommodityType
-  priceUSD              Decimal?                @db.Decimal(20, 6)
-  quoteDate             DateTime                @db.Date
-  collectedAt           DateTime                @default(now()) @db.Timestamptz(6)
+  priceUSD              Decimal?                   @db.Decimal(20, 6)
+  quoteDate             DateTime                   @db.Date
+  scheduledSlot         CommodityCollectionSlot
+  collectedAt           DateTime                   @default(now()) @db.Timestamptz(6)
   source                String?
   status                CommoditySnapshotStatus
   errorMessage          String?
-  variationFromPrevious Decimal?                @db.Decimal(10, 6)
+  variationFromPrevious Decimal?                   @db.Decimal(10, 6)
+  trigger               CommodityCollectionTrigger @default(SCHEDULED)
 
-  @@index([commodityType, quoteDate(sort: Desc)])
+  @@index([commodityType, quoteDate(sort: Desc), scheduledSlot])
   @@index([commodityType, status, collectedAt(sort: Desc)])
+}
+
+enum PtaxSnapshotStatus {
+  SUCCESS
+  FAILED
+}
+
+/// Snapshot diário da cotação PTAX USD/BRL (BCB) para indicadores globais.
+model PtaxSnapshot {
+  id           String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteDate    DateTime           @db.Date
+  buyRate      Decimal?           @db.Decimal(20, 6)
+  sellRate     Decimal?           @db.Decimal(20, 6)
+  source       String             @default("BCB PTAX")
+  status       PtaxSnapshotStatus
+  errorMessage String?
+  collectedAt  DateTime           @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @db.Timestamptz(6)
+
+  @@index([status, collectedAt(sort: Desc)])
+  @@index([quoteDate(sort: Desc)])
 }
 
 model Product {

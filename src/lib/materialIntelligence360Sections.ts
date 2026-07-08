@@ -18,29 +18,14 @@ export type MaterialIntelligence360SectionDef = {
   emptyMessage: string;
 };
 
-export const MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS: MaterialIntelligence360SectionDef[] = [
-  {
-    id: "suppliers",
-    title: "Fornecedores",
-    description: "Fornecedores vinculados e condições de compra.",
-    emptyMessage: "O panorama de fornecedores será consolidado nesta área.",
-  },
-  {
-    id: "impactedProducts",
-    title: "Produtos Impactados",
-    description: "Produtos e estruturas que consomem esta matéria-prima.",
-    emptyMessage: "Os produtos impactados serão listados nesta área.",
-  },
-  {
-    id: "audit",
-    title: "Auditoria",
-    description: "Registro de alterações de monitoramento e custos.",
-    emptyMessage: "O histórico de auditoria será exibido nesta área.",
-  },
-];
+export const MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS: MaterialIntelligence360SectionDef[] =
+  [];
 
 export const MATERIAL_INTELLIGENCE_RECENT_QUOTES_EMPTY_MESSAGE =
   "Nenhuma cotação manual registrada para esta matéria-prima ainda.";
+
+export const MATERIAL_INTELLIGENCE_TIMELINE_EMPTY_MESSAGE =
+  "Nenhuma compra vinculada ainda.";
 
 export function formatMaterialIntelligenceQuoteDate(iso: string | null | undefined): string {
   if (!iso?.trim()) return "—";

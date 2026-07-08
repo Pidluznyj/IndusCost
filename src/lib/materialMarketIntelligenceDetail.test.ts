@@ -167,4 +167,51 @@ describe("materialMarketIntelligenceDetail", () => {
     );
     assert.equal(mapped.marketSituation.status, "ATENCAO");
   });
+
+  it("inclui officialQuote no detalhe 360°", () => {
+    const mapped = mapMaterialIntelligenceDetail({
+      id: "mat-1",
+      code: "MP-001",
+      description: "Aço",
+      unit: "kg",
+      category: "MATERIA_PRIMA",
+      currentCost: 100,
+      isMarketMonitored: true,
+      MaterialMarketQuote: [
+        {
+          id: "q-official",
+          materialId: "mat-1",
+          supplierName: "Fornecedor Oficial",
+          quoteDate: "2026-05-01",
+          price: 88,
+          currency: "BRL",
+          unit: "kg",
+          netPrice: 88,
+          status: "ACTIVE",
+          isOfficialReference: true,
+          createdAt: "2026-05-01T10:00:00Z",
+          updatedAt: "2026-05-01T10:00:00Z",
+        },
+        {
+          id: "q-latest",
+          materialId: "mat-1",
+          supplierName: "Outro",
+          quoteDate: "2026-06-01",
+          price: 95,
+          currency: "BRL",
+          unit: "kg",
+          netPrice: 95,
+          status: "ACTIVE",
+          isOfficialReference: false,
+          createdAt: "2026-06-01T10:00:00Z",
+          updatedAt: "2026-06-01T10:00:00Z",
+        },
+      ],
+    });
+
+    assert.ok(mapped.officialQuote);
+    assert.equal(mapped.officialQuote?.id, "q-official");
+    assert.equal(mapped.officialQuote?.priceBrl, 88);
+    assert.equal(mapped.lastQuoteAmount, 95);
+  });
 });

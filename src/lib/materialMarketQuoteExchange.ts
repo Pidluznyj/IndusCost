@@ -97,15 +97,18 @@ function buildBrlConversion(price: number, netPrice: number, ptaxVenda: number) 
   };
 }
 
-function skippedExchangeFields(): MaterialMarketQuoteExchangePersistFields {
+function brlIdentityExchangeFields(
+  price: number,
+  netPrice: number
+): MaterialMarketQuoteExchangePersistFields {
   return {
     exchangeOrigin: null,
     ptaxVenda: null,
     ptaxReferenceDate: null,
     ptaxFetchStatus: "SKIPPED",
     ptaxFetchFailureReason: null,
-    priceBrl: null,
-    netPriceBrl: null,
+    priceBrl: roundExchangeMoney(price),
+    netPriceBrl: roundExchangeMoney(netPrice),
     manualExchangeJustification: null,
     manualExchangeBy: null,
     manualExchangeAt: null,
@@ -146,7 +149,7 @@ export async function resolveMaterialMarketQuoteExchange(
   }
 ): Promise<MaterialMarketQuoteExchangeResolution> {
   if (!isUsdCurrency(input.currency)) {
-    return { ok: true, value: skippedExchangeFields() };
+    return { ok: true, value: brlIdentityExchangeFields(input.price, input.netPrice) };
   }
 
   const fetchPtax = options.fetchPtax ?? defaultFetchPtax;

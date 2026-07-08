@@ -3,29 +3,30 @@
  *
  * Uso:
  *   npm run collect:brent
- *   npm run collect:brent -- --trigger=manual
  */
-import { collectBrentCommoditySnapshot } from "@/src/lib/brentCommodityCollection.js";
-import { listRegisteredScheduledJobs } from "@/src/lib/brentCommodityJobRegistry.js";
+import "dotenv/config";
+import {
+  collectBrentCommoditySnapshot,
+  serializeBrentSnapshotForApi,
+} from "../src/lib/brentCommodityCollection.js";
 
 async function main(): Promise<void> {
-  const jobs = listRegisteredScheduledJobs();
-  console.info("[brent-commodity-collect] jobs registrados:", jobs.map((j) => j.id).join(", "));
-
   const outcome = await collectBrentCommoditySnapshot({ trigger: "MANUAL" });
   if (outcome.action === "skipped") {
-    console.info("[brent-commodity-collect] dedup:", outcome.reason);
-    console.info("[brent-commodity-collect] existingSnapshotId:", outcome.existingSnapshotId);
+    console.info(
+      `[brent-commodity-collect] skipped slot=${outcome.slot} reason=${outcome.reason}`
+    );
     return;
   }
 
-  console.info(
-    `[brent-commodity-collect] ${outcome.snapshot.status} id=${outcome.snapshot.id} slot=${outcome.slot} quoteDate=${outcome.quoteDate}`
-  );
-  if (outcome.snapshot.status === "SUCCESS") {
-    console.info(`[brent-commodity-collect] priceUSD=${outcome.snapshot.priceUSD}`);
+  const snapshot = serializeBrentSnapshotForApi(outcome.snapshot);
+  console.info(`[brent-commodity-collect] ${snapshot.status} id=${snapshot.id} slot=${outcome.slot}`);
+  if (snapshot.status === "SUCCESS") {
+    console.info(
+      `[brent-commodity-collect] priceUSD=${snapshot.priceUSD} variation=${snapshot.variationFromPrevious ?? "n/a"}`
+    );
   } else {
-    console.error(`[brent-commodity-collect] error=${outcome.snapshot.errorMessage}`);
+    console.error(`[brent-commodity-collect] error=${snapshot.errorMessage}`);
     process.exitCode = 1;
   }
 }

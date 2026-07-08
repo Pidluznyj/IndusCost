@@ -696,6 +696,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["materials.edit"],
     risk: "sensitive",
   }),
+  perm({
+    key: "materials.market_quote.approve",
+    label: "Cotação — Aprovar oficial",
+    group: OPS,
+    module: "materials",
+    description:
+      "Aprovar ou rejeitar cotações de matérias de criticidade Alta/Crítica antes de torná-las oficiais.",
+    type: "action",
+    parentKey: "materials.edit",
+    requires: ["materials.edit"],
+    risk: "sensitive",
+  }),
   perm({ key: "opex.view", label: "Custos indiretos / OPEX", group: OPS, module: "opex", description: "Consultar custos indiretos.", type: "menu" }),
   perm({
     key: "opex.edit",

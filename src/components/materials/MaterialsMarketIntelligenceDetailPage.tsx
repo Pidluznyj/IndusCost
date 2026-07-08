@@ -3,10 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   BarChart3,
-  Clock,
-  DollarSign,
-  Droplets,
-  Factory,
   FileSearch,
   Loader2,
 } from "lucide-react";
@@ -28,16 +24,21 @@ import {
 import { MaterialIntelligence360Header } from "@/src/components/materials/MaterialIntelligence360Header";
 import { MaterialIntelligenceRecentQuotesSection } from "@/src/components/materials/MaterialIntelligenceRecentQuotesSection";
 import { MaterialIntelligencePriceHistoryChart } from "@/src/components/materials/MaterialIntelligencePriceHistoryChart";
+import { MaterialIntelligenceComparativeChart } from "@/src/components/materials/MaterialIntelligenceComparativeChart";
 import { MaterialIntelligencePriceAnalyticsSection } from "@/src/components/materials/MaterialIntelligencePriceAnalyticsSection";
+import { MaterialIntelligenceFxDecompositionSection } from "@/src/components/materials/MaterialIntelligenceFxDecompositionSection";
 import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/materials/MaterialIntelligenceSavingsOpportunitySection";
 import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
+import { MaterialIntelligenceImpactedProductsSection } from "@/src/components/materials/MaterialIntelligenceImpactedProductsSection";
+import { MaterialIntelligenceFinancialImpactSection } from "@/src/components/materials/MaterialIntelligenceFinancialImpactSection";
+import { MaterialIntelligenceAuditSection } from "@/src/components/materials/MaterialIntelligenceAuditSection";
+import { MaterialIntelligenceSimulationPanel } from "@/src/components/materials/MaterialIntelligenceSimulationPanel";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
+import { MaterialIntelligencePurchaseTimelineSection } from "@/src/components/materials/MaterialIntelligencePurchaseTimelineSection";
+import { MaterialMarketAlertConfigPanel } from "@/src/components/materials/MaterialMarketAlertConfigPanel";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
-  dollar: <DollarSign className="h-7 w-7" aria-hidden="true" />,
-  brent: <Droplets className="h-7 w-7" aria-hidden="true" />,
-  impactedProducts: <Factory className="h-7 w-7" aria-hidden="true" />,
   audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
 };
 
@@ -46,6 +47,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const [item, setItem] = useState<MaterialIntelligenceDetailItem | null>(null);
   const [quotes, setQuotes] = useState<MaterialMarketQuoteApiItem[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [purchaseRefreshKey, setPurchaseRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
@@ -106,6 +108,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const handleQuoteCreated = async () => {
     await loadQuotes();
     await load();
+    setPurchaseRefreshKey((k) => k + 1);
   };
 
   const headerItem = useMemo(() => {
@@ -181,6 +184,10 @@ export function MaterialsMarketIntelligenceDetailPage() {
         <div className="space-y-6" data-testid="material-intelligence-360-page">
           <MaterialIntelligence360Header item={headerItem ?? item} />
 
+          {item.isMarketMonitored ? (
+            <MaterialMarketAlertConfigPanel materialId={item.id} />
+          ) : null}
+
           {!item.isMarketMonitored ? (
             <MaterialIntelligenceActivatePanel
               criticality={activationCriticality}
@@ -193,6 +200,8 @@ export function MaterialsMarketIntelligenceDetailPage() {
             />
           ) : null}
 
+          <MaterialIntelligenceSimulationPanel materialId={item.id} unit={item.unit} />
+
           <div
             className="grid gap-4 xl:grid-cols-2"
             data-testid="material-intelligence-360-sections"
@@ -200,6 +209,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceRecentQuotesSection
               materialId={item.id}
               defaultUnit={item.unit}
+              marketCriticality={item.marketCriticality}
               quotes={quotes}
               loading={quotesLoading}
               onQuoteCreated={() => void handleQuoteCreated()}
@@ -207,7 +217,14 @@ export function MaterialsMarketIntelligenceDetailPage() {
 
             <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
 
+            <MaterialIntelligenceComparativeChart materialId={item.id} unit={item.unit} />
+
             <MaterialIntelligencePriceAnalyticsSection materialId={item.id} />
+
+            <MaterialIntelligenceFxDecompositionSection
+              materialId={item.id}
+              materialName={item.description}
+            />
 
             <MaterialIntelligenceSavingsOpportunitySection
               materialId={item.id}
@@ -217,6 +234,22 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceSuppliersSection materialId={item.id} />
 
             <MaterialIntelligenceAlertsSection materialId={item.id} />
+
+            <MaterialIntelligenceImpactedProductsSection materialId={item.id} />
+
+            <MaterialIntelligencePurchaseTimelineSection
+              materialId={item.id}
+              refreshKey={purchaseRefreshKey}
+            />
+
+            <MaterialIntelligenceFinancialImpactSection
+              materialId={item.id}
+              unit={item.unit}
+              defaultSimulatedPrice={quotes[0]?.netPrice ?? null}
+              defaultBaselinePrice={item.currentCost ?? null}
+            />
+
+            <MaterialIntelligenceAuditSection materialId={item.id} />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder

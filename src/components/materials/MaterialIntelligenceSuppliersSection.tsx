@@ -12,6 +12,7 @@ import { formatMaterialIntelligenceQuoteDate } from "@/src/lib/materialIntellige
 import { getMaterialMarketIntelligenceSuppliersApiPath } from "@/src/lib/materialsNavigation";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 
 type Props = {
   materialId: string;
@@ -59,23 +60,29 @@ export function MaterialIntelligenceSuppliersSection({ materialId }: Props) {
       title="Fornecedores"
       description="Ranking de fornecedores com base nas cotações manuais registradas no período."
     >
-      <div className="flex flex-wrap items-center gap-2" data-testid="material-suppliers-period-filter">
-        {MATERIAL_MARKET_SUPPLIER_PERIOD_VALUES.map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setPeriod(value)}
-            className={cn(
-              "rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors",
-              period === value
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-background text-muted-foreground hover:text-foreground"
-            )}
-            data-testid={`material-suppliers-period-${value}`}
-          >
-            {MATERIAL_MARKET_SUPPLIER_PERIOD_LABELS[value]}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2" data-testid="material-suppliers-period-filter">
+          {MATERIAL_MARKET_SUPPLIER_PERIOD_VALUES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setPeriod(value)}
+              className={cn(
+                "rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors",
+                period === value
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+              )}
+              data-testid={`material-suppliers-period-${value}`}
+            >
+              {MATERIAL_MARKET_SUPPLIER_PERIOD_LABELS[value]}
+            </button>
+          ))}
+        </div>
+        <MaterialMarketIntelligenceExportButtons
+          scope="suppliers"
+          filters={{ materialId, period }}
+        />
       </div>
 
       {loading ? (

@@ -1,6 +1,6 @@
 import type express from "express";
 import type { RequestHandler } from "express";
-import { loadMarketGlobalIndicators } from "@/src/lib/marketGlobalIndicators.js";
+import { loadMarketGlobalIndicators } from "@/src/lib/marketGlobalIndicators.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;

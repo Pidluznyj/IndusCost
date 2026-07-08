@@ -18,6 +18,11 @@ import {
   type MaterialMarketQuoteApiItem,
   type MaterialMarketQuoteSourceRow,
 } from "./materialMarketQuote.js";
+import {
+  buildMaterialOfficialQuoteSummary,
+  resolveMaterialOfficialQuoteRow,
+  type MaterialOfficialQuoteSummary,
+} from "./materialOfficialQuote.js";
 import { getMaterialMarketIntelligenceDetailPath } from "./materialsNavigation.js";
 import {
   classifyMaterialMarketSituationFromQuotes,
@@ -55,6 +60,7 @@ export type MaterialIntelligenceDetailItem = {
   monitoringStatusLabel: string;
   lastQuoteAmount: number | null;
   lastQuoteDate: string | null;
+  officialQuote: MaterialOfficialQuoteSummary | null;
   recentQuotes: MaterialMarketQuoteApiItem[];
   intelligencePath: string;
   marketSituation: MaterialMarketSituationResult;
@@ -104,6 +110,9 @@ export function mapMaterialIntelligenceDetail(
   const marketSituation = classifyMaterialMarketSituationFromQuotes(
     material.MaterialMarketQuote
   );
+  const officialQuote = buildMaterialOfficialQuoteSummary(
+    resolveMaterialOfficialQuoteRow(material.MaterialMarketQuote ?? [])
+  );
 
   return {
     id: material.id,
@@ -123,6 +132,7 @@ export function mapMaterialIntelligenceDetail(
     }),
     lastQuoteAmount,
     lastQuoteDate,
+    officialQuote,
     recentQuotes,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
     marketSituation,
