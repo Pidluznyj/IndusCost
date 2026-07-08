@@ -27,11 +27,19 @@ describe("financeArTitlesPrint", () => {
 
   it("logo em tamanho controlado no CSS de impressão", () => {
     const css = read("src/components/finance/finance-ar-titles-print.css");
-    assert.match(css, /max-width:\s*140px/);
-    assert.match(css, /max-height:\s*80px/);
+    assert.match(css, /max-width:\s*96px/);
+    assert.match(css, /max-height:\s*54px/);
     assert.match(css, /object-fit:\s*contain/);
-    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX, 140);
-    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX, 80);
+    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX, 96);
+    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX, 54);
+  });
+
+  it("impressão oculta #root com display none para evitar páginas em branco", () => {
+    const css = read("src/components/finance/finance-ar-titles-print.css");
+    const global = read("src/reports-print.css");
+    assert.match(css, /body\.ar-titles-print-route #root[\s\S]*display:\s*none\s*!important/);
+    assert.match(global, /body\.ar-titles-print-route #root[\s\S]*display:\s*none\s*!important/);
+    assert.match(global, /#ar-titles-print-root,\s*\n\s*#ar-titles-print-root \*/);
   });
 
   it("cabeçalho executivo com logo e textos no mesmo bloco superior", () => {

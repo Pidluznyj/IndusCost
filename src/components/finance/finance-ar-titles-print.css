@@ -19,17 +19,14 @@
   }
 
   body.ar-titles-print-route #root {
-    visibility: hidden !important;
+    display: none !important;
   }
 
-  body.ar-titles-print-route #ar-titles-print-root {
-    visibility: visible !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
+  body.ar-titles-print-route > *:not(#ar-titles-print-root) {
+    display: none !important;
   }
 
+  body.ar-titles-print-route #ar-titles-print-root,
   body.ar-titles-print-route #ar-titles-print-root * {
     visibility: visible !important;
   }
@@ -95,8 +92,8 @@
 
   #ar-titles-print-root .finance-ar-titles-print-logo {
     display: block;
-    max-width: 140px;
-    max-height: 80px;
+    max-width: 96px;
+    max-height: 54px;
     width: auto;
     height: auto;
     object-fit: contain;
@@ -123,9 +120,9 @@
 
   #ar-titles-print-root .finance-ar-titles-print-executive-header-row {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 5px;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-executive-header-text {
@@ -206,7 +203,7 @@
   }
 
   #ar-titles-print-root tfoot {
-    display: table-footer-group;
+    display: table-row-group;
   }
 
   #ar-titles-print-root tbody tr {

@@ -1,6 +1,10 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
+import {
+  FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX,
+  FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX,
+} from "@/src/lib/financeArTitlesPrintMeta";
 
 const BRAND_TEXT_FALLBACK = "Grupo Lazarios";
 
@@ -18,6 +22,8 @@ export function FinanceArTitlesPrintBrand({ branding }: { branding: BrandingSett
           src={logoSrc}
           alt={fallbackName}
           className="finance-ar-titles-print-logo"
+          width={FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX}
+          height={FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX}
         />
       </div>
     );

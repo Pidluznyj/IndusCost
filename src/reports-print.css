@@ -10,7 +10,8 @@
    */
   body.np-report-printing #root,
   body.material-demand-printing #root,
-  body.cnpj-intelligence-printing #root {
+  body.cnpj-intelligence-printing #root,
+  body.ar-titles-print-route #root {
     display: none !important;
   }
   body * {
@@ -29,7 +30,9 @@
   #pricing-simulator-print-root,
   #pricing-simulator-print-root *,
   #cnpj-intelligence-print-root,
-  #cnpj-intelligence-print-root * {
+  #cnpj-intelligence-print-root *,
+  #ar-titles-print-root,
+  #ar-titles-print-root * {
     visibility: visible !important;
   }
   /* Aba Relatórios: único bloco absoluto na página */
