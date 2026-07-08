@@ -1033,17 +1033,17 @@ export const SettingsModule = () => {
   const nomusHealthBadgeClass = (health: NomusIntegrationHealthState): string => {
     switch (health) {
       case "OK":
-        return "bg-green-100 text-green-800";
+        return "bg-green-50 text-green-800 border border-green-200";
       case "WARNING":
-        return "bg-amber-100 text-amber-900";
+        return "bg-amber-50 text-amber-900 border border-amber-200";
       case "FAILED":
-        return "bg-red-100 text-red-800";
+        return "bg-red-50 text-red-800 border border-red-200";
       case "STALE":
-        return "bg-orange-100 text-orange-900";
+        return "bg-orange-50 text-orange-900 border border-orange-200";
       case "NO_DATA":
-        return "bg-slate-100 text-slate-700";
+        return "bg-slate-50 text-slate-700 border border-slate-200";
       default:
-        return "bg-slate-100 text-slate-700";
+        return "bg-slate-50 text-slate-700 border border-slate-200";
     }
   };
 
@@ -1590,7 +1590,7 @@ export const SettingsModule = () => {
                           </div>
                           <span
                             className={cn(
-                              "shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+                              "shrink-0 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
                               nomusHealthBadgeClass(t.health)
                             )}
                           >

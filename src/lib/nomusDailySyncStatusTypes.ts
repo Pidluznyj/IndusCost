@@ -89,18 +89,18 @@ export function primaryButtonLabel(
 export function overallStatusBadgeClass(status: NomusDailyOverallStatus): string {
   switch (status) {
     case "RUNNING":
-      return "bg-sky-100 text-sky-900 border-sky-200";
+      return "border-blue-200 bg-blue-50/80 text-blue-950";
     case "SUCCESS":
-      return "bg-green-100 text-green-900 border-green-200";
+      return "border-green-200 bg-green-50/80 text-green-950";
     case "PARTIAL_FAILED":
-      return "bg-orange-100 text-orange-900 border-orange-200";
+      return "border-orange-200 bg-orange-50/80 text-orange-950";
     case "FAILED":
-      return "bg-red-100 text-red-900 border-red-200";
+      return "border-red-200 bg-red-50/80 text-red-950";
     case "STALE":
-      return "bg-amber-100 text-amber-950 border-amber-300";
+      return "border-amber-200 bg-amber-50/80 text-amber-950";
     case "NOT_RUN_TODAY":
-      return "bg-slate-100 text-slate-800 border-slate-200";
+      return "border-slate-200 bg-slate-50/80 text-slate-800";
     default:
-      return "bg-muted text-muted-foreground border-border";
+      return "border-border bg-card/60 text-foreground";
   }
 }

@@ -1,0 +1,160 @@
+/**
+ * Cards executivos — Logs de Sincronização Nomus.
+ * Mesmo padrão visual do Fluxo Financeiro / Pedidos de Venda.
+ */
+
+.nomus-sync-metric-grid {
+  --metric-card-min: 148px;
+}
+
+.nomus-sync-metric-grid .metric-card {
+  min-height: 108px;
+  padding: 12px 14px 10px 16px;
+  background: var(--color-card, #fff);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.nomus-sync-metric-grid .metric-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.nomus-sync-metric-grid .metric-card-value {
+  margin-top: 6px;
+  font-size: clamp(1.125rem, 0.7vw + 0.5rem, 1.5rem);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.nomus-sync-metric-grid .metric-card--compact .metric-card-value,
+.nomus-sync-metric-grid .metric-card-value--compact {
+  font-size: clamp(1.125rem, 0.7vw + 0.5rem, 1.5rem);
+}
+
+.nomus-sync-metric-grid .metric-card-value--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: clamp(0.75rem, 0.5vw + 0.35rem, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: normal;
+}
+
+.nomus-sync-metric-grid .metric-card-subtitle {
+  padding-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nomus-sync-metric-grid .metric-card-icon-wrap {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.nomus-sync-metric-grid .metric-card-icon-wrap svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* Métricas secundárias — contadores e detalhes de processamento */
+.nomus-sync-metric-grid--secondary {
+  --metric-card-min: 120px;
+}
+
+.nomus-sync-metric-grid--secondary .metric-card {
+  min-height: 96px;
+  padding: 10px 12px 8px 14px;
+}
+
+.nomus-sync-metric-grid--secondary .metric-card-value {
+  font-size: clamp(1rem, 0.55vw + 0.45rem, 1.25rem);
+  font-weight: 600;
+}
+
+.nomus-sync-metric-grid--secondary .metric-card-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+/* Painel de status — cards internos neutros sobre fundo semântico suave */
+.nomus-sync-status-panel .nomus-sync-metric-grid .metric-card {
+  background: var(--color-card, #fff);
+  border-color: var(--color-border, hsl(214.3 31.8% 91.4%));
+}
+
+.nomus-sync-status-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.nomus-sync-status-panel__chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  padding: 0.125rem 0.5rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  opacity: 0.9;
+}
+
+.nomus-sync-status-panel__meta {
+  font-size: 10px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.nomus-sync-run-message {
+  border-radius: 0.5rem;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  padding: 0.5rem 0.75rem;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #166534;
+}
+
+.nomus-sync-error-message {
+  border-radius: 0.5rem;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  padding: 0.5rem 0.75rem;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #991b1b;
+}
+
+.nomus-sync-failed-steps {
+  border-radius: 0.5rem;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  padding: 0.5rem 0.75rem;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #9a3412;
+}
+
+.nomus-sync-failed-steps__title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nomus-sync-failed-steps__item {
+  font-size: 11px;
+  line-height: 1.4;
+}

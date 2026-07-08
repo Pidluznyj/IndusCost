@@ -38,6 +38,8 @@ const KPI_ALIGNED_SCREENS = [
   "src/components/commissions/commissionsUi.tsx",
   "src/components/contextual/MaterialDemandPlannedRealizedPanel.tsx",
   "src/components/NomusDailySyncCard.tsx",
+  "src/components/NomusAccountsPayableSyncCard.tsx",
+  "src/components/NomusAccountsReceivableSyncCard.tsx",
   "src/components/pricing/CostPriceMarginAuditPanel.tsx",
   "src/components/audit/CostToCashTraceSections.tsx",
   ...FINANCE_KPI_ALIGNED,
@@ -99,6 +101,12 @@ describe("kpiSummaryCardsVisualAudit", () => {
     const css = read("src/components/ui/metric-card.css");
     assert.match(metric, /valueWrap/);
     assert.match(css, /metric-card-value--wrap/);
+  });
+
+  it("Nomus sync usa CSS executivo dedicado", () => {
+    const css = read("src/components/admin/nomus-sync-metric-cards.css");
+    assert.match(css, /nomus-sync-metric-grid/);
+    assert.match(css, /font-weight:\s*600/);
   });
 
   it("ExecutiveSummarySection suporta modo embedded aninhado", () => {

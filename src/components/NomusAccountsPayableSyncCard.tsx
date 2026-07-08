@@ -3,6 +3,11 @@ import { AlertTriangle, CircleCheck, Clock, FileText, Loader2, Play, RefreshCw, 
 import { AdminKpiSection, AdminMetricGrid } from "@/src/components/admin/adminUi";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  formatSyncCardDateTime,
+  formatSyncDurationMs,
+  formatSyncIntOrDash,
+} from "@/src/lib/nomusSyncCardFormat";
 import { cn } from "@/src/lib/utils";
 import { NOMUS_AP_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusAccountsPayableSyncConstants";
 import type { NomusAccountsPayableSyncStatusPayload } from "@/src/lib/nomusAccountsPayableSyncStatusTypes";
@@ -11,27 +16,6 @@ import {
   apOverallStatusLabel,
   apPrimaryButtonLabel,
 } from "@/src/lib/nomusAccountsPayableSyncStatusTypes";
-
-function formatDateTimeSafe(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
-}
-
-function formatDurationMs(ms: number | null | undefined): string {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
-  const totalSec = Math.floor(ms / 1000);
-  const hh = Math.floor(totalSec / 3600);
-  const mm = Math.floor((totalSec % 3600) / 60);
-  const ss = totalSec % 60;
-  if (hh > 0) return `${hh}h ${mm}m`;
-  return `${mm}m ${ss}s`;
-}
-
-function formatIntOrDash(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return String(Math.trunc(value));
-}
 
 export function NomusAccountsPayableSyncCard({
   canRun,
@@ -189,7 +173,7 @@ export function NomusAccountsPayableSyncCard({
         {status ? (
           <div
             className={cn(
-              "rounded-lg border px-3 py-2.5 space-y-2",
+              "nomus-sync-status-panel rounded-lg border px-3 py-2.5 space-y-2.5",
               apOverallStatusBadgeClass(overall)
             )}
           >
@@ -201,61 +185,58 @@ export function NomusAccountsPayableSyncCard({
               ) : overall === "FAILED" || overall === "STALE" ? (
                 <AlertTriangle className="h-4 w-4 shrink-0" />
               ) : null}
-              <p className="font-bold text-sm">{apOverallStatusLabel(overall)}</p>
+              <p className="nomus-sync-status-panel__title">{apOverallStatusLabel(overall)}</p>
               {status.syncStrategy ? (
-                <span className="text-[10px] rounded-full border border-current/30 px-2 py-0.5 opacity-80 font-mono">
-                  {status.syncStrategy}
-                </span>
+                <span className="nomus-sync-status-panel__chip font-mono">{status.syncStrategy}</span>
               ) : null}
             </div>
             {status.staleReason ? (
-              <p className="text-xs leading-snug">{status.staleReason}</p>
+              <p className="text-xs leading-snug opacity-90">{status.staleReason}</p>
             ) : null}
             {status.recommendedAction ? (
-              <p className="text-xs leading-snug font-medium">{status.recommendedAction}</p>
+              <p className="text-xs leading-snug font-medium opacity-90">{status.recommendedAction}</p>
             ) : null}
             <AdminMetricGrid
+              nomusSyncMetrics
               minColumnWidth={140}
               items={[
-                { label: "Início", value: formatDateTimeSafe(status.startedAt), variant: "neutral" },
-                { label: "Fim", value: formatDateTimeSafe(status.finishedAt), variant: "neutral" },
-                { label: "Duração", value: formatDurationMs(status.durationMs), variant: "info" },
+                { label: "Início", ...formatSyncCardDateTime(status.startedAt), variant: "neutral" },
+                { label: "Fim", ...formatSyncCardDateTime(status.finishedAt), variant: "neutral" },
+                {
+                  label: "Duração",
+                  value: formatSyncDurationMs(status.durationMs),
+                  variant: "info",
+                },
                 {
                   label: "Erros",
-                  value: formatIntOrDash(metrics?.errors),
+                  value: formatSyncIntOrDash(metrics?.errors),
                   variant: (metrics?.errors ?? 0) > 0 ? "danger" : "success",
                 },
               ]}
             />
             <AdminMetricGrid
+              nomusSyncMetrics
+              secondary
               minColumnWidth={120}
               items={[
-                { label: "Páginas", value: formatIntOrDash(metrics?.pagesRead), variant: "neutral" },
-                { label: "Lidos", value: formatIntOrDash(metrics?.recordsRead), variant: "info" },
-                { label: "Mapeados", value: formatIntOrDash(metrics?.mapped), variant: "info" },
-                { label: "Criados", value: formatIntOrDash(metrics?.created), variant: "success" },
-                { label: "Atualizados", value: formatIntOrDash(metrics?.updated), variant: "info" },
-                { label: "Inalterados", value: formatIntOrDash(metrics?.unchanged), variant: "neutral" },
+                { label: "Páginas", value: formatSyncIntOrDash(metrics?.pagesRead), variant: "neutral" },
+                { label: "Lidos", value: formatSyncIntOrDash(metrics?.recordsRead), variant: "info" },
+                { label: "Mapeados", value: formatSyncIntOrDash(metrics?.mapped), variant: "info" },
+                { label: "Criados", value: formatSyncIntOrDash(metrics?.created), variant: "success" },
+                { label: "Atualizados", value: formatSyncIntOrDash(metrics?.updated), variant: "info" },
+                { label: "Inalterados", value: formatSyncIntOrDash(metrics?.unchanged), variant: "neutral" },
               ]}
             />
-            <p className="text-[10px] opacity-80">
+            <p className="nomus-sync-status-panel__meta">
               Processo vivo: {status.hasLiveProcess ? "sim" : "não"} · Lock ativo:{" "}
               {status.hasActiveLock ? "sim" : "não"}
             </p>
           </div>
         ) : null}
 
-        {runMessage ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900">
-            {runMessage}
-          </div>
-        ) : null}
+        {runMessage ? <div className="nomus-sync-run-message">{runMessage}</div> : null}
 
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error}
-          </div>
-        ) : null}
+        {error ? <div className="nomus-sync-error-message">{error}</div> : null}
 
         <AdminKpiSection
           title="Referência da sync Contas a Pagar"
@@ -263,27 +244,38 @@ export function NomusAccountsPayableSyncCard({
           minColumnWidth={180}
           testId="nomus-ap-sync-kpi"
           embedded
+          nomusSyncMetrics
         >
           <MetricCard
             label="Última execução"
             value={
               status?.lastRun
-                ? formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)
+                ? formatSyncCardDateTime(status.lastRun.finishedAt ?? status.lastRun.startedAt).value
                 : "Nenhuma execução encontrada"
             }
             subtitle={
-              status?.lastRun?.exitCode != null ? `exit ${status.lastRun.exitCode}` : undefined
+              status?.lastRun
+                ? [
+                    formatSyncCardDateTime(status.lastRun.finishedAt ?? status.lastRun.startedAt)
+                      .subtitle,
+                    status.lastRun.exitCode != null ? `exit ${status.lastRun.exitCode}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
+                : undefined
             }
             variant="info"
             icon={<Clock className="h-3.5 w-3.5" />}
+            compact
           />
           <MetricCard
             label="Último sucesso"
             value={status?.lastSuccess?.fileName ?? "—"}
-            subtitle={formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
+            subtitle={formatSyncCardDateTime(status?.lastSuccess?.finishedAt).value}
             variant="success"
             icon={<FileText className="h-3.5 w-3.5" />}
             valueWrap
+            compact
           />
           <MetricCard
             label="Último log"
@@ -292,13 +284,15 @@ export function NomusAccountsPayableSyncCard({
             variant="neutral"
             icon={<FileText className="h-3.5 w-3.5" />}
             valueWrap
+            compact
           />
           <MetricCard
             label="Periodicidade"
             value="A cada 2 horas"
             subtitle="Cron automático no servidor"
-            variant="info"
+            variant="neutral"
             icon={<Timer className="h-3.5 w-3.5" />}
+            compact
           />
         </AdminKpiSection>
 

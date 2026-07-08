@@ -3,6 +3,10 @@ import { AlertTriangle, CircleCheck, Clock, FileText, History, Loader2, Play, Re
 import { AdminKpiSection, AdminMetricGrid } from "@/src/components/admin/adminUi";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  formatSyncCardDateTime,
+  formatSyncDurationMs,
+} from "@/src/lib/nomusSyncCardFormat";
 import { cn } from "@/src/lib/utils";
 import { NOMUS_DAILY_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusDailySyncConstants";
 import type { NomusDailySyncStatusPayload } from "@/src/lib/nomusDailySyncStatusTypes";
@@ -11,22 +15,6 @@ import {
   overallStatusLabel,
   primaryButtonLabel,
 } from "@/src/lib/nomusDailySyncStatusTypes";
-
-function formatDateTimeSafe(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
-}
-
-function formatDurationMs(ms: number | null | undefined): string {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
-  const totalSec = Math.floor(ms / 1000);
-  const hh = Math.floor(totalSec / 3600);
-  const mm = Math.floor((totalSec % 3600) / 60);
-  const ss = totalSec % 60;
-  if (hh > 0) return `${hh}h ${mm}m`;
-  return `${mm}m ${ss}s`;
-}
 
 function targetLabel(target: string): string {
   switch (target) {
@@ -193,7 +181,7 @@ export function NomusDailySyncCard({
         {status ? (
           <div
             className={cn(
-              "rounded-lg border px-3 py-2.5 space-y-2",
+              "nomus-sync-status-panel rounded-lg border px-3 py-2.5 space-y-2.5",
               overallStatusBadgeClass(overall)
             )}
           >
@@ -205,42 +193,46 @@ export function NomusDailySyncCard({
               ) : overall === "PARTIAL_FAILED" || overall === "FAILED" || overall === "STALE" ? (
                 <AlertTriangle className="h-4 w-4 shrink-0" />
               ) : null}
-              <p className="font-bold text-sm">{overallStatusLabel(overall)}</p>
+              <p className="nomus-sync-status-panel__title">{overallStatusLabel(overall)}</p>
               {status.ranToday ? (
-                <span className="text-[10px] rounded-full border border-current/30 px-2 py-0.5 opacity-80">
-                  Houve execução hoje
-                </span>
+                <span className="nomus-sync-status-panel__chip">Houve execução hoje</span>
               ) : (
-                <span className="text-[10px] rounded-full border border-current/30 px-2 py-0.5 opacity-80">
-                  Sem execução hoje
-                </span>
+                <span className="nomus-sync-status-panel__chip">Sem execução hoje</span>
               )}
             </div>
             {status.staleReason ? (
-              <p className="text-xs leading-snug">{status.staleReason}</p>
+              <p className="text-xs leading-snug opacity-90">{status.staleReason}</p>
             ) : null}
             {status.recommendedAction ? (
-              <p className="text-xs leading-snug font-medium">{status.recommendedAction}</p>
+              <p className="text-xs leading-snug font-medium opacity-90">{status.recommendedAction}</p>
             ) : null}
             <AdminMetricGrid
+              nomusSyncMetrics
               minColumnWidth={140}
               items={[
-                { label: "Início", value: formatDateTimeSafe(status.startedAt), variant: "neutral" },
+                {
+                  label: "Início",
+                  ...formatSyncCardDateTime(status.startedAt),
+                  variant: "neutral",
+                },
+                {
+                  label: "Fim",
+                  ...formatSyncCardDateTime(status.finishedAt),
+                  variant: "neutral",
+                },
+                {
+                  label: "Duração",
+                  value: formatSyncDurationMs(status.durationMs),
+                  variant: "info",
+                },
                 {
                   label: "Etapa (últ./atual)",
                   value: status.currentOrLastStep ? targetLabel(status.currentOrLastStep) : "—",
                   variant: "info",
                 },
-                { label: "Fim", value: formatDateTimeSafe(status.finishedAt), variant: "neutral" },
-                {
-                  label: "Duração",
-                  value: formatDurationMs(status.durationMs),
-                  variant: "info",
-                  subtitle: "Tempo da execução atual ou última",
-                },
               ]}
             />
-            <p className="text-[10px] opacity-80">
+            <p className="nomus-sync-status-panel__meta">
               Processo vivo: {status.hasLiveProcess ? "sim" : "não"} · Lock ativo:{" "}
               {status.hasActiveLock ? "sim" : "não"}
             </p>
@@ -248,30 +240,24 @@ export function NomusDailySyncCard({
         ) : null}
 
         {status?.failedSteps && status.failedSteps.length > 0 ? (
-          <div className="rounded-lg border border-orange-200 bg-orange-50/90 px-3 py-2 text-sm text-orange-950 space-y-1">
-            <p className="font-semibold">Etapas com falha</p>
+          <div className="nomus-sync-failed-steps space-y-1">
+            <p className="nomus-sync-failed-steps__title">Etapas com falha</p>
             {status.failedSteps.map((s) => (
-              <p key={s.target} className="text-xs">
-                <span className="font-bold">{targetLabel(s.target)}</span>
+              <p key={s.target} className="nomus-sync-failed-steps__item">
+                <span className="font-semibold">{targetLabel(s.target)}</span>
                 {s.exitCode != null ? ` · exit ${s.exitCode}` : ""}
-                {s.finishedAt ? ` · ${formatDateTimeSafe(s.finishedAt)}` : ""}
+                {s.finishedAt
+                  ? ` · ${formatSyncCardDateTime(s.finishedAt).value} ${formatSyncCardDateTime(s.finishedAt).subtitle ?? ""}`
+                  : ""}
                 {s.message ? ` — ${s.message}` : ""}
               </p>
             ))}
           </div>
         ) : null}
 
-        {runMessage ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900">
-            {runMessage}
-          </div>
-        ) : null}
+        {runMessage ? <div className="nomus-sync-run-message">{runMessage}</div> : null}
 
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error}
-          </div>
-        ) : null}
+        {error ? <div className="nomus-sync-error-message">{error}</div> : null}
 
         <AdminKpiSection
           title="Referência da rotina diária"
@@ -279,6 +265,7 @@ export function NomusDailySyncCard({
           minColumnWidth={180}
           testId="nomus-daily-sync-kpi"
           embedded
+          nomusSyncMetrics
         >
           <MetricCard
             label="Resultado geral"
@@ -294,27 +281,38 @@ export function NomusDailySyncCard({
                     : "neutral"
             }
             icon={<History className="h-3.5 w-3.5" />}
+            compact
           />
           <MetricCard
             label="Última execução"
             value={
               status?.lastRun
-                ? formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)
+                ? formatSyncCardDateTime(status.lastRun.finishedAt ?? status.lastRun.startedAt).value
                 : "Nenhuma execução diária"
             }
             subtitle={
-              status?.lastRun?.exitCode != null ? `exit ${status.lastRun.exitCode}` : undefined
+              status?.lastRun
+                ? [
+                    formatSyncCardDateTime(status.lastRun.finishedAt ?? status.lastRun.startedAt)
+                      .subtitle,
+                    status.lastRun.exitCode != null ? `exit ${status.lastRun.exitCode}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
+                : undefined
             }
             variant="info"
             icon={<Clock className="h-3.5 w-3.5" />}
+            compact
           />
           <MetricCard
             label="Último sucesso"
             value={status?.lastSuccess?.fileName ?? "—"}
-            subtitle={formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
+            subtitle={formatSyncCardDateTime(status?.lastSuccess?.finishedAt).value}
             variant="success"
             icon={<FileText className="h-3.5 w-3.5" />}
             valueWrap
+            compact
           />
           <MetricCard
             label="Último log diário"
@@ -323,6 +321,7 @@ export function NomusDailySyncCard({
             variant="neutral"
             icon={<FileText className="h-3.5 w-3.5" />}
             valueWrap
+            compact
           />
         </AdminKpiSection>
 
