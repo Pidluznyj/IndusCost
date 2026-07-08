@@ -42,6 +42,7 @@ import type {
 } from "@/src/lib/financeAccountsReceivableTitles";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 
@@ -95,6 +96,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   const [exporting, setExporting] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
 
   const query = useMemo(
     () =>
@@ -126,6 +128,12 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
 
   useEffect(() => {
     if (printRequestId === 0 || !printPayload || !printItems) return;
@@ -691,6 +699,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
               allItems={printItems}
               generatedAt={new Date().toISOString()}
               emitterName={auth.user?.name}
+              branding={branding}
             />,
             document.body
           )

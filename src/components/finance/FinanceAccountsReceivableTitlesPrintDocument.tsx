@@ -1,4 +1,6 @@
 import React from "react";
+import type { BrandingSettingsDTO } from "@/src/types/branding";
+import { FinanceArTitlesPrintBrand } from "@/src/components/finance/FinanceArTitlesPrintBrand";
 import { FinanceAccountsReceivableTitlesPrintCover } from "@/src/components/finance/FinanceAccountsReceivableTitlesPrintCover";
 import type { FinanceArAnalyticalUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
@@ -12,12 +14,34 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   buildFinanceArTitlesPrintFilterLines,
+  FINANCE_AR_TITLES_PRINT_DATA_SOURCE,
   FINANCE_AR_TITLES_PRINT_FOOTER_NOTE,
   FINANCE_AR_TITLES_PRINT_SUBTITLE,
   FINANCE_AR_TITLES_PRINT_TITLE,
 } from "@/src/lib/financeArTitlesPrintMeta";
+import {
+  financeArTitlesPrintMoneyClass,
+  financeArTitlesPrintStatusBadgeClass,
+  financeArTitlesPrintTotalMoneyClass,
+} from "@/src/lib/financeArTitlesPrintStatus";
 import type { FinanceArTitleListItem, FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles";
 import { safeTrim } from "@/src/lib/safeTrim";
+
+function SummaryKpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div
+      className={[
+        "finance-ar-titles-print-summary-card",
+        tone ? `finance-ar-titles-print-summary-card--${tone}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <p className="finance-ar-titles-print-summary-card-label">{label}</p>
+      <p className="finance-ar-titles-print-summary-card-value">{value}</p>
+    </div>
+  );
+}
 
 export function FinanceAccountsReceivableTitlesPrintDocument({
   payload,
@@ -25,12 +49,14 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
   allItems,
   generatedAt,
   emitterName,
+  branding,
 }: {
   payload: FinanceArTitlesPayload;
   filters: FinanceArAnalyticalUiFilters;
   allItems: FinanceArTitleListItem[];
   generatedAt: string;
   emitterName?: string | null;
+  branding: BrandingSettingsDTO;
 }) {
   const { summary } = payload;
   const filterLines = buildFinanceArTitlesPrintFilterLines(filters);
@@ -43,16 +69,19 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
         generatedAt={generatedAt}
         emitterName={emitterName}
         titlesCount={allItems.length}
+        branding={branding}
       />
 
       <div className="finance-ar-titles-print-document">
-        <header className="finance-ar-titles-print-doc-header">
-          <div className="finance-ar-titles-print-brand">
-            <span className="finance-ar-titles-print-brand-main">IndusCost</span>
-            <span className="finance-ar-titles-print-brand-sub">Grupo Lazarios</span>
+        <div className="finance-ar-titles-print-doc-header">
+          <div className="finance-ar-titles-print-doc-header-top">
+            <FinanceArTitlesPrintBrand branding={branding} />
+            <div className="finance-ar-titles-print-doc-header-text">
+              <h1 className="finance-ar-titles-print-doc-title">{FINANCE_AR_TITLES_PRINT_TITLE}</h1>
+              <p className="finance-ar-titles-print-doc-subtitle">{FINANCE_AR_TITLES_PRINT_SUBTITLE}</p>
+            </div>
           </div>
-          <h1 className="finance-ar-titles-print-doc-title">{FINANCE_AR_TITLES_PRINT_TITLE}</h1>
-          <p className="finance-ar-titles-print-doc-subtitle">{FINANCE_AR_TITLES_PRINT_SUBTITLE}</p>
+
           <table className="finance-ar-titles-print-meta-table">
             <tbody>
               <tr>
@@ -65,44 +94,52 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
                 <th>Títulos</th>
                 <td>{formatFinanceInteger(allItems.length)}</td>
                 <th>Origem</th>
-                <td>Contas a Receber Nomus</td>
+                <td>{FINANCE_AR_TITLES_PRINT_DATA_SOURCE}</td>
               </tr>
-              {filterLines.length > 0 ? (
-                <tr>
-                  <th>Filtros aplicados</th>
-                  <td colSpan={3}>{filterLines.join(" · ")}</td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
-        </header>
+
+          {filterLines.length > 0 ? (
+            <div className="finance-ar-titles-print-filter-band">
+              <p className="finance-ar-titles-print-filter-band-label">Filtros aplicados</p>
+              <p className="finance-ar-titles-print-filter-band-value">{filterLines.join(" · ")}</p>
+            </div>
+          ) : null}
+        </div>
 
         <section className="finance-ar-titles-print-section">
           <h2 className="finance-ar-titles-print-section-title">Resumo executivo</h2>
-          <table className="finance-ar-titles-print-kpi-table">
-            <tbody>
-              <tr>
-                <th>Títulos</th>
-                <td>{formatFinanceInteger(summary.totalTitles)}</td>
-                <th>Valor original</th>
-                <td>{formatFinanceCurrency(summary.totalOriginalValue)}</td>
-                <th>Valor recebido</th>
-                <td>{formatFinanceCurrency(summary.totalReceivedValue)}</td>
-              </tr>
-              <tr>
-                <th>Em aberto</th>
-                <td>{formatFinanceCurrency(summary.totalOpenValue)}</td>
-                <th>Vencido</th>
-                <td>{formatFinanceCurrency(summary.totalOverdueValue)}</td>
-                <th>A vencer</th>
-                <td>{formatFinanceCurrency(summary.totalDueValue)}</td>
-              </tr>
-              <tr>
-                <th>Ticket médio</th>
-                <td colSpan={5}>{formatFinanceCurrency(summary.averageTicket)}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="finance-ar-titles-print-summary-grid">
+            <SummaryKpiCard label="Títulos" value={formatFinanceInteger(summary.totalTitles)} />
+            <SummaryKpiCard
+              label="Valor original"
+              value={formatFinanceCurrency(summary.totalOriginalValue)}
+            />
+            <SummaryKpiCard
+              label="Valor recebido"
+              value={formatFinanceCurrency(summary.totalReceivedValue)}
+              tone="received"
+            />
+            <SummaryKpiCard
+              label="Em aberto"
+              value={formatFinanceCurrency(summary.totalOpenValue)}
+              tone="open"
+            />
+            <SummaryKpiCard
+              label="Vencido"
+              value={formatFinanceCurrency(summary.totalOverdueValue)}
+              tone="risk"
+            />
+            <SummaryKpiCard
+              label="A vencer"
+              value={formatFinanceCurrency(summary.totalDueValue)}
+              tone="success"
+            />
+            <SummaryKpiCard
+              label="Ticket médio"
+              value={formatFinanceCurrency(summary.averageTicket)}
+            />
+          </div>
         </section>
 
         <section className="finance-ar-titles-print-section">
@@ -144,20 +181,40 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
                     <td className="col-date">{formatFinanceDate(row.competenceDate)}</td>
                     <td className="col-date">{formatFinanceDate(row.dueDate)}</td>
                     <td className="col-date">{formatFinanceDate(row.settlementDate)}</td>
-                    <td className="col-status">{formatFinanceCalculatedStatus(row.calculatedStatus)}</td>
+                    <td className="col-status">
+                      <span className={financeArTitlesPrintStatusBadgeClass(row.calculatedStatus)}>
+                        {formatFinanceCalculatedStatus(row.calculatedStatus)}
+                      </span>
+                    </td>
                     <td className="col-num">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
-                    <td className="col-money">{formatFinanceCurrency(row.amountReceivable)}</td>
-                    <td className="col-money">{formatFinanceCurrency(row.amountReceived)}</td>
-                    <td className="col-money">{formatFinanceCurrency(row.balanceReceivable)}</td>
+                    <td
+                      className={financeArTitlesPrintMoneyClass("original", row.calculatedStatus)}
+                    >
+                      {formatFinanceCurrency(row.amountReceivable)}
+                    </td>
+                    <td
+                      className={financeArTitlesPrintMoneyClass("received", row.calculatedStatus)}
+                    >
+                      {formatFinanceCurrency(row.amountReceived)}
+                    </td>
+                    <td className={financeArTitlesPrintMoneyClass("open", row.calculatedStatus)}>
+                      {formatFinanceCurrency(row.balanceReceivable)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr>
+                <tr className="finance-ar-titles-print-total-row">
                   <td colSpan={8}>Total</td>
-                  <td className="col-money">{formatFinanceCurrency(summary.totalOriginalValue)}</td>
-                  <td className="col-money">{formatFinanceCurrency(summary.totalReceivedValue)}</td>
-                  <td className="col-money">{formatFinanceCurrency(summary.totalOpenValue)}</td>
+                  <td className={financeArTitlesPrintTotalMoneyClass("original")}>
+                    {formatFinanceCurrency(summary.totalOriginalValue)}
+                  </td>
+                  <td className={financeArTitlesPrintTotalMoneyClass("received")}>
+                    {formatFinanceCurrency(summary.totalReceivedValue)}
+                  </td>
+                  <td className={financeArTitlesPrintTotalMoneyClass("open")}>
+                    {formatFinanceCurrency(summary.totalOpenValue)}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -165,7 +222,8 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
         </section>
 
         <footer className="finance-ar-titles-print-footer">
-          {FINANCE_AR_TITLES_PRINT_FOOTER_NOTE} · {formatFinanceDateTime(generatedAt)}
+          <p>{FINANCE_AR_TITLES_PRINT_FOOTER_NOTE}</p>
+          <p>{formatFinanceDateTime(generatedAt)}</p>
         </footer>
       </div>
     </div>

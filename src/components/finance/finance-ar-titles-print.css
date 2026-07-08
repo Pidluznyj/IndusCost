@@ -83,48 +83,68 @@
   #ar-titles-print-root .finance-ar-titles-print-document {
     font-family: Arial, Helvetica, sans-serif;
     font-size: 7.5px;
-    line-height: 1.3;
-    color: #111;
+    line-height: 1.35;
+    color: #0f172a;
+  }
+
+  /* Brand / logo */
+  #ar-titles-print-root .finance-ar-titles-print-brand {
+    margin-bottom: 6px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-logo {
+    display: block;
+    max-width: 42mm;
+    max-height: 14mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-brand--text {
+    margin-bottom: 4px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-brand-fallback {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1e3a8a;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-doc-header {
-    border-bottom: 2px solid #333;
+    border-bottom: 2px solid #1d4ed8;
     padding-bottom: 6px;
     margin-bottom: 8px;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-brand {
+  #ar-titles-print-root .finance-ar-titles-print-doc-header-top {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 4px;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-brand-main {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-brand-sub {
-    font-size: 8px;
-    color: #555;
+  #ar-titles-print-root .finance-ar-titles-print-doc-header-text {
+    flex: 1;
+    min-width: 0;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-doc-title {
     font-size: 14px;
     font-weight: 700;
     margin: 0 0 2px;
-    color: #000;
+    color: #0f172a;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-doc-subtitle {
     font-size: 9px;
-    color: #444;
-    margin: 0 0 6px;
+    color: #475569;
+    margin: 0;
   }
 
   #ar-titles-print-root table {
@@ -150,7 +170,7 @@
 
   #ar-titles-print-root th,
   #ar-titles-print-root td {
-    border: 1px solid #bbb;
+    border: 1px solid #cbd5e1;
     padding: 2px 3px;
     vertical-align: top;
     word-wrap: break-word;
@@ -159,12 +179,38 @@
 
   #ar-titles-print-root .finance-ar-titles-print-meta-table {
     font-size: 7px;
+    margin-bottom: 4px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-meta-table th {
     width: 12%;
-    background: #f3f4f6;
+    background: #eff6ff;
     font-weight: 700;
+    color: #1e3a8a;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-filter-band {
+    margin-top: 4px;
+    padding: 4px 6px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-left: 3px solid #1d4ed8;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-filter-band-label {
+    font-size: 6.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin: 0 0 2px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-filter-band-value {
+    font-size: 7px;
+    color: #334155;
+    margin: 0;
+    line-height: 1.4;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-section {
@@ -174,31 +220,97 @@
   #ar-titles-print-root .finance-ar-titles-print-section-title {
     font-size: 9px;
     font-weight: 700;
-    margin: 0 0 3px;
-    color: #000;
+    margin: 0 0 4px;
+    color: #1e3a8a;
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-kpi-table th {
-    background: #f3f4f6;
+  /* Resumo executivo — cards */
+  #ar-titles-print-root .finance-ar-titles-print-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    padding: 4px 5px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card-label {
+    font-size: 6.5px;
     font-weight: 700;
-    width: 11%;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #64748b;
+    margin: 0 0 2px;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-kpi-table td {
-    font-weight: 600;
-    width: 22%;
+  #ar-titles-print-root .finance-ar-titles-print-summary-card-value {
+    font-size: 9px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
   }
 
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--received {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--received .finance-ar-titles-print-summary-card-value {
+    color: #166534;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--open {
+    background: #fffbeb;
+    border-color: #fcd34d;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--open .finance-ar-titles-print-summary-card-value {
+    color: #92400e;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--risk {
+    background: #fef2f2;
+    border-color: #fca5a5;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--risk .finance-ar-titles-print-summary-card-value {
+    color: #991b1b;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--success {
+    background: #ecfdf5;
+    border-color: #6ee7b7;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-summary-card--success .finance-ar-titles-print-summary-card-value {
+    color: #047857;
+  }
+
+  /* Tabela analítica */
   #ar-titles-print-root .finance-ar-titles-print-data-table thead th {
-    background: #e5e7eb;
+    background: #dbeafe;
     font-weight: 700;
     font-size: 7px;
+    color: #1e3a8a;
+    text-align: left;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-data-table tbody tr:nth-child(even) {
-    background: #f9fafb;
+    background: #f8fafc;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-total-row td {
+    background: #eff6ff !important;
+    font-weight: 700;
+    border-top: 2px solid #1d4ed8;
   }
 
   #ar-titles-print-root .col-num,
@@ -206,9 +318,29 @@
     text-align: center !important;
   }
 
-  #ar-titles-print-root .col-money {
+  #ar-titles-print-root .finance-ar-titles-print-money {
     text-align: right !important;
     font-variant-numeric: tabular-nums;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-money--risk {
+    color: #b91c1c !important;
+    font-weight: 600;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-money--open {
+    color: #b45309 !important;
+    font-weight: 600;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-money--received {
+    color: #15803d !important;
+    font-weight: 600;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-money--total {
+    font-weight: 700;
+    font-size: 7.5px;
   }
 
   #ar-titles-print-root .col-client {
@@ -227,19 +359,71 @@
     width: 8%;
   }
 
+  /* Status badges */
+  #ar-titles-print-root .finance-ar-titles-print-status {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 6.5px;
+    font-weight: 700;
+    line-height: 1.3;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--danger {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--success {
+    background: #d1fae5;
+    color: #047857;
+    border-color: #6ee7b7;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--warning {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--settled {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--muted {
+    background: #ffedd5;
+    color: #9a3412;
+    border-color: #fdba74;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-status--unknown {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+  }
+
   #ar-titles-print-root .finance-ar-titles-print-empty {
     font-size: 8px;
-    color: #555;
+    color: #64748b;
     margin: 4px 0;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-footer {
     margin-top: 8px;
     padding-top: 4px;
-    border-top: 1px solid #ccc;
+    border-top: 1px solid #cbd5e1;
     font-size: 7px;
-    color: #666;
+    color: #64748b;
     text-align: center;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-footer p {
+    margin: 0 0 2px;
   }
 
   /* Capa executiva */
@@ -263,19 +447,26 @@
     font-size: 22px;
     font-weight: 800;
     margin: 8px 0 4px;
-    color: #000;
+    color: #0f172a;
     line-height: 1.15;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-subtitle {
     font-size: 11px;
-    color: #444;
-    margin: 0 0 14px;
+    color: #475569;
+    margin: 0 0 10px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-customer {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e3a8a;
+    margin: 0 0 12px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-meta-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px 16px;
     margin-bottom: 12px;
     font-size: 9px;
@@ -286,28 +477,22 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #666;
+    color: #64748b;
     margin: 0 0 2px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-value {
     font-size: 10px;
     font-weight: 600;
-    color: #111;
+    color: #0f172a;
     margin: 0;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-cover-filters {
-    font-size: 8px;
-    color: #333;
-    margin: 0 0 12px;
-    line-height: 1.4;
-  }
-
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-panel {
-    border: 1px solid #ccc;
+    border: 1px solid #cbd5e1;
     padding: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+    background: #fff;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-heading {
@@ -316,7 +501,7 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin: 0 0 6px;
-    color: #333;
+    color: #1e3a8a;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-grid {
@@ -326,28 +511,73 @@
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card {
-    border: 1px solid #ddd;
+    border: 1px solid #e2e8f0;
     padding: 6px;
-    background: #fafafa;
+    background: #f8fafc;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--wide {
     grid-column: span 3;
   }
 
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--received {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--received .finance-ar-titles-print-cover-kpi-value {
+    color: #166534;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--open {
+    background: #fffbeb;
+    border-color: #fcd34d;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--open .finance-ar-titles-print-cover-kpi-value {
+    color: #92400e;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--risk {
+    background: #fef2f2;
+    border-color: #fca5a5;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--risk .finance-ar-titles-print-cover-kpi-value {
+    color: #991b1b;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--success {
+    background: #ecfdf5;
+    border-color: #6ee7b7;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--success .finance-ar-titles-print-cover-kpi-value {
+    color: #047857;
+  }
+
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-label {
     font-size: 7px;
     font-weight: 700;
     text-transform: uppercase;
-    color: #666;
+    color: #64748b;
     margin: 0 0 2px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-kpi-value {
     font-size: 11px;
     font-weight: 700;
-    color: #000;
+    color: #0f172a;
     margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover-disclaimer {
+    font-size: 7.5px;
+    color: #64748b;
+    font-style: italic;
+    margin: 0 0 10px;
+    line-height: 1.4;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-cover-contents {

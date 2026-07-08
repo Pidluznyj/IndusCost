@@ -3,7 +3,10 @@ import { FINANCE_AR_MONTH_OPTIONS, FINANCE_AR_STATUS_OPTIONS } from "./financeAc
 import { safeTrim } from "./safeTrim.js";
 
 export const FINANCE_AR_TITLES_PRINT_TITLE = "Contas a Receber — Títulos";
-export const FINANCE_AR_TITLES_PRINT_SUBTITLE = "Grid analítico de títulos filtrados";
+export const FINANCE_AR_TITLES_PRINT_SUBTITLE = "Relatório analítico de títulos filtrados";
+export const FINANCE_AR_TITLES_PRINT_DATA_SOURCE = "Contas a Receber Nomus";
+export const FINANCE_AR_TITLES_PRINT_DISCLAIMER =
+  "Relatório gerado a partir dos dados oficiais de Contas a Receber do Nomus.";
 export const FINANCE_AR_TITLES_PRINT_FOOTER_NOTE =
   "Documento gerado pelo IndusCost · Origem: Nomus Contas a Receber";
 
