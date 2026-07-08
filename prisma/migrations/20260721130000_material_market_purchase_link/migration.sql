@@ -1,4 +1,4 @@
-﻿-- Vínculo cotação de mercado → compra real (manual; sem FK a módulo PurchaseOrder).
+-- Vínculo cotação de mercado → compra real (manual; sem FK a módulo PurchaseOrder).
 -- Economia estimada: (preçoReferênciaBRL - preçoNegociado) × quantidade.
 
 DO $$ BEGIN
