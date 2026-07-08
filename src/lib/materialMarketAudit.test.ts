@@ -106,4 +106,13 @@ describe("materialMarketAudit", () => {
     });
     assert.equal(built.ok, false);
   });
+
+  it("não expõe rota DELETE de auditoria", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL("./materialMarketAuditRoutes.ts", import.meta.url),
+      "utf8"
+    );
+    assert.doesNotMatch(source, /app\.delete\([\s\S]*\/audit/);
+  });
 });
