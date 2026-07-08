@@ -39,11 +39,9 @@ import {
 import { normalizeAccountsPayableTitle } from "@/src/lib/financeAccountsPayableRules.js";
 import {
   buildCostCenterConsolidatedSuppliers,
-  costCenterDashboardHasPeriodFilter,
   filterCostCenterSupplierScopeRows,
   resolveCostCenterSupplierConsolidationKey,
   resolveCostCenterSupplierDisplay,
-  stripCostCenterDashboardPeriodFilters,
 } from "@/src/lib/financeCostCenterSupplierConsolidation.js";
 import {
   buildCostCenterAnnualSpendingChart,
@@ -837,16 +835,7 @@ export async function buildFinanceCostCenterDashboardDefault(
   const syncCutoff = await deps.resolveSyncCutoff();
   const where = buildFinanceApPrismaWhere(filters, syncCutoff);
   const rows = await deps.loadApRows(where);
-  const supplierFilters = stripCostCenterDashboardPeriodFilters(filters);
-  const supplierWhere = buildFinanceApPrismaWhere(supplierFilters, syncCutoff);
-  const supplierScopeSourceRows = !costCenterDashboardHasPeriodFilter(filters)
-    ? rows
-    : supplierWhere.externalId === -1
-      ? []
-      : await deps.loadApRows(supplierWhere);
-  const allocationIds = [
-    ...new Set([...rows, ...supplierScopeSourceRows].map((row) => row.externalId)),
-  ];
+  const allocationIds = rows.map((row) => row.externalId);
   const allocations = await deps.loadAllocations(allocationIds);
   const costCenters = await deps.loadCostCenters();
   const suppliers = await deps.loadSuppliers();
@@ -868,7 +857,7 @@ export async function buildFinanceCostCenterDashboardDefault(
     filters,
     referenceDate,
     syncCutoff,
-    supplierScopeSourceRows,
+    undefined,
     officialApFinancial
   );
 }

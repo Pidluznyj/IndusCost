@@ -47,7 +47,10 @@ export type CostCenterConsolidatedSupplierRow = {
   costCenterShares: Map<string, number>;
 };
 
-/** Remove ano/mês para alinhar cobertura de fornecedores com títulos sem classificação (sem recorte de período). */
+/**
+ * Remove ano/mês — uso legado restrito (ex.: metadados que não devem recortar por vencimento).
+ * A aba Fornecedores e o drilldown de títulos usam filtros completos (eixo = data de vencimento).
+ */
 export function stripCostCenterDashboardPeriodFilters<
   T extends { year?: number; month?: number }
 >(filters: T): Omit<T, "year" | "month"> & { year?: undefined; month?: undefined } {
@@ -69,8 +72,7 @@ export function filterCostCenterSupplierScopeRows(
   syncCutoff?: NomusApReportSyncCutoff | null,
   apScope: FinanceCostCenterApScope = "open_only"
 ): FinanceApDashboardRow[] {
-  const periodStripped = stripCostCenterDashboardPeriodFilters(filters);
-  return filterOfficialApTitlesForCostCenter(rows, periodStripped, referenceDate, syncCutoff).filter(
+  return filterOfficialApTitlesForCostCenter(rows, filters, referenceDate, syncCutoff).filter(
     (row) => isCostCenterTitleInScope(row, apScope)
   );
 }

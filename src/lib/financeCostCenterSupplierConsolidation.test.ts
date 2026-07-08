@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import {
   buildCostCenterConsolidatedSuppliers,
   COST_CENTER_UNIDENTIFIED_SUPPLIER_LABEL,
+  filterCostCenterSupplierScopeRows,
   resolveCostCenterSupplierConsolidationKey,
   resolveCostCenterSupplierDisplay,
 } from "./financeCostCenterSupplierConsolidation.js";
@@ -138,5 +139,42 @@ describe("financeCostCenterSupplierConsolidation", () => {
       "all_in_filter"
     );
     assert.equal(map.size, 1);
+  });
+
+  it("filterCostCenterSupplierScopeRows respeita ano por data de vencimento", () => {
+    const rows = [
+      apRow({ externalId: 10, dueDate: new Date(2025, 5, 1), balancePayable: 100 }),
+      apRow({ externalId: 11, dueDate: new Date(2026, 5, 1), balancePayable: 200 }),
+    ];
+    const scoped = filterCostCenterSupplierScopeRows(
+      rows,
+      { status: "all", year: 2026 },
+      new Date(2026, 6, 1)
+    );
+    assert.equal(scoped.length, 1);
+    assert.equal(scoped[0]!.externalId, 11);
+  });
+
+  it("filterCostCenterSupplierScopeRows ano + mês por vencimento", () => {
+    const rows = [
+      apRow({ externalId: 12, dueDate: new Date(2026, 4, 15), balancePayable: 100 }),
+      apRow({ externalId: 13, dueDate: new Date(2026, 5, 15), balancePayable: 200 }),
+    ];
+    const scoped = filterCostCenterSupplierScopeRows(
+      rows,
+      { status: "all", year: 2026, month: 6 },
+      new Date(2026, 6, 1)
+    );
+    assert.equal(scoped.length, 1);
+    assert.equal(scoped[0]!.externalId, 13);
+  });
+
+  it("sem filtro de ano inclui todos os vencimentos", () => {
+    const rows = [
+      apRow({ externalId: 14, dueDate: new Date(2024, 0, 1), balancePayable: 50 }),
+      apRow({ externalId: 15, dueDate: new Date(2026, 0, 1), balancePayable: 60 }),
+    ];
+    const scoped = filterCostCenterSupplierScopeRows(rows, { status: "all" }, new Date(2026, 6, 1));
+    assert.equal(scoped.length, 2);
   });
 });

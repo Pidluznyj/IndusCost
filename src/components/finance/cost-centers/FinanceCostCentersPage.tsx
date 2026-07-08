@@ -231,13 +231,16 @@ export function FinanceCostCentersPage() {
             <select
               className={financeModuleFilterFieldClass()}
               value={draftFilters.year ?? ""}
-              onChange={(e) =>
+              onChange={(e) => {
+                const nextYear = e.target.value ? Number(e.target.value) : undefined;
                 setDraftFilters((f) => ({
                   ...f,
-                  year: e.target.value ? Number(e.target.value) : undefined,
-                }))
-              }
+                  year: nextYear,
+                  month: nextYear == null ? undefined : f.month,
+                }));
+              }}
             >
+              <option value="">Todos os anos</option>
               {yearOptions.map((year) => (
                 <option key={year} value={year}>
                   {year}
@@ -250,6 +253,7 @@ export function FinanceCostCentersPage() {
             <select
               className={financeModuleFilterFieldClass()}
               value={draftFilters.month ?? ""}
+              disabled={draftFilters.year == null}
               onChange={(e) =>
                 setDraftFilters((f) => ({
                   ...f,

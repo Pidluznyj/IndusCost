@@ -234,7 +234,7 @@ describe("financeCostCenterDashboard", () => {
     assert.equal(payload.bySupplier[0]!.amount, 600);
   });
 
-  it("3b3. fornecedor fora do ano filtrado entra em bySupplier via escopo ampliado", () => {
+  it("3b3. fornecedor fora do ano filtrado não entra em bySupplier", () => {
     const priorYearRow = apRow({
       externalId: 35,
       dueDate: new Date(2025, 10, 15),
@@ -261,9 +261,29 @@ describe("financeCostCenterDashboard", () => {
       state.apRows
     );
     assert.equal(payload.summary.totalAmount, 0);
+    assert.equal(payload.bySupplier.length, 0);
+  });
+
+  it("3b3b. fornecedor no ano filtrado entra em bySupplier", () => {
+    const row2026 = apRow({
+      externalId: 36,
+      dueDate: new Date(2026, 3, 10),
+      balancePayable: 500,
+      amountPayable: 500,
+      personName: "Fornecedor 2026",
+    });
+    const payload = buildFinanceCostCenterDashboard(
+      [row2026],
+      [],
+      [],
+      [],
+      new Set(),
+      parseFinanceCostCenterDashboardFilters({ status: "all", year: 2026 }),
+      REF,
+      null
+    );
     assert.equal(payload.bySupplier.length, 1);
-    assert.equal(payload.bySupplier[0]!.name, "Fornecedor Ano Anterior");
-    assert.equal(payload.bySupplier[0]!.amount, 800);
+    assert.equal(payload.bySupplier[0]!.amount, 500);
   });
 
   it("3i. over-alocação não infla Total AP no filtro", () => {

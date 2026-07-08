@@ -39,7 +39,6 @@ import {
   filterCostCenterSupplierScopeRows,
   resolveCostCenterSupplierConsolidationKey,
   resolveCostCenterSupplierDisplay,
-  stripCostCenterDashboardPeriodFilters,
   type CostCenterSupplierClassificationFilter,
 } from "@/src/lib/financeCostCenterSupplierConsolidation.js";
 import {
@@ -442,10 +441,9 @@ function iterateSupplierPaidRows(
     rowAllocations: PaymentDrilldownAllocationRow[];
   }) => void
 ): void {
-  const scopeFilters = stripCostCenterDashboardPeriodFilters(ctx.filters);
   const scopeRows = filterCostCenterSupplierScopeRows(
     ctx.rows,
-    scopeFilters,
+    ctx.filters,
     ctx.referenceDate,
     ctx.syncCutoff,
     "all_in_filter"
@@ -756,8 +754,7 @@ export async function loadCostCenterSupplierPaymentContext(
 ): Promise<SupplierPaymentContext> {
   const deps = createDefaultFinanceCostCenterDashboardDeps();
   const syncCutoff = await deps.resolveSyncCutoff();
-  const scopeFilters = stripCostCenterDashboardPeriodFilters(filters);
-  const where = buildFinanceApPrismaWhere(scopeFilters, syncCutoff);
+  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
   const rows =
     where.externalId === -1
       ? []
