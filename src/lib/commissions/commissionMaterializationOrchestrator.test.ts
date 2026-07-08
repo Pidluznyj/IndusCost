@@ -15,6 +15,7 @@ import {
   rebuildCommissionMaterializationForAffectedSales,
   resolveSalesOrderIdsFromNfeExternalIds,
   resolveSalesOrderIdsFromReceivableExternalIds,
+  ensureCommissionMaterializationForReceiptMonth,
 } from "./commissionMaterializationOrchestrator.server.js";
 
 const ORDER_A = "880e8400-e29b-41d4-a716-446655440004";
@@ -356,5 +357,54 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(summary.excludedCustomers, 1);
     assert.equal(summary.unresolvedSellers, 1);
     assert.equal(summary.receivablesWithoutLink, 1);
+  });
+
+  it("ensureCommissionMaterializationForReceiptMonth materializa schedules faltantes do mês", async () => {
+    const receivableId = 9001;
+    const nfeId = 555;
+    let materializeCalls = 0;
+    let scheduleCalls = 0;
+
+    const db = {
+      nomusAccountsReceivable: {
+        findMany: async () => [
+          {
+            externalId: receivableId,
+            sourceInvoiceId: nfeId,
+            personName: "Cliente Comercial",
+            personCnpj: "12345678000199",
+          },
+        ],
+      },
+      commissionReceivableSchedule: {
+        findMany: async () => [],
+        findFirst: async () => ({ id: "sched-new" }),
+      },
+      salesOrderNfeLink: {
+        findFirst: async () => ({ salesOrderId: ORDER_A, nfeExternalId: nfeId }),
+      },
+    };
+
+    const result = await ensureCommissionMaterializationForReceiptMonth(db as never, {
+      year: 2026,
+      month: 6,
+      apply: true,
+      deps: {
+        materialize: async () => {
+          materializeCalls += 1;
+          return snapshotResult();
+        },
+        rebuildSchedule: async () => {
+          scheduleCalls += 1;
+          return scheduleResult();
+        },
+      },
+    });
+
+    assert.equal(result.receivablesChecked, 1);
+    assert.equal(result.receivablesMissingBefore, 1);
+    assert.equal(result.schedulesEnsured, 1);
+    assert.equal(materializeCalls, 1);
+    assert.equal(scheduleCalls, 1);
   });
 });

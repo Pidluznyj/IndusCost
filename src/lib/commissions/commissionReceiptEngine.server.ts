@@ -84,7 +84,6 @@ export async function loadMaterializedSchedulesByReceivableId(
               status: true,
               ruleSnapshotJson: true,
             },
-            take: 1,
           },
         },
       },
@@ -123,6 +122,7 @@ export async function loadMaterializedSchedulesByReceivableId(
         (mapPrismaScheduleStatus(row.status) === "CUSTOMER_EXCLUDED"
           ? "Cliente excluído de comissão"
           : null),
+      itemSnapshotStatuses: row.orderSnapshot.items.map((item) => item.status),
     });
     map.set(row.receivableId, list);
   }

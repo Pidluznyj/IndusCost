@@ -192,7 +192,7 @@ export function assessReceiptClosingApplyReadiness(
   if (commercialWithoutSchedule > 0) {
     return {
       canApply: false,
-      applyBlockedReason: `${commercialWithoutSchedule} título(s) comercial(is) sem schedule materializado. Rode a materialização (scripts/rebuild-commission-materialization.ts) antes de fechar.`,
+      applyBlockedReason: `${commercialWithoutSchedule} título(s) comercial(is) ainda sem schedule após materialização automática. Verifique vínculo pedido/NF ou reprocesse materialização.`,
     };
   }
 

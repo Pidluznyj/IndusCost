@@ -833,3 +833,34 @@ export async function rebuildCommissionMaterializationForAffectedSales(
     receiptMonthUnlinkedReceivables: receiptMonthPass?.unlinkedReceivables,
   });
 }
+
+export type EnsureCommissionMaterializationForReceiptMonthResult = {
+  receivablesChecked: number;
+  receivablesMissingBefore: number;
+  schedulesEnsured: number;
+  unlinkedReceivables: number;
+  errors: Array<{ receivableId: number; message: string }>;
+};
+
+/**
+ * Garante snapshots + schedules de CR para títulos comerciais recebidos no mês.
+ * Idempotente — reutilizado antes da prévia/fechamento por recebimento.
+ */
+export async function ensureCommissionMaterializationForReceiptMonth(
+  db: PrismaClient,
+  input: {
+    year: number;
+    month: number;
+    apply?: boolean;
+    deps?: MaterializationOrchestratorDeps;
+  }
+): Promise<EnsureCommissionMaterializationForReceiptMonthResult> {
+  const deps = input.deps ?? defaultDeps;
+  return ensureReceiptMonthReceivableSchedules(db, {
+    year: input.year,
+    month: input.month,
+    dryRun: input.apply !== true,
+    processedPairs: new Set<string>(),
+    deps,
+  });
+}

@@ -58,6 +58,7 @@ export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineS
   "NO_SELLER",
   "SELLER_UNRESOLVED",
   "NO_RULE",
+  "NO_MARGIN",
   "STALE_SCHEDULE",
   "ZERO_AMOUNT",
   "ERROR",
@@ -65,7 +66,7 @@ export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineS
 
 /** Motivo padrão quando CR recebido não possui CommissionReceivableSchedule materializado. */
 export const COMMISSION_RECEIPT_NO_SCHEDULE_REASON =
-  "Título recebido sem schedule de comissão materializado — rode a materialização antes do fechamento";
+  "Título recebido sem schedule de comissão materializável após tentativa de materialização";
 
 /** Motivo quando a NF do título não está vinculada a um pedido de venda local. */
 export const COMMISSION_RECEIPT_NO_SALES_ORDER_REASON =
@@ -103,6 +104,8 @@ export type MaterializedReceivableScheduleInput = {
   sellerResolutionStatus: string | null;
   exclusionRuleId: string | null;
   exclusionReason: string | null;
+  /** Status dos itens no snapshot (diagnóstico quando comissão zerada). */
+  itemSnapshotStatuses?: string[];
 };
 
 export function resolveMaterializedItemExclusionMeta(
@@ -354,6 +357,7 @@ function emptyStatusCounts(): Record<CommissionReceiptLedgerLineStatus, number> 
     NO_SELLER: 0,
     SELLER_UNRESOLVED: 0,
     NO_RULE: 0,
+    NO_MARGIN: 0,
     STALE_SCHEDULE: 0,
     ZERO_AMOUNT: 0,
     ERROR: 0,
@@ -515,9 +519,53 @@ export function mapMaterializedScheduleToLedgerStatus(
     return { status: "NO_SELLER", reason: "Schedule sem vendedor" };
   }
   if (schedule.scheduledCommissionAmount <= 0 && schedule.scheduleStatus === "ACTIVE") {
+    const snapshotDiagnosis = mapSnapshotItemStatusesToLedgerDiagnosis(
+      schedule.itemSnapshotStatuses ?? []
+    );
+    if (snapshotDiagnosis) return snapshotDiagnosis;
     return { status: "ZERO_AMOUNT", reason: "Comissão programada zerada" };
   }
   return { status: "COMMISSIONABLE", reason: null };
+}
+
+const SNAPSHOT_MARGIN_ISSUE_STATUSES = new Set([
+  "NO_COMMERCIAL_PRICE_TABLE",
+  "INVALID_COMMERCIAL_PRICE_RANGE",
+]);
+
+const SNAPSHOT_RULE_ISSUE_STATUSES = new Set(["NO_RULE", "NO_COMMISSION_TABLE_RATE"]);
+
+/** Mapeia status de itens do snapshot para status de linha do ledger (quando comissão é zero). */
+export function mapSnapshotItemStatusesToLedgerDiagnosis(
+  itemStatuses: string[]
+): { status: CommissionReceiptLedgerLineStatus; reason: string } | null {
+  if (itemStatuses.length === 0) return null;
+
+  if (itemStatuses.every((status) => SNAPSHOT_MARGIN_ISSUE_STATUSES.has(status))) {
+    return {
+      status: "NO_MARGIN",
+      reason: "Margem ou tabela comercial indisponível para cálculo de comissão",
+    };
+  }
+  if (itemStatuses.every((status) => SNAPSHOT_RULE_ISSUE_STATUSES.has(status))) {
+    return {
+      status: "NO_RULE",
+      reason: "Nenhuma regra de comissão aplicável à faixa de margem do item",
+    };
+  }
+  if (
+    itemStatuses.every(
+      (status) =>
+        SNAPSHOT_MARGIN_ISSUE_STATUSES.has(status) || SNAPSHOT_RULE_ISSUE_STATUSES.has(status)
+    ) &&
+    itemStatuses.some((status) => SNAPSHOT_MARGIN_ISSUE_STATUSES.has(status))
+  ) {
+    return {
+      status: "NO_MARGIN",
+      reason: "Margem ou tabela comercial indisponível para cálculo de comissão",
+    };
+  }
+  return null;
 }
 
 function pickMaterializedScheduleForReceivable(
@@ -656,6 +704,9 @@ export function diagnoseReceivableWithoutMaterializedSchedule(input: {
   }
 
   if (snap?.exists) {
+    const snapshotDiagnosis = mapSnapshotItemStatusesToLedgerDiagnosis(snap.itemStatuses);
+    if (snapshotDiagnosis) return snapshotDiagnosis;
+
     if (
       snap.itemStatuses.length > 0 &&
       snap.itemStatuses.every((status) => status === "NO_RULE")

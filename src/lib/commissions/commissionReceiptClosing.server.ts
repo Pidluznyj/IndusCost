@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { toPrismaDecimal } from "./commission-money.js";
 import type { CommissionMonthlyPayableQuery, CommissionMonthlyPayableSummary } from "./commissionMonthlyPayable.js";
+import { ensureCommissionMaterializationForReceiptMonth } from "./commissionMaterializationOrchestrator.server.js";
 import { loadCommissionReceiptPreview } from "./commissionReceiptEngine.server.js";
 import {
   aggregateMonthlyPayableFromLedgerLines,
@@ -107,11 +108,22 @@ export async function loadReceiptClosingLedgerLines(
   return rows.map(mapLedgerRowToSnapshot);
 }
 
+async function loadReceiptClosingPreviewWithMaterialization(
+  filters: ReceiptClosingFilters
+): Promise<Awaited<ReturnType<typeof loadCommissionReceiptPreview>>> {
+  await ensureCommissionMaterializationForReceiptMonth(prisma, {
+    year: filters.year,
+    month: filters.month,
+    apply: true,
+  });
+  return loadCommissionReceiptPreview(filters);
+}
+
 export async function previewCommissionReceiptClosing(
   filters: ReceiptClosingFilters
 ): Promise<ReceiptClosingPreviewPayload> {
   const [preview, existingClosing] = await Promise.all([
-    loadCommissionReceiptPreview(filters),
+    loadReceiptClosingPreviewWithMaterialization(filters),
     findClosedReceiptClosing(prisma, filters.year, filters.month),
   ]);
   return buildReceiptClosingPreviewPayload(preview, existingClosing);
@@ -189,7 +201,7 @@ export async function applyCommissionReceiptClosing(
     throw new ReceiptClosingDuplicateError(existing.closingId);
   }
 
-  const preview = await loadCommissionReceiptPreview(input);
+  const preview = await loadReceiptClosingPreviewWithMaterialization(input);
   validateReceiptClosingPreviewForApply(preview);
   const calculationHash = buildReceiptClosingHashFromPreview(preview);
 
@@ -276,7 +288,7 @@ export async function reprocessCommissionReceiptClosingPreview(
       "Nenhum fechamento CLOSED encontrado para reprocessar."
     );
   }
-  const preview = await loadCommissionReceiptPreview(filters);
+  const preview = await loadReceiptClosingPreviewWithMaterialization(filters);
   return buildReceiptClosingReprocessPreview(existingClosing, preview);
 }
 
@@ -288,7 +300,7 @@ export async function reprocessCommissionReceiptClosingApply(
   }
 ): Promise<ReceiptClosingApplyResult & { supersededClosingId: string }> {
   const reason = validateReceiptClosingCancelReason(input.reason);
-  const preview = await loadCommissionReceiptPreview(input);
+  const preview = await loadReceiptClosingPreviewWithMaterialization(input);
   const calculationHash = buildReceiptClosingHashFromPreview(preview);
 
   return db.$transaction(async (tx) => {

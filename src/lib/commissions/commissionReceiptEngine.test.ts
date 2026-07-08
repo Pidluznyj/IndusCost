@@ -7,6 +7,7 @@ import {
   COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
   COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
   filterSettledReceivablesForPreview,
+  mapSnapshotItemStatusesToLedgerDiagnosis,
   type CommissionReceiptReceivableInput,
 } from "./commissionReceiptEngine.js";
 import type {
@@ -815,5 +816,76 @@ describe("commissionReceiptEngine", () => {
       6
     );
     assert.deepEqual(rows.map((row) => row.nomusReceivableId), [1]);
+  });
+
+  it("mapSnapshotItemStatusesToLedgerDiagnosis identifica NO_MARGIN", () => {
+    const diagnosis = mapSnapshotItemStatusesToLedgerDiagnosis([
+      "NO_COMMERCIAL_PRICE_TABLE",
+      "NO_COMMERCIAL_PRICE_TABLE",
+    ]);
+    assert.equal(diagnosis?.status, "NO_MARGIN");
+  });
+
+  it("mapSnapshotItemStatusesToLedgerDiagnosis identifica NO_RULE", () => {
+    const diagnosis = mapSnapshotItemStatusesToLedgerDiagnosis(["NO_RULE"]);
+    assert.equal(diagnosis?.status, "NO_RULE");
+  });
+
+  it("schedule zerado com margem indisponível vira NO_MARGIN", () => {
+    const sched = materializedSchedule({
+      receivableId: 601,
+      scheduledCommissionAmount: 0,
+      itemSnapshotStatuses: ["NO_COMMERCIAL_PRICE_TABLE"],
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 601 })],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[601, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_MARGIN");
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+  });
+
+  it("sem schedule mas snapshot com NO_RULE diagnostica NO_RULE em vez de NO_SCHEDULE", () => {
+    const order = makeOrderBundle([item("i1", 5000)]);
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 602 })],
+      ordersByNfeId: new Map([[100, order]]),
+      materializedSchedulesByReceivableId: new Map(),
+      orderSnapshotDiagnosisByNfeId: new Map([
+        [100, { exists: true, itemStatuses: ["NO_RULE"] }],
+      ]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_RULE");
+    assert.equal(result.countByStatus.NO_SCHEDULE, 0);
+  });
+
+  it("sem schedule mas snapshot sem margem diagnostica NO_MARGIN", () => {
+    const order = makeOrderBundle([item("i1", 5000)]);
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 603 })],
+      ordersByNfeId: new Map([[100, order]]),
+      materializedSchedulesByReceivableId: new Map(),
+      orderSnapshotDiagnosisByNfeId: new Map([
+        [100, { exists: true, itemStatuses: ["INVALID_COMMERCIAL_PRICE_RANGE"] }],
+      ]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "NO_MARGIN");
+    assert.equal(result.countByStatus.NO_SCHEDULE, 0);
   });
 });

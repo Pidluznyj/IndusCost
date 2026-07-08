@@ -97,6 +97,7 @@ function previewResult(
       NO_SELLER: 0,
       SELLER_UNRESOLVED: 0,
       NO_RULE: 0,
+      NO_MARGIN: 0,
       STALE_SCHEDULE: 0,
       ZERO_AMOUNT: 0,
       ERROR: 0,
