@@ -84,110 +84,79 @@
     color: #0f172a;
   }
 
-  /* Brand / logo — compacta, proporcional */
-  #ar-titles-print-root .finance-ar-titles-print-brand {
-    flex-shrink: 0;
-    margin: 0;
+  /* Cabeçalho institucional — grid 3 colunas (logo | empresa | documento) */
+  #ar-titles-print-root .print-doc-header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 3mm;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-logo {
-    display: block;
-    max-width: 96px;
-    max-height: 54px;
-    width: auto;
-    height: auto;
-    object-fit: contain;
+  #ar-titles-print-root .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: 28mm minmax(0, 1fr) 58mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-brand--text {
-    margin: 0;
+  #ar-titles-print-root .print-doc-logo-wrap {
+    display: block !important;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-brand-fallback {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: #1e3a8a;
-    line-height: 1.2;
+  #ar-titles-print-root .print-doc-logo {
+    max-height: 22mm !important;
+    max-width: 28mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    object-position: left top !important;
   }
 
-  /* Cabeçalho executivo compacto */
-  #ar-titles-print-root .finance-ar-titles-print-executive-header {
-    border-bottom: 2px solid #1d4ed8;
-    padding-bottom: 5px;
-    margin-bottom: 6px;
+  #ar-titles-print-root .print-doc-company-text {
+    font-size: 7pt !important;
+    line-height: 1.35 !important;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-executive-header-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
+  #ar-titles-print-root .print-doc-company-name {
+    font-size: 9.5pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 1mm !important;
+  }
+
+  #ar-titles-print-root .print-doc-company-slogan {
+    font-size: 6.5pt !important;
+  }
+
+  #ar-titles-print-root .print-doc-meta {
+    border-left: 1px solid #cbd5e1 !important;
+    padding-left: 3mm !important;
+    font-size: 7pt !important;
+    line-height: 1.35 !important;
+  }
+
+  #ar-titles-print-root .print-doc-meta-title {
+    font-size: 9pt !important;
+    font-weight: 800 !important;
+    margin-bottom: 1.5mm !important;
+    white-space: normal !important;
+  }
+
+  #ar-titles-print-root .print-doc-meta-line {
+    margin-bottom: 0.8mm !important;
+  }
+
+  #ar-titles-print-root .print-doc-subtitle {
+    margin: 2mm 0 0 !important;
+    font-size: 7pt !important;
+    color: #64748b !important;
+  }
+
+  #ar-titles-print-root .print-doc-header-rule {
+    margin-top: 2.5mm !important;
+    border-top: 1px solid #94a3b8 !important;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-cover {
     margin-bottom: 4px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-executive-header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-executive-title {
-    font-size: 13px;
-    font-weight: 700;
-    margin: 0 0 1px;
-    color: #0f172a;
-    line-height: 1.2;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-executive-subtitle {
-    font-size: 8px;
-    color: #475569;
-    margin: 0 0 2px;
-    line-height: 1.25;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-executive-customer {
-    font-size: 8.5px;
-    font-weight: 700;
-    color: #1e3a8a;
-    margin: 0 0 1px;
-    line-height: 1.25;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-executive-origin {
-    font-size: 7px;
-    color: #64748b;
-    margin: 0;
-    line-height: 1.25;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-meta-cards {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-    margin-bottom: 4px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-meta-card {
-    border: 1px solid #cbd5e1;
-    background: #f8fafc;
-    padding: 3px 5px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-meta-card-label {
-    font-size: 6px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #64748b;
-    margin: 0 0 1px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-meta-card-value {
-    font-size: 7.5px;
-    font-weight: 600;
-    color: #0f172a;
-    margin: 0;
-    line-height: 1.25;
   }
 
   #ar-titles-print-root table {

@@ -25,13 +25,33 @@ describe("financeArTitlesPrint", () => {
     assert.doesNotMatch(css, /min-height:\s*185mm/);
   });
 
+  it("cabeçalho usa PrintHeader institucional com grid 3 colunas", () => {
+    const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
+    const css = read("src/components/finance/finance-ar-titles-print.css");
+    const tab = read("src/components/finance/FinanceArAnalyticalTitlesTab.tsx");
+    assert.match(cover, /PrintHeader/);
+    assert.match(cover, /documentTitle="CONTAS A RECEBER"/);
+    assert.match(cover, /documentHighlight="TÍTULOS"/);
+    assert.match(css, /print-doc-header-grid[\s\S]*grid-template-columns:\s*28mm/);
+    assert.match(css, /print-doc-logo[\s\S]*max-height:\s*22mm/);
+    assert.match(tab, /print-document\.css/);
+  });
+
   it("logo em tamanho controlado no CSS de impressão", () => {
     const css = read("src/components/finance/finance-ar-titles-print.css");
-    assert.match(css, /max-width:\s*96px/);
-    assert.match(css, /max-height:\s*54px/);
+    assert.match(css, /max-width:\s*28mm/);
+    assert.match(css, /max-height:\s*22mm/);
     assert.match(css, /object-fit:\s*contain/);
-    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX, 96);
-    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX, 54);
+    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX, 106);
+    assert.equal(FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX, 83);
+  });
+
+  it("metadados ficam na coluna direita do cabeçalho (sem cards abaixo da logo)", () => {
+    const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
+    assert.match(cover, /metaLines/);
+    assert.match(cover, /Emitido em/);
+    assert.doesNotMatch(cover, /finance-ar-titles-print-meta-cards/);
+    assert.doesNotMatch(cover, /FinanceArTitlesPrintBrand/);
   });
 
   it("impressão oculta #root com display none para evitar páginas em branco", () => {
@@ -42,35 +62,16 @@ describe("financeArTitlesPrint", () => {
     assert.match(global, /#ar-titles-print-root,\s*\n\s*#ar-titles-print-root \*/);
   });
 
-  it("cabeçalho executivo com logo e textos no mesmo bloco superior", () => {
-    const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
-    const css = read("src/components/finance/finance-ar-titles-print.css");
-    assert.match(cover, /finance-ar-titles-print-executive-header-row/);
-    assert.match(cover, /FinanceArTitlesPrintBrand/);
-    assert.match(cover, /finance-ar-titles-print-executive-title/);
-    assert.match(css, /finance-ar-titles-print-executive-header-row[\s\S]*display:\s*flex/);
-  });
-
-  it("documento unificado sem capa separada nem duplicação de resumo", () => {
+  it("documento unificado sem duplicação de resumo", () => {
     const doc = read("src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx");
     assert.match(doc, /FinanceAccountsReceivableTitlesPrintCover/);
     assert.match(doc, /id="ar-titles-print-root"/);
     assert.match(doc, /finance-ar-titles-print-summary-grid/);
-    assert.doesNotMatch(doc, /finance-ar-titles-print-doc-header/);
-    assert.doesNotMatch(doc, /payload=\{payload\}/);
   });
 
   it("não existe seção Conteúdo nas próximas páginas", () => {
     const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
     assert.doesNotMatch(cover, /Conteúdo nas próximas páginas/);
-    assert.doesNotMatch(cover, /getFinanceArTitlesPrintCoverSections/);
-  });
-
-  it("usa logo da identidade visual via resolvePrintLogoSrc", () => {
-    const brand = read("src/components/finance/FinanceArTitlesPrintBrand.tsx");
-    assert.match(brand, /resolvePrintLogoSrc/);
-    assert.match(brand, /finance-ar-titles-print-logo/);
-    assert.match(brand, /finance-ar-titles-print-brand-fallback/);
   });
 
   it("documento usa branding e badges de status coloridos", () => {
@@ -85,7 +86,6 @@ describe("financeArTitlesPrint", () => {
   it("cabeçalho exibe disclaimer, metadados e filtros", () => {
     const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
     const doc = read("src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx");
-    assert.match(cover, /finance-ar-titles-print-meta-cards/);
     assert.match(cover, /finance-ar-titles-print-filter-band/);
     assert.match(doc, /FINANCE_AR_TITLES_PRINT_DISCLAIMER/);
   });
@@ -136,9 +136,7 @@ describe("financeArTitlesPrint", () => {
   });
 
   it("PDF não quebra sem logo nem filtros", () => {
-    const brand = read("src/components/finance/FinanceArTitlesPrintBrand.tsx");
     const cover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
-    assert.match(brand, /BRAND_TEXT_FALLBACK|brand-fallback/);
     assert.match(cover, /filterLines\.length > 0 \?/);
     const doc = read("src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx");
     assert.match(doc, /allItems\.length === 0/);

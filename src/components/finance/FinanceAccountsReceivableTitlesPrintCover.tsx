@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
-import { FinanceArTitlesPrintBrand } from "@/src/components/finance/FinanceArTitlesPrintBrand";
+import { PrintHeader } from "@/src/components/print/PrintHeader";
 import type { FinanceArAnalyticalUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
   formatFinanceDateTime,
@@ -19,7 +19,7 @@ function coverCustomerLabel(filters: FinanceArAnalyticalUiFilters): string | nul
   return name || null;
 }
 
-/** Cabeçalho executivo compacto — logo à esquerda, metadados à direita (sem quebra de página). */
+/** Cabeçalho institucional — mesmo grid 3 colunas da proposta/pedido de venda. */
 export function FinanceAccountsReceivableTitlesPrintCover({
   filters,
   generatedAt,
@@ -36,40 +36,29 @@ export function FinanceAccountsReceivableTitlesPrintCover({
   const filterLines = buildFinanceArTitlesPrintFilterLines(filters);
   const customerLabel = coverCustomerLabel(filters);
 
-  return (
-    <header className="finance-ar-titles-print-executive-header" aria-label="Cabeçalho do relatório">
-      <div className="finance-ar-titles-print-executive-header-row">
-        <FinanceArTitlesPrintBrand branding={branding} />
-        <div className="finance-ar-titles-print-executive-header-text">
-          <h1 className="finance-ar-titles-print-executive-title">{FINANCE_AR_TITLES_PRINT_TITLE}</h1>
-          <p className="finance-ar-titles-print-executive-subtitle">{FINANCE_AR_TITLES_PRINT_SUBTITLE}</p>
-          {customerLabel ? (
-            <p className="finance-ar-titles-print-executive-customer">Cliente: {customerLabel}</p>
-          ) : null}
-          <p className="finance-ar-titles-print-executive-origin">
-            Origem: {FINANCE_AR_TITLES_PRINT_DATA_SOURCE}
-          </p>
-        </div>
-      </div>
+  const metaLines = useMemo(() => {
+    const lines = [
+      { label: "Emitido em", value: formatFinanceDateTime(generatedAt) },
+      { label: "Emitido por", value: emitterName?.trim() || "—" },
+      { label: "Títulos", value: formatFinanceInteger(titlesCount) },
+      { label: "Origem", value: FINANCE_AR_TITLES_PRINT_DATA_SOURCE },
+    ];
+    if (customerLabel) {
+      lines.unshift({ label: "Cliente", value: customerLabel });
+    }
+    return lines;
+  }, [customerLabel, emitterName, generatedAt, titlesCount]);
 
-      <div className="finance-ar-titles-print-meta-cards">
-        <div className="finance-ar-titles-print-meta-card">
-          <p className="finance-ar-titles-print-meta-card-label">Emitido em</p>
-          <p className="finance-ar-titles-print-meta-card-value">{formatFinanceDateTime(generatedAt)}</p>
-        </div>
-        <div className="finance-ar-titles-print-meta-card">
-          <p className="finance-ar-titles-print-meta-card-label">Emitido por</p>
-          <p className="finance-ar-titles-print-meta-card-value">{emitterName?.trim() || "—"}</p>
-        </div>
-        <div className="finance-ar-titles-print-meta-card">
-          <p className="finance-ar-titles-print-meta-card-label">Origem dos dados</p>
-          <p className="finance-ar-titles-print-meta-card-value">{FINANCE_AR_TITLES_PRINT_DATA_SOURCE}</p>
-        </div>
-        <div className="finance-ar-titles-print-meta-card">
-          <p className="finance-ar-titles-print-meta-card-label">Títulos no relatório</p>
-          <p className="finance-ar-titles-print-meta-card-value">{formatFinanceInteger(titlesCount)}</p>
-        </div>
-      </div>
+  return (
+    <div className="finance-ar-titles-print-cover">
+      <PrintHeader
+        branding={branding}
+        documentTitle="CONTAS A RECEBER"
+        documentHighlight="TÍTULOS"
+        metaLines={metaLines}
+        subtitle={FINANCE_AR_TITLES_PRINT_SUBTITLE}
+        className="finance-ar-titles-print-doc-header"
+      />
 
       {filterLines.length > 0 ? (
         <div className="finance-ar-titles-print-filter-band">
@@ -77,6 +66,6 @@ export function FinanceAccountsReceivableTitlesPrintCover({
           <p className="finance-ar-titles-print-filter-band-value">{filterLines.join(" · ")}</p>
         </div>
       ) : null}
-    </header>
+    </div>
   );
 }

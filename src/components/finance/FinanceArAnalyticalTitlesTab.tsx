@@ -1,3 +1,4 @@
+import "@/src/components/print/print-document.css";
 import "./finance-ar-titles-print.css";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
