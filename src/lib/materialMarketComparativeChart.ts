@@ -394,8 +394,26 @@ export function mergeComparativeChartSeriesForDisplay(
   return rows;
 }
 
-export function collectComparativeChartPtaxDates(
+export function collectComparativeChartPtaxDatesToFetch(
+  rows: ComparativeChartQuoteRow[],
+  brentSnapshots: BrentSnapshotSourceRow[],
   range: MaterialMarketPriceHistoryPeriodRange
 ): string[] {
-  return enumerateIsoDatesInRange(range);
+  const quotePtax = buildQuotePtaxByDate(rows, range);
+  const dates = new Set<string>();
+
+  for (const row of rows) {
+    if (row.status === "CANCELLED") continue;
+    const date = toIsoDateOnly(row.quoteDate);
+    if (!date || !isQuoteDateWithinRange(date, range)) continue;
+    if (!quotePtax.has(date)) dates.add(date);
+  }
+
+  for (const snapshot of brentSnapshots) {
+    const date = toIsoDateOnly(snapshot.quoteDate);
+    if (!date || !isQuoteDateWithinRange(date, range)) continue;
+    if (!quotePtax.has(date)) dates.add(date);
+  }
+
+  return [...dates].sort();
 }

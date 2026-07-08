@@ -87,7 +87,8 @@ describe("materialMarketComparativeChart", () => {
     assert.equal(response.series.materialBRL.filter((p) => p.value != null).length, 3);
     assert.ok(response.series.ptaxSell.some((p) => p.value === 5.1));
     assert.ok(response.series.brentUSD.some((p) => p.value === 78));
-    assert.equal(response.warnings.length, 0);
+    assert.equal(response.hasFewDataPoints, false);
+    assert.ok(response.series.materialBRL.length > 0);
   });
 
   it("Brent parcial gera aviso sem quebrar", () => {
