@@ -70,8 +70,8 @@ export function formatKpiCompactNumber(
   }
   const display =
     abs >= 1_000_000
-      ? `${formatPtBr(value / 1_000_000, 1)} Mi`
-      : `${formatPtBr(value / 1_000, 1)} mil`;
+      ? `${formatPtBr(value / 1_000_000, 1)}\u00a0Mi`
+      : `${formatPtBr(value / 1_000, 1)}\u00a0mil`;
   return { display, title: full, isCompact: true };
 }
 

@@ -12,15 +12,23 @@ describe("formatFinanceKpiCurrency", () => {
   });
 
   it("formata milhares com sufixo mil e 1 casa decimal", () => {
-    assert.equal(formatFinanceKpiCurrency(12_400), "R$ 12,4 mil");
-    assert.equal(formatFinanceKpiCurrency(827_500), "R$ 827,5 mil");
-    assert.equal(formatFinanceKpiCurrency(284_900), "R$ 284,9 mil");
+    assert.equal(formatFinanceKpiCurrency(12_400), "R$\u00a012,4\u00a0mil");
+    assert.equal(formatFinanceKpiCurrency(827_500), "R$\u00a0827,5\u00a0mil");
+    assert.equal(formatFinanceKpiCurrency(284_900), "R$\u00a0284,9\u00a0mil");
+    assert.equal(formatFinanceKpiCurrency(449_300), "R$\u00a0449,3\u00a0mil");
   });
 
   it("formata milhões com sufixo Mi e 2 casas decimais", () => {
-    assert.equal(formatFinanceKpiCurrency(1_300_000), "R$ 1,30 Mi");
-    assert.equal(formatFinanceKpiCurrency(5_830_000), "R$ 5,83 Mi");
-    assert.equal(formatFinanceKpiCurrency(14_010_000), "R$ 14,01 Mi");
+    assert.equal(formatFinanceKpiCurrency(1_300_000), "R$\u00a01,30\u00a0Mi");
+    assert.equal(formatFinanceKpiCurrency(5_830_000), "R$\u00a05,83\u00a0Mi");
+    assert.equal(formatFinanceKpiCurrency(14_010_000), "R$\u00a014,01\u00a0Mi");
+    assert.equal(formatFinanceKpiCurrency(9_630_000), "R$\u00a09,63\u00a0Mi");
+  });
+
+  it("compacto usa espaço inseparável para evitar quebra feia em cards", () => {
+    const july = formatFinanceKpiCurrency(449_300);
+    assert.doesNotMatch(july, /R\$ 449,3 mil/);
+    assert.match(july, /\u00a0/);
   });
 
   it("não exibe valor longo para grandes montantes", () => {

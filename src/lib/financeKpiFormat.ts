@@ -26,10 +26,10 @@ export function formatFinanceKpiCurrency(value: number | null | undefined): stri
   if (value == null || !Number.isFinite(value)) return "—";
   const abs = Math.abs(value);
   if (abs >= 1_000_000) {
-    return `R$ ${formatPtBr(value / 1_000_000, 2)} Mi`;
+    return `R$\u00a0${formatPtBr(value / 1_000_000, 2)}\u00a0Mi`;
   }
   if (abs >= 10_000) {
-    return `R$ ${formatPtBr(value / 1_000, 1)} mil`;
+    return `R$\u00a0${formatPtBr(value / 1_000, 1)}\u00a0mil`;
   }
   return formatPtBrCurrency(value);
 }

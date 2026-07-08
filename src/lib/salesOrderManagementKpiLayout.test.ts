@@ -93,12 +93,13 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(perf, /lazy/);
   });
 
-  it("9. listagem usa seção Visão Geral com MetricCard", () => {
+  it("9. listagem usa seção Visão Geral com MetricCard e grid executivo", () => {
     const list = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(list, /sales-order-list-overview/);
     assert.match(list, /Pedidos filtrados/);
     assert.match(list, /Valor vendido/);
+    assert.match(list, /sales-order-list-summary-grid/);
     assert.match(module, /SalesOrderListSummaryCards/);
     assert.doesNotMatch(module, /FinanceBiKpiCard/);
   });
