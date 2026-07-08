@@ -717,6 +717,34 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.exclusionRuleId, "ex-esmaltec");
   });
 
+  it("schedule materializado não prevalece sobre pedido sem vendedor Nomus", () => {
+    const sched = materializedSchedule({
+      receivableId: 507,
+      scheduledCommissionAmount: 100,
+      canonicalSellerId: "person-eduardo",
+      canonicalSellerName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+      rawSellerId: 1189,
+      rawSellerName: "JOSE EDUARDO CARDOSO DOS SANTOS",
+    });
+    const order = makeOrderBundle([item("item-a", 10000)], {
+      seller: { nomusSellerId: null, responsibleName: null },
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [receivable({ nomusReceivableId: 507 })],
+      ordersByNfeId: new Map([[100, order]]),
+      materializedSchedulesByReceivableId: new Map([[507, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.sellerResolutionStatus, "NO_SELLER");
+    assert.equal(result.lines[0]?.canonicalSellerId, null);
+    assert.equal(result.lines[0]?.canonicalSellerName, "Sem vendedor no pedido Nomus");
+    assert.equal(result.lines[0]?.rawSellerId, null);
+  });
+
   it("empresa do grupo é excluída da base comissionável com motivo EMPRESA_GRUPO_EXCLUIDA", () => {
     const market = receivable({
       nomusReceivableId: 1,
