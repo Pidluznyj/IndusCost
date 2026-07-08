@@ -43,13 +43,26 @@ describe("materialsNavigation", () => {
     assert.match(app, /<MaterialsModule\s*\/>/);
   });
 
-  it("página inicial exibe estado vazio amigável", () => {
+  it("página inicial exibe indicadores globais e lista de monitoradas", () => {
     const page = read("src/components/materials/MaterialsMarketIntelligencePage.tsx");
     const list = read("src/components/materials/MaterialsMarketIntelligenceMonitoredList.tsx");
+    const indicators = read(
+      "src/components/materials/MaterialsMarketGlobalIndicatorsSection.tsx"
+    );
     assert.match(list, /MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE/);
     assert.match(page, /materials-market-intelligence-page/);
-    assert.match(page, /MaterialsMarketIntelligenceBrentKpi/);
-    assert.doesNotMatch(page, /\bdólar\b/i);
+    assert.match(page, /MaterialsMarketGlobalIndicatorsSection/);
+    assert.match(indicators, /Dólar PTAX venda/);
+    assert.match(indicators, /Dólar PTAX compra/);
+    assert.match(indicators, /Brent USD\/barril/);
+    assert.match(indicators, /MARKET_GLOBAL_INDICATORS_EMPTY_MESSAGE/);
+    assert.match(indicators, /\/api\/market-intelligence\/global-indicators/);
+  });
+
+  it("API agrega indicadores globais PTAX e Brent", () => {
+    const server = read("server.ts");
+    assert.match(server, /registerMarketGlobalIndicatorsRoutes/);
+    assert.match(server, /\/api\/market-intelligence\/global-indicators/);
   });
 
   it("API expõe PATCH de monitoramento de mercado", () => {
@@ -193,6 +206,19 @@ describe("materialsNavigation", () => {
     assert.match(section, /material-intelligence-suppliers-table/);
     assert.match(section, /Sem cotação recente/);
     assert.match(detail, /MaterialIntelligenceSuppliersSection/);
+  });
+
+  it("API e seção de produtos impactados via BOM oficial", () => {
+    const server = read("server.ts");
+    const section = read("src/components/materials/MaterialIntelligenceImpactedProductsSection.tsx");
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    const nav = read("src/lib/materialsNavigation.ts");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/impacted-products/);
+    assert.match(server, /buildMaterialBomImpactForApi/);
+    assert.match(nav, /getMaterialMarketIntelligenceImpactedProductsApiPath/);
+    assert.match(section, /material-intelligence-impacted-products-table/);
+    assert.match(section, /Nenhum produto vinculado a esta matéria-prima na BOM oficial/);
+    assert.match(detail, /MaterialIntelligenceImpactedProductsSection/);
   });
 
   it("API de commodity Brent (coleta manual e último snapshot)", () => {

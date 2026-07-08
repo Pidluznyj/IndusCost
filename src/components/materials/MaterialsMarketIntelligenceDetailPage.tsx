@@ -3,10 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   BarChart3,
-  Clock,
-  DollarSign,
-  Droplets,
-  Factory,
   FileSearch,
   Loader2,
 } from "lucide-react";
@@ -28,16 +24,17 @@ import {
 import { MaterialIntelligence360Header } from "@/src/components/materials/MaterialIntelligence360Header";
 import { MaterialIntelligenceRecentQuotesSection } from "@/src/components/materials/MaterialIntelligenceRecentQuotesSection";
 import { MaterialIntelligencePriceHistoryChart } from "@/src/components/materials/MaterialIntelligencePriceHistoryChart";
+import { MaterialIntelligenceComparativeChart } from "@/src/components/materials/MaterialIntelligenceComparativeChart";
 import { MaterialIntelligencePriceAnalyticsSection } from "@/src/components/materials/MaterialIntelligencePriceAnalyticsSection";
+import { MaterialIntelligenceFxDecompositionSection } from "@/src/components/materials/MaterialIntelligenceFxDecompositionSection";
 import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/materials/MaterialIntelligenceSavingsOpportunitySection";
 import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
+import { MaterialIntelligenceImpactedProductsSection } from "@/src/components/materials/MaterialIntelligenceImpactedProductsSection";
+import { MaterialIntelligenceFinancialImpactSection } from "@/src/components/materials/MaterialIntelligenceFinancialImpactSection";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
-  dollar: <DollarSign className="h-7 w-7" aria-hidden="true" />,
-  brent: <Droplets className="h-7 w-7" aria-hidden="true" />,
-  impactedProducts: <Factory className="h-7 w-7" aria-hidden="true" />,
   audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
 };
 
@@ -207,7 +204,14 @@ export function MaterialsMarketIntelligenceDetailPage() {
 
             <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
 
+            <MaterialIntelligenceComparativeChart materialId={item.id} unit={item.unit} />
+
             <MaterialIntelligencePriceAnalyticsSection materialId={item.id} />
+
+            <MaterialIntelligenceFxDecompositionSection
+              materialId={item.id}
+              materialName={item.description}
+            />
 
             <MaterialIntelligenceSavingsOpportunitySection
               materialId={item.id}
@@ -217,6 +221,15 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceSuppliersSection materialId={item.id} />
 
             <MaterialIntelligenceAlertsSection materialId={item.id} />
+
+            <MaterialIntelligenceImpactedProductsSection materialId={item.id} />
+
+            <MaterialIntelligenceFinancialImpactSection
+              materialId={item.id}
+              unit={item.unit}
+              defaultSimulatedPrice={quotes[0]?.netPrice ?? null}
+              defaultBaselinePrice={item.currentCost ?? null}
+            />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder

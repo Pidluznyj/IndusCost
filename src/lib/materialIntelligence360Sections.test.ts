@@ -9,13 +9,7 @@ import {
 describe("materialIntelligence360Sections", () => {
   it("define todas as seções preparadas da visão 360º", () => {
     const ids = MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((s) => s.id);
-    assert.deepEqual(ids, [
-      "dollar",
-      "brent",
-      "impactedProducts",
-      "timeline",
-      "audit",
-    ]);
+    assert.deepEqual(ids, ["audit"]);
   });
 
   it("mensagem amigável sem cotações", () => {

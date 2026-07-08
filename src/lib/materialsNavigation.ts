@@ -16,6 +16,9 @@ export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
 export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
   "/api/materials/market-intelligence/monitored" as const;
 
+export const MATERIALS_MARKET_GLOBAL_INDICATORS_API =
+  "/api/market-intelligence/global-indicators" as const;
+
 export const MATERIALS_MARKET_INTELLIGENCE_OPPORTUNITIES_API =
   "/api/materials/market-intelligence/opportunities" as const;
 
