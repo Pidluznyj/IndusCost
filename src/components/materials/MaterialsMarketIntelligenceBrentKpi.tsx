@@ -14,7 +14,7 @@ function formatQuoteDate(iso: string): string {
 function formatVariation(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${formatNumber(value, { maximumFractionDigits: 2 })}%`;
+  return `${sign}${formatNumber(value, 2)}%`;
 }
 
 export function MaterialsMarketIntelligenceBrentKpi() {
@@ -91,7 +91,7 @@ export function MaterialsMarketIntelligenceBrentKpi() {
               Brent
             </p>
             <p className="text-2xl font-bold tabular-nums text-foreground">
-              US$ {formatNumber(snapshot.priceUSD, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              US$ {formatNumber(snapshot.priceUSD, 2)}
             </p>
           </div>
         </div>
