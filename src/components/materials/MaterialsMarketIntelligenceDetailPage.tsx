@@ -190,6 +190,8 @@ export function MaterialsMarketIntelligenceDetailPage() {
             />
           ) : null}
 
+          <MaterialIntelligenceSimulationPanel materialId={item.id} unit={item.unit} />
+
           <div
             className="grid gap-4 xl:grid-cols-2"
             data-testid="material-intelligence-360-sections"
@@ -223,13 +225,6 @@ export function MaterialsMarketIntelligenceDetailPage() {
             <MaterialIntelligenceAlertsSection materialId={item.id} />
 
             <MaterialIntelligenceImpactedProductsSection materialId={item.id} />
-
-            <MaterialIntelligenceFinancialImpactSection
-              materialId={item.id}
-              unit={item.unit}
-              defaultSimulatedPrice={quotes[0]?.netPrice ?? null}
-              defaultBaselinePrice={item.currentCost ?? null}
-            />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder
