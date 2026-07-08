@@ -7,6 +7,7 @@ import {
   cashFlowMonthlySeriesHasData,
   computeCashFlowNetPosition,
   formatCashFlowKpiDisplay,
+  resolveCashFlowMetricTone,
   resolveCashFlowNetPositionTone,
 } from "./financeCashFlowDisplay.js";
 
@@ -180,13 +181,21 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(page.includes("FinanceDataAuditButton"));
   });
 
-  it("YTD summary usa grid responsivo SummaryKpiGrid", () => {
+  it("YTD summary usa grid responsivo SummaryKpiGrid e MetricCard executivo", () => {
     const ytd = readFileSync(
       join(process.cwd(), "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx"),
       "utf8"
     );
     assert.ok(ytd.includes("SummaryKpiGrid"));
-    assert.ok(ytd.includes("FinanceCashFlowKpiCard"));
+    assert.ok(ytd.includes("FinanceCashFlowExecutiveMetricCard"));
+    assert.ok(ytd.includes("MetricCard"));
+    assert.equal(ytd.includes("FinanceCashFlowKpiCard"), false);
     assert.equal(ytd.includes("xl:grid-cols-6"), false);
+  });
+
+  it("resolveCashFlowMetricTone classifica sinal sem alterar valor", () => {
+    assert.equal(resolveCashFlowMetricTone(1), "positive");
+    assert.equal(resolveCashFlowMetricTone(-1), "negative");
+    assert.equal(resolveCashFlowMetricTone(0), "neutral");
   });
 });

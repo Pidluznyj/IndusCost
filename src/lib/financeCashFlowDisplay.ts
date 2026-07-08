@@ -67,3 +67,12 @@ export function formatCashFlowKpiDisplay(amount: number): { display: string; ful
   const display = formatFinanceCurrencyCompact(amount);
   return { display, full };
 }
+
+/** Tom visual do card — apenas apresentação, sem alterar valores. */
+export function resolveCashFlowMetricTone(
+  amount: number
+): "positive" | "negative" | "neutral" {
+  if (amount > 0) return "positive";
+  if (amount < 0) return "negative";
+  return "neutral";
+}

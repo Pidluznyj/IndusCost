@@ -11,6 +11,7 @@ import {
 import type { FinanceCashFlowExecutiveSummary } from "@/src/lib/financeCashFlowExecutiveSummary";
 import type { CashHealthScore } from "@/src/lib/financeCashFlowCfoDiagnostics";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
+import { resolveCashFlowMetricTone } from "@/src/lib/financeCashFlowDisplay";
 import {
   FINANCE_KPI_CF_ESTIMATED_AP_YEAR,
   FINANCE_KPI_CF_ESTIMATED_AR_YEAR,
@@ -26,10 +27,12 @@ import {
   FINANCE_KPI_CF_REALIZED_YTD,
   FINANCE_KPI_CF_RECEIVED_YTD,
 } from "@/src/lib/financeKpiTooltips";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
-import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
+import { FinanceCashFlowExecutiveMetricCard } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveMetricCard";
 import { cn } from "@/src/lib/utils";
+import "./finance-cash-flow-executive-summary.css";
 
 type Props = {
   summary: FinanceCashFlowExecutiveSummary;
@@ -37,21 +40,6 @@ type Props = {
   filtersActive: boolean;
   appliedFiltersLabel?: string;
 };
-
-function BlockTitle({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="mb-2">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-[#111827]">{title}</h3>
-      <p className="text-[10px] text-[#6B7280]">{subtitle}</p>
-    </div>
-  );
-}
 
 export function FinanceCashFlowExecutiveSummaryPanel({
   summary,
@@ -76,16 +64,16 @@ export function FinanceCashFlowExecutiveSummaryPanel({
   return (
     <section
       data-testid="cash-flow-executive-summary"
-      className={cn(financeBiSectionClass, "overflow-hidden")}
+      className={cn(financeBiSectionClass, "finance-cash-flow-executive-summary overflow-hidden")}
     >
       <div className="px-4 py-3 border-b border-[#E5E7EB] space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-bold text-[#111827]">Visão executiva do caixa</h2>
-          <span className="rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2 py-0.5 text-[10px] font-semibold text-[#1D4ED8]">
+          <h2 className="text-sm font-semibold text-[#111827]">Visão executiva do caixa</h2>
+          <span className="rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2 py-0.5 text-[10px] font-medium text-[#1D4ED8]">
             Ano {metadata.year}
           </span>
           {period.monthFiltered ? (
-            <span className="rounded-full bg-[#FEF3C7] border border-[#FDE68A] px-2 py-0.5 text-[10px] font-semibold text-[#92400E]">
+            <span className="rounded-full bg-[#FEF3C7] border border-[#FDE68A] px-2 py-0.5 text-[10px] font-medium text-[#92400E]">
               Mês filtrado: {period.periodLabel}
             </span>
           ) : null}
@@ -105,107 +93,95 @@ export function FinanceCashFlowExecutiveSummaryPanel({
       </div>
 
       <div className="p-4 space-y-5">
-        <div>
-          <BlockTitle
-            title="Contas a Receber — Entradas"
-            subtitle={`Realizado YTD e ${annualScopeNote} · Origem: ${metadata.receivableOrigin}`}
-          />
-          <SummaryKpiGrid minColumnWidth={200}>
-            <FinanceCashFlowKpiCard
+        <ExecutiveSummarySection
+          embedded
+          title="Contas a Receber — Entradas"
+          eyebrow={`Realizado YTD e ${annualScopeNote} · Origem: ${metadata.receivableOrigin}`}
+        >
+          <SummaryKpiGrid minColumnWidth={168} className="finance-cash-flow-metric-grid">
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-received-ytd"
               label="Recebido YTD"
               hint={FINANCE_KPI_CF_RECEIVED_YTD}
-              value={formatFinanceCurrency(receivable.receivedYtd)}
-              valueFull={formatFinanceCurrency(receivable.receivedYtd)}
+              amount={receivable.receivedYtd}
               icon={TrendingUp}
-              colorClass="text-[#059669]"
-              valueClassName="text-[#059669] font-bold tabular-nums text-lg sm:text-xl"
+              tone="positive"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-open-ar-year-end"
               label="A receber restante no ano"
               hint={`${FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END} Intervalo: ${forwardHint}.`}
-              value={formatFinanceCurrency(receivable.openFromTodayToYearEnd)}
-              valueFull={formatFinanceCurrency(receivable.openFromTodayToYearEnd)}
+              amount={receivable.openFromTodayToYearEnd}
               icon={ArrowDownRight}
-              colorClass="text-[#059669]"
-              valueClassName="text-[#059669] font-bold tabular-nums text-lg sm:text-xl"
+              tone="positive"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-estimated-ar-year"
               label="Estimativa AR do ano"
               hint={FINANCE_KPI_CF_ESTIMATED_AR_YEAR}
-              value={formatFinanceCurrency(receivable.estimatedYearTotal)}
-              valueFull={formatFinanceCurrency(receivable.estimatedYearTotal)}
+              amount={receivable.estimatedYearTotal}
               icon={Wallet}
-              colorClass="text-[#047857]"
-              valueClassName="text-[#047857] font-bold tabular-nums text-lg sm:text-xl"
+              tone="positive"
               featured
             />
           </SummaryKpiGrid>
-        </div>
+        </ExecutiveSummarySection>
 
-        <div>
-          <BlockTitle
-            title="Contas a Pagar — Saídas"
-            subtitle={`Realizado YTD e ${annualScopeNote}`}
-          />
-          <SummaryKpiGrid minColumnWidth={200}>
-            <FinanceCashFlowKpiCard
+        <ExecutiveSummarySection
+          embedded
+          title="Contas a Pagar — Saídas"
+          eyebrow={`Realizado YTD e ${annualScopeNote}`}
+        >
+          <SummaryKpiGrid minColumnWidth={168} className="finance-cash-flow-metric-grid">
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-paid-ytd"
               label="Pago YTD"
               hint={FINANCE_KPI_CF_PAID_YTD}
-              value={formatFinanceCurrency(payable.paidYtd)}
-              valueFull={formatFinanceCurrency(payable.paidYtd)}
+              amount={payable.paidYtd}
               icon={TrendingDown}
-              colorClass="text-[#DC2626]"
-              valueClassName="text-[#DC2626] font-bold tabular-nums text-lg sm:text-xl"
+              tone="negative"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-open-ap-year-end"
               label="A pagar restante no ano"
               hint={`${FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END} Intervalo: ${forwardHint}.`}
-              value={formatFinanceCurrency(payable.openFromTodayToYearEnd)}
-              valueFull={formatFinanceCurrency(payable.openFromTodayToYearEnd)}
+              amount={payable.openFromTodayToYearEnd}
               icon={ArrowUpRight}
-              colorClass="text-[#DC2626]"
-              valueClassName="text-[#DC2626] font-bold tabular-nums text-lg sm:text-xl"
+              tone="negative"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-estimated-ap-year"
               label="Estimativa AP do ano"
               hint={FINANCE_KPI_CF_ESTIMATED_AP_YEAR}
-              value={formatFinanceCurrency(payable.estimatedYearTotal)}
-              valueFull={formatFinanceCurrency(payable.estimatedYearTotal)}
+              amount={payable.estimatedYearTotal}
               icon={Wallet}
-              colorClass="text-[#B91C1C]"
-              valueClassName="text-[#B91C1C] font-bold tabular-nums text-lg sm:text-xl"
+              tone="negative"
               featured
             />
           </SummaryKpiGrid>
           {forwardApMonths.length > 0 ? (
             <div
               data-testid="exec-kpi-ap-forward-breakdown"
-              className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2"
+              className="finance-cash-flow-executive-summary__forward-breakdown"
               title={FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN}
             >
-              <p className="text-[10px] font-semibold text-[#991B1B]">
+              <p className="finance-cash-flow-executive-summary__forward-breakdown-title">
                 Composição do saldo a pagar restante ({forwardHint})
               </p>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[#7F1D1D]">
+              <div className="finance-cash-flow-executive-summary__forward-breakdown-body">
                 {forwardApMonths.map((row) => (
                   <span key={row.month} className="tabular-nums">
                     {row.monthLabel}: {formatFinanceCurrency(row.openAmount)}
                   </span>
                 ))}
-                <span className="font-semibold tabular-nums">
+                <span className="font-medium tabular-nums">
                   Total: {formatFinanceCurrency(payable.openFromTodayToYearEnd)}
                 </span>
               </div>
               {periodVsForward && periodVsForward.gapVsPeriodOutflow > 0 ? (
                 <p
                   data-testid="exec-kpi-ap-period-gap-note"
-                  className="mt-1.5 text-[10px] text-[#92400E]"
+                  className="finance-cash-flow-executive-summary__forward-breakdown-gap"
                 >
                   Diferença de {formatFinanceCurrency(periodVsForward.gapVsPeriodOutflow)} em
                   relação a Saídas do período ({periodVsForward.filteredMonthLabel}):{" "}
@@ -215,144 +191,126 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               ) : null}
             </div>
           ) : null}
-        </div>
+        </ExecutiveSummarySection>
 
-        <div>
-          <BlockTitle
-            title="Resultado do caixa"
-            subtitle="Saldo realizado, projeção restante e estimativa líquida anual"
-          />
-          <SummaryKpiGrid minColumnWidth={200}>
-            <FinanceCashFlowKpiCard
+        <ExecutiveSummarySection
+          embedded
+          title="Resultado do caixa"
+          eyebrow="Saldo realizado, projeção restante e estimativa líquida anual"
+        >
+          <SummaryKpiGrid minColumnWidth={168} className="finance-cash-flow-metric-grid">
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-realized-ytd"
               label="Saldo realizado YTD"
               hint={FINANCE_KPI_CF_REALIZED_YTD}
-              value={formatFinanceCurrency(net.realizedYtd)}
-              valueFull={formatFinanceCurrency(net.realizedYtd)}
+              amount={net.realizedYtd}
               icon={Scale}
-              colorClass={net.realizedYtd >= 0 ? "text-[#059669]" : "text-[#DC2626]"}
-              valueClassName={cn(
-                "font-bold tabular-nums text-lg sm:text-xl",
-                net.realizedYtd >= 0 ? "text-[#059669]" : "text-[#DC2626]"
-              )}
+              tone={resolveCashFlowMetricTone(net.realizedYtd)}
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-projected-remaining"
               label="Saldo projetado restante"
               hint={FINANCE_KPI_CF_PROJECTED_REMAINING}
-              value={formatFinanceCurrency(net.projectedRemaining)}
-              valueFull={formatFinanceCurrency(net.projectedRemaining)}
+              amount={net.projectedRemaining}
               icon={CircleDollarSign}
-              colorClass={net.projectedRemaining >= 0 ? "text-[#059669]" : "text-[#DC2626]"}
-              valueClassName={cn(
-                "font-bold tabular-nums text-lg sm:text-xl",
-                net.projectedRemaining >= 0 ? "text-[#059669]" : "text-[#DC2626]"
-              )}
+              tone={resolveCashFlowMetricTone(net.projectedRemaining)}
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-estimated-year-net"
               label="Estimativa líquida anual"
               hint={FINANCE_KPI_CF_ESTIMATED_YEAR_NET}
-              featured
-              value={formatFinanceCurrency(net.estimatedYearNet)}
-              valueFull={formatFinanceCurrency(net.estimatedYearNet)}
+              amount={net.estimatedYearNet}
               icon={netPositive ? TrendingUp : TrendingDown}
-              colorClass={netPositive ? "text-[#059669]" : "text-[#DC2626]"}
-              valueClassName={cn(
-                "font-bold tabular-nums text-xl sm:text-2xl",
-                netPositive ? "text-[#059669]" : "text-[#DC2626]"
-              )}
+              tone={resolveCashFlowMetricTone(net.estimatedYearNet)}
+              featured
             />
             {cashHealthScore ? (
-              <FinanceCashFlowKpiCard
+              <FinanceCashFlowExecutiveMetricCard
                 testId="exec-kpi-cfo-score"
                 label="Score CFO"
                 hint="Score composto de saúde do caixa (0–100) com base em carteira, vencidos e tendência."
                 value={String(cashHealthScore.score)}
                 valueFull={`${cashHealthScore.score} — ${cashHealthScore.classificationLabel}`}
+                subtitle={cashHealthScore.classificationLabel}
                 icon={CircleDollarSign}
-                colorClass="text-[#2563EB]"
-                valueClassName="text-[#2563EB] font-bold tabular-nums text-lg sm:text-xl"
+                tone="info"
               />
             ) : null}
           </SummaryKpiGrid>
           <p
             data-testid="exec-kpi-year-net-status"
             className={cn(
-              "mt-2 text-xs font-semibold",
-              netPositive ? "text-[#059669]" : "text-[#DC2626]"
+              "finance-cash-flow-executive-summary__status-note",
+              netPositive
+                ? "finance-cash-flow-executive-summary__status-note--positive"
+                : "finance-cash-flow-executive-summary__status-note--negative"
             )}
           >
-            Caixa previsto do ano: {netPositive ? "positivo" : "negativo"} (
-            {formatFinanceCurrency(net.estimatedYearNet)})
+            Caixa previsto do ano:{" "}
+            <strong>
+              {netPositive ? "positivo" : "negativo"} ({formatFinanceCurrency(net.estimatedYearNet)})
+            </strong>
           </p>
-        </div>
+        </ExecutiveSummarySection>
 
-        <div>
-          <BlockTitle
-            title="Período filtrado"
-            subtitle={
-              period.monthFiltered
-                ? `Recorte operacional ${period.periodLabel} — distinto da visão anual acima`
-                : `Recorte do ano ${metadata.year} conforme modo ${metadata.viewMode}`
-            }
-          />
-          <SummaryKpiGrid minColumnWidth={200}>
-            <FinanceCashFlowKpiCard
+        <ExecutiveSummarySection
+          embedded
+          title="Período filtrado"
+          eyebrow={
+            period.monthFiltered
+              ? `Recorte operacional ${period.periodLabel} — distinto da visão anual acima`
+              : `Recorte do ano ${metadata.year} conforme modo ${metadata.viewMode}`
+          }
+        >
+          <SummaryKpiGrid minColumnWidth={168} className="finance-cash-flow-metric-grid">
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-period-inflow"
               label="Entradas do período"
               hint={FINANCE_KPI_CF_PERIOD_INFLOW}
-              value={formatFinanceCurrency(period.inflowAmount)}
-              valueFull={formatFinanceCurrency(period.inflowAmount)}
+              amount={period.inflowAmount}
               icon={TrendingUp}
-              colorClass="text-[#059669]"
-              valueClassName="text-[#059669] font-bold tabular-nums text-lg sm:text-xl"
+              tone="positive"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-period-outflow"
               label="Saídas do período"
               hint={FINANCE_KPI_CF_PERIOD_OUTFLOW}
-              value={formatFinanceCurrency(period.outflowAmount)}
-              valueFull={formatFinanceCurrency(period.outflowAmount)}
+              amount={period.outflowAmount}
               icon={TrendingDown}
-              colorClass="text-[#DC2626]"
-              valueClassName="text-[#DC2626] font-bold tabular-nums text-lg sm:text-xl"
+              tone="negative"
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-period-net"
               label="Saldo líquido do período"
               hint={FINANCE_KPI_CF_PERIOD_NET}
-              value={formatFinanceCurrency(period.netFlowAmount)}
-              valueFull={formatFinanceCurrency(period.netFlowAmount)}
+              amount={period.netFlowAmount}
               icon={Scale}
-              colorClass={periodPositive ? "text-[#059669]" : "text-[#DC2626]"}
-              valueClassName={cn(
-                "font-bold tabular-nums text-lg sm:text-xl",
-                periodPositive ? "text-[#059669]" : "text-[#DC2626]"
-              )}
+              tone={resolveCashFlowMetricTone(period.netFlowAmount)}
             />
-            <FinanceCashFlowKpiCard
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-period-accumulated"
               label="Saldo acumulado do período"
               hint="Soma do fluxo líquido mês a mês no período filtrado. Não é saldo bancário."
-              value={formatFinanceCurrency(period.accumulatedBalance)}
-              valueFull={formatFinanceCurrency(period.accumulatedBalance)}
+              amount={period.accumulatedBalance}
               icon={CircleDollarSign}
-              colorClass="text-[#111827]"
-              valueClassName="text-[#111827] font-bold tabular-nums text-lg sm:text-xl"
+              tone="neutral"
             />
           </SummaryKpiGrid>
           <p
             data-testid="exec-kpi-period-status"
             className={cn(
-              "mt-2 text-xs font-semibold",
-              periodPositive ? "text-[#059669]" : "text-[#DC2626]"
+              "finance-cash-flow-executive-summary__status-note",
+              periodPositive
+                ? "finance-cash-flow-executive-summary__status-note--positive"
+                : "finance-cash-flow-executive-summary__status-note--negative"
             )}
           >
-            Período filtrado: {periodPositive ? "positivo" : "negativo"} (
-            {formatFinanceCurrency(period.netFlowAmount)})
+            Período filtrado:{" "}
+            <strong>
+              {periodPositive ? "positivo" : "negativo"} ({formatFinanceCurrency(period.netFlowAmount)})
+            </strong>
           </p>
-        </div>
+        </ExecutiveSummarySection>
       </div>
     </section>
   );
