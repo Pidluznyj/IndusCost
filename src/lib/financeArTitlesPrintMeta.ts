@@ -10,15 +10,9 @@ export const FINANCE_AR_TITLES_PRINT_DISCLAIMER =
 export const FINANCE_AR_TITLES_PRINT_FOOTER_NOTE =
   "Documento gerado pelo IndusCost · Origem: Nomus Contas a Receber";
 
-const COVER_SECTIONS = [
-  "Resumo executivo",
-  "Filtros aplicados",
-  "Detalhamento analítico dos títulos",
-] as const;
-
-export function getFinanceArTitlesPrintCoverSections(): readonly string[] {
-  return COVER_SECTIONS;
-}
+/** Limites da logo no PDF (px) — proporcional, sem distorção. */
+export const FINANCE_AR_TITLES_PRINT_LOGO_MAX_WIDTH_PX = 140;
+export const FINANCE_AR_TITLES_PRINT_LOGO_MAX_HEIGHT_PX = 80;
 
 function monthLabel(month: string): string {
   return FINANCE_AR_MONTH_OPTIONS.find((o) => o.value === month)?.label ?? month;

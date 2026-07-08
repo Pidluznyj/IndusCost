@@ -1,6 +1,5 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
-import { FinanceArTitlesPrintBrand } from "@/src/components/finance/FinanceArTitlesPrintBrand";
 import { FinanceAccountsReceivableTitlesPrintCover } from "@/src/components/finance/FinanceAccountsReceivableTitlesPrintCover";
 import type { FinanceArAnalyticalUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
@@ -13,11 +12,8 @@ import {
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
-  buildFinanceArTitlesPrintFilterLines,
-  FINANCE_AR_TITLES_PRINT_DATA_SOURCE,
+  FINANCE_AR_TITLES_PRINT_DISCLAIMER,
   FINANCE_AR_TITLES_PRINT_FOOTER_NOTE,
-  FINANCE_AR_TITLES_PRINT_SUBTITLE,
-  FINANCE_AR_TITLES_PRINT_TITLE,
 } from "@/src/lib/financeArTitlesPrintMeta";
 import {
   financeArTitlesPrintMoneyClass,
@@ -25,7 +21,6 @@ import {
   financeArTitlesPrintTotalMoneyClass,
 } from "@/src/lib/financeArTitlesPrintStatus";
 import type { FinanceArTitleListItem, FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles";
-import { safeTrim } from "@/src/lib/safeTrim";
 
 function SummaryKpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -59,55 +54,19 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
   branding: BrandingSettingsDTO;
 }) {
   const { summary } = payload;
-  const filterLines = buildFinanceArTitlesPrintFilterLines(filters);
 
   return (
     <div id="ar-titles-print-root">
-      <FinanceAccountsReceivableTitlesPrintCover
-        payload={payload}
-        filters={filters}
-        generatedAt={generatedAt}
-        emitterName={emitterName}
-        titlesCount={allItems.length}
-        branding={branding}
-      />
-
       <div className="finance-ar-titles-print-document">
-        <div className="finance-ar-titles-print-doc-header">
-          <div className="finance-ar-titles-print-doc-header-top">
-            <FinanceArTitlesPrintBrand branding={branding} />
-            <div className="finance-ar-titles-print-doc-header-text">
-              <h1 className="finance-ar-titles-print-doc-title">{FINANCE_AR_TITLES_PRINT_TITLE}</h1>
-              <p className="finance-ar-titles-print-doc-subtitle">{FINANCE_AR_TITLES_PRINT_SUBTITLE}</p>
-            </div>
-          </div>
+        <FinanceAccountsReceivableTitlesPrintCover
+          filters={filters}
+          generatedAt={generatedAt}
+          emitterName={emitterName}
+          titlesCount={allItems.length}
+          branding={branding}
+        />
 
-          <table className="finance-ar-titles-print-meta-table">
-            <tbody>
-              <tr>
-                <th>Emitido em</th>
-                <td>{formatFinanceDateTime(generatedAt)}</td>
-                <th>Emitido por</th>
-                <td>{safeTrim(emitterName) || "—"}</td>
-              </tr>
-              <tr>
-                <th>Títulos</th>
-                <td>{formatFinanceInteger(allItems.length)}</td>
-                <th>Origem</th>
-                <td>{FINANCE_AR_TITLES_PRINT_DATA_SOURCE}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {filterLines.length > 0 ? (
-            <div className="finance-ar-titles-print-filter-band">
-              <p className="finance-ar-titles-print-filter-band-label">Filtros aplicados</p>
-              <p className="finance-ar-titles-print-filter-band-value">{filterLines.join(" · ")}</p>
-            </div>
-          ) : null}
-        </div>
-
-        <section className="finance-ar-titles-print-section">
+        <section className="finance-ar-titles-print-section finance-ar-titles-print-section--summary">
           <h2 className="finance-ar-titles-print-section-title">Resumo executivo</h2>
           <div className="finance-ar-titles-print-summary-grid">
             <SummaryKpiCard label="Títulos" value={formatFinanceInteger(summary.totalTitles)} />
@@ -142,7 +101,9 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
           </div>
         </section>
 
-        <section className="finance-ar-titles-print-section">
+        <p className="finance-ar-titles-print-disclaimer">{FINANCE_AR_TITLES_PRINT_DISCLAIMER}</p>
+
+        <section className="finance-ar-titles-print-section finance-ar-titles-print-section--detail">
           <h2 className="finance-ar-titles-print-section-title">
             Detalhamento analítico ({formatFinanceInteger(allItems.length)})
           </h2>

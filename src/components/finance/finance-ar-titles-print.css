@@ -87,64 +87,110 @@
     color: #0f172a;
   }
 
-  /* Brand / logo */
+  /* Brand / logo — compacta, proporcional */
   #ar-titles-print-root .finance-ar-titles-print-brand {
-    margin-bottom: 6px;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    flex-shrink: 0;
+    margin: 0;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-logo {
     display: block;
-    max-width: 42mm;
-    max-height: 14mm;
+    max-width: 140px;
+    max-height: 80px;
     width: auto;
     height: auto;
     object-fit: contain;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-brand--text {
-    margin-bottom: 4px;
+    margin: 0;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-brand-fallback {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
     color: #1e3a8a;
+    line-height: 1.2;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-doc-header {
+  /* Cabeçalho executivo compacto */
+  #ar-titles-print-root .finance-ar-titles-print-executive-header {
     border-bottom: 2px solid #1d4ed8;
-    padding-bottom: 6px;
-    margin-bottom: 8px;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-doc-header-top {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    padding-bottom: 5px;
     margin-bottom: 6px;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-doc-header-text {
+  #ar-titles-print-root .finance-ar-titles-print-executive-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 5px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-executive-header-text {
     flex: 1;
     min-width: 0;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-doc-title {
-    font-size: 14px;
+  #ar-titles-print-root .finance-ar-titles-print-executive-title {
+    font-size: 13px;
     font-weight: 700;
-    margin: 0 0 2px;
+    margin: 0 0 1px;
     color: #0f172a;
+    line-height: 1.2;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-doc-subtitle {
-    font-size: 9px;
+  #ar-titles-print-root .finance-ar-titles-print-executive-subtitle {
+    font-size: 8px;
     color: #475569;
+    margin: 0 0 2px;
+    line-height: 1.25;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-executive-customer {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #1e3a8a;
+    margin: 0 0 1px;
+    line-height: 1.25;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-executive-origin {
+    font-size: 7px;
+    color: #64748b;
     margin: 0;
+    line-height: 1.25;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-card {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    padding: 3px 5px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-card-label {
+    font-size: 6px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin: 0 0 1px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-meta-card-value {
+    font-size: 7.5px;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0;
+    line-height: 1.25;
   }
 
   #ar-titles-print-root table {
@@ -177,21 +223,9 @@
     overflow-wrap: anywhere;
   }
 
-  #ar-titles-print-root .finance-ar-titles-print-meta-table {
-    font-size: 7px;
-    margin-bottom: 4px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-meta-table th {
-    width: 12%;
-    background: #eff6ff;
-    font-weight: 700;
-    color: #1e3a8a;
-  }
-
   #ar-titles-print-root .finance-ar-titles-print-filter-band {
-    margin-top: 4px;
-    padding: 4px 6px;
+    margin-top: 3px;
+    padding: 3px 5px;
     background: #f8fafc;
     border: 1px solid #cbd5e1;
     border-left: 3px solid #1d4ed8;
@@ -203,42 +237,60 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #64748b;
-    margin: 0 0 2px;
+    margin: 0 0 1px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-filter-band-value {
     font-size: 7px;
     color: #334155;
     margin: 0;
-    line-height: 1.4;
+    line-height: 1.35;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-section {
-    margin-bottom: 8px;
+    margin-bottom: 5px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-section--summary {
+    margin-bottom: 4px;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-section--detail {
+    margin-bottom: 4px;
+    page-break-before: auto;
+    break-before: auto;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-section-title {
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 700;
-    margin: 0 0 4px;
+    margin: 0 0 3px;
     color: #1e3a8a;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  #ar-titles-print-root .finance-ar-titles-print-disclaimer {
+    font-size: 7px;
+    color: #64748b;
+    font-style: italic;
+    margin: 0 0 5px;
+    line-height: 1.35;
   }
 
   /* Resumo executivo — cards */
   #ar-titles-print-root .finance-ar-titles-print-summary-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    gap: 3px;
+    page-break-inside: auto;
+    break-inside: auto;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-summary-card {
     border: 1px solid #cbd5e1;
     background: #f8fafc;
-    padding: 4px 5px;
+    padding: 3px 4px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-summary-card-label {
@@ -247,11 +299,11 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: #64748b;
-    margin: 0 0 2px;
+    margin: 0 0 1px;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-summary-card-value {
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 700;
     color: #0f172a;
     margin: 0;
@@ -410,12 +462,12 @@
   #ar-titles-print-root .finance-ar-titles-print-empty {
     font-size: 8px;
     color: #64748b;
-    margin: 4px 0;
+    margin: 3px 0;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-footer {
-    margin-top: 8px;
-    padding-top: 4px;
+    margin-top: 5px;
+    padding-top: 3px;
     border-top: 1px solid #cbd5e1;
     font-size: 7px;
     color: #64748b;
@@ -423,170 +475,6 @@
   }
 
   #ar-titles-print-root .finance-ar-titles-print-footer p {
-    margin: 0 0 2px;
-  }
-
-  /* Capa executiva */
-  #ar-titles-print-root .finance-ar-titles-print-cover-page {
-    break-after: page;
-    page-break-after: always;
-    min-height: 185mm;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12mm 10mm;
-    box-sizing: border-box;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-inner {
-    width: 100%;
-    max-width: 260mm;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-title {
-    font-size: 22px;
-    font-weight: 800;
-    margin: 8px 0 4px;
-    color: #0f172a;
-    line-height: 1.15;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-subtitle {
-    font-size: 11px;
-    color: #475569;
-    margin: 0 0 10px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-customer {
-    font-size: 12px;
-    font-weight: 700;
-    color: #1e3a8a;
-    margin: 0 0 12px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-meta-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px 16px;
-    margin-bottom: 12px;
-    font-size: 9px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-label {
-    font-size: 7px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #64748b;
-    margin: 0 0 2px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-value {
-    font-size: 10px;
-    font-weight: 600;
-    color: #0f172a;
-    margin: 0;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-panel {
-    border: 1px solid #cbd5e1;
-    padding: 8px;
-    margin-bottom: 10px;
-    background: #fff;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-heading {
-    font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin: 0 0 6px;
-    color: #1e3a8a;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card {
-    border: 1px solid #e2e8f0;
-    padding: 6px;
-    background: #f8fafc;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--wide {
-    grid-column: span 3;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--received {
-    background: #f0fdf4;
-    border-color: #86efac;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--received .finance-ar-titles-print-cover-kpi-value {
-    color: #166534;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--open {
-    background: #fffbeb;
-    border-color: #fcd34d;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--open .finance-ar-titles-print-cover-kpi-value {
-    color: #92400e;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--risk {
-    background: #fef2f2;
-    border-color: #fca5a5;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--risk .finance-ar-titles-print-cover-kpi-value {
-    color: #991b1b;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--success {
-    background: #ecfdf5;
-    border-color: #6ee7b7;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-card--success .finance-ar-titles-print-cover-kpi-value {
-    color: #047857;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-label {
-    font-size: 7px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #64748b;
-    margin: 0 0 2px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-kpi-value {
-    font-size: 11px;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0;
-    font-variant-numeric: tabular-nums;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-disclaimer {
-    font-size: 7.5px;
-    color: #64748b;
-    font-style: italic;
-    margin: 0 0 10px;
-    line-height: 1.4;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-contents {
-    margin-top: 10px;
-    font-size: 8px;
-  }
-
-  #ar-titles-print-root .finance-ar-titles-print-cover-contents-list {
-    margin: 4px 0 0 16px;
-    padding: 0;
+    margin: 0 0 1px;
   }
 }
