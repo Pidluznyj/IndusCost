@@ -119,4 +119,52 @@ describe("materialMarketIntelligenceDetail", () => {
     const mapped = mapMaterialIntelligenceDetail(row());
     assert.deepEqual(mapped.recentQuotes, []);
   });
+
+  it("mapeia situação de mercado no detalhe", () => {
+    const mapped = mapMaterialIntelligenceDetail(
+      row({
+        isMarketMonitored: true,
+        marketCriticality: "HIGH",
+        MaterialMarketQuote: [
+          {
+            id: "q1",
+            materialId: "mat-1",
+            quoteDate: "2026-01-01",
+            price: 200,
+            currency: "BRL",
+            unit: "kg",
+            netPrice: 200,
+            status: "ACTIVE",
+            createdAt: "2026-01-01T10:00:00Z",
+            updatedAt: "2026-01-01T10:00:00Z",
+          },
+          {
+            id: "q2",
+            materialId: "mat-1",
+            quoteDate: "2026-02-01",
+            price: 100,
+            currency: "BRL",
+            unit: "kg",
+            netPrice: 100,
+            status: "ACTIVE",
+            createdAt: "2026-02-01T10:00:00Z",
+            updatedAt: "2026-02-01T10:00:00Z",
+          },
+          {
+            id: "q3",
+            materialId: "mat-1",
+            quoteDate: "2026-03-01",
+            price: 180,
+            currency: "BRL",
+            unit: "kg",
+            netPrice: 180,
+            status: "ACTIVE",
+            createdAt: "2026-03-01T10:00:00Z",
+            updatedAt: "2026-03-01T10:00:00Z",
+          },
+        ],
+      })
+    );
+    assert.equal(mapped.marketSituation.status, "ATENCAO");
+  });
 });

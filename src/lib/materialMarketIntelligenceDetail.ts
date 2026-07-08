@@ -19,6 +19,10 @@ import {
   type MaterialMarketQuoteSourceRow,
 } from "./materialMarketQuote.js";
 import { getMaterialMarketIntelligenceDetailPath } from "./materialsNavigation.js";
+import {
+  classifyMaterialMarketSituationFromQuotes,
+  type MaterialMarketSituationResult,
+} from "./materialMarketSituationStatus.js";
 
 export type MaterialIntelligenceDetailSourceRow = {
   id: string;
@@ -53,6 +57,7 @@ export type MaterialIntelligenceDetailItem = {
   lastQuoteDate: string | null;
   recentQuotes: MaterialMarketQuoteApiItem[];
   intelligencePath: string;
+  marketSituation: MaterialMarketSituationResult;
 };
 
 export type MaterialIntelligenceQuoteRow = {
@@ -96,6 +101,9 @@ export function mapMaterialIntelligenceDetail(
   });
   const lastQuoteAmount = latestQuote.amount ?? priceHistoryFallback.amount;
   const lastQuoteDate = latestQuote.date ?? priceHistoryFallback.date;
+  const marketSituation = classifyMaterialMarketSituationFromQuotes(
+    material.MaterialMarketQuote
+  );
 
   return {
     id: material.id,
@@ -117,5 +125,6 @@ export function mapMaterialIntelligenceDetail(
     lastQuoteDate,
     recentQuotes,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
+    marketSituation,
   };
 }

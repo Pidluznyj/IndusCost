@@ -10,8 +10,6 @@ describe("materialIntelligence360Sections", () => {
   it("define todas as seções preparadas da visão 360º", () => {
     const ids = MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((s) => s.id);
     assert.deepEqual(ids, [
-      "priceHistory",
-      "suppliers",
       "dollar",
       "brent",
       "impactedProducts",

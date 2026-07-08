@@ -1,6 +1,7 @@
 import React from "react";
-import { LineChart } from "lucide-react";
 import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/materials/MaterialsMarketIntelligenceMonitoredList";
+import { MaterialsMarketIntelligenceAlertsPanel } from "@/src/components/materials/MaterialMarketAlertsList";
+import { MaterialsMarketIntelligenceTopOpportunityCard } from "@/src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard";
 
 export const MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE =
   "Nenhuma matéria-prima monitorada ainda";
@@ -38,20 +39,12 @@ export function MaterialsMarketIntelligencePage() {
             </p>
           </div>
         </div>
-        <div
-          className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center"
-          data-testid="materials-market-intelligence-kpis-placeholder"
-        >
-          <LineChart className="mb-3 h-8 w-8 text-muted-foreground opacity-60" aria-hidden="true" />
-          <p className="text-sm font-medium text-muted-foreground">
-            Os indicadores de mercado serão exibidos nesta área.
-          </p>
-        </div>
+        <MaterialsMarketIntelligenceTopOpportunityCard />
       </section>
 
+      <MaterialsMarketIntelligenceAlertsPanel />
+
       <section
-        className="space-y-3"
-        aria-labelledby="materials-market-intelligence-list-heading"
         data-testid="materials-market-intelligence-list-section"
       >
         <div>

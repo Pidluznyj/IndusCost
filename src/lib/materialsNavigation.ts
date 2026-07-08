@@ -16,12 +16,86 @@ export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
 export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
   "/api/materials/market-intelligence/monitored" as const;
 
+export const MATERIALS_MARKET_INTELLIGENCE_OPPORTUNITIES_API =
+  "/api/materials/market-intelligence/opportunities" as const;
+
+export const BRENT_COMMODITY_LATEST_API =
+  "/api/market-intelligence/commodities/brent/latest" as const;
+
+export const BRENT_COMMODITY_COLLECT_API =
+  "/api/market-intelligence/commodities/brent/collect" as const;
+
 export function getMaterialMarketIntelligenceDetailApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}`;
 }
 
 export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/quotes`;
+}
+
+export function getMaterialMarketPtaxPreviewApiPath(date: string): string {
+  return `/api/materials/market-intelligence/ptax-preview?date=${encodeURIComponent(date)}`;
+}
+
+export function getMaterialMarketIntelligenceFxDecompositionApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/fx-decomposition`;
+}
+
+export function getMaterialMarketIntelligenceSavingsApiPath(
+  materialId: string,
+  query?: { volume?: number | string; period?: string }
+): string {
+  const params = new URLSearchParams();
+  if (query?.volume != null && String(query.volume).trim()) {
+    params.set("volume", String(query.volume));
+  }
+  if (query?.period?.trim()) {
+    params.set("period", query.period.trim());
+  }
+  const qs = params.toString();
+  return qs
+    ? `/api/materials/market-intelligence/${materialId}/savings?${qs}`
+    : `/api/materials/market-intelligence/${materialId}/savings`;
+}
+
+export function getMaterialMarketIntelligenceSuppliersApiPath(
+  materialId: string,
+  period?: string
+): string {
+  const base = `/api/materials/market-intelligence/${materialId}/suppliers`;
+  if (!period) return base;
+  return `${base}?period=${encodeURIComponent(period)}`;
+}
+
+export function getMaterialMarketIntelligencePriceHistoryApiPath(
+  materialId: string,
+  query?: { period?: string; dateFrom?: string; dateTo?: string }
+): string {
+  const base = `/api/materials/market-intelligence/${materialId}/price-history`;
+  if (!query) return base;
+
+  const params = new URLSearchParams();
+  if (query.period?.trim()) params.set("period", query.period.trim());
+  if (query.dateFrom?.trim()) params.set("dateFrom", query.dateFrom.trim());
+  if (query.dateTo?.trim()) params.set("dateTo", query.dateTo.trim());
+
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
+export function getMaterialMarketIntelligenceAnalyticsApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/analytics`;
+}
+
+export function getMaterialMarketIntelligenceComparativeChartApiPath(
+  materialId: string,
+  query?: { period?: string }
+): string {
+  const base = `/api/materials/market-intelligence/${materialId}/comparative-chart`;
+  if (!query?.period?.trim()) return base;
+  const params = new URLSearchParams();
+  params.set("period", query.period.trim());
+  return `${base}?${params.toString()}`;
 }
 
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {

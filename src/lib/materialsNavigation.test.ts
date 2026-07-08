@@ -48,7 +48,7 @@ describe("materialsNavigation", () => {
     const list = read("src/components/materials/MaterialsMarketIntelligenceMonitoredList.tsx");
     assert.match(list, /MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE/);
     assert.match(page, /materials-market-intelligence-page/);
-    assert.doesNotMatch(page, /\bBrent\b/i);
+    assert.match(page, /MaterialsMarketIntelligenceBrentKpi/);
     assert.doesNotMatch(page, /\bdólar\b/i);
   });
 
@@ -118,10 +118,55 @@ describe("materialsNavigation", () => {
     assert.match(form, /material-market-quote-submit/);
   });
 
+  it("API de economia potencial e oportunidades", () => {
+    const server = read("server.ts");
+    const savings = read("src/components/materials/MaterialIntelligenceSavingsOpportunitySection.tsx");
+    const home = read("src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard.tsx");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/savings/);
+    assert.match(server, /\/api\/materials\/market-intelligence\/opportunities/);
+    assert.match(server, /rankMaterialMarketSavingsOpportunities/);
+    assert.match(savings, /material-intelligence-savings-opportunity/);
+    assert.match(home, /materials-market-intelligence-top-opportunity-card/);
+  });
+
   it("schema possui MaterialMarketQuote append-only", () => {
     const schema = read("prisma/schema.prisma");
     assert.match(schema, /model MaterialMarketQuote/);
     assert.match(schema, /netPrice/);
     assert.match(schema, /supplierName/);
+  });
+
+  it("API de histórico de preços para gráfico 360º", () => {
+    const server = read("server.ts");
+    const chart = read("src/components/materials/MaterialIntelligencePriceHistoryChart.tsx");
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/price-history/);
+    assert.match(server, /buildMaterialMarketPriceHistoryResponse/);
+    assert.match(chart, /material-intelligence-price-history-chart/);
+    assert.match(chart, /recharts/);
+    assert.match(detail, /MaterialIntelligencePriceHistoryChart/);
+  });
+
+  it("API compara fornecedores por matéria-prima", () => {
+    const server = read("server.ts");
+    const section = read("src/components/materials/MaterialIntelligenceSuppliersSection.tsx");
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/suppliers/);
+    assert.match(server, /buildMaterialMarketSupplierComparison/);
+    assert.match(section, /material-intelligence-suppliers-table/);
+    assert.match(section, /Sem cotação recente/);
+    assert.match(detail, /MaterialIntelligenceSuppliersSection/);
+  });
+
+  it("API de commodity Brent (coleta manual e último snapshot)", () => {
+    const server = read("server.ts");
+    const nav = read("src/lib/materialsNavigation.ts");
+    const schema = read("prisma/schema.prisma");
+    assert.match(server, /\/api\/market-intelligence\/commodities\/brent\/latest/);
+    assert.match(server, /\/api\/market-intelligence\/commodities\/brent\/collect/);
+    assert.match(server, /registerBrentCommodityRoutes/);
+    assert.match(nav, /BRENT_COMMODITY_LATEST_API/);
+    assert.match(schema, /model CommoditySnapshot/);
+    assert.match(schema, /variationFromPrevious/);
   });
 });

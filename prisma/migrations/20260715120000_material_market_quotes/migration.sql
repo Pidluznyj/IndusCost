@@ -1,6 +1,8 @@
 -- Cotações manuais de mercado por matéria-prima (append-only).
 
 CREATE TYPE "MaterialMarketQuoteStatus" AS ENUM ('DRAFT', 'ACTIVE', 'EXPIRED', 'CANCELLED');
+CREATE TYPE "MaterialMarketQuoteExchangeOrigin" AS ENUM ('BCB_PTAX', 'MANUAL');
+CREATE TYPE "MaterialMarketQuotePtaxFetchStatus" AS ENUM ('SUCCESS', 'FAILED', 'SKIPPED');
 
 CREATE TABLE "MaterialMarketQuote" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -20,6 +22,16 @@ CREATE TABLE "MaterialMarketQuote" (
     "proposalValidityDate" DATE,
     "notes" TEXT,
     "status" "MaterialMarketQuoteStatus" NOT NULL DEFAULT 'ACTIVE',
+    "exchangeOrigin" "MaterialMarketQuoteExchangeOrigin",
+    "ptaxVenda" DECIMAL(20,6),
+    "ptaxReferenceDate" DATE,
+    "ptaxFetchStatus" "MaterialMarketQuotePtaxFetchStatus",
+    "ptaxFetchFailureReason" TEXT,
+    "priceBrl" DECIMAL(20,6),
+    "netPriceBrl" DECIMAL(20,6),
+    "manualExchangeJustification" TEXT,
+    "manualExchangeBy" TEXT,
+    "manualExchangeAt" TIMESTAMPTZ(6),
     "createdBy" TEXT,
     "updatedBy" TEXT,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,

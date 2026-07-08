@@ -27,6 +27,7 @@ function buildAdminPermissions(): string[] {
     "accessProfiles.view",
     "accessProfiles.manage",
     "crm.customers.assign_seller",
+    "materials.market_quote.manual_exchange",
   ]) {
     acc = enablePermission(acc, key);
   }

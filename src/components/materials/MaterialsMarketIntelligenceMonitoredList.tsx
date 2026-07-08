@@ -15,6 +15,7 @@ import {
 } from "@/src/lib/materialsNavigation";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
+import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
 import { MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 
 type MonitoredMaterialsApiResponse = {
@@ -163,7 +164,7 @@ export function MaterialsMarketIntelligenceMonitoredList() {
                   <th className="p-4 text-sm font-semibold">Família</th>
                   <th className="p-4 text-sm font-semibold">Unidade</th>
                   <th className="p-4 text-sm font-semibold">Criticidade</th>
-                  <th className="p-4 text-sm font-semibold">Status</th>
+                  <th className="p-4 text-sm font-semibold">Situação</th>
                   <th className="p-4 text-sm font-semibold">Última cotação</th>
                   <th className="p-4 text-sm font-semibold text-right">Ações</th>
                 </tr>
@@ -182,13 +183,7 @@ export function MaterialsMarketIntelligenceMonitoredList() {
                       />
                     </td>
                     <td className="p-4">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary"
-                        )}
-                      >
-                        Monitorada
-                      </span>
+                      <MaterialMarketSituationBadge situation={mat.marketSituation} />
                     </td>
                     <td className="p-4 text-sm">
                       {mat.lastQuoteAmount != null ? (

@@ -8,9 +8,7 @@ import {
   Droplets,
   Factory,
   FileSearch,
-  History,
   Loader2,
-  Truck,
 } from "lucide-react";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
@@ -29,15 +27,16 @@ import {
 } from "@/src/components/materials/MaterialIntelligenceActivatePanel";
 import { MaterialIntelligence360Header } from "@/src/components/materials/MaterialIntelligence360Header";
 import { MaterialIntelligenceRecentQuotesSection } from "@/src/components/materials/MaterialIntelligenceRecentQuotesSection";
+import { MaterialIntelligencePriceHistoryChart } from "@/src/components/materials/MaterialIntelligencePriceHistoryChart";
+import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/materials/MaterialIntelligenceSavingsOpportunitySection";
+import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
+import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
-  priceHistory: <History className="h-7 w-7" aria-hidden="true" />,
-  suppliers: <Truck className="h-7 w-7" aria-hidden="true" />,
   dollar: <DollarSign className="h-7 w-7" aria-hidden="true" />,
   brent: <Droplets className="h-7 w-7" aria-hidden="true" />,
   impactedProducts: <Factory className="h-7 w-7" aria-hidden="true" />,
-  timeline: <Clock className="h-7 w-7" aria-hidden="true" />,
   audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
 };
 
@@ -204,6 +203,17 @@ export function MaterialsMarketIntelligenceDetailPage() {
               loading={quotesLoading}
               onQuoteCreated={() => void handleQuoteCreated()}
             />
+
+            <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
+
+            <MaterialIntelligenceSavingsOpportunitySection
+              materialId={item.id}
+              unit={item.unit}
+            />
+
+            <MaterialIntelligenceSuppliersSection materialId={item.id} />
+
+            <MaterialIntelligenceAlertsSection materialId={item.id} />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder

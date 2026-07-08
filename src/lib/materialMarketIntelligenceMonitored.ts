@@ -9,6 +9,11 @@ import {
   type MaterialMarketCriticality,
 } from "./materialMarketMonitoring.js";
 import { getMaterialMarketIntelligenceDetailPath } from "./materialsNavigation.js";
+import {
+  classifyMaterialMarketSituationFromQuotes,
+  type MaterialMarketSituationResult,
+} from "./materialMarketSituationStatus.js";
+import type { MaterialMarketQuoteSourceRow } from "./materialMarketQuote.js";
 
 export type MonitoredMaterialPriceHistoryRow = {
   price: number | string;
@@ -25,6 +30,7 @@ export type MonitoredMaterialSourceRow = {
   isMarketMonitored: boolean;
   marketCriticality?: string | null;
   MaterialPriceHistory?: MonitoredMaterialPriceHistoryRow[];
+  MaterialMarketQuote?: MaterialMarketQuoteSourceRow[];
 };
 
 export type MonitoredMaterialListItem = {
@@ -40,6 +46,7 @@ export type MonitoredMaterialListItem = {
   lastQuoteAmount: number | null;
   lastQuoteDate: string | null;
   intelligencePath: string;
+  marketSituation: MaterialMarketSituationResult;
 };
 
 export type MonitoredMaterialListFilters = {
@@ -90,6 +97,9 @@ export function mapMonitoredMaterialListItem(
     currentCost: material.currentCost,
     priceHistory: material.MaterialPriceHistory,
   });
+  const marketSituation = classifyMaterialMarketSituationFromQuotes(
+    material.MaterialMarketQuote
+  );
 
   return {
     id: material.id,
@@ -104,6 +114,7 @@ export function mapMonitoredMaterialListItem(
     lastQuoteAmount: lastQuote.amount,
     lastQuoteDate: lastQuote.date,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
+    marketSituation,
   };
 }
 

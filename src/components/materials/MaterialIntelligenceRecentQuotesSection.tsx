@@ -1,7 +1,6 @@
 import React from "react";
-import { Receipt } from "lucide-react";
-import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
-import {
+import { AlertTriangle, Receipt } from "lucide-react";
+import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";import {
   formatMaterialIntelligenceQuoteDate,
   MATERIAL_INTELLIGENCE_RECENT_QUOTES_EMPTY_MESSAGE,
 } from "@/src/lib/materialIntelligence360Sections";
@@ -60,8 +59,9 @@ export function MaterialIntelligenceRecentQuotesSection({
                 <th className="p-3 font-semibold">Fornecedor</th>
                 <th className="p-3 font-semibold text-right">Preço base</th>
                 <th className="p-3 font-semibold text-right">Líquido</th>
-                <th className="p-3 font-semibold">Unid.</th>
-                <th className="p-3 font-semibold">Status</th>
+                <th className="p-3 font-semibold text-right">Líquido BRL</th>
+                <th className="p-3 font-semibold">Câmbio</th>
+                <th className="p-3 font-semibold">Unid.</th>                <th className="p-3 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -82,8 +82,35 @@ export function MaterialIntelligenceRecentQuotesSection({
                   <td className="p-3 text-right font-semibold text-primary">
                     {formatCurrency(quote.netPrice)}
                   </td>
-                  <td className="p-3 text-muted-foreground">{quote.unit}</td>
-                  <td className="p-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <td className="p-3 text-right text-muted-foreground">
+                    {quote.netPriceBrl != null ? formatCurrency(quote.netPriceBrl) : "—"}
+                  </td>
+                  <td className="p-3">
+                    {quote.isManualExchange ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900"
+                        title={quote.manualExchangeJustification ?? undefined}
+                        data-testid={`material-market-quote-manual-badge-${quote.id}`}
+                      >
+                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                        Câmbio informado manualmente
+                      </span>
+                    ) : quote.exchangeOrigin === "BCB_PTAX" ? (
+                      <span className="text-xs text-muted-foreground">
+                        PTAX {quote.ptaxVenda != null ? formatCurrency(quote.ptaxVenda) : "—"}
+                      </span>
+                    ) : quote.ptaxFetchStatus === "FAILED" ? (
+                      <span className="text-xs text-amber-800">Sem conversão BRL</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                    {quote.isManualExchange && quote.manualExchangeJustification ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground line-clamp-2">
+                        {quote.manualExchangeJustification}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="p-3 text-muted-foreground">{quote.unit}</td>                  <td className="p-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {quote.statusLabel}
                   </td>
                 </tr>

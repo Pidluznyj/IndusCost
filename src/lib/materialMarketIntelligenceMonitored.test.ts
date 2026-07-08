@@ -80,4 +80,40 @@ describe("materialMarketIntelligenceMonitored", () => {
     assert.equal(quote.amount, null);
     assert.equal(quote.date, null);
   });
+
+  it("mapeia situação de mercado a partir das cotações", () => {
+    const mapped = mapMonitoredMaterialListItem(
+      row({
+        id: "a",
+        code: "MP-A",
+        MaterialMarketQuote: [
+          {
+            id: "q1",
+            materialId: "a",
+            quoteDate: "2026-01-01",
+            price: 100,
+            currency: "BRL",
+            unit: "KG",
+            netPrice: 100,
+            status: "ACTIVE",
+            createdAt: "2026-01-01T10:00:00Z",
+            updatedAt: "2026-01-01T10:00:00Z",
+          },
+          {
+            id: "q2",
+            materialId: "a",
+            quoteDate: "2026-02-01",
+            price: 85,
+            currency: "BRL",
+            unit: "KG",
+            netPrice: 85,
+            status: "ACTIVE",
+            createdAt: "2026-02-01T10:00:00Z",
+            updatedAt: "2026-02-01T10:00:00Z",
+          },
+        ],
+      })
+    );
+    assert.equal(mapped.marketSituation.status, "OPORTUNIDADE");
+  });
 });

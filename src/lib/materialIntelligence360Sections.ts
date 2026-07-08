@@ -5,9 +5,8 @@
 export type MaterialIntelligence360SectionId =
   | "recentQuotes"
   | "priceHistory"
+  | "marketComparison"
   | "suppliers"
-  | "dollar"
-  | "brent"
   | "impactedProducts"
   | "timeline"
   | "audit";
@@ -21,40 +20,16 @@ export type MaterialIntelligence360SectionDef = {
 
 export const MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS: MaterialIntelligence360SectionDef[] = [
   {
-    id: "priceHistory",
-    title: "Histórico de Preços",
-    description: "Evolução de custos e cotações ao longo do tempo.",
-    emptyMessage: "O histórico detalhado de preços será exibido nesta área.",
-  },
-  {
     id: "suppliers",
     title: "Fornecedores",
     description: "Fornecedores vinculados e condições de compra.",
     emptyMessage: "O panorama de fornecedores será consolidado nesta área.",
   },
   {
-    id: "dollar",
-    title: "Dólar",
-    description: "Correlação com câmbio e impacto estimado no custo.",
-    emptyMessage: "Os sinais de dólar serão exibidos nesta área.",
-  },
-  {
-    id: "brent",
-    title: "Brent",
-    description: "Correlação com petróleo e derivados relevantes.",
-    emptyMessage: "Os sinais de Brent serão exibidos nesta área.",
-  },
-  {
     id: "impactedProducts",
     title: "Produtos Impactados",
     description: "Produtos e estruturas que consomem esta matéria-prima.",
     emptyMessage: "Os produtos impactados serão listados nesta área.",
-  },
-  {
-    id: "timeline",
-    title: "Timeline",
-    description: "Linha do tempo de eventos de mercado e decisões.",
-    emptyMessage: "A timeline de mercado será exibida nesta área.",
   },
   {
     id: "audit",

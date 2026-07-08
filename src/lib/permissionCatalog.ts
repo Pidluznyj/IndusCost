@@ -684,6 +684,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "materials.view",
     requires: ["materials.view"],
   }),
+  perm({
+    key: "materials.market_quote.manual_exchange",
+    label: "Cotação — Câmbio manual",
+    group: OPS,
+    module: "materials",
+    description:
+      "Informar taxa de câmbio manual (PTAX venda) em cotações USD quando a API do BCB falhar ou por exceção autorizada.",
+    type: "action",
+    parentKey: "materials.edit",
+    requires: ["materials.edit"],
+    risk: "sensitive",
+  }),
   perm({ key: "opex.view", label: "Custos indiretos / OPEX", group: OPS, module: "opex", description: "Consultar custos indiretos.", type: "menu" }),
   perm({
     key: "opex.edit",

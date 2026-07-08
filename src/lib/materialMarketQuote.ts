@@ -3,6 +3,17 @@
  * Cada registro é append-only; nunca sobrescreve histórico anterior.
  */
 
+import {
+  MATERIAL_MARKET_QUOTE_EXCHANGE_ORIGIN_LABELS,
+  type MaterialMarketQuoteExchangeOrigin,
+  type MaterialMarketQuotePtaxStatus,
+} from "./materialMarketQuoteExchange.js";
+
+export {
+  MATERIAL_MARKET_QUOTE_MANUAL_EXCHANGE_PERMISSION,
+  canManualMaterialMarketQuoteExchange,
+} from "./materialMarketQuoteExchange.js";
+
 export const MATERIAL_MARKET_QUOTE_STATUS_VALUES = [
   "DRAFT",
   "ACTIVE",
@@ -36,6 +47,9 @@ export type MaterialMarketQuoteInput = {
   proposalValidityDate?: unknown;
   notes?: unknown;
   status?: unknown;
+  manualExchangeRate?: unknown;
+  manualExchangeJustification?: unknown;
+  forceManualExchange?: unknown;
 };
 
 export type MaterialMarketQuotePersistFields = {
@@ -75,6 +89,18 @@ export type MaterialMarketQuoteApiItem = {
   notes: string | null;
   status: MaterialMarketQuoteStatus;
   statusLabel: string;
+  exchangeOrigin: MaterialMarketQuoteExchangeOrigin | null;
+  exchangeOriginLabel: string | null;
+  ptaxVenda: number | null;
+  ptaxReferenceDate: string | null;
+  ptaxFetchStatus: MaterialMarketQuotePtaxStatus | null;
+  ptaxFetchFailureReason: string | null;
+  priceBrl: number | null;
+  netPriceBrl: number | null;
+  manualExchangeJustification: string | null;
+  manualExchangeBy: string | null;
+  manualExchangeAt: string | null;
+  isManualExchange: boolean;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
@@ -99,6 +125,16 @@ export type MaterialMarketQuoteSourceRow = {
   proposalValidityDate?: Date | string | null;
   notes?: string | null;
   status: string;
+  exchangeOrigin?: string | null;
+  ptaxVenda?: number | string | null | { toString(): string };
+  ptaxReferenceDate?: Date | string | null;
+  ptaxFetchStatus?: string | null;
+  ptaxFetchFailureReason?: string | null;
+  priceBrl?: number | string | null | { toString(): string };
+  netPriceBrl?: number | string | null | { toString(): string };
+  manualExchangeJustification?: string | null;
+  manualExchangeBy?: string | null;
+  manualExchangeAt?: Date | string | null;
   createdBy?: string | null;
   updatedBy?: string | null;
   createdAt: Date | string;
@@ -267,10 +303,29 @@ function toNumber(value: number | string | { toString(): string }): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function toOptionalNumber(
+  value: number | string | null | undefined | { toString(): string }
+): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseExchangeOrigin(value: unknown): MaterialMarketQuoteExchangeOrigin | null {
+  if (value === "BCB_PTAX" || value === "MANUAL") return value;
+  return null;
+}
+
+function parsePtaxStatus(value: unknown): MaterialMarketQuotePtaxStatus | null {
+  if (value === "SUCCESS" || value === "FAILED" || value === "SKIPPED") return value;
+  return null;
+}
+
 export function serializeMaterialMarketQuoteForApi(
   row: MaterialMarketQuoteSourceRow
 ): MaterialMarketQuoteApiItem {
   const status = isMaterialMarketQuoteStatus(row.status) ? row.status : "ACTIVE";
+  const exchangeOrigin = parseExchangeOrigin(row.exchangeOrigin);
   return {
     id: row.id,
     materialId: row.materialId,
@@ -292,6 +347,22 @@ export function serializeMaterialMarketQuoteForApi(
     notes: row.notes?.trim() || null,
     status,
     statusLabel: MATERIAL_MARKET_QUOTE_STATUS_LABELS[status],
+    exchangeOrigin,
+    exchangeOriginLabel: exchangeOrigin
+      ? MATERIAL_MARKET_QUOTE_EXCHANGE_ORIGIN_LABELS[exchangeOrigin]
+      : null,
+    ptaxVenda: toOptionalNumber(row.ptaxVenda),
+    ptaxReferenceDate: row.ptaxReferenceDate ? toIsoDateOnly(row.ptaxReferenceDate) : null,
+    ptaxFetchStatus: parsePtaxStatus(row.ptaxFetchStatus),
+    ptaxFetchFailureReason: row.ptaxFetchFailureReason?.trim() || null,
+    priceBrl: toOptionalNumber(row.priceBrl),
+    netPriceBrl: toOptionalNumber(row.netPriceBrl),
+    manualExchangeJustification: row.manualExchangeJustification?.trim() || null,
+    manualExchangeBy: row.manualExchangeBy ?? null,
+    manualExchangeAt: row.manualExchangeAt
+      ? new Date(row.manualExchangeAt).toISOString()
+      : null,
+    isManualExchange: exchangeOrigin === "MANUAL",
     createdBy: row.createdBy ?? null,
     updatedBy: row.updatedBy ?? null,
     createdAt: new Date(row.createdAt).toISOString(),

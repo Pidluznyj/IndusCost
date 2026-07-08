@@ -3,6 +3,7 @@ import { LineChart } from "lucide-react";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
 import { MATERIAL_MARKET_CRITICALITY_LABELS } from "@/src/lib/materialMarketMonitoring";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
+import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
 import { SummaryKpiCard } from "@/src/components/ui/SummaryKpiCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { formatCurrency } from "@/src/lib/utils";
@@ -53,16 +54,25 @@ export function MaterialIntelligence360Header({ item }: Props) {
             </div>
           </div>
         </div>
-        <MaterialMarketMonitoringBadge
-          isMarketMonitored={item.isMarketMonitored}
-          marketCriticality={item.marketCriticality}
-        />
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <MaterialMarketMonitoringBadge
+            isMarketMonitored={item.isMarketMonitored}
+            marketCriticality={item.marketCriticality}
+          />
+          {item.isMarketMonitored ? (
+            <MaterialMarketSituationBadge situation={item.marketSituation} />
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 border-t border-border pt-5">
         <DetailField label="Grupo / Família" value={item.family} />
         <DetailField label="Unidade" value={item.unit} />
         <DetailField label="Criticidade" value={criticalityLabel} />
+        <DetailField
+          label="Situação de mercado"
+          value={<MaterialMarketSituationBadge situation={item.marketSituation} />}
+        />
         <DetailField label="Status de monitoramento" value={item.monitoringStatusLabel} />
       </div>
 

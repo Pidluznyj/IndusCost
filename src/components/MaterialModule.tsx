@@ -31,6 +31,7 @@ import {
 } from "@/src/lib/materialMarketMonitoring";
 import { getMaterialMarketIntelligenceDetailPath } from "@/src/lib/materialsNavigation";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
+import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
@@ -452,10 +453,15 @@ export const MaterialModule = () => {
                       <p className="text-[10px] text-muted-foreground">Perda: {formatNumber(mat.standardLoss, 2)}%</p>
                     </td>
                     <td className="p-4">
-                      <MaterialMarketMonitoringBadge
-                        isMarketMonitored={mat.isMarketMonitored}
-                        marketCriticality={mat.marketCriticality}
-                      />
+                      <div className="flex flex-col items-start gap-1.5">
+                        <MaterialMarketMonitoringBadge
+                          isMarketMonitored={mat.isMarketMonitored}
+                          marketCriticality={mat.marketCriticality}
+                        />
+                        {mat.isMarketMonitored ? (
+                          <MaterialMarketSituationBadge situation={mat.marketSituation} />
+                        ) : null}
+                      </div>
                     </td>
                     <td className="p-4">
                       <div

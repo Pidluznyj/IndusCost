@@ -1,3 +1,5 @@
+import type { MaterialMarketSituationResult } from "../lib/materialMarketSituationStatus";
+
 export interface MaterialPriceHistory {
   id: string;
   materialId: string;
@@ -29,6 +31,7 @@ export interface Material {
     landedCost: number;
     effectiveCost: number;
   };
+  marketSituation?: MaterialMarketSituationResult | null;
   createdAt: string;
   updatedAt: string;
 }
