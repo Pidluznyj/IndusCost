@@ -3,7 +3,12 @@ import { Download, Loader2, Lock, RefreshCw, ShieldCheck, X } from "lucide-react
 import { useAuth } from "@/src/contexts/AuthContext";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  receiptClosingStatusBadgeLabel,
+  receiptClosingStatusBadgeTone,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { fetchJsonOk } from "@/src/lib/http";
 import { canManageReceiptClosing } from "@/src/lib/commissionsModulePermissions";
@@ -738,96 +743,122 @@ export function CommissionsReceiptClosingPage() {
             testId="commissions-receipt-closing-kpi"
             minColumnWidth={240}
           >
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Títulos recebidos"
-              value={String(data.materializationSummary.totalReceivablesCount)}
+              amount={data.materializationSummary.totalReceivablesCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Com schedule"
-              value={String(data.materializationSummary.receivablesWithScheduleCount)}
+              amount={data.materializationSummary.receivablesWithScheduleCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Sem schedule"
-              value={String(data.materializationSummary.receivablesWithoutScheduleCount)}
+              amount={data.materializationSummary.receivablesWithoutScheduleCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Clientes excluídos"
-              value={String(data.materializationSummary.excludedCustomerCount)}
+              amount={data.materializationSummary.excludedCustomerCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Empresas do grupo excluídas"
-              value={String(data.materializationSummary.groupCompanyExcludedCount)}
+              amount={data.materializationSummary.groupCompanyExcludedCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Recebido grupo (auditoria)"
-              value=""
               amount={data.materializationSummary.groupCompanyExcludedReceivedAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Vendedor não resolvido"
-              value={String(data.materializationSummary.sellerUnresolvedCount)}
+              amount={data.materializationSummary.sellerUnresolvedCount}
+              amountFormat="number"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Total recebido gerencial"
-              value=""
               amount={cards.totalReceivedAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Recebido com schedule"
-              value=""
               amount={cards.receivedWithScheduleAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Recebido cliente excluído"
-              value=""
               amount={cards.receivedExcludedCustomerAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Recebido sem schedule"
-              value=""
               amount={cards.receivedWithoutScheduleAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Base comissionável"
-              value=""
               amount={cards.commissionableBaseAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão bruta"
-              value=""
               amount={cards.grossCommissionAmount}
               amountFormat="currency"
+              tone="money"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão excluída"
-              value=""
               amount={cards.excludedCommissionAmount}
               amountFormat="currency"
+              tone="warning"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão final a pagar"
-              value=""
               amount={cards.finalCommissionAmount}
               amountFormat="currency"
+              tone="success"
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Diferença vs Nomus"
-              value={
-                cards.nomusCommissionDiff != null
-                  ? ""
-                  : "—"
-              }
-              amount={cards.nomusCommissionDiff ?? undefined}
+              amount={cards.nomusCommissionDiff ?? null}
               amountFormat={cards.nomusCommissionDiff != null ? "currency" : undefined}
+              value={cards.nomusCommissionDiff != null ? undefined : "—"}
               helperText={cards.nomusDiffExplanation ?? undefined}
             />
-            <FinanceKpiCard label="Status" value={cards.reportStatus} />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Status"
+              badge={{
+                label: receiptClosingStatusBadgeLabel(cards.reportStatus),
+                tone: receiptClosingStatusBadgeTone(cards.reportStatus),
+                testId: "commissions-receipt-closing-status-badge",
+              }}
+            />
           </CommissionsKpiSection>
 
           <section className="space-y-2">

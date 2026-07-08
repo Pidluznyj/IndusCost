@@ -1,14 +1,21 @@
 import React from "react";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
-import { MetricCard, type MetricCardVariant } from "@/src/components/ui/MetricCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_GRID_SECONDARY_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+  type SystemTotalizerTone,
+} from "@/src/components/ui/SystemTotalizerCard";
+import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
 import { cn } from "@/src/lib/utils";
 import "./nomus-sync-metric-cards.css";
 
 export const NOMUS_SYNC_METRIC_GRID_CLASS = "nomus-sync-metric-grid";
 export const NOMUS_SYNC_METRIC_GRID_SECONDARY_CLASS = "nomus-sync-metric-grid--secondary";
 
-/** Bloco executivo de KPI — padrão "Resumo geral dos centros filtrados". */
+/** Bloco executivo de KPI — padrão Cards Totalizadores Executivos. */
 export function AdminKpiSection({
   title,
   eyebrow,
@@ -46,7 +53,10 @@ export function AdminKpiSection({
       <SummaryKpiGrid
         minColumnWidth={minColumnWidth}
         testId={testId ? `${testId}-grid` : undefined}
-        className={nomusSyncMetrics ? NOMUS_SYNC_METRIC_GRID_CLASS : undefined}
+        className={cn(
+          SYSTEM_TOTALIZER_GRID_CLASS,
+          nomusSyncMetrics && NOMUS_SYNC_METRIC_GRID_CLASS
+        )}
       >
         {children}
       </SummaryKpiGrid>
@@ -64,7 +74,7 @@ export type AdminMetricItem = {
   valueWrap?: boolean;
 };
 
-/** Grid responsivo de MetricCard compactos para painéis técnicos/admin. */
+/** Grid responsivo de cards executivos para painéis técnicos/admin. */
 export function AdminMetricGrid({
   items,
   minColumnWidth = 168,
@@ -79,26 +89,33 @@ export function AdminMetricGrid({
   /** Contadores e detalhes com menor destaque visual. */
   secondary?: boolean;
 }) {
+  const toneFromVariant = (variant?: MetricCardVariant): SystemTotalizerTone => {
+    if (!variant || variant === "default") return "neutral";
+    return variant as SystemTotalizerTone;
+  };
+
   return (
     <SummaryKpiGrid
       minColumnWidth={minColumnWidth}
       testId={testId}
       className={cn(
+        SYSTEM_TOTALIZER_GRID_CLASS,
         nomusSyncMetrics && NOMUS_SYNC_METRIC_GRID_CLASS,
-        nomusSyncMetrics && secondary && NOMUS_SYNC_METRIC_GRID_SECONDARY_CLASS
+        secondary && SYSTEM_TOTALIZER_GRID_SECONDARY_CLASS,
+        secondary && nomusSyncMetrics && NOMUS_SYNC_METRIC_GRID_SECONDARY_CLASS
       )}
     >
       {items.map((item) => (
-        <MetricCard
+        <SystemTotalizerCard
           key={item.label}
           label={item.label}
           value={item.value}
           subtitle={item.subtitle}
-          variant={item.variant ?? "neutral"}
-          compact
+          tone={toneFromVariant(item.variant)}
           loading={item.loading}
-          className={item.className}
           valueWrap={item.valueWrap}
+          compact
+          className={cn(SYSTEM_TOTALIZER_METRIC_CARD_CLASS, item.className)}
         />
       ))}
     </SummaryKpiGrid>

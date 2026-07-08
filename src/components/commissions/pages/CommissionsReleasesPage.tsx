@@ -16,7 +16,10 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermissions";
 import {
   CommissionsEmptyState,
@@ -242,45 +245,56 @@ export function CommissionsReleasesPage() {
           eyebrow="Indicadores do filtro aplicado"
           testId="commissions-releases-kpi"
         >
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Comissão a liberar"
-            value=""
             amount={cards.commissionToRelease}
             amountFormat="currency"
+            tone="money"
             icon={Unlock}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Comissão já liberada"
-            value=""
             amount={cards.commissionAlreadyReleased}
             amountFormat="currency"
+            tone="success"
             icon={Banknote}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Bloqueada (sem recebimento)"
-            value=""
             amount={cards.commissionBlockedByNoReceipt}
             amountFormat="currency"
+            tone="warning"
             icon={Lock}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Contas recebidas"
-            value={String(cards.accountsReceivedCount)}
+            amount={cards.accountsReceivedCount}
+            amountFormat="number"
             icon={Banknote}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Contas em aberto"
-            value={String(cards.accountsOpenCount)}
+            amount={cards.accountsOpenCount}
+            amountFormat="number"
             icon={Clock}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Contas vencidas"
-            value={String(cards.accountsOverdueCount)}
+            amount={cards.accountsOverdueCount}
+            amountFormat="number"
             icon={AlertCircle}
           />
-          <FinanceKpiCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Próximas liberações (30d)"
-            value={String(cards.upcomingReleasesCount)}
+            amount={cards.upcomingReleasesCount}
+            amountFormat="number"
             icon={CalendarClock}
           />
         </CommissionsKpiSection>

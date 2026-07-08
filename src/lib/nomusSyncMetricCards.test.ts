@@ -41,20 +41,23 @@ describe("nomusSyncCardFormat", () => {
 
 describe("nomusSyncMetricCards visual", () => {
   const CSS = "src/components/admin/nomus-sync-metric-cards.css";
+  const SYSTEM_CSS = "src/components/ui/system-totalizer-card.css";
 
   it("CSS executivo Nomus existe", () => {
     assert.ok(existsSync(join(ROOT, CSS)));
+    assert.ok(existsSync(join(ROOT, SYSTEM_CSS)));
   });
 
-  it("CSS evita font-weight 800 e tamanhos gigantes", () => {
-    const css = read(CSS);
+  it("tipografia executiva vem do system-totalizer-card.css", () => {
+    const css = read(SYSTEM_CSS);
     assert.match(css, /font-weight:\s*600/);
     assert.doesNotMatch(css, /font-weight:\s*800/);
     assert.doesNotMatch(css, /text-4xl|text-5xl|font-black/);
+    assert.match(css, /nomus-sync-metric-grid/);
   });
 
-  it("CSS trata logs longos e datas", () => {
-    const css = read(CSS);
+  it("CSS Nomus trata logs longos via system totalizer", () => {
+    const css = read(SYSTEM_CSS);
     assert.match(css, /metric-card-value--wrap/);
     assert.match(css, /white-space:\s*nowrap/);
   });
@@ -62,7 +65,8 @@ describe("nomusSyncMetricCards visual", () => {
   it("adminUi expõe grid executivo Nomus", () => {
     const adminUi = read("src/components/admin/adminUi.tsx");
     assert.match(adminUi, /nomusSyncMetrics/);
-    assert.match(adminUi, /NOMUS_SYNC_METRIC_GRID_CLASS/);
+    assert.match(adminUi, /SystemTotalizerCard/);
+    assert.match(adminUi, /SYSTEM_TOTALIZER_GRID_CLASS/);
     assert.match(adminUi, /nomus-sync-metric-cards\.css/);
   });
 

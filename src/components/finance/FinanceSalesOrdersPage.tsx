@@ -33,10 +33,8 @@ import {
 } from "@/src/lib/financeSalesOrdersNarratives";
 import {
   formatExecutiveCurrency,
-  formatExecutiveInteger,
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters";
-import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
@@ -44,7 +42,11 @@ import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceD
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceSalesOrdersMonthlyChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersMonthlyChart";
@@ -479,80 +481,84 @@ export function FinanceSalesOrdersPage() {
             eyebrow="Pedidos de venda no escopo filtrado — valores oficiais do módulo financeiro."
             testId="finance-sales-orders-executive-summary"
           >
-            <SummaryKpiGrid minColumnWidth={220}>
-            <FinanceKpiCard
+            <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={Package}
               label="Pedidos emitidos"
-              value={formatExecutiveInteger(summary.orderCount)}
               amount={summary.orderCount}
               amountFormat="number"
               helperText="Total de pedidos válidos no período (issueDate)."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={ShoppingBag}
               label="Valor total de pedidos"
-              value={formatFinanceKpiCurrency(summary.totalOrdersAmount)}
               amount={summary.totalOrdersAmount}
               amountFormat="currency"
+              tone="money"
               helperText="Soma do valor líquido dos pedidos no filtro."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={Wallet}
               label="Carteira aberta"
-              value={formatExecutiveInteger(summary.openPortfolioCount)}
               amount={summary.openPortfolioCount}
               amountFormat="number"
               helperText="Pedidos válidos sem NF processada."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={Wallet}
               label="Valor em carteira"
-              value={formatFinanceKpiCurrency(summary.openPortfolioAmount)}
               amount={summary.openPortfolioAmount}
               amountFormat="currency"
+              tone="money"
               helperText="Valor líquido dos pedidos ainda sem NF processada."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={Package}
               label="Pedidos faturados"
-              value={formatExecutiveInteger(summary.invoicedOrdersCount)}
               amount={summary.invoicedOrdersCount}
               amountFormat="number"
               helperText="Pedidos com NF processada (dataProcessamento)."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={TrendingUp}
               label="Valor faturado"
-              value={formatFinanceKpiCurrency(summary.invoicedOrdersAmount)}
               amount={summary.invoicedOrdersAmount}
               amountFormat="currency"
+              tone="success"
               helperText="Valor líquido dos pedidos com NF processada."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={ShoppingBag}
               label="Ticket médio"
-              value={formatFinanceKpiCurrency(summary.averageTicketAmount)}
               amount={summary.averageTicketAmount}
               amountFormat="currency"
+              tone="money"
               helperText="Valor total ÷ quantidade de pedidos."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={TrendingUp}
               label="Média diária"
-              value={formatFinanceKpiCurrency(summary.dailyAverageAmount)}
               amount={summary.dailyAverageAmount}
               amountFormat="currency"
+              tone="money"
               helperText="Valor YTD ÷ dias úteis decorridos (seg–sex)."
             />
-            <FinanceKpiCard
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               icon={Target}
               label="Meta mês atual"
-              value={
-                summary.monthTargetConfigured
-                  ? formatFinanceKpiCurrency(summary.monthTargetAmount)
-                  : "Meta não configurada"
-              }
-              amount={summary.monthTargetAmount}
+              amount={summary.monthTargetConfigured ? summary.monthTargetAmount : null}
+              amountFormat={summary.monthTargetConfigured ? "currency" : undefined}
+              value={summary.monthTargetConfigured ? undefined : "Meta não configurada"}
+              valueSize={summary.monthTargetConfigured ? "default" : "text"}
               helperText={
                 summary.monthTargetConfigured
                   ? "Meta comercial oficial do mês."

@@ -3,7 +3,12 @@ import { Loader2 } from "lucide-react";
 import { HttpError } from "@/src/lib/http";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceKpiCard, type FinanceKpiTone } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+  type SystemTotalizerTone,
+} from "@/src/components/ui/SystemTotalizerCard";
 
 export function formatCommissionsApiError(error: unknown, fallback: string): string {
   if (error instanceof HttpError) return error.message || fallback;
@@ -128,7 +133,7 @@ export function commissionsTableClassName(): string {
   return "min-w-full divide-y divide-border text-sm";
 }
 
-/** Bloco executivo de KPI — padrão "Resumo geral dos centros filtrados". */
+/** Bloco executivo de KPI — padrão Cards Totalizadores Executivos. */
 export function CommissionsKpiSection({
   title,
   eyebrow,
@@ -154,6 +159,7 @@ export function CommissionsKpiSection({
       <SummaryKpiGrid
         minColumnWidth={minColumnWidth}
         testId={testId ? `${testId}-grid` : undefined}
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
       >
         {children}
       </SummaryKpiGrid>
@@ -174,13 +180,14 @@ export function CommissionsSummaryGrid({
     value: string;
     hint?: string;
     valueTitle?: string;
-    tone?: FinanceKpiTone;
+    tone?: SystemTotalizerTone;
   }>;
   testId?: string;
 }) {
   const cards = items.map((item) => (
-    <FinanceKpiCard
+    <SystemTotalizerCard
       key={item.label}
+      className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
       label={item.label}
       value={item.value}
       valueTitle={item.valueTitle}
@@ -198,7 +205,7 @@ export function CommissionsSummaryGrid({
   }
 
   return (
-    <SummaryKpiGrid minColumnWidth={200} testId={testId}>
+    <SummaryKpiGrid className={SYSTEM_TOTALIZER_GRID_CLASS} testId={testId}>
       {cards}
     </SummaryKpiGrid>
   );

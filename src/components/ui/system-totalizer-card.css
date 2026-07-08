@@ -1,0 +1,189 @@
+/**
+ * Cards Totalizadores Executivos — padrão oficial IndusCost.
+ * Referência visual: Fluxo de Caixa / Pedidos de Venda / Logs Nomus.
+ */
+
+.system-totalizer-grid,
+.sales-order-list-summary-grid,
+.nomus-sync-metric-grid,
+.finance-cash-flow-metric-grid {
+  --metric-card-min: 168px;
+}
+
+.system-totalizer-grid--secondary,
+.nomus-sync-metric-grid--secondary {
+  --metric-card-min: 120px;
+}
+
+.system-totalizer-grid .metric-card,
+.system-totalizer-grid .system-totalizer-metric-card,
+.sales-order-list-summary-grid .metric-card,
+.sales-order-list-summary-grid .sales-order-list-summary-metric-card,
+.nomus-sync-metric-grid .metric-card,
+.finance-cash-flow-metric-grid .metric-card,
+.finance-cash-flow-metric-grid .finance-cash-flow-metric-card {
+  min-height: 108px;
+  padding: 12px 14px 10px 16px;
+}
+
+.system-totalizer-grid--secondary .metric-card,
+.nomus-sync-metric-grid--secondary .metric-card {
+  min-height: 96px;
+  padding: 10px 12px 8px 14px;
+}
+
+.system-totalizer-grid .metric-card-label,
+.sales-order-list-summary-grid .metric-card-label,
+.nomus-sync-metric-grid .metric-card-label,
+.finance-cash-flow-metric-grid .metric-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.system-totalizer-grid .metric-card-value,
+.system-totalizer-grid .system-totalizer-metric-card .metric-card-value,
+.sales-order-list-summary-grid .metric-card-value,
+.nomus-sync-metric-grid .metric-card-value,
+.finance-cash-flow-metric-grid .metric-card-value {
+  margin-top: 6px;
+  font-size: clamp(1.25rem, 0.75vw + 0.45rem, 1.75rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.system-totalizer-grid--secondary .metric-card-value,
+.nomus-sync-metric-grid--secondary .metric-card-value {
+  font-size: clamp(1rem, 0.55vw + 0.45rem, 1.25rem);
+}
+
+.system-totalizer-grid .metric-card-value--compact,
+.sales-order-list-summary-grid .metric-card-value--compact,
+.nomus-sync-metric-grid .metric-card-value--compact {
+  font-size: clamp(1.25rem, 0.75vw + 0.45rem, 1.75rem);
+  line-height: 1.2;
+}
+
+.system-totalizer-grid .metric-card-value--text .metric-card-value,
+.system-totalizer-grid .metric-card.metric-card-value--text .metric-card-value,
+.system-totalizer-metric-card.metric-card-value--text .metric-card-value {
+  font-size: clamp(0.8125rem, 0.45vw + 0.4rem, 1rem);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-totalizer-grid .metric-card-value--wrap,
+.nomus-sync-metric-grid .metric-card-value--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: clamp(0.75rem, 0.5vw + 0.35rem, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: normal;
+}
+
+.system-totalizer-grid .metric-card-subtitle,
+.sales-order-list-summary-grid .metric-card-subtitle,
+.nomus-sync-metric-grid .metric-card-subtitle,
+.finance-cash-flow-metric-grid .metric-card-subtitle {
+  padding-top: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-totalizer-grid .metric-card-icon-wrap,
+.sales-order-list-summary-grid .metric-card-icon-wrap,
+.nomus-sync-metric-grid .metric-card-icon-wrap,
+.finance-cash-flow-metric-grid .metric-card-icon-wrap {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.system-totalizer-grid .metric-card-icon-wrap svg,
+.sales-order-list-summary-grid .metric-card-icon-wrap svg,
+.nomus-sync-metric-grid .metric-card-icon-wrap svg,
+.finance-cash-flow-metric-grid .metric-card-icon-wrap svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.system-totalizer-metric-card--featured .metric-card,
+.finance-cash-flow-metric-card--featured .metric-card {
+  box-shadow:
+    0 1px 2px rgba(37, 99, 235, 0.06),
+    0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.system-totalizer-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  padding: 0.2rem 0.55rem;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-totalizer-badge--neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.system-totalizer-badge--success {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.system-totalizer-badge--warning {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.system-totalizer-badge--danger {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.system-totalizer-badge--info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.system-totalizer-metric-card--badge .metric-card-value {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.system-totalizer-metric-card--badge .metric-card-footer {
+  margin-top: 6px;
+  padding-top: 0;
+  min-height: auto;
+}
