@@ -184,7 +184,25 @@ export async function buildFinanceArHorizonExportPayloadDefault(
   userContext: { userName: string | null },
   referenceDate: Date = new Date()
 ): Promise<FinanceArHorizonExportPayload> {
-  const { rows, syncCutoff } = await loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate);
+  const loaded = await loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate);
+  return buildFinanceArHorizonExportPayloadFromRows({
+    rows: loaded.rows,
+    syncCutoff: loaded.syncCutoff,
+    query,
+    userContext,
+    referenceDate,
+  });
+}
+
+export function buildFinanceArHorizonExportPayloadFromRows(input: {
+  rows: FinanceArDashboardRow[];
+  syncCutoff: import("./financeNomusArReportFreshness.js").NomusArReportSyncCutoff | null;
+  query: ReturnType<typeof parseFinanceArHorizonExportQuery>;
+  userContext: { userName: string | null };
+  referenceDate?: Date;
+}): FinanceArHorizonExportPayload {
+  const referenceDate = input.referenceDate ?? new Date();
+  const { rows, syncCutoff, query, userContext } = input;
   const horizon = buildOfficialAccountsReceivableRulesResult({
     rows,
     referenceDate,

@@ -6,7 +6,7 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { buildCustomerIntelligenceFinancial } from "@/src/lib/customerIntelligenceFinancial.js";
 import { resolveCustomerIntelligenceRegion } from "@/src/lib/customerIntelligenceUtils.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadEnrichedFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import {
   computeSoldProductsAverageUnitPrice,
   computeSoldProductsSharePercent,
@@ -494,7 +494,7 @@ export async function buildSoldProductCustomers(
 
   const hasTaxId = customers.some((c) => (c.taxId ?? "").trim().length > 0);
   const arLoad = hasTaxId
-    ? await loadFinanceArManagementRowsFromPrisma(prisma, { status: "all" })
+    ? await loadEnrichedFinanceArManagementRowsFromPrisma(prisma, { status: "all" })
     : { rows: [], syncCutoff: null };
 
   const financialById = new Map<string, SoldProductCustomerFinancialSnapshot>();

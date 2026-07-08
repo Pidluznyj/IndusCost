@@ -80,6 +80,13 @@ export type FinanceArDashboardRow = {
   suspendCollection: boolean | null;
   nomusStatus: boolean | null;
   syncedAt: Date;
+  /** Valor nominal original do Nomus CR antes da resolução por parcela do pedido. */
+  nomusAmountReceivable?: number;
+  /** Fonte do valor financeiro usado em relatórios. */
+  financialAmountSource?: "nomus_cr" | "sales_order_parcel";
+  linkedOrderCode?: string | null;
+  orderFinancialDivergence?: boolean;
+  orderFinancialDivergenceDelta?: number;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

@@ -5,7 +5,7 @@ import {
   CustomerIntelligenceFilterParseError,
   parseCustomerIntelligenceFilters,
 } from "@/src/lib/customerIntelligenceUtils.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadEnrichedFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import {
   normalizeCustomerDocument,
   salesOrderHasInvoicing,
@@ -117,7 +117,7 @@ export async function loadCustomerIntelligenceData(customerId: string) {
       },
     }),
     customerDoc
-      ? loadFinanceArManagementRowsFromPrisma(prisma, { status: "all" })
+      ? loadEnrichedFinanceArManagementRowsFromPrisma(prisma, { status: "all" })
       : Promise.resolve({ rows: [], syncCutoff: null }),
   ]);
 

@@ -23,6 +23,7 @@ import {
   type DailyRadarRangeSummary,
   type DailyRadarSelectedDetail,
 } from "./financeCashFlowDailyRadar.js";
+import { enrichFinanceArDashboardRowsWithOrderFinancialResolution } from "./nomusArOrderFinancialResolution.server.js";
 import type { FinanceExecutiveReportFilters } from "./financeExecutiveReportTypes.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
@@ -121,8 +122,14 @@ export async function loadExecutiveReportDailyRadarPortfolioRows(
     }),
   ]);
 
+  const arMapped = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const arRows = await enrichFinanceArDashboardRowsWithOrderFinancialResolution(
+    db as Parameters<typeof enrichFinanceArDashboardRowsWithOrderFinancialResolution>[0],
+    arMapped
+  );
+
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
