@@ -21,6 +21,12 @@ import {
   type CostCenterExpenseMapDrilldownFilters,
 } from "@/src/lib/financeCostCenterExpenseMap";
 import { FinanceCostCenterExpenseMapExecutiveSummary } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary";
+import { FinanceCostCenterMonthlyDrilldownChart } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyDrilldownChart";
+import {
+  buildCostCenterMonthlyChartQuery,
+  formatCostCenterMonthlyChartPeriodLabel,
+  type CostCenterMonthlyChartPayload,
+} from "@/src/lib/financeCostCenterMonthlyChart";
 import type {
   CostCenterDetailAllocationRow,
   CostCenterDetailExportPayload,
@@ -230,6 +236,9 @@ export function FinanceCostCenterExpenseMapSection({
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [printPayload, setPrintPayload] = useState<CostCenterDetailExportPayload | null>(null);
+  const [chartPayload, setChartPayload] = useState<CostCenterMonthlyChartPayload | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
 
   const cards = useMemo(() => {
     const built = buildCostCenterExpenseMapCards(dashboard?.byCostCenter ?? [], centers);
@@ -273,6 +282,37 @@ export function FinanceCostCenterExpenseMapSection({
     () => aggregateCostCenterExpenseMapTotals(cards, hasCardSelection ? selectedCenterIdSet : null),
     [cards, hasCardSelection, selectedCenterIdSet]
   );
+
+  const detailPeriodLabel = useMemo(
+    () => formatCostCenterMonthlyChartPeriodLabel(appliedFilters.year, appliedFilters.month),
+    [appliedFilters.month, appliedFilters.year]
+  );
+
+  const detailHeaderTotals = useMemo(() => {
+    if (hasCardSelection || detailCenterIds.length !== 1) {
+      return aggregateCostCenterExpenseMapTotals(
+        cards.filter((card) => detailCenterIds.includes(card.costCenterId))
+      );
+    }
+    if (!detailCard) return null;
+    return {
+      centersCount: 1,
+      amount: detailCard.amount,
+      overdueAmount: detailCard.overdueAmount,
+      upcomingAmount: detailCard.upcomingAmount,
+      paidAmount: detailCard.paidAmount,
+      titlesCount: detailCard.titlesCount,
+      participationPercent: detailCard.sharePercentage,
+      totalFilteredCentersCount: cards.length,
+      totalFilteredAmount: executiveTotals.totalFilteredAmount,
+    };
+  }, [
+    cards,
+    detailCard,
+    detailCenterIds,
+    executiveTotals.totalFilteredAmount,
+    hasCardSelection,
+  ]);
 
   useEffect(() => {
     setDetailPanelSuppressed(false);
@@ -320,6 +360,36 @@ export function FinanceCostCenterExpenseMapSection({
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  const loadChart = useCallback(async () => {
+    if (detailCenterIds.length === 0) {
+      setChartPayload(null);
+      setChartError(null);
+      return;
+    }
+    setChartLoading(true);
+    setChartError(null);
+    try {
+      const qs = buildCostCenterMonthlyChartQuery(appliedFilters, detailCenterIds);
+      const payload = await fetchJsonOk<CostCenterMonthlyChartPayload>(
+        `/api/finance/cost-centers/monthly-chart?${qs}`,
+        { credentials: "include" }
+      );
+      setChartPayload(payload);
+    } catch (e) {
+      setChartPayload(null);
+      setChartError(
+        buildFinanceTabLoadError("Não foi possível carregar o gráfico mensal do centro de custo.", e)
+          .message
+      );
+    } finally {
+      setChartLoading(false);
+    }
+  }, [appliedFilters, detailCenterIds]);
+
+  useEffect(() => {
+    void loadChart();
+  }, [loadChart]);
 
   const handleDrilldownClick = (card: CostCenterExpenseMapCard) => {
     setDetailPanelSuppressed(false);
@@ -604,6 +674,39 @@ export function FinanceCostCenterExpenseMapSection({
             </div>
           </div>
 
+          {detailHeaderTotals ? (
+            <div
+              className="rounded-lg border border-border/80 bg-muted/20 px-3 py-3 grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]"
+              data-testid="finance-cc-expense-map-detail-header-kpis"
+            >
+              <div>
+                <p className="text-muted-foreground">Valor total (filtros da tela)</p>
+                <p className="font-bold text-base tabular-nums">{formatFinanceCurrency(detailHeaderTotals.amount)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Títulos</p>
+                <p className="font-bold">{formatFinanceInteger(detailHeaderTotals.titlesCount)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Pago / realizado</p>
+                <p className="font-bold text-emerald-800">{formatFinanceCurrency(detailHeaderTotals.paidAmount)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Previsto / em aberto</p>
+                <p className="font-bold text-sky-800">
+                  {formatFinanceCurrency(detailHeaderTotals.upcomingAmount + detailHeaderTotals.overdueAmount)}
+                </p>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <p className="text-muted-foreground">Período analisado</p>
+                <p className="font-semibold leading-snug">{detailPeriodLabel}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Competência AP: data de vencimento
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {summary ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
               <div>
@@ -648,6 +751,17 @@ export function FinanceCostCenterExpenseMapSection({
               ) : null}
             </div>
           ) : null}
+
+          <FinanceCostCenterMonthlyDrilldownChart
+            payload={chartPayload}
+            loading={chartLoading}
+            error={chartError}
+            title={
+              isMultiCenterDetail
+                ? "Comportamento mensal — centros selecionados"
+                : "Comportamento mensal do centro de custo"
+            }
+          />
 
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
             <FinanceCostCenterGridSearchBar

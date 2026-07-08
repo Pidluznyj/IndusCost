@@ -157,6 +157,8 @@ export type FinanceCostCenterDashboardMonthlyByCostCenterRow = {
   code: string;
   name: string;
   amount: number;
+  paidAmount: number;
+  openAmount: number;
 };
 
 export type FinanceCostCenterDashboardMonthlySeries = {
@@ -573,8 +575,12 @@ export function buildFinanceCostCenterDashboard(
           code: meta?.code ?? allocation.costCenterId,
           name: meta?.name ?? allocation.costCenterId,
           amount: 0,
+          paidAmount: 0,
+          openAmount: 0,
         };
         monthlyCc.amount += lineAmount;
+        monthlyCc.paidAmount += linePaid;
+        monthlyCc.openAmount += lineOpen;
         monthlyByCc.set(monthlyCcKey, monthlyCc);
       }
     }
@@ -734,6 +740,8 @@ export function buildFinanceCostCenterDashboard(
       byCostCenter: monthlyByCcRows.map((row) => ({
         ...row,
         amount: finiteMoney(row.amount),
+        paidAmount: finiteMoney(row.paidAmount),
+        openAmount: finiteMoney(row.openAmount),
       })),
     },
     audit: {

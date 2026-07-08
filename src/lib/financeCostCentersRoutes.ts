@@ -17,6 +17,10 @@ import {
   parseFinanceCostCenterDashboardFilters,
 } from "@/src/lib/financeCostCenterDashboard.js";
 import {
+  buildCostCenterMonthlyChartPayloadDefault,
+  parseCostCenterMonthlyChartCostCenterIds,
+} from "@/src/lib/financeCostCenterMonthlyChart.js";
+import {
   buildCostCenterSupplierPaymentSummary,
   buildCostCenterSupplierPaymentTitles,
   buildCostCenterSupplierPaymentYears,
@@ -144,6 +148,37 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
       console.error("GET /api/finance/cost-centers/dashboard", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao montar dashboard de centros de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/monthly-chart", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const query = req.query as Record<string, unknown>;
+      const filters = parseFinanceCostCenterDashboardFilters(query);
+      const costCenterIds = parseCostCenterMonthlyChartCostCenterIds(query);
+      if (costCenterIds.length === 0) {
+        return res.status(400).json({
+          error: "Informe costCenterIds (ou costCenterId) para o gráfico mensal.",
+          code: "MISSING_COST_CENTER_IDS",
+        });
+      }
+
+      const payload = await buildCostCenterMonthlyChartPayloadDefault(filters, costCenterIds);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDashboardError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDashboardError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/monthly-chart", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar gráfico mensal do centro de custo.", error)
       );
     }
   });
