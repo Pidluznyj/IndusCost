@@ -31,7 +31,7 @@ import { MaterialIntelligenceSavingsOpportunitySection } from "@/src/components/
 import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials/MaterialIntelligenceSuppliersSection";
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialIntelligenceImpactedProductsSection } from "@/src/components/materials/MaterialIntelligenceImpactedProductsSection";
-import { MaterialIntelligenceFinancialImpactSection } from "@/src/components/materials/MaterialIntelligenceFinancialImpactSection";
+import { MaterialIntelligenceSimulationPanel } from "@/src/components/materials/MaterialIntelligenceSimulationPanel";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
