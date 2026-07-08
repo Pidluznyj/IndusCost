@@ -23,6 +23,11 @@ export function createDefaultPaidTitleListFilters(input?: {
   };
 }
 
+/** Filtros iniciais do modal da aba Fornecedores — centro de custo sempre em Todos. */
+export function createDefaultSupplierTitleListFilters(): PaidTitleListFilters {
+  return createDefaultPaidTitleListFilters({ prioritizePending: false });
+}
+
 export function resolvePaidTitleListDefaultFilters(supplier: {
   hasActiveRule: boolean;
 }): PaidTitleListFilters {

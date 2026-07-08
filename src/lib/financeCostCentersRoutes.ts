@@ -26,6 +26,7 @@ import {
   buildCostCenterSupplierPaymentYears,
   loadCostCenterSupplierPaymentContext,
 } from "@/src/lib/financeCostCenterSupplierPaymentDrilldown.js";
+import { buildCostCenterSupplierTitles } from "@/src/lib/financeCostCenterSupplierTitlesDrilldown.js";
 import {
   FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS,
   listFinanceCostCenterAuditLogs,
@@ -39,7 +40,7 @@ import {
   parseBatchReclassificationBody,
 } from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
 import { FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS } from "@/src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
-import { parsePaidTitleListFilters } from "@/src/lib/financePaidTitlesModalFilters.js";
+import { parsePaidTitleListFilters, createDefaultSupplierTitleListFilters } from "@/src/lib/financePaidTitlesModalFilters.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -282,6 +283,57 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
         console.error("GET /api/finance/cost-centers/supplier-payment-years", error);
         return res.status(500).json(
           financeApiErrorJson("Erro ao montar histórico anual de pagamentos.", error)
+        );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/cost-centers/supplier-titles",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+        const supplierKey = String(req.query.supplierKey ?? "").trim();
+        if (!supplierKey) {
+          return res.status(400).json({ error: "supplierKey é obrigatório." });
+        }
+        const filters = parseFinanceCostCenterDashboardFilters(req.query as Record<string, unknown>);
+        const asOfRaw = typeof req.query.asOfDate === "string" ? req.query.asOfDate.trim() : "";
+        const referenceDate = asOfRaw ? new Date(`${asOfRaw}T12:00:00.000Z`) : new Date();
+        const supplierDisplayName =
+          typeof req.query.supplierDisplayName === "string"
+            ? req.query.supplierDisplayName.trim()
+            : supplierKey;
+        const page = Number(req.query.page ?? 1);
+        const pageSize = Number(req.query.pageSize ?? 50);
+        const listFilters = parsePaidTitleListFilters(
+          req.query as Record<string, unknown>,
+          createDefaultSupplierTitleListFilters()
+        );
+
+        const ctx = await loadCostCenterSupplierPaymentContext(filters, referenceDate);
+        const payload = buildCostCenterSupplierTitles(
+          ctx,
+          supplierKey,
+          supplierDisplayName,
+          page,
+          pageSize,
+          listFilters
+        );
+        return res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof FinanceCostCenterDashboardError ||
+          error instanceof FinanceApFilterParseError
+        ) {
+          return handleDashboardError(res, error);
+        }
+        console.error("GET /api/finance/cost-centers/supplier-titles", error);
+        return res.status(500).json(
+          financeApiErrorJson("Erro ao listar títulos do fornecedor.", error)
         );
       }
     }

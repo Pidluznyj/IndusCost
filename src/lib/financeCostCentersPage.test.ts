@@ -109,9 +109,10 @@ describe("financeCostCentersPage", () => {
     assert.match(unclassified, /finance-unclassified-batch-apply-button/);
     assert.match(unclassified, /FINANCE_AP_ALLOCATION_BATCH_CONFIRMATION_TEXT/);
     assert.match(suppliers, /finance-suppliers-view-paid-titles-button/);
-    assert.match(suppliers, /FinanceSupplierPaidTitlesModal/);
+    assert.match(suppliers, /FinanceSupplierTitlesModal/);
     assert.match(suppliers, /canReclassifyTitles/);
-    assert.match(read("src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx"), /supplier-payment-titles/);
+    assert.match(read("src/components/finance/cost-centers/FinanceSupplierTitlesModal.tsx"), /supplier-titles/);
+    assert.doesNotMatch(suppliers, /FinanceSupplierPaidTitlesModal/);
     assert.match(read("src/components/finance/cost-centers/FinanceApTitleReclassifyModal.tsx"), /cost-center-reclassification/);
   });
 
@@ -121,7 +122,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx",
       "src/components/finance/cost-centers/FinanceSuppliersTab.tsx",
-      "src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal.tsx",
+      "src/components/finance/cost-centers/FinanceSupplierTitlesModal.tsx",
       "src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx",
       "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx",
       "src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx",

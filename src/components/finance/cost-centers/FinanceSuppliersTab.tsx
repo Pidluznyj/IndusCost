@@ -48,7 +48,7 @@ import type { FinanceCostCentersTabId } from "@/src/lib/financeCostCentersPageTy
 import type { FinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-centers/FinanceSupplierCadastroDrawer";
 import { FinanceSupplierPaymentDrilldownSection } from "@/src/components/finance/cost-centers/FinanceSupplierPaymentDrilldownSection";
-import { FinanceSupplierPaidTitlesModal } from "@/src/components/finance/cost-centers/FinanceSupplierPaidTitlesModal";
+import { FinanceSupplierTitlesModal } from "@/src/components/finance/cost-centers/FinanceSupplierTitlesModal";
 
 type Props = {
   dashboard: FinanceCostCenterDashboardPayload | null;
@@ -77,7 +77,7 @@ export function FinanceSuppliersTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aliasesSupplier, setAliasesSupplier] = useState<SupplierGridRow | null>(null);
-  const [paidTitlesSupplier, setPaidTitlesSupplier] = useState<SupplierGridRow | null>(null);
+  const [supplierTitlesSupplier, setSupplierTitlesSupplier] = useState<SupplierGridRow | null>(null);
   const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
   const [creatingCadastroFor, setCreatingCadastroFor] = useState<string | null>(null);
 
@@ -382,7 +382,7 @@ export function FinanceSuppliersTab({
                       type="button"
                       data-testid="finance-suppliers-view-paid-titles-button"
                       className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                      onClick={() => setPaidTitlesSupplier(row)}
+                      onClick={() => setSupplierTitlesSupplier(row)}
                     >
                       <ListOrdered className="h-3 w-3" />
                       Ver títulos
@@ -444,12 +444,12 @@ export function FinanceSuppliersTab({
         canDelete={canDeleteSupplier}
       />
 
-      <FinanceSupplierPaidTitlesModal
-        open={Boolean(paidTitlesSupplier)}
-        supplier={paidTitlesSupplier}
+      <FinanceSupplierTitlesModal
+        open={Boolean(supplierTitlesSupplier)}
+        supplier={supplierTitlesSupplier}
         filters={appliedFilters}
         canReclassify={canReclassifyTitles}
-        onClose={() => setPaidTitlesSupplier(null)}
+        onClose={() => setSupplierTitlesSupplier(null)}
       />
 
       <FinanceSupplierPaymentDrilldownSection filters={appliedFilters} />
