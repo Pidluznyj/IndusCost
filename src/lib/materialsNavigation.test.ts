@@ -45,9 +45,24 @@ describe("materialsNavigation", () => {
 
   it("página inicial exibe estado vazio amigável", () => {
     const page = read("src/components/materials/MaterialsMarketIntelligencePage.tsx");
-    assert.match(page, /Nenhuma matéria-prima monitorada ainda/);
+    const list = read("src/components/materials/MaterialsMarketIntelligenceMonitoredList.tsx");
+    assert.match(list, /MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE/);
     assert.match(page, /materials-market-intelligence-page/);
     assert.doesNotMatch(page, /\bBrent\b/i);
     assert.doesNotMatch(page, /\bdólar\b/i);
+  });
+
+  it("API expõe PATCH de monitoramento de mercado", () => {
+    const server = read("server.ts");
+    assert.match(server, /\/api\/materials\/:id\/market-monitoring/);
+    assert.match(server, /parseMaterialMarketMonitoringInput/);
+  });
+
+  it("schema Material possui campos de monitoramento", () => {
+    const schema = read("prisma/schema.prisma");
+    assert.match(schema, /isMarketMonitored/);
+    assert.match(schema, /marketCriticality/);
+    assert.match(schema, /marketMonitoringFrequencyDays/);
+    assert.match(schema, /marketNotes/);
   });
 });

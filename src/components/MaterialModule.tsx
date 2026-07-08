@@ -14,11 +14,21 @@ import {
   Package,
   Truck,
   AlertTriangle,
-  DollarSign
+  DollarSign,
+  LineChart,
+  Radar
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Material, CreateMaterialInput } from "@/src/types/material";
+import {
+  DEFAULT_MATERIAL_MARKET_CRITICALITY,
+  DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
+  MATERIAL_MARKET_CRITICALITY_LABELS,
+  MATERIAL_MARKET_CRITICALITY_VALUES,
+  type MaterialMarketCriticality,
+} from "@/src/lib/materialMarketMonitoring";
+import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
@@ -69,6 +79,10 @@ export const MaterialModule = () => {
     freight: 0,
     standardLoss: 0,
     conversionFactor: 1,
+    isMarketMonitored: false,
+    marketCriticality: DEFAULT_MATERIAL_MARKET_CRITICALITY,
+    marketMonitoringFrequencyDays: DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
+    marketNotes: "",
   });
 
   const fetchData = async () => {
@@ -104,6 +118,13 @@ export const MaterialModule = () => {
         freight: Number(material.freight),
         standardLoss: Number(material.standardLoss),
         conversionFactor: Number(material.conversionFactor),
+        isMarketMonitored: material.isMarketMonitored === true,
+        marketCriticality:
+          material.marketCriticality ?? DEFAULT_MATERIAL_MARKET_CRITICALITY,
+        marketMonitoringFrequencyDays:
+          material.marketMonitoringFrequencyDays ??
+          DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
+        marketNotes: material.marketNotes ?? "",
       });
     } else {
       setEditingMaterial(null);
@@ -119,6 +140,10 @@ export const MaterialModule = () => {
         freight: 0,
         standardLoss: 0,
         conversionFactor: 1,
+        isMarketMonitored: false,
+        marketCriticality: DEFAULT_MATERIAL_MARKET_CRITICALITY,
+        marketMonitoringFrequencyDays: DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
+        marketNotes: "",
       });
     }
     setIsModalOpen(true);
@@ -209,6 +234,24 @@ export const MaterialModule = () => {
           "Material existente recarregado na lista. Clique em editar para abrir o cadastro.",
       });
     });
+  };
+
+  const toggleMarketMonitoring = async (material: Material) => {
+    try {
+      await fetchOk(`/api/materials/${material.id}/market-monitoring`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isMarketMonitored: !material.isMarketMonitored }),
+      });
+      await fetchData();
+    } catch (error) {
+      console.error("Erro ao alterar monitoramento:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Erro de conexão ao alterar monitoramento de mercado."
+      );
+    }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
@@ -350,6 +393,7 @@ export const MaterialModule = () => {
                 <th className="p-4 font-semibold text-sm">Custo Atual</th>
                 <th className="p-4 font-semibold text-sm">Posto Fábrica</th>
                 <th className="p-4 font-semibold text-sm">Custo c/ Perda</th>
+                <th className="p-4 font-semibold text-sm">Mercado</th>
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -357,7 +401,7 @@ export const MaterialModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center">
+                  <td colSpan={8} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando materiais...</p>
                   </td>
@@ -406,16 +450,48 @@ export const MaterialModule = () => {
                       <p className="text-[10px] text-muted-foreground">Perda: {formatNumber(mat.standardLoss, 2)}%</p>
                     </td>
                     <td className="p-4">
-                      <div className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                        mat.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                      )}>
-                        <div className={cn("h-1.5 w-1.5 rounded-full", mat.status === "ACTIVE" ? "bg-green-600" : "bg-red-600")} />
+                      <MaterialMarketMonitoringBadge
+                        isMarketMonitored={mat.isMarketMonitored}
+                        marketCriticality={mat.marketCriticality}
+                      />
+                    </td>
+                    <td className="p-4">
+                      <div
+                        className={cn(
+                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                          mat.status === "ACTIVE"
+                            ? "bg-green-500/10 text-green-600"
+                            : "bg-red-500/10 text-red-600"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            mat.status === "ACTIVE" ? "bg-green-600" : "bg-red-600"
+                          )}
+                        />
                         {mat.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </div>
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => toggleMarketMonitoring(mat)}
+                          className={cn(
+                            "p-2 rounded-md hover:bg-accent transition-all",
+                            mat.isMarketMonitored
+                              ? "text-primary"
+                              : "text-muted-foreground hover:text-primary"
+                          )}
+                          title={
+                            mat.isMarketMonitored
+                              ? "Desativar monitoramento de mercado"
+                              : "Monitorar na Inteligência de Mercado"
+                          }
+                          data-testid={`material-market-toggle-${mat.id}`}
+                        >
+                          <Radar className="h-4 w-4" />
+                        </button>
                         <button 
                           onClick={() => setViewingHistory(mat)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
@@ -634,6 +710,92 @@ export const MaterialModule = () => {
                     </p>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-accent/20 p-5 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <LineChart className="h-4 w-4" /> Inteligência de Mercado
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+                      Marque matérias estratégicas para acompanhamento na aba Inteligência de Mercado.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                      checked={formData.isMarketMonitored === true}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          isMarketMonitored: e.target.checked,
+                        })
+                      }
+                      data-testid="material-form-market-monitored"
+                    />
+                    Monitorar matéria-prima
+                  </label>
+                </div>
+
+                {formData.isMarketMonitored ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Criticidade
+                      </label>
+                      <select
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                        value={formData.marketCriticality ?? DEFAULT_MATERIAL_MARKET_CRITICALITY}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            marketCriticality: e.target.value as MaterialMarketCriticality,
+                          })
+                        }
+                      >
+                        {MATERIAL_MARKET_CRITICALITY_VALUES.map((value) => (
+                          <option key={value} value={value}>
+                            {MATERIAL_MARKET_CRITICALITY_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Frequência (dias)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                        value={formData.marketMonitoringFrequencyDays ?? ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            marketMonitoringFrequencyDays: parseInt(e.target.value, 10) || null,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-1">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Observações
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                        placeholder="Contexto de mercado, fornecedor, risco..."
+                        value={formData.marketNotes ?? ""}
+                        onChange={(e) =>
+                          setFormData({ ...formData, marketNotes: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {formError ? (

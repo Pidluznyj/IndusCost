@@ -1,6 +1,6 @@
 import React from "react";
 import { LineChart } from "lucide-react";
-import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
+import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/materials/MaterialsMarketIntelligenceMonitoredList";
 
 export const MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE =
   "Nenhuma matéria-prima monitorada ainda";
@@ -65,9 +65,7 @@ export function MaterialsMarketIntelligencePage() {
             Lista das matérias acompanhadas e seus últimos sinais registrados.
           </p>
         </div>
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          <ContextualDashboardEmpty message={MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE} />
-        </div>
+        <MaterialsMarketIntelligenceMonitoredList />
       </section>
     </div>
   );

@@ -20,6 +20,10 @@ export interface Material {
   standardLoss: number;
   conversionFactor: number;
   status: "ACTIVE" | "INACTIVE";
+  isMarketMonitored?: boolean;
+  marketCriticality?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  marketMonitoringFrequencyDays?: number | null;
+  marketNotes?: string | null;
   MaterialPriceHistory?: MaterialPriceHistory[];
   calculations?: {
     landedCost: number;
@@ -27,6 +31,13 @@ export interface Material {
   };
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MaterialMarketMonitoringInput {
+  isMarketMonitored: boolean;
+  marketCriticality?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  marketMonitoringFrequencyDays?: number | null;
+  marketNotes?: string | null;
 }
 
 export interface CreateMaterialInput {
@@ -41,4 +52,8 @@ export interface CreateMaterialInput {
   freight: number;
   standardLoss: number;
   conversionFactor: number;
+  isMarketMonitored?: boolean;
+  marketCriticality?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  marketMonitoringFrequencyDays?: number | null;
+  marketNotes?: string | null;
 }

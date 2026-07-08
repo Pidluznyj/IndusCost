@@ -113,6 +113,10 @@ model Material {
   standardLoss         Decimal?               @default(0) @db.Decimal(10, 6)
   conversionFactor     Decimal?               @default(1) @db.Decimal(20, 6)
   status               String?                @default("ACTIVE")
+  isMarketMonitored    Boolean                @default(false)
+  marketCriticality    MaterialMarketCriticality?
+  marketMonitoringFrequencyDays Int?
+  marketNotes            String?
   createdAt            DateTime?              @default(now()) @db.Timestamptz(6)
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
@@ -120,6 +124,13 @@ model Material {
   PurchaseRequestItem  PurchaseRequestItem[]
   ProjectStructureLine ProjectStructureLine[]
   MaterialCostTableItem MaterialCostTableItem[]
+}
+
+enum MaterialMarketCriticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
 model MaterialPriceHistory {

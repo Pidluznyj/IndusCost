@@ -78,6 +78,7 @@ import { generateClientProposalPptx } from "./src/lib/projects/clientProposalPpt
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
+import { parseMaterialMarketMonitoringInput } from "./src/lib/materialMarketMonitoring.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -2817,6 +2818,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         });
       }
 
+      const marketParsed = parseMaterialMarketMonitoringInput({
+        isMarketMonitored: body.isMarketMonitored,
+        marketCriticality: body.marketCriticality,
+        marketMonitoringFrequencyDays: body.marketMonitoringFrequencyDays,
+        marketNotes: body.marketNotes,
+      });
+      if (marketParsed.ok === false) {
+        return res.status(400).json({
+          error: "MATERIAL_INVALID_MARKET_MONITORING",
+          field: marketParsed.field,
+          message: marketParsed.message,
+        });
+      }
+
       const existing = await prisma.material.findUnique({
         where: { code },
         select: { id: true, code: true },
@@ -2843,6 +2858,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           freight: parsedNumeric.freight,
           standardLoss: parsedNumeric.standardLoss,
           conversionFactor: conversion.value,
+          ...marketParsed.value,
           MaterialPriceHistory: {
             create: {
               price: parsedNumeric.currentCost,
@@ -2894,31 +2910,137 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   app.put("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
-    const { id } = req.params;
-    const { currentCost, freight, ...data } = req.body;
+    try {
+      const { id } = req.params;
+      const body = req.body ?? {};
+      const { currentCost, freight } = body;
 
-    // Se o custo ou frete mudou, registra no histórico
-    const oldMaterial = await prisma.material.findUnique({ where: { id } });
-    if (oldMaterial && (Number(oldMaterial.currentCost) !== currentCost || Number(oldMaterial.freight) !== freight)) {
-      await prisma.materialPriceHistory.create({
+      if (!isUuid(id)) {
+        return res.status(400).json({ error: "ID de material inválido." });
+      }
+
+      const marketParsed = parseMaterialMarketMonitoringInput({
+        isMarketMonitored: body.isMarketMonitored,
+        marketCriticality: body.marketCriticality,
+        marketMonitoringFrequencyDays: body.marketMonitoringFrequencyDays,
+        marketNotes: body.marketNotes,
+      });
+      if (marketParsed.ok === false) {
+        return res.status(400).json({
+          error: "MATERIAL_INVALID_MARKET_MONITORING",
+          field: marketParsed.field,
+          message: marketParsed.message,
+        });
+      }
+
+      // Se o custo ou frete mudou, registra no histórico
+      const oldMaterial = await prisma.material.findUnique({ where: { id } });
+      if (!oldMaterial) {
+        return res.status(404).json({ error: "Material não encontrado." });
+      }
+      if (
+        Number(oldMaterial.currentCost) !== Number(currentCost) ||
+        Number(oldMaterial.freight) !== Number(freight)
+      ) {
+        await prisma.materialPriceHistory.create({
+          data: {
+            materialId: id,
+            price: currentCost,
+            freight: freight,
+          },
+        });
+      }
+
+      const material = await prisma.material.update({
+        where: { id },
         data: {
-          materialId: id,
-          price: currentCost,
-          freight: freight,
-        }
+          code: typeof body.code === "string" ? body.code.trim() : oldMaterial.code,
+          description:
+            typeof body.description === "string" ? body.description.trim() : oldMaterial.description,
+          unit: typeof body.unit === "string" ? body.unit.trim() : oldMaterial.unit,
+          category:
+            typeof body.category === "string" ? body.category.trim() : oldMaterial.category,
+          supplier:
+            typeof body.supplier === "string" && body.supplier.trim()
+              ? body.supplier.trim()
+              : body.supplier === "" || body.supplier == null
+                ? null
+                : oldMaterial.supplier,
+          averageCost: body.averageCost ?? oldMaterial.averageCost,
+          standardCost: body.standardCost ?? oldMaterial.standardCost,
+          standardLoss: body.standardLoss ?? oldMaterial.standardLoss,
+          conversionFactor: body.conversionFactor ?? oldMaterial.conversionFactor,
+          currentCost,
+          freight,
+          ...marketParsed.value,
+        },
+      });
+      res.json(material);
+    } catch (error) {
+      console.error("PUT /api/materials/:id", error);
+      res.status(500).json({
+        error:
+          error instanceof Error ? error.message : "Erro ao atualizar material.",
       });
     }
-
-    const material = await prisma.material.update({
-      where: { id },
-      data: {
-        ...data,
-        currentCost,
-        freight,
-      }
-    });
-    res.json(material);
   });
+
+  app.patch(
+    "/api/materials/:id/market-monitoring",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const existing = await prisma.material.findUnique({ where: { id } });
+        if (!existing) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const body = req.body ?? {};
+        const toggled =
+          typeof body.isMarketMonitored === "boolean"
+            ? body.isMarketMonitored
+            : !existing.isMarketMonitored;
+
+        const marketParsed = parseMaterialMarketMonitoringInput({
+          isMarketMonitored: toggled,
+          marketCriticality:
+            body.marketCriticality ??
+            (toggled ? existing.marketCriticality : null),
+          marketMonitoringFrequencyDays:
+            body.marketMonitoringFrequencyDays ??
+            (toggled ? existing.marketMonitoringFrequencyDays : null),
+          marketNotes: body.marketNotes ?? existing.marketNotes,
+        });
+        if (marketParsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_INVALID_MARKET_MONITORING",
+            field: marketParsed.field,
+            message: marketParsed.message,
+          });
+        }
+
+        const material = await prisma.material.update({
+          where: { id },
+          data: marketParsed.value,
+        });
+        res.json(material);
+      } catch (error) {
+        console.error("PATCH /api/materials/:id/market-monitoring", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao atualizar monitoramento de mercado.",
+        });
+      }
+    }
+  );
 
   app.patch("/api/materials/:id/status", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     try {
