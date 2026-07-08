@@ -4,9 +4,9 @@
 **Módulo:** Materiais → Inteligência de Mercado  
 **Atualizado:** 2026-07-08  
 
-> **Deploy NÃO é executado a partir do Cursor.** Migrations e restart rodame no servidor (`/opt/induscost` ou caminho equivalente), com backup prévio.
+> **Deploy NÃO é executado a partir do Cursor.** Migrations e restart rodam no servidor (`/opt/induscost` ou caminho equivalente), com backup prévio.
 
-**Proibido neste fluxo:** `prisma db push`, `prisma migrate dev`, `DROP`/`TRUNCATE` manuais, alteruar dados de produção sem autorização.
+**Proibido neste fluxo:** `prisma db push`, `prisma migrate dev`, `DROP`/`TRUNCATE` manuais, alterar dados de produção sem autorização.
 
 ---
 
