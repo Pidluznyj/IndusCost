@@ -87,6 +87,20 @@ describe("materialsNavigation", () => {
     assert.equal(resolveMaterialsCanonicalPath(detail), detail);
   });
 
+  it("visão 360º individual com seções preparadas", () => {
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    const header = read("src/components/materials/MaterialIntelligence360Header.tsx");
+    const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
+    assert.match(detail, /material-intelligence-360-page/);
+    assert.match(detail, /MaterialIntelligence360Header/);
+    assert.match(detail, /MaterialIntelligenceRecentQuotesSection/);
+    assert.match(detail, /MaterialIntelligenceActivatePanel/);
+    assert.match(header, /Observações estratégicas/);
+    assert.match(header, /material-intelligence-360-header/);
+    assert.match(detail, /MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS/);
+    assert.match(quotes, /material-intelligence-360-recent-quotes-empty/);
+  });
+
   it("schema Material possui campos de monitoramento", () => {
     const schema = read("prisma/schema.prisma");
     assert.match(schema, /isMarketMonitored/);

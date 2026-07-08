@@ -1,21 +1,43 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Radar } from "lucide-react";
-import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import {
-  DEFAULT_MATERIAL_MARKET_CRITICALITY,
-  DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
-  MATERIAL_MARKET_CRITICALITY_LABELS,
-  MATERIAL_MARKET_CRITICALITY_VALUES,
-  type MaterialMarketCriticality,
-} from "@/src/lib/materialMarketMonitoring";
+  ArrowLeft,
+  BarChart3,
+  Clock,
+  DollarSign,
+  Droplets,
+  Factory,
+  FileSearch,
+  History,
+  Loader2,
+  Truck,
+} from "lucide-react";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
+import type { MaterialMarketCriticality } from "@/src/lib/materialMarketMonitoring";
+import { MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS } from "@/src/lib/materialIntelligence360Sections";
 import {
   getMaterialMarketIntelligenceDetailApiPath,
   MATERIALS_SECTION_PATHS,
 } from "@/src/lib/materialsNavigation";
-import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
-import { formatCurrency } from "@/src/lib/utils";
+import {
+  MaterialIntelligenceActivatePanel,
+  DEFAULT_MATERIAL_MARKET_CRITICALITY,
+  DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
+} from "@/src/components/materials/MaterialIntelligenceActivatePanel";
+import { MaterialIntelligence360Header } from "@/src/components/materials/MaterialIntelligence360Header";
+import { MaterialIntelligenceRecentQuotesSection } from "@/src/components/materials/MaterialIntelligenceRecentQuotesSection";
+import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
+
+const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
+  priceHistory: <History className="h-7 w-7" aria-hidden="true" />,
+  suppliers: <Truck className="h-7 w-7" aria-hidden="true" />,
+  dollar: <DollarSign className="h-7 w-7" aria-hidden="true" />,
+  brent: <Droplets className="h-7 w-7" aria-hidden="true" />,
+  impactedProducts: <Factory className="h-7 w-7" aria-hidden="true" />,
+  timeline: <Clock className="h-7 w-7" aria-hidden="true" />,
+  audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
+};
 
 export function MaterialsMarketIntelligenceDetailPage() {
   const { materialId } = useParams<{ materialId: string }>();
@@ -85,8 +107,6 @@ export function MaterialsMarketIntelligenceDetailPage() {
     }
   };
 
-  const title = useMemo(() => item?.description ?? "Inteligência de Mercado", [item]);
-
   return (
     <div className="space-y-6" data-testid="materials-market-intelligence-detail-page">
       <div className="flex flex-wrap items-center gap-4">
@@ -111,7 +131,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
           data-testid="materials-market-intelligence-detail-loading"
         >
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="mt-2 text-sm text-muted-foreground">Carregando inteligência…</p>
+          <p className="mt-2 text-sm text-muted-foreground">Carregando visão 360º…</p>
         </div>
       ) : error && !item ? (
         <div
@@ -121,108 +141,38 @@ export function MaterialsMarketIntelligenceDetailPage() {
           {error}
         </div>
       ) : item ? (
-        <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {item.code}
-              </p>
-              <h3 className="text-lg font-bold tracking-tight">{title}</h3>
-              <p className="text-sm text-muted-foreground">
-                {item.family} · {item.unit}
-              </p>
-            </div>
-            <MaterialMarketMonitoringBadge
-              isMarketMonitored={item.isMarketMonitored}
-              marketCriticality={item.marketCriticality}
+        <div className="space-y-6" data-testid="material-intelligence-360-page">
+          <MaterialIntelligence360Header item={item} />
+
+          {!item.isMarketMonitored ? (
+            <MaterialIntelligenceActivatePanel
+              criticality={activationCriticality}
+              frequency={activationFrequency}
+              activating={activating}
+              error={error}
+              onCriticalityChange={setActivationCriticality}
+              onFrequencyChange={setActivationFrequency}
+              onActivate={() => void handleActivateMonitoring()}
             />
+          ) : null}
+
+          <div
+            className="grid gap-4 xl:grid-cols-2"
+            data-testid="material-intelligence-360-sections"
+          >
+            <MaterialIntelligenceRecentQuotesSection quotes={item.recentQuotes} />
+
+            {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
+              <MaterialIntelligence360SectionPlaceholder
+                key={section.id}
+                id={section.id}
+                title={section.title}
+                description={section.description}
+                message={section.emptyMessage}
+                icon={PLACEHOLDER_ICONS[section.id] ?? <BarChart3 className="h-7 w-7" />}
+              />
+            ))}
           </div>
-
-          {item.isMarketMonitored ? (
-            <>
-              {item.lastQuoteAmount != null ? (
-                <p className="text-sm text-muted-foreground">
-                  Última cotação:{" "}
-                  <span className="font-semibold text-foreground">
-                    {formatCurrency(item.lastQuoteAmount)}
-                  </span>
-                </p>
-              ) : null}
-              <p className="text-sm text-muted-foreground">
-                Painel individual em construção. Os sinais de mercado e histórico detalhado serão
-                exibidos nesta rota nas próximas entregas.
-              </p>
-            </>
-          ) : (
-            <div
-              className="rounded-lg border border-dashed border-border bg-accent/20 p-4 space-y-4"
-              data-testid="materials-market-intelligence-activate-panel"
-            >
-              <div className="flex items-start gap-3">
-                <Radar className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold">Ativar monitoramento de mercado</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Esta matéria-prima ainda não está no radar de Inteligência de Mercado. Ative o
-                    monitoramento para acompanhá-la na home e receber sinais nas próximas entregas.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 max-w-xl">
-                <label className="space-y-1.5 text-sm">
-                  <span className="font-medium">Criticidade</span>
-                  <select
-                    value={activationCriticality}
-                    onChange={(e) =>
-                      setActivationCriticality(e.target.value as MaterialMarketCriticality)
-                    }
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2"
-                    data-testid="material-intelligence-activate-criticality"
-                  >
-                    {MATERIAL_MARKET_CRITICALITY_VALUES.map((value) => (
-                      <option key={value} value={value}>
-                        {MATERIAL_MARKET_CRITICALITY_LABELS[value]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1.5 text-sm">
-                  <span className="font-medium">Frequência (dias)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={activationFrequency}
-                    onChange={(e) =>
-                      setActivationFrequency(parseInt(e.target.value, 10) || 1)
-                    }
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2"
-                    data-testid="material-intelligence-activate-frequency"
-                  />
-                </label>
-              </div>
-
-              {error ? (
-                <p className="text-sm text-red-700">{error}</p>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => void handleActivateMonitoring()}
-                disabled={activating}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-                data-testid="material-intelligence-activate-button"
-              >
-                {activating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Radar className="h-4 w-4" />
-                )}
-                Ativar monitoramento
-              </button>
-            </div>
-          )}
         </div>
       ) : null}
     </div>

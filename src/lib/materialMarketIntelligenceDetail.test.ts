@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildMaterialIntelligenceMonitoringStatusLabel,
   mapMaterialIntelligenceDetail,
+  mapMaterialIntelligenceRecentQuotes,
 } from "./materialMarketIntelligenceDetail.js";
 
 function row(
@@ -59,5 +60,25 @@ describe("materialMarketIntelligenceDetail", () => {
       }),
       "Monitorada · Média"
     );
+  });
+
+  it("mapeia cotações recentes e fornecedor", () => {
+    const mapped = mapMaterialIntelligenceDetail(
+      row({
+        supplier: "  Fornecedor X  ",
+        MaterialPriceHistory: [
+          { price: 10, effectiveDate: "2026-01-01" },
+          { price: 11, effectiveDate: "2026-02-01" },
+        ],
+      })
+    );
+    assert.equal(mapped.supplier, "Fornecedor X");
+    assert.equal(mapped.recentQuotes.length, 2);
+    assert.equal(mapped.recentQuotes[0]?.amount, 10);
+  });
+
+  it("cotações recentes vazias sem histórico", () => {
+    assert.deepEqual(mapMaterialIntelligenceRecentQuotes(undefined), []);
+    assert.deepEqual(mapMaterialIntelligenceRecentQuotes([]), []);
   });
 });

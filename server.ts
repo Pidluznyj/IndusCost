@@ -2784,7 +2784,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const material = await prisma.material.findUnique({
           where: { id: materialId },
           include: {
-            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 1 },
+            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 },
           },
         });
         if (!material) {

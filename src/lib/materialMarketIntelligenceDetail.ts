@@ -21,6 +21,7 @@ export type MaterialIntelligenceDetailSourceRow = {
   description: string;
   unit: string;
   category: string;
+  supplier?: string | null;
   currentCost: number | string;
   isMarketMonitored: boolean;
   marketCriticality?: string | null;
@@ -36,6 +37,7 @@ export type MaterialIntelligenceDetailItem = {
   family: string;
   familyCode: string;
   unit: string;
+  supplier: string | null;
   isMarketMonitored: boolean;
   marketCriticality: MaterialMarketCriticality | null;
   marketMonitoringFrequencyDays: number | null;
@@ -43,8 +45,32 @@ export type MaterialIntelligenceDetailItem = {
   monitoringStatusLabel: string;
   lastQuoteAmount: number | null;
   lastQuoteDate: string | null;
+  recentQuotes: MaterialIntelligenceQuoteRow[];
   intelligencePath: string;
 };
+
+export type MaterialIntelligenceQuoteRow = {
+  amount: number;
+  date: string | null;
+};
+
+export function mapMaterialIntelligenceRecentQuotes(
+  priceHistory: MonitoredMaterialPriceHistoryRow[] | undefined
+): MaterialIntelligenceQuoteRow[] {
+  if (!priceHistory?.length) return [];
+  return priceHistory
+    .map((row) => {
+      const amount = Number(row.price);
+      if (!Number.isFinite(amount)) return null;
+      const rawDate = row.effectiveDate;
+      const date =
+        rawDate != null && String(rawDate).trim()
+          ? new Date(rawDate).toISOString()
+          : null;
+      return { amount, date };
+    })
+    .filter((row): row is MaterialIntelligenceQuoteRow => row != null);
+}
 
 export function buildMaterialIntelligenceMonitoringStatusLabel(input: {
   isMarketMonitored: boolean;
@@ -63,6 +89,7 @@ export function mapMaterialIntelligenceDetail(
     currentCost: material.currentCost,
     priceHistory: material.MaterialPriceHistory,
   });
+  const recentQuotes = mapMaterialIntelligenceRecentQuotes(material.MaterialPriceHistory);
 
   return {
     id: material.id,
@@ -71,6 +98,7 @@ export function mapMaterialIntelligenceDetail(
     family: formatMaterialCategoryLabel(material.category),
     familyCode: material.category,
     unit: material.unit,
+    supplier: material.supplier?.trim() || null,
     isMarketMonitored: marketFields.isMarketMonitored,
     marketCriticality: marketFields.marketCriticality,
     marketMonitoringFrequencyDays: marketFields.marketMonitoringFrequencyDays,
@@ -81,6 +109,7 @@ export function mapMaterialIntelligenceDetail(
     }),
     lastQuoteAmount: lastQuote.amount,
     lastQuoteDate: lastQuote.date,
+    recentQuotes,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
   };
 }
