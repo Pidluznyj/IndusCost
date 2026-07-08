@@ -57,7 +57,6 @@ import { loadAnnualComparisonPortfolioRows } from "@/src/lib/financeExecutiveRep
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
-import { enrichFinanceArDashboardRowsWithOrderFinancialResolution } from "@/src/lib/nomusArOrderFinancialResolution.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -116,11 +115,8 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
     }),
   ]);
 
-  const arMapped = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
-  const arRows = await enrichFinanceArDashboardRowsWithOrderFinancialResolution(prisma, arMapped);
-
   return {
-    arRows,
+    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
@@ -152,11 +148,8 @@ async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
     }),
   ]);
 
-  const arMapped = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
-  const arRows = await enrichFinanceArDashboardRowsWithOrderFinancialResolution(prisma, arMapped);
-
   return {
-    arRows,
+    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,

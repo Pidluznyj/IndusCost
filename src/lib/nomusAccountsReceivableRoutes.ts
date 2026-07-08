@@ -2,7 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { buildOfficialNomusAccountsReceivableSummaryResponse } from "@/src/lib/financeAccountsReceivableRulesAdapter.js";
-import { loadEnrichedFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -25,7 +25,7 @@ export function registerNomusAccountsReceivableRoutes(app: express.Express, auth
           return res.status(401).json({ error: "Não autenticado." });
         }
 
-        const { rows, syncCutoff } = await loadEnrichedFinanceArManagementRowsFromPrisma(prisma, {
+        const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(prisma, {
           status: "all",
         });
         const response = buildOfficialNomusAccountsReceivableSummaryResponse({

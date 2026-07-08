@@ -27,16 +27,13 @@ import {
   type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
-import { enrichFinanceArDashboardRowsWithOrderFinancialResolution } from "./nomusArOrderFinancialResolution.server.js";
 import {
   buildCashFlowArPrismaWhere,
   buildCashFlowApPrismaWhere,
 } from "./financeCashFlowRowFilters.js";
 import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
-import {
-  loadEnrichedFinanceArManagementRowsFromPrisma,
-  loadEnrichedFinanceArOpenHorizonRowsFromPrisma,
-} from "./financeAccountsReceivableManagement.server.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
+import { loadFinanceArOpenHorizonRowsFromPrisma } from "./financeAccountsReceivableHorizon.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
@@ -358,14 +355,8 @@ async function loadCashFlowRows(
     }),
   ]);
 
-  const arMapped = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
-  const arRows = await enrichFinanceArDashboardRowsWithOrderFinancialResolution(
-    db as Parameters<typeof enrichFinanceArDashboardRowsWithOrderFinancialResolution>[0],
-    arMapped
-  );
-
   return {
-    arRows,
+    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
@@ -607,9 +598,9 @@ export async function buildFinanceExecutiveReport(
     nfeSyncStatus,
     dailyRadarPortfolio,
   ] = await Promise.all([
-    loadEnrichedFinanceArManagementRowsFromPrisma(db, arPortfolioFilters, referenceDate),
+    loadFinanceArManagementRowsFromPrisma(db, arPortfolioFilters, referenceDate),
     loadApRows(db, apPortfolioFilters),
-    loadEnrichedFinanceArOpenHorizonRowsFromPrisma(db, referenceDate),
+    loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate),
     loadCashFlowRows(db, cashFlowFilters, referenceDate),
     loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
     loadAnnualComparisonPortfolioRows(db, referenceDate, cashFlowFilters),

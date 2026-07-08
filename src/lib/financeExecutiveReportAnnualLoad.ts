@@ -19,7 +19,6 @@ import {
 } from "./financeCashFlowDashboard.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
-import { enrichFinanceArDashboardRowsWithOrderFinancialResolution } from "./nomusArOrderFinancialResolution.server.js";
 
 export async function loadAnnualComparisonPortfolioRows(
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable">,
@@ -49,14 +48,8 @@ export async function loadAnnualComparisonPortfolioRows(
     }),
   ]);
 
-  const arMapped = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
-  const arRows = await enrichFinanceArDashboardRowsWithOrderFinancialResolution(
-    db as Parameters<typeof enrichFinanceArDashboardRowsWithOrderFinancialResolution>[0],
-    arMapped
-  );
-
   return {
-    arRows,
+    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,

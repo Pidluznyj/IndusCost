@@ -17,15 +17,12 @@ import {
   buildFinanceArTitlesExportBuffer,
   financeArTitlesExportFilename,
 } from "@/src/lib/financeAccountsReceivableTitlesExport.js";
-import { loadEnrichedFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
-import {
-  loadEnrichedFinanceArOpenHorizonRowsFromPrisma,
-} from "@/src/lib/financeAccountsReceivableManagement.server.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadFinanceArOpenHorizonRowsFromPrisma } from "@/src/lib/financeAccountsReceivableHorizon.js";
 import { listFinanceArHorizonBucketCustomers } from "@/src/lib/financeArHorizonBucketCustomers.js";
 import { parseFinanceAgingBucketParam } from "@/src/lib/financeDashboardAgingBuckets.js";
 import {
   buildFinanceArHorizonExportPayloadDefault,
-  buildFinanceArHorizonExportPayloadFromRows,
   FinanceArHorizonExportError,
   parseFinanceArHorizonExportQuery,
 } from "@/src/lib/financeAccountsReceivableHorizonExport.js";
@@ -64,7 +61,7 @@ export const FINANCE_AR_EXPORT_PERMISSIONS = [
 ] as const;
 
 async function loadFinanceArRows(filters: FinanceArDashboardFilters) {
-  return loadEnrichedFinanceArManagementRowsFromPrisma(prisma, filters);
+  return loadFinanceArManagementRowsFromPrisma(prisma, filters);
 }
 
 function parseFinanceArFiltersOrRespond(
@@ -128,7 +125,7 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       if (!filters) return;
       const referenceDate = new Date();
       const { rows, syncCutoff } = await loadFinanceArRows(filters);
-      const { rows: horizonSourceRows } = await loadEnrichedFinanceArOpenHorizonRowsFromPrisma(
+      const { rows: horizonSourceRows } = await loadFinanceArOpenHorizonRowsFromPrisma(
         prisma,
         referenceDate
       );
@@ -157,8 +154,8 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       if (!query) return;
       const referenceDate = new Date();
       const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
-        ? await loadEnrichedFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
-        : await loadEnrichedFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
+        ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
+        : await loadFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
       const payload = buildFinanceArTitlesPayload(rows, query, referenceDate, syncCutoff);
       return res.json(payload);
     } catch (error) {
@@ -180,7 +177,7 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       }
 
       const referenceDate = new Date();
-      const { rows, syncCutoff } = await loadEnrichedFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate);
+      const { rows, syncCutoff } = await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate);
       const items = listFinanceArHorizonBucketCustomers(rows, agingBucket, referenceDate, syncCutoff);
       return res.json({ items });
     } catch (error) {
@@ -200,7 +197,7 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const query = parseFinanceArTitlesOrRespond(res, rawQuery);
       if (!query) return;
       const referenceDate = new Date();
-      const { rows, syncCutoff } = await loadEnrichedFinanceArManagementRowsFromPrisma(
+      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(
         prisma,
         financeArTitlesPrismaFilters(query)
       );
@@ -258,14 +255,12 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const query = parseFinanceArHorizonExportOrRespond(res, req.query as Record<string, unknown>);
       if (!query) return;
       const referenceDate = new Date();
-      const horizonLoaded = await loadEnrichedFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate);
-      const payload = buildFinanceArHorizonExportPayloadFromRows({
-        rows: horizonLoaded.rows,
-        syncCutoff: horizonLoaded.syncCutoff,
+      const payload = await buildFinanceArHorizonExportPayloadDefault(
+        prisma,
         query,
-        userContext: { userName: user.name ?? null },
-        referenceDate,
-      });
+        { userName: user.name ?? null },
+        referenceDate
+      );
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/horizon/export-data", error);
@@ -283,14 +278,12 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const query = parseFinanceArHorizonExportOrRespond(res, req.query as Record<string, unknown>);
       if (!query) return;
       const referenceDate = new Date();
-      const horizonLoaded = await loadEnrichedFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate);
-      const payload = buildFinanceArHorizonExportPayloadFromRows({
-        rows: horizonLoaded.rows,
-        syncCutoff: horizonLoaded.syncCutoff,
+      const payload = await buildFinanceArHorizonExportPayloadDefault(
+        prisma,
         query,
-        userContext: { userName: user.name ?? null },
-        referenceDate,
-      });
+        { userName: user.name ?? null },
+        referenceDate
+      );
       const buffer = buildFinanceArHorizonExportBuffer(payload);
       const bucketLabel =
         query.scope === "full" ? "Todas as faixas" : (payload.bucket?.label ?? "faixa");

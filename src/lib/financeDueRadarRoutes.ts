@@ -3,8 +3,8 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "./appAuth.js";
 import {
   filterFinanceArManagementReportRows,
+  loadFinanceArManagementRowsFromPrisma,
 } from "./financeAccountsReceivableManagement.js";
-import { loadEnrichedFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 import {
   buildOfficialApDueRadarPayload,
   filterOfficialApManagementTitles,
@@ -58,7 +58,7 @@ type AuthGuards = {
 
 async function loadArDueRadarRows(query: Record<string, unknown>, referenceDate: Date) {
   const filters = parseDueRadarPageFilters(query, "receivable");
-  const { rows, syncCutoff } = await loadEnrichedFinanceArManagementRowsFromPrisma(prisma, filters, referenceDate);
+  const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(prisma, filters, referenceDate);
   const filtered = filterFinanceArManagementReportRows(rows, filters, referenceDate, syncCutoff);
   return { filtered, filtersApplied: filters as Record<string, unknown> };
 }

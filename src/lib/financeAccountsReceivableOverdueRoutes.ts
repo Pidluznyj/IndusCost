@@ -12,7 +12,7 @@ import {
   FinanceArOverdueFilterParseError,
   parseFinanceArOverdueFilters,
 } from "./financeAccountsReceivableOverdue.js";
-import { loadEnrichedFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
 import type { FinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import { prisma } from "./prisma.js";
 
@@ -35,7 +35,7 @@ type AuthGuards = {
 };
 
 async function loadFinanceArOverdueRows(filters: FinanceArDashboardFilters) {
-  return loadEnrichedFinanceArManagementRowsFromPrisma(prisma, { ...filters, status: "all" });
+  return loadFinanceArManagementRowsFromPrisma(prisma, { ...filters, status: "all" });
 }
 
 function parseOverdueFiltersOrRespond(res: express.Response, query: Record<string, unknown>) {
