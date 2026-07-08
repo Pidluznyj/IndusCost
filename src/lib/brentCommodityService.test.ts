@@ -52,10 +52,7 @@ describe("brentCommodityService", () => {
         json: async () => ({}),
       }) as Response;
 
-    await assert.rejects(
-      () => fetchBrentQuoteFromYahoo(mockFetch),
-      /HTTP 503/
-    );
+    await assert.rejects(() => fetchBrentQuoteFromYahoo(mockFetch), /HTTP 503/);
   });
 
   it("fetchBrentQuoteFromYahoo falha sem preço válido", async () => {
@@ -67,9 +64,6 @@ describe("brentCommodityService", () => {
         }),
       }) as Response;
 
-    await assert.rejects(
-      () => fetchBrentQuoteFromYahoo(mockFetch),
-      /preço válido/
-    );
+    await assert.rejects(() => fetchBrentQuoteFromYahoo(mockFetch), /preço válido/);
   });
 });

@@ -1,6 +1,6 @@
 import React from "react";
-import { MaterialsMarketIntelligenceBrentKpi } from "@/src/components/materials/MaterialsMarketIntelligenceBrentKpi";
 import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/materials/MaterialsMarketIntelligenceMonitoredList";
+import { MaterialsMarketGlobalIndicatorsSection } from "@/src/components/materials/MaterialsMarketGlobalIndicatorsSection";
 import { MaterialsMarketIntelligenceAlertsPanel } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialsMarketIntelligenceTopOpportunityCard } from "@/src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard";
 
@@ -16,37 +16,30 @@ export function MaterialsMarketIntelligencePage() {
         </p>
         <h3 className="text-lg font-bold tracking-tight text-foreground">Inteligência de Mercado</h3>
         <p className="text-sm text-muted-foreground max-w-3xl">
-          Acompanhe matérias-primas estratégicas e sinais de mercado para apoiar compras, custos e
-          decisões de engenharia. Nesta fase inicial, configure o monitoramento quando estiver
-          disponível.
+          Acompanhe o Dólar PTAX, o Brent e matérias-primas estratégicas para apoiar compras, custos e
+          decisões de engenharia.
         </p>
       </header>
 
+      <MaterialsMarketGlobalIndicatorsSection />
+
       <section
         className="space-y-3"
-        aria-labelledby="materials-market-intelligence-kpis-heading"
-        data-testid="materials-market-intelligence-kpis-section"
+        aria-labelledby="materials-market-intelligence-opportunity-heading"
+        data-testid="materials-market-intelligence-opportunity-section"
       >
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h4
-              id="materials-market-intelligence-kpis-heading"
-              className="text-sm font-semibold text-foreground"
-            >
-              Indicadores
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Resumo executivo das matérias monitoradas e variações relevantes.
-            </p>
-          </div>
+        <div>
+          <h4
+            id="materials-market-intelligence-opportunity-heading"
+            className="text-sm font-semibold text-foreground"
+          >
+            Oportunidades
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            Destaques de economia potencial identificados nas cotações monitoradas.
+          </p>
         </div>
-        <div
-          className="grid gap-3 lg:grid-cols-2"
-          data-testid="materials-market-intelligence-kpis-grid"
-        >
-          <MaterialsMarketIntelligenceBrentKpi />
-          <MaterialsMarketIntelligenceTopOpportunityCard />
-        </div>
+        <MaterialsMarketIntelligenceTopOpportunityCard />
       </section>
 
       <MaterialsMarketIntelligenceAlertsPanel />
