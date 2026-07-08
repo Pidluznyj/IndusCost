@@ -1,0 +1,320 @@
+/**
+ * Cotações manuais de mercado — Inteligência de Mercado (Suprimentos).
+ * Cada registro é append-only; nunca sobrescreve histórico anterior.
+ */
+
+export const MATERIAL_MARKET_QUOTE_STATUS_VALUES = [
+  "DRAFT",
+  "ACTIVE",
+  "EXPIRED",
+  "CANCELLED",
+] as const;
+
+export type MaterialMarketQuoteStatus = (typeof MATERIAL_MARKET_QUOTE_STATUS_VALUES)[number];
+
+export const DEFAULT_MATERIAL_MARKET_QUOTE_CURRENCY = "BRL";
+
+export const MATERIAL_MARKET_QUOTE_STATUS_LABELS: Record<MaterialMarketQuoteStatus, string> = {
+  DRAFT: "Rascunho",
+  ACTIVE: "Ativa",
+  EXPIRED: "Expirada",
+  CANCELLED: "Cancelada",
+};
+
+export type MaterialMarketQuoteInput = {
+  supplierId?: unknown;
+  supplierName?: unknown;
+  quoteDate?: unknown;
+  price?: unknown;
+  currency?: unknown;
+  unit?: unknown;
+  origin?: unknown;
+  manufacturer?: unknown;
+  freightValue?: unknown;
+  taxValue?: unknown;
+  paymentTerms?: unknown;
+  proposalValidityDate?: unknown;
+  notes?: unknown;
+  status?: unknown;
+};
+
+export type MaterialMarketQuotePersistFields = {
+  supplierId: string | null;
+  supplierName: string | null;
+  quoteDate: Date;
+  price: number;
+  currency: string;
+  unit: string;
+  origin: string | null;
+  manufacturer: string | null;
+  freightValue: number | null;
+  taxValue: number | null;
+  netPrice: number;
+  paymentTerms: string | null;
+  proposalValidityDate: Date | null;
+  notes: string | null;
+  status: MaterialMarketQuoteStatus;
+};
+
+export type MaterialMarketQuoteApiItem = {
+  id: string;
+  materialId: string;
+  supplierId: string | null;
+  supplierName: string | null;
+  quoteDate: string;
+  price: number;
+  currency: string;
+  unit: string;
+  origin: string | null;
+  manufacturer: string | null;
+  freightValue: number | null;
+  taxValue: number | null;
+  netPrice: number;
+  paymentTerms: string | null;
+  proposalValidityDate: string | null;
+  notes: string | null;
+  status: MaterialMarketQuoteStatus;
+  statusLabel: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MaterialMarketQuoteSourceRow = {
+  id: string;
+  materialId: string;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  quoteDate: Date | string;
+  price: number | string | { toString(): string };
+  currency: string;
+  unit: string;
+  origin?: string | null;
+  manufacturer?: string | null;
+  freightValue?: number | string | null | { toString(): string };
+  taxValue?: number | string | null | { toString(): string };
+  netPrice: number | string | { toString(): string };
+  paymentTerms?: string | null;
+  proposalValidityDate?: Date | string | null;
+  notes?: string | null;
+  status: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+/** Preço líquido = preço base + frete + impostos (quando informados). */
+export function calculateMaterialMarketQuoteNetPrice(input: {
+  price: number;
+  freightValue?: number | null;
+  taxValue?: number | null;
+}): number {
+  const freight = input.freightValue ?? 0;
+  const tax = input.taxValue ?? 0;
+  return roundMarketQuoteMoney(input.price + freight + tax);
+}
+
+function roundMarketQuoteMoney(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function parseOptionalDecimal(value: unknown, field: string):
+  | { ok: true; value: number | null }
+  | { ok: false; field: string; message: string } {
+  if (value == null || value === "") return { ok: true, value: null };
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return { ok: false, field, message: `${field} deve ser um número não negativo.` };
+  }
+  return { ok: true, value: roundMarketQuoteMoney(n) };
+}
+
+function parseRequiredDecimal(value: unknown, field: string):
+  | { ok: true; value: number }
+  | { ok: false; field: string; message: string } {
+  if (value == null || value === "") {
+    return { ok: false, field, message: `${field} é obrigatório.` };
+  }
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return { ok: false, field, message: `${field} deve ser um número não negativo.` };
+  }
+  return { ok: true, value: roundMarketQuoteMoney(n) };
+}
+
+function parseOptionalDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseRequiredDate(value: unknown, field: string):
+  | { ok: true; value: Date }
+  | { ok: false; field: string; message: string } {
+  const d = parseOptionalDate(value);
+  if (!d) {
+    return { ok: false, field, message: `${field} é obrigatória e deve ser uma data válida.` };
+  }
+  return { ok: true, value: d };
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeUuidOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+export function isMaterialMarketQuoteStatus(value: unknown): value is MaterialMarketQuoteStatus {
+  return (
+    typeof value === "string" &&
+    (MATERIAL_MARKET_QUOTE_STATUS_VALUES as readonly string[]).includes(value)
+  );
+}
+
+export function parseMaterialMarketQuoteInput(
+  input: MaterialMarketQuoteInput,
+  defaults?: { unit?: string }
+):
+  | { ok: true; value: MaterialMarketQuotePersistFields }
+  | { ok: false; message: string; field?: string } {
+  const quoteDateParsed = parseRequiredDate(input.quoteDate, "quoteDate");
+  if (quoteDateParsed.ok === false) {
+    return { ok: false, field: quoteDateParsed.field, message: quoteDateParsed.message };
+  }
+
+  const priceParsed = parseRequiredDecimal(input.price, "price");
+  if (priceParsed.ok === false) {
+    return { ok: false, field: priceParsed.field, message: priceParsed.message };
+  }
+
+  const freightParsed = parseOptionalDecimal(input.freightValue, "freightValue");
+  if (freightParsed.ok === false) {
+    return { ok: false, field: freightParsed.field, message: freightParsed.message };
+  }
+
+  const taxParsed = parseOptionalDecimal(input.taxValue, "taxValue");
+  if (taxParsed.ok === false) {
+    return { ok: false, field: taxParsed.field, message: taxParsed.message };
+  }
+
+  const unit = normalizeOptionalString(input.unit) ?? defaults?.unit?.trim() ?? "";
+  if (!unit) {
+    return { ok: false, field: "unit", message: "Unidade é obrigatória." };
+  }
+
+  const supplierId = normalizeUuidOrNull(input.supplierId);
+  const supplierName = normalizeOptionalString(input.supplierName);
+  if (!supplierId && !supplierName) {
+    return {
+      ok: false,
+      field: "supplierName",
+      message: "Informe o fornecedor (nome ou ID).",
+    };
+  }
+
+  const currency =
+    normalizeOptionalString(input.currency)?.toUpperCase() ??
+    DEFAULT_MATERIAL_MARKET_QUOTE_CURRENCY;
+
+  const statusRaw = input.status;
+  const status = isMaterialMarketQuoteStatus(statusRaw) ? statusRaw : "ACTIVE";
+
+  const netPrice = calculateMaterialMarketQuoteNetPrice({
+    price: priceParsed.value,
+    freightValue: freightParsed.value,
+    taxValue: taxParsed.value,
+  });
+
+  return {
+    ok: true,
+    value: {
+      supplierId,
+      supplierName,
+      quoteDate: quoteDateParsed.value,
+      price: priceParsed.value,
+      currency,
+      unit,
+      origin: normalizeOptionalString(input.origin),
+      manufacturer: normalizeOptionalString(input.manufacturer),
+      freightValue: freightParsed.value,
+      taxValue: taxParsed.value,
+      netPrice,
+      paymentTerms: normalizeOptionalString(input.paymentTerms),
+      proposalValidityDate: parseOptionalDate(input.proposalValidityDate),
+      notes: normalizeOptionalString(input.notes),
+      status,
+    },
+  };
+}
+
+function toIsoDateOnly(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function toNumber(value: number | string | { toString(): string }): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function serializeMaterialMarketQuoteForApi(
+  row: MaterialMarketQuoteSourceRow
+): MaterialMarketQuoteApiItem {
+  const status = isMaterialMarketQuoteStatus(row.status) ? row.status : "ACTIVE";
+  return {
+    id: row.id,
+    materialId: row.materialId,
+    supplierId: row.supplierId ?? null,
+    supplierName: row.supplierName?.trim() || null,
+    quoteDate: toIsoDateOnly(row.quoteDate),
+    price: toNumber(row.price),
+    currency: row.currency,
+    unit: row.unit,
+    origin: row.origin?.trim() || null,
+    manufacturer: row.manufacturer?.trim() || null,
+    freightValue: row.freightValue != null ? toNumber(row.freightValue) : null,
+    taxValue: row.taxValue != null ? toNumber(row.taxValue) : null,
+    netPrice: toNumber(row.netPrice),
+    paymentTerms: row.paymentTerms?.trim() || null,
+    proposalValidityDate: row.proposalValidityDate
+      ? toIsoDateOnly(row.proposalValidityDate)
+      : null,
+    notes: row.notes?.trim() || null,
+    status,
+    statusLabel: MATERIAL_MARKET_QUOTE_STATUS_LABELS[status],
+    createdBy: row.createdBy ?? null,
+    updatedBy: row.updatedBy ?? null,
+    createdAt: new Date(row.createdAt).toISOString(),
+    updatedAt: new Date(row.updatedAt).toISOString(),
+  };
+}
+
+/** Ordenação cronológica decrescente (mais recente primeiro). */
+export function sortMaterialMarketQuotesChronologically<T extends { quoteDate: string | Date; createdAt: string | Date }>(
+  rows: T[]
+): T[] {
+  return [...rows].sort((a, b) => {
+    const dateA = new Date(a.quoteDate).getTime();
+    const dateB = new Date(b.quoteDate).getTime();
+    if (dateB !== dateA) return dateB - dateA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+export function buildMaterialMarketQuoteListResponse(
+  rows: MaterialMarketQuoteSourceRow[]
+): { items: MaterialMarketQuoteApiItem[]; total: number } {
+  const sorted = sortMaterialMarketQuotesChronologically(rows);
+  const items = sorted.map(serializeMaterialMarketQuoteForApi);
+  return { items, total: items.length };
+}

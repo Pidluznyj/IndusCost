@@ -20,6 +20,10 @@ export function getMaterialMarketIntelligenceDetailApiPath(materialId: string): 
   return `/api/materials/market-intelligence/${materialId}`;
 }
 
+export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes`;
+}
+
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {
   return `${MATERIALS_SECTION_PATHS.marketIntelligence}/${materialId}`;
 }

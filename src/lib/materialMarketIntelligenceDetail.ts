@@ -13,6 +13,11 @@ import {
   resolveMaterialLastQuote,
   type MonitoredMaterialPriceHistoryRow,
 } from "./materialMarketIntelligenceMonitored.js";
+import {
+  buildMaterialMarketQuoteListResponse,
+  type MaterialMarketQuoteApiItem,
+  type MaterialMarketQuoteSourceRow,
+} from "./materialMarketQuote.js";
 import { getMaterialMarketIntelligenceDetailPath } from "./materialsNavigation.js";
 
 export type MaterialIntelligenceDetailSourceRow = {
@@ -28,6 +33,7 @@ export type MaterialIntelligenceDetailSourceRow = {
   marketMonitoringFrequencyDays?: number | null;
   marketNotes?: string | null;
   MaterialPriceHistory?: MonitoredMaterialPriceHistoryRow[];
+  MaterialMarketQuote?: MaterialMarketQuoteSourceRow[];
 };
 
 export type MaterialIntelligenceDetailItem = {
@@ -45,7 +51,7 @@ export type MaterialIntelligenceDetailItem = {
   monitoringStatusLabel: string;
   lastQuoteAmount: number | null;
   lastQuoteDate: string | null;
-  recentQuotes: MaterialIntelligenceQuoteRow[];
+  recentQuotes: MaterialMarketQuoteApiItem[];
   intelligencePath: string;
 };
 
@@ -54,22 +60,19 @@ export type MaterialIntelligenceQuoteRow = {
   date: string | null;
 };
 
-export function mapMaterialIntelligenceRecentQuotes(
-  priceHistory: MonitoredMaterialPriceHistoryRow[] | undefined
-): MaterialIntelligenceQuoteRow[] {
-  if (!priceHistory?.length) return [];
-  return priceHistory
-    .map((row) => {
-      const amount = Number(row.price);
-      if (!Number.isFinite(amount)) return null;
-      const rawDate = row.effectiveDate;
-      const date =
-        rawDate != null && String(rawDate).trim()
-          ? new Date(rawDate).toISOString()
-          : null;
-      return { amount, date };
-    })
-    .filter((row): row is MaterialIntelligenceQuoteRow => row != null);
+export function mapMaterialIntelligenceMarketQuotes(
+  quotes: MaterialMarketQuoteSourceRow[] | undefined
+): MaterialMarketQuoteApiItem[] {
+  if (!quotes?.length) return [];
+  return buildMaterialMarketQuoteListResponse(quotes).items;
+}
+
+export function resolveLatestMarketQuote(
+  quotes: MaterialMarketQuoteApiItem[]
+): { amount: number | null; date: string | null } {
+  const latest = quotes[0];
+  if (!latest) return { amount: null, date: null };
+  return { amount: latest.netPrice, date: latest.quoteDate };
 }
 
 export function buildMaterialIntelligenceMonitoringStatusLabel(input: {
@@ -85,11 +88,14 @@ export function mapMaterialIntelligenceDetail(
   material: MaterialIntelligenceDetailSourceRow
 ): MaterialIntelligenceDetailItem {
   const marketFields = serializeMaterialForApi(material);
-  const lastQuote = resolveMaterialLastQuote({
+  const recentQuotes = mapMaterialIntelligenceMarketQuotes(material.MaterialMarketQuote);
+  const latestQuote = resolveLatestMarketQuote(recentQuotes);
+  const priceHistoryFallback = resolveMaterialLastQuote({
     currentCost: material.currentCost,
     priceHistory: material.MaterialPriceHistory,
   });
-  const recentQuotes = mapMaterialIntelligenceRecentQuotes(material.MaterialPriceHistory);
+  const lastQuoteAmount = latestQuote.amount ?? priceHistoryFallback.amount;
+  const lastQuoteDate = latestQuote.date ?? priceHistoryFallback.date;
 
   return {
     id: material.id,
@@ -107,8 +113,8 @@ export function mapMaterialIntelligenceDetail(
       isMarketMonitored: marketFields.isMarketMonitored,
       marketCriticality: marketFields.marketCriticality,
     }),
-    lastQuoteAmount: lastQuote.amount,
-    lastQuoteDate: lastQuote.date,
+    lastQuoteAmount,
+    lastQuoteDate,
     recentQuotes,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
   };

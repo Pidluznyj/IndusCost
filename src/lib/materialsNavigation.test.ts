@@ -108,4 +108,20 @@ describe("materialsNavigation", () => {
     assert.match(schema, /marketMonitoringFrequencyDays/);
     assert.match(schema, /marketNotes/);
   });
+
+  it("API de cotações manuais de mercado", () => {
+    const server = read("server.ts");
+    const form = read("src/components/materials/MaterialIntelligenceMarketQuoteForm.tsx");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/quotes/);
+    assert.match(server, /materialMarketQuote\.create/);
+    assert.match(server, /parseMaterialMarketQuoteInput/);
+    assert.match(form, /material-market-quote-submit/);
+  });
+
+  it("schema possui MaterialMarketQuote append-only", () => {
+    const schema = read("prisma/schema.prisma");
+    assert.match(schema, /model MaterialMarketQuote/);
+    assert.match(schema, /netPrice/);
+    assert.match(schema, /supplierName/);
+  });
 });

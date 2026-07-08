@@ -84,6 +84,11 @@ import {
   parseMonitoredMaterialCriticalityFilter,
 } from "./src/lib/materialMarketIntelligenceMonitored.js";
 import { mapMaterialIntelligenceDetail } from "./src/lib/materialMarketIntelligenceDetail.js";
+import {
+  buildMaterialMarketQuoteListResponse,
+  parseMaterialMarketQuoteInput,
+  serializeMaterialMarketQuoteForApi,
+} from "./src/lib/materialMarketQuote.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -2771,6 +2776,105 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   );
 
   app.get(
+    "/api/materials/market-intelligence/:materialId/quotes",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const material = await prisma.material.findUnique({ where: { id: materialId } });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const quotes = await prisma.materialMarketQuote.findMany({
+          where: { materialId },
+          orderBy: [{ quoteDate: "desc" }, { createdAt: "desc" }],
+        });
+
+        res.json(buildMaterialMarketQuoteListResponse(quotes));
+      } catch (error) {
+        console.error("GET /api/materials/market-intelligence/:materialId/quotes", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao listar cotações de mercado.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/materials/market-intelligence/:materialId/quotes",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const material = await prisma.material.findUnique({ where: { id: materialId } });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
+          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+        }
+
+        const body = req.body ?? {};
+        const parsed = parseMaterialMarketQuoteInput(body, { unit: material.unit });
+        if (parsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_MARKET_QUOTE_INVALID",
+            field: parsed.field,
+            message: parsed.message,
+          });
+        }
+
+        if (parsed.value.supplierId) {
+          const supplier = await prisma.financialSupplier.findUnique({
+            where: { id: parsed.value.supplierId },
+          });
+          if (!supplier) {
+            return res.status(400).json({
+              error: "MATERIAL_MARKET_QUOTE_INVALID_SUPPLIER",
+              message: "Fornecedor informado não encontrado.",
+            });
+          }
+        }
+
+        const quote = await prisma.materialMarketQuote.create({
+          data: {
+            materialId,
+            ...parsed.value,
+            createdBy: authUser.id,
+            updatedBy: authUser.id,
+          },
+        });
+
+        res.status(201).json(serializeMaterialMarketQuoteForApi(quote));
+      } catch (error) {
+        console.error("POST /api/materials/market-intelligence/:materialId/quotes", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao registrar cotação de mercado.",
+        });
+      }
+    }
+  );
+
+  app.get(
     "/api/materials/market-intelligence/:materialId",
     requireAppAuth,
     requirePermission("materials.view"),
@@ -2784,7 +2888,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const material = await prisma.material.findUnique({
           where: { id: materialId },
           include: {
-            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 },
+            MaterialMarketQuote: { orderBy: [{ quoteDate: "desc" }, { createdAt: "desc" }], take: 10 },
+            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 1 },
           },
         });
         if (!material) {

@@ -65,7 +65,7 @@ export const MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS: MaterialIntelligenc
 ];
 
 export const MATERIAL_INTELLIGENCE_RECENT_QUOTES_EMPTY_MESSAGE =
-  "Nenhuma cotação registrada para esta matéria-prima ainda.";
+  "Nenhuma cotação manual registrada para esta matéria-prima ainda.";
 
 export function formatMaterialIntelligenceQuoteDate(iso: string | null | undefined): string {
   if (!iso?.trim()) return "—";

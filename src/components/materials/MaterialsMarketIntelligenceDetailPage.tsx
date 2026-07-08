@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -14,10 +14,12 @@ import {
 } from "lucide-react";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
+import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
 import type { MaterialMarketCriticality } from "@/src/lib/materialMarketMonitoring";
 import { MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS } from "@/src/lib/materialIntelligence360Sections";
 import {
   getMaterialMarketIntelligenceDetailApiPath,
+  getMaterialMarketIntelligenceQuotesApiPath,
   MATERIALS_SECTION_PATHS,
 } from "@/src/lib/materialsNavigation";
 import {
@@ -42,6 +44,8 @@ const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
 export function MaterialsMarketIntelligenceDetailPage() {
   const { materialId } = useParams<{ materialId: string }>();
   const [item, setItem] = useState<MaterialIntelligenceDetailItem | null>(null);
+  const [quotes, setQuotes] = useState<MaterialMarketQuoteApiItem[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
@@ -51,6 +55,21 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const [activationFrequency, setActivationFrequency] = useState(
     DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS
   );
+
+  const loadQuotes = useCallback(async () => {
+    if (!materialId) return;
+    setQuotesLoading(true);
+    try {
+      const data = await fetchJsonOk<{ items: MaterialMarketQuoteApiItem[] }>(
+        getMaterialMarketIntelligenceQuotesApiPath(materialId)
+      );
+      setQuotes(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      setQuotes([]);
+    } finally {
+      setQuotesLoading(false);
+    }
+  }, [materialId]);
 
   const load = useCallback(async () => {
     if (!materialId) {
@@ -71,17 +90,35 @@ export function MaterialsMarketIntelligenceDetailPage() {
       if (data.marketMonitoringFrequencyDays) {
         setActivationFrequency(data.marketMonitoringFrequencyDays);
       }
+      await loadQuotes();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar a inteligência.");
       setItem(null);
     } finally {
       setLoading(false);
     }
-  }, [materialId]);
+  }, [materialId, loadQuotes]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleQuoteCreated = async () => {
+    await loadQuotes();
+    await load();
+  };
+
+  const headerItem = useMemo(() => {
+    if (!item) return null;
+    const latest = quotes[0];
+    if (!latest) return item;
+    return {
+      ...item,
+      lastQuoteAmount: latest.netPrice,
+      lastQuoteDate: latest.quoteDate,
+      recentQuotes: quotes,
+    };
+  }, [item, quotes]);
 
   const handleActivateMonitoring = async () => {
     if (!materialId) return;
@@ -142,7 +179,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
         </div>
       ) : item ? (
         <div className="space-y-6" data-testid="material-intelligence-360-page">
-          <MaterialIntelligence360Header item={item} />
+          <MaterialIntelligence360Header item={headerItem ?? item} />
 
           {!item.isMarketMonitored ? (
             <MaterialIntelligenceActivatePanel
@@ -160,7 +197,13 @@ export function MaterialsMarketIntelligenceDetailPage() {
             className="grid gap-4 xl:grid-cols-2"
             data-testid="material-intelligence-360-sections"
           >
-            <MaterialIntelligenceRecentQuotesSection quotes={item.recentQuotes} />
+            <MaterialIntelligenceRecentQuotesSection
+              materialId={item.id}
+              defaultUnit={item.unit}
+              quotes={quotes}
+              loading={quotesLoading}
+              onQuoteCreated={() => void handleQuoteCreated()}
+            />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder
