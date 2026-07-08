@@ -25,6 +25,7 @@ import {
   formatExecutiveCurrency,
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters";
+import { ExecutiveDashboardSummaryKpiGrid } from "@/src/components/dashboard/ExecutiveDashboardSummaryKpiGrid";
 
 type ComboRow = DashboardMonthlySeriesPoint & {
   name: string;
@@ -511,22 +512,16 @@ export function ExecutiveTargetPanel({
   return (
     <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-bold">{title}</h3>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          { label: "Realizado", value: target.formatted.actual },
-          { label: "Período anterior", value: target.formatted.previousPeriod },
-          { label: "Meta (+30%)", value: target.formatted.target },
-          { label: "Diferença p/ meta", value: target.formatted.gap },
-          { label: "% atingimento", value: target.formatted.achievementPercent },
-        ].map((item) => (
-          <div key={item.label} className="rounded-2xl border border-border bg-accent/20 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{item.label}</p>
-            <p className="mt-1 truncate text-lg font-black" title={item.value}>
-              {item.value}
-            </p>
-          </div>
-        ))}
-      </div>
+      <ExecutiveDashboardSummaryKpiGrid
+        cards={[
+          { label: "Realizado", formatted: target.formatted.actual },
+          { label: "Período anterior", formatted: target.formatted.previousPeriod },
+          { label: "Meta (+30%)", formatted: target.formatted.target },
+          { label: "Diferença p/ meta", formatted: target.formatted.gap },
+          { label: "% atingimento", formatted: target.formatted.achievementPercent },
+        ]}
+        minColumnWidth={140}
+      />
     </section>
   );
 }

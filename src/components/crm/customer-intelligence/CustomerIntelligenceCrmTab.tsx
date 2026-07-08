@@ -4,6 +4,7 @@ import type {
   CustomerIntelligenceRelationshipStatus,
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes";
+import { CustomerIntelligenceTabKpiGrid } from "@/src/components/crm/customer-intelligence/CustomerIntelligenceTabKpiGrid";
 
 const RELATIONSHIP_STATUS_LABELS: Record<CustomerIntelligenceRelationshipStatus, string> = {
   ativo: "Ativo",
@@ -23,20 +24,6 @@ function formatDateTime(iso: string | null | undefined): string {
 function formatDays(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${Math.max(0, Math.floor(value))} dia(s)`;
-}
-
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-        {label}
-      </p>
-      <p className="text-lg font-bold mt-1 truncate" title={value}>
-        {value}
-      </p>
-      {hint ? <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p> : null}
-    </div>
-  );
 }
 
 function StatusBadge({ status }: { status: CustomerIntelligenceRelationshipStatus }) {
@@ -76,21 +63,28 @@ export function CustomerIntelligenceCrmTab({ report }: { report: CustomerIntelli
         <StatusBadge status={crm.relationshipStatus} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Responsável" value={crm.commercialOwner ?? "—"} />
-        <KpiCard
-          label="Último contato"
-          value={formatDateTime(crm.lastContactAt)}
-          hint={crm.daysSinceLastContact != null ? `${formatDays(crm.daysSinceLastContact)} atrás` : undefined}
-        />
-        <KpiCard label="Próxima tarefa" value={formatDateTime(crm.nextTaskAt)} />
-        <KpiCard label="Tarefas abertas" value={String(crm.openTasksCount)} />
-        <KpiCard
-          label="Tarefas vencidas"
-          value={String(crm.overdueTasksCount)}
-          hint={crm.overdueTasksCount > 0 ? "Priorizar follow-up" : undefined}
-        />
-      </div>
+      <CustomerIntelligenceTabKpiGrid
+        ariaLabel="Indicadores de CRM"
+        items={[
+          { label: "Responsável", value: crm.commercialOwner ?? "—" },
+          {
+            label: "Último contato",
+            value: formatDateTime(crm.lastContactAt),
+            hint:
+              crm.daysSinceLastContact != null
+                ? `${formatDays(crm.daysSinceLastContact)} atrás`
+                : undefined,
+          },
+          { label: "Próxima tarefa", value: formatDateTime(crm.nextTaskAt) },
+          { label: "Tarefas abertas", value: String(crm.openTasksCount) },
+          {
+            label: "Tarefas vencidas",
+            value: String(crm.overdueTasksCount),
+            hint: crm.overdueTasksCount > 0 ? "Priorizar follow-up" : undefined,
+            tone: crm.overdueTasksCount > 0 ? "warning" : undefined,
+          },
+        ]}
+      />
 
       {isEmpty ? (
         <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">

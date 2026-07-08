@@ -9,28 +9,7 @@ import {
   ExecutiveRealizedVsProjectedChart,
   ExecutiveTargetPanel,
 } from "@/src/components/dashboard/ExecutiveDashboardCharts";
-
-function SummaryCards({ cards }: { cards: SalesOrdersDashboardTab["summaryCards"] }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {cards.map((card) => (
-        <div
-          key={card.id}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
-          title={card.hint}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{card.label}</p>
-          <p className="mt-2 truncate text-xl font-black lg:text-2xl" title={card.formatted}>
-            {card.compactFormatted ?? card.formatted}
-          </p>
-          {card.hint ? (
-            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{card.hint}</p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
+import { ExecutiveDashboardSummaryKpiGrid } from "@/src/components/dashboard/ExecutiveDashboardSummaryKpiGrid";
 
 export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab }) {
   const realizedVsMeta = {
@@ -46,7 +25,7 @@ export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab 
 
   return (
     <div className="space-y-6">
-      <SummaryCards cards={tab.summaryCards} />
+      <ExecutiveDashboardSummaryKpiGrid cards={tab.summaryCards} testId="executive-sales-orders-summary-kpis" />
       <ExecutiveAdministrativeIndicatorsPanel targets={tab.targets} projection={tab.projection} />
       <ExecutiveTargetPanel title={`Realizado vs meta do mês (${tab.periodLabel})`} target={tab.targets.monthly} />
       <ExecutiveMonthlyComboChart

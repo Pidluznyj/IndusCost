@@ -21,6 +21,9 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { INDIRECT_COST_TOUR_STEPS } from "@/src/tours/indirectTourSteps";
@@ -156,32 +159,35 @@ export const IndirectCostModule = () => {
   return (
     <div className="space-y-6" data-tour="indirect-cost-root">
       {/* Summary Section */}
-      <div
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
-        data-tour="indirect-cost-summary"
+      <div data-tour="indirect-cost-summary">
+      <SummaryKpiGrid
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+        minColumnWidth={200}
+        testId="indirect-cost-summary"
       >
-        <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total CIF Mensal</p>
-          <p className="text-2xl font-black text-blue-600">{formatCurrency(totalCIF)}</p>
-          <p className="text-[10px] text-muted-foreground mt-1">Absorvido no Custo Industrial</p>
-        </div>
-        <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total OPEX Mensal</p>
-          <p className="text-2xl font-black text-purple-600">{formatCurrency(totalOPEX)}</p>
-          <p className="text-[10px] text-muted-foreground mt-1">Despesas Administrativas/Comerciais</p>
-        </div>
-        <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total Geral</p>
-          <p className="text-2xl font-black">{formatCurrency(totalCIF + totalOPEX)}</p>
-          <p className="text-[10px] text-muted-foreground mt-1">Impacto total na operação</p>
-        </div>
-        <div className="p-6 rounded-2xl border border-border bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-          <p className="text-[10px] font-bold uppercase mb-1 opacity-80">Eficiência de Absorção</p>
-          <p className="text-2xl font-black">84.5%</p>
-          <div className="w-full bg-white/20 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div className="bg-white h-full" style={{ width: "84.5%" }} />
-          </div>
-        </div>
+        <FinanceExecutiveTotalizerCard
+          label="Total CIF Mensal"
+          value={formatCurrency(totalCIF)}
+          subtitle="Absorvido no Custo Industrial"
+          tone="info"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Total OPEX Mensal"
+          value={formatCurrency(totalOPEX)}
+          subtitle="Despesas Administrativas/Comerciais"
+          tone="info"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Total Geral"
+          value={formatCurrency(totalCIF + totalOPEX)}
+          subtitle="Impacto total na operação"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Eficiência de Absorção"
+          value="84.5%"
+          tone="success"
+        />
+      </SummaryKpiGrid>
       </div>
 
       {/* Actions */}

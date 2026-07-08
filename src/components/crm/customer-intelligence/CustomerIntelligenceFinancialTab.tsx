@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
+import { CustomerIntelligenceTabKpiGrid } from "@/src/components/crm/customer-intelligence/CustomerIntelligenceTabKpiGrid";
 
 function formatOptionalCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
@@ -12,20 +13,6 @@ function formatOptionalCurrency(value: number | null | undefined): string {
 function formatOptionalNumber(value: number | null | undefined): string {
   if (value == null) return "—";
   return formatNumber(value);
-}
-
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-        {label}
-      </p>
-      <p className="text-lg font-bold mt-1 truncate" title={value}>
-        {value}
-      </p>
-      {hint ? <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p> : null}
-    </div>
-  );
 }
 
 function TitleTable({
@@ -110,42 +97,40 @@ export function CustomerIntelligenceFinancialTab({ report }: { report: CustomerI
         </section>
       ) : null}
 
-      <section
-        className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))]"
-        aria-label="Indicadores financeiros"
-      >
-        <KpiCard
-          label="Total a receber"
-          value={formatOptionalCurrency(financial.receivableOpenAmount)}
-        />
-        <KpiCard label="Valor vencido" value={formatOptionalCurrency(financial.overdueAmount)} />
-        <KpiCard label="Valor a vencer" value={formatOptionalCurrency(financial.upcomingAmount)} />
-        <KpiCard
-          label="Títulos em aberto"
-          value={formatOptionalNumber(financial.openTitlesCount)}
-        />
-        <KpiCard
-          label="Títulos vencidos"
-          value={formatOptionalNumber(financial.overdueTitlesCount)}
-        />
-        <KpiCard
-          label="Maior atraso"
-          value={
-            financial.maxDaysOverdue != null && financial.maxDaysOverdue > 0
-              ? `${financial.maxDaysOverdue} dias`
-              : "—"
-          }
-        />
-        <KpiCard
-          label="Média de atraso"
-          value={
-            financial.averageDaysOverdue != null
-              ? `${financial.averageDaysOverdue.toFixed(1)} dias`
-              : "—"
-          }
-        />
-        <KpiCard label="Próximo vencimento" value={financial.nextDueDate ?? "—"} />
-      </section>
+      <CustomerIntelligenceTabKpiGrid
+        ariaLabel="Indicadores financeiros"
+        items={[
+          {
+            label: "Total a receber",
+            value: formatOptionalCurrency(financial.receivableOpenAmount),
+          },
+          { label: "Valor vencido", value: formatOptionalCurrency(financial.overdueAmount) },
+          { label: "Valor a vencer", value: formatOptionalCurrency(financial.upcomingAmount) },
+          {
+            label: "Títulos em aberto",
+            value: formatOptionalNumber(financial.openTitlesCount),
+          },
+          {
+            label: "Títulos vencidos",
+            value: formatOptionalNumber(financial.overdueTitlesCount),
+          },
+          {
+            label: "Maior atraso",
+            value:
+              financial.maxDaysOverdue != null && financial.maxDaysOverdue > 0
+                ? `${financial.maxDaysOverdue} dias`
+                : "—",
+          },
+          {
+            label: "Média de atraso",
+            value:
+              financial.averageDaysOverdue != null
+                ? `${financial.averageDaysOverdue.toFixed(1)} dias`
+                : "—",
+          },
+          { label: "Próximo vencimento", value: financial.nextDueDate ?? "—" },
+        ]}
+      />
 
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-bold mb-3">Aging de vencidos e carteira</h2>

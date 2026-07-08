@@ -1,6 +1,7 @@
 import React from "react";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
+import { CustomerIntelligenceTabKpiGrid } from "@/src/components/crm/customer-intelligence/CustomerIntelligenceTabKpiGrid";
 
 function formatOptionalCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
@@ -27,20 +28,6 @@ function growthStatusLabel(
     default:
       return "Histórico insuficiente";
   }
-}
-
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-        {label}
-      </p>
-      <p className="text-lg font-bold mt-1 truncate" title={value}>
-        {value}
-      </p>
-      {hint ? <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p> : null}
-    </div>
-  );
 }
 
 function ExecutiveTable({
@@ -131,58 +118,49 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
         </p>
       ) : null}
 
-      <section
-        className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))]"
-        aria-label="Indicadores de compras no filtro"
-      >
-        <KpiCard
-          label="Total comprado (filtro)"
-          value={formatCurrency(filteredSummary.revenue)}
-          hint={`${formatNumber(filteredSummary.validOrdersCount)} pedido(s) válido(s)`}
-        />
-        <KpiCard
-          label="Total histórico comprado"
-          value={formatCurrency(lifetimeSummary.revenue)}
-          hint={`${formatNumber(lifetimeSummary.validOrdersCount)} pedido(s) no histórico`}
-        />
-        <KpiCard
-          label="Pedidos no filtro"
-          value={formatNumber(filteredSummary.ordersCount)}
-        />
-        <KpiCard
-          label="Pedidos históricos"
-          value={formatNumber(lifetimeSummary.ordersCount)}
-        />
-        <KpiCard
-          label="Melhor ano (filtro)"
-          value={analysis.bestYear != null ? String(analysis.bestYear) : "—"}
-          hint={
-            analysis.bestYearRevenue != null
-              ? formatCurrency(analysis.bestYearRevenue)
-              : undefined
-          }
-        />
-        <KpiCard
-          label="Receita ano de referência"
-          value={
-            analysis.referenceYear != null ? String(analysis.referenceYear) : "—"
-          }
-          hint={formatOptionalCurrency(analysis.referenceYearRevenue)}
-        />
-        <KpiCard
-          label="Crescimento vs ano anterior"
-          value={formatOptionalPercent(analysis.growthPercentVsPreviousYear)}
-          hint={growthStatusLabel(analysis.growthStatus)}
-        />
-        <KpiCard label="Mês mais forte (histórico)" value={strongestMonthLabel} />
-        <KpiCard
-          label="Meses ativos"
-          value={formatNumber(seasonality.activeMonthsCount)}
-          hint={
-            seasonality.hasSeasonality ? "Sazonalidade detectada" : "Sem sazonalidade marcante"
-          }
-        />
-      </section>
+      <CustomerIntelligenceTabKpiGrid
+        ariaLabel="Indicadores de compras no filtro"
+        items={[
+          {
+            label: "Total comprado (filtro)",
+            value: formatCurrency(filteredSummary.revenue),
+            hint: `${formatNumber(filteredSummary.validOrdersCount)} pedido(s) válido(s)`,
+          },
+          {
+            label: "Total histórico comprado",
+            value: formatCurrency(lifetimeSummary.revenue),
+            hint: `${formatNumber(lifetimeSummary.validOrdersCount)} pedido(s) no histórico`,
+          },
+          { label: "Pedidos no filtro", value: formatNumber(filteredSummary.ordersCount) },
+          { label: "Pedidos históricos", value: formatNumber(lifetimeSummary.ordersCount) },
+          {
+            label: "Melhor ano (filtro)",
+            value: analysis.bestYear != null ? String(analysis.bestYear) : "—",
+            hint:
+              analysis.bestYearRevenue != null
+                ? formatCurrency(analysis.bestYearRevenue)
+                : undefined,
+          },
+          {
+            label: "Receita ano de referência",
+            value: analysis.referenceYear != null ? String(analysis.referenceYear) : "—",
+            hint: formatOptionalCurrency(analysis.referenceYearRevenue),
+          },
+          {
+            label: "Crescimento vs ano anterior",
+            value: formatOptionalPercent(analysis.growthPercentVsPreviousYear),
+            hint: growthStatusLabel(analysis.growthStatus),
+          },
+          { label: "Mês mais forte (histórico)", value: strongestMonthLabel },
+          {
+            label: "Meses ativos",
+            value: formatNumber(seasonality.activeMonthsCount),
+            hint: seasonality.hasSeasonality
+              ? "Sazonalidade detectada"
+              : "Sem sazonalidade marcante",
+          },
+        ]}
+      />
 
       {managerialReadings.length > 0 ? (
         <section className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">

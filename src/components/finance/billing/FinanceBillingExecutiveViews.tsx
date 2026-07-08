@@ -19,6 +19,7 @@ import {
   FinanceBillingForecastMonthlyChart,
 } from "@/src/components/finance/billing/FinanceBillingForecastCharts";
 import { ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
+import { ExecutiveDashboardSummaryKpiGrid } from "@/src/components/dashboard/ExecutiveDashboardSummaryKpiGrid";
 import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
@@ -333,19 +334,15 @@ export function FinanceBillingProjectionView({
       <section className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
         <h3 className="text-sm font-bold mb-1">Comparativo anual YTD</h3>
         <FinanceFilterScopeNote className="mb-3">{FINANCE_BILLING_YTD_SCOPE}</FinanceFilterScopeNote>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "YTD ano atual", value: tab.yearComparison.formatted.yearToDateCurrent },
-            { label: "YTD ano anterior", value: tab.yearComparison.formatted.yearToDatePrevious },
-            { label: "Ano anterior (total)", value: tab.yearComparison.formatted.previousYearTotal },
-            { label: "Meta anual (+30%)", value: tab.yearComparison.formatted.annualTarget },
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl border border-border/50 bg-background/50 p-3">
-              <p className="text-[10px] font-bold uppercase text-muted-foreground">{item.label}</p>
-              <p className="mt-1 text-lg font-black">{item.value}</p>
-            </div>
-          ))}
-        </div>
+        <ExecutiveDashboardSummaryKpiGrid
+          cards={[
+            { label: "YTD ano atual", formatted: tab.yearComparison.formatted.yearToDateCurrent },
+            { label: "YTD ano anterior", formatted: tab.yearComparison.formatted.yearToDatePrevious },
+            { label: "Ano anterior (total)", formatted: tab.yearComparison.formatted.previousYearTotal },
+            { label: "Meta anual (+30%)", formatted: tab.yearComparison.formatted.annualTarget },
+          ]}
+          minColumnWidth={160}
+        />
       </section>
     </div>
   );

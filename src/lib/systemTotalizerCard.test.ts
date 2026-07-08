@@ -208,3 +208,51 @@ describe("SystemTotalizerCard — módulos operacionais fase 3", () => {
     assert.match(src, /SystemTotalizerCard/);
   });
 });
+
+describe("SystemTotalizerCard — revisão final", () => {
+  const FINAL_REVIEW_MIGRATED = [
+    "src/components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.tsx",
+    "src/components/crm/customer-intelligence/CustomerIntelligenceCrmTab.tsx",
+    "src/components/dashboard/ExecutiveBillingTab.tsx",
+    "src/components/dashboard/ExecutiveSalesOrdersTab.tsx",
+    "src/components/dashboard/SalesFunnelPanel.tsx",
+    "src/components/dashboard/ExecutiveDashboardCharts.tsx",
+    "src/components/finance/billing/FinanceBillingCustomersTab.tsx",
+    "src/components/finance/billing/FinanceBillingExecutiveViews.tsx",
+    "src/components/IndirectCostModule.tsx",
+  ];
+
+  const CC_PRESERVED = [
+    "src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary.tsx",
+    "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
+    "src/components/finance/cost-centers/FinanceCostCenterDetailPage.tsx",
+    "src/components/finance/executive-report/ExecutiveCostCenterTopCardsGrid.tsx",
+  ];
+
+  it("telas da revisão final usam grid executivo", () => {
+    for (const file of FINAL_REVIEW_MIGRATED) {
+      const src = read(file);
+      assert.match(
+        src,
+        /FinanceExecutiveTotalizerCard|ExecutiveDashboardSummaryKpiGrid|CustomerIntelligenceTabKpiGrid/,
+        `${file} deve usar card executivo`
+      );
+      assert.doesNotMatch(src, /function SummaryCards/, `${file} não deve ter SummaryCards local`);
+      assert.doesNotMatch(src, /function KpiCard/, `${file} não deve ter KpiCard local`);
+    }
+  });
+
+  it("Centro de Custo aprovado permanece sem SystemTotalizerCard", () => {
+    for (const file of CC_PRESERVED) {
+      const src = read(file);
+      assert.doesNotMatch(src, /SystemTotalizerCard|FinanceExecutiveTotalizerCard/, `${file} preservado`);
+    }
+  });
+
+  it("documentação do design system existe", () => {
+    assert.ok(existsSync(join(ROOT, "docs/design-system-totalizer-cards.md")));
+    const doc = read("docs/design-system-totalizer-cards.md");
+    assert.match(doc, /SystemTotalizerCard/);
+    assert.match(doc, /Novos totalizadores/);
+  });
+});

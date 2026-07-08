@@ -8,22 +8,7 @@ import {
   ExecutiveRealizedVsProjectedChart,
   ExecutiveTargetPanel,
 } from "@/src/components/dashboard/ExecutiveDashboardCharts";
-
-function SummaryCards({ cards }: { cards: BillingDashboardTab["summaryCards"] }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {cards.map((card) => (
-        <div key={card.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{card.label}</p>
-          <p className="mt-2 truncate text-xl font-black lg:text-2xl" title={card.formatted}>
-            {card.compactFormatted ?? card.formatted}
-          </p>
-          {card.hint ? <p className="mt-1 text-[11px] text-muted-foreground">{card.hint}</p> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
+import { ExecutiveDashboardSummaryKpiGrid } from "@/src/components/dashboard/ExecutiveDashboardSummaryKpiGrid";
 
 export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
   return (
@@ -32,27 +17,21 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
         {tab.marketBillingNote}
       </p>
 
-      <SummaryCards cards={tab.summaryCards} />
+      <ExecutiveDashboardSummaryKpiGrid cards={tab.summaryCards} testId="executive-billing-summary-kpis" />
 
       <ExecutiveTargetPanel title="Meta do mês — realizado vs ano anterior (+30%)" target={tab.target} />
 
       <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-bold">Comparativo anual acumulado</h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "YTD ano atual", value: tab.yearComparison.formatted.yearToDateCurrent },
-            { label: "YTD ano anterior", value: tab.yearComparison.formatted.yearToDatePrevious },
-            { label: "Ano anterior (total)", value: tab.yearComparison.formatted.previousYearTotal },
-            { label: "Meta anual (+30%)", value: tab.yearComparison.formatted.annualTarget },
-          ].map((item) => (
-            <div key={item.label} className="rounded-2xl border border-border bg-accent/20 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{item.label}</p>
-              <p className="mt-1 truncate text-lg font-black" title={item.value}>
-                {item.value}
-              </p>
-            </div>
-          ))}
-        </div>
+        <ExecutiveDashboardSummaryKpiGrid
+          cards={[
+            { label: "YTD ano atual", formatted: tab.yearComparison.formatted.yearToDateCurrent },
+            { label: "YTD ano anterior", formatted: tab.yearComparison.formatted.yearToDatePrevious },
+            { label: "Ano anterior (total)", formatted: tab.yearComparison.formatted.previousYearTotal },
+            { label: "Meta anual (+30%)", formatted: tab.yearComparison.formatted.annualTarget },
+          ]}
+          minColumnWidth={160}
+        />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">

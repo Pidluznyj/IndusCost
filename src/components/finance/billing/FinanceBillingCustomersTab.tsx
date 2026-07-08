@@ -6,6 +6,9 @@ import {
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters";
 import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE } from "@/src/lib/financeFilterScope";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 
@@ -35,23 +38,26 @@ export function FinanceBillingCustomersTab({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 border-b border-[#E5E7EB] bg-[#F9FAFB]/50">
-        <div>
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Clientes no ranking</p>
-          <p className="text-lg font-black tabular-nums">{loading ? "…" : formatExecutiveInteger(rows.length)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Faturamento ranking</p>
-          <p className="text-lg font-black tabular-nums">
-            {loading ? "…" : formatExecutiveCurrency(total)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Ticket médio (NF-e)</p>
-          <p className="text-lg font-black tabular-nums">
-            {loading ? "…" : ticketAvg != null ? formatExecutiveCurrency(ticketAvg) : "—"}
-          </p>
-        </div>
+      <div className="p-5 border-b border-[#E5E7EB] bg-[#F9FAFB]/50">
+        <SummaryKpiGrid className={SYSTEM_TOTALIZER_GRID_CLASS} minColumnWidth={180}>
+        <FinanceExecutiveTotalizerCard
+          label="Clientes no ranking"
+          value={loading ? undefined : formatExecutiveInteger(rows.length)}
+          loading={loading}
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Faturamento ranking"
+          value={loading ? undefined : formatExecutiveCurrency(total)}
+          loading={loading}
+          tone="money"
+        />
+        <FinanceExecutiveTotalizerCard
+          label="Ticket médio (NF-e)"
+          value={loading ? undefined : ticketAvg != null ? formatExecutiveCurrency(ticketAvg) : "—"}
+          loading={loading}
+          tone="money"
+        />
+      </SummaryKpiGrid>
       </div>
 
       {loading && rows.length === 0 ? (

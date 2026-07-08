@@ -5,6 +5,7 @@ import type {
   CustomerIntelligenceProductRow,
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes";
+import { CustomerIntelligenceTabKpiGrid } from "@/src/components/crm/customer-intelligence/CustomerIntelligenceTabKpiGrid";
 
 function formatOptionalCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
@@ -14,20 +15,6 @@ function formatOptionalCurrency(value: number | null | undefined): string {
 function formatOptionalPercent(value: number | null | undefined): string {
   if (value == null) return "—";
   return `${value.toFixed(1)}%`;
-}
-
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-        {label}
-      </p>
-      <p className="text-lg font-bold mt-1 truncate" title={value}>
-        {value}
-      </p>
-      {hint ? <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p> : null}
-    </div>
-  );
 }
 
 function ProductTable({
@@ -121,46 +108,42 @@ export function CustomerIntelligenceProductsTab({ report }: { report: CustomerIn
 
   return (
     <div className="customer-intelligence-tab-panel space-y-5">
-      <section
-        className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))]"
-        aria-label="Indicadores de produtos"
-      >
-        <KpiCard
-          label="Produto líder"
-          value={leaderLabel}
-          hint={
-            products.topByRevenue[0]
+      <CustomerIntelligenceTabKpiGrid
+        ariaLabel="Indicadores de produtos"
+        items={[
+          {
+            label: "Produto líder",
+            value: leaderLabel,
+            hint: products.topByRevenue[0]
               ? formatCurrency(products.topByRevenue[0].revenue)
-              : undefined
-          }
-        />
-        <KpiCard
-          label="Produtos distintos"
-          value={formatNumber(products.concentration.distinctProductsCount)}
-        />
-        <KpiCard
-          label="Concentração top 3"
-          value={formatOptionalPercent(products.concentration.top3RevenueSharePercent)}
-          hint={
-            products.concentration.top5RevenueSharePercent != null
-              ? `Top 5: ${products.concentration.top5RevenueSharePercent.toFixed(1)}%`
-              : undefined
-          }
-        />
-        <KpiCard
-          label="Produtos abandonados"
-          value={formatNumber(products.abandonedProducts.length)}
-        />
-        <KpiCard
-          label="Produtos recorrentes"
-          value={formatNumber(products.recurringProducts.length)}
-          hint={
-            products.newProducts.length > 0
-              ? `${products.newProducts.length} novo(s) no mix`
-              : undefined
-          }
-        />
-      </section>
+              : undefined,
+          },
+          {
+            label: "Produtos distintos",
+            value: formatNumber(products.concentration.distinctProductsCount),
+          },
+          {
+            label: "Concentração top 3",
+            value: formatOptionalPercent(products.concentration.top3RevenueSharePercent),
+            hint:
+              products.concentration.top5RevenueSharePercent != null
+                ? `Top 5: ${products.concentration.top5RevenueSharePercent.toFixed(1)}%`
+                : undefined,
+          },
+          {
+            label: "Produtos abandonados",
+            value: formatNumber(products.abandonedProducts.length),
+          },
+          {
+            label: "Produtos recorrentes",
+            value: formatNumber(products.recurringProducts.length),
+            hint:
+              products.newProducts.length > 0
+                ? `${products.newProducts.length} novo(s) no mix`
+                : undefined,
+          },
+        ]}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ProductTable

@@ -35,6 +35,7 @@ import {
   formatExecutiveInteger,
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters";
+import { ExecutiveDashboardSummaryKpiGrid } from "@/src/components/dashboard/ExecutiveDashboardSummaryKpiGrid";
 
 const STAGE_COLORS: Record<SalesFunnelStage["id"], string> = {
   emitted: "#546E7A",
@@ -78,31 +79,6 @@ function buildYearOptions(now = new Date()): number[] {
     years.push(y);
   }
   return years;
-}
-
-function SummaryCards({ cards }: { cards: SalesFunnelDashboardTab["summaryCards"] }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {cards.map((card) => (
-        <div
-          key={card.id}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
-        >
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {card.label}
-          </p>
-          <p className="mt-2 truncate text-xl font-black lg:text-2xl" title={card.formatted}>
-            {card.compactFormatted ?? card.formatted}
-          </p>
-          {card.hint ? (
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground" title={card.hint}>
-              {card.hint}
-            </p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function LegacyCommercialFunnel({ stages }: { stages: SalesFunnelStage[] }) {
@@ -345,14 +321,14 @@ export function SalesFunnelPanel({
         </div>
       ) : null}
 
-      <SummaryCards cards={tab.summaryCards} />
+      <ExecutiveDashboardSummaryKpiGrid cards={tab.summaryCards} testId="sales-funnel-summary-kpis" />
 
       {tab.operationalSummaryCards?.length ? (
         <>
           <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
             Indicadores operacionais (motor único)
           </h3>
-          <SummaryCards cards={tab.operationalSummaryCards} />
+          <ExecutiveDashboardSummaryKpiGrid cards={tab.operationalSummaryCards} />
         </>
       ) : null}
 
