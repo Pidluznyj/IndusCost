@@ -22,6 +22,10 @@ npx prisma generate
 npm test
 # Suite obrigatória MI (também roda via npm test e build:safe):
 npm run test:market-intelligence
+# Smoke HTTP das rotas críticas MI (também incluso em test:market-intelligence):
+npm run test:market-intelligence-smoke
+# Guardrail de named exports no boot (também incluso em build:safe):
+npm run check:server-imports
 npm run build:safe
 ```
 
