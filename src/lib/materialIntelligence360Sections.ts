@@ -11,6 +11,9 @@ export type MaterialIntelligence360SectionId =
   | "timeline"
   | "audit";
 
+export const MATERIAL_INTELLIGENCE_IMPACTED_PRODUCTS_EMPTY_MESSAGE =
+  "Nenhum produto vinculado a esta matéria-prima na BOM oficial.";
+
 export type MaterialIntelligence360SectionDef = {
   id: MaterialIntelligence360SectionId;
   title: string;
@@ -19,18 +22,6 @@ export type MaterialIntelligence360SectionDef = {
 };
 
 export const MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS: MaterialIntelligence360SectionDef[] = [
-  {
-    id: "suppliers",
-    title: "Fornecedores",
-    description: "Fornecedores vinculados e condições de compra.",
-    emptyMessage: "O panorama de fornecedores será consolidado nesta área.",
-  },
-  {
-    id: "impactedProducts",
-    title: "Produtos Impactados",
-    description: "Produtos e estruturas que consomem esta matéria-prima.",
-    emptyMessage: "Os produtos impactados serão listados nesta área.",
-  },
   {
     id: "audit",
     title: "Auditoria",

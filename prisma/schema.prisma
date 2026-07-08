@@ -121,6 +121,8 @@ model Material {
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
   MaterialMarketQuote  MaterialMarketQuote[]
+  MaterialOfficialQuoteAudit MaterialOfficialQuoteAudit[]
+  MaterialMarketAlert  MaterialMarketAlert[]
   ProductBOM           ProductBOM[]
   PurchaseRequestItem  PurchaseRequestItem[]
   ProjectStructureLine ProjectStructureLine[]
@@ -148,6 +150,23 @@ enum MaterialMarketQuoteStatus {
   ACTIVE
   EXPIRED
   CANCELLED
+}
+
+enum MaterialMarketQuoteOfficialStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  OFFICIAL
+  REPLACED
+}
+
+enum MaterialOfficialQuoteAuditAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SET_OFFICIAL
+  REPLACED
 }
 
 enum MaterialMarketQuoteExchangeOrigin {
@@ -190,6 +209,15 @@ model MaterialMarketQuote {
   manualExchangeJustification String?
   manualExchangeBy            String?
   manualExchangeAt            DateTime?                           @db.Timestamptz(6)
+  isOfficialReference         Boolean                             @default(false)
+  officialStatus              MaterialMarketQuoteOfficialStatus   @default(DRAFT)
+  rejectionReason             String?
+  submittedForApprovalBy      String?
+  submittedForApprovalAt      DateTime?                           @db.Timestamptz(6)
+  approvedBy                  String?
+  approvedAt                  DateTime?                           @db.Timestamptz(6)
+  setOfficialBy               String?
+  setOfficialAt               DateTime?                           @db.Timestamptz(6)
   createdBy                   String?
   updatedBy                   String?
   createdAt                   DateTime                            @default(now()) @db.Timestamptz(6)
@@ -199,7 +227,76 @@ model MaterialMarketQuote {
   FinancialSupplier FinancialSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([materialId, quoteDate(sort: Desc)])
+  @@index([materialId, isOfficialReference])
+  @@index([materialId, officialStatus])
   @@index([supplierId])
+}
+
+/// Auditoria de governança da cotação oficial por matéria-prima.
+model MaterialOfficialQuoteAudit {
+  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId      String                         @db.Uuid
+  quoteId         String                         @db.Uuid
+  action          MaterialOfficialQuoteAuditAction
+  previousQuoteId String?                        @db.Uuid
+  newQuoteId      String?                        @db.Uuid
+  changedBy       String?
+  changedAt       DateTime                       @default(now()) @db.Timestamptz(6)
+  reason          String?
+  rejectionReason String?
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId])
+  @@index([quoteId])
+  @@index([changedAt])
+}
+
+enum MaterialMarketAlertType {
+  PRICE_UP_PCT
+  PRICE_DOWN_PCT
+  BREAK_MAX
+  BREAK_MIN
+  NO_RECENT_QUOTE
+  SUPPLIER_ABOVE_AVG
+  SAVINGS_OPPORTUNITY
+}
+
+enum MaterialMarketAlertStatus {
+  OPEN
+  READ
+  RESOLVED
+}
+
+enum MaterialMarketAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Alerta de mercado por matéria-prima — append-only por evento; alertas OPEN do mesmo tipo são atualizados.
+model MaterialMarketAlert {
+  id          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId  String                      @db.Uuid
+  alertType   MaterialMarketAlertType
+  status      MaterialMarketAlertStatus   @default(OPEN)
+  title       String
+  message     String
+  severity    MaterialMarketAlertSeverity
+  metadata    Json?
+  triggeredAt DateTime                    @default(now()) @db.Timestamptz(6)
+  readAt      DateTime?                   @db.Timestamptz(6)
+  resolvedAt  DateTime?                   @db.Timestamptz(6)
+  readBy      String?
+  resolvedBy  String?
+  createdAt   DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId, status])
+  @@index([materialId, alertType, status])
+  @@index([status, triggeredAt(sort: Desc)])
 }
 
 enum CommodityType {
@@ -211,20 +308,53 @@ enum CommoditySnapshotStatus {
   FAILED
 }
 
+enum CommodityCollectionSlot {
+  MORNING
+  AFTERNOON
+}
+
+enum CommodityCollectionTrigger {
+  SCHEDULED
+  MANUAL
+}
+
 /// Snapshot de cotação de commodity (ex.: Brent) — append-only; cada coleta cria nova linha.
 model CommoditySnapshot {
-  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   commodityType         CommodityType
-  priceUSD              Decimal?                @db.Decimal(20, 6)
-  quoteDate             DateTime                @db.Date
-  collectedAt           DateTime                @default(now()) @db.Timestamptz(6)
+  priceUSD              Decimal?                   @db.Decimal(20, 6)
+  quoteDate             DateTime                   @db.Date
+  scheduledSlot         CommodityCollectionSlot
+  collectedAt           DateTime                   @default(now()) @db.Timestamptz(6)
   source                String?
   status                CommoditySnapshotStatus
   errorMessage          String?
-  variationFromPrevious Decimal?                @db.Decimal(10, 6)
+  variationFromPrevious Decimal?                   @db.Decimal(10, 6)
+  trigger               CommodityCollectionTrigger @default(SCHEDULED)
 
-  @@index([commodityType, quoteDate(sort: Desc)])
+  @@index([commodityType, quoteDate(sort: Desc), scheduledSlot])
   @@index([commodityType, status, collectedAt(sort: Desc)])
+}
+
+enum PtaxSnapshotStatus {
+  SUCCESS
+  FAILED
+}
+
+/// Snapshot diário da cotação PTAX USD/BRL (BCB) para indicadores globais.
+model PtaxSnapshot {
+  id           String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteDate    DateTime           @db.Date
+  buyRate      Decimal?           @db.Decimal(20, 6)
+  sellRate     Decimal?           @db.Decimal(20, 6)
+  source       String             @default("BCB PTAX")
+  status       PtaxSnapshotStatus
+  errorMessage String?
+  collectedAt  DateTime           @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @db.Timestamptz(6)
+
+  @@index([status, collectedAt(sort: Desc)])
+  @@index([quoteDate(sort: Desc)])
 }
 
 model Product {

@@ -1,4 +1,5 @@
 import React from "react";
+import { MaterialsMarketIntelligenceBrentKpi } from "@/src/components/materials/MaterialsMarketIntelligenceBrentKpi";
 import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/materials/MaterialsMarketIntelligenceMonitoredList";
 import { MaterialsMarketIntelligenceAlertsPanel } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialsMarketIntelligenceTopOpportunityCard } from "@/src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard";
@@ -39,12 +40,20 @@ export function MaterialsMarketIntelligencePage() {
             </p>
           </div>
         </div>
-        <MaterialsMarketIntelligenceTopOpportunityCard />
+        <div
+          className="grid gap-3 lg:grid-cols-2"
+          data-testid="materials-market-intelligence-kpis-grid"
+        >
+          <MaterialsMarketIntelligenceBrentKpi />
+          <MaterialsMarketIntelligenceTopOpportunityCard />
+        </div>
       </section>
 
       <MaterialsMarketIntelligenceAlertsPanel />
 
       <section
+        className="space-y-3"
+        aria-labelledby="materials-market-intelligence-list-heading"
         data-testid="materials-market-intelligence-list-section"
       >
         <div>

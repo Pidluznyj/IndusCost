@@ -6,10 +6,12 @@ import type { PrismaClient } from "@prisma/client";
 import {
   dedupeMaterialMarketAlertProposals,
   evaluateMaterialMarketAlerts,
+  MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS,
   resolveAutoResolvableAlertTypes,
   shouldUpdateOpenMaterialMarketAlert,
   type MaterialMarketAlertProposal,
 } from "./materialMarketAlertEngine.js";
+import { buildMaterialMarketSavingsOpportunityFromRows } from "./materialMarketSavingsOpportunity.js";
 
 type DbClient = Pick<
   PrismaClient,
@@ -26,6 +28,8 @@ export async function loadMaterialMarketAlertEvaluationContext(
       id: true,
       code: true,
       description: true,
+      unit: true,
+      currentCost: true,
       isMarketMonitored: true,
       marketMonitoringFrequencyDays: true,
     },
@@ -129,6 +133,62 @@ export async function persistMaterialMarketAlertProposals(
   return { created, updated, resolved };
 }
 
+function appendSavingsOpportunityProposal(input: {
+  material: {
+    id: string;
+    code: string;
+    description: string;
+    unit: string;
+    currentCost: unknown;
+  };
+  quotes: Parameters<typeof buildMaterialMarketSavingsOpportunityFromRows>[0]["quotes"];
+  referenceDate?: Date;
+  proposals: MaterialMarketAlertProposal[];
+}): MaterialMarketAlertProposal[] {
+  const savings = buildMaterialMarketSavingsOpportunityFromRows({
+    materialId: input.material.id,
+    unit: input.material.unit,
+    currentCost: input.material.currentCost as number | string,
+    quotes: input.quotes,
+    estimatedVolume: 1,
+    period: "90d",
+    referenceDate: input.referenceDate,
+  });
+
+  const threshold = MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.savingsOpportunityPercent;
+  if (
+    !savings.hasSavings ||
+    savings.savingsPercent == null ||
+    savings.savingsPercent < threshold ||
+    savings.currentPrice == null ||
+    savings.bestPrice == null
+  ) {
+    return input.proposals;
+  }
+
+  const formatBRL = (value: number) =>
+    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const savingsProposal: MaterialMarketAlertProposal = {
+    materialId: input.material.id,
+    alertType: "SAVINGS_OPPORTUNITY",
+    title: "Oportunidade de economia",
+    message: `Economia potencial de ${savings.savingsPercent.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% ao comparar ${formatBRL(savings.currentPrice)} (preço atual) com ${formatBRL(savings.bestPrice)} (${savings.recommendedSupplier ?? "melhor cotação"}).`,
+    severity: "INFO",
+    metadata: {
+      materialCode: input.material.code,
+      currentPrice: savings.currentPrice,
+      bestPrice: savings.bestPrice,
+      savingsPercent: savings.savingsPercent,
+      recommendedSupplier: savings.recommendedSupplier,
+      source: "materialMarketSavingsOpportunity",
+    },
+    triggeredAt: input.referenceDate ?? new Date(),
+  };
+
+  return dedupeMaterialMarketAlertProposals([...input.proposals, savingsProposal]);
+}
+
 export async function evaluateAndPersistMaterialMarketAlerts(
   db: DbClient,
   materialId: string,
@@ -159,14 +219,19 @@ export async function evaluateAndPersistMaterialMarketAlerts(
     };
   }
 
-  const proposals = evaluateMaterialMarketAlerts({
-    materialId: material.id,
-    materialCode: material.code,
-    materialDescription: material.description,
-    isMarketMonitored: material.isMarketMonitored,
-    marketMonitoringFrequencyDays: material.marketMonitoringFrequencyDays,
+  const proposals = appendSavingsOpportunityProposal({
+    material,
     quotes,
     referenceDate,
+    proposals: evaluateMaterialMarketAlerts({
+      materialId: material.id,
+      materialCode: material.code,
+      materialDescription: material.description,
+      isMarketMonitored: material.isMarketMonitored,
+      marketMonitoringFrequencyDays: material.marketMonitoringFrequencyDays,
+      quotes,
+      referenceDate,
+    }),
   });
 
   const persistence = await persistMaterialMarketAlertProposals(db, proposals);

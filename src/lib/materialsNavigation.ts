@@ -28,12 +28,23 @@ export const BRENT_COMMODITY_LATEST_API =
 export const BRENT_COMMODITY_COLLECT_API =
   "/api/market-intelligence/commodities/brent/collect" as const;
 
+export function getMaterialMarketIntelligenceAlertsApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/alerts`;
+}
+
 export function getMaterialMarketIntelligenceDetailApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}`;
 }
 
 export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/quotes`;
+}
+
+export function getMaterialMarketIntelligenceSetOfficialQuoteApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/set-official`;
 }
 
 export function getMaterialMarketPtaxPreviewApiPath(date: string): string {
@@ -90,6 +101,27 @@ export function getMaterialMarketIntelligenceAnalyticsApiPath(materialId: string
   return `/api/materials/market-intelligence/${materialId}/analytics`;
 }
 
+export function getMaterialMarketIntelligenceSimulateApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/simulate`;
+}
+
+export function getMaterialMarketIntelligenceFinancialImpactApiPath(
+  materialId: string,
+  query?: { simulatedPrice?: number | string; baselinePrice?: number | string }
+): string {
+  const base = `/api/materials/market-intelligence/${materialId}/financial-impact`;
+  if (!query) return base;
+  const params = new URLSearchParams();
+  if (query.simulatedPrice != null && String(query.simulatedPrice).trim()) {
+    params.set("simulatedPrice", String(query.simulatedPrice));
+  }
+  if (query.baselinePrice != null && String(query.baselinePrice).trim()) {
+    params.set("baselinePrice", String(query.baselinePrice));
+  }
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 export function getMaterialMarketIntelligenceComparativeChartApiPath(
   materialId: string,
   query?: { period?: string }
@@ -101,12 +133,12 @@ export function getMaterialMarketIntelligenceComparativeChartApiPath(
   return `${base}?${params.toString()}`;
 }
 
-export function getMaterialMarketIntelligenceAlertsApiPath(materialId: string): string {
-  return `/api/materials/market-intelligence/${materialId}/alerts`;
-}
-
 export function getMaterialMarketIntelligenceAlertsEvaluateApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/alerts/evaluate`;
+}
+
+export function getMaterialMarketIntelligenceImpactedProductsApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/impacted-products`;
 }
 
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {

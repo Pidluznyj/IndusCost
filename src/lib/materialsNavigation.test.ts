@@ -118,6 +118,17 @@ describe("materialsNavigation", () => {
     assert.match(form, /material-market-quote-submit/);
   });
 
+  it("API de impacto financeiro nos produtos vinculados", () => {
+    const server = read("server.ts");
+    const section = read("src/components/materials/MaterialIntelligenceFinancialImpactSection.tsx");
+    const nav = read("src/lib/materialsNavigation.ts");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/financial-impact/);
+    assert.match(server, /buildMaterialProductFinancialImpactForApi/);
+    assert.match(nav, /financial-impact/);
+    assert.match(section, /material-intelligence-financial-impact/);
+    assert.match(section, /Simulação — não altera custo padrão/);
+  });
+
   it("API de economia potencial e oportunidades", () => {
     const server = read("server.ts");
     const savings = read("src/components/materials/MaterialIntelligenceSavingsOpportunitySection.tsx");
@@ -134,6 +145,21 @@ describe("materialsNavigation", () => {
     assert.match(schema, /model MaterialMarketQuote/);
     assert.match(schema, /netPrice/);
     assert.match(schema, /supplierName/);
+    assert.match(schema, /exchangeOrigin/);
+    assert.match(schema, /manualExchangeJustification/);
+  });
+
+  it("API de câmbio manual PTAX com permissão e preview", () => {
+    const server = read("server.ts");
+    const form = read("src/components/materials/MaterialIntelligenceMarketQuoteForm.tsx");
+    const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
+    const catalog = read("src/lib/permissionCatalog.ts");
+    assert.match(server, /\/api\/materials\/market-intelligence\/ptax-preview/);
+    assert.match(server, /resolveMaterialMarketQuoteExchange/);
+    assert.match(catalog, /materials\.market_quote\.manual_exchange/);
+    assert.match(form, /material-market-quote-manual-exchange-rate/);
+    assert.match(form, /material-market-quote-manual-exchange-justification/);
+    assert.match(quotes, /Câmbio informado manualmente/);
   });
 
   it("API de histórico de preços para gráfico 360º", () => {
@@ -145,6 +171,17 @@ describe("materialsNavigation", () => {
     assert.match(chart, /material-intelligence-price-history-chart/);
     assert.match(chart, /recharts/);
     assert.match(detail, /MaterialIntelligencePriceHistoryChart/);
+  });
+
+  it("API de gráfico comparativo de mercado 360º", () => {
+    const server = read("server.ts");
+    const chart = read("src/components/materials/MaterialIntelligenceComparativeChart.tsx");
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/comparative-chart/);
+    assert.match(server, /buildMaterialMarketComparativeChartResponse/);
+    assert.match(chart, /material-intelligence-comparative-chart/);
+    assert.match(chart, /Comparativo de mercado/);
+    assert.match(detail, /MaterialIntelligenceComparativeChart/);
   });
 
   it("API compara fornecedores por matéria-prima", () => {
@@ -160,11 +197,12 @@ describe("materialsNavigation", () => {
 
   it("API de commodity Brent (coleta manual e último snapshot)", () => {
     const server = read("server.ts");
+    const routes = read("src/lib/brentCommodityRoutes.ts");
     const nav = read("src/lib/materialsNavigation.ts");
     const schema = read("prisma/schema.prisma");
-    assert.match(server, /\/api\/market-intelligence\/commodities\/brent\/latest/);
-    assert.match(server, /\/api\/market-intelligence\/commodities\/brent\/collect/);
     assert.match(server, /registerBrentCommodityRoutes/);
+    assert.match(routes, /\/api\/market-intelligence\/commodities\/brent\/latest/);
+    assert.match(routes, /\/api\/market-intelligence\/commodities\/brent\/collect/);
     assert.match(nav, /BRENT_COMMODITY_LATEST_API/);
     assert.match(schema, /model CommoditySnapshot/);
     assert.match(schema, /variationFromPrevious/);
