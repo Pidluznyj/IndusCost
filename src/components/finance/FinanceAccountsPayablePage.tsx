@@ -92,7 +92,8 @@ import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/Fina
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
 import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
@@ -875,8 +876,8 @@ export function FinanceAccountsPayablePage() {
         eyebrow="KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas"
         testId="finance-ap-executive-summary"
       >
-        <SummaryKpiGrid minColumnWidth={200}>
-          <FinanceKpiCard
+        <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard
             icon={Wallet}
             label="Total a pagar"
             value="—"
@@ -891,7 +892,7 @@ export function FinanceAccountsPayablePage() {
             helperText={FINANCE_KPI_AP_TOTAL_PAYABLE}
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Landmark}
             label="Pago no mês"
             value="—"
@@ -902,7 +903,7 @@ export function FinanceAccountsPayablePage() {
             tone="success"
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Wallet}
             label="Em aberto"
             value="—"
@@ -918,7 +919,7 @@ export function FinanceAccountsPayablePage() {
             tone="info"
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={AlertTriangle}
             label="Vencido gerencial"
             value="—"
@@ -929,7 +930,7 @@ export function FinanceAccountsPayablePage() {
             tone={(cards?.overdueAmount ?? 0) > 0 ? "danger" : "neutral"}
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Vence hoje"
             value="—"
@@ -940,7 +941,7 @@ export function FinanceAccountsPayablePage() {
             tone="warning"
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Próx. 7 dias"
             value="—"
@@ -951,7 +952,7 @@ export function FinanceAccountsPayablePage() {
             tone="info"
             loading={loading}
           />
-          <FinanceKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Próx. 30 dias"
             value="—"
@@ -963,7 +964,7 @@ export function FinanceAccountsPayablePage() {
             loading={loading}
           />
           {data?.purchaseOrderScheduleAudit?.rescheduledOpenCount ? (
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={ShieldAlert}
               label="Agendados"
               value="—"
@@ -977,7 +978,7 @@ export function FinanceAccountsPayablePage() {
               loading={loading}
             />
           ) : (
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={ShieldAlert}
               label="Maior fornecedor"
               value="—"
@@ -994,8 +995,8 @@ export function FinanceAccountsPayablePage() {
             <p className="text-[10px] font-bold uppercase text-muted-foreground">
               Classificação por centro de custo
             </p>
-            <SummaryKpiGrid minColumnWidth={220}>
-              <FinanceKpiCard
+            <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+              <FinanceExecutiveTotalizerCard
                 icon={CheckCircle2}
                 label="Total classificado"
                 value="—"
@@ -1005,7 +1006,7 @@ export function FinanceAccountsPayablePage() {
                 tone="info"
                 loading={loading}
               />
-              <FinanceKpiCard
+              <FinanceExecutiveTotalizerCard
                 icon={AlertTriangle}
                 label="Total sem classificação"
                 value="—"
@@ -1017,7 +1018,7 @@ export function FinanceAccountsPayablePage() {
                 }
                 loading={loading}
               />
-              <FinanceKpiCard
+              <FinanceExecutiveTotalizerCard
                 icon={TrendingDown}
                 label="% classificado"
                 value={

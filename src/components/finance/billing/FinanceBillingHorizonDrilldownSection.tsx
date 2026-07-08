@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -49,7 +50,7 @@ function HorizonBucketCard({
         active && "ring-2 ring-[#2563EB] shadow-sm"
       )}
     >
-      <FinanceKpiCard
+      <FinanceExecutiveTotalizerCard
         label={card.label}
         value={loading ? "…" : formatFinanceKpiCurrency(card.amount)}
         subtitle={card.count > 0 ? `${card.count} ${countUnitLabel}` : "—"}
@@ -174,11 +175,11 @@ export function FinanceBillingHorizonDrilldownSection({
 
   return (
     <div className="space-y-4">
-      <SummaryKpiGrid minColumnWidth={180}>
+      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
         {loadingCards
           ? Array.from({ length: Math.min(cards.length || 6, 8) }, (_, index) => (
               <React.Fragment key={`billing-horizon-skeleton-${index}`}>
-                <FinanceKpiCard label="…" value="…" loading compact />
+                <FinanceExecutiveTotalizerCard label="…" value="…" loading compact />
               </React.Fragment>
             ))
           : cards.map((card) => (

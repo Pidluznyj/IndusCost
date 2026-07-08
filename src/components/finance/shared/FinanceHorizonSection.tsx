@@ -2,7 +2,8 @@ import React from "react";
 import { CalendarRange } from "lucide-react";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceKpiCard, type FinanceKpiCardProps } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceExecutiveTotalizerCard, type FinanceExecutiveTotalizerCardProps } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation";
 import { FinanceBillingHorizonDrilldownSection } from "@/src/components/finance/billing/FinanceBillingHorizonDrilldownSection";
 import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
@@ -14,7 +15,7 @@ import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 
 type FinanceHorizonVariant = "ap" | "ar" | "billing";
 
-type HorizonSkeletonCard = FinanceKpiCardProps & { id: string };
+type HorizonSkeletonCard = FinanceExecutiveTotalizerCardProps & { id: string };
 
 const HORIZON_SKELETON_CARDS: HorizonSkeletonCard[] = Array.from({ length: 6 }, (_, index) => ({
   id: `horizon-skeleton-${index}`,
@@ -69,15 +70,15 @@ export function FinanceHorizonSection({
           loadingCards={loading && !summary}
         />
       ) : loading && !summary ? (
-        <SummaryKpiGrid minColumnWidth={180}>
+        <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
           {HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
-            <FinanceKpiCard key={id} {...cardProps} />
+            <FinanceExecutiveTotalizerCard key={id} {...cardProps} />
           ))}
         </SummaryKpiGrid>
       ) : (
-        <SummaryKpiGrid minColumnWidth={180}>
+        <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
           {cards.map((bucket) => (
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               key={bucket.key}
               icon={CalendarRange}
               label={bucket.label}

@@ -104,9 +104,10 @@ import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceD
 import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import {
-  FinanceKpiCard,
   type FinanceKpiTone,
 } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import {
   buildFinanceBillingComparisonPeriodTitle,
   buildFinanceBillingSelectedPeriodTitle,
@@ -751,7 +752,7 @@ export function FinanceBillingPage() {
             title={selectedPeriodTitle}
             subtitle="Fonte NF-e fiscal autorizada."
           >
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Wallet}
               label="Faturamento líquido"
               value={loading ? "…" : formatFinanceKpiCurrency(tab?.target.actual)}
@@ -760,7 +761,7 @@ export function FinanceBillingPage() {
               tone="info"
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label="Bruto encontrado"
               value={
@@ -770,7 +771,7 @@ export function FinanceBillingPage() {
               helperText={FINANCE_KPI_BILLING_GROSS_FOUND}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Target}
               label="NF-e no mês"
               value={
@@ -783,7 +784,7 @@ export function FinanceBillingPage() {
               helperText={FINANCE_KPI_BILLING_NFE_COUNT}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Wallet}
               label="Ticket médio"
               value={
@@ -793,7 +794,7 @@ export function FinanceBillingPage() {
               helperText={FINANCE_KPI_BILLING_TICKET_AVG}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Target}
               label="Previsto no mês"
               value={
@@ -817,7 +818,7 @@ export function FinanceBillingPage() {
             subtitle="Mesmo mês do ano anterior — não é o mês cronológico anterior."
             columns={3}
           >
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label={sameMonthPrevYearLabel}
               value={loading ? "…" : formatFinanceKpiCurrency(tab?.target.previousPeriod)}
@@ -825,7 +826,7 @@ export function FinanceBillingPage() {
               helperText={FINANCE_KPI_BILLING_SAME_MONTH_PREV_YEAR}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label={`Diferença vs ${previousYear}`}
               value={loading ? "…" : formatFinanceBillingDeltaValue(monthComparison.delta)}
@@ -834,7 +835,7 @@ export function FinanceBillingPage() {
               tone={deltaTone(monthComparison.delta)}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label={`Variação vs ${previousYear}`}
               value={loading ? "…" : formatFinanceBillingVariationValue(monthComparison.variationPercent)}
@@ -849,7 +850,7 @@ export function FinanceBillingPage() {
             title="Acumulado do ano — YTD"
             subtitle="Comparação acumulada entre ano selecionado e ano anterior."
           >
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Wallet}
               label={`YTD ${selectedYear}`}
               value={
@@ -860,7 +861,7 @@ export function FinanceBillingPage() {
               tone="info"
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={Wallet}
               label={`YTD ${previousYear}`}
               value={
@@ -870,7 +871,7 @@ export function FinanceBillingPage() {
               helperText={FINANCE_KPI_BILLING_YTD_PREVIOUS}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label="Diferença YTD"
               value={loading ? "…" : formatFinanceBillingDeltaValue(ytdComparison.delta)}
@@ -879,7 +880,7 @@ export function FinanceBillingPage() {
               tone={deltaTone(ytdComparison.delta)}
               loading={loading}
             />
-            <FinanceKpiCard
+            <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
               label="Variação YTD"
               value={loading ? "…" : formatFinanceBillingVariationValue(ytdComparison.variationPercent)}
@@ -1016,7 +1017,7 @@ function FinanceBillingKpiGroup({
 }) {
   return (
     <ExecutiveSummarySection title={title} eyebrow={subtitle} className="border-0 shadow-none p-0 gap-3">
-      <SummaryKpiGrid minColumnWidth={200}>{children}</SummaryKpiGrid>
+      <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>{children}</SummaryKpiGrid>
     </ExecutiveSummarySection>
   );
 }

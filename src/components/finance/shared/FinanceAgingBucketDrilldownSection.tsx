@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceArHorizonExportButtons";
 import {
   FinanceArHorizonBucketCustomerFilter,
@@ -71,7 +72,7 @@ function AgingBucketCard({
         active && "ring-2 ring-[#2563EB] shadow-sm"
       )}
     >
-      <FinanceKpiCard
+      <FinanceExecutiveTotalizerCard
         label={card.label}
         value={loading ? "…" : formatFinanceKpiCurrency(card.amount)}
         subtitle={card.count > 0 ? `${card.count} título(s)` : "—"}
@@ -207,11 +208,11 @@ export function FinanceAgingBucketDrilldownSection({
 
   return (
     <div className="space-y-4">
-      <SummaryKpiGrid minColumnWidth={180}>
+      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS}>
         {loadingCards
           ? Array.from({ length: Math.min(cards.length || 6, 8) }, (_, index) => (
               <React.Fragment key={`aging-skeleton-${index}`}>
-                <FinanceKpiCard label="…" value="…" loading compact />
+                <FinanceExecutiveTotalizerCard label="…" value="…" loading compact />
               </React.Fragment>
             ))
           : cards.map((card) => (

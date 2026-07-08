@@ -28,7 +28,8 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import {
   FinanceArLoadingBlock,
   FinanceArScrollableTable,
@@ -309,26 +310,26 @@ export function FinanceAccountsReceivableOverdueTab({
               eyebrow="Carteira vencida no escopo filtrado"
               testId="finance-ar-overdue-summary"
             >
-            <SummaryKpiGrid minColumnWidth={200}>
-              <FinanceBiKpiCard
+            <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+              <FinanceExecutiveTotalizerCard
                 label="Total vencido"
                 value="—"
                 amount={summary?.totalOverdueAmount}
                 amountFormat="currency"
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Títulos vencidos"
                 value="—"
                 amount={summary?.overdueTitlesCount}
                 amountFormat="number"
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Clientes em atraso"
                 value="—"
                 amount={summary?.overdueCustomersCount}
                 amountFormat="number"
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Média dias em atraso"
                 value={
                   summary?.averageDaysOverdue != null
@@ -336,7 +337,7 @@ export function FinanceAccountsReceivableOverdueTab({
                     : "—"
                 }
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Maior cliente devedor"
                 value={summary?.topOverdueCustomer?.name ?? "—"}
                 hint={
@@ -345,19 +346,19 @@ export function FinanceAccountsReceivableOverdueTab({
                     : undefined
                 }
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Acima de 30 dias"
                 value="—"
                 amount={summary?.over30Amount}
                 amountFormat="currency"
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Acima de 60 dias"
                 value="—"
                 amount={summary?.over60Amount}
                 amountFormat="currency"
               />
-              <FinanceBiKpiCard
+              <FinanceExecutiveTotalizerCard
                 label="Acima de 90 dias"
                 value="—"
                 amount={summary?.over90Amount}

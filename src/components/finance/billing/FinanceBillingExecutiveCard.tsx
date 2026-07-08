@@ -1,5 +1,5 @@
 import React from "react";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 
 export function FinanceBillingExecutiveCard({
   label,
@@ -8,7 +8,6 @@ export function FinanceBillingExecutiveCard({
   hint,
   scopeNote,
   colorClass = "text-[#111827]",
-  valueClassName,
   loading = false,
 }: {
   label: string;
@@ -21,14 +20,13 @@ export function FinanceBillingExecutiveCard({
   loading?: boolean;
 }) {
   return (
-    <FinanceBiKpiCard
+    <FinanceExecutiveTotalizerCard
       label={label}
       value={value}
       sub={sub}
       hint={hint}
       scopeNote={scopeNote}
       colorClass={colorClass}
-      valueClassName={valueClassName}
       loading={loading}
     />
   );

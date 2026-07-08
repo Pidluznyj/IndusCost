@@ -6,7 +6,8 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw, AlertTriangle, CalendarClock, CheckCircle2, FileText, Receipt, Scale, Wallet } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { StatusBadge } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
@@ -474,61 +475,61 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
           eyebrow="Totais da carteira conforme filtros aplicados"
           testId="finance-ar-titles-executive-summary"
         >
-        <SummaryKpiGrid testId="finance-ar-titles-summary-kpis">
-          <MetricCard
+        <SummaryKpiGrid testId="finance-ar-titles-summary-kpis" className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard
             label="Títulos"
             amount={summary.totalTitles}
             amountFormat="number"
-            variant="info"
-            icon={<FileText />}
+            tone="info"
+            icon={FileText}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Valor original"
             amount={summary.totalOriginalValue}
             amountFormat="currency"
-            variant="neutral"
-            icon={<Receipt />}
+            tone="neutral"
+            icon={Receipt}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Valor recebido"
             amount={summary.totalReceivedValue}
             amountFormat="currency"
-            variant="success"
-            icon={<CheckCircle2 />}
+            tone="success"
+            icon={CheckCircle2}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Em aberto"
             amount={summary.totalOpenValue}
             amountFormat="currency"
-            variant="info"
-            icon={<Wallet />}
+            tone="info"
+            icon={Wallet}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Vencido"
             amount={summary.totalOverdueValue}
             amountFormat="currency"
-            variant="danger"
-            icon={<AlertTriangle />}
+            tone="danger"
+            icon={AlertTriangle}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="A vencer"
             amount={summary.totalDueValue}
             amountFormat="currency"
-            variant="neutral"
-            icon={<CalendarClock />}
+            tone="neutral"
+            icon={CalendarClock}
             loading={loading}
           />
-          <MetricCard
+          <FinanceExecutiveTotalizerCard
             label="Ticket médio"
             amount={summary.averageTicket}
             amountFormat="currency"
-            variant="neutral"
-            icon={<Scale />}
+            tone="neutral"
+            icon={Scale}
             loading={loading}
           />
         </SummaryKpiGrid>

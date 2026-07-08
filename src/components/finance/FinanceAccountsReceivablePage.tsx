@@ -94,7 +94,8 @@ import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/Fina
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
 import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { buildFinanceArFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
@@ -870,8 +871,8 @@ export function FinanceAccountsReceivablePage() {
         eyebrow="KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas"
         testId="finance-ar-executive-summary"
       >
-        <SummaryKpiGrid minColumnWidth={200}>
-          <FinanceBiKpiCard
+        <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard
             icon={Wallet}
             label="Total a Receber"
             value="—"
@@ -882,7 +883,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#111827]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={TrendingUp}
             label="Recebido"
             value="—"
@@ -893,7 +894,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#059669]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Wallet}
             label="Em Aberto"
             value="—"
@@ -909,7 +910,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#2563EB]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={AlertTriangle}
             label="Vencido"
             value="—"
@@ -920,7 +921,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Vence Hoje"
             value="—"
@@ -931,7 +932,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#D97706]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Próximos 7 Dias"
             value="—"
@@ -942,7 +943,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#2563EB]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={Clock}
             label="Próximos 30 Dias"
             value="—"
@@ -953,7 +954,7 @@ export function FinanceAccountsReceivablePage() {
             colorClass="text-[#2563EB]"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceExecutiveTotalizerCard
             icon={TrendingDown}
             label="Inadimplência"
             value="—"

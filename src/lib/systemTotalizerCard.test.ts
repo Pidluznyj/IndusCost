@@ -101,3 +101,60 @@ describe("SystemTotalizerCard — telas migradas fase 1", () => {
     assert.match(src, /SystemTotalizerCard/);
   });
 });
+
+describe("SystemTotalizerCard — financeiro fase 2", () => {
+  const FINANCE_MIGRATED = [
+    "src/components/finance/FinanceAccountsReceivablePage.tsx",
+    "src/components/finance/FinanceAccountsReceivableOverdueTab.tsx",
+    "src/components/finance/FinanceAccountsPayablePage.tsx",
+    "src/components/finance/FinanceBillingPage.tsx",
+    "src/components/finance/FinanceArAnalyticalTitlesTab.tsx",
+    "src/components/finance/shared/FinanceHorizonSection.tsx",
+    "src/components/finance/shared/FinanceAgingBucketDrilldownSection.tsx",
+    "src/components/finance/billing/FinanceBillingHorizonDrilldownSection.tsx",
+    "src/components/finance/billing/FinanceBillingExecutiveCard.tsx",
+    "src/components/finance/executive-report/ExecutiveKpiCard.tsx",
+    "src/components/finance/executive-report/ExecutiveKpiGrid.tsx",
+  ];
+
+  const CC_PRESERVED = [
+    "src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary.tsx",
+    "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
+    "src/components/finance/cost-centers/FinanceCostCenterDetailPage.tsx",
+    "src/components/finance/executive-report/ExecutiveCostCenterTopCardsGrid.tsx",
+  ];
+
+  it("telas financeiras migradas usam FinanceExecutiveTotalizerCard ou SystemTotalizerCard", () => {
+    for (const file of FINANCE_MIGRATED) {
+      const src = read(file);
+      assert.match(
+        src,
+        /FinanceExecutiveTotalizerCard|SystemTotalizerCard/,
+        `${file} deve usar card executivo`
+      );
+      assert.doesNotMatch(src, /FinanceBiKpiCard/, `${file} não deve usar FinanceBiKpiCard`);
+      assert.doesNotMatch(src, /<FinanceKpiCard/, `${file} não deve usar FinanceKpiCard`);
+    }
+  });
+
+  it("Centro de Custo aprovado permanece intacto", () => {
+    for (const file of CC_PRESERVED) {
+      const src = read(file);
+      if (file.includes("ExpenseMapExecutiveSummary")) {
+        assert.match(src, /MetricCard/);
+      }
+      if (file.includes("OverviewTab") || file.includes("DetailPage")) {
+        assert.match(src, /FinanceKpiCard/);
+      }
+      if (file.includes("ExecutiveCostCenterTopCardsGrid")) {
+        assert.match(src, /FinanceCostCenterExpenseMapExecutiveSummary/);
+        assert.doesNotMatch(src, /SystemTotalizerCard/);
+      }
+    }
+  });
+
+  it("ponte FinanceExecutiveTotalizerCard existe", () => {
+    const src = read("src/components/finance/shared/FinanceExecutiveTotalizerCard.tsx");
+    assert.match(src, /SystemTotalizerCard/);
+  });
+});
