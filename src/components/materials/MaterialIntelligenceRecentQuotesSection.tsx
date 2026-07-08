@@ -22,7 +22,7 @@ import {
   getMaterialMarketQuoteSetOfficialApiPath,
   getMaterialMarketQuoteSubmitApprovalApiPath,
 } from "@/src/lib/materialsNavigation";
-import { formatCurrency } from "@/src/lib/utils";
+import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
 import { MaterialIntelligenceMarketQuoteForm } from "@/src/components/materials/MaterialIntelligenceMarketQuoteForm";
 import { MaterialIntelligencePurchaseLinkForm } from "@/src/components/materials/MaterialIntelligencePurchaseLinkForm";
@@ -224,16 +224,20 @@ export function MaterialIntelligenceRecentQuotesSection({
                       ) : null}
                     </td>
                     <td className="p-3 text-right">
-                      {formatCurrency(quote.price)} {quote.currency}
+                      {quote.currency.trim().toUpperCase() === "USD"
+                        ? `US$ ${formatNumber(quote.price)}`
+                        : `${formatCurrency(quote.price)} ${quote.currency}`}
                     </td>
                     <td className="p-3 text-right font-semibold text-primary">
-                      {formatCurrency(quote.netPrice)}
+                      {quote.currency.trim().toUpperCase() === "USD"
+                        ? `US$ ${formatNumber(quote.netPrice)}`
+                        : formatCurrency(quote.netPrice)}
                     </td>
                     <td className="p-3 text-right text-muted-foreground">
                       {formatCurrency(quote.netPriceBrl ?? quote.netPrice)}
                       {quote.currency.trim().toUpperCase() === "USD" && quote.netPriceBrl != null ? (
                         <p className="text-[11px] text-muted-foreground">
-                          orig. {formatCurrency(quote.netPrice)} USD
+                          orig. US$ {formatNumber(quote.netPrice)}
                         </p>
                       ) : null}
                     </td>

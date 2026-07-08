@@ -12,7 +12,7 @@ import {
   getMaterialMarketIntelligenceQuotesApiPath,
   getMaterialMarketPtaxPreviewApiPath,
 } from "@/src/lib/materialsNavigation";
-import { formatCurrency } from "@/src/lib/utils";
+import { formatCurrency, formatNumber } from "@/src/lib/utils";
 
 export type MaterialMarketQuoteFormValues = {
   supplierName: string;
@@ -434,14 +434,16 @@ export function MaterialIntelligenceMarketQuoteForm({
             <p className="text-sm text-muted-foreground" data-testid="material-market-quote-net-preview">
               Preço líquido calculado:{" "}
               <span className="font-semibold text-foreground">
-                {formatCurrency(previewNetPrice)} {isUsd ? "USD" : form.currency}
+                {isUsd
+                  ? `US$ ${formatNumber(previewNetPrice)}`
+                  : `${formatCurrency(previewNetPrice)} ${form.currency}`}
               </span>
               {previewNetPriceBrl != null ? (
                 <>
                   {" "}
                   →{" "}
                   <span className="font-semibold text-foreground">
-                    {formatCurrency(previewNetPriceBrl)} BRL
+                    {formatCurrency(previewNetPriceBrl)}
                   </span>
                 </>
               ) : null}
