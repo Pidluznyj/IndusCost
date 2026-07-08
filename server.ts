@@ -104,6 +104,8 @@ import {
   rankMaterialMarketSavingsOpportunities,
   DEFAULT_MATERIAL_MARKET_SAVINGS_RANKING_VOLUME,
 } from "./src/lib/materialMarketSavingsOpportunity.js";
+import { MaterialMarketReportParseError } from "./src/lib/materialMarketIntelligenceReports.js";
+import { buildMaterialMarketIntelligenceReportForApi } from "./src/lib/materialMarketIntelligenceReports.server.js";
 import {
   buildMaterialProductFinancialImpactForApi,
 } from "./src/lib/materialProductFinancialImpact.server.js";
@@ -2866,6 +2868,32 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             error instanceof Error
               ? error.message
               : "Erro ao listar matérias-primas monitoradas.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/materials/market-intelligence/reports",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const payload = await buildMaterialMarketIntelligenceReportForApi(
+          prisma,
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (error instanceof MaterialMarketReportParseError) {
+          return res.status(400).json({ error: error.message });
+        }
+        console.error("GET /api/materials/market-intelligence/reports", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao gerar relatório executivo de inteligência de mercado.",
         });
       }
     }

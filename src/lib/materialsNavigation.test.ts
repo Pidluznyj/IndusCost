@@ -90,6 +90,26 @@ describe("materialsNavigation", () => {
     assert.match(catalog, /Inteligência/);
   });
 
+  it("relatório executivo de inteligência de mercado", () => {
+    const module = read("src/components/MaterialsModule.tsx");
+    const page = read("src/components/materials/MaterialsMarketIntelligenceReportsPage.tsx");
+    const home = read("src/components/materials/MaterialsMarketIntelligencePage.tsx");
+    const nav = read("src/lib/materialsNavigation.ts");
+    const server = read("server.ts");
+    assert.match(module, /market-intelligence\/reports/);
+    assert.match(module, /MaterialsMarketIntelligenceReportsPage/);
+    assert.match(page, /materials-market-intelligence-reports-page/);
+    assert.match(home, /MATERIALS_MARKET_INTELLIGENCE_REPORTS_PATH/);
+    assert.match(nav, /MATERIALS_MARKET_INTELLIGENCE_REPORTS_API/);
+    assert.match(nav, /getMaterialMarketIntelligenceReportsApiPath/);
+    assert.match(server, /\/api\/materials\/market-intelligence\/reports/);
+    assert.match(server, /buildMaterialMarketIntelligenceReportForApi/);
+    assert.equal(
+      isMaterialsCanonicalPath("/materials/market-intelligence/reports"),
+      true
+    );
+  });
+
   it("API de detalhe por matéria-prima", () => {
     const server = read("server.ts");
     assert.match(server, /\/api\/materials\/market-intelligence\/:materialId/);

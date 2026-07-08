@@ -4,14 +4,15 @@ import type { PrismaClient } from "@prisma/client";
 import {
   canAdjustMaterialMarketQuoteReliability,
   parseMaterialMarketQuoteReliabilityPatch,
-  toPrismaMaterialMarketQuoteReliabilityLevel,
 } from "./materialMarketQuoteReliability.js";
+import { overrideMaterialMarketQuoteReliability } from "./materialMarketQuoteReliability.server.js";
+import { serializeMaterialMarketQuoteForApi } from "./materialMarketQuote.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   getCurrentAppUser: (
     req: express.Request
-  ) => Promise<{ id: string; role: string; permissions: string[] } | null>;
+  ) => Promise<{ id: string; role: string; permissions: string[]; effectivePermissions?: string[] } | null>;
 };
 
 type RouteDeps = { prisma: PrismaClient; isUuid: (value: unknown) => value is string };
@@ -49,41 +50,36 @@ export function registerMaterialMarketQuoteReliabilityRoutes(
         return res.status(400).json({ error: parsed.code, message: parsed.message });
       }
 
-      const quote = await deps.prisma.materialMarketQuote.findFirst({
-        where: { id: quoteId, materialId },
-        select: { id: true, suggestedReliabilityLevel: true },
+      let change;
+      try {
+        change = await overrideMaterialMarketQuoteReliability(deps.prisma, {
+          materialId,
+          quoteId,
+          level: parsed.level,
+          justification: parsed.justification,
+          userId: authUser.id,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "QUOTE_NOT_FOUND") {
+          return res.status(404).json({
+            error: "QUOTE_NOT_FOUND",
+            message: "Cotação não encontrada.",
+          });
+        }
+        throw error;
+      }
+
+      const quote = await deps.prisma.materialMarketQuote.findUnique({
+        where: { id: quoteId },
+        include: { _count: { select: { Attachments: true } } },
       });
       if (!quote) {
         return res.status(404).json({ error: "QUOTE_NOT_FOUND", message: "Cotação não encontrada." });
       }
 
-      const updated = await deps.prisma.materialMarketQuote.update({
-        where: { id: quoteId },
-        data: {
-          suggestedReliabilityLevel: toPrismaMaterialMarketQuoteReliabilityLevel(
-            parsed.level
-          ),
-        },
-      });
-
-      await deps.prisma.materialMarketQuoteAuditLog.create({
-        data: {
-          quoteId,
-          entityType: "MaterialMarketQuote",
-          entityId: quoteId,
-          action: "RELIABILITY_OVERRIDE",
-          details: JSON.stringify({
-            before: quote.suggestedReliabilityLevel,
-            after: parsed.level,
-            justification: parsed.justification,
-          }),
-          userId: authUser.id,
-        },
-      });
-
       return res.json({
-        quoteId: updated.id,
-        suggestedReliabilityLevel: updated.suggestedReliabilityLevel,
+        ...serializeMaterialMarketQuoteForApi(quote),
+        reliabilityChange: change,
       });
     } catch (error) {
       console.error(`PATCH ${path}`, error);

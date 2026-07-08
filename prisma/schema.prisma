@@ -184,9 +184,10 @@ enum MaterialMarketQuotePtaxFetchStatus {
 }
 
 enum MaterialMarketQuoteReliabilityLevel {
-  LOW
-  MEDIUM
-  HIGH
+  MANUAL
+  BAIXA
+  MEDIA
+  ALTA
 }
 
 enum MaterialMarketQuoteAttachmentType {
@@ -236,6 +237,11 @@ model MaterialMarketQuote {
   approvedAt                  DateTime?                           @db.Timestamptz(6)
   setOfficialBy               String?
   setOfficialAt               DateTime?                           @db.Timestamptz(6)
+  reliabilityLevel            MaterialMarketQuoteReliabilityLevel?
+  reliabilitySuggestedLevel   MaterialMarketQuoteReliabilityLevel?
+  reliabilityOverrideReason   String?
+  reliabilitySetBy            String?
+  reliabilitySetAt            DateTime?                           @db.Timestamptz(6)
   suggestedReliabilityLevel   MaterialMarketQuoteReliabilityLevel?
   createdBy                   String?
   updatedBy                   String?

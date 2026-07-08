@@ -16,6 +16,8 @@ import {
 import {
   MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS,
   parseMaterialMarketQuoteReliabilityLevel,
+  resolveQuoteAppliedReliabilityLevel,
+  resolveQuoteSuggestedReliabilityLevel,
   type MaterialMarketQuoteReliabilityLevel,
 } from "./materialMarketQuoteReliability.js";
 
@@ -194,6 +196,11 @@ export type MaterialMarketQuoteSourceRow = {
   approvedAt?: Date | string | null;
   setOfficialBy?: string | null;
   setOfficialAt?: Date | string | null;
+  reliabilityLevel?: string | null;
+  reliabilitySuggestedLevel?: string | null;
+  reliabilityOverrideReason?: string | null;
+  reliabilitySetBy?: string | null;
+  reliabilitySetAt?: Date | string | null;
   suggestedReliabilityLevel?: string | null;
   _count?: { Attachments?: number };
   createdBy?: string | null;
@@ -406,8 +413,9 @@ export function serializeMaterialMarketQuoteForApi(
   const currency = row.currency;
   const ptaxVenda = toOptionalNumber(row.ptaxVenda);
   const priceBrl = toOptionalNumber(row.priceBrl);
-  const suggestedReliabilityLevel = parseReliabilityLevel(row.suggestedReliabilityLevel);
-  const appliedLevel = suggestedReliabilityLevel ?? "MANUAL";
+  const suggestedReliabilityLevel = resolveQuoteSuggestedReliabilityLevel(row);
+  const appliedLevel = resolveQuoteAppliedReliabilityLevel(row) ?? "MANUAL";
+  const reliabilityOverrideReason = row.reliabilityOverrideReason?.trim() || null;
   return {
     id: row.id,
     materialId: row.materialId,
@@ -469,7 +477,14 @@ export function serializeMaterialMarketQuoteForApi(
     reliabilitySuggestedLabel: suggestedReliabilityLevel
       ? MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[suggestedReliabilityLevel]
       : null,
-    reliabilityOverrideReason: null,
+    reliabilityOverrideReason,
+    reliabilitySetBy: row.reliabilitySetBy ?? null,
+    reliabilitySetAt: row.reliabilitySetAt
+      ? new Date(row.reliabilitySetAt).toISOString()
+      : null,
+    hasReliabilityOverride: Boolean(reliabilityOverrideReason),
+    reliabilityDiffersFromSuggestion:
+      suggestedReliabilityLevel != null && appliedLevel !== suggestedReliabilityLevel,
     suggestedReliabilityLevel,
     suggestedReliabilityLabel: suggestedReliabilityLevel
       ? MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[suggestedReliabilityLevel]

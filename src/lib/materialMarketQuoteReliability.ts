@@ -18,10 +18,10 @@ export const MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS: Record<
   MaterialMarketQuoteReliabilityLevel,
   string
 > = {
-  MANUAL: "Manual",
-  BAIXA: "Baixa",
-  MEDIA: "Média",
-  ALTA: "Alta",
+  MANUAL: "Dado sem evidência",
+  BAIXA: "Informação verbal",
+  MEDIA: "E-mail ou tabela",
+  ALTA: "Proposta formal/anexo",
 };
 
 export const MATERIAL_MARKET_QUOTE_RELIABILITY_BADGE_CLASSES: Record<
@@ -221,4 +221,26 @@ export function fromPrismaMaterialMarketQuoteReliabilityLevel(
   value: unknown
 ): MaterialMarketQuoteReliabilityLevel | null {
   return parseMaterialMarketQuoteReliabilityLevel(value);
+}
+
+export function resolveQuoteAppliedReliabilityLevel(row: {
+  reliabilityLevel?: string | null;
+  reliabilitySuggestedLevel?: string | null;
+  suggestedReliabilityLevel?: string | null;
+}): MaterialMarketQuoteReliabilityLevel | null {
+  return (
+    fromPrismaMaterialMarketQuoteReliabilityLevel(row.reliabilityLevel) ??
+    fromPrismaMaterialMarketQuoteReliabilityLevel(row.reliabilitySuggestedLevel) ??
+    fromPrismaMaterialMarketQuoteReliabilityLevel(row.suggestedReliabilityLevel)
+  );
+}
+
+export function resolveQuoteSuggestedReliabilityLevel(row: {
+  reliabilitySuggestedLevel?: string | null;
+  suggestedReliabilityLevel?: string | null;
+}): MaterialMarketQuoteReliabilityLevel | null {
+  return (
+    fromPrismaMaterialMarketQuoteReliabilityLevel(row.reliabilitySuggestedLevel) ??
+    fromPrismaMaterialMarketQuoteReliabilityLevel(row.suggestedReliabilityLevel)
+  );
 }

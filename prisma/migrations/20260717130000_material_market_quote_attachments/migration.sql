@@ -1,6 +1,6 @@
 -- Anexos e nível de confiabilidade sugerido para cotações de mercado.
 
-CREATE TYPE "MaterialMarketQuoteReliabilityLevel" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
+CREATE TYPE "MaterialMarketQuoteReliabilityLevel" AS ENUM ('MANUAL', 'BAIXA', 'MEDIA', 'ALTA');
 CREATE TYPE "MaterialMarketQuoteAttachmentType" AS ENUM ('PDF', 'IMAGE', 'SPREADSHEET', 'EMAIL', 'PROPOSAL', 'OTHER');
 
 ALTER TABLE "MaterialMarketQuote"
