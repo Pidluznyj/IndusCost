@@ -19,9 +19,10 @@ git pull
 npm ci   # ou npm install se lock estiver alinhado
 npx prisma validate
 npx prisma generate
-npm run test:brent-commodity
-npx tsx --test src/lib/materialMarketPtax.test.ts src/lib/materialMarketQuoteExchange.test.ts src/lib/marketGlobalIndicators.test.ts
-npm run build
+npm test
+# Suite obrigatória MI (também roda via npm test e build:safe):
+npm run test:market-intelligence
+npm run build:safe
 ```
 
 Anote o commit:
