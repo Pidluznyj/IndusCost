@@ -18,6 +18,15 @@ import {
   resolveSalesOrderListSellerWhere,
   type SalesOrderListQuery,
 } from "./salesOrderListQuery.server.js";
+import {
+  buildSalesOrderListPaymentOpeningRows,
+  buildSalesOrderListPaymentReportSummary,
+  resolveSalesOrderListPaymentSummary,
+} from "./salesOrderListPaymentSchedule.js";
+import {
+  collectReceivablesForOrderNfes,
+  loadSalesOrderListReceivablesByNfeExternalIds,
+} from "./salesOrderListPaymentSchedule.server.js";
 import { SALES_ORDER_LIST_STATUS_LABELS } from "./salesOrderListUi.js";
 import {
   calculateSalesOrderMarginsForOrders,
@@ -25,12 +34,12 @@ import {
   type SalesOrderForMargin,
 } from "./salesOrderMarginService.server.js";
 import {
-  buildSalesOrderListReportExportSummary,
   buildSalesOrderListReportPeriodLabel,
   formatSalesOrderListReportIssueDate,
   formatSalesOrderListReportNfeDocument,
   type SalesOrderListReportExportPayload,
   type SalesOrderListReportExportRow,
+  type SalesOrderListReportPaymentOpeningRow,
 } from "./salesOrderListReportExport.js";
 
 function customerDisplayName(customer?: {
@@ -38,6 +47,11 @@ function customerDisplayName(customer?: {
   tradeName?: string | null;
 } | null): string {
   return customer?.tradeName?.trim() || customer?.companyName?.trim() || "Cliente não informado";
+}
+
+function formatDueDateBr(value: Date | null): string {
+  if (!value) return "";
+  return value.toLocaleDateString("pt-BR");
 }
 
 function resolveSellerLabelForSummary(
@@ -83,6 +97,8 @@ export async function loadSalesOrderListReportExportPayload(
       totalNetValue: true,
       totalItems: true,
       expectedDeliveryDate: true,
+      paymentTerms: true,
+      paymentMethod: true,
       nomusRawResponse: true,
       Customer: { select: { companyName: true, tradeName: true } },
       items: canViewMarginEconomics ? { select: SALES_ORDER_ITEM_MARGIN_SELECT } : false,
@@ -99,6 +115,18 @@ export async function loadSalesOrderListReportExportPayload(
     }))
   );
 
+  const allNfeExternalIds = [
+    ...new Set(
+      [...linkedNfeContextMap.values()].flatMap((context) =>
+        context.nfeLinks.map((link) => link.nfeExternalId)
+      )
+    ),
+  ];
+  const receivablesByNfeId = await loadSalesOrderListReceivablesByNfeExternalIds(
+    prisma,
+    allNfeExternalIds
+  );
+
   const marginByOrder = canViewMarginEconomics
     ? await calculateSalesOrderMarginsForOrders(
         prisma,
@@ -112,6 +140,8 @@ export async function loadSalesOrderListReportExportPayload(
   let marginPercentWeight = 0;
   let invoicedCount = 0;
   let notInvoicedCount = 0;
+  const paymentSummaries = [];
+  const paymentOpeningRows: SalesOrderListReportPaymentOpeningRow[] = [];
 
   const rows: SalesOrderListReportExportRow[] = orders.map((order) => {
     const linked = linkedNfeContextMap.get(order.id);
@@ -135,6 +165,29 @@ export async function loadSalesOrderListReportExportPayload(
       marginPercentWeight += netValue;
     }
 
+    const nfeDocument = formatSalesOrderListReportNfeDocument(linked?.nfeNumbers);
+    const nfeExternalIds = linked?.nfeLinks.map((link) => link.nfeExternalId) ?? [];
+    const receivables = collectReceivablesForOrderNfes(nfeExternalIds, receivablesByNfeId);
+    const payment = resolveSalesOrderListPaymentSummary({
+      paymentTerms: order.paymentTerms,
+      paymentMethod: order.paymentMethod,
+      issueDate: order.issueDate,
+      totalNetValue: netValue,
+      nomusRawResponse: order.nomusRawResponse,
+      nfeDocuments: linked?.nfeNumbers ?? [],
+      receivables,
+    });
+    paymentSummaries.push(payment);
+    paymentOpeningRows.push(
+      ...buildSalesOrderListPaymentOpeningRows({
+        orderCode: order.orderCode,
+        customerName: customerDisplayName(order.Customer),
+        sellerName: formatSalesOrderNomusSellerListLabel(seller),
+        nfeDocument,
+        payment,
+      })
+    );
+
     return {
       orderCode: order.orderCode,
       customerName: customerDisplayName(order.Customer),
@@ -147,13 +200,24 @@ export async function loadSalesOrderListReportExportPayload(
       marginPercent,
       marginValue,
       itemsCount,
-      nfeDocument: formatSalesOrderListReportNfeDocument(linked?.nfeNumbers),
+      nfeDocument,
       externalSalesOrderCode: order.externalSalesOrderCode?.trim() ?? "",
+      paymentConditionLabel: payment.paymentConditionLabel,
+      paymentSourceLabel: payment.paymentSourceLabel,
+      installmentCount: payment.installmentCount,
+      firstDueDate: formatDueDateBr(payment.firstDueDate),
+      lastDueDate: formatDueDateBr(payment.lastDueDate),
+      scheduleText: payment.scheduleText,
+      totalTitlesAmount: payment.totalTitlesAmount ?? "",
+      financialStatusLabel: payment.financialStatusLabel ?? "—",
     };
   });
 
   const averageMarginPercent =
     marginPercentWeight > 0 ? marginPercentSum / marginPercentWeight : null;
+  const paymentReportSummary = buildSalesOrderListPaymentReportSummary({
+    payments: paymentSummaries,
+  });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -168,7 +232,16 @@ export async function loadSalesOrderListReportExportPayload(
       averageMarginPercent,
       invoicedCount,
       notInvoicedCount,
+      cashOrdersCount: paymentReportSummary.cashOrdersCount,
+      installmentOrdersCount: paymentReportSummary.installmentOrdersCount,
+      noPaymentInfoCount: paymentReportSummary.noPaymentInfoCount,
+      withRealTitlesCount: paymentReportSummary.withRealTitlesCount,
+      withForecastOnlyCount: paymentReportSummary.withForecastOnlyCount,
+      reportFirstDueDate: formatDueDateBr(paymentReportSummary.reportFirstDueDate),
+      reportLastDueDate: formatDueDateBr(paymentReportSummary.reportLastDueDate),
+      totalTitlesAmount: paymentReportSummary.totalTitlesAmount,
     },
     rows,
+    paymentOpeningRows,
   };
 }
