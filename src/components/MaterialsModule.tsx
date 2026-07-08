@@ -12,6 +12,7 @@ import {
 import { MaterialModule } from "@/src/components/MaterialModule";
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
+import { MaterialsMarketIntelligenceReportsPage } from "@/src/components/materials/MaterialsMarketIntelligenceReportsPage";
 
 function MaterialsHomeRedirect() {
   return <Navigate to={getMaterialsDefaultPath()} replace />;
@@ -73,6 +74,7 @@ export function MaterialsModule() {
 
       <Routes>
         <Route index element={<MaterialModule />} />
+        <Route path="market-intelligence/reports" element={<MaterialsMarketIntelligenceReportsPage />} />
         <Route path="market-intelligence/:materialId" element={<MaterialsMarketIntelligenceDetailPage />} />
         <Route path="market-intelligence" element={<MaterialsMarketIntelligencePage />} />
         <Route path="*" element={<MaterialsHomeRedirect />} />

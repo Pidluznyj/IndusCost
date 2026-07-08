@@ -9,8 +9,9 @@ import {
   type MaterialMarketIntelligenceReport,
   type MaterialMarketReportMaterialInput,
 } from "./materialMarketIntelligenceReports.js";
-import { loadMarketGlobalIndicators } from "./marketGlobalIndicators.js";
-import { getLatestBrentSnapshot } from "./brentCommodityCollection.js";
+import { loadMarketGlobalIndicators } from "./marketGlobalIndicators.server.js";
+
+const BOM_LOAD_MATERIAL_LIMIT = 25;
 
 export async function buildMaterialMarketIntelligenceReportForApi(
   db: PrismaClient,
@@ -53,8 +54,8 @@ export async function buildMaterialMarketIntelligenceReportForApi(
           take: 200,
         })
       : Promise.resolve([]),
-    loadGlobalIndicatorsSafe(db),
-    loadBomImpacts(db, materials.map((material) => material.id)),
+    loadMarketGlobalIndicators().catch(() => null),
+    loadBomImpacts(db, materialIds),
   ]);
 
   const reportMaterials: MaterialMarketReportMaterialInput[] = materials.map((material) => ({
@@ -82,32 +83,16 @@ export async function buildMaterialMarketIntelligenceReportForApi(
   });
 }
 
-async function loadGlobalIndicatorsSafe(db: PrismaClient) {
-  try {
-    const [ptax, brent] = await Promise.all([
-      db.ptaxSnapshot.findFirst({
-        where: { status: "SUCCESS" },
-        orderBy: { collectedAt: "desc" },
-      }),
-      getLatestBrentSnapshot(db),
-    ]);
-    return loadMarketGlobalIndicators({ ptax, brent });
-  } catch {
-    return null;
-  }
-}
-
 async function loadBomImpacts(
   db: PrismaClient,
   materialIds: string[]
 ): Promise<Map<string, NonNullable<MaterialMarketReportMaterialInput["bomImpactItems"]>>> {
   const map = new Map<string, NonNullable<MaterialMarketReportMaterialInput["bomImpactItems"]>>();
-  // Limita fan-out: relatório geral sem materialId não precisa de BOM completa de todas.
-  // Carrega BOM apenas quando há poucas matérias filtradas.
-  if (materialIds.length === 0 || materialIds.length > 25) return map;
+  const ids = materialIds.slice(0, BOM_LOAD_MATERIAL_LIMIT);
+  if (!ids.length) return map;
 
   await Promise.all(
-    materialIds.map(async (materialId) => {
+    ids.map(async (materialId) => {
       const payload = await buildMaterialBomImpactForApi(db, materialId);
       if ("notFound" in payload) return;
       map.set(materialId, payload.items);
