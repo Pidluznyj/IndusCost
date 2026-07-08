@@ -207,6 +207,8 @@ export function MaterialsMarketIntelligenceDetailPage() {
 
             <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
 
+            <MaterialIntelligencePriceAnalyticsSection materialId={item.id} />
+
             <MaterialIntelligenceSavingsOpportunitySection
               materialId={item.id}
               unit={item.unit}
