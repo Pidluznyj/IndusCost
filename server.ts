@@ -79,6 +79,10 @@ import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { parseMaterialMarketMonitoringInput } from "./src/lib/materialMarketMonitoring.js";
+import {
+  buildMonitoredMaterialListResponse,
+  parseMonitoredMaterialCriticalityFilter,
+} from "./src/lib/materialMarketIntelligenceMonitored.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -2716,6 +2720,54 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
     res.json(materialsWithCalculations);
   });
+
+  app.get(
+    "/api/materials/market-intelligence/monitored",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const q = typeof req.query.q === "string" ? req.query.q : "";
+        const criticalityParam =
+          typeof req.query.criticality === "string" ? req.query.criticality : "";
+        const criticality = parseMonitoredMaterialCriticalityFilter(criticalityParam);
+        const qTrim = q.trim();
+
+        const materials = await prisma.material.findMany({
+          where: {
+            isMarketMonitored: true,
+            ...(criticality ? { marketCriticality: criticality } : {}),
+            ...(qTrim
+              ? {
+                  OR: [
+                    { code: { contains: qTrim, mode: "insensitive" } },
+                    { description: { contains: qTrim, mode: "insensitive" } },
+                  ],
+                }
+              : {}),
+          },
+          include: {
+            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 1 },
+          },
+          orderBy: [{ marketCriticality: "desc" }, { code: "asc" }],
+        });
+
+        const payload = buildMonitoredMaterialListResponse(materials, {
+          q,
+          criticality: criticality ?? undefined,
+        });
+        res.json(payload);
+      } catch (error) {
+        console.error("GET /api/materials/market-intelligence/monitored", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao listar matérias-primas monitoradas.",
+        });
+      }
+    }
+  );
 
   app.post("/api/materials", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     try {

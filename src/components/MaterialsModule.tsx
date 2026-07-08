@@ -11,6 +11,7 @@ import {
 } from "@/src/lib/materialsNavigation";
 import { MaterialModule } from "@/src/components/MaterialModule";
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
+import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
 
 function MaterialsHomeRedirect() {
   return <Navigate to={getMaterialsDefaultPath()} replace />;
@@ -54,7 +55,9 @@ export function MaterialsModule() {
               className={({ isActive }) =>
                 cn(
                   "inline-flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap",
-                  isActive
+                  (section.id === "marketIntelligence"
+                    ? location.pathname.startsWith(section.path)
+                    : isActive)
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 )
@@ -70,6 +73,7 @@ export function MaterialsModule() {
 
       <Routes>
         <Route index element={<MaterialModule />} />
+        <Route path="market-intelligence/:materialId" element={<MaterialsMarketIntelligenceDetailPage />} />
         <Route path="market-intelligence" element={<MaterialsMarketIntelligencePage />} />
         <Route path="*" element={<MaterialsHomeRedirect />} />
       </Routes>

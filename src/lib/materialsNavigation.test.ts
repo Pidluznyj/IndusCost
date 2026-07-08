@@ -58,6 +58,20 @@ describe("materialsNavigation", () => {
     assert.match(server, /parseMaterialMarketMonitoringInput/);
   });
 
+  it("API lista matérias monitoradas com busca e criticidade", () => {
+    const server = read("server.ts");
+    assert.match(server, /\/api\/materials\/market-intelligence\/monitored/);
+    assert.match(server, /buildMonitoredMaterialListResponse/);
+  });
+
+  it("rota individual de inteligência preparada", () => {
+    const module = read("src/components/MaterialsModule.tsx");
+    const list = read("src/components/materials/MaterialsMarketIntelligenceMonitoredList.tsx");
+    assert.match(module, /market-intelligence\/:materialId/);
+    assert.match(module, /MaterialsMarketIntelligenceDetailPage/);
+    assert.match(list, /Ver Inteligência/);
+  });
+
   it("schema Material possui campos de monitoramento", () => {
     const schema = read("prisma/schema.prisma");
     assert.match(schema, /isMarketMonitored/);

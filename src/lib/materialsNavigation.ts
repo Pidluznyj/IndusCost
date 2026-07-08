@@ -13,6 +13,13 @@ export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
   marketIntelligence: `${MATERIALS_BASE_PATH}/market-intelligence`,
 };
 
+export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
+  "/api/materials/market-intelligence/monitored" as const;
+
+export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {
+  return `${MATERIALS_SECTION_PATHS.marketIntelligence}/${materialId}`;
+}
+
 export const MATERIALS_DEFAULT_SECTION: MaterialsSectionId = "catalog";
 
 export type MaterialsSectionDef = {
@@ -49,9 +56,19 @@ export function parseMaterialsSectionFromPath(pathname: string): MaterialsSectio
   return null;
 }
 
+export function isMaterialMarketIntelligenceDetailPath(pathname: string): boolean {
+  return /^\/materials\/market-intelligence\/[^/]+$/.test(pathname);
+}
+
+export function parseMaterialIdFromMarketIntelligencePath(pathname: string): string | null {
+  const match = pathname.match(/^\/materials\/market-intelligence\/([^/]+)$/);
+  return match?.[1] ?? null;
+}
+
 export function isMaterialsCanonicalPath(pathname: string): boolean {
   if (pathname === MATERIALS_BASE_PATH) return true;
   if (pathname === MATERIALS_SECTION_PATHS.marketIntelligence) return true;
+  if (isMaterialMarketIntelligenceDetailPath(pathname)) return true;
   return false;
 }
 
