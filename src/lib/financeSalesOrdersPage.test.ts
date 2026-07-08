@@ -84,6 +84,17 @@ describe("financeSalesOrdersPage", () => {
 
   });
 
+  it("cards financeiros usam amountFormat currency com campos do summary", () => {
+    const page = read("src/components/finance/FinanceSalesOrdersPage.tsx");
+    assert.match(page, /amountFormat="currency"/);
+    assert.match(page, /summary\.totalOrdersAmount/);
+    assert.match(page, /summary\.openPortfolioAmount/);
+    assert.match(page, /summary\.invoicedOrdersAmount/);
+    assert.match(page, /summary\.averageTicketAmount/);
+    assert.match(page, /summary\.dailyAverageAmount/);
+    assert.match(page, /formatFinanceKpiCurrency/);
+  });
+
 
 
   it("filtros aparecem", () => {

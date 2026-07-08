@@ -493,6 +493,7 @@ export function FinanceSalesOrdersPage() {
               label="Valor total de pedidos"
               value={formatFinanceKpiCurrency(summary.totalOrdersAmount)}
               amount={summary.totalOrdersAmount}
+              amountFormat="currency"
               helperText="Soma do valor líquido dos pedidos no filtro."
             />
             <FinanceKpiCard
@@ -508,6 +509,7 @@ export function FinanceSalesOrdersPage() {
               label="Valor em carteira"
               value={formatFinanceKpiCurrency(summary.openPortfolioAmount)}
               amount={summary.openPortfolioAmount}
+              amountFormat="currency"
               helperText="Valor líquido dos pedidos ainda sem NF processada."
             />
             <FinanceKpiCard
@@ -523,6 +525,7 @@ export function FinanceSalesOrdersPage() {
               label="Valor faturado"
               value={formatFinanceKpiCurrency(summary.invoicedOrdersAmount)}
               amount={summary.invoicedOrdersAmount}
+              amountFormat="currency"
               helperText="Valor líquido dos pedidos com NF processada."
             />
             <FinanceKpiCard
@@ -530,6 +533,7 @@ export function FinanceSalesOrdersPage() {
               label="Ticket médio"
               value={formatFinanceKpiCurrency(summary.averageTicketAmount)}
               amount={summary.averageTicketAmount}
+              amountFormat="currency"
               helperText="Valor total ÷ quantidade de pedidos."
             />
             <FinanceKpiCard
@@ -537,6 +541,7 @@ export function FinanceSalesOrdersPage() {
               label="Média diária"
               value={formatFinanceKpiCurrency(summary.dailyAverageAmount)}
               amount={summary.dailyAverageAmount}
+              amountFormat="currency"
               helperText="Valor YTD ÷ dias úteis decorridos (seg–sex)."
             />
             <FinanceKpiCard

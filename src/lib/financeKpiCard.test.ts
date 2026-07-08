@@ -56,6 +56,13 @@ describe("financeKpiCard", () => {
     assert.match(bi, /formatKpiDisplayValue/);
   });
 
+  it("FinanceBiKpiCard preserva value formatado quando amount não tem amountFormat", () => {
+    const bi = readFileSync(biKpiCardPath, "utf8");
+    assert.match(bi, /usesStructuredAmount/);
+    assert.match(bi, /formattedValue=\{displayValue\}/);
+    assert.doesNotMatch(bi, /metricAmount == null \? displayValue : undefined/);
+  });
+
   it("FinanceKpiCard não importa backend ou Prisma", () => {
     const src = readFileSync(kpiCardPath, "utf8");
     const forbidden = [

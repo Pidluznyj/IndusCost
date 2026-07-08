@@ -10,6 +10,7 @@ import {
   buildOfficialSalesOrderManagementCore,
   buildOfficialSalesOrderResultSalesBundle,
   mapOfficialFinancePortfolioFromManagementRows,
+  mapOfficialFinancePeriodAgg,
   OFFICIAL_SO_RULES_SOURCE,
 } from "./salesOrderRulesAdapter.js";
 import type { SalesOrderRulesOrderInput } from "./salesOrderRulesEngine.types.js";
@@ -110,6 +111,22 @@ describe("salesOrderRulesAdapter integration", () => {
     });
     const portfolio = mapOfficialFinancePortfolioFromManagementRows(core.rows);
     assert.equal(portfolio.open.count + portfolio.invoiced.count, core.rows.length);
+  });
+
+  it("mapOfficialFinancePeriodAgg expõe quantidade e valor vendido do motor", () => {
+    const rows = [order({ id: "1", totalNetValue: 1500 }), order({ id: "2", totalNetValue: 500 })];
+    const payload = buildOfficialSalesOrderListPayload({
+      orders: rows,
+      listFilters: { year: 2026 },
+      referenceDate: REF,
+    });
+    const agg = mapOfficialFinancePeriodAgg({
+      listSummary: payload.summary,
+      metrics: payload.metrics,
+    });
+    assert.equal(agg.count, 2);
+    assert.equal(agg.net, 2000);
+    assert.ok(Number.isFinite(agg.net));
   });
 
   it("reports commercial payload usa motor oficial para totais", () => {

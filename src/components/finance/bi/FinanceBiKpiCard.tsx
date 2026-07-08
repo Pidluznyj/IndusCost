@@ -49,10 +49,10 @@ export function FinanceBiKpiCard({
 }) {
   let displayValue = value;
   let displayTitle = valueTitle ?? undefined;
-  let metricAmount = amount;
-  let metricAmountFormat = amountFormat;
 
-  if (!loading && amount != null && amountFormat) {
+  const usesStructuredAmount = !loading && amount != null && amountFormat != null;
+
+  if (usesStructuredAmount) {
     const formatted =
       amountFormat === "currency"
         ? formatKpiCompactCurrency(amount)
@@ -62,8 +62,6 @@ export function FinanceBiKpiCard({
     const display = formatKpiDisplayValue(formatted, label);
     displayValue = display.value;
     displayTitle = display.valueTitle ?? displayTitle;
-    metricAmount = undefined;
-    metricAmountFormat = undefined;
   }
 
   const subtitleParts = [scopeNote, sub].filter(Boolean);
@@ -93,11 +91,9 @@ export function FinanceBiKpiCard({
   return (
     <MetricCard
       label={label}
-      value={metricAmount == null ? displayValue : undefined}
-      formattedValue={metricAmount == null ? displayValue : undefined}
+      value={displayValue}
+      formattedValue={displayValue}
       fullValue={displayTitle}
-      amount={metricAmount}
-      amountFormat={metricAmountFormat}
       subtitle={subtitle}
       variant={financeColorClassToVariant(colorClass)}
       icon={Icon ? <Icon className="h-3.5 w-3.5" /> : undefined}
