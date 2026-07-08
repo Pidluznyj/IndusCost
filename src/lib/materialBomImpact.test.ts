@@ -106,8 +106,9 @@ describe("materialBomImpact", () => {
       materialUnit: "un",
       effectiveUnitCost: 9,
     });
-    assert.equal(items[0]?.quantityConsumed, roundApprox(1 / 0.9));
-    assert.equal(items[0]?.estimatedCurrentCost, roundApprox((1 / 0.9) * 9));
+    const qty = roundApprox(1 / 0.9);
+    assert.equal(items[0]?.quantityConsumed, qty);
+    assert.equal(items[0]?.estimatedCurrentCost, roundApprox(qty * 9));
     assert.equal(items[0]?.potentialImpact, null);
   });
 });
