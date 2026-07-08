@@ -1212,3 +1212,12 @@ describe("fleetPublicReservation approval history", () => {
     assert.equal(blockedIdx, -1);
   });
 });
+
+describe('tryPublicReservationShortLinkRedirect resilience', () => {
+  it('source swallows DB/settings failures and returns null', () => {
+    const servicePath = join(process.cwd(), 'src', 'lib', 'fleetPublicReservationService.ts');
+    const src = readFileSync(servicePath, 'utf8');
+    assert.match(src, /export async function tryPublicReservationShortLinkRedirect/);
+    assert.match(src, /catch \{\s*\/\/ Sem banco[\s\S]*?return null;\s*\}/);
+  });
+});

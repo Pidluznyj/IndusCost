@@ -1336,14 +1336,19 @@ export async function resolvePublicReservationLinkBySlug(
 export async function tryPublicReservationShortLinkRedirect(
   requestPath: string
 ): Promise<string | null> {
-  const settings = await loadFleetSettings();
-  if (settings.publicReservationEnabled !== "true") return null;
+  try {
+    const settings = await loadFleetSettings();
+    if (settings.publicReservationEnabled !== "true") return null;
 
-  const slug = normalizePublicReservationSlug(settings.publicReservationSlug);
-  if (!slug || !publicReservationPathMatchesSlug(requestPath, slug)) return null;
+    const slug = normalizePublicReservationSlug(settings.publicReservationSlug);
+    if (!slug || !publicReservationPathMatchesSlug(requestPath, slug)) return null;
 
-  const token = settings.publicReservationToken?.trim();
-  if (!token || token.length < 32) return null;
+    const token = settings.publicReservationToken?.trim();
+    if (!token || token.length < 32) return null;
 
-  return `${FLEET_PUBLIC_RESERVATION_PATH}/${token}`;
+    return `${FLEET_PUBLIC_RESERVATION_PATH}/${token}`;
+  } catch {
+    // Sem banco (ex.: DATABASE_URL ausente) o short-link não deve derrubar o SPA.
+    return null;
+  }
 }
