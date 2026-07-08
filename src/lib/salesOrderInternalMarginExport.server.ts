@@ -23,10 +23,6 @@ import {
   buildSalesOrderMarginIndicatorWhere,
 } from "./salesOrderMarginIndicators.server.js";
 import {
-  buildSalesOrderListWhere,
-  isValidSalesOrderListStatus,
-} from "./salesOrdersListSummary.js";
-import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
@@ -43,10 +39,14 @@ import {
 } from "./salesOrderInternalMarginExport.js";
 import {
   buildSalesOrderNomusSellerDto,
-  buildSalesOrderNomusSellerWhereFilter,
   formatSalesOrderNomusSellerListLabel,
 } from "./salesOrderNomusSellerDisplay.js";
 import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
+import {
+  buildSalesOrderListWhereForQuery,
+  parseSalesOrderListQuery,
+  resolveSalesOrderListSellerWhere,
+} from "./salesOrderListQuery.server.js";
 
 export type SalesOrderInternalMarginExportScope = "list" | "management" | "indicators";
 
@@ -252,7 +252,9 @@ function buildListExportFilters(query: Record<string, unknown>): SalesOrderInter
   const customerId = String(query.customerId ?? "").trim();
   if (customerId) rows.push({ label: "Cliente (ID)", value: customerId });
   const seller = String(query.seller ?? query.responsible ?? "").trim();
-  if (seller) rows.push({ label: "Vendedor", value: seller });
+  const sellerKey = String(query.sellerKey ?? "").trim();
+  if (sellerKey) rows.push({ label: "Vendedor (sellerKey)", value: sellerKey });
+  else if (seller) rows.push({ label: "Vendedor", value: seller });
   const year = parseSalesOrderYearParam(query.year);
   if (year) rows.push({ label: "Ano emissão", value: String(year) });
   const month = parseSalesOrderMonthParam(query.month);
@@ -453,29 +455,14 @@ export async function loadSalesOrderInternalMarginExportPayload(
     });
   }
 
-  const status = String(query.status ?? "").trim();
-  const customerId = String(query.customerId ?? "").trim();
-  const sellerFilter = String(query.seller ?? query.responsible ?? "").trim();
-  const year = parseSalesOrderYearParam(query.year);
-  const month = parseSalesOrderMonthParam(query.month);
-  const startDate = parseDateQueryStart(query.startDate);
-  const endDate = parseDateQueryEnd(query.endDate);
-  const q = String(query.q ?? "").trim();
-
+  const listQuery = parseSalesOrderListQuery(query);
   const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
-  const sellerWhere = buildSalesOrderNomusSellerWhereFilter(sellerFilter, sellerIdentityCtx);
-
-  const where = buildSalesOrderListWhere({
-    status: status && isValidSalesOrderListStatus(status) ? status : undefined,
-    customerId: customerId || undefined,
-    seller: sellerFilter || undefined,
-    sellerWhere,
-    startDate,
-    endDate,
-    year,
-    month,
-    q: q || undefined,
+  const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
+    sellerKeyRaw: listQuery.sellerKeyRaw,
+    sellerText: listQuery.sellerText,
   });
+
+  const where = buildSalesOrderListWhereForQuery(listQuery, sellerWhere);
 
   const orders = await prisma.salesOrder.findMany({
     where,

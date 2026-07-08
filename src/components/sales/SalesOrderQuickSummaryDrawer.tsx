@@ -50,6 +50,7 @@ export type SalesOrderListRowSnapshot = {
   totalMarginPerc?: unknown;
   totalMarginValue?: unknown;
   marginSummary?: SalesOrderMarginSummaryPayload;
+  hasInvoice?: boolean;
   Customer?: { companyName?: string; tradeName?: string };
   Proposal?: { number: number; externalProposalCode?: string | null; title?: string | null };
 };

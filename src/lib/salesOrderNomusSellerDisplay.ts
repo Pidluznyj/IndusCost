@@ -8,7 +8,23 @@ import {
   resolveNomusOrderSeller,
   type NomusOrderSellerResolution,
 } from "./commissions/commissionNomusOrderSellerResolver.js";
+import type { Prisma } from "@prisma/client";
 import type { CommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.js";
+
+/** Valor técnico de `sellerKey` para pedidos sem `externalSellerId`. */
+export const SALES_ORDER_NO_SELLER_KEY = "__NO_SELLER__";
+
+export type ParsedSalesOrderSellerKey =
+  | { kind: "all" }
+  | { kind: "no_seller" }
+  | { kind: "seller_id"; externalSellerId: number };
+
+export type SalesOrderSellerFilterOption = {
+  sellerKey: string;
+  label: string;
+  externalSellerId: number | null;
+  orderCount: number;
+};
 
 export type SalesOrderNomusSellerApiStatus =
   | "RESOLVED"
@@ -129,6 +145,53 @@ export function collectExternalSellerIdsMatchingSellerFilter(
   }
 
   return [...ids];
+}
+
+/** Interpreta `sellerKey` da query string (select Comercial). */
+export function parseSalesOrderSellerKey(
+  value: string | null | undefined
+): ParsedSalesOrderSellerKey {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return { kind: "all" };
+  if (trimmed === SALES_ORDER_NO_SELLER_KEY) return { kind: "no_seller" };
+  const asNum = Number(trimmed);
+  if (Number.isInteger(asNum) && asNum > 0) {
+    return { kind: "seller_id", externalSellerId: asNum };
+  }
+  return { kind: "all" };
+}
+
+/** Monta `sellerKey` a partir de `externalSellerId` (opções do select). */
+export function buildSalesOrderSellerKey(
+  externalSellerId: number | null | undefined
+): string {
+  if (externalSellerId == null || externalSellerId <= 0) return SALES_ORDER_NO_SELLER_KEY;
+  return String(externalSellerId);
+}
+
+export function formatSalesOrderNoSellerFilterLabel(): string {
+  return "Sem vendedor no pedido Nomus";
+}
+
+/** Where Prisma a partir de `sellerKey` (prioridade sobre filtro textual). */
+export function buildSalesOrderNomusSellerWhereFromSellerKey(
+  sellerKey: string | null | undefined
+): Prisma.SalesOrderWhereInput | null {
+  const parsed = parseSalesOrderSellerKey(sellerKey);
+  if (parsed.kind === "all") return null;
+  if (parsed.kind === "no_seller") return { externalSellerId: null };
+  return { externalSellerId: parsed.externalSellerId };
+}
+
+export function buildSalesOrderSellerFilterOptionLabel(
+  externalSellerId: number | null,
+  ctx: CommissionSellerIdentityContext
+): string {
+  if (externalSellerId == null || externalSellerId <= 0) {
+    return formatSalesOrderNoSellerFilterLabel();
+  }
+  const seller = buildSalesOrderNomusSellerDto({ externalSellerId }, ctx);
+  return formatSalesOrderNomusSellerListLabel(seller);
 }
 
 /** Trecho Prisma para filtrar pedidos pelo vendedor Nomus (não usa `responsible`). */

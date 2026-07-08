@@ -313,20 +313,20 @@ import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntell
 import { registerSalesOrderMarginIndicatorsRoutes } from "./src/lib/salesOrderMarginIndicatorsRoutes.js";
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
+import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
+import {
+  buildSalesOrderListWhereForQuery,
+  parseSalesOrderListQuery,
+  resolveSalesOrderListSellerWhere,
+} from "./src/lib/salesOrderListQuery.server.js";
 import {
   attachMarginToSalesOrderDetail,
   attachMarginsToSalesOrders,
   SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
 } from "./src/lib/salesOrderMarginService.server.js";
 import { registerOfficialServerResolvers } from "./src/lib/registerServerResolvers.js";
-import {
-  buildSalesOrderListWhere,
-} from "./src/lib/salesOrdersListSummary.js";
-import {
-  buildSalesOrderNomusSellerDto,
-  buildSalesOrderNomusSellerWhereFilter,
-} from "./src/lib/salesOrderNomusSellerDisplay.js";
 import { loadCommissionSellerIdentityContext } from "./src/lib/commissions/commissionSellerIdentity.server.js";
+import { buildSalesOrderNomusSellerDto } from "./src/lib/salesOrderNomusSellerDisplay.js";
 import {
   buildOfficialSalesOrderListPayload,
   mapPrismaOrderToSalesOrderRulesInput,
@@ -13331,46 +13331,28 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         auth != null &&
         (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"));
 
-      const status = String(req.query.status ?? "").trim();
-      const customerId = String(req.query.customerId ?? "").trim();
-      // Query `responsible` mantida por compat; filtro oficial é vendedor Nomus (externalSellerId).
-      const sellerFilter = String(req.query.seller ?? req.query.responsible ?? "").trim();
-      const startDate = parseDateQueryStart(req.query.startDate);
-      const endDate = parseDateQueryEnd(req.query.endDate);
-      // Filtro executivo Ano/Mês por data de emissão (issueDate); inválidos são ignorados.
-      const year = parseSalesOrderYearParam(req.query.year);
-      const month = parseSalesOrderMonthParam(req.query.month);
-      // Busca inteligente (pedido/NF/cliente/vendedor/empresa/itens).
-      const q = String(req.query.q ?? "").trim();
-
+      const listQuery = parseSalesOrderListQuery(req.query as Record<string, unknown>);
       const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
-      const sellerWhere = buildSalesOrderNomusSellerWhereFilter(sellerFilter, sellerIdentityCtx);
-
-      const where = buildSalesOrderListWhere({
-        status: status || undefined,
-        customerId: customerId || undefined,
-        seller: sellerFilter || undefined,
-        sellerWhere,
-        startDate,
-        endDate,
-        year,
-        month,
-        q: q || undefined,
+      const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
+        sellerKeyRaw: listQuery.sellerKeyRaw,
+        sellerText: listQuery.sellerText,
       });
 
-      const page = parsePositiveIntQuery(req.query.page, 1);
-      const pageSize = Math.min(parsePositiveIntQuery(req.query.pageSize, 20), 100);
+      const where = buildSalesOrderListWhereForQuery(listQuery, sellerWhere);
+
+      const page = listQuery.page;
+      const pageSize = listQuery.pageSize;
       const skip = (page - 1) * pageSize;
 
       const listFilters = {
-        status: status || undefined,
-        customerId: customerId || undefined,
-        seller: sellerFilter || undefined,
-        startDate,
-        endDate,
-        year,
-        month,
-        q: q || undefined,
+        status: listQuery.status || undefined,
+        customerId: listQuery.customerId || undefined,
+        seller: listQuery.sellerText || undefined,
+        startDate: listQuery.startDate,
+        endDate: listQuery.endDate,
+        year: listQuery.year,
+        month: listQuery.month,
+        q: listQuery.q || undefined,
       };
 
       const [rows, total, summaryOrders, marginOrders] = await Promise.all([
@@ -13397,12 +13379,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           : Promise.resolve([]),
       ]);
 
+      const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+        rows.map((order) => ({
+          id: order.id,
+          totalNetValue: order.totalNetValue,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        }))
+      );
+
       const officialList = buildOfficialSalesOrderListPayload({
         orders: summaryOrders.map(mapPrismaOrderToSalesOrderRulesInput),
         listFilters,
         referenceDate: new Date(),
-        year: year ?? undefined,
-        month: month ?? undefined,
+        year: listQuery.year ?? undefined,
+        month: listQuery.month ?? undefined,
       });
       const summary = officialList.summary;
 
@@ -13415,9 +13407,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
           sellerIdentityCtx
         );
+        const linked = linkedNfeContextMap.get(order.id);
         return {
           ...order,
           seller,
+          hasInvoice: linked?.hasNfe ?? false,
           // Compat: clientes antigos liam `responsible` na coluna — agora = rótulo do vendedor Nomus.
           responsible:
             seller.resolutionStatus === "NO_SELLER"
@@ -13469,6 +13463,18 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   registerSalesOrderInternalMarginExportRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+  });
+
+  registerSalesOrderListReportExportRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    canViewMarginEconomics: async (req) => {
+      const auth = await readAppSession(req);
+      return (
+        auth != null &&
+        (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"))
+      );
+    },
   });
 
   app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {

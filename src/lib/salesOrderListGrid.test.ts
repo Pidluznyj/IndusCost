@@ -151,6 +151,7 @@ describe("salesOrderListGrid components", () => {
     assert.match(tableSrc, />Vendedor</);
     assert.match(tableSrc, />Emissão</);
     assert.match(tableSrc, />Situação</);
+    assert.match(tableSrc, />Faturado</);
     assert.match(tableSrc, />Valor líquido</);
     assert.match(tableSrc, />Margem</);
     assert.match(tableSrc, />Itens</);
@@ -244,6 +245,10 @@ describe("salesOrderListGrid wiring", () => {
     const moduleSrc = read("components/SalesOrdersModule.tsx");
     assert.match(moduleSrc, /sales-orders-smart-search/);
     assert.match(moduleSrc, /sales-orders-export-internal-margin/);
+    assert.match(moduleSrc, /sales-orders-export-report-xlsx/);
+    assert.match(moduleSrc, /sales-orders-export-report-pdf/);
+    assert.match(moduleSrc, /sellerKey/);
+    assert.match(moduleSrc, /seller-filter-options/);
     assert.match(moduleSrc, /setCurrentPage/);
     assert.match(moduleSrc, /listFiltersKey/);
     assert.match(moduleSrc, /SalesOrderListTable/);

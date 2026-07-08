@@ -14,6 +14,10 @@ import {
   SALES_ORDER_LIST_STATUS_LABELS,
 } from "@/src/lib/salesOrderListUi";
 import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
+import {
+  formatSalesOrderListInvoicedLabel,
+  salesOrderListInvoicedBadgeClass,
+} from "@/src/lib/salesOrderListInvoicing";
 import "./sales-order-list-table.css";
 
 export function SalesOrderListTable({
@@ -31,7 +35,7 @@ export function SalesOrderListTable({
   onRowOpenSummary: (row: SalesOrderListRowSnapshot) => void;
   onOpenDetail: (orderId: string) => void;
 }) {
-  const columnCount = showMarginEconomics ? 9 : 8;
+  const columnCount = showMarginEconomics ? 10 : 9;
   return (
     <div
       className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
@@ -46,6 +50,7 @@ export function SalesOrderListTable({
               <th>Vendedor</th>
               <th>Emissão</th>
               <th>Situação</th>
+              <th>Faturado</th>
               <th className="so-value-cell">Valor líquido</th>
               {showMarginEconomics ? <th className="so-value-cell">Margem</th> : null}
               <th className="so-value-cell">Itens</th>
@@ -138,6 +143,14 @@ export function SalesOrderListTable({
                         title={SALES_ORDER_LIST_STATUS_LABELS[row.status] ?? row.status}
                       >
                         {SALES_ORDER_LIST_STATUS_LABELS[row.status] ?? row.status ?? "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={salesOrderListInvoicedBadgeClass(Boolean(row.hasInvoice))}
+                        data-testid="sales-order-list-invoiced"
+                      >
+                        {formatSalesOrderListInvoicedLabel(Boolean(row.hasInvoice))}
                       </span>
                     </td>
                     <td className="so-value-cell font-medium" title={netValue.title}>

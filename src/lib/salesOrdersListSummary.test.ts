@@ -7,6 +7,9 @@ import {
   buildSalesOrderListWhere,
   summarizeSalesOrderListRows,
 } from "./salesOrdersListSummary.js";
+import {
+  buildSalesOrderNomusSellerWhereFromSellerKey,
+} from "./salesOrderNomusSellerDisplay.js";
 
 describe("salesOrdersListSummary", () => {
   const allRows = [
@@ -139,6 +142,30 @@ describe("salesOrdersListSummary", () => {
     });
     assert.equal(where.status, "DRAFT");
     assert.equal(where.issueDate, undefined);
+  });
+
+  it("buildSalesOrderListWhere com sellerKey via sellerWhere filtra externalSellerId", () => {
+    const where = buildSalesOrderListWhere({
+      sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("464"),
+    });
+    assert.deepEqual(where, { externalSellerId: 464 });
+  });
+
+  it("buildSalesOrderListWhere com sellerKey sem vendedor", () => {
+    const where = buildSalesOrderListWhere({
+      sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("__NO_SELLER__"),
+    });
+    assert.deepEqual(where, { externalSellerId: null });
+  });
+
+  it("UI da lista usa select de vendedor com sellerKey", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes('params.set("sellerKey", sellerKey)'));
+    assert.ok(page.includes("Todos os vendedores"));
+    assert.ok(page.includes("seller-filter-options"));
   });
 
   it("UI da lista renderiza filtros Ano e Mês ligados à API e ao reset de página", () => {

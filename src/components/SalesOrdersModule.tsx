@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Download, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -26,6 +26,13 @@ import {
   downloadInternalMarginExport,
   getSalesOrderListInternalMarginExportUrl,
 } from "@/src/lib/salesOrderInternalMarginExportUi";
+import {
+  downloadSalesOrderListReportExport,
+  getSalesOrderListReportExportPdfUrl,
+  getSalesOrderListReportExportXlsxUrl,
+  getSalesOrderSellerFilterOptionsUrl,
+} from "@/src/lib/salesOrderListReportExportUi";
+import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 
 type SalesOrderRow = SalesOrderListRowSnapshot;
@@ -119,7 +126,9 @@ function SalesOrderList() {
   const [status, setStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
-  const [responsible, setResponsible] = useState("");
+  const [sellerKey, setSellerKey] = useState("");
+  const [sellerFilterOptions, setSellerFilterOptions] = useState<SalesOrderSellerFilterOption[]>([]);
+  const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
@@ -128,6 +137,8 @@ function SalesOrderList() {
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [exportingInternal, setExportingInternal] = useState(false);
+  const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
+  const [exportingReportPdf, setExportingReportPdf] = useState(false);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [summaryRow, setSummaryRow] = useState<SalesOrderRow | null>(null);
 
@@ -138,23 +149,57 @@ function SalesOrderList() {
 
   const listFiltersKey = useMemo(
     () =>
-      JSON.stringify({ status, customerId, responsible, startDate, endDate, year, month, search }),
-    [status, customerId, responsible, startDate, endDate, year, month, search]
+      JSON.stringify({ status, customerId, sellerKey, startDate, endDate, year, month, search }),
+    [status, customerId, sellerKey, startDate, endDate, year, month, search]
+  );
+  const sellerOptionsFiltersKey = useMemo(
+    () => JSON.stringify({ status, customerId, startDate, endDate, year, month, search }),
+    [status, customerId, startDate, endDate, year, month, search]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
-  const internalExportQuery = useMemo(() => {
+  const listExportQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (customerId) params.set("customerId", customerId);
-    if (responsible.trim()) params.set("seller", responsible.trim());
+    if (sellerKey) params.set("sellerKey", sellerKey);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     if (year) params.set("year", year);
     if (month) params.set("month", month);
     if (search) params.set("q", search);
     return params.toString();
-  }, [status, customerId, responsible, startDate, endDate, year, month, search]);
+  }, [status, customerId, sellerKey, startDate, endDate, year, month, search]);
+
+  const internalExportQuery = listExportQuery;
+
+  const handleExportReportXlsx = useCallback(async () => {
+    setExportingReportXlsx(true);
+    try {
+      await downloadSalesOrderListReportExport(
+        getSalesOrderListReportExportXlsxUrl(listExportQuery),
+        "pedidos-venda-relatorio.xlsx"
+      );
+    } catch {
+      alert("Não foi possível exportar o relatório XLSX de pedidos.");
+    } finally {
+      setExportingReportXlsx(false);
+    }
+  }, [listExportQuery]);
+
+  const handleExportReportPdf = useCallback(async () => {
+    setExportingReportPdf(true);
+    try {
+      await downloadSalesOrderListReportExport(
+        getSalesOrderListReportExportPdfUrl(listExportQuery),
+        "pedidos-venda-relatorio.pdf"
+      );
+    } catch {
+      alert("Não foi possível gerar o relatório PDF de pedidos.");
+    } finally {
+      setExportingReportPdf(false);
+    }
+  }, [listExportQuery]);
 
   const handleExportInternal = useCallback(async () => {
     setExportingInternal(true);
@@ -179,7 +224,7 @@ function SalesOrderList() {
         params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
         if (status) params.set("status", status);
         if (customerId) params.set("customerId", customerId);
-        if (responsible.trim()) params.set("seller", responsible.trim());
+        if (sellerKey) params.set("sellerKey", sellerKey);
         if (startDate) params.set("startDate", startDate);
         if (endDate) params.set("endDate", endDate);
         if (year) params.set("year", year);
@@ -225,8 +270,37 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, customerId, responsible, startDate, endDate, year, month, search]
+    [status, customerId, sellerKey, startDate, endDate, year, month, search]
   );
+
+  useEffect(() => {
+    const ac = new AbortController();
+    setSellerOptionsLoading(true);
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (customerId) params.set("customerId", customerId);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (year) params.set("year", year);
+    if (month) params.set("month", month);
+    if (search) params.set("q", search);
+    const q = params.toString();
+    void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
+      getSalesOrderSellerFilterOptionsUrl(q),
+      { signal: ac.signal }
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) setSellerFilterOptions(data.options ?? []);
+      })
+      .catch((e) => {
+        if (ac.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        setSellerFilterOptions([]);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setSellerOptionsLoading(false);
+      });
+    return () => ac.abort();
+  }, [sellerOptionsFiltersKey, status, customerId, startDate, endDate, year, month, search]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -333,14 +407,22 @@ function SalesOrderList() {
           </div>
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Vendedor</label>
-            <input
-              type="text"
+            <select
               className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              placeholder="Nome do vendedor"
-              value={responsible}
-              onChange={(e) => setResponsible(e.target.value)}
+              value={sellerKey}
+              onChange={(e) => setSellerKey(e.target.value)}
+              disabled={sellerOptionsLoading}
+              aria-label="Filtrar por vendedor Nomus"
               data-testid="sales-orders-seller-filter"
-            />
+            >
+              <option value="">Todos os vendedores</option>
+              {sellerFilterOptions.map((option) => (
+                <option key={option.sellerKey} value={option.sellerKey}>
+                  {option.label}
+                  {option.orderCount > 0 ? ` (${option.orderCount})` : ""}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -363,6 +445,45 @@ function SalesOrderList() {
             </div>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid="sales-orders-export-report-xlsx"
+          disabled={exportingReportXlsx}
+          onClick={() => void handleExportReportXlsx()}
+          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {exportingReportXlsx ? (
+            <>
+              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
+              Exportando…
+            </>
+          ) : (
+            <>
+              <Download className="inline h-4 w-4 mr-1" />
+              Exportar XLSX
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          data-testid="sales-orders-export-report-pdf"
+          disabled={exportingReportPdf}
+          onClick={() => void handleExportReportPdf()}
+          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {exportingReportPdf ? (
+            <>
+              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
+              Gerando…
+            </>
+          ) : (
+            <>
+              <FileText className="inline h-4 w-4 mr-1" />
+              Gerar PDF
+            </>
+          )}
+        </button>
         <button
           type="button"
           data-testid="sales-orders-export-internal-margin"
@@ -382,13 +503,14 @@ function SalesOrderList() {
             </>
           )}
         </button>
+        </div>
         <button
           type="button"
           onClick={() => {
             setStatus("");
             setCustomerId("");
             setCustomerSelection(null);
-            setResponsible("");
+            setSellerKey("");
             setStartDate("");
             setEndDate("");
             setYear("");

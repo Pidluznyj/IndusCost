@@ -4,8 +4,11 @@ import type { CommissionSellerIdentityContext } from "./commissions/commissionSe
 import {
   buildSalesOrderNomusSellerDto,
   buildSalesOrderNomusSellerWhereFilter,
+  buildSalesOrderNomusSellerWhereFromSellerKey,
+  buildSalesOrderSellerKey,
   collectExternalSellerIdsMatchingSellerFilter,
   formatSalesOrderNomusSellerListLabel,
+  parseSalesOrderSellerKey,
 } from "./salesOrderNomusSellerDisplay.js";
 
 function ctx(
@@ -97,5 +100,32 @@ describe("salesOrderNomusSellerDisplay", () => {
     if (where && "externalSellerId" in where) {
       assert.ok(where.externalSellerId.in.includes(464));
     }
+  });
+
+  it("sellerKey vazio → todos os vendedores", () => {
+    assert.deepEqual(parseSalesOrderSellerKey(""), { kind: "all" });
+    assert.equal(buildSalesOrderNomusSellerWhereFromSellerKey(""), null);
+  });
+
+  it("sellerKey __NO_SELLER__ → externalSellerId null", () => {
+    assert.deepEqual(parseSalesOrderSellerKey("__NO_SELLER__"), { kind: "no_seller" });
+    assert.deepEqual(buildSalesOrderNomusSellerWhereFromSellerKey("__NO_SELLER__"), {
+      externalSellerId: null,
+    });
+  });
+
+  it("sellerKey numérico → externalSellerId exato", () => {
+    assert.deepEqual(parseSalesOrderSellerKey("464"), {
+      kind: "seller_id",
+      externalSellerId: 464,
+    });
+    assert.deepEqual(buildSalesOrderNomusSellerWhereFromSellerKey("464"), {
+      externalSellerId: 464,
+    });
+  });
+
+  it("buildSalesOrderSellerKey mapeia null para __NO_SELLER__", () => {
+    assert.equal(buildSalesOrderSellerKey(null), "__NO_SELLER__");
+    assert.equal(buildSalesOrderSellerKey(464), "464");
   });
 });
