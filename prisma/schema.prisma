@@ -490,18 +490,30 @@ enum CommoditySnapshotStatus {
 }
 
 /// Snapshot de cotação de commodity (ex.: Brent) — append-only; cada coleta cria nova linha.
+enum CommodityCollectionSlot {
+  MORNING
+  AFTERNOON
+}
+
+enum CommodityCollectionTrigger {
+  SCHEDULED
+  MANUAL
+}
+
 model CommoditySnapshot {
-  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   commodityType         CommodityType
-  priceUSD              Decimal?                @db.Decimal(20, 6)
-  quoteDate             DateTime                @db.Date
-  collectedAt           DateTime                @default(now()) @db.Timestamptz(6)
+  priceUSD              Decimal?                   @db.Decimal(20, 6)
+  quoteDate             DateTime                   @db.Date
+  scheduledSlot         CommodityCollectionSlot
+  collectedAt           DateTime                   @default(now()) @db.Timestamptz(6)
   source                String?
   status                CommoditySnapshotStatus
   errorMessage          String?
-  variationFromPrevious Decimal?                @db.Decimal(10, 6)
+  variationFromPrevious Decimal?                   @db.Decimal(10, 6)
+  trigger               CommodityCollectionTrigger @default(SCHEDULED)
 
-  @@index([commodityType, quoteDate(sort: Desc)])
+  @@index([commodityType, quoteDate(sort: Desc), scheduledSlot])
   @@index([commodityType, status, collectedAt(sort: Desc)])
 }
 
