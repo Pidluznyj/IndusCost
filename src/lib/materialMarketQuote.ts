@@ -8,11 +8,29 @@ import {
   type MaterialMarketQuoteExchangeOrigin,
   type MaterialMarketQuotePtaxStatus,
 } from "./materialMarketQuoteExchange.js";
+import {
+  MATERIAL_MARKET_QUOTE_OFFICIAL_STATUS_LABELS,
+  parseMaterialMarketQuoteOfficialStatus,
+  type MaterialMarketQuoteOfficialStatus,
+} from "./materialMarketQuoteGovernance.js";
+import {
+  MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS,
+  type MaterialMarketQuoteReliabilityLevel,
+} from "./materialMarketQuoteAttachment.js";
 
 export {
   MATERIAL_MARKET_QUOTE_MANUAL_EXCHANGE_PERMISSION,
   canManualMaterialMarketQuoteExchange,
 } from "./materialMarketQuoteExchange.js";
+
+export {
+  MATERIAL_MARKET_QUOTE_APPROVE_PERMISSION,
+  MATERIAL_MARKET_QUOTE_OFFICIAL_STATUS_LABELS,
+  canApproveMaterialMarketQuote,
+  isCriticalMaterialForQuoteApproval,
+  parseMaterialMarketQuoteOfficialStatus,
+  type MaterialMarketQuoteOfficialStatus,
+} from "./materialMarketQuoteGovernance.js";
 
 export const MATERIAL_MARKET_QUOTE_STATUS_VALUES = [
   "DRAFT",
@@ -78,6 +96,10 @@ export type MaterialMarketQuoteApiItem = {
   quoteDate: string;
   price: number;
   currency: string;
+  /** Alias estável: moeda original informada na cotação. */
+  originalCurrency: string;
+  /** Alias estável: preço base na moeda original. */
+  originalPrice: number;
   unit: string;
   origin: string | null;
   manufacturer: string | null;
@@ -92,15 +114,34 @@ export type MaterialMarketQuoteApiItem = {
   exchangeOrigin: MaterialMarketQuoteExchangeOrigin | null;
   exchangeOriginLabel: string | null;
   ptaxVenda: number | null;
+  /** Alias: taxa usada na conversão (PTAX venda ou manual); null para BRL. */
+  exchangeRateUsed: number | null;
   ptaxReferenceDate: string | null;
   ptaxFetchStatus: MaterialMarketQuotePtaxStatus | null;
   ptaxFetchFailureReason: string | null;
   priceBrl: number | null;
+  /** Alias: preço base convertido para BRL (congelado no save). */
+  convertedPriceBRL: number | null;
   netPriceBrl: number | null;
   manualExchangeJustification: string | null;
   manualExchangeBy: string | null;
   manualExchangeAt: string | null;
   isManualExchange: boolean;
+  isOfficialReference: boolean;
+  officialStatus: MaterialMarketQuoteOfficialStatus;
+  officialStatusLabel: string;
+  rejectionReason: string | null;
+  submittedForApprovalBy: string | null;
+  submittedForApprovalAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  setOfficialBy: string | null;
+  setOfficialAt: string | null;
+  setOfficialByName: string | null;
+  suggestedReliabilityLevel: MaterialMarketQuoteReliabilityLevel | null;
+  suggestedReliabilityLabel: string | null;
+  attachmentCount: number;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
@@ -135,6 +176,17 @@ export type MaterialMarketQuoteSourceRow = {
   manualExchangeJustification?: string | null;
   manualExchangeBy?: string | null;
   manualExchangeAt?: Date | string | null;
+  isOfficialReference?: boolean;
+  officialStatus?: string | null;
+  rejectionReason?: string | null;
+  submittedForApprovalBy?: string | null;
+  submittedForApprovalAt?: Date | string | null;
+  approvedBy?: string | null;
+  approvedAt?: Date | string | null;
+  setOfficialBy?: string | null;
+  setOfficialAt?: Date | string | null;
+  suggestedReliabilityLevel?: string | null;
+  _count?: { Attachments?: number };
   createdBy?: string | null;
   updatedBy?: string | null;
   createdAt: Date | string;
@@ -321,19 +373,42 @@ function parsePtaxStatus(value: unknown): MaterialMarketQuotePtaxStatus | null {
   return null;
 }
 
+function parseReliabilityLevel(value: unknown): MaterialMarketQuoteReliabilityLevel | null {
+  if (value === "LOW" || value === "MEDIUM" || value === "HIGH") return value;
+  return null;
+}
+
 export function serializeMaterialMarketQuoteForApi(
-  row: MaterialMarketQuoteSourceRow
+  row: MaterialMarketQuoteSourceRow,
+  options?: {
+    userNamesById?: Map<string, string>;
+  }
 ): MaterialMarketQuoteApiItem {
   const status = isMaterialMarketQuoteStatus(row.status) ? row.status : "ACTIVE";
   const exchangeOrigin = parseExchangeOrigin(row.exchangeOrigin);
+  const officialStatus = parseMaterialMarketQuoteOfficialStatus(row.officialStatus);
+  const userNames = options?.userNamesById;
+  const approvedByName =
+    row.approvedBy && userNames?.get(row.approvedBy) ? userNames.get(row.approvedBy)! : null;
+  const setOfficialByName =
+    row.setOfficialBy && userNames?.get(row.setOfficialBy)
+      ? userNames.get(row.setOfficialBy)!
+      : null;
+  const price = toNumber(row.price);
+  const currency = row.currency;
+  const ptaxVenda = toOptionalNumber(row.ptaxVenda);
+  const priceBrl = toOptionalNumber(row.priceBrl);
+  const suggestedReliabilityLevel = parseReliabilityLevel(row.suggestedReliabilityLevel);
   return {
     id: row.id,
     materialId: row.materialId,
     supplierId: row.supplierId ?? null,
     supplierName: row.supplierName?.trim() || null,
     quoteDate: toIsoDateOnly(row.quoteDate),
-    price: toNumber(row.price),
-    currency: row.currency,
+    price,
+    currency,
+    originalCurrency: currency,
+    originalPrice: price,
     unit: row.unit,
     origin: row.origin?.trim() || null,
     manufacturer: row.manufacturer?.trim() || null,
@@ -351,11 +426,13 @@ export function serializeMaterialMarketQuoteForApi(
     exchangeOriginLabel: exchangeOrigin
       ? MATERIAL_MARKET_QUOTE_EXCHANGE_ORIGIN_LABELS[exchangeOrigin]
       : null,
-    ptaxVenda: toOptionalNumber(row.ptaxVenda),
+    ptaxVenda,
+    exchangeRateUsed: ptaxVenda,
     ptaxReferenceDate: row.ptaxReferenceDate ? toIsoDateOnly(row.ptaxReferenceDate) : null,
     ptaxFetchStatus: parsePtaxStatus(row.ptaxFetchStatus),
     ptaxFetchFailureReason: row.ptaxFetchFailureReason?.trim() || null,
-    priceBrl: toOptionalNumber(row.priceBrl),
+    priceBrl,
+    convertedPriceBRL: priceBrl,
     netPriceBrl: toOptionalNumber(row.netPriceBrl),
     manualExchangeJustification: row.manualExchangeJustification?.trim() || null,
     manualExchangeBy: row.manualExchangeBy ?? null,
@@ -363,6 +440,25 @@ export function serializeMaterialMarketQuoteForApi(
       ? new Date(row.manualExchangeAt).toISOString()
       : null,
     isManualExchange: exchangeOrigin === "MANUAL",
+    isOfficialReference: row.isOfficialReference === true,
+    officialStatus,
+    officialStatusLabel: MATERIAL_MARKET_QUOTE_OFFICIAL_STATUS_LABELS[officialStatus],
+    rejectionReason: row.rejectionReason?.trim() || null,
+    submittedForApprovalBy: row.submittedForApprovalBy ?? null,
+    submittedForApprovalAt: row.submittedForApprovalAt
+      ? new Date(row.submittedForApprovalAt).toISOString()
+      : null,
+    approvedBy: row.approvedBy ?? null,
+    approvedAt: row.approvedAt ? new Date(row.approvedAt).toISOString() : null,
+    approvedByName,
+    setOfficialBy: row.setOfficialBy ?? null,
+    setOfficialAt: row.setOfficialAt ? new Date(row.setOfficialAt).toISOString() : null,
+    setOfficialByName,
+    suggestedReliabilityLevel,
+    suggestedReliabilityLabel: suggestedReliabilityLevel
+      ? MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[suggestedReliabilityLevel]
+      : null,
+    attachmentCount: row._count?.Attachments ?? 0,
     createdBy: row.createdBy ?? null,
     updatedBy: row.updatedBy ?? null,
     createdAt: new Date(row.createdAt).toISOString(),
@@ -383,9 +479,26 @@ export function sortMaterialMarketQuotesChronologically<T extends { quoteDate: s
 }
 
 export function buildMaterialMarketQuoteListResponse(
-  rows: MaterialMarketQuoteSourceRow[]
+  rows: MaterialMarketQuoteSourceRow[],
+  options?: {
+    userNamesById?: Map<string, string>;
+  }
 ): { items: MaterialMarketQuoteApiItem[]; total: number } {
   const sorted = sortMaterialMarketQuotesChronologically(rows);
-  const items = sorted.map(serializeMaterialMarketQuoteForApi);
+  const items = sorted.map((row) =>
+    serializeMaterialMarketQuoteForApi(row, { userNamesById: options?.userNamesById })
+  );
   return { items, total: items.length };
+}
+
+export function collectMaterialMarketQuoteUserIds(
+  rows: MaterialMarketQuoteSourceRow[]
+): string[] {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.approvedBy) ids.add(row.approvedBy);
+    if (row.setOfficialBy) ids.add(row.setOfficialBy);
+    if (row.submittedForApprovalBy) ids.add(row.submittedForApprovalBy);
+  }
+  return [...ids];
 }

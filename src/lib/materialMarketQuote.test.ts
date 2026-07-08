@@ -99,4 +99,54 @@ describe("materialMarketQuote", () => {
     ]);
     assert.equal(sorted[0]?.createdAt, "2026-03-01T12:00:00Z");
   });
+
+  it("serializa aliases de conversão congelada (original/converted)", () => {
+    const { items } = buildMaterialMarketQuoteListResponse([
+      {
+        id: "usd-1",
+        materialId: "m1",
+        quoteDate: "2026-07-05",
+        price: 100,
+        currency: "USD",
+        unit: "kg",
+        netPrice: 100,
+        status: "ACTIVE",
+        exchangeOrigin: "BCB_PTAX",
+        ptaxVenda: 5.5,
+        priceBrl: 550,
+        netPriceBrl: 550,
+        createdAt: "2026-07-05T10:00:00Z",
+        updatedAt: "2026-07-05T10:00:00Z",
+      },
+      {
+        id: "brl-1",
+        materialId: "m1",
+        quoteDate: "2026-07-04",
+        price: 80,
+        currency: "BRL",
+        unit: "kg",
+        netPrice: 80,
+        status: "ACTIVE",
+        ptaxFetchStatus: "SKIPPED",
+        priceBrl: 80,
+        netPriceBrl: 80,
+        createdAt: "2026-07-04T10:00:00Z",
+        updatedAt: "2026-07-04T10:00:00Z",
+      },
+    ]);
+
+    const usd = items.find((i) => i.id === "usd-1");
+    assert.ok(usd);
+    assert.equal(usd.originalCurrency, "USD");
+    assert.equal(usd.originalPrice, 100);
+    assert.equal(usd.exchangeRateUsed, 5.5);
+    assert.equal(usd.convertedPriceBRL, 550);
+
+    const brl = items.find((i) => i.id === "brl-1");
+    assert.ok(brl);
+    assert.equal(brl.originalCurrency, "BRL");
+    assert.equal(brl.originalPrice, 80);
+    assert.equal(brl.exchangeRateUsed, null);
+    assert.equal(brl.convertedPriceBRL, 80);
+  });
 });
