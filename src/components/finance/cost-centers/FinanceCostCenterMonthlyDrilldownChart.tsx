@@ -16,7 +16,7 @@ import {
   FINANCE_BILLING_CHART_HEIGHT,
 } from "@/src/components/finance/billing/FinanceBillingChartShell";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
-import type { CostCenterMonthlyChartPayload } from "@/src/lib/financeCostCenterMonthlyChart";
+import type { CostCenterMonthlyChartPayload } from "@/src/lib/financeCostCenterMonthlyChart.shared";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { Loader2 } from "lucide-react";

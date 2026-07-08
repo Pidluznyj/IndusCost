@@ -9,7 +9,7 @@ import type { MonitoredMaterialListItem } from "./materialMarketIntelligenceMoni
 import type { MaterialMarketAlertApiItem } from "./materialMarketAlert.js";
 import type { MaterialMarketSupplierComparisonRow } from "./materialMarketSupplierComparison.js";
 import type { MaterialMarketPriceHistoryPoint } from "./materialMarketPriceHistory.js";
-import type { MaterialBomImpactItem } from "./materialBomImpact.js";
+import type { MaterialBomImpactItem } from "./materialBomImpact.types.js";
 import type { MaterialMarketSimulationResponse } from "./materialMarketSimulation.js";
 import type { MarketGlobalIndicatorsDto } from "./marketGlobalIndicators.js";
 import { MATERIAL_MARKET_CRITICALITY_LABELS } from "./materialMarketMonitoring.js";

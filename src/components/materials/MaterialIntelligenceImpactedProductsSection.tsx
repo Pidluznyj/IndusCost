@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Factory, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import type { MaterialBomImpactResponse } from "@/src/lib/materialBomImpact";
-import { MATERIAL_BOM_IMPACT_EMPTY_MESSAGE } from "@/src/lib/materialBomImpact";
+import {
+  MATERIAL_BOM_IMPACT_EMPTY_MESSAGE,
+  type MaterialBomImpactResponse,
+} from "@/src/lib/materialBomImpact.types";
 import { getMaterialMarketIntelligenceImpactedProductsApiPath } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumberAdaptive } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";

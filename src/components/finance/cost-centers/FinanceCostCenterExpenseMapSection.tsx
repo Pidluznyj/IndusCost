@@ -26,7 +26,7 @@ import {
   buildCostCenterMonthlyChartQuery,
   formatCostCenterMonthlyChartPeriodLabel,
   type CostCenterMonthlyChartPayload,
-} from "@/src/lib/financeCostCenterMonthlyChart";
+} from "@/src/lib/financeCostCenterMonthlyChart.shared";
 import type {
   CostCenterDetailAllocationRow,
   CostCenterDetailExportPayload,

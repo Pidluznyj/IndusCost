@@ -7,17 +7,15 @@ import {
   buildCostCenterMonthlyChartSeries,
   formatCostCenterMonthlyChartPeriodLabel,
   parseCostCenterMonthlyChartCostCenterIds,
-} from "./financeCostCenterMonthlyChart.js";
-import type { FinanceCostCenterDashboardMonthlyByCostCenterRow } from "./financeCostCenterDashboard.js";
+  type CostCenterMonthlyChartSourceRow,
+} from "./financeCostCenterMonthlyChart.shared.js";
 
 function monthlyRow(
-  overrides: Partial<FinanceCostCenterDashboardMonthlyByCostCenterRow> &
-    Pick<FinanceCostCenterDashboardMonthlyByCostCenterRow, "month" | "costCenterId">
-): FinanceCostCenterDashboardMonthlyByCostCenterRow {
+  overrides: Partial<CostCenterMonthlyChartSourceRow> &
+    Pick<CostCenterMonthlyChartSourceRow, "month" | "costCenterId">
+): CostCenterMonthlyChartSourceRow {
   return {
     year: 2026,
-    code: "CC_A",
-    name: "Centro A",
     amount: 1000,
     paidAmount: 600,
     openAmount: 400,
@@ -39,7 +37,7 @@ describe("financeCostCenterMonthlyChart", () => {
   });
 
   it("agrega pago e em aberto por mês e centro", () => {
-    const rows: FinanceCostCenterDashboardMonthlyByCostCenterRow[] = [
+    const rows: CostCenterMonthlyChartSourceRow[] = [
       monthlyRow({ month: 3, costCenterId: "cc-a", paidAmount: 200, openAmount: 50, amount: 250 }),
       monthlyRow({ month: 3, costCenterId: "cc-b", paidAmount: 100, openAmount: 25, amount: 125 }),
       monthlyRow({ month: 6, costCenterId: "cc-a", paidAmount: 80, openAmount: 20, amount: 100 }),

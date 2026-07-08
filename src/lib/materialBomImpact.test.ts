@@ -5,8 +5,8 @@ import {
   buildMaterialBomImpactResponse,
   MATERIAL_BOM_IMPACT_EMPTY_MESSAGE,
   resolveOfficialMaterialEffectiveUnitCost,
-} from "./materialBomImpact.js";
-import type { BomUsageLine } from "./productBomUsage.js";
+} from "./materialBomImpact.shared.js";
+import type { BomUsageLine } from "./productBomUsage.types.js";
 import { MATERIAL_COST_SOURCE_LIVE_MATERIAL } from "./materialCostEngineResolver.js";
 
 function usage(overrides: Partial<BomUsageLine> & Pick<BomUsageLine, "parentProductId" | "parentSku">): BomUsageLine {

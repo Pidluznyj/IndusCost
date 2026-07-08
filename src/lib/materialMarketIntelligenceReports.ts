@@ -16,7 +16,7 @@ import {
   evaluateMaterialMarketAlerts,
   MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS,
 } from "./materialMarketAlertEngine.js";
-import type { MaterialBomImpactItem } from "./materialBomImpact.js";
+import type { MaterialBomImpactItem } from "./materialBomImpact.types.js";
 import { formatMaterialCategoryLabel } from "./materialCategoryLabels.js";
 import {
   buildMaterialMarketFxDecompositionFromRows,

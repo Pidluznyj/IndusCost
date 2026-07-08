@@ -7,7 +7,7 @@ import type {
   BomUsageAmbiguityCandidate,
   BomUsageResult,
   BomUsageSearchKind,
-} from "@/src/lib/productBomUsage";
+} from "@/src/lib/productBomUsage.types";
 
 type SearchOutcome =
   | { type: "idle" }
