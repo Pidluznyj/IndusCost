@@ -67,8 +67,6 @@ export type FinanceDataSanitization = {
   ignoredOverdueWithoutFiscalDocumentReceivables: number;
   supersededPreInvoiceReceivables: number;
   supersededPreInvoiceAmount: number;
-  obsoleteOrderParcelReceivables: number;
-  obsoleteOrderParcelAmount: number;
 };
 
 /** Visão gerencial financeira — mantido para compatibilidade de query/API. */
@@ -281,8 +279,6 @@ export function mergeFinanceDataSanitization(
     ignoredOverdueWithoutFiscalDocumentReceivables: 0,
     supersededPreInvoiceReceivables: 0,
     supersededPreInvoiceAmount: 0,
-    obsoleteOrderParcelReceivables: 0,
-    obsoleteOrderParcelAmount: 0,
   };
   for (const part of parts) {
     merged.ignoredInternalGroupReceivables +=
@@ -298,9 +294,6 @@ export function mergeFinanceDataSanitization(
     merged.supersededPreInvoiceReceivables +=
       part.supersededPreInvoiceReceivables ?? 0;
     merged.supersededPreInvoiceAmount += part.supersededPreInvoiceAmount ?? 0;
-    merged.obsoleteOrderParcelReceivables +=
-      part.obsoleteOrderParcelReceivables ?? 0;
-    merged.obsoleteOrderParcelAmount += part.obsoleteOrderParcelAmount ?? 0;
   }
   return merged;
 }
