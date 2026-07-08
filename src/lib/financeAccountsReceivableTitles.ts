@@ -569,6 +569,7 @@ export function buildFinanceArTitlesPayload(
 
 export const FINANCE_AR_TITLE_SELECT = {
   externalId: true,
+  companyId: true,
   companyName: true,
   personId: true,
   personName: true,
@@ -587,6 +588,8 @@ export const FINANCE_AR_TITLE_SELECT = {
   sourceInvoiceNumber: true,
   suspendCollection: true,
   status: true,
+  createdAtNomus: true,
+  modifiedAtNomus: true,
   syncedAt: true,
 } as const;
 

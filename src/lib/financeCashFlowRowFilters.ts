@@ -29,7 +29,7 @@ import {
   type CashFlowMovementSlice,
 } from "./financeCashFlowLedger.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
-import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import { consolidateFinanceArReceivableRows } from "./nomusAccountsReceivableCurrent.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -168,7 +168,7 @@ export function filterCashFlowArPortfolioRows(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  return deduplicateFinanceArRows(portfolio).rows;
+  return consolidateFinanceArReceivableRows(portfolio).rows;
 }
 
 export function filterCashFlowApPortfolioRows(
@@ -206,8 +206,8 @@ export function filterCashFlowArRowsScoped(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  const deduped = deduplicateFinanceArRows(portfolio);
-  return deduped.rows.filter((row) =>
+  const consolidated = consolidateFinanceArReceivableRows(portfolio);
+  return consolidated.rows.filter((row) =>
     matchesCashFlowArPeriodScope(row, filters, referenceDate)
   );
 }

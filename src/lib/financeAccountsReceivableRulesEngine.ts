@@ -87,6 +87,7 @@ const METRIC_DEFINITIONS: FinanceAccountsReceivableMetricDefinition[] = [
       "Stale Nomus",
       "Vencidos sem NF",
       "Duplicatas pré-NF superseded",
+      "Títulos obsoletos de pedido/parcela substituídos no Nomus",
     ],
   },
   {

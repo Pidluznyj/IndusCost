@@ -6,7 +6,7 @@ import {
   trackFinanceArDataQualityRow,
 } from "./financeAccountsReceivableDataQuality.js";
 import { buildCustomerSuggestedAction } from "./financeAccountsReceivableActions.js";
-import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import { consolidateFinanceArReceivableRows } from "./nomusAccountsReceivableCurrent.js";
 import {
   isFinanceArExcludedFromReports,
   isNomusArStaleForReports,
@@ -61,6 +61,7 @@ export class FinanceArFilterParseError extends Error {
 
 export type FinanceArDashboardRow = {
   externalId: number;
+  companyId?: number | null;
   companyName: string | null;
   personId: number | null;
   personName: string | null;
@@ -79,6 +80,8 @@ export type FinanceArDashboardRow = {
   sourceInvoiceNumber: string | null;
   suspendCollection: boolean | null;
   nomusStatus: boolean | null;
+  createdAtNomus?: Date | null;
+  modifiedAtNomus?: Date | null;
   syncedAt: Date;
   /** Valor nominal original do Nomus CR antes da resolução por parcela do pedido. */
   nomusAmountReceivable?: number;
@@ -123,6 +126,7 @@ export function decimalFieldToNumber(value: Prisma.Decimal | null | undefined): 
 
 export function mapPrismaRowToFinanceArDashboardRow(row: {
   externalId: number;
+  companyId?: number | null;
   companyName: string | null;
   personId?: number | null;
   personName: string | null;
@@ -141,10 +145,13 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
   sourceInvoiceNumber: string | null;
   suspendCollection: boolean | null;
   status?: boolean | null;
+  createdAtNomus?: Date | null;
+  modifiedAtNomus?: Date | null;
   syncedAt: Date;
 }): FinanceArDashboardRow {
   return {
     externalId: row.externalId,
+    companyId: row.companyId ?? null,
     companyName: row.companyName,
     personId: row.personId ?? null,
     personName: row.personName,
@@ -163,6 +170,8 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
     sourceInvoiceNumber: row.sourceInvoiceNumber,
     suspendCollection: row.suspendCollection,
     nomusStatus: row.status ?? null,
+    createdAtNomus: row.createdAtNomus ?? null,
+    modifiedAtNomus: row.modifiedAtNomus ?? null,
     syncedAt: row.syncedAt,
   };
 }
@@ -593,6 +602,8 @@ export function countFinanceArSanitizationInScope(
   | "ignoredOverdueWithoutFiscalDocumentReceivables"
   | "supersededPreInvoiceReceivables"
   | "supersededPreInvoiceAmount"
+  | "obsoleteOrderParcelReceivables"
+  | "obsoleteOrderParcelAmount"
 > {
   const { empty } = resolveFinanceArDueDateBounds(filters);
   if (empty) {
@@ -603,6 +614,8 @@ export function countFinanceArSanitizationInScope(
       ignoredOverdueWithoutFiscalDocumentReceivables: 0,
       supersededPreInvoiceReceivables: 0,
       supersededPreInvoiceAmount: 0,
+      obsoleteOrderParcelReceivables: 0,
+      obsoleteOrderParcelAmount: 0,
     };
   }
 
@@ -633,14 +646,16 @@ export function countFinanceArSanitizationInScope(
     }
   }
 
-  const deduped = deduplicateFinanceArRows(preDedup);
+  const consolidated = consolidateFinanceArReceivableRows(preDedup);
   return {
     ignoredInternalGroupReceivables,
     ignoredGhostReceivables,
     ignoredStaleReceivables,
     ignoredOverdueWithoutFiscalDocumentReceivables,
-    supersededPreInvoiceReceivables: deduped.supersededPreInvoiceCount,
-    supersededPreInvoiceAmount: deduped.supersededPreInvoiceAmount,
+    supersededPreInvoiceReceivables: consolidated.supersededPreInvoiceCount,
+    supersededPreInvoiceAmount: consolidated.supersededPreInvoiceAmount,
+    obsoleteOrderParcelReceivables: consolidated.obsoleteOrderParcelCount,
+    obsoleteOrderParcelAmount: consolidated.obsoleteOrderParcelAmount,
   };
 }
 
@@ -659,7 +674,7 @@ export function filterFinanceArRows(
       matchesFinanceArDashboardFilters(row, filters, referenceDate) &&
       !isFinanceArExcludedFromReports(row, effectiveCutoff)
   );
-  return deduplicateFinanceArRows(matched).rows;
+  return consolidateFinanceArReceivableRows(matched).rows;
 }
 
 /** Fonte única de AR gerencial (stale, grupo interno, fantasma, dedup, lastro fiscal vencidos). */

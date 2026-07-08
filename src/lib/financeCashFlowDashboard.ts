@@ -145,7 +145,9 @@ export type FinanceCashFlowApRow = FinanceApDashboardRow & {
 
 export const FINANCE_CASH_FLOW_AR_SELECT = {
   externalId: true,
+  companyId: true,
   companyName: true,
+  personId: true,
   personName: true,
   personCnpj: true,
   description: true,
@@ -161,6 +163,8 @@ export const FINANCE_CASH_FLOW_AR_SELECT = {
   sourceInvoiceNumber: true,
   suspendCollection: true,
   status: true,
+  createdAtNomus: true,
+  modifiedAtNomus: true,
   syncedAt: true,
 } as const;
 
@@ -316,7 +320,9 @@ export function resolveFinanceCashFlowFiltersForLoad(
 
 export function mapPrismaRowToFinanceCashFlowArRow(row: {
   externalId: number;
+  companyId?: number | null;
   companyName: string | null;
+  personId?: number | null;
   personName: string | null;
   personCnpj: string | null;
   description?: string | null;
@@ -332,6 +338,8 @@ export function mapPrismaRowToFinanceCashFlowArRow(row: {
   sourceInvoiceNumber: string | null;
   suspendCollection: boolean | null;
   status?: boolean | null;
+  createdAtNomus?: Date | null;
+  modifiedAtNomus?: Date | null;
   syncedAt: Date;
 }): FinanceCashFlowArRow {
   return {
