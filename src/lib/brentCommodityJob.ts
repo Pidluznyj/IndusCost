@@ -97,8 +97,21 @@ export async function runBrentCommodityScheduledCollection(now: Date = new Date(
   }
 }
 
+function isBrentSchedulerEnabled(): boolean {
+  const raw = process.env.BRENT_COMMODITY_SCHEDULER_ENABLED?.trim().toLowerCase();
+  // Default ON in production/server; explicit "false"/"0"/"off" disables safely.
+  if (raw === "false" || raw === "0" || raw === "off" || raw === "no") return false;
+  return true;
+}
+
 export function startBrentCommodityScheduledJob(): void {
   if (schedulerStarted) return;
+  if (!isBrentSchedulerEnabled()) {
+    console.info(
+      `${BRENT_COMMODITY_LOG_PREFIX} scheduler disabled via BRENT_COMMODITY_SCHEDULER_ENABLED`
+    );
+    return;
+  }
   schedulerStarted = true;
   console.info(`${BRENT_COMMODITY_LOG_PREFIX} registered job=${BRENT_COMMODITY_JOB_ID}`);
   void runBrentCommodityScheduledCollection();

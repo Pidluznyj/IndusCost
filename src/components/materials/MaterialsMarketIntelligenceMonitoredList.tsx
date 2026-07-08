@@ -16,6 +16,7 @@ import {
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
 import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 import { MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 
 type MonitoredMaterialsApiResponse = {
@@ -147,6 +148,23 @@ export function MaterialsMarketIntelligenceMonitoredList() {
           <X className="h-4 w-4" />
           Limpar
         </button>
+        <MaterialMarketIntelligenceExportButtons
+          scope="home"
+          filters={{
+            q: searchTerm.trim() || null,
+            criticality: criticalityFilter || null,
+          }}
+          className="lg:ml-auto"
+        />
+        <MaterialMarketIntelligenceExportButtons
+          scope="reports"
+          filters={{
+            q: searchTerm.trim() || null,
+            criticality: criticalityFilter || null,
+            status: "OPEN",
+          }}
+          labelPrefix="Relatório"
+        />
       </div>
 
       {items.length === 0 ? (

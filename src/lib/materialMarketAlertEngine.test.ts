@@ -22,6 +22,8 @@ const BASE_INPUT = {
 
 describe("materialMarketAlertEngine", () => {
   it("expõe limiares padrão documentados", () => {
+    assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.risePercentThreshold, 10);
+    assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.fallPercentThreshold, 10);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.priceChangePercent, 10);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.supplierAboveAvgPercent, 15);
     assert.equal(MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.noRecentQuoteDays, 90);

@@ -3,6 +3,7 @@ import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/mater
 import { MaterialsMarketGlobalIndicatorsSection } from "@/src/components/materials/MaterialsMarketGlobalIndicatorsSection";
 import { MaterialsMarketIntelligenceAlertsPanel } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialsMarketIntelligenceTopOpportunityCard } from "@/src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard";
+import { MaterialMarketAlertGlobalConfigPanel } from "@/src/components/materials/MaterialMarketAlertGlobalConfigPanel";
 
 export const MATERIALS_MARKET_INTELLIGENCE_EMPTY_MESSAGE =
   "Nenhuma matéria-prima monitorada ainda";
@@ -43,6 +44,8 @@ export function MaterialsMarketIntelligencePage() {
       </section>
 
       <MaterialsMarketIntelligenceAlertsPanel />
+
+      <MaterialMarketAlertGlobalConfigPanel />
 
       <section
         className="space-y-3"

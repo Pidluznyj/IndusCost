@@ -11,11 +11,18 @@ import {
   shouldUpdateOpenMaterialMarketAlert,
   type MaterialMarketAlertProposal,
 } from "./materialMarketAlertEngine.js";
+import { toEngineThresholdsFromEffectiveConfig } from "./materialMarketAlertConfig.js";
+import { loadEffectiveMaterialMarketAlertConfig } from "./materialMarketAlertConfig.server.js";
 import { buildMaterialMarketSavingsOpportunityFromRows } from "./materialMarketSavingsOpportunity.js";
 
 type DbClient = Pick<
   PrismaClient,
-  "material" | "materialMarketQuote" | "materialMarketAlert"
+  | "material"
+  | "materialMarketQuote"
+  | "materialMarketAlert"
+  | "materialMarketAlertGlobalConfig"
+  | "materialMarketAlertConfig"
+  | "materialMarketAlertConfigAudit"
 >;
 
 export async function loadMaterialMarketAlertEvaluationContext(
@@ -219,6 +226,18 @@ export async function evaluateAndPersistMaterialMarketAlerts(
     };
   }
 
+  const effectiveConfig = await loadEffectiveMaterialMarketAlertConfig(db, materialId);
+  if (!effectiveConfig.alertsEnabled) {
+    return {
+      materialFound: true,
+      monitored: true,
+      proposals: [],
+      persistence: { created: 0, updated: 0, resolved: 0 },
+    };
+  }
+
+  const engineThresholds = toEngineThresholdsFromEffectiveConfig(effectiveConfig);
+
   const proposals = appendSavingsOpportunityProposal({
     material,
     quotes,
@@ -228,9 +247,16 @@ export async function evaluateAndPersistMaterialMarketAlerts(
       materialCode: material.code,
       materialDescription: material.description,
       isMarketMonitored: material.isMarketMonitored,
+      alertsEnabled: effectiveConfig.alertsEnabled,
       marketMonitoringFrequencyDays: material.marketMonitoringFrequencyDays,
       quotes,
       referenceDate,
+      thresholds: {
+        ...engineThresholds,
+        supplierAboveAvgPercent: MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.supplierAboveAvgPercent,
+        savingsOpportunityPercent:
+          MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.savingsOpportunityPercent,
+      },
     }),
   });
 

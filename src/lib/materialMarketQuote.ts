@@ -15,8 +15,9 @@ import {
 } from "./materialMarketQuoteGovernance.js";
 import {
   MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS,
+  parseMaterialMarketQuoteReliabilityLevel,
   type MaterialMarketQuoteReliabilityLevel,
-} from "./materialMarketQuoteAttachment.js";
+} from "./materialMarketQuoteReliability.js";
 
 export {
   MATERIAL_MARKET_QUOTE_MANUAL_EXCHANGE_PERMISSION,
@@ -27,6 +28,9 @@ export {
   MATERIAL_MARKET_QUOTE_APPROVE_PERMISSION,
   MATERIAL_MARKET_QUOTE_OFFICIAL_STATUS_LABELS,
   canApproveMaterialMarketQuote,
+  canShowApproveRejectActions,
+  canShowSetOfficialAction,
+  canShowSubmitForApprovalAction,
   isCriticalMaterialForQuoteApproval,
   parseMaterialMarketQuoteOfficialStatus,
   type MaterialMarketQuoteOfficialStatus,
@@ -139,6 +143,11 @@ export type MaterialMarketQuoteApiItem = {
   setOfficialBy: string | null;
   setOfficialAt: string | null;
   setOfficialByName: string | null;
+  reliabilityLevel: MaterialMarketQuoteReliabilityLevel;
+  reliabilityLevelLabel: string;
+  reliabilitySuggestedLevel: MaterialMarketQuoteReliabilityLevel | null;
+  reliabilitySuggestedLabel: string | null;
+  reliabilityOverrideReason: string | null;
   suggestedReliabilityLevel: MaterialMarketQuoteReliabilityLevel | null;
   suggestedReliabilityLabel: string | null;
   attachmentCount: number;
@@ -374,8 +383,7 @@ function parsePtaxStatus(value: unknown): MaterialMarketQuotePtaxStatus | null {
 }
 
 function parseReliabilityLevel(value: unknown): MaterialMarketQuoteReliabilityLevel | null {
-  if (value === "LOW" || value === "MEDIUM" || value === "HIGH") return value;
-  return null;
+  return parseMaterialMarketQuoteReliabilityLevel(value);
 }
 
 export function serializeMaterialMarketQuoteForApi(
@@ -399,6 +407,7 @@ export function serializeMaterialMarketQuoteForApi(
   const ptaxVenda = toOptionalNumber(row.ptaxVenda);
   const priceBrl = toOptionalNumber(row.priceBrl);
   const suggestedReliabilityLevel = parseReliabilityLevel(row.suggestedReliabilityLevel);
+  const appliedLevel = suggestedReliabilityLevel ?? "MANUAL";
   return {
     id: row.id,
     materialId: row.materialId,
@@ -454,6 +463,13 @@ export function serializeMaterialMarketQuoteForApi(
     setOfficialBy: row.setOfficialBy ?? null,
     setOfficialAt: row.setOfficialAt ? new Date(row.setOfficialAt).toISOString() : null,
     setOfficialByName,
+    reliabilityLevel: appliedLevel,
+    reliabilityLevelLabel: MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[appliedLevel],
+    reliabilitySuggestedLevel: suggestedReliabilityLevel,
+    reliabilitySuggestedLabel: suggestedReliabilityLevel
+      ? MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[suggestedReliabilityLevel]
+      : null,
+    reliabilityOverrideReason: null,
     suggestedReliabilityLevel,
     suggestedReliabilityLabel: suggestedReliabilityLevel
       ? MATERIAL_MARKET_QUOTE_RELIABILITY_LABELS[suggestedReliabilityLevel]

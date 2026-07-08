@@ -120,6 +120,8 @@ describe("materialMarketSimulation", () => {
     assert.equal(response.criticalProducts.length, 1);
     assert.equal(response.marginSummary.avgPreviousMargin, 50);
     assert.equal(response.marginSummary.avgSimulatedMargin, 45);
+    assert.equal(response.comparison.material.differenceBRL, 1);
+    assert.equal(response.comparison.material.differencePct, 10);
   });
 
   it("parseMaterialMarketSimulationRequest valida modo e valor", () => {

@@ -6,6 +6,7 @@ import { MATERIAL_BOM_IMPACT_EMPTY_MESSAGE } from "@/src/lib/materialBomImpact";
 import { getMaterialMarketIntelligenceImpactedProductsApiPath } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumberAdaptive } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 
 type Props = {
   materialId: string;
@@ -49,6 +50,12 @@ export function MaterialIntelligenceImpactedProductsSection({ materialId }: Prop
       title="Produtos Impactados"
       description="Produtos e estruturas que consomem esta matéria-prima na BOM oficial."
     >
+      <div className="mb-3 flex justify-end">
+        <MaterialMarketIntelligenceExportButtons
+          scope="impacted-products"
+          filters={{ materialId }}
+        />
+      </div>
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

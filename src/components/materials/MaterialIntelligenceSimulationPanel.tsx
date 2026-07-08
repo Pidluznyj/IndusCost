@@ -6,7 +6,9 @@ import type { MaterialMarketSimulationMode } from "@/src/lib/materialMarketSimul
 import { getMaterialMarketIntelligenceSimulateApiPath } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
-import { MaterialIntelligenceSimulationComparison } from "@/src/components/materials/MaterialIntelligenceSimulationComparison";
+import { MaterialIntelligenceSimulationComparison } from "@/src/components/materials/MaterialIntelligenceSimulationComparison";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
+
 
 type SimulationModeTab = "PCT_INCREASE" | "PCT_DECREASE" | "MANUAL_PRICE";
 
@@ -89,7 +91,17 @@ export function MaterialIntelligenceSimulationPanel({ materialId, unit }: Props)
           data-testid="material-intelligence-simulation-disclaimer"
         >
           Simulação temporária — dados oficiais não são alterados.
-        </div>
+        </div>
+
+        <div className="flex justify-end">
+          <MaterialMarketIntelligenceExportButtons
+            scope="simulations"
+            filters={{ materialId }}
+            simulationResult={result}
+            disabled={!result}
+          />
+        </div>
+
 
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Modo de simulação">
           {(Object.keys(MODE_LABELS) as SimulationModeTab[]).map((tab) => (

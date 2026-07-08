@@ -1,12 +1,15 @@
-import type { CommoditySnapshot, PtaxSnapshot } from "@prisma/client";
-import { prisma } from "@/src/lib/prisma.js";
-import { calculatePercentageChange } from "@/src/lib/financeExecutiveReportUtils.js";
+/**
+ * Indicadores globais de mercado (PTAX + Brent) para a Home de Inteligência de Mercado.
+ * Mapeamento puro a partir de snapshots já persistidos — sem chamadas externas.
+ */
+
 import { BRENT_DEFAULT_SOURCE } from "@/src/lib/brentCommodityService.js";
 
 export const MARKET_GLOBAL_INDICATORS_API =
   "/api/market-intelligence/global-indicators" as const;
 
 export const PTAX_DEFAULT_SOURCE_LABEL = "BCB PTAX" as const;
+export const BRENT_DISPLAY_UNIT = "barril" as const;
 
 const BRENT_SOURCE_LABELS: Record<string, string> = {
   [BRENT_DEFAULT_SOURCE]: "Yahoo Finance",
@@ -36,10 +39,30 @@ export type MarketGlobalIndicatorsDto = {
   hasData: boolean;
 };
 
-function toNumber(value: { toString(): string } | number | null | undefined): number | null {
+export type MarketGlobalPtaxSourceRow = {
+  status: string;
+  sellRate: number | string | null | { toString(): string };
+  buyRate: number | string | null | { toString(): string };
+  source?: string | null;
+  collectedAt: Date | string;
+};
+
+export type MarketGlobalBrentSourceRow = {
+  status: string;
+  priceUSD: number | string | null | { toString(): string };
+  source?: string | null;
+  collectedAt: Date | string;
+  variationFromPrevious?: number | string | null | { toString(): string };
+};
+
+function toNumber(value: { toString(): string } | number | string | null | undefined): number | null {
   if (value == null) return null;
-  const n = Number(value);
+  const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function toIso(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 export function formatBrentSourceLabel(source: string | null | undefined): string {
@@ -52,15 +75,15 @@ export function buildMarketGlobalIndicatorsSourcesLabel(input: {
   ptaxSource: string | null;
   brentSource: string | null;
 }): string | null {
-  const labels = new Set<string>();
-  if (input.ptaxSource?.trim()) labels.add(input.ptaxSource.trim());
-  if (input.brentSource?.trim()) labels.add(input.brentSource.trim());
-  if (labels.size === 0) return null;
-  return [...labels].join(" · ");
+  const labels: string[] = [];
+  if (input.ptaxSource?.trim()) labels.push(input.ptaxSource.trim());
+  if (input.brentSource?.trim()) labels.push(input.brentSource.trim());
+  if (labels.length === 0) return null;
+  return labels.join(" · ");
 }
 
 export function mapPtaxSnapshotToIndicator(
-  snapshot: PtaxSnapshot | null
+  snapshot: MarketGlobalPtaxSourceRow | null
 ): MarketGlobalIndicatorsPtaxDto | null {
   if (!snapshot || snapshot.status !== "SUCCESS") return null;
   const sellRate = toNumber(snapshot.sellRate);
@@ -70,29 +93,24 @@ export function mapPtaxSnapshotToIndicator(
     sellRate,
     buyRate,
     source: snapshot.source?.trim() || PTAX_DEFAULT_SOURCE_LABEL,
-    lastUpdate: snapshot.collectedAt.toISOString(),
+    lastUpdate: toIso(snapshot.collectedAt),
   };
 }
 
-export function mapBrentSnapshotsToIndicator(input: {
-  latest: CommoditySnapshot | null;
-  previous: CommoditySnapshot | null;
-}): MarketGlobalIndicatorsBrentDto | null {
-  const { latest, previous } = input;
-  if (!latest || latest.status !== "SUCCESS") return null;
-  const price = toNumber(latest.price);
+export function mapBrentSnapshotToIndicator(
+  snapshot: MarketGlobalBrentSourceRow | null
+): MarketGlobalIndicatorsBrentDto | null {
+  if (!snapshot || snapshot.status !== "SUCCESS") return null;
+  const price = toNumber(snapshot.priceUSD);
   if (price == null) return null;
-
-  const previousPrice = previous?.status === "SUCCESS" ? toNumber(previous.price) : null;
-  const variationFromPrevious = calculatePercentageChange(price, previousPrice);
 
   return {
     price,
-    currency: latest.currency?.trim() || "USD",
-    unit: latest.unit?.trim() || "barrel",
-    variationFromPrevious,
-    source: formatBrentSourceLabel(latest.source),
-    lastUpdate: latest.collectedAt.toISOString(),
+    currency: "USD",
+    unit: BRENT_DISPLAY_UNIT,
+    variationFromPrevious: toNumber(snapshot.variationFromPrevious),
+    source: formatBrentSourceLabel(snapshot.source),
+    lastUpdate: toIso(snapshot.collectedAt),
   };
 }
 
@@ -108,15 +126,11 @@ export function resolveMarketGlobalIndicatorsLastUpdate(
 }
 
 export function mapMarketGlobalIndicators(input: {
-  ptax: PtaxSnapshot | null;
-  brentLatest: CommoditySnapshot | null;
-  brentPrevious: CommoditySnapshot | null;
+  ptax: MarketGlobalPtaxSourceRow | null;
+  brent: MarketGlobalBrentSourceRow | null;
 }): MarketGlobalIndicatorsDto {
   const ptax = mapPtaxSnapshotToIndicator(input.ptax);
-  const brent = mapBrentSnapshotsToIndicator({
-    latest: input.brentLatest,
-    previous: input.brentPrevious,
-  });
+  const brent = mapBrentSnapshotToIndicator(input.brent);
   const lastUpdate = resolveMarketGlobalIndicatorsLastUpdate(ptax, brent);
   const sourcesLabel = buildMarketGlobalIndicatorsSourcesLabel({
     ptaxSource: ptax?.source ?? null,
@@ -130,24 +144,4 @@ export function mapMarketGlobalIndicators(input: {
     sourcesLabel,
     hasData: ptax != null || brent != null,
   };
-}
-
-export async function loadMarketGlobalIndicators(): Promise<MarketGlobalIndicatorsDto> {
-  const [ptax, brentSnapshots] = await Promise.all([
-    prisma.ptaxSnapshot.findFirst({
-      where: { status: "SUCCESS" },
-      orderBy: [{ quoteDate: "desc" }, { collectedAt: "desc" }],
-    }),
-    prisma.commoditySnapshot.findMany({
-      where: { commodityType: "BRENT", status: "SUCCESS" },
-      orderBy: [{ quoteDate: "desc" }, { collectedAt: "desc" }],
-      take: 2,
-    }),
-  ]);
-
-  return mapMarketGlobalIndicators({
-    ptax,
-    brentLatest: brentSnapshots[0] ?? null,
-    brentPrevious: brentSnapshots[1] ?? null,
-  });
 }

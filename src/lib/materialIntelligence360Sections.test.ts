@@ -7,9 +7,8 @@ import {
 } from "./materialIntelligence360Sections.js";
 
 describe("materialIntelligence360Sections", () => {
-  it("define todas as seções preparadas da visão 360º", () => {
-    const ids = MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((s) => s.id);
-    assert.deepEqual(ids, ["audit"]);
+  it("não mantém seções placeholder quando auditoria está implementada", () => {
+    assert.deepEqual(MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS, []);
   });
 
   it("mensagem amigável sem cotações", () => {

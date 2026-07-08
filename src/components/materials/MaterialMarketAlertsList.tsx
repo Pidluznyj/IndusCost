@@ -14,6 +14,7 @@ import {
   MATERIALS_MARKET_INTELLIGENCE_ALERTS_API,
   getMaterialMarketIntelligenceAlertsApiPath,
 } from "@/src/lib/materialsNavigation";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 
 type AlertsApiResponse = {
   items: MaterialMarketAlertApiItem[];
@@ -135,13 +136,22 @@ export function MaterialMarketAlertsList({
           />
           Incluir resolvidos
         </label>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="text-xs font-medium text-primary hover:underline"
-        >
-          Atualizar
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <MaterialMarketIntelligenceExportButtons
+            scope="alerts"
+            filters={{
+              materialId: materialId ?? null,
+              status: showResolved ? "ALL" : "OPEN",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {error ? (

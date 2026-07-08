@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertTriangle, Check, Loader2, Receipt, Send, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Receipt, Send, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchOk } from "@/src/lib/http";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
@@ -9,12 +9,13 @@ import {
   canShowSetOfficialAction,
   canShowSubmitForApprovalAction,
   type MaterialMarketQuoteOfficialStatus,
-} from "@/src/lib/materialMarketQuote";
+} from "@/src/lib/materialMarketQuoteGovernance";
 import {
   formatMaterialIntelligenceQuoteDate,
   MATERIAL_INTELLIGENCE_RECENT_QUOTES_EMPTY_MESSAGE,
 } from "@/src/lib/materialIntelligence360Sections";
 import type { MaterialMarketCriticality } from "@/src/lib/materialMarketMonitoring";
+import { canAdjustMaterialMarketQuoteReliability } from "@/src/lib/materialMarketQuoteReliability";
 import {
   getMaterialMarketQuoteApproveApiPath,
   getMaterialMarketQuoteRejectApiPath,
@@ -24,6 +25,10 @@ import {
 import { formatCurrency } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
 import { MaterialIntelligenceMarketQuoteForm } from "@/src/components/materials/MaterialIntelligenceMarketQuoteForm";
+import { MaterialIntelligencePurchaseLinkForm } from "@/src/components/materials/MaterialIntelligencePurchaseLinkForm";
+import { MaterialMarketQuoteAttachmentsPanel } from "@/src/components/materials/MaterialMarketQuoteAttachmentsPanel";
+import { MaterialIntelligenceQuoteReliabilityBadge } from "@/src/components/materials/MaterialIntelligenceQuoteReliabilityBadge";
+import { MaterialIntelligenceQuoteReliabilityModal } from "@/src/components/materials/MaterialIntelligenceQuoteReliabilityModal";
 
 type Props = {
   materialId: string;
@@ -79,10 +84,20 @@ export function MaterialIntelligenceRecentQuotesSection({
   const auth = useAuth();
   const canEdit = auth.hasPermission("materials.edit");
   const canApprove = canApproveMaterialMarketQuote(auth);
+  const canAdjustReliability =
+    auth.authUser != null &&
+    canAdjustMaterialMarketQuoteReliability({
+      role: auth.authUser.role,
+      permissions: auth.authUser.permissions,
+      effectivePermissions: auth.authUser.effectivePermissions,
+    });
   const [actingQuoteId, setActingQuoteId] = useState<string | null>(null);
+  const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
+  const [reliabilityQuote, setReliabilityQuote] = useState<MaterialMarketQuoteApiItem | null>(null);
   const [rejectQuoteId, setRejectQuoteId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [purchaseLinkQuoteId, setPurchaseLinkQuoteId] = useState<string | null>(null);
 
   const refresh = async () => {
     await onQuoteCreated();
@@ -154,6 +169,7 @@ export function MaterialIntelligenceRecentQuotesSection({
                 <th className="p-3 font-semibold">Câmbio</th>
                 <th className="p-3 font-semibold">Unid.</th>
                 <th className="p-3 font-semibold">Status</th>
+                <th className="p-3 font-semibold">Confiabilidade</th>
                 <th className="p-3 font-semibold">Governança</th>
                 <th className="p-3 font-semibold">Ações</th>
               </tr>
@@ -179,9 +195,27 @@ export function MaterialIntelligenceRecentQuotesSection({
                 });
 
                 return (
-                  <tr key={quote.id} data-testid={`material-market-quote-row-${quote.id}`}>
+                  <React.Fragment key={quote.id}>
+                  <tr data-testid={`material-market-quote-row-${quote.id}`}>
                     <td className="p-3 text-muted-foreground">
-                      {formatMaterialIntelligenceQuoteDate(quote.quoteDate)}
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                        onClick={() =>
+                          setExpandedQuoteId((current) =>
+                            current === quote.id ? null : quote.id
+                          )
+                        }
+                        aria-expanded={expandedQuoteId === quote.id}
+                        data-testid={`material-market-quote-expand-${quote.id}`}
+                      >
+                        {expandedQuoteId === quote.id ? (
+                          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        {formatMaterialIntelligenceQuoteDate(quote.quoteDate)}
+                      </button>
                     </td>
                     <td className="p-3">
                       <span className="font-medium">{quote.supplierName ?? "—"}</span>
@@ -226,6 +260,12 @@ export function MaterialIntelligenceRecentQuotesSection({
                     <td className="p-3 text-muted-foreground">{quote.unit}</td>
                     <td className="p-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {quote.statusLabel}
+                    </td>
+                    <td className="p-3">
+                      <MaterialIntelligenceQuoteReliabilityBadge
+                        level={quote.reliabilityLevel}
+                        suggestedLevel={quote.reliabilitySuggestedLevel}
+                      />
                     </td>
                     <td className="p-3">
                       <span
@@ -329,7 +369,36 @@ export function MaterialIntelligenceRecentQuotesSection({
                             Definir como cotação oficial
                           </button>
                         ) : null}
+
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold hover:bg-accent disabled:opacity-60"
+                            disabled={isActing}
+                            data-testid={`material-market-quote-link-purchase-${quote.id}`}
+                            onClick={() => {
+                              setPurchaseLinkQuoteId(
+                                purchaseLinkQuoteId === quote.id ? null : quote.id
+                              );
+                              setActionError(null);
+                            }}
+                          >
+                            <Link2 className="h-3 w-3" aria-hidden="true" />
+                            Vincular compra
+                          </button>
+                        ) : null}
+
                       </div>
+
+                      {purchaseLinkQuoteId === quote.id ? (
+                        <MaterialIntelligencePurchaseLinkForm
+                          materialId={materialId}
+                          quote={quote}
+                          open
+                          onClose={() => setPurchaseLinkQuoteId(null)}
+                          onCreated={() => void refresh()}
+                        />
+                      ) : null}
 
                       {rejectQuoteId === quote.id ? (
                         <div
@@ -373,6 +442,71 @@ export function MaterialIntelligenceRecentQuotesSection({
                       ) : null}
                     </td>
                   </tr>
+                  {expandedQuoteId === quote.id ? (
+                    <tr data-testid={`material-market-quote-detail-${quote.id}`}>
+                      <td colSpan={10} className="bg-muted/15 px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-2 text-sm">
+                            <p className="font-semibold">Confiabilidade da informação</p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Nível aplicado</p>
+                                <MaterialIntelligenceQuoteReliabilityBadge
+                                  level={quote.reliabilityLevel}
+                                  showSuggestionHint={false}
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {quote.reliabilityLevelLabel}
+                                </p>
+                              </div>
+                              {quote.reliabilitySuggestedLevel ? (
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Sugestão automática</p>
+                                  <MaterialIntelligenceQuoteReliabilityBadge
+                                    level={quote.reliabilitySuggestedLevel}
+                                    showSuggestionHint={false}
+                                  />
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {quote.reliabilitySuggestedLabel}
+                                  </p>
+                                </div>
+                              ) : null}
+                            </div>
+                            {quote.reliabilityOverrideReason ? (
+                              <p className="text-xs text-muted-foreground">
+                                Justificativa: {quote.reliabilityOverrideReason}
+                              </p>
+                            ) : null}
+                            {quote.attachmentCount > 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                {quote.attachmentCount} anexo(s) de evidência
+                              </p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">Sem anexos de evidência</p>
+                            )}
+                          </div>
+                          <MaterialMarketQuoteAttachmentsPanel
+                            materialId={materialId}
+                            quoteId={quote.id}
+                            canEdit={canEdit}
+                            onAttachmentsChanged={() => void refresh()}
+                          />
+                          {canAdjustReliability ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-accent"
+                              data-testid={`material-market-quote-adjust-reliability-${quote.id}`}
+                              onClick={() => setReliabilityQuote(quote)}
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                              Ajustar confiabilidade
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -382,6 +516,19 @@ export function MaterialIntelligenceRecentQuotesSection({
           </p>
         </div>
       )}
+
+      {reliabilityQuote ? (
+        <MaterialIntelligenceQuoteReliabilityModal
+          materialId={materialId}
+          quoteId={reliabilityQuote.id}
+          currentLevel={reliabilityQuote.reliabilityLevel}
+          suggestedLevel={reliabilityQuote.reliabilitySuggestedLevel}
+          overrideReason={reliabilityQuote.reliabilityOverrideReason}
+          open
+          onClose={() => setReliabilityQuote(null)}
+          onSaved={() => void refresh()}
+        />
+      ) : null}
     </MaterialIntelligence360Section>
   );
 }

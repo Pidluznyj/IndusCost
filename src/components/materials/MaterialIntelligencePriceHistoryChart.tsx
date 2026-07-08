@@ -19,6 +19,7 @@ import {
 import { getMaterialMarketIntelligencePriceHistoryApiPath } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
+import { MaterialMarketIntelligenceExportButtons } from "@/src/components/materials/MaterialMarketIntelligenceExportButtons";
 import { FINANCE_BI_COLORS } from "@/src/lib/financeBiDashboardTheme";
 
 type Props = {
@@ -135,22 +136,34 @@ export function MaterialIntelligencePriceHistoryChart({ materialId, unit }: Prop
       className="xl:col-span-2"
     >
       <div className="space-y-4" data-testid="material-intelligence-price-history-chart">
-        <div className="flex flex-wrap items-center gap-2">
-          {MATERIAL_MARKET_PRICE_HISTORY_PERIOD_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setPeriod(option.value)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                period === option.value
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-background text-muted-foreground hover:bg-accent"
-              }`}
-              data-testid={`material-price-history-period-${option.value}`}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {MATERIAL_MARKET_PRICE_HISTORY_PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setPeriod(option.value)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  period === option.value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
+                }`}
+                data-testid={`material-price-history-period-${option.value}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <MaterialMarketIntelligenceExportButtons
+            scope="history"
+            filters={{
+              materialId,
+              period,
+              dateFrom: period === "custom" ? customDateFrom : null,
+              dateTo: period === "custom" ? customDateTo : null,
+            }}
+            disabled={!canLoadCustom}
+          />
         </div>
 
         {period === "custom" ? (

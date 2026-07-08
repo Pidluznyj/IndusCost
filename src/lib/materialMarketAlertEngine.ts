@@ -1,10 +1,10 @@
 /**
  * Motor de geração de alertas de mercado — regras puras, sem acesso ao banco.
  *
- * Limiares padrão (configuráveis via MaterialMarketAlertThresholds):
- * - priceChangePercent: 10% — alta/queda relevante vs. cotação anterior ou média
+ * Limiares padrão (configuráveis via EffectiveAlertConfig / MaterialMarketAlertThresholds):
+ * - risePercentThreshold / fallPercentThreshold: 10% — alta/queda relevante
  * - supplierAboveAvgPercent: 15% — fornecedor acima da média do material
- * - noRecentQuoteDays: 90 — dias sem cotação ativa
+ * - noRecentQuoteDays / daysWithoutQuote: 90 — dias sem cotação ativa
  * - savingsOpportunityPercent: 10% — menor cotação abaixo da média
  */
 
@@ -14,6 +14,8 @@ import type {
 } from "./materialMarketAlert.js";
 
 export const MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS = {
+  risePercentThreshold: 10,
+  fallPercentThreshold: 10,
   priceChangePercent: 10,
   supplierAboveAvgPercent: 15,
   noRecentQuoteDays: 90,
@@ -21,6 +23,8 @@ export const MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS = {
 } as const;
 
 export type MaterialMarketAlertThresholds = {
+  risePercentThreshold: number;
+  fallPercentThreshold: number;
   priceChangePercent: number;
   supplierAboveAvgPercent: number;
   noRecentQuoteDays: number;
@@ -40,6 +44,7 @@ export type MaterialMarketAlertEvaluationInput = {
   materialCode: string;
   materialDescription: string;
   isMarketMonitored: boolean;
+  alertsEnabled?: boolean;
   marketMonitoringFrequencyDays?: number | null;
   quotes: MaterialMarketAlertQuoteInput[];
   referenceDate?: Date;
@@ -89,9 +94,18 @@ function formatDatePtBr(value: Date): string {
 function resolveThresholds(
   partial?: Partial<MaterialMarketAlertThresholds>
 ): MaterialMarketAlertThresholds {
+  const rise =
+    partial?.risePercentThreshold ??
+    partial?.priceChangePercent ??
+    MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.risePercentThreshold;
+  const fall =
+    partial?.fallPercentThreshold ??
+    partial?.priceChangePercent ??
+    MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.fallPercentThreshold;
   return {
-    priceChangePercent:
-      partial?.priceChangePercent ?? MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.priceChangePercent,
+    risePercentThreshold: rise,
+    fallPercentThreshold: fall,
+    priceChangePercent: partial?.priceChangePercent ?? rise,
     supplierAboveAvgPercent:
       partial?.supplierAboveAvgPercent ??
       MATERIAL_MARKET_ALERT_DEFAULT_THRESHOLDS.supplierAboveAvgPercent,
@@ -149,6 +163,7 @@ export function evaluateMaterialMarketAlerts(
   input: MaterialMarketAlertEvaluationInput
 ): MaterialMarketAlertProposal[] {
   if (!input.isMarketMonitored) return [];
+  if (input.alertsEnabled === false) return [];
 
   const thresholds = resolveThresholds(input.thresholds);
   const referenceDate = input.referenceDate ?? new Date();
@@ -218,13 +233,13 @@ export function evaluateMaterialMarketAlerts(
   const referenceForChange = previous?.netPrice ?? (activeQuotes.length >= 2 ? average : null);
   if (referenceForChange != null) {
     const changePct = computePercentChange(latest.netPrice, referenceForChange);
-    if (changePct != null && changePct >= thresholds.priceChangePercent) {
+    if (changePct != null && changePct >= thresholds.risePercentThreshold) {
       proposals.push({
         materialId: input.materialId,
         alertType: "PRICE_UP_PCT",
         title: "Alta relevante de preço",
         message: `Cotação atual de ${formatBRL(latest.netPrice)} representa alta de ${formatPercent(changePct)} em relação à ${previous ? "cotação anterior" : "média"} (${formatBRL(referenceForChange)}).`,
-        severity: changePct >= thresholds.priceChangePercent * 2 ? "CRITICAL" : "WARNING",
+        severity: changePct >= thresholds.risePercentThreshold * 2 ? "CRITICAL" : "WARNING",
         metadata: {
           ...baseMeta,
           currentPrice: latest.netPrice,
@@ -234,7 +249,7 @@ export function evaluateMaterialMarketAlerts(
         },
         triggeredAt: referenceDate,
       });
-    } else if (changePct != null && changePct <= -thresholds.priceChangePercent) {
+    } else if (changePct != null && changePct <= -thresholds.fallPercentThreshold) {
       proposals.push({
         materialId: input.materialId,
         alertType: "PRICE_DOWN_PCT",

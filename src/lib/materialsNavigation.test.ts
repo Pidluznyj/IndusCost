@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  getMaterialMarketQuoteReliabilityApiPath,
   getMaterialsDefaultPath,
   isMaterialsCanonicalPath,
   MATERIALS_SECTION_PATHS,
@@ -56,13 +57,14 @@ describe("materialsNavigation", () => {
     assert.match(indicators, /Dólar PTAX compra/);
     assert.match(indicators, /Brent USD\/barril/);
     assert.match(indicators, /MARKET_GLOBAL_INDICATORS_EMPTY_MESSAGE/);
-    assert.match(indicators, /\/api\/market-intelligence\/global-indicators/);
+    assert.match(indicators, /MARKET_GLOBAL_INDICATORS_API/);
   });
 
   it("API agrega indicadores globais PTAX e Brent", () => {
     const server = read("server.ts");
+    const routes = read("src/lib/marketGlobalIndicatorsRoutes.ts");
     assert.match(server, /registerMarketGlobalIndicatorsRoutes/);
-    assert.match(server, /\/api\/market-intelligence\/global-indicators/);
+    assert.match(routes, /\/api\/market-intelligence\/global-indicators/);
   });
 
   it("API expõe PATCH de monitoramento de mercado", () => {
@@ -216,8 +218,8 @@ describe("materialsNavigation", () => {
     assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/impacted-products/);
     assert.match(server, /buildMaterialBomImpactForApi/);
     assert.match(nav, /getMaterialMarketIntelligenceImpactedProductsApiPath/);
-    assert.match(section, /material-intelligence-impacted-products-table/);
-    assert.match(section, /Nenhum produto vinculado a esta matéria-prima na BOM oficial/);
+    assert.match(section, /material-intelligence-impacted-products-(table|empty)/);
+    assert.match(section, /MATERIAL_BOM_IMPACT_EMPTY_MESSAGE/);
     assert.match(detail, /MaterialIntelligenceImpactedProductsSection/);
   });
 
@@ -232,5 +234,32 @@ describe("materialsNavigation", () => {
     assert.match(nav, /BRENT_COMMODITY_LATEST_API/);
     assert.match(schema, /model CommoditySnapshot/);
     assert.match(schema, /variationFromPrevious/);
+  });
+
+  it("API de confiabilidade de cotação de mercado", () => {
+    assert.equal(
+      getMaterialMarketQuoteReliabilityApiPath("mat-1", "quote-1"),
+      "/api/materials/market-intelligence/mat-1/quotes/quote-1/reliability"
+    );
+    const server = read("server.ts");
+    assert.match(server, /registerMaterialMarketQuoteReliabilityRoutes/);
+  });
+
+  it("API de anexos de cotação com upload, listagem e download", () => {
+    const server = read("server.ts");
+    const routes = read("src/lib/materialMarketQuoteAttachmentRoutes.ts");
+    const panel = read("src/components/materials/MaterialMarketQuoteAttachmentsPanel.tsx");
+    const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
+    const schema = read("prisma/schema.prisma");
+    const storage = read("src/lib/appLocalFileStorage.ts");
+    assert.match(server, /registerMaterialMarketQuoteAttachmentRoutes/);
+    assert.match(routes, /attachments/);
+    assert.match(routes, /download/);
+    assert.match(schema, /model MaterialMarketQuoteAttachment/);
+    assert.match(schema, /suggestedReliabilityLevel/);
+    assert.match(storage, /data\/uploads/);
+    assert.match(panel, /material-market-quote-attachments/);
+    assert.match(quotes, /MaterialMarketQuoteAttachmentsPanel/);
+    assert.match(quotes, /attachmentCount/);
   });
 });

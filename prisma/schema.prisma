@@ -125,6 +125,7 @@ model Material {
   MaterialMarketAuditEvent MaterialMarketAuditEvent[]
   MaterialMarketAlert  MaterialMarketAlert[]
   MaterialMarketAlertConfig MaterialMarketAlertConfig?
+  MaterialMarketPurchaseLink MaterialMarketPurchaseLink[]
   ProductBOM           ProductBOM[]
   PurchaseRequestItem  PurchaseRequestItem[]
   ProjectStructureLine ProjectStructureLine[]

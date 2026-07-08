@@ -123,6 +123,17 @@ import {
 } from "./src/lib/materialMarketAlert.js";
 import { evaluateAndPersistMaterialMarketAlerts } from "./src/lib/materialMarketAlertService.js";
 import {
+  parseMaterialMarketAlertGlobalConfigInput,
+  parseMaterialMarketAlertMaterialConfigInput,
+} from "./src/lib/materialMarketAlertConfig.js";
+import {
+  ensureMaterialMarketAlertGlobalConfig,
+  listMaterialMarketAlertConfigAudit,
+  loadEffectiveMaterialMarketAlertConfig,
+  saveMaterialMarketAlertGlobalConfig,
+  saveMaterialMarketAlertMaterialConfig,
+} from "./src/lib/materialMarketAlertConfig.server.js";
+import {
   buildMaterialMarketSupplierComparison,
   parseMaterialMarketSupplierPeriod,
 } from "./src/lib/materialMarketSupplierComparison.js";
@@ -145,6 +156,15 @@ import {
   buildMaterialMarketFxDecompositionFromRows,
   parseMaterialMarketFxDecompositionPeriod,
 } from "./src/lib/materialMarketFxDecomposition.js";
+import {
+  buildMaterialMarketPurchaseLinkListResponse,
+  buildMaterialMarketPurchaseTimeline,
+  computeMaterialMarketPurchaseSavingsFromContext,
+  MATERIAL_MARKET_PURCHASE_LINK_CURRENCY,
+  MATERIAL_MARKET_PURCHASE_SAVINGS_FORMULA,
+  parseMaterialMarketPurchaseLinkInput,
+  serializeMaterialMarketPurchaseLinkForApi,
+} from "./src/lib/materialMarketPurchaseLink.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -432,7 +452,12 @@ import { registerNomusAutoApplyBomDashboardRoutes } from "./src/lib/nomusAutoApp
 import { registerBrentCommodityRoutes } from "./src/lib/brentCommodityRoutes.js";
 import { registerMaterialMarketQuoteAttachmentRoutes } from "./src/lib/materialMarketQuoteAttachmentRoutes.js";
 import { registerMaterialMarketQuoteGovernanceRoutes } from "./src/lib/materialMarketQuoteGovernanceRoutes.js";
+import { registerMaterialMarketAuditRoutes } from "./src/lib/materialMarketAuditRoutes.js";
+import { recordMaterialMarketAuditEvent } from "./src/lib/materialMarketAudit.server.js";
+import { registerMaterialMarketQuoteReliabilityRoutes } from "./src/lib/materialMarketQuoteReliabilityRoutes.js";
+import { initializeMaterialMarketQuoteReliability } from "./src/lib/materialMarketQuoteReliability.server.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
+import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
 import {
   applyNomusBomBatchFromDashboard,
   applyNomusBomFromDashboard,
@@ -2986,6 +3011,194 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   );
 
   app.get(
+    "/api/market-intelligence/alert-config/global",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (_req, res) => {
+      try {
+        const effective = await loadEffectiveMaterialMarketAlertConfig(prisma);
+        const global = await ensureMaterialMarketAlertGlobalConfig(prisma);
+        const globalRow = await prisma.materialMarketAlertGlobalConfig.findUnique({
+          where: { id: "GLOBAL" },
+        });
+        res.json({
+          ...effective,
+          usesGlobalConfig: true,
+          materialOverrides: {},
+          updatedAt: globalRow?.updatedAt?.toISOString(),
+          updatedBy: globalRow?.updatedBy ?? null,
+        });
+      } catch (error) {
+        console.error("GET /api/market-intelligence/alert-config/global", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao carregar configuração global de alertas.",
+        });
+      }
+    }
+  );
+
+  app.put(
+    "/api/market-intelligence/alert-config/global",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
+          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+        }
+
+        const parsed = parseMaterialMarketAlertGlobalConfigInput(req.body ?? {});
+        if (parsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_MARKET_ALERT_CONFIG_INVALID",
+            field: parsed.field,
+            message: parsed.message,
+          });
+        }
+
+        const saved = await saveMaterialMarketAlertGlobalConfig(
+          prisma,
+          parsed.value,
+          authUser.id
+        );
+        res.json(saved);
+      } catch (error) {
+        console.error("PUT /api/market-intelligence/alert-config/global", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao salvar configuração global de alertas.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/market-intelligence/alert-config/audit",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const materialId =
+          typeof req.query.materialId === "string" && isUuid(req.query.materialId)
+            ? req.query.materialId
+            : undefined;
+        const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
+        const payload = await listMaterialMarketAlertConfigAudit(prisma, {
+          materialId,
+          limit: Number.isFinite(limitRaw) ? limitRaw : 50,
+        });
+        res.json(payload);
+      } catch (error) {
+        console.error("GET /api/market-intelligence/alert-config/audit", error);
+        res.status(500).json({
+          error:
+            error instanceof Error ? error.message : "Erro ao listar auditoria de configuração.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/materials/market-intelligence/:materialId/alert-config",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const material = await prisma.material.findUnique({ where: { id: materialId } });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const effective = await loadEffectiveMaterialMarketAlertConfig(prisma, materialId);
+        const materialRow = await prisma.materialMarketAlertConfig.findUnique({
+          where: { materialId },
+        });
+
+        res.json({
+          ...effective,
+          materialId,
+          updatedAt: materialRow?.updatedAt?.toISOString(),
+          updatedBy: materialRow?.updatedBy ?? null,
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/materials/market-intelligence/:materialId/alert-config",
+          error
+        );
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao carregar configuração de alertas do material.",
+        });
+      }
+    }
+  );
+
+  app.put(
+    "/api/materials/market-intelligence/:materialId/alert-config",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
+          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+        }
+
+        const material = await prisma.material.findUnique({ where: { id: materialId } });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const parsed = parseMaterialMarketAlertMaterialConfigInput(req.body ?? {});
+        if (parsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_MARKET_ALERT_CONFIG_INVALID",
+            field: parsed.field,
+            message: parsed.message,
+          });
+        }
+
+        const saved = await saveMaterialMarketAlertMaterialConfig(
+          prisma,
+          materialId,
+          parsed.value,
+          { clearOverrides: parsed.clearOverrides, updatedBy: authUser.id }
+        );
+        res.json(saved);
+      } catch (error) {
+        console.error(
+          "PUT /api/materials/market-intelligence/:materialId/alert-config",
+          error
+        );
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao salvar configuração de alertas do material.",
+        });
+      }
+    }
+  );
+
+  app.get(
     "/api/materials/market-intelligence/ptax-preview",
     requireAppAuth,
     requirePermission("materials.view"),
@@ -3206,8 +3419,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   );
 
-  app.post(
-    "/api/materials/market-intelligence/:materialId/simulate",
+  app.get(
+    "/api/materials/market-intelligence/:materialId/purchase-links",
     requireAppAuth,
     requirePermission("materials.view"),
     async (req, res) => {
@@ -3216,38 +3429,201 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         if (!isUuid(materialId)) {
           return res.status(400).json({ error: "ID de material inválido." });
         }
-
-        const parsed = parseMaterialMarketSimulationRequest(req.body ?? {});
-        if (parsed.ok === false) {
-          return res.status(400).json({ error: parsed.message });
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
         }
-
-        const payload = await buildMaterialMarketSimulationForMaterial(
-          prisma,
-          { initAnalysisCache, getProductCostAnalysis, isCostAnalysisFailure, describeCostAnalysisFailure },
-          materialId,
-          parsed.value
-        );
-
-        if ("error" in payload && "status" in payload) {
-          return res.status(payload.status).json({ error: payload.error });
-        }
-
-        res.json(payload);
+        const rows = await prisma.materialMarketPurchaseLink.findMany({
+          where: { materialId },
+          orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+        });
+        res.json(buildMaterialMarketPurchaseLinkListResponse(rows));
       } catch (error) {
         console.error(
-          "POST /api/materials/market-intelligence/:materialId/simulate",
+          "GET /api/materials/market-intelligence/:materialId/purchase-links",
           error
         );
         res.status(500).json({
           error:
             error instanceof Error
               ? error.message
-              : "Erro ao executar simulação de mercado.",
+              : "Erro ao listar vínculos de compra.",
         });
       }
     }
   );
+
+  app.get(
+    "/api/materials/market-intelligence/:materialId/timeline",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+        const rows = await prisma.materialMarketPurchaseLink.findMany({
+          where: { materialId },
+          orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+        });
+        const links = buildMaterialMarketPurchaseLinkListResponse(rows).items;
+        const timeline = buildMaterialMarketPurchaseTimeline(links);
+        res.json({
+          ...timeline,
+          formula: MATERIAL_MARKET_PURCHASE_SAVINGS_FORMULA,
+          currency: MATERIAL_MARKET_PURCHASE_LINK_CURRENCY,
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/materials/market-intelligence/:materialId/timeline",
+          error
+        );
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao carregar timeline de compras.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/materials/market-intelligence/:materialId/purchase-links",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
+          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+        }
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true, currentCost: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+        const parsed = parseMaterialMarketPurchaseLinkInput(req.body ?? {});
+        if (parsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_MARKET_PURCHASE_LINK_INVALID",
+            field: parsed.field,
+            message: parsed.message,
+          });
+        }
+        const quote = await prisma.materialMarketQuote.findFirst({
+          where: { id: parsed.value.quoteId, materialId },
+        });
+        if (!quote) {
+          return res.status(404).json({
+            error: "MATERIAL_MARKET_QUOTE_NOT_FOUND",
+            message: "Cotação não encontrada para esta matéria-prima.",
+          });
+        }
+        const officialRow = await prisma.materialMarketQuote.findFirst({
+          where: { materialId, isOfficialReference: true },
+        });
+        const savings = computeMaterialMarketPurchaseSavingsFromContext({
+          quote,
+          negotiatedPrice: parsed.value.negotiatedPrice,
+          quantityPurchased: parsed.value.quantityPurchased,
+          currentCost: material.currentCost,
+          officialQuote: officialRow,
+        });
+        if (savings.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_MARKET_PURCHASE_SAVINGS_UNAVAILABLE",
+            message: savings.message,
+          });
+        }
+        const link = await prisma.materialMarketPurchaseLink.create({
+          data: {
+            materialId,
+            quoteId: parsed.value.quoteId,
+            purchaseOrderId: parsed.value.purchaseOrderId,
+            purchaseOrderNumber: parsed.value.purchaseOrderNumber,
+            supplierName: parsed.value.supplierName,
+            quantityPurchased: parsed.value.quantityPurchased,
+            negotiatedPrice: parsed.value.negotiatedPrice,
+            purchaseDate: parsed.value.purchaseDate,
+            choiceReason: parsed.value.choiceReason,
+            estimatedSavings: savings.value.estimatedSavings,
+            referenceUnitPriceBrl: savings.value.referenceUnitPriceBrl,
+            currency: MATERIAL_MARKET_PURCHASE_LINK_CURRENCY,
+            createdBy: authUser.id,
+          },
+        });
+        try {
+          await prisma.materialMarketAuditEvent.create({
+            data: {
+              materialId,
+              entityType: "PURCHASE_LINK",
+              entityId: link.id,
+              eventType: "PURCHASE_LINKED",
+              userId: authUser.id,
+              userName: authUser.email ?? null,
+              reason: parsed.value.choiceReason,
+              afterJson: {
+                quoteId: link.quoteId,
+                purchaseOrderId: link.purchaseOrderId,
+                purchaseOrderNumber: link.purchaseOrderNumber,
+                supplierName: link.supplierName,
+                quantityPurchased: Number(link.quantityPurchased),
+                negotiatedPrice: Number(link.negotiatedPrice),
+                estimatedSavings: Number(link.estimatedSavings),
+                referenceUnitPriceBrl: Number(link.referenceUnitPriceBrl),
+                referenceSource: savings.value.referenceSource,
+                purchaseDate: link.purchaseDate,
+              },
+              metadata: {
+                message: "Compra vinculada à cotação " + quote.id,
+                formula: MATERIAL_MARKET_PURCHASE_SAVINGS_FORMULA,
+              },
+            },
+          });
+        } catch (auditError) {
+          console.error(
+            "POST purchase-link — falha ao registrar auditoria (vínculo criado)",
+            auditError
+          );
+        }
+        res.status(201).json({
+          ...serializeMaterialMarketPurchaseLinkForApi(link),
+          referenceSource: savings.value.referenceSource,
+          formula: MATERIAL_MARKET_PURCHASE_SAVINGS_FORMULA,
+        });
+      } catch (error) {
+        console.error(
+          "POST /api/materials/market-intelligence/:materialId/purchase-links",
+          error
+        );
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao vincular compra à cotação.",
+        });
+      }
+    }
+  );
+
 
   app.get(
     "/api/materials/market-intelligence/:materialId/quotes",
@@ -3512,6 +3888,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
         });
 
+        await initializeMaterialMarketQuoteReliability(prisma, quote.id);
+
+        const savedQuote = await prisma.materialMarketQuote.findUnique({
+          where: { id: quote.id },
+          include: { _count: { select: { Attachments: true } } },
+        });
+
         if (material.isMarketMonitored) {
           try {
             await evaluateAndPersistMaterialMarketAlerts(prisma, materialId);
@@ -3523,8 +3906,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           }
         }
 
+        try {
+          await recordMaterialMarketAuditEvent(prisma, {
+            materialId,
+            entityType: "QUOTE",
+            entityId: quote.id,
+            eventType: "CREATED",
+            userId: authUser.id,
+            userName: authUser.name,
+            afterJson: serializeMaterialMarketQuoteForApi(savedQuote ?? quote),
+          });
+        } catch (auditError) {
+          console.error("POST quote — falha ao registrar auditoria", auditError);
+        }
+
         res.status(201).json({
-          ...serializeMaterialMarketQuoteForApi(quote),
+          ...serializeMaterialMarketQuoteForApi(savedQuote ?? quote),
           warning: exchangeResolved.warning ?? null,
         });
       } catch (error) {
@@ -3534,93 +3931,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             error instanceof Error
               ? error.message
               : "Erro ao registrar cotação de mercado.",
-        });
-      }
-    }
-  );
-
-  app.post(
-    "/api/materials/market-intelligence/:materialId/quotes/:quoteId/set-official",
-    requireAppAuth,
-    requirePermission("materials.edit"),
-    async (req, res) => {
-      try {
-        const { materialId, quoteId } = req.params;
-        if (!isUuid(materialId) || !isUuid(quoteId)) {
-          return res.status(400).json({ error: "ID de material ou cotação inválido." });
-        }
-
-        const authUser = await getCurrentAppUser(req);
-        if (!authUser) {
-          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
-        }
-
-        const material = await prisma.material.findUnique({
-          where: { id: materialId },
-          select: { id: true, currentCost: true, standardCost: true },
-        });
-        if (!material) {
-          return res.status(404).json({ error: "Material não encontrado." });
-        }
-
-        const quotes = await prisma.materialMarketQuote.findMany({
-          where: { materialId },
-          select: { id: true, materialId: true, isOfficialReference: true },
-        });
-
-        const planned = planSetMaterialOfficialQuote({ materialId, quoteId, quotes });
-        if (planned.ok === false) {
-          if (planned.code === "QUOTE_NOT_FOUND") {
-            return res.status(404).json({ error: "Cotação não encontrada." });
-          }
-          return res.status(400).json({ error: "Cotação não pertence a esta matéria-prima." });
-        }
-
-        const body = req.body ?? {};
-        const reason =
-          typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
-        const changedBy = authUser.id ?? authUser.email ?? null;
-
-        await prisma.$transaction(async (tx) => {
-          await tx.materialMarketQuote.updateMany({
-            where: { materialId, isOfficialReference: true },
-            data: { isOfficialReference: false, updatedBy: changedBy },
-          });
-          await tx.materialMarketQuote.update({
-            where: { id: quoteId },
-            data: { isOfficialReference: true, updatedBy: changedBy },
-          });
-          await tx.materialOfficialQuoteAudit.create({
-            data: {
-              materialId,
-              previousQuoteId: planned.plan.previousQuoteId,
-              newQuoteId: quoteId,
-              changedBy,
-              reason,
-            },
-          });
-        });
-
-        const officialRow = await prisma.materialMarketQuote.findUnique({
-          where: { id: quoteId },
-        });
-        const officialQuote = buildMaterialOfficialQuoteSummary(officialRow);
-
-        res.json({
-          ok: true,
-          officialQuote,
-          previousQuoteId: planned.plan.previousQuoteId,
-        });
-      } catch (error) {
-        console.error(
-          "POST /api/materials/market-intelligence/:materialId/quotes/:quoteId/set-official",
-          error
-        );
-        res.status(500).json({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Erro ao definir cotação oficial de referência.",
         });
       }
     }
@@ -6608,6 +6918,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     getCurrentAppUser,
   });
 
+  registerMaterialMarketAuditRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+  }, {
+    prisma,
+    getCurrentAppUser,
+  });
+
   registerMaterialMarketQuoteAttachmentRoutes(
     app,
     {
@@ -6619,9 +6937,25 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     { prisma, isUuid }
   );
 
+  registerMaterialMarketQuoteReliabilityRoutes(
+    app,
+    {
+      requireAppAuth,
+      getCurrentAppUser,
+    },
+    { prisma, isUuid }
+  );
+
   registerMarketGlobalIndicatorsRoutes(app, {
     requireAppAuth,
     requirePermission,
+  });
+
+  registerMaterialMarketIntelligenceExportRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+  }, {
+    prisma,
   });
 
   app.get(

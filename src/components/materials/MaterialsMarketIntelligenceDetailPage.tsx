@@ -32,8 +32,11 @@ import { MaterialIntelligenceSuppliersSection } from "@/src/components/materials
 import { MaterialIntelligenceAlertsSection } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialIntelligenceImpactedProductsSection } from "@/src/components/materials/MaterialIntelligenceImpactedProductsSection";
 import { MaterialIntelligenceFinancialImpactSection } from "@/src/components/materials/MaterialIntelligenceFinancialImpactSection";
+import { MaterialIntelligenceAuditSection } from "@/src/components/materials/MaterialIntelligenceAuditSection";
 import { MaterialIntelligenceSimulationPanel } from "@/src/components/materials/MaterialIntelligenceSimulationPanel";
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
+import { MaterialIntelligencePurchaseTimelineSection } from "@/src/components/materials/MaterialIntelligencePurchaseTimelineSection";
+import { MaterialMarketAlertConfigPanel } from "@/src/components/materials/MaterialMarketAlertConfigPanel";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
   audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
@@ -44,6 +47,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const [item, setItem] = useState<MaterialIntelligenceDetailItem | null>(null);
   const [quotes, setQuotes] = useState<MaterialMarketQuoteApiItem[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [purchaseRefreshKey, setPurchaseRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
@@ -104,6 +108,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const handleQuoteCreated = async () => {
     await loadQuotes();
     await load();
+    setPurchaseRefreshKey((k) => k + 1);
   };
 
   const headerItem = useMemo(() => {
@@ -179,6 +184,10 @@ export function MaterialsMarketIntelligenceDetailPage() {
         <div className="space-y-6" data-testid="material-intelligence-360-page">
           <MaterialIntelligence360Header item={headerItem ?? item} />
 
+          {item.isMarketMonitored ? (
+            <MaterialMarketAlertConfigPanel materialId={item.id} />
+          ) : null}
+
           {!item.isMarketMonitored ? (
             <MaterialIntelligenceActivatePanel
               criticality={activationCriticality}
@@ -228,12 +237,19 @@ export function MaterialsMarketIntelligenceDetailPage() {
 
             <MaterialIntelligenceImpactedProductsSection materialId={item.id} />
 
+            <MaterialIntelligencePurchaseTimelineSection
+              materialId={item.id}
+              refreshKey={purchaseRefreshKey}
+            />
+
             <MaterialIntelligenceFinancialImpactSection
               materialId={item.id}
               unit={item.unit}
               defaultSimulatedPrice={quotes[0]?.netPrice ?? null}
               defaultBaselinePrice={item.currentCost ?? null}
             />
+
+            <MaterialIntelligenceAuditSection materialId={item.id} />
 
             {MATERIAL_INTELLIGENCE_360_PLACEHOLDER_SECTIONS.map((section) => (
               <MaterialIntelligence360SectionPlaceholder

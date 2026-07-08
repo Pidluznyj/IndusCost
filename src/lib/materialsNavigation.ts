@@ -25,6 +25,12 @@ export const MATERIALS_MARKET_INTELLIGENCE_OPPORTUNITIES_API =
 export const MATERIALS_MARKET_INTELLIGENCE_ALERTS_API =
   "/api/materials/market-intelligence/alerts" as const;
 
+export const MATERIAL_MARKET_ALERT_GLOBAL_CONFIG_API =
+  "/api/market-intelligence/alert-config/global" as const;
+
+export const MATERIAL_MARKET_ALERT_CONFIG_AUDIT_API =
+  "/api/market-intelligence/alert-config/audit" as const;
+
 export const BRENT_COMMODITY_LATEST_API =
   "/api/market-intelligence/commodities/brent/latest" as const;
 
@@ -39,8 +45,25 @@ export function getMaterialMarketIntelligenceDetailApiPath(materialId: string): 
   return `/api/materials/market-intelligence/${materialId}`;
 }
 
+export function getMaterialMarketAlertConfigApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/alert-config`;
+}
+
 export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/quotes`;
+}
+
+export function getMaterialMarketIntelligenceAuditApiPath(
+  materialId: string,
+  query?: { limit?: number | string; offset?: number | string }
+): string {
+  const base = `/api/materials/market-intelligence/${materialId}/audit`;
+  if (!query) return base;
+  const params = new URLSearchParams();
+  if (query.limit != null) params.set("limit", String(query.limit));
+  if (query.offset != null) params.set("offset", String(query.offset));
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 export function getMaterialMarketQuoteAttachmentsApiPath(
@@ -48,6 +71,13 @@ export function getMaterialMarketQuoteAttachmentsApiPath(
   quoteId: string
 ): string {
   return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/attachments`;
+}
+
+export function getMaterialMarketQuoteReliabilityApiPath(
+  materialId: string,
+  quoteId: string
+): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}/reliability`;
 }
 
 export function getMaterialMarketQuoteAttachmentDownloadApiPath(
@@ -185,6 +215,14 @@ export function getMaterialMarketIntelligenceAlertsEvaluateApiPath(materialId: s
 
 export function getMaterialMarketIntelligenceImpactedProductsApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/impacted-products`;
+}
+
+export function getMaterialMarketIntelligencePurchaseLinksApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/purchase-links`;
+}
+
+export function getMaterialMarketIntelligenceTimelineApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/timeline`;
 }
 
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {

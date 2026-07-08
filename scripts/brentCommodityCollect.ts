@@ -5,13 +5,22 @@
  *   npm run collect:brent
  */
 import "dotenv/config";
-import { collectBrentCommoditySnapshot, serializeBrentSnapshotForApi } from "../src/lib/brentCommodityCollection.js";
+import {
+  collectBrentCommoditySnapshot,
+  serializeBrentSnapshotForApi,
+} from "../src/lib/brentCommodityCollection.js";
 
 async function main(): Promise<void> {
-  const outcome = await collectBrentCommoditySnapshot();
-  const snapshot = serializeBrentSnapshotForApi(outcome.snapshot);
+  const outcome = await collectBrentCommoditySnapshot({ trigger: "MANUAL" });
+  if (outcome.action === "skipped") {
+    console.info(
+      `[brent-commodity-collect] skipped slot=${outcome.slot} reason=${outcome.reason}`
+    );
+    return;
+  }
 
-  console.info(`[brent-commodity-collect] ${snapshot.status} id=${snapshot.id}`);
+  const snapshot = serializeBrentSnapshotForApi(outcome.snapshot);
+  console.info(`[brent-commodity-collect] ${snapshot.status} id=${snapshot.id} slot=${outcome.slot}`);
   if (snapshot.status === "SUCCESS") {
     console.info(
       `[brent-commodity-collect] priceUSD=${snapshot.priceUSD} variation=${snapshot.variationFromPrevious ?? "n/a"}`
