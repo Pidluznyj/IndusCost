@@ -4,7 +4,7 @@ import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
 import { MachineModule } from "./components/MachineModule";
-import { MaterialModule } from "./components/MaterialModule";
+import { MaterialsModule } from "./components/MaterialsModule";
 import { ProductModule } from "./components/ProductModule";
 import { IndirectCostModule } from "./components/IndirectCostModule";
 import { TaxModule } from "./components/TaxModule";
@@ -337,13 +337,13 @@ export default function App() {
           }
         />
         <Route
-          path="materials"
+          path="materials/*"
           element={
             <ModulePageShell
               title="Suprimentos"
               description="Gestão de matérias-primas, insumos e custos de aquisição."
             >
-              <MaterialModule />
+              <MaterialsModule />
             </ModulePageShell>
           }
         />
