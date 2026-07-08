@@ -89,6 +89,28 @@ export function MaterialIntelligence360Header({ item }: Props) {
       </div>
 
       <SummaryKpiGrid testId="material-intelligence-360-kpis">
+        {item.officialQuote ? (
+          <SummaryKpiCard
+            label="Cotação oficial"
+            value={
+              item.officialQuote.priceBrl != null
+                ? formatCurrency(item.officialQuote.priceBrl)
+                : "—"
+            }
+            description={`${item.officialQuote.supplierName ?? "Fornecedor não informado"} · ${
+              item.officialQuote.quoteDate
+                ? formatMaterialIntelligenceQuoteDate(item.officialQuote.quoteDate)
+                : "—"
+            }`}
+            helperText="Cotação oficial"
+          />
+        ) : (
+          <SummaryKpiCard
+            label="Cotação oficial"
+            value="Não definida"
+            helperText="Defina uma cotação de referência na lista abaixo"
+          />
+        )}
         <SummaryKpiCard
           label="Última cotação"
           value={

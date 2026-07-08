@@ -14,6 +14,11 @@ import {
   type MaterialMarketSituationResult,
 } from "./materialMarketSituationStatus.js";
 import type { MaterialMarketQuoteSourceRow } from "./materialMarketQuote.js";
+import {
+  buildMaterialOfficialQuoteSummary,
+  resolveMaterialOfficialQuoteRow,
+  type MaterialOfficialQuoteSummary,
+} from "./materialOfficialQuote.js";
 
 export type MonitoredMaterialPriceHistoryRow = {
   price: number | string;
@@ -45,6 +50,7 @@ export type MonitoredMaterialListItem = {
   monitoringStatusLabel: string;
   lastQuoteAmount: number | null;
   lastQuoteDate: string | null;
+  officialQuote: MaterialOfficialQuoteSummary | null;
   intelligencePath: string;
   marketSituation: MaterialMarketSituationResult;
 };
@@ -100,6 +106,9 @@ export function mapMonitoredMaterialListItem(
   const marketSituation = classifyMaterialMarketSituationFromQuotes(
     material.MaterialMarketQuote
   );
+  const officialQuote = buildMaterialOfficialQuoteSummary(
+    resolveMaterialOfficialQuoteRow(material.MaterialMarketQuote ?? [])
+  );
 
   return {
     id: material.id,
@@ -113,6 +122,7 @@ export function mapMonitoredMaterialListItem(
     monitoringStatusLabel: `Monitorada · ${MATERIAL_MARKET_CRITICALITY_LABELS[marketCriticality]}`,
     lastQuoteAmount: lastQuote.amount,
     lastQuoteDate: lastQuote.date,
+    officialQuote,
     intelligencePath: getMaterialMarketIntelligenceDetailPath(material.id),
     marketSituation,
   };

@@ -184,6 +184,7 @@ export function MaterialsMarketIntelligenceMonitoredList() {
                   <th className="p-4 text-sm font-semibold">Criticidade</th>
                   <th className="p-4 text-sm font-semibold">Situação</th>
                   <th className="p-4 text-sm font-semibold">Última cotação</th>
+                  <th className="p-4 text-sm font-semibold">Cotação oficial</th>
                   <th className="p-4 text-sm font-semibold text-right">Ações</th>
                 </tr>
               </thead>
@@ -209,6 +210,18 @@ export function MaterialsMarketIntelligenceMonitoredList() {
                           <p className="font-medium">{formatCurrency(mat.lastQuoteAmount)}</p>
                           <p className="text-xs text-muted-foreground">
                             {formatLastQuoteDate(mat.lastQuoteDate)}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-sm" data-testid={`material-official-quote-${mat.id}`}>
+                      {mat.officialQuote?.priceBrl != null ? (
+                        <div>
+                          <p className="font-medium">{formatCurrency(mat.officialQuote.priceBrl)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatLastQuoteDate(mat.officialQuote.quoteDate)}
                           </p>
                         </div>
                       ) : (

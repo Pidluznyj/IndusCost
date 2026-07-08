@@ -116,4 +116,32 @@ describe("materialMarketIntelligenceMonitored", () => {
     );
     assert.equal(mapped.marketSituation.status, "OPORTUNIDADE");
   });
+
+  it("mapeia cotação oficial na listagem monitorada", () => {
+    const mapped = mapMonitoredMaterialListItem(
+      row({
+        id: "a",
+        code: "MP-A",
+        MaterialMarketQuote: [
+          {
+            id: "q-official",
+            materialId: "a",
+            supplierName: "Fornecedor Oficial",
+            quoteDate: "2026-04-01",
+            price: 50,
+            currency: "BRL",
+            unit: "KG",
+            netPrice: 50,
+            status: "ACTIVE",
+            isOfficialReference: true,
+            createdAt: "2026-04-01T10:00:00Z",
+            updatedAt: "2026-04-01T10:00:00Z",
+          },
+        ],
+      })
+    );
+    assert.ok(mapped.officialQuote);
+    assert.equal(mapped.officialQuote?.priceBrl, 50);
+    assert.equal(mapped.officialQuote?.supplierName, "Fornecedor Oficial");
+  });
 });
