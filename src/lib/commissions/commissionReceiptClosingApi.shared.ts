@@ -10,6 +10,9 @@ export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY = "—";
 
 export const RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL = "Sem vendedor / Excluído";
 
+/** Chave do bucket quando o pedido Nomus não tem vendedor comissionável. */
+export const RECEIPT_CLOSING_NO_SELLER_GROUP_KEY = "no-seller";
+
 const RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES = new Set(["CUSTOMER_EXCLUDED"]);
 
 export const RECEIPT_CLOSING_GROUP_COMPANY_STATUS = "GROUP_COMPANY_EXCLUDED" as const;
@@ -58,7 +61,7 @@ export function resolveReceiptClosingSellerGroupKey(line: {
     return `nomus-unresolved:${line.rawSellerId}`;
   }
   if (line.sellerResolutionStatus === "NO_SELLER") {
-    return "no-seller";
+    return RECEIPT_CLOSING_NO_SELLER_GROUP_KEY;
   }
   return (
     line.canonicalSellerName ??
@@ -160,6 +163,8 @@ export type ReceiptClosingApiLine = {
 };
 
 export type ReceiptClosingApiSellerRow = {
+  /** Chave estável de agrupamento — usada no filtro do detalhamento. */
+  sellerGroupKey: string;
   sellerId: string | null;
   sellerName: string | null;
   receivableCount: number;

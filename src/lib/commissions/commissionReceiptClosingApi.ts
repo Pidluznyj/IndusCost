@@ -729,6 +729,7 @@ export function buildReceiptClosingBySeller(
     const isUnassignedBucket = key === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
     const resolvedSellerName = receiptClosingSellerGroupLabelFromLine(line);
     const row = map.get(key) ?? {
+      sellerGroupKey: key,
       sellerId: isUnassignedBucket ? null : line.canonicalSellerId,
       sellerName: isUnassignedBucket
         ? null

@@ -1075,6 +1075,7 @@ export type CommissionsReceiptClosingLine = {
 };
 
 export type CommissionsReceiptClosingSellerRow = {
+  sellerGroupKey: string;
   sellerId: string | null;
   sellerName: string | null;
   receivableCount: number;

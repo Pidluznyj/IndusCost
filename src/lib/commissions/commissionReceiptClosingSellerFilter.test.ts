@@ -9,7 +9,10 @@ import {
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
 } from "./commissionReceiptClosingSellerFilter.js";
-import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY } from "./commissionReceiptClosingApi.shared.js";
+import {
+  RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
+  RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
+} from "./commissionReceiptClosingApi.shared.js";
 
 function line(
   partial: Partial<ReceiptClosingApiLine> & Pick<ReceiptClosingApiLine, "lineKey">
@@ -85,7 +88,7 @@ describe("commissionReceiptClosingSellerFilter", () => {
     );
   });
 
-  it("linha sem vendedor canônico usa chave —", () => {
+  it("linha sem vendedor canônico e sem sellerResolutionStatus usa chave —", () => {
     assert.equal(
       receiptClosingLineSellerKey({
         status: "NO_SELLER",
@@ -98,6 +101,27 @@ describe("commissionReceiptClosingSellerFilter", () => {
     assert.equal(
       receiptClosingSellerFilterLabel({ sellerId: null, sellerName: null }),
       "Sem vendedor / Excluído"
+    );
+  });
+
+  it("NO_SELLER com sellerResolutionStatus usa chave no-seller", () => {
+    assert.equal(
+      receiptClosingLineSellerKey({
+        status: "NO_SELLER",
+        sellerResolutionStatus: "NO_SELLER",
+        canonicalSellerId: null,
+        canonicalSellerName: "Sem vendedor no pedido Nomus",
+        rawSellerName: null,
+      }),
+      RECEIPT_CLOSING_NO_SELLER_GROUP_KEY
+    );
+    assert.equal(
+      receiptClosingSellerRowKey({
+        sellerGroupKey: RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
+        sellerId: null,
+        sellerName: "Sem vendedor no pedido Nomus",
+      }),
+      RECEIPT_CLOSING_NO_SELLER_GROUP_KEY
     );
   });
 
@@ -151,8 +175,9 @@ describe("commissionReceiptClosingSellerFilter", () => {
       line({
         lineKey: "n1",
         status: "NO_SELLER",
+        sellerResolutionStatus: "NO_SELLER",
         canonicalSellerId: null,
-        canonicalSellerName: null,
+        canonicalSellerName: "Sem vendedor no pedido Nomus",
         rawSellerName: null,
         nomusReceivableId: 4,
       }),
@@ -161,11 +186,28 @@ describe("commissionReceiptClosingSellerFilter", () => {
     assert.equal(gislene.length, 1);
     assert.equal(gislene[0]?.lineKey, "g1");
 
-    const noSeller = filterReceiptClosingLinesBySellerKey(lines, RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY);
-    assert.equal(noSeller.length, 2);
+    const unassigned = filterReceiptClosingLinesBySellerKey(
+      lines,
+      RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY
+    );
+    assert.equal(unassigned.length, 1);
+    assert.equal(unassigned[0]?.lineKey, "ex1");
+
+    const nomusNoSeller = filterReceiptClosingLinesBySellerKey(
+      lines,
+      RECEIPT_CLOSING_NO_SELLER_GROUP_KEY
+    );
+    assert.equal(nomusNoSeller.length, 1);
+    assert.equal(nomusNoSeller[0]?.lineKey, "n1");
+
+    const summaryKey = receiptClosingSellerRowKey({
+      sellerGroupKey: RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
+      sellerId: null,
+      sellerName: "Sem vendedor no pedido Nomus",
+    });
     assert.deepEqual(
-      noSeller.map((row) => row.lineKey).sort(),
-      ["ex1", "n1"]
+      filterReceiptClosingLinesBySellerKey(lines, summaryKey).map((row) => row.lineKey),
+      ["n1"]
     );
 
     assert.equal(filterReceiptClosingLinesBySellerKey(lines, null).length, 4);

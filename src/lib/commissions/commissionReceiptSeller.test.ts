@@ -9,8 +9,11 @@ import { buildCommissionReceiptPreview } from "./commissionReceiptEngine.js";
 import type { CommissionOrderItemSource, CommissionOrderSourceBundle } from "./commission-types.js";
 import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js";
 import { buildReceiptClosingBySeller } from "./commissionReceiptClosingApi.js";
-import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY } from "./commissionReceiptClosingApi.shared.js";
-import { resolveReceiptClosingSellerGroupKey } from "./commissionReceiptClosingApi.shared.js";
+import {
+  RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
+  RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
+  resolveReceiptClosingSellerGroupKey,
+} from "./commissionReceiptClosingApi.shared.js";
 
 const OK_IDENTITY: CommissionSellerIdentityContext = {
   persons: [
@@ -291,7 +294,20 @@ describe("NO_SCHEDULE + vendedor no motor de fechamento", () => {
     assert.equal(result.lines[0]?.rawSellerId, null);
 
     const key = resolveReceiptClosingSellerGroupKey(result.lines[0]!);
-    assert.equal(key, "no-seller");
+    assert.equal(key, RECEIPT_CLOSING_NO_SELLER_GROUP_KEY);
+
+    const rows = buildReceiptClosingBySeller(
+      result.lines.map((line) => ({
+        ...line,
+        lineKey: line.ledgerLineKey,
+        uniqueReceivedAmount: line.receivedAmount,
+        scheduledCommissionAmount: null,
+        commissionReceivableScheduleId: line.commissionReceivableScheduleId,
+      }))
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.sellerGroupKey, RECEIPT_CLOSING_NO_SELLER_GROUP_KEY);
+    assert.equal(rows[0]?.sellerName, "Sem vendedor no pedido Nomus");
   });
 
   it("NO_SCHEDULE via SalesOrder agrupa no vendedor resolvido", () => {

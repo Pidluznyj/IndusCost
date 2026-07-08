@@ -12,9 +12,11 @@ import { roundMoney } from "./commission-money.shared.js";
 
 /** Chave estável de agrupamento — espelha `buildReceiptClosingBySeller`. */
 export function receiptClosingSellerRowKey(row: {
+  sellerGroupKey?: string | null;
   sellerId: string | null;
   sellerName: string | null;
 }): string {
+  if (row.sellerGroupKey) return row.sellerGroupKey;
   return row.sellerId ?? row.sellerName ?? RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
 }
 
