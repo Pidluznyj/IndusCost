@@ -87,22 +87,161 @@ npx prisma migrate status
 npx prisma migrate deploy
 ```
 
-| Migration | Conteúdo / segurança |
-|-----------|----------------------|
-| `20260714120000_material_market_monitoring` | Colunas em `Material` + enum — defaults seguros |
-| `20260715120000_material_market_quotes` | Tabela `MaterialMarketQuote` (append-only) |
-| `20260716120000_commodity_snapshots` | `CommoditySnapshot` |
-| `20260716130000_ptax_snapshots` | `PtaxSnapshot` |
-| `20260717120000_material_market_alerts` | `MaterialMarketAlert` + enums |
-| `20260717130000_material_market_quote_attachments` | Anexos + audit log + reliability |
-| `20260718120000_material_market_alert_config` | Config global/material + seed `GLOBAL` |
-| `20260718125000_material_official_quote` | Flag oficial + partial unique + audit base |
-| `20260718130000_material_quote_official_governance` | Status/aprovação + evolução da audit |
-| `20260720120000_material_market_audit_events` | Trilha unificada de auditoria |
-| `20260721120000_commodity_snapshot_scheduled_slot` | `scheduledSlot` + `trigger` (backfill) |
-| `20260721130000_material_market_purchase_link` | Vínculo cotação↔compra + enum values |
+| Pasta | Objetivo | Tipo | Destrutiva? | Dependências |
+|-------|----------|------|-------------|--------------|
+| `20260714120000_material_market_monitoring` | Enum criticality + cols `Material` + idx monitorados | ADD | Não | `Material` |
+| `20260715120000_material_market_quotes` | Tabela `MaterialMarketQuote` + enums FX/PTAX/status | ADD | Não | `Material`, `FinancialSupplier` |
+| `20260716120000_commodity_snapshots` | `CommoditySnapshot` (Brent) | ADD | Não | — |
+| `20260716130000_ptax_snapshots` | `PtaxSnapshot` | ADD | Não | — |
+| `20260717120000_material_market_alerts` | `MaterialMarketAlert` + enums | ADD | Não | `Material` |
+| `20260717130000_material_market_quote_attachments` | Anexos + `MaterialMarketQuoteAuditLog` + col reliability sugerida | ADD | Não | `MaterialMarketQuote` |
+| `20260718120000_material_market_alert_config` | Config global/material + seed `GLOBAL` + audit config | ADD | Não | `Material` |
+| `20260718125000_material_official_quote` | Flag oficial + unique parcial + `MaterialOfficialQuoteAudit` | ADD | Não | `Material`, `MaterialMarketQuote` |
+| `20260718130000_material_quote_official_governance` | Status/aprovação + backfill OFFICIAL + relax `newQuoteId` | ALTER (+ UPDATE backfill) | Não* | cols oficiais existentes |
+| `20260719130000_material_quote_reliability_override` | Cols reliability aplicada/override + backfill | ALTER (+ UPDATE) | Não | enum attachments |
+| `20260720120000_material_market_audit_events` | `MaterialMarketAuditEvent` + enums | ADD | Não | `Material` (FK SET NULL) |
+| `20260721120000_commodity_snapshot_scheduled_slot` | `scheduledSlot`/`trigger` + replace índice | ALTER (+ DROP INDEX) | Só índice antigo** | `CommoditySnapshot` |
+| `20260721130000_material_market_purchase_link` | `MaterialMarketPurchaseLink` (+ enum values idempotentes) | ADD | Não | `Material`, `MaterialMarketQuote` |
 
-**Nenhuma** migration deste módulo faz `DROP TABLE` / `TRUNCATE` de dados de produção. Único `DROP` controlado: índice antigo de commodity substituído por índice com `scheduledSlot`.
+\* `DROP NOT NULL` apenas em `MaterialOfficialQuoteAudit.newQuoteId` (coluna permanece; deixa de ser obrigatória).  
+\*\* `DROP INDEX IF EXISTS CommoditySnapshot_commodityType_quoteDate_idx` — substituído por índice com `scheduledSlot`. Sem `DROP TABLE` / `TRUNCATE`.
+
+**Ownership / permissões:** nenhum `OWNER TO`, `GRANT`, `SET ROLE` ou schema extra — objetos no `public` com o role da `DATABASE_URL`.
+
+**UTF-8 BOM:** as 13 migrations MI foram conferidas sem BOM (`EF BB BF`). Requisito: PostgreSQL com `gen_random_uuid()` (já usado no restante do projeto). `ALTER TYPE ... ADD VALUE IF NOT EXISTS` (migration `purchase_link`) exige **PostgreSQL ≥ 15** — mesmo padrão das migrations de comissões/frota.
+
+**Idempotência:** `PURCHASE_LINK` / `PURCHASE_LINKED` já entram em `CREATE TYPE` na migration `audit_events`; a migration `purchase_link` só reafirma com `ADD VALUE IF NOT EXISTS` (no-op se já existirem).
+
+**Schema drift (não bloqueante):** índice `Material_isMarketMonitored_idx` existe na migration SQL, mas `@@index([isMarketMonitored])` **não** está em `schema.prisma` (risco de `db push` futuro dropar o índice — **não usar** `db push` em produção). Índice parcial `MaterialMarketQuote_one_official_per_material_idx` só no SQL (esperado — Prisma não modela partial unique).
+
+---
+
+## 5.1 Checklist SQL pós-migrate (servidor — só SELECT)
+
+Rodar **manualmente** no PostgreSQL após `migrate deploy` (ex.: `runuser -u postgres -- psql -d teste_bi -P pager=off`). Não executar do Cursor.
+
+```sql
+-- 1) Histórico Prisma: as 13 migrations MI devem aparecer
+SELECT migration_name, finished_at, rolled_back_at
+FROM "_prisma_migrations"
+WHERE migration_name LIKE '%material_market%'
+   OR migration_name LIKE '%commodity_snapshot%'
+   OR migration_name LIKE '%ptax_snapshot%'
+   OR migration_name LIKE '%material_official%'
+   OR migration_name LIKE '%material_quote%'
+ORDER BY migration_name;
+
+-- 2) Tabelas-chave
+SELECT c.relname AS table_name
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relkind = 'r'
+  AND c.relname IN (
+    'MaterialMarketQuote',
+    'MaterialMarketQuoteAttachment',
+    'MaterialMarketQuoteAuditLog',
+    'MaterialOfficialQuoteAudit',
+    'MaterialMarketAlert',
+    'MaterialMarketAlertGlobalConfig',
+    'MaterialMarketAlertConfig',
+    'MaterialMarketAlertConfigAudit',
+    'MaterialMarketAuditEvent',
+    'MaterialMarketPurchaseLink',
+    'CommoditySnapshot',
+    'PtaxSnapshot'
+  )
+ORDER BY 1;
+-- Esperado: 12 linhas
+
+-- 3) Colunas Material (monitoramento)
+SELECT column_name, data_type, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'Material'
+  AND column_name IN (
+    'isMarketMonitored', 'marketCriticality',
+    'marketMonitoringFrequencyDays', 'marketNotes'
+  )
+ORDER BY 1;
+
+-- 4) Colunas MaterialMarketQuote (oficial + reliability)
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'MaterialMarketQuote'
+  AND column_name IN (
+    'isOfficialReference', 'officialStatus',
+    'suggestedReliabilityLevel', 'reliabilityLevel',
+    'reliabilitySuggestedLevel', 'reliabilityOverrideReason',
+    'reliabilitySetBy', 'reliabilitySetAt'
+  )
+ORDER BY 1;
+
+-- 5) Commodity scheduledSlot / trigger NOT NULL
+SELECT column_name, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'CommoditySnapshot'
+  AND column_name IN ('scheduledSlot', 'trigger');
+
+-- 6) Seed GLOBAL de alertas
+SELECT id, "alertsEnabled", "daysWithoutQuote"
+FROM "MaterialMarketAlertGlobalConfig"
+WHERE id = 'GLOBAL';
+
+-- 7) Enums (amostra)
+SELECT t.typname, e.enumlabel
+FROM pg_type t
+JOIN pg_enum e ON e.enumtypid = t.oid
+WHERE t.typname IN (
+  'MaterialMarketCriticality',
+  'MaterialMarketQuoteOfficialStatus',
+  'MaterialMarketAuditEntityType',
+  'MaterialMarketAuditEventType',
+  'CommodityCollectionSlot',
+  'CommodityCollectionTrigger'
+)
+ORDER BY 1, e.enumsortorder;
+-- Conferir: PURCHASE_LINK / PURCHASE_LINKED; MORNING / AFTERNOON; SCHEDULED / MANUAL
+
+-- 8) Índices hot-path
+SELECT indexname
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND indexname IN (
+    'Material_isMarketMonitored_idx',
+    'MaterialMarketQuote_materialId_quoteDate_idx',
+    'MaterialMarketQuote_one_official_per_material_idx',
+    'MaterialMarketQuote_materialId_isOfficialReference_idx',
+    'MaterialMarketQuote_materialId_officialStatus_idx',
+    'MaterialMarketAlert_materialId_status_idx',
+    'MaterialMarketAlert_status_triggeredAt_idx',
+    'MaterialMarketAuditEvent_materialId_occurredAt_idx',
+    'CommoditySnapshot_commodityType_quoteDate_scheduledSlot_idx',
+    'CommoditySnapshot_commodityType_status_collectedAt_idx',
+    'PtaxSnapshot_status_collectedAt_idx',
+    'MaterialMarketPurchaseLink_materialId_purchaseDate_idx'
+  )
+ORDER BY 1;
+-- Não deve existir o índice antigo CommoditySnapshot_commodityType_quoteDate_idx
+
+-- 9) FKs MI (Material / Quote / Supplier) + official audit
+SELECT conname, conrelid::regclass AS from_table, confrelid::regclass AS to_table
+FROM pg_constraint
+WHERE contype = 'f'
+  AND (
+    conrelid::regclass::text LIKE '%MaterialMarket%'
+    OR conrelid::regclass::text LIKE '%MaterialOfficialQuoteAudit%'
+  )
+ORDER BY 1;
+-- CommoditySnapshot / PtaxSnapshot não têm FK (esperado)
+
+-- 10) Contagens smoke (não precisam ser > 0 no go-live frio)
+SELECT 'MaterialMarketQuote' AS t, COUNT(*) FROM "MaterialMarketQuote"
+UNION ALL SELECT 'CommoditySnapshot', COUNT(*) FROM "CommoditySnapshot"
+UNION ALL SELECT 'PtaxSnapshot', COUNT(*) FROM "PtaxSnapshot"
+UNION ALL SELECT 'MaterialMarketAlert', COUNT(*) FROM "MaterialMarketAlert"
+UNION ALL SELECT 'MaterialMarketAuditEvent', COUNT(*) FROM "MaterialMarketAuditEvent"
+UNION ALL SELECT 'MaterialMarketPurchaseLink', COUNT(*) FROM "MaterialMarketPurchaseLink";
+```
 
 ---
 
@@ -152,7 +291,8 @@ Com sessão autenticada (`materials.view` / `materials.edit`):
 ## 9. Critérios de go-live
 
 - [ ] Backup DB feito
-- [ ] `migrate deploy` OK (sem migration duplicada/órfã)
+- [ ] `migrate deploy` OK (sem migration duplicada/órfã) — **13** pastas MI listadas acima
+- [ ] Checklist SQL §5.1 OK (histórico, tabelas, enums, índices)
 - [ ] `prisma generate` + app restart OK
 - [ ] Smoke Brent + lista de monitorados OK
 - [ ] `APP_UPLOADS_DIR` persistente e com espaço
