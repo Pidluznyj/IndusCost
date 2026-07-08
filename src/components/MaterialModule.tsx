@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -28,6 +29,7 @@ import {
   MATERIAL_MARKET_CRITICALITY_VALUES,
   type MaterialMarketCriticality,
 } from "@/src/lib/materialMarketMonitoring";
+import { getMaterialMarketIntelligenceDetailPath } from "@/src/lib/materialsNavigation";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -408,7 +410,7 @@ export const MaterialModule = () => {
                 </tr>
               ) : filteredMaterials.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
                     Nenhum material encontrado.
                   </td>
                 </tr>
@@ -475,6 +477,15 @@ export const MaterialModule = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <Link
+                          to={getMaterialMarketIntelligenceDetailPath(mat.id)}
+                          className="inline-flex items-center rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent transition-colors"
+                          title="Inteligência de Mercado"
+                          data-testid={`material-intelligence-link-${mat.id}`}
+                        >
+                          <LineChart className="h-3.5 w-3.5 mr-1" />
+                          Inteligência
+                        </Link>
                         <button
                           onClick={() => toggleMarketMonitoring(mat)}
                           className={cn(

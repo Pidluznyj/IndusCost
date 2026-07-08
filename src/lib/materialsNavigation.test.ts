@@ -67,9 +67,24 @@ describe("materialsNavigation", () => {
   it("rota individual de inteligência preparada", () => {
     const module = read("src/components/MaterialsModule.tsx");
     const list = read("src/components/materials/MaterialsMarketIntelligenceMonitoredList.tsx");
+    const catalog = read("src/components/MaterialModule.tsx");
     assert.match(module, /market-intelligence\/:materialId/);
     assert.match(module, /MaterialsMarketIntelligenceDetailPage/);
     assert.match(list, /Ver Inteligência/);
+    assert.match(catalog, /material-intelligence-link-/);
+    assert.match(catalog, /Inteligência/);
+  });
+
+  it("API de detalhe por matéria-prima", () => {
+    const server = read("server.ts");
+    assert.match(server, /\/api\/materials\/market-intelligence\/:materialId/);
+    assert.match(server, /mapMaterialIntelligenceDetail/);
+  });
+
+  it("detalhe preserva rota individual na canonicalização", () => {
+    const detail = "/materials/market-intelligence/abc-123";
+    assert.equal(isMaterialsCanonicalPath(detail), true);
+    assert.equal(resolveMaterialsCanonicalPath(detail), detail);
   });
 
   it("schema Material possui campos de monitoramento", () => {

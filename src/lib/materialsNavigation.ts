@@ -16,6 +16,10 @@ export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
 export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
   "/api/materials/market-intelligence/monitored" as const;
 
+export function getMaterialMarketIntelligenceDetailApiPath(materialId: string): string {
+  return `/api/materials/market-intelligence/${materialId}`;
+}
+
 export function getMaterialMarketIntelligenceDetailPath(materialId: string): string {
   return `${MATERIALS_SECTION_PATHS.marketIntelligence}/${materialId}`;
 }
@@ -73,6 +77,7 @@ export function isMaterialsCanonicalPath(pathname: string): boolean {
 }
 
 export function resolveMaterialsCanonicalPath(pathname: string): string {
+  if (isMaterialMarketIntelligenceDetailPath(pathname)) return pathname;
   const section = parseMaterialsSectionFromPath(pathname);
   if (section === "marketIntelligence") return MATERIALS_SECTION_PATHS.marketIntelligence;
   return getMaterialsDefaultPath();

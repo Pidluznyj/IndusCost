@@ -83,6 +83,7 @@ import {
   buildMonitoredMaterialListResponse,
   parseMonitoredMaterialCriticalityFilter,
 } from "./src/lib/materialMarketIntelligenceMonitored.js";
+import { mapMaterialIntelligenceDetail } from "./src/lib/materialMarketIntelligenceDetail.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
@@ -2764,6 +2765,40 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             error instanceof Error
               ? error.message
               : "Erro ao listar matérias-primas monitoradas.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/materials/market-intelligence/:materialId",
+    requireAppAuth,
+    requirePermission("materials.view"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!isUuid(materialId)) {
+          return res.status(400).json({ error: "ID de material inválido." });
+        }
+
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          include: {
+            MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 1 },
+          },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        res.json(mapMaterialIntelligenceDetail(material));
+      } catch (error) {
+        console.error("GET /api/materials/market-intelligence/:materialId", error);
+        res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Erro ao carregar inteligência da matéria-prima.",
         });
       }
     }
