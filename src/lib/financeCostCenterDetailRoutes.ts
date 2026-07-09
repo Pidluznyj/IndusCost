@@ -15,6 +15,10 @@ import {
   previewCostCenterReallocationDefault,
 } from "@/src/lib/financeCostCenterDetail.js";
 import {
+  loadCostCenterMonthlyEvolutionDefault,
+  loadCostCenterMonthlyEvolutionForCenters,
+} from "@/src/lib/financeCostCenterMonthlyEvolution.js";
+import {
   buildCostCenterDetailExportBuffer,
 } from "@/src/lib/financeCostCenterDetailExport.js";
 import {
@@ -155,6 +159,37 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
     }
   });
 
+  app.get("/api/finance/cost-centers/allocations/monthly", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const costCenterIds = parseCostCenterIdsParam(req.query.costCenterIds);
+      if (costCenterIds.length < 2) {
+        return res.status(400).json({
+          error: "Informe ao menos dois centros de custo em costCenterIds.",
+          code: "INVALID_FILTER",
+        });
+      }
+
+      const query = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
+      const payload = await loadCostCenterMonthlyEvolutionForCenters(costCenterIds, query);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/allocations/monthly", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar a evolução mensal consolidada dos centros de custo.", error)
+      );
+    }
+  });
+
   app.get("/api/finance/cost-centers/detail/export-data", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
@@ -289,6 +324,30 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       console.error("GET /api/finance/cost-centers/:id/allocations", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao listar alocações do centro de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/:id/allocations/monthly", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const id = String(req.params.id ?? "").trim();
+      const query = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
+      const payload = await loadCostCenterMonthlyEvolutionDefault(id, query);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDetailError ||
+        error instanceof FinanceCostCenterValidationError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDetailError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/:id/allocations/monthly", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar a evolução mensal do centro de custo.", error)
       );
     }
   });
