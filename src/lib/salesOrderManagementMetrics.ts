@@ -99,8 +99,8 @@ export function buildSalesOrderManagementSourceAudit(input: {
   lastNomusSyncAt?: string | null;
   warnings?: string[];
 }): SalesOrderManagementSourceAudit {
-  const consolidated = marginEconomics.consolidated;
-  const itemCounts = marginEconomics.itemCounts;
+  const consolidated = input.marginEconomics.consolidated;
+  const itemCounts = input.marginEconomics.itemCounts;
   const warnings = [...(input.warnings ?? [])];
 
   let partialCoverageWarning: string | null = null;

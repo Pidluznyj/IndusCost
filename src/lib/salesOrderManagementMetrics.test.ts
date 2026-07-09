@@ -71,6 +71,10 @@ function row(
 }
 
 describe("salesOrderManagementMetrics", () => {
+  it("bundle oficial não lança ao montar sourceAudit", () => {
+    assert.doesNotThrow(() => buildOfficialManagementMetricsBundle([], new Map()));
+  });
+
   it("valor vendido agrega SalesOrder.totalNetValue", () => {
     const bundle = buildOfficialManagementMetricsBundle(
       [
