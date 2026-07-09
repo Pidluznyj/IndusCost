@@ -147,6 +147,7 @@ export function resolveMaterializedScheduleExclusionRuleId(input: {
   const exclusion = resolveCustomerExclusionForSale({
     customerId: input.schedule.customerId ?? input.receivable.customerId,
     customerExternalId: input.receivable.customerExternalId,
+    customerTaxId: input.receivable.customerCnpj ?? null,
     customerName: input.receivable.customerName,
     referenceDate: input.receivable.settlementDate,
     rules: input.exclusionRules,
@@ -698,6 +699,7 @@ export function resolveCustomerExclusionForReceivable(input: {
     customerId: input.receivable.customerId ?? null,
     customerExternalId:
       input.receivable.customerExternalId ?? input.order?.customerExternalId ?? null,
+    customerTaxId: input.receivable.customerCnpj ?? null,
     customerName: input.receivable.customerName ?? input.order?.customerName ?? null,
     referenceDate: resolveReceivableExclusionReferenceDate(input.receivable, input.order),
     rules: input.exclusionRules,
@@ -1317,6 +1319,7 @@ function calculatePreviewLinesForReceivable(input: {
   const exclusion = resolveCustomerExclusionForSale({
     customerId: receivable.customerId ?? order.localOrderId,
     customerExternalId: receivable.customerExternalId ?? order.customerExternalId,
+    customerTaxId: receivable.customerCnpj ?? null,
     customerName: receivable.customerName ?? order.customerName,
     referenceDate,
     rules: exclusionRules,

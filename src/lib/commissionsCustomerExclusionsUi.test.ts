@@ -20,10 +20,13 @@ describe("commissionsCustomerExclusionsUi", () => {
     assert.match(page, /Exceções por cliente/);
     assert.match(page, /Nova exclusão de cliente/);
     assert.match(page, /useCommissionsCustomerExclusionsData/);
+    assert.match(page, /Reconciliação com Fechamento do mês/);
+    assert.match(page, /Empresas do grupo excluídas automaticamente/);
     const hook = read(
       "src/components/commissions/customerExclusions/useCommissionsCustomerExclusionsData.ts"
     );
     assert.match(hook, /\/api\/commissions\/customer-exclusions/);
+    assert.match(hook, /closing-reconciliation/);
   });
 
   it("usa CustomerAutocompleteFilter no modal", () => {

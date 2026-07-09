@@ -1,12 +1,20 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { HttpError } from "@/src/lib/http";
+import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import { COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS } from "@/src/lib/commissionsPermissions";
+import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
+import {
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
+import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
   CommissionsSectionIntro,
   CommissionsTableScroll,
@@ -15,6 +23,10 @@ import {
 import type { CustomerExclusionRuleItem } from "@/src/components/commissions/commissionsTypes";
 import { CommissionsCustomerExclusionFormModal } from "@/src/components/commissions/customerExclusions/CommissionsCustomerExclusionFormModal";
 import {
+  CUSTOMER_EXCLUSION_CLOSING_IMPACT_LABEL,
+  CUSTOMER_EXCLUSION_EXCLUDED_LABEL,
+  CUSTOMER_EXCLUSION_GROUP_AUTO_TYPE_LABEL,
+  CUSTOMER_EXCLUSION_MANUAL_TYPE_LABEL,
   customerExclusionStatusBadgeClass,
   formatCustomerExclusionStatus,
   formatEffectiveRange,
@@ -24,6 +36,7 @@ import {
 import {
   createCustomerExclusionApi,
   inactivateCustomerExclusionApi,
+  mapRuleImpactById,
   updateCustomerExclusionApi,
   useCommissionsCustomerExclusionsData,
 } from "@/src/components/commissions/customerExclusions/useCommissionsCustomerExclusionsData";
@@ -33,7 +46,13 @@ export function CommissionsCustomerExclusionsPage() {
   const canManage = auth.hasAnyPermission([...COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS]);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState<string | null>(null);
-  const { data, loading, error, reload } = useCommissionsCustomerExclusionsData(search);
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [month, setMonth] = useState(String(new Date().getMonth() + 1));
+  const { data, reconciliation, loading, error, reload } = useCommissionsCustomerExclusionsData(
+    search,
+    year,
+    month
+  );
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingRow, setEditingRow] = useState<CustomerExclusionRuleItem | null>(null);
@@ -42,6 +61,7 @@ export function CommissionsCustomerExclusionsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const rows = data?.rows ?? [];
+  const ruleImpact = useMemo(() => mapRuleImpactById(reconciliation), [reconciliation]);
 
   function openCreate() {
     setModalMode("create");
@@ -106,9 +126,148 @@ export function CommissionsCustomerExclusionsPage() {
     <div className="space-y-5" data-testid="commissions-customer-exclusions-page">
       <CommissionsSectionIntro
         title="Exceções por cliente"
-        description="Cadastre clientes que não geram comissão. A regra zera a comissão dentro da vigência, com motivo auditável — sem ocultar pedidos, NFs ou títulos."
+        description="Cadastro oficial das exclusões manuais usadas pelo Fechamento, Previsão e Auditoria Visual. Empresas do grupo são excluídas automaticamente — não precisam ser cadastradas aqui."
         testId="commissions-customer-exclusions-intro"
       />
+
+      <ExecutiveAlert
+        variant="info"
+        density="compact"
+        title="Regra oficial"
+        description="Exceções impactam o cálculo no backend (CommissionCustomerExclusionRule). Clientes excluídos não entram no grid comissionável do vendedor e aparecem na auditoria como excluídos."
+      />
+
+      <div className="rounded-xl border p-4 space-y-3">
+        <CommissionsPeriodFilterFields
+          year={year}
+          month={month}
+          onYearChange={setYear}
+          onMonthChange={setMonth}
+          yearLabel="Ano do fechamento"
+          monthLabel="Mês do fechamento"
+        />
+        <p className="text-xs text-muted-foreground">
+          A reconciliação abaixo usa o mesmo universo do Fechamento do mês (settlementDate).
+        </p>
+      </div>
+
+      {reconciliation ? (
+        <CommissionsKpiSection
+          title="Reconciliação com Fechamento do mês"
+          eyebrow={reconciliation.scopeNote}
+          testId="commissions-customer-exclusions-reconciliation-kpi"
+          minColumnWidth={220}
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Clientes excluídos (fechamento)"
+            amount={reconciliation.materializationSummary.excludedCustomerCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Empresas do grupo excluídas"
+            amount={reconciliation.materializationSummary.groupCompanyExcludedCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Recebido grupo (auditoria)"
+            amount={reconciliation.materializationSummary.groupCompanyExcludedReceivedAmount}
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Total recebido gerencial"
+            amount={reconciliation.materializationSummary.totalReceivedAmount}
+          />
+        </CommissionsKpiSection>
+      ) : null}
+
+      {reconciliation && reconciliation.manualExcludedCustomers.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-customer-exclusions-closing-manual">
+          <p className="mb-2 text-sm font-semibold">
+            Clientes excluídos no fechamento selecionado ({CUSTOMER_EXCLUSION_EXCLUDED_LABEL})
+          </p>
+          <table className="min-w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Cliente</th>
+                <th className="px-3 py-2">ID Nomus</th>
+                <th className="px-3 py-2">Tipo</th>
+                <th className="px-3 py-2">Motivo</th>
+                <th className="px-3 py-2 text-right">Títulos</th>
+                <th className="px-3 py-2 text-right">Recebido</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {reconciliation.manualExcludedCustomers.map((row) => (
+                <tr key={row.customerKey}>
+                  <td className="px-3 py-2 font-medium">{row.customerName ?? "—"}</td>
+                  <td className="px-3 py-2">{row.customerExternalId ?? "—"}</td>
+                  <td className="px-3 py-2">{CUSTOMER_EXCLUSION_EXCLUDED_LABEL}</td>
+                  <td className="px-3 py-2">{row.exclusionReason ?? "—"}</td>
+                  <td className="px-3 py-2 text-right">{row.receivableCount}</td>
+                  <td className="px-3 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CommissionsTableScroll>
+      ) : null}
+
+      {reconciliation && reconciliation.groupCompanyExcluded.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-customer-exclusions-closing-group">
+          <p className="mb-2 text-sm font-semibold">
+            Empresas do grupo excluídas automaticamente ({CUSTOMER_EXCLUSION_GROUP_AUTO_TYPE_LABEL})
+          </p>
+          <table className="min-w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Empresa</th>
+                <th className="px-3 py-2">CNPJ</th>
+                <th className="px-3 py-2">Tipo</th>
+                <th className="px-3 py-2 text-right">Títulos</th>
+                <th className="px-3 py-2 text-right">Recebido</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {reconciliation.groupCompanyExcluded.map((row) => (
+                <tr key={row.cnpj}>
+                  <td className="px-3 py-2 font-medium">{row.companyName}</td>
+                  <td className="px-3 py-2">{row.displayCnpj}</td>
+                  <td className="px-3 py-2">{row.exclusionLabel}</td>
+                  <td className="px-3 py-2 text-right">{row.receivableCount}</td>
+                  <td className="px-3 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CommissionsTableScroll>
+      ) : null}
+
+      {reconciliation ? (
+        <CommissionsTableScroll testId="commissions-customer-exclusions-fixed-group">
+          <p className="mb-2 text-sm font-semibold">Empresas do grupo — exclusão fixa (sem cadastro manual)</p>
+          <table className="min-w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Empresa</th>
+                <th className="px-3 py-2">CNPJ</th>
+                <th className="px-3 py-2">Tipo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {reconciliation.fixedGroupCompanies.map((row) => (
+                <tr key={row.cnpj}>
+                  <td className="px-3 py-2">{row.name}</td>
+                  <td className="px-3 py-2">{row.displayCnpj}</td>
+                  <td className="px-3 py-2">{row.exclusionLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CommissionsTableScroll>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form onSubmit={applySearch} className="flex max-w-md flex-1 gap-2">
@@ -174,65 +333,86 @@ export function CommissionsCustomerExclusionsPage() {
 
       {rows.length > 0 ? (
         <CommissionsTableScroll testId="commissions-customer-exclusions-table">
-          <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-semibold">Cliente</th>
-              <th className="px-3 py-2 font-semibold">Documento/CNPJ</th>
-              <th className="px-3 py-2 font-semibold">ID Nomus</th>
-              <th className="px-3 py-2 font-semibold">Vigência</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold">Motivo</th>
-              <th className="px-3 py-2 font-semibold">Atualizado em</th>
-              {canManage ? <th className="px-3 py-2 font-semibold">Ações</th> : null}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border bg-background">
-            {rows.map((row) => (
-              <tr key={row.id} data-testid={`customer-exclusion-row-${row.id}`}>
-                <td className="px-3 py-2 font-medium">{row.customerNameSnapshot}</td>
-                <td className="px-3 py-2">{formatTaxIdDisplay(row.customerTaxId)}</td>
-                <td className="px-3 py-2">{row.customerExternalId ?? "—"}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {formatEffectiveRange(row.effectiveFrom, row.effectiveTo)}
-                </td>
-                <td className="px-3 py-2">
-                  <span className={customerExclusionStatusBadgeClass(row.status)}>
-                    {formatCustomerExclusionStatus(row.status)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 max-w-xs truncate" title={row.reason}>
-                  {row.reason}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {new Date(row.updatedAt).toLocaleString("pt-BR")}
-                </td>
-                {canManage ? (
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-primary hover:underline"
-                        onClick={() => openEdit(row)}
-                        data-testid={`customer-exclusion-edit-${row.id}`}
-                      >
-                        Editar
-                      </button>
-                      {row.status === "ACTIVE" ? (
-                        <button
-                          type="button"
-                          className="text-xs font-semibold text-red-700 hover:underline"
-                          onClick={() => void handleInactivate(row)}
-                          data-testid={`customer-exclusion-inactivate-${row.id}`}
-                        >
-                          Inativar
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                ) : null}
+          <p className="mb-2 text-sm font-semibold">
+            Exceções manuais cadastradas ({CUSTOMER_EXCLUSION_MANUAL_TYPE_LABEL})
+          </p>
+          <table className="min-w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Cliente</th>
+                <th className="px-3 py-2 font-semibold">Documento/CNPJ</th>
+                <th className="px-3 py-2 font-semibold">ID Nomus</th>
+                <th className="px-3 py-2 font-semibold">Tipo</th>
+                <th className="px-3 py-2 font-semibold">Vigência</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-3 py-2 font-semibold">Motivo</th>
+                <th className="px-3 py-2 font-semibold">Impacto no fechamento</th>
+                <th className="px-3 py-2 font-semibold">Atualizado em</th>
+                {canManage ? <th className="px-3 py-2 font-semibold">Ações</th> : null}
               </tr>
-            ))}
-          </tbody>
+            </thead>
+            <tbody className="divide-y divide-border bg-background">
+              {rows.map((row) => {
+                const impact = ruleImpact.get(row.id);
+                return (
+                  <tr key={row.id} data-testid={`customer-exclusion-row-${row.id}`}>
+                    <td className="px-3 py-2 font-medium">{row.customerNameSnapshot}</td>
+                    <td className="px-3 py-2">{formatTaxIdDisplay(row.customerTaxId)}</td>
+                    <td className="px-3 py-2">{row.customerExternalId ?? "—"}</td>
+                    <td className="px-3 py-2">{CUSTOMER_EXCLUSION_MANUAL_TYPE_LABEL}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {formatEffectiveRange(row.effectiveFrom, row.effectiveTo)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={customerExclusionStatusBadgeClass(row.status)}>
+                        {formatCustomerExclusionStatus(row.status)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 max-w-xs truncate" title={row.reason}>
+                      {row.reason}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {impact?.usedInClosing ? (
+                        <span className="text-xs font-semibold text-emerald-800">
+                          {CUSTOMER_EXCLUSION_CLOSING_IMPACT_LABEL}: {impact.receivableCount}{" "}
+                          título(s), {formatFinanceCurrency(impact.receivedAmount)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sem impacto no mês</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {new Date(row.updatedAt).toLocaleString("pt-BR")}
+                    </td>
+                    {canManage ? (
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-primary hover:underline"
+                            onClick={() => openEdit(row)}
+                            data-testid={`customer-exclusion-edit-${row.id}`}
+                          >
+                            Editar
+                          </button>
+                          {row.status === "ACTIVE" ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-red-700 hover:underline"
+                              onClick={() => void handleInactivate(row)}
+                              data-testid={`customer-exclusion-inactivate-${row.id}`}
+                            >
+                              Inativar
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </CommissionsTableScroll>
       ) : null}
 

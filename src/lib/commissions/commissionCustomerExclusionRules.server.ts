@@ -5,6 +5,7 @@ import { paginatedMeta, type CustomerExclusionRulesQuery } from "./commissionQue
 import {
   buildCustomerExclusionIdentity,
   findConflictingActiveExclusionRule,
+  mapCustomerExclusionRuleSnapshot,
   normalizeCustomerNameForExclusion,
   resolveApplicableCustomerExclusionRule,
   type CustomerExclusionRuleSnapshot,
@@ -89,19 +90,12 @@ function mapSnapshot(row: {
   effectiveTo: Date | null;
   status: "ACTIVE" | "INACTIVE";
   notes: string | null;
+  customer?: { taxId: string } | null;
 }): CustomerExclusionRuleSnapshot {
-  return {
-    id: row.id,
-    customerId: row.customerId,
-    customerExternalId: row.customerExternalId,
-    customerNameSnapshot: row.customerNameSnapshot,
-    normalizedCustomerName: row.normalizedCustomerName,
-    reason: row.reason,
-    effectiveFrom: row.effectiveFrom,
-    effectiveTo: row.effectiveTo,
-    status: row.status,
-    notes: row.notes,
-  };
+  return mapCustomerExclusionRuleSnapshot({
+    ...row,
+    customerTaxId: row.customer?.taxId ?? null,
+  });
 }
 
 async function resolveCustomerNameFields(input: {
@@ -380,6 +374,7 @@ export async function findApplicableCustomerExclusionRule(
       effectiveTo: true,
       status: true,
       notes: true,
+      customer: { select: { taxId: true } },
     },
   });
 
@@ -405,6 +400,7 @@ export async function getCustomerExclusionRuleSnapshotById(
       effectiveTo: true,
       status: true,
       notes: true,
+      customer: { select: { taxId: true } },
     },
   });
   return row ? mapSnapshot(row) : null;
@@ -426,6 +422,7 @@ export async function loadActiveCustomerExclusionRuleSnapshots(): Promise<
       effectiveTo: true,
       status: true,
       notes: true,
+      customer: { select: { taxId: true } },
     },
     orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }],
   });

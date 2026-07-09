@@ -153,6 +153,57 @@ export type CustomerExclusionRulesPayload = {
   pagination: CommissionsPagination;
 };
 
+export type CustomerExclusionClosingReconciliationPayload = {
+  year: number;
+  month: number;
+  scopeNote: string;
+  materializationSummary: {
+    excludedCustomerCount: number;
+    groupCompanyExcludedCount: number;
+    groupCompanyExcludedReceivedAmount: number;
+    totalReceivedAmount: number;
+  };
+  manualExcludedCustomers: Array<{
+    customerKey: string;
+    customerName: string | null;
+    customerExternalId: number | null;
+    customerId: string | null;
+    exclusionRuleId: string | null;
+    exclusionReason: string | null;
+    exclusionLabel: string;
+    receivableCount: number;
+    receivedAmount: number;
+    matchedRuleIds: string[];
+  }>;
+  groupCompanyExcluded: Array<{
+    cnpj: string;
+    displayCnpj: string;
+    companyName: string;
+    receivableCount: number;
+    receivedAmount: number;
+    exclusionLabel: string;
+  }>;
+  registeredRulesImpact: Array<{
+    ruleId: string;
+    customerNameSnapshot: string;
+    customerExternalId: number | null;
+    customerTaxId: string | null;
+    reason: string;
+    status: string;
+    receivableCount: number;
+    receivedAmount: number;
+    usedInClosing: boolean;
+    impactLabel: string | null;
+  }>;
+  fixedGroupCompanies: Array<{
+    cnpj: string;
+    displayCnpj: string;
+    name: string;
+    exclusionLabel: string;
+    requiresManualRegistration: false;
+  }>;
+};
+
 export type CommissionsRecordItem = {
   id: string;
   status: string;

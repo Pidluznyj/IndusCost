@@ -43,6 +43,11 @@ export function formatEffectiveRange(
 export const CUSTOMER_EXCLUSION_ALERT_MESSAGE =
   "Esta regra zera a comissão de vendas do cliente dentro da vigência. Não altera pedidos, NFs ou Contas a Receber.";
 
+export const CUSTOMER_EXCLUSION_MANUAL_TYPE_LABEL = "Exceção manual ativa";
+export const CUSTOMER_EXCLUSION_GROUP_AUTO_TYPE_LABEL = "Exclusão automática — empresa do grupo";
+export const CUSTOMER_EXCLUSION_EXCLUDED_LABEL = "Excluído da comissão";
+export const CUSTOMER_EXCLUSION_CLOSING_IMPACT_LABEL = "Impactado no fechamento do mês";
+
 export type CustomerExclusionFormInput = {
   customerSelection: EntityAutocompleteSelection | null;
   effectiveFrom: string;

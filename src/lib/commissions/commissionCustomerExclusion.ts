@@ -1,4 +1,5 @@
 import { normalizeSearchString } from "@/src/lib/utils.js";
+import { normalizeFinanceCnpj } from "@/src/lib/financeInternalGroupExclusions.js";
 import type { CommissionCustomerExclusionRuleStatus } from "@prisma/client";
 
 /** Mensagem padrão exibida quando a comissão é zerada por exclusão de cliente. */
@@ -9,6 +10,8 @@ export type CustomerExclusionRuleSnapshot = {
   id: string;
   customerId: string | null;
   customerExternalId: number | null;
+  customerTaxId: string | null;
+  normalizedCustomerTaxId: string | null;
   customerNameSnapshot: string;
   normalizedCustomerName: string;
   reason: string;
@@ -21,6 +24,7 @@ export type CustomerExclusionRuleSnapshot = {
 export type FindApplicableCustomerExclusionInput = {
   customerId?: string | null;
   customerExternalId?: number | null;
+  customerTaxId?: string | null;
   customerName?: string | null;
   referenceDate: Date;
 };
@@ -31,6 +35,13 @@ export type FindApplicableCustomerExclusionResult = {
   exclusionMessage: string;
 };
 
+export function normalizeCustomerTaxIdForExclusion(
+  value: string | null | undefined
+): string {
+  const digits = normalizeFinanceCnpj(value);
+  return digits.length >= 11 ? digits : "";
+}
+
 export function normalizeCustomerNameForExclusion(
   value: string | null | undefined
 ): string {
@@ -40,6 +51,9 @@ export function normalizeCustomerNameForExclusion(
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** Nome curto demais não entra no fallback por texto (evita falso positivo). */
+export const CUSTOMER_EXCLUSION_MIN_NAME_MATCH_LENGTH = 4;
 
 export function startOfUtcDay(value: Date): Date {
   return new Date(
@@ -155,19 +169,31 @@ function ruleMatchesExternalId(
   return rule.customerExternalId === customerExternalId;
 }
 
+function ruleMatchesNormalizedTaxId(
+  rule: CustomerExclusionRuleSnapshot,
+  normalizedTaxId: string
+): boolean {
+  return (
+    normalizedTaxId.length >= 11 &&
+    (rule.normalizedCustomerTaxId?.length ?? 0) >= 11 &&
+    rule.normalizedCustomerTaxId === normalizedTaxId
+  );
+}
+
 function ruleMatchesNormalizedName(
   rule: CustomerExclusionRuleSnapshot,
   normalizedCustomerName: string
 ): boolean {
   return (
-    normalizedCustomerName.length > 0 &&
+    normalizedCustomerName.length >= CUSTOMER_EXCLUSION_MIN_NAME_MATCH_LENGTH &&
+    rule.normalizedCustomerName.length >= CUSTOMER_EXCLUSION_MIN_NAME_MATCH_LENGTH &&
     rule.normalizedCustomerName === normalizedCustomerName
   );
 }
 
 /**
  * Resolve regra aplicável na data de referência (NF ou pedido).
- * Prioridade: customerId → customerExternalId → normalizedCustomerName.
+ * Prioridade: customerId → customerExternalId → CNPJ normalizado → nome normalizado.
  */
 export function resolveApplicableCustomerExclusionRule(
   input: FindApplicableCustomerExclusionInput,
@@ -201,6 +227,16 @@ export function resolveApplicableCustomerExclusionRule(
     }
   }
 
+  const normalizedTaxId = normalizeCustomerTaxIdForExclusion(input.customerTaxId);
+  if (normalizedTaxId) {
+    const byTaxId = applicable.find((rule) =>
+      ruleMatchesNormalizedTaxId(rule, normalizedTaxId)
+    );
+    if (byTaxId) {
+      return mapApplicableResult(byTaxId);
+    }
+  }
+
   const normalizedName = normalizeCustomerNameForExclusion(input.customerName);
   if (normalizedName) {
     const byName = applicable.find((rule) =>
@@ -212,6 +248,38 @@ export function resolveApplicableCustomerExclusionRule(
   }
 
   return null;
+}
+
+export function mapCustomerExclusionRuleSnapshot(row: {
+  id: string;
+  customerId: string | null;
+  customerExternalId: number | null;
+  customerNameSnapshot: string;
+  normalizedCustomerName: string;
+  reason: string;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+  status: CommissionCustomerExclusionRuleStatus;
+  notes: string | null;
+  customerTaxId?: string | null;
+}): CustomerExclusionRuleSnapshot {
+  const customerTaxId = row.customerTaxId?.trim() || null;
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    customerExternalId: row.customerExternalId,
+    customerTaxId,
+    normalizedCustomerTaxId: customerTaxId
+      ? normalizeCustomerTaxIdForExclusion(customerTaxId)
+      : null,
+    customerNameSnapshot: row.customerNameSnapshot,
+    normalizedCustomerName: row.normalizedCustomerName,
+    reason: row.reason,
+    effectiveFrom: row.effectiveFrom,
+    effectiveTo: row.effectiveTo,
+    status: row.status,
+    notes: row.notes,
+  };
 }
 
 function mapApplicableResult(

@@ -99,6 +99,7 @@ import {
   toggleCommissionCustomerExceptionActive,
   updateCommissionCustomerException,
 } from "@/src/lib/commissions/commissionExceptions.server.js";
+import { loadCustomerExclusionClosingReconciliation } from "@/src/lib/commissions/commissionCustomerExclusionClosingReconciliation.server.js";
 import {
   createCustomerExclusionRule,
   inactivateCustomerExclusionRule,
@@ -131,6 +132,7 @@ import {
   parseCommissionRulesQuery,
   parseCommissionExceptionsQuery,
   parseCustomerExclusionRulesQuery,
+  parseCustomerExclusionClosingReconciliationQuery,
   parseCommissionReleasesQuery,
   parseCommissionVisualAuditQuery,
   parseCommissionMonthlyClosingQuery,
@@ -885,6 +887,35 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       }
     }
   });
+
+  app.get(
+    "/api/commissions/customer-exclusions/closing-reconciliation",
+    ...exceptionsViewGuard,
+    async (req, res) => {
+      try {
+        const query = parseCustomerExclusionClosingReconciliationQuery(
+          req.query as Record<string, unknown>
+        );
+        const payload = await loadCustomerExclusionClosingReconciliation(
+          query.year,
+          query.month
+        );
+        return res.json(payload);
+      } catch (error) {
+        try {
+          return handleQueryError(res, error);
+        } catch {
+          console.error(
+            "GET /api/commissions/customer-exclusions/closing-reconciliation",
+            error
+          );
+          return res.status(500).json({
+            error: "Erro ao reconciliar exclusões com o fechamento do mês.",
+          });
+        }
+      }
+    }
+  );
 
   app.post("/api/commissions/customer-exclusions", ...exceptionsManageGuard, async (req, res) => {
     try {

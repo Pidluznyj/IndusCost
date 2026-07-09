@@ -68,6 +68,7 @@ export function buildCustomerExclusionMetadataPatch(
 export function resolveCustomerExclusionForSale(input: {
   customerId?: string | null;
   customerExternalId?: number | null;
+  customerTaxId?: string | null;
   customerName?: string | null;
   referenceDate: Date;
   rules: CustomerExclusionRuleSnapshot[];
@@ -76,6 +77,7 @@ export function resolveCustomerExclusionForSale(input: {
     {
       customerId: input.customerId ?? null,
       customerExternalId: input.customerExternalId ?? null,
+      customerTaxId: input.customerTaxId ?? null,
       customerName: input.customerName ?? null,
       referenceDate: input.referenceDate,
     },

@@ -1174,6 +1174,25 @@ export type CustomerExclusionRulesQuery = {
   pageSize: number;
 };
 
+export type CustomerExclusionClosingReconciliationQuery = {
+  year: number;
+  month: number;
+};
+
+export function parseCustomerExclusionClosingReconciliationQuery(
+  query: Record<string, unknown>
+): CustomerExclusionClosingReconciliationQuery {
+  const year = Number.parseInt(String(query.year ?? ""), 10);
+  const month = Number.parseInt(String(query.month ?? ""), 10);
+  if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+    throw new CommissionQueryParseError("year inválido para reconciliação de exclusões.");
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new CommissionQueryParseError("month inválido para reconciliação de exclusões.");
+  }
+  return { year, month };
+}
+
 export function parseCustomerExclusionRulesQuery(
   query: Record<string, unknown>
 ): CustomerExclusionRulesQuery {

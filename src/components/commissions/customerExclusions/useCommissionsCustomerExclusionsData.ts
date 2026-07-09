@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
-import type { CustomerExclusionRulesPayload } from "@/src/components/commissions/commissionsTypes";
+import type {
+  CustomerExclusionClosingReconciliationPayload,
+  CustomerExclusionRulesPayload,
+} from "@/src/components/commissions/commissionsTypes";
 import type { CustomerExclusionRuleItem } from "@/src/components/commissions/commissionsTypes";
 import type { CustomerExclusionFormInput } from "@/src/components/commissions/customerExclusions/commissionsCustomerExclusionLabels";
 import {
@@ -8,12 +11,22 @@ import {
   buildCustomerExclusionUpdateBody,
 } from "@/src/components/commissions/customerExclusions/commissionsCustomerExclusionLabels";
 
-export function useCommissionsCustomerExclusionsData(search: string | null) {
+export function useCommissionsCustomerExclusionsData(
+  search: string | null,
+  year: string,
+  month: string
+) {
   const query = new URLSearchParams({ page: "1", pageSize: "100" });
   if (search?.trim()) query.set("search", search.trim());
-  const url = `/api/commissions/customer-exclusions?${query.toString()}`;
+  const listUrl = `/api/commissions/customer-exclusions?${query.toString()}`;
+  const reconciliationUrl =
+    year.trim() && month.trim()
+      ? `/api/commissions/customer-exclusions/closing-reconciliation?year=${encodeURIComponent(year.trim())}&month=${encodeURIComponent(month.trim())}`
+      : null;
 
   const [data, setData] = useState<CustomerExclusionRulesPayload | null>(null);
+  const [reconciliation, setReconciliation] =
+    useState<CustomerExclusionClosingReconciliationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,10 +34,19 @@ export function useCommissionsCustomerExclusionsData(search: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchJsonOk<CustomerExclusionRulesPayload>(url);
-      setData(payload);
+      const listPromise = fetchJsonOk<CustomerExclusionRulesPayload>(listUrl);
+      const reconciliationPromise = reconciliationUrl
+        ? fetchJsonOk<CustomerExclusionClosingReconciliationPayload>(reconciliationUrl)
+        : Promise.resolve(null);
+      const [listPayload, reconciliationPayload] = await Promise.all([
+        listPromise,
+        reconciliationPromise,
+      ]);
+      setData(listPayload);
+      setReconciliation(reconciliationPayload);
     } catch (e: unknown) {
       setData(null);
+      setReconciliation(null);
       setError(
         e instanceof Error && e.message.trim()
           ? e.message
@@ -33,13 +55,13 @@ export function useCommissionsCustomerExclusionsData(search: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [url]);
+  }, [listUrl, reconciliationUrl]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  return { data, loading, error, reload };
+  return { data, reconciliation, loading, error, reload };
 }
 
 export async function createCustomerExclusionApi(
@@ -68,4 +90,22 @@ export async function inactivateCustomerExclusionApi(id: string): Promise<Custom
     `/api/commissions/customer-exclusions/${id}/inactivate`,
     { method: "POST" }
   );
+}
+
+export function mapRuleImpactById(
+  reconciliation: CustomerExclusionClosingReconciliationPayload | null
+): Map<string, { receivableCount: number; receivedAmount: number; usedInClosing: boolean }> {
+  const map = new Map<
+    string,
+    { receivableCount: number; receivedAmount: number; usedInClosing: boolean }
+  >();
+  if (!reconciliation) return map;
+  for (const item of reconciliation.registeredRulesImpact) {
+    map.set(item.ruleId, {
+      receivableCount: item.receivableCount,
+      receivedAmount: item.receivedAmount,
+      usedInClosing: item.usedInClosing,
+    });
+  }
+  return map;
 }

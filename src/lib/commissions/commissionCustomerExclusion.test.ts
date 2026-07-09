@@ -23,6 +23,8 @@ function rule(
   return {
     customerId: null,
     customerExternalId: null,
+    customerTaxId: null,
+    normalizedCustomerTaxId: null,
     customerNameSnapshot: "ESMALTEC",
     normalizedCustomerName: "esmaltec",
     reason: "Política comercial",
@@ -94,6 +96,38 @@ describe("commissionCustomerExclusion", () => {
     );
     assert.ok(found);
     assert.equal(found.rule.id, "r3");
+  });
+
+  it("encontra regra por CNPJ normalizado", () => {
+    const rules = [
+      rule({
+        id: "by-cnpj",
+        customerTaxId: "12.345.678/0001-90",
+        normalizedCustomerTaxId: "12345678000190",
+      }),
+    ];
+    const found = resolveApplicableCustomerExclusionRule(
+      {
+        customerTaxId: "12345678000190",
+        customerName: "Outro Nome",
+        referenceDate: new Date("2026-07-10"),
+      },
+      rules
+    );
+    assert.ok(found);
+    assert.equal(found.rule.id, "by-cnpj");
+  });
+
+  it("nome curto não gera falso positivo", () => {
+    const rules = [rule({ id: "sm", normalizedCustomerName: "sm" })];
+    const found = resolveApplicableCustomerExclusionRule(
+      {
+        customerName: "SM",
+        referenceDate: new Date("2026-07-10"),
+      },
+      rules
+    );
+    assert.equal(found, null);
   });
 
   it("prioriza customerExternalId sobre nome", () => {
