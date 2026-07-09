@@ -190,7 +190,8 @@ function parseSalesOrderMarginStatusFilter(
 }
 
 export function buildSalesOrderManagementWhere(
-  filters: SalesOrderManagementFilters
+  filters: SalesOrderManagementFilters,
+  options?: { sellerWhere?: Prisma.SalesOrderWhereInput | null }
 ): Prisma.SalesOrderWhereInput {
   let startDate = filters.startDate ?? null;
   let endDate = filters.endDate ?? null;
@@ -203,10 +204,14 @@ export function buildSalesOrderManagementWhere(
       : new Date(filters.year, 11, 31, 23, 59, 59, 999);
   }
 
+  const sellerWhere = options?.sellerWhere ?? null;
+  const sellerText = sellerWhere ? undefined : filters.responsible;
+
   const base = buildSalesOrderListWhere({
     status: filters.status,
     customerId: filters.customerId,
-    seller: filters.responsible,
+    seller: sellerText,
+    sellerWhere,
     startDate,
     endDate,
     q: filters.q,
@@ -418,6 +423,11 @@ export function buildManagementRowsFromOrders(
   };
 }
 
+export type {
+  SalesOrderManagementOfficialMetrics,
+  SalesOrderManagementSourceAudit,
+} from "./salesOrderManagementMetrics.js";
+
 export type SalesOrderManagementResponse = {
   page: number;
   pageSize: number;
@@ -430,6 +440,8 @@ export type SalesOrderManagementResponse = {
   fulfillmentKpis?: SalesOrderFulfillmentKpis;
   fulfillmentCharts?: SalesOrderFulfillmentCharts;
   marginEconomics?: SalesOrderManagementMarginEconomics;
+  officialMetrics?: import("./salesOrderManagementMetrics.js").SalesOrderManagementOfficialMetrics;
+  sourceAudit?: import("./salesOrderManagementMetrics.js").SalesOrderManagementSourceAudit;
   metricsSource?: string;
   rulesEngineVersion?: string;
   rows: SalesOrderManagementRow[];

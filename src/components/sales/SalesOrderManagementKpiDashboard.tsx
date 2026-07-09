@@ -6,6 +6,7 @@ import {
   Percent,
   Receipt,
   TrendingUp,
+  Wallet,
 } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
@@ -27,6 +28,7 @@ import type {
   SalesOrderManagementMarginEconomics,
   SalesOrderManagementSummary,
 } from "@/src/lib/salesOrderManagementTypes";
+import type { SalesOrderManagementOfficialMetrics } from "@/src/lib/salesOrderManagementMetrics";
 import type { SalesOrderFulfillmentKpis } from "@/src/lib/salesOrderManagementFulfillment";
 import type {
   ManagementDashboardCard,
@@ -103,6 +105,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
   loading,
   loadError,
   fulfillmentKpis,
+  officialMetrics,
   marginEconomics,
   managementSummary,
   displayDashboardCards,
@@ -115,6 +118,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
   loading: boolean;
   loadError: string | null;
   fulfillmentKpis: SalesOrderFulfillmentKpis | null;
+  officialMetrics?: SalesOrderManagementOfficialMetrics | null;
   marginEconomics: SalesOrderManagementMarginEconomics | null;
   managementSummary: SalesOrderManagementSummary | null;
   displayDashboardCards: ManagementDashboardCard[];
@@ -277,8 +281,25 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
   ]);
 
   const totalOrders =
+    toFiniteMetricNumber(officialMetrics?.totalOrders) ??
     toFiniteMetricNumber(fulfillmentKpis?.totalOrders) ??
     toFiniteMetricNumber(managementSummary?.totalOrdersCount);
+
+  const soldAmount =
+    toFiniteMetricNumber(officialMetrics?.soldAmount) ??
+    toFiniteMetricNumber(fulfillmentKpis?.totalSoldValue);
+
+  const invoicedNfeAmount =
+    toFiniteMetricNumber(officialMetrics?.invoicedNfeAmount) ??
+    toFiniteMetricNumber(fulfillmentKpis?.totalInvoicedValue);
+
+  const soldInvoicedGap =
+    toFiniteMetricNumber(officialMetrics?.soldInvoicedGap) ??
+    toFiniteMetricNumber(fulfillmentKpis?.soldInvoicedGap);
+
+  const onTimePercent =
+    toFiniteMetricNumber(officialMetrics?.onTimePercent) ??
+    toFiniteMetricNumber(fulfillmentKpis?.onTimePercent);
 
   return (
     <div className="space-y-5" data-testid="sales-order-management-kpi-dashboard">
@@ -294,48 +315,84 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
             amountFormat="number"
             variant="info"
             icon={<LayoutGrid className="h-4 w-4" />}
-            helperText="Pedidos únicos no filtro atual."
+            helperText="Pedidos únicos no filtro atual (mesmo escopo da tabela)."
             loading={loading}
           />
           <MetricCard
             label="Valor vendido"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.totalSoldValue)}
+            amount={soldAmount}
             amountFormat="currency"
             variant="money"
             icon={<DollarSign className="h-4 w-4" />}
+            helperText="Soma do valor líquido oficial do pedido (SalesOrder)."
             loading={loading}
           />
           <MetricCard
-            label="Valor faturado"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.totalInvoicedValue)}
+            label="Valor faturado (NF)"
+            amount={invoicedNfeAmount}
             amountFormat="currency"
             variant="success"
             icon={<Receipt className="h-4 w-4" />}
+            helperText="Soma das NF-e vinculadas ao pedido (faturamento fiscal)."
             loading={loading}
           />
           <MetricCard
             label="Gap vendido × faturado"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.soldInvoicedGap)}
+            amount={soldInvoicedGap}
             amountFormat="currency"
-            variant={resolveFulfillmentKpiVariant(
-              "gap",
-              toFiniteMetricNumber(fulfillmentKpis?.soldInvoicedGap)
-            )}
+            variant={resolveFulfillmentKpiVariant("gap", soldInvoicedGap)}
             icon={<TrendingUp className="h-4 w-4" />}
-            helperText="Valor vendido ainda não convertido em NF."
+            helperText="Valor vendido do pedido ainda não refletido em NF."
             loading={loading}
           />
           <MetricCard
             label="% no prazo"
-            amount={toFiniteMetricNumber(fulfillmentKpis?.onTimePercent)}
+            amount={onTimePercent}
             amountFormat="percent"
-            variant={resolveFulfillmentKpiVariant(
-              "onTimePct",
-              toFiniteMetricNumber(fulfillmentKpis?.onTimePercent)
-            )}
+            variant={resolveFulfillmentKpiVariant("onTimePct", onTimePercent)}
             icon={<Percent className="h-4 w-4" />}
             loading={loading}
           />
+          {officialMetrics ? (
+            <>
+              <MetricCard
+                label="Ticket médio"
+                amount={officialMetrics.averageTicket}
+                amountFormat="currency"
+                variant="money"
+                icon={<DollarSign className="h-4 w-4" />}
+                helperText="Valor vendido ÷ pedidos no filtro."
+                loading={loading}
+              />
+              <MetricCard
+                label="Carteira aberta"
+                amount={officialMetrics.openPortfolioCount}
+                amountFormat="number"
+                variant="info"
+                icon={<LayoutGrid className="h-4 w-4" />}
+                helperText="Pedidos sem NF processada."
+                loading={loading}
+              />
+              <MetricCard
+                label="Valor em carteira"
+                amount={officialMetrics.openPortfolioAmount}
+                amountFormat="currency"
+                variant="money"
+                icon={<Wallet className="h-4 w-4" />}
+                helperText="Valor líquido dos pedidos sem NF processada."
+                loading={loading}
+              />
+              <MetricCard
+                label="Pedidos faturados"
+                amount={officialMetrics.invoicedOrdersCount}
+                amountFormat="number"
+                variant="success"
+                icon={<Receipt className="h-4 w-4" />}
+                helperText="Pedidos com NF válida/vínculo fiscal."
+                loading={loading}
+              />
+            </>
+          ) : null}
         </SummaryKpiGrid>
       </SalesOrderKpiSection>
 

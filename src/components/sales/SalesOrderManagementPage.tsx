@@ -14,6 +14,10 @@ import type {
   SalesOrderManagementRow,
   SalesOrderManagementSummary,
 } from "@/src/lib/salesOrderManagementTypes";
+import type {
+  SalesOrderManagementOfficialMetrics,
+  SalesOrderManagementSourceAudit,
+} from "@/src/lib/salesOrderManagementMetrics";
 import {
   getSalesOrderIntelligenceApiPath,
   getSalesOrderManagementApiPath,
@@ -90,6 +94,8 @@ type ManagementResponse = {
   fulfillmentKpis?: SalesOrderFulfillmentKpis;
   fulfillmentCharts?: SalesOrderFulfillmentCharts;
   marginEconomics?: SalesOrderManagementMarginEconomics;
+  officialMetrics?: SalesOrderManagementOfficialMetrics;
+  sourceAudit?: SalesOrderManagementSourceAudit;
   rows: SalesOrderManagementRow[];
 };
 
@@ -165,6 +171,9 @@ export function SalesOrderManagementPage() {
   );
   const [marginEconomics, setMarginEconomics] =
     useState<SalesOrderManagementMarginEconomics | null>(null);
+  const [officialMetrics, setOfficialMetrics] =
+    useState<SalesOrderManagementOfficialMetrics | null>(null);
+  const [sourceAudit, setSourceAudit] = useState<SalesOrderManagementSourceAudit | null>(null);
   const [exportingInternal, setExportingInternal] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
@@ -276,6 +285,8 @@ export function SalesOrderManagementPage() {
       setFulfillmentKpis(data.fulfillmentKpis ?? null);
       setFulfillmentCharts(data.fulfillmentCharts ?? null);
       setMarginEconomics(data.marginEconomics ?? null);
+      setOfficialMetrics(data.officialMetrics ?? null);
+      setSourceAudit(data.sourceAudit ?? null);
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(1, data.totalPages ?? 1));
     } catch (e) {
@@ -290,6 +301,8 @@ export function SalesOrderManagementPage() {
       setFulfillmentKpis(null);
       setFulfillmentCharts(null);
       setMarginEconomics(null);
+      setOfficialMetrics(null);
+      setSourceAudit(null);
       setTotal(0);
       setTotalPages(1);
     } finally {
@@ -602,6 +615,38 @@ export function SalesOrderManagementPage() {
       >
         {SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER}
       </div>
+      {sourceAudit ? (
+        <div
+          className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground space-y-1"
+          data-testid="sales-order-management-source-audit"
+        >
+          <p className="font-semibold text-foreground">Fontes dos indicadores (auditoria)</p>
+          <p>
+            Pedido/valor vendido: <span className="font-mono">{sourceAudit.orderValueSource}</span> ·
+            Margem: <span className="font-mono">{sourceAudit.marginSource}</span> · Faturamento
+            fiscal: <span className="font-mono">{sourceAudit.invoicedFiscalSource}</span>
+          </p>
+          <p>
+            Vendedor: {sourceAudit.sellerSource} · Pedidos no filtro:{" "}
+            {sourceAudit.filteredOrdersCount}
+            {sourceAudit.lastNomusSyncAt
+              ? ` · Última atualização Nomus: ${new Date(sourceAudit.lastNomusSyncAt).toLocaleString("pt-BR")}`
+              : null}
+          </p>
+          {(sourceAudit.itemsWithoutCost > 0 ||
+            sourceAudit.itemsWithoutProduct > 0 ||
+            sourceAudit.itemsWithNegativeMargin > 0) && (
+            <p>
+              Itens sem custo: {sourceAudit.itemsWithoutCost} · sem produto:{" "}
+              {sourceAudit.itemsWithoutProduct} · margem negativa:{" "}
+              {sourceAudit.itemsWithNegativeMargin}
+            </p>
+          )}
+          {sourceAudit.partialCoverageWarning ? (
+            <p className="text-amber-800 dark:text-amber-200">{sourceAudit.partialCoverageWarning}</p>
+          ) : null}
+        </div>
+      ) : null}
       <SalesOrderManagementFiltersBar
         year={year}
         month={month}
@@ -732,6 +777,7 @@ export function SalesOrderManagementPage() {
         loading={loading}
         loadError={loadError}
         fulfillmentKpis={fulfillmentKpis}
+        officialMetrics={officialMetrics}
         marginEconomics={marginEconomics}
         managementSummary={managementSummary}
         displayDashboardCards={displayDashboardCards}

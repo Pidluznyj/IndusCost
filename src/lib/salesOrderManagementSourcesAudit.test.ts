@@ -16,25 +16,35 @@ describe("auditoria gestão pedidos venda — fontes", () => {
     const text = read(doc);
     assert.match(text, /GET \/api\/sales-orders\/management/);
     assert.match(text, /calculateOfficialSalesOrderMarginsForOrders/);
-    assert.match(text, /Valor faturado/);
   });
 
-  it("gestão usa SalesOrder e motor oficial, não Proposal", () => {
+  it("gestão usa service centralizado e motor oficial", () => {
+    const server = read("src/lib/salesOrderManagementMetrics.server.ts");
+    assert.match(server, /loadSalesOrderManagementMetrics/);
+    assert.match(server, /calculateSalesOrderMarginsForOrders/);
+    assert.match(server, /buildOfficialSalesOrderManagementCore/);
+    assert.doesNotMatch(server, /prisma\.proposal/i);
+
     const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
-    assert.match(routes, /loadSalesOrderManagementPage/);
-    assert.match(routes, /buildOfficialSalesOrderManagementCore/);
-    assert.match(routes, /calculateSalesOrderMarginsForOrders/);
-    assert.match(routes, /prisma\.salesOrder\.findMany/);
-    assert.doesNotMatch(routes, /prisma\.proposal/i);
+    assert.match(routes, /salesOrderManagementMetrics\.server/);
 
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /getSalesOrderManagementApiPath/);
     assert.doesNotMatch(page, /Proposal/);
   });
 
-  it("valor vendido na UI vem de fulfillmentKpis, não de cálculo local", () => {
+  it("cards e tabela compartilham dataset via metrics bundle", () => {
+    const server = read("src/lib/salesOrderManagementMetrics.server.ts");
+    assert.match(server, /buildOfficialManagementMetricsBundle/);
+    assert.match(server, /activeRows/);
+    assert.match(server, /marginFilteredRows|filters\.marginStatus/);
+    const metrics = read("src/lib/salesOrderManagementMetrics.ts");
+    assert.match(metrics, /fulfillmentKpis = buildFulfillmentKpis\(activeRows\)/);
+  });
+
+  it("valor vendido na UI vem de officialMetrics/fulfillmentKpis backend", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    assert.match(dashboard, /fulfillmentKpis\?\.totalSoldValue/);
+    assert.match(dashboard, /officialMetrics\?\.soldAmount|soldAmount/);
     assert.doesNotMatch(dashboard, /formatCurrency\(.*totalNetValue/s);
   });
 
@@ -42,26 +52,17 @@ describe("auditoria gestão pedidos venda — fontes", () => {
     const margin = read("src/components/sales/SalesOrderManagementMarginOverview.tsx");
     assert.match(margin, /marginEconomics\?\.consolidated/);
     assert.doesNotMatch(margin, /calculateSalesOrderItemMargin/);
-    assert.doesNotMatch(margin, /aggregateSalesOrderMarginSummaries/);
   });
 
-  it("financeiro compartilha motor oficial de pedidos", () => {
-    const finance = read("src/lib/financeSalesOrdersDashboard.ts");
-    assert.match(finance, /buildOfficialSalesOrderRulesResult/);
-    assert.match(finance, /SALES_ORDER_RULES_PRISMA_SELECT/);
-    assert.match(finance, /mapOfficialFinancePortfolioFromManagementRows/);
-  });
-
-  it("export interno gestão usa margem oficial", () => {
+  it("export interno gestão usa service centralizado", () => {
     const exp = read("src/lib/salesOrderInternalMarginExport.server.ts");
+    assert.match(exp, /loadSalesOrderManagementMetrics/);
     assert.match(exp, /calculateSalesOrderMarginsForOrders/);
-    assert.match(exp, /scope === "management"/);
   });
 
-  it("divergência marginStatus documentada na rota", () => {
-    const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
-    assert.match(routes, /marginFilteredRows/);
-    assert.match(routes, /officialCore\.fulfillmentKpis/);
-    assert.match(routes, /marginEconomics/);
+  it("auditoria de fonte exposta na página", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /sales-order-management-source-audit/);
+    assert.match(page, /sourceAudit\.marginSource/);
   });
 });

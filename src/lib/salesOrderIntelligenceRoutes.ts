@@ -12,23 +12,12 @@ import {
 import {
   buildSalesOrderManagementWhere,
   parseSalesOrderManagementFilters,
-  type SalesOrderManagementResponse,
 } from "./salesOrderManagement.js";
+import { loadSalesOrderManagementPage as loadSalesOrderManagementPageMetrics } from "./salesOrderManagementMetrics.server.js";
 import {
   buildOfficialSalesOrderManagementCore,
   mapPrismaOrderToSalesOrderRulesInput,
-  SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./salesOrderRulesAdapter.js";
-import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
-import {
-  attachMarginsToSalesOrders,
-  calculateSalesOrderMarginsForOrders,
-} from "./salesOrderMarginService.server.js";
-import {
-  buildSalesOrderManagementMarginEconomics,
-  countMarginItemStatuses,
-  matchesSalesOrderMarginStatusFilter,
-} from "./salesOrderManagementMargin.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -45,10 +34,11 @@ function isUuid(value: string): boolean {
   );
 }
 
-function parsePositiveInt(value: unknown, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+export async function loadSalesOrderManagementPage(query: Record<string, unknown>) {
+  return loadSalesOrderManagementPageMetrics(prisma, query);
 }
+
+export { loadSalesOrderManagementPageMetrics };
 
 export async function loadSalesOrderIntelligence(orderId: string) {
   const order = await prisma.salesOrder.findUnique({
@@ -98,96 +88,6 @@ export async function loadSalesOrderIntelligence(orderId: string) {
     },
     linkedNfeContext: linkedNfeContextMap.get(order.id) ?? null,
   });
-}
-
-export async function loadSalesOrderManagementPage(
-  query: Record<string, unknown>
-): Promise<SalesOrderManagementResponse> {
-  const filters = parseSalesOrderManagementFilters(query);
-  const page = parsePositiveInt(query.page, 1);
-  const pageSize = Math.min(parsePositiveInt(query.pageSize, 20), 100);
-  const where = buildSalesOrderManagementWhere(filters);
-
-  const orders = await prisma.salesOrder.findMany({
-    where,
-    orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-    select: SALES_ORDER_RULES_PRISMA_SELECT,
-  });
-
-  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
-    orders.map((order) => ({
-      id: order.id,
-      totalNetValue: order.totalNetValue,
-      issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
-    }))
-  );
-
-  const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
-  const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
-  const officialCore = buildOfficialSalesOrderManagementCore({
-    orders: rulesOrders,
-    managementFilters: filters,
-    referenceDate: undefined,
-    linkedNfeContextMap,
-    sellerIdentityCtx,
-  });
-
-  const marginByOrder = await calculateSalesOrderMarginsForOrders(
-    prisma,
-    orders.map((order) => ({
-      id: order.id,
-      issueDate: order.issueDate,
-      nomusRawResponse: order.nomusRawResponse,
-      items: order.items,
-    }))
-  );
-
-  const rows = officialCore.rows.map((row) => ({ ...row }));
-
-  const itemResultsByOrderId = new Map<string, import("./salesOrderMarginTypes.js").SalesOrderMarginItemResult[]>();
-  for (const row of rows) {
-    const marginResult = marginByOrder.get(row.id);
-    row.marginSummary = marginResult?.marginSummary;
-    if (marginResult) {
-      row.marginDetail = countMarginItemStatuses(marginResult.itemResults);
-      row.marginItems = Array.from(marginResult.itemMargins.values());
-      itemResultsByOrderId.set(row.id, marginResult.itemResults);
-    }
-  }
-
-  const marginFilteredRows = filters.marginStatus
-    ? rows.filter((row) =>
-        matchesSalesOrderMarginStatusFilter(row.marginSummary, filters.marginStatus!)
-      )
-    : rows;
-
-  const marginEconomics = buildSalesOrderManagementMarginEconomics(
-    marginFilteredRows,
-    itemResultsByOrderId
-  );
-
-  const total = marginFilteredRows.length;
-  const start = (page - 1) * pageSize;
-  const pageRows = marginFilteredRows.slice(start, start + pageSize);
-
-  return {
-    page,
-    pageSize,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    cards: officialCore.cards,
-    cardAmounts: officialCore.cardAmounts,
-    dashboardCards: officialCore.dashboardCards,
-    summary: officialCore.summary,
-    fulfillmentKpis: officialCore.fulfillmentKpis,
-    fulfillmentCharts: officialCore.fulfillmentCharts,
-    metricsSource: officialCore.metricsSource,
-    rulesEngineVersion: officialCore.rulesEngineVersion,
-    marginEconomics,
-    rows: pageRows,
-  };
 }
 
 export async function loadSalesOrderFulfillmentAudit(

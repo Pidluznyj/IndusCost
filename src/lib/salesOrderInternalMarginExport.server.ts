@@ -4,11 +4,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import {
-  buildManagementRowsFromOrders,
   parseSalesOrderManagementFilters,
   buildSalesOrderManagementWhere,
 } from "./salesOrderManagement.js";
-import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
 import {
   countMarginItemStatuses,
   matchesSalesOrderMarginStatusFilter,
@@ -316,33 +314,31 @@ export async function loadSalesOrderInternalMarginExportPayload(
   query: Record<string, unknown>
 ): Promise<SalesOrderInternalMarginExportPayload> {
   if (scope === "management") {
-    const filters = parseSalesOrderManagementFilters(query);
-    const where = buildSalesOrderManagementWhere(filters);
+    const { loadSalesOrderManagementMetrics } = await import(
+      "./salesOrderManagementMetrics.server.js"
+    );
+    const loaded = await loadSalesOrderManagementMetrics(prisma, query);
+    const orderIds = loaded.rows.map((row) => row.id);
+    if (orderIds.length === 0) {
+      return buildPayloadFromMarginContext({
+        scopeLabel: "Gestão de Pedidos de Venda",
+        appliedFilters: buildManagementExportFilters(loaded.filters),
+        orders: [],
+        marginByOrder: new Map(),
+      });
+    }
+
     const orders = await prisma.salesOrder.findMany({
-      where,
+      where: { id: { in: orderIds } },
       orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-      include: {
-        Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+      select: {
+        id: true,
+        orderCode: true,
+        issueDate: true,
+        nomusRawResponse: true,
         items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
       },
     });
-
-    const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
-      orders.map((order) => ({
-        id: order.id,
-        totalNetValue: order.totalNetValue,
-        issueDate: order.issueDate,
-        expectedDeliveryDate: order.expectedDeliveryDate,
-        nomusRawResponse: order.nomusRawResponse,
-      }))
-    );
-
-    const { rows } = buildManagementRowsFromOrders(
-      orders,
-      filters,
-      undefined,
-      linkedNfeContextMap
-    );
 
     const marginByOrder = await calculateSalesOrderMarginsForOrders(
       prisma,
@@ -354,20 +350,14 @@ export async function loadSalesOrderInternalMarginExportPayload(
       }))
     );
 
-    const filteredRows = filters.marginStatus
-      ? rows.filter((row) =>
-          matchesSalesOrderMarginStatusFilter(row.marginSummary, filters.marginStatus!)
-        )
-      : rows;
-
-    const orderById = new Map(orders.map((o) => [o.id, o]));
-    const exportOrders = filteredRows
-      .map((row) => {
-        const order = orderById.get(row.id);
-        if (!order) return null;
+    const rowById = new Map(loaded.rows.map((row) => [row.id, row]));
+    const exportOrders = orders
+      .map((order) => {
+        const row = rowById.get(order.id);
+        if (!row) return null;
         return {
-          id: row.id,
-          orderCode: row.orderCode,
+          id: order.id,
+          orderCode: order.orderCode,
           issueDate: order.issueDate,
           responsible: row.nomusSellerDisplayName || row.sellerName || "—",
           customerName: row.customerName,
@@ -379,7 +369,7 @@ export async function loadSalesOrderInternalMarginExportPayload(
 
     return buildPayloadFromMarginContext({
       scopeLabel: "Gestão de Pedidos de Venda",
-      appliedFilters: buildManagementExportFilters(filters),
+      appliedFilters: buildManagementExportFilters(loaded.filters),
       orders: exportOrders,
       marginByOrder,
     });
