@@ -12,10 +12,14 @@ function read(path: string): string {
 describe("auditoria gestão pedidos venda — fontes", () => {
   it("documento de auditoria existe", () => {
     const doc = "docs/auditoria-gestao-pedidos-venda-fontes.md";
+    const layout = "docs/gestao-pedidos-venda-fontes-e-layout.md";
     assert.ok(existsSync(join(ROOT, doc)));
+    assert.ok(existsSync(join(ROOT, layout)));
     const text = read(doc);
     assert.match(text, /GET \/api\/sales-orders\/management/);
-    assert.match(text, /calculateOfficialSalesOrderMarginsForOrders/);
+    const layoutText = read(layout);
+    assert.match(layoutText, /SystemTotalizerCard/);
+    assert.match(layoutText, /activeRows/);
   });
 
   it("gestão usa service centralizado e motor oficial", () => {
