@@ -10,7 +10,11 @@ import {
   Scale,
   TrendingUp,
 } from "lucide-react";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import { formatCurrency } from "@/src/lib/utils";
@@ -18,10 +22,11 @@ import { cn } from "@/src/lib/utils";
 import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
 import {
   formatOrderCountLabel,
-  metricCurrencySubtitle,
+  metricVariantToTotalizerTone,
   resolveAlertCountVariant,
   resolveFulfillmentKpiVariant,
   resolveLogisticStatusCardVariant,
+  resolveMarginCardShortSubtitle,
   resolveMarginMoneyVariant,
   resolveMarginPercentVariant,
   resolveNegativeMarginCountVariant,
@@ -29,7 +34,6 @@ import {
 } from "@/src/lib/salesOrderManagementMetricCards";
 import { SALES_ORDER_MGMT_KPI_SECTIONS } from "@/src/lib/salesOrderManagementKpiLabels";
 import {
-  buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
@@ -90,7 +94,7 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
 }: LogisticsBlockProps) {
   return (
     <div data-testid="sales-order-management-logistics">
-      <SummaryKpiGrid minColumnWidth={180}>
+      <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
         {displayDashboardCards.map((card) => {
           const Icon = kpiIcons[card.key] ?? FileText;
           const isTotal = card.isTotal === true;
@@ -100,8 +104,8 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
           const countLabel = formatOrderCountLabel(card.count);
           const percentHint =
             card.percentOfTotal != null && !isTotal
-              ? `${card.tooltip} (${card.percentOfTotal}% do total no filtro)`
-              : card.tooltip;
+              ? `${card.percentOfTotal}% do total`
+              : undefined;
           const footnote =
             !busy
               ? [formatCompactCurrency(card.totalNetValue), percentHint]
@@ -127,26 +131,27 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
                 isActive && "ring-2 ring-primary shadow-md"
               )}
             >
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label={card.label}
-                formattedValue={busy ? "—" : countLabel}
-                fullValue={metricCurrencySubtitle(card.totalNetValue)}
+                value={busy ? "—" : countLabel}
                 subtitle={footnote}
-                variant={resolveLogisticStatusCardVariant(card.key)}
-                icon={<Icon className="h-4 w-4" />}
+                helperText={card.tooltip}
+                tone={metricVariantToTotalizerTone(resolveLogisticStatusCardVariant(card.key))}
+                icon={Icon}
                 compact
                 loading={loading}
-                className="h-full"
               />
             </button>
           );
         })}
       </SummaryKpiGrid>
 
-      <SummaryKpiGrid className="mt-4" minColumnWidth={160}>
-        <MetricCard
+      <SummaryKpiGrid className={`mt-4 ${SYSTEM_TOTALIZER_GRID_CLASS}`} minColumnWidth={148}>
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="SLA médio"
-          formattedValue={
+          value={
             busy ||
             fulfillmentKpis?.averageSlaDays == null ||
             !Number.isFinite(fulfillmentKpis.averageSlaDays)
@@ -154,29 +159,33 @@ const LogisticsKpiBlock = memo(function LogisticsKpiBlock({
               : `${fulfillmentKpis.averageSlaDays.toFixed(1)} dias`
           }
           helperText="Média de dias entre emissão do pedido e NF."
-          variant="neutral"
-          icon={<Clock className="h-4 w-4" />}
+          tone="neutral"
+          icon={Clock}
           compact
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="% atendimento médio"
           amount={toFiniteMetricNumber(fulfillmentKpis?.averageFulfilledPercent)}
           amountFormat="percent"
-          variant="neutral"
-          icon={<Percent className="h-4 w-4" />}
+          tone="neutral"
+          icon={Percent}
           compact
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="% no prazo"
           amount={toFiniteMetricNumber(fulfillmentKpis?.onTimePercent)}
           amountFormat="percent"
-          variant={resolveFulfillmentKpiVariant(
-            "onTimePct",
-            toFiniteMetricNumber(fulfillmentKpis?.onTimePercent)
+          tone={metricVariantToTotalizerTone(
+            resolveFulfillmentKpiVariant(
+              "onTimePct",
+              toFiniteMetricNumber(fulfillmentKpis?.onTimePercent)
+            )
           )}
-          icon={<Percent className="h-4 w-4" />}
+          icon={Percent}
           compact
           loading={loading}
         />
@@ -224,7 +233,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
   }
 
   const consolidated = marginEconomics.consolidated;
-  const coverageHint = buildSalesOrderMarginCoverageHint(consolidated, formatCurrency);
+  const marginSubtitle = resolveMarginCardShortSubtitle(consolidated);
   const drillCards = [
     {
       key: "MARGEM_NEGATIVA" as const,
@@ -263,39 +272,47 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
           testId="sales-order-management-economic-margin-tooltip"
         />
       </div>
-      <SummaryKpiGrid minColumnWidth={200}>
-        <MetricCard
+      <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label={resolveSalesOrderMarginMoneyLabel(consolidated)}
           amount={toFiniteMetricNumber(consolidated.marginValue)}
           amountFormat="currency"
-          variant={resolveMarginMoneyVariant(consolidated.marginValue)}
-          icon={<DollarSign className="h-4 w-4" />}
-          helperText={coverageHint}
+          tone={metricVariantToTotalizerTone(resolveMarginMoneyVariant(consolidated.marginValue))}
+          icon={DollarSign}
+          subtitle={marginSubtitle}
+          helperText="Margem gerencial consolidada"
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label={resolveSalesOrderMarginPercentLabel(consolidated)}
           amount={toFiniteMetricNumber(consolidated.marginPercent)}
           amountFormat="percent"
-          variant={resolveMarginPercentVariant(consolidated.marginPercent)}
-          icon={<Percent className="h-4 w-4" />}
-          helperText={coverageHint ?? "Ponderada por receita com custo"}
+          tone={metricVariantToTotalizerTone(
+            resolveMarginPercentVariant(consolidated.marginPercent)
+          )}
+          icon={Percent}
+          subtitle={marginSubtitle}
+          helperText="Ponderada por receita com custo"
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Custo estimado"
           amount={toFiniteMetricNumber(consolidated.totalCost)}
           amountFormat="currency"
-          variant="internal"
-          icon={<Scale className="h-4 w-4" />}
+          tone="internal"
+          icon={Scale}
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Receita líquida"
           amount={toFiniteMetricNumber(consolidated.netRevenue)}
           amountFormat="currency"
-          variant="money"
-          icon={<TrendingUp className="h-4 w-4" />}
+          tone="money"
+          icon={TrendingUp}
           loading={loading}
         />
       </SummaryKpiGrid>
@@ -303,7 +320,7 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
       <p className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         Drill-down por status de margem
       </p>
-      <SummaryKpiGrid minColumnWidth={150}>
+      <SummaryKpiGrid minColumnWidth={148} className={SYSTEM_TOTALIZER_GRID_CLASS}>
         {drillCards.map((card) => {
           const active = marginStatusFilter === card.key;
           return (
@@ -318,15 +335,15 @@ const EconomicsKpiBlock = memo(function EconomicsKpiBlock({
                 active && "ring-2 ring-primary shadow-md"
               )}
             >
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label={card.label}
-                formattedValue={formatOrderCountLabel(card.count)}
+                value={formatOrderCountLabel(card.count)}
                 helperText={card.helper}
-                variant={card.variant}
-                icon={<AlertTriangle className="h-4 w-4" />}
+                tone={metricVariantToTotalizerTone(card.variant)}
+                icon={AlertTriangle}
                 compact
                 loading={loading}
-                className="h-full"
               />
             </button>
           );
@@ -377,46 +394,56 @@ const FulfillmentKpiBlock = memo(function FulfillmentKpiBlock({
 }: FulfillmentBlockProps) {
   return (
     <div data-testid="sales-order-management-fulfillment">
-      <SummaryKpiGrid minColumnWidth={160}>
-        <MetricCard
+      <SummaryKpiGrid minColumnWidth={148} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Com NF"
-          formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithNfe)}
-          variant={resolveFulfillmentKpiVariant(
-            "withNfe",
-            toFiniteMetricNumber(fulfillmentKpis?.ordersWithNfe)
+          value={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithNfe)}
+          tone={metricVariantToTotalizerTone(
+            resolveFulfillmentKpiVariant(
+              "withNfe",
+              toFiniteMetricNumber(fulfillmentKpis?.ordersWithNfe)
+            )
           )}
-          icon={<Receipt className="h-4 w-4" />}
+          icon={Receipt}
           compact
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Sem NF"
-          formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithoutNfe)}
-          variant={resolveFulfillmentKpiVariant(
-            "withoutNfe",
-            toFiniteMetricNumber(fulfillmentKpis?.ordersWithoutNfe)
+          value={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.ordersWithoutNfe)}
+          tone={metricVariantToTotalizerTone(
+            resolveFulfillmentKpiVariant(
+              "withoutNfe",
+              toFiniteMetricNumber(fulfillmentKpis?.ordersWithoutNfe)
+            )
           )}
-          icon={<FileText className="h-4 w-4" />}
+          icon={FileText}
           compact
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="% faturado"
           amount={toFiniteMetricNumber(fulfillmentKpis?.averageInvoicedPercent)}
           amountFormat="percent"
-          variant="neutral"
-          icon={<Percent className="h-4 w-4" />}
+          tone="neutral"
+          icon={Percent}
           compact
           loading={loading}
         />
-        <MetricCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Entregues no prazo"
-          formattedValue={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.deliveredOnTime)}
-          variant={resolveFulfillmentKpiVariant(
-            "onTime",
-            toFiniteMetricNumber(fulfillmentKpis?.deliveredOnTime)
+          value={busy ? "—" : formatOrderCountLabel(fulfillmentKpis?.deliveredOnTime)}
+          tone={metricVariantToTotalizerTone(
+            resolveFulfillmentKpiVariant(
+              "onTime",
+              toFiniteMetricNumber(fulfillmentKpis?.deliveredOnTime)
+            )
           )}
-          icon={<Receipt className="h-4 w-4" />}
+          icon={Receipt}
           compact
           loading={loading}
         />

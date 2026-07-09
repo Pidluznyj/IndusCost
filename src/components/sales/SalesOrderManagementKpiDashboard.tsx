@@ -8,7 +8,11 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { SalesOrderManagementKpiSecondaryPanel } from "@/src/components/sales/SalesOrderManagementKpiSecondaryPanel";
@@ -17,6 +21,7 @@ import { SalesOrderManagementMarginOverview } from "@/src/components/sales/Sales
 import type { SalesOrderMarginStatusFilter } from "@/src/lib/salesOrderManagementMargin";
 import {
   formatOrderCountLabel,
+  metricVariantToTotalizerTone,
   resolveAlertCountVariant,
   resolveFulfillmentKpiVariant,
   resolveNegativeMarginCountVariant,
@@ -308,86 +313,99 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         title={SALES_ORDER_MGMT_KPI_SECTIONS.overview.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.overview.subtitle}
       >
-        <SummaryKpiGrid minColumnWidth={200}>
-          <MetricCard
+        <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Total de pedidos"
             amount={totalOrders}
             amountFormat="number"
-            variant="info"
-            icon={<LayoutGrid className="h-4 w-4" />}
+            tone="info"
+            icon={LayoutGrid}
             helperText="Pedidos únicos no filtro atual (mesmo escopo da tabela)."
             loading={loading}
           />
-          <MetricCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Valor vendido"
             amount={soldAmount}
             amountFormat="currency"
-            variant="money"
-            icon={<DollarSign className="h-4 w-4" />}
+            tone="money"
+            icon={DollarSign}
             helperText="Soma do valor líquido oficial do pedido (SalesOrder)."
             loading={loading}
           />
-          <MetricCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Valor faturado (NF)"
             amount={invoicedNfeAmount}
             amountFormat="currency"
-            variant="success"
-            icon={<Receipt className="h-4 w-4" />}
+            tone="success"
+            icon={Receipt}
             helperText="Soma das NF-e vinculadas ao pedido (faturamento fiscal)."
             loading={loading}
           />
-          <MetricCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Gap vendido × faturado"
             amount={soldInvoicedGap}
             amountFormat="currency"
-            variant={resolveFulfillmentKpiVariant("gap", soldInvoicedGap)}
-            icon={<TrendingUp className="h-4 w-4" />}
+            tone={metricVariantToTotalizerTone(
+              resolveFulfillmentKpiVariant("gap", soldInvoicedGap)
+            )}
+            icon={TrendingUp}
             helperText="Valor vendido do pedido ainda não refletido em NF."
             loading={loading}
           />
-          <MetricCard
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="% no prazo"
             amount={onTimePercent}
             amountFormat="percent"
-            variant={resolveFulfillmentKpiVariant("onTimePct", onTimePercent)}
-            icon={<Percent className="h-4 w-4" />}
+            tone={metricVariantToTotalizerTone(
+              resolveFulfillmentKpiVariant("onTimePct", onTimePercent)
+            )}
+            icon={Percent}
             loading={loading}
           />
           {officialMetrics ? (
             <>
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Ticket médio"
                 amount={officialMetrics.averageTicket}
                 amountFormat="currency"
-                variant="money"
-                icon={<DollarSign className="h-4 w-4" />}
+                tone="money"
+                icon={DollarSign}
                 helperText="Valor vendido ÷ pedidos no filtro."
                 loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Carteira aberta"
                 amount={officialMetrics.openPortfolioCount}
                 amountFormat="number"
-                variant="info"
-                icon={<LayoutGrid className="h-4 w-4" />}
+                tone="info"
+                icon={LayoutGrid}
                 helperText="Pedidos sem NF processada."
                 loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Valor em carteira"
                 amount={officialMetrics.openPortfolioAmount}
                 amountFormat="currency"
-                variant="money"
-                icon={<Wallet className="h-4 w-4" />}
+                tone="money"
+                icon={Wallet}
                 helperText="Valor líquido dos pedidos sem NF processada."
                 loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Pedidos faturados"
                 amount={officialMetrics.invoicedOrdersCount}
                 amountFormat="number"
-                variant="success"
-                icon={<Receipt className="h-4 w-4" />}
+                tone="success"
+                icon={Receipt}
                 helperText="Pedidos com NF válida/vínculo fiscal."
                 loading={loading}
               />
@@ -409,7 +427,7 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
         title={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.title}
         subtitle={SALES_ORDER_MGMT_KPI_SECTIONS.alerts.subtitle}
       >
-        <SummaryKpiGrid minColumnWidth={160}>
+        <SummaryKpiGrid minColumnWidth={148} className={SYSTEM_TOTALIZER_GRID_CLASS}>
           {alertCards.map((alert) => (
             <AlertCardButton
               key={alert.key}
@@ -418,19 +436,19 @@ export const SalesOrderManagementKpiDashboard = memo(function SalesOrderManageme
               disabled={!alert.filterable}
               onClick={alert.filterable ? alert.onClick : undefined}
             >
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label={alert.label}
-                formattedValue={busy ? "—" : formatOrderCountLabel(alert.count)}
+                value={busy ? "—" : formatOrderCountLabel(alert.count)}
                 helperText={
                   alert.filterable
                     ? alert.helperText ?? "Clique para filtrar."
                     : "Filtro dedicado ainda não disponível."
                 }
-                variant={alert.variant}
-                icon={<AlertTriangle className="h-4 w-4" />}
+                tone={metricVariantToTotalizerTone(alert.variant)}
+                icon={AlertTriangle}
                 compact
                 loading={loading}
-                className="h-full"
               />
             </AlertCardButton>
           ))}

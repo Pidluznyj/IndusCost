@@ -3,8 +3,37 @@
  * Apenas apresentação — sem cálculo de negócio.
  */
 import type { MetricCardVariant } from "@/src/components/ui/MetricCard";
+import type { SystemTotalizerTone } from "@/src/components/ui/SystemTotalizerCard";
 import { formatFullCurrency } from "@/src/lib/formatFinancialMetric";
 import type { ManagementStatusCardId } from "@/src/lib/salesOrderManagementStatus";
+import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
+
+export function metricVariantToTotalizerTone(variant: MetricCardVariant): SystemTotalizerTone {
+  const map: Record<MetricCardVariant, SystemTotalizerTone> = {
+    default: "default",
+    neutral: "neutral",
+    info: "info",
+    money: "money",
+    success: "success",
+    warning: "warning",
+    danger: "danger",
+    margin: "margin",
+    internal: "internal",
+  };
+  return map[variant] ?? "neutral";
+}
+
+export function resolveMarginCardShortSubtitle(
+  consolidated?: Pick<SalesOrderMarginSummaryPayload, "costCoverageStatus"> | null
+): string | undefined {
+  if (consolidated?.costCoverageStatus === "PARTIAL") {
+    return "Cobertura parcial de custos.";
+  }
+  if (consolidated?.costCoverageStatus === "NONE") {
+    return "Sem cobertura de custo no escopo.";
+  }
+  return undefined;
+}
 
 export function toFiniteMetricNumber(value: unknown): number | null {
   if (value == null || value === "") return null;

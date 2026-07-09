@@ -77,6 +77,27 @@ describe("SystemTotalizerCard — telas migradas fase 1", () => {
     assert.match(src, /amountFormat="currency"/);
   });
 
+  it("Comercial Gestão de Pedidos usa card padrão", () => {
+    for (const file of [
+      "src/components/sales/SalesOrderManagementKpiDashboard.tsx",
+      "src/components/sales/SalesOrderManagementMarginOverview.tsx",
+      "src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx",
+    ]) {
+      const src = read(file);
+      assert.match(src, /SystemTotalizerCard/, `${file} deve usar SystemTotalizerCard`);
+      assert.match(src, /SYSTEM_TOTALIZER_GRID_CLASS/, `${file} deve usar grid executivo`);
+      assert.doesNotMatch(src, /<MetricCard[\s\n/>]/, `${file} não deve usar MetricCard`);
+    }
+    const margin = read("src/components/sales/SalesOrderManagementMarginOverview.tsx");
+    assert.doesNotMatch(margin, /buildSalesOrderMarginCoverageHint/);
+    assert.match(margin, /SalesOrderMarginInfoTooltip/);
+    assert.match(margin, /amountFormat="currency"/);
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
+    assert.match(dashboard, /amountFormat="currency"/);
+    assert.match(dashboard, /Ticket médio/);
+    assert.match(dashboard, /Valor em carteira/);
+  });
+
   it("Comissões fechamento/liberação usa card padrão", () => {
     for (const file of [
       "src/components/commissions/pages/CommissionsReceiptClosingPage.tsx",

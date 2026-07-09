@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   formatOrderCountLabel,
+  metricVariantToTotalizerTone,
   resolveAlertCountVariant,
   resolveFulfillmentKpiVariant,
   resolveLogisticStatusCardVariant,
+  resolveMarginCardShortSubtitle,
   resolveMarginMoneyVariant,
   resolveMarginPercentVariant,
   resolveNegativeMarginCountVariant,
@@ -19,13 +21,15 @@ function read(rel: string): string {
 }
 
 describe("salesOrderManagementMetricCards", () => {
-  it("1. Gestão de Pedidos renderiza cards com MetricCard oficial", () => {
+  it("1. Gestão de Pedidos renderiza cards com SystemTotalizerCard", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     assert.match(page, /SalesOrderManagementKpiDashboard/);
-    assert.match(dashboard, /MetricCard/);
+    assert.match(dashboard, /SystemTotalizerCard/);
+    assert.match(dashboard, /SYSTEM_TOTALIZER_GRID_CLASS/);
     assert.match(dashboard, /SummaryKpiGrid/);
     assert.doesNotMatch(page, /FinanceBiKpiCard/);
+    assert.doesNotMatch(dashboard, /<MetricCard[\s\n/>]/);
   });
 
   it("2. valor grande não é truncado com reticências", () => {
@@ -84,12 +88,12 @@ describe("salesOrderManagementMetricCards", () => {
   });
 
   it("11. status logístico separado de margem na página", () => {
-    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
-    const logisticsIdx = dashboard.indexOf("sales-order-management-logistics");
-    const marginIdx = dashboard.indexOf("sales-order-management-economic-summary");
+    const secondary = read("src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx");
+    const logisticsIdx = secondary.indexOf("sales-order-management-logistics");
+    const marginIdx = secondary.indexOf("sales-order-management-economic-summary");
     assert.ok(logisticsIdx >= 0 && marginIdx > logisticsIdx);
-    assert.match(dashboard, /resolveLogisticStatusCardVariant/);
-    assert.match(dashboard, /resolveMarginMoneyVariant/);
+    assert.match(secondary, /resolveLogisticStatusCardVariant/);
+    assert.match(secondary, /resolveMarginMoneyVariant/);
   });
 
   it("12–14. filtros, busca e paginação preservados", () => {
@@ -124,5 +128,20 @@ describe("salesOrderManagementMetricCards", () => {
   it("margem % baixa usa warning", () => {
     assert.equal(resolveMarginPercentVariant(5), "warning");
     assert.equal(resolveMarginPercentVariant(-1), "danger");
+  });
+
+  it("metricVariantToTotalizerTone mapeia variantes semânticas", () => {
+    assert.equal(metricVariantToTotalizerTone("success"), "success");
+    assert.equal(metricVariantToTotalizerTone("danger"), "danger");
+    assert.equal(metricVariantToTotalizerTone("money"), "money");
+  });
+
+  it("resolveMarginCardShortSubtitle evita texto longo no card", () => {
+    assert.equal(resolveMarginCardShortSubtitle({ costCoverageStatus: "PARTIAL" }), "Cobertura parcial de custos.");
+    assert.equal(resolveMarginCardShortSubtitle({ costCoverageStatus: "NONE" }), "Sem cobertura de custo no escopo.");
+    assert.equal(resolveMarginCardShortSubtitle({ costCoverageStatus: "FULL" }), undefined);
+    const margin = read("src/components/sales/SalesOrderManagementMarginOverview.tsx");
+    assert.doesNotMatch(margin, /buildSalesOrderMarginCoverageHint/);
+    assert.match(margin, /SalesOrderMarginInfoTooltip/);
   });
 });

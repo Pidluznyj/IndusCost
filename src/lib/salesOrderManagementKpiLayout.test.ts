@@ -22,11 +22,12 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.ok(secondaryIdx > alertsIdx);
   });
 
-  it("2. bloco Visão Geral aparece primeiro com no máximo 5 cards principais", () => {
+  it("2. bloco Visão Geral usa SystemTotalizerCard com grid executivo", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const labels = read("src/lib/salesOrderManagementKpiLabels.ts");
     assert.match(labels, /Visão Geral/);
     assert.match(dashboard, /SALES_ORDER_MGMT_KPI_SECTIONS\.overview/);
+    assert.match(dashboard, /SYSTEM_TOTALIZER_GRID_CLASS/);
     assert.match(dashboard, /Total de pedidos/);
     assert.match(dashboard, /Valor vendido/);
     assert.match(dashboard, /Valor faturado/);
@@ -36,8 +37,10 @@ describe("salesOrderManagementKpiLayout", () => {
       dashboard.indexOf('testId="sales-order-management-overview"'),
       dashboard.indexOf("<SalesOrderManagementMarginOverview")
     );
-    const metricCardsInOverview = (overviewBlock.match(/<MetricCard[\s\n/>]/g) ?? []).length;
-    assert.equal(metricCardsInOverview, 5);
+    const totalizerCardsInOverview = (overviewBlock.match(/<SystemTotalizerCard[\s\n/>]/g) ?? [])
+      .length;
+    assert.ok(totalizerCardsInOverview >= 5);
+    assert.doesNotMatch(overviewBlock, /<MetricCard[\s\n/>]/);
   });
 
   it("3. bloco Alertas aparece antes dos blocos secundários", () => {
@@ -53,17 +56,20 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(secondary, /sales-order-management-logistics/);
     assert.match(secondary, /sales-order-management-economic-summary/);
     assert.match(secondary, /sales-order-margin-drill-/);
+    assert.match(marginOverview, /SystemTotalizerCard/);
     assert.match(marginOverview, /amountFormat="currency"/);
     assert.match(marginOverview, /amountFormat="percent"/);
+    assert.doesNotMatch(marginOverview, /buildSalesOrderMarginCoverageHint/);
   });
 
-  it("5. cards principais usam MetricCard oficial com superfície visível", () => {
-    const css = read("src/components/ui/metric-card.css");
+  it("5. cards principais usam SystemTotalizerCard com grid executivo", () => {
+    const css = read("src/components/ui/system-totalizer-card.css");
+    const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     const section = read("src/components/sales/SalesOrderKpiSection.tsx");
-    assert.match(css, /background:\s*var\(--color-card/);
-    assert.match(css, /metric-card-grid > \*/);
-    assert.match(css, /overflow:\s*hidden/);
-    assert.match(css, /box-shadow:/);
+    assert.match(css, /font-weight:\s*600/);
+    assert.match(css, /white-space:\s*nowrap/);
+    assert.match(dashboard, /SYSTEM_TOTALIZER_GRID_CLASS/);
+    assert.match(dashboard, /SYSTEM_TOTALIZER_METRIC_CARD_CLASS/);
     assert.match(section, /data-panel/);
     assert.match(section, /bg-card shadow-sm/);
   });
@@ -72,6 +78,7 @@ describe("salesOrderManagementKpiLayout", () => {
     const dashboard = read("src/components/sales/SalesOrderManagementKpiDashboard.tsx");
     assert.match(dashboard, /sales-order-alert-card-/);
     assert.match(dashboard, /compact/);
+    assert.match(dashboard, /SystemTotalizerCard/);
     assert.match(dashboard, /resolveNegativeMarginCountVariant/);
     assert.match(dashboard, /resolveAlertCountVariant/);
   });
@@ -93,13 +100,14 @@ describe("salesOrderManagementKpiLayout", () => {
     assert.match(perf, /lazy/);
   });
 
-  it("9. listagem usa seção Visão Geral com MetricCard e grid executivo", () => {
+  it("9. listagem usa seção Visão Geral com SystemTotalizerCard e grid executivo", () => {
     const list = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(list, /sales-order-list-overview/);
     assert.match(list, /Pedidos filtrados/);
     assert.match(list, /Valor vendido/);
     assert.match(list, /sales-order-list-summary-grid/);
+    assert.match(list, /SystemTotalizerCard/);
     assert.match(module, /SalesOrderListSummaryCards/);
     assert.doesNotMatch(module, /FinanceBiKpiCard/);
   });
@@ -133,8 +141,10 @@ describe("salesOrderManagementKpiLayout — performance e regressão", () => {
     assert.match(secondary, /marginEconomics\?\.consolidated/);
   });
 
-  it("MetricCard loading usa skeleton, não valor zero", () => {
+  it("loading delega skeleton ao MetricCard subjacente", () => {
+    const totalizer = read("src/components/ui/SystemTotalizerCard.tsx");
     const card = read("src/components/ui/MetricCard.tsx");
+    assert.match(totalizer, /loading={loading}/);
     assert.match(card, /metric-card-loading/);
     assert.match(card, /loading \?/);
   });
@@ -152,9 +162,21 @@ describe("salesOrderManagementKpiLayout — performance e regressão", () => {
     assert.doesNotMatch(helpers, /marginValue\s*=/);
   });
 
+  it("gestão não usa MetricCard nos KPIs principais", () => {
+    for (const file of [
+      "src/components/sales/SalesOrderManagementKpiDashboard.tsx",
+      "src/components/sales/SalesOrderManagementMarginOverview.tsx",
+      "src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx",
+    ]) {
+      const src = read(file);
+      assert.match(src, /SystemTotalizerCard/, `${file} deve usar SystemTotalizerCard`);
+      assert.doesNotMatch(src, /<MetricCard[\s\n/>]/, `${file} não deve usar MetricCard`);
+    }
+  });
+
   it("cards não importam Prisma", () => {
     for (const file of [
-      "src/components/ui/MetricCard.tsx",
+      "src/components/ui/SystemTotalizerCard.tsx",
       "src/components/sales/SalesOrderManagementKpiDashboard.tsx",
       "src/components/sales/SalesOrderListSummaryCards.tsx",
     ]) {
