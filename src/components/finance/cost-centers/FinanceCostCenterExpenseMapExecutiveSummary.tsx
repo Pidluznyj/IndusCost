@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { CheckCircle2, Clock, DollarSign, Layers, Percent } from "lucide-react";
+import { CheckCircle2, Clock, DollarSign, Layers, Percent, X } from "lucide-react";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
@@ -67,10 +67,11 @@ export function FinanceCostCenterExpenseMapExecutiveSummary({
           <button
             type="button"
             onClick={onClearSelection}
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/50"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/50"
             data-testid="finance-cc-expense-map-clear-selection"
           >
-            Limpar seleção
+            <X className="h-3.5 w-3.5" />
+            Limpar seleção ({formatFinanceInteger(totals.centersCount)})
           </button>
         ) : undefined
       }

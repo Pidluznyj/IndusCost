@@ -274,6 +274,26 @@ describe("financeCostCenterExpenseMap", () => {
     assert.doesNotMatch(section, /min-w-0 pr-8/);
   });
 
+  it("botão limpar seleção aparece no cabeçalho e no resumo com contagem", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
+      "utf8"
+    );
+    const summary = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(section, /finance-cc-expense-map-clear-selection-toolbar/);
+    assert.match(section, /Limpar seleção \(\{selectedCenterIds\.length\}\)/);
+    assert.match(section, /handleClearSelection/);
+    assert.match(section, /setSelectedCenterIds\(\[\]\)/);
+    assert.match(summary, /finance-cc-expense-map-clear-selection/);
+    assert.match(summary, /Limpar seleção \(\{formatFinanceInteger\(totals\.centersCount\)\}\)/);
+  });
+
   it("drilldown lista apenas títulos do centro via API path por id", () => {
     const section = readFileSync(
       join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),

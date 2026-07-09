@@ -577,21 +577,34 @@ export function FinanceCostCenterExpenseMapSection({
             Valores conforme filtros atuais da tela.
           </p>
         </div>
-        <label className="space-y-1 min-w-[180px]">
-          <span className={financeModuleFilterLabelClass()}>Filtrar cards</span>
-          <select
-            className={financeModuleFilterFieldClass()}
-            value={cardFilter}
-            onChange={(e) => setCardFilter(e.target.value as CostCenterExpenseMapCategoryFilter)}
-            data-testid="finance-cc-expense-map-card-filter"
-          >
-            {CARD_FILTER_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          {hasCardSelection ? (
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
+              data-testid="finance-cc-expense-map-clear-selection-toolbar"
+            >
+              <X className="h-3.5 w-3.5" />
+              Limpar seleção ({selectedCenterIds.length})
+            </button>
+          ) : null}
+          <label className="space-y-1 min-w-[180px]">
+            <span className={financeModuleFilterLabelClass()}>Filtrar cards</span>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={cardFilter}
+              onChange={(e) => setCardFilter(e.target.value as CostCenterExpenseMapCategoryFilter)}
+              data-testid="finance-cc-expense-map-card-filter"
+            >
+              {CARD_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {dashboardLoading && !dashboard ? (
