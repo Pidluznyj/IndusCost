@@ -51,11 +51,11 @@ describe("sidebarNavigation — filtro por permissão", () => {
   it("oculta grupos sem nenhum item acessível", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
     assert.equal(nav.directItems.length, 0);
-    assert.equal(nav.groups.length, 1);
+    assert.equal(nav.groups.length, 2);
     assert.equal(nav.groups[0]?.id, "engenharia");
     assert.deepEqual(
       nav.groups[0]?.items.map((item) => item.itemId),
-      ["products"]
+      ["products", "transformation-simulator"]
     );
   });
 
@@ -87,11 +87,12 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.deepEqual(labels, [...SIDEBAR_GROUP_UI_LABELS]);
   });
 
-  it("Engenharia contém Produtos, Suprimentos, Simulações e Projetos", () => {
+  it("Engenharia contém Produtos, Simulador, Suprimentos, Simulações e Projetos", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const eng = nav.groups.find((g) => g.id === "engenharia");
     assert.deepEqual(eng?.items.map((i) => i.label), [
       MODULE_LABELS.products,
+      MODULE_LABELS["transformation-simulator"],
       MODULE_LABELS.materials,
       MODULE_LABELS.simulations,
       MODULE_LABELS.projects,
@@ -259,13 +260,15 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     }
   });
 
-  it("modo colapsado usa ícones flat com tooltip e sem subitens aninhados", () => {
+  it("modo colapsado usa rail com rótulos curtos visíveis e flyout por clique", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.match(sidebar, /flatAccessibleItems\.map\(\(item\) =>/);
-    assert.match(sidebar, /title=\{collapsed \? label : undefined\}/);
+    assert.match(sidebar, /data-sidebar-collapsed-rail/);
+    assert.match(sidebar, /sidebar-collapsed-short-label/);
+    assert.match(sidebar, /SidebarCollapsedFlyout/);
+    assert.match(sidebar, /min-h-11/);
     assert.match(
       sidebar,
-      /\{collapsed \? \([\s\S]*flatAccessibleItems[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
+      /\{collapsed \? \([\s\S]*SidebarCollapsedGroupButton[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
     );
   });
 
@@ -313,10 +316,12 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
     assert.ok(sidebar.includes("data-sidebar-collapsed"));
   });
 
-  it("sidebar colapsada não renderiza accordions aninhados", () => {
+  it("sidebar colapsada abre submenus via flyout, não accordion inline", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /data-sidebar-collapsed=\{collapsed \? "true" : "false"\}/);
-    assert.match(
+    assert.match(sidebar, /SidebarCollapsedFlyout/);
+    assert.match(sidebar, /toggleFlyout/);
+    assert.doesNotMatch(
       sidebar,
       /\{collapsed \? \([\s\S]*flatAccessibleItems[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
     );
@@ -324,7 +329,7 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
 
   it("grupos vazios não aparecem para usuário sem permissões", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
-    assert.equal(nav.groups.length, 1);
+    assert.equal(nav.groups.length, 2);
     assert.equal(nav.groups[0]?.id, "engenharia");
     assert.equal(nav.directItems.length, 0);
   });
@@ -337,10 +342,11 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
     assert.ok(!ids.includes("products"));
   });
 
-  it("tooltips nativos no modo colapsado", () => {
+  it("tooltip no modo colapsado é complemento, não única identificação", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
+    assert.match(sidebar, /sidebar-collapsed-short-label/);
+    assert.match(sidebar, /resolveModuleShortLabel/);
     assert.match(sidebar, /title=\{collapsed \? label : undefined\}/);
-    assert.match(sidebar, /aria-label=\{collapsed \? label : undefined\}/);
   });
 
   it("rótulos oficiais dos grupos permanecem inalterados", () => {

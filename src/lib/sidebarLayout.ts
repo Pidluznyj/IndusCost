@@ -6,7 +6,8 @@
 export const SIDEBAR_COLLAPSED_STORAGE_KEY = "induscost.sidebar.collapsed";
 
 export const SIDEBAR_LAYOUT_WIDTH_EXPANDED = 272;
-export const SIDEBAR_LAYOUT_WIDTH_COLLAPSED = 80;
+/** Largura do rail recolhido — ícone + rótulo curto visível (touch-friendly). */
+export const SIDEBAR_LAYOUT_WIDTH_COLLAPSED = 104;
 
 /** Viewport abaixo de lg — sidebar vira drawer sobre o conteúdo. */
 export const SIDEBAR_MOBILE_MEDIA_QUERY = "(max-width: 1023px)";

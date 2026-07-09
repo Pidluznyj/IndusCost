@@ -43,6 +43,15 @@ export function SidebarLayoutProvider({ children }: { children: ReactNode }) {
     if (!isMobile) setMobileOpen(false);
   }, [isMobile]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
   const toggleDesktopCollapsed = useCallback(() => {
     setDesktopCollapsed((current) => {
       const next = !current;

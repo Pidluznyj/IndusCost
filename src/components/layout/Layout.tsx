@@ -9,6 +9,7 @@ import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { MarketHeaderTicker } from "@/src/components/layout/MarketHeaderTicker";
+import { AppHeaderBreadcrumb } from "@/src/components/layout/AppHeaderBreadcrumb";
 import { fetchJsonOk } from "@/src/lib/http";
 
 type HeaderSyncLog = {
@@ -121,15 +122,16 @@ function LayoutShell() {
             {isMobile ? (
               <button
                 type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 aria-label="Abrir menu lateral"
+                aria-expanded={false}
                 title="Abrir menu"
                 onClick={openMobileSidebar}
               >
                 <PanelLeft className="h-5 w-5" />
               </button>
             ) : null}
-            <h1 className="text-xl font-semibold tracking-tight truncate">Dashboard</h1>
+            <AppHeaderBreadcrumb pathname={location.pathname} />
           </div>
           <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             {authUser ? <MarketHeaderTicker /> : null}

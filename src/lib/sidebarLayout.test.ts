@@ -55,16 +55,23 @@ describe("sidebarLayout", () => {
 
   it("persiste e recupera colapso no localStorage", () => {
     const storage = new Map<string, string>();
-    const original = globalThis.localStorage;
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
+    const mockStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
       },
+    };
+    type GlobalWithWindow = typeof globalThis & { window?: { localStorage: typeof mockStorage } };
+    const globalRef = globalThis as GlobalWithWindow;
+    const originals = {
+      global: globalRef.localStorage,
+      window: globalRef.window,
+    };
+    Object.defineProperty(globalRef, "localStorage", {
+      configurable: true,
+      value: mockStorage,
     });
+    globalRef.window = { localStorage: mockStorage };
     try {
       persistSidebarCollapsed(true);
       assert.equal(readStoredSidebarCollapsed(), true);
@@ -72,10 +79,15 @@ describe("sidebarLayout", () => {
       assert.equal(readStoredSidebarCollapsed(), false);
       assert.equal(storage.get(SIDEBAR_COLLAPSED_STORAGE_KEY), "false");
     } finally {
-      Object.defineProperty(globalThis, "localStorage", {
+      Object.defineProperty(globalRef, "localStorage", {
         configurable: true,
-        value: original,
+        value: originals.global,
       });
+      if (originals.window === undefined) {
+        delete globalRef.window;
+      } else {
+        globalRef.window = originals.window;
+      }
     }
   });
 });
@@ -115,14 +127,26 @@ describe("Layout.tsx — recolhimento do menu lateral", () => {
     assert.match(layout, /Última sincronia com o Nomus/);
     assert.match(layout, /formatRoleLabel/);
   });
+
+  it("header exibe breadcrumb contextual em vez de título fixo Dashboard", () => {
+    const layout = read("src/components/layout/Layout.tsx");
+    assert.match(layout, /AppHeaderBreadcrumb/);
+    assert.doesNotMatch(layout, /<h1 className="text-xl font-semibold[^"]*">Dashboard<\/h1>/);
+  });
+
+  it("botão mobile usa área de toque mínima 44px", () => {
+    const layout = read("src/components/layout/Layout.tsx");
+    assert.match(layout, /min-h-11 min-w-11/);
+  });
 });
 
 describe("Sidebar.tsx — colapso e drawer", () => {
-  it("usa contexto compartilhado em vez de useState local", () => {
+  it("usa contexto compartilhado para colapso desktop", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /useSidebarLayout/);
+    assert.match(sidebar, /desktopCollapsed/);
     assert.match(sidebar, /toggleDesktopCollapsed/);
-    assert.doesNotMatch(sidebar, /useState\(false\).*collapsed/s);
+    assert.doesNotMatch(sidebar, /useState\([^)]*\)[\s\S]{0,40}desktopCollapsed/s);
   });
 
   it("botão de recolher/expandir com acessibilidade", () => {
@@ -132,13 +156,19 @@ describe("Sidebar.tsx — colapso e drawer", () => {
     assert.match(sidebar, /title=\{isMobile \? "Fechar menu" : collapsed \? "Expandir menu" : "Recolher menu"\}/);
   });
 
-  it("desktop colapsado mantém ícones via flatAccessibleItems", () => {
+  it("desktop colapsado usa rail com rótulos curtos e flyout por clique", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /resolveSidebarAsideWidth/);
     assert.match(sidebar, /data-sidebar-collapsed=\{collapsed \? "true" : "false"\}/);
+    assert.match(sidebar, /data-sidebar-collapsed-rail/);
+    assert.match(sidebar, /sidebar-collapsed-short-label/);
+    assert.match(sidebar, /SidebarCollapsedGroupButton/);
+    assert.match(sidebar, /SidebarCollapsedFlyout/);
+    assert.match(sidebar, /resolveModuleShortLabel/);
+    assert.match(sidebar, /resolveNavigationGroupShortLabel/);
     assert.match(
       sidebar,
-      /\{collapsed \? \([\s\S]*flatAccessibleItems[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
+      /\{collapsed \? \([\s\S]*SidebarCollapsedGroupButton[\s\S]*\) : \([\s\S]*SidebarNavGroup/s
     );
   });
 
@@ -159,5 +189,11 @@ describe("SidebarLayoutContext — viewport mobile", () => {
     assert.equal(SIDEBAR_MOBILE_MEDIA_QUERY, "(max-width: 1023px)");
     assert.match(context, /persistSidebarCollapsed/);
     assert.match(context, /readStoredSidebarCollapsed/);
+  });
+
+  it("fecha drawer mobile com tecla Escape", () => {
+    const context = read("src/contexts/SidebarLayoutContext.tsx");
+    assert.match(context, /event\.key === "Escape"/);
+    assert.match(context, /setMobileOpen\(false\)/);
   });
 });
