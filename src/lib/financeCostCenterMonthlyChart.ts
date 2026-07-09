@@ -19,11 +19,16 @@ export {
   buildCostCenterMonthlyChartFilters,
   buildCostCenterMonthlyChartQuery,
   buildCostCenterMonthlyChartSeries,
+  buildCostCenterMonthlyLinearTrendValues,
+  buildCostCenterMonthlyTrendChartData,
+  buildCostCenterMonthlyTrendSummary,
   formatCostCenterMonthlyChartPeriodLabel,
   parseCostCenterMonthlyChartCostCenterIds,
   type CostCenterMonthlyChartPayload,
   type CostCenterMonthlyChartPoint,
   type CostCenterMonthlyChartSourceRow,
+  type CostCenterMonthlyTrendChartPoint,
+  type CostCenterMonthlyTrendSummary,
 } from "./financeCostCenterMonthlyChart.shared.js";
 
 export async function buildCostCenterMonthlyChartPayloadDefault(

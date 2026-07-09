@@ -27,6 +27,7 @@ import {
   TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE,
   type TransformationCostSimulatorFormValues,
 } from "@/src/lib/transformationCostSimulator";
+import { CostCenterHhHmSimulationPanel } from "@/src/components/CostCenterHhHmSimulationPanel";
 
 const INPUT_CLASS =
   "h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -696,6 +697,8 @@ export function TransformationCostSimulatorModule() {
           </div>
         </div>
       </section>
+
+      <CostCenterHhHmSimulationPanel />
 
       <details className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-800 marker:content-none">

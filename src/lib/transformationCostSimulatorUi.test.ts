@@ -38,4 +38,17 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.match(server, /buildOfficialDefaultIndustrialCostsReference/);
     assert.match(server, /initAnalysisCache/);
   });
+
+  it("simulação HH/HM por centro de custo integrada sem persistir custo oficial", () => {
+    const mod = read("src/components/TransformationCostSimulatorModule.tsx");
+    assert.match(mod, /CostCenterHhHmSimulationPanel/);
+    const panel = read("src/components/CostCenterHhHmSimulationPanel.tsx");
+    assert.match(panel, /média mensal/i);
+    assert.match(panel, /Usar valor manual/i);
+    assert.match(panel, /Não altera custos oficiais/i);
+    assert.doesNotMatch(panel, /prisma/i);
+    const routes = read("src/lib/financeCostCentersRoutes.ts");
+    assert.match(routes, /\/api\/finance\/cost-centers\/hh-hm-simulation\/monthly-data/);
+    assert.doesNotMatch(routes, /prisma\.(simulation|product)/i);
+  });
 });

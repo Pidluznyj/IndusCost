@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   buildCostCenterMonthlyChartQuery,
   buildCostCenterMonthlyChartSeries,
+  buildCostCenterMonthlyTrendSummary,
   formatCostCenterMonthlyChartPeriodLabel,
   parseCostCenterMonthlyChartCostCenterIds,
   type CostCenterMonthlyChartSourceRow,
@@ -104,5 +105,39 @@ describe("financeCostCenterMonthlyChart", () => {
     const routes = readFileSync(join(process.cwd(), "src/lib/financeCostCentersRoutes.ts"), "utf8");
     assert.match(routes, /\/api\/finance\/cost-centers\/monthly-chart/);
     assert.match(routes, /buildCostCenterMonthlyChartPayloadDefault/);
+  });
+
+  it("buildCostCenterMonthlyTrendSummary calcula totais e tendência", () => {
+    const series = buildCostCenterMonthlyChartSeries({
+      rows: [
+        monthlyRow({ month: 5, costCenterId: "cc-a", amount: 1000, paidAmount: 600, openAmount: 400 }),
+        monthlyRow({ month: 6, costCenterId: "cc-a", amount: 1500, paidAmount: 900, openAmount: 600 }),
+      ],
+      costCenterIds: ["cc-a"],
+      year: 2026,
+      highlightMonth: 6,
+    });
+    const summary = buildCostCenterMonthlyTrendSummary(series, {
+      titlesCount: 12,
+      highlightMonth: 6,
+    });
+    assert.equal(summary.totalAmount, 2500);
+    assert.equal(summary.titlesCount, 12);
+    assert.equal(summary.maxMonth, "Jun");
+    assert.equal(summary.trendDirection, "up");
+    assert.equal(summary.momChangePercent, 50);
+  });
+
+  it("mapa de gastos integra ícone e modal de tendência mensal", () => {
+    const section = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(section, /finance-cc-expense-map-trend-/);
+    assert.match(section, /FinanceCostCenterMonthlyTrendModal/);
+    assert.match(section, /LineChart/);
   });
 });

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, Link, Loader2, Printer, X, Check } from "lucide-react";
+import { Download, Link, LineChart, Loader2, Printer, X, Check } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
@@ -22,6 +22,7 @@ import {
 } from "@/src/lib/financeCostCenterExpenseMap";
 import { FinanceCostCenterExpenseMapExecutiveSummary } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary";
 import { FinanceCostCenterMonthlyDrilldownChart } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyDrilldownChart";
+import { FinanceCostCenterMonthlyTrendModal } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyTrendModal";
 import {
   buildCostCenterMonthlyChartQuery,
   formatCostCenterMonthlyChartPeriodLabel,
@@ -112,12 +113,14 @@ function ExpenseMapCard({
   selectionChecked,
   onDrilldown,
   onToggleSelection,
+  onOpenTrend,
 }: {
   card: CostCenterExpenseMapCard;
   drilldownActive: boolean;
   selectionChecked: boolean;
   onDrilldown: () => void;
   onToggleSelection: () => void;
+  onOpenTrend: () => void;
 }) {
   const shareWidth = Math.min(100, Math.max(0, card.sharePercentage));
   return (
@@ -131,31 +134,46 @@ function ExpenseMapCard({
         drilldownActive && selectionChecked && "ring-2 ring-primary shadow-md"
       )}
     >
-      <button
-        type="button"
-        aria-label={selectionChecked ? "Remover do resumo" : "Incluir no resumo"}
-        aria-pressed={selectionChecked}
-        data-testid={`finance-cc-expense-map-select-${card.costCenterId}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleSelection();
-        }}
-        className={cn(
-          "absolute top-3 right-3 z-10 flex h-6 w-6 items-center justify-center rounded-md border transition-colors",
-          selectionChecked
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-primary/5"
-        )}
-      >
-        {selectionChecked ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : null}
-      </button>
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-label="Ver tendência mensal"
+          title="Ver tendência mensal"
+          data-testid={`finance-cc-expense-map-trend-${card.costCenterId}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenTrend();
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+        >
+          <LineChart className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label={selectionChecked ? "Remover do resumo" : "Incluir no resumo"}
+          aria-pressed={selectionChecked}
+          data-testid={`finance-cc-expense-map-select-${card.costCenterId}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleSelection();
+          }}
+          className={cn(
+            "flex h-6 w-6 items-center justify-center rounded-md border transition-colors",
+            selectionChecked
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-primary/5"
+          )}
+        >
+          {selectionChecked ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : null}
+        </button>
+      </div>
 
       <button
         type="button"
         aria-pressed={drilldownActive}
         onClick={onDrilldown}
         title="Clique para detalhar"
-        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md pr-8"
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md pr-16"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 pr-8">
@@ -167,7 +185,7 @@ function ExpenseMapCard({
               <p className="text-[10px] text-muted-foreground truncate">Pai: {card.parentName}</p>
             ) : null}
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0 mr-6">
+          <div className="flex flex-col items-end gap-1 shrink-0 mr-14">
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -239,6 +257,7 @@ export function FinanceCostCenterExpenseMapSection({
   const [chartPayload, setChartPayload] = useState<CostCenterMonthlyChartPayload | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
+  const [trendModalCard, setTrendModalCard] = useState<CostCenterExpenseMapCard | null>(null);
 
   const cards = useMemo(() => {
     const built = buildCostCenterExpenseMapCards(dashboard?.byCostCenter ?? [], centers);
@@ -518,6 +537,13 @@ export function FinanceCostCenterExpenseMapSection({
             document.body
           )
         : null}
+      {trendModalCard ? (
+        <FinanceCostCenterMonthlyTrendModal
+          card={trendModalCard}
+          appliedFilters={appliedFilters}
+          onClose={() => setTrendModalCard(null)}
+        />
+      ) : null}
     <section
       className="space-y-4 border-t border-border pt-6 cc-detail-no-print"
       data-testid="finance-cc-expense-map-section"
@@ -534,7 +560,7 @@ export function FinanceCostCenterExpenseMapSection({
         <div>
           <h3 className="text-sm font-bold text-foreground">Mapa de Gastos por Centro de Custo</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Use o check no canto do card para montar o resumo executivo. Clique no corpo do card para detalhar títulos.
+            Use o check no canto do card para montar o resumo executivo. Clique no corpo do card para detalhar títulos. O ícone de gráfico abre a tendência mensal.
           </p>
           <p className="text-[10px] text-muted-foreground mt-1" data-testid="finance-cc-expense-map-scope-note">
             Valores conforme filtros atuais da tela.
@@ -577,6 +603,7 @@ export function FinanceCostCenterExpenseMapSection({
               selectionChecked={selectedCenterIdSet.has(card.costCenterId)}
               onDrilldown={() => handleDrilldownClick(card)}
               onToggleSelection={() => handleToggleCardSelection(card.costCenterId)}
+              onOpenTrend={() => setTrendModalCard(card)}
             />
           ))}
         </div>

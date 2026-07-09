@@ -21,6 +21,10 @@ import {
   parseCostCenterMonthlyChartCostCenterIds,
 } from "@/src/lib/financeCostCenterMonthlyChart.js";
 import {
+  buildCostCenterHhHmSimulationMonthlyPayload,
+  parseCostCenterHhHmSimulationAveragePeriod,
+} from "@/src/lib/financeCostCenterHhHmSimulation.server.js";
+import {
   buildCostCenterSupplierPaymentSummary,
   buildCostCenterSupplierPaymentTitles,
   buildCostCenterSupplierPaymentYears,
@@ -180,6 +184,41 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
       console.error("GET /api/finance/cost-centers/monthly-chart", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao montar gráfico mensal do centro de custo.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/hh-hm-simulation/monthly-data", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const query = req.query as Record<string, unknown>;
+      const costCenterIds = parseCostCenterMonthlyChartCostCenterIds(query);
+      if (costCenterIds.length === 0) {
+        return res.status(400).json({
+          error: "Informe costCenterIds (ou costCenterId) para a simulação HH/HM.",
+          code: "MISSING_COST_CENTER_IDS",
+        });
+      }
+
+      const averagePeriod = parseCostCenterHhHmSimulationAveragePeriod(query.averagePeriod);
+      const payload = await buildCostCenterHhHmSimulationMonthlyPayload({
+        costCenterIds,
+        averagePeriod,
+        query,
+      });
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDashboardError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDashboardError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/hh-hm-simulation/monthly-data", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao carregar dados mensais para simulação HH/HM.", error)
       );
     }
   });
