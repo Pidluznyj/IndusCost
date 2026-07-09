@@ -35,9 +35,10 @@ import type {
 import { formatCurrency } from "@/src/lib/utils";
 
 /**
- * Altura explícita — ResponsiveContainer com height="100%" colapsa em flex sem
- * altura definida (mesma correção de FinanceBillingChartShell). Sem isto, o
- * gráfico mede width(-1)/height(-1) e não renderiza.
+ * Altura explícita passada diretamente ao ResponsiveContainer — com height="100%"
+ * dentro de um flex/grid sem altura definida o container colapsa, o recharts mede
+ * width(-1)/height(-1) e o gráfico não renderiza. Mesmo padrão de
+ * FinanceBillingChartShell (height numérico).
  */
 const FULFILLMENT_CHART_HEIGHT = 220;
 
@@ -67,9 +68,7 @@ function ChartCard({
         <h3 className="text-sm font-bold">{title}</h3>
         {subtitle ? <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p> : null}
       </div>
-      <div className="mt-2" style={{ width: "100%", height: FULFILLMENT_CHART_HEIGHT }}>
-        {children}
-      </div>
+      <div className="mt-2">{children}</div>
     </div>
   );
 }
@@ -287,7 +286,7 @@ export function SalesOrderManagementFulfillmentCharts({
           subtitle="Contagem por pedido (1 linha = 1 pedido)"
           empty={charts.ordersByLogisticStatus.length === 0}
         >
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <BarChart data={charts.ordersByLogisticStatus} layout="vertical" margin={{ left: 8, right: 16 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" allowDecimals={false} />
@@ -302,7 +301,7 @@ export function SalesOrderManagementFulfillmentCharts({
           title="Valor por status logístico"
           empty={charts.valueByLogisticStatus.length === 0}
         >
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <BarChart data={charts.valueByLogisticStatus} layout="vertical" margin={{ left: 8, right: 16 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} />
@@ -314,7 +313,7 @@ export function SalesOrderManagementFulfillmentCharts({
         </ChartCard>
 
         <ChartCard title="No prazo × atrasado" empty={onTimeData.every((d) => d.value === 0)}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <BarChart data={onTimeData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
@@ -326,7 +325,7 @@ export function SalesOrderManagementFulfillmentCharts({
         </ChartCard>
 
         <ChartCard title="SLA médio por mês" empty={charts.slaByMonth.length === 0}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <BarChart data={charts.slaByMonth}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} />
@@ -338,7 +337,7 @@ export function SalesOrderManagementFulfillmentCharts({
         </ChartCard>
 
         <ChartCard title="Evolução vendido × faturado" empty={charts.soldVsInvoicedByMonth.length === 0}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <ComposedChart data={charts.soldVsInvoicedByMonth}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} />
@@ -352,7 +351,7 @@ export function SalesOrderManagementFulfillmentCharts({
         </ChartCard>
 
         <ChartCard title="Top clientes com atrasos" empty={charts.topLateCustomers.length === 0}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={FULFILLMENT_CHART_HEIGHT}>
             <BarChart data={charts.topLateCustomers} layout="vertical" margin={{ left: 8, right: 16 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" allowDecimals={false} />
