@@ -255,7 +255,7 @@ describe("commissionVisualAudit", () => {
   it("parseVisualAuditAppraisalMode aceita aliases", () => {
     assert.equal(parseVisualAuditAppraisalMode("payable"), "PAYABLE");
     assert.equal(parseVisualAuditAppraisalMode("FORECAST"), "FORECAST");
-    assert.equal(parseVisualAuditAppraisalMode(undefined), "GENERATED");
+    assert.equal(parseVisualAuditAppraisalMode(undefined), "PAYABLE");
   });
 
   it("cliente excluído mantém base e zera comissão na linha", () => {

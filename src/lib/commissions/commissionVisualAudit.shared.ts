@@ -7,18 +7,18 @@ export const VISUAL_AUDIT_APPRAISAL_MODES: VisualAuditAppraisalMode[] = [
 ];
 
 export const VISUAL_AUDIT_MODE_LABELS: Record<VisualAuditAppraisalMode, string> = {
-  GENERATED: "Gerada",
-  FORECAST: "Prevista / A liberar",
-  PAYABLE: "A pagar no mês",
+  GENERATED: "Gerada (secundária)",
+  FORECAST: "Prevista (secundária)",
+  PAYABLE: "Fechamento por recebimento",
 };
 
 export const VISUAL_AUDIT_MODE_DESCRIPTIONS: Record<VisualAuditAppraisalMode, string> = {
   GENERATED:
-    "Comissão gerada por vendas/faturamentos do período (data da NF/documento ou pedido).",
+    "Visão secundária por comissão gerada (confirmedAt da NF). Não substitui a auditoria do fechamento.",
   FORECAST:
-    "Comissão calculada em títulos em aberto ou futuros, ainda dependente de recebimento.",
+    "Visão secundária por títulos em aberto (dueDate). Use a aba Previsão para o fluxo oficial.",
   PAYABLE:
-    "Comissão liberada em títulos baixados/recebidos no período (settlementDate do CR). Comparável ao Nomus mensal.",
+    "Auditoria oficial do fechamento: títulos baixados no mês (settlementDate), mesmas regras e totais do Fechamento do mês.",
 };
 
 export function parseVisualAuditAppraisalMode(
@@ -27,5 +27,6 @@ export function parseVisualAuditAppraisalMode(
   const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
   if (raw === "FORECAST" || raw === "PREVISTA" || raw === "PREVIEW") return "FORECAST";
   if (raw === "PAYABLE" || raw === "PAGAR" || raw === "PAGO") return "PAYABLE";
-  return "GENERATED";
+  if (raw === "GENERATED" || raw === "GERADA") return "GENERATED";
+  return "PAYABLE";
 }

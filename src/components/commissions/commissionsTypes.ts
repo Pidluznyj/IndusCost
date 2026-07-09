@@ -774,6 +774,10 @@ export type CommissionsVisualAuditRow = {
   receivableTitleStatus: string;
   commissionStatus: string;
   alertLabels: string[];
+  auditCategory?: string;
+  auditCategoryLabel?: string;
+  lineStatus?: string;
+  statusReason?: string | null;
 };
 
 export type CommissionsVisualAuditPayload = {
@@ -808,6 +812,53 @@ export type CommissionsVisualAuditPayload = {
     indusAverageRatePercent: number | null;
     comparable: boolean;
   };
+  scopeNote?: string;
+  reconciliationNote?: string;
+  materializationSummary?: {
+    totalReceivablesCount: number;
+    receivablesWithScheduleCount: number;
+    receivablesWithoutScheduleCount: number;
+    excludedCustomerCount: number;
+    groupCompanyExcludedCount: number;
+    groupCompanyExcludedReceivedAmount: number;
+    sellerUnresolvedCount: number;
+    staleScheduleCount: number;
+    totalReceivedAmount: number;
+    totalExpectedCommission: number;
+    totalReleasedCommission: number;
+    pendingMaterialization: boolean;
+    pendingMaterializationMessage: string | null;
+    rebuildScriptHint: string | null;
+  };
+  officialCards?: {
+    totalReceivedAmount: number;
+    receivedWithScheduleAmount: number;
+    receivedExcludedCustomerAmount: number;
+    receivedGroupCompanyExcludedAmount: number;
+    receivedWithoutScheduleAmount: number;
+    commissionableBaseAmount: number;
+    grossCommissionAmount: number;
+    excludedCommissionAmount: number;
+    finalCommissionAmount: number;
+    nomusCommissionDiff: number | null;
+    nomusDiffExplanation: string | null;
+    reportStatus: string;
+  };
+  reconciliation?: {
+    divergentReceivableCount: number;
+    excludedCustomerCount: number;
+    groupCompanyExcludedCount: number;
+    groupCompanyExcludedReceivedAmount: number;
+    receivablesWithoutScheduleCount: number;
+    staleScheduleCount: number;
+    sellerUnresolvedCount?: number;
+    duplicateReceivedCount: number;
+    diffExplanation: string | null;
+  };
+  criticalDivergence?: boolean;
+  criticalDivergenceReason?: string | null;
+  categoryRowCounts?: Partial<Record<string, number>>;
+  criticalDivergenceReceivableCount?: number;
 };
 
 export type CommissionsMonthlyClosingDetailRow = {

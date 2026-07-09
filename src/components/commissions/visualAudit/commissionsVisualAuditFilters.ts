@@ -10,6 +10,7 @@ export type VisualAuditFilters = {
   orderCode: string;
   nfeNumber: string;
   nomusReceivableId: string;
+  auditCategory: string;
   onlySettled: boolean;
   onlyOpen: boolean;
   onlyDivergences: boolean;
@@ -22,7 +23,7 @@ export type VisualAuditFilters = {
 };
 
 export const EMPTY_VISUAL_AUDIT_FILTERS: VisualAuditFilters = {
-  appraisalMode: "GENERATED",
+  appraisalMode: "PAYABLE",
   year: String(new Date().getFullYear()),
   month: String(new Date().getMonth() + 1),
   commissionPersonId: "",
@@ -30,6 +31,7 @@ export const EMPTY_VISUAL_AUDIT_FILTERS: VisualAuditFilters = {
   orderCode: "",
   nfeNumber: "",
   nomusReceivableId: "",
+  auditCategory: "",
   onlySettled: false,
   onlyOpen: false,
   onlyDivergences: false,
@@ -51,6 +53,7 @@ export function buildVisualAuditQueryString(filters: VisualAuditFilters): string
   if (filters.orderCode.trim()) q.set("orderCode", filters.orderCode.trim());
   if (filters.nfeNumber.trim()) q.set("nfeNumber", filters.nfeNumber.trim());
   if (filters.nomusReceivableId.trim()) q.set("nomusReceivableId", filters.nomusReceivableId.trim());
+  if (filters.auditCategory.trim()) q.set("auditCategory", filters.auditCategory.trim());
   if (filters.onlySettled) q.set("onlySettled", "true");
   if (filters.onlyOpen) q.set("onlyOpen", "true");
   if (filters.onlyDivergences) q.set("onlyDivergences", "true");

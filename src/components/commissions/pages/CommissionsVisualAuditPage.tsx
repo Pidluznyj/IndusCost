@@ -4,6 +4,10 @@ import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
+import {
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
@@ -27,6 +31,18 @@ import {
   EMPTY_VISUAL_AUDIT_FILTERS,
   type VisualAuditFilters,
 } from "@/src/components/commissions/visualAudit/commissionsVisualAuditFilters";
+
+const AUDIT_CATEGORY_DRILLDOWN: Array<{ key: string; label: string; summaryKey?: string }> = [
+  { key: "COMMISSIONABLE", label: "OK / com schedule" },
+  { key: "CUSTOMER_EXCLUDED", label: "Cliente excluído", summaryKey: "excludedCustomerCount" },
+  { key: "GROUP_COMPANY_EXCLUDED", label: "Grupo excluído", summaryKey: "groupCompanyExcludedCount" },
+  { key: "SELLER_UNRESOLVED", label: "Vendedor não resolvido", summaryKey: "sellerUnresolvedCount" },
+  { key: "NO_SELLER", label: "Sem vendedor Nomus" },
+  { key: "NO_SCHEDULE", label: "Sem schedule", summaryKey: "receivablesWithoutScheduleCount" },
+  { key: "STALE_SCHEDULE", label: "Schedule desatualizado", summaryKey: "staleScheduleCount" },
+  { key: "NO_SALES_LINK", label: "Sem pedido vinculado" },
+  { key: "DIVERGENT", label: "Divergentes críticos" },
+];
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -54,9 +70,15 @@ function statusBadgeClass(kind: "title" | "commission", value: string): string {
 
 function VisualAuditDetailDrawer({
   lineId,
+  year,
+  month,
+  appraisalMode,
   onClose,
 }: {
   lineId: string | null;
+  year: string;
+  month: string;
+  appraisalMode: VisualAuditAppraisalMode;
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<{
@@ -73,12 +95,12 @@ function VisualAuditDetailDrawer({
     }
     setLoading(true);
     void fetchJsonOk<typeof detail>(
-      `/api/commissions/visual-audit/detail?lineId=${encodeURIComponent(lineId)}`
+      `/api/commissions/visual-audit/detail?lineId=${encodeURIComponent(lineId)}&year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&appraisalMode=${encodeURIComponent(appraisalMode)}`
     )
       .then(setDetail)
       .catch(() => setDetail(null))
       .finally(() => setLoading(false));
-  }, [lineId]);
+  }, [lineId, year, month, appraisalMode]);
 
   if (!lineId) return null;
 
@@ -285,11 +307,11 @@ export function CommissionsVisualAuditPage() {
             Comissões
           </p>
           <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">
-            Auditoria Visual por Contas a Receber
+            Auditoria Visual — Fechamento por Recebimento
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Valide comissão gerada, prevista e a pagar por título, NF, pedido e recebimento.
-            Resumo calculado no backend — sem cálculo no frontend.
+            Audite o mesmo universo do Fechamento do mês: títulos baixados por settlementDate,
+            schedules materializados, exclusões e divergências. Resumo calculado no backend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -306,6 +328,33 @@ export function CommissionsVisualAuditPage() {
 
       <VisualAuditModeTabs mode={mode} onChange={switchMode} />
       <p className="text-sm text-muted-foreground">{modeDescription}</p>
+
+      {mode === "PAYABLE" && data?.scopeNote ? (
+        <ExecutiveAlert
+          variant="info"
+          density="compact"
+          title="Escopo da auditoria"
+          description={`${data.scopeNote} ${data.reconciliationNote ?? ""}`}
+        />
+      ) : null}
+
+      {mode !== "PAYABLE" ? (
+        <ExecutiveAlert
+          variant="attention"
+          density="compact"
+          title="Visão secundária"
+          description="Para auditoria oficial alinhada ao Fechamento do mês, use a visão Fechamento por recebimento."
+        />
+      ) : null}
+
+      {mode === "PAYABLE" && data?.criticalDivergence ? (
+        <ExecutiveAlert
+          variant="attention"
+          density="compact"
+          title="Divergência crítica detectada"
+          description={data.criticalDivergenceReason ?? "Revise os títulos divergentes listados abaixo."}
+        />
+      ) : null}
 
       <div className="rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-widest text-[#6B7280]">
@@ -444,7 +493,116 @@ export function CommissionsVisualAuditPage() {
 
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
-      {cards ? <VisualAuditCards mode={mode} cards={cards} /> : null}
+      {mode === "PAYABLE" && data?.materializationSummary ? (
+        <CommissionsKpiSection
+          title="Resumo oficial — mesmo universo do Fechamento do mês"
+          eyebrow="Títulos baixados no período (settlementDate)"
+          testId="commissions-visual-audit-official-kpi"
+          minColumnWidth={240}
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Títulos recebidos"
+            amount={data.materializationSummary.totalReceivablesCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Com schedule"
+            amount={data.materializationSummary.receivablesWithScheduleCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Sem schedule"
+            amount={data.materializationSummary.receivablesWithoutScheduleCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Clientes excluídos"
+            amount={data.materializationSummary.excludedCustomerCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Empresas do grupo excluídas"
+            amount={data.materializationSummary.groupCompanyExcludedCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Recebido grupo (auditoria)"
+            amount={data.materializationSummary.groupCompanyExcludedReceivedAmount}
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Vendedor não resolvido"
+            amount={data.materializationSummary.sellerUnresolvedCount}
+            amountFormat="number"
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Total recebido gerencial"
+            amount={data.officialCards?.totalReceivedAmount ?? data.cards?.receivedAmountTotal ?? 0}
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Divergências críticas"
+            amount={data.reconciliation?.divergentReceivableCount ?? data.cards?.divergenceCount ?? 0}
+            amountFormat="number"
+          />
+        </CommissionsKpiSection>
+      ) : null}
+
+      {mode === "PAYABLE" ? (
+        <div className="flex flex-wrap gap-2">
+          {AUDIT_CATEGORY_DRILLDOWN.map((item) => {
+            const summary = data?.materializationSummary;
+            const reconciliation = data?.reconciliation;
+            const badgeCount =
+              item.key === "DIVERGENT"
+                ? (reconciliation?.divergentReceivableCount ??
+                  data?.criticalDivergenceReceivableCount ??
+                  null)
+                : item.summaryKey && summary
+                  ? (summary[item.summaryKey as keyof typeof summary] as number | undefined)
+                  : (data?.categoryRowCounts?.[item.key] ?? null);
+            return (
+            <button
+              key={item.key}
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
+                appliedFilters.auditCategory === item.key
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-background text-foreground ring-border hover:bg-muted/50"
+              }`}
+              onClick={() =>
+                setAppliedFilters((f) => ({
+                  ...f,
+                  auditCategory: f.auditCategory === item.key ? "" : item.key,
+                  page: 1,
+                }))
+              }
+            >
+              {item.label}
+              {badgeCount != null ? ` (${badgeCount})` : ""}
+            </button>
+            );
+          })}
+          {appliedFilters.auditCategory ? (
+            <button
+              type="button"
+              className="rounded-full px-3 py-1 text-xs font-semibold text-muted-foreground hover:underline"
+              onClick={() => setAppliedFilters((f) => ({ ...f, auditCategory: "", page: 1 }))}
+            >
+              Limpar categoria
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {cards && mode !== "PAYABLE" ? <VisualAuditCards mode={mode} cards={cards} /> : null}
 
       {loading && !data ? <CommissionsLoading label="Carregando auditoria…" /> : null}
 
@@ -459,6 +617,7 @@ export function CommissionsVisualAuditPage() {
               <thead>
                 <tr className="border-b text-left uppercase text-muted-foreground">
                   <th className="px-2 py-2">Vendedor</th>
+                  {mode === "PAYABLE" ? <th className="px-2 py-2">Categoria</th> : null}
                   <th className="px-2 py-2">Cliente</th>
                   <th className="px-2 py-2">Pedido</th>
                   <th className="px-2 py-2">NF-e</th>
@@ -490,6 +649,9 @@ export function CommissionsVisualAuditPage() {
                     onClick={() => setSelectedLineId(row.lineId)}
                   >
                     <td className="px-2 py-2">{row.commissionPersonName}</td>
+                    {mode === "PAYABLE" ? (
+                      <td className="px-2 py-2">{row.auditCategoryLabel ?? row.lineStatus ?? "—"}</td>
+                    ) : null}
                     <td className="px-2 py-2">{row.customerName ?? "—"}</td>
                     <td className="px-2 py-2">{row.orderCode ?? "—"}</td>
                     <td className="px-2 py-2">{row.nfeNumber ?? "—"}</td>
@@ -557,7 +719,13 @@ export function CommissionsVisualAuditPage() {
         </>
       ) : null}
 
-      <VisualAuditDetailDrawer lineId={selectedLineId} onClose={() => setSelectedLineId(null)} />
+      <VisualAuditDetailDrawer
+        lineId={selectedLineId}
+        year={appliedFilters.year}
+        month={appliedFilters.month}
+        appraisalMode={mode}
+        onClose={() => setSelectedLineId(null)}
+      />
     </div>
   );
 }

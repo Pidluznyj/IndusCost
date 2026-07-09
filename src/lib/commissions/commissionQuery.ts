@@ -975,6 +975,7 @@ export type CommissionVisualAuditQuery = CommissionRecordsQuery & {
   commissionStatus: string | null;
   nomusReferenceBase: number | null;
   nomusReferenceCommission: number | null;
+  auditCategory: string | null;
 };
 
 export function parseCommissionVisualAuditQuery(
@@ -1025,6 +1026,10 @@ export function parseCommissionVisualAuditQuery(
     nomusReferenceCommission: Number.isFinite(nomusReferenceCommission)
       ? nomusReferenceCommission
       : null,
+    auditCategory:
+      typeof query.auditCategory === "string" && query.auditCategory.trim()
+        ? query.auditCategory.trim()
+        : null,
   };
 }
 

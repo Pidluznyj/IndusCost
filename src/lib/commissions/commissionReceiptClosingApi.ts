@@ -108,6 +108,11 @@ const DIVERGENT_STATUSES = new Set([
   "ZERO_AMOUNT",
 ]);
 
+/** Status de linha que contam como divergência crítica no fechamento (por título único). */
+export function isReceiptClosingDivergentLineStatus(status: string): boolean {
+  return DIVERGENT_STATUSES.has(status);
+}
+
 const SCHEDULE_SOURCES = new Set(["MATERIALIZED_SCHEDULE", "PERSISTED_SCHEDULE"]);
 
 function escapeCsvCell(value: unknown): string {

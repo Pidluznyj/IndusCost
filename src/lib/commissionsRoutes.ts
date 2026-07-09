@@ -373,7 +373,17 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (!lineId) {
         return res.status(400).json({ error: "lineId é obrigatório." });
       }
-      const payload = await getCommissionVisualAuditDetail({ lineId, scope: ctx.scope });
+      const yearRaw = typeof req.query.year === "string" ? Number.parseInt(req.query.year, 10) : null;
+      const monthRaw = typeof req.query.month === "string" ? Number.parseInt(req.query.month, 10) : null;
+      const appraisalMode =
+        typeof req.query.appraisalMode === "string" ? req.query.appraisalMode : null;
+      const payload = await getCommissionVisualAuditDetail({
+        lineId,
+        scope: ctx.scope,
+        year: Number.isFinite(yearRaw) ? yearRaw : null,
+        month: Number.isFinite(monthRaw) ? monthRaw : null,
+        appraisalMode,
+      });
       if (!payload) return res.status(404).json({ error: "Linha não encontrada." });
       return res.json(payload);
     } catch (error) {

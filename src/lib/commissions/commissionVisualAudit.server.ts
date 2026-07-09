@@ -13,6 +13,30 @@ import {
   type VisualAuditRow,
   type VisualAuditRowInput,
 } from "./commissionVisualAudit.js";
+import {
+  buildVisualAuditClosingCsv,
+  buildVisualAuditClosingDetail,
+  buildVisualAuditClosingRows,
+  COMMISSION_VISUAL_AUDIT_CLOSING_RECONCILIATION_NOTE,
+  COMMISSION_VISUAL_AUDIT_CLOSING_SCOPE_NOTE,
+  countVisualAuditCriticalDivergenceReceivables,
+  countVisualAuditRowsByCategory,
+  filterVisualAuditClosingRows,
+  mapClosingMaterializationToVisualAuditCards,
+  type VisualAuditClosingRow,
+  type VisualAuditOfficialCategory,
+} from "./commissionVisualAuditOfficial.js";
+import {
+  buildReceiptClosingPageFromLedger,
+  buildReceiptClosingPageFromPreview,
+} from "./commissionReceiptClosingApi.js";
+import {
+  findClosedReceiptClosing,
+  loadReceiptClosingLedgerLines,
+  previewCommissionReceiptClosing,
+  type ReceiptClosingFilters,
+} from "./commissionReceiptClosing.server.js";
+import type { ReceiptClosingPagePayload } from "./commissionReceiptClosingApi.shared.js";
 import { resolveVisualAuditCustomerExclusion } from "./commissionCustomerExclusionApply.js";
 import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
 import {
@@ -25,9 +49,18 @@ import {
 
 export type CommissionVisualAuditPayload = {
   cards: ReturnType<typeof computeVisualAuditCards>;
-  rows: VisualAuditRow[];
+  rows: Array<VisualAuditRow | VisualAuditClosingRow>;
   pagination: ReturnType<typeof paginatedMeta>;
   nomusReference: VisualAuditNomusReference;
+  scopeNote?: string;
+  reconciliationNote?: string;
+  materializationSummary?: ReceiptClosingPagePayload["materializationSummary"];
+  officialCards?: ReceiptClosingPagePayload["cards"];
+  reconciliation?: ReceiptClosingPagePayload["reconciliation"];
+  criticalDivergence?: boolean;
+  criticalDivergenceReason?: string | null;
+  categoryRowCounts?: Partial<Record<string, number>>;
+  criticalDivergenceReceivableCount?: number;
 };
 
 type ArMeta = {
@@ -524,10 +557,161 @@ export async function listForecastVisualAuditRows(
   );
 }
 
+function buildPayableVisualAuditBaseQuery(
+  year: number,
+  month: number,
+  overrides: Partial<CommissionVisualAuditQuery> = {}
+): CommissionVisualAuditQuery {
+  return {
+    year,
+    month,
+    from: null,
+    to: null,
+    appraisalMode: "PAYABLE",
+    commissionPersonId: null,
+    customer: null,
+    orderCode: null,
+    nfeNumber: null,
+    sellerId: null,
+    representativeId: null,
+    nomusReceivableId: null,
+    dueDateFrom: null,
+    dueDateTo: null,
+    settlementDateFrom: null,
+    settlementDateTo: null,
+    onlySettled: false,
+    onlyOpen: false,
+    onlyDivergences: false,
+    onlyZeroCommission: false,
+    onlyMissingReceivableLink: false,
+    receivableTitleStatus: null,
+    commissionStatus: null,
+    nomusReferenceBase: null,
+    nomusReferenceCommission: null,
+    auditCategory: null,
+    status: null,
+    statusIn: null,
+    originStage: null,
+    hasRule: null,
+    includeSuperseded: false,
+    page: 1,
+    pageSize: 100000,
+    ...overrides,
+  };
+}
+
+function parseAuditCategory(value: string | null | undefined): VisualAuditOfficialCategory | null {
+  if (!value?.trim()) return null;
+  const raw = value.trim().toUpperCase();
+  const allowed: VisualAuditOfficialCategory[] = [
+    "COMMISSIONABLE",
+    "CUSTOMER_EXCLUDED",
+    "GROUP_COMPANY_EXCLUDED",
+    "SELLER_UNRESOLVED",
+    "NO_SELLER",
+    "NO_SCHEDULE",
+    "STALE_SCHEDULE",
+    "NO_SALES_LINK",
+    "DIVERGENT",
+    "OTHER",
+  ];
+  return allowed.includes(raw as VisualAuditOfficialCategory)
+    ? (raw as VisualAuditOfficialCategory)
+    : null;
+}
+
+async function loadVisualAuditClosingUniverse(
+  query: CommissionVisualAuditQuery
+): Promise<ReceiptClosingPagePayload> {
+  const year = query.year!;
+  const month = query.month!;
+  const filters: ReceiptClosingFilters = {
+    year,
+    month,
+    seller: null,
+    customer: null,
+    nomusBase: query.nomusReferenceBase,
+    nomusCommission: query.nomusReferenceCommission,
+  };
+
+  const closing = await findClosedReceiptClosing(prisma, year, month);
+  if (closing) {
+    const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
+    return buildReceiptClosingPageFromLedger({
+      closing,
+      ledgerLines,
+      nomusBase: filters.nomusBase,
+      nomusCommission: filters.nomusCommission,
+    });
+  }
+
+  const previewPayload = await previewCommissionReceiptClosing(filters);
+  return buildReceiptClosingPageFromPreview({
+    preview: previewPayload.preview,
+    closing: previewPayload.existingClosing,
+    canApply: previewPayload.canApply,
+    applyBlockedReason: previewPayload.applyBlockedReason,
+    nomusBase: filters.nomusBase,
+    nomusCommission: filters.nomusCommission,
+  });
+}
+
+async function listCommissionVisualAuditClosingPage(
+  query: CommissionVisualAuditQuery,
+  _scope: CommissionAccessScope
+): Promise<CommissionVisualAuditPayload> {
+  const closingPage = await loadVisualAuditClosingUniverse(query);
+  const allRows = buildVisualAuditClosingRows(closingPage);
+  const auditCategory = parseAuditCategory(query.auditCategory);
+  const filtered = filterVisualAuditClosingRows(allRows, {
+    commissionPersonId: query.commissionPersonId,
+    customer: query.customer,
+    orderCode: query.orderCode,
+    nfeNumber: query.nfeNumber,
+    nomusReceivableId: query.nomusReceivableId,
+    auditCategory,
+    onlyDivergences: query.onlyDivergences,
+  });
+
+  const cards = mapClosingMaterializationToVisualAuditCards(
+    closingPage.materializationSummary,
+    closingPage.cards,
+    closingPage.reconciliation
+  );
+  const total = filtered.length;
+  const skip = (query.page - 1) * query.pageSize;
+  const pageRows = filtered.slice(skip, skip + query.pageSize);
+
+  return {
+    cards,
+    rows: pageRows,
+    pagination: paginatedMeta(total, query.page, query.pageSize),
+    nomusReference: buildVisualAuditNomusReference({
+      mode: "PAYABLE",
+      cards,
+      nomusBase: query.nomusReferenceBase,
+      nomusCommission: query.nomusReferenceCommission,
+    }),
+    scopeNote: COMMISSION_VISUAL_AUDIT_CLOSING_SCOPE_NOTE,
+    reconciliationNote: COMMISSION_VISUAL_AUDIT_CLOSING_RECONCILIATION_NOTE,
+    materializationSummary: closingPage.materializationSummary,
+    officialCards: closingPage.cards,
+    reconciliation: closingPage.reconciliation,
+    criticalDivergence: closingPage.criticalDivergence,
+    criticalDivergenceReason: closingPage.criticalDivergenceReason,
+    categoryRowCounts: countVisualAuditRowsByCategory(allRows),
+    criticalDivergenceReceivableCount: countVisualAuditCriticalDivergenceReceivables(allRows),
+  };
+}
+
 export async function listCommissionVisualAuditPage(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Promise<CommissionVisualAuditPayload> {
+  if (query.appraisalMode === "PAYABLE" && query.year != null && query.month != null) {
+    return listCommissionVisualAuditClosingPage(query, scope);
+  }
+
   const rows = await listFilteredVisualAuditRows(query, scope);
   const cards = computeVisualAuditCards(rows, query.appraisalMode);
   const total = rows.length;
@@ -551,6 +735,22 @@ export async function exportCommissionVisualAuditCsv(
   query: CommissionVisualAuditQuery,
   scope: CommissionAccessScope
 ): Promise<string> {
+  if (query.appraisalMode === "PAYABLE" && query.year != null && query.month != null) {
+    const closingPage = await loadVisualAuditClosingUniverse(query);
+    const allRows = buildVisualAuditClosingRows(closingPage);
+    const auditCategory = parseAuditCategory(query.auditCategory);
+    const filtered = filterVisualAuditClosingRows(allRows, {
+      commissionPersonId: query.commissionPersonId,
+      customer: query.customer,
+      orderCode: query.orderCode,
+      nfeNumber: query.nfeNumber,
+      nomusReceivableId: query.nomusReceivableId,
+      auditCategory,
+      onlyDivergences: query.onlyDivergences,
+    });
+    return buildVisualAuditClosingCsv(filtered, closingPage);
+  }
+
   const rows = await listFilteredVisualAuditRows(query, scope);
   const cards = computeVisualAuditCards(rows, query.appraisalMode);
   return buildVisualAuditCsv(rows, cards);
@@ -559,19 +759,42 @@ export async function exportCommissionVisualAuditCsv(
 export async function getCommissionVisualAuditDetail(input: {
   lineId: string;
   scope: CommissionAccessScope;
+  year?: number | null;
+  month?: number | null;
+  appraisalMode?: string | null;
 }): Promise<{
   explanation: string;
   record: {
-    id: string;
+    id?: string;
     productCode: string | null;
     baseAmount: number;
     ratePercent: number;
     commissionAmount: number;
-    metadataJson: unknown;
+    metadataJson?: unknown;
   } | null;
-  schedule: VisualAuditRow | null;
+  schedule: VisualAuditRow | VisualAuditClosingRow | null;
   documentTotals: { base: number; commission: number };
 } | null> {
+  if (
+    (input.appraisalMode === "PAYABLE" || input.appraisalMode == null) &&
+    input.year != null &&
+    input.month != null
+  ) {
+    const closingPage = await loadVisualAuditClosingUniverse(
+      buildPayableVisualAuditBaseQuery(input.year, input.month)
+    );
+    const row = buildVisualAuditClosingRows(closingPage).find((r) => r.lineId === input.lineId);
+    if (row) {
+      const detail = buildVisualAuditClosingDetail(row);
+      return {
+        explanation: detail.explanation,
+        record: detail.record,
+        schedule: row,
+        documentTotals: detail.documentTotals,
+      };
+    }
+  }
+
   const [recordId, scheduleId] = input.lineId.includes(":")
     ? input.lineId.split(":")
     : [input.lineId, null];
@@ -620,6 +843,7 @@ export async function getCommissionVisualAuditDetail(input: {
       commissionStatus: null,
       nomusReferenceBase: null,
       nomusReferenceCommission: null,
+      auditCategory: null,
       page: 1,
       pageSize: 10000,
     },
