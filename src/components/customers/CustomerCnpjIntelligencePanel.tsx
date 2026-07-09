@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -24,6 +24,7 @@ import {
   type CnpjIntelligencePayload,
 } from "@/src/lib/customerCnpjIntelligenceTypes";
 import { cn } from "@/src/lib/utils";
+import { resolveModalStackZIndex } from "@/src/lib/modalStack";
 import type { Customer } from "@/src/types/commercial";
 
 type Props = {
@@ -34,6 +35,8 @@ type Props = {
   onCustomerUpdated?: () => void;
   onCreatePrefill?: (draft: Partial<Customer>) => void;
   onOpenExistingCustomer?: (customerId: string) => void;
+  /** Empilha acima de modais base (ex.: Editar Cliente). */
+  stacked?: boolean;
 };
 
 function JsonTree({ node, depth = 0 }: { node: ReturnType<typeof flatten>; depth?: number }) {
@@ -81,7 +84,11 @@ export function CustomerCnpjIntelligencePanel({
   onCustomerUpdated,
   onCreatePrefill,
   onOpenExistingCustomer,
+  stacked = false,
 }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const [cnpjInput, setCnpjInput] = useState(initialCnpj);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +148,33 @@ export function CustomerCnpjIntelligencePanel({
       void load(false);
     }
   }, [open, customerId, initialCnpj]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const focusTimer = window.setTimeout(() => {
+      closeButtonRef.current?.focus();
+    }, 0);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKeyDown, true);
+      returnFocusRef.current?.focus?.();
+    };
+  }, [open, onClose]);
+
+  const overlayZIndex = resolveModalStackZIndex(stacked);
 
   const handlePrint = useCallback(async () => {
     if (!data) return;
@@ -257,35 +291,45 @@ export function CustomerCnpjIntelligencePanel({
 
   if (!open) return null;
 
-  return (
-    <>
-      {createPortal(
-        <div
-          id={CNPJ_INTELLIGENCE_PRINT_ROOT_ID}
-          className="cnpj-intelligence-print-only"
-          aria-hidden
-        >
-          {printPayload ? <CnpjCommercialIntelligencePrintReport data={printPayload} /> : null}
-        </div>,
-        document.body
+  const screenOverlay = (
+    <div
+      className={cn(
+        "cnpj-intelligence-screen-only fixed inset-0 flex items-end sm:items-center justify-center bg-black/40 p-2 sm:p-4",
+        overlayZIndex
       )}
-
-      <div className="cnpj-intelligence-screen-only fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-2 sm:p-4">
-        <div className="flex max-h-[95vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-xl">
-          <div className="cnpj-intelligence-no-print flex items-start justify-between gap-3 border-b px-4 py-3">
-            <div>
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Consulta CNPJ / Inteligência Comercial
-              </h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Dados públicos via publica.cnpj.ws — apoio à decisão comercial.
-              </p>
-            </div>
-            <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-100">
-              <X className="h-5 w-5" />
-            </button>
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="customer-cnpj-intelligence-title"
+        className="flex max-h-[95vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-xl"
+        data-testid="customer-cnpj-intelligence-dialog"
+        data-modal-stacked={stacked ? "true" : "false"}
+      >
+        <div className="cnpj-intelligence-no-print flex items-start justify-between gap-3 border-b px-4 py-3">
+          <div>
+            <h2 id="customer-cnpj-intelligence-title" className="text-lg font-semibold flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Consulta CNPJ / Inteligência Comercial
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Dados públicos via publica.cnpj.ws — apoio à decisão comercial.
+            </p>
           </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 hover:bg-slate-100"
+            aria-label="Fechar consulta CNPJ"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
             {!customerId && (
@@ -665,7 +709,22 @@ export function CustomerCnpjIntelligencePanel({
           )}
           </div>
         </div>
-      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {createPortal(
+        <div
+          id={CNPJ_INTELLIGENCE_PRINT_ROOT_ID}
+          className="cnpj-intelligence-print-only"
+          aria-hidden
+        >
+          {printPayload ? <CnpjCommercialIntelligencePrintReport data={printPayload} /> : null}
+        </div>,
+        document.body
+      )}
+      {createPortal(screenOverlay, document.body)}
     </>
   );
 }

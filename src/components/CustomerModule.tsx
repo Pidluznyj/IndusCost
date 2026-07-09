@@ -290,6 +290,7 @@ export const CustomerModule = () => {
       <CustomerCnpjIntelligencePanel
         open={intelligenceOpen}
         onClose={() => setIntelligenceOpen(false)}
+        stacked={isModalOpen}
         customerId={intelligenceCustomerId}
         initialCnpj={intelligenceCnpj}
         onCustomerUpdated={fetchData}
