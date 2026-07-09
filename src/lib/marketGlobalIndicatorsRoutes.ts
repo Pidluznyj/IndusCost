@@ -7,6 +7,10 @@ import {
   type MarketGlobalIndicatorsRefreshResponse,
 } from "@/src/lib/marketGlobalIndicators.js";
 import { collectPtaxSnapshot } from "@/src/lib/ptaxSnapshotCollection.js";
+import {
+  mapMarketGlobalIndicatorsToHeaderTicker,
+  MARKET_HEADER_TICKER_API,
+} from "@/src/lib/marketHeaderTicker.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -38,6 +42,23 @@ export function registerMarketGlobalIndicatorsRoutes(
   guards: AuthGuards
 ): void {
   const { requireAppAuth, requirePermission } = guards;
+
+  app.get(
+    MARKET_HEADER_TICKER_API,
+    requireAppAuth,
+    async (_req, res) => {
+      try {
+        const indicators = await loadMarketGlobalIndicators();
+        return res.json(mapMarketGlobalIndicatorsToHeaderTicker(indicators));
+      } catch (error) {
+        console.error(`GET ${MARKET_HEADER_TICKER_API}`, error);
+        return res.status(500).json({
+          error: "MARKET_HEADER_TICKER_FAILED",
+          message: "Não foi possível carregar o ticker de mercado.",
+        });
+      }
+    }
+  );
 
   app.get(
     "/api/market-intelligence/global-indicators",

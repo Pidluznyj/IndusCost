@@ -6,6 +6,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
+import { MarketHeaderTicker } from "@/src/components/layout/MarketHeaderTicker";
 import { fetchJsonOk } from "@/src/lib/http";
 
 type HeaderSyncLog = {
@@ -96,8 +97,9 @@ export const Layout = () => {
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/50 border border-border">
+          <div className="flex items-center gap-2 lg:gap-4 min-w-0">
+            {authUser ? <MarketHeaderTicker /> : null}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/50 border border-border shrink-0">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-xs font-medium text-muted-foreground">Sistema Online</span>
             </div>
