@@ -218,15 +218,20 @@ export function MaterialsMarketIntelligenceDetailPage() {
             className="grid gap-4 xl:grid-cols-2"
             data-testid="material-intelligence-360-sections"
           >
-            <MaterialIntelligenceRecentQuotesSection
-              materialId={item.id}
-              defaultUnit={item.unit}
-              marketCriticality={item.marketCriticality}
-              quotes={quotes}
-              loading={quotesLoading}
-              onQuoteCreated={() => void handleQuoteCreated()}
-              onRegisterQuote={canEditQuotes ? openQuoteModal : undefined}
-            />
+            <div
+              className="min-w-0 xl:col-span-2"
+              data-testid="material-intelligence-recent-quotes-full-width"
+            >
+              <MaterialIntelligenceRecentQuotesSection
+                materialId={item.id}
+                defaultUnit={item.unit}
+                marketCriticality={item.marketCriticality}
+                quotes={quotes}
+                loading={quotesLoading}
+                onQuoteCreated={() => void handleQuoteCreated()}
+                onRegisterQuote={canEditQuotes ? openQuoteModal : undefined}
+              />
+            </div>
 
             <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
 
