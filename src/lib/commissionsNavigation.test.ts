@@ -9,6 +9,8 @@ import {
   COMMISSIONS_SIMPLIFIED_UI,
   getCommissionsDefaultPath,
   isCommissionsCanonicalPath,
+  isCommissionsHiddenSection,
+  resolveCommissionsCanonicalPath,
   resolveCommissionsLegacyRedirect,
 } from "./commissionsNavigation.js";
 import { canAccessCommissionsModule, canViewCommissionsSection, resolveFirstAccessibleCommissionsPath } from "./commissionsModulePermissions.js";
@@ -27,27 +29,34 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("modo simplificado expõe fechamento mensal, previsão, auditoria e exclusões por cliente", () => {
+  it("modo simplificado expõe apenas fechamento mensal e exclusões por cliente", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 4);
+    assert.equal(COMMISSIONS_SECTIONS.length, 2);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
-    assert.equal(COMMISSIONS_SECTIONS[1]?.id, "receivableForecast");
-    assert.equal(COMMISSIONS_SECTIONS[2]?.id, "visualAudit");
-    assert.equal(COMMISSIONS_SECTIONS[3]?.id, "customerExclusions");
-    assert.equal(COMMISSIONS_SECTION_PATHS.receivableForecast, "/commissions/previsao");
+    assert.equal(COMMISSIONS_SECTIONS[1]?.id, "customerExclusions");
+    assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "receivableForecast"), false);
+    assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "visualAudit"), false);
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
-    assert.equal(COMMISSIONS_SECTION_PATHS.visualAudit, "/commissions/auditoria");
     assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
+    assert.equal(isCommissionsHiddenSection("receivableForecast"), true);
+    assert.equal(isCommissionsHiddenSection("visualAudit"), true);
   });
 
-  it("redireciona rotas legadas para /commissions", () => {
-    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions/previsao");
+  it("redireciona rotas legadas e abas removidas para fechamento", () => {
+    assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("previsao"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("auditoria"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("dashboard"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("exceptions"), "/commissions/exclusoes-cliente");
     assert.ok(COMMISSIONS_LEGACY_PATH_REDIRECTS.apuracao);
     assert.equal(COMMISSIONS_LEGACY_PATH_REDIRECTS.payable, "/commissions");
+  });
+
+  it("deep-link de previsão e auditoria redireciona para fechamento", () => {
+    assert.equal(resolveCommissionsCanonicalPath("/commissions/previsao"), "/commissions");
+    assert.equal(resolveCommissionsCanonicalPath("/commissions/auditoria"), "/commissions");
   });
 
   it("paths canônicos", () => {
@@ -69,14 +78,19 @@ describe("commissions frontend wiring", () => {
     assert.match(app, /CommissionsModule/);
   });
 
-  it("CommissionsModule usa fechamento mensal, auditoria visual e redirects legados", () => {
+  it("CommissionsModule usa fechamento e exclusões; abas legadas redirecionam", () => {
     const moduleSrc = read("src/components/CommissionsModule.tsx");
     assert.match(moduleSrc, /CommissionsReceiptClosingPage/);
-    assert.match(moduleSrc, /CommissionsReceivableForecastPage/);
-    assert.match(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /CommissionsCustomerExclusionsPage/);
+    assert.match(moduleSrc, /CommissionsDeprecatedTabRedirect/);
+    assert.doesNotMatch(moduleSrc, /CommissionsReceivableForecastPage/);
+    assert.doesNotMatch(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
     assert.match(moduleSrc, /CommissionsLegacyRedirect/);
+    assert.match(moduleSrc, /commissions-tab-monthlyClosing/);
+    assert.match(moduleSrc, /commissions-tab-customerExclusions/);
+    assert.doesNotMatch(moduleSrc, /commissions-tab-receivableForecast/);
+    assert.doesNotMatch(moduleSrc, /commissions-tab-visualAudit/);
   });
 
   it("Sidebar inclui item Comissões", () => {
@@ -101,9 +115,9 @@ describe("commissionsModulePermissions", () => {
     assert.equal(canViewCommissionsSection("monthlyClosing", checker(["finance.view"])), false);
   });
 
-  it("visualAudit exige commissions.view", () => {
-    assert.equal(canViewCommissionsSection("visualAudit", checker(["commissions.view"])), true);
-    assert.equal(canViewCommissionsSection("visualAudit", checker(["finance.view"])), false);
+  it("abas ocultas não são acessíveis na UI", () => {
+    assert.equal(canViewCommissionsSection("visualAudit", checker(["commissions.view"])), false);
+    assert.equal(canViewCommissionsSection("receivableForecast", checker(["commissions.view"])), false);
   });
 
   it("customerExclusions exige commissions.rules.view", () => {

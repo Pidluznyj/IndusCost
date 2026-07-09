@@ -1,9 +1,9 @@
 /**
- * Módulo Comissões — modo simplificado (auditoria visual única).
+ * Módulo Comissões — Fechamento do mês + Exceções por cliente.
  *
- * Telas antigas (dashboard, payable, generated, etc.) permanecem no repositório
- * para revisão futura do modelo, mas estão temporariamente desativadas na UI.
- * Ver COMMISSIONS_DISABLED_SECTION_IDS e páginas em pages/.
+ * Previsão e Auditoria Visual permanecem em pages/ para reescrita futura,
+ * mas estão ocultas na UI (rotas redirecionam para Fechamento).
+ * Ver COMMISSIONS_HIDDEN_SECTION_IDS e COMMISSIONS_LEGACY_PATH_REDIRECTS.
  */
 import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
@@ -24,11 +24,13 @@ import {
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
-import { CommissionsReceivableForecastPage } from "@/src/components/commissions/pages/CommissionsReceivableForecastPage";
-import { CommissionsVisualAuditPage } from "@/src/components/commissions/pages/CommissionsVisualAuditPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 
 function CommissionsHomeRedirect() {
+  return <Navigate to={getCommissionsDefaultPath()} replace />;
+}
+
+function CommissionsDeprecatedTabRedirect() {
   return <Navigate to={getCommissionsDefaultPath()} replace />;
 }
 
@@ -36,7 +38,7 @@ function CommissionsLegacyRedirect() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
   const legacySegment = segments[segments.indexOf("commissions") + 1] ?? "";
-  const target = resolveCommissionsLegacyRedirect(legacySegment) ?? "/commissions";
+  const target = resolveCommissionsLegacyRedirect(legacySegment) ?? getCommissionsDefaultPath();
   return <Navigate to={target} replace />;
 }
 
@@ -118,6 +120,7 @@ export function CommissionsModule() {
                 )
               }
               title={section.description}
+              data-testid={`commissions-tab-${section.id}`}
             >
               {section.label}
             </NavLink>
@@ -127,8 +130,8 @@ export function CommissionsModule() {
 
       <Routes>
         <Route index element={guard("monthlyClosing", <CommissionsReceiptClosingPage />)} />
-        <Route path="previsao" element={guard("receivableForecast", <CommissionsReceivableForecastPage />)} />
-        <Route path="auditoria" element={guard("visualAudit", <CommissionsVisualAuditPage />)} />
+        <Route path="previsao" element={<CommissionsDeprecatedTabRedirect />} />
+        <Route path="auditoria" element={<CommissionsDeprecatedTabRedirect />} />
         <Route
           path="exclusoes-cliente"
           element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}

@@ -126,7 +126,7 @@ export function CommissionsCustomerExclusionsPage() {
     <div className="space-y-5" data-testid="commissions-customer-exclusions-page">
       <CommissionsSectionIntro
         title="Exceções por cliente"
-        description="Cadastro oficial das exclusões manuais usadas pelo Fechamento, Previsão e Auditoria Visual. Empresas do grupo são excluídas automaticamente — não precisam ser cadastradas aqui."
+        description="Cadastro oficial das exclusões manuais usadas pelo Fechamento do mês. Empresas do grupo são excluídas automaticamente — não precisam ser cadastradas aqui."
         testId="commissions-customer-exclusions-intro"
       />
 
