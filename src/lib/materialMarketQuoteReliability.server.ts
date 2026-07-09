@@ -7,10 +7,13 @@ import {
   buildMaterialMarketQuoteReliabilityAuditDetails,
   computeQuoteSuggestedReliabilityFromAttachments,
   fromPrismaMaterialMarketQuoteReliabilityLevel,
+  MaterialMarketQuoteReliabilityValidationError,
   parseMaterialMarketQuoteReliabilityLevel,
   toPrismaMaterialMarketQuoteReliabilityLevel,
   type MaterialMarketQuoteReliabilityLevel,
 } from "./materialMarketQuoteReliability.js";
+
+export { MaterialMarketQuoteReliabilityValidationError };
 
 export async function refreshMaterialMarketQuoteReliabilitySuggestion(
   prisma: PrismaClient,
@@ -35,6 +38,11 @@ export async function refreshMaterialMarketQuoteReliabilitySuggestion(
     exchangeOrigin: quote.exchangeOrigin,
   });
   const prismaSuggested = toPrismaMaterialMarketQuoteReliabilityLevel(suggested);
+  if (prismaSuggested == null) {
+    throw new MaterialMarketQuoteReliabilityValidationError(
+      "Não foi possível calcular a confiabilidade sugerida da cotação."
+    );
+  }
   const hasOverride = Boolean(quote.reliabilityOverrideReason?.trim());
 
   await prisma.materialMarketQuote.update({
@@ -88,6 +96,11 @@ export async function overrideMaterialMarketQuoteReliability(
     fromPrismaMaterialMarketQuoteReliabilityLevel(quote.reliabilityLevel) ??
     fromPrismaMaterialMarketQuoteReliabilityLevel(quote.suggestedReliabilityLevel);
   const prismaLevel = toPrismaMaterialMarketQuoteReliabilityLevel(input.level);
+  if (prismaLevel == null) {
+    throw new MaterialMarketQuoteReliabilityValidationError(
+      "Nível de confiabilidade inválido para gravação."
+    );
+  }
   const now = new Date();
 
   await prisma.$transaction([

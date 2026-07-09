@@ -470,7 +470,7 @@ import { registerMaterialMarketQuoteGovernanceRoutes } from "./src/lib/materialM
 import { registerMaterialMarketAuditRoutes } from "./src/lib/materialMarketAuditRoutes.js";
 import { recordMaterialMarketAuditEvent } from "./src/lib/materialMarketAudit.server.js";
 import { registerMaterialMarketQuoteReliabilityRoutes } from "./src/lib/materialMarketQuoteReliabilityRoutes.js";
-import { initializeMaterialMarketQuoteReliability } from "./src/lib/materialMarketQuoteReliability.server.js";
+import { initializeMaterialMarketQuoteReliability, MaterialMarketQuoteReliabilityValidationError } from "./src/lib/materialMarketQuoteReliability.server.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
 import {
@@ -3966,6 +3966,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           warning: exchangeResolved.warning ?? null,
         });
       } catch (error) {
+        if (error instanceof MaterialMarketQuoteReliabilityValidationError) {
+          return res.status(400).json({
+            error: error.code,
+            message: error.message,
+          });
+        }
         console.error("POST /api/materials/market-intelligence/:materialId/quotes", error);
         res.status(500).json({
           error:

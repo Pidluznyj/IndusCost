@@ -205,16 +205,29 @@ export function computeQuoteSuggestedReliabilityFromAttachments(
   return pickHigherReliabilityLevel(best, aggregate);
 }
 
-/** Prisma enum legado: LOW | MEDIUM | HIGH. */
-export type MaterialMarketQuoteReliabilityPrismaLevel = "LOW" | "MEDIUM" | "HIGH";
+/** Valores aceitos pelo enum Prisma `MaterialMarketQuoteReliabilityLevel`. */
+export type MaterialMarketQuoteReliabilityPrismaLevel = MaterialMarketQuoteReliabilityLevel;
+
+export class MaterialMarketQuoteReliabilityValidationError extends Error {
+  readonly code = "RELIABILITY_INVALID_LEVEL";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "MaterialMarketQuoteReliabilityValidationError";
+  }
+}
 
 export function toPrismaMaterialMarketQuoteReliabilityLevel(
   level: MaterialMarketQuoteReliabilityLevel | null | undefined
 ): MaterialMarketQuoteReliabilityPrismaLevel | null {
-  if (!level) return null;
-  if (level === "ALTA") return "HIGH";
-  if (level === "MEDIA") return "MEDIUM";
-  return "LOW";
+  if (level == null) return null;
+  const parsed = parseMaterialMarketQuoteReliabilityLevel(level);
+  if (!parsed) {
+    throw new MaterialMarketQuoteReliabilityValidationError(
+      `Nível de confiabilidade inválido: ${String(level)}`
+    );
+  }
+  return parsed;
 }
 
 export function fromPrismaMaterialMarketQuoteReliabilityLevel(

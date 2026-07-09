@@ -4,8 +4,10 @@ import { computeQuoteSuggestedReliabilityLevel } from "./materialMarketQuoteAtta
 import {
   buildMaterialMarketQuoteReliabilityAuditDetails,
   lowerMaterialMarketQuoteReliabilityLevel,
+  MaterialMarketQuoteReliabilityValidationError,
   parseMaterialMarketQuoteReliabilityPatch,
   suggestMaterialMarketQuoteReliability,
+  toPrismaMaterialMarketQuoteReliabilityLevel,
 } from "./materialMarketQuoteReliability.js";
 
 describe("materialMarketQuoteReliability", () => {
@@ -128,5 +130,26 @@ describe("materialMarketQuoteReliability", () => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.level, "ALTA");
+  });
+
+  it("toPrisma grava valores canônicos do enum Prisma (MANUAL/BAIXA/MEDIA/ALTA)", () => {
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel("MANUAL"), "MANUAL");
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel("BAIXA"), "BAIXA");
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel("MEDIA"), "MEDIA");
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel("ALTA"), "ALTA");
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel(null), null);
+  });
+
+  it("cotação manual sem anexo grava MANUAL no Prisma (não LOW)", () => {
+    const suggested = suggestMaterialMarketQuoteReliability({ attachments: [] });
+    assert.equal(suggested, "MANUAL");
+    assert.equal(toPrismaMaterialMarketQuoteReliabilityLevel(suggested), "MANUAL");
+  });
+
+  it("rejeita valor inválido antes do Prisma com erro explícito", () => {
+    assert.throws(
+      () => toPrismaMaterialMarketQuoteReliabilityLevel("INVALID" as never),
+      MaterialMarketQuoteReliabilityValidationError
+    );
   });
 });
