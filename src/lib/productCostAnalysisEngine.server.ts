@@ -2,6 +2,7 @@
  * Motor oficial getProductCostAnalysis — compartilhado entre server HTTP e scripts Nomus.
  */
 import type { PrismaClient } from "@prisma/client";
+import { shouldSkipOwnProcessInCosting } from "./productCostingModeValidation.js";
 import {
   aggregateParentDecomposition,
   scaleChildContribution,
@@ -431,7 +432,7 @@ async function getProductCostAnalysis(
    * o próprio processo dentro da própria análise recursiva.
    */
   const costingMode = product.costingMode ?? "OWN_PROCESS";
-  const skipOwnProcess = costingMode !== "OWN_PROCESS";
+  const skipOwnProcess = shouldSkipOwnProcessInCosting(costingMode);
   const ownProcessSkipReason: string | null = skipOwnProcess
     ? costingMode === "FINISHING_SERVICE"
       ? "Processo próprio ignorado porque o item está configurado como Acabamento/beneficiamento."

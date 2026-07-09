@@ -1,4 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import {
+  filterProductEngineeringListItems,
+  hasProductEngineeringListFilters,
+  type ProductEngineeringListStatusFilter,
+} from "@/src/lib/productEngineeringListFilters";
 import { 
   Plus, 
   Search, 
@@ -29,7 +34,11 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
-import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
+import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting, type ProductCostingMode } from "@/src/types/product";
+import {
+  BOM_ONLY_COSTING_HINT,
+  validateStandardProcessFieldsForForm,
+} from "@/src/lib/productCostingModeValidation";
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -216,10 +225,13 @@ export const ProductModule = () => {
   const [machines, setMachines] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [draftSearch, setDraftSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   /** Escopo da lista: só Produtos ou Componentes (GET /api/products?type=…). */
   const [engineeringSegment, setEngineeringSegment] = useState<"PRODUCT" | "COMPONENT">("PRODUCT");
-  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<ProductEngineeringListStatusFilter>("");
+  const [appliedStatusFilter, setAppliedStatusFilter] =
+    useState<ProductEngineeringListStatusFilter>("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -586,55 +598,26 @@ export const ProductModule = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const costingMode: ProductCostingMode = formData.costingMode ?? "OWN_PROCESS";
+
     // Validation based on type
     if (formData.type === "PRODUCT" && formData.bom.length === 0) {
       alert("Um PRODUTO deve ter pelo menos uma linha na estrutura (componentes fabricados e/ou materiais comprados).");
       return;
     }
 
-    // Validação do Processo Padrão do Componente
-    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback.
-    // Em modos BOM_ONLY / FINISHING_SERVICE, o processo padrão é IGNORADO no custo, mas a
-    // consistência do cadastro (tudo-ou-nada) continua válida para não criar dados inválidos no banco.
-    if (formData.type === "COMPONENT" && formData.cycleTimeSeconds !== "" && formData.cycleTimeSeconds !== null && formData.cycleTimeSeconds !== undefined) {
-      const ct = Number(formData.cycleTimeSeconds);
-      if (!Number.isFinite(ct) || ct <= 0) {
-        alert("Processo Padrão: Ciclo (segundos) deve ser um número válido maior que zero.");
-        return;
-      }
-
-      // Cavidades: obrigatório quando ciclo está preenchido
-      if (formData.cavities === "" || formData.cavities === null || formData.cavities === undefined) {
-        alert("Processo Padrão: Cavidades é obrigatório quando o Ciclo está preenchido.");
-        return;
-      }
-      const cv = Number(formData.cavities);
-      if (!Number.isFinite(cv) || cv < 1) {
-        alert("Processo Padrão: Cavidades deve ser >= 1.");
-        return;
-      }
-
-      // Setup: obrigatório quando ciclo está preenchido
-      if (formData.setupTimeMin === "" || formData.setupTimeMin === null || formData.setupTimeMin === undefined) {
-        alert("Processo Padrão: Setup (minutos) é obrigatório quando o Ciclo está preenchido.");
-        return;
-      }
-      const st = Number(formData.setupTimeMin);
-      if (!Number.isFinite(st) || st < 0) {
-        alert("Processo Padrão: Setup (minutos) deve ser >= 0.");
-        return;
-      }
-
-      // Eficiência: obrigatório quando ciclo está preenchido
-      if (formData.efficiencyExpected === "" || formData.efficiencyExpected === null || formData.efficiencyExpected === undefined) {
-        alert("Processo Padrão: Eficiência (%) é obrigatório quando o Ciclo está preenchido.");
-        return;
-      }
-      const ef = Number(formData.efficiencyExpected);
-      if (!Number.isFinite(ef) || ef <= 0 || ef > 100) {
-        alert("Processo Padrão: Eficiência deve ser > 0 e <= 100.");
-        return;
-      }
+    const processValidationMessage = validateStandardProcessFieldsForForm(
+      {
+        cycleTimeSeconds: formData.cycleTimeSeconds,
+        cavities: formData.cavities,
+        setupTimeMin: formData.setupTimeMin,
+        efficiencyExpected: formData.efficiencyExpected,
+      },
+      { itemType: formData.type, costingMode }
+    );
+    if (processValidationMessage) {
+      alert(processValidationMessage);
+      return;
     }
 
     const method = editingItem ? "PUT" : "POST";
@@ -791,22 +774,36 @@ export const ProductModule = () => {
     }
   };
 
-  const filteredItems = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return items.filter((item) => {
-      if (listStatusFilter && item.status !== listStatusFilter) return false;
-      if (!q) return true;
-      return (
-        item.name.toLowerCase().includes(q) ||
-        item.sku.toLowerCase().includes(q)
-      );
-    });
-  }, [items, searchTerm, listStatusFilter]);
+  const filteredItems = useMemo(
+    () =>
+      filterProductEngineeringListItems(items, {
+        search: appliedSearch,
+        status: appliedStatusFilter,
+      }),
+    [items, appliedSearch, appliedStatusFilter]
+  );
+
+  const handleListSearchSubmit = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setAppliedSearch(draftSearch.trim());
+    setAppliedStatusFilter(draftStatusFilter);
+    setSelectedIds([]);
+  };
 
   const clearListFilters = () => {
-    setSearchTerm("");
-    setListStatusFilter("");
+    setDraftSearch("");
+    setAppliedSearch("");
+    setDraftStatusFilter("");
+    setAppliedStatusFilter("");
+    setSelectedIds([]);
   };
+
+  const hasListFilters = hasProductEngineeringListFilters({
+    draftSearch,
+    appliedSearch,
+    draftStatus: draftStatusFilter,
+    appliedStatus: appliedStatusFilter,
+  });
 
   const handleExportEngineering = () => {
     const selected = selectedIds.length
@@ -1123,6 +1120,8 @@ export const ProductModule = () => {
     [editingItem?.id, loadingCost, costAnalysisError, backendCostAnalysis]
   );
 
+  const isOwnProcessCostingMode = (formData.costingMode ?? "OWN_PROCESS") === "OWN_PROCESS";
+
   const showTraditionalProductsView =
     activeProductsMainTab === "products" || !showNomusMaintenanceTab;
 
@@ -1185,26 +1184,29 @@ export const ProductModule = () => {
               </button>
             ))}
           </div>
-          <div
+          <form
             className="flex flex-wrap items-center gap-2"
-            role="group"
+            role="search"
             aria-label="Filtros da lista de engenharia"
+            onSubmit={handleListSearchSubmit}
           >
             <div className="relative min-w-[200px] max-w-md flex-1 basis-[220px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
-                type="text"
+                type="search"
                 placeholder="Buscar por SKU ou nome..."
                 className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition-all focus:ring-2 focus:ring-primary/20"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
               />
             </div>
 
             <select
               className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={listStatusFilter}
-              onChange={(e) => setListStatusFilter(e.target.value as any)}
+              value={draftStatusFilter}
+              onChange={(e) =>
+                setDraftStatusFilter(e.target.value as ProductEngineeringListStatusFilter)
+              }
             >
               <option value="">Todos os status</option>
               <option value="ACTIVE">Ativo</option>
@@ -1212,16 +1214,24 @@ export const ProductModule = () => {
             </select>
 
             <button
+              type="submit"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              Pesquisar
+            </button>
+
+            <button
               type="button"
               onClick={clearListFilters}
-              disabled={!searchTerm.trim() && !listStatusFilter}
+              disabled={!hasListFilters}
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 disabled:hover:bg-card"
               title="Limpar filtros"
             >
               <X className="h-4 w-4 shrink-0" />
               Limpar
             </button>
-          </div>
+          </form>
 
           <p className="text-xs text-muted-foreground">
             Exibindo <span className="font-bold text-foreground">{filteredItems.length}</span> de{" "}
@@ -1968,6 +1978,17 @@ export const ProductModule = () => {
                               );
                             })}
                           </div>
+                          {(formData.costingMode ?? "OWN_PROCESS") === "BOM_ONLY" ? (
+                            <p className="border-t border-border bg-amber-50 px-4 py-3 text-[11px] text-amber-950">
+                              {BOM_ONLY_COSTING_HINT}
+                            </p>
+                          ) : null}
+                          {(formData.costingMode ?? "OWN_PROCESS") === "FINISHING_SERVICE" ? (
+                            <p className="border-t border-border bg-sky-50 px-4 py-3 text-[11px] text-sky-950">
+                              Este modo usa a composição da BOM (componente base + serviço/insumo). Processo próprio
+                              neste nível não entra no custo.
+                            </p>
+                          ) : null}
                         </div>
                       )}
 
@@ -1976,9 +1997,7 @@ export const ProductModule = () => {
                         <div
                           className={cn(
                             "mt-6 border border-border rounded-xl bg-card overflow-hidden",
-                            (formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"
-                              ? "opacity-60"
-                              : ""
+                            !isOwnProcessCostingMode ? "opacity-60" : ""
                           )}
                         >
                           <div className="bg-muted px-4 py-3 border-b border-border">
@@ -1986,9 +2005,11 @@ export const ProductModule = () => {
                               <Cpu className="h-4 w-4 text-primary"/> Processo Padrão de Produção
                             </h4>
                             <p className="text-[10px] text-muted-foreground mt-0.5">Parâmetros formadores do Custo do Componente (Substitui Roteiro e Herda a Carga Indireta Global).</p>
-                            {(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS" ? (
+                            {!isOwnProcessCostingMode ? (
                               <p className="text-[11px] mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                                O processo padrão está cadastrado, mas não será usado no custo enquanto o modo "{formData.costingMode === "FINISHING_SERVICE" ? "Acabamento / beneficiamento" : "Somente composição da BOM"}" estiver ativo.
+                                {formData.costingMode === "BOM_ONLY"
+                                  ? BOM_ONLY_COSTING_HINT
+                                  : `O processo padrão está cadastrado, mas não será usado no custo enquanto o modo "Acabamento / beneficiamento" estiver ativo.`}
                               </p>
                             ) : null}
                           </div>
@@ -1999,7 +2020,7 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.cycleTimeSeconds ?? ""}
                                 onChange={(e) => setFormData({...formData, cycleTimeSeconds: e.target.value})}
-                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                disabled={!isOwnProcessCostingMode}
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Tempo limpo" 
                               />
@@ -2010,7 +2031,7 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.cavities ?? ""}
                                 onChange={(e) => setFormData({...formData, cavities: e.target.value})}
-                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                disabled={!isOwnProcessCostingMode}
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="1"
                               />
@@ -2021,7 +2042,7 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.setupTimeMin ?? ""}
                                 onChange={(e) => setFormData({...formData, setupTimeMin: e.target.value})}
-                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                disabled={!isOwnProcessCostingMode}
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                               />
                             </div>
@@ -2031,7 +2052,7 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.efficiencyExpected ?? ""}
                                 onChange={(e) => setFormData({...formData, efficiencyExpected: e.target.value})}
-                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                disabled={!isOwnProcessCostingMode}
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Ex: 95" 
                               />
@@ -2042,7 +2063,7 @@ export const ProductModule = () => {
                           cycleTimeSeconds={formData.cycleTimeSeconds}
                           cavities={formData.cavities}
                           efficiencyExpectedPercent={formData.efficiencyExpected}
-                          disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                          disabled={!isOwnProcessCostingMode}
                         />
                         </>
                       )}
@@ -2188,6 +2209,27 @@ export const ProductModule = () => {
                               Materiais não possuem roteiro de produção interno, pois são itens adquiridos de fornecedores externos.
                             </p>
                           </div>
+                        </div>
+                      ) : !isOwnProcessCostingMode ? (
+                        <div className="space-y-4">
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                            {formData.costingMode === "BOM_ONLY"
+                              ? BOM_ONLY_COSTING_HINT
+                              : "O roteiro permanece cadastrado, mas não entra no custo enquanto o modo Acabamento / beneficiamento estiver ativo."}
+                          </div>
+                          {formData.routing.length === 0 ? (
+                            <div className="text-center py-12 border-2 border-dashed border-border rounded-xl opacity-60">
+                              <p className="text-sm text-muted-foreground">
+                                Nenhuma etapa de produção definida — adequado para este modo de custeio.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                              {formData.routing.length} etapa(s) de roteiro salvas anteriormente. Elas não serão
+                              somadas ao custo neste modo; altere para &quot;Processo próprio&quot; para reativar o
+                              roteiro no cálculo.
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <>

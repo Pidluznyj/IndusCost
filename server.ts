@@ -15,6 +15,11 @@ import {
 } from "@prisma/client";
 import { NO_PUBLISHED_MATERIAL_COST_TABLE_MESSAGE } from "./src/lib/materialCostEngineResolver.js";
 import { createProductCostAnalysisEngine, type AnalysisCache } from "./src/lib/productCostAnalysisEngine.server.js";
+import {
+  normalizeProductCostingMode,
+  parseStandardProcessFields,
+  validateStandardProcessFields,
+} from "./src/lib/productCostingModeValidation.js";
 import { resolveDefaultProcessHourCostsFromAnalysisCache, buildOfficialDefaultIndustrialCostsReference } from "./src/lib/componentStandardProcessCost.js";
 import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
 import {
@@ -7298,36 +7303,26 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
       }
 
+      const safeCostingMode = normalizeProductCostingMode(costingMode);
+
       // Sanitização dos campos do Processo Padrão (null-safe, NaN-safe)
       const safeCycle = cycleTimeSeconds   == null || cycleTimeSeconds   === "" ? null : Number(cycleTimeSeconds);
       const safeCav   = cavities           == null || cavities           === "" ? null : Number(cavities);
       const safeSetup = setupTimeMin       == null || setupTimeMin       === "" ? null : Number(setupTimeMin);
       const safeEff   = efficiencyExpected == null || efficiencyExpected === "" ? null : Number(efficiencyExpected);
 
-      const hasProcessoField = safeCycle !== null || safeCav !== null || safeSetup !== null || safeEff !== null;
-
-      // Processo Padrão só é permitido em COMPONENT
-      if (hasProcessoField && effectiveType !== "COMPONENT")
-        return res.status(400).json({ error: "Processo Padrão (cycleTimeSeconds/cavities/setupTimeMin/efficiencyExpected) só é permitido para itens do tipo COMPONENT." });
-
-      // Regra tudo-ou-nada: se ANY campo vier, TODOS os 4 são obrigatórios e válidos
-      if (hasProcessoField && effectiveType === "COMPONENT") {
-        if (safeCycle === null || !Number.isFinite(safeCycle) || safeCycle <= 0)
-          return res.status(400).json({ error: "Processo Padrão: cycleTimeSeconds é obrigatório e deve ser > 0." });
-        if (safeCav === null || !Number.isFinite(safeCav) || safeCav < 1)
-          return res.status(400).json({ error: "Processo Padrão: cavities é obrigatório e deve ser >= 1." });
-        if (safeSetup === null || !Number.isFinite(safeSetup) || safeSetup < 0)
-          return res.status(400).json({ error: "Processo Padrão: setupTimeMin é obrigatório e deve ser >= 0." });
-        if (safeEff === null || !Number.isFinite(safeEff) || safeEff <= 0 || safeEff > 100)
-          return res.status(400).json({ error: "Processo Padrão: efficiencyExpected é obrigatório e deve ser > 0 e <= 100." });
+      const processValidation = validateStandardProcessFields(
+        parseStandardProcessFields({
+          cycleTimeSeconds: safeCycle,
+          cavities: safeCav,
+          setupTimeMin: safeSetup,
+          efficiencyExpected: safeEff,
+        }),
+        { itemType: effectiveType, costingMode: safeCostingMode }
+      );
+      if (!processValidation.ok) {
+        return res.status(400).json({ error: processValidation.error });
       }
-
-      const validCostingModes = ["OWN_PROCESS", "BOM_ONLY", "FINISHING_SERVICE"] as const;
-      const safeCostingMode =
-        typeof costingMode === "string" &&
-        (validCostingModes as readonly string[]).includes(costingMode)
-          ? (costingMode as (typeof validCostingModes)[number])
-          : "OWN_PROCESS";
 
       const product = await prisma.product.create({
         data: {
@@ -7398,7 +7393,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       // effectiveType: usa o tipo do banco se o payload não trouxer type
       const currentProduct = await prisma.product.findUnique({
         where: { id },
-        select: { type: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
+        select: { type: true, costingMode: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
       });
       if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
 
@@ -7497,24 +7492,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const resolvedSetup = safeSetup !== undefined ? safeSetup : (currentProduct.setupTimeMin       !== null ? Number(currentProduct.setupTimeMin)       : null);
       const resolvedEff   = safeEff   !== undefined ? safeEff   : (currentProduct.efficiencyExpected !== null ? Number(currentProduct.efficiencyExpected) : null);
 
-      const hasProcessoField = resolvedCycle !== null || resolvedCav !== null || resolvedSetup !== null || resolvedEff !== null;
-
-      // Processo Padrão só é permitido em COMPONENT
-      if (hasProcessoField && effectiveType !== "COMPONENT")
-        return res.status(400).json({ error: "Processo Padrão (cycleTimeSeconds/cavities/setupTimeMin/efficiencyExpected) só é permitido para itens do tipo COMPONENT." });
-
-      // Regra tudo-ou-nada aplicada sobre os valores resolvidos
-      if (hasProcessoField && effectiveType === "COMPONENT") {
-        if (resolvedCycle === null || !Number.isFinite(resolvedCycle) || resolvedCycle <= 0)
-          return res.status(400).json({ error: "Processo Padrão: cycleTimeSeconds é obrigatório e deve ser > 0." });
-        if (resolvedCav === null || !Number.isFinite(resolvedCav) || resolvedCav < 1)
-          return res.status(400).json({ error: "Processo Padrão: cavities é obrigatório e deve ser >= 1." });
-        if (resolvedSetup === null || !Number.isFinite(resolvedSetup) || resolvedSetup < 0)
-          return res.status(400).json({ error: "Processo Padrão: setupTimeMin é obrigatório e deve ser >= 0." });
-        if (resolvedEff === null || !Number.isFinite(resolvedEff) || resolvedEff <= 0 || resolvedEff > 100)
-          return res.status(400).json({ error: "Processo Padrão: efficiencyExpected é obrigatório e deve ser > 0 e <= 100." });
-      }
-
       const validCostingModes = ["OWN_PROCESS", "BOM_ONLY", "FINISHING_SERVICE"] as const;
       const costingModeInPayload = Object.prototype.hasOwnProperty.call(body, "costingMode");
       const safeCostingMode =
@@ -7523,6 +7500,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         (validCostingModes as readonly string[]).includes(costingMode)
           ? (costingMode as (typeof validCostingModes)[number])
           : undefined;
+      const resolvedCostingMode = normalizeProductCostingMode(
+        safeCostingMode ?? currentProduct.costingMode
+      );
+
+      const processValidation = validateStandardProcessFields(
+        {
+          cycleTimeSeconds: resolvedCycle,
+          cavities: resolvedCav,
+          setupTimeMin: resolvedSetup,
+          efficiencyExpected: resolvedEff,
+        },
+        { itemType: effectiveType, costingMode: resolvedCostingMode }
+      );
+      if (!processValidation.ok) {
+        return res.status(400).json({ error: processValidation.error });
+      }
 
       const product = await prisma.$transaction(async (tx) => {
         await tx.productBOM.deleteMany({ where: { productId: id } });
