@@ -8,9 +8,11 @@ import {
   computeCostCenterMonthlyAverage,
   COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING,
   EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+  filterCostCenterHhHmSimulationCostCenters,
   normalizeCostCenterHhHmSimulationStoredForm,
   parseCostCenterHhHmSimulationCostCentersResponse,
   parseCostCenterHhHmSimulationMonthlyDataResponse,
+  pruneCostCenterHhHmSimulationSelectedIds,
 } from "./financeCostCenterHhHmSimulation.js";
 
 function monthlyRowsForCenter(
@@ -193,9 +195,10 @@ describe("financeCostCenterHhHmSimulation", () => {
   });
 
   it("10 — payload inválido de centros de custo não vira objeto mapeável", () => {
-    const parsed = parseCostCenterHhHmSimulationCostCentersResponse({ data: [] });
-    assert.equal(parsed.invalidShape, true);
-    assert.deepEqual(parsed.items, []);
+    assert.deepEqual(parseCostCenterHhHmSimulationCostCentersResponse(null).items, []);
+    assert.equal(parseCostCenterHhHmSimulationCostCentersResponse(null).invalidShape, true);
+    assert.deepEqual(parseCostCenterHhHmSimulationCostCentersResponse(undefined).items, []);
+    assert.equal(parseCostCenterHhHmSimulationCostCentersResponse({ foo: [] }).invalidShape, true);
   });
 
   it("11 — localStorage com selectedCostCenterIds objeto não quebra simulação", () => {
@@ -228,5 +231,47 @@ describe("financeCostCenterHhHmSimulation", () => {
     if (!parsed.ok) return;
     assert.equal(parsed.monthlyBuckets.length, 1);
     assert.equal(parsed.monthlyBuckets[0]?.totalAmount, 1000);
+  });
+
+  it("14 — envelope { data: [...] } é normalizado", () => {
+    const parsed = parseCostCenterHhHmSimulationCostCentersResponse({
+      data: [{ id: "cc-2", code: "200", name: "Energia" }],
+    });
+    assert.equal(parsed.invalidShape, false);
+    assert.equal(parsed.items[0]?.name, "Energia");
+    assert.equal(parsed.items[0]?.category, "machine");
+  });
+
+  it("15 — filtro de busca por código e nome", () => {
+    const items = [
+      { id: "1", code: "100", name: "Folha de pagamento", category: "administrative" as const },
+      { id: "2", code: "200", name: "Energia elétrica", category: "machine" as const },
+    ];
+    const filtered = filterCostCenterHhHmSimulationCostCenters(items, "energia");
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]?.id, "2");
+  });
+
+  it("16 — valor manual funciona sem centros selecionados", () => {
+    const result = computeCostCenterHhHmSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        useManualRate: true,
+        manualRatePerHour: "45",
+        quantityUsedInItem: "2",
+        selectedCostCenterIds: [],
+      },
+      monthlyBuckets: [],
+    });
+    assert.equal(result.composition.effectiveRatePerHour, 45);
+    assert.equal(result.composition.simulatedItemCost, 90);
+    assert.ok(result.errors.some((message) => /Selecione ao menos um centro/i.test(message)));
+  });
+
+  it("17 — prune remove ids inexistentes após reload", () => {
+    assert.deepEqual(
+      pruneCostCenterHhHmSimulationSelectedIds(["cc-a", "cc-z"], ["cc-a", "cc-b"]),
+      ["cc-a"]
+    );
   });
 });

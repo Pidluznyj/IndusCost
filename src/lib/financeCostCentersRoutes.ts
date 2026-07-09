@@ -24,6 +24,7 @@ import {
   buildCostCenterHhHmSimulationMonthlyPayload,
   parseCostCenterHhHmSimulationAveragePeriod,
 } from "@/src/lib/financeCostCenterHhHmSimulation.server.js";
+import { FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS } from "@/src/lib/financeCostCenterHhHmSimulation.js";
 import {
   buildCostCenterSupplierPaymentSummary,
   buildCostCenterSupplierPaymentTitles,
@@ -58,6 +59,8 @@ export const FINANCE_COST_CENTERS_VIEW_PERMISSIONS = [
 ] as const;
 
 export const FINANCE_COST_CENTERS_MANAGE_PERMISSIONS = ["finance.cost_centers.manage"] as const;
+
+export { FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS } from "@/src/lib/financeCostCenterHhHmSimulation.js";
 
 function handleValidationError(res: express.Response, error: FinanceCostCenterValidationError) {
   const status = error.code === "NOT_FOUND" ? 404 : 400;
@@ -98,6 +101,10 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
   const auditGuard = [
     requireAppAuth,
     requireAnyPermission([...FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS]),
+  ] as const;
+  const hhHmSimulationGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS]),
   ] as const;
 
   app.get("/api/finance/cost-center-audit", ...auditGuard, async (req, res) => {
@@ -188,7 +195,26 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
     }
   });
 
-  app.get("/api/finance/cost-centers/hh-hm-simulation/monthly-data", ...viewGuard, async (req, res) => {
+  app.get("/api/finance/cost-centers/hh-hm-simulation/cost-centers", ...hhHmSimulationGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const query = parseFinanceCostCentersListQuery(req.query as Record<string, unknown>);
+      const payload = await listFinancialCostCentersDefault(query);
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof FinanceCostCenterValidationError) {
+        return handleValidationError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/hh-hm-simulation/cost-centers", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao listar centros de custo para simulação HH/HM.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/hh-hm-simulation/monthly-data", ...hhHmSimulationGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });

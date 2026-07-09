@@ -13,6 +13,15 @@ export const COST_CENTER_HH_HM_SIMULATION_INSUFFICIENT_DATA =
 export const COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE =
   "Valores por data de vencimento (Contas a Pagar)";
 
+/** Permissões para leitura da simulação HH/HM (Engenharia + Financeiro). */
+export const FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS = [
+  "finance.cost_centers.view",
+  "finance.view",
+  "products.view",
+  "simulations.view",
+  "costs.view",
+] as const;
+
 export type CostCenterHhHmSimulationHourType = "HH" | "HM";
 
 export type CostCenterHhHmSimulationAveragePeriod =
@@ -126,7 +135,171 @@ export type CostCenterHhHmSimulationCostCenterRow = {
   id: string;
   code: string;
   name: string;
+  category?: CostCenterHhHmSimulationCategory;
 };
+
+export type CostCenterHhHmSimulationCategory =
+  | "administrative"
+  | "manufacturing"
+  | "machine"
+  | "exclude"
+  | "other";
+
+export const COST_CENTER_HH_HM_SIMULATION_CATEGORY_LABELS: Record<
+  CostCenterHhHmSimulationCategory,
+  string
+> = {
+  administrative: "Administrativo / mão de obra",
+  manufacturing: "Fabricação / produção",
+  machine: "Máquina / energia / manutenção",
+  exclude: "Não considerar",
+  other: "Outros",
+};
+
+export function buildCostCenterHhHmSimulationCostCentersApiPath(
+  status: "ACTIVE" | "all" = "ACTIVE"
+): string {
+  const q = new URLSearchParams();
+  if (status !== "all") q.set("status", status);
+  const qs = q.toString();
+  return `/api/finance/cost-centers/hh-hm-simulation/cost-centers${qs ? `?${qs}` : ""}`;
+}
+
+function normalizeCategoryToken(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toUpperCase()
+    .trim();
+}
+
+export function inferCostCenterHhHmSimulationCategory(
+  code: string,
+  name: string
+): CostCenterHhHmSimulationCategory {
+  const haystack = normalizeCategoryToken(`${code} ${name}`);
+  if (
+    haystack.includes("NAO CONSIDER") ||
+    haystack.includes("IGNORAR") ||
+    haystack.includes("EXCLUIR")
+  ) {
+    return "exclude";
+  }
+  if (
+    haystack.includes("ENERG") ||
+    haystack.includes("MAQUIN") ||
+    haystack.includes("MANUT") ||
+    haystack.includes("DEPREC")
+  ) {
+    return "machine";
+  }
+  if (haystack.includes("FABRIC") || haystack.includes("INDUSTRI") || haystack.includes("PRODUC")) {
+    return "manufacturing";
+  }
+  if (
+    haystack.includes("ADMIN") ||
+    haystack.includes("FOLHA") ||
+    haystack.includes("MAO DE OBRA") ||
+    haystack.includes("MAO OBRA")
+  ) {
+    return "administrative";
+  }
+  return "other";
+}
+
+export function enrichCostCenterHhHmSimulationCostCenterRow(
+  row: CostCenterHhHmSimulationCostCenterRow
+): CostCenterHhHmSimulationCostCenterRow {
+  return {
+    ...row,
+    category: inferCostCenterHhHmSimulationCategory(row.code, row.name),
+  };
+}
+
+function categorySortRank(
+  category: CostCenterHhHmSimulationCategory | undefined,
+  hourType: CostCenterHhHmSimulationHourType
+): number {
+  if (hourType === "HH") {
+    switch (category) {
+      case "administrative":
+        return 0;
+      case "manufacturing":
+        return 1;
+      case "other":
+        return 2;
+      case "machine":
+        return 3;
+      case "exclude":
+        return 4;
+      default:
+        return 2;
+    }
+  }
+  switch (category) {
+    case "machine":
+      return 0;
+    case "manufacturing":
+      return 1;
+    case "other":
+      return 2;
+    case "administrative":
+      return 3;
+    case "exclude":
+      return 4;
+    default:
+      return 2;
+  }
+}
+
+export function sortCostCenterHhHmSimulationCostCenters(
+  items: CostCenterHhHmSimulationCostCenterRow[],
+  hourType: CostCenterHhHmSimulationHourType
+): CostCenterHhHmSimulationCostCenterRow[] {
+  return [...items].sort((a, b) => {
+    const rankDiff =
+      categorySortRank(a.category, hourType) - categorySortRank(b.category, hourType);
+    if (rankDiff !== 0) return rankDiff;
+    const codeDiff = a.code.localeCompare(b.code, "pt-BR");
+    if (codeDiff !== 0) return codeDiff;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+}
+
+export function filterCostCenterHhHmSimulationCostCenters(
+  items: CostCenterHhHmSimulationCostCenterRow[],
+  search: string
+): CostCenterHhHmSimulationCostCenterRow[] {
+  const term = search.trim().toUpperCase();
+  if (!term) return items;
+  return items.filter((row) => {
+    const haystack = normalizeCategoryToken(`${row.code} ${row.name}`);
+    return haystack.includes(term);
+  });
+}
+
+export function formatCostCenterHhHmSimulationSelectedLabels(
+  selectedIds: string[],
+  items: CostCenterHhHmSimulationCostCenterRow[]
+): string {
+  if (selectedIds.length === 0) return "—";
+  const byId = new Map(items.map((row) => [row.id, row]));
+  const labels = selectedIds
+    .map((id) => {
+      const row = byId.get(id);
+      return row ? `${row.code} — ${row.name}` : id;
+    })
+    .filter(Boolean);
+  return labels.length > 0 ? labels.join("; ") : "—";
+}
+
+export function pruneCostCenterHhHmSimulationSelectedIds(
+  selectedIds: string[],
+  availableIds: string[]
+): string[] {
+  const valid = new Set(availableIds);
+  return selectedIds.filter((id) => valid.has(id));
+}
 
 export type CostCenterHhHmSimulationCostCentersParseResult = {
   items: CostCenterHhHmSimulationCostCenterRow[];
@@ -145,23 +318,30 @@ function isCostCenterHhHmSimulationCostCenterRow(
   );
 }
 
-/** Normaliza GET /api/finance/cost-centers ({ items }) ou array legado para a simulação HH/HM. */
+/** Normaliza GET /api/finance/cost-centers/hh-hm-simulation/cost-centers ({ items }), array ou { data }. */
 export function parseCostCenterHhHmSimulationCostCentersResponse(
   payload: unknown
 ): CostCenterHhHmSimulationCostCentersParseResult {
-  if (Array.isArray(payload)) {
-    return {
-      items: payload.filter(isCostCenterHhHmSimulationCostCenterRow),
-      invalidShape: false,
-    };
+  const extractRows = (rows: unknown): CostCenterHhHmSimulationCostCenterRow[] => {
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .filter(isCostCenterHhHmSimulationCostCenterRow)
+      .map(enrichCostCenterHhHmSimulationCostCenterRow);
+  };
+
+  if (payload == null) {
+    return { items: [], invalidShape: true };
   }
-  if (payload && typeof payload === "object") {
-    const items = (payload as { items?: unknown }).items;
-    if (Array.isArray(items)) {
-      return {
-        items: items.filter(isCostCenterHhHmSimulationCostCenterRow),
-        invalidShape: false,
-      };
+  if (Array.isArray(payload)) {
+    return { items: extractRows(payload), invalidShape: false };
+  }
+  if (typeof payload === "object") {
+    const body = payload as Record<string, unknown>;
+    if (Array.isArray(body.items)) {
+      return { items: extractRows(body.items), invalidShape: false };
+    }
+    if (Array.isArray(body.data)) {
+      return { items: extractRows(body.data), invalidShape: false };
     }
   }
   return { items: [], invalidShape: true };

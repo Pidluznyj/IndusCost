@@ -1,15 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Building2, Calculator, Loader2 } from "lucide-react";
+import { CostCenterHhHmSimulationMultiselect } from "@/src/components/CostCenterHhHmSimulationMultiselect";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
+  buildCostCenterHhHmSimulationCostCentersApiPath,
   computeCostCenterHhHmSimulation,
   COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS,
   COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE,
   DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
   EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+  formatCostCenterHhHmSimulationSelectedLabels,
   normalizeCostCenterHhHmSimulationStoredForm,
   parseCostCenterHhHmSimulationCostCentersResponse,
   parseCostCenterHhHmSimulationMonthlyDataResponse,
+  pruneCostCenterHhHmSimulationSelectedIds,
   type CostCenterHhHmSimulationCostCenterRow,
   type CostCenterHhHmSimulationFormValues,
   type CostCenterHhHmSimulationHourType,
@@ -82,41 +86,55 @@ export function CostCenterHhHmSimulationPanel() {
   const [costCenters, setCostCenters] = useState<CostCenterHhHmSimulationCostCenterRow[]>([]);
   const [costCentersLoading, setCostCentersLoading] = useState(true);
   const [costCentersError, setCostCentersError] = useState<string | null>(null);
+  const [costCentersReloadKey, setCostCentersReloadKey] = useState(0);
   const [monthlyData, setMonthlyData] = useState<MonthlyDataPayload | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState<string | null>(null);
 
+  const loadCostCenters = useCallback(async (cancelled: () => boolean) => {
+    setCostCentersLoading(true);
+    try {
+      const payload = await fetchJsonOk(buildCostCenterHhHmSimulationCostCentersApiPath("ACTIVE"));
+      if (cancelled()) return;
+      const parsed = parseCostCenterHhHmSimulationCostCentersResponse(payload);
+      if (parsed.invalidShape) {
+        console.error("CostCenterHhHmSimulation: payload inválido de centros de custo", payload);
+        setCostCenters([]);
+        setCostCentersError(
+          "Não foi possível interpretar a lista de centros de custo. Tente novamente."
+        );
+        return;
+      }
+      setCostCenters(parsed.items);
+      setCostCentersError(null);
+      setForm((prev) => {
+        const pruned = pruneCostCenterHhHmSimulationSelectedIds(
+          prev.selectedCostCenterIds,
+          parsed.items.map((row) => row.id)
+        );
+        if (pruned.length === prev.selectedCostCenterIds.length) return prev;
+        return { ...prev, selectedCostCenterIds: pruned };
+      });
+    } catch (error) {
+      console.error("CostCenterHhHmSimulation: falha ao carregar centros de custo", error);
+      if (!cancelled()) {
+        setCostCenters([]);
+        setCostCentersError(
+          "Não foi possível carregar os centros de custo. Verifique sua permissão ou tente novamente."
+        );
+      }
+    } finally {
+      if (!cancelled()) setCostCentersLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setCostCentersLoading(true);
-      try {
-        const payload = await fetchJsonOk(buildFinanceCostCentersListApiPath("ACTIVE"));
-        const parsed = parseCostCenterHhHmSimulationCostCentersResponse(payload);
-        if (!cancelled) {
-          if (parsed.invalidShape) {
-            setCostCenters([]);
-            setCostCentersError(
-              "Formato inválido ao carregar centros de custo. Tente novamente ou contate o suporte."
-            );
-          } else {
-            setCostCenters(parsed.items);
-            setCostCentersError(null);
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setCostCenters([]);
-          setCostCentersError("Não foi possível carregar os centros de custo.");
-        }
-      } finally {
-        if (!cancelled) setCostCentersLoading(false);
-      }
-    })();
+    void loadCostCenters(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadCostCenters, costCentersReloadKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -160,7 +178,8 @@ export function CostCenterHhHmSimulationPanel() {
             setMonthlyError(null);
           }
         }
-      } catch {
+      } catch (error) {
+        console.error("CostCenterHhHmSimulation: falha ao carregar média mensal", error);
         if (!cancelled) {
           setMonthlyData(null);
           setMonthlyError("Não foi possível carregar a média mensal dos centros selecionados.");
@@ -191,17 +210,12 @@ export function CostCenterHhHmSimulationPanel() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const toggleCostCenter = (costCenterId: string) => {
-    setForm((prev) => {
-      const selected = new Set(prev.selectedCostCenterIds);
-      if (selected.has(costCenterId)) selected.delete(costCenterId);
-      else selected.add(costCenterId);
-      return { ...prev, selectedCostCenterIds: [...selected] };
-    });
-  };
-
   const hourLabel = form.hourType === "HH" ? "HH" : "HM";
   const manualMode = form.useManualRate || form.averagePeriod === "MANUAL_VALUE";
+  const selectedCentersLabel = formatCostCenterHhHmSimulationSelectedLabels(
+    form.selectedCostCenterIds,
+    costCenters
+  );
 
   return (
     <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
@@ -277,36 +291,15 @@ export function CostCenterHhHmSimulationPanel() {
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700">Centros de custo selecionados</label>
-            {costCentersLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-600">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Carregando centros de custo...
-              </div>
-            ) : costCentersError ? (
-              <p className="text-sm text-amber-800">{costCentersError}</p>
-            ) : (
-              <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
-                {costCenters.map((center) => {
-                  const checked = form.selectedCostCenterIds.includes(center.id);
-                  return (
-                    <label
-                      key={center.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleCostCenter(center.id)}
-                        className="rounded border-slate-300"
-                      />
-                      <span className="text-sm text-slate-800">
-                        <span className="font-semibold">{center.code}</span> — {center.name}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
+            <CostCenterHhHmSimulationMultiselect
+              options={costCenters}
+              selectedIds={form.selectedCostCenterIds}
+              onChange={(selectedCostCenterIds) => patch("selectedCostCenterIds", selectedCostCenterIds)}
+              hourType={form.hourType}
+              loading={costCentersLoading}
+              error={costCentersError}
+              onRetry={() => setCostCentersReloadKey((value) => value + 1)}
+            />
           </div>
 
           <Field
@@ -366,11 +359,17 @@ export function CostCenterHhHmSimulationPanel() {
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-600">Período</dt>
-                <dd className="font-medium text-slate-900">
+                <dd className="font-medium text-slate-900 text-right">
                   {monthlyData?.periodLabel ??
                     COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS.find(
                       (row) => row.value === form.averagePeriod
                     )?.label}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="shrink-0 text-slate-600">Centros selecionados</dt>
+                <dd className="max-w-[60%] text-right text-xs font-medium leading-relaxed text-slate-900">
+                  {selectedCentersLabel}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
