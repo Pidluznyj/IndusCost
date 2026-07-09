@@ -91,6 +91,10 @@ export const BRENT_COMMODITY_LATEST_API =
 export const BRENT_COMMODITY_COLLECT_API =
   "/api/market-intelligence/commodities/brent/collect" as const;
 
+export const PTAX_SNAPSHOT_LATEST_API = "/api/market-intelligence/ptax/latest" as const;
+
+export const PTAX_SNAPSHOT_COLLECT_API = "/api/market-intelligence/ptax/collect" as const;
+
 export function getMaterialMarketIntelligenceAlertsApiPath(materialId: string): string {
   return `/api/materials/market-intelligence/${materialId}/alerts`;
 }

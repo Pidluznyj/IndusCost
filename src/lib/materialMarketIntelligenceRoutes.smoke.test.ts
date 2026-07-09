@@ -17,6 +17,7 @@ import { after, describe, it } from "node:test";
 import express from "express";
 import type { RequestHandler } from "express";
 import { registerBrentCommodityRoutes } from "./brentCommodityRoutes.js";
+import { registerPtaxSnapshotRoutes } from "./ptaxSnapshotRoutes.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketAuditRoutes } from "./materialMarketAuditRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./materialMarketIntelligenceExportRoutes.js";
@@ -24,8 +25,10 @@ import { registerMaterialMarketQuoteAttachmentRoutes } from "./materialMarketQuo
 import { registerMaterialMarketQuoteGovernanceRoutes } from "./materialMarketQuoteGovernanceRoutes.js";
 import { registerMaterialMarketQuoteReliabilityRoutes } from "./materialMarketQuoteReliabilityRoutes.js";
 import { resetBrentCommoditySchedulerForTests } from "./brentCommodityJob.js";
+import { resetPtaxSnapshotSchedulerForTests } from "./ptaxSnapshotJob.js";
 
 process.env.BRENT_COMMODITY_SCHEDULER_ENABLED = "false";
+process.env.PTAX_SNAPSHOT_SCHEDULER_ENABLED = "false";
 
 const SAMPLE_MATERIAL_ID = "11111111-1111-4111-8111-111111111111";
 const SAMPLE_QUOTE_ID = "22222222-2222-4222-8222-222222222222";
@@ -130,6 +133,11 @@ function createMiModularApp(): express.Application {
     requirePermission: guards.requirePermission,
   });
 
+  registerPtaxSnapshotRoutes(app, {
+    requireAppAuth: guards.requireAppAuth,
+    requirePermission: guards.requirePermission,
+  });
+
   registerMaterialMarketQuoteGovernanceRoutes(
     app,
     {
@@ -187,6 +195,7 @@ function createMiModularApp(): express.Application {
 
 after(() => {
   resetBrentCommoditySchedulerForTests();
+  resetPtaxSnapshotSchedulerForTests();
 });
 
 describe("MI route smoke — modular registrars (HTTP 401 auth-gate)", () => {
@@ -228,8 +237,12 @@ describe("MI route smoke — modular registrars (HTTP 401 auth-gate)", () => {
     // Brent
     { method: "GET", path: "/api/market-intelligence/commodities/brent/latest" },
     { method: "POST", path: "/api/market-intelligence/commodities/brent/collect" },
+    // PTAX
+    { method: "GET", path: "/api/market-intelligence/ptax/latest" },
+    { method: "POST", path: "/api/market-intelligence/ptax/collect" },
     // Global indicators (home KPIs)
     { method: "GET", path: "/api/market-intelligence/global-indicators" },
+    { method: "POST", path: "/api/market-intelligence/global-indicators/refresh" },
     // Governance (related quote lifecycle)
     {
       method: "POST",

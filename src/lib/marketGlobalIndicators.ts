@@ -8,6 +8,9 @@ import { BRENT_DEFAULT_SOURCE } from "@/src/lib/brentCommodityService.js";
 export const MARKET_GLOBAL_INDICATORS_API =
   "/api/market-intelligence/global-indicators" as const;
 
+export const MARKET_GLOBAL_INDICATORS_REFRESH_API =
+  "/api/market-intelligence/global-indicators/refresh" as const;
+
 export const PTAX_DEFAULT_SOURCE_LABEL = "BCB PTAX" as const;
 export const BRENT_DISPLAY_UNIT = "barril" as const;
 
@@ -18,6 +21,7 @@ const BRENT_SOURCE_LABELS: Record<string, string> = {
 export type MarketGlobalIndicatorsPtaxDto = {
   sellRate: number;
   buyRate: number;
+  quoteDate: string;
   source: string;
   lastUpdate: string;
 };
@@ -39,10 +43,52 @@ export type MarketGlobalIndicatorsDto = {
   hasData: boolean;
 };
 
+export type MarketGlobalIndicatorsRefreshPartResult =
+  | { ok: true; action: "created" | "skipped"; quoteDate?: string; reason?: string }
+  | { ok: false; error: string };
+
+export type MarketGlobalIndicatorsRefreshResponse = {
+  brent: MarketGlobalIndicatorsRefreshPartResult;
+  ptax: MarketGlobalIndicatorsRefreshPartResult;
+  indicators: MarketGlobalIndicatorsDto;
+};
+
+type CollectionSnapshotLike = {
+  status: string;
+  errorMessage?: string | null;
+};
+
+type CollectionOutcomeLike =
+  | { action: "skipped"; quoteDate: string; reason: string }
+  | { action: "created"; quoteDate: string; snapshot: CollectionSnapshotLike }
+  | { error: string };
+
+export function mapCollectionOutcomeToRefreshPart(
+  outcome: CollectionOutcomeLike
+): MarketGlobalIndicatorsRefreshPartResult {
+  if ("error" in outcome) return { ok: false, error: outcome.error };
+  if (outcome.action === "skipped") {
+    return {
+      ok: true,
+      action: "skipped",
+      quoteDate: outcome.quoteDate,
+      reason: outcome.reason,
+    };
+  }
+  if (outcome.snapshot.status === "SUCCESS") {
+    return { ok: true, action: "created", quoteDate: outcome.quoteDate };
+  }
+  return {
+    ok: false,
+    error: outcome.snapshot.errorMessage ?? "Coleta sem sucesso.",
+  };
+}
+
 export type MarketGlobalPtaxSourceRow = {
   status: string;
   sellRate: number | string | null | { toString(): string };
   buyRate: number | string | null | { toString(): string };
+  quoteDate?: Date | string;
   source?: string | null;
   collectedAt: Date | string;
 };
@@ -82,16 +128,27 @@ export function buildMarketGlobalIndicatorsSourcesLabel(input: {
   return labels.join(" · ");
 }
 
+function toQuoteDateIso(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const trimmed = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
 export function mapPtaxSnapshotToIndicator(
   snapshot: MarketGlobalPtaxSourceRow | null
 ): MarketGlobalIndicatorsPtaxDto | null {
   if (!snapshot || snapshot.status !== "SUCCESS") return null;
   const sellRate = toNumber(snapshot.sellRate);
   const buyRate = toNumber(snapshot.buyRate);
-  if (sellRate == null || buyRate == null) return null;
+  const quoteDate = toQuoteDateIso(snapshot.quoteDate);
+  if (sellRate == null || buyRate == null || quoteDate == null) return null;
   return {
     sellRate,
     buyRate,
+    quoteDate,
     source: snapshot.source?.trim() || PTAX_DEFAULT_SOURCE_LABEL,
     lastUpdate: toIso(snapshot.collectedAt),
   };

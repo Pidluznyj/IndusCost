@@ -457,6 +457,7 @@ import {
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
 import { registerNomusAutoApplyBomDashboardRoutes } from "./src/lib/nomusAutoApplyBomDashboardRoutes.js";
 import { registerBrentCommodityRoutes } from "./src/lib/brentCommodityRoutes.js";
+import { registerPtaxSnapshotRoutes } from "./src/lib/ptaxSnapshotRoutes.js";
 import { registerMaterialMarketQuoteAttachmentRoutes } from "./src/lib/materialMarketQuoteAttachmentRoutes.js";
 import { registerMaterialMarketQuoteGovernanceRoutes } from "./src/lib/materialMarketQuoteGovernanceRoutes.js";
 import { registerMaterialMarketAuditRoutes } from "./src/lib/materialMarketAuditRoutes.js";
@@ -6939,6 +6940,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerBrentCommodityRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+  });
+
+  registerPtaxSnapshotRoutes(app, {
     requireAppAuth,
     requirePermission,
   });

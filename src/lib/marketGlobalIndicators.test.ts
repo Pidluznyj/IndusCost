@@ -15,6 +15,7 @@ describe("marketGlobalIndicators DTO mapping", () => {
       status: "SUCCESS",
       sellRate: 5.4321,
       buyRate: 5.431,
+      quoteDate: "2026-07-08",
       source: "BCB PTAX",
       collectedAt: "2026-07-08T12:00:00.000Z",
     });
@@ -22,6 +23,7 @@ describe("marketGlobalIndicators DTO mapping", () => {
     assert.deepEqual(mapped, {
       sellRate: 5.4321,
       buyRate: 5.431,
+      quoteDate: "2026-07-08",
       source: "BCB PTAX",
       lastUpdate: "2026-07-08T12:00:00.000Z",
     });
@@ -78,6 +80,7 @@ describe("marketGlobalIndicators DTO mapping", () => {
         status: "SUCCESS",
         sellRate: 5.5,
         buyRate: 5.4,
+        quoteDate: "2026-07-08",
         source: "BCB PTAX",
         collectedAt: "2026-07-08T10:00:00.000Z",
       },
@@ -112,6 +115,7 @@ describe("marketGlobalIndicators DTO mapping", () => {
         {
           sellRate: 1,
           buyRate: 1,
+          quoteDate: "2026-07-08",
           source: "BCB PTAX",
           lastUpdate: "2026-07-08T09:00:00.000Z",
         },

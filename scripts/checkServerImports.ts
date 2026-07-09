@@ -30,6 +30,7 @@ export const SERVER_IMPORT_CHECK_ENTRIES = [
   "src/lib/materialMarketQuoteReliabilityRoutes.ts",
   "src/lib/materialMarketIntelligenceExportRoutes.ts",
   "src/lib/brentCommodityRoutes.ts",
+  "src/lib/ptaxSnapshotRoutes.ts",
   "src/lib/marketGlobalIndicatorsRoutes.ts",
 ] as const;
 
@@ -41,6 +42,7 @@ export const SERVER_IMPORT_DYNAMIC_MODULES = [
   "src/lib/materialMarketQuoteReliabilityRoutes.ts",
   "src/lib/materialMarketIntelligenceExportRoutes.ts",
   "src/lib/brentCommodityRoutes.ts",
+  "src/lib/ptaxSnapshotRoutes.ts",
   "src/lib/marketGlobalIndicatorsRoutes.ts",
 ] as const;
 

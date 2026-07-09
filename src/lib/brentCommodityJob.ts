@@ -70,7 +70,17 @@ export const BRENT_COMMODITY_REGISTERED_JOB = {
 };
 
 export function listRegisteredScheduledJobs() {
-  return [BRENT_COMMODITY_REGISTERED_JOB];
+  return [
+    BRENT_COMMODITY_REGISTERED_JOB,
+    {
+      id: "ptax-snapshot-collection",
+      name: "Coleta PTAX (BCB)",
+      timezone: BRENT_COLLECTION_TIMEZONE,
+      schedule: BRENT_COLLECTION_SCHEDULE.map((s) => s.label).join(", "),
+      description:
+        "Coleta automática da PTAX de fechamento (BCB) para Inteligência de Mercado — mesma agenda do Brent.",
+    },
+  ];
 }
 
 export function getRegisteredScheduledJob(jobId: string) {
