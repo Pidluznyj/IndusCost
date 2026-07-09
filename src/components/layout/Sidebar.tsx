@@ -37,7 +37,9 @@ import {
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
+import { resolveSidebarAsideWidth } from "@/src/lib/sidebarLayout";
 import {
   MODULE_LABELS,
   type AppModuleId,
@@ -258,8 +260,21 @@ export const Sidebar = () => {
   const location = useLocation();
   const auth = useAuth();
   const { authUser, logout } = auth;
-  const [collapsed, setCollapsed] = React.useState(false);
+  const {
+    desktopCollapsed,
+    isMobile,
+    mobileOpen,
+    toggleDesktopCollapsed,
+    closeMobileSidebar,
+  } = useSidebarLayout();
+  const collapsed = isMobile ? false : desktopCollapsed;
   const [pendingLogout, setPendingLogout] = React.useState(false);
+
+  const asideWidth = resolveSidebarAsideWidth({ isMobile, desktopCollapsed });
+
+  React.useEffect(() => {
+    if (isMobile) closeMobileSidebar();
+  }, [location.pathname, isMobile, closeMobileSidebar]);
 
   const navigation = React.useMemo(
     () => buildAccessibleSidebarNavigation(auth),
@@ -306,12 +321,18 @@ export const Sidebar = () => {
   return (
     <motion.aside
       initial={false}
-      animate={{ width: collapsed ? 80 : 272 }}
+      animate={{ width: asideWidth }}
       data-sidebar-collapsed={collapsed ? "true" : "false"}
+      data-sidebar-mobile={isMobile ? "true" : "false"}
+      data-sidebar-mobile-open={isMobile && mobileOpen ? "true" : "false"}
       className={cn(
-        "h-screen min-h-0 bg-card border-r border-border flex flex-col relative z-20",
-        "transition-[width] duration-300 ease-in-out",
-        collapsed ? "items-stretch" : ""
+        "h-screen min-h-0 bg-card border-r border-border flex flex-col",
+        isMobile
+          ? cn(
+              "fixed inset-y-0 left-0 z-30 shadow-xl transition-transform duration-300 ease-in-out",
+              mobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
+            )
+          : "relative shrink-0 z-20 transition-[width] duration-300 ease-in-out"
       )}
     >
       <div
@@ -443,16 +464,29 @@ export const Sidebar = () => {
         </button>
         <button
           type="button"
-          title={collapsed ? "Expandir menu" : "Recolher menu"}
-          aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
-          onClick={() => setCollapsed(!collapsed)}
+          title={isMobile ? "Fechar menu" : collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-label={
+            isMobile
+              ? "Fechar menu lateral"
+              : collapsed
+                ? "Expandir menu lateral"
+                : "Recolher menu lateral"
+          }
+          onClick={() => {
+            if (isMobile) closeMobileSidebar();
+            else toggleDesktopCollapsed();
+          }}
           className={cn(
             "flex items-center justify-center w-full p-2 rounded-md transition-colors",
             "text-muted-foreground hover:bg-accent/80 hover:text-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           )}
         >
-          {collapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+          {isMobile || collapsed ? (
+            <ChevronRight className="h-5 w-5" />
+          ) : (
+            <ChevronLeft className="h-5 w-5" />
+          )}
         </button>
       </div>
     </motion.aside>

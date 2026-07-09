@@ -1,8 +1,10 @@
 import React from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { PanelLeft } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { SidebarLayoutProvider, useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
@@ -15,7 +17,27 @@ type HeaderSyncLog = {
   modifiedAt?: string;
 };
 
-export const Layout = () => {
+export const Layout = () => (
+  <SidebarLayoutProvider>
+    <LayoutShell />
+  </SidebarLayoutProvider>
+);
+
+function SidebarMobileBackdrop() {
+  const { isMobile, mobileOpen, closeMobileSidebar } = useSidebarLayout();
+  if (!isMobile || !mobileOpen) return null;
+  return (
+    <button
+      type="button"
+      aria-label="Fechar menu lateral"
+      className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+      onClick={closeMobileSidebar}
+    />
+  );
+}
+
+function LayoutShell() {
+  const { openMobileSidebar, isMobile } = useSidebarLayout();
   const auth = useAuth();
   const { authUser } = auth;
   const location = useLocation();
@@ -90,12 +112,24 @@ export const Layout = () => {
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans antialiased text-foreground">
+      <SidebarMobileBackdrop />
       <Sidebar />
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="h-16 border-b border-border flex items-center justify-between px-8 bg-card/50 backdrop-blur-sm z-10">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+      <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
+        <header className="h-16 border-b border-border flex items-center justify-between px-4 sm:px-8 bg-card/50 backdrop-blur-sm z-10 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {isMobile ? (
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label="Abrir menu lateral"
+                title="Abrir menu"
+                onClick={openMobileSidebar}
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+            ) : null}
+            <h1 className="text-xl font-semibold tracking-tight truncate">Dashboard</h1>
           </div>
           <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             {authUser ? <MarketHeaderTicker /> : null}
@@ -158,4 +192,4 @@ export const Layout = () => {
       </main>
     </div>
   );
-};
+}
