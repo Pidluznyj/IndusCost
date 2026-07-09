@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildSalesOrderListSummary,
+  buildSalesOrderListTotalsFromPrismaOrders,
   buildSalesOrderListWhere,
   summarizeSalesOrderListRows,
 } from "./salesOrdersListSummary.js";
@@ -300,5 +301,12 @@ describe("salesOrdersListSummary", () => {
     assert.ok(cards.includes("Ticket médio"));
     assert.ok(cards.includes("Margem geral"));
     assert.ok(page.includes("marginSummary"));
+  });
+
+  it("buildSalesOrderListTotalsFromPrismaOrders preserva paridade com length", () => {
+    const orders = [{ totalNetValue: 100, totalItems: 1 }];
+    const totals = buildSalesOrderListTotalsFromPrismaOrders(orders);
+    assert.equal(totals.totalOrders, 1);
+    assert.equal(totals.totalNetAmount, 100);
   });
 });

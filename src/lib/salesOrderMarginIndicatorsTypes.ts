@@ -20,6 +20,11 @@ export type SalesOrderMarginIndicatorFilters = {
 };
 
 export type SalesOrderMarginIndicatorSummary = SalesOrderMarginCoveragePayload & {
+  /** Σ SalesOrder.totalNetValue — paridade com GET /api/sales-orders */
+  totalSoldAmount: number;
+  /** Pedidos no filtro — paridade com paginação e card Pedidos filtrados */
+  filteredTotalItems: number;
+  filteredAverageTicket: number;
   netRevenue: number;
   totalCost: number;
   marginValue: number;

@@ -58,7 +58,7 @@ function row(
 }
 
 describe("salesOrderMarginIndicators", () => {
-  it("1. indicador geral calcula margem ponderada", () => {
+  it("1. indicador geral calcula margem ponderada sobre receita com custo", () => {
     const items = [
       row({ item: item({ netRevenue: 1000, marginValue: 200, marginPercent: 20 }) }),
       row({
@@ -69,6 +69,7 @@ describe("salesOrderMarginIndicators", () => {
     ];
     const summary = buildSalesOrderMarginPeriodSummary(items);
     assert.equal(summary.netRevenue, 4000);
+    assert.equal(summary.marginRevenueCovered, 4000);
     assert.equal(summary.marginValue, 1100);
     assert.ok(Math.abs((summary.marginPercent ?? 0) - 27.5) < 0.001);
   });
@@ -202,7 +203,8 @@ describe("salesOrderMarginIndicators", () => {
       join(ROOT, "lib/salesOrderMarginIndicators.server.ts"),
       "utf8"
     );
-    assert.match(source, /marginValue \/ bucket\.netRevenue/);
+    assert.match(source, /marginValue \/ marginRevenueCovered|marginRevenueCovered\)/);
+    assert.doesNotMatch(source, /marginValue \/ bucket\.netRevenue/);
     assert.doesNotMatch(source, /reduce\([\s\S]*marginPercent[\s\S]*\/\s*items\.length/s);
   });
 
@@ -229,6 +231,7 @@ describe("salesOrderMarginIndicators UI", () => {
     assert.match(ui, /SYSTEM_TOTALIZER_GRID_CLASS/);
     assert.doesNotMatch(ui, /FinanceBiKpiCard/);
     assert.match(ui, /getSalesOrderMarginIndicatorsApiPath/);
+    assert.match(ui, /totalSoldAmount/);
   });
 
   it("13b. valores monetários usam amountFormat compacto", () => {

@@ -2,7 +2,7 @@
  * Indicadores consolidados de margem de Pedidos de Venda.
  * Fluxo: buscar pedidos filtrados → margem em lote → agrupar em memória.
  *
- * Margem % consolidada sempre ponderada: soma(margem R$) / soma(receita líquida).
+ * Margem % consolidada: soma(margem R$) / soma(receita com custo no escopo).
  * Para volumes muito altos, considerar materialização assíncrona (não implementada).
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -17,7 +17,10 @@ import {
   SALES_ORDER_ITEM_MARGIN_SELECT,
   type SalesOrderForMargin,
 } from "./salesOrderMarginService.server.js";
-import { resolveSalesOrderMarginSummaryStatusMeta } from "./salesOrderMarginStatus.js";
+import {
+  isSalesOrderMarginConsolidationEligible,
+  resolveSalesOrderMarginSummaryStatusMeta,
+} from "./salesOrderMarginStatus.js";
 import type {
   SalesOrderMarginItemResult,
   SalesOrderMarginStatus,
@@ -27,8 +30,14 @@ import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
-import { computeSalesOrderMarginCoverageFromItems } from "./salesOrderMarginCoverage.js";
-import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
+import {
+  computeSalesOrderMarginCoverageFromItems,
+  isSalesOrderMarginItemInSalesScope,
+} from "./salesOrderMarginCoverage.js";
+import {
+  buildSalesOrderListWhere,
+  buildSalesOrderListTotalsFromPrismaOrders,
+} from "./salesOrdersListSummary.js";
 import type {
   SalesOrderMarginIndicatorAlerts,
   SalesOrderMarginIndicatorCustomerRow,
@@ -54,6 +63,7 @@ const VALID_ITEM_MARGIN_STATUSES = new Set<SalesOrderMarginStatus>([
 
 type MarginBucket = {
   netRevenue: number;
+  marginRevenueCovered: number;
   totalCost: number;
   marginValue: number;
   orderIds: Set<string>;
@@ -161,12 +171,8 @@ export function buildSalesOrderMarginIndicatorWhere(
     seller: filters.responsible,
   });
 
-  const baseStatus = listWhere.status;
   return {
     ...listWhere,
-    status: filters.status
-      ? baseStatus
-      : { notIn: ["CANCELLED", "ERROR"] },
     ...(filters.companyIssuer
       ? { companyIssuer: { contains: filters.companyIssuer, mode: "insensitive" } }
       : {}),
@@ -185,16 +191,23 @@ function customerDisplayName(customer?: {
   );
 }
 
-function weightedMetrics(bucket: Pick<MarginBucket, "netRevenue" | "totalCost" | "marginValue">) {
+function weightedMetrics(
+  bucket: Pick<MarginBucket, "netRevenue" | "totalCost" | "marginValue">,
+  marginRevenueCovered: number
+) {
   const marginPercent =
-    bucket.netRevenue > 0 ? (bucket.marginValue / bucket.netRevenue) * 100 : null;
-  const markup = bucket.totalCost > 0 ? bucket.netRevenue / bucket.totalCost : null;
+    marginRevenueCovered > 0 ? (bucket.marginValue / marginRevenueCovered) * 100 : null;
+  const markup =
+    bucket.totalCost > 0 && marginRevenueCovered > 0
+      ? marginRevenueCovered / bucket.totalCost
+      : null;
   return { marginPercent, markup };
 }
 
 function createBucket(): MarginBucket {
   return {
     netRevenue: 0,
+    marginRevenueCovered: 0,
     totalCost: 0,
     marginValue: 0,
     orderIds: new Set(),
@@ -211,6 +224,14 @@ function addItemToBucket(bucket: MarginBucket, row: EnrichedItem) {
   bucket.netRevenue += item.netRevenue;
   bucket.totalCost += item.totalCost ?? 0;
   bucket.marginValue += item.marginValue ?? 0;
+  if (isSalesOrderMarginItemInSalesScope(item.status)) {
+    if (
+      isSalesOrderMarginConsolidationEligible(item.status) ||
+      item.status === "MARGEM_NEGATIVA"
+    ) {
+      bucket.marginRevenueCovered += item.netRevenue;
+    }
+  }
   bucket.orderIds.add(row.orderId);
   if (row.customerId) bucket.customerIds.add(row.customerId);
   bucket.itemCount += 1;
@@ -228,12 +249,12 @@ function resolveBucketStatus(bucket: MarginBucket): SalesOrderMarginSummaryPaylo
   return "OK";
 }
 
-async function loadEnrichedMarginItems(
+async function loadSalesOrderMarginIndicatorOrders(
   prisma: PrismaClient,
   filters: SalesOrderMarginIndicatorFilters
-): Promise<EnrichedItem[]> {
+) {
   const where = buildSalesOrderMarginIndicatorWhere(filters);
-  const orders = await prisma.salesOrder.findMany({
+  return prisma.salesOrder.findMany({
     where,
     select: {
       id: true,
@@ -241,22 +262,32 @@ async function loadEnrichedMarginItems(
       issueDate: true,
       responsible: true,
       customerId: true,
+      totalNetValue: true,
+      totalItems: true,
       nomusRawResponse: true,
       Customer: { select: { companyName: true, tradeName: true } },
       items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
     },
   });
+}
 
-  if (orders.length === 0) return [];
+async function loadEnrichedMarginItems(
+  prisma: PrismaClient,
+  filters: SalesOrderMarginIndicatorFilters,
+  orders?: Awaited<ReturnType<typeof loadSalesOrderMarginIndicatorOrders>>
+): Promise<EnrichedItem[]> {
+  const scopedOrders = orders ?? (await loadSalesOrderMarginIndicatorOrders(prisma, filters));
+
+  if (scopedOrders.length === 0) return [];
 
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
     prisma,
-    orders as SalesOrderForMargin[]
+    scopedOrders as SalesOrderForMargin[]
   );
 
   const enriched: EnrichedItem[] = [];
 
-  for (const order of orders) {
+  for (const order of scopedOrders) {
     const marginResult = marginByOrder.get(order.id);
     if (!marginResult) continue;
 
@@ -308,8 +339,8 @@ export function buildSalesOrderMarginPeriodSummary(
 ): SalesOrderMarginIndicatorSummary {
   const bucket = createBucket();
   for (const row of items) addItemToBucket(bucket, row);
-  const { marginPercent, markup } = weightedMetrics(bucket);
   const coverage = computeSalesOrderMarginCoverageFromItems(items.map((row) => row.item));
+  const { marginPercent, markup } = weightedMetrics(bucket, coverage.marginRevenueCovered);
   return {
     netRevenue: bucket.netRevenue,
     totalCost: bucket.totalCost,
@@ -321,6 +352,9 @@ export function buildSalesOrderMarginPeriodSummary(
     itemsWithoutCost: bucket.itemsWithoutCost,
     itemsWithoutProduct: bucket.itemsWithoutProduct,
     itemsWithNegativeMargin: bucket.itemsWithNegativeMargin,
+    totalSoldAmount: 0,
+    filteredTotalItems: 0,
+    filteredAverageTicket: 0,
     ...coverage,
   };
 }
@@ -346,7 +380,7 @@ export function buildSalesOrderMarginByCustomer(
     .map((bucket) => {
       const status = resolveBucketStatus(bucket);
       const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
-      const { marginPercent } = weightedMetrics(bucket);
+      const { marginPercent } = weightedMetrics(bucket, bucket.marginRevenueCovered);
       return {
         customerId: bucket.customerId,
         customerName: bucket.customerName,
@@ -379,7 +413,7 @@ export function buildSalesOrderMarginBySeller(
 
   return [...map.values()]
     .map((bucket) => {
-      const { marginPercent } = weightedMetrics(bucket);
+      const { marginPercent } = weightedMetrics(bucket, bucket.marginRevenueCovered);
       return {
         sellerName: bucket.sellerName,
         netRevenue: bucket.netRevenue,
@@ -429,7 +463,7 @@ export function buildSalesOrderMarginByProduct(
     .map((bucket) => {
       const status = resolveBucketStatus(bucket);
       const meta = resolveSalesOrderMarginSummaryStatusMeta(status);
-      const { marginPercent } = weightedMetrics(bucket);
+      const { marginPercent } = weightedMetrics(bucket, bucket.marginRevenueCovered);
       return {
         productKey: bucket.productKey,
         productId: bucket.productId,
@@ -532,8 +566,21 @@ export async function buildSalesOrderMarginIndicatorsPayload(
   prisma: PrismaClient,
   filters: SalesOrderMarginIndicatorFilters
 ): Promise<SalesOrderMarginIndicatorsPayload> {
-  const items = await loadEnrichedMarginItems(prisma, filters);
-  const summary = buildSalesOrderMarginPeriodSummary(items);
+  const orders = await loadSalesOrderMarginIndicatorOrders(prisma, filters);
+  const listTotals = buildSalesOrderListTotalsFromPrismaOrders(
+    orders.map((order) => ({
+      totalNetValue: order.totalNetValue,
+      totalItems: order.totalItems,
+    }))
+  );
+  const items = await loadEnrichedMarginItems(prisma, filters, orders);
+  const summary = {
+    ...buildSalesOrderMarginPeriodSummary(items),
+    totalSoldAmount: listTotals.totalNetAmount,
+    ordersCount: listTotals.totalOrders,
+    filteredTotalItems: listTotals.totalItems,
+    filteredAverageTicket: listTotals.averageTicket,
+  };
 
   return {
     filters: {
@@ -551,12 +598,12 @@ export async function buildSalesOrderMarginIndicatorsPayload(
     },
     scopeNote: (() => {
       if (summary.costCoverageStatus === "FULL") {
-        return "Margem do período — indicadores consolidados com % ponderada por receita líquida.";
+        return "Margem do período — indicadores consolidados com % ponderada sobre receita com custo.";
       }
       if (summary.costCoverageStatus === "PARTIAL") {
-        return `Margem parcial — calculada sobre ${summary.marginCoveragePercent ?? 0}% da receita vendida no filtro (${summary.itemsWithoutCost} linha(s) sem custo).`;
+        return `Margem parcial — calculada sobre ${summary.marginCoveragePercent ?? 0}% da receita dos itens (${summary.itemsWithoutCost} linha(s) sem custo). Valor vendido total usa Σ SalesOrder.totalNetValue.`;
       }
-      return "Margem indisponível — nenhuma linha com custo no filtro.";
+      return "Margem indisponível — nenhuma linha com custo no filtro. Valor vendido total usa Σ SalesOrder.totalNetValue.";
     })(),
     summary,
     byCustomer: buildSalesOrderMarginByCustomer(items),

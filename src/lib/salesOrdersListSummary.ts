@@ -184,6 +184,17 @@ export function buildSalesOrderListSummary(input: {
   };
 }
 
+/**
+ * Totais oficiais da listagem operacional — Σ `SalesOrder.totalNetValue` / contagem
+ * dos pedidos já filtrados pelo mesmo `where` do GET /api/sales-orders.
+ * Não reaplica filtros de mercado executivo (ex.: exclusão de clientes do grupo).
+ */
+export function buildSalesOrderListTotalsFromPrismaOrders(
+  orders: Array<{ totalNetValue: unknown; totalItems: number }>
+): SalesOrderListSummary {
+  return summarizeSalesOrderListRows(orders);
+}
+
 /** Agrega linhas em memória — útil para testes de paridade com a tabela. */
 export function summarizeSalesOrderListRows(
   rows: Array<{ totalNetValue: unknown; totalItems: number }>

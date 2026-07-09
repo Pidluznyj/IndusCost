@@ -333,11 +333,13 @@ import { registerOfficialServerResolvers } from "./src/lib/registerServerResolve
 import { loadCommissionSellerIdentityContext } from "./src/lib/commissions/commissionSellerIdentity.server.js";
 import { buildSalesOrderNomusSellerDto } from "./src/lib/salesOrderNomusSellerDisplay.js";
 import {
-  buildOfficialSalesOrderListPayload,
+  OFFICIAL_SO_RULES_SOURCE,
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialScopedOrderMetrics,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./src/lib/salesOrderRulesAdapter.js";
+import { SALES_ORDER_RULES_ENGINE_VERSION } from "./src/lib/salesOrderRulesEngine.js";
+import { buildSalesOrderListTotalsFromPrismaOrders } from "./src/lib/salesOrdersListSummary.js";
 import { loadOfficialCommercial360MarginBundle, buildOfficialSalesOrderListMarginSummary } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import {
@@ -13343,17 +13345,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const pageSize = listQuery.pageSize;
       const skip = (page - 1) * pageSize;
 
-      const listFilters = {
-        status: listQuery.status || undefined,
-        customerId: listQuery.customerId || undefined,
-        seller: listQuery.sellerText || undefined,
-        startDate: listQuery.startDate,
-        endDate: listQuery.endDate,
-        year: listQuery.year,
-        month: listQuery.month,
-        q: listQuery.q || undefined,
-      };
-
       const [rows, total, summaryOrders, marginOrders] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
@@ -13388,14 +13379,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         }))
       );
 
-      const officialList = buildOfficialSalesOrderListPayload({
-        orders: summaryOrders.map(mapPrismaOrderToSalesOrderRulesInput),
-        listFilters,
-        referenceDate: new Date(),
-        year: listQuery.year ?? undefined,
-        month: listQuery.month ?? undefined,
-      });
-      const summary = officialList.summary;
+      const summary = buildSalesOrderListTotalsFromPrismaOrders(
+        summaryOrders.map((order) => ({
+          totalNetValue: order.totalNetValue,
+          totalItems: order.totalItems,
+        }))
+      );
 
       const dataWithMargins = await attachMarginsToSalesOrders(prisma, rows);
       const data = dataWithMargins.map((order) => {
@@ -13434,8 +13423,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
         summary,
         marginSummary,
-        metricsSource: officialList.metricsSource,
-        rulesEngineVersion: officialList.rulesEngineVersion,
+        metricsSource: OFFICIAL_SO_RULES_SOURCE,
+        rulesEngineVersion: SALES_ORDER_RULES_ENGINE_VERSION,
       });
     } catch (e: any) {
       console.error("GET /api/sales-orders", e);

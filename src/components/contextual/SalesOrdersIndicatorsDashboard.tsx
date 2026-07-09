@@ -5,6 +5,7 @@ import {
   Loader2,
   Package,
   Percent,
+  Receipt,
   Scale,
   TrendingDown,
   TrendingUp,
@@ -342,10 +343,20 @@ export function SalesOrdersIndicatorsDashboard() {
                 testId="sales-order-margin-kpi-total-revenue"
                 icon={DollarSign}
                 label="Valor vendido (total)"
-                amount={summary.totalSalesRevenueInScope}
+                amount={summary.totalSoldAmount}
                 amountFormat="currency"
                 tone="money"
-                helperText="Soma do valor vendido no filtro aplicado."
+                helperText="Soma do valor líquido dos pedidos (SalesOrder.totalNetValue) no filtro."
+              />
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-item-revenue"
+                icon={Receipt}
+                label="Receita dos itens"
+                amount={summary.totalSalesRevenueInScope}
+                amountFormat="currency"
+                tone="neutral"
+                helperText="Soma da receita líquida calculada por item no escopo de margem."
               />
               <SystemTotalizerCard
                 className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
