@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -38,8 +38,18 @@ describe("check:server-imports", () => {
     }
   });
 
-  it("audit routes atuais não têm named import fantasma (estático)", () => {
-    const issues = findMissingNamedExports(["src/lib/materialMarketAuditRoutes.ts"]);
+  it("gestão de pedidos não importa aliases BI inexistentes de salesOrderManagementStatus", () => {
+    const issues = findMissingNamedExports([
+      "src/lib/salesOrderManagementMetrics.ts",
+      "src/lib/salesOrderManagementMetrics.server.ts",
+      "src/lib/salesOrderIntelligenceRoutes.ts",
+    ]);
     assert.deepEqual(issues, []);
+    const metrics = readFileSync(
+      path.join(process.cwd(), "src/lib/salesOrderManagementMetrics.ts"),
+      "utf8"
+    );
+    assert.doesNotMatch(metrics, /buildBiLogisticDashboardCards/);
+    assert.match(metrics, /buildManagementDashboardCards/);
   });
 });

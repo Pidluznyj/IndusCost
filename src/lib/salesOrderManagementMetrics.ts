@@ -15,8 +15,8 @@ import {
   type SalesOrderFulfillmentKpis,
 } from "./salesOrderManagementFulfillment.js";
 import {
-  buildBiLogisticDashboardCards,
-  buildBiLogisticStatusCardMetrics,
+  buildManagementDashboardCards,
+  buildManagementStatusCardMetrics,
   type ManagementDashboardCard,
 } from "./salesOrderManagementStatus.js";
 import {
@@ -144,13 +144,13 @@ export function buildOfficialManagementMetricsBundle(
   const fulfillmentKpis = buildFulfillmentKpis(activeRows);
   const fulfillmentCharts = buildFulfillmentCharts(activeRows);
   const portfolio = mapOfficialFinancePortfolioFromManagementRows(activeRows);
-  const dashboard = buildBiLogisticDashboardCards(
+  const dashboard = buildManagementDashboardCards(
     activeRows.map((row) => ({
       logisticStatusCardId: row.logisticStatusCardId,
       totalNetValue: row.totalNetValue,
     }))
   );
-  const statusMetrics = buildBiLogisticStatusCardMetrics(
+  const statusMetrics = buildManagementStatusCardMetrics(
     activeRows.map((row) => ({
       logisticStatusCardId: row.logisticStatusCardId,
       totalNetValue: row.totalNetValue,

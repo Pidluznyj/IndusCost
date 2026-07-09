@@ -32,6 +32,9 @@ export const SERVER_IMPORT_CHECK_ENTRIES = [
   "src/lib/brentCommodityRoutes.ts",
   "src/lib/ptaxSnapshotRoutes.ts",
   "src/lib/marketGlobalIndicatorsRoutes.ts",
+  "src/lib/salesOrderManagementMetrics.ts",
+  "src/lib/salesOrderManagementMetrics.server.ts",
+  "src/lib/salesOrderIntelligenceRoutes.ts",
 ] as const;
 
 /** Módulos carregados dinamicamente (registrars; NÃO o server.ts completo). */
@@ -44,6 +47,8 @@ export const SERVER_IMPORT_DYNAMIC_MODULES = [
   "src/lib/brentCommodityRoutes.ts",
   "src/lib/ptaxSnapshotRoutes.ts",
   "src/lib/marketGlobalIndicatorsRoutes.ts",
+  "src/lib/salesOrderManagementMetrics.server.ts",
+  "src/lib/salesOrderIntelligenceRoutes.ts",
 ] as const;
 
 export type NamedImportRef = {
