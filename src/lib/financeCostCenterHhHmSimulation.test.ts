@@ -8,6 +8,9 @@ import {
   computeCostCenterMonthlyAverage,
   COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING,
   EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+  normalizeCostCenterHhHmSimulationStoredForm,
+  parseCostCenterHhHmSimulationCostCentersResponse,
+  parseCostCenterHhHmSimulationMonthlyDataResponse,
 } from "./financeCostCenterHhHmSimulation.js";
 
 function monthlyRowsForCenter(
@@ -178,5 +181,52 @@ describe("financeCostCenterHhHmSimulation", () => {
       quantityUsedInItem: 10,
     });
     assert.equal(itemCost, null);
+  });
+
+  it("9 — envelope { items } de centros de custo é normalizado para array", () => {
+    const parsed = parseCostCenterHhHmSimulationCostCentersResponse({
+      items: [{ id: "cc-1", code: "100", name: "Produção" }],
+    });
+    assert.equal(parsed.invalidShape, false);
+    assert.equal(parsed.items.length, 1);
+    assert.equal(parsed.items[0]?.code, "100");
+  });
+
+  it("10 — payload inválido de centros de custo não vira objeto mapeável", () => {
+    const parsed = parseCostCenterHhHmSimulationCostCentersResponse({ data: [] });
+    assert.equal(parsed.invalidShape, true);
+    assert.deepEqual(parsed.items, []);
+  });
+
+  it("11 — localStorage com selectedCostCenterIds objeto não quebra simulação", () => {
+    const form = normalizeCostCenterHhHmSimulationStoredForm({
+      selectedCostCenterIds: { a: "cc-1" },
+      hourType: "HH",
+    });
+    assert.deepEqual(form.selectedCostCenterIds, []);
+    assert.equal(form.hourType, "HH");
+  });
+
+  it("12 — monthly-data com monthlyBuckets inválido retorna erro amigável", () => {
+    const parsed = parseCostCenterHhHmSimulationMonthlyDataResponse({
+      periodLabel: "Jan/2026",
+      metricsScope: "teste",
+      monthlyBuckets: null,
+    });
+    assert.equal(parsed.ok, false);
+    if (parsed.ok) return;
+    assert.match(parsed.message, /monthlyBuckets/i);
+  });
+
+  it("13 — monthly-data válido normaliza buckets", () => {
+    const parsed = parseCostCenterHhHmSimulationMonthlyDataResponse({
+      periodLabel: "01/2026 — 06/2026",
+      metricsScope: "AP",
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 1000 }],
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    assert.equal(parsed.monthlyBuckets.length, 1);
+    assert.equal(parsed.monthlyBuckets[0]?.totalAmount, 1000);
   });
 });

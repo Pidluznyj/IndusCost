@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Building2, Calculator, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
-import {
-  buildFinanceCostCentersListApiPath,
-} from "@/src/lib/financeCostCentersPageTypes";
 import {
   computeCostCenterHhHmSimulation,
   COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS,
   COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE,
   DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
   EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+  normalizeCostCenterHhHmSimulationStoredForm,
+  parseCostCenterHhHmSimulationCostCentersResponse,
+  parseCostCenterHhHmSimulationMonthlyDataResponse,
+  type CostCenterHhHmSimulationCostCenterRow,
   type CostCenterHhHmSimulationFormValues,
   type CostCenterHhHmSimulationHourType,
   type CostCenterMonthlyExpenseBucket,
@@ -38,8 +38,7 @@ function loadStoredForm(): CostCenterHhHmSimulationFormValues {
         averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
       };
     }
-    const parsed = JSON.parse(raw) as Partial<CostCenterHhHmSimulationFormValues>;
-    return { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM, ...parsed };
+    return normalizeCostCenterHhHmSimulationStoredForm(JSON.parse(raw));
   } catch {
     return EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM;
   }
@@ -80,7 +79,7 @@ function Field({
 
 export function CostCenterHhHmSimulationPanel() {
   const [form, setForm] = useState<CostCenterHhHmSimulationFormValues>(loadStoredForm);
-  const [costCenters, setCostCenters] = useState<FinanceCostCenterDto[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenterHhHmSimulationCostCenterRow[]>([]);
   const [costCentersLoading, setCostCentersLoading] = useState(true);
   const [costCentersError, setCostCentersError] = useState<string | null>(null);
   const [monthlyData, setMonthlyData] = useState<MonthlyDataPayload | null>(null);
@@ -92,10 +91,18 @@ export function CostCenterHhHmSimulationPanel() {
     (async () => {
       setCostCentersLoading(true);
       try {
-        const rows = (await fetchJsonOk(buildFinanceCostCentersListApiPath("ACTIVE"))) as FinanceCostCenterDto[];
+        const payload = await fetchJsonOk(buildFinanceCostCentersListApiPath("ACTIVE"));
+        const parsed = parseCostCenterHhHmSimulationCostCentersResponse(payload);
         if (!cancelled) {
-          setCostCenters(rows);
-          setCostCentersError(null);
+          if (parsed.invalidShape) {
+            setCostCenters([]);
+            setCostCentersError(
+              "Formato inválido ao carregar centros de custo. Tente novamente ou contate o suporte."
+            );
+          } else {
+            setCostCenters(parsed.items);
+            setCostCentersError(null);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -136,12 +143,22 @@ export function CostCenterHhHmSimulationPanel() {
           if (form.filteredDueDateFrom.trim()) qs.set("dueDateFrom", form.filteredDueDateFrom.trim());
           if (form.filteredDueDateTo.trim()) qs.set("dueDateTo", form.filteredDueDateTo.trim());
         }
-        const payload = (await fetchJsonOk(
+        const payload = await fetchJsonOk(
           `/api/finance/cost-centers/hh-hm-simulation/monthly-data?${qs.toString()}`
-        )) as MonthlyDataPayload;
+        );
+        const parsed = parseCostCenterHhHmSimulationMonthlyDataResponse(payload);
         if (!cancelled) {
-          setMonthlyData(payload);
-          setMonthlyError(null);
+          if (!parsed.ok) {
+            setMonthlyData(null);
+            setMonthlyError(parsed.message);
+          } else {
+            setMonthlyData({
+              periodLabel: parsed.periodLabel,
+              metricsScope: parsed.metricsScope,
+              monthlyBuckets: parsed.monthlyBuckets,
+            });
+            setMonthlyError(null);
+          }
         }
       } catch {
         if (!cancelled) {

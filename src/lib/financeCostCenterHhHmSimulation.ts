@@ -91,6 +91,124 @@ export const EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM: CostCenterHhHmSimulationFo
   filteredDueDateTo: "",
 };
 
+function normalizeStringField(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function normalizeStringIdArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+/** Restaura formulário local com schema seguro (localStorage antigo/corrompido). */
+export function normalizeCostCenterHhHmSimulationStoredForm(
+  raw: unknown
+): CostCenterHhHmSimulationFormValues {
+  if (!raw || typeof raw !== "object") {
+    return { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM };
+  }
+  const parsed = raw as Partial<CostCenterHhHmSimulationFormValues>;
+  return {
+    hourType: parsed.hourType === "HH" || parsed.hourType === "HM" ? parsed.hourType : "HM",
+    averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(parsed.averagePeriod),
+    selectedCostCenterIds: normalizeStringIdArray(parsed.selectedCostCenterIds),
+    baseMonthlyHours: normalizeStringField(parsed.baseMonthlyHours),
+    quantityUsedInItem: normalizeStringField(parsed.quantityUsedInItem),
+    useManualRate: parsed.useManualRate === true,
+    manualRatePerHour: normalizeStringField(parsed.manualRatePerHour),
+    note: normalizeStringField(parsed.note),
+    filteredDueDateFrom: normalizeStringField(parsed.filteredDueDateFrom),
+    filteredDueDateTo: normalizeStringField(parsed.filteredDueDateTo),
+  };
+}
+
+export type CostCenterHhHmSimulationCostCenterRow = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type CostCenterHhHmSimulationCostCentersParseResult = {
+  items: CostCenterHhHmSimulationCostCenterRow[];
+  invalidShape: boolean;
+};
+
+function isCostCenterHhHmSimulationCostCenterRow(
+  value: unknown
+): value is CostCenterHhHmSimulationCostCenterRow {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "string" &&
+    typeof row.code === "string" &&
+    typeof row.name === "string"
+  );
+}
+
+/** Normaliza GET /api/finance/cost-centers ({ items }) ou array legado para a simulação HH/HM. */
+export function parseCostCenterHhHmSimulationCostCentersResponse(
+  payload: unknown
+): CostCenterHhHmSimulationCostCentersParseResult {
+  if (Array.isArray(payload)) {
+    return {
+      items: payload.filter(isCostCenterHhHmSimulationCostCenterRow),
+      invalidShape: false,
+    };
+  }
+  if (payload && typeof payload === "object") {
+    const items = (payload as { items?: unknown }).items;
+    if (Array.isArray(items)) {
+      return {
+        items: items.filter(isCostCenterHhHmSimulationCostCenterRow),
+        invalidShape: false,
+      };
+    }
+  }
+  return { items: [], invalidShape: true };
+}
+
+export type CostCenterHhHmSimulationMonthlyDataParseResult =
+  | {
+      ok: true;
+      periodLabel: string;
+      metricsScope: string;
+      monthlyBuckets: CostCenterMonthlyExpenseBucket[];
+    }
+  | { ok: false; message: string };
+
+function isMonthlyExpenseBucket(value: unknown): value is CostCenterMonthlyExpenseBucket {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.year === "number" &&
+    typeof row.month === "number" &&
+    typeof row.totalAmount === "number"
+  );
+}
+
+/** Normaliza payload de GET .../hh-hm-simulation/monthly-data. */
+export function parseCostCenterHhHmSimulationMonthlyDataResponse(
+  payload: unknown
+): CostCenterHhHmSimulationMonthlyDataParseResult {
+  if (!payload || typeof payload !== "object") {
+    return { ok: false, message: "Resposta inválida da API de média mensal." };
+  }
+  const body = payload as Record<string, unknown>;
+  const monthlyBuckets = body.monthlyBuckets;
+  if (!Array.isArray(monthlyBuckets)) {
+    return { ok: false, message: "monthlyBuckets ausente ou inválido na resposta da API." };
+  }
+  return {
+    ok: true,
+    periodLabel: normalizeStringField(body.periodLabel, "Período"),
+    metricsScope: normalizeStringField(
+      body.metricsScope,
+      COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE
+    ),
+    monthlyBuckets: monthlyBuckets.filter(isMonthlyExpenseBucket),
+  };
+}
+
 export type CostCenterMonthlyAverageResult = {
   monthlyBuckets: CostCenterMonthlyExpenseBucket[];
   monthsInPeriod: number;

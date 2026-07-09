@@ -46,6 +46,8 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.match(panel, /média mensal/i);
     assert.match(panel, /Usar valor manual/i);
     assert.match(panel, /Não altera custos oficiais/i);
+    assert.match(panel, /parseCostCenterHhHmSimulationCostCentersResponse/);
+    assert.match(panel, /normalizeCostCenterHhHmSimulationStoredForm/);
     assert.doesNotMatch(panel, /prisma/i);
     const routes = read("src/lib/financeCostCentersRoutes.ts");
     assert.match(routes, /\/api\/finance\/cost-centers\/hh-hm-simulation\/monthly-data/);
