@@ -14,14 +14,15 @@ import {
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import {
-  buildOfficialSalesOrderMarginTooltipText,
-  buildSalesOrderMarginCoverageHint,
-  formatSalesOrderMarginMoney,
   formatSalesOrderMarginPercent,
   formatSalesOrderMarkup,
   resolveSalesOrderMarginMoneyLabel,
@@ -163,6 +164,16 @@ export function SalesOrdersIndicatorsDashboard() {
 
   const summary = payload?.summary;
   const alerts = payload?.alerts;
+  const marginSummaryPayload = summary as
+    | import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload
+    | undefined;
+  const marginPartial = summary?.costCoverageStatus === "PARTIAL";
+  const marginNone = summary?.costCoverageStatus === "NONE";
+  const marginMoneySubtitle = marginPartial
+    ? "Cobertura parcial de custos."
+    : marginNone
+      ? "Sem cobertura de custo no escopo."
+      : undefined;
 
   const customerRows = useMemo(
     () =>
@@ -322,76 +333,131 @@ export function SalesOrdersIndicatorsDashboard() {
               />
             }
           >
-            <SummaryKpiGrid minColumnWidth={200}>
-              <FinanceBiKpiCard
+            <SummaryKpiGrid
+              minColumnWidth={168}
+              className={SYSTEM_TOTALIZER_GRID_CLASS}
+            >
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-total-revenue"
                 icon={DollarSign}
                 label="Valor vendido (total)"
-                value={formatSalesOrderMarginMoney(summary.totalSalesRevenueInScope)}
-                loading={false}
+                amount={summary.totalSalesRevenueInScope}
+                amountFormat="currency"
+                tone="money"
+                helperText="Soma do valor vendido no filtro aplicado."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-revenue-covered"
                 icon={Wallet}
                 label="Receita com custo"
-                value={formatSalesOrderMarginMoney(summary.marginRevenueCovered)}
-                loading={false}
-                hint={
-                  summary.costCoverageStatus === "PARTIAL"
-                    ? `${summary.marginCoveragePercent ?? 0}% da receita vendida`
+                amount={summary.marginRevenueCovered}
+                amountFormat="currency"
+                tone="info"
+                subtitle={
+                  marginPartial && summary.marginCoveragePercent != null
+                    ? `${summary.marginCoveragePercent.toFixed(2)}% da receita vendida`
                     : undefined
                 }
+                helperText="Receita com custo de produção resolvido."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-total-cost"
                 icon={Scale}
                 label="Custo estimado"
-                value={formatSalesOrderMarginMoney(summary.totalCost)}
-                loading={false}
+                amount={summary.totalCost}
+                amountFormat="currency"
+                tone="neutral"
+                helperText="Custo de produção estimado no escopo."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-margin-money"
                 icon={DollarSign}
                 label={resolveSalesOrderMarginMoneyLabel(summary)}
-                value={formatSalesOrderMarginMoney(summary.marginValue)}
-                loading={false}
-                valueTitle={buildOfficialSalesOrderMarginTooltipText({
-                  summary: summary as import("@/src/lib/salesOrderMarginTypes").SalesOrderMarginSummaryPayload,
-                })}
-                hint={buildSalesOrderMarginCoverageHint(summary, formatCurrency)}
+                amount={summary.marginValue}
+                amountFormat="currency"
+                tone={marginPartial || marginNone ? "warning" : "margin"}
+                subtitle={marginMoneySubtitle}
+                labelAccessory={
+                  marginSummaryPayload ? (
+                    <SalesOrderMarginInfoTooltip
+                      summary={marginSummaryPayload}
+                      testId="sales-order-margin-kpi-margin-money-tooltip"
+                    />
+                  ) : undefined
+                }
+                footer={
+                  marginPartial ? (
+                    <span
+                      className="system-totalizer-badge system-totalizer-badge--warning"
+                      data-testid="sales-order-margin-kpi-partial-badge"
+                    >
+                      Margem parcial
+                    </span>
+                  ) : undefined
+                }
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-margin-percent"
                 icon={Percent}
                 label={resolveSalesOrderMarginPercentLabel(summary)}
-                value={formatSalesOrderMarginPercent(summary.marginPercent)}
-                loading={false}
-                hint="Ponderada por receita com custo"
+                amount={summary.marginPercent}
+                amountFormat="percent"
+                tone={marginPartial || marginNone ? "warning" : "margin"}
+                helperText="Ponderada por receita com custo."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-markup"
                 icon={TrendingUp}
                 label="Markup"
                 value={formatSalesOrderMarkup(summary.markup)}
-                loading={false}
+                tone="neutral"
+                helperText="Receita com custo ÷ custo estimado."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-orders"
                 icon={Package}
                 label="Pedidos"
-                value={String(summary.ordersCount)}
-                loading={false}
+                amount={summary.ordersCount}
+                amountFormat="number"
+                tone="info"
+                helperText="Pedidos no filtro aplicado."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-negative-items"
                 icon={TrendingDown}
                 label="Itens margem negativa"
-                value={String(summary.itemsWithNegativeMargin)}
-                loading={false}
+                amount={summary.itemsWithNegativeMargin}
+                amountFormat="number"
+                tone={summary.itemsWithNegativeMargin > 0 ? "danger" : "neutral"}
+                helperText="Linhas com margem negativa no escopo."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-missing-cost"
                 icon={AlertTriangle}
                 label="Itens sem custo"
-                value={String(summary.itemsWithoutCost)}
-                loading={false}
+                amount={summary.itemsWithoutCost}
+                amountFormat="number"
+                tone={summary.itemsWithoutCost > 0 ? "warning" : "neutral"}
+                helperText="Linhas sem custo de produção resolvido."
               />
-              <FinanceBiKpiCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                testId="sales-order-margin-kpi-missing-product"
                 icon={Users}
                 label="Itens sem produto"
-                value={String(summary.itemsWithoutProduct)}
-                loading={false}
+                amount={summary.itemsWithoutProduct}
+                amountFormat="number"
+                tone={summary.itemsWithoutProduct > 0 ? "warning" : "neutral"}
+                helperText="Linhas sem produto vinculado."
               />
             </SummaryKpiGrid>
           </ExecutiveSummarySection>

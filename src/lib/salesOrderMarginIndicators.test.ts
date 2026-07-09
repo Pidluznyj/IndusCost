@@ -10,6 +10,7 @@ import {
   buildSalesOrderMarginPeriodSummary,
   parseSalesOrderMarginIndicatorFilters,
 } from "./salesOrderMarginIndicators.server.js";
+import { formatKpiCompactCurrency } from "./kpiDisplayFormat.js";
 import type { SalesOrderMarginItemResult } from "./salesOrderMarginTypes.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -218,14 +219,67 @@ describe("salesOrderMarginIndicators", () => {
 });
 
 describe("salesOrderMarginIndicators UI", () => {
-  it("13. UI renderiza cards principais", () => {
+  it("13. UI renderiza cards principais com SystemTotalizerCard", () => {
     const ui = readFileSync(
       join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
       "utf8"
     );
     assert.match(ui, /sales-order-margin-indicator-summary/);
-    assert.match(ui, /FinanceBiKpiCard/);
+    assert.match(ui, /SystemTotalizerCard/);
+    assert.match(ui, /SYSTEM_TOTALIZER_GRID_CLASS/);
+    assert.doesNotMatch(ui, /FinanceBiKpiCard/);
     assert.match(ui, /getSalesOrderMarginIndicatorsApiPath/);
+  });
+
+  it("13b. valores monetários usam amountFormat compacto", () => {
+    const ui = readFileSync(
+      join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
+      "utf8"
+    );
+    assert.match(ui, /amountFormat="currency"/);
+    assert.doesNotMatch(ui, /formatSalesOrderMarginMoney\(summary/);
+  });
+
+  it("13c. texto longo da margem não é renderizado no card", () => {
+    const ui = readFileSync(
+      join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(ui, /buildSalesOrderMarginCoverageHint/);
+    assert.doesNotMatch(ui, /buildOfficialSalesOrderMarginTooltipText/);
+    assert.match(ui, /SalesOrderMarginInfoTooltip/);
+    assert.match(ui, /sales-order-margin-kpi-margin-money-tooltip/);
+  });
+
+  it("13d. Excel interno e export continuam presentes", () => {
+    const ui = readFileSync(
+      join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
+      "utf8"
+    );
+    assert.match(ui, /sales-order-indicators-export-internal-margin/);
+    assert.match(ui, /downloadInternalMarginExport/);
+  });
+
+  it("13f. valores milionários exibem formato compacto executivo", () => {
+    const sold = formatKpiCompactCurrency(6_214_384.19);
+    assert.match(sold.display, /Mi/);
+    assert.ok(sold.title?.includes("6.214.384,19"));
+    const margin = formatKpiCompactCurrency(3_701_900.38);
+    assert.match(margin.display, /Mi/);
+    assert.ok(margin.isCompact);
+  });
+
+  it("13e. cards cobrem estados de margem parcial e contadores", () => {
+    const ui = readFileSync(
+      join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
+      "utf8"
+    );
+    assert.match(ui, /sales-order-margin-kpi-margin-money/);
+    assert.match(ui, /sales-order-margin-kpi-partial-badge/);
+    assert.match(ui, /Cobertura parcial de custos/);
+    assert.match(ui, /itemsWithNegativeMargin/);
+    assert.match(ui, /itemsWithoutCost/);
+    assert.match(ui, /itemsWithoutProduct/);
   });
 
   it("14. UI renderiza rankings", () => {
