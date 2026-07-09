@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Receipt, Send, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Link2, Loader2, Plus, Receipt, Send, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchOk } from "@/src/lib/http";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
@@ -24,7 +24,6 @@ import {
 } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
-import { MaterialIntelligenceMarketQuoteForm } from "@/src/components/materials/MaterialIntelligenceMarketQuoteForm";
 import { MaterialIntelligencePurchaseLinkForm } from "@/src/components/materials/MaterialIntelligencePurchaseLinkForm";
 import { MaterialMarketQuoteAttachmentsPanel } from "@/src/components/materials/MaterialMarketQuoteAttachmentsPanel";
 import { MaterialIntelligenceQuoteReliabilityBadge } from "@/src/components/materials/MaterialIntelligenceQuoteReliabilityBadge";
@@ -38,6 +37,7 @@ type Props = {
   loading?: boolean;
   onQuoteCreated: () => void;
   onQuotesChanged?: () => void;
+  onRegisterQuote?: () => void;
 };
 
 function officialStatusBadgeClass(status: MaterialMarketQuoteOfficialStatus): string {
@@ -80,6 +80,7 @@ export function MaterialIntelligenceRecentQuotesSection({
   loading = false,
   onQuoteCreated,
   onQuotesChanged,
+  onRegisterQuote,
 }: Props) {
   const auth = useAuth();
   const canEdit = auth.hasPermission("materials.edit");
@@ -128,13 +129,20 @@ export function MaterialIntelligenceRecentQuotesSection({
       id="recentQuotes"
       title="Últimas Cotações"
       description="Cotações manuais de mercado registradas para esta matéria-prima."
+      actions={
+        onRegisterQuote ? (
+          <button
+            type="button"
+            onClick={onRegisterQuote}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-accent"
+            data-testid="material-intelligence-register-quote-section"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Registrar cotação
+          </button>
+        ) : undefined
+      }
     >
-      <MaterialIntelligenceMarketQuoteForm
-        materialId={materialId}
-        defaultUnit={defaultUnit}
-        onCreated={onQuoteCreated}
-      />
-
       {actionError ? (
         <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
           {actionError}
@@ -153,7 +161,7 @@ export function MaterialIntelligenceRecentQuotesSection({
             {MATERIAL_INTELLIGENCE_RECENT_QUOTES_EMPTY_MESSAGE}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Use o formulário acima para registrar a primeira cotação manual.
+            Use o botão &quot;Registrar cotação&quot; para lançar a primeira cotação manual.
           </p>
         </div>
       ) : (

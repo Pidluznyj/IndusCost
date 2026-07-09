@@ -7,6 +7,7 @@ type Props = {
   description: string;
   children?: React.ReactNode;
   className?: string;
+  actions?: React.ReactNode;
 };
 
 export function MaterialIntelligence360Section({
@@ -15,6 +16,7 @@ export function MaterialIntelligence360Section({
   description,
   children,
   className,
+  actions,
 }: Props) {
   return (
     <section
@@ -25,14 +27,17 @@ export function MaterialIntelligence360Section({
       aria-labelledby={`material-intelligence-360-${id}-heading`}
       data-testid={`material-intelligence-360-section-${id}`}
     >
-      <header className="space-y-0.5">
-        <h4
-          id={`material-intelligence-360-${id}-heading`}
-          className="text-sm font-semibold text-foreground"
-        >
-          {title}
-        </h4>
-        <p className="text-xs text-muted-foreground">{description}</p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <h4
+            id={`material-intelligence-360-${id}-heading`}
+            className="text-sm font-semibold text-foreground"
+          >
+            {title}
+          </h4>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
       {children}
     </section>

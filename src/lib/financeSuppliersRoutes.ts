@@ -34,6 +34,8 @@ export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = [
   "finance.cost_centers.view",
   "finance.cost_center_rules.view",
   "finance.view",
+  "materials.view",
+  "materials.edit",
 ] as const;
 
 export const FINANCE_SUPPLIERS_APPLY_PERMISSIONS = ["finance.suppliers.manage"] as const;

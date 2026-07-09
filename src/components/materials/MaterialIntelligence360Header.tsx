@@ -1,5 +1,5 @@
 import React from "react";
-import { LineChart } from "lucide-react";
+import { LineChart, Plus } from "lucide-react";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
 import { MATERIAL_MARKET_CRITICALITY_LABELS } from "@/src/lib/materialMarketMonitoring";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
@@ -12,6 +12,7 @@ import { formatMaterialIntelligenceQuoteDate } from "@/src/lib/materialIntellige
 
 type Props = {
   item: MaterialIntelligenceDetailItem;
+  onRegisterQuote?: () => void;
 };
 
 function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
@@ -25,7 +26,7 @@ function DetailField({ label, value }: { label: string; value: React.ReactNode }
   );
 }
 
-export function MaterialIntelligence360Header({ item }: Props) {
+export function MaterialIntelligence360Header({ item, onRegisterQuote }: Props) {
   const criticalityLabel = item.marketCriticality
     ? MATERIAL_MARKET_CRITICALITY_LABELS[item.marketCriticality]
     : "—";
@@ -56,6 +57,17 @@ export function MaterialIntelligence360Header({ item }: Props) {
           </div>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
+          {onRegisterQuote ? (
+            <button
+              type="button"
+              onClick={onRegisterQuote}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-accent"
+              data-testid="material-intelligence-register-quote-header"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Registrar cotação
+            </button>
+          ) : null}
           <MaterialMarketMonitoringBadge
             isMarketMonitored={item.isMarketMonitored}
             marketCriticality={item.marketCriticality}

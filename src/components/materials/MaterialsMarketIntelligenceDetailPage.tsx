@@ -6,6 +6,7 @@ import {
   FileSearch,
   Loader2,
 } from "lucide-react";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
@@ -37,6 +38,7 @@ import { MaterialIntelligenceSimulationPanel } from "@/src/components/materials/
 import { MaterialIntelligence360SectionPlaceholder } from "@/src/components/materials/MaterialIntelligence360Section";
 import { MaterialIntelligencePurchaseTimelineSection } from "@/src/components/materials/MaterialIntelligencePurchaseTimelineSection";
 import { MaterialMarketAlertConfigPanel } from "@/src/components/materials/MaterialMarketAlertConfigPanel";
+import { MaterialIntelligenceMarketQuoteModal } from "@/src/components/materials/MaterialIntelligenceMarketQuoteModal";
 
 const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
   audit: <FileSearch className="h-7 w-7" aria-hidden="true" />,
@@ -44,6 +46,8 @@ const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
 
 export function MaterialsMarketIntelligenceDetailPage() {
   const { materialId } = useParams<{ materialId: string }>();
+  const auth = useAuth();
+  const canEditQuotes = auth.hasPermission("materials.edit");
   const [item, setItem] = useState<MaterialIntelligenceDetailItem | null>(null);
   const [quotes, setQuotes] = useState<MaterialMarketQuoteApiItem[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);
@@ -57,6 +61,11 @@ export function MaterialsMarketIntelligenceDetailPage() {
   const [activationFrequency, setActivationFrequency] = useState(
     DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS
   );
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+
+  const openQuoteModal = useCallback(() => {
+    setQuoteModalOpen(true);
+  }, []);
 
   const loadQuotes = useCallback(async () => {
     if (!materialId) return;
@@ -182,7 +191,10 @@ export function MaterialsMarketIntelligenceDetailPage() {
         </div>
       ) : item ? (
         <div className="space-y-6" data-testid="material-intelligence-360-page">
-          <MaterialIntelligence360Header item={headerItem ?? item} />
+          <MaterialIntelligence360Header
+            item={headerItem ?? item}
+            onRegisterQuote={canEditQuotes ? openQuoteModal : undefined}
+          />
 
           {item.isMarketMonitored ? (
             <MaterialMarketAlertConfigPanel materialId={item.id} />
@@ -213,6 +225,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
               quotes={quotes}
               loading={quotesLoading}
               onQuoteCreated={() => void handleQuoteCreated()}
+              onRegisterQuote={canEditQuotes ? openQuoteModal : undefined}
             />
 
             <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
@@ -262,6 +275,16 @@ export function MaterialsMarketIntelligenceDetailPage() {
               />
             ))}
           </div>
+
+          {canEditQuotes ? (
+            <MaterialIntelligenceMarketQuoteModal
+              open={quoteModalOpen}
+              materialId={item.id}
+              defaultUnit={item.unit}
+              onClose={() => setQuoteModalOpen(false)}
+              onCreated={() => void handleQuoteCreated()}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

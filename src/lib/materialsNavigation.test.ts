@@ -147,10 +147,23 @@ describe("materialsNavigation", () => {
   it("API de cotações manuais de mercado", () => {
     const server = read("server.ts");
     const form = read("src/components/materials/MaterialIntelligenceMarketQuoteForm.tsx");
+    const modal = read("src/components/materials/MaterialIntelligenceMarketQuoteModal.tsx");
+    const supplierField = read("src/components/materials/MaterialMarketQuoteSupplierField.tsx");
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
     assert.match(server, /\/api\/materials\/market-intelligence\/:materialId\/quotes/);
     assert.match(server, /materialMarketQuote\.create/);
     assert.match(server, /parseMaterialMarketQuoteInput/);
     assert.match(form, /material-market-quote-submit/);
+    assert.match(form, /MaterialMarketQuoteSupplierField/);
+    assert.match(form, /supplierId/);
+    assert.match(modal, /material-intelligence-market-quote-modal/);
+    assert.match(supplierField, /material-market-quote-supplier-search/);
+    assert.match(supplierField, /material-market-quote-supplier-free-text-option/);
+    assert.match(detail, /MaterialIntelligenceMarketQuoteModal/);
+    const header = read("src/components/materials/MaterialIntelligence360Header.tsx");
+    assert.match(header, /material-intelligence-register-quote-header/);
+    const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
+    assert.match(quotes, /material-intelligence-register-quote-section/);
   });
 
   it("API de impacto financeiro nos produtos vinculados", () => {
