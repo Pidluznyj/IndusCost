@@ -324,7 +324,7 @@ describe("commissionReceiptClosing", () => {
     ]);
     const payload = buildReceiptClosingPreviewPayload(preview, null);
     assert.equal(payload.canApply, false);
-    assert.match(payload.applyBlockedReason ?? "", /sem schedule materializado/i);
+    assert.match(payload.applyBlockedReason ?? "", /ainda sem schedule após materialização automática/i);
     assert.throws(
       () => validateReceiptClosingPreviewForApply(preview),
       ReceiptClosingValidationError

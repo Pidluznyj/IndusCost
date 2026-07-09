@@ -3,6 +3,10 @@ import { ChevronLeft, ChevronRight, Download, Loader2, RefreshCw } from "lucide-
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
@@ -124,10 +128,19 @@ export function CommissionsReceivableForecastPage() {
           </p>
           <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">Previsão</h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Comissão prevista conforme títulos a receber em aberto (sem baixa). Agrupamento por{" "}
-            <strong>vencimento</strong> (<code>dueDate</code>). Comissão prevista = esperada ainda
-            não liberada (<code>commissionPending</code>). Calculado no backend.
+            Comissão prevista sobre títulos a receber em aberto, agrupados por{" "}
+            <strong>vencimento</strong> (<code>dueDate</code>). Usa o mesmo motor do Fechamento do
+            mês (schedules materializados, vendedor Nomus, exclusões). O fechamento oficial ocorre
+            na baixa (<code>settlementDate</code>). Calculado exclusivamente no backend.
           </p>
+          {data?.reconciliationNote ? (
+            <p
+              className="mt-2 max-w-3xl rounded-lg border border-amber-300/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-950"
+              data-testid="commissions-forecast-reconciliation-note"
+            >
+              {data.reconciliationNote}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -252,11 +265,80 @@ export function CommissionsReceivableForecastPage() {
       {error ? <CommissionsErrorBanner message={error} onRetry={() => void reload()} /> : null}
 
       {cards ? (
-        <CommissionsKpiSection
-          title="Resumo de comissões previstas"
-          eyebrow="Projeção por vencimento de títulos"
-          testId="forecast-cards"
-        >
+        <>
+          <CommissionsKpiSection
+            title="Resumo oficial (mesmas regras do fechamento)"
+            eyebrow="Títulos em aberto no escopo"
+            testId="forecast-official-cards"
+            minColumnWidth={200}
+          >
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Títulos em aberto"
+              amount={data?.materializationSummary?.totalReceivablesCount ?? cards.titleCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Com schedule"
+              amount={data?.materializationSummary?.receivablesWithScheduleCount ?? 0}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Sem schedule"
+              amount={data?.materializationSummary?.receivablesWithoutScheduleCount ?? 0}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Clientes excluídos"
+              amount={data?.materializationSummary?.excludedCustomerCount ?? 0}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Empresas do grupo excluídas"
+              amount={data?.materializationSummary?.groupCompanyExcludedCount ?? 0}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Saldo grupo (auditoria)"
+              amount={data?.materializationSummary?.groupCompanyExcludedReceivedAmount ?? 0}
+              amountFormat="currency"
+              tone="money"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Vendedor não resolvido"
+              amount={data?.materializationSummary?.sellerUnresolvedCount ?? 0}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Valor previsto total"
+              amount={
+                data?.officialCards?.finalCommissionAmount ??
+                cards.futureCommissionTotal + cards.overdueCommissionTotal
+              }
+              amountFormat="currency"
+              tone="money"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Saldo em aberto (gerencial)"
+              amount={data?.officialCards?.totalReceivedAmount ?? 0}
+              amountFormat="currency"
+              tone="money"
+            />
+          </CommissionsKpiSection>
+
+          <CommissionsKpiSection
+            title="Resumo por vencimento"
+            eyebrow="Projeção por dueDate"
+            testId="forecast-cards"
+          >
           <FinanceKpiCard
             label="Comissão prevista (a vencer)"
             value={formatFinanceCurrency(cards.futureCommissionTotal)}
@@ -286,6 +368,7 @@ export function CommissionsReceivableForecastPage() {
             value={`${cards.nextMonthLabelPt ?? "—"} · ${formatFinanceCurrency(cards.nextMonthCommission)}`}
           />
         </CommissionsKpiSection>
+        </>
       ) : null}
 
       {loading && !data ? <CommissionsLoading label="Carregando previsão…" /> : null}

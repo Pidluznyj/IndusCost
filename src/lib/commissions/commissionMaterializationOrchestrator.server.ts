@@ -593,11 +593,10 @@ export async function loadCommercialReceiptMonthReceivableRefs(
     }));
 }
 
-async function ensureReceiptMonthReceivableSchedules(
+async function ensureSchedulesForReceivableRefList(
   db: PrismaClient,
+  receivables: ReceiptMonthReceivableRef[],
   input: {
-    year: number;
-    month: number;
     dryRun: boolean;
     processedPairs: Set<string>;
     deps: MaterializationOrchestratorDeps;
@@ -609,11 +608,6 @@ async function ensureReceiptMonthReceivableSchedules(
   unlinkedReceivables: number;
   errors: Array<{ receivableId: number; message: string }>;
 }> {
-  const receivables = await loadCommercialReceiptMonthReceivableRefs(
-    db,
-    input.year,
-    input.month
-  );
   if (receivables.length === 0) {
     return {
       receivablesChecked: 0,
@@ -695,6 +689,30 @@ async function ensureReceiptMonthReceivableSchedules(
     unlinkedReceivables,
     errors,
   };
+}
+
+async function ensureReceiptMonthReceivableSchedules(
+  db: PrismaClient,
+  input: {
+    year: number;
+    month: number;
+    dryRun: boolean;
+    processedPairs: Set<string>;
+    deps: MaterializationOrchestratorDeps;
+  }
+): Promise<{
+  receivablesChecked: number;
+  receivablesMissingBefore: number;
+  schedulesEnsured: number;
+  unlinkedReceivables: number;
+  errors: Array<{ receivableId: number; message: string }>;
+}> {
+  const receivables = await loadCommercialReceiptMonthReceivableRefs(
+    db,
+    input.year,
+    input.month
+  );
+  return ensureSchedulesForReceivableRefList(db, receivables, input);
 }
 
 async function processSalesOrderMaterialization(
@@ -860,6 +878,20 @@ export async function ensureCommissionMaterializationForReceiptMonth(
     year: input.year,
     month: input.month,
     dryRun: input.apply !== true,
+    processedPairs: new Set<string>(),
+    deps,
+  });
+}
+
+/** Materializa schedules faltantes para uma lista explícita de títulos (previsão em aberto). */
+export async function ensureCommissionMaterializationForReceivableRefs(
+  db: PrismaClient,
+  refs: ReceiptMonthReceivableRef[],
+  input?: { apply?: boolean; deps?: MaterializationOrchestratorDeps }
+): Promise<EnsureCommissionMaterializationForReceiptMonthResult> {
+  const deps = input?.deps ?? defaultDeps;
+  return ensureSchedulesForReceivableRefList(db, refs, {
+    dryRun: input?.apply !== true,
     processedPairs: new Set<string>(),
     deps,
   });

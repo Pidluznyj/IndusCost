@@ -158,7 +158,7 @@ export type CommissionReceiptReceivableInput = {
   nomusReceivableId: number;
   receivableNumber?: string | null;
   installmentNumber?: number | null;
-  settlementDate: Date;
+  settlementDate: Date | null;
   dueDate?: Date | null;
   amountReceivable: number;
   amountReceived: number;
@@ -196,6 +196,16 @@ export type CommissionReceiptPreviewContext = {
   identityCtx: CommissionSellerIdentityContext;
   /** Override de % por item (testes / fallback sem tier comercial). */
   itemRateOverrides?: Map<string, number>;
+  /** settled = fechamento por settlementDate; open = previsão por títulos em aberto. */
+  receivableScope?: "settled" | "open";
+  /** released = comissão liberada no recebimento; forecast = comissão prevista sobre saldo aberto. */
+  commissionMode?: "released" | "forecast";
+  openForecastFilters?: {
+    dueDateFrom?: Date | null;
+    dueDateTo?: Date | null;
+    horizonMonths?: number | null;
+  };
+  referenceDate?: Date;
 };
 
 export type CommissionReceiptPreviewLine = {
@@ -309,8 +319,67 @@ export function filterSettledReceivablesForPreview(
   return receivables.filter((row) => {
     if (row.cancelled || row.suspended) return false;
     if (roundMoney(row.amountReceived) <= 0) return false;
+    if (!row.settlementDate) return false;
     return isDateInReceiptPreviewPeriod(row.settlementDate, year, month);
   });
+}
+
+export function resolveOpenReceivableBalance(
+  receivable: CommissionReceiptReceivableInput
+): number {
+  if (receivable.balanceReceivable != null && Number.isFinite(receivable.balanceReceivable)) {
+    return roundMoney(Math.max(0, receivable.balanceReceivable));
+  }
+  return roundMoney(Math.max(0, receivable.amountReceivable - receivable.amountReceived));
+}
+
+export function isOpenReceivableForForecast(
+  receivable: CommissionReceiptReceivableInput
+): boolean {
+  if (receivable.cancelled || receivable.suspended) return false;
+  return resolveOpenReceivableBalance(receivable) > 0.009;
+}
+
+export function filterOpenReceivablesForForecast(
+  receivables: CommissionReceiptReceivableInput[],
+  filters: {
+    dueDateFrom?: Date | null;
+    dueDateTo?: Date | null;
+    horizonMonths?: number | null;
+  } = {},
+  ref: Date = new Date()
+): CommissionReceiptReceivableInput[] {
+  let open = receivables.filter(isOpenReceivableForForecast);
+
+  if (filters.dueDateFrom) {
+    const fromTs = filters.dueDateFrom.getTime();
+    open = open.filter((row) => row.dueDate && row.dueDate.getTime() >= fromTs);
+  }
+  if (filters.dueDateTo) {
+    const toTs = filters.dueDateTo.getTime();
+    open = open.filter((row) => row.dueDate && row.dueDate.getTime() <= toTs);
+  }
+  if (filters.horizonMonths != null && filters.horizonMonths > 0) {
+    const horizonEnd = new Date(
+      Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() + filters.horizonMonths, 0, 23, 59, 59, 999)
+    );
+    open = open.filter((row) => !row.dueDate || row.dueDate.getTime() <= horizonEnd.getTime());
+  }
+
+  return open;
+}
+
+export function resolveScopedReceivablesForPreview(
+  input: CommissionReceiptPreviewContext
+): CommissionReceiptReceivableInput[] {
+  if (input.receivableScope === "open") {
+    return filterOpenReceivablesForForecast(
+      input.receivables,
+      input.openForecastFilters ?? {},
+      input.referenceDate ?? new Date()
+    );
+  }
+  return filterSettledReceivablesForPreview(input.receivables, input.year, input.month);
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -467,6 +536,36 @@ export function releaseCommissionFromMaterializedSchedule(input: {
     receivedSharePercent: roundMoney(share * 100),
     commissionableBaseAmount: received,
     expectedCommissionAmount: released,
+    effectiveRatePercent,
+  };
+}
+
+/** Comissão prevista proporcional ao saldo em aberto do título (previsão). */
+export function forecastCommissionFromMaterializedSchedule(input: {
+  schedule: MaterializedReceivableScheduleInput;
+  receivable: CommissionReceiptReceivableInput;
+}): {
+  openSharePercent: number;
+  commissionableBaseAmount: number;
+  forecastCommissionAmount: number;
+  effectiveRatePercent: number;
+} {
+  const nominal = roundMoney(
+    input.schedule.receivableNominalAmount > 0
+      ? input.schedule.receivableNominalAmount
+      : input.receivable.amountReceivable
+  );
+  const openBalance = resolveOpenReceivableBalance(input.receivable);
+  const share = nominal > 0 ? Math.min(1, openBalance / nominal) : 0;
+  const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
+  const forecast = normalizeCommissionLedgerMoney(scheduled * share);
+  const effectiveRatePercent =
+    nominal > 0 ? roundMoney((scheduled / nominal) * 100) : 0;
+
+  return {
+    openSharePercent: roundMoney(share * 100),
+    commissionableBaseAmount: openBalance,
+    forecastCommissionAmount: forecast,
     effectiveRatePercent,
   };
 }
@@ -737,23 +836,38 @@ function previewLineFromMaterializedSchedule(
   month: number,
   exclusionRules: CustomerExclusionRuleSnapshot[] = [],
   order?: CommissionOrderSourceBundle,
-  identityCtx?: CommissionSellerIdentityContext
+  identityCtx?: CommissionSellerIdentityContext,
+  commissionMode: "released" | "forecast" = "released"
 ): CommissionReceiptPreviewLine {
   const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
-  const release = releaseCommissionFromMaterializedSchedule({ schedule, receivable });
-  const released =
-    status === "COMMISSIONABLE"
+  const isForecast = commissionMode === "forecast";
+  const release = isForecast
+    ? forecastCommissionFromMaterializedSchedule({ schedule, receivable })
+    : releaseCommissionFromMaterializedSchedule({ schedule, receivable });
+  const openBalance = resolveOpenReceivableBalance(receivable);
+  const receivedAmount = isForecast ? openBalance : roundMoney(receivable.amountReceived);
+  const commissionableBase = isForecast
+    ? release.commissionableBaseAmount
+    : release.commissionableBaseAmount;
+  const expectedCommission = isForecast
+    ? release.forecastCommissionAmount
+    : status === "COMMISSIONABLE"
       ? release.expectedCommissionAmount
       : 0;
+  const released =
+    !isForecast && status === "COMMISSIONABLE" ? release.expectedCommissionAmount : 0;
+  const receivedSharePercent = isForecast
+    ? release.openSharePercent
+    : release.receivedSharePercent;
   const grossCommissionAmount =
     schedule.scheduleStatus === "CUSTOMER_EXCLUDED"
       ? roundMoney(
           schedule.grossScheduledCommissionAmount ??
             (schedule.scheduledCommissionAmount > 0
               ? schedule.scheduledCommissionAmount
-              : release.expectedCommissionAmount)
+              : expectedCommission)
         )
-      : release.expectedCommissionAmount;
+      : expectedCommission;
   const exclusionRuleId = resolveMaterializedScheduleExclusionRuleId({
     schedule,
     receivable,
@@ -797,8 +911,8 @@ function previewLineFromMaterializedSchedule(
     receivableAmount: normalizeCommissionLedgerMoney(
       schedule.receivableNominalAmount || receivable.amountReceivable
     ),
-    receivedAmount: normalizeCommissionLedgerMoney(receivable.amountReceived),
-    receivedSharePercent: release.receivedSharePercent,
+    receivedAmount: normalizeCommissionLedgerMoney(receivedAmount),
+    receivedSharePercent,
     customerExternalId: receivable.customerExternalId ?? null,
     customerId: schedule.customerId ?? receivable.customerId ?? null,
     customerName: receivable.customerName,
@@ -821,11 +935,11 @@ function previewLineFromMaterializedSchedule(
     ruleId: null,
     ruleName: null,
     ratePercent: release.effectiveRatePercent,
-    commissionableBaseAmount: release.commissionableBaseAmount,
-    expectedCommissionAmount: release.expectedCommissionAmount,
+    commissionableBaseAmount: commissionableBase,
+    expectedCommissionAmount: expectedCommission,
     releasedCommissionAmount: released,
     grossCommissionAmount:
-      status === "CUSTOMER_EXCLUDED" ? grossCommissionAmount : release.expectedCommissionAmount,
+      status === "CUSTOMER_EXCLUDED" ? grossCommissionAmount : expectedCommission,
     status,
     statusReason: reason,
     exclusionRuleId,
@@ -1085,6 +1199,7 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
   orderSnapshotDiagnosis?: CommissionOrderSnapshotDiagnosis;
   identityCtx: CommissionSellerIdentityContext;
   commissionRecord?: CommissionReceiptSellerRecordInput | null;
+  commissionMode?: "released" | "forecast";
 }): CommissionReceiptPreviewLine[] {
   const schedule = pickMaterializedScheduleForReceivable(input.schedules);
   if (!schedule) {
@@ -1134,7 +1249,8 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
       input.month,
       input.exclusionRules,
       input.order,
-      input.identityCtx
+      input.identityCtx,
+      input.commissionMode ?? "released"
     ),
   ];
 }
@@ -1491,21 +1607,34 @@ export function aggregateCommissionReceiptPreview(
   };
 }
 
+function applyOpenForecastAmountsToLine(
+  line: CommissionReceiptPreviewLine,
+  receivable: CommissionReceiptReceivableInput
+): CommissionReceiptPreviewLine {
+  const open = resolveOpenReceivableBalance(receivable);
+  return {
+    ...line,
+    receivedAmount: normalizeCommissionLedgerMoney(open),
+    receivedSharePercent:
+      receivable.amountReceivable > 0
+        ? roundMoney((open / receivable.amountReceivable) * 100)
+        : null,
+  };
+}
+
 export function buildCommissionReceiptPreview(
   input: CommissionReceiptPreviewContext
 ): CommissionReceiptPreviewResult {
-  const settled = filterSettledReceivablesForPreview(
-    input.receivables,
-    input.year,
-    input.month
-  );
+  const scoped = resolveScopedReceivablesForPreview(input);
+  const commissionMode = input.commissionMode ?? "released";
+  const isForecast = input.receivableScope === "open";
 
   const ordersByNfeId = input.ordersByNfeId;
   const useMaterializedSchedules = input.materializedSchedulesByReceivableId !== undefined;
   const auditByReceivable = groupAuditRowsByReceivable(input.persistedAuditRows ?? []);
   const lines: CommissionReceiptPreviewLine[] = [];
 
-  for (const receivable of settled) {
+  for (const receivable of scoped) {
     if (
       !customerMatchesFilter(
         receivable.customerName,
@@ -1517,13 +1646,12 @@ export function buildCommissionReceiptPreview(
     }
 
     if (isCommissionInternalGroupReceivable(receivable)) {
-      lines.push(
-        buildGroupCompanyExcludedLine({
-          receivable,
-          year: input.year,
-          month: input.month,
-        })
-      );
+      const line = buildGroupCompanyExcludedLine({
+        receivable,
+        year: input.year,
+        month: input.month,
+      });
+      lines.push(isForecast ? applyOpenForecastAmountsToLine(line, receivable) : line);
       continue;
     }
 
@@ -1545,6 +1673,7 @@ export function buildCommissionReceiptPreview(
           nfeId != null ? input.orderSnapshotDiagnosisByNfeId?.get(nfeId) : undefined,
         identityCtx: input.identityCtx,
         commissionRecord,
+        commissionMode,
       });
       for (const line of scheduleLines) {
         if (
@@ -1562,7 +1691,7 @@ export function buildCommissionReceiptPreview(
     }
 
     const auditRows = auditByReceivable.get(receivable.nomusReceivableId) ?? [];
-    if (auditRows.length > 0) {
+    if (!isForecast && auditRows.length > 0) {
       for (const row of auditRows) {
         if (
           !sellerMatchesFilter(
@@ -1582,32 +1711,30 @@ export function buildCommissionReceiptPreview(
     const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
 
     if (!order) {
-      lines.push(
-        buildExceptionLine({
-          receivable,
-          year: input.year,
-          month: input.month,
-          status: "NO_SALES_LINK",
-          statusReason: "Título sem vínculo com pedido/NF",
-        })
-      );
+      const line = buildExceptionLine({
+        receivable,
+        year: input.year,
+        month: input.month,
+        status: "NO_SALES_LINK",
+        statusReason: "Título sem vínculo com pedido/NF",
+      });
+      lines.push(isForecast ? applyOpenForecastAmountsToLine(line, receivable) : line);
       continue;
     }
 
     if (!input.allowItemRecalculationFallback) {
-      lines.push(
-        buildExceptionLine({
-          receivable,
-          year: input.year,
-          month: input.month,
-          status: "NO_SCHEDULE",
-          statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
-          order,
-          identityCtx: input.identityCtx,
-          commissionRecord:
-            nfeId != null ? input.commissionRecordsByNfeId?.get(nfeId) : undefined,
-        })
-      );
+      const line = buildExceptionLine({
+        receivable,
+        year: input.year,
+        month: input.month,
+        status: "NO_SCHEDULE",
+        statusReason: COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
+        order,
+        identityCtx: input.identityCtx,
+        commissionRecord:
+          nfeId != null ? input.commissionRecordsByNfeId?.get(nfeId) : undefined,
+      });
+      lines.push(isForecast ? applyOpenForecastAmountsToLine(line, receivable) : line);
       continue;
     }
 
@@ -1636,7 +1763,19 @@ export function buildCommissionReceiptPreview(
     }
   }
 
-  return aggregateCommissionReceiptPreview(lines, input, settled.length);
+  return aggregateCommissionReceiptPreview(lines, input, scoped.length);
+}
+
+/** Previsão oficial — títulos em aberto, mesmas regras do fechamento por recebimento. */
+export function buildCommissionReceivableForecastPreview(
+  input: CommissionReceiptPreviewContext
+): CommissionReceiptPreviewResult {
+  return buildCommissionReceiptPreview({
+    ...input,
+    receivableScope: "open",
+    commissionMode: "forecast",
+    allowItemRecalculationFallback: false,
+  });
 }
 
 export function receiptPreviewCsvHeader(): string[] {

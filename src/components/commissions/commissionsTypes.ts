@@ -965,6 +965,10 @@ export type CommissionsReceivableForecastPayload = {
   futureMonths: CommissionsReceivableForecastMonthlyRow[];
   detailRows: CommissionsReceivableForecastDetailRow[];
   pagination: CommissionsPagination;
+  scopeNote?: string;
+  reconciliationNote?: string;
+  materializationSummary?: CommissionsReceiptClosingMaterializationSummary;
+  officialCards?: CommissionsReceiptClosingMaterializationCards;
 };
 
 export type CommissionsReceiptClosingSnapshot = {

@@ -3,7 +3,10 @@ import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
 import {
   buildCommissionReceiptPreview,
+  buildCommissionReceivableForecastPreview,
+  filterOpenReceivablesForForecast,
   type CommissionReceiptPreviewResult,
+  type CommissionReceiptReceivableInput,
   type MaterializedReceivableScheduleInput,
   resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
@@ -19,6 +22,7 @@ import {
   resolveCommissionPeriod,
 } from "./commission-source-resolver.server.js";
 import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
+import { ensureCommissionMaterializationForReceivableRefs } from "./commissionMaterializationOrchestrator.server.js";
 import { decimalToNumber } from "./commission-money.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
 import {
@@ -360,4 +364,206 @@ export function receivableReceivedTotal(
     total += decimalToNumber(row.amountReceived);
   }
   return total;
+}
+
+export type LoadCommissionReceivableForecastPreviewInput = {
+  dueDateFrom?: Date | null;
+  dueDateTo?: Date | null;
+  horizonMonths?: number | null;
+  customer?: string | null;
+  seller?: string | null;
+  commissionPersonId?: string | null;
+  orderCode?: string | null;
+  nfeNumber?: string | null;
+  nomusReceivableId?: number | null;
+  applyMaterialization?: boolean;
+};
+
+function mapOpenNomusArRowToReceivableInput(row: {
+  externalId: number;
+  personId: number | null;
+  personName: string | null;
+  personCnpj?: string | null;
+  sourceInvoiceId: number | null;
+  sourceInvoiceNumber: string | null;
+  dueDate: Date | null;
+  settlementDate: Date | null;
+  amountReceivable: import("@prisma/client").Prisma.Decimal | null;
+  amountReceived: import("@prisma/client").Prisma.Decimal | null;
+  balanceReceivable: import("@prisma/client").Prisma.Decimal | null;
+  description?: string | null;
+  suspendCollection?: boolean | null;
+  status?: boolean | null;
+}): CommissionReceiptReceivableInput | null {
+  const source = mapReceivableSource(row);
+  if (row.status === false || row.suspendCollection === true) return null;
+  const balance = decimalToNumber(row.balanceReceivable) ?? 0;
+  const open =
+    balance > 0.009
+      ? balance
+      : Math.max(0, (decimalToNumber(row.amountReceivable) ?? 0) - (decimalToNumber(row.amountReceived) ?? 0));
+  if (open <= 0.009) return null;
+  return {
+    nomusReceivableId: source.nomusReceivableId,
+    receivableNumber: row.sourceInvoiceNumber ?? row.description ?? null,
+    installmentNumber: source.installmentNumber,
+    settlementDate: source.settlementDate,
+    dueDate: source.dueDate,
+    amountReceivable: source.amountReceivable,
+    amountReceived: source.amountReceived,
+    balanceReceivable: open,
+    nomusNfeId: source.nomusNfeId,
+    nfeNumber: row.sourceInvoiceNumber,
+    customerExternalId: row.personId,
+    customerId: null,
+    customerName: row.personName,
+    customerCnpj: row.personCnpj ?? null,
+    cancelled: row.status === false,
+    suspended: row.suspendCollection === true,
+  };
+}
+
+export async function loadCommissionReceivableForecastPreview(
+  input: LoadCommissionReceivableForecastPreviewInput
+): Promise<CommissionReceiptPreviewResult> {
+  const referenceDate = new Date();
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth() + 1;
+
+  const arPrismaRows = await prisma.nomusAccountsReceivable.findMany({
+    where: {
+      balanceReceivable: { gt: 0 },
+      suspendCollection: { not: true },
+      OR: [{ status: null }, { status: true }],
+    },
+    select: {
+      externalId: true,
+      personId: true,
+      personName: true,
+      personCnpj: true,
+      sourceInvoiceId: true,
+      sourceInvoiceNumber: true,
+      dueDate: true,
+      settlementDate: true,
+      amountReceivable: true,
+      amountReceived: true,
+      balanceReceivable: true,
+      description: true,
+      suspendCollection: true,
+      status: true,
+    },
+  });
+
+  let receivables = arPrismaRows
+    .map((row) => mapOpenNomusArRowToReceivableInput(row))
+    .filter((row): row is CommissionReceiptReceivableInput => row != null);
+
+  receivables = filterOpenReceivablesForForecast(
+    receivables,
+    {
+      dueDateFrom: input.dueDateFrom ?? null,
+      dueDateTo: input.dueDateTo ?? null,
+      horizonMonths: input.horizonMonths ?? null,
+    },
+    referenceDate
+  );
+
+  if (input.nomusReceivableId != null) {
+    receivables = receivables.filter((r) => r.nomusReceivableId === input.nomusReceivableId);
+  }
+  if (input.nfeNumber?.trim()) {
+    const needle = input.nfeNumber.trim().toLowerCase();
+    receivables = receivables.filter((r) => (r.nfeNumber ?? "").toLowerCase().includes(needle));
+  }
+
+  await ensureCommissionMaterializationForReceivableRefs(
+    prisma,
+    receivables.map((row) => ({
+      receivableId: row.nomusReceivableId,
+      sourceInvoiceId: row.nomusNfeId ?? null,
+    })),
+    { apply: input.applyMaterialization === true }
+  );
+
+  const receivableIds = receivables.map((row) => row.nomusReceivableId);
+  const nfeIds = [
+    ...new Set(
+      receivables
+        .map((row) => row.nomusNfeId)
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ];
+
+  const [materializedSchedulesByReceivableId, orderBundles, commissionRecordsByNfeId, snapshotRows, identityCtx, exclusionRules] =
+    await Promise.all([
+      loadMaterializedSchedulesByReceivableId(receivableIds),
+      loadCommissionOrderSourcesByNfeExternalIds(prisma, nfeIds),
+      loadCommissionRecordSellersByNfeId(nfeIds),
+      nfeIds.length > 0
+        ? prisma.commissionOrderSnapshot.findMany({
+            where: { nfeId: { in: nfeIds }, status: "ACTIVE" },
+            select: {
+              nfeId: true,
+              items: { select: { status: true } },
+            },
+          })
+        : Promise.resolve([]),
+      loadCommissionSellerIdentityContext(prisma),
+      loadActiveCustomerExclusionRuleSnapshots(),
+    ]);
+
+  if (input.orderCode?.trim()) {
+    const needle = input.orderCode.trim().toLowerCase();
+    const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+    receivables = receivables.filter((row) => {
+      const nfeId = row.nomusNfeId ?? null;
+      const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
+      return (order?.orderCode ?? "").toLowerCase().includes(needle);
+    });
+  }
+
+  const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+  const orderSnapshotDiagnosisByNfeId = new Map(
+    snapshotRows
+      .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
+      .map((row) => [
+        row.nfeId,
+        {
+          exists: true,
+          itemStatuses: row.items.map((item) => item.status),
+        },
+      ])
+  );
+
+  let preview = buildCommissionReceivableForecastPreview({
+    year,
+    month,
+    seller: input.seller ?? null,
+    customer: input.customer ?? null,
+    receivables,
+    ordersByNfeId,
+    materializedSchedulesByReceivableId,
+    commissionRecordsByNfeId,
+    orderSnapshotDiagnosisByNfeId,
+    allowItemRecalculationFallback: false,
+    rules: [],
+    exclusionRules,
+    identityCtx,
+    openForecastFilters: {
+      dueDateFrom: input.dueDateFrom ?? null,
+      dueDateTo: input.dueDateTo ?? null,
+      horizonMonths: input.horizonMonths ?? null,
+    },
+    referenceDate,
+  });
+
+  if (input.commissionPersonId?.trim()) {
+    const personId = input.commissionPersonId.trim();
+    preview = {
+      ...preview,
+      lines: preview.lines.filter((line) => line.canonicalSellerId === personId),
+    };
+  }
+
+  return preview;
 }
