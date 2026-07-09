@@ -173,19 +173,22 @@ function ExpenseMapCard({
         aria-pressed={drilldownActive}
         onClick={onDrilldown}
         title="Clique para detalhar"
-        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md pr-16"
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md"
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 pr-8">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {card.code}
-            </p>
-            <h4 className="text-sm font-bold text-foreground truncate">{card.name}</h4>
-            {card.parentName ? (
-              <p className="text-[10px] text-muted-foreground truncate">Pai: {card.parentName}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0 mr-14">
+        <div className="pr-14">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground line-clamp-1 break-all"
+            title={card.code}
+          >
+            {card.code}
+          </p>
+          <h4
+            className="mt-0.5 text-sm font-semibold text-foreground leading-snug line-clamp-2 break-words"
+            title={card.name}
+          >
+            {card.name}
+          </h4>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -197,6 +200,14 @@ function ExpenseMapCard({
             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
               {expenseMapCategoryLabel(card.category)}
             </span>
+            {card.parentName ? (
+              <span
+                className="text-[10px] text-muted-foreground line-clamp-1 max-w-full"
+                title={`Pai: ${card.parentName}`}
+              >
+                Pai: {card.parentName}
+              </span>
+            ) : null}
           </div>
         </div>
 

@@ -262,6 +262,18 @@ describe("financeCostCenterExpenseMap", () => {
     assert.ok(qs.includes("costCenterIds=cc-1%2Ccc-2") || qs.includes("costCenterIds=cc-1,cc-2"));
   });
 
+  it("cards do mapa exibem titulo legivel sem truncate agressivo", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /line-clamp-2/);
+    assert.match(section, /title=\{card\.name\}/);
+    assert.match(section, /title=\{card\.code\}/);
+    assert.doesNotMatch(section, /font-bold text-foreground truncate/);
+    assert.doesNotMatch(section, /min-w-0 pr-8/);
+  });
+
   it("drilldown lista apenas títulos do centro via API path por id", () => {
     const section = readFileSync(
       join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
