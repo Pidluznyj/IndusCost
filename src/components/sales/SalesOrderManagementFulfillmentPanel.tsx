@@ -34,6 +34,13 @@ import type {
 } from "@/src/lib/salesOrderManagementFulfillment";
 import { formatCurrency } from "@/src/lib/utils";
 
+/**
+ * Altura explícita — ResponsiveContainer com height="100%" colapsa em flex sem
+ * altura definida (mesma correção de FinanceBillingChartShell). Sem isto, o
+ * gráfico mede width(-1)/height(-1) e não renderiza.
+ */
+const FULFILLMENT_CHART_HEIGHT = 220;
+
 function ChartCard({
   title,
   subtitle,
@@ -60,7 +67,9 @@ function ChartCard({
         <h3 className="text-sm font-bold">{title}</h3>
         {subtitle ? <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p> : null}
       </div>
-      <div className="flex-1 min-h-[200px] mt-2">{children}</div>
+      <div className="mt-2" style={{ width: "100%", height: FULFILLMENT_CHART_HEIGHT }}>
+        {children}
+      </div>
     </div>
   );
 }
