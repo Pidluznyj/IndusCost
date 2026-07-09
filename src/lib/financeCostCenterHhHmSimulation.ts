@@ -8,7 +8,7 @@ export const COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING =
   "Existem meses sem lançamentos para os centros selecionados.";
 
 export const COST_CENTER_HH_HM_SIMULATION_INSUFFICIENT_DATA =
-  "Não há dados suficientes no período. Informe um valor manual ou ajuste os filtros.";
+  "Não há dados suficientes para calcular a taxa. Informe valor manual ou ajuste centros/período.";
 
 export const COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE =
   "Valores por data de vencimento (Contas a Pagar)";
@@ -74,7 +74,46 @@ export type CostCenterMonthlyExpenseSourceRow = {
   amount: number;
 };
 
+export type CostCenterHhHmSimulationSideFormValues = {
+  averagePeriod: CostCenterHhHmSimulationAveragePeriod;
+  selectedCostCenterIds: string[];
+  baseMonthlyHours: string;
+  useManualRate: boolean;
+  manualRatePerHour: string;
+  filteredDueDateFrom: string;
+  filteredDueDateTo: string;
+};
+
 export type CostCenterHhHmSimulationFormValues = {
+  hh: CostCenterHhHmSimulationSideFormValues;
+  hm: CostCenterHhHmSimulationSideFormValues;
+  note: string;
+  itemApplicationOpen: boolean;
+  quantityHhInItem: string;
+  quantityHmInItem: string;
+};
+
+export const EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE: CostCenterHhHmSimulationSideFormValues = {
+  averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
+  selectedCostCenterIds: [],
+  baseMonthlyHours: "",
+  useManualRate: false,
+  manualRatePerHour: "",
+  filteredDueDateFrom: "",
+  filteredDueDateTo: "",
+};
+
+export const EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM: CostCenterHhHmSimulationFormValues = {
+  hh: { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE },
+  hm: { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE },
+  note: "",
+  itemApplicationOpen: false,
+  quantityHhInItem: "",
+  quantityHmInItem: "",
+};
+
+/** @deprecated Schema legado v1 — apenas para migração de localStorage. */
+export type CostCenterHhHmSimulationLegacyFormValues = {
   hourType: CostCenterHhHmSimulationHourType;
   averagePeriod: CostCenterHhHmSimulationAveragePeriod;
   selectedCostCenterIds: string[];
@@ -87,19 +126,6 @@ export type CostCenterHhHmSimulationFormValues = {
   filteredDueDateTo: string;
 };
 
-export const EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM: CostCenterHhHmSimulationFormValues = {
-  hourType: "HM",
-  averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
-  selectedCostCenterIds: [],
-  baseMonthlyHours: "",
-  quantityUsedInItem: "",
-  useManualRate: false,
-  manualRatePerHour: "",
-  note: "",
-  filteredDueDateFrom: "",
-  filteredDueDateTo: "",
-};
-
 function normalizeStringField(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
@@ -109,6 +135,54 @@ function normalizeStringIdArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
 }
 
+function normalizeSideFormValues(
+  raw: Partial<CostCenterHhHmSimulationSideFormValues> | undefined
+): CostCenterHhHmSimulationSideFormValues {
+  if (!raw || typeof raw !== "object") {
+    return { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE };
+  }
+  return {
+    averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(raw.averagePeriod),
+    selectedCostCenterIds: normalizeStringIdArray(raw.selectedCostCenterIds),
+    baseMonthlyHours: normalizeStringField(raw.baseMonthlyHours),
+    useManualRate: raw.useManualRate === true,
+    manualRatePerHour: normalizeStringField(raw.manualRatePerHour),
+    filteredDueDateFrom: normalizeStringField(raw.filteredDueDateFrom),
+    filteredDueDateTo: normalizeStringField(raw.filteredDueDateTo),
+  };
+}
+
+function migrateLegacyStoredForm(
+  raw: Partial<CostCenterHhHmSimulationLegacyFormValues>
+): CostCenterHhHmSimulationFormValues {
+  const side: CostCenterHhHmSimulationSideFormValues = {
+    averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(raw.averagePeriod),
+    selectedCostCenterIds: normalizeStringIdArray(raw.selectedCostCenterIds),
+    baseMonthlyHours: normalizeStringField(raw.baseMonthlyHours),
+    useManualRate: raw.useManualRate === true,
+    manualRatePerHour: normalizeStringField(raw.manualRatePerHour),
+    filteredDueDateFrom: normalizeStringField(raw.filteredDueDateFrom),
+    filteredDueDateTo: normalizeStringField(raw.filteredDueDateTo),
+  };
+  const quantity =
+    typeof raw.quantityUsedInItem === "string" ? raw.quantityUsedInItem : "";
+  const hourType = raw.hourType === "HH" ? "HH" : "HM";
+  return {
+    hh:
+      hourType === "HH"
+        ? { ...side }
+        : { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE },
+    hm:
+      hourType === "HM"
+        ? { ...side }
+        : { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE },
+    note: normalizeStringField(raw.note),
+    itemApplicationOpen: quantity.trim().length > 0,
+    quantityHhInItem: hourType === "HH" ? quantity : "",
+    quantityHmInItem: hourType === "HM" ? quantity : "",
+  };
+}
+
 /** Restaura formulário local com schema seguro (localStorage antigo/corrompido). */
 export function normalizeCostCenterHhHmSimulationStoredForm(
   raw: unknown
@@ -116,19 +190,18 @@ export function normalizeCostCenterHhHmSimulationStoredForm(
   if (!raw || typeof raw !== "object") {
     return { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM };
   }
-  const parsed = raw as Partial<CostCenterHhHmSimulationFormValues>;
-  return {
-    hourType: parsed.hourType === "HH" || parsed.hourType === "HM" ? parsed.hourType : "HM",
-    averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(parsed.averagePeriod),
-    selectedCostCenterIds: normalizeStringIdArray(parsed.selectedCostCenterIds),
-    baseMonthlyHours: normalizeStringField(parsed.baseMonthlyHours),
-    quantityUsedInItem: normalizeStringField(parsed.quantityUsedInItem),
-    useManualRate: parsed.useManualRate === true,
-    manualRatePerHour: normalizeStringField(parsed.manualRatePerHour),
-    note: normalizeStringField(parsed.note),
-    filteredDueDateFrom: normalizeStringField(parsed.filteredDueDateFrom),
-    filteredDueDateTo: normalizeStringField(parsed.filteredDueDateTo),
-  };
+  const parsed = raw as Record<string, unknown>;
+  if ("hh" in parsed || "hm" in parsed) {
+    return {
+      hh: normalizeSideFormValues(parsed.hh as Partial<CostCenterHhHmSimulationSideFormValues>),
+      hm: normalizeSideFormValues(parsed.hm as Partial<CostCenterHhHmSimulationSideFormValues>),
+      note: normalizeStringField(parsed.note),
+      itemApplicationOpen: parsed.itemApplicationOpen === true,
+      quantityHhInItem: normalizeStringField(parsed.quantityHhInItem),
+      quantityHmInItem: normalizeStringField(parsed.quantityHmInItem),
+    };
+  }
+  return migrateLegacyStoredForm(parsed as Partial<CostCenterHhHmSimulationLegacyFormValues>);
 }
 
 export type CostCenterHhHmSimulationCostCenterRow = {
@@ -400,23 +473,39 @@ export type CostCenterMonthlyAverageResult = {
   insufficientData: boolean;
 };
 
-export type CostCenterHhHmSimulationComposition = {
+export type CostCenterHhHmSideComposition = {
   monthlyAverageAmount: number | null;
   baseMonthlyHours: number | null;
   calculatedRatePerHour: number | null;
   effectiveRatePerHour: number | null;
-  quantityUsedInItem: number | null;
-  simulatedItemCost: number | null;
-  hourType: CostCenterHhHmSimulationHourType;
   useManualRate: boolean;
 };
 
-export type CostCenterHhHmSimulationResult = {
+export type CostCenterHhHmSideSimulationResult = {
   monthlyAverage: CostCenterMonthlyAverageResult;
-  composition: CostCenterHhHmSimulationComposition;
+  composition: CostCenterHhHmSideComposition;
   warnings: string[];
   errors: string[];
   canCalculateRate: boolean;
+};
+
+export type CostCenterHhHmDualSimulationResult = {
+  hh: CostCenterHhHmSideSimulationResult;
+  hm: CostCenterHhHmSideSimulationResult;
+  combinedRatePerHour: number | null;
+  optionalItemImpact: number | null;
+};
+
+/** @deprecated Use CostCenterHhHmSideComposition — mantido para compatibilidade de testes legados. */
+export type CostCenterHhHmSimulationComposition = CostCenterHhHmSideComposition & {
+  quantityUsedInItem: number | null;
+  simulatedItemCost: number | null;
+  hourType: CostCenterHhHmSimulationHourType;
+};
+
+/** @deprecated Use CostCenterHhHmSideSimulationResult — mantido para compatibilidade de testes legados. */
+export type CostCenterHhHmSimulationResult = CostCenterHhHmSideSimulationResult & {
+  composition: CostCenterHhHmSimulationComposition;
   canCalculateItemCost: boolean;
 };
 
@@ -582,10 +671,10 @@ export function computeCostCenterHhHmItemCost(input: {
   return roundMoney(input.ratePerHour * input.quantityUsedInItem);
 }
 
-export function computeCostCenterHhHmSimulation(input: {
-  form: CostCenterHhHmSimulationFormValues;
+export function computeCostCenterHhHmSideSimulation(input: {
+  form: CostCenterHhHmSimulationSideFormValues;
   monthlyBuckets: CostCenterMonthlyExpenseBucket[];
-}): CostCenterHhHmSimulationResult {
+}): CostCenterHhHmSideSimulationResult {
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -595,7 +684,7 @@ export function computeCostCenterHhHmSimulation(input: {
     ...monthlyAverageSummary,
   };
 
-  if (input.form.selectedCostCenterIds.length === 0) {
+  if (input.form.selectedCostCenterIds.length === 0 && !input.form.useManualRate) {
     errors.push("Selecione ao menos um centro de custo.");
   }
 
@@ -604,11 +693,10 @@ export function computeCostCenterHhHmSimulation(input: {
   }
 
   const baseMonthlyHours = parsePositiveNumber(input.form.baseMonthlyHours);
-  if (!input.form.useManualRate && baseMonthlyHours == null) {
+  if (!input.form.useManualRate && input.form.averagePeriod !== "MANUAL_VALUE" && baseMonthlyHours == null) {
     errors.push("Informe as horas base mensais (driver de rateio).");
   }
 
-  const quantityUsedInItem = parseNonNegativeNumber(input.form.quantityUsedInItem);
   const manualRatePerHour = parsePositiveNumber(input.form.manualRatePerHour);
 
   const skipAverage =
@@ -638,19 +726,11 @@ export function computeCostCenterHhHmSimulation(input: {
     effectiveRatePerHour = calculatedRatePerHour;
   }
 
-  const simulatedItemCost = computeCostCenterHhHmItemCost({
-    ratePerHour: effectiveRatePerHour,
-    quantityUsedInItem,
-  });
-
-  const composition: CostCenterHhHmSimulationComposition = {
+  const composition: CostCenterHhHmSideComposition = {
     monthlyAverageAmount: skipAverage ? null : monthlyAverage.monthlyAverageAmount,
     baseMonthlyHours,
     calculatedRatePerHour,
     effectiveRatePerHour,
-    quantityUsedInItem,
-    simulatedItemCost,
-    hourType: input.form.hourType,
     useManualRate: input.form.useManualRate || input.form.averagePeriod === "MANUAL_VALUE",
   };
 
@@ -660,6 +740,95 @@ export function computeCostCenterHhHmSimulation(input: {
     warnings,
     errors,
     canCalculateRate: effectiveRatePerHour != null,
+  };
+}
+
+export function combineCostCenterHhHmRates(
+  hhRate: number | null,
+  hmRate: number | null
+): number | null {
+  if (hhRate == null && hmRate == null) return null;
+  return roundMoney((hhRate ?? 0) + (hmRate ?? 0));
+}
+
+export function computeCostCenterHhHmOptionalItemImpact(input: {
+  hhRate: number | null;
+  hmRate: number | null;
+  quantityHhInItem: string;
+  quantityHmInItem: string;
+}): number | null {
+  const quantityHh = parseNonNegativeNumber(input.quantityHhInItem);
+  const quantityHm = parseNonNegativeNumber(input.quantityHmInItem);
+  const hhPart =
+    input.hhRate != null && quantityHh != null
+      ? roundMoney(input.hhRate * quantityHh)
+      : null;
+  const hmPart =
+    input.hmRate != null && quantityHm != null
+      ? roundMoney(input.hmRate * quantityHm)
+      : null;
+  if (hhPart == null && hmPart == null) return null;
+  return roundMoney((hhPart ?? 0) + (hmPart ?? 0));
+}
+
+export function computeCostCenterHhHmDualRateSimulation(input: {
+  form: CostCenterHhHmSimulationFormValues;
+  monthlyBucketsHh: CostCenterMonthlyExpenseBucket[];
+  monthlyBucketsHm: CostCenterMonthlyExpenseBucket[];
+}): CostCenterHhHmDualSimulationResult {
+  const hh = computeCostCenterHhHmSideSimulation({
+    form: input.form.hh,
+    monthlyBuckets: input.monthlyBucketsHh,
+  });
+  const hm = computeCostCenterHhHmSideSimulation({
+    form: input.form.hm,
+    monthlyBuckets: input.monthlyBucketsHm,
+  });
+  const combinedRatePerHour = combineCostCenterHhHmRates(
+    hh.composition.effectiveRatePerHour,
+    hm.composition.effectiveRatePerHour
+  );
+  const optionalItemImpact = computeCostCenterHhHmOptionalItemImpact({
+    hhRate: hh.composition.effectiveRatePerHour,
+    hmRate: hm.composition.effectiveRatePerHour,
+    quantityHhInItem: input.form.quantityHhInItem,
+    quantityHmInItem: input.form.quantityHmInItem,
+  });
+  return { hh, hm, combinedRatePerHour, optionalItemImpact };
+}
+
+/**
+ * @deprecated Use computeCostCenterHhHmSideSimulation — wrapper legado para um único tipo HH/HM.
+ */
+export function computeCostCenterHhHmSimulation(input: {
+  form: CostCenterHhHmSimulationLegacyFormValues;
+  monthlyBuckets: CostCenterMonthlyExpenseBucket[];
+}): CostCenterHhHmSimulationResult {
+  const side = computeCostCenterHhHmSideSimulation({
+    form: {
+      averagePeriod: input.form.averagePeriod,
+      selectedCostCenterIds: input.form.selectedCostCenterIds,
+      baseMonthlyHours: input.form.baseMonthlyHours,
+      useManualRate: input.form.useManualRate,
+      manualRatePerHour: input.form.manualRatePerHour,
+      filteredDueDateFrom: input.form.filteredDueDateFrom,
+      filteredDueDateTo: input.form.filteredDueDateTo,
+    },
+    monthlyBuckets: input.monthlyBuckets,
+  });
+  const quantityUsedInItem = parseNonNegativeNumber(input.form.quantityUsedInItem);
+  const simulatedItemCost = computeCostCenterHhHmItemCost({
+    ratePerHour: side.composition.effectiveRatePerHour,
+    quantityUsedInItem,
+  });
+  return {
+    ...side,
+    composition: {
+      ...side.composition,
+      quantityUsedInItem,
+      simulatedItemCost,
+      hourType: input.form.hourType,
+    },
     canCalculateItemCost: simulatedItemCost != null,
   };
 }

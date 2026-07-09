@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   aggregateCostCenterMonthlyTotals,
+  combineCostCenterHhHmRates,
+  computeCostCenterHhHmDualRateSimulation,
   computeCostCenterHhHmItemCost,
+  computeCostCenterHhHmOptionalItemImpact,
   computeCostCenterHhHmRate,
+  computeCostCenterHhHmSideSimulation,
   computeCostCenterHhHmSimulation,
   computeCostCenterMonthlyAverage,
+  COST_CENTER_HH_HM_SIMULATION_INSUFFICIENT_DATA,
   COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING,
   EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+  EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
   filterCostCenterHhHmSimulationCostCenters,
   normalizeCostCenterHhHmSimulationStoredForm,
   parseCostCenterHhHmSimulationCostCentersResponse,
@@ -31,6 +37,12 @@ function monthlyRowsForCenter(
     };
   });
 }
+
+const SIX_MONTH_BUCKETS = Array.from({ length: 6 }, () => ({
+  year: 2026,
+  month: 1,
+  totalAmount: 120_000,
+}));
 
 describe("financeCostCenterHhHmSimulation", () => {
   it("1 — centro com 6 meses de dados calcula média mensal corretamente", () => {
@@ -79,48 +91,35 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.equal(rate, 30);
   });
 
-  it("4 — taxa HM = média mensal / horas base", () => {
-    const result = computeCostCenterHhHmSimulation({
+  it("4 — taxa HM por lado (HH/HM separados)", () => {
+    const hm = computeCostCenterHhHmSideSimulation({
       form: {
-        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
-        hourType: "HM",
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
         baseMonthlyHours: "4000",
-        quantityUsedInItem: "2.5",
       },
-      monthlyBuckets: [
-        { year: 2026, month: 1, totalAmount: 120_000 },
-        { year: 2026, month: 2, totalAmount: 120_000 },
-        { year: 2026, month: 3, totalAmount: 120_000 },
-        { year: 2026, month: 4, totalAmount: 120_000 },
-        { year: 2026, month: 5, totalAmount: 120_000 },
-        { year: 2026, month: 6, totalAmount: 120_000 },
-      ],
+      monthlyBuckets: SIX_MONTH_BUCKETS,
     });
-    assert.equal(result.composition.calculatedRatePerHour, 30);
-    assert.equal(result.composition.effectiveRatePerHour, 30);
-    assert.equal(result.composition.simulatedItemCost, 75);
-    assert.equal(result.composition.hourType, "HM");
+    assert.equal(hm.composition.calculatedRatePerHour, 30);
+    assert.equal(hm.composition.effectiveRatePerHour, 30);
   });
 
   it("5 — valor manual sobrescreve taxa calculada apenas na simulação", () => {
-    const calculated = computeCostCenterHhHmSimulation({
+    const calculated = computeCostCenterHhHmSideSimulation({
       form: {
-        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
         baseMonthlyHours: "4000",
-        quantityUsedInItem: "1",
       },
       monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 120_000 }],
     });
     assert.equal(calculated.composition.calculatedRatePerHour, 30);
 
-    const manual = computeCostCenterHhHmSimulation({
+    const manual = computeCostCenterHhHmSideSimulation({
       form: {
-        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
         baseMonthlyHours: "4000",
-        quantityUsedInItem: "1",
         useManualRate: true,
         manualRatePerHour: "45",
       },
@@ -128,14 +127,13 @@ describe("financeCostCenterHhHmSimulation", () => {
     });
     assert.equal(manual.composition.calculatedRatePerHour, 30);
     assert.equal(manual.composition.effectiveRatePerHour, 45);
-    assert.equal(manual.composition.simulatedItemCost, 45);
     assert.equal(manual.composition.useManualRate, true);
   });
 
   it("6 — meses sem dados geram aviso", () => {
-    const result = computeCostCenterHhHmSimulation({
+    const result = computeCostCenterHhHmSideSimulation({
       form: {
-        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
         baseMonthlyHours: "1000",
       },
@@ -152,7 +150,8 @@ describe("financeCostCenterHhHmSimulation", () => {
 
   it("7 — custo oficial não é alterado (motor puro, sem efeitos colaterais)", () => {
     const form = {
-      ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+      hourType: "HM" as const,
+      ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
       selectedCostCenterIds: ["cc-a"],
       baseMonthlyHours: "4000",
       quantityUsedInItem: "10",
@@ -166,17 +165,18 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.deepEqual(form, beforeForm);
     assert.deepEqual(buckets, beforeBuckets);
     assert.equal(result.composition.simulatedItemCost, 300);
-    assert.equal(typeof result.composition.simulatedItemCost, "number");
   });
 
   it("8 — simulação limpa não altera dados oficiais", () => {
-    const empty = computeCostCenterHhHmSimulation({
+    const empty = computeCostCenterHhHmDualRateSimulation({
       form: EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
-      monthlyBuckets: [],
+      monthlyBucketsHh: [],
+      monthlyBucketsHm: [],
     });
-    assert.equal(empty.composition.effectiveRatePerHour, null);
-    assert.equal(empty.composition.simulatedItemCost, null);
-    assert.ok(empty.errors.length > 0);
+    assert.equal(empty.hh.composition.effectiveRatePerHour, null);
+    assert.equal(empty.hm.composition.effectiveRatePerHour, null);
+    assert.equal(empty.combinedRatePerHour, null);
+    assert.ok(empty.hh.errors.length > 0);
 
     const itemCost = computeCostCenterHhHmItemCost({
       ratePerHour: null,
@@ -201,13 +201,24 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.equal(parseCostCenterHhHmSimulationCostCentersResponse({ foo: [] }).invalidShape, true);
   });
 
-  it("11 — localStorage com selectedCostCenterIds objeto não quebra simulação", () => {
-    const form = normalizeCostCenterHhHmSimulationStoredForm({
+  it("11 — localStorage legado v1 migra para HH ou HM", () => {
+    const hhForm = normalizeCostCenterHhHmSimulationStoredForm({
       selectedCostCenterIds: { a: "cc-1" },
       hourType: "HH",
+      baseMonthlyHours: "100",
     });
-    assert.deepEqual(form.selectedCostCenterIds, []);
-    assert.equal(form.hourType, "HH");
+    assert.deepEqual(hhForm.hh.selectedCostCenterIds, []);
+    assert.deepEqual(hhForm.hm.selectedCostCenterIds, []);
+    assert.equal(hhForm.hh.baseMonthlyHours, "100");
+
+    const hmForm = normalizeCostCenterHhHmSimulationStoredForm({
+      hourType: "HM",
+      selectedCostCenterIds: ["cc-2"],
+      manualRatePerHour: "72",
+    });
+    assert.deepEqual(hmForm.hm.selectedCostCenterIds, ["cc-2"]);
+    assert.equal(hmForm.hm.manualRatePerHour, "72");
+    assert.deepEqual(hmForm.hh.selectedCostCenterIds, []);
   });
 
   it("12 — monthly-data com monthlyBuckets inválido retorna erro amigável", () => {
@@ -252,19 +263,17 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.equal(filtered[0]?.id, "2");
   });
 
-  it("16 — valor manual funciona sem centros selecionados", () => {
-    const result = computeCostCenterHhHmSimulation({
+  it("16 — valor manual HH funciona sem centros selecionados", () => {
+    const result = computeCostCenterHhHmSideSimulation({
       form: {
-        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         useManualRate: true,
-        manualRatePerHour: "45",
-        quantityUsedInItem: "2",
+        manualRatePerHour: "38",
         selectedCostCenterIds: [],
       },
       monthlyBuckets: [],
     });
-    assert.equal(result.composition.effectiveRatePerHour, 45);
-    assert.equal(result.composition.simulatedItemCost, 90);
+    assert.equal(result.composition.effectiveRatePerHour, 38);
     assert.ok(result.errors.some((message) => /Selecione ao menos um centro/i.test(message)));
   });
 
@@ -273,5 +282,90 @@ describe("financeCostCenterHhHmSimulation", () => {
       pruneCostCenterHhHmSimulationSelectedIds(["cc-a", "cc-z"], ["cc-a", "cc-b"]),
       ["cc-a"]
     );
+  });
+
+  it("18 — taxa final HH + HM soma taxas efetivas", () => {
+    const dual = computeCostCenterHhHmDualRateSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          useManualRate: true,
+          manualRatePerHour: "38",
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          useManualRate: true,
+          manualRatePerHour: "72",
+        },
+      },
+      monthlyBucketsHh: [],
+      monthlyBucketsHm: [],
+    });
+    assert.equal(dual.hh.composition.effectiveRatePerHour, 38);
+    assert.equal(dual.hm.composition.effectiveRatePerHour, 72);
+    assert.equal(dual.combinedRatePerHour, 110);
+    assert.equal(combineCostCenterHhHmRates(38, 72), 110);
+  });
+
+  it("19 — seleção múltipla HH e HM independentes", () => {
+    const dual = computeCostCenterHhHmDualRateSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-a", "cc-b"],
+          baseMonthlyHours: "4000",
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-c"],
+          baseMonthlyHours: "2000",
+        },
+      },
+      monthlyBucketsHh: SIX_MONTH_BUCKETS,
+      monthlyBucketsHm: [
+        { year: 2026, month: 1, totalAmount: 144_000 },
+        { year: 2026, month: 2, totalAmount: 144_000 },
+      ],
+    });
+    assert.equal(dual.hh.composition.effectiveRatePerHour, 30);
+    assert.equal(dual.hm.composition.effectiveRatePerHour, 72);
+    assert.equal(dual.combinedRatePerHour, 102);
+  });
+
+  it("20 — impacto opcional na peça não é resultado principal", () => {
+    const impact = computeCostCenterHhHmOptionalItemImpact({
+      hhRate: 38,
+      hmRate: 72,
+      quantityHhInItem: "0.5",
+      quantityHmInItem: "0.25",
+    });
+    assert.equal(impact, 37);
+  });
+
+  it("21 — aviso de dados insuficientes referencia taxa", () => {
+    assert.match(COST_CENTER_HH_HM_SIMULATION_INSUFFICIENT_DATA, /calcular a taxa/i);
+  });
+
+  it("22 — valor manual HM entra no total combinado", () => {
+    const dual = computeCostCenterHhHmDualRateSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-a"],
+          baseMonthlyHours: "4000",
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          useManualRate: true,
+          manualRatePerHour: "72",
+        },
+      },
+      monthlyBucketsHh: SIX_MONTH_BUCKETS,
+      monthlyBucketsHm: [],
+    });
+    assert.equal(dual.combinedRatePerHour, 102);
   });
 });

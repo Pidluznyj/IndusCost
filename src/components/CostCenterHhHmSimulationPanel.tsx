@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, Calculator, Loader2 } from "lucide-react";
+import { AlertTriangle, Building2, Calculator, ChevronDown, Loader2 } from "lucide-react";
 import { CostCenterHhHmSimulationMultiselect } from "@/src/components/CostCenterHhHmSimulationMultiselect";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   buildCostCenterHhHmSimulationCostCentersApiPath,
-  computeCostCenterHhHmSimulation,
+  computeCostCenterHhHmDualRateSimulation,
   COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS,
   COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE,
   DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
@@ -17,6 +17,8 @@ import {
   type CostCenterHhHmSimulationCostCenterRow,
   type CostCenterHhHmSimulationFormValues,
   type CostCenterHhHmSimulationHourType,
+  type CostCenterHhHmSimulationSideFormValues,
+  type CostCenterHhHmSideSimulationResult,
   type CostCenterMonthlyExpenseBucket,
 } from "@/src/lib/financeCostCenterHhHmSimulation";
 import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
@@ -24,7 +26,7 @@ import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
 const INPUT_CLASS =
   "h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
-const STORAGE_KEY = "induscost.cost-center-hh-hm-simulation.v1";
+const STORAGE_KEY = "induscost.cost-center-hh-hm-simulation.v2";
 
 type MonthlyDataPayload = {
   periodLabel: string;
@@ -32,14 +34,25 @@ type MonthlyDataPayload = {
   monthlyBuckets: CostCenterMonthlyExpenseBucket[];
 };
 
+type SideKey = "hh" | "hm";
+
 function loadStoredForm(): CostCenterHhHmSimulationFormValues {
   if (typeof window === "undefined") return EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
+      const legacy = window.localStorage.getItem("induscost.cost-center-hh-hm-simulation.v1");
+      if (legacy) return normalizeCostCenterHhHmSimulationStoredForm(JSON.parse(legacy));
       return {
         ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
-        averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM.hh,
+          averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM.hm,
+          averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
+        },
       };
     }
     return normalizeCostCenterHhHmSimulationStoredForm(JSON.parse(raw));
@@ -81,68 +94,13 @@ function Field({
   );
 }
 
-export function CostCenterHhHmSimulationPanel() {
-  const [form, setForm] = useState<CostCenterHhHmSimulationFormValues>(loadStoredForm);
-  const [costCenters, setCostCenters] = useState<CostCenterHhHmSimulationCostCenterRow[]>([]);
-  const [costCentersLoading, setCostCentersLoading] = useState(true);
-  const [costCentersError, setCostCentersError] = useState<string | null>(null);
-  const [costCentersReloadKey, setCostCentersReloadKey] = useState(0);
+function useMonthlyDataForSide(side: CostCenterHhHmSimulationSideFormValues) {
   const [monthlyData, setMonthlyData] = useState<MonthlyDataPayload | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState<string | null>(null);
 
-  const loadCostCenters = useCallback(async (cancelled: () => boolean) => {
-    setCostCentersLoading(true);
-    try {
-      const payload = await fetchJsonOk(buildCostCenterHhHmSimulationCostCentersApiPath("ACTIVE"));
-      if (cancelled()) return;
-      const parsed = parseCostCenterHhHmSimulationCostCentersResponse(payload);
-      if (parsed.invalidShape) {
-        console.error("CostCenterHhHmSimulation: payload inválido de centros de custo", payload);
-        setCostCenters([]);
-        setCostCentersError(
-          "Não foi possível interpretar a lista de centros de custo. Tente novamente."
-        );
-        return;
-      }
-      setCostCenters(parsed.items);
-      setCostCentersError(null);
-      setForm((prev) => {
-        const pruned = pruneCostCenterHhHmSimulationSelectedIds(
-          prev.selectedCostCenterIds,
-          parsed.items.map((row) => row.id)
-        );
-        if (pruned.length === prev.selectedCostCenterIds.length) return prev;
-        return { ...prev, selectedCostCenterIds: pruned };
-      });
-    } catch (error) {
-      console.error("CostCenterHhHmSimulation: falha ao carregar centros de custo", error);
-      if (!cancelled()) {
-        setCostCenters([]);
-        setCostCentersError(
-          "Não foi possível carregar os centros de custo. Verifique sua permissão ou tente novamente."
-        );
-      }
-    } finally {
-      if (!cancelled()) setCostCentersLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    let cancelled = false;
-    void loadCostCenters(() => cancelled);
-    return () => {
-      cancelled = true;
-    };
-  }, [loadCostCenters, costCentersReloadKey]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
-  }, [form]);
-
-  useEffect(() => {
-    if (form.selectedCostCenterIds.length === 0 || form.averagePeriod === "MANUAL_VALUE") {
+    if (side.selectedCostCenterIds.length === 0 || side.averagePeriod === "MANUAL_VALUE") {
       setMonthlyData(null);
       setMonthlyError(null);
       return;
@@ -153,13 +111,13 @@ export function CostCenterHhHmSimulationPanel() {
       setMonthlyLoading(true);
       try {
         const qs = new URLSearchParams({
-          costCenterIds: form.selectedCostCenterIds.join(","),
-          averagePeriod: form.averagePeriod,
+          costCenterIds: side.selectedCostCenterIds.join(","),
+          averagePeriod: side.averagePeriod,
           status: "all",
         });
-        if (form.averagePeriod === "FILTERED_PERIOD") {
-          if (form.filteredDueDateFrom.trim()) qs.set("dueDateFrom", form.filteredDueDateFrom.trim());
-          if (form.filteredDueDateTo.trim()) qs.set("dueDateTo", form.filteredDueDateTo.trim());
+        if (side.averagePeriod === "FILTERED_PERIOD") {
+          if (side.filteredDueDateFrom.trim()) qs.set("dueDateFrom", side.filteredDueDateFrom.trim());
+          if (side.filteredDueDateTo.trim()) qs.set("dueDateTo", side.filteredDueDateTo.trim());
         }
         const payload = await fetchJsonOk(
           `/api/finance/cost-centers/hh-hm-simulation/monthly-data?${qs.toString()}`
@@ -192,30 +150,315 @@ export function CostCenterHhHmSimulationPanel() {
     return () => {
       cancelled = true;
     };
-  }, [form.selectedCostCenterIds, form.averagePeriod, form.filteredDueDateFrom, form.filteredDueDateTo]);
+  }, [
+    side.selectedCostCenterIds,
+    side.averagePeriod,
+    side.filteredDueDateFrom,
+    side.filteredDueDateTo,
+  ]);
+
+  return { monthlyData, monthlyLoading, monthlyError };
+}
+
+function SideCalculationBlock({
+  sideKey,
+  title,
+  hourType,
+  side,
+  costCenters,
+  costCentersLoading,
+  costCentersError,
+  onRetryCostCenters,
+  onPatch,
+  monthlyData,
+  monthlyLoading,
+  monthlyError,
+  sideResult,
+}: {
+  sideKey: SideKey;
+  title: string;
+  hourType: CostCenterHhHmSimulationHourType;
+  side: CostCenterHhHmSimulationSideFormValues;
+  costCenters: CostCenterHhHmSimulationCostCenterRow[];
+  costCentersLoading: boolean;
+  costCentersError: string | null;
+  onRetryCostCenters: () => void;
+  onPatch: <K extends keyof CostCenterHhHmSimulationSideFormValues>(
+    key: K,
+    value: CostCenterHhHmSimulationSideFormValues[K]
+  ) => void;
+  monthlyData: MonthlyDataPayload | null;
+  monthlyLoading: boolean;
+  monthlyError: string | null;
+  sideResult: CostCenterHhHmSideSimulationResult;
+}) {
+  const manualMode = side.useManualRate || side.averagePeriod === "MANUAL_VALUE";
+  const selectedCentersLabel = formatCostCenterHhHmSimulationSelectedLabels(
+    side.selectedCostCenterIds,
+    costCenters
+  );
+
+  return (
+    <div
+      className="space-y-4 rounded-lg border border-slate-200 bg-slate-50/50 p-4"
+      data-hh-hm-side={sideKey}
+    >
+      <h3 className="text-base font-bold text-slate-900">{title}</h3>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-slate-700">Período da média</label>
+        <select
+          value={side.averagePeriod}
+          onChange={(e) =>
+            onPatch(
+              "averagePeriod",
+              e.target.value as CostCenterHhHmSimulationSideFormValues["averagePeriod"]
+            )
+          }
+          className={INPUT_CLASS}
+        >
+          {COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {side.averagePeriod === "FILTERED_PERIOD" ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field
+            label="Vencimento de"
+            value={side.filteredDueDateFrom}
+            onChange={(value) => onPatch("filteredDueDateFrom", value)}
+            type="date"
+          />
+          <Field
+            label="Vencimento até"
+            value={side.filteredDueDateTo}
+            onChange={(value) => onPatch("filteredDueDateTo", value)}
+            type="date"
+          />
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-700">
+          Centros de custo para {hourType}
+        </label>
+        <CostCenterHhHmSimulationMultiselect
+          options={costCenters}
+          selectedIds={side.selectedCostCenterIds}
+          onChange={(selectedCostCenterIds) => onPatch("selectedCostCenterIds", selectedCostCenterIds)}
+          hourType={hourType}
+          loading={costCentersLoading}
+          error={costCentersError}
+          onRetry={onRetryCostCenters}
+        />
+      </div>
+
+      <Field
+        label={`Horas base mensais ${hourType} (driver)`}
+        value={side.baseMonthlyHours}
+        onChange={(value) => onPatch("baseMonthlyHours", value)}
+        type="number"
+        step="0.01"
+        placeholder="Ex.: 4000"
+        disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+      />
+
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={side.useManualRate}
+          onChange={(e) => onPatch("useManualRate", e.target.checked)}
+          disabled={side.averagePeriod === "MANUAL_VALUE"}
+        />
+        Usar valor manual de {hourType}
+      </label>
+
+      {(manualMode || side.useManualRate) && (
+        <Field
+          label={`Valor manual R$/${hourType}`}
+          value={side.manualRatePerHour}
+          onChange={(value) => onPatch("manualRatePerHour", value)}
+          type="number"
+          step="0.0001"
+          placeholder="Ex.: 38"
+        />
+      )}
+
+      <div className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+        <dl className="space-y-1.5">
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Período</dt>
+            <dd className="text-right font-medium text-slate-900">
+              {monthlyData?.periodLabel ??
+                COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS.find(
+                  (row) => row.value === side.averagePeriod
+                )?.label}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="shrink-0 text-slate-600">Centros</dt>
+            <dd className="max-w-[55%] text-right text-xs font-medium leading-relaxed text-slate-900">
+              {selectedCentersLabel}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Média mensal</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {sideResult.composition.monthlyAverageAmount != null
+                ? formatCurrency(sideResult.composition.monthlyAverageAmount)
+                : manualMode
+                  ? "— (manual)"
+                  : monthlyLoading
+                    ? "Calculando..."
+                    : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4 border-t border-slate-100 pt-1.5">
+            <dt className="font-semibold text-slate-800">Taxa {hourType}</dt>
+            <dd className="font-bold tabular-nums text-slate-900">
+              {sideResult.composition.effectiveRatePerHour != null
+                ? `${formatCurrency(sideResult.composition.effectiveRatePerHour)}/${hourType}`
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {monthlyLoading ? (
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando série mensal por vencimento...
+        </div>
+      ) : null}
+
+      {monthlyError ? (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{monthlyError}</span>
+        </div>
+      ) : null}
+
+      {sideResult.warnings.map((warning) => (
+        <div
+          key={warning}
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{warning}</span>
+        </div>
+      ))}
+
+      {sideResult.errors.map((error) => (
+        <div
+          key={error}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+        >
+          {error}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function CostCenterHhHmSimulationPanel() {
+  const [form, setForm] = useState<CostCenterHhHmSimulationFormValues>(loadStoredForm);
+  const [costCenters, setCostCenters] = useState<CostCenterHhHmSimulationCostCenterRow[]>([]);
+  const [costCentersLoading, setCostCentersLoading] = useState(true);
+  const [costCentersError, setCostCentersError] = useState<string | null>(null);
+  const [costCentersReloadKey, setCostCentersReloadKey] = useState(0);
+
+  const loadCostCenters = useCallback(async (cancelled: () => boolean) => {
+    setCostCentersLoading(true);
+    try {
+      const payload = await fetchJsonOk(buildCostCenterHhHmSimulationCostCentersApiPath("ACTIVE"));
+      if (cancelled()) return;
+      const parsed = parseCostCenterHhHmSimulationCostCentersResponse(payload);
+      if (parsed.invalidShape) {
+        console.error("CostCenterHhHmSimulation: payload inválido de centros de custo", payload);
+        setCostCenters([]);
+        setCostCentersError(
+          "Não foi possível interpretar a lista de centros de custo. Tente novamente."
+        );
+        return;
+      }
+      setCostCenters(parsed.items);
+      setCostCentersError(null);
+      setForm((prev) => {
+        const pruneSide = (side: CostCenterHhHmSimulationSideFormValues) =>
+          pruneCostCenterHhHmSimulationSelectedIds(
+            side.selectedCostCenterIds,
+            parsed.items.map((row) => row.id)
+          );
+        const hhPruned = pruneSide(prev.hh);
+        const hmPruned = pruneSide(prev.hm);
+        if (
+          hhPruned.length === prev.hh.selectedCostCenterIds.length &&
+          hmPruned.length === prev.hm.selectedCostCenterIds.length
+        ) {
+          return prev;
+        }
+        return { ...prev, hh: { ...prev.hh, selectedCostCenterIds: hhPruned }, hm: { ...prev.hm, selectedCostCenterIds: hmPruned } };
+      });
+    } catch (error) {
+      console.error("CostCenterHhHmSimulation: falha ao carregar centros de custo", error);
+      if (!cancelled()) {
+        setCostCenters([]);
+        setCostCentersError(
+          "Não foi possível carregar os centros de custo. Verifique sua permissão ou tente novamente."
+        );
+      }
+    } finally {
+      if (!cancelled()) setCostCentersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCostCenters(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCostCenters, costCentersReloadKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+  }, [form]);
+
+  const hhMonthly = useMonthlyDataForSide(form.hh);
+  const hmMonthly = useMonthlyDataForSide(form.hm);
 
   const simulation = useMemo(
     () =>
-      computeCostCenterHhHmSimulation({
+      computeCostCenterHhHmDualRateSimulation({
         form,
-        monthlyBuckets: monthlyData?.monthlyBuckets ?? [],
+        monthlyBucketsHh: hhMonthly.monthlyData?.monthlyBuckets ?? [],
+        monthlyBucketsHm: hmMonthly.monthlyData?.monthlyBuckets ?? [],
       }),
-    [form, monthlyData]
+    [form, hhMonthly.monthlyData, hmMonthly.monthlyData]
   );
 
-  const patch = <K extends keyof CostCenterHhHmSimulationFormValues>(
+  const patchSide = (
+    sideKey: SideKey,
+    key: keyof CostCenterHhHmSimulationSideFormValues,
+    value: CostCenterHhHmSimulationSideFormValues[typeof key]
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      [sideKey]: { ...prev[sideKey], [key]: value },
+    }));
+  };
+
+  const patchRoot = <K extends keyof CostCenterHhHmSimulationFormValues>(
     key: K,
     value: CostCenterHhHmSimulationFormValues[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
-
-  const hourLabel = form.hourType === "HH" ? "HH" : "HM";
-  const manualMode = form.useManualRate || form.averagePeriod === "MANUAL_VALUE";
-  const selectedCentersLabel = formatCostCenterHhHmSimulationSelectedLabels(
-    form.selectedCostCenterIds,
-    costCenters
-  );
 
   return (
     <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
@@ -226,247 +469,224 @@ export function CostCenterHhHmSimulationPanel() {
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="text-lg font-bold text-slate-900">Simulação HH/HM por Centro de Custo</h2>
           <p className="text-sm leading-relaxed text-slate-600">
-            Taxa simulada = média mensal dos centros selecionados ÷ horas base mensais.{" "}
-            {COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE}. Não altera custos oficiais.
+            Calcule a taxa final de HH e HM a partir da média mensal dos centros de custo
+            selecionados. Esta simulação não altera custos oficiais.{" "}
+            {COST_CENTER_HH_HM_SIMULATION_METRICS_SCOPE}.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {(["HH", "HM"] as CostCenterHhHmSimulationHourType[]).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => patch("hourType", type)}
-                className={cn(
-                  "rounded-lg border px-4 py-2 text-sm font-semibold transition-colors",
-                  form.hourType === type
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                )}
-              >
-                {type === "HH" ? "Mão de obra (HH)" : "Máquina (HM)"}
-              </button>
-            ))}
-          </div>
+      <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <SideCalculationBlock
+          sideKey="hh"
+          title="Cálculo da taxa HH (Hora Homem)"
+          hourType="HH"
+          side={form.hh}
+          costCenters={costCenters}
+          costCentersLoading={costCentersLoading}
+          costCentersError={costCentersError}
+          onRetryCostCenters={() => setCostCentersReloadKey((value) => value + 1)}
+          onPatch={(key, value) => patchSide("hh", key, value)}
+          monthlyData={hhMonthly.monthlyData}
+          monthlyLoading={hhMonthly.monthlyLoading}
+          monthlyError={hhMonthly.monthlyError}
+          sideResult={simulation.hh}
+        />
+        <SideCalculationBlock
+          sideKey="hm"
+          title="Cálculo da taxa HM (Hora Máquina)"
+          hourType="HM"
+          side={form.hm}
+          costCenters={costCenters}
+          costCentersLoading={costCentersLoading}
+          costCentersError={costCentersError}
+          onRetryCostCenters={() => setCostCentersReloadKey((value) => value + 1)}
+          onPatch={(key, value) => patchSide("hm", key, value)}
+          monthlyData={hmMonthly.monthlyData}
+          monthlyLoading={hmMonthly.monthlyLoading}
+          monthlyError={hmMonthly.monthlyError}
+          sideResult={simulation.hm}
+        />
+      </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Período da média</label>
-            <select
-              value={form.averagePeriod}
-              onChange={(e) =>
-                patch(
-                  "averagePeriod",
-                  e.target.value as CostCenterHhHmSimulationFormValues["averagePeriod"]
-                )
-              }
-              className={INPUT_CLASS}
-            >
-              {COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {form.averagePeriod === "FILTERED_PERIOD" ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field
-                label="Vencimento de"
-                value={form.filteredDueDateFrom}
-                onChange={(value) => patch("filteredDueDateFrom", value)}
-                type="date"
-              />
-              <Field
-                label="Vencimento até"
-                value={form.filteredDueDateTo}
-                onChange={(value) => patch("filteredDueDateTo", value)}
-                type="date"
-              />
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">Centros de custo selecionados</label>
-            <CostCenterHhHmSimulationMultiselect
-              options={costCenters}
-              selectedIds={form.selectedCostCenterIds}
-              onChange={(selectedCostCenterIds) => patch("selectedCostCenterIds", selectedCostCenterIds)}
-              hourType={form.hourType}
-              loading={costCentersLoading}
-              error={costCentersError}
-              onRetry={() => setCostCentersReloadKey((value) => value + 1)}
-            />
-          </div>
-
-          <Field
-            label="Horas base mensais (driver)"
-            value={form.baseMonthlyHours}
-            onChange={(value) => patch("baseMonthlyHours", value)}
-            type="number"
-            step="0.01"
-            placeholder="Ex.: 4000"
-            disabled={manualMode && form.averagePeriod === "MANUAL_VALUE"}
-          />
-
-          <Field
-            label={`Quantidade de ${hourLabel} usada no item`}
-            value={form.quantityUsedInItem}
-            onChange={(value) => patch("quantityUsedInItem", value)}
-            type="number"
-            step="0.00001"
-            placeholder="Ex.: 0.05"
-          />
-
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.useManualRate}
-              onChange={(e) => patch("useManualRate", e.target.checked)}
-              disabled={form.averagePeriod === "MANUAL_VALUE"}
-            />
-            Usar valor manual (R$/{hourLabel})
-          </label>
-
-          {(manualMode || form.useManualRate) && (
-            <Field
-              label={`Valor manual R$/${hourLabel}`}
-              value={form.manualRatePerHour}
-              onChange={(value) => patch("manualRatePerHour", value)}
-              type="number"
-              step="0.0001"
-              placeholder="Ex.: 30"
-            />
-          )}
-
-          <Field
-            label="Observação"
-            value={form.note}
-            onChange={(value) => patch("note", value)}
-            placeholder="Override ou contexto da simulação"
-          />
+      <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5">
+        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-emerald-900">
+          <Calculator className="h-4 w-4" />
+          Resultado final — taxas HH e HM
         </div>
-
-        <div className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <Calculator className="h-4 w-4" />
-              Composição do cálculo
-            </div>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Período</dt>
-                <dd className="font-medium text-slate-900 text-right">
-                  {monthlyData?.periodLabel ??
-                    COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS.find(
-                      (row) => row.value === form.averagePeriod
-                    )?.label}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="shrink-0 text-slate-600">Centros selecionados</dt>
-                <dd className="max-w-[60%] text-right text-xs font-medium leading-relaxed text-slate-900">
-                  {selectedCentersLabel}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Média mensal dos centros</dt>
-                <dd className="font-medium tabular-nums text-slate-900">
-                  {simulation.composition.monthlyAverageAmount != null
-                    ? formatCurrency(simulation.composition.monthlyAverageAmount)
-                    : manualMode
-                      ? "— (manual)"
-                      : monthlyLoading
-                        ? "Calculando..."
-                        : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Horas base</dt>
-                <dd className="font-medium tabular-nums text-slate-900">
-                  {simulation.composition.baseMonthlyHours != null
-                    ? `${formatNumber(simulation.composition.baseMonthlyHours, 2)} h/mês`
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Taxa calculada</dt>
-                <dd className="font-medium tabular-nums text-slate-900">
-                  {simulation.composition.calculatedRatePerHour != null
-                    ? `${formatCurrency(simulation.composition.calculatedRatePerHour)}/${hourLabel}`
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Taxa efetiva</dt>
-                <dd className="font-semibold tabular-nums text-slate-900">
-                  {simulation.composition.effectiveRatePerHour != null
-                    ? `${formatCurrency(simulation.composition.effectiveRatePerHour)}/${hourLabel}`
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-600">Quantidade no item</dt>
-                <dd className="font-medium tabular-nums text-slate-900">
-                  {simulation.composition.quantityUsedInItem != null
-                    ? `${formatNumber(simulation.composition.quantityUsedInItem, 5)} ${hourLabel}`
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4 border-t border-slate-200 pt-2">
-                <dt className="font-semibold text-slate-800">Impacto no custo do item</dt>
-                <dd className="text-lg font-black tabular-nums text-emerald-800">
-                  {simulation.composition.simulatedItemCost != null
-                    ? formatCurrency(simulation.composition.simulatedItemCost, 5)
-                    : "—"}
-                </dd>
-              </div>
-            </dl>
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-emerald-100 bg-white p-4">
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-600">Taxa HH</dt>
+            <dd className="mt-1 text-xl font-black tabular-nums text-slate-900">
+              {simulation.hh.composition.effectiveRatePerHour != null
+                ? `${formatCurrency(simulation.hh.composition.effectiveRatePerHour)}/HH`
+                : "—"}
+            </dd>
           </div>
+          <div className="rounded-lg border border-emerald-100 bg-white p-4">
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-600">Taxa HM</dt>
+            <dd className="mt-1 text-xl font-black tabular-nums text-slate-900">
+              {simulation.hm.composition.effectiveRatePerHour != null
+                ? `${formatCurrency(simulation.hm.composition.effectiveRatePerHour)}/HM`
+                : "—"}
+            </dd>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-100/50 p-4">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-emerald-900">
+              Taxa final HH + HM
+            </dt>
+            <dd className="mt-1 text-2xl font-black tabular-nums text-emerald-950">
+              {simulation.combinedRatePerHour != null
+                ? formatCurrency(simulation.combinedRatePerHour)
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+      </div>
 
-          {monthlyLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando série mensal por vencimento...
-            </div>
-          ) : null}
+      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+        <div className="mb-3 text-sm font-semibold text-slate-800">Composição do cálculo</div>
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm md:grid-cols-2">
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Período HH</dt>
+            <dd className="font-medium text-slate-900 text-right">
+              {hhMonthly.monthlyData?.periodLabel ?? "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Período HM</dt>
+            <dd className="font-medium text-slate-900 text-right">
+              {hmMonthly.monthlyData?.periodLabel ?? "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Centros HH</dt>
+            <dd className="max-w-[55%] text-right text-xs font-medium text-slate-900">
+              {formatCostCenterHhHmSimulationSelectedLabels(form.hh.selectedCostCenterIds, costCenters)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Centros HM</dt>
+            <dd className="max-w-[55%] text-right text-xs font-medium text-slate-900">
+              {formatCostCenterHhHmSimulationSelectedLabels(form.hm.selectedCostCenterIds, costCenters)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Média mensal HH</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hh.composition.monthlyAverageAmount != null
+                ? formatCurrency(simulation.hh.composition.monthlyAverageAmount)
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Média mensal HM</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hm.composition.monthlyAverageAmount != null
+                ? formatCurrency(simulation.hm.composition.monthlyAverageAmount)
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas base HH</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hh.composition.baseMonthlyHours != null
+                ? `${formatNumber(simulation.hh.composition.baseMonthlyHours, 2)} h/mês`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas base HM</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hm.composition.baseMonthlyHours != null
+                ? `${formatNumber(simulation.hm.composition.baseMonthlyHours, 2)} h/mês`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Taxa HH</dt>
+            <dd className="font-semibold tabular-nums text-slate-900">
+              {simulation.hh.composition.effectiveRatePerHour != null
+                ? `${formatCurrency(simulation.hh.composition.effectiveRatePerHour)}/HH`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Taxa HM</dt>
+            <dd className="font-semibold tabular-nums text-slate-900">
+              {simulation.hm.composition.effectiveRatePerHour != null
+                ? `${formatCurrency(simulation.hm.composition.effectiveRatePerHour)}/HM`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4 md:col-span-2 border-t border-slate-200 pt-2">
+            <dt className="font-semibold text-slate-800">Taxa final HH + HM</dt>
+            <dd className="text-lg font-black tabular-nums text-emerald-800">
+              {simulation.combinedRatePerHour != null
+                ? formatCurrency(simulation.combinedRatePerHour)
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+      </div>
 
-          {monthlyError ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{monthlyError}</span>
-            </div>
-          ) : null}
-
-          {simulation.warnings.map((warning) => (
-            <div
-              key={warning}
-              className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{warning}</span>
-            </div>
-          ))}
-
-          {simulation.errors.map((error) => (
-            <div
-              key={error}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-            >
-              {error}
-            </div>
-          ))}
-
+      <details
+        className="mb-4 rounded-lg border border-slate-200 bg-white"
+        open={form.itemApplicationOpen}
+        onToggle={(event) =>
+          patchRoot("itemApplicationOpen", (event.currentTarget as HTMLDetailsElement).open)
+        }
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-800 [&::-webkit-details-marker]:hidden">
+          <span>Aplicar taxa em uma peça/item (opcional)</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+        </summary>
+        <div className="space-y-4 border-t border-slate-100 px-4 py-4">
           <p className="text-xs leading-relaxed text-slate-500">
-            A média mensal considera todos os meses do período (incluindo meses zerados). Meses sem
-            lançamentos reduzem a média e geram aviso. Use valor manual quando não houver dados
-            suficientes.
+            Use apenas para estimar o impacto em uma peça específica. Não altera custos oficiais do
+            produto.
           </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Quantidade de HH na peça"
+              value={form.quantityHhInItem}
+              onChange={(value) => patchRoot("quantityHhInItem", value)}
+              type="number"
+              step="0.00001"
+              placeholder="Ex.: 0.05"
+            />
+            <Field
+              label="Quantidade de HM na peça"
+              value={form.quantityHmInItem}
+              onChange={(value) => patchRoot("quantityHmInItem", value)}
+              type="number"
+              step="0.00001"
+              placeholder="Ex.: 0.02"
+            />
+          </div>
+          <div className="flex justify-between gap-4 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+            <span className="text-slate-600">Estimativa na peça (HH + HM)</span>
+            <span className="font-semibold tabular-nums text-slate-900">
+              {simulation.optionalItemImpact != null
+                ? formatCurrency(simulation.optionalItemImpact, 5)
+                : "—"}
+            </span>
+          </div>
         </div>
-      </div>
+      </details>
+
+      <Field
+        label="Observação"
+        value={form.note}
+        onChange={(value) => patchRoot("note", value)}
+        placeholder="Contexto da simulação"
+      />
+
+      <p className="mt-4 text-xs leading-relaxed text-slate-500">
+        A média mensal considera todos os meses do período (incluindo meses zerados). Meses sem
+        lançamentos reduzem a média e geram aviso. Use valor manual quando não houver dados
+        suficientes para calcular a taxa.
+      </p>
     </section>
   );
 }
