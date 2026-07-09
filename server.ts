@@ -3683,7 +3683,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         }
 
         const quotes = await prisma.materialMarketQuote.findMany({
-          where: { materialId },
+          where: { materialId, status: { not: "CANCELLED" } },
           orderBy: [{ quoteDate: "desc" }, { createdAt: "desc" }],
           include: {
             _count: { select: { Attachments: true } },
@@ -6976,6 +6976,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   }, {
     prisma,
     getCurrentAppUser,
+    hasPermission,
+    evaluateMarketAlerts: async (materialId: string) => {
+      await evaluateAndPersistMaterialMarketAlerts(prisma, materialId);
+    },
   });
 
   registerMaterialMarketQuoteAttachmentRoutes(

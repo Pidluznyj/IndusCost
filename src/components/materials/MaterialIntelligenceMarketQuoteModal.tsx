@@ -1,26 +1,31 @@
 import React from "react";
 import { X } from "lucide-react";
+import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
 import { MaterialIntelligenceMarketQuoteForm } from "@/src/components/materials/MaterialIntelligenceMarketQuoteForm";
 
 type Props = {
   open: boolean;
   materialId: string;
   defaultUnit: string;
+  quote?: MaterialMarketQuoteApiItem | null;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 };
 
 export function MaterialIntelligenceMarketQuoteModal({
   open,
   materialId,
   defaultUnit,
+  quote = null,
   onClose,
-  onCreated,
+  onSaved,
 }: Props) {
   if (!open) return null;
 
-  const handleCreated = () => {
-    onCreated();
+  const isEditMode = quote != null;
+
+  const handleSaved = () => {
+    onSaved();
     onClose();
   };
 
@@ -42,10 +47,12 @@ export function MaterialIntelligenceMarketQuoteModal({
               id="material-intelligence-market-quote-modal-title"
               className="text-base font-semibold"
             >
-              Registrar cotação manual
+              {isEditMode ? "Editar cotação manual" : "Registrar cotação manual"}
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Cada registro cria um novo histórico — nunca sobrescreve cotações anteriores.
+              {isEditMode
+                ? "Alterações recalculam o preço líquido no servidor e não alteram custos oficiais."
+                : "Cada registro cria um novo histórico — nunca sobrescreve cotações anteriores."}
             </p>
           </div>
           <button
@@ -62,7 +69,8 @@ export function MaterialIntelligenceMarketQuoteModal({
           <MaterialIntelligenceMarketQuoteForm
             materialId={materialId}
             defaultUnit={defaultUnit}
-            onCreated={handleCreated}
+            quote={quote}
+            onCreated={handleSaved}
             onCancel={onClose}
           />
         </div>

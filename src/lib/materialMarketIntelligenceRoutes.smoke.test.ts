@@ -212,6 +212,10 @@ describe("MI route smoke — modular registrars (HTTP 401 auth-gate)", () => {
       path: `/api/materials/market-intelligence/${SAMPLE_MATERIAL_ID}/quotes/${SAMPLE_QUOTE_ID}`,
       body: { unitPrice: 1 },
     },
+    {
+      method: "DELETE",
+      path: `/api/materials/market-intelligence/${SAMPLE_MATERIAL_ID}/quotes/${SAMPLE_QUOTE_ID}`,
+    },
     // Attachments
     {
       method: "GET",

@@ -6,10 +6,12 @@ import {
   ChevronRight,
   Link2,
   Loader2,
+  Pencil,
   Plus,
   Receipt,
   Send,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -30,10 +32,15 @@ import type { MaterialMarketCriticality } from "@/src/lib/materialMarketMonitori
 import { canAdjustMaterialMarketQuoteReliability } from "@/src/lib/materialMarketQuoteReliability";
 import {
   getMaterialMarketQuoteApproveApiPath,
+  getMaterialMarketQuoteApiPath,
   getMaterialMarketQuoteRejectApiPath,
   getMaterialMarketQuoteSetOfficialApiPath,
   getMaterialMarketQuoteSubmitApprovalApiPath,
 } from "@/src/lib/materialsNavigation";
+import {
+  guardMaterialMarketQuoteDelete,
+  guardMaterialMarketQuoteEdit,
+} from "@/src/lib/materialMarketQuoteUpdate";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { MaterialIntelligence360Section } from "@/src/components/materials/MaterialIntelligence360Section";
 import { MaterialIntelligencePurchaseLinkForm } from "@/src/components/materials/MaterialIntelligencePurchaseLinkForm";
@@ -50,6 +57,7 @@ type Props = {
   onQuoteCreated: () => void;
   onQuotesChanged?: () => void;
   onRegisterQuote?: () => void;
+  onEditQuote?: (quote: MaterialMarketQuoteApiItem) => void;
 };
 
 function officialStatusBadgeClass(status: MaterialMarketQuoteOfficialStatus): string {
@@ -346,6 +354,7 @@ export function MaterialIntelligenceRecentQuotesSection({
   onQuoteCreated,
   onQuotesChanged,
   onRegisterQuote,
+  onEditQuote,
 }: Props) {
   const auth = useAuth();
   const canEdit = auth.hasPermission("materials.edit");
@@ -364,6 +373,8 @@ export function MaterialIntelligenceRecentQuotesSection({
   const [rejectReason, setRejectReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [purchaseLinkQuoteId, setPurchaseLinkQuoteId] = useState<string | null>(null);
+  const [deleteQuoteId, setDeleteQuoteId] = useState<string | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const refresh = async () => {
     await onQuoteCreated();
@@ -386,6 +397,23 @@ export function MaterialIntelligenceRecentQuotesSection({
       setActionError(e instanceof Error ? e.message : "Não foi possível concluir a ação.");
     } finally {
       setActingQuoteId(null);
+    }
+  };
+
+  const runDelete = async (quoteId: string) => {
+    setDeleteSubmitting(true);
+    setActionError(null);
+    try {
+      await fetchOk(getMaterialMarketQuoteApiPath(materialId, quoteId), {
+        method: "DELETE",
+      });
+      setDeleteQuoteId(null);
+      if (expandedQuoteId === quoteId) setExpandedQuoteId(null);
+      await refresh();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Não foi possível excluir a cotação.");
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -445,14 +473,15 @@ export function MaterialIntelligenceRecentQuotesSection({
             data-testid="material-intelligence-market-quotes-table"
           >
             <colgroup>
-              <col className="w-[9%]" />
-              <col className="w-[22%]" />
-              <col className="w-[11%]" />
-              <col className="w-[11%]" />
-              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[20%]" />
               <col className="w-[10%]" />
-              <col className="w-[7%]" />
-              <col className="w-[18%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[6%]" />
+              <col className="w-[16%]" />
+              <col className="w-[10%]" />
             </colgroup>
             <thead>
               <tr className="border-b border-border bg-accent/40 text-xs uppercase tracking-wide text-muted-foreground">
@@ -464,12 +493,24 @@ export function MaterialIntelligenceRecentQuotesSection({
                 <th className="px-3 py-2.5 font-semibold">Câmbio</th>
                 <th className="px-3 py-2.5 font-semibold">Unid.</th>
                 <th className="px-3 py-2.5 font-semibold">Status</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {quotes.map((quote) => {
                 const isActing = actingQuoteId === quote.id;
                 const isExpanded = expandedQuoteId === quote.id;
+                const canEditQuote = guardMaterialMarketQuoteEdit({
+                  status: quote.status,
+                  isOfficialReference: quote.isOfficialReference,
+                  officialStatus: quote.officialStatus,
+                }).ok;
+                const canDeleteQuote = guardMaterialMarketQuoteDelete({
+                  status: quote.status,
+                  isOfficialReference: quote.isOfficialReference,
+                  officialStatus: quote.officialStatus,
+                  purchaseLinkCount: 0,
+                }).ok;
 
                 return (
                   <React.Fragment key={quote.id}>
@@ -550,10 +591,43 @@ export function MaterialIntelligenceRecentQuotesSection({
                           </span>
                         </div>
                       </td>
+                      <td className="px-3 py-2.5 align-top text-right">
+                        {canEdit ? (
+                          <div className="inline-flex items-center justify-end gap-1">
+                            {onEditQuote && canEditQuote ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                                title="Editar cotação"
+                                aria-label="Editar cotação"
+                                data-testid={`material-market-quote-edit-${quote.id}`}
+                                onClick={() => onEditQuote(quote)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
+                            {canDeleteQuote ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                title="Excluir cotação"
+                                aria-label="Excluir cotação"
+                                data-testid={`material-market-quote-delete-open-${quote.id}`}
+                                onClick={() => {
+                                  setDeleteQuoteId(quote.id);
+                                  setActionError(null);
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </td>
                     </tr>
                     {isExpanded ? (
                       <tr data-testid={`material-market-quote-detail-${quote.id}`}>
-                        <td colSpan={8} className="bg-muted/10 px-4 py-4">
+                        <td colSpan={9} className="bg-muted/10 px-4 py-4">
                           <div className="grid gap-4 lg:grid-cols-3">
                             <div className="space-y-3 rounded-lg border border-border/60 bg-card p-3">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -746,6 +820,51 @@ export function MaterialIntelligenceRecentQuotesSection({
           onClose={() => setReliabilityQuote(null)}
           onSaved={() => void refresh()}
         />
+      ) : null}
+
+      {deleteQuoteId ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+          data-testid="material-market-quote-delete-confirm-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="material-market-quote-delete-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-lg">
+            <h3 id="material-market-quote-delete-title" className="text-base font-semibold">
+              Excluir cotação?
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Tem certeza que deseja excluir esta cotação? Esta ação remove a cotação da
+              inteligência desta matéria-prima.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50"
+                disabled={deleteSubmitting}
+                data-testid="material-market-quote-delete-cancel"
+                onClick={() => setDeleteQuoteId(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+                disabled={deleteSubmitting}
+                data-testid="material-market-quote-delete-confirm"
+                onClick={() => void runDelete(deleteQuoteId)}
+              >
+                {deleteSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                )}
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </MaterialIntelligence360Section>
   );

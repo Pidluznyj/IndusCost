@@ -45,6 +45,29 @@ describe("materialIntelligenceRecentQuotes UI", () => {
     assert.match(quotes, /Registrar cotação/);
   });
 
+  it("ações editar e excluir com confirmação", () => {
+    const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
+    const modal = read("src/components/materials/MaterialIntelligenceMarketQuoteModal.tsx");
+    const form = read("src/components/materials/MaterialIntelligenceMarketQuoteForm.tsx");
+    assert.match(quotes, /material-market-quote-edit-/);
+    assert.match(quotes, /material-market-quote-delete-open-/);
+    assert.match(quotes, /material-market-quote-delete-confirm-modal/);
+    assert.match(quotes, /Tem certeza que deseja excluir esta cotação/);
+    assert.match(modal, /Editar cotação manual/);
+    assert.match(form, /getMaterialMarketQuoteApiPath/);
+    assert.match(form, /method: "PATCH"/);
+    assert.match(form, /Salvar alterações/);
+  });
+
+  it("rotas PATCH e DELETE no backend", () => {
+    const routes = read("src/lib/materialMarketAuditRoutes.ts");
+    assert.match(routes, /app\.patch\(/);
+    assert.match(routes, /app\.delete\(/);
+    assert.match(routes, /status: "CANCELLED"/);
+    assert.match(routes, /guardMaterialMarketQuoteEdit/);
+    assert.match(routes, /guardMaterialMarketQuoteDelete/);
+  });
+
   it("contador de cotações e dados financeiros sem hardcode", () => {
     const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
     assert.match(quotes, /material-intelligence-recent-quotes-count/);

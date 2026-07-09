@@ -6,10 +6,12 @@ import {
   calculateMaterialMarketQuoteNetPrice,
   canManualMaterialMarketQuoteExchange,
   DEFAULT_MATERIAL_MARKET_QUOTE_CURRENCY,
+  type MaterialMarketQuoteApiItem,
 } from "@/src/lib/materialMarketQuote";
 import type { MaterialMarketQuotePtaxPreview } from "@/src/lib/materialMarketQuoteExchange";
 import {
   getMaterialMarketIntelligenceQuotesApiPath,
+  getMaterialMarketQuoteApiPath,
   getMaterialMarketPtaxPreviewApiPath,
 } from "@/src/lib/materialsNavigation";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
@@ -37,9 +39,36 @@ export type MaterialMarketQuoteFormValues = {
 type Props = {
   materialId: string;
   defaultUnit: string;
+  quote?: MaterialMarketQuoteApiItem | null;
   onCreated: () => void;
+  onUpdated?: () => void;
   onCancel?: () => void;
 };
+
+function quoteToFormValues(
+  quote: MaterialMarketQuoteApiItem,
+  defaultUnit: string
+): MaterialMarketQuoteFormValues {
+  return {
+    supplierId: quote.supplierId,
+    supplierName: quote.supplierName ?? "",
+    quoteDate: quote.quoteDate,
+    price: String(quote.price),
+    currency: quote.currency,
+    unit: quote.unit || defaultUnit,
+    origin: quote.origin ?? "",
+    manufacturer: quote.manufacturer ?? "",
+    freightValue: quote.freightValue != null ? String(quote.freightValue) : "",
+    taxValue: quote.taxValue != null ? String(quote.taxValue) : "",
+    paymentTerms: quote.paymentTerms ?? "",
+    proposalValidityDate: quote.proposalValidityDate ?? "",
+    notes: quote.notes ?? "",
+    manualExchangeRate:
+      quote.ptaxVenda != null && quote.isManualExchange ? String(quote.ptaxVenda) : "",
+    manualExchangeJustification: quote.manualExchangeJustification ?? "",
+    forceManualExchange: quote.isManualExchange,
+  };
+}
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -73,13 +102,18 @@ function isUsdCurrency(currency: string): boolean {
 export function MaterialIntelligenceMarketQuoteForm({
   materialId,
   defaultUnit,
+  quote = null,
   onCreated,
+  onUpdated,
   onCancel,
 }: Props) {
   const auth = useAuth();
   const canManualExchange = canManualMaterialMarketQuoteExchange(auth);
+  const isEditMode = quote != null;
 
-  const [form, setForm] = useState<MaterialMarketQuoteFormValues>(() => emptyForm(defaultUnit));
+  const [form, setForm] = useState<MaterialMarketQuoteFormValues>(() =>
+    quote ? quoteToFormValues(quote, defaultUnit) : emptyForm(defaultUnit)
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ptaxPreview, setPtaxPreview] = useState<MaterialMarketQuotePtaxPreview | null>(null);
@@ -121,6 +155,12 @@ export function MaterialIntelligenceMarketQuoteForm({
     ptaxPreview?.ptaxVenda,
     showManualFields,
   ]);
+
+  useEffect(() => {
+    setForm(quote ? quoteToFormValues(quote, defaultUnit) : emptyForm(defaultUnit));
+    setError(null);
+    setPtaxPreview(null);
+  }, [quote, defaultUnit]);
 
   useEffect(() => {
     if (!isUsd || !form.quoteDate.trim()) {
@@ -195,16 +235,32 @@ export function MaterialIntelligenceMarketQuoteForm({
         payload.forceManualExchange = form.forceManualExchange;
       }
 
-      await fetchOk(getMaterialMarketIntelligenceQuotesApiPath(materialId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      setForm(emptyForm(defaultUnit));
-      setPtaxPreview(null);
-      onCreated();
+      if (isEditMode && quote) {
+        await fetchOk(getMaterialMarketQuoteApiPath(materialId, quote.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        onUpdated?.();
+        onCreated();
+      } else {
+        await fetchOk(getMaterialMarketIntelligenceQuotesApiPath(materialId), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        setForm(emptyForm(defaultUnit));
+        setPtaxPreview(null);
+        onCreated();
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Não foi possível registrar a cotação.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : isEditMode
+            ? "Não foi possível salvar a cotação."
+            : "Não foi possível registrar a cotação."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -452,7 +508,7 @@ export function MaterialIntelligenceMarketQuoteForm({
           data-testid="material-market-quote-submit"
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Registrar cotação
+          {isEditMode ? "Salvar alterações" : "Registrar cotação"}
         </button>
         {onCancel ? (
           <button

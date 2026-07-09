@@ -62,8 +62,15 @@ export function MaterialsMarketIntelligenceDetailPage() {
     DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS
   );
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<MaterialMarketQuoteApiItem | null>(null);
 
   const openQuoteModal = useCallback(() => {
+    setEditingQuote(null);
+    setQuoteModalOpen(true);
+  }, []);
+
+  const openEditQuoteModal = useCallback((quote: MaterialMarketQuoteApiItem) => {
+    setEditingQuote(quote);
     setQuoteModalOpen(true);
   }, []);
 
@@ -230,6 +237,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
                 loading={quotesLoading}
                 onQuoteCreated={() => void handleQuoteCreated()}
                 onRegisterQuote={canEditQuotes ? openQuoteModal : undefined}
+                onEditQuote={canEditQuotes ? openEditQuoteModal : undefined}
               />
             </div>
 
@@ -286,8 +294,12 @@ export function MaterialsMarketIntelligenceDetailPage() {
               open={quoteModalOpen}
               materialId={item.id}
               defaultUnit={item.unit}
-              onClose={() => setQuoteModalOpen(false)}
-              onCreated={() => void handleQuoteCreated()}
+              quote={editingQuote}
+              onClose={() => {
+                setQuoteModalOpen(false);
+                setEditingQuote(null);
+              }}
+              onSaved={() => void handleQuoteCreated()}
             />
           ) : null}
         </div>

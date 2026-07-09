@@ -13,10 +13,17 @@ import {
   listMaterialMarketAuditEventsForMaterial,
   recordMaterialMarketAuditEvent,
 } from "@/src/lib/materialMarketAudit.server.js";
-import { serializeMaterialMarketQuoteForApi } from "@/src/lib/materialMarketQuote.js";
+import {
+  canManualMaterialMarketQuoteExchange,
+  serializeMaterialMarketQuoteForApi,
+} from "@/src/lib/materialMarketQuote.js";
+import { resolveMaterialMarketQuoteExchange } from "@/src/lib/materialMarketQuoteExchange.js";
 import {
   buildMaterialMarketQuotePatchData,
-  parseMaterialMarketQuotePatch,
+  guardMaterialMarketQuoteDelete,
+  guardMaterialMarketQuoteEdit,
+  mergeMaterialMarketQuoteEditBody,
+  shouldRecalculateMaterialMarketQuoteExchange,
 } from "@/src/lib/materialMarketQuoteUpdate.js";
 
 type AuthGuards = {
@@ -27,6 +34,8 @@ type AuthGuards = {
 type RouteDeps = {
   prisma: PrismaClient;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+  hasPermission?: (user: AppAuthContext, permission: string) => boolean;
+  evaluateMarketAlerts?: (materialId: string) => Promise<void>;
 };
 
 function isUuid(value: string): boolean {
@@ -41,7 +50,7 @@ export function registerMaterialMarketAuditRoutes(
   deps: RouteDeps
 ): void {
   const { requireAppAuth, requirePermission } = guards;
-  const { prisma, getCurrentAppUser } = deps;
+  const { prisma, getCurrentAppUser, hasPermission, evaluateMarketAlerts } = deps;
 
   app.get(
     "/api/materials/market-intelligence/:materialId/audit",
@@ -102,6 +111,14 @@ export function registerMaterialMarketAuditRoutes(
           return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
         }
 
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true, unit: true, isMarketMonitored: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
         const existing = await prisma.materialMarketQuote.findFirst({
           where: { id: quoteId, materialId },
         });
@@ -109,7 +126,16 @@ export function registerMaterialMarketAuditRoutes(
           return res.status(404).json({ error: "Cotação não encontrada." });
         }
 
-        const parsed = parseMaterialMarketQuotePatch(req.body ?? {});
+        const editGuard = guardMaterialMarketQuoteEdit(existing);
+        if (editGuard.ok === false) {
+          return res.status(editGuard.httpStatus).json({
+            error: editGuard.code,
+            message: editGuard.message,
+          });
+        }
+
+        const body = req.body ?? {};
+        const parsed = mergeMaterialMarketQuoteEditBody(existing, body, { unit: material.unit });
         if (parsed.ok === false) {
           return res.status(400).json({
             error: "MATERIAL_MARKET_QUOTE_PATCH_INVALID",
@@ -118,9 +144,60 @@ export function registerMaterialMarketAuditRoutes(
           });
         }
 
+        if (parsed.value.supplierId) {
+          const supplier = await prisma.financialSupplier.findUnique({
+            where: { id: parsed.value.supplierId },
+          });
+          if (!supplier) {
+            return res.status(400).json({
+              error: "MATERIAL_MARKET_QUOTE_INVALID_SUPPLIER",
+              message: "Fornecedor informado não encontrado.",
+            });
+          }
+        }
+
+        const reason =
+          typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
+        let exchangeFields: Record<string, unknown> = {};
+        if (
+          shouldRecalculateMaterialMarketQuoteExchange({
+            body,
+            existing,
+          })
+        ) {
+          const canManualExchange = canManualMaterialMarketQuoteExchange({
+            hasPermission: (p) =>
+              hasPermission ? hasPermission(authUser, p) : false,
+          });
+          const exchangeResolved = await resolveMaterialMarketQuoteExchange(
+            {
+              currency: parsed.value.currency,
+              quoteDate: parsed.value.quoteDate,
+              price: parsed.value.price,
+              netPrice: parsed.value.netPrice,
+              manualExchangeRate: body.manualExchangeRate,
+              manualExchangeJustification: body.manualExchangeJustification,
+              forceManualExchange: body.forceManualExchange,
+            },
+            { canManualExchange, userId: authUser.id }
+          );
+          if (exchangeResolved.ok === false) {
+            return res.status(400).json({
+              error: exchangeResolved.code,
+              field: exchangeResolved.field,
+              message: exchangeResolved.message,
+              ptaxFetchFailureReason: exchangeResolved.ptaxFetchFailureReason,
+              canManualExchange,
+            });
+          }
+          exchangeFields = exchangeResolved.value;
+        }
+
         const beforeSnapshot = serializeQuoteAuditSnapshot(existing);
         const updateData = {
           ...buildMaterialMarketQuotePatchData(existing, parsed.value),
+          ...exchangeFields,
           updatedBy: authUser.id,
         };
         const afterPreview = { ...existing, ...updateData };
@@ -138,7 +215,7 @@ export function registerMaterialMarketAuditRoutes(
             eventType,
             userId: authUser.id,
             userName: authUser.name,
-            reason: parsed.value.reason ?? null,
+            reason,
             beforeJson: beforeSnapshot,
             afterJson: afterSnapshot,
             isOfficialQuote: Boolean(existing.isOfficialReference),
@@ -156,6 +233,7 @@ export function registerMaterialMarketAuditRoutes(
           const quote = await tx.materialMarketQuote.update({
             where: { id: quoteId },
             data: updateData,
+            include: { _count: { select: { Attachments: true } } },
           });
 
           for (const eventType of changeEvents) {
@@ -166,7 +244,7 @@ export function registerMaterialMarketAuditRoutes(
               eventType,
               userId: authUser.id,
               userName: authUser.name,
-              reason: parsed.value.reason ?? null,
+              reason,
               beforeJson: beforeSnapshot,
               afterJson: serializeQuoteAuditSnapshot(quote),
               isOfficialQuote: Boolean(existing.isOfficialReference),
@@ -176,11 +254,115 @@ export function registerMaterialMarketAuditRoutes(
           return quote;
         });
 
+        if (material.isMarketMonitored && evaluateMarketAlerts) {
+          try {
+            await evaluateMarketAlerts(materialId);
+          } catch (alertError) {
+            console.error("PATCH quote — falha ao avaliar alertas de mercado", alertError);
+          }
+        }
+
         return res.json(serializeMaterialMarketQuoteForApi(updated));
       } catch (error) {
         console.error("PATCH material market quote", error);
         return res.status(500).json({
-          error: error instanceof Error ? error.message : "Erro ao atualizar cotação.",
+          error: "Erro ao atualizar cotação.",
+          message: error instanceof Error ? error.message : "Erro ao atualizar cotação.",
+        });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/materials/market-intelligence/:materialId/quotes/:quoteId",
+    requireAppAuth,
+    requirePermission("materials.edit"),
+    async (req, res) => {
+      try {
+        const { materialId, quoteId } = req.params;
+        if (!isUuid(materialId) || !isUuid(quoteId)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
+          return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+        }
+
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true, isMarketMonitored: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Material não encontrado." });
+        }
+
+        const existing = await prisma.materialMarketQuote.findFirst({
+          where: { id: quoteId, materialId },
+          include: { _count: { select: { purchaseLinks: true } } },
+        });
+        if (!existing) {
+          return res.status(404).json({ error: "Cotação não encontrada." });
+        }
+
+        const deleteGuard = guardMaterialMarketQuoteDelete({
+          status: existing.status,
+          isOfficialReference: existing.isOfficialReference,
+          officialStatus: existing.officialStatus,
+          purchaseLinkCount: existing._count.purchaseLinks,
+        });
+        if (deleteGuard.ok === false) {
+          return res.status(deleteGuard.httpStatus).json({
+            error: deleteGuard.code,
+            message: deleteGuard.message,
+          });
+        }
+
+        const beforeSnapshot = serializeQuoteAuditSnapshot(existing);
+        const updated = await prisma.$transaction(async (tx) => {
+          const quote = await tx.materialMarketQuote.update({
+            where: { id: quoteId },
+            data: {
+              status: "CANCELLED",
+              updatedBy: authUser.id,
+            },
+            include: { _count: { select: { Attachments: true } } },
+          });
+
+          await recordMaterialMarketAuditEvent(tx, {
+            materialId,
+            entityType: "QUOTE",
+            entityId: quoteId,
+            eventType: "STATUS_CHANGED",
+            userId: authUser.id,
+            userName: authUser.name,
+            reason: "Cotação removida da inteligência de mercado.",
+            beforeJson: beforeSnapshot,
+            afterJson: serializeQuoteAuditSnapshot(quote),
+            isOfficialQuote: Boolean(existing.isOfficialReference),
+          });
+
+          return quote;
+        });
+
+        if (material.isMarketMonitored && evaluateMarketAlerts) {
+          try {
+            await evaluateMarketAlerts(materialId);
+          } catch (alertError) {
+            console.error("DELETE quote — falha ao avaliar alertas de mercado", alertError);
+          }
+        }
+
+        return res.json({
+          ok: true,
+          id: updated.id,
+          status: updated.status,
+        });
+      } catch (error) {
+        console.error("DELETE material market quote", error);
+        return res.status(500).json({
+          error: "Erro ao excluir cotação.",
+          message: error instanceof Error ? error.message : "Erro ao excluir cotação.",
         });
       }
     }

@@ -5,33 +5,124 @@
 import {
   calculateMaterialMarketQuoteNetPrice,
   isMaterialMarketQuoteStatus,
-  type MaterialMarketQuoteStatus,
+  parseMaterialMarketQuoteInput,
+  type MaterialMarketQuoteInput,
+  type MaterialMarketQuotePersistFields,
 } from "./materialMarketQuote.js";
+import { parseMaterialMarketQuoteOfficialStatus } from "./materialMarketQuoteGovernance.js";
 
-export type MaterialMarketQuotePatchInput = {
-  price?: unknown;
-  freightValue?: unknown;
-  taxValue?: unknown;
-  supplierId?: unknown;
-  supplierName?: unknown;
-  currency?: unknown;
-  status?: unknown;
-  notes?: unknown;
+export type MaterialMarketQuotePatchInput = MaterialMarketQuoteInput & {
   reason?: unknown;
 };
 
-export type MaterialMarketQuotePatchFields = {
-  price?: number;
-  freightValue?: number | null;
-  taxValue?: number | null;
-  supplierId?: string | null;
-  supplierName?: string | null;
-  currency?: string;
-  netPrice?: number;
-  status?: MaterialMarketQuoteStatus;
-  notes?: string | null;
+export type MaterialMarketQuotePatchFields = Partial<MaterialMarketQuotePersistFields> & {
   reason?: string | null;
 };
+
+export type MaterialMarketQuoteMutationGuardResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string; httpStatus: 409 };
+
+function toIsoDateInput(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+export function guardMaterialMarketQuoteEdit(input: {
+  status: string;
+  isOfficialReference: boolean;
+  officialStatus: string | null | undefined;
+}): MaterialMarketQuoteMutationGuardResult {
+  if (input.status === "CANCELLED") {
+    return {
+      ok: false,
+      code: "QUOTE_CANCELLED",
+      message: "Esta cotação já foi removida.",
+      httpStatus: 409,
+    };
+  }
+  const officialStatus = parseMaterialMarketQuoteOfficialStatus(input.officialStatus);
+  if (input.isOfficialReference || officialStatus === "OFFICIAL") {
+    return {
+      ok: false,
+      code: "QUOTE_OFFICIAL_LOCKED",
+      message:
+        "Cotações oficiais não podem ser editadas por esta ação. Use o fluxo de governança.",
+      httpStatus: 409,
+    };
+  }
+  return { ok: true };
+}
+
+export function guardMaterialMarketQuoteDelete(input: {
+  status: string;
+  isOfficialReference: boolean;
+  officialStatus: string | null | undefined;
+  purchaseLinkCount: number;
+}): MaterialMarketQuoteMutationGuardResult {
+  const editGuard = guardMaterialMarketQuoteEdit(input);
+  if (editGuard.ok === false) return editGuard;
+  if (input.purchaseLinkCount > 0) {
+    return {
+      ok: false,
+      code: "QUOTE_HAS_PURCHASE_LINK",
+      message: "Cotação vinculada a uma compra real não pode ser excluída.",
+      httpStatus: 409,
+    };
+  }
+  return { ok: true };
+}
+
+export function mergeMaterialMarketQuoteEditBody(
+  existing: {
+    supplierId: string | null;
+    supplierName: string | null;
+    quoteDate: Date | string;
+    price: number | string | { toString(): string };
+    currency: string;
+    unit: string;
+    origin: string | null;
+    manufacturer: string | null;
+    freightValue: number | string | null | { toString(): string };
+    taxValue: number | string | null | { toString(): string };
+    paymentTerms: string | null;
+    proposalValidityDate: Date | string | null;
+    notes: string | null;
+    status: string;
+  },
+  body: MaterialMarketQuoteInput,
+  defaults?: { unit?: string }
+):
+  | { ok: true; value: MaterialMarketQuotePersistFields }
+  | { ok: false; message: string; field?: string } {
+  const mergedInput: MaterialMarketQuoteInput = {
+    supplierId: body.supplierId !== undefined ? body.supplierId : existing.supplierId,
+    supplierName:
+      body.supplierName !== undefined ? body.supplierName : existing.supplierName ?? "",
+    quoteDate:
+      body.quoteDate !== undefined ? body.quoteDate : toIsoDateInput(existing.quoteDate),
+    price: body.price !== undefined ? body.price : Number(existing.price),
+    currency: body.currency !== undefined ? body.currency : existing.currency,
+    unit: body.unit !== undefined ? body.unit : existing.unit,
+    origin: body.origin !== undefined ? body.origin : existing.origin,
+    manufacturer: body.manufacturer !== undefined ? body.manufacturer : existing.manufacturer,
+    freightValue:
+      body.freightValue !== undefined ? body.freightValue : existing.freightValue,
+    taxValue: body.taxValue !== undefined ? body.taxValue : existing.taxValue,
+    paymentTerms:
+      body.paymentTerms !== undefined ? body.paymentTerms : existing.paymentTerms,
+    proposalValidityDate:
+      body.proposalValidityDate !== undefined
+        ? body.proposalValidityDate
+        : existing.proposalValidityDate
+          ? toIsoDateInput(existing.proposalValidityDate)
+          : null,
+    notes: body.notes !== undefined ? body.notes : existing.notes,
+    status: body.status !== undefined ? body.status : existing.status,
+  };
+  return parseMaterialMarketQuoteInput(mergedInput, defaults);
+}
 
 function parseOptionalDecimal(value: unknown):
   | { ok: true; value: number | null | undefined }
@@ -154,13 +245,27 @@ export function buildMaterialMarketQuotePatchData<T extends {
   const data: Record<string, unknown> = { ...patch };
   delete data.reason;
 
-  if (patch.price != null || patch.freightValue !== undefined || patch.taxValue !== undefined) {
-    data.netPrice = calculateMaterialMarketQuoteNetPrice({
-      price,
-      freightValue,
-      taxValue,
-    });
-  }
+  data.netPrice = calculateMaterialMarketQuoteNetPrice({
+    price,
+    freightValue,
+    taxValue,
+  });
 
   return data;
+}
+
+export function shouldRecalculateMaterialMarketQuoteExchange(input: {
+  body: MaterialMarketQuoteInput;
+  existing: { currency: string; quoteDate: Date | string; price: number | string };
+}): boolean {
+  if (input.body.currency !== undefined) return true;
+  if (input.body.quoteDate !== undefined) return true;
+  if (input.body.price !== undefined) return true;
+  if (input.body.freightValue !== undefined) return true;
+  if (input.body.taxValue !== undefined) return true;
+  if (input.body.manualExchangeRate !== undefined) return true;
+  if (input.body.manualExchangeJustification !== undefined) return true;
+  if (input.body.forceManualExchange !== undefined) return true;
+  const currency = (input.body.currency ?? input.existing.currency).trim().toUpperCase();
+  return currency === "USD";
 }

@@ -111,6 +111,10 @@ export function getMaterialMarketIntelligenceQuotesApiPath(materialId: string): 
   return `/api/materials/market-intelligence/${materialId}/quotes`;
 }
 
+export function getMaterialMarketQuoteApiPath(materialId: string, quoteId: string): string {
+  return `/api/materials/market-intelligence/${materialId}/quotes/${quoteId}`;
+}
+
 export function getMaterialMarketIntelligenceAuditApiPath(
   materialId: string,
   query?: { limit?: number | string; offset?: number | string }
