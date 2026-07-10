@@ -57,6 +57,10 @@ export type PortfolioBusinessAnswers = {
     next30DaysValue: number;
     over30DaysValue: number;
     withoutReliableDateValue: number;
+    /** Como a UI deve destacar o card (vencidos vs próxima data). */
+    highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+    highlightValue: number;
+    highlightSubtitle: string;
     buckets: PortfolioReceiptBucket[];
     explanation: string;
     question: string;
@@ -79,18 +83,29 @@ export type PortfolioBusinessAnswers = {
     filterHint: PortfolioBusinessAnswerFilterHint;
   };
   soPedidoCarteira: {
+    /** Valor confiável (sem LOW/BLOCKED/alerta bloqueante). */
     value: number;
     ordersCount: number;
+    /** Pedidos sem NF/CR que existem, mas precisam revisão. */
+    reviewValue: number;
+    reviewOrdersCount: number;
+    /** value + reviewValue (deduplicado por pedido). */
+    totalOrderOnlyValue: number;
+    totalOrderOnlyOrdersCount: number;
     label: string;
     explanation: string;
+    displayPrimaryValue: number;
+    displaySubtitle: string;
     question: string;
     filterHint: PortfolioBusinessAnswerFilterHint;
   };
   precisaRevisar: {
     ordersCount: number;
     alertsCount: number;
+    /** Alias explícito do impacto financeiro deduplicado por pedido. */
+    valueAtRisk: number;
     valorPedidosComAlerta: number;
-    mainReasons: Array<{ reason: string; count: number }>;
+    mainReasons: Array<{ reason: string; count: number; label?: string }>;
     explanation: string;
     question: string;
     filterHint: PortfolioBusinessAnswerFilterHint;
@@ -134,11 +149,6 @@ function addDaysIso(iso: string, days: number): string {
   const dt = new Date(y!, m! - 1, d!);
   dt.setDate(dt.getDate() + days);
   return startOfDayIso(dt);
-}
-
-function parseAlerts(alertsJson: unknown): string[] {
-  if (!Array.isArray(alertsJson)) return [];
-  return alertsJson.filter((a): a is string => typeof a === "string" && a.trim().length > 0);
 }
 
 function isLowConfidence(level: string): boolean {
@@ -328,7 +338,73 @@ function classifyOrderSource(
 function isConfidentForSlice(row: PortfolioReconciliationOrderRow): boolean {
   if (isLowConfidence(row.confidenceLevel)) return false;
   if (isUnreliableStatus(row.status)) return false;
+  if (row.alertas.length > 0) return false;
   return true;
+}
+
+function isOrderOnlyCarteira(
+  row: PortfolioReconciliationOrderRow,
+  source: PortfolioForecastSource,
+  facts: readonly PortfolioReconciliationFactApiRow[]
+): boolean {
+  if (source === "ORDER") return true;
+  if (row.status === "ORDER_ONLY") return true;
+  if (facts.length > 0 && facts.every((f) => f.status === "ORDER_ONLY")) return true;
+  return false;
+}
+
+/** Valor oficial do pedido (nunca cabeçalho NF). */
+function orderOfficialValue(row: PortfolioReconciliationOrderRow): number {
+  if (row.valorPedido > 0) return row.valorPedido;
+  if (row.saldo > 0) return row.saldo;
+  return Math.max(row.valorAlocado, 0);
+}
+
+function buildQuandoHighlight(timing: {
+  overdueValue: number;
+  nextDate: string | null;
+  nextDateValue: number;
+  next30DaysValue: number;
+}): {
+  highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+  highlightValue: number;
+  highlightSubtitle: string;
+  nextDateLabel: string | null;
+} {
+  const nextDateLabel = timing.nextDate ? formatBrDate(timing.nextDate) : null;
+  if (timing.overdueValue > 0) {
+    const nextLine = nextDateLabel
+      ? `Próximo vencimento: ${nextDateLabel}`
+      : "Sem próximo vencimento confiável";
+    return {
+      highlightKind: "OVERDUE",
+      highlightValue: timing.overdueValue,
+      highlightSubtitle: `${nextLine} · ${timing.next30DaysValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        maximumFractionDigits: 0,
+      })} nos próximos 30 dias`,
+      nextDateLabel,
+    };
+  }
+  if (nextDateLabel) {
+    return {
+      highlightKind: "NEXT_DATE",
+      highlightValue: timing.nextDateValue,
+      highlightSubtitle: `${timing.next30DaysValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        maximumFractionDigits: 0,
+      })} nos próximos 30 dias`,
+      nextDateLabel,
+    };
+  }
+  return {
+    highlightKind: "EMPTY",
+    highlightValue: 0,
+    highlightSubtitle: "Sem data confiável de recebimento no filtro atual",
+    nextDateLabel: null,
+  };
 }
 
 /**
@@ -342,13 +418,6 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
   asOfDate?: Date | string;
 }): PortfolioBusinessAnswers {
   const factsByOrder = groupFactsByOrder(args.facts);
-  const rowByKey = new Map<string, PortfolioReconciliationOrderRow>();
-  for (const row of args.orderRows) {
-    const key =
-      row.salesOrderId ??
-      (row.pedido ? `code:${row.pedido}` : `row:${row.pedido ?? "x"}`);
-    rowByKey.set(key, row);
-  }
 
   let jaVirouValue = 0;
   let jaVirouOrders = 0;
@@ -356,6 +425,8 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
   let faturadoOrders = 0;
   let pedidoValue = 0;
   let pedidoOrders = 0;
+  let pedidoReviewValue = 0;
+  let pedidoReviewOrders = 0;
   let valorPedidosComAlerta = 0;
   const reasonCounts = new Map<string, number>();
 
@@ -366,10 +437,13 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
       (key && factsByOrder.get(key)) ||
       (row.salesOrderId ? factsByOrder.get(row.salesOrderId) : undefined) ||
       [];
-    const source = facts.length > 0 ? classifyOrderSource(facts) : (row.forecastSource as PortfolioForecastSource);
+    const source =
+      facts.length > 0
+        ? classifyOrderSource(facts)
+        : (row.forecastSource as PortfolioForecastSource);
 
     if (row.alertas.length > 0) {
-      valorPedidosComAlerta += Math.max(row.valorPedido, row.valorAlocado, row.saldo);
+      valorPedidosComAlerta += orderOfficialValue(row);
       for (const alert of row.alertas) {
         reasonCounts.set(alert, (reasonCounts.get(alert) ?? 0) + 1);
       }
@@ -387,13 +461,18 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
       continue;
     }
 
-    if (source === "ORDER" && isConfidentForSlice(row)) {
-      pedidoValue += row.saldo > 0 ? row.saldo : row.valorPedido;
-      pedidoOrders += 1;
+    if (isOrderOnlyCarteira(row, source, facts)) {
+      const orderValue = orderOfficialValue(row);
+      if (isConfidentForSlice(row)) {
+        pedidoValue += orderValue;
+        pedidoOrders += 1;
+      } else {
+        pedidoReviewValue += orderValue;
+        pedidoReviewOrders += 1;
+      }
     }
   }
 
-  // Preferir totais oficiais do summary (já alinhados ao summaryJson quando aplicável).
   const quantoReceber = round2(args.summary.saldoCarteira);
   const jaVirouOfficial =
     args.runSummary?.totalReceivableValue != null
@@ -408,23 +487,35 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
     factsByOrder,
     asOfDate: args.asOfDate,
   });
+  const quandoHighlight = buildQuandoHighlight(timing);
 
   const mainReasons = [...reasonCounts.entries()]
-    .map(([reason, count]) => ({ reason, count }))
+    .map(([reason, count]) => ({ reason, label: reason, count }))
     .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "pt-BR"))
     .slice(0, 8);
 
-  const ordersComAlerta =
-    args.runSummary?.alertCount != null &&
-    args.summary.pedidosComAlerta > 0 &&
-    args.orderRows.length === (args.runSummary.ordersAnalyzed ?? -1)
-      ? args.summary.pedidosComAlerta
-      : args.summary.pedidosComAlerta;
+  const ordersComAlerta = args.summary.pedidosComAlerta;
   const alertsCount =
     args.runSummary?.alertCount != null &&
     args.orderRows.length === (args.runSummary.ordersAnalyzed ?? -1)
       ? args.runSummary.alertCount
       : args.summary.alertasEncontrados;
+
+  const totalOrderOnlyValue = round2(pedidoValue + pedidoReviewValue);
+  const totalOrderOnlyOrdersCount = pedidoOrders + pedidoReviewOrders;
+  const soPedidoPrimary = totalOrderOnlyValue;
+  const soPedidoSubtitle =
+    totalOrderOnlyOrdersCount === 0
+      ? "Nenhum pedido só em carteira no filtro atual."
+      : `${pedidoValue.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        })} confiável · ${pedidoReviewValue.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        })} em revisão · ${totalOrderOnlyOrdersCount} pedido${
+          totalOrderOnlyOrdersCount === 1 ? "" : "s"
+        } sem NF/CR`;
 
   return {
     quantoTenhoParaReceber: {
@@ -438,13 +529,16 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
     },
     quandoVouReceber: {
       nextDate: timing.nextDate,
-      nextDateLabel: timing.nextDate ? formatBrDate(timing.nextDate) : null,
+      nextDateLabel: quandoHighlight.nextDateLabel,
       nextDateValue: timing.nextDateValue,
       overdueValue: timing.overdueValue,
       next7DaysValue: timing.next7DaysValue,
       next30DaysValue: timing.next30DaysValue,
       over30DaysValue: timing.over30DaysValue,
       withoutReliableDateValue: timing.withoutReliableDateValue,
+      highlightKind: quandoHighlight.highlightKind,
+      highlightValue: round2(quandoHighlight.highlightValue),
+      highlightSubtitle: quandoHighlight.highlightSubtitle,
       buckets: timing.buckets,
       explanation:
         "Datas pela prioridade Contas a receber → NF/documento → pedido. Linha sintética FULLY_ALLOCATED não sobrescreve vencimento de CR.",
@@ -472,19 +566,26 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
     soPedidoCarteira: {
       value: round2(pedidoValue),
       ordersCount: pedidoOrders,
+      reviewValue: round2(pedidoReviewValue),
+      reviewOrdersCount: pedidoReviewOrders,
+      totalOrderOnlyValue,
+      totalOrderOnlyOrdersCount,
       label: "Só pedido em carteira",
       explanation:
-        "Ainda não encontramos NF, documento de saída ou título de Contas a Receber.",
+        "Pedidos sem NF, documento de saída ou Contas a Receber. Baixa confiança ou alerta entram em revisão, não somem.",
+      displayPrimaryValue: soPedidoPrimary,
+      displaySubtitle: soPedidoSubtitle,
       question: "O que ainda é só pedido em carteira?",
       filterHint: { forecastSource: "ORDER" },
     },
     precisaRevisar: {
       ordersCount: ordersComAlerta,
       alertsCount,
+      valueAtRisk: round2(valorPedidosComAlerta),
       valorPedidosComAlerta: round2(valorPedidosComAlerta),
       mainReasons,
       explanation:
-        "Pedidos com divergência, baixa confiança ou dados incompletos. Alertas continuam rastreáveis no detalhe do pedido.",
+        "Pedidos com divergência, baixa confiança ou dados incompletos. O valor usa o pedido oficial, não cabeçalho de NF.",
       question: "O que está errado ou incompleto?",
       filterHint: { onlyIssues: true },
     },

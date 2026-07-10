@@ -42,7 +42,10 @@ function CardShell({
   return (
     <div
       data-testid={testId}
-      className={cn(interactive && "cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+      className={cn(
+        interactive &&
+          "cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      )}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       onClick={interactive ? () => onFilterHint?.(hint) : undefined}
@@ -62,13 +65,38 @@ function CardShell({
   );
 }
 
+function quandoPrimary(answers: PortfolioBusinessAnswers): {
+  value: string;
+  subtitle: string;
+} {
+  const q = answers.quandoVouReceber;
+  if (q.highlightKind === "OVERDUE") {
+    return {
+      value: `${formatFinanceCurrencyCompact(q.highlightValue)} vencidos`,
+      subtitle: q.highlightSubtitle,
+    };
+  }
+  if (q.highlightKind === "NEXT_DATE") {
+    return {
+      value: q.nextDateLabel
+        ? `Próximo recebimento: ${q.nextDateLabel}`
+        : "Sem data confiável",
+      subtitle: q.highlightSubtitle,
+    };
+  }
+  return {
+    value: "Sem data confiável",
+    subtitle: q.highlightSubtitle,
+  };
+}
+
 export function PortfolioReconciliationSummaryCardsView({
   answers,
   onFilterHint,
 }: Props) {
-  const quando = answers.quandoVouReceber;
-  const quandoValue = quando.nextDateLabel ?? "Sem data confiável";
-  const quandoSubtitle = `${formatFinanceCurrencyCompact(quando.next30DaysValue)} nos próximos 30 dias`;
+  const quando = quandoPrimary(answers);
+  const so = answers.soPedidoCarteira;
+  const revisar = answers.precisaRevisar;
 
   return (
     <div
@@ -94,13 +122,13 @@ export function PortfolioReconciliationSummaryCardsView({
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Quando vou receber"
-          value={quandoValue}
+          value={quando.value}
           icon={CalendarClock}
-          tone="info"
-          subtitle={quandoSubtitle}
+          tone={answers.quandoVouReceber.highlightKind === "OVERDUE" ? "danger" : "info"}
+          subtitle={quando.subtitle}
         />
         <ul className="mt-1.5 space-y-0.5 px-1 text-[10px] text-muted-foreground">
-          {quando.buckets.map((b) => (
+          {answers.quandoVouReceber.buckets.map((b) => (
             <li key={b.id} className="flex justify-between gap-2 tabular-nums">
               <span>{b.label}</span>
               <span>{formatFinanceCurrencyCompact(b.value)}</span>
@@ -134,25 +162,25 @@ export function PortfolioReconciliationSummaryCardsView({
         />
       </CardShell>
 
-      <CardShell hint={answers.soPedidoCarteira.filterHint} onFilterHint={onFilterHint}>
+      <CardShell hint={so.filterHint} onFilterHint={onFilterHint} testId="portfolio-card-so-pedido">
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Só pedido em carteira"
-          value={formatFinanceCurrencyCompact(answers.soPedidoCarteira.value)}
+          value={formatFinanceCurrencyCompact(so.displayPrimaryValue)}
           icon={Package}
-          tone="neutral"
-          subtitle={answers.soPedidoCarteira.explanation}
+          tone={so.reviewOrdersCount > 0 && so.value === 0 ? "warning" : "neutral"}
+          subtitle={so.displaySubtitle}
         />
       </CardShell>
 
-      <CardShell hint={answers.precisaRevisar.filterHint} onFilterHint={onFilterHint}>
+      <CardShell hint={revisar.filterHint} onFilterHint={onFilterHint}>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Precisa revisar"
-          value={formatFinanceInteger(answers.precisaRevisar.ordersCount)}
+          value={`${formatFinanceInteger(revisar.ordersCount)} pedidos`}
           icon={AlertTriangle}
           tone="danger"
-          subtitle={`${formatFinanceInteger(answers.precisaRevisar.alertsCount)} alertas encontrados`}
+          subtitle={`${formatFinanceInteger(revisar.alertsCount)} alertas encontrados · ${formatFinanceCurrencyCompact(revisar.valueAtRisk)} em pedidos com alerta`}
         />
       </CardShell>
     </div>

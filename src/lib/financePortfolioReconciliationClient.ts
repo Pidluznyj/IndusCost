@@ -127,6 +127,9 @@ export type PortfolioBusinessAnswers = {
     next30DaysValue: number;
     over30DaysValue: number;
     withoutReliableDateValue: number;
+    highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+    highlightValue: number;
+    highlightSubtitle: string;
     buckets: Array<{
       id: string;
       label: string;
@@ -156,16 +159,23 @@ export type PortfolioBusinessAnswers = {
   soPedidoCarteira: {
     value: number;
     ordersCount: number;
+    reviewValue: number;
+    reviewOrdersCount: number;
+    totalOrderOnlyValue: number;
+    totalOrderOnlyOrdersCount: number;
     label: string;
     explanation: string;
+    displayPrimaryValue: number;
+    displaySubtitle: string;
     question: string;
     filterHint: PortfolioBusinessAnswerFilterHint;
   };
   precisaRevisar: {
     ordersCount: number;
     alertsCount: number;
+    valueAtRisk: number;
     valorPedidosComAlerta: number;
-    mainReasons: Array<{ reason: string; count: number }>;
+    mainReasons: Array<{ reason: string; count: number; label?: string }>;
     explanation: string;
     question: string;
     filterHint: PortfolioBusinessAnswerFilterHint;

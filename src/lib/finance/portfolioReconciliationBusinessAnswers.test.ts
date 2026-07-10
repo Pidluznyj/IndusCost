@@ -101,9 +101,12 @@ describe("portfolioReconciliationBusinessAnswers", () => {
   it("Britânia/run 1dc2ead7: respostas batem com summaryJson oficial", () => {
     const orderTotals = new Map<string, number>();
     const facts: PortfolioReconciliationFactApiRow[] = [];
+    // 18 com NF/CR (4 com alerta) + 13 ORDER_ONLY LOW com alerta = 31; 17 pedidos com alerta
     for (let i = 0; i < 31; i++) {
       const id = `order-${i}`;
-      orderTotals.set(id, i === 0 ? 3324636.5 - 30 * 1000 : 1000);
+      const isOrderOnly = i >= 18;
+      const hasAlert = isOrderOnly || i < 4;
+      orderTotals.set(id, isOrderOnly ? 50_000 : i === 0 ? 3324636.5 - 30 * 50_000 : 50_000);
       facts.push(
         fact({
           id: `f-${i}`,
@@ -111,18 +114,20 @@ describe("portfolioReconciliationBusinessAnswers", () => {
           orderCode: `PD ${String(i).padStart(5, "0")}`,
           salesOrderItemId: `item-${i}`,
           orderItemValue: 500,
-          allocatedQuantity: i < 18 ? 1 : null,
-          allocatedValueByOrderPrice: i < 18 ? 500 : null,
-          receivableTotalValue: i < 17 ? 500 : null,
+          allocatedQuantity: isOrderOnly ? null : 1,
+          allocatedValueByOrderPrice: isOrderOnly ? null : 500,
+          receivableTotalValue: isOrderOnly ? null : 500,
           receivedValue: 0,
-          openReceivableValue: i < 17 ? 500 : null,
-          forecastDate: i < 17 ? "2026-08-10" : "2026-09-10",
-          forecastValue: i < 17 ? 500 : 1000,
-          status: i < 17 ? "RECEIVABLE_CONFIRMED" : "ORDER_ONLY",
-          forecastSource: i < 17 ? "RECEIVABLE" : "ORDER",
-          confidenceLevel: "HIGH",
-          alertsJson: i < 17 ? ["alerta"] : [],
-          dueDatesJson: i < 17 ? ["2026-08-10"] : null,
+          openReceivableValue: isOrderOnly ? null : 500,
+          forecastDate: isOrderOnly ? "2026-09-10" : "2026-08-10",
+          forecastValue: isOrderOnly ? 50_000 : 500,
+          status: isOrderOnly ? "ORDER_ONLY" : "RECEIVABLE_CONFIRMED",
+          forecastSource: isOrderOnly ? "ORDER" : "RECEIVABLE",
+          confidenceLevel: isOrderOnly ? "LOW" : "HIGH",
+          alertsJson: hasAlert
+            ? [isOrderOnly ? "Pedido sem NF vinculada" : "alerta"]
+            : [],
+          dueDatesJson: isOrderOnly ? null : ["2026-08-10"],
         })
       );
     }
@@ -148,6 +153,46 @@ describe("portfolioReconciliationBusinessAnswers", () => {
     assert.notEqual(a.quantoTenhoParaReceber.value, 4114297.78);
     assert.notEqual(a.jaVirouContasReceber.value, 1_610_000);
     assert.match(a.quantoTenhoParaReceber.explanation, /sem duplicar/i);
+
+    // ORDER_ONLY LOW não some: vai para revisão
+    assert.equal(a.soPedidoCarteira.value, 0);
+    assert.equal(a.soPedidoCarteira.reviewOrdersCount, 13);
+    assert.equal(a.soPedidoCarteira.totalOrderOnlyOrdersCount, 13);
+    assert.ok(a.soPedidoCarteira.reviewValue > 0);
+    assert.equal(a.soPedidoCarteira.displayPrimaryValue, a.soPedidoCarteira.totalOrderOnlyValue);
+    assert.ok(a.precisaRevisar.valueAtRisk > 0);
+    assert.equal(a.precisaRevisar.valueAtRisk, a.precisaRevisar.valorPedidosComAlerta);
+  });
+
+  it("ORDER_ONLY com LOW não some do card Só pedido em carteira", () => {
+    const facts = Array.from({ length: 13 }, (_, i) =>
+      fact({
+        id: `oo-${i}`,
+        salesOrderId: `oo-${i}`,
+        orderCode: `PD OO ${i}`,
+        salesOrderItemId: `item-oo-${i}`,
+        orderItemValue: 10_000,
+        forecastSource: "ORDER",
+        forecastValue: 10_000,
+        forecastDate: "2026-09-01",
+        status: "ORDER_ONLY",
+        confidenceLevel: "LOW",
+        alertsJson: ["Pedido sem NF vinculada"],
+      })
+    );
+    const totals = new Map(facts.map((f) => [f.salesOrderId!, 10_000]));
+    const rows = aggregateFactsToOrderRows(facts, { orderTotalBySalesOrderId: totals });
+    const summary = buildPortfolioReconciliationSummaryCards(rows, { facts });
+    const answers = buildPortfolioReconciliationBusinessAnswers({
+      orderRows: rows,
+      facts,
+      summary,
+    });
+    assert.equal(answers.soPedidoCarteira.value, 0);
+    assert.equal(answers.soPedidoCarteira.reviewOrdersCount, 13);
+    assert.equal(answers.soPedidoCarteira.totalOrderOnlyOrdersCount, 13);
+    assert.equal(answers.soPedidoCarteira.reviewValue, 130_000);
+    assert.equal(answers.soPedidoCarteira.displayPrimaryValue, 130_000);
   });
 
   it("PD 02339: tenho para receber / CR / forecast sem 20/05", () => {
@@ -228,6 +273,64 @@ describe("portfolioReconciliationBusinessAnswers", () => {
       answers.precisaRevisar.mainReasons.some((r) => /cabeçalho/i.test(r.reason))
     );
     assert.notEqual(answers.quantoTenhoParaReceber.value, 355290);
+    assert.equal(answers.precisaRevisar.valueAtRisk, 158000);
+    assert.notEqual(answers.precisaRevisar.valueAtRisk, 355290);
+  });
+
+  it("quando há vencidos, highlightKind=OVERDUE", () => {
+    const factsByOrder = new Map<string, PortfolioReconciliationFactApiRow[]>([
+      [
+        "o1",
+        [
+          fact({
+            id: "v",
+            salesOrderId: "o1",
+            salesOrderItemId: "i1",
+            allocatedQuantity: 1,
+            openReceivableValue: 885100,
+            receivableTotalValue: 885100,
+            forecastSource: "RECEIVABLE",
+            forecastDate: "2026-06-01",
+            dueDatesJson: ["2026-06-01"],
+            status: "RECEIVABLE_CONFIRMED",
+            confidenceLevel: "HIGH",
+            forecastValue: 885100,
+          }),
+        ],
+      ],
+      [
+        "o2",
+        [
+          fact({
+            id: "n",
+            salesOrderId: "o2",
+            salesOrderItemId: "i2",
+            allocatedQuantity: 1,
+            openReceivableValue: 100,
+            receivableTotalValue: 100,
+            forecastSource: "RECEIVABLE",
+            forecastDate: "2026-07-10",
+            dueDatesJson: ["2026-07-10"],
+            status: "RECEIVABLE_CONFIRMED",
+            confidenceLevel: "HIGH",
+            forecastValue: 100,
+          }),
+        ],
+      ],
+    ]);
+    const rows = aggregateFactsToOrderRows([...factsByOrder.values()].flat());
+    const summary = buildPortfolioReconciliationSummaryCards(rows, {
+      facts: [...factsByOrder.values()].flat(),
+    });
+    const answers = buildPortfolioReconciliationBusinessAnswers({
+      orderRows: rows,
+      facts: [...factsByOrder.values()].flat(),
+      summary,
+      asOfDate: "2026-07-10",
+    });
+    assert.equal(answers.quandoVouReceber.highlightKind, "OVERDUE");
+    assert.equal(answers.quandoVouReceber.highlightValue, 885100);
+    assert.match(answers.quandoVouReceber.highlightSubtitle, /Próximo vencimento/i);
   });
 
   it("buckets de recebimento: vencido, 7d, 30d, depois, sem data", () => {
