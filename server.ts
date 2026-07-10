@@ -308,6 +308,7 @@ import { registerFinanceUnclassifiedImportRoutes } from "./src/lib/financeUnclas
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
+import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financePortfolioReconciliationRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
 import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
@@ -14033,6 +14034,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
+  });
+
+  registerFinancePortfolioReconciliationRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
   });
 
   registerFinanceExecutiveReportRoutes(app, {
