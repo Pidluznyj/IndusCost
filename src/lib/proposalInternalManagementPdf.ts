@@ -6,6 +6,11 @@
 
 import { extractProposalItemCostBreakdown } from "./proposalItemCostBreakdown.js";
 import {
+  estimateProposalItemCommissionValue,
+  extractProposalItemEstimatedCommission,
+  formatProposalEstimatedCommissionLabel,
+} from "./proposalItemEstimatedCommission.js";
+import {
   buildFormattedLandscapePdf,
   formatPdfMoneyBr,
   formatPdfNumberBr,
@@ -100,6 +105,8 @@ export type ProposalInternalManagementPdfItemRow = {
   taxesValue: number;
   commissionValue: number;
   commissionPerc: number;
+  commissionLabel: string;
+  commissionEstimated: boolean;
   marginValue: number;
   marginPerc: number;
   markup: number | null;
@@ -107,6 +114,7 @@ export type ProposalInternalManagementPdfItemRow = {
   costIncomplete: boolean;
   marginMissing: boolean;
   commissionPending: boolean;
+  commissionPendingReason: string | null;
   breakdownPending: boolean;
   breakdownPendingReason: string | null;
 };
@@ -146,6 +154,8 @@ export type ProposalInternalManagementPdfDocument = {
     markup: number | null;
     taxes: number;
     commission: number;
+    commissionPerc: number | null;
+    commissionLabel: string;
     freight: number;
   };
   commissionSummaryLabel: string;
@@ -205,7 +215,7 @@ export function buildProposalInternalManagementPdfDocument(
   const cost = n(input.totalCost);
   const marginValue = n(input.totalMarginValue);
   const marginPerc = n(input.totalMarginPerc);
-  const commission = n(input.totalCommission);
+  const storedCommission = n(input.totalCommission);
   const markup = cost > 0 ? net / cost : null;
 
   const rows: ProposalInternalManagementPdfItemRow[] = items.map((item, index) => {
@@ -216,15 +226,71 @@ export function buildProposalInternalManagementPdfDocument(
     const totalCost = quantity * unitCost;
     const itemMargin = n(item.marginValue);
     const itemMarginPerc = n(item.marginPerc);
-    const itemCommission = n(item.commissionValue);
-    const itemCommissionPerc = n(item.commissionPerc);
+    const storedCommissionValue = n(item.commissionValue);
+    const storedCommissionPerc = n(item.commissionPerc);
     const taxesValue = n(item.taxesValue);
     const breakdown = extractProposalItemCostBreakdown(item.pricingSnapshotJson, quantity);
+    const estimated = extractProposalItemEstimatedCommission(item.pricingSnapshotJson);
+
+    let commissionPerc = storedCommissionPerc > 0 ? storedCommissionPerc : 0;
+    let commissionValue = storedCommissionValue > 0 ? storedCommissionValue : 0;
+    let commissionEstimated = false;
+    let commissionPending = false;
+    let commissionPendingReason: string | null = null;
+
+    if (storedCommissionPerc > 0 || storedCommissionValue > 0) {
+      if (!(storedCommissionPerc > 0) && estimated.commissionPerc != null) {
+        commissionPerc = estimated.commissionPerc;
+        commissionEstimated = true;
+      }
+      if (!(storedCommissionValue > 0)) {
+        const estimatedValue = estimateProposalItemCommissionValue({
+          quantity,
+          lineRevenue: totalPrice,
+          commissionPerc: commissionPerc > 0 ? commissionPerc : estimated.commissionPerc,
+          commissionValuePerUnit: estimated.commissionValuePerUnit,
+        });
+        if (estimatedValue != null) {
+          commissionValue = estimatedValue;
+          commissionEstimated = true;
+        }
+      }
+    } else if (estimated.source === "SNAPSHOT" && estimated.commissionPerc != null) {
+      commissionPerc = estimated.commissionPerc;
+      const estimatedValue = estimateProposalItemCommissionValue({
+        quantity,
+        lineRevenue: totalPrice,
+        commissionPerc: estimated.commissionPerc,
+        commissionValuePerUnit: estimated.commissionValuePerUnit,
+      });
+      commissionValue = estimatedValue ?? 0;
+      commissionEstimated = true;
+      commissionPending = estimatedValue == null && estimated.commissionPerc > 0;
+      commissionPendingReason = commissionPending
+        ? "Percentual disponível; valor estimado pendente (sem base de venda)."
+        : null;
+    } else {
+      commissionPending = true;
+      commissionPendingReason =
+        estimated.pendingReason ?? "Pendente: regra de comissão não resolvida.";
+    }
+
     const costIncomplete = !(unitCost > 0);
     const marginMissing =
       !(itemMargin !== 0 || itemMarginPerc !== 0) && totalPrice > 0 && costIncomplete;
-    const commissionPending = !(itemCommission > 0 || itemCommissionPerc > 0);
     const itemMarkup = totalCost > 0 ? totalPrice / totalCost : null;
+    const commissionLabel = formatProposalEstimatedCommissionLabel({
+      commissionPerc: commissionPending && !(commissionPerc > 0) ? null : commissionPerc,
+      commissionValue:
+        commissionPending && !(commissionValue > 0) && !(commissionPerc > 0)
+          ? null
+          : commissionValue > 0 || commissionPerc === 0
+            ? commissionValue
+            : null,
+      pending: commissionPending && !(commissionPerc > 0),
+      pendingReason: commissionPendingReason,
+    });
+
     return {
       lineNo: String((index + 1) * 10).padStart(5, "0"),
       code: text(item.sku, "s/ código"),
@@ -238,15 +304,18 @@ export function buildProposalInternalManagementPdfDocument(
       materialTotal: breakdown.materialTotal,
       fabricationTotal: breakdown.fabricationTotal,
       taxesValue,
-      commissionValue: itemCommission,
-      commissionPerc: itemCommissionPerc,
+      commissionValue,
+      commissionPerc,
+      commissionLabel,
+      commissionEstimated,
       marginValue: itemMargin,
       marginPerc: itemMarginPerc,
       markup: itemMarkup,
       notes: item.notes?.trim() ? item.notes.trim() : null,
       costIncomplete,
       marginMissing,
-      commissionPending,
+      commissionPending: commissionPending && !(commissionPerc > 0),
+      commissionPendingReason,
       breakdownPending: breakdown.source === "UNAVAILABLE",
       breakdownPendingReason: breakdown.pendingReason,
     };
@@ -263,6 +332,16 @@ export function buildProposalInternalManagementPdfDocument(
   const hasMaterial = rows.some((row) => row.materialTotal != null);
   const hasFabrication = rows.some((row) => row.fabricationTotal != null);
 
+  const estimatedCommissionSum = rows.reduce((acc, row) => acc + row.commissionValue, 0);
+  const commission =
+    storedCommission > 0 ? storedCommission : estimatedCommissionSum;
+  const revenueForCommission = rows.reduce((acc, row) => acc + row.totalPrice, 0);
+  const commissionPercTotal =
+    revenueForCommission > 0
+      ? (commission / revenueForCommission) * 100
+      : rows.find((row) => row.commissionPerc > 0 || row.commissionPerc === 0)?.commissionPerc ??
+        null;
+
   const pendencies: string[] = [];
   const incompleteCostItems = rows.filter((row) => row.costIncomplete);
   if (incompleteCostItems.length > 0) {
@@ -272,8 +351,11 @@ export function buildProposalInternalManagementPdfDocument(
   if (missingMargin.length > 0) {
     pendencies.push(`${missingMargin.length} item(ns) sem margem calculável.`);
   }
-  if (!(commission > 0) && rows.every((row) => row.commissionPending)) {
-    pendencies.push("Comissão estimada não informada na proposta (exibir como pendente).");
+  const commissionPendingRows = rows.filter((row) => row.commissionPending);
+  if (commissionPendingRows.length > 0) {
+    pendencies.push(
+      `${commissionPendingRows.length} item(ns) sem percentual de comissão resolvido no snapshot.`
+    );
   }
   if (cost <= 0 && rows.length > 0) {
     pendencies.push("Custo total da proposta ausente ou zerado.");
@@ -285,10 +367,12 @@ export function buildProposalInternalManagementPdfDocument(
     );
   }
 
-  const commissionSummaryLabel =
-    commission > 0
-      ? formatPdfMoneyBr(commission)
-      : "Pendente: comissão não informada na proposta";
+  const commissionSummaryLabel = formatProposalEstimatedCommissionLabel({
+    commissionPerc: commissionPercTotal,
+    commissionValue: commission,
+    pending: rows.length > 0 && rows.every((row) => row.commissionPending),
+    pendingReason: "regra não resolvida",
+  });
 
   const proposalCode =
     input.number != null && Number.isFinite(Number(input.number))
@@ -337,6 +421,8 @@ export function buildProposalInternalManagementPdfDocument(
       markup,
       taxes: n(input.totalTaxes),
       commission,
+      commissionPerc: commissionPercTotal,
+      commissionLabel: commissionSummaryLabel,
       freight: n(input.totalFreight),
     },
     commissionSummaryLabel,
@@ -392,9 +478,7 @@ export function buildProposalInternalManagementPdfBuffer(
           formatPdfMoneyBr(doc.totals.materialCost),
           formatPdfMoneyBr(doc.totals.fabricationCost),
           formatPdfMoneyBr(doc.totals.taxes),
-          doc.totals.commission > 0
-            ? formatPdfMoneyBr(doc.totals.commission)
-            : "Pendente",
+          doc.totals.commissionLabel,
           formatPdfMoneyBr(doc.totals.marginValue),
           formatPdfPercentBr(doc.totals.marginPerc),
           doc.totals.markup != null ? formatPdfNumberBr(doc.totals.markup, 4) : "—",
@@ -420,15 +504,31 @@ export function buildProposalInternalManagementPdfBuffer(
     { type: "subtitle", text: "Itens — visão gerencial" },
     {
       type: "table",
-      headers: ["Item", "MP", "Fabricação", "Impostos", "Comissão", "Custo", "Margem", "%", "Markup"],
+      headers: [
+        "Item",
+        "MP",
+        "Fabricação",
+        "Impostos",
+        "Comissão %",
+        "Comissão R$",
+        "Custo",
+        "Margem",
+        "%",
+        "Markup",
+      ],
       rows: doc.items.map((item) => [
         item.lineNo,
         item.materialTotal != null ? formatPdfMoneyBr(item.materialTotal) : "Pendente",
         item.fabricationTotal != null ? formatPdfMoneyBr(item.fabricationTotal) : "Pendente",
         formatPdfMoneyBr(item.taxesValue),
-        item.commissionPending && !(item.commissionValue > 0)
+        item.commissionPending && !(item.commissionPerc > 0)
           ? "Pendente"
-          : formatPdfMoneyBr(item.commissionValue),
+          : formatPdfPercentBr(item.commissionPerc),
+        item.commissionPending && !(item.commissionValue > 0) && !(item.commissionPerc > 0)
+          ? "Pendente"
+          : item.commissionPerc > 0 && !(item.commissionValue > 0)
+            ? "valor pendente"
+            : formatPdfMoneyBr(item.commissionValue),
         formatPdfMoneyBr(item.totalCost),
         formatPdfMoneyBr(item.marginValue),
         formatPdfPercentBr(item.marginPerc),

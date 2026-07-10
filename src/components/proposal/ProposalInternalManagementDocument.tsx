@@ -57,12 +57,11 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
             { label: "Data", value: doc.issuedAtLabel },
             { label: "Vendedor", value: doc.responsible },
           ]}
-          subtitle={PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK}
           className="proposal-compact-header proposal-print-section"
         />
 
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-950">
-          Documento interno e confidencial. Não compartilhar com clientes.
+          {PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK}
         </div>
 
         <section className="proposal-compact-section mt-4">
@@ -132,8 +131,8 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
               ],
               ["Impostos", money(doc.totals.taxes)],
               [
-                "Comissão",
-                doc.totals.commission > 0 ? money(doc.totals.commission) : "Pendente",
+                "Comissão estimada",
+                doc.totals.commissionLabel,
               ],
               ["Margem R$", money(doc.totals.marginValue)],
               ["Margem %", pct(doc.totals.marginPerc)],
@@ -198,7 +197,8 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
                   <th className="border border-slate-300 px-2 py-1.5 text-right">MP</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Fabricação</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Impostos</th>
-                  <th className="border border-slate-300 px-2 py-1.5 text-right">Comissão</th>
+                  <th className="border border-slate-300 px-2 py-1.5 text-right">Comissão %</th>
+                  <th className="border border-slate-300 px-2 py-1.5 text-right">Comissão R$</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Custo total</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Margem R$</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Margem %</th>
@@ -221,9 +221,18 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
                       {money(item.taxesValue)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
-                      {item.commissionPending && !(item.commissionValue > 0)
+                      {item.commissionPending && !(item.commissionPerc > 0)
                         ? "Pendente"
-                        : money(item.commissionValue)}
+                        : pct(item.commissionPerc)}
+                    </td>
+                    <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
+                      {item.commissionPending &&
+                      !(item.commissionValue > 0) &&
+                      !(item.commissionPerc > 0)
+                        ? "Pendente"
+                        : item.commissionPerc > 0 && !(item.commissionValue > 0)
+                          ? "valor pendente"
+                          : money(item.commissionValue)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
                       {money(item.totalCost)}

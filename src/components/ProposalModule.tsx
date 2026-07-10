@@ -289,6 +289,8 @@ type PublishedPriceDefaults = {
   marginPerc: number;
   taxesValue: number;
   freightValue: number;
+  commissionPerc?: number;
+  commissionValue?: number;
 };
 
 type PublishedPriceApiResponse = {
@@ -1032,8 +1034,11 @@ export const ProposalModule = () => {
         const gross = qty * suggestedPrice;
         const totalCost = qty * unitCost;
         const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
-        const commissionPerc = 0;
-        const commissionValue = 0;
+        const commissionPerc = safeNum(df.commissionPerc);
+        const commissionValue =
+          safeNum(df.commissionValue) > 0
+            ? safeNum(df.commissionValue) * qty
+            : safeNum(gross * (commissionPerc / 100));
         const marginValue = safeNum(
           gross - taxesValueFixed - commissionValue - freightVal - totalCost
         );
@@ -1163,8 +1168,11 @@ export const ProposalModule = () => {
       const gross = qty * suggestedPrice;
       const totalCost = qty * unitCost;
       const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
-      const commissionPerc = 0;
-      const commissionValue = 0;
+      const commissionPerc = safeNum(df.commissionPerc);
+      const commissionValue =
+        safeNum(df.commissionValue) > 0
+          ? safeNum(df.commissionValue) * qty
+          : safeNum(gross * (commissionPerc / 100));
       const marginValue = safeNum(
         gross - taxesValueFixed - commissionValue - freightVal - totalCost
       );

@@ -111,9 +111,51 @@ describe("proposalInternalManagementPdf", () => {
         ...item,
         commissionPerc: 0,
         commissionValue: 0,
+        pricingSnapshotJson: null,
       })),
     });
     assert.match(doc.commissionSummaryLabel, /Pendente/i);
+  });
+
+  it("estima comissao do snapshot quando colunas da proposta estao zeradas", () => {
+    const doc = buildProposalInternalManagementPdfDocument({
+      ...SAMPLE_PROPOSAL,
+      totalCommission: 0,
+      items: [
+        {
+          sku: "P-01",
+          name: "Peca A",
+          quantity: 10,
+          unit: "UN",
+          unitCost: 70,
+          negotiatedPrice: 100,
+          marginValue: 300,
+          marginPerc: 30,
+          commissionPerc: 0,
+          commissionValue: 0,
+          taxesValue: 50,
+          notes: null,
+          pricingSnapshotJson: {
+            proposalDefaults: { commissionPerc: 2, commissionValue: 2 },
+            item: {
+              commissionPerc: 0,
+              salePrice: 100,
+              frozenMaterialCost: 40,
+              frozenHhCost: 20,
+              frozenHmCost: 10,
+            },
+          },
+        },
+      ],
+    });
+    assert.equal(doc.items[0]?.commissionPerc, 2);
+    assert.equal(doc.items[0]?.commissionValue, 20);
+    assert.equal(doc.items[0]?.commissionPending, false);
+    assert.equal(doc.items[0]?.commissionEstimated, true);
+    assert.match(doc.commissionSummaryLabel, /2,00%/);
+    assert.match(doc.commissionSummaryLabel, /R\$ 20,00/);
+    assert.equal(doc.totals.commission, 20);
+    assert.doesNotMatch(doc.commissionSummaryLabel, /^Pendente$/i);
   });
 
   it("gera PDF formatado (nao texto puro) com marcador interno e sem R$?", () => {
@@ -202,6 +244,9 @@ describe("proposalInternalManagementPdf", () => {
     assert.match(server, /registerProposalInternalManagementPdfRoutes/);
     assert.match(pdfLib, /buildFormattedLandscapePdf/);
     assert.doesNotMatch(pdfLib, /buildMinimalPdfDocument/);
+    assert.match(mod, /safeNum\(df\.commissionPerc\)/);
+    assert.match(internalDoc, /Comissão estimada|Comiss[aã]o estimada/);
+    assert.match(internalDoc, /Comissão %|Comiss[aã]o %/);
     assert.doesNotMatch(clientDoc, /totalCost|commissionValue|margem bruta/i);
     assert.doesNotMatch(printView, /internal-management|totalCost|commissionValue/i);
     assert.match(
