@@ -29,6 +29,11 @@ import type {
   CommissionReportsPayload,
 } from "@/src/lib/commissions/commissionReports.shared";
 import { buildCommissionReportsExportFilename } from "@/src/lib/commissions/commissionReports.shared";
+import {
+  SalesOrderMarginDetailDrawer,
+  type SalesOrderMarginDetailCommissionContext,
+} from "@/src/components/sales/SalesOrderMarginDetailDrawer";
+import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
 
 const MONTH_LABELS = [
   "",
@@ -111,6 +116,7 @@ export function CommissionsReportsPage() {
   const [page, setPage] = useState(1);
   const [selectedSellerKey, setSelectedSellerKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<CommissionReportRecord | null>(null);
+  const [orderDetailRow, setOrderDetailRow] = useState<CommissionReportRecord | null>(null);
 
   const [data, setData] = useState<CommissionReportsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -545,7 +551,21 @@ export function CommissionsReportsPage() {
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2">{row.orderCode ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    {row.orderCode ? (
+                      <button
+                        type="button"
+                        data-testid="commissions-reports-order-link"
+                        className="min-h-9 rounded px-0.5 text-left font-medium text-sky-700 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
+                        onClick={() => setOrderDetailRow(row)}
+                        title={`Ver detalhe do pedido ${formatSalesOrderDisplayCode(row.orderCode)}`}
+                      >
+                        {formatSalesOrderDisplayCode(row.orderCode)}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-3 py-2">{row.nfeNumber ?? "—"}</td>
                   <td className="px-3 py-2">
                     {row.receivableNumber ??
@@ -679,6 +699,31 @@ export function CommissionsReportsPage() {
           </div>
         </div>
       ) : null}
+
+      <SalesOrderMarginDetailDrawer
+        open={Boolean(orderDetailRow)}
+        salesOrderId={orderDetailRow?.localOrderId ?? null}
+        orderCodeFallback={orderDetailRow?.orderCode ?? null}
+        commissionContext={
+          orderDetailRow
+            ? ({
+                orderCode: orderDetailRow.orderCode,
+                customerName: orderDetailRow.customerName,
+                sellerName: orderDetailRow.sellerName,
+                nfeNumber: orderDetailRow.nfeNumber,
+                receivableNumber: orderDetailRow.receivableNumber,
+                nomusReceivableId: orderDetailRow.nomusReceivableId,
+                settlementDate: orderDetailRow.settlementDate,
+                receivedAmount: orderDetailRow.receivedAmount,
+                ratePercent: orderDetailRow.ratePercent,
+                finalCommissionAmount: orderDetailRow.finalCommissionAmount,
+                commissionableBaseAmount: orderDetailRow.commissionableBaseAmount,
+                lineStatus: orderDetailRow.lineStatus,
+              } satisfies SalesOrderMarginDetailCommissionContext)
+            : null
+        }
+        onClose={() => setOrderDetailRow(null)}
+      />
     </div>
   );
 }

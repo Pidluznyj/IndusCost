@@ -266,6 +266,33 @@ async function loadPreviewMonthSourceLines(input: {
   };
 }
 
+async function attachLocalOrderIdsToReportLines(
+  lines: CommissionReportSourceLine[]
+): Promise<CommissionReportSourceLine[]> {
+  const missingCodes = [
+    ...new Set(
+      lines
+        .filter((line) => !line.localOrderId && Boolean(line.orderCode?.trim()))
+        .map((line) => line.orderCode!.trim())
+    ),
+  ];
+  if (missingCodes.length === 0) return lines;
+
+  const orders = await prisma.salesOrder.findMany({
+    where: { orderCode: { in: missingCodes } },
+    select: { id: true, orderCode: true },
+  });
+  const byCode = new Map(orders.map((order) => [order.orderCode, order.id]));
+
+  return lines.map((line) => {
+    if (line.localOrderId) return line;
+    const code = line.orderCode?.trim();
+    if (!code) return line;
+    const localOrderId = byCode.get(code) ?? null;
+    return localOrderId ? { ...line, localOrderId } : line;
+  });
+}
+
 /**
  * Mesma regra do mês único: ledger CLOSED primeiro; se não houver fechamento e o status
  * permitir, carrega prévia. Assim "Todos os meses" / multi-mês não zeram quando o mês
@@ -348,22 +375,24 @@ export async function getCommissionReportsPage(
   query: CommissionReportsQuery,
   scope: CommissionAccessScope
 ): Promise<CommissionReportsPayload> {
-  const { lines, monthsIncluded } = await loadReportSource({ query, scope });
-  if (lines.length === 0) {
+  const loaded = await loadReportSource({ query, scope });
+  if (loaded.lines.length === 0) {
     return buildEmptyCommissionReportsPayload(query);
   }
-  return assembleCommissionReportsPayload(lines, query, monthsIncluded);
+  const lines = await attachLocalOrderIdsToReportLines(loaded.lines);
+  return assembleCommissionReportsPayload(lines, query, loaded.monthsIncluded);
 }
 
 export async function exportCommissionReportsXlsx(
   query: CommissionReportsQuery,
   scope: CommissionAccessScope
 ): Promise<{ buffer: Buffer; filename: string }> {
-  const { lines, monthsIncluded } = await loadReportSource({ query, scope });
+  const loaded = await loadReportSource({ query, scope });
+  const lines = await attachLocalOrderIdsToReportLines(loaded.lines);
   const payload = assembleCommissionReportsPayload(
     lines,
     { ...query, page: 1, pageSize: Math.max(lines.length, 1) },
-    monthsIncluded
+    loaded.monthsIncluded
   );
   const records = filterCommissionReportRecords(
     lines.map(mapSourceLineToReportRecord),

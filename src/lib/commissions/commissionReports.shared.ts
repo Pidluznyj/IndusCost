@@ -104,6 +104,8 @@ export type CommissionReportRecord = {
   sellerName: string;
   customerName: string | null;
   orderCode: string | null;
+  /** UUID do SalesOrder local, quando resolvido (preview ou lookup por orderCode). */
+  localOrderId: string | null;
   nfeNumber: string | null;
   receivableNumber: string | null;
   nomusReceivableId: number | null;
@@ -251,6 +253,7 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     sellerName: resolveCommissionReportSellerLabel(line),
     customerName: line.customerName,
     orderCode: line.orderCode,
+    localOrderId: line.localOrderId,
     nfeNumber: line.nfeNumber,
     receivableNumber: line.receivableNumber,
     nomusReceivableId: line.nomusReceivableId,

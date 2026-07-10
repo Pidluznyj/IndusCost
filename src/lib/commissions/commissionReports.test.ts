@@ -439,6 +439,15 @@ describe("commissionReports.shared", () => {
     assert.equal(record.ratePercent, 7.5);
     assert.equal(record.finalCommissionAmount, 40);
   });
+
+  it("propaga localOrderId do source line para o registro do relatório", () => {
+    const withId = mapSourceLineToReportRecord(
+      line({ lineKey: "with-id", localOrderId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })
+    );
+    assert.equal(withId.localOrderId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const without = mapSourceLineToReportRecord(line({ lineKey: "no-id", localOrderId: null }));
+    assert.equal(without.localOrderId, null);
+  });
 });
 
 describe("commissionReports UI months multiselect", () => {
@@ -464,6 +473,30 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(server, /loadPreviewMonthSourceLines/);
     assert.match(server, /months\.filter\(\(m\) => !closedMonths\.has\(m\)\)/);
     assert.match(server, /month:\s*\{\s*in:\s*input\.months\s*\}/);
+  });
+
+  it("coluna Pedido é clicável e abre drawer de margem do SalesOrder", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    const drawer = read("src/components/sales/SalesOrderMarginDetailDrawer.tsx");
+    const server = read("src/lib/commissions/commissionReports.server.ts");
+    assert.match(page, /commissions-reports-order-link/);
+    assert.match(page, /SalesOrderMarginDetailDrawer/);
+    assert.match(page, /setOrderDetailRow/);
+    assert.match(page, /localOrderId/);
+    assert.match(page, /onClose=\{\(\) => setOrderDetailRow\(null\)\}/);
+    assert.doesNotMatch(
+      page,
+      /onClose=\{\(\) => \{\s*setOrderDetailRow\(null\);\s*setYear/
+    );
+    assert.match(drawer, /sales-order-margin-detail-drawer/);
+    assert.match(drawer, /\/api\/sales-orders\/\$\{salesOrderId\}/);
+    assert.match(drawer, /SalesOrderMarginAnalysisSection/);
+    assert.match(drawer, /Abrir pedido completo/);
+    assert.match(drawer, /Não foi possível carregar o detalhe do pedido/);
+    assert.doesNotMatch(drawer, /from ["']@\/src\/lib\/proposals|Proposal\.find/);
+    assert.doesNotMatch(drawer, /finalCommissionAmount\s*\*|ratePercent\s*\*/);
+    assert.match(server, /attachLocalOrderIdsToReportLines/);
+    assert.match(server, /prisma\.salesOrder\.findMany/);
   });
 });
 
