@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { computeProjectedOpenBalance } from "./portfolioReconciliationProjectedBalance.js";
 import type {
   PortfolioFactStatus,
   PortfolioReconciliationFactDraft,
@@ -207,7 +208,6 @@ export function buildPortfolioRebuildSummary(
   let divergenceCount = 0;
   let totalAllocatedValue = 0;
   let totalReceivableValue = 0;
-  let projectedOpenBalance = 0;
   const alertSamples: string[] = [];
 
   for (const fact of facts) {
@@ -221,17 +221,6 @@ export function buildPortfolioRebuildSummary(
     if (DIVERGENCE_STATUSES.has(fact.status)) divergenceCount += 1;
     if ((fact.allocatedQuantity ?? 0) > 0) {
       totalAllocatedValue += fact.allocatedValueByOrderPrice ?? 0;
-    }
-    if (fact.receivableTotalValue != null && (fact.allocatedQuantity ?? 0) > 0) {
-      totalReceivableValue += fact.receivableTotalValue;
-    }
-    if (fact.forecastSource === "RECEIVABLE" && fact.openReceivableValue != null) {
-      projectedOpenBalance += fact.openReceivableValue;
-    } else if (
-      (fact.forecastSource === "NFE" || fact.forecastSource === "ORDER") &&
-      fact.forecastValue != null
-    ) {
-      projectedOpenBalance += fact.forecastValue;
     }
   }
 
@@ -259,6 +248,9 @@ export function buildPortfolioRebuildSummary(
       .reduce((s, f) => s + (f.receivableTotalValue ?? 0), 0);
     totalReceivableValue += rateado;
   }
+
+  // Saldo projetado: RECEIVABLE > NFE > ORDER; sem duplicar rollup FULLY_ALLOCATED + CR.
+  const projectedOpenBalance = computeProjectedOpenBalance(facts);
 
   const totalOrderValue = snapshot.orders.reduce((s, o) => s + (o.totalNetValue ?? 0), 0);
 

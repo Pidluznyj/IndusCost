@@ -7,6 +7,8 @@ import type {
   PortfolioConfidenceLevel,
   PortfolioForecastSource,
 } from "./portfolioReconciliationAllocationEngine.js";
+import { resolveDominantForecastSource } from "./portfolioReconciliationReceivables.js";
+import { computeOrderProjectedOpenBalance } from "./portfolioReconciliationProjectedBalance.js";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Rode o rebuild manual.";
@@ -371,14 +373,13 @@ export function aggregateFactsToOrderRows(
     valorAlocadoPorDocumento: number;
     valorCR: number;
     recebido: number;
-    openReceivable: number;
     forecastDate: Date | null;
     forecastSource: string;
     confidenceLevel: string;
     status: string;
     alertas: Set<string>;
     nfsHeaderOnly: boolean;
-    hasReceivableSnapshot: boolean;
+    facts: PortfolioReconciliationFactApiRow[];
   };
 
   const byOrder = new Map<string, Acc>();
@@ -404,17 +405,18 @@ export function aggregateFactsToOrderRows(
         valorAlocadoPorDocumento: 0,
         valorCR: 0,
         recebido: 0,
-        openReceivable: 0,
         forecastDate: null,
         forecastSource: fact.forecastSource,
         confidenceLevel: fact.confidenceLevel,
         status: fact.status ?? "ORDER_ONLY",
         alertas: new Set(),
         nfsHeaderOnly: false,
-        hasReceivableSnapshot: false,
+        facts: [],
       };
       byOrder.set(key, acc);
     }
+
+    acc.facts.push(fact);
 
     if (!acc.pedido && fact.orderCode) acc.pedido = fact.orderCode;
     if (!acc.cliente && fact.customerNameSnapshot) acc.cliente = fact.customerNameSnapshot;
@@ -439,22 +441,9 @@ export function aggregateFactsToOrderRows(
     acc.valorAlocado += toNumber(fact.allocatedValueByOrderPrice);
     acc.valorAlocadoPorDocumento += toNumber(fact.allocatedValueByStockPrice);
 
-    if (!acc.hasReceivableSnapshot && fact.receivableTotalValue != null) {
-      acc.valorCR = toNumber(fact.receivableTotalValue);
-      acc.recebido = toNumber(fact.receivedValue);
-      acc.openReceivable = toNumber(fact.openReceivableValue);
-      acc.hasReceivableSnapshot = true;
-    } else if (acc.hasReceivableSnapshot) {
-      // CR é nível pedido/NF — não somar por linha de fato.
-      acc.valorCR = Math.max(acc.valorCR, toNumber(fact.receivableTotalValue));
-      acc.recebido = Math.max(acc.recebido, toNumber(fact.receivedValue));
-      acc.openReceivable = Math.max(acc.openReceivable, toNumber(fact.openReceivableValue));
-    }
-
     const fd = toDate(fact.forecastDate);
     if (fd && (!acc.forecastDate || fd.getTime() < acc.forecastDate.getTime())) {
       acc.forecastDate = fd;
-      acc.forecastSource = fact.forecastSource;
     }
 
     acc.confidenceLevel = pickWorseConfidence(acc.confidenceLevel, fact.confidenceLevel);
@@ -468,14 +457,39 @@ export function aggregateFactsToOrderRows(
     let valorPedido = 0;
     for (const v of acc.itemValues.values()) valorPedido += v;
     if (valorPedido === 0 && acc.valorAlocado > 0) {
-      // fallback: alguns fatos ORDER_ONLY podem não ter itemValue repetido
       valorPedido = acc.valorAlocado;
     }
 
-    const saldo =
-      acc.hasReceivableSnapshot && acc.openReceivable > 0
-        ? acc.openReceivable
-        : Math.max(0, valorPedido - acc.recebido);
+    // CR / recebido: soma linhas itemizadas rateadas; senão um valor por NF.
+    const crLines = acc.facts.filter(
+      (f) =>
+        f.receivableTotalValue != null &&
+        (f.allocatedQuantity ?? 0) > 0 &&
+        (f.status === "ITEM_ALLOCATED" ||
+          f.status === "PRICE_MISMATCH" ||
+          f.status === "RECEIVABLE_CONFIRMED" ||
+          f.status === "RECEIVED")
+    );
+    if (crLines.length > 0) {
+      acc.valorCR = crLines.reduce((s, f) => s + toNumber(f.receivableTotalValue), 0);
+      acc.recebido = crLines.reduce((s, f) => s + toNumber(f.receivedValue), 0);
+    } else {
+      const seenNfe = new Set<string>();
+      for (const f of acc.facts) {
+        if (f.receivableTotalValue == null) continue;
+        const nfeKey = f.nfeExternalId != null ? String(f.nfeExternalId) : f.id;
+        if (seenNfe.has(nfeKey)) continue;
+        seenNfe.add(nfeKey);
+        acc.valorCR += toNumber(f.receivableTotalValue);
+        acc.recebido += toNumber(f.receivedValue);
+      }
+    }
+
+    acc.forecastSource = resolveDominantForecastSource(
+      acc.facts.map((f) => f.forecastSource as "RECEIVABLE" | "NFE" | "ORDER" | "UNRESOLVED")
+    );
+
+    const saldo = computeOrderProjectedOpenBalance(acc.facts);
 
     const alertas = [...acc.alertas];
     const hasIssues =

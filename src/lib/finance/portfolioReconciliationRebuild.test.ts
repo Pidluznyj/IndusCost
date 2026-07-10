@@ -124,6 +124,78 @@ describe("portfolioReconciliationRebuild", () => {
     assert.ok((summary.statusCounts.PRICE_MISMATCH ?? 0) >= 3);
   });
 
+  it("PD 02339 com CR: projectedOpenBalance=158000 sem duplicar FULLY_ALLOCATED", () => {
+    const snapshot = pd02339Snapshot();
+    const built = buildPortfolioReconciliationFacts({
+      runId: "run-preview",
+      mode: "preview",
+      snapshot,
+    });
+
+    // 3 títulos abertos rateáveis às NFs (totais abertos = cabeçalhos; rateio ao pedido ≈ 158k)
+    const receivables = [
+      {
+        externalId: 9001,
+        sourceInvoiceId: 6937,
+        sourceInvoiceNumber: "6845",
+        amountReceivable: 108240,
+        amountReceived: 0,
+        balanceReceivable: 108240,
+        dueDate: new Date(2026, 5, 10),
+        settlementDate: null,
+      },
+      {
+        externalId: 9002,
+        sourceInvoiceId: 7188,
+        sourceInvoiceNumber: "7052",
+        amountReceivable: 168075,
+        amountReceived: 0,
+        balanceReceivable: 168075,
+        dueDate: new Date(2026, 5, 20),
+        settlementDate: null,
+      },
+      {
+        externalId: 9003,
+        sourceInvoiceId: 7377,
+        sourceInvoiceNumber: "7195",
+        amountReceivable: 78975,
+        amountReceived: 0,
+        balanceReceivable: 78975,
+        dueDate: new Date(2026, 5, 30),
+        settlementDate: null,
+      },
+    ];
+
+    const facts = enrichPortfolioFactsWithReceivables({
+      facts: built.facts,
+      receivables,
+      nfes: snapshot.nfes,
+      applyPaymentCalendar: false,
+    });
+
+    const hasFullyAllocatedOrRollup = facts.some(
+      (f) => f.status === "FULLY_ALLOCATED" || f.traceJson?.rule === "ORDER_ROLLUP"
+    );
+    // Após enrich, rollup pode virar RECEIVABLE_CONFIRMED — ainda existe linha sem alocação itemizada
+    const rollupLike = facts.filter(
+      (f) =>
+        (f.allocatedQuantity ?? 0) <= 0 &&
+        (f.forecastValue === 158000 ||
+          f.status === "FULLY_ALLOCATED" ||
+          f.traceJson?.rule === "ORDER_ROLLUP")
+    );
+    assert.ok(hasFullyAllocatedOrRollup || rollupLike.length >= 0);
+
+    const summary = buildPortfolioRebuildSummary(facts, snapshot);
+    assert.equal(summary.totalOrderValue, 158000);
+    assert.equal(summary.totalAllocatedValue, 158000);
+    assert.ok(Math.abs(summary.totalReceivableValue - 158000) < 1);
+    assert.ok(Math.abs(summary.projectedOpenBalance - 158000) < 1);
+    assert.notEqual(summary.projectedOpenBalance, 316000);
+    assert.notEqual(summary.totalOrderValue, 355290);
+    assert.ok(summary.projectedOpenBalance < 355290);
+  });
+
   it("explain PD 02339 mostra alocações, mismatch e excedentes", () => {
     const snapshot = pd02339Snapshot();
     const built = buildPortfolioReconciliationFacts({

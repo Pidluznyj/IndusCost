@@ -122,12 +122,13 @@ describe("portfolioReconciliationApi", () => {
         id: "f1",
         salesOrderItemId: "item-a",
         orderItemValue: 1000,
+        allocatedQuantity: 10,
         allocatedValueByOrderPrice: 800,
         allocatedValueByStockPrice: 700,
-        receivableTotalValue: 5000,
-        receivedValue: 2000,
-        openReceivableValue: 3000,
-        status: "ITEM_ALLOCATED",
+        receivableTotalValue: 2000,
+        receivedValue: 800,
+        openReceivableValue: 1200,
+        status: "RECEIVABLE_CONFIRMED",
         confidenceLevel: "HIGH",
         forecastSource: "RECEIVABLE",
         forecastDate: new Date(2026, 5, 10),
@@ -137,16 +138,26 @@ describe("portfolioReconciliationApi", () => {
         id: "f2",
         salesOrderItemId: "item-b",
         orderItemValue: 2000,
+        allocatedQuantity: 20,
         allocatedValueByOrderPrice: 1500,
         allocatedValueByStockPrice: 1400,
-        receivableTotalValue: 5000,
-        receivedValue: 2000,
-        openReceivableValue: 3000,
+        receivableTotalValue: 3000,
+        receivedValue: 1200,
+        openReceivableValue: 1800,
         status: "PRICE_MISMATCH",
         confidenceLevel: "MEDIUM",
         forecastSource: "RECEIVABLE",
         forecastDate: new Date(2026, 5, 20),
         alertsJson: ["Diferença de preço"],
+      }),
+      fact({
+        id: "rollup",
+        status: "FULLY_ALLOCATED",
+        forecastSource: "NFE",
+        forecastValue: 3000,
+        allocatedQuantity: null,
+        confidenceLevel: "MEDIUM",
+        alertsJson: [],
       }),
     ];
 
@@ -157,7 +168,7 @@ describe("portfolioReconciliationApi", () => {
     assert.equal(rows[0]!.valorCR, 5000);
     assert.equal(rows[0]!.recebido, 2000);
     assert.equal(rows[0]!.saldo, 3000);
-    assert.equal(rows[0]!.status, "PRICE_MISMATCH");
+    assert.equal(rows[0]!.forecastSource, "RECEIVABLE");
     assert.equal(rows[0]!.confidenceLevel, "MEDIUM");
     assert.deepEqual(rows[0]!.alertas, ["Diferença de preço"]);
     assert.equal(rows[0]!.hasIssues, true);
@@ -275,12 +286,14 @@ describe("portfolioReconciliationApi", () => {
         orderCode: "A",
         salesOrderItemId: "i1",
         orderItemValue: 1000,
+        allocatedQuantity: 10,
         allocatedValueByOrderPrice: 900,
         allocatedValueByStockPrice: 850,
         receivableTotalValue: 1000,
         receivedValue: 400,
         openReceivableValue: 600,
-        status: "ITEM_ALLOCATED",
+        status: "RECEIVABLE_CONFIRMED",
+        forecastSource: "RECEIVABLE",
         confidenceLevel: "HIGH",
       }),
       fact({
@@ -289,12 +302,14 @@ describe("portfolioReconciliationApi", () => {
         orderCode: "B",
         salesOrderItemId: "i2",
         orderItemValue: 500,
+        allocatedQuantity: 5,
         allocatedValueByOrderPrice: 100,
         allocatedValueByStockPrice: 90,
         receivableTotalValue: 500,
         receivedValue: 0,
         openReceivableValue: 500,
         status: "PRICE_MISMATCH",
+        forecastSource: "RECEIVABLE",
         confidenceLevel: "LOW",
         alertsJson: ["x"],
       }),
