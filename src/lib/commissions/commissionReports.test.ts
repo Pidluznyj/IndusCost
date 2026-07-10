@@ -221,6 +221,219 @@ describe("commissionReports.shared", () => {
     assert.ok(Array.isArray(payload.records));
   });
 
+  it("summary bate com soma do resumo por vendedor e respeita filtros", () => {
+    const sellerA = "11111111-1111-4111-8111-111111111111";
+    const sellerB = "33333333-3333-4333-8333-333333333333";
+    const lines = [
+      line({
+        lineKey: "a1",
+        month: 6,
+        canonicalSellerId: sellerA,
+        canonicalSellerName: "Rodrigo",
+        receivedAmount: 100,
+        uniqueReceivedAmount: 100,
+        commissionableBaseAmount: 80,
+        releasedCommissionAmount: 4,
+        grossCommissionAmount: 4,
+        periodStatus: "CLOSED",
+      }),
+      line({
+        lineKey: "a2",
+        month: 7,
+        nomusReceivableId: 2,
+        settlementDate: "2026-07-10T00:00:00.000Z",
+        canonicalSellerId: sellerA,
+        canonicalSellerName: "Rodrigo",
+        receivedAmount: 200,
+        uniqueReceivedAmount: 200,
+        commissionableBaseAmount: 160,
+        releasedCommissionAmount: 8,
+        grossCommissionAmount: 8,
+        periodStatus: "PREVIEW",
+      }),
+      line({
+        lineKey: "b1",
+        month: 6,
+        nomusReceivableId: 3,
+        canonicalSellerId: sellerB,
+        canonicalSellerName: "Gislene",
+        receivedAmount: 50,
+        uniqueReceivedAmount: 50,
+        commissionableBaseAmount: 40,
+        releasedCommissionAmount: 2,
+        grossCommissionAmount: 2,
+        periodStatus: "CLOSED",
+      }),
+      line({
+        lineKey: "ex",
+        month: 6,
+        nomusReceivableId: 4,
+        status: "CUSTOMER_EXCLUDED",
+        canonicalSellerId: sellerA,
+        canonicalSellerName: "Rodrigo",
+        receivedAmount: 10,
+        uniqueReceivedAmount: 10,
+        commissionableBaseAmount: 0,
+        releasedCommissionAmount: 0,
+        expectedCommissionAmount: 1,
+        grossCommissionAmount: 1,
+        periodStatus: "CLOSED",
+      }),
+    ];
+
+    const allMonths = assembleCommissionReportsPayload(
+      lines,
+      {
+        year: 2026,
+        months: "all",
+        sellerId: "all",
+        status: "all",
+        search: null,
+        page: 1,
+        pageSize: 50,
+      },
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
+    );
+    assert.equal(
+      allMonths.summary.totalCommission,
+      roundSellerSum(allMonths.sellers, "finalCommission")
+    );
+    assert.equal(
+      allMonths.summary.commissionableBase,
+      roundSellerSum(allMonths.sellers, "commissionableBase")
+    );
+    assert.equal(
+      allMonths.summary.receivedAmount,
+      roundSellerSum(allMonths.sellers, "receivedAmount")
+    );
+    assert.equal(allMonths.summary.recordCount, allMonths.pagination.total);
+    assert.equal(allMonths.summary.sellerCount, allMonths.sellers.length);
+    assert.equal(allMonths.summary.excludedCustomerCount, 1);
+    assert.equal(
+      allMonths.summary.excludedCommission,
+      roundSellerSum(allMonths.sellers, "excludedCommission")
+    );
+    assert.ok(allMonths.summary.excludedCommission > 0);
+
+    const bySeller = assembleCommissionReportsPayload(
+      lines,
+      {
+        year: 2026,
+        months: "all",
+        sellerId: sellerA,
+        status: "all",
+        search: null,
+        page: 1,
+        pageSize: 50,
+      },
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
+    );
+    assert.equal(bySeller.summary.sellerCount, 1);
+    assert.equal(bySeller.sellers[0]?.sellerName, "Rodrigo");
+    assert.equal(bySeller.summary.totalCommission, bySeller.sellers[0]?.finalCommission);
+    assert.equal(bySeller.summary.commissionableBase, bySeller.sellers[0]?.commissionableBase);
+    assert.equal(bySeller.summary.receivedAmount, bySeller.sellers[0]?.receivedAmount);
+    assert.equal(bySeller.summary.recordCount, 3);
+
+    const multi = assembleCommissionReportsPayload(
+      lines,
+      {
+        year: 2026,
+        months: [6, 7],
+        sellerId: "all",
+        status: "all",
+        search: null,
+        page: 1,
+        pageSize: 50,
+      },
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
+    );
+    assert.equal(multi.summary.totalCommission, allMonths.summary.totalCommission);
+
+    const previewOnly = assembleCommissionReportsPayload(
+      lines,
+      {
+        year: 2026,
+        months: "all",
+        sellerId: "all",
+        status: "PREVIEW",
+        search: null,
+        page: 1,
+        pageSize: 50,
+      },
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
+    );
+    assert.equal(previewOnly.summary.recordCount, 1);
+    assert.equal(previewOnly.summary.totalCommission, 8);
+    assert.equal(previewOnly.summary.receivedAmount, 200);
+
+    const search = assembleCommissionReportsPayload(
+      lines,
+      {
+        year: 2026,
+        months: "all",
+        sellerId: "all",
+        status: "all",
+        search: "Gislene",
+        page: 1,
+        pageSize: 50,
+      },
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
+    );
+    assert.equal(search.summary.recordCount, 1);
+    assert.equal(search.summary.totalCommission, 2);
+    assert.equal(search.summary.sellerCount, 1);
+  });
+
+  it("summary com zero monetário retorna 0 (não null)", () => {
+    const payload = assembleCommissionReportsPayload(
+      [
+        line({
+          lineKey: "z",
+          status: "SELLER_UNRESOLVED",
+          sellerResolutionStatus: "SELLER_UNRESOLVED",
+          canonicalSellerId: null,
+          canonicalSellerName: null,
+          releasedCommissionAmount: 0,
+          grossCommissionAmount: 0,
+          commissionableBaseAmount: 0,
+          receivedAmount: 0,
+          uniqueReceivedAmount: 0,
+        }),
+      ],
+      {
+        year: 2026,
+        months: [6],
+        sellerId: "all",
+        status: "all",
+        search: null,
+        page: 1,
+        pageSize: 50,
+      },
+      [{ year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" }]
+    );
+    assert.equal(payload.summary.totalCommission, 0);
+    assert.equal(payload.summary.commissionableBase, 0);
+    assert.equal(payload.summary.receivedAmount, 0);
+    assert.equal(payload.summary.excludedCommission, 0);
+    assert.equal(payload.summary.unresolvedSellerCount, 1);
+  });
+
   it("não recalcula percentual no frontend — usa rate da linha", () => {
     const record = mapSourceLineToReportRecord(line({ lineKey: "r", ratePercent: 7.5 }));
     assert.equal(record.ratePercent, 7.5);
@@ -237,6 +450,15 @@ describe("commissionReports UI months multiselect", () => {
     assert.doesNotMatch(page, /CommissionsPeriodFilterFields/);
   });
 
+  it("cards monetários usam amountFormat currency", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    assert.match(page, /label="Comissão total"[\s\S]*?amountFormat="currency"/);
+    assert.match(page, /label="Base comissionável"[\s\S]*?amountFormat="currency"/);
+    assert.match(page, /label="Valor recebido"[\s\S]*?amountFormat="currency"/);
+    assert.match(page, /label="Comissão excluída"[\s\S]*?amountFormat="currency"/);
+    assert.match(page, /label="Registros"[\s\S]*?amountFormat="number"/);
+  });
+
   it("server carrega prévia para meses sem fechamento também em multi/all", () => {
     const server = read("src/lib/commissions/commissionReports.server.ts");
     assert.match(server, /loadPreviewMonthSourceLines/);
@@ -244,3 +466,15 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(server, /month:\s*\{\s*in:\s*input\.months\s*\}/);
   });
 });
+
+function roundSellerSum(
+  sellers: Array<{
+    finalCommission: number;
+    commissionableBase: number;
+    receivedAmount: number;
+    excludedCommission: number;
+  }>,
+  key: "finalCommission" | "commissionableBase" | "receivedAmount" | "excludedCommission"
+): number {
+  return Math.round(sellers.reduce((sum, row) => sum + row[key], 0) * 100) / 100;
+}

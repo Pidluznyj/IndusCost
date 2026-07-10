@@ -428,32 +428,23 @@ export function buildCommissionReportSummary(
   sellers: CommissionReportSellerRow[],
   monthsIncluded: CommissionReportsPayload["monthsIncluded"]
 ): CommissionReportSummary {
-  const seenReceivables = new Set<number>();
-  let receivedAmount = 0;
-  let commissionableBase = 0;
+  /** Totais monetários = mesma base do "Resumo por vendedor" (sem cálculo paralelo). */
   let totalCommission = 0;
+  let commissionableBase = 0;
+  let receivedAmount = 0;
   let excludedCommission = 0;
+  for (const seller of sellers) {
+    totalCommission = round2(totalCommission + seller.finalCommission);
+    commissionableBase = round2(commissionableBase + seller.commissionableBase);
+    receivedAmount = round2(receivedAmount + seller.receivedAmount);
+    excludedCommission = round2(excludedCommission + seller.excludedCommission);
+  }
+
   let excludedCustomerCount = 0;
   let groupCompanyExcludedCount = 0;
   let unresolvedSellerCount = 0;
-
   for (const record of records) {
-    if (record.nomusReceivableId != null) {
-      if (!seenReceivables.has(record.nomusReceivableId)) {
-        seenReceivables.add(record.nomusReceivableId);
-        receivedAmount = round2(receivedAmount + record.receivedAmount);
-      }
-    } else {
-      receivedAmount = round2(receivedAmount + record.uniqueReceivedAmount);
-    }
-    if (record.lineStatus === "COMMISSIONABLE") {
-      commissionableBase = round2(commissionableBase + record.commissionableBaseAmount);
-      totalCommission = round2(totalCommission + record.finalCommissionAmount);
-    }
-    if (record.isCustomerExcluded) {
-      excludedCommission = round2(excludedCommission + record.excludedCommissionAmount);
-      excludedCustomerCount += 1;
-    }
+    if (record.isCustomerExcluded) excludedCustomerCount += 1;
     if (record.isGroupCompany) groupCompanyExcludedCount += 1;
     if (record.isSellerUnresolved || record.isNoSeller) unresolvedSellerCount += 1;
   }

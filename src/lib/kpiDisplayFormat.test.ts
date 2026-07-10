@@ -16,6 +16,18 @@ describe("kpiDisplayFormat", () => {
     assert.equal(r.isCompact, false);
   });
 
+  it("moeda zero exibe R$ 0,00 e não —", () => {
+    const r = formatKpiCompactCurrency(0);
+    assert.match(r.display, /R\$.*0,00/);
+    assert.equal(r.title, null);
+    assert.notEqual(r.display, "—");
+  });
+
+  it("null/undefined monetário exibe —", () => {
+    assert.equal(formatKpiCompactCurrency(null).display, "—");
+    assert.equal(formatKpiCompactCurrency(undefined).display, "—");
+  });
+
   it("moeda grande usa compacto com title completo", () => {
     const r = formatKpiCompactCurrency(524_199.99);
     assert.equal(r.display, "R$ 524,2 mil");

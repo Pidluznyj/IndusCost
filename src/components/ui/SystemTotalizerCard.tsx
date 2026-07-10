@@ -132,11 +132,15 @@ export function SystemTotalizerCard({
   let displayValue = value ?? "—";
   let displayTitle = valueTitle ?? undefined;
 
-  if (!loading && !badge && amount != null && amountFormat != null) {
+  /** Sem amountFormat explícito, amount numérico é tratado como moeda (evita cards com "—"). */
+  const resolvedAmountFormat =
+    amountFormat ?? (amount != null && value == null ? "currency" : undefined);
+
+  if (!loading && !badge && amount != null && resolvedAmountFormat != null) {
     const formatted =
-      amountFormat === "currency"
+      resolvedAmountFormat === "currency"
         ? formatKpiCompactCurrency(amount)
-        : amountFormat === "percent"
+        : resolvedAmountFormat === "percent"
           ? formatKpiCompactPercent(amount)
           : formatKpiCompactNumber(amount);
     const display = formatKpiDisplayValue(formatted, label);

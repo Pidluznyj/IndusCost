@@ -372,16 +372,19 @@ export function CommissionsReportsPage() {
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Comissão total"
             amount={summary.totalCommission}
+            amountFormat="currency"
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Base comissionável"
             amount={summary.commissionableBase}
+            amountFormat="currency"
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Valor recebido"
             amount={summary.receivedAmount}
+            amountFormat="currency"
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -417,6 +420,7 @@ export function CommissionsReportsPage() {
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Comissão excluída"
             amount={summary.excludedCommission}
+            amountFormat="currency"
           />
         </CommissionsKpiSection>
       ) : null}

@@ -48,6 +48,12 @@ describe("SystemTotalizerCard", () => {
     const css = read(CSS);
     assert.match(css, /system-totalizer-badge/);
   });
+
+  it("amount sem amountFormat defaulta para currency (evita — em cards monetários)", () => {
+    const src = read(COMPONENT);
+    assert.match(src, /resolvedAmountFormat/);
+    assert.match(src, /amountFormat \?\? \(amount != null && value == null \? "currency"/);
+  });
 });
 
 describe("SystemTotalizerCard — telas migradas fase 1", () => {
