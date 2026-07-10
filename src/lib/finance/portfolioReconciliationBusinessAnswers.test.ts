@@ -162,6 +162,9 @@ describe("portfolioReconciliationBusinessAnswers", () => {
     assert.equal(a.soPedidoCarteira.displayPrimaryValue, a.soPedidoCarteira.totalOrderOnlyValue);
     assert.ok(a.precisaRevisar.valueAtRisk > 0);
     assert.equal(a.precisaRevisar.valueAtRisk, a.precisaRevisar.valorPedidosComAlerta);
+    // Fixture sem CR aberto vencido: não acusar "vencidos"
+    assert.equal(a.quandoVouReceber.openOverdueReceivablesValue, 0);
+    assert.notEqual(a.quandoVouReceber.highlightKind, "OPEN_OVERDUE_RECEIVABLE");
   });
 
   it("ORDER_ONLY com LOW não some do card Só pedido em carteira", () => {
@@ -277,7 +280,165 @@ describe("portfolioReconciliationBusinessAnswers", () => {
     assert.notEqual(answers.precisaRevisar.valueAtRisk, 355290);
   });
 
-  it("quando há vencidos, highlightKind=OVERDUE", () => {
+  it("CR aberto vencido → títulos vencidos; ORDER/NFE no passado → previsões para revisar", () => {
+    const asOf = "2026-07-10";
+    const factsByOrder = new Map<string, PortfolioReconciliationFactApiRow[]>([
+      [
+        "cr-vencido",
+        [
+          fact({
+            id: "cr",
+            salesOrderId: "cr-vencido",
+            salesOrderItemId: "i1",
+            allocatedQuantity: 1,
+            openReceivableValue: 500,
+            receivableTotalValue: 500,
+            forecastSource: "RECEIVABLE",
+            forecastDate: "2026-07-09",
+            dueDatesJson: ["2026-07-09"],
+            status: "RECEIVABLE_CONFIRMED",
+            confidenceLevel: "HIGH",
+            forecastValue: 500,
+          }),
+        ],
+      ],
+      [
+        "order-passado",
+        [
+          fact({
+            id: "ord",
+            salesOrderId: "order-passado",
+            salesOrderItemId: "i2",
+            orderItemValue: 300,
+            forecastSource: "ORDER",
+            forecastDate: "2026-07-09",
+            forecastValue: 300,
+            status: "ORDER_ONLY",
+            confidenceLevel: "LOW",
+            alertsJson: ["Pedido sem NF vinculada"],
+          }),
+        ],
+      ],
+      [
+        "nfe-passado",
+        [
+          fact({
+            id: "nfe",
+            salesOrderId: "nfe-passado",
+            salesOrderItemId: "i3",
+            allocatedQuantity: 1,
+            allocatedValueByOrderPrice: 200,
+            forecastSource: "NFE",
+            forecastDate: "2026-07-09",
+            forecastValue: 200,
+            status: "ITEM_ALLOCATED",
+            confidenceLevel: "HIGH",
+            openReceivableValue: null,
+            receivableTotalValue: null,
+          }),
+        ],
+      ],
+      [
+        "cr-baixado",
+        [
+          fact({
+            id: "recv",
+            salesOrderId: "cr-baixado",
+            salesOrderItemId: "i4",
+            allocatedQuantity: 1,
+            openReceivableValue: 0,
+            receivedValue: 400,
+            receivableTotalValue: 400,
+            forecastSource: "RECEIVABLE",
+            forecastDate: "2026-06-01",
+            dueDatesJson: ["2026-06-01"],
+            status: "RECEIVED",
+            confidenceLevel: "HIGH",
+            forecastValue: 0,
+          }),
+        ],
+      ],
+    ]);
+
+    const timing = buildReceiptTimingBuckets({ factsByOrder, asOfDate: asOf });
+    assert.equal(timing.openOverdueReceivablesValue, 500);
+    assert.equal(timing.outdatedForecastValue, 500); // 300 ORDER + 200 NFE
+    assert.equal(timing.overdueValue, 500);
+    assert.ok(
+      timing.buckets.some(
+        (b) => b.id === "OPEN_OVERDUE_RECEIVABLE" && b.label === "Títulos vencidos" && b.value === 500
+      )
+    );
+    assert.ok(
+      timing.buckets.some(
+        (b) => b.id === "OUTDATED_FORECAST" && b.label === "Previsões para revisar" && b.value === 500
+      )
+    );
+
+    const allFacts = [...factsByOrder.values()].flat();
+    const rows = aggregateFactsToOrderRows(allFacts);
+    const summary = buildPortfolioReconciliationSummaryCards(rows, { facts: allFacts });
+    const answers = buildPortfolioReconciliationBusinessAnswers({
+      orderRows: rows,
+      facts: allFacts,
+      summary,
+      asOfDate: asOf,
+    });
+    assert.equal(answers.quandoVouReceber.highlightKind, "OPEN_OVERDUE_RECEIVABLE");
+    assert.equal(answers.quandoVouReceber.openOverdueReceivablesValue, 500);
+    assert.match(answers.quandoVouReceber.headlineLabel, /títulos vencidos/i);
+  });
+
+  it("previsão ORDER no passado sem CR não vira título vencido no headline", () => {
+    const facts = [
+      fact({
+        id: "ord",
+        salesOrderId: "o1",
+        salesOrderItemId: "i1",
+        orderItemValue: 885100,
+        forecastSource: "ORDER",
+        forecastDate: "2026-05-01",
+        forecastValue: 885100,
+        status: "ORDER_ONLY",
+        confidenceLevel: "LOW",
+        alertsJson: ["Pedido sem NF vinculada"],
+      }),
+      fact({
+        id: "fut",
+        salesOrderId: "o2",
+        salesOrderItemId: "i2",
+        allocatedQuantity: 1,
+        openReceivableValue: 100,
+        receivableTotalValue: 100,
+        forecastSource: "RECEIVABLE",
+        forecastDate: "2026-08-10",
+        dueDatesJson: ["2026-08-10"],
+        status: "RECEIVABLE_CONFIRMED",
+        confidenceLevel: "HIGH",
+        forecastValue: 100,
+      }),
+    ];
+    const rows = aggregateFactsToOrderRows(facts, {
+      orderTotalBySalesOrderId: new Map([
+        ["o1", 885100],
+        ["o2", 100],
+      ]),
+    });
+    const summary = buildPortfolioReconciliationSummaryCards(rows, { facts });
+    const answers = buildPortfolioReconciliationBusinessAnswers({
+      orderRows: rows,
+      facts,
+      summary,
+      asOfDate: "2026-07-10",
+    });
+    assert.equal(answers.quandoVouReceber.openOverdueReceivablesValue, 0);
+    assert.equal(answers.quandoVouReceber.outdatedForecastValue, 885100);
+    assert.notEqual(answers.quandoVouReceber.highlightKind, "OPEN_OVERDUE_RECEIVABLE");
+    assert.equal(answers.quandoVouReceber.highlightKind, "NEXT_DATE");
+    assert.match(answers.quandoVouReceber.nextDateLabel ?? "", /10\/08\/2026/);
+  });
+
+  it("quando há CR aberto vencido, highlightKind=OPEN_OVERDUE_RECEIVABLE", () => {
     const factsByOrder = new Map<string, PortfolioReconciliationFactApiRow[]>([
       [
         "o1",
@@ -309,8 +470,8 @@ describe("portfolioReconciliationBusinessAnswers", () => {
             openReceivableValue: 100,
             receivableTotalValue: 100,
             forecastSource: "RECEIVABLE",
-            forecastDate: "2026-07-10",
-            dueDatesJson: ["2026-07-10"],
+            forecastDate: "2026-07-15",
+            dueDatesJson: ["2026-07-15"],
             status: "RECEIVABLE_CONFIRMED",
             confidenceLevel: "HIGH",
             forecastValue: 100,
@@ -328,12 +489,13 @@ describe("portfolioReconciliationBusinessAnswers", () => {
       summary,
       asOfDate: "2026-07-10",
     });
-    assert.equal(answers.quandoVouReceber.highlightKind, "OVERDUE");
+    assert.equal(answers.quandoVouReceber.highlightKind, "OPEN_OVERDUE_RECEIVABLE");
+    assert.equal(answers.quandoVouReceber.openOverdueReceivablesValue, 885100);
     assert.equal(answers.quandoVouReceber.highlightValue, 885100);
-    assert.match(answers.quandoVouReceber.highlightSubtitle, /Próximo vencimento/i);
+    assert.match(answers.quandoVouReceber.highlightSubtitle, /Contas a Receber/i);
   });
 
-  it("buckets de recebimento: vencido, 7d, 30d, depois, sem data", () => {
+  it("buckets: títulos vencidos, previsões para revisar, 7d, 30d, depois, sem data", () => {
     const factsByOrder = new Map<string, PortfolioReconciliationFactApiRow[]>([
       [
         "o-overdue",
@@ -352,6 +514,22 @@ describe("portfolioReconciliationBusinessAnswers", () => {
             status: "RECEIVABLE_CONFIRMED",
             confidenceLevel: "HIGH",
             forecastValue: 100,
+          }),
+        ],
+      ],
+      [
+        "o-outdated-order",
+        [
+          fact({
+            id: "oo",
+            salesOrderId: "o-outdated-order",
+            salesOrderItemId: "ioo",
+            orderItemValue: 50,
+            forecastSource: "ORDER",
+            forecastDate: "2026-06-15",
+            forecastValue: 50,
+            status: "ORDER_ONLY",
+            confidenceLevel: "LOW",
           }),
         ],
       ],
@@ -438,9 +616,10 @@ describe("portfolioReconciliationBusinessAnswers", () => {
       asOfDate: "2026-07-01",
     });
 
-    assert.equal(timing.overdueValue, 100);
+    assert.equal(timing.openOverdueReceivablesValue, 100);
+    assert.equal(timing.outdatedForecastValue, 50);
     assert.equal(timing.next7DaysValue, 200);
-    assert.equal(timing.next30DaysValue, 500); // 7d + 8-30d
+    assert.equal(timing.next30DaysValue, 500);
     assert.equal(timing.over30DaysValue, 400);
     assert.equal(timing.withoutReliableDateValue, 500);
     assert.equal(timing.nextDate, "2026-07-05");

@@ -68,12 +68,14 @@ function CardShell({
 function quandoPrimary(answers: PortfolioBusinessAnswers): {
   value: string;
   subtitle: string;
+  tone: "danger" | "info" | "warning" | "neutral";
 } {
   const q = answers.quandoVouReceber;
-  if (q.highlightKind === "OVERDUE") {
+  if (q.highlightKind === "OPEN_OVERDUE_RECEIVABLE") {
     return {
-      value: `${formatFinanceCurrencyCompact(q.highlightValue)} vencidos`,
+      value: `${formatFinanceCurrencyCompact(q.highlightValue)} em títulos vencidos`,
       subtitle: q.highlightSubtitle,
+      tone: "danger",
     };
   }
   if (q.highlightKind === "NEXT_DATE") {
@@ -82,11 +84,20 @@ function quandoPrimary(answers: PortfolioBusinessAnswers): {
         ? `Próximo recebimento: ${q.nextDateLabel}`
         : "Sem data confiável",
       subtitle: q.highlightSubtitle,
+      tone: "info",
+    };
+  }
+  if (q.highlightKind === "OUTDATED_FORECAST") {
+    return {
+      value: `${formatFinanceCurrencyCompact(q.highlightValue)} em previsões para revisar`,
+      subtitle: q.highlightSubtitle,
+      tone: "warning",
     };
   }
   return {
     value: "Sem data confiável",
     subtitle: q.highlightSubtitle,
+    tone: "neutral",
   };
 }
 
@@ -124,7 +135,7 @@ export function PortfolioReconciliationSummaryCardsView({
           label="Quando vou receber"
           value={quando.value}
           icon={CalendarClock}
-          tone={answers.quandoVouReceber.highlightKind === "OVERDUE" ? "danger" : "info"}
+          tone={quando.tone}
           subtitle={quando.subtitle}
         />
         <ul className="mt-1.5 space-y-0.5 px-1 text-[10px] text-muted-foreground">

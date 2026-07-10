@@ -101,7 +101,8 @@ export type PortfolioBusinessAnswerFilterHint = {
   forecastSource?: "RECEIVABLE" | "NFE" | "ORDER" | "UNRESOLVED" | null;
   onlyIssues?: boolean;
   receiptBucket?:
-    | "OVERDUE"
+    | "OPEN_OVERDUE_RECEIVABLE"
+    | "OUTDATED_FORECAST"
     | "NEXT_7_DAYS"
     | "NEXT_30_DAYS"
     | "AFTER_30_DAYS"
@@ -123,12 +124,15 @@ export type PortfolioBusinessAnswers = {
     nextDateLabel: string | null;
     nextDateValue: number;
     overdueValue: number;
+    openOverdueReceivablesValue: number;
+    outdatedForecastValue: number;
     next7DaysValue: number;
     next30DaysValue: number;
     over30DaysValue: number;
     withoutReliableDateValue: number;
-    highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+    highlightKind: "OPEN_OVERDUE_RECEIVABLE" | "NEXT_DATE" | "OUTDATED_FORECAST" | "EMPTY";
     highlightValue: number;
+    headlineLabel: string;
     highlightSubtitle: string;
     buckets: Array<{
       id: string;
@@ -284,7 +288,7 @@ export const PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE =
   "Esta visão é uma auditoria paralela de carteira, documentos de saída e contas a receber. Ela não altera o fluxo de caixa oficial.";
 
 export const PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER =
-  "Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. O que não for confiável aparece em Precisa revisar.";
+  'Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. "Títulos vencidos" são somente CR em aberto com vencimento passado — previsões antigas de pedido/NF aparecem como "Previsões para revisar", não como atraso do cliente.';
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Solicite a execução do rebuild manual no servidor.";

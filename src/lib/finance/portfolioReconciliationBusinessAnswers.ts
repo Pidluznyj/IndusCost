@@ -20,7 +20,8 @@ import {
 import type { PortfolioForecastSource } from "./portfolioReconciliationAllocationEngine.js";
 
 export type PortfolioReceiptBucketId =
-  | "OVERDUE"
+  | "OPEN_OVERDUE_RECEIVABLE"
+  | "OUTDATED_FORECAST"
   | "NEXT_7_DAYS"
   | "NEXT_30_DAYS"
   | "AFTER_30_DAYS"
@@ -39,6 +40,12 @@ export type PortfolioBusinessAnswerFilterHint = {
   receiptBucket?: PortfolioReceiptBucketId | null;
 };
 
+export type PortfolioQuandoHighlightKind =
+  | "OPEN_OVERDUE_RECEIVABLE"
+  | "NEXT_DATE"
+  | "OUTDATED_FORECAST"
+  | "EMPTY";
+
 export type PortfolioBusinessAnswers = {
   quantoTenhoParaReceber: {
     value: number;
@@ -52,14 +59,17 @@ export type PortfolioBusinessAnswers = {
     nextDate: string | null;
     nextDateLabel: string | null;
     nextDateValue: number;
+    /** @deprecated use openOverdueReceivablesValue — só títulos CR abertos vencidos. */
     overdueValue: number;
+    openOverdueReceivablesValue: number;
+    outdatedForecastValue: number;
     next7DaysValue: number;
     next30DaysValue: number;
     over30DaysValue: number;
     withoutReliableDateValue: number;
-    /** Como a UI deve destacar o card (vencidos vs próxima data). */
-    highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+    highlightKind: PortfolioQuandoHighlightKind;
     highlightValue: number;
+    headlineLabel: string;
     highlightSubtitle: string;
     buckets: PortfolioReceiptBucket[];
     explanation: string;
@@ -83,13 +93,10 @@ export type PortfolioBusinessAnswers = {
     filterHint: PortfolioBusinessAnswerFilterHint;
   };
   soPedidoCarteira: {
-    /** Valor confiável (sem LOW/BLOCKED/alerta bloqueante). */
     value: number;
     ordersCount: number;
-    /** Pedidos sem NF/CR que existem, mas precisam revisão. */
     reviewValue: number;
     reviewOrdersCount: number;
-    /** value + reviewValue (deduplicado por pedido). */
     totalOrderOnlyValue: number;
     totalOrderOnlyOrdersCount: number;
     label: string;
@@ -102,7 +109,6 @@ export type PortfolioBusinessAnswers = {
   precisaRevisar: {
     ordersCount: number;
     alertsCount: number;
-    /** Alias explícito do impacto financeiro deduplicado por pedido. */
     valueAtRisk: number;
     valorPedidosComAlerta: number;
     mainReasons: Array<{ reason: string; count: number; label?: string }>;
@@ -209,9 +215,41 @@ function primaryDateForFact(fact: PortfolioReconciliationFactApiRow): string | n
   return dates[0]!;
 }
 
-function classifyBucket(asOf: string, date: string | null): PortfolioReceiptBucketId {
+function asForecastSource(value: string): PortfolioForecastSource {
+  if (value === "RECEIVABLE" || value === "NFE" || value === "ORDER" || value === "UNRESOLVED") {
+    return value;
+  }
+  return "UNRESOLVED";
+}
+
+/**
+ * Título real de CR aberto e vencido (atraso financeiro).
+ * Não inclui ORDER/NFE, RECEIVED, nem previsão de calendário.
+ */
+export function isOpenOverdueReceivableFact(
+  fact: PortfolioReconciliationFactApiRow,
+  asOf: string
+): boolean {
+  if (asForecastSource(fact.forecastSource) !== "RECEIVABLE") return false;
+  if (fact.status === "RECEIVED") return false;
+  const open = toNumber(fact.openReceivableValue);
+  if (open <= 0) return false;
+  const due = primaryDateForFact(fact);
+  if (!due || due >= asOf) return false;
+  return true;
+}
+
+function classifyReceiptBucket(
+  fact: PortfolioReconciliationFactApiRow,
+  asOf: string,
+  date: string | null
+): PortfolioReceiptBucketId {
   if (!date) return "WITHOUT_RELIABLE_DATE";
-  if (date < asOf) return "OVERDUE";
+  if (date < asOf) {
+    return isOpenOverdueReceivableFact(fact, asOf)
+      ? "OPEN_OVERDUE_RECEIVABLE"
+      : "OUTDATED_FORECAST";
+  }
   const d7 = addDaysIso(asOf, 7);
   const d30 = addDaysIso(asOf, 30);
   if (date <= d7) return "NEXT_7_DAYS";
@@ -220,15 +258,26 @@ function classifyBucket(asOf: string, date: string | null): PortfolioReceiptBuck
 }
 
 const BUCKET_LABELS: Record<PortfolioReceiptBucketId, string> = {
-  OVERDUE: "Vencido",
+  OPEN_OVERDUE_RECEIVABLE: "Títulos vencidos",
+  OUTDATED_FORECAST: "Previsões para revisar",
   NEXT_7_DAYS: "Próximos 7 dias",
   NEXT_30_DAYS: "Próximos 30 dias",
   AFTER_30_DAYS: "Depois de 30 dias",
   WITHOUT_RELIABLE_DATE: "Sem data confiável",
 };
 
+const BUCKET_ORDER: PortfolioReceiptBucketId[] = [
+  "OPEN_OVERDUE_RECEIVABLE",
+  "OUTDATED_FORECAST",
+  "NEXT_7_DAYS",
+  "NEXT_30_DAYS",
+  "AFTER_30_DAYS",
+  "WITHOUT_RELIABLE_DATE",
+];
+
 /**
  * Distribui o saldo projetado por data de forecast (sem duplicar rollup + item).
+ * Separa título CR vencido de previsão ultrapassada (ORDER/NFE/calendário).
  */
 export function buildReceiptTimingBuckets(args: {
   factsByOrder: Map<string, PortfolioReconciliationFactApiRow[]>;
@@ -237,6 +286,9 @@ export function buildReceiptTimingBuckets(args: {
   buckets: PortfolioReceiptBucket[];
   nextDate: string | null;
   nextDateValue: number;
+  openOverdueReceivablesValue: number;
+  outdatedForecastValue: number;
+  /** Alias de openOverdueReceivablesValue (compat). */
   overdueValue: number;
   next7DaysValue: number;
   next30DaysValue: number;
@@ -250,9 +302,9 @@ export function buildReceiptTimingBuckets(args: {
 
   const valueByBucket = new Map<PortfolioReceiptBucketId, number>();
   const ordersByBucket = new Map<PortfolioReceiptBucketId, Set<string>>();
-  const valueByDate = new Map<string, number>();
+  const valueByFutureDate = new Map<string, number>();
 
-  for (const id of Object.keys(BUCKET_LABELS) as PortfolioReceiptBucketId[]) {
+  for (const id of BUCKET_ORDER) {
     valueByBucket.set(id, 0);
     ordersByBucket.set(id, new Set());
   }
@@ -283,32 +335,37 @@ export function buildReceiptTimingBuckets(args: {
     }
 
     for (const fact of contributing) {
-      const value = factOpenValue(fact);
+      const apiFact = fact as PortfolioReconciliationFactApiRow;
+      const value = factOpenValue(apiFact);
       if (value <= 0) continue;
-      const date = primaryDateForFact(fact as PortfolioReconciliationFactApiRow);
-      const bucket = classifyBucket(asOf, date);
+      // Baixado: não entra em título vencido nem como previsão futura do CR.
+      if (apiFact.status === "RECEIVED") continue;
+
+      const date = primaryDateForFact(apiFact);
+      const bucket = classifyReceiptBucket(apiFact, asOf, date);
       valueByBucket.set(bucket, (valueByBucket.get(bucket) ?? 0) + value);
       ordersByBucket.get(bucket)!.add(orderKey);
-      if (date) {
-        valueByDate.set(date, (valueByDate.get(date) ?? 0) + value);
+      if (date && date >= asOf) {
+        valueByFutureDate.set(date, (valueByFutureDate.get(date) ?? 0) + value);
       }
     }
   }
 
-  const futureDates = [...valueByDate.keys()].filter((d) => d >= asOf).sort();
+  const futureDates = [...valueByFutureDate.keys()].sort();
   const nextDate = futureDates[0] ?? null;
-  const nextDateValue = nextDate ? round2(valueByDate.get(nextDate) ?? 0) : 0;
+  const nextDateValue = nextDate ? round2(valueByFutureDate.get(nextDate) ?? 0) : 0;
 
-  const buckets: PortfolioReceiptBucket[] = (
-    Object.keys(BUCKET_LABELS) as PortfolioReceiptBucketId[]
-  ).map((id) => ({
+  const buckets: PortfolioReceiptBucket[] = BUCKET_ORDER.map((id) => ({
     id,
     label: BUCKET_LABELS[id],
     value: round2(valueByBucket.get(id) ?? 0),
     ordersCount: ordersByBucket.get(id)?.size ?? 0,
   }));
 
-  const overdueValue = buckets.find((b) => b.id === "OVERDUE")!.value;
+  const openOverdueReceivablesValue = buckets.find(
+    (b) => b.id === "OPEN_OVERDUE_RECEIVABLE"
+  )!.value;
+  const outdatedForecastValue = buckets.find((b) => b.id === "OUTDATED_FORECAST")!.value;
   const next7DaysValue = buckets.find((b) => b.id === "NEXT_7_DAYS")!.value;
   const next30Window =
     next7DaysValue + buckets.find((b) => b.id === "NEXT_30_DAYS")!.value;
@@ -321,7 +378,9 @@ export function buildReceiptTimingBuckets(args: {
     buckets,
     nextDate,
     nextDateValue,
-    overdueValue,
+    openOverdueReceivablesValue,
+    outdatedForecastValue,
+    overdueValue: openOverdueReceivablesValue,
     next7DaysValue,
     next30DaysValue: round2(next30Window),
     over30DaysValue,
@@ -360,48 +419,67 @@ function orderOfficialValue(row: PortfolioReconciliationOrderRow): number {
   return Math.max(row.valorAlocado, 0);
 }
 
+function moneyBrCompact(n: number): string {
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  });
+}
+
 function buildQuandoHighlight(timing: {
-  overdueValue: number;
+  openOverdueReceivablesValue: number;
+  outdatedForecastValue: number;
   nextDate: string | null;
   nextDateValue: number;
   next30DaysValue: number;
 }): {
-  highlightKind: "OVERDUE" | "NEXT_DATE" | "EMPTY";
+  highlightKind: PortfolioQuandoHighlightKind;
   highlightValue: number;
+  headlineLabel: string;
   highlightSubtitle: string;
   nextDateLabel: string | null;
 } {
   const nextDateLabel = timing.nextDate ? formatBrDate(timing.nextDate) : null;
-  if (timing.overdueValue > 0) {
+
+  if (timing.openOverdueReceivablesValue > 0) {
     const nextLine = nextDateLabel
       ? `Próximo vencimento: ${nextDateLabel}`
       : "Sem próximo vencimento confiável";
     return {
-      highlightKind: "OVERDUE",
-      highlightValue: timing.overdueValue,
-      highlightSubtitle: `${nextLine} · ${timing.next30DaysValue.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-        maximumFractionDigits: 0,
-      })} nos próximos 30 dias`,
+      highlightKind: "OPEN_OVERDUE_RECEIVABLE",
+      highlightValue: timing.openOverdueReceivablesValue,
+      headlineLabel: "em títulos vencidos",
+      highlightSubtitle: `Contas a Receber em aberto com vencimento já passado. ${nextLine} · ${moneyBrCompact(timing.next30DaysValue)} nos próximos 30 dias`,
       nextDateLabel,
     };
   }
+
   if (nextDateLabel) {
     return {
       highlightKind: "NEXT_DATE",
       highlightValue: timing.nextDateValue,
-      highlightSubtitle: `${timing.next30DaysValue.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-        maximumFractionDigits: 0,
-      })} nos próximos 30 dias`,
+      headlineLabel: "Próximo recebimento",
+      highlightSubtitle: `${moneyBrCompact(timing.next30DaysValue)} nos próximos 30 dias.`,
       nextDateLabel,
     };
   }
+
+  if (timing.outdatedForecastValue > 0) {
+    return {
+      highlightKind: "OUTDATED_FORECAST",
+      highlightValue: timing.outdatedForecastValue,
+      headlineLabel: "em previsões para revisar",
+      highlightSubtitle:
+        "Não são títulos vencidos; são pedidos/NFs com previsão antiga ou pendente de atualização.",
+      nextDateLabel: null,
+    };
+  }
+
   return {
     highlightKind: "EMPTY",
     highlightValue: 0,
+    headlineLabel: "Sem data confiável",
     highlightSubtitle: "Sem data confiável de recebimento no filtro atual",
     nextDateLabel: null,
   };
@@ -531,17 +609,20 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
       nextDate: timing.nextDate,
       nextDateLabel: quandoHighlight.nextDateLabel,
       nextDateValue: timing.nextDateValue,
-      overdueValue: timing.overdueValue,
+      overdueValue: timing.openOverdueReceivablesValue,
+      openOverdueReceivablesValue: timing.openOverdueReceivablesValue,
+      outdatedForecastValue: timing.outdatedForecastValue,
       next7DaysValue: timing.next7DaysValue,
       next30DaysValue: timing.next30DaysValue,
       over30DaysValue: timing.over30DaysValue,
       withoutReliableDateValue: timing.withoutReliableDateValue,
       highlightKind: quandoHighlight.highlightKind,
       highlightValue: round2(quandoHighlight.highlightValue),
+      headlineLabel: quandoHighlight.headlineLabel,
       highlightSubtitle: quandoHighlight.highlightSubtitle,
       buckets: timing.buckets,
       explanation:
-        "Datas pela prioridade Contas a receber → NF/documento → pedido. Linha sintética FULLY_ALLOCATED não sobrescreve vencimento de CR.",
+        '"Títulos vencidos" são só Contas a Receber em aberto com vencimento passado. Datas projetadas antigas de pedido/NF aparecem como "Previsões para revisar", não como atraso do cliente.',
       question: "Quando vou receber?",
       filterHint: {},
     },
@@ -593,4 +674,4 @@ export function buildPortfolioReconciliationBusinessAnswers(args: {
 }
 
 export const PORTFOLIO_BUSINESS_ANSWERS_BANNER =
-  "Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. O que não for confiável aparece em Precisa revisar.";
+  'Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. "Títulos vencidos" são somente CR em aberto com vencimento passado — previsões antigas de pedido/NF aparecem como "Previsões para revisar", não como atraso do cliente.';
