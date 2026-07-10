@@ -10,15 +10,28 @@ export function AppHeaderBreadcrumb({ pathname }: { pathname: string }) {
   const segments = resolveAppHeaderBreadcrumb(pathname);
 
   return (
-    <nav aria-label="Localização atual" data-header-breadcrumb={APP_HEADER_BREADCRUMB_MARKER}>
-      <ol className="flex items-center gap-1 min-w-0">
+    <nav
+      aria-label="Localização atual"
+      data-header-breadcrumb={APP_HEADER_BREADCRUMB_MARKER}
+      className="min-w-0 max-w-full overflow-hidden"
+    >
+      <ol className="flex items-center gap-1 min-w-0 max-w-full">
         {segments.map((segment, index) => {
           const isLast = index === segments.length - 1;
           return (
-            <li key={`${segment.label}-${index}`} className="flex items-center gap-1 min-w-0">
+            <li
+              key={`${segment.label}-${index}`}
+              className={cn(
+                "flex items-center gap-1 min-w-0",
+                !isLast && segments.length > 1 && "hidden sm:flex"
+              )}
+            >
               {index > 0 ? (
                 <ChevronRight
-                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 text-muted-foreground/70",
+                    isLast && segments.length > 1 && "hidden sm:block"
+                  )}
                   aria-hidden="true"
                 />
               ) : null}

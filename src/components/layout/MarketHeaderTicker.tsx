@@ -41,6 +41,7 @@ function TickerPill({
   stale,
   loading,
   variation,
+  forceCompactLabel,
 }: {
   testId: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -51,20 +52,27 @@ function TickerPill({
   stale?: boolean;
   loading?: boolean;
   variation?: number | null;
+  forceCompactLabel?: boolean;
 }) {
   return (
     <div
       data-testid={testId}
       title={tooltip}
       className={cn(
-        "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] leading-none",
+        "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] leading-none min-w-0",
         "bg-background/80 border-border/70 text-foreground/90 shadow-sm",
         stale && "border-amber-300/60 bg-amber-50/40"
       )}
     >
       <Icon className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="hidden md:inline font-medium text-muted-foreground">{label}</span>
-      <span className="md:hidden font-medium text-muted-foreground">{compactLabel}</span>
+      {forceCompactLabel ? (
+        <span className="font-medium text-muted-foreground shrink-0">{compactLabel}</span>
+      ) : (
+        <>
+          <span className="hidden md:inline font-medium text-muted-foreground shrink-0">{label}</span>
+          <span className="md:hidden font-medium text-muted-foreground shrink-0">{compactLabel}</span>
+        </>
+      )}
       <span className="font-semibold tabular-nums whitespace-nowrap">
         {loading ? "…" : value}
       </span>
@@ -73,7 +81,13 @@ function TickerPill({
   );
 }
 
-export const MarketHeaderTicker = memo(function MarketHeaderTicker() {
+export type MarketHeaderTickerLayout = "default" | "compact" | "stack";
+
+export const MarketHeaderTicker = memo(function MarketHeaderTicker({
+  layout = "default",
+}: {
+  layout?: MarketHeaderTickerLayout;
+}) {
   const [data, setData] = useState<MarketHeaderTickerPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -105,11 +119,16 @@ export const MarketHeaderTicker = memo(function MarketHeaderTicker() {
 
   const ptax = data?.ptax ?? { available: false };
   const brent = data?.brent ?? { available: false };
+  const forceCompactLabel = layout === "compact" || layout === "stack";
 
   return (
     <div
       data-testid="market-header-ticker"
-      className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink"
+      data-ticker-layout={layout}
+      className={cn(
+        "min-w-0",
+        layout === "stack" ? "flex flex-col gap-1.5 w-full" : "flex items-center gap-1.5 sm:gap-2 shrink"
+      )}
     >
       <TickerPill
         testId="market-header-ticker-ptax"
@@ -120,6 +139,7 @@ export const MarketHeaderTicker = memo(function MarketHeaderTicker() {
         tooltip={buildMarketHeaderPtaxTooltip(ptax)}
         stale={ptax.stale}
         loading={loading}
+        forceCompactLabel={forceCompactLabel}
       />
       <TickerPill
         testId="market-header-ticker-brent"
@@ -131,6 +151,7 @@ export const MarketHeaderTicker = memo(function MarketHeaderTicker() {
         stale={brent.stale}
         loading={loading}
         variation={brent.changePercent ?? null}
+        forceCompactLabel={forceCompactLabel}
       />
     </div>
   );

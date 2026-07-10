@@ -112,31 +112,35 @@ describe("Layout.tsx — recolhimento do menu lateral", () => {
     assert.match(layout, /fixed inset-0 z-20 bg-black\/40 lg:hidden/);
   });
 
-  it("mobile: botão no header abre o menu lateral", () => {
-    const layout = read("src/components/layout/Layout.tsx");
-    assert.match(layout, /openMobileSidebar/);
-    assert.match(layout, /aria-label="Abrir menu lateral"/);
-    assert.match(layout, /PanelLeft/);
-    assert.match(layout, /\{isMobile \? \(/);
-  });
-
   it("header global permanece com ticker, Nomus e usuário", () => {
     const layout = read("src/components/layout/Layout.tsx");
-    assert.match(layout, /MarketHeaderTicker/);
-    assert.match(layout, /Sistema Online/);
-    assert.match(layout, /Última sincronia com o Nomus/);
-    assert.match(layout, /formatRoleLabel/);
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
+    assert.match(layout, /AppHeaderBar/);
+    assert.match(bar, /MarketHeaderTicker/);
+    assert.match(bar, /Sistema Online/);
+    assert.match(bar, /Última sincronia com o Nomus/);
+    assert.match(bar, /formatRoleLabel/);
   });
 
   it("header exibe breadcrumb contextual em vez de título fixo Dashboard", () => {
     const layout = read("src/components/layout/Layout.tsx");
-    assert.match(layout, /AppHeaderBreadcrumb/);
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
+    assert.match(bar, /AppHeaderBreadcrumb/);
     assert.doesNotMatch(layout, /<h1 className="text-xl font-semibold[^"]*">Dashboard<\/h1>/);
   });
 
   it("botão mobile usa área de toque mínima 44px", () => {
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
+    assert.match(bar, /min-h-11 min-w-11/);
+  });
+
+  it("mobile: botão no header abre o menu lateral", () => {
     const layout = read("src/components/layout/Layout.tsx");
-    assert.match(layout, /min-h-11 min-w-11/);
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
+    assert.match(layout, /openMobileSidebar/);
+    assert.match(bar, /aria-label="Abrir menu lateral"/);
+    assert.match(bar, /PanelLeft/);
+    assert.match(bar, /\{isMobile \? \(/);
   });
 });
 

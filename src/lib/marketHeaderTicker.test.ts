@@ -145,11 +145,13 @@ describe("marketHeaderTicker", () => {
 describe("marketHeaderTicker — integração", () => {
   it("endpoint leve usa snapshots sem coleta externa", () => {
     const routes = read("src/lib/marketGlobalIndicatorsRoutes.ts");
-    assert.match(routes, new RegExp(MARKET_HEADER_TICKER_API.replace(/\//g, "\\/")));
-    const headerBlock = routes.slice(
-      routes.indexOf(MARKET_HEADER_TICKER_API),
-      routes.indexOf("/api/market-intelligence/global-indicators")
-    );
+    assert.match(routes, /MARKET_HEADER_TICKER_API/);
+    const registerStart = routes.indexOf("export function registerMarketGlobalIndicatorsRoutes");
+    assert.ok(registerStart >= 0);
+    const headerStart = routes.indexOf("MARKET_HEADER_TICKER_API", registerStart);
+    const headerEnd = routes.indexOf("/api/market-intelligence/global-indicators", headerStart);
+    const headerBlock = routes.slice(headerStart, headerEnd);
+    assert.ok(headerStart >= 0 && headerEnd > headerStart);
     assert.match(headerBlock, /loadMarketGlobalIndicators/);
     assert.match(headerBlock, /mapMarketGlobalIndicatorsToHeaderTicker/);
     assert.doesNotMatch(headerBlock, /collectBrentCommoditySnapshot/);
@@ -159,16 +161,20 @@ describe("marketHeaderTicker — integração", () => {
 
   it("header global renderiza ticker antes do status Nomus", () => {
     const layout = read("src/components/layout/Layout.tsx");
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
     const ticker = read("src/components/layout/MarketHeaderTicker.tsx");
-    assert.match(layout, /MarketHeaderTicker/);
+    assert.match(layout, /AppHeaderBar/);
+    assert.match(bar, /MarketHeaderTicker/);
     assert.match(ticker, /market-header-ticker-ptax/);
     assert.match(ticker, /market-header-ticker-brent/);
-    const tickerIdx = layout.indexOf("<MarketHeaderTicker");
-    const onlineIdx = layout.indexOf("Sistema Online");
-    const nomusIdx = layout.indexOf("Última sincronia com o Nomus");
-    assert.ok(tickerIdx >= 0 && tickerIdx < onlineIdx);
+    const renderStart = bar.indexOf("return (");
+    const tickerIdx = bar.indexOf("<MarketHeaderTicker", renderStart);
+    const onlineIdx = bar.indexOf("<OnlineBadge", renderStart);
+    const nomusIdx = bar.indexOf('data-header-nomus-sync="full"', renderStart);
+    assert.ok(tickerIdx >= 0 && onlineIdx >= 0 && nomusIdx >= 0);
+    assert.ok(tickerIdx < onlineIdx);
     assert.ok(onlineIdx < nomusIdx);
-    assert.match(layout, /authUser \? <MarketHeaderTicker/);
+    assert.match(bar, /authUser \? \(/);
   });
 
   it("ticker não chama API externa no frontend", () => {
@@ -179,11 +185,21 @@ describe("marketHeaderTicker — integração", () => {
   });
 
   it("layout responsivo mantém Nomus e usuário", () => {
-    const layout = read("src/components/layout/Layout.tsx");
-    assert.match(layout, /hidden md:block/);
-    assert.match(layout, /hidden lg:block/);
-    assert.match(layout, /min-w-0/);
-    assert.match(layout, /Última sincronia com o Nomus/);
-    assert.match(layout, /formatRoleLabel/);
+    const bar = read("src/components/layout/AppHeaderBar.tsx");
+    assert.match(bar, /hidden 2xl:block/);
+    assert.match(bar, /hidden xl:block/);
+    assert.match(bar, /min-w-0/);
+    assert.match(bar, /Última sincronia com o Nomus/);
+    assert.match(bar, /formatRoleLabel/);
+    assert.match(bar, /AppHeaderStatusMenu/);
+    assert.match(bar, /data-header-user-avatar/);
+  });
+
+  it("MarketHeaderTicker aceita layout compacto/stack sem quebrar", () => {
+    const ticker = read("src/components/layout/MarketHeaderTicker.tsx");
+    assert.match(ticker, /layout = "default"/);
+    assert.match(ticker, /"compact"/);
+    assert.match(ticker, /"stack"/);
+    assert.match(ticker, /data-ticker-layout=\{layout\}/);
   });
 });
