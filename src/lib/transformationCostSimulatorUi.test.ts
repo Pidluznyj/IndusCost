@@ -48,6 +48,11 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.match(panel, /Usar taxa manual/i);
     assert.match(panel, /Pessoas produtivas/i);
     assert.match(panel, /Máquinas produtivas/i);
+    assert.match(panel, /Horas por pessoa\/mês/);
+    assert.match(panel, /Horas por máquina\/mês/);
+    assert.match(panel, /Eficiência mão de obra \(%\)/);
+    assert.match(panel, /Eficiência máquinas \(%\)/);
+    assert.match(panel, /min-h-\[2\.75rem\]/);
     assert.match(panel, /Configuração avançada/i);
     assert.match(panel, /Salvar simulação/);
     assert.match(panel, /save-cc-hh-hm-simulation/);

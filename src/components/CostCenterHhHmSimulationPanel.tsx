@@ -73,6 +73,7 @@ function Field({
   step,
   placeholder,
   disabled,
+  title: titleAttr,
 }: {
   label: string;
   value: string;
@@ -81,10 +82,17 @@ function Field({
   step?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** Texto completo no hover; não empurra o input quando o label é curto. */
+  title?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-slate-700">{label}</label>
+    <div className="flex h-full flex-col gap-1.5">
+      <label
+        className="flex min-h-[2.75rem] items-end text-sm font-medium leading-snug text-slate-700"
+        title={titleAttr ?? label}
+      >
+        <span className="line-clamp-2">{label}</span>
+      </label>
       <input
         type={type}
         step={step}
@@ -261,9 +269,14 @@ function SideCalculationBlock({
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">
         <Field
           label={hourType === "HH" ? "Pessoas produtivas" : "Máquinas produtivas"}
+          title={
+            hourType === "HH"
+              ? "Quantidade de pessoas produtivas"
+              : "Quantidade de máquinas produtivas"
+          }
           value={side.productiveCount}
           onChange={(value) => onPatch("productiveCount", value)}
           type="number"
@@ -272,7 +285,12 @@ function SideCalculationBlock({
           disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
         />
         <Field
-          label={hourType === "HH" ? "Horas mensais por pessoa" : "Horas mensais por máquina"}
+          label={hourType === "HH" ? "Horas por pessoa/mês" : "Horas por máquina/mês"}
+          title={
+            hourType === "HH"
+              ? "Horas mensais por pessoa"
+              : "Horas mensais por máquina"
+          }
           value={side.hoursPerUnit}
           onChange={(value) => onPatch("hoursPerUnit", value)}
           type="number"
@@ -281,7 +299,8 @@ function SideCalculationBlock({
           disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
         />
         <Field
-          label={
+          label={hourType === "HH" ? "Eficiência mão de obra (%)" : "Eficiência máquinas (%)"}
+          title={
             hourType === "HH"
               ? "Eficiência produtiva da mão de obra (%)"
               : "Eficiência produtiva das máquinas (%)"
