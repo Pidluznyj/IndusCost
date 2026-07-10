@@ -14,8 +14,10 @@ import { canViewFinancePortfolioReconciliation } from "@/src/lib/financePortfoli
 import {
   buildPortfolioReconciliationListQuery,
   createDefaultPortfolioReconciliationUiFilters,
+  PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER,
   PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE,
   PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE,
+  type PortfolioBusinessAnswerFilterHint,
   type PortfolioReconciliationListPayload,
   type PortfolioReconciliationRunsPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
@@ -125,6 +127,7 @@ export function FinancePortfolioReconciliationPage() {
           message: PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE,
           run: null,
           summary: null,
+          businessAnswers: null,
           rows: [],
           pagination: { page: 1, pageSize: 50, totalRows: 0, totalPages: 0 },
           filters: null,
@@ -191,7 +194,24 @@ export function FinancePortfolioReconciliationPage() {
 
   const noRun = payload != null && payload.ok === false;
   const hasRows = (payload?.rows.length ?? 0) > 0;
-  const hasAlerts = (payload?.summary?.pedidosComAlerta ?? 0) > 0;
+  const hasAlerts = (payload?.businessAnswers?.precisaRevisar.ordersCount ??
+    payload?.summary?.pedidosComAlerta ??
+    0) > 0;
+
+  const applyBusinessAnswerFilter = useCallback((hint: PortfolioBusinessAnswerFilterHint) => {
+    setDraftFilters((prev) => ({
+      ...prev,
+      forecastSource: hint.forecastSource ?? "",
+      onlyIssues: hint.onlyIssues === true,
+      page: 1,
+    }));
+    setAppliedFilters((prev) => ({
+      ...prev,
+      forecastSource: hint.forecastSource ?? "",
+      onlyIssues: hint.onlyIssues === true,
+      page: 1,
+    }));
+  }, []);
 
   return (
     <div data-testid="finance-portfolio-reconciliation-page">
@@ -427,9 +447,18 @@ export function FinancePortfolioReconciliationPage() {
           />
         ) : null}
 
-        {!noRun && payload?.summary ? (
-          <div className="mb-4">
-            <PortfolioReconciliationSummaryCardsView summary={payload.summary} />
+        {!noRun && payload?.businessAnswers ? (
+          <div className="mb-4 space-y-3">
+            <div
+              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
+              data-testid="portfolio-reconciliation-business-banner"
+            >
+              <p>{PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER}</p>
+            </div>
+            <PortfolioReconciliationSummaryCardsView
+              answers={payload.businessAnswers}
+              onFilterHint={applyBusinessAnswerFilter}
+            />
           </div>
         ) : null}
 
@@ -449,8 +478,11 @@ export function FinancePortfolioReconciliationPage() {
               >
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
-                  Há {payload.summary?.pedidosComAlerta ?? 0} pedido(s) com alerta nesta visão.
-                  Use “Apenas divergências” para focar a auditoria.
+                  Há {payload.businessAnswers?.precisaRevisar.ordersCount ??
+                    payload.summary?.pedidosComAlerta ??
+                    0}{" "}
+                  pedido(s) com alerta nesta visão.
+                  Use “Apenas divergências” ou o card Precisa revisar para focar a auditoria.
                 </p>
               </div>
             ) : null}

@@ -107,6 +107,8 @@ describe("finance portfolio reconciliation menu + page", () => {
     const client = read("src/lib/financePortfolioReconciliationClient.ts");
     assert.match(page, /portfolio-reconciliation-parallel-notice/);
     assert.match(page, /PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE/);
+    assert.match(page, /PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER/);
+    assert.match(page, /businessAnswers/);
     assert.match(client, new RegExp(PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(page, /\/api\/finance\/portfolio-reconciliation/);
     assert.match(page, /\/api\/finance\/portfolio-reconciliation\/runs/);

@@ -10,6 +10,10 @@ import {
   computeOrderProjectedOpenBalance,
   resolveOrderAggregatedForecast,
 } from "./portfolioReconciliationProjectedBalance.js";
+import {
+  buildPortfolioReconciliationBusinessAnswers,
+  type PortfolioBusinessAnswers,
+} from "./portfolioReconciliationBusinessAnswers.js";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Rode o rebuild manual.";
@@ -1028,6 +1032,14 @@ export function buildListPayload(args: {
     );
   }
 
+  const runSummary = parsePortfolioRunSummaryJson(args.run.summaryJson);
+  const businessAnswers = buildPortfolioReconciliationBusinessAnswers({
+    orderRows,
+    facts: summaryFacts,
+    summary,
+    runSummary: !hasRestrictivePortfolioListFilters(args.filters) ? runSummary : null,
+  });
+
   const page = paginateRows(orderRows, args.filters.page, args.filters.pageSize);
   const availableFilters = buildAvailableFilters(args.facts, allOrderRows);
 
@@ -1036,6 +1048,7 @@ export function buildListPayload(args: {
     message: null as string | null,
     run: serializeRunMeta(args.run),
     summary,
+    businessAnswers,
     rows: page.rows,
     pagination: {
       page: page.page,
@@ -1054,6 +1067,7 @@ export function buildNoRunPayload() {
     message: PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE,
     run: null,
     summary: null,
+    businessAnswers: null as PortfolioBusinessAnswers | null,
     rows: [] as PortfolioReconciliationOrderRow[],
     pagination: {
       page: 1,
@@ -1072,5 +1086,7 @@ export function buildNoRunPayload() {
     },
   };
 }
+
+export type { PortfolioBusinessAnswers };
 
 export type { PortfolioConfidenceLevel, PortfolioForecastSource };

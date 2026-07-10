@@ -85,6 +85,7 @@ export type PortfolioReconciliationListPayload = {
   message: string | null;
   run: PortfolioReconciliationRunDto | null;
   summary: PortfolioReconciliationSummaryCards | null;
+  businessAnswers: PortfolioBusinessAnswers | null;
   rows: PortfolioReconciliationOrderRow[];
   pagination: {
     page: number;
@@ -94,6 +95,81 @@ export type PortfolioReconciliationListPayload = {
   };
   filters: PortfolioReconciliationUiFilters | Record<string, unknown> | null;
   availableFilters: PortfolioReconciliationAvailableFilters;
+};
+
+export type PortfolioBusinessAnswerFilterHint = {
+  forecastSource?: "RECEIVABLE" | "NFE" | "ORDER" | "UNRESOLVED" | null;
+  onlyIssues?: boolean;
+  receiptBucket?:
+    | "OVERDUE"
+    | "NEXT_7_DAYS"
+    | "NEXT_30_DAYS"
+    | "AFTER_30_DAYS"
+    | "WITHOUT_RELIABLE_DATE"
+    | null;
+};
+
+export type PortfolioBusinessAnswers = {
+  quantoTenhoParaReceber: {
+    value: number;
+    label: string;
+    explanation: string;
+    validationHint: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
+  quandoVouReceber: {
+    nextDate: string | null;
+    nextDateLabel: string | null;
+    nextDateValue: number;
+    overdueValue: number;
+    next7DaysValue: number;
+    next30DaysValue: number;
+    over30DaysValue: number;
+    withoutReliableDateValue: number;
+    buckets: Array<{
+      id: string;
+      label: string;
+      value: number;
+      ordersCount: number;
+    }>;
+    explanation: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
+  jaVirouContasReceber: {
+    value: number;
+    ordersCount: number;
+    label: string;
+    explanation: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
+  faturadoSemContasReceber: {
+    value: number;
+    ordersCount: number;
+    label: string;
+    explanation: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
+  soPedidoCarteira: {
+    value: number;
+    ordersCount: number;
+    label: string;
+    explanation: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
+  precisaRevisar: {
+    ordersCount: number;
+    alertsCount: number;
+    valorPedidosComAlerta: number;
+    mainReasons: Array<{ reason: string; count: number }>;
+    explanation: string;
+    question: string;
+    filterHint: PortfolioBusinessAnswerFilterHint;
+  };
 };
 
 export type PortfolioReconciliationOrderDetailPayload = {
@@ -196,6 +272,9 @@ export function buildPortfolioReconciliationListQuery(
 
 export const PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE =
   "Esta visão é uma auditoria paralela de carteira, documentos de saída e contas a receber. Ela não altera o fluxo de caixa oficial.";
+
+export const PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER =
+  "Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. O que não for confiável aparece em Precisa revisar.";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Solicite a execução do rebuild manual no servidor.";
