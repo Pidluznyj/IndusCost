@@ -96,3 +96,35 @@ export function parsePositiveCapacityNumber(raw: string): number | null {
   if (value == null || value <= 0) return null;
   return value;
 }
+
+/**
+ * Taxa horária = média mensal ÷ horas ajustadas (denominador da taxa).
+ * Retorna null se não houver divisão válida.
+ */
+export function calculateHhHmHourlyRate(
+  monthlyAverageAmount: number | null,
+  adjustedHours: number | null
+): number | null {
+  if (monthlyAverageAmount == null || adjustedHours == null) return null;
+  if (!(adjustedHours > 0) || !Number.isFinite(monthlyAverageAmount)) return null;
+  return Math.round((monthlyAverageAmount / adjustedHours) * 100) / 100;
+}
+
+/**
+ * Denominador da taxa: horas ajustadas pela eficiência, ou horas base manuais
+ * somente quando a configuração avançada está marcada.
+ */
+export function resolveHhHmRateDenominatorHours(input: {
+  useManualBaseHours: boolean;
+  manualBaseHours: number | null;
+  adjustedHours: number | null;
+}): number | null {
+  if (input.useManualBaseHours) {
+    return input.manualBaseHours != null && input.manualBaseHours > 0
+      ? input.manualBaseHours
+      : null;
+  }
+  return input.adjustedHours != null && input.adjustedHours > 0
+    ? input.adjustedHours
+    : null;
+}

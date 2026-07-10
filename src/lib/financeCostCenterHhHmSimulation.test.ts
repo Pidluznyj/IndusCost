@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   aggregateCostCenterMonthlyTotals,
+  applyCostCenterHhHmCapacityFieldPatch,
   combineCostCenterHhHmRates,
   computeCostCenterHhHmDualRateSimulation,
   computeCostCenterHhHmItemCost,
@@ -121,13 +122,104 @@ describe("financeCostCenterHhHmSimulation", () => {
         hoursPerUnit: "180",
         efficiencyPercent: "80",
       },
-      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 23_310.3 }],
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 62_396.89 }],
       hourType: "HM",
     });
     assert.equal(hm.composition.theoreticalHours, 2_340);
     assert.equal(hm.composition.adjustedHours, 1_872);
-    assert.equal(hm.composition.calculatedRatePerHour, 12.45);
-    assert.equal(hm.composition.effectiveRatePerHour, 12.45);
+    assert.equal(hm.composition.baseMonthlyHours, 1_872);
+    assert.equal(hm.composition.calculatedRatePerHour, 33.33);
+    assert.equal(hm.composition.effectiveRatePerHour, 33.33);
+  });
+
+  it("3c2 — HM com eficiência 100% usa 2340 h e taxa R$ 26,67", () => {
+    const hm = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "13",
+        hoursPerUnit: "180",
+        efficiencyPercent: "100",
+      },
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 62_396.89 }],
+      hourType: "HM",
+    });
+    assert.equal(hm.composition.theoreticalHours, 2_340);
+    assert.equal(hm.composition.adjustedHours, 2_340);
+    assert.equal(hm.composition.baseMonthlyHours, 2_340);
+    assert.equal(hm.composition.calculatedRatePerHour, 26.67);
+    assert.equal(hm.composition.effectiveRatePerHour, 26.67);
+  });
+
+  it("3c3 — horas base manuais antigas não vazam com avançado desmarcado", () => {
+    const hm = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "13",
+        hoursPerUnit: "180",
+        efficiencyPercent: "100",
+        useManualBaseHours: false,
+        baseMonthlyHours: "1872",
+      },
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 62_396.89 }],
+      hourType: "HM",
+    });
+    assert.equal(hm.composition.baseMonthlyHours, 2_340);
+    assert.equal(hm.composition.effectiveRatePerHour, 26.67);
+  });
+
+  it("3c4 — editar eficiência desliga horas base manuais (patch)", () => {
+    const before = {
+      ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+      productiveCount: "13",
+      hoursPerUnit: "180",
+      efficiencyPercent: "80",
+      useManualBaseHours: true,
+      baseMonthlyHours: "1872",
+    };
+    const after = applyCostCenterHhHmCapacityFieldPatch(before, "efficiencyPercent", "100");
+    assert.equal(after.efficiencyPercent, "100");
+    assert.equal(after.useManualBaseHours, false);
+    assert.equal(after.baseMonthlyHours, "");
+
+    const hm = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...after,
+        selectedCostCenterIds: ["cc-a"],
+      },
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 62_396.89 }],
+      hourType: "HM",
+    });
+    assert.equal(hm.composition.baseMonthlyHours, 2_340);
+    assert.equal(hm.composition.effectiveRatePerHour, 26.67);
+  });
+
+  it("3c5 — HH do print permanece 39,07 e HM 100% atualiza taxa final", () => {
+    const dual = computeCostCenterHhHmDualRateSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-hh"],
+          productiveCount: "60",
+          hoursPerUnit: "180",
+          efficiencyPercent: "80",
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-hm"],
+          productiveCount: "13",
+          hoursPerUnit: "180",
+          efficiencyPercent: "100",
+        },
+      },
+      monthlyBucketsHh: [{ year: 2026, month: 1, totalAmount: 337_536.26 }],
+      monthlyBucketsHm: [{ year: 2026, month: 1, totalAmount: 62_396.89 }],
+    });
+    assert.equal(dual.hh.composition.effectiveRatePerHour, 39.07);
+    assert.equal(dual.hm.composition.effectiveRatePerHour, 26.67);
+    assert.equal(dual.combinedRatePerHour, 65.74);
   });
 
   it("3d — HH + HM com capacidade automática", () => {

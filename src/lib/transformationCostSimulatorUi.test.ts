@@ -66,6 +66,8 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.match(panel, /CostCenterHhHmSimulationMultiselect/);
     assert.match(multiselect, /cost-center-hh-hm-multiselect/);
     assert.match(multiselect, /role="listbox"/);
+    assert.match(panel, /applyCostCenterHhHmCapacityFieldPatch/);
+    assert.match(panel, /Horas base manuais ativas/);
     assert.match(panel, /parseCostCenterHhHmSimulationCostCentersResponse/);
     assert.match(panel, /normalizeCostCenterHhHmSimulationStoredForm/);
     assert.doesNotMatch(panel, /prisma/i);

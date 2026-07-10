@@ -4,9 +4,11 @@ import {
   computeHhHmAdjustedHours,
   computeHhHmCapacityHours,
   computeHhHmTheoreticalHours,
+  calculateHhHmHourlyRate,
   HH_HM_CAPACITY_HH_INPUT_HINT,
   HH_HM_CAPACITY_HM_INPUT_HINT,
   parseHhHmCapacityEfficiencyPercent,
+  resolveHhHmRateDenominatorHours,
 } from "./hhHmCapacityCalculation.js";
 
 describe("hhHmCapacityCalculation", () => {
@@ -22,8 +24,35 @@ describe("hhHmCapacityCalculation", () => {
     assert.equal(computeHhHmTheoreticalHours(13, 180), 2_340);
   });
 
-  it("horas HM ajustadas com eficiência 80% = 1872", () => {
-    assert.equal(computeHhHmAdjustedHours(2_340, 80), 1_872);
+  it("horas HM ajustadas com eficiência 100% = 2340", () => {
+    assert.equal(computeHhHmAdjustedHours(2_340, 100), 2_340);
+  });
+
+  it("taxa HM com eficiência 100% usa 2340 horas (R$ 26,67)", () => {
+    assert.equal(calculateHhHmHourlyRate(62_396.89, 2_340), 26.67);
+  });
+
+  it("taxa HM com eficiência 80% usa 1872 horas (R$ 33,33)", () => {
+    assert.equal(calculateHhHmHourlyRate(62_396.89, 1_872), 33.33);
+  });
+
+  it("denominador ignora horas manuais quando avançado está desmarcado", () => {
+    assert.equal(
+      resolveHhHmRateDenominatorHours({
+        useManualBaseHours: false,
+        manualBaseHours: 1_872,
+        adjustedHours: 2_340,
+      }),
+      2_340
+    );
+    assert.equal(
+      resolveHhHmRateDenominatorHours({
+        useManualBaseHours: true,
+        manualBaseHours: 1_872,
+        adjustedHours: 2_340,
+      }),
+      1_872
+    );
   });
 
   it("computeHhHmCapacityHours integra strings do formulário", () => {

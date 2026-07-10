@@ -10,6 +10,8 @@ import {
   HH_HM_CAPACITY_DEFAULT_HOURS_PER_UNIT,
   HH_HM_CAPACITY_HH_INPUT_HINT,
   HH_HM_CAPACITY_HM_INPUT_HINT,
+  calculateHhHmHourlyRate,
+  resolveHhHmRateDenominatorHours,
 } from "./hhHmCapacityCalculation.js";
 
 export const COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING =
@@ -701,9 +703,25 @@ export function computeCostCenterHhHmRate(input: {
   monthlyAverageAmount: number | null;
   baseMonthlyHours: number | null;
 }): number | null {
-  if (input.monthlyAverageAmount == null || input.baseMonthlyHours == null) return null;
-  if (input.baseMonthlyHours <= 0) return null;
-  return roundMoney(input.monthlyAverageAmount / input.baseMonthlyHours);
+  const rate = calculateHhHmHourlyRate(input.monthlyAverageAmount, input.baseMonthlyHours);
+  return rate == null ? null : roundMoney(rate);
+}
+
+/**
+ * Ao editar capacidade (pessoas/máquinas, horas ou eficiência), desliga horas base
+ * manuais para a taxa acompanhar a eficiência atual — evita denominador antigo.
+ */
+export function applyCostCenterHhHmCapacityFieldPatch(
+  side: CostCenterHhHmSimulationSideFormValues,
+  key: "productiveCount" | "hoursPerUnit" | "efficiencyPercent",
+  value: string
+): CostCenterHhHmSimulationSideFormValues {
+  return {
+    ...side,
+    [key]: value,
+    useManualBaseHours: false,
+    baseMonthlyHours: "",
+  };
 }
 
 export function computeCostCenterHhHmItemCost(input: {
@@ -747,16 +765,14 @@ export function computeCostCenterHhHmSideSimulation(input: {
     errors.push(capacity.efficiencyError);
   }
 
-  const manualBaseHours = parsePositiveNumber(input.form.baseMonthlyHours);
-  let baseMonthlyHours: number | null = null;
-  if (input.form.useManualBaseHours) {
-    baseMonthlyHours = manualBaseHours;
-  } else {
-    baseMonthlyHours =
-      capacity.adjustedHours != null && capacity.adjustedHours > 0
-        ? capacity.adjustedHours
-        : null;
-  }
+  const manualBaseHours = input.form.useManualBaseHours
+    ? parsePositiveNumber(input.form.baseMonthlyHours)
+    : null;
+  const baseMonthlyHours = resolveHhHmRateDenominatorHours({
+    useManualBaseHours: input.form.useManualBaseHours,
+    manualBaseHours,
+    adjustedHours: capacity.adjustedHours,
+  });
 
   const skipAverage =
     input.form.averagePeriod === "MANUAL_VALUE" || input.form.useManualRate;

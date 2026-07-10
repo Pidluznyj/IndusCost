@@ -3,6 +3,7 @@ import { AlertTriangle, Building2, Calculator, ChevronDown, Loader2, Save } from
 import { CostCenterHhHmSimulationMultiselect } from "@/src/components/CostCenterHhHmSimulationMultiselect";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
+  applyCostCenterHhHmCapacityFieldPatch,
   buildCostCenterHhHmSimulationCostCentersApiPath,
   computeCostCenterHhHmDualRateSimulation,
   COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD_OPTIONS,
@@ -182,6 +183,7 @@ function SideCalculationBlock({
   costCentersError,
   onRetryCostCenters,
   onPatch,
+  onPatchCapacity,
   monthlyData,
   monthlyLoading,
   monthlyError,
@@ -198,6 +200,10 @@ function SideCalculationBlock({
   onPatch: <K extends keyof CostCenterHhHmSimulationSideFormValues>(
     key: K,
     value: CostCenterHhHmSimulationSideFormValues[K]
+  ) => void;
+  onPatchCapacity: (
+    key: "productiveCount" | "hoursPerUnit" | "efficiencyPercent",
+    value: string
   ) => void;
   monthlyData: MonthlyDataPayload | null;
   monthlyLoading: boolean;
@@ -278,7 +284,7 @@ function SideCalculationBlock({
               : "Quantidade de máquinas produtivas"
           }
           value={side.productiveCount}
-          onChange={(value) => onPatch("productiveCount", value)}
+          onChange={(value) => onPatchCapacity("productiveCount", value)}
           type="number"
           step="1"
           placeholder={hourType === "HH" ? "Ex.: 60" : "Ex.: 13"}
@@ -292,7 +298,7 @@ function SideCalculationBlock({
               : "Horas mensais por máquina"
           }
           value={side.hoursPerUnit}
-          onChange={(value) => onPatch("hoursPerUnit", value)}
+          onChange={(value) => onPatchCapacity("hoursPerUnit", value)}
           type="number"
           step="0.01"
           placeholder="Ex.: 180"
@@ -306,7 +312,7 @@ function SideCalculationBlock({
               : "Eficiência produtiva das máquinas (%)"
           }
           value={side.efficiencyPercent}
-          onChange={(value) => onPatch("efficiencyPercent", value)}
+          onChange={(value) => onPatchCapacity("efficiencyPercent", value)}
           type="number"
           step="0.01"
           placeholder="Ex.: 80"
@@ -323,24 +329,45 @@ function SideCalculationBlock({
             <input
               type="checkbox"
               checked={side.useManualBaseHours}
-              onChange={(e) => onPatch("useManualBaseHours", e.target.checked)}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                onPatch("useManualBaseHours", checked);
+                if (!checked) onPatch("baseMonthlyHours", "");
+              }}
               disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
             />
             Informar horas base manualmente
           </label>
           {side.useManualBaseHours ? (
-            <Field
-              label={`Horas base mensais ${hourType} (driver)`}
-              value={side.baseMonthlyHours}
-              onChange={(value) => onPatch("baseMonthlyHours", value)}
-              type="number"
-              step="0.01"
-              placeholder="Ex.: 8640"
-              disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
-            />
+            <>
+              <p className="text-xs text-amber-800">
+                Com horas base manuais ativas, a taxa não usa a eficiência acima até você
+                desmarcar esta opção ou alterar pessoas/máquinas, horas ou eficiência.
+              </p>
+              <Field
+                label={`Horas base mensais ${hourType} (driver)`}
+                value={side.baseMonthlyHours}
+                onChange={(value) => onPatch("baseMonthlyHours", value)}
+                type="number"
+                step="0.01"
+                placeholder="Ex.: 8640"
+                disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+              />
+            </>
           ) : null}
         </div>
       </details>
+
+      {side.useManualBaseHours ? (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Horas base manuais ativas: a taxa {hourType} usa o driver manual, não a eficiência
+            informada acima. Desmarque a opção avançada ou altere máquinas/horas/eficiência para
+            recalcular automaticamente.
+          </span>
+        </div>
+      ) : null}
 
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input
@@ -376,12 +403,18 @@ function SideCalculationBlock({
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-            {hourType === "HH" ? "Horas HH ajustadas" : "Horas HM ajustadas"}
+            {side.useManualBaseHours
+              ? `Horas base manuais ${hourType}`
+              : hourType === "HH"
+                ? "Horas HH ajustadas"
+                : "Horas HM ajustadas"}
           </p>
           <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">
-            {sideResult.composition.adjustedHours != null
-              ? `${formatNumber(sideResult.composition.adjustedHours, 2)} h`
-              : "—"}
+            {sideResult.composition.baseMonthlyHours != null
+              ? `${formatNumber(sideResult.composition.baseMonthlyHours, 2)} h`
+              : sideResult.composition.adjustedHours != null
+                ? `${formatNumber(sideResult.composition.adjustedHours, 2)} h`
+                : "—"}
           </p>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-3">
@@ -588,6 +621,17 @@ export function CostCenterHhHmSimulationPanel({
     }));
   };
 
+  const patchSideCapacity = (
+    sideKey: SideKey,
+    key: "productiveCount" | "hoursPerUnit" | "efficiencyPercent",
+    value: string
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      [sideKey]: applyCostCenterHhHmCapacityFieldPatch(prev[sideKey], key, value),
+    }));
+  };
+
   const patchRoot = <K extends keyof CostCenterHhHmSimulationFormValues>(
     key: K,
     value: CostCenterHhHmSimulationFormValues[K]
@@ -688,6 +732,7 @@ export function CostCenterHhHmSimulationPanel({
           costCentersError={costCentersError}
           onRetryCostCenters={() => setCostCentersReloadKey((value) => value + 1)}
           onPatch={(key, value) => patchSide("hh", key, value)}
+          onPatchCapacity={(key, value) => patchSideCapacity("hh", key, value)}
           monthlyData={hhMonthly.monthlyData}
           monthlyLoading={hhMonthly.monthlyLoading}
           monthlyError={hhMonthly.monthlyError}
@@ -703,6 +748,7 @@ export function CostCenterHhHmSimulationPanel({
           costCentersError={costCentersError}
           onRetryCostCenters={() => setCostCentersReloadKey((value) => value + 1)}
           onPatch={(key, value) => patchSide("hm", key, value)}
+          onPatchCapacity={(key, value) => patchSideCapacity("hm", key, value)}
           monthlyData={hmMonthly.monthlyData}
           monthlyLoading={hmMonthly.monthlyLoading}
           monthlyError={hmMonthly.monthlyError}
