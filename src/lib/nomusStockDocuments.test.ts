@@ -93,14 +93,21 @@ describe("nomusStockDocumentsSyncLogic", () => {
 
   it("monta query RSQL por período e por idNfe", () => {
     assert.equal(isoDateToNomusBrDate("2025-07-01"), "01/07/2025");
+    assert.equal(isoDateToNomusBrDate("2026-07-10"), "10/07/2026");
+    const periodQuery = buildStockDocumentsQuery({
+      tipo: "DocumentoSaida",
+      from: "2025-07-01",
+      to: "2026-07-10",
+    });
     assert.equal(
-      buildStockDocumentsQuery({
-        tipo: "DocumentoSaida",
-        from: "2025-07-01",
-        to: "2026-07-10",
-      }),
-      "tipoDocumentoEstoque==DocumentoSaida;data=ge=01/07/2025;data=le=10/07/2026"
+      periodQuery,
+      "dataEmissao>=01/07/2025;dataEmissao<=10/07/2026;tipoDocumentoEstoque==DocumentoSaida"
     );
+    assert.ok(!periodQuery.includes("data>="));
+    assert.ok(!periodQuery.includes("data<="));
+    assert.ok(!periodQuery.includes("data=ge="));
+    assert.ok(!periodQuery.includes("data=le="));
+    assert.ok(!/(^|;)data(>=|<=|=ge=|=le=)/.test(periodQuery));
     assert.equal(
       buildStockDocumentsQuery({
         tipo: "DocumentoSaida",

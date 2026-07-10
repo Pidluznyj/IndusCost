@@ -119,9 +119,10 @@ export function parseStockDocumentsSyncCli(argv: string[]): StockDocumentsSyncCl
 }
 
 /**
- * Monta filtro RSQL Nomus.
- * Período: data=ge=dd/MM/yyyy;data=le=dd/MM/yyyy
- * Pontual: idNfe==N (um id por request quando múltiplos).
+ * Monta filtro RSQL Nomus (documentosEstoque).
+ * Período: dataEmissao>=dd/MM/yyyy;dataEmissao<=dd/MM/yyyy;tipoDocumentoEstoque==...
+ * Pontual: idNfe==N;tipoDocumentoEstoque==... (um id por request quando múltiplos).
+ * Seletor de data: dataEmissao (não "data").
  */
 export function buildStockDocumentsQuery(options: {
   tipo: string;
@@ -129,16 +130,17 @@ export function buildStockDocumentsQuery(options: {
   to?: string | null;
   idNfe?: number | null;
 }): string {
-  const parts: string[] = [`tipoDocumentoEstoque==${options.tipo}`];
+  const parts: string[] = [];
   if (options.idNfe != null) {
-    parts.unshift(`idNfe==${options.idNfe}`);
+    parts.push(`idNfe==${options.idNfe}`);
   }
   if (options.from) {
-    parts.push(`data=ge=${isoDateToNomusBrDate(options.from)}`);
+    parts.push(`dataEmissao>=${isoDateToNomusBrDate(options.from)}`);
   }
   if (options.to) {
-    parts.push(`data=le=${isoDateToNomusBrDate(options.to)}`);
+    parts.push(`dataEmissao<=${isoDateToNomusBrDate(options.to)}`);
   }
+  parts.push(`tipoDocumentoEstoque==${options.tipo}`);
   return parts.join(";");
 }
 
