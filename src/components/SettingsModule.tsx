@@ -32,6 +32,7 @@ import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
+import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
@@ -306,6 +307,10 @@ export const SettingsModule = () => {
   const canManageUsersPerm = canManageUsers(auth);
   const canViewAccessProfilesPerm = canViewAccessProfiles(auth);
   const canViewSettings = auth.hasPermission("settings.view");
+  const canEditGlobalParams = auth.hasAnyPermission([
+    "settings.global_params.edit",
+    "users.manage",
+  ]);
   const canRunNomusDailySync = auth.hasPermission("settings.nomus.sync");
   const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles">("users");
   const [tourOpen, setTourOpen] = useState(false);
@@ -1513,6 +1518,19 @@ export const SettingsModule = () => {
                   Salvar Parâmetros
                 </button>
               </div>
+
+              <SettingsApplyHhHmSimulationSection
+                canApply={canEditGlobalParams}
+                currentOfficial={{
+                  hhOverride:
+                    globalForm.hhOverride === "" ? globals.hhOverride : Number(globalForm.hhOverride),
+                  energyCost: Number(globalForm.energyCost) || globals.energyCost,
+                  workingHours: Number(globalForm.workingHours) || globals.workingHours,
+                }}
+                onApplied={() => {
+                  void fetchData();
+                }}
+              />
 
               <SalesMarginNomusConfigPanel />
             </div>

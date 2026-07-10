@@ -14120,7 +14120,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       requireAppAuth,
       requireBootstrapOrAnyPermission,
     },
-    { initAnalysisCache }
+    { initAnalysisCache, isUuid }
   );
 
   registerSettingsSalesMarginNomusRoutes(app, {

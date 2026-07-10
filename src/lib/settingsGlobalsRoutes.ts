@@ -2,6 +2,11 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AnalysisCache } from "@/src/lib/productCostAnalysisEngine.server.js";
+import {
+  APPLY_HH_HM_SIMULATION_API,
+  parseApplyHhHmSimulationBody,
+} from "./settingsApplyHhHmSimulation.js";
+import { applyHhHmSimulationToOfficialParams } from "./settingsApplyHhHmSimulation.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -10,6 +15,7 @@ type AuthGuards = {
 
 type Deps = {
   initAnalysisCache: () => Promise<AnalysisCache>;
+  isUuid: (value: unknown) => value is string;
 };
 
 export const SETTINGS_GLOBAL_PARAMS_VIEW_PERMISSIONS = [
@@ -87,6 +93,11 @@ export function registerSettingsGlobalsRoutes(
     requireBootstrapOrAnyPermission([...SETTINGS_GLOBAL_PARAMS_VIEW_PERMISSIONS]),
   ] as const;
 
+  const editGuard = [
+    requireAppAuth,
+    requireBootstrapOrAnyPermission([...SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS]),
+  ] as const;
+
   app.get("/api/settings/globals", ...viewGuard, async (_req, res) => {
     try {
       const payload = await buildSettingsGlobalsPayload(deps.initAnalysisCache);
@@ -94,6 +105,45 @@ export function registerSettingsGlobalsRoutes(
     } catch (error) {
       console.error("GET /api/settings/globals", error);
       return res.status(500).json({ error: "Erro ao carregar configurações globais." });
+    }
+  });
+
+  app.post(APPLY_HH_HM_SIMULATION_API, ...editGuard, async (req, res) => {
+    try {
+      const parsed = parseApplyHhHmSimulationBody(req.body);
+      if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.code, message: parsed.message });
+      }
+      if (!deps.isUuid(parsed.simulationId)) {
+        return res.status(400).json({
+          error: "INVALID_SIMULATION_ID",
+          message: "Identificador da simulação inválido.",
+        });
+      }
+
+      const result = await applyHhHmSimulationToOfficialParams(prisma, parsed.simulationId);
+      if (!result.ok) {
+        return res.status(result.status).json({
+          error: result.code,
+          message: result.message,
+        });
+      }
+
+      const globals = await buildSettingsGlobalsPayload(deps.initAnalysisCache);
+      return res.json({
+        message: result.message,
+        simulationId: result.simulationId,
+        simulationType: result.simulationType,
+        before: result.before,
+        after: result.after,
+        globals,
+      });
+    } catch (error) {
+      console.error("POST apply-hh-hm-simulation", error);
+      return res.status(500).json({
+        error: "APPLY_HH_HM_SIMULATION_FAILED",
+        message: "Não foi possível aplicar a simulação aos parâmetros oficiais.",
+      });
     }
   });
 

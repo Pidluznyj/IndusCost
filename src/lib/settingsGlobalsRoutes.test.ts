@@ -18,6 +18,7 @@ describe("settingsGlobalsRoutes", () => {
     const lib = read("src/lib/settingsGlobalsRoutes.ts");
     const server = read("server.ts");
     assert.match(lib, /\/api\/settings\/globals/);
+    assert.match(lib, /apply-hh-hm-simulation/);
     assert.doesNotMatch(lib, /production-hour-cost-simulations/);
     assert.match(server, /registerSettingsGlobalsRoutes/);
   });
