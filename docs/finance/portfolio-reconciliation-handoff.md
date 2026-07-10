@@ -63,7 +63,7 @@ A fato responde, com confiança e alertas:
 | 8 | API read-only | `feat(finance): adiciona api read-only…` | `c2d7750` |
 | 9 | Tela menu Financeiro | `feat(finance): adiciona tela…` | `855b961` |
 | 10 | Drawer de rastreabilidade | `feat(finance): adiciona rastreabilidade…` | `b665871` |
-| 11 | Handoff (este documento) | `docs(finance): documenta handoff…` | *(após push)* |
+| 11 | Handoff (este documento) | `docs(finance): documenta handoff…` | `cc49f3a` |
 
 ### O que cada etapa entregou
 
