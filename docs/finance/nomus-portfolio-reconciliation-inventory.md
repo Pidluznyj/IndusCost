@@ -1,5 +1,8 @@
 # Inventário — Conciliação de carteira Nomus (Pedido × Documento de Saída × Contas a Receber)
 
+Documento de **descoberta** e stage de documentos de estoque.  
+Arquitetura da tabela fato / motor de conciliação: [portfolio-reconciliation-architecture.md](./portfolio-reconciliation-architecture.md).
+
 Stage isolado de **documentos de estoque** Nomus para conciliação futura Pedido × NF × saída.  
 **Não altera** Contas a Receber, Faturamento, Fluxo de Caixa nem Comissões. Sem cron / sem rotina automática.
 
