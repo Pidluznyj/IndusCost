@@ -51,12 +51,9 @@ import {
   EXECUTIVE_REPORT_SECTION_INTROS,
   EXECUTIVE_REPORT_SECTION_SUBTITLES,
   EXECUTIVE_REPORT_AUTO_TARGET_SHORT,
-  EXECUTIVE_REPORT_PRINT_DATA_NOTE,
   formatExecutiveReportBillingYearsSubtitle,
   getExecutiveReportKpiHint,
   presentExecutiveReportNarrativeBullets,
-  simplifyExecutiveHighlight,
-  translateExecutiveReportWarning,
 } from "@/src/lib/financeExecutiveReportUxCopy";
 
 function printTargetHint(missing: boolean, fallback?: string): string | undefined {
@@ -118,19 +115,6 @@ function mapPayablesRowsForNarrative(
     overdueAmount: row.isCurrentMonth ? overdueAmount : 0,
     upcomingAmount: row.paidAmount,
   }));
-}
-
-function resolvePrincipalAlerta(report: FinanceExecutiveReport): string {
-  const warning = report.dataQuality.warnings[0];
-  if (warning) return translateExecutiveReportWarning(warning);
-
-  const highlight = report.executiveSummary.highlights[0];
-  if (highlight) return simplifyExecutiveHighlight(highlight);
-
-  const narrative = report.executiveNarrative?.sections[0]?.body;
-  if (narrative) return simplifyExecutiveHighlight(narrative);
-
-  return "Sem alertas relevantes para o período.";
 }
 
 export function ExecutiveReportDocument({
@@ -201,12 +185,6 @@ export function ExecutiveReportDocument({
     narrative: report.executiveNarrative,
     warnings: report.dataQuality.warnings,
   });
-
-  const conclusionBullets = presentExecutiveReportNarrativeBullets({
-    narrative: report.executiveNarrative,
-  });
-
-  const principalAlerta = resolvePrincipalAlerta(report);
 
   const billingChartNarrative = buildExecutiveChartNarrative("billing-comparison", {
     billingComparison: {
@@ -324,13 +302,6 @@ export function ExecutiveReportDocument({
               hint={kpiHint("Saldo acumulado")}
               tooltip={kpiHint("Saldo acumulado")}
               tone={cashFlowKpis.finalAccumulated < 0 ? "negative" : "positive"}
-            />
-            <ExecutiveKpiCard
-              label="Principal alerta"
-              value={principalAlerta}
-              hint="Leitura prioritária para decisão no período."
-              tooltip="Leitura prioritária para decisão no período."
-              tone="neutral"
             />
           </ExecutiveKpiGrid>
 
@@ -776,31 +747,8 @@ export function ExecutiveReportDocument({
       </ExecutivePrintPageShell>
 
       <ExecutivePrintPageShell
-        pageId="conclusion"
-        pageNumber={9}
-        header={printHeader}
-        generatedAt={report.generatedAt}
-      >
-        <ExecutiveReportSection
-          id="conclusion"
-          eyebrow="Encerramento"
-          title="Conclusão Executiva"
-          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES.conclusion}
-          intro={EXECUTIVE_REPORT_SECTION_INTROS.conclusion}
-        >
-          <ExecutiveNarrativeBullets
-            title="Principais pontos"
-            bullets={conclusionBullets}
-            emptyMessage="Sem leitura executiva para os filtros aplicados."
-          />
-
-          <p className="executive-print-conclusion-note">{EXECUTIVE_REPORT_PRINT_DATA_NOTE}</p>
-        </ExecutiveReportSection>
-      </ExecutivePrintPageShell>
-
-      <ExecutivePrintPageShell
         pageId="cash-flow-monthly-timeline"
-        pageNumber={10}
+        pageNumber={9}
         header={printHeader}
         generatedAt={report.generatedAt}
       >
@@ -811,7 +759,7 @@ export function ExecutiveReportDocument({
 
       <ExecutivePrintPageShell
         pageId="cash-radar"
-        pageNumber={11}
+        pageNumber={10}
         allowContentFlow
         header={printHeader}
         generatedAt={report.generatedAt}

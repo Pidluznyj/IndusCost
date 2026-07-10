@@ -56,7 +56,7 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /pageId="accounts-receivable"/);
     assert.match(document, /pageId="accounts-payable"/);
     assert.match(document, /pageId="cash-flow"/);
-    assert.match(document, /pageId="conclusion"/);
+    assert.doesNotMatch(document, /pageId="conclusion"/);
     assert.match(document, /pageId="cash-flow-monthly-timeline"/);
     assert.match(document, /pageId="cash-radar"/);
     assert.doesNotMatch(document, /pageId="billing-projection"/);
@@ -65,7 +65,6 @@ describe("financeExecutiveReportPrint", () => {
     const arIdx = document.indexOf('pageId="accounts-receivable"');
     const apIdx = document.indexOf('pageId="accounts-payable"');
     const cfIdx = document.indexOf('pageId="cash-flow"');
-    const conclusionIdx = document.indexOf('pageId="conclusion"');
     const timelineIdx = document.indexOf('pageId="cash-flow-monthly-timeline"');
     const cashRadarIdx = document.indexOf('pageId="cash-radar"');
     assert.ok(
@@ -74,8 +73,7 @@ describe("financeExecutiveReportPrint", () => {
         arIdx > billingIdx &&
         apIdx > arIdx &&
         cfIdx > apIdx &&
-        conclusionIdx > cfIdx &&
-        timelineIdx > conclusionIdx &&
+        timelineIdx > cfIdx &&
         cashRadarIdx > timelineIdx
     );
   });
@@ -261,7 +259,15 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Pedidos de Venda/);
     assert.match(document, /Pedidos mês/);
     assert.match(document, /Pedidos YTD/);
-    assert.match(document, /Conclusão Executiva/);
+    assert.match(document, /Faturamento mês/);
+    assert.match(document, /Faturamento YTD/);
+    assert.match(document, /AR aberto/);
+    assert.match(document, /AP aberto/);
+    assert.match(document, /Saldo planejado ano/);
+    assert.doesNotMatch(document, /Principal alerta/);
+    assert.doesNotMatch(document, /Conclusão Executiva/);
+    assert.doesNotMatch(document, /Principais pontos/);
+    assert.doesNotMatch(document, /Encerramento/);
     assert.match(document, /FinanceCashFlowMonthlyTimelineTable/);
     assert.match(document, /executive-report-monthly-timeline/);
     assert.match(document, /calendarAgenda\.executiveSummary/);
