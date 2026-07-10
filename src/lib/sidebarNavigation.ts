@@ -5,6 +5,7 @@
 
 import {
   buildGroupedNavigationStructure,
+  getModulePath,
   resolveNavigationGroupIdForModule,
   type GroupedNavigationStructure,
   type NavigationGroupId,
@@ -85,7 +86,7 @@ export function buildAccessibleSidebarNavigation(
     return {
       id: moduleId,
       label: moduleId,
-      path: `/${moduleId}`,
+      path: getModulePath(moduleId),
     };
   });
 

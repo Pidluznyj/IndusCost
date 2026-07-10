@@ -67,14 +67,16 @@ describe("sidebarNavigation — filtro por permissão", () => {
     assert.ok(!ids.includes("products"));
   });
 
-  it("preserva paths /{moduleId} nos links acessíveis", () => {
+  it("preserva paths canônicos nos links acessíveis", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     for (const item of nav.flatAccessibleItems) {
-      assert.equal(item.path, `/${item.id}`);
+      const expected = item.id === "suppliers" ? "/finance/suppliers" : `/${item.id}`;
+      assert.equal(item.path, expected);
     }
     for (const group of nav.groups) {
       for (const item of group.items) {
-        assert.equal(item.path, `/${item.itemId}`);
+        const expected = item.itemId === "suppliers" ? "/finance/suppliers" : `/${item.itemId}`;
+        assert.equal(item.path, expected);
       }
     }
   });
@@ -112,10 +114,16 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Financeiro contém Financeiro, Custos Indiretos, Tributos e Relatórios", () => {
+  it("Financeiro contém Financeiro, Fornecedores, Custos Indiretos, Tributos e Relatórios", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "financeiro");
-    assert.deepEqual(group?.items.map((i) => i.itemId), ["finance", "opex", "taxes", "reports"]);
+    assert.deepEqual(group?.items.map((i) => i.itemId), [
+      "finance",
+      "suppliers",
+      "opex",
+      "taxes",
+      "reports",
+    ]);
   });
 
   it("Operações contém Estoque, Compras, Máquinas, Performance, Manutenção e Frota", () => {
@@ -238,14 +246,15 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     }
   });
 
-  it("paths dos NavLink permanecem item.path (/{moduleId})", () => {
+  it("paths dos NavLink usam item.path (suppliers → /finance/suppliers)", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /to=\{path\}/);
     assert.doesNotMatch(sidebar, /to=\{`\/\$\{/);
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
       const flat = nav.flatAccessibleItems.find((item) => item.id === moduleId);
-      assert.equal(flat?.path, `/${moduleId}`);
+      const expected = moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
+      assert.equal(flat?.path, expected);
     }
   });
 

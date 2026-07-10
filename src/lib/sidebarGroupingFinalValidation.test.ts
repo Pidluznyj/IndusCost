@@ -79,6 +79,7 @@ const EXPECTED_MENU: Record<
   ],
   Financeiro: [
     MODULE_LABELS.finance,
+    MODULE_LABELS.suppliers,
     MODULE_LABELS.opex,
     MODULE_LABELS.taxes,
     MODULE_LABELS.reports,
@@ -132,11 +133,24 @@ describe("validação final — estrutura de menu agrupado", () => {
 });
 
 describe("validação final — rotas preservadas", () => {
-  it("cada módulo mantém path /{moduleId} e rota em App.tsx", () => {
+  it("cada módulo mantém path canônico e rota em App.tsx", () => {
     const appTsx = read("src/App.tsx");
+    const structure = buildGroupedNavigationStructure();
+    const allItems = [
+      ...structure.directItems,
+      ...structure.groups.flatMap((g) => g.items),
+      ...(structure.fallbackGroup?.items ?? []),
+    ];
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
-      const path = `/${moduleId}`;
-      assert.equal(buildGroupedNavigationStructure().directItems.find((i) => i.itemId === moduleId)?.path ?? path, path);
+      const item = allItems.find((i) => i.itemId === moduleId);
+      const expectedPath =
+        moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
+      assert.equal(item?.path, expectedPath);
+      if (moduleId === "suppliers") {
+        assert.match(appTsx, /path=["']finance\/\*["']/);
+        assert.match(read("src/components/FinanceModule.tsx"), /path="suppliers"/);
+        continue;
+      }
       const escaped = moduleId.replace(/-/g, "\\-");
       assert.match(
         appTsx,
@@ -153,7 +167,7 @@ describe("validação final — rotas preservadas", () => {
 });
 
 describe("validação final — permissões por perfil de role", () => {
-  it("SUPER_ADMIN vê todos os 23 módulos do menu", () => {
+  it("SUPER_ADMIN vê todos os módulos do menu", () => {
     const check = authChecker("SUPER_ADMIN", []);
     assert.equal(accessibleModuleIds(check).length, SIDEBAR_MODULE_ORDER.length);
     for (const moduleId of SIDEBAR_MODULE_ORDER) {

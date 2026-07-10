@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   buildGroupedNavigationStructure,
   flattenGroupedNavigationItems,
+  getModulePath,
   MODULE_MENU_PERMISSION_KEYS,
   NAVIGATION_GROUP_DEFINITIONS,
   resolveNavigationGroupIdForModule,
@@ -94,6 +95,9 @@ function isDirectGroup(groupId: NavigationGroupId): boolean {
 }
 
 function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
+  if (moduleId === "suppliers") {
+    return /path=["']finance\/\*["']/.test(appTsx);
+  }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);
 }
@@ -113,7 +117,7 @@ export function buildNavigationGroupingSnapshot(
       order: index + 1,
       itemId,
       label: MODULE_LABELS[itemId],
-      path: `/${itemId}`,
+      path: getModulePath(itemId),
       groupId,
       groupLabel: groupLabel(groupId),
       isDirect: isDirectGroup(groupId),

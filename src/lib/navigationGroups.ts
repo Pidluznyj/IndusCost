@@ -115,6 +115,11 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "settings.nomus.view",
     "settings.view",
   ],
+  suppliers: [
+    "finance.suppliers.view",
+    "finance.cost_centers.view",
+    "finance.view",
+  ],
   guide: ["guide.view", "dashboard.view"],
 };
 
@@ -154,7 +159,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Financeiro",
     iconKey: "Banknote",
     order: 4,
-    itemIds: ["finance", "opex", "taxes", "reports"],
+    itemIds: ["finance", "suppliers", "opex", "taxes", "reports"],
   },
   {
     id: "operacoes",
@@ -187,6 +192,7 @@ const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
 );
 
 export function getModulePath(moduleId: AppModuleId): string {
+  if (moduleId === "suppliers") return "/finance/suppliers";
   return `/${moduleId}`;
 }
 

@@ -190,11 +190,16 @@ export type SupplierGridRow = {
   ruleStatus: string;
   hasActiveRule: boolean;
   aliasesCount: number;
+  /** Status do cadastro gerencial (ACTIVE/INACTIVE/…); ausente em linhas só-AP. */
+  status?: string | null;
 };
+
+export type SupplierStatusFilter = "all" | "active" | "inactive";
 
 export type SupplierGridFilters = {
   search: string;
   ruleFilter: "all" | "with_rule" | "without_rule";
+  statusFilter?: SupplierStatusFilter;
   minAmount?: number;
   maxAmount?: number;
 };
@@ -220,6 +225,9 @@ export function filterSupplierGridRows(
   return rows.filter((row) => {
     if (filters.ruleFilter === "with_rule" && !row.hasActiveRule) return false;
     if (filters.ruleFilter === "without_rule" && row.hasActiveRule) return false;
+    const statusFilter = filters.statusFilter ?? "all";
+    if (statusFilter === "active" && row.status === "INACTIVE") return false;
+    if (statusFilter === "inactive" && row.status !== "INACTIVE") return false;
     if (filters.minAmount != null && row.amount < filters.minAmount) return false;
     if (filters.maxAmount != null && row.amount > filters.maxAmount) return false;
     if (!matchesFinanceGridSearch(`${row.name} ${row.document ?? ""} ${row.costCenterName}`, filters.search)) {

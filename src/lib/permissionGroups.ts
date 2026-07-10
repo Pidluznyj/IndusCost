@@ -65,6 +65,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   pricing: "comercial",
   commissions: "comercial",
   finance: "financeiro",
+  suppliers: "financeiro",
   opex: "financeiro",
   taxes: "financeiro",
   purchases: "operacoes",
@@ -138,6 +139,7 @@ export const PERMISSION_ACCESS_GROUP_DEFINITIONS: readonly PermissionAccessGroup
     description: "Financeiro, tributos, custos indiretos, relatórios e subdomínios financeiros.",
     relatedMenuLabels: [
       MODULE_LABELS.finance,
+      MODULE_LABELS.suppliers,
       MODULE_LABELS.opex,
       MODULE_LABELS.taxes,
       MODULE_LABELS.reports,
@@ -354,7 +356,7 @@ export function getRelatedSidebarModulesForAccessGroup(
     case "comercial":
       return ["crm-commercial", "customers", "proposals", "sales-orders", "pricing", "commissions"];
     case "financeiro":
-      return ["finance", "opex", "taxes", "reports"];
+      return ["finance", "suppliers", "opex", "taxes", "reports"];
     case "operacoes":
       return ["inventory", "purchases", "machines", "operations-performance", "maintenance", "fleet"];
     case "administracao":

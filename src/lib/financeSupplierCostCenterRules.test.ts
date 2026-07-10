@@ -452,7 +452,7 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
     assert.equal(result.totalValue, 1500.5);
   });
 
-  it("8. searchFinancialSuppliersForRules normaliza termo e limita a 50", async () => {
+  it("8. searchFinancialSuppliersForRules normaliza termo e limita a 500", async () => {
     const captured: { search?: string; limit?: number } = {};
     const deps = {
       searchSuppliers: async (search: string, limit: number) => {
@@ -463,15 +463,15 @@ describe("financeSupplierCostCenterRules — busca de fornecedor", () => {
     } as unknown as FinanceSupplierCostCenterRulesDeps;
     const out = await searchFinancialSuppliersForRules(deps, { search: " teste ", limit: 999 });
     assert.equal(captured.search, "teste");
-    assert.equal(captured.limit, 50);
+    assert.equal(captured.limit, 500);
     assert.equal(out.suppliers.length, 1);
     assert.equal(out.suppliers[0]!.id, "sup-1");
   });
 
-  it("9. clampSupplierSearchLimit respeita 1..50 com default 20", () => {
+  it("9. clampSupplierSearchLimit respeita 1..500 com default 20", () => {
     assert.equal(clampSupplierSearchLimit(undefined), 20);
     assert.equal(clampSupplierSearchLimit(0), 1);
-    assert.equal(clampSupplierSearchLimit(999), 50);
+    assert.equal(clampSupplierSearchLimit(999), 500);
     assert.equal(clampSupplierSearchLimit(30), 30);
   });
 

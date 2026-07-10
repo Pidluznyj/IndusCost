@@ -27,6 +27,7 @@ export type AppModuleId =
   | "simulations"
   | "reports"
   | "finance"
+  | "suppliers"
   | "guide"
   | "settings";
 
@@ -61,6 +62,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "simulations",
   "reports",
   "finance",
+  "suppliers",
   "guide",
   "settings",
 ];
@@ -145,6 +147,12 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("reports.view") ||
         check.hasPermission("settings.nomus.view") ||
         check.hasPermission("settings.view")
+      );
+    case "suppliers":
+      return (
+        check.hasPermission("finance.suppliers.view") ||
+        check.hasPermission("finance.cost_centers.view") ||
+        check.hasPermission("finance.view")
       );
     case "guide":
       return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");
@@ -251,7 +259,11 @@ export function canAccessSettingsSection(
 
 /** Primeiro segmento da rota autenticada → módulo. */
 export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
-  const segment = pathname.replace(/^\//, "").split("/").filter(Boolean)[0];
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (normalized === "/finance/suppliers") {
+    return "suppliers";
+  }
+  const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
     return segment as AppModuleId;
@@ -292,6 +304,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   simulations: "Simulações",
   reports: "Relatórios",
   finance: "Financeiro",
+  suppliers: "Fornecedores",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };

@@ -57,6 +57,13 @@ describe("sidebarLabels — breadcrumb do header", () => {
     ]);
   });
 
+  it("financeiro › fornecedores", () => {
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/finance/suppliers"), [
+      { label: "Financeiro" },
+      { label: MODULE_LABELS.suppliers, path: "/finance/suppliers" },
+    ]);
+  });
+
   it("financeiro › relatórios", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/reports"), [
       { label: "Financeiro" },

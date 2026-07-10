@@ -88,7 +88,13 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
       const search = typeof req.query.search === "string" ? req.query.search : "";
       const limitRaw =
         typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
-      const payload = await searchOfficialFinancialSuppliersDefault({ search, limit: limitRaw });
+      const includeInactive =
+        req.query.includeInactive === "true" || req.query.includeInactive === "1";
+      const payload = await searchOfficialFinancialSuppliersDefault({
+        search,
+        limit: limitRaw,
+        includeInactive,
+      });
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/suppliers/search", error);

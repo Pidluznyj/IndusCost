@@ -44,6 +44,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   pricing: "comercial",
   commissions: "comercial",
   finance: "financeiro",
+  suppliers: "financeiro",
   opex: "financeiro",
   taxes: "financeiro",
   reports: "financeiro",
@@ -73,12 +74,13 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     assert.equal(new Set(ids).size, ids.length);
   });
 
-  it("todos os paths permanecem /{moduleId}", () => {
+  it("todos os paths usam getModulePath (suppliers → /finance/suppliers)", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
-      assert.equal(getModulePath(moduleId), `/${moduleId}`);
+      const expected = moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
+      assert.equal(getModulePath(moduleId), expected);
     }
     for (const item of flattenGroupedNavigationItems()) {
-      assert.equal(item.path, `/${item.itemId}`);
+      assert.equal(item.path, getModulePath(item.itemId));
       assert.equal(item.originalItem.path, item.path);
     }
   });

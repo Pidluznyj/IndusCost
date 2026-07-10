@@ -353,7 +353,7 @@ export function serializeFinancialSupplierSearchRow(
 export function clampSupplierSearchLimit(raw: number | undefined): number {
   const value = Number.isFinite(Number(raw)) ? Math.trunc(Number(raw)) : 20;
   if (value < 1) return 1;
-  if (value > 50) return 50;
+  if (value > 500) return 500;
   return value;
 }
 

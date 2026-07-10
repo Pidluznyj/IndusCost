@@ -13,6 +13,7 @@ import {
   resolveModuleIdFromPath,
   type AppModuleId,
 } from "@/src/lib/modulePermissions.js";
+import { getModulePath } from "@/src/lib/navigationGroups.js";
 
 export const NAVIGATION_GROUP_SHORT_LABELS: Record<NavigationGroupId, string> = {
   dashboard: "Home",
@@ -48,6 +49,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   simulations: "Simul.",
   reports: "Relat.",
   finance: "Financ.",
+  suppliers: "Forn.",
   guide: "Guia",
   settings: "Config.",
 };
@@ -89,6 +91,6 @@ export function resolveAppHeaderBreadcrumb(pathname: string): AppHeaderBreadcrum
   const groupLabel = resolveNavigationGroupLabel(groupId);
   return [
     { label: groupLabel },
-    { label: moduleLabel, path: `/${moduleId}` },
+    { label: moduleLabel, path: getModulePath(moduleId) },
   ];
 }

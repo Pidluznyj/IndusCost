@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -127,8 +128,27 @@ function buildAuditSections(data: FinanceCostCenterDashboardPayload | null): Fin
 
 export function FinanceCostCentersPage() {
   const auth = useAuth();
+  const [searchParams] = useSearchParams();
   const abortRef = useRef<AbortController | null>(null);
-  const [activeTab, setActiveTab] = useState<FinanceCostCentersTabId>("overview");
+  const initialTab = useMemo((): FinanceCostCentersTabId => {
+    const raw = searchParams.get("tab");
+    if (
+      raw === "overview" ||
+      raw === "centers" ||
+      raw === "suppliers" ||
+      raw === "rules" ||
+      raw === "unclassified" ||
+      raw === "audit"
+    ) {
+      return raw;
+    }
+    return "overview";
+  }, [searchParams]);
+  const [activeTab, setActiveTab] = useState<FinanceCostCentersTabId>(initialTab);
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
   const [draftFilters, setDraftFilters] = useState<FinanceCostCentersUiFilters>(
     createDefaultFinanceCostCentersUiFilters
   );

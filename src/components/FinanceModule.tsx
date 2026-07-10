@@ -15,11 +15,15 @@ import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsRecei
 import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
 import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
 import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
-import { canViewFinanceCostCenters } from "@/src/lib/financeCostCentersPermissions";
+import {
+  canViewFinanceCostCenters,
+  canViewFinanceSuppliers,
+} from "@/src/lib/financeCostCentersPermissions";
 import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/FinanceCostCentersPage";
 import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
 import { canViewFinanceSalesOrders } from "@/src/lib/financeSalesOrdersPermissions";
 import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
+import { FinanceSuppliersPage } from "@/src/components/finance/FinanceSuppliersPage";
 import {
   FINANCE_SECTIONS,
   getFinanceDefaultPath,
@@ -45,6 +49,7 @@ export function FinanceModule() {
   const canViewExecutiveReport = canViewFinanceExecutiveReport(auth);
   const canViewSalesOrders = canViewFinanceSalesOrders(auth);
   const canViewCostCenters = canViewFinanceCostCenters(auth);
+  const canViewSuppliers = canViewFinanceSuppliers(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
     if (section.id === "cash-flow") return canViewCashFlow;
@@ -52,6 +57,7 @@ export function FinanceModule() {
     if (section.id === "accounts-payable") return canViewAccountsPayable;
     if (section.id === "billing") return canViewBilling;
     if (section.id === "sales-orders") return canViewSalesOrders;
+    if (section.id === "suppliers") return canViewSuppliers;
     if (section.id === "cost-centers") return canViewCostCenters;
     if (section.id === "executive-report") return canViewExecutiveReport;
     return false;
@@ -105,6 +111,13 @@ export function FinanceModule() {
     ) : (
       <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
         Sem permissão para Pedidos de Venda.
+      </div>
+    ),
+    suppliers: canViewSuppliers ? (
+      <FinanceSuppliersPage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Fornecedores.
       </div>
     ),
     "cost-centers": canViewCostCenters ? (
@@ -172,6 +185,7 @@ export function FinanceModule() {
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />
         <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
+        <Route path="suppliers" element={sectionRoutes.suppliers} />
         <Route path="cost-centers/:costCenterId" element={sectionRoutes["cost-centers"] ? <FinanceCostCenterDetailPage /> : <Navigate to={defaultPath} replace />} />
         <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
         <Route path="executive-report" element={sectionRoutes["executive-report"]} />
