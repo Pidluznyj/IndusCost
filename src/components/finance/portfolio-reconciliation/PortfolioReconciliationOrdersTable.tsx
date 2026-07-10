@@ -107,7 +107,7 @@ export function PortfolioReconciliationOrdersTable({
                     {formatFinanceCurrency(row.saldo)}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    {formatFinanceDate(row.forecastDate)}
+                    {row.forecastLabel || formatFinanceDate(row.forecastDate)}
                   </td>
                   <td className="px-3 py-2.5 text-xs">
                     {formatPortfolioForecastSourceLabel(row.forecastSource)}

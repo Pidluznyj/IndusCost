@@ -169,9 +169,81 @@ describe("portfolioReconciliationApi", () => {
     assert.equal(rows[0]!.recebido, 2000);
     assert.equal(rows[0]!.saldo, 3000);
     assert.equal(rows[0]!.forecastSource, "RECEIVABLE");
+    assert.equal(rows[0]!.forecastDate, "2026-06-10");
+    assert.notEqual(rows[0]!.forecastDate, "2026-05-20");
+    assert.deepEqual(rows[0]!.forecastDates, ["2026-06-10", "2026-06-20"]);
+    assert.equal(rows[0]!.forecastDueCount, 2);
+    assert.match(rows[0]!.forecastLabel, /10\/06\/2026/);
+    assert.match(rows[0]!.forecastLabel, /\+ 1 vencimento/);
     assert.equal(rows[0]!.confidenceLevel, "MEDIUM");
     assert.deepEqual(rows[0]!.alertas, ["Diferença de preço"]);
     assert.equal(rows[0]!.hasIssues, true);
+  });
+
+  it("PD 02339: forecast agregado usa vencimentos CR e ignora FULLY_ALLOCATED 20/05", () => {
+    const facts = [
+      fact({
+        id: "cr-jul",
+        salesOrderItemId: "item-a",
+        orderItemValue: 17550,
+        allocatedQuantity: 3000,
+        allocatedValueByOrderPrice: 17550,
+        receivableTotalValue: 17550,
+        receivedValue: 0,
+        openReceivableValue: 17550,
+        dueDatesJson: ["2026-07-10"],
+        status: "RECEIVABLE_CONFIRMED",
+        confidenceLevel: "HIGH",
+        forecastSource: "RECEIVABLE",
+        forecastDate: new Date(2026, 6, 10),
+        forecastValue: 17550,
+        alertsJson: [],
+      }),
+      fact({
+        id: "cr-ago",
+        salesOrderItemId: "item-b",
+        orderItemValue: 140450,
+        allocatedQuantity: 24000,
+        allocatedValueByOrderPrice: 140450,
+        receivableTotalValue: 140450,
+        receivedValue: 0,
+        openReceivableValue: 140450,
+        dueDatesJson: ["2026-08-10"],
+        status: "RECEIVABLE_CONFIRMED",
+        confidenceLevel: "HIGH",
+        forecastSource: "RECEIVABLE",
+        forecastDate: new Date(2026, 7, 10),
+        forecastValue: 140450,
+        alertsJson: ["Diferença de preço"],
+      }),
+      fact({
+        id: "rollup",
+        status: "FULLY_ALLOCATED",
+        forecastSource: "NFE",
+        forecastDate: new Date(2026, 4, 20),
+        forecastValue: 158000,
+        allocatedQuantity: null,
+        confidenceLevel: "MEDIUM",
+        alertsJson: [],
+        expectedDeliveryDate: new Date(2026, 4, 15),
+      }),
+    ];
+
+    const rows = aggregateFactsToOrderRows(facts);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.valorPedido, 158000);
+    assert.equal(rows[0]!.saldo, 158000);
+    assert.equal(rows[0]!.forecastSource, "RECEIVABLE");
+    assert.equal(rows[0]!.forecastDate, "2026-07-10");
+    assert.notEqual(rows[0]!.forecastDate, "2026-05-20");
+    assert.deepEqual(rows[0]!.forecastDates, ["2026-07-10", "2026-08-10"]);
+    assert.equal(rows[0]!.forecastDueCount, 2);
+    assert.equal(rows[0]!.forecastLabel, "10/07/2026 + 1 vencimento");
+
+    const cards = buildPortfolioReconciliationSummaryCards(rows);
+    assert.equal(cards.totalPedidos, 1);
+    assert.equal(cards.totalValorPedidos, 158000);
+    assert.notEqual(cards.totalValorPedidos, cards.totalPedidos);
   });
 
   it("summary cards e onlyIssues no payload de lista", () => {
@@ -316,6 +388,7 @@ describe("portfolioReconciliationApi", () => {
     ]);
     const cards = buildPortfolioReconciliationSummaryCards(rows);
     assert.equal(cards.totalPedidos, 2);
+    assert.equal(cards.totalValorPedidos, 1500);
     assert.equal(cards.totalAlocadoPorPrecoPedido, 1000);
     assert.equal(cards.totalAlocadoPorPrecoDocumento, 940);
     assert.equal(cards.totalContasReceber, 1500);

@@ -227,7 +227,12 @@ export function PortfolioReconciliationOrderDrawer({
                   <Field label="Saldo" value={formatFinanceCurrency(order.saldo)} />
                   <Field
                     label="Forecast"
-                    value={`${formatFinanceDate(order.forecastDate)} · ${formatPortfolioForecastSourceLabel(order.forecastSource)}`}
+                    value={`${order.forecastLabel || formatFinanceDate(order.forecastDate)} · ${formatPortfolioForecastSourceLabel(order.forecastSource)}`}
+                    hint={
+                      order.forecastDueCount > 1
+                        ? `Vencimentos: ${(order.forecastDates ?? []).map((d) => formatFinanceDate(d)).join(", ")}`
+                        : undefined
+                    }
                   />
                 </dl>
                 <div>

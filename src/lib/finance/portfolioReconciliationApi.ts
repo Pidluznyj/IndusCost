@@ -5,10 +5,11 @@
 
 import type {
   PortfolioConfidenceLevel,
-  PortfolioForecastSource,
 } from "./portfolioReconciliationAllocationEngine.js";
-import { resolveDominantForecastSource } from "./portfolioReconciliationReceivables.js";
-import { computeOrderProjectedOpenBalance } from "./portfolioReconciliationProjectedBalance.js";
+import {
+  computeOrderProjectedOpenBalance,
+  resolveOrderAggregatedForecast,
+} from "./portfolioReconciliationProjectedBalance.js";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Rode o rebuild manual.";
@@ -133,8 +134,14 @@ export type PortfolioReconciliationOrderRow = {
   valorCR: number;
   recebido: number;
   saldo: number;
+  /** Data principal (mais cedo) do forecast agregado — mesma prioridade do saldo. */
   forecastDate: string | null;
   forecastSource: string;
+  /** Datas únicas de vencimento/forecast que entram no saldo projetado. */
+  forecastDates: string[];
+  /** Rótulo curto (ex.: "10/07/2026 + 1 vencimento"). */
+  forecastLabel: string;
+  forecastDueCount: number;
   confidenceLevel: string;
   status: string;
   alertas: string[];
@@ -143,7 +150,10 @@ export type PortfolioReconciliationOrderRow = {
 };
 
 export type PortfolioReconciliationSummaryCards = {
+  /** Quantidade de pedidos no filtro (para subtexto). */
   totalPedidos: number;
+  /** Soma monetária de valorPedido no filtro. */
+  totalValorPedidos: number;
   totalAlocadoPorPrecoPedido: number;
   totalAlocadoPorPrecoDocumento: number;
   totalContasReceber: number;
@@ -373,8 +383,6 @@ export function aggregateFactsToOrderRows(
     valorAlocadoPorDocumento: number;
     valorCR: number;
     recebido: number;
-    forecastDate: Date | null;
-    forecastSource: string;
     confidenceLevel: string;
     status: string;
     alertas: Set<string>;
@@ -405,8 +413,6 @@ export function aggregateFactsToOrderRows(
         valorAlocadoPorDocumento: 0,
         valorCR: 0,
         recebido: 0,
-        forecastDate: null,
-        forecastSource: fact.forecastSource,
         confidenceLevel: fact.confidenceLevel,
         status: fact.status ?? "ORDER_ONLY",
         alertas: new Set(),
@@ -440,11 +446,6 @@ export function aggregateFactsToOrderRows(
 
     acc.valorAlocado += toNumber(fact.allocatedValueByOrderPrice);
     acc.valorAlocadoPorDocumento += toNumber(fact.allocatedValueByStockPrice);
-
-    const fd = toDate(fact.forecastDate);
-    if (fd && (!acc.forecastDate || fd.getTime() < acc.forecastDate.getTime())) {
-      acc.forecastDate = fd;
-    }
 
     acc.confidenceLevel = pickWorseConfidence(acc.confidenceLevel, fact.confidenceLevel);
     acc.status = pickDominantStatus(acc.status, fact.status);
@@ -485,11 +486,8 @@ export function aggregateFactsToOrderRows(
       }
     }
 
-    acc.forecastSource = resolveDominantForecastSource(
-      acc.facts.map((f) => f.forecastSource as "RECEIVABLE" | "NFE" | "ORDER" | "UNRESOLVED")
-    );
-
     const saldo = computeOrderProjectedOpenBalance(acc.facts);
+    const forecast = resolveOrderAggregatedForecast(acc.facts);
 
     const alertas = [...acc.alertas];
     const hasIssues =
@@ -508,8 +506,11 @@ export function aggregateFactsToOrderRows(
       valorCR: round2(acc.valorCR),
       recebido: round2(acc.recebido),
       saldo: round2(saldo),
-      forecastDate: toIsoDate(acc.forecastDate),
-      forecastSource: acc.forecastSource,
+      forecastDate: forecast.primaryDate,
+      forecastSource: forecast.source,
+      forecastDates: forecast.dates,
+      forecastLabel: forecast.label,
+      forecastDueCount: forecast.dueCount,
       confidenceLevel: acc.confidenceLevel,
       status: acc.status,
       alertas,
@@ -563,6 +564,7 @@ export function filterOrderRows(
 export function buildPortfolioReconciliationSummaryCards(
   rows: readonly PortfolioReconciliationOrderRow[]
 ): PortfolioReconciliationSummaryCards {
+  let totalValorPedidos = 0;
   let totalAlocadoPorPrecoPedido = 0;
   let totalAlocadoPorPrecoDocumento = 0;
   let totalContasReceber = 0;
@@ -574,6 +576,7 @@ export function buildPortfolioReconciliationSummaryCards(
   let nfsHeaderOnly = 0;
 
   for (const row of rows) {
+    totalValorPedidos += row.valorPedido;
     totalAlocadoPorPrecoPedido += row.valorAlocado;
     totalAlocadoPorPrecoDocumento += row.valorAlocadoPorDocumento;
     totalContasReceber += row.valorCR;
@@ -591,6 +594,7 @@ export function buildPortfolioReconciliationSummaryCards(
 
   return {
     totalPedidos: rows.length,
+    totalValorPedidos: round2(totalValorPedidos),
     totalAlocadoPorPrecoPedido: round2(totalAlocadoPorPrecoPedido),
     totalAlocadoPorPrecoDocumento: round2(totalAlocadoPorPrecoDocumento),
     totalContasReceber: round2(totalContasReceber),

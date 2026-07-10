@@ -19,6 +19,7 @@ export type PortfolioReconciliationUiFilters = {
 
 export type PortfolioReconciliationSummaryCards = {
   totalPedidos: number;
+  totalValorPedidos: number;
   totalAlocadoPorPrecoPedido: number;
   totalAlocadoPorPrecoDocumento: number;
   totalContasReceber: number;
@@ -43,6 +44,9 @@ export type PortfolioReconciliationOrderRow = {
   saldo: number;
   forecastDate: string | null;
   forecastSource: string;
+  forecastDates: string[];
+  forecastLabel: string;
+  forecastDueCount: number;
   confidenceLevel: string;
   status: string;
   alertas: string[];
