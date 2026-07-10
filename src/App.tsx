@@ -75,7 +75,7 @@ function ModulePageShell({
   headerActions,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
   headerActions?: React.ReactNode;
 }) {
@@ -84,7 +84,7 @@ function ModulePageShell({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-          <p className="text-muted-foreground">{description}</p>
+          {description ? <p className="text-muted-foreground">{description}</p> : null}
         </div>
         {headerActions ? <div className="shrink-0 flex flex-wrap gap-2">{headerActions}</div> : null}
       </div>
@@ -767,7 +767,6 @@ export default function App() {
           element={
             <ModulePageShell
               title="Pedidos de venda"
-              description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
               headerActions={
                 <>
                   <Link
