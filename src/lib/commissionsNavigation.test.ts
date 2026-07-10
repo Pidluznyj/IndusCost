@@ -29,15 +29,17 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("commissionsNavigation", () => {
-  it("modo simplificado expõe apenas fechamento mensal e exclusões por cliente", () => {
+  it("modo simplificado expõe fechamento, exclusões e relatórios", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 2);
+    assert.equal(COMMISSIONS_SECTIONS.length, 3);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
     assert.equal(COMMISSIONS_SECTIONS[1]?.id, "customerExclusions");
+    assert.equal(COMMISSIONS_SECTIONS[2]?.id, "reports");
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "receivableForecast"), false);
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "visualAudit"), false);
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
     assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
+    assert.equal(COMMISSIONS_SECTION_PATHS.reports, "/commissions/relatorios");
     assert.equal(isCommissionsHiddenSection("receivableForecast"), true);
     assert.equal(isCommissionsHiddenSection("visualAudit"), true);
   });
@@ -67,6 +69,7 @@ describe("commissionsNavigation", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions/auditoria"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/previsao"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/exclusoes-cliente"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/relatorios"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/forecast"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/unknown"), false);
@@ -81,19 +84,21 @@ describe("commissions frontend wiring", () => {
     assert.match(app, /CommissionsModule/);
   });
 
-  it("CommissionsModule usa fechamento e exclusões; abas legadas redirecionam", () => {
+  it("CommissionsModule usa fechamento, exclusões e relatórios; abas legadas redirecionam", () => {
     const moduleSrc = read("src/components/CommissionsModule.tsx");
     assert.match(moduleSrc, /CommissionsReceiptClosingPage/);
     assert.match(moduleSrc, /CommissionsCustomerExclusionsPage/);
+    assert.match(moduleSrc, /CommissionsReportsPage/);
     assert.match(moduleSrc, /CommissionsDeprecatedTabRedirect/);
     assert.doesNotMatch(moduleSrc, /CommissionsReceivableForecastPage/);
     assert.doesNotMatch(moduleSrc, /CommissionsVisualAuditPage/);
     assert.match(moduleSrc, /COMMISSIONS_LEGACY_PATH_REDIRECTS/);
     assert.match(moduleSrc, /CommissionsLegacyRedirect/);
-    assert.match(moduleSrc, /commissions-tab-monthlyClosing/);
-    assert.match(moduleSrc, /commissions-tab-customerExclusions/);
-    assert.doesNotMatch(moduleSrc, /commissions-tab-receivableForecast/);
-    assert.doesNotMatch(moduleSrc, /commissions-tab-visualAudit/);
+    assert.match(moduleSrc, /commissions-tab-\$\{section\.id\}/);
+    assert.match(moduleSrc, /path="relatorios"/);
+    assert.match(moduleSrc, /guard\("reports"/);
+    assert.match(moduleSrc, /guard\("monthlyClosing"/);
+    assert.match(moduleSrc, /guard\("customerExclusions"/);
   });
 
   it("Sidebar inclui item Comissões", () => {
@@ -146,11 +151,26 @@ describe("commissionsModulePermissions", () => {
     assert.equal(canViewCommissionsSection("customerExclusions", checker(["finance.view"])), false);
   });
 
+  it("reports exige commissions.view", () => {
+    assert.equal(canViewCommissionsSection("reports", checker(["commissions.view"])), true);
+    assert.equal(canViewCommissionsSection("reports", checker(["finance.view"])), false);
+  });
+
   it("resolveFirstAccessibleCommissionsPath retorna /commissions", () => {
     assert.equal(
       resolveFirstAccessibleCommissionsPath(checker(["commissions.view"])),
       "/commissions"
     );
+  });
+});
+
+describe("commissions reports UI wiring", () => {
+  it("página de relatórios consome API sem recalcular comissão", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    assert.match(page, /\/api\/commissions\/reports/);
+    assert.match(page, /export\.xlsx/);
+    assert.doesNotMatch(page, /calculateCommission|recalculate|commissionPerc\s*\*/);
+    assert.match(page, /commissions-reports-page/);
   });
 });
 

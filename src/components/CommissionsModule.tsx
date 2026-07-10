@@ -1,5 +1,5 @@
 /**
- * Módulo Comissões — Fechamento do mês + Exceções por cliente.
+ * Módulo Comissões — Fechamento do mês + Exceções por cliente + Relatórios.
  *
  * Previsão e Auditoria Visual permanecem em pages/ para reescrita futura,
  * mas estão ocultas na UI (rotas redirecionam para Fechamento).
@@ -25,6 +25,7 @@ import {
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
+import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
 
 function CommissionsHomeRedirect() {
   return <Navigate to={getCommissionsDefaultPath()} replace />;
@@ -136,6 +137,7 @@ export function CommissionsModule() {
           path="exclusoes-cliente"
           element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}
         />
+        <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
           <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
         ))}

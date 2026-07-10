@@ -27,6 +27,9 @@ export function canViewCommissionsSection(
   if (sectionId === "customerExclusions") {
     return check.hasAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]);
   }
+  if (sectionId === "reports") {
+    return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
+  }
   return false;
 }
 

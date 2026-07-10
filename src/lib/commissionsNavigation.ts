@@ -1,7 +1,7 @@
 /** Rotas canônicas do módulo Comissões (React Router). */
 
 /**
- * Modo simplificado: Fechamento do mês + Exceções por cliente.
+ * Modo simplificado: Fechamento do mês + Exceções por cliente + Relatórios.
  * Previsão e Auditoria Visual permanecem no código para reescrita futura, mas estão ocultas na UI.
  */
 export const COMMISSIONS_SIMPLIFIED_UI = true as const;
@@ -12,6 +12,7 @@ export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 export const COMMISSIONS_UI_SECTION_IDS = [
   "monthlyClosing",
   "customerExclusions",
+  "reports",
 ] as const;
 
 export type CommissionsUiSectionId = (typeof COMMISSIONS_UI_SECTION_IDS)[number];
@@ -75,6 +76,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   receivableForecast: "/commissions/previsao",
   visualAudit: "/commissions/auditoria",
   customerExclusions: "/commissions/exclusoes-cliente",
+  reports: "/commissions/relatorios",
 };
 
 export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "monthlyClosing";
@@ -100,6 +102,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.customerExclusions,
     description:
       "Clientes que não geram comissão — regra auditável com vigência, sem ocultar vendas",
+  },
+  {
+    id: "reports",
+    label: "Relatórios",
+    path: COMMISSIONS_SECTION_PATHS.reports,
+    description:
+      "Consulta dos registros de comissão materializados pelo Fechamento (por ano, mês e vendedor)",
   },
 ];
 
@@ -132,6 +141,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (firstSegment === "auditoria") return true;
   if (firstSegment === "previsao") return true;
   if (firstSegment === "exclusoes-cliente") return true;
+  if (firstSegment === "relatorios") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
   if (isCommissionsLegacySectionSegment(firstSegment)) return true;
   return false;
@@ -147,6 +157,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (!next) return "monthlyClosing";
   if (next === "auditoria" || next === "previsao") return "monthlyClosing";
   if (next === "exclusoes-cliente") return "customerExclusions";
+  if (next === "relatorios") return "reports";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";
   return isCommissionsSectionId(next) ? next : null;
 }

@@ -1205,3 +1205,85 @@ export function parseCustomerExclusionRulesQuery(
   }
   return { search, status, page, pageSize };
 }
+
+const COMMISSION_REPORT_STATUS_SET = new Set<string>([
+  "ALL",
+  "CLOSED",
+  "PREVIEW",
+  "COMMISSIONABLE",
+  "CUSTOMER_EXCLUDED",
+  "GROUP_COMPANY_EXCLUDED",
+  "SELLER_UNRESOLVED",
+  "NO_SELLER",
+  "NO_SCHEDULE",
+  "STALE_SCHEDULE",
+  "ZERO_AMOUNT",
+  "NO_RULE",
+  "ERROR",
+]);
+
+export type CommissionReportsQueryParsed = {
+  year: number;
+  month: number | "all";
+  sellerId: string | "all";
+  status: string | "all";
+  search: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export function parseCommissionReportsQuery(
+  query: Record<string, unknown>
+): CommissionReportsQueryParsed {
+  const year = parseOptionalInt(query.year);
+  if (year == null || year < 2000 || year > 2100) {
+    throw new CommissionQueryParseError("Informe um ano válido (2000–2100).");
+  }
+
+  const monthRaw = query.month;
+  let month: number | "all" = "all";
+  if (monthRaw == null || monthRaw === "" || monthRaw === "all") {
+    month = "all";
+  } else {
+    const monthNum = parseOptionalInt(monthRaw);
+    if (monthNum == null || monthNum < 1 || monthNum > 12) {
+      throw new CommissionQueryParseError("Mês inválido. Use 1–12 ou all.");
+    }
+    month = monthNum;
+  }
+
+  const sellerRaw =
+    typeof query.sellerId === "string" && query.sellerId.trim()
+      ? query.sellerId.trim()
+      : "all";
+  let sellerId: string | "all" = "all";
+  if (sellerRaw === "all" || sellerRaw === "") {
+    sellerId = "all";
+  } else if (sellerRaw.length > 200) {
+    throw new CommissionQueryParseError("Vendedor inválido.");
+  } else {
+    sellerId = sellerRaw;
+  }
+
+  const statusRaw =
+    typeof query.status === "string" && query.status.trim()
+      ? query.status.trim().toUpperCase()
+      : "ALL";
+  if (!COMMISSION_REPORT_STATUS_SET.has(statusRaw)) {
+    throw new CommissionQueryParseError(
+      "Status inválido. Use all, CLOSED, PREVIEW ou um status de linha do fechamento."
+    );
+  }
+  const status: string | "all" = statusRaw === "ALL" ? "all" : statusRaw;
+
+  const search =
+    typeof query.search === "string" && query.search.trim() ? query.search.trim() : null;
+
+  const pageRaw = parseOptionalInt(query.page);
+  const pageSizeRaw = parseOptionalInt(query.pageSize);
+  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
+  const pageSize =
+    pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 200) : 50;
+
+  return { year, month, sellerId, status, search, page, pageSize };
+}

@@ -137,6 +137,7 @@ import {
   parseCommissionVisualAuditQuery,
   parseCommissionMonthlyClosingQuery,
   parseCommissionReceivableForecastQuery,
+  parseCommissionReportsQuery,
   parseReceiptClosingPeriodParams,
   parseReceiptClosingQuery,
   parseUnpaidReleasedCommissionsQuery,
@@ -150,6 +151,10 @@ import {
   reprocessReceiptClosingApplyFromApi,
   reprocessReceiptClosingPreviewFromApi,
 } from "@/src/lib/commissions/commissionReceiptClosingApi.server.js";
+import {
+  exportCommissionReportsXlsx,
+  getCommissionReportsPage,
+} from "@/src/lib/commissions/commissionReports.server.js";
 import {
   ReceiptClosingDuplicateError,
   ReceiptClosingValidationError,
@@ -442,6 +447,45 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/monthly-closing/export", error);
         return res.status(500).json({ error: "Erro ao exportar fechamento mensal." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/reports", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReportsQuery(req.query as Record<string, unknown>);
+      const payload = await getCommissionReportsPage(query, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/reports", error);
+        return res.status(500).json({ error: "Erro ao carregar relatório de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/reports/export.xlsx", ...viewAnyGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const query = parseCommissionReportsQuery(req.query as Record<string, unknown>);
+      const { buffer, filename } = await exportCommissionReportsXlsx(query, ctx.scope);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/reports/export.xlsx", error);
+        return res.status(500).json({ error: "Erro ao exportar relatório de comissões." });
       }
     }
   });
