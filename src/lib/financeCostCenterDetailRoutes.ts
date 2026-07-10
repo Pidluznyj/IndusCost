@@ -3,6 +3,7 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   applyCostCenterReallocationDefault,
+  assertFinanceCostCenterUuid,
   buildCostCenterDetailExportPayloadDefault,
   buildCostCenterDetailExportPayloadForCenters,
   buildCostCenterDetailSummaryDefault,
@@ -245,7 +246,7 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
-      const id = String(req.params.id ?? "").trim();
+      const id = assertFinanceCostCenterUuid(String(req.params.id ?? ""));
       const filters = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
       const { page: _p, limit: _l, sortBy: _s, sortDirection: _d, ...summaryFilters } = filters;
       void _p;
@@ -274,7 +275,7 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
-      const id = String(req.params.id ?? "").trim();
+      const id = assertFinanceCostCenterUuid(String(req.params.id ?? ""));
       const query = parseCostCenterDetailListQuery(req.query as Record<string, unknown>);
       const payload = await listCostCenterDetailAllocationsDefault(id, query);
       return res.json(payload);
@@ -298,7 +299,7 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
-      const id = String(req.params.id ?? "").trim();
+      const id = assertFinanceCostCenterUuid(String(req.params.id ?? ""));
       const rawQuery = req.query as Record<string, unknown>;
       const query = parseCostCenterDetailListQuery(rawQuery);
       const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);
@@ -330,7 +331,7 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
-      const id = String(req.params.id ?? "").trim();
+      const id = assertFinanceCostCenterUuid(String(req.params.id ?? ""));
       const rawQuery = req.query as Record<string, unknown>;
       const query = parseCostCenterDetailListQuery(rawQuery);
       const appliedFilters = buildCostCenterDetailAppliedFilterLinesFromQuery(rawQuery);

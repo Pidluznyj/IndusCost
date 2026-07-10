@@ -635,18 +635,50 @@ function appendReallocationNote(
 }
 
 export function parseCostCenterIdsParam(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return [
-      ...new Set(
-        raw
-          .flatMap((value) => String(value ?? "").split(","))
-          .map((id) => id.trim())
-          .filter(Boolean)
-      ),
-    ];
+  const parsed = (() => {
+    if (Array.isArray(raw)) {
+      return [
+        ...new Set(
+          raw
+            .flatMap((value) => String(value ?? "").split(","))
+            .map((id) => id.trim())
+            .filter(Boolean)
+        ),
+      ];
+    }
+    const text = typeof raw === "string" ? raw : "";
+    return [...new Set(text.split(",").map((id) => id.trim()).filter(Boolean))];
+  })();
+
+  for (const id of parsed) {
+    if (!isFinanceCostCenterUuid(id)) {
+      throw new FinanceCostCenterDetailError(
+        "INVALID_ID",
+        `Identificador de centro de custo inválido: "${id}". Informe UUIDs válidos em costCenterIds.`
+      );
+    }
   }
-  const text = typeof raw === "string" ? raw : "";
-  return [...new Set(text.split(",").map((id) => id.trim()).filter(Boolean))];
+  return parsed;
+}
+
+export function isFinanceCostCenterUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value.trim()
+    )
+  );
+}
+
+export function assertFinanceCostCenterUuid(id: string): string {
+  const trimmed = id.trim();
+  if (!isFinanceCostCenterUuid(trimmed)) {
+    throw new FinanceCostCenterDetailError(
+      "INVALID_ID",
+      "Identificador do centro de custo inválido."
+    );
+  }
+  return trimmed;
 }
 
 export async function loadCostCenterDetailEntriesForCenters(

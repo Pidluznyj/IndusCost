@@ -215,12 +215,26 @@ describe("financeCostCenterExpenseMap", () => {
       join(process.cwd(), "src/lib/financeCostCenterDetailRoutes.ts"),
       "utf8"
     );
+    const centersRoutes = readFileSync(
+      join(process.cwd(), "src/lib/financeCostCentersRoutes.ts"),
+      "utf8"
+    );
+    const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     assert.ok(section.includes("/api/finance/cost-centers/${detailCenterIds[0]}/allocations"));
     assert.ok(section.includes("/api/finance/cost-centers/allocations?"));
+    assert.ok(section.includes("isMultiCenterDetail"));
     assert.ok(section.includes("finance-cc-expense-map-detail-selection-badge"));
     assert.ok(section.includes("finance-cc-expense-map-detail-center-list"));
+    assert.ok(section.includes("Não foi possível carregar o detalhamento do centro."));
+    assert.doesNotMatch(section, /buildFinanceTabLoadError\("Não foi possível carregar o detalhamento/);
     assert.ok(routes.includes('app.get("/api/finance/cost-centers/allocations"'));
     assert.ok(routes.includes("listCostCenterDetailAllocationsForCenters"));
+    assert.ok(routes.includes("assertFinanceCostCenterUuid"));
+    assert.ok(centersRoutes.includes("isFinanceCostCenterUuid"));
+    const detailRegister = server.indexOf("registerFinanceCostCenterDetailRoutes(app");
+    const centersRegister = server.indexOf("registerFinanceCostCentersRoutes(app");
+    assert.ok(detailRegister >= 0 && centersRegister >= 0);
+    assert.ok(detailRegister < centersRegister);
   });
 
   it("formata título e lista de centros selecionados no detalhe", () => {
@@ -242,9 +256,9 @@ describe("financeCostCenterExpenseMap", () => {
     );
     assert.equal(
       buildExpenseMapDetailTitle(cards, ["cc-1", "cc-2", "cc-3", "cc-4"]),
-      "Detalhamento de gastos — 4 centros selecionados"
+      "Detalhamento dos centros selecionados (4)"
     );
-    assert.equal(buildExpenseMapDetailTitle(cards, ["cc-1"]), "Detalhamento de gastos — FOLHA");
+    assert.equal(buildExpenseMapDetailTitle(cards, ["cc-1"]), "Detalhamento do centro — FOLHA");
     assert.equal(
       formatExpenseMapSelectedCenterNames(cards, ["cc-1", "cc-2", "cc-3", "cc-4"]),
       "FOLHA, MATÉRIA PRIMA, MÃO DE OBRA, FERRAMENTARIA"

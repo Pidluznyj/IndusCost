@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Link, LineChart, Loader2, Printer, X, Check } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
 import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
@@ -381,7 +381,13 @@ export function FinanceCostCenterExpenseMapSection({
     } catch (e) {
       setSummary(null);
       setList(null);
-      setError(buildFinanceTabLoadError("Não foi possível carregar o detalhamento do centro.", e));
+      const detail = e instanceof Error ? e.message : "";
+      // Não exibir stack/Prisma cru; 400 amigável do backend pode aparecer.
+      if (e instanceof HttpError && e.status >= 400 && e.status < 500 && detail && !/prisma|uuid|inconsistent column/i.test(detail)) {
+        setError(detail);
+      } else {
+        setError("Não foi possível carregar o detalhamento do centro.");
+      }
     } finally {
       setLoading(false);
     }

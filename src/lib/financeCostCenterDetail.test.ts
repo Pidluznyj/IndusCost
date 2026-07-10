@@ -52,10 +52,26 @@ function row(overrides: Partial<CostCenterDetailAllocationRow>): CostCenterDetai
 }
 
 describe("financeCostCenterDetail", () => {
-  it("parseCostCenterIdsParam aceita lista separada por vírgula", () => {
-    assert.deepEqual(parseCostCenterIdsParam("cc-1, cc-2 ,cc-1"), ["cc-1", "cc-2"]);
-    assert.deepEqual(parseCostCenterIdsParam(["cc-3", "cc-4,cc-5"]), ["cc-3", "cc-4", "cc-5"]);
+  it("parseCostCenterIdsParam aceita lista separada por vírgula e rejeita UUID inválido", () => {
+    const id1 = "11111111-1111-4111-8111-111111111111";
+    const id2 = "22222222-2222-4222-8222-222222222222";
+    const id3 = "33333333-3333-4333-8333-333333333333";
+    const id4 = "44444444-4444-4444-8444-444444444444";
+    const id5 = "55555555-5555-4555-8555-555555555555";
+    assert.deepEqual(parseCostCenterIdsParam(`${id1}, ${id2} ,${id1}`), [id1, id2]);
+    assert.deepEqual(parseCostCenterIdsParam([id3, `${id4},${id5}`]), [id3, id4, id5]);
     assert.deepEqual(parseCostCenterIdsParam(""), []);
+    assert.throws(
+      () => parseCostCenterIdsParam("allocations"),
+      (err: unknown) =>
+        err instanceof Error &&
+        err.name === "FinanceCostCenterDetailError" &&
+        /inválido/i.test(err.message)
+    );
+    assert.throws(
+      () => parseCostCenterIdsParam("cc-1,cc-2"),
+      (err: unknown) => err instanceof Error && /inválido/i.test(err.message)
+    );
   });
 
   it("filtro por fonte manual e locked", () => {
@@ -163,7 +179,17 @@ describe("financeCostCenterDetail", () => {
     assert.match(routes, /\/api\/finance\/cost-centers\/detail\/export\.xlsx/);
     assert.match(routes, /\/api\/finance\/cost-centers\/reallocation\/preview/);
     assert.match(routes, /\/api\/finance\/cost-centers\/reallocation\/apply/);
-    assert.match(server, /registerFinanceCostCenterDetailRoutes/);
+    assert.match(server, /registerFinanceCostCenterDetailRoutes\(app/);
+    // Rotas estáticas de consolidação devem ser registradas antes de /:id
+    // (senão "allocations" vira id e estoura findUnique com UUID inválido).
+    const detailRegister = server.indexOf("registerFinanceCostCenterDetailRoutes(app");
+    const centersRegister = server.indexOf("registerFinanceCostCentersRoutes(app");
+    assert.ok(detailRegister >= 0 && centersRegister >= 0);
+    assert.ok(
+      detailRegister < centersRegister,
+      "registerFinanceCostCenterDetailRoutes deve vir antes de registerFinanceCostCentersRoutes"
+    );
+    assert.match(routes, /assertFinanceCostCenterUuid/);
     assert.match(page, /finance-cost-center-detail-page/);
     assert.match(page, /reallocation\/preview/);
     assert.doesNotMatch(page, /\/summary\?/);

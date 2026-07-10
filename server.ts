@@ -13974,13 +13974,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     getCurrentAppUser,
   });
 
-  registerFinanceCostCentersRoutes(app, {
+  // Detalhe consolidado (/allocations, /detail/…) antes de /:id — senão
+  // "allocations" é capturado como id e estoura findUnique com UUID inválido.
+  registerFinanceCostCenterDetailRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
   });
 
-  registerFinanceCostCenterDetailRoutes(app, {
+  registerFinanceCostCentersRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,

@@ -84,6 +84,15 @@ function handleAllocationError(res: express.Response, error: FinanceApAllocation
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
+function isFinanceCostCenterUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value.trim()
+    )
+  );
+}
+
 export function registerFinanceCostCentersRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
   const viewGuard = [
@@ -489,8 +498,11 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
       const id = String(req.params.id ?? "").trim();
-      if (!id) {
-        return res.status(400).json({ error: "ID inválido." });
+      if (!isFinanceCostCenterUuid(id)) {
+        return res.status(400).json({
+          error: "Identificador do centro de custo inválido.",
+          code: "INVALID_ID",
+        });
       }
 
       const item = await getFinancialCostCenterByIdDefault(id);
@@ -531,8 +543,11 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
       if (!user) return res.status(401).json({ error: "Não autenticado." });
 
       const id = String(req.params.id ?? "").trim();
-      if (!id) {
-        return res.status(400).json({ error: "ID inválido." });
+      if (!isFinanceCostCenterUuid(id)) {
+        return res.status(400).json({
+          error: "Identificador do centro de custo inválido.",
+          code: "INVALID_ID",
+        });
       }
 
       const input = parseFinanceCostCenterUpdateBody(req.body);

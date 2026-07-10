@@ -216,10 +216,10 @@ export function buildExpenseMapDetailTitle(
   detailCenterIds: string[]
 ): string {
   if (detailCenterIds.length > 1) {
-    return `Detalhamento de gastos — ${detailCenterIds.length} centros selecionados`;
+    return `Detalhamento dos centros selecionados (${detailCenterIds.length})`;
   }
   const card = cards.find((item) => item.costCenterId === detailCenterIds[0]);
-  return `Detalhamento de gastos — ${card?.name ?? "Centro"}`;
+  return `Detalhamento do centro — ${card?.name ?? "Centro"}`;
 }
 
 export function buildCostCenterExpenseMapAllocationsQuery(
