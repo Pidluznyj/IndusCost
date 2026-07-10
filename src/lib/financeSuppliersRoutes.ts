@@ -15,7 +15,9 @@ import {
 import {
   applyCompanyIntelligenceToSupplierDefault,
   assertSuperAdminCanDeleteSupplier,
+  buildFinanceSupplierCnpjLookupPayloadDefault,
   buildFinanceSupplierCompanyIntelligencePayloadDefault,
+  createFinancialSupplierDefault,
   deactivateFinancialSupplierDefault,
   FinanceSupplierProfileError,
   getFinancialSupplierProfileDefault,
@@ -56,7 +58,13 @@ function isUuid(value: unknown): value is string {
 
 function handleSupplierProfileError(res: express.Response, error: unknown) {
   if (error instanceof FinanceSupplierProfileError) {
-    return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+    return res.status(error.httpStatus).json({
+      error: error.message,
+      code: error.code,
+      ...(error.existingSupplierId
+        ? { existingSupplierId: error.existingSupplierId }
+        : {}),
+    });
   }
   if (error instanceof FinanceSupplierEngineError) {
     return res.status(error.httpStatus).json({ error: error.message, code: error.code });
@@ -192,6 +200,82 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
       return res.status(500).json(
         financeApiErrorJson("Erro ao aplicar rebuild de fornecedores a partir de AP.", error)
       );
+    }
+  });
+
+  app.get("/api/finance/suppliers/cnpj-lookup", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const cnpj = typeof req.query.cnpj === "string" ? req.query.cnpj : "";
+      const forceRefresh = req.query.refresh === "true";
+      const draft = {
+        displayName: typeof req.query.displayName === "string" ? req.query.displayName : undefined,
+        legalName: typeof req.query.legalName === "string" ? req.query.legalName : undefined,
+        tradeName: typeof req.query.tradeName === "string" ? req.query.tradeName : undefined,
+        document: typeof req.query.document === "string" ? req.query.document : undefined,
+      };
+
+      const payload = await buildFinanceSupplierCnpjLookupPayloadDefault({
+        cnpj,
+        forceRefresh,
+        userId: user.id ?? user.email ?? null,
+        draft,
+      });
+      return res.json(payload);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.post("/api/finance/suppliers/cnpj-lookup/refresh", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const body = req.body ?? {};
+      const cnpj = typeof body.cnpj === "string" ? body.cnpj : "";
+      const draft = {
+        displayName: typeof body.displayName === "string" ? body.displayName : undefined,
+        legalName: typeof body.legalName === "string" ? body.legalName : undefined,
+        tradeName: typeof body.tradeName === "string" ? body.tradeName : undefined,
+        document: typeof body.document === "string" ? body.document : undefined,
+      };
+
+      const payload = await buildFinanceSupplierCnpjLookupPayloadDefault({
+        cnpj,
+        forceRefresh: true,
+        userId: user.id ?? user.email ?? null,
+        draft,
+      });
+      return res.json(payload);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
+    }
+  });
+
+  app.post("/api/finance/suppliers", ...applyGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const body = req.body ?? {};
+      const profile = await createFinancialSupplierDefault(
+        {
+          displayName: typeof body.displayName === "string" ? body.displayName : undefined,
+          legalName:
+            body.legalName === null || typeof body.legalName === "string" ? body.legalName : undefined,
+          tradeName:
+            body.tradeName === null || typeof body.tradeName === "string" ? body.tradeName : undefined,
+          document:
+            body.document === null || typeof body.document === "string" ? body.document : undefined,
+        },
+        user
+      );
+      return res.status(201).json(profile);
+    } catch (error) {
+      return handleSupplierProfileError(res, error);
     }
   });
 

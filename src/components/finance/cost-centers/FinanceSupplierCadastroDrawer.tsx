@@ -8,29 +8,56 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { CNPJ_COMPARE_STATUS_LABEL } from "@/src/lib/customerCnpjIntelligenceTypes";
-import type { FinancialSupplierProfileDto } from "@/src/lib/financeSupplierProfile";
-import type { FinanceSupplierIntelligencePayload } from "@/src/lib/financeSupplierProfile";
+import type {
+  FinanceSupplierCnpjLookupPayload,
+  FinanceSupplierIntelligencePayload,
+  FinancialSupplierProfileDto,
+} from "@/src/lib/financeSupplierProfile";
+import { buildSupplierApplyPatch } from "@/src/lib/financeSupplierCnpjCompare";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 
+export type FinanceSupplierCadastroMode = "create" | "edit";
+
 type Props = {
   open: boolean;
+  mode: FinanceSupplierCadastroMode;
   supplierId: string | null;
   onClose: () => void;
   onChanged?: () => void;
+  /** Em duplicidade no create, abre o cadastro existente no mesmo drawer. */
+  onOpenExisting?: (supplierId: string) => void;
   canManage: boolean;
   canDelete: boolean;
 };
 
+type CnpjPanelPayload = FinanceSupplierIntelligencePayload | FinanceSupplierCnpjLookupPayload;
+
+function resetFormFields(setters: {
+  setLegalName: (v: string) => void;
+  setTradeName: (v: string) => void;
+  setDocument: (v: string) => void;
+  setDisplayName: (v: string) => void;
+  setCnpjInput: (v: string) => void;
+}) {
+  setters.setLegalName("");
+  setters.setTradeName("");
+  setters.setDocument("");
+  setters.setDisplayName("");
+  setters.setCnpjInput("");
+}
+
 export function FinanceSupplierCadastroDrawer({
   open,
+  mode,
   supplierId,
   onClose,
   onChanged,
+  onOpenExisting,
   canManage,
   canDelete,
 }: Props) {
@@ -39,6 +66,7 @@ export function FinanceSupplierCadastroDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [duplicateSupplierId, setDuplicateSupplierId] = useState<string | null>(null);
 
   const [legalName, setLegalName] = useState("");
   const [tradeName, setTradeName] = useState("");
@@ -47,11 +75,15 @@ export function FinanceSupplierCadastroDrawer({
   const [saving, setSaving] = useState(false);
 
   const [cnpjInput, setCnpjInput] = useState("");
-  const [cnpjData, setCnpjData] = useState<FinanceSupplierIntelligencePayload | null>(null);
+  const [cnpjData, setCnpjData] = useState<CnpjPanelPayload | null>(null);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState<string | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
+
+  const isCreate = mode === "create";
+  const isInactive = profile?.status === "INACTIVE";
+  const formDisabled = !canManage || (!isCreate && isInactive);
 
   const loadProfile = useCallback(async () => {
     if (!supplierId) return;
@@ -77,58 +109,133 @@ export function FinanceSupplierCadastroDrawer({
   }, [supplierId]);
 
   useEffect(() => {
-    if (!open || !supplierId) return;
+    if (!open) return;
     setCnpjData(null);
     setCnpjError(null);
     setMessage(null);
+    setError(null);
+    setDuplicateSupplierId(null);
+    if (isCreate) {
+      setProfile(null);
+      setLoading(false);
+      resetFormFields({
+        setLegalName,
+        setTradeName,
+        setDocument,
+        setDisplayName,
+        setCnpjInput,
+      });
+      return;
+    }
+    if (!supplierId) return;
     void loadProfile();
-  }, [open, supplierId, loadProfile]);
+  }, [open, isCreate, supplierId, loadProfile]);
 
   const saveProfile = async () => {
-    if (!supplierId || !canManage) return;
+    if (!canManage) return;
     setSaving(true);
     setError(null);
     setMessage(null);
+    setDuplicateSupplierId(null);
     try {
+      const body = {
+        displayName,
+        legalName: legalName.trim() || null,
+        tradeName: tradeName.trim() || null,
+        document: document.trim() || null,
+      };
+      if (isCreate) {
+        await fetchJsonOk<FinancialSupplierProfileDto>("/api/finance/suppliers", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        setMessage("Fornecedor cadastrado.");
+        onChanged?.();
+        onClose();
+        return;
+      }
+      if (!supplierId) return;
       const data = await fetchJsonOk<FinancialSupplierProfileDto>(
         `/api/finance/suppliers/${supplierId}`,
         {
           method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName,
-            legalName: legalName.trim() || null,
-            tradeName: tradeName.trim() || null,
-            document: document.trim() || null,
-          }),
+          body: JSON.stringify(body),
         }
       );
       setProfile(data);
       setMessage("Cadastro atualizado.");
       onChanged?.();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar cadastro.");
+      if (e instanceof HttpError) {
+        setError(e.message);
+        if (e.code === "DUPLICATE_DOCUMENT" && e.existingSupplierId) {
+          setDuplicateSupplierId(e.existingSupplierId);
+        }
+      } else {
+        setError(e instanceof Error ? e.message : "Erro ao salvar cadastro.");
+      }
     } finally {
       setSaving(false);
     }
   };
 
   const loadCnpj = async (refresh = false) => {
-    if (!supplierId) return;
     setCnpjLoading(true);
     setCnpjError(null);
     setMessage(null);
     try {
       const digits = cnpjInput.replace(/\D/g, "");
+      if (isCreate) {
+        const draftParams = new URLSearchParams();
+        draftParams.set("cnpj", digits);
+        if (displayName.trim()) draftParams.set("displayName", displayName.trim());
+        if (legalName.trim()) draftParams.set("legalName", legalName.trim());
+        if (tradeName.trim()) draftParams.set("tradeName", tradeName.trim());
+        if (document.trim()) draftParams.set("document", document.trim());
+
+        let payload: FinanceSupplierCnpjLookupPayload;
+        if (refresh) {
+          payload = await fetchJsonOk("/api/finance/suppliers/cnpj-lookup/refresh", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cnpj: cnpjInput,
+              displayName: displayName.trim() || undefined,
+              legalName: legalName.trim() || undefined,
+              tradeName: tradeName.trim() || undefined,
+              document: document.trim() || undefined,
+            }),
+          });
+        } else {
+          payload = await fetchJsonOk(
+            `/api/finance/suppliers/cnpj-lookup?${draftParams.toString()}`,
+            { credentials: "include" }
+          );
+        }
+        setCnpjData(payload);
+        setSelectedFields(
+          payload.comparison?.fields.filter((f) => f.selectable).map((f) => f.field) ?? []
+        );
+        return;
+      }
+
+      if (!supplierId) return;
       let payload: FinanceSupplierIntelligencePayload;
       if (refresh) {
-        payload = await fetchJsonOk(`/api/finance/suppliers/${supplierId}/company-intelligence/refresh`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(digits.length === 14 ? { cnpj: cnpjInput } : {}),
-        });
+        payload = await fetchJsonOk(
+          `/api/finance/suppliers/${supplierId}/company-intelligence/refresh`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(digits.length === 14 ? { cnpj: cnpjInput } : {}),
+          }
+        );
       } else {
         const query = digits.length === 14 ? `?cnpj=${encodeURIComponent(digits)}` : "";
         payload = await fetchJsonOk(
@@ -147,7 +254,55 @@ export function FinanceSupplierCadastroDrawer({
     }
   };
 
+  const applyCnpjToCreateForm = () => {
+    if (!cnpjData || !canManage) return;
+    const draft = {
+      displayName: displayName.trim() || null,
+      legalName: legalName.trim() || null,
+      tradeName: tradeName.trim() || null,
+      document: document.trim() || null,
+    };
+    const hasFilled =
+      Boolean(draft.displayName) ||
+      Boolean(draft.legalName) ||
+      Boolean(draft.tradeName) ||
+      Boolean(draft.document);
+    const patch = buildSupplierApplyPatch(draft, cnpjData.summary, selectedFields);
+    if (Object.keys(patch).length === 0) {
+      setCnpjError("Nenhum campo selecionado pode ser aplicado ao formulário.");
+      return;
+    }
+    const wouldOverwrite = selectedFields.some((field) => {
+      if (field === "legalName" && draft.legalName) return true;
+      if (field === "tradeName" && draft.tradeName) return true;
+      if (field === "document" && draft.document) return true;
+      return false;
+    });
+    if (hasFilled && wouldOverwrite) {
+      if (
+        !confirm(
+          "Deseja substituir os dados atuais do formulário pelos dados encontrados na consulta CNPJ?"
+        )
+      ) {
+        return;
+      }
+    }
+    if (patch.legalName) setLegalName(patch.legalName);
+    if (patch.tradeName) setTradeName(patch.tradeName);
+    if (patch.document) {
+      setDocument(patch.document);
+      setCnpjInput(patch.document);
+    }
+    if (patch.displayName) setDisplayName(patch.displayName);
+    setMessage("Dados da consulta CNPJ aplicados ao formulário.");
+    setCnpjError(null);
+  };
+
   const applyCnpjFields = async () => {
+    if (isCreate) {
+      applyCnpjToCreateForm();
+      return;
+    }
     if (!supplierId || !cnpjData || !canManage) return;
     if (
       !confirm(
@@ -217,22 +372,28 @@ export function FinanceSupplierCadastroDrawer({
     }
   };
 
-  if (!open || !supplierId || !portalContainer) return null;
+  if (!open || !portalContainer) return null;
+  if (!isCreate && !supplierId) return null;
+
+  const showForm = isCreate || Boolean(profile);
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40"
+      className="fixed inset-0 z-[60] flex justify-end bg-black/40"
       data-testid="finance-supplier-cadastro-drawer"
+      data-mode={mode}
     >
       <div className={cn(financeBiCardClass, "flex h-full w-full max-w-2xl flex-col shadow-xl")}>
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Cadastro do fornecedor
+              {isCreate ? "Novo fornecedor" : "Editar fornecedor"}
             </h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Dados cadastrais consolidados — não altera títulos AP originais.
+              {isCreate
+                ? "Cadastro manual na base consolidada de fornecedores — consulta CNPJ opcional."
+                : "Dados cadastrais consolidados — não altera títulos AP originais."}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 hover:bg-muted">
@@ -242,9 +403,21 @@ export function FinanceSupplierCadastroDrawer({
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
           {error ? (
-            <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              {error}
+            <div className="space-y-2">
+              <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                {error}
+              </div>
+              {duplicateSupplierId && onOpenExisting ? (
+                <button
+                  type="button"
+                  data-testid="finance-supplier-open-existing-button"
+                  className="rounded-lg border px-3 py-2 text-sm font-semibold"
+                  onClick={() => onOpenExisting(duplicateSupplierId)}
+                >
+                  Abrir cadastro existente
+                </button>
+              ) : null}
             </div>
           ) : null}
           {message ? (
@@ -257,7 +430,7 @@ export function FinanceSupplierCadastroDrawer({
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : profile ? (
+          ) : showForm ? (
             <>
               <section className="space-y-3">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
@@ -270,7 +443,8 @@ export function FinanceSupplierCadastroDrawer({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      disabled={!canManage || profile.status === "INACTIVE"}
+                      disabled={formDisabled}
+                      data-testid="finance-supplier-display-name-input"
                     />
                   </label>
                   <label className="space-y-1 sm:col-span-2">
@@ -279,7 +453,7 @@ export function FinanceSupplierCadastroDrawer({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={legalName}
                       onChange={(e) => setLegalName(e.target.value)}
-                      disabled={!canManage || profile.status === "INACTIVE"}
+                      disabled={formDisabled}
                     />
                   </label>
                   <label className="space-y-1 sm:col-span-2">
@@ -288,7 +462,7 @@ export function FinanceSupplierCadastroDrawer({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={tradeName}
                       onChange={(e) => setTradeName(e.target.value)}
-                      disabled={!canManage || profile.status === "INACTIVE"}
+                      disabled={formDisabled}
                     />
                   </label>
                   <label className="space-y-1">
@@ -297,15 +471,18 @@ export function FinanceSupplierCadastroDrawer({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={document}
                       onChange={(e) => setDocument(e.target.value)}
-                      disabled={!canManage || profile.status === "INACTIVE"}
+                      disabled={formDisabled}
+                      data-testid="finance-supplier-document-input"
                     />
                   </label>
                   <div className="space-y-1">
                     <span className="text-xs font-semibold text-muted-foreground">Status</span>
-                    <p className="text-sm font-semibold">{profile.status}</p>
+                    <p className="text-sm font-semibold">
+                      {isCreate ? "ACTIVE" : profile?.status ?? "—"}
+                    </p>
                   </div>
                 </div>
-                {canManage && profile.status !== "INACTIVE" ? (
+                {canManage && (isCreate || !isInactive) ? (
                   <button
                     type="button"
                     data-testid="finance-supplier-save-cadastro-button"
@@ -313,35 +490,43 @@ export function FinanceSupplierCadastroDrawer({
                     disabled={saving}
                     onClick={() => void saveProfile()}
                   >
-                    {saving ? "Salvando…" : "Salvar cadastro"}
+                    {saving
+                      ? isCreate
+                        ? "Cadastrando…"
+                        : "Salvando…"
+                      : isCreate
+                        ? "Cadastrar fornecedor"
+                        : "Salvar alterações"}
                   </button>
                 ) : null}
               </section>
 
-              <section className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                  Resumo financeiro (AP)
-                </h3>
-                <p>Títulos vinculados: {profile.titlesCount}</p>
-                <p>Valor total visto: {formatFinanceCurrency(profile.totalAmountSeen)}</p>
-                <p>Alocações CC: {profile.allocationCount}</p>
-                {profile.activeRules.length > 0 ? (
-                  <div>
-                    <p className="font-semibold mt-2">Regras ativas</p>
-                    <ul className="list-disc pl-4 text-xs text-muted-foreground">
-                      {profile.activeRules.map((rule) => (
-                        <li key={rule.id}>
-                          {rule.costCenterName} ({rule.percentage}%)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">Sem regra de centro de custo ativa.</p>
-                )}
-              </section>
+              {!isCreate && profile ? (
+                <section className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Resumo financeiro (AP)
+                  </h3>
+                  <p>Títulos vinculados: {profile.titlesCount}</p>
+                  <p>Valor total visto: {formatFinanceCurrency(profile.totalAmountSeen)}</p>
+                  <p>Alocações CC: {profile.allocationCount}</p>
+                  {profile.activeRules.length > 0 ? (
+                    <div>
+                      <p className="font-semibold mt-2">Regras ativas</p>
+                      <ul className="list-disc pl-4 text-xs text-muted-foreground">
+                        {profile.activeRules.map((rule) => (
+                          <li key={rule.id}>
+                            {rule.costCenterName} ({rule.percentage}%)
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Sem regra de centro de custo ativa.</p>
+                  )}
+                </section>
+              ) : null}
 
-              {profile.aliases.length > 0 ? (
+              {!isCreate && profile && profile.aliases.length > 0 ? (
                 <section className="space-y-2">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
                     Aliases ({profile.aliases.length})
@@ -362,9 +547,9 @@ export function FinanceSupplierCadastroDrawer({
                   Consulta CNPJ
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Mesma rotina de Clientes (publica.cnpj.ws). Endereço e contatos públicos são
-                  exibidos para comparação; apenas razão social, fantasia e CNPJ (se vazio) podem
-                  ser aplicados ao cadastro consolidado.
+                  {isCreate
+                    ? "Opcional. Informe o CNPJ e consulte para preencher o formulário. Você também pode cadastrar manualmente sem consultar."
+                    : "Mesma rotina de Clientes (publica.cnpj.ws). Endereço e contatos públicos são exibidos para comparação; apenas razão social, fantasia e CNPJ (se vazio) podem ser aplicados ao cadastro consolidado."}
                 </p>
                 <div className="flex flex-wrap gap-2 items-end">
                   <label className="flex-1 min-w-[180px]">
@@ -374,7 +559,8 @@ export function FinanceSupplierCadastroDrawer({
                       placeholder="00.000.000/0000-00"
                       value={cnpjInput}
                       onChange={(e) => setCnpjInput(e.target.value)}
-                      disabled={!canManage || profile.status === "INACTIVE"}
+                      disabled={formDisabled}
+                      data-testid="finance-supplier-cnpj-input"
                     />
                   </label>
                   <button
@@ -383,8 +569,7 @@ export function FinanceSupplierCadastroDrawer({
                     className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
                     disabled={
                       cnpjLoading ||
-                      !canManage ||
-                      profile.status === "INACTIVE" ||
+                      formDisabled ||
                       cnpjInput.replace(/\D/g, "").length !== 14
                     }
                     onClick={() => void loadCnpj(false)}
@@ -477,7 +662,7 @@ export function FinanceSupplierCadastroDrawer({
                             </tbody>
                           </table>
                         </div>
-                        {canManage && profile.status !== "INACTIVE" ? (
+                        {canManage && (isCreate || !isInactive) ? (
                           <div className="p-3 border-t">
                             <button
                               type="button"
@@ -486,7 +671,9 @@ export function FinanceSupplierCadastroDrawer({
                               disabled={cnpjLoading || selectedFields.length === 0}
                               onClick={() => void applyCnpjFields()}
                             >
-                              Aplicar dados selecionados
+                              {isCreate
+                                ? "Preencher formulário com selecionados"
+                                : "Aplicar dados selecionados"}
                             </button>
                           </div>
                         ) : null}
@@ -499,7 +686,7 @@ export function FinanceSupplierCadastroDrawer({
           ) : null}
         </div>
 
-        {canDelete && profile?.status !== "INACTIVE" ? (
+        {!isCreate && canDelete && profile?.status !== "INACTIVE" ? (
           <div className="border-t px-4 py-3">
             <button
               type="button"

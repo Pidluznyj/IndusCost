@@ -117,6 +117,9 @@ describe("financeSuppliersRoutes wiring", () => {
   it("expõe rotas de cadastro, CNPJ e exclusão", () => {
     const routes = read("src/lib/financeSuppliersRoutes.ts");
     assert.match(routes, /\/api\/finance\/suppliers\/:id/);
+    assert.match(routes, /app\.post\("\/api\/finance\/suppliers"/);
+    assert.match(routes, /createFinancialSupplierDefault/);
+    assert.match(routes, /cnpj-lookup/);
     assert.match(routes, /company-intelligence/);
     assert.match(routes, /apply-company-intelligence/);
     assert.match(routes, /assertSuperAdminCanDeleteSupplier/);
@@ -132,11 +135,57 @@ describe("finance supplier cadastro UI", () => {
   it("componentes de cadastro e ações existem", () => {
     const drawer = read("src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx");
     const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(drawer, /finance-supplier-cadastro-drawer/);
+    assert.match(drawer, /mode: FinanceSupplierCadastroMode/);
+    assert.match(drawer, /Novo fornecedor/);
+    assert.match(drawer, /Editar fornecedor/);
+    assert.match(drawer, /Cadastrar fornecedor/);
+    assert.match(drawer, /Salvar alterações/);
     assert.match(drawer, /finance-supplier-consult-cnpj-button/);
     assert.match(drawer, /finance-supplier-apply-cnpj-button/);
     assert.match(drawer, /finance-supplier-delete-button/);
+    assert.match(drawer, /\/api\/finance\/suppliers\/cnpj-lookup/);
+    assert.match(drawer, /method: "POST"/);
+    assert.match(drawer, /z-\[60\]/);
+    assert.match(shared, /finance-suppliers-new-supplier-button/);
+    assert.match(shared, /canManageSuppliers/);
     assert.match(tab, /finance-suppliers-open-cadastro-button/);
     assert.match(tab, /finance-suppliers-create-cadastro-button/);
+  });
+
+  it("botão Novo fornecedor só renderiza com permissão de gestão", () => {
+    const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
+    assert.match(
+      shared,
+      /canManageSuppliers \? \([\s\S]*finance-suppliers-new-supplier-button/
+    );
+  });
+});
+
+describe("finance supplier create profile helpers", () => {
+  it("buildSupplierApplyPatch preenche draft vazio no create sem sobrescrever document existente", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const emptyPatch = buildSupplierApplyPatch(
+      { displayName: null, legalName: null, tradeName: null, document: null },
+      summary,
+      ["legalName", "tradeName", "document"]
+    );
+    assert.equal(emptyPatch.legalName, summary.companyName);
+    assert.equal(emptyPatch.tradeName, summary.tradeName);
+    assert.equal(emptyPatch.document, "11444777000161");
+
+    const filledPatch = buildSupplierApplyPatch(
+      {
+        displayName: "Manual",
+        legalName: "RAZAO MANUAL",
+        tradeName: "FANTASIA",
+        document: "11222333000181",
+      },
+      summary,
+      ["legalName", "tradeName", "document"]
+    );
+    assert.equal(filledPatch.document, undefined);
+    assert.ok(filledPatch.legalName === summary.companyName || filledPatch.tradeName);
   });
 });

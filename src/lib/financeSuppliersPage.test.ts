@@ -140,6 +140,22 @@ describe("finance suppliers menu + route", () => {
     assert.match(perms, /finance\.suppliers\.view/);
   });
 
+  it("cadastro novo reutiliza drawer, POST /api/finance/suppliers e mesma tabela", () => {
+    const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
+    const drawer = read("src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx");
+    const routes = read("src/lib/financeSuppliersRoutes.ts");
+    const profile = read("src/lib/financeSupplierProfile.ts");
+    assert.match(shared, /finance-suppliers-new-supplier-button/);
+    assert.match(shared, /mode=\{cadastroMode\}/);
+    assert.match(drawer, /mode === "create"/);
+    assert.match(drawer, /\/api\/finance\/suppliers"/);
+    assert.match(routes, /app\.post\("\/api\/finance\/suppliers"/);
+    assert.match(profile, /createFinancialSupplier/);
+    assert.match(profile, /source: "MANUAL"/);
+    assert.match(profile, /prisma\.financialSupplier\.create/);
+    assert.doesNotMatch(profile, /prisma\.\w+SupplierMaster/);
+  });
+
   it("nenhuma migration criada nesta feature", () => {
     assert.equal(existsSync(join(process.cwd(), "prisma", "migrations")), true);
     const page = read("src/components/finance/FinanceSuppliersPage.tsx");

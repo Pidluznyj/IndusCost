@@ -15,11 +15,13 @@ export const APP_AUTH_REQUIRED_EVENT = "app-auth-required";
 export class HttpError extends Error {
   readonly status: number;
   readonly code?: string;
-  constructor(status: number, message: string, code?: string) {
+  readonly existingSupplierId?: string;
+  constructor(status: number, message: string, code?: string, existingSupplierId?: string) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.code = code;
+    this.existingSupplierId = existingSupplierId;
   }
 }
 
@@ -42,7 +44,11 @@ export function notifyAuthRequired(): void {
   }
 }
 
-export async function parseApiErrorMessage(res: Response): Promise<string> {
+export async function parseApiErrorPayload(res: Response): Promise<{
+  message: string;
+  code?: string;
+  existingSupplierId?: string;
+}> {
   const fallback = `Erro HTTP ${res.status}`;
   try {
     const ct = res.headers.get("content-type");
@@ -52,18 +58,24 @@ export async function parseApiErrorMessage(res: Response): Promise<string> {
         const o = data as Record<string, unknown>;
         const msg = typeof o.message === "string" ? o.message.trim() : "";
         const err = typeof o.error === "string" ? o.error.trim() : "";
+        const code = typeof o.code === "string" ? o.code.trim() : undefined;
+        const existingSupplierId =
+          typeof o.existingSupplierId === "string" ? o.existingSupplierId : undefined;
         // Preferir message: o backend costuma enviar error=CHILD_COST_FAILED e o detalhe útil em message.
-        if (msg) return msg;
-        if (err) return err;
-        if (typeof o.details === "string" && o.details.trim()) return o.details;
+        const message = msg || err || (typeof o.details === "string" && o.details.trim()) || fallback;
+        return { message, code, existingSupplierId };
       }
-      return fallback;
+      return { message: fallback };
     }
     const text = await res.text();
-    return text?.trim().slice(0, 300) || fallback;
+    return { message: text?.trim().slice(0, 300) || fallback };
   } catch {
-    return fallback;
+    return { message: fallback };
   }
+}
+
+export async function parseApiErrorMessage(res: Response): Promise<string> {
+  return (await parseApiErrorPayload(res)).message;
 }
 
 /** Normaliza init garantindo credentials e mantendo signal/headers/body intactos. */
@@ -92,7 +104,8 @@ export async function fetchJsonOk<T = unknown>(
     await raiseForUnauthorized(res, init);
   }
   if (!res.ok) {
-    throw new HttpError(res.status, await parseApiErrorMessage(res));
+    const payload = await parseApiErrorPayload(res);
+    throw new HttpError(res.status, payload.message, payload.code, payload.existingSupplierId);
   }
   const ct = res.headers.get("content-type");
   if (ct?.includes("application/json")) {
@@ -111,6 +124,7 @@ export async function fetchOk(
     await raiseForUnauthorized(res, init);
   }
   if (!res.ok) {
-    throw new HttpError(res.status, await parseApiErrorMessage(res));
+    const payload = await parseApiErrorPayload(res);
+    throw new HttpError(res.status, payload.message, payload.code, payload.existingSupplierId);
   }
 }

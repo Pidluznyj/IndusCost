@@ -33,8 +33,11 @@ describe("finance supplier cadastro portal", () => {
     const tab = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(tab, /finance-suppliers-create-cadastro-button/);
     assert.match(tab, /Criar cadastro/);
+    assert.match(tab, /finance-suppliers-new-supplier-button/);
+    assert.match(tab, /Novo fornecedor/);
     assert.match(tab, /FinanceSupplierCadastroDrawer/);
     assert.match(tab, /setCadastroSupplierId/);
+    assert.match(tab, /cadastroMode/);
     assert.match(tab, /finance-suppliers-define-rule-button/);
     assert.match(tab, /finance-suppliers-view-aliases-button/);
     assert.match(tab, /sup_q/);
@@ -42,7 +45,7 @@ describe("finance supplier cadastro portal", () => {
 
   it("fechar cadastro não limpa filtros de URL", () => {
     const tab = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
-    assert.match(tab, /onClose=\{\(\) => setCadastroSupplierId\(null\)\}/);
+    assert.match(tab, /setCadastroSupplierId\(null\)/);
     assert.doesNotMatch(tab, /setCadastroSupplierId\(null\)[\s\S]*patchUrl/);
   });
 });

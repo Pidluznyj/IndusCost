@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, FileText, ListOrdered, RefreshCw, Settings2 } from "lucide-react";
+import { Eye, FileText, ListOrdered, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -95,6 +95,7 @@ export function SuppliersManagementView({
   const [aliasesSupplier, setAliasesSupplier] = useState<SupplierGridRow | null>(null);
   const [supplierTitlesSupplier, setSupplierTitlesSupplier] = useState<SupplierGridRow | null>(null);
   const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
+  const [cadastroMode, setCadastroMode] = useState<"create" | "edit">("edit");
   const [creatingCadastroFor, setCreatingCadastroFor] = useState<string | null>(null);
 
   const search = readFinanceGridUrlString(searchParams, "sup_q");
@@ -285,6 +286,7 @@ export function SuppliersManagementView({
 
   const openCadastroFromApRow = async (row: SupplierGridRow) => {
     if (row.supplierId) {
+      setCadastroMode("edit");
       setCadastroSupplierId(row.supplierId);
       return;
     }
@@ -299,6 +301,7 @@ export function SuppliersManagementView({
           body: JSON.stringify({ personName: row.name, personDocument: row.document }),
         }
       );
+      setCadastroMode("edit");
       setCadastroSupplierId(result.supplierId);
       onSuppliersChanged?.();
     } catch (e) {
@@ -389,14 +392,30 @@ export function SuppliersManagementView({
             </select>
           </label>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold"
-          onClick={() => void load()}
-        >
-          <RefreshCw className="h-4 w-4" />
-          Atualizar
-        </button>
+        <div className="flex flex-wrap items-end gap-2">
+          {canManageSuppliers ? (
+            <button
+              type="button"
+              data-testid="finance-suppliers-new-supplier-button"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+              onClick={() => {
+                setCadastroMode("create");
+                setCadastroSupplierId(null);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Novo fornecedor
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold"
+            onClick={() => void load()}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       <FinanceCostCenterGridActiveFilters
@@ -477,7 +496,10 @@ export function SuppliersManagementView({
                         type="button"
                         data-testid="finance-suppliers-open-cadastro-button"
                         className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                        onClick={() => setCadastroSupplierId(row.supplierId!)}
+                        onClick={() => {
+                          setCadastroMode("edit");
+                          setCadastroSupplierId(row.supplierId!);
+                        }}
                       >
                         <FileText className="h-3 w-3" />
                         {row.status === "INACTIVE" ? "Ver cadastro" : "Editar"}
@@ -552,9 +574,17 @@ export function SuppliersManagementView({
       ) : null}
 
       <FinanceSupplierCadastroDrawer
-        open={Boolean(cadastroSupplierId)}
+        open={cadastroMode === "create" || Boolean(cadastroSupplierId)}
+        mode={cadastroMode}
         supplierId={cadastroSupplierId}
-        onClose={() => setCadastroSupplierId(null)}
+        onClose={() => {
+          setCadastroMode("edit");
+          setCadastroSupplierId(null);
+        }}
+        onOpenExisting={(id) => {
+          setCadastroMode("edit");
+          setCadastroSupplierId(id);
+        }}
         onChanged={() => {
           onSuppliersChanged?.();
           void load();
