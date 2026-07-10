@@ -67,6 +67,7 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
   payments: "/commissions",
   previsao: "/commissions",
   auditoria: "/commissions",
+  "visual-audit": "/commissions",
 };
 
 export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {

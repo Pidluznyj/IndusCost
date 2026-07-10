@@ -46,6 +46,7 @@ describe("commissionsNavigation", () => {
     assert.equal(resolveCommissionsLegacyRedirect("forecast"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("previsao"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("auditoria"), "/commissions");
+    assert.equal(resolveCommissionsLegacyRedirect("visual-audit"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("confirmed"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("releases"), "/commissions");
     assert.equal(resolveCommissionsLegacyRedirect("dashboard"), "/commissions");
@@ -57,6 +58,8 @@ describe("commissionsNavigation", () => {
   it("deep-link de previsão e auditoria redireciona para fechamento", () => {
     assert.equal(resolveCommissionsCanonicalPath("/commissions/previsao"), "/commissions");
     assert.equal(resolveCommissionsCanonicalPath("/commissions/auditoria"), "/commissions");
+    assert.equal(resolveCommissionsCanonicalPath("/commissions/forecast"), "/commissions");
+    assert.equal(resolveCommissionsCanonicalPath("/commissions/visual-audit"), "/commissions");
   });
 
   it("paths canônicos", () => {
@@ -118,6 +121,20 @@ describe("commissionsModulePermissions", () => {
   it("abas ocultas não são acessíveis na UI", () => {
     assert.equal(canViewCommissionsSection("visualAudit", checker(["commissions.view"])), false);
     assert.equal(canViewCommissionsSection("receivableForecast", checker(["commissions.view"])), false);
+  });
+
+  it("importa isCommissionsHiddenSection (evita ReferenceError em runtime)", () => {
+    const src = read("src/lib/commissionsModulePermissions.ts");
+    assert.match(src, /isCommissionsHiddenSection/);
+    assert.match(
+      src,
+      /import\s*\{[^}]*isCommissionsHiddenSection[^}]*\}\s*from\s*["']@\/src\/lib\/commissionsNavigation\.js["']/
+    );
+    assert.doesNotThrow(() => {
+      canViewCommissionsSection("visualAudit", checker(["commissions.view"]));
+      canViewCommissionsSection("receivableForecast", checker(["commissions.view"]));
+      canViewCommissionsSection("monthlyClosing", checker(["commissions.view"]));
+    });
   });
 
   it("customerExclusions exige commissions.rules.view", () => {

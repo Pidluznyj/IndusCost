@@ -5,7 +5,10 @@ import {
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import type { CommissionsSectionId } from "@/src/lib/commissionsNavigation.js";
-import { COMMISSIONS_SECTIONS } from "@/src/lib/commissionsNavigation.js";
+import {
+  COMMISSIONS_SECTIONS,
+  isCommissionsHiddenSection,
+} from "@/src/lib/commissionsNavigation.js";
 
 export function canAccessCommissionsModule(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
