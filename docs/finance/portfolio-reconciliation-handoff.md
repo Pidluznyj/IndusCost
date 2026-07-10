@@ -4,8 +4,8 @@
 **Módulo:** Financeiro → Conciliação de Carteira (camada **paralela** / auditoria)  
 **Atualizado:** 2026-07-10  
 **Branch:** `main`  
-**Commit de referência (rastreabilidade UI):** `b665871dc641d05be89167552ce6a1b804e3f0eb`  
-**Faixa de commits da entrega:** `b984e7e` … `b665871` (+ este handoff)
+**Commit de referência (handoff):** `cc49f3a85fb15541f192b10a17e8a556aa6d037f`  
+**Faixa de commits da entrega:** `b984e7e` … `cc49f3a`
 
 > Documento operacional para **execução no servidor**.  
 > Complementar: [`portfolio-reconciliation-architecture.md`](./portfolio-reconciliation-architecture.md), [`nomus-portfolio-reconciliation-inventory.md`](./nomus-portfolio-reconciliation-inventory.md).
