@@ -163,6 +163,9 @@ export function SuppliersManagementView({
     onNavigateTab("rules");
   };
 
+  /** Ações financeiras/operacionais (títulos, regras, aliases) só na aba Centro de Custos. */
+  const showOperationalActions = context === "cost-center-tab";
+
   const allRows = useMemo<SupplierGridRow[]>(() => {
     const bySupplier = dashboard?.bySupplier ?? [];
     const activeRulesBySupplier = new Map<string, SupplierCostCenterRuleDto[]>();
@@ -516,33 +519,37 @@ export function SuppliersManagementView({
                         {creatingCadastroFor === row.name ? "Criando…" : "Criar cadastro"}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      data-testid="finance-suppliers-view-paid-titles-button"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                      onClick={() => setSupplierTitlesSupplier(row)}
-                    >
-                      <ListOrdered className="h-3 w-3" />
-                      Ver títulos
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="finance-suppliers-define-rule-button"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                      onClick={handleNavigateRules}
-                    >
-                      <Settings2 className="h-3 w-3" />
-                      Definir regra
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="finance-suppliers-view-aliases-button"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground"
-                      onClick={() => setAliasesSupplier(row)}
-                    >
-                      <Eye className="h-3 w-3" />
-                      Ver aliases
-                    </button>
+                    {showOperationalActions ? (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="finance-suppliers-view-paid-titles-button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                          onClick={() => setSupplierTitlesSupplier(row)}
+                        >
+                          <ListOrdered className="h-3 w-3" />
+                          Ver títulos
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="finance-suppliers-define-rule-button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                          onClick={handleNavigateRules}
+                        >
+                          <Settings2 className="h-3 w-3" />
+                          Definir regra
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="finance-suppliers-view-aliases-button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground"
+                          onClick={() => setAliasesSupplier(row)}
+                        >
+                          <Eye className="h-3 w-3" />
+                          Ver aliases
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -551,7 +558,7 @@ export function SuppliersManagementView({
         </>
       ) : null}
 
-      {aliasesSupplier ? (
+      {showOperationalActions && aliasesSupplier ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className={cn(financeBiCardClass, "w-full max-w-lg space-y-3")}>
             <h3 className="text-lg font-semibold">Aliases — {aliasesSupplier.name}</h3>
@@ -593,15 +600,19 @@ export function SuppliersManagementView({
         canDelete={canDeleteSupplier}
       />
 
-      <FinanceSupplierTitlesModal
-        open={Boolean(supplierTitlesSupplier)}
-        supplier={supplierTitlesSupplier}
-        filters={appliedFilters}
-        canReclassify={canReclassifyTitles}
-        onClose={() => setSupplierTitlesSupplier(null)}
-      />
+      {showOperationalActions ? (
+        <>
+          <FinanceSupplierTitlesModal
+            open={Boolean(supplierTitlesSupplier)}
+            supplier={supplierTitlesSupplier}
+            filters={appliedFilters}
+            canReclassify={canReclassifyTitles}
+            onClose={() => setSupplierTitlesSupplier(null)}
+          />
 
-      <FinanceSupplierPaymentDrilldownSection filters={appliedFilters} />
+          <FinanceSupplierPaymentDrilldownSection filters={appliedFilters} />
+        </>
+      ) : null}
     </div>
   );
 }

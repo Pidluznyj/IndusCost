@@ -156,6 +156,42 @@ describe("finance suppliers menu + route", () => {
     assert.doesNotMatch(profile, /prisma\.\w+SupplierMaster/);
   });
 
+  it("Financeiro > Fornecedores não expõe títulos/regras/aliases; CC mantém", () => {
+    const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
+    const page = read("src/components/finance/FinanceSuppliersPage.tsx");
+    const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const ccRoutes = read("src/lib/financeCostCentersRoutes.ts");
+    const rulesRoutes = read("src/lib/financeSupplierCostCenterRulesRoutes.ts");
+    assert.match(page, /context="finance-menu"/);
+    assert.match(tab, /context="cost-center-tab"/);
+    assert.match(shared, /showOperationalActions = context === "cost-center-tab"/);
+    assert.match(shared, /finance-suppliers-open-cadastro-button/);
+    assert.match(shared, /finance-suppliers-new-supplier-button/);
+    // botões operacionais existem no fonte, mas só renderizam com showOperationalActions
+    assert.match(shared, /showOperationalActions \?/);
+    assert.match(shared, /finance-suppliers-view-paid-titles-button/);
+    assert.match(shared, /finance-suppliers-define-rule-button/);
+    assert.match(shared, /finance-suppliers-view-aliases-button/);
+    // endpoints sensíveis exigem permissão de centro de custo / regras — não só suppliers.view
+    assert.match(ccRoutes, /FINANCE_COST_CENTERS_VIEW_PERMISSIONS/);
+    assert.match(ccRoutes, /supplier-titles/);
+    assert.doesNotMatch(
+      ccRoutes.slice(
+        ccRoutes.indexOf("FINANCE_COST_CENTERS_VIEW_PERMISSIONS"),
+        ccRoutes.indexOf("FINANCE_COST_CENTERS_VIEW_PERMISSIONS") + 200
+      ),
+      /finance\.suppliers\.view/
+    );
+    assert.match(rulesRoutes, /FINANCE_SUPPLIER_COST_CENTER_RULES_VIEW_PERMISSIONS/);
+    assert.doesNotMatch(
+      rulesRoutes.slice(
+        rulesRoutes.indexOf("FINANCE_SUPPLIER_COST_CENTER_RULES_VIEW_PERMISSIONS"),
+        rulesRoutes.indexOf("FINANCE_SUPPLIER_COST_CENTER_RULES_VIEW_PERMISSIONS") + 220
+      ),
+      /finance\.suppliers\.view/
+    );
+  });
+
   it("nenhuma migration criada nesta feature", () => {
     assert.equal(existsSync(join(process.cwd(), "prisma", "migrations")), true);
     const page = read("src/components/finance/FinanceSuppliersPage.tsx");

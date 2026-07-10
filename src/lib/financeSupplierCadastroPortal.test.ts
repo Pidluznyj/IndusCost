@@ -38,6 +38,7 @@ describe("finance supplier cadastro portal", () => {
     assert.match(tab, /FinanceSupplierCadastroDrawer/);
     assert.match(tab, /setCadastroSupplierId/);
     assert.match(tab, /cadastroMode/);
+    assert.match(tab, /showOperationalActions/);
     assert.match(tab, /finance-suppliers-define-rule-button/);
     assert.match(tab, /finance-suppliers-view-aliases-button/);
     assert.match(tab, /sup_q/);
@@ -47,5 +48,17 @@ describe("finance supplier cadastro portal", () => {
     const tab = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(tab, /setCadastroSupplierId\(null\)/);
     assert.doesNotMatch(tab, /setCadastroSupplierId\(null\)[\s\S]*patchUrl/);
+  });
+
+  it("contexto finance-menu oculta ações financeiras; cost-center-tab mantém", () => {
+    const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
+    const page = read("src/components/finance/FinanceSuppliersPage.tsx");
+    const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    assert.match(page, /context="finance-menu"/);
+    assert.match(tab, /context="cost-center-tab"/);
+    assert.match(shared, /showOperationalActions = context === "cost-center-tab"/);
+    assert.match(shared, /showOperationalActions \? \([\s\S]*finance-suppliers-view-paid-titles-button/);
+    assert.match(shared, /finance-suppliers-open-cadastro-button/);
+    assert.match(shared, /finance-suppliers-new-supplier-button/);
   });
 });
