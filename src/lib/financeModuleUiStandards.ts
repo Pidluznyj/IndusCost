@@ -20,6 +20,7 @@ export type FinanceModuleTabId =
   | "billing"
   | "sales-orders"
   | "suppliers"
+  | "portfolio-reconciliation"
   | "cost-centers"
   | "executive-report";
 
@@ -30,6 +31,7 @@ export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
   billing: "Faturamento",
   "sales-orders": "Pedidos de Venda",
   suppliers: "Fornecedores",
+  "portfolio-reconciliation": "Conciliação de Carteira",
   "cost-centers": "Centros de Custo",
   "executive-report": "Relatório Executivo",
 };
@@ -41,6 +43,7 @@ export const FINANCE_MODULE_TAB_ENDPOINTS: Record<FinanceModuleTabId, string> = 
   billing: "/api/finance/billing/dashboard",
   "sales-orders": "/api/finance/sales-orders/dashboard",
   suppliers: "/api/finance/suppliers/search",
+  "portfolio-reconciliation": "/api/finance/portfolio-reconciliation",
   "cost-centers": "/api/finance/cost-centers/dashboard",
   "executive-report": "/api/finance/executive-report",
 };

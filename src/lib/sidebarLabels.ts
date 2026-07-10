@@ -50,6 +50,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   reports: "Relat.",
   finance: "Financ.",
   suppliers: "Forn.",
+  "portfolio-reconciliation": "Conc.",
   guide: "Guia",
   settings: "Config.",
 };

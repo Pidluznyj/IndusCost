@@ -120,6 +120,13 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "finance.cost_centers.view",
     "finance.view",
   ],
+  "portfolio-reconciliation": [
+    "finance.view",
+    "finance.accountsReceivable.view",
+    "finance.accountsPayable.view",
+    "reports.view",
+    "settings.nomus.view",
+  ],
   guide: ["guide.view", "dashboard.view"],
 };
 
@@ -159,7 +166,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Financeiro",
     iconKey: "Banknote",
     order: 4,
-    itemIds: ["finance", "suppliers", "opex", "taxes", "reports"],
+    itemIds: ["finance", "suppliers", "portfolio-reconciliation", "opex", "taxes", "reports"],
   },
   {
     id: "operacoes",
@@ -193,6 +200,7 @@ const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
 
 export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
+  if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
   return `/${moduleId}`;
 }
 

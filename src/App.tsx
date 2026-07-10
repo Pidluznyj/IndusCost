@@ -14,6 +14,7 @@ import { TransformationCostSimulatorModule } from "./components/TransformationCo
 import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
 import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage";
+import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
@@ -911,6 +912,10 @@ export default function App() {
         <Route
           path="finance/suppliers"
           element={<FinanceSuppliersPage />}
+        />
+        <Route
+          path="finance/portfolio-reconciliation"
+          element={<FinancePortfolioReconciliationPage />}
         />
         <Route
           path="finance"

@@ -98,6 +98,9 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "suppliers") {
     return /path=["']finance\/suppliers["']/.test(appTsx);
   }
+  if (moduleId === "portfolio-reconciliation") {
+    return /path=["']finance\/portfolio-reconciliation["']/.test(appTsx);
+  }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);
 }

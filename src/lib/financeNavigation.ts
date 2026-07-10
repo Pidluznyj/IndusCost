@@ -17,6 +17,7 @@ export type FinanceSectionId = (typeof FINANCE_SECTION_IDS)[number];
 /** Rotas financeiras fora das abas do FinanceModule (tela própria). */
 export const FINANCE_STANDALONE_PATHS = {
   suppliers: "/finance/suppliers",
+  "portfolio-reconciliation": "/finance/portfolio-reconciliation",
 } as const;
 
 export type FinanceStandaloneId = keyof typeof FINANCE_STANDALONE_PATHS;
@@ -85,9 +86,18 @@ export function getFinanceSuppliersPath(): string {
   return FINANCE_STANDALONE_PATHS.suppliers;
 }
 
+export function getFinancePortfolioReconciliationPath(): string {
+  return FINANCE_STANDALONE_PATHS["portfolio-reconciliation"];
+}
+
 export function isFinanceSuppliersStandalonePath(pathname: string): boolean {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   return normalized === FINANCE_STANDALONE_PATHS.suppliers;
+}
+
+export function isFinancePortfolioReconciliationStandalonePath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  return normalized === FINANCE_STANDALONE_PATHS["portfolio-reconciliation"];
 }
 
 export function getFinanceDefaultPath(): string {
@@ -112,6 +122,7 @@ export function isFinanceCanonicalPath(pathname: string): boolean {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   if (normalized === FINANCE_BASE_PATH) return true;
   if (isFinanceSuppliersStandalonePath(normalized)) return true;
+  if (isFinancePortfolioReconciliationStandalonePath(normalized)) return true;
   if (isFinanceCostCenterDetailPath(normalized)) return true;
   return FINANCE_SECTION_IDS.some((id) => normalized === FINANCE_SECTION_PATHS[id]);
 }
@@ -127,7 +138,8 @@ export function hasNestedFinanceSectionPath(pathname: string): boolean {
     return (
       segments.length === 1 &&
       !isFinanceSectionId(only) &&
-      only !== "suppliers"
+      only !== "suppliers" &&
+      only !== "portfolio-reconciliation"
     );
   }
   return true;

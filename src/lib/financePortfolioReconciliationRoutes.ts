@@ -2,6 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconciliationApi.js";
+import { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS } from "./financePortfolioReconciliationPermissions.js";
 import {
   listPortfolioReconciliationRuns,
   loadPortfolioReconciliationList,
@@ -14,14 +15,7 @@ type AuthGuards = {
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
 
-/** Permissões financeiras existentes — leitura da camada paralela de conciliação. */
-export const FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS = [
-  "finance.view",
-  "finance.accountsReceivable.view",
-  "finance.accountsPayable.view",
-  "reports.view",
-  "settings.nomus.view",
-] as const;
+export { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS };
 
 export function registerFinancePortfolioReconciliationRoutes(
   app: express.Express,
@@ -37,10 +31,6 @@ export function registerFinancePortfolioReconciliationRoutes(
       const payload = await loadPortfolioReconciliationList(
         req.query as Record<string, unknown>
       );
-      if (!payload.ok) {
-        res.status(404).json(payload);
-        return;
-      }
       res.json(payload);
     } catch (error) {
       if (error instanceof PortfolioReconciliationApiParseError) {

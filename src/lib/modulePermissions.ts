@@ -28,6 +28,7 @@ export type AppModuleId =
   | "reports"
   | "finance"
   | "suppliers"
+  | "portfolio-reconciliation"
   | "guide"
   | "settings";
 
@@ -63,6 +64,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "reports",
   "finance",
   "suppliers",
+  "portfolio-reconciliation",
   "guide",
   "settings",
 ];
@@ -153,6 +155,14 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("finance.suppliers.view") ||
         check.hasPermission("finance.cost_centers.view") ||
         check.hasPermission("finance.view")
+      );
+    case "portfolio-reconciliation":
+      return (
+        check.hasPermission("finance.view") ||
+        check.hasPermission("finance.accountsReceivable.view") ||
+        check.hasPermission("finance.accountsPayable.view") ||
+        check.hasPermission("reports.view") ||
+        check.hasPermission("settings.nomus.view")
       );
     case "guide":
       return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");
@@ -263,6 +273,9 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   if (normalized === "/finance/suppliers") {
     return "suppliers";
   }
+  if (normalized === "/finance/portfolio-reconciliation") {
+    return "portfolio-reconciliation";
+  }
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
@@ -305,6 +318,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   reports: "Relatórios",
   finance: "Financeiro",
   suppliers: "Fornecedores",
+  "portfolio-reconciliation": "Conciliação de Carteira",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };
