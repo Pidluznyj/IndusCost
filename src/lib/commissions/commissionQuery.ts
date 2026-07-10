@@ -1224,13 +1224,61 @@ const COMMISSION_REPORT_STATUS_SET = new Set<string>([
 
 export type CommissionReportsQueryParsed = {
   year: number;
-  month: number | "all";
+  months: number[] | "all";
   sellerId: string | "all";
   status: string | "all";
   search: string | null;
   page: number;
   pageSize: number;
 };
+
+function parseCommissionReportsMonths(query: Record<string, unknown>): number[] | "all" {
+  const monthsRaw = query.months ?? query.month;
+
+  if (monthsRaw == null || monthsRaw === "" || monthsRaw === "all") {
+    return "all";
+  }
+
+  if (Array.isArray(monthsRaw)) {
+    if (monthsRaw.length === 0) return "all";
+    const parsed: number[] = [];
+    for (const item of monthsRaw) {
+      const n = parseOptionalInt(item);
+      if (n == null || n < 1 || n > 12) {
+        throw new CommissionQueryParseError(
+          "Mês inválido. Informe meses entre 1 e 12, ou months=all."
+        );
+      }
+      parsed.push(n);
+    }
+    return [...new Set(parsed)].sort((a, b) => a - b);
+  }
+
+  if (typeof monthsRaw === "string") {
+    const trimmed = monthsRaw.trim();
+    if (!trimmed || trimmed.toLowerCase() === "all") return "all";
+    const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+    if (parts.length === 0) return "all";
+    const parsed: number[] = [];
+    for (const part of parts) {
+      if (part.toLowerCase() === "all") return "all";
+      const n = parseOptionalInt(part);
+      if (n == null || n < 1 || n > 12) {
+        throw new CommissionQueryParseError(
+          "Mês inválido. Informe months=1,2,3 ou months=all."
+        );
+      }
+      parsed.push(n);
+    }
+    return [...new Set(parsed)].sort((a, b) => a - b);
+  }
+
+  const single = parseOptionalInt(monthsRaw);
+  if (single == null || single < 1 || single > 12) {
+    throw new CommissionQueryParseError("Mês inválido. Use 1–12 ou all.");
+  }
+  return [single];
+}
 
 export function parseCommissionReportsQuery(
   query: Record<string, unknown>
@@ -1240,17 +1288,7 @@ export function parseCommissionReportsQuery(
     throw new CommissionQueryParseError("Informe um ano válido (2000–2100).");
   }
 
-  const monthRaw = query.month;
-  let month: number | "all" = "all";
-  if (monthRaw == null || monthRaw === "" || monthRaw === "all") {
-    month = "all";
-  } else {
-    const monthNum = parseOptionalInt(monthRaw);
-    if (monthNum == null || monthNum < 1 || monthNum > 12) {
-      throw new CommissionQueryParseError("Mês inválido. Use 1–12 ou all.");
-    }
-    month = monthNum;
-  }
+  const months = parseCommissionReportsMonths(query);
 
   const sellerRaw =
     typeof query.sellerId === "string" && query.sellerId.trim()
@@ -1285,5 +1323,5 @@ export function parseCommissionReportsQuery(
   const pageSize =
     pageSizeRaw != null && pageSizeRaw >= 1 ? Math.min(pageSizeRaw, 200) : 50;
 
-  return { year, month, sellerId, status, search, page, pageSize };
+  return { year, months, sellerId, status, search, page, pageSize };
 }

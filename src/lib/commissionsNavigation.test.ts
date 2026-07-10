@@ -169,6 +169,7 @@ describe("commissions reports UI wiring", () => {
     const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
     assert.match(page, /\/api\/commissions\/reports/);
     assert.match(page, /export\.xlsx/);
+    assert.match(page, /CommissionsMonthsMultiSelect/);
     assert.doesNotMatch(page, /calculateCommission|recalculate|commissionPerc\s*\*/);
     assert.match(page, /commissions-reports-page/);
   });

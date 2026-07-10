@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   assembleCommissionReportsPayload,
+  buildCommissionReportsExportFilename,
   buildEmptyCommissionReportsPayload,
   filterCommissionReportRecords,
+  formatCommissionReportMonthsLabel,
+  isCommissionReportAllMonths,
   mapSourceLineToReportRecord,
   matchesCommissionReportSearch,
+  resolveCommissionReportMonths,
   type CommissionReportSourceLine,
 } from "./commissionReports.shared.js";
 import { parseCommissionReportsQuery, CommissionQueryParseError } from "./commissionQuery.js";
+
+function read(path: string): string {
+  return readFileSync(join(process.cwd(), path), "utf8");
+}
 
 function line(
   partial: Partial<CommissionReportSourceLine> & { lineKey: string }
@@ -66,13 +76,29 @@ describe("parseCommissionReportsQuery", () => {
     );
   });
 
-  it("aceita mês all e filtros padrão", () => {
-    const q = parseCommissionReportsQuery({ year: "2026", month: "all" });
-    assert.equal(q.year, 2026);
-    assert.equal(q.month, "all");
-    assert.equal(q.sellerId, "all");
-    assert.equal(q.status, "all");
-    assert.equal(q.page, 1);
+  it("aceita months=all e month legado", () => {
+    const all = parseCommissionReportsQuery({ year: "2026", months: "all" });
+    assert.equal(all.months, "all");
+    const legacy = parseCommissionReportsQuery({ year: "2026", month: "6" });
+    assert.deepEqual(legacy.months, [6]);
+  });
+
+  it("aceita months múltiplos", () => {
+    const q = parseCommissionReportsQuery({ year: "2026", months: "6,7" });
+    assert.deepEqual(q.months, [6, 7]);
+  });
+
+  it("array vazio de months vira all", () => {
+    const q = parseCommissionReportsQuery({ year: "2026", months: [] });
+    assert.equal(q.months, "all");
+  });
+
+  it("rejeita mês inválido com erro amigável", () => {
+    assert.throws(
+      () => parseCommissionReportsQuery({ year: "2026", months: "13" }),
+      (err: unknown) =>
+        err instanceof CommissionQueryParseError && String(err.message).includes("Mês inválido")
+    );
   });
 
   it("rejeita status inválido com erro amigável", () => {
@@ -85,11 +111,36 @@ describe("parseCommissionReportsQuery", () => {
   });
 });
 
+describe("commissionReports months helpers", () => {
+  it("resolve all para 1–12", () => {
+    assert.deepEqual(resolveCommissionReportMonths("all"), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert.equal(isCommissionReportAllMonths("all"), true);
+    assert.equal(isCommissionReportAllMonths([6, 7]), false);
+  });
+
+  it("filename reflete filtro", () => {
+    assert.equal(
+      buildCommissionReportsExportFilename(2026, "all"),
+      "comissao-relatorio-2026-todos-os-meses.xlsx"
+    );
+    assert.equal(
+      buildCommissionReportsExportFilename(2026, [6, 7]),
+      "comissao-relatorio-2026-jun-jul.xlsx"
+    );
+  });
+
+  it("label resume seleção", () => {
+    assert.equal(formatCommissionReportMonthsLabel("all"), "Todos os meses");
+    assert.equal(formatCommissionReportMonthsLabel([6]), "Junho");
+    assert.match(formatCommissionReportMonthsLabel([6, 7]), /Junho/);
+  });
+});
+
 describe("commissionReports.shared", () => {
   it("arrays vazios não quebram payload", () => {
     const empty = buildEmptyCommissionReportsPayload({
       year: 2026,
-      month: "all",
+      months: "all",
       sellerId: "all",
       status: "all",
       search: null,
@@ -136,31 +187,37 @@ describe("commissionReports.shared", () => {
     assert.equal(matchesCommissionReportSearch(record, "inexistente"), false);
   });
 
-  it("resumo por vendedor soma comissão final", () => {
+  it("resumo por vendedor soma comissão final de múltiplos meses", () => {
     const payload = assembleCommissionReportsPayload(
       [
-        line({ lineKey: "1", releasedCommissionAmount: 40, grossCommissionAmount: 40 }),
+        line({ lineKey: "1", month: 6, releasedCommissionAmount: 40, grossCommissionAmount: 40 }),
         line({
           lineKey: "2",
+          month: 7,
           nomusReceivableId: 2,
+          settlementDate: "2026-07-10T00:00:00.000Z",
           releasedCommissionAmount: 60,
           grossCommissionAmount: 60,
         }),
       ],
       {
         year: 2026,
-        month: 6,
+        months: [6, 7],
         sellerId: "all",
         status: "all",
         search: null,
         page: 1,
         pageSize: 50,
       },
-      [{ year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" }]
+      [
+        { year: 2026, month: 6, periodStatus: "CLOSED", closingId: "c1" },
+        { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
+      ]
     );
     assert.equal(payload.summary.totalCommission, 100);
     assert.equal(payload.sellers.length, 1);
     assert.equal(payload.sellers[0]?.finalCommission, 100);
+    assert.deepEqual(payload.filtersApplied.months, [6, 7]);
     assert.ok(Array.isArray(payload.records));
   });
 
@@ -168,5 +225,22 @@ describe("commissionReports.shared", () => {
     const record = mapSourceLineToReportRecord(line({ lineKey: "r", ratePercent: 7.5 }));
     assert.equal(record.ratePercent, 7.5);
     assert.equal(record.finalCommissionAmount, 40);
+  });
+});
+
+describe("commissionReports UI months multiselect", () => {
+  it("página usa multiselect e months na query", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    assert.match(page, /CommissionsMonthsMultiSelect/);
+    assert.match(page, /months/);
+    assert.match(page, /\/api\/commissions\/reports/);
+    assert.doesNotMatch(page, /CommissionsPeriodFilterFields/);
+  });
+
+  it("server carrega prévia para meses sem fechamento também em multi/all", () => {
+    const server = read("src/lib/commissions/commissionReports.server.ts");
+    assert.match(server, /loadPreviewMonthSourceLines/);
+    assert.match(server, /months\.filter\(\(m\) => !closedMonths\.has\(m\)\)/);
+    assert.match(server, /month:\s*\{\s*in:\s*input\.months\s*\}/);
   });
 });

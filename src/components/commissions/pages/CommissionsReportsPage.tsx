@@ -6,8 +6,9 @@ import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import {
   COMMISSIONS_FILTER_FIELD_CLASS,
   COMMISSIONS_FILTER_LABEL_CLASS,
+  buildCommissionsYearOptions,
 } from "@/src/lib/commissionsPeriodFilter";
-import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
+import { CommissionsMonthsMultiSelect } from "@/src/components/commissions/CommissionsMonthsMultiSelect";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
@@ -24,8 +25,10 @@ import {
 import { cn } from "@/src/lib/utils";
 import type {
   CommissionReportRecord,
+  CommissionReportsMonthsFilter,
   CommissionReportsPayload,
 } from "@/src/lib/commissions/commissionReports.shared";
+import { buildCommissionReportsExportFilename } from "@/src/lib/commissions/commissionReports.shared";
 
 const MONTH_LABELS = [
   "",
@@ -75,7 +78,7 @@ function formatDateBr(iso: string | null): string {
 
 function buildReportsQuery(params: {
   year: string;
-  month: string;
+  months: CommissionReportsMonthsFilter;
   sellerId: string;
   status: string;
   search: string;
@@ -84,7 +87,11 @@ function buildReportsQuery(params: {
 }): string {
   const qs = new URLSearchParams();
   qs.set("year", params.year);
-  qs.set("month", params.month || "all");
+  if (params.months === "all" || (Array.isArray(params.months) && params.months.length === 0)) {
+    qs.set("months", "all");
+  } else {
+    qs.set("months", params.months.join(","));
+  }
   qs.set("sellerId", params.sellerId || "all");
   qs.set("status", params.status || "all");
   if (params.search.trim()) qs.set("search", params.search.trim());
@@ -96,7 +103,7 @@ function buildReportsQuery(params: {
 export function CommissionsReportsPage() {
   const now = new Date();
   const [year, setYear] = useState(String(now.getFullYear()));
-  const [month, setMonth] = useState(String(now.getMonth() + 1));
+  const [months, setMonths] = useState<CommissionReportsMonthsFilter>([now.getMonth() + 1]);
   const [sellerId, setSellerId] = useState("all");
   const [status, setStatus] = useState("all");
   const [searchInput, setSearchInput] = useState("");
@@ -111,19 +118,23 @@ export function CommissionsReportsPage() {
   const [exporting, setExporting] = useState(false);
 
   const pageSize = 50;
+  const yearOptions = useMemo(
+    () => buildCommissionsYearOptions(Number.parseInt(year, 10) || new Date().getFullYear()),
+    [year]
+  );
 
   const queryString = useMemo(
     () =>
       buildReportsQuery({
         year,
-        month,
+        months,
         sellerId,
         status,
         search,
         page,
         pageSize,
       }),
-    [year, month, sellerId, status, search, page, pageSize]
+    [year, months, sellerId, status, search, page, pageSize]
   );
 
   const reload = useCallback(async () => {
@@ -153,7 +164,7 @@ export function CommissionsReportsPage() {
 
   function clearFilters() {
     setYear(String(now.getFullYear()));
-    setMonth(String(now.getMonth() + 1));
+    setMonths("all");
     setSellerId("all");
     setStatus("all");
     setSearchInput("");
@@ -185,7 +196,7 @@ export function CommissionsReportsPage() {
     try {
       const qs = buildReportsQuery({
         year,
-        month,
+        months,
         sellerId,
         status,
         search,
@@ -201,7 +212,8 @@ export function CommissionsReportsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `comissao-relatorio-${year}-${month || "todos"}.xlsx`;
+      const yearNum = Number.parseInt(year, 10) || now.getFullYear();
+      a.download = buildCommissionReportsExportFilename(yearNum, months);
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -230,18 +242,30 @@ export function CommissionsReportsPage() {
         data-testid="commissions-reports-filters"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <CommissionsPeriodFilterFields
-            year={year}
-            month={month}
-            onYearChange={(v) => {
-              setYear(v || String(now.getFullYear()));
+          <label className="space-y-1">
+            <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Ano</span>
+            <select
+              className={COMMISSIONS_FILTER_FIELD_CLASS}
+              value={year}
+              onChange={(e) => {
+                setYear(e.target.value || String(now.getFullYear()));
+                setPage(1);
+              }}
+              aria-label="Ano"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+          <CommissionsMonthsMultiSelect
+            value={months}
+            onChange={(next) => {
+              setMonths(next);
               setPage(1);
             }}
-            onMonthChange={(v) => {
-              setMonth(v);
-              setPage(1);
-            }}
-            allowAllYears={false}
           />
           <label className="space-y-1">
             <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Vendedor</span>
@@ -401,8 +425,8 @@ export function CommissionsReportsPage() {
         <h3 className="text-sm font-semibold text-foreground">Resumo por vendedor</h3>
         {sellers.length === 0 && !loading ? (
           <CommissionsEmptyState
-            title="Nenhum registro de comissão encontrado para os filtros selecionados."
-            description="Ajuste ano, mês ou vendedor. Em “Todos os meses”, só entram períodos já fechados."
+            title="Nenhum registro encontrado para os meses selecionados."
+            description="Ajuste ano, meses ou vendedor. Meses sem fechamento usam a prévia do Fechamento, quando disponível."
           />
         ) : (
           <CommissionsTableScroll testId="commissions-reports-sellers-table">

@@ -18,7 +18,9 @@ import {
   buildEmptyCommissionReportsPayload,
   filterCommissionReportRecords,
   mapSourceLineToReportRecord,
+  resolveCommissionReportMonths,
   type CommissionReportSourceLine,
+  type CommissionReportsMonthsFilter,
   type CommissionReportsPayload,
   type CommissionReportsQuery,
 } from "./commissionReports.shared.js";
@@ -141,16 +143,20 @@ function applyOwnScopeToLines(
 
 async function loadClosedLedgerSourceLines(input: {
   year: number;
-  month: number | "all";
+  months: number[];
   scope: CommissionAccessScope;
   ownSellerIds: Set<string>;
 }): Promise<{
   lines: CommissionReportSourceLine[];
   monthsIncluded: CommissionReportsPayload["monthsIncluded"];
 }> {
+  if (input.months.length === 0) {
+    return { lines: [], monthsIncluded: [] };
+  }
+
   const where: Prisma.CommissionReceiptLedgerLineWhereInput = {
     year: input.year,
-    ...(input.month === "all" ? {} : { month: input.month }),
+    month: { in: input.months },
     closing: {
       status: "CLOSED",
       source: RECEIPT_CLOSING_SOURCE,
@@ -161,7 +167,7 @@ async function loadClosedLedgerSourceLines(input: {
     where,
     orderBy: [
       { month: "asc" },
-      { settlementDate: "asc" },
+      { settlementDate: "desc" },
       { nomusReceivableId: "asc" },
       { productCode: "asc" },
     ],
@@ -177,7 +183,9 @@ async function loadClosedLedgerSourceLines(input: {
   const lines: CommissionReportSourceLine[] = [];
   const monthsIncluded: CommissionReportsPayload["monthsIncluded"] = [];
 
-  for (const [month, monthRows] of [...byMonth.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const month of input.months) {
+    const monthRows = byMonth.get(month);
+    if (!monthRows || monthRows.length === 0) continue;
     const closingId = monthRows.find((r) => r.closingId)?.closingId ?? null;
     const apiLines = markReceivableReceivedAnchors(
       monthRows.map((row) => mapLedgerPrismaRowToApiLine(row))
@@ -203,55 +211,15 @@ async function loadClosedLedgerSourceLines(input: {
   return { lines, monthsIncluded };
 }
 
-async function loadSingleMonthSourceLines(input: {
+async function loadPreviewMonthSourceLines(input: {
   year: number;
   month: number;
-  status: string | "all";
   scope: CommissionAccessScope;
   ownSellerIds: Set<string>;
 }): Promise<{
   lines: CommissionReportSourceLine[];
   monthsIncluded: CommissionReportsPayload["monthsIncluded"];
 }> {
-  if (input.status === "PREVIEW") {
-    const preview = await getReceiptClosingPreviewPage({
-      year: input.year,
-      month: input.month,
-    });
-    if (preview.mode === "CLOSED") {
-      return { lines: [], monthsIncluded: [] };
-    }
-    const scoped = applyOwnScopeToLines(preview.lines, input.scope, input.ownSellerIds);
-    return {
-      lines: scoped.map((line) => ({
-        ...line,
-        year: input.year,
-        month: input.month,
-        periodStatus: "PREVIEW" as const,
-        closingId: null,
-      })),
-      monthsIncluded: [
-        {
-          year: input.year,
-          month: input.month,
-          periodStatus: "PREVIEW",
-          closingId: null,
-        },
-      ],
-    };
-  }
-
-  const closed = await loadClosedLedgerSourceLines({
-    year: input.year,
-    month: input.month,
-    scope: input.scope,
-    ownSellerIds: input.ownSellerIds,
-  });
-  if (input.status === "CLOSED" || closed.lines.length > 0) {
-    return closed;
-  }
-
-  // Sem fechamento: prévia rotulada (somente mês específico).
   const closedPage = await getReceiptClosingPage(input.year, input.month);
   if (closedPage.mode === "CLOSED") {
     const scoped = applyOwnScopeToLines(closedPage.lines, input.scope, input.ownSellerIds);
@@ -298,6 +266,11 @@ async function loadSingleMonthSourceLines(input: {
   };
 }
 
+/**
+ * Mesma regra do mês único: ledger CLOSED primeiro; se não houver fechamento e o status
+ * permitir, carrega prévia. Assim "Todos os meses" / multi-mês não zeram quando o mês
+ * individual ainda tem dados de prévia.
+ */
 async function loadReportSource(input: {
   query: CommissionReportsQuery;
   scope: CommissionAccessScope;
@@ -306,21 +279,69 @@ async function loadReportSource(input: {
   monthsIncluded: CommissionReportsPayload["monthsIncluded"];
 }> {
   const ownSellerIds = await resolveOwnCanonicalSellerIds(input.scope);
-  if (input.query.month === "all") {
-    return loadClosedLedgerSourceLines({
-      year: input.query.year,
-      month: "all",
-      scope: input.scope,
-      ownSellerIds,
-    });
+  const months = resolveCommissionReportMonths(input.query.months);
+  const status = input.query.status;
+
+  if (status === "PREVIEW") {
+    const previews = await Promise.all(
+      months.map((month) =>
+        loadPreviewMonthSourceLines({
+          year: input.query.year,
+          month,
+          scope: input.scope,
+          ownSellerIds,
+        })
+      )
+    );
+    const lines: CommissionReportSourceLine[] = [];
+    const monthsIncluded: CommissionReportsPayload["monthsIncluded"] = [];
+    for (const part of previews) {
+      for (const line of part.lines) {
+        if (line.periodStatus === "PREVIEW") lines.push(line);
+      }
+      for (const meta of part.monthsIncluded) {
+        if (meta.periodStatus === "PREVIEW") monthsIncluded.push(meta);
+      }
+    }
+    return { lines, monthsIncluded };
   }
-  return loadSingleMonthSourceLines({
+
+  const closed = await loadClosedLedgerSourceLines({
     year: input.query.year,
-    month: input.query.month,
-    status: input.query.status,
+    months,
     scope: input.scope,
     ownSellerIds,
   });
+
+  if (status === "CLOSED") {
+    return closed;
+  }
+
+  const closedMonths = new Set(closed.monthsIncluded.map((m) => m.month));
+  const missing = months.filter((m) => !closedMonths.has(m));
+  if (missing.length === 0) {
+    return closed;
+  }
+
+  const previews = await Promise.all(
+    missing.map((month) =>
+      loadPreviewMonthSourceLines({
+        year: input.query.year,
+        month,
+        scope: input.scope,
+        ownSellerIds,
+      })
+    )
+  );
+
+  const lines = [...closed.lines];
+  const monthsIncluded = [...closed.monthsIncluded];
+  for (const part of previews) {
+    lines.push(...part.lines);
+    monthsIncluded.push(...part.monthsIncluded);
+  }
+  monthsIncluded.sort((a, b) => a.month - b.month);
+  return { lines, monthsIncluded };
 }
 
 export async function getCommissionReportsPage(
@@ -348,14 +369,15 @@ export async function exportCommissionReportsXlsx(
     lines.map(mapSourceLineToReportRecord),
     query
   );
+  const months: CommissionReportsMonthsFilter = query.months;
   const wb = buildCommissionReportsExportWorkbook({
     sellers: payload.sellers,
     records,
     year: query.year,
-    month: query.month,
+    months,
   });
   return {
     buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer,
-    filename: buildCommissionReportsExportFilename(query.year, query.month),
+    filename: buildCommissionReportsExportFilename(query.year, months),
   };
 }

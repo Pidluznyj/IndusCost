@@ -15,17 +15,82 @@ import {
 export const COMMISSION_REPORTS_UNRESOLVED_SELLER_KEY = "unresolved" as const;
 export const COMMISSION_REPORTS_NO_SELLER_KEY = "no-seller" as const;
 
+export const COMMISSION_REPORT_ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
 export type CommissionReportPeriodStatus = "CLOSED" | "PREVIEW";
+
+/** `all` = janeiro–dezembro; array = meses específicos (1–12). */
+export type CommissionReportsMonthsFilter = number[] | "all";
 
 export type CommissionReportsQuery = {
   year: number;
-  month: number | "all";
+  months: CommissionReportsMonthsFilter;
   sellerId: string | "all";
   status: string | "all";
   search: string | null;
   page: number;
   pageSize: number;
 };
+
+export function resolveCommissionReportMonths(
+  months: CommissionReportsMonthsFilter
+): number[] {
+  if (months === "all") return [...COMMISSION_REPORT_ALL_MONTHS];
+  const unique = [...new Set(months.filter((m) => Number.isInteger(m) && m >= 1 && m <= 12))];
+  return unique.sort((a, b) => a - b);
+}
+
+export function isCommissionReportAllMonths(months: CommissionReportsMonthsFilter): boolean {
+  if (months === "all") return true;
+  const resolved = resolveCommissionReportMonths(months);
+  return (
+    resolved.length === 12 &&
+    COMMISSION_REPORT_ALL_MONTHS.every((m, idx) => resolved[idx] === m)
+  );
+}
+
+const MONTH_FILE_SLUGS = [
+  "jan",
+  "fev",
+  "mar",
+  "abr",
+  "mai",
+  "jun",
+  "jul",
+  "ago",
+  "set",
+  "out",
+  "nov",
+  "dez",
+] as const;
+
+export function formatCommissionReportMonthsLabel(
+  months: CommissionReportsMonthsFilter
+): string {
+  if (isCommissionReportAllMonths(months)) return "Todos os meses";
+  const resolved = resolveCommissionReportMonths(months);
+  if (resolved.length === 0) return "Todos os meses";
+  const labels = resolved.map((m) => {
+    const full = [
+      "Janeiro",
+      "Fevereiro",
+      "Março",
+      "Abril",
+      "Maio",
+      "Junho",
+      "Julho",
+      "Agosto",
+      "Setembro",
+      "Outubro",
+      "Novembro",
+      "Dezembro",
+    ][m - 1];
+    return full ?? String(m);
+  });
+  if (labels.length <= 2) return labels.join(", ");
+  if (labels.length === 3) return labels.join(", ");
+  return `${labels.length} meses selecionados`;
+}
 
 export type CommissionReportRecord = {
   lineKey: string;
@@ -108,7 +173,7 @@ export type CommissionReportsPayload = {
   };
   filtersApplied: {
     year: number;
-    month: number | "all";
+    months: CommissionReportsMonthsFilter;
     sellerId: string | "all";
     status: string | "all";
     search: string | null;
@@ -480,7 +545,7 @@ export function buildEmptyCommissionReportsPayload(
     pagination: { page: query.page, pageSize: query.pageSize, total: 0, totalPages: 0 },
     filtersApplied: {
       year: query.year,
-      month: query.month,
+      months: query.months,
       sellerId: query.sellerId,
       status: query.status,
       search: query.search,
@@ -495,7 +560,13 @@ export function assembleCommissionReportsPayload(
   monthsIncluded: CommissionReportsPayload["monthsIncluded"]
 ): CommissionReportsPayload {
   const allRecords = sourceLines.map(mapSourceLineToReportRecord);
-  const filtered = filterCommissionReportRecords(allRecords, query);
+  const filtered = filterCommissionReportRecords(allRecords, query).sort((a, b) => {
+    const da = a.settlementDate ? Date.parse(a.settlementDate) : 0;
+    const db = b.settlementDate ? Date.parse(b.settlementDate) : 0;
+    if (db !== da) return db - da;
+    if (b.month !== a.month) return b.month - a.month;
+    return a.lineKey.localeCompare(b.lineKey);
+  });
   const sellers = buildCommissionReportSellerRows(filtered);
   const summary = buildCommissionReportSummary(filtered, sellers, monthsIncluded);
   const sellerOptions = buildCommissionReportSellerOptions(
@@ -511,7 +582,7 @@ export function assembleCommissionReportsPayload(
     pagination: paged.pagination,
     filtersApplied: {
       year: query.year,
-      month: query.month,
+      months: query.months,
       sellerId: query.sellerId,
       status: query.status,
       search: query.search,
@@ -535,7 +606,7 @@ export function buildCommissionReportsExportWorkbook(input: {
   sellers: CommissionReportSellerRow[];
   records: CommissionReportRecord[];
   year: number;
-  month: number | "all";
+  months: CommissionReportsMonthsFilter;
 }): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
@@ -612,7 +683,7 @@ export function buildCommissionReportsExportWorkbook(input: {
   const meta = XLSX.utils.aoa_to_sheet([
     ["Relatório de comissões"],
     ["Ano", input.year],
-    ["Mês", input.month === "all" ? "Todos" : input.month],
+    ["Meses", formatCommissionReportMonthsLabel(input.months)],
     ["Gerado em", new Date().toISOString()],
     ["Observação", "Valores oficiais do ledger de Fechamento (settlementDate). Exclusões identificadas."],
     ["Comissão total formatada (amostra)", formatCurrencyBr(
@@ -626,8 +697,18 @@ export function buildCommissionReportsExportWorkbook(input: {
 
 export function buildCommissionReportsExportFilename(
   year: number,
-  month: number | "all"
+  months: CommissionReportsMonthsFilter
 ): string {
-  const monthPart = month === "all" ? "todos-meses" : String(month).padStart(2, "0");
-  return `comissao-relatorio-${year}-${monthPart}.xlsx`;
+  if (isCommissionReportAllMonths(months)) {
+    return `comissao-relatorio-${year}-todos-os-meses.xlsx`;
+  }
+  const resolved = resolveCommissionReportMonths(months);
+  if (resolved.length === 0) {
+    return `comissao-relatorio-${year}-todos-os-meses.xlsx`;
+  }
+  if (resolved.length <= 3) {
+    const slugs = resolved.map((m) => MONTH_FILE_SLUGS[m - 1] ?? String(m));
+    return `comissao-relatorio-${year}-${slugs.join("-")}.xlsx`;
+  }
+  return `comissao-relatorio-${year}-${resolved.length}-meses.xlsx`;
 }
