@@ -123,7 +123,7 @@ describe("finance suppliers menu + route", () => {
     assert.match(page, /Fornecedores/);
     assert.match(
       page,
-      /Cadastro financeiro de fornecedores usado nas regras de alocação e centros de custo/
+      /Cadastro de fornecedores para padronização de nomes, documentos e vínculo operacional/
     );
     assert.match(page, /mesma base utilizada em Centro de Custos/);
     assert.match(page, /finance-suppliers-shared-base-notice/);
@@ -160,18 +160,25 @@ describe("finance suppliers menu + route", () => {
     const shared = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     const page = read("src/components/finance/FinanceSuppliersPage.tsx");
     const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const drawer = read("src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx");
     const ccRoutes = read("src/lib/financeCostCentersRoutes.ts");
     const rulesRoutes = read("src/lib/financeSupplierCostCenterRulesRoutes.ts");
     assert.match(page, /context="finance-menu"/);
     assert.match(tab, /context="cost-center-tab"/);
-    assert.match(shared, /showOperationalActions = context === "cost-center-tab"/);
+    assert.match(shared, /showFinancialContext = context === "cost-center-tab"/);
     assert.match(shared, /finance-suppliers-open-cadastro-button/);
     assert.match(shared, /finance-suppliers-new-supplier-button/);
-    // botões operacionais existem no fonte, mas só renderizam com showOperationalActions
     assert.match(shared, /showOperationalActions \?/);
     assert.match(shared, /finance-suppliers-view-paid-titles-button/);
     assert.match(shared, /finance-suppliers-define-rule-button/);
     assert.match(shared, /finance-suppliers-view-aliases-button/);
+    assert.match(shared, /showFinancialContext \? \([\s\S]*label="Valor"/);
+    assert.match(shared, /showFinancialContext \? \([\s\S]*label="Regra"/);
+    assert.match(shared, /showFinancialContext \? \([\s\S]*label="Títulos"/);
+    assert.match(shared, /showFinancialSummary=\{showFinancialContext\}/);
+    assert.match(drawer, /finance-supplier-financial-summary/);
+    assert.match(drawer, /showFinancialSummary/);
+    assert.doesNotMatch(page, /volume de AP/);
     // endpoints sensíveis exigem permissão de centro de custo / regras — não só suppliers.view
     assert.match(ccRoutes, /FINANCE_COST_CENTERS_VIEW_PERMISSIONS/);
     assert.match(ccRoutes, /supplier-titles/);

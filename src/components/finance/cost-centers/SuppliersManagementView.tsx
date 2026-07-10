@@ -163,8 +163,9 @@ export function SuppliersManagementView({
     onNavigateTab("rules");
   };
 
-  /** Ações financeiras/operacionais (títulos, regras, aliases) só na aba Centro de Custos. */
-  const showOperationalActions = context === "cost-center-tab";
+  /** Colunas/ações/resumo financeiros e de regra — só na aba Centro de Custos. */
+  const showFinancialContext = context === "cost-center-tab";
+  const showOperationalActions = showFinancialContext;
 
   const allRows = useMemo<SupplierGridRow[]>(() => {
     const bySupplier = dashboard?.bySupplier ?? [];
@@ -246,11 +247,23 @@ export function SuppliersManagementView({
 
   const gridRows = useMemo(
     () =>
-      prepareSupplierGridRows(allRows, { search, ruleFilter, statusFilter }, sort),
-    [allRows, search, ruleFilter, statusFilter, sort]
+      prepareSupplierGridRows(
+        allRows,
+        {
+          search,
+          ruleFilter: showFinancialContext ? ruleFilter : "all",
+          statusFilter,
+        },
+        sort
+      ),
+    [allRows, search, ruleFilter, statusFilter, sort, showFinancialContext]
   );
 
-  const totals = useMemo(() => supplierGridTotals(gridRows), [gridRows]);
+  const totals = useMemo(() => {
+    const base = supplierGridTotals(gridRows);
+    if (showFinancialContext) return base;
+    return { rowCount: base.rowCount };
+  }, [gridRows, showFinancialContext]);
 
   const { pageRows, totalPages, total } = useMemo(() => {
     const paged = paginateFinanceGridRows(gridRows, { page, pageSize });
@@ -258,19 +271,31 @@ export function SuppliersManagementView({
   }, [gridRows, page, pageSize]);
 
   const hasActiveFilters =
-    Boolean(search.trim()) || ruleFilter !== "all" || statusFilter !== "all";
+    Boolean(search.trim()) ||
+    statusFilter !== "all" ||
+    (showFinancialContext && ruleFilter !== "all");
   const emptyCopy = buildFinanceGridEmptyState(
     allRows.length > 0,
     hasActiveFilters,
-    {
-      title: "Nenhum fornecedor no filtro",
-      description:
-        "Execute a sincronização de AP ou reconstrua fornecedores a partir dos títulos para popular esta lista.",
-    },
-    {
-      title: "Nenhum fornecedor no filtro aplicado",
-      description: "Ajuste a busca ou o filtro de regra/status para ver outros fornecedores.",
-    }
+    showFinancialContext
+      ? {
+          title: "Nenhum fornecedor no filtro",
+          description:
+            "Execute a sincronização de AP ou reconstrua fornecedores a partir dos títulos para popular esta lista.",
+        }
+      : {
+          title: "Nenhum fornecedor no filtro",
+          description: "Cadastre um novo fornecedor ou ajuste a busca/status para ver outros registros.",
+        },
+    showFinancialContext
+      ? {
+          title: "Nenhum fornecedor no filtro aplicado",
+          description: "Ajuste a busca ou o filtro de regra/status para ver outros fornecedores.",
+        }
+      : {
+          title: "Nenhum fornecedor no filtro aplicado",
+          description: "Ajuste a busca ou o filtro de status para ver outros fornecedores.",
+        }
   );
 
   const handleSort = (key: SupplierGridSortKey) => {
@@ -315,7 +340,7 @@ export function SuppliersManagementView({
   };
 
   const filterChips = [
-    ...(ruleFilter !== "all"
+    ...(showFinancialContext && ruleFilter !== "all"
       ? [
           {
             key: "rule",
@@ -347,16 +372,22 @@ export function SuppliersManagementView({
     <div className="space-y-4" data-testid={rootTestId} data-suppliers-context={context}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Fornecedores consolidados com volume de AP e status de classificação por centro de custo.{" "}
-          <span className="text-xs">
-            “Sem regra” é indicador operacional — distinto de títulos sem alocação real.
-          </span>
+          {showFinancialContext ? (
+            <>
+              Fornecedores consolidados com volume de AP e status de classificação por centro de custo.{" "}
+              <span className="text-xs">
+                “Sem regra” é indicador operacional — distinto de títulos sem alocação real.
+              </span>
+            </>
+          ) : (
+            "Cadastro de fornecedores utilizado para padronização de nomes, documentos e vínculo operacional com centros de custo."
+          )}
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <FinanceCostCenterGridSearchBar
             value={search}
             onChange={(value) => patchUrl({ sup_q: value || null, sup_page: 1 })}
-            placeholder="Nome, CNPJ ou centro"
+            placeholder={showFinancialContext ? "Nome, CNPJ ou centro" : "Nome ou CNPJ"}
             testId="finance-suppliers-search"
           />
           <label className="space-y-1">
@@ -377,23 +408,26 @@ export function SuppliersManagementView({
               <option value="inactive">Inativo</option>
             </select>
           </label>
-          <label className="space-y-1">
-            <span className={financeModuleFilterLabelClass()}>Regra</span>
-            <select
-              className={financeModuleFilterFieldClass()}
-              value={ruleFilter}
-              onChange={(e) =>
-                patchUrl({
-                  sup_rule: e.target.value === "all" ? null : e.target.value,
-                  sup_page: 1,
-                })
-              }
-            >
-              <option value="all">Todas</option>
-              <option value="with_rule">Com regra ativa</option>
-              <option value="without_rule">Sem regra ativa</option>
-            </select>
-          </label>
+          {showFinancialContext ? (
+            <label className="space-y-1">
+              <span className={financeModuleFilterLabelClass()}>Regra</span>
+              <select
+                className={financeModuleFilterFieldClass()}
+                value={ruleFilter}
+                data-testid="finance-suppliers-rule-filter"
+                onChange={(e) =>
+                  patchUrl({
+                    sup_rule: e.target.value === "all" ? null : e.target.value,
+                    sup_page: 1,
+                  })
+                }
+              >
+                <option value="all">Todas</option>
+                <option value="with_rule">Com regra ativa</option>
+                <option value="without_rule">Sem regra ativa</option>
+              </select>
+            </label>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           {canManageSuppliers ? (
@@ -425,7 +459,13 @@ export function SuppliersManagementView({
         chips={filterChips}
         onClear={
           hasActiveFilters
-            ? () => patchUrl({ sup_q: null, sup_rule: null, sup_status: null, sup_page: 1 })
+            ? () =>
+                patchUrl({
+                  sup_q: null,
+                  ...(showFinancialContext ? { sup_rule: null } : {}),
+                  sup_status: null,
+                  sup_page: 1,
+                })
             : undefined
         }
       />
@@ -448,16 +488,22 @@ export function SuppliersManagementView({
             totalPages={totalPages}
           />
           <FinanceCostCenterGridTableShell
-            tableClassName="min-w-[760px]"
+            tableClassName={showFinancialContext ? "min-w-[760px]" : "min-w-[520px]"}
             head={
               <tr className="border-b border-border text-left">
                 <FinanceCostCenterSortableTh label="Fornecedor" sortKey="name" sort={sort} onSort={handleSort} />
                 <FinanceCostCenterSortableTh label="Documento" sortKey="document" sort={sort} onSort={handleSort} />
                 <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">Status</th>
-                <FinanceCostCenterSortableTh label="Títulos" sortKey="titlesCount" sort={sort} onSort={handleSort} />
-                <FinanceCostCenterSortableTh label="Valor" sortKey="amount" sort={sort} onSort={handleSort} align="right" />
+                {showFinancialContext ? (
+                  <>
+                    <FinanceCostCenterSortableTh label="Títulos" sortKey="titlesCount" sort={sort} onSort={handleSort} />
+                    <FinanceCostCenterSortableTh label="Valor" sortKey="amount" sort={sort} onSort={handleSort} align="right" />
+                  </>
+                ) : null}
                 <FinanceCostCenterSortableTh label="Centro padrão" sortKey="costCenterName" sort={sort} onSort={handleSort} />
-                <FinanceCostCenterSortableTh label="Regra" sortKey="ruleStatus" sort={sort} onSort={handleSort} />
+                {showFinancialContext ? (
+                  <FinanceCostCenterSortableTh label="Regra" sortKey="ruleStatus" sort={sort} onSort={handleSort} />
+                ) : null}
                 <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">Ações</th>
               </tr>
             }
@@ -488,10 +534,16 @@ export function SuppliersManagementView({
                     <span className="text-xs text-muted-foreground">Origem AP</span>
                   )}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{row.titlesCount}</td>
-                <td className="px-3 py-2 tabular-nums text-right">{formatFinanceCurrency(row.amount)}</td>
+                {showFinancialContext ? (
+                  <>
+                    <td className="px-3 py-2 tabular-nums">{row.titlesCount}</td>
+                    <td className="px-3 py-2 tabular-nums text-right">{formatFinanceCurrency(row.amount)}</td>
+                  </>
+                ) : null}
                 <td className="px-3 py-2">{row.costCenterName}</td>
-                <td className="px-3 py-2">{row.ruleStatus}</td>
+                {showFinancialContext ? (
+                  <td className="px-3 py-2">{row.ruleStatus}</td>
+                ) : null}
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-2">
                     {row.supplierId ? (
@@ -598,6 +650,7 @@ export function SuppliersManagementView({
         }}
         canManage={canManageSuppliers}
         canDelete={canDeleteSupplier}
+        showFinancialSummary={showFinancialContext}
       />
 
       {showOperationalActions ? (

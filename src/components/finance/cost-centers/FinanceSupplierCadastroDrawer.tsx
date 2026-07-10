@@ -33,6 +33,8 @@ type Props = {
   onOpenExisting?: (supplierId: string) => void;
   canManage: boolean;
   canDelete: boolean;
+  /** Resumo AP, regras e aliases com contagem de títulos — só no contexto Centro de Custos. */
+  showFinancialSummary?: boolean;
 };
 
 type CnpjPanelPayload = FinanceSupplierIntelligencePayload | FinanceSupplierCnpjLookupPayload;
@@ -60,6 +62,7 @@ export function FinanceSupplierCadastroDrawer({
   onOpenExisting,
   canManage,
   canDelete,
+  showFinancialSummary = true,
 }: Props) {
   const portalContainer = usePortalContainer();
   const [profile, setProfile] = useState<FinancialSupplierProfileDto | null>(null);
@@ -501,8 +504,11 @@ export function FinanceSupplierCadastroDrawer({
                 ) : null}
               </section>
 
-              {!isCreate && profile ? (
-                <section className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
+              {!isCreate && profile && showFinancialSummary ? (
+                <section
+                  className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
+                  data-testid="finance-supplier-financial-summary"
+                >
                   <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
                     Resumo financeiro (AP)
                   </h3>
@@ -526,7 +532,7 @@ export function FinanceSupplierCadastroDrawer({
                 </section>
               ) : null}
 
-              {!isCreate && profile && profile.aliases.length > 0 ? (
+              {!isCreate && profile && showFinancialSummary && profile.aliases.length > 0 ? (
                 <section className="space-y-2">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
                     Aliases ({profile.aliases.length})

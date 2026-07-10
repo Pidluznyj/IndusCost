@@ -97,7 +97,7 @@ export function FinanceSuppliersPage() {
       <FinanceExecutivePageHeader
         eyebrow={buildFinanceModuleEyebrow("suppliers")}
         title="Fornecedores"
-        subtitle="Cadastro financeiro de fornecedores usado nas regras de alocação e centros de custo."
+        subtitle="Cadastro de fornecedores para padronização de nomes, documentos e vínculo operacional."
         actions={[
           {
             id: "refresh",
