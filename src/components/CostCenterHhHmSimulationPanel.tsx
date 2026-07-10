@@ -257,15 +257,67 @@ function SideCalculationBlock({
         />
       </div>
 
-      <Field
-        label={`Horas base mensais ${hourType} (driver)`}
-        value={side.baseMonthlyHours}
-        onChange={(value) => onPatch("baseMonthlyHours", value)}
-        type="number"
-        step="0.01"
-        placeholder="Ex.: 4000"
-        disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
-      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Field
+          label={hourType === "HH" ? "Pessoas produtivas" : "Máquinas produtivas"}
+          value={side.productiveCount}
+          onChange={(value) => onPatch("productiveCount", value)}
+          type="number"
+          step="1"
+          placeholder={hourType === "HH" ? "Ex.: 60" : "Ex.: 13"}
+          disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+        />
+        <Field
+          label={hourType === "HH" ? "Horas mensais por pessoa" : "Horas mensais por máquina"}
+          value={side.hoursPerUnit}
+          onChange={(value) => onPatch("hoursPerUnit", value)}
+          type="number"
+          step="0.01"
+          placeholder="Ex.: 180"
+          disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+        />
+        <Field
+          label={
+            hourType === "HH"
+              ? "Eficiência produtiva da mão de obra (%)"
+              : "Eficiência produtiva das máquinas (%)"
+          }
+          value={side.efficiencyPercent}
+          onChange={(value) => onPatch("efficiencyPercent", value)}
+          type="number"
+          step="0.01"
+          placeholder="Ex.: 80"
+          disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+        />
+      </div>
+
+      <details className="rounded-md border border-slate-200 bg-white">
+        <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-700 [&::-webkit-details-marker]:hidden">
+          Configuração avançada — informar horas base manualmente
+        </summary>
+        <div className="space-y-3 border-t border-slate-100 px-3 py-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={side.useManualBaseHours}
+              onChange={(e) => onPatch("useManualBaseHours", e.target.checked)}
+              disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+            />
+            Informar horas base manualmente
+          </label>
+          {side.useManualBaseHours ? (
+            <Field
+              label={`Horas base mensais ${hourType} (driver)`}
+              value={side.baseMonthlyHours}
+              onChange={(value) => onPatch("baseMonthlyHours", value)}
+              type="number"
+              step="0.01"
+              placeholder="Ex.: 8640"
+              disabled={manualMode && side.averagePeriod === "MANUAL_VALUE"}
+            />
+          ) : null}
+        </div>
+      </details>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input
@@ -274,12 +326,12 @@ function SideCalculationBlock({
           onChange={(e) => onPatch("useManualRate", e.target.checked)}
           disabled={side.averagePeriod === "MANUAL_VALUE"}
         />
-        Usar valor manual de {hourType}
+        Usar taxa manual de {hourType}
       </label>
 
       {(manualMode || side.useManualRate) && (
         <Field
-          label={`Valor manual R$/${hourType}`}
+          label={`Taxa manual R$/${hourType}`}
           value={side.manualRatePerHour}
           onChange={(value) => onPatch("manualRatePerHour", value)}
           type="number"
@@ -287,6 +339,53 @@ function SideCalculationBlock({
           placeholder="Ex.: 38"
         />
       )}
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            {hourType === "HH" ? "Horas homem teóricas" : "Horas máquina teóricas"}
+          </p>
+          <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">
+            {sideResult.composition.theoreticalHours != null
+              ? `${formatNumber(sideResult.composition.theoreticalHours, 2)} h`
+              : "—"}
+          </p>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            {hourType === "HH" ? "Horas HH ajustadas" : "Horas HM ajustadas"}
+          </p>
+          <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">
+            {sideResult.composition.adjustedHours != null
+              ? `${formatNumber(sideResult.composition.adjustedHours, 2)} h`
+              : "—"}
+          </p>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Média mensal
+          </p>
+          <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">
+            {sideResult.composition.monthlyAverageAmount != null
+              ? formatCurrency(sideResult.composition.monthlyAverageAmount)
+              : manualMode
+                ? "— (manual)"
+                : monthlyLoading
+                  ? "…"
+                  : "—"}
+          </p>
+        </div>
+        <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+            Taxa {hourType}
+          </p>
+          <p className="mt-1 text-sm font-black tabular-nums text-emerald-950">
+            {sideResult.composition.effectiveRatePerHour != null
+              ? `${formatCurrency(sideResult.composition.effectiveRatePerHour)}/${hourType}`
+              : "—"}
+          </p>
+        </div>
+      </div>
 
       <div className="rounded-md border border-slate-200 bg-white p-3 text-sm">
         <dl className="space-y-1.5">
@@ -306,15 +405,21 @@ function SideCalculationBlock({
             </dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Média mensal</dt>
+            <dt className="text-slate-600">
+              {hourType === "HH" ? "Pessoas produtivas" : "Máquinas produtivas"}
+            </dt>
             <dd className="font-medium tabular-nums text-slate-900">
-              {sideResult.composition.monthlyAverageAmount != null
-                ? formatCurrency(sideResult.composition.monthlyAverageAmount)
-                : manualMode
-                  ? "— (manual)"
-                  : monthlyLoading
-                    ? "Calculando..."
-                    : "—"}
+              {sideResult.composition.productiveCount != null
+                ? formatNumber(sideResult.composition.productiveCount, 0)
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Eficiência</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {sideResult.composition.efficiencyPercent != null
+                ? `${formatNumber(sideResult.composition.efficiencyPercent, 0)}%`
+                : "—"}
             </dd>
           </div>
           <div className="flex justify-between gap-4 border-t border-slate-100 pt-1.5">
@@ -572,6 +677,70 @@ export function CostCenterHhHmSimulationPanel() {
             </dd>
           </div>
           <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Pessoas produtivas</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hh.composition.productiveCount != null
+                ? formatNumber(simulation.hh.composition.productiveCount, 0)
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Máquinas produtivas</dt>
+            <dd className="font-medium tabular-nums text-slate-900">
+              {simulation.hm.composition.productiveCount != null
+                ? formatNumber(simulation.hm.composition.productiveCount, 0)
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas/pessoa · eficiência HH</dt>
+            <dd className="font-medium tabular-nums text-slate-900 text-right">
+              {simulation.hh.composition.hoursPerUnit != null
+                ? `${formatNumber(simulation.hh.composition.hoursPerUnit, 0)} h`
+                : "—"}
+              {" · "}
+              {simulation.hh.composition.efficiencyPercent != null
+                ? `${formatNumber(simulation.hh.composition.efficiencyPercent, 0)}%`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas/máquina · eficiência HM</dt>
+            <dd className="font-medium tabular-nums text-slate-900 text-right">
+              {simulation.hm.composition.hoursPerUnit != null
+                ? `${formatNumber(simulation.hm.composition.hoursPerUnit, 0)} h`
+                : "—"}
+              {" · "}
+              {simulation.hm.composition.efficiencyPercent != null
+                ? `${formatNumber(simulation.hm.composition.efficiencyPercent, 0)}%`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas HH teóricas / ajustadas</dt>
+            <dd className="font-medium tabular-nums text-slate-900 text-right">
+              {simulation.hh.composition.theoreticalHours != null
+                ? formatNumber(simulation.hh.composition.theoreticalHours, 2)
+                : "—"}
+              {" / "}
+              {simulation.hh.composition.adjustedHours != null
+                ? `${formatNumber(simulation.hh.composition.adjustedHours, 2)} h`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-600">Horas HM teóricas / ajustadas</dt>
+            <dd className="font-medium tabular-nums text-slate-900 text-right">
+              {simulation.hm.composition.theoreticalHours != null
+                ? formatNumber(simulation.hm.composition.theoreticalHours, 2)
+                : "—"}
+              {" / "}
+              {simulation.hm.composition.adjustedHours != null
+                ? `${formatNumber(simulation.hm.composition.adjustedHours, 2)} h`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
             <dt className="text-slate-600">Média mensal HH</dt>
             <dd className="font-medium tabular-nums text-slate-900">
               {simulation.hh.composition.monthlyAverageAmount != null
@@ -584,22 +753,6 @@ export function CostCenterHhHmSimulationPanel() {
             <dd className="font-medium tabular-nums text-slate-900">
               {simulation.hm.composition.monthlyAverageAmount != null
                 ? formatCurrency(simulation.hm.composition.monthlyAverageAmount)
-                : "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Horas base HH</dt>
-            <dd className="font-medium tabular-nums text-slate-900">
-              {simulation.hh.composition.baseMonthlyHours != null
-                ? `${formatNumber(simulation.hh.composition.baseMonthlyHours, 2)} h/mês`
-                : "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Horas base HM</dt>
-            <dd className="font-medium tabular-nums text-slate-900">
-              {simulation.hm.composition.baseMonthlyHours != null
-                ? `${formatNumber(simulation.hm.composition.baseMonthlyHours, 2)} h/mês`
                 : "—"}
             </dd>
           </div>

@@ -45,7 +45,10 @@ describe("transformationCostSimulator UI isolation", () => {
     const panel = read("src/components/CostCenterHhHmSimulationPanel.tsx");
     const multiselect = read("src/components/CostCenterHhHmSimulationMultiselect.tsx");
     assert.match(panel, /média mensal/i);
-    assert.match(panel, /Usar valor manual/i);
+    assert.match(panel, /Usar taxa manual/i);
+    assert.match(panel, /Pessoas produtivas/i);
+    assert.match(panel, /Máquinas produtivas/i);
+    assert.match(panel, /Configuração avançada/i);
     assert.match(panel, /não altera custos oficiais/i);
     assert.match(panel, /Taxa final HH \+ HM/i);
     assert.match(panel, /computeCostCenterHhHmDualRateSimulation/);

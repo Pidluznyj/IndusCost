@@ -1,8 +1,16 @@
 /**
  * Simulação HH/HM por centro de custo — motor puro (sem Prisma, sem custo oficial).
- * Média mensal dos centros selecionados ÷ horas base mensais = taxa simulada.
+ * Média mensal dos centros selecionados ÷ horas base ajustadas = taxa simulada.
+ * Horas base vêm da capacidade (pessoas/máquinas × horas × eficiência), mesma regra da simulação simples.
  */
 import { roundMoney } from "./financeAccountsPayableDashboard.js";
+import {
+  computeHhHmCapacityHours,
+  HH_HM_CAPACITY_DEFAULT_EFFICIENCY_PERCENT,
+  HH_HM_CAPACITY_DEFAULT_HOURS_PER_UNIT,
+  HH_HM_CAPACITY_HH_INPUT_HINT,
+  HH_HM_CAPACITY_HM_INPUT_HINT,
+} from "./hhHmCapacityCalculation.js";
 
 export const COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING =
   "Existem meses sem lançamentos para os centros selecionados.";
@@ -77,6 +85,15 @@ export type CostCenterMonthlyExpenseSourceRow = {
 export type CostCenterHhHmSimulationSideFormValues = {
   averagePeriod: CostCenterHhHmSimulationAveragePeriod;
   selectedCostCenterIds: string[];
+  /** Quantidade de pessoas (HH) ou máquinas (HM) produtivas. */
+  productiveCount: string;
+  /** Horas mensais por pessoa/máquina. */
+  hoursPerUnit: string;
+  /** Eficiência produtiva (%). */
+  efficiencyPercent: string;
+  /** Avançado: informar horas base ajustadas manualmente. */
+  useManualBaseHours: boolean;
+  /** Horas base mensais (driver) — só quando useManualBaseHours. */
   baseMonthlyHours: string;
   useManualRate: boolean;
   manualRatePerHour: string;
@@ -96,6 +113,10 @@ export type CostCenterHhHmSimulationFormValues = {
 export const EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE: CostCenterHhHmSimulationSideFormValues = {
   averagePeriod: DEFAULT_COST_CENTER_HH_HM_SIMULATION_AVERAGE_PERIOD,
   selectedCostCenterIds: [],
+  productiveCount: "",
+  hoursPerUnit: HH_HM_CAPACITY_DEFAULT_HOURS_PER_UNIT,
+  efficiencyPercent: HH_HM_CAPACITY_DEFAULT_EFFICIENCY_PERCENT,
+  useManualBaseHours: false,
   baseMonthlyHours: "",
   useManualRate: false,
   manualRatePerHour: "",
@@ -141,10 +162,26 @@ function normalizeSideFormValues(
   if (!raw || typeof raw !== "object") {
     return { ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE };
   }
+  const baseMonthlyHours = normalizeStringField(raw.baseMonthlyHours);
+  const productiveCount = normalizeStringField(raw.productiveCount);
+  const hasLegacyBaseOnly =
+    baseMonthlyHours.trim().length > 0 &&
+    productiveCount.trim().length === 0 &&
+    raw.useManualBaseHours !== true &&
+    raw.useManualBaseHours !== false &&
+    !("productiveCount" in raw);
+
   return {
     averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(raw.averagePeriod),
     selectedCostCenterIds: normalizeStringIdArray(raw.selectedCostCenterIds),
-    baseMonthlyHours: normalizeStringField(raw.baseMonthlyHours),
+    productiveCount,
+    hoursPerUnit:
+      normalizeStringField(raw.hoursPerUnit) || HH_HM_CAPACITY_DEFAULT_HOURS_PER_UNIT,
+    efficiencyPercent:
+      normalizeStringField(raw.efficiencyPercent) ||
+      HH_HM_CAPACITY_DEFAULT_EFFICIENCY_PERCENT,
+    useManualBaseHours: raw.useManualBaseHours === true || hasLegacyBaseOnly,
+    baseMonthlyHours,
     useManualRate: raw.useManualRate === true,
     manualRatePerHour: normalizeStringField(raw.manualRatePerHour),
     filteredDueDateFrom: normalizeStringField(raw.filteredDueDateFrom),
@@ -155,7 +192,7 @@ function normalizeSideFormValues(
 function migrateLegacyStoredForm(
   raw: Partial<CostCenterHhHmSimulationLegacyFormValues>
 ): CostCenterHhHmSimulationFormValues {
-  const side: CostCenterHhHmSimulationSideFormValues = {
+  const side = normalizeSideFormValues({
     averagePeriod: parseCostCenterHhHmSimulationAveragePeriod(raw.averagePeriod),
     selectedCostCenterIds: normalizeStringIdArray(raw.selectedCostCenterIds),
     baseMonthlyHours: normalizeStringField(raw.baseMonthlyHours),
@@ -163,7 +200,7 @@ function migrateLegacyStoredForm(
     manualRatePerHour: normalizeStringField(raw.manualRatePerHour),
     filteredDueDateFrom: normalizeStringField(raw.filteredDueDateFrom),
     filteredDueDateTo: normalizeStringField(raw.filteredDueDateTo),
-  };
+  });
   const quantity =
     typeof raw.quantityUsedInItem === "string" ? raw.quantityUsedInItem : "";
   const hourType = raw.hourType === "HH" ? "HH" : "HM";
@@ -475,10 +512,17 @@ export type CostCenterMonthlyAverageResult = {
 
 export type CostCenterHhHmSideComposition = {
   monthlyAverageAmount: number | null;
+  productiveCount: number | null;
+  hoursPerUnit: number | null;
+  efficiencyPercent: number | null;
+  theoreticalHours: number | null;
+  adjustedHours: number | null;
+  /** Horas base usadas no rateio (= ajustadas, ou manuais no modo avançado). */
   baseMonthlyHours: number | null;
   calculatedRatePerHour: number | null;
   effectiveRatePerHour: number | null;
   useManualRate: boolean;
+  useManualBaseHours: boolean;
 };
 
 export type CostCenterHhHmSideSimulationResult = {
@@ -674,9 +718,11 @@ export function computeCostCenterHhHmItemCost(input: {
 export function computeCostCenterHhHmSideSimulation(input: {
   form: CostCenterHhHmSimulationSideFormValues;
   monthlyBuckets: CostCenterMonthlyExpenseBucket[];
+  hourType?: CostCenterHhHmSimulationHourType;
 }): CostCenterHhHmSideSimulationResult {
   const warnings: string[] = [];
   const errors: string[] = [];
+  const hourType = input.hourType ?? "HH";
 
   const monthlyAverageSummary = computeCostCenterMonthlyAverage(input.monthlyBuckets);
   const monthlyAverage: CostCenterMonthlyAverageResult = {
@@ -692,15 +738,44 @@ export function computeCostCenterHhHmSideSimulation(input: {
     warnings.push(COST_CENTER_HH_HM_SIMULATION_ZERO_MONTHS_WARNING);
   }
 
-  const baseMonthlyHours = parsePositiveNumber(input.form.baseMonthlyHours);
-  if (!input.form.useManualRate && input.form.averagePeriod !== "MANUAL_VALUE" && baseMonthlyHours == null) {
-    errors.push("Informe as horas base mensais (driver de rateio).");
+  const capacity = computeHhHmCapacityHours({
+    unitCount: input.form.productiveCount,
+    hoursPerUnit: input.form.hoursPerUnit,
+    efficiencyPercent: input.form.efficiencyPercent,
+  });
+  if (capacity.efficiencyError) {
+    errors.push(capacity.efficiencyError);
   }
 
-  const manualRatePerHour = parsePositiveNumber(input.form.manualRatePerHour);
+  const manualBaseHours = parsePositiveNumber(input.form.baseMonthlyHours);
+  let baseMonthlyHours: number | null = null;
+  if (input.form.useManualBaseHours) {
+    baseMonthlyHours = manualBaseHours;
+  } else {
+    baseMonthlyHours =
+      capacity.adjustedHours != null && capacity.adjustedHours > 0
+        ? capacity.adjustedHours
+        : null;
+  }
 
   const skipAverage =
     input.form.averagePeriod === "MANUAL_VALUE" || input.form.useManualRate;
+
+  if (
+    !input.form.useManualRate &&
+    input.form.averagePeriod !== "MANUAL_VALUE" &&
+    baseMonthlyHours == null
+  ) {
+    if (input.form.useManualBaseHours) {
+      errors.push("Informe as horas base mensais (driver de rateio).");
+    } else {
+      errors.push(
+        hourType === "HM" ? HH_HM_CAPACITY_HM_INPUT_HINT : HH_HM_CAPACITY_HH_INPUT_HINT
+      );
+    }
+  }
+
+  const manualRatePerHour = parsePositiveNumber(input.form.manualRatePerHour);
 
   if (!skipAverage && monthlyAverage.insufficientData) {
     warnings.push(COST_CENTER_HH_HM_SIMULATION_INSUFFICIENT_DATA);
@@ -726,12 +801,21 @@ export function computeCostCenterHhHmSideSimulation(input: {
     effectiveRatePerHour = calculatedRatePerHour;
   }
 
+  const productiveCount = parsePositiveNumber(input.form.productiveCount);
+  const hoursPerUnit = parsePositiveNumber(input.form.hoursPerUnit);
+
   const composition: CostCenterHhHmSideComposition = {
     monthlyAverageAmount: skipAverage ? null : monthlyAverage.monthlyAverageAmount,
+    productiveCount,
+    hoursPerUnit,
+    efficiencyPercent: capacity.efficiencyPercent,
+    theoreticalHours: capacity.theoreticalHours,
+    adjustedHours: capacity.adjustedHours,
     baseMonthlyHours,
     calculatedRatePerHour,
     effectiveRatePerHour,
     useManualRate: input.form.useManualRate || input.form.averagePeriod === "MANUAL_VALUE",
+    useManualBaseHours: input.form.useManualBaseHours,
   };
 
   return {
@@ -779,10 +863,12 @@ export function computeCostCenterHhHmDualRateSimulation(input: {
   const hh = computeCostCenterHhHmSideSimulation({
     form: input.form.hh,
     monthlyBuckets: input.monthlyBucketsHh,
+    hourType: "HH",
   });
   const hm = computeCostCenterHhHmSideSimulation({
     form: input.form.hm,
     monthlyBuckets: input.monthlyBucketsHm,
+    hourType: "HM",
   });
   const combinedRatePerHour = combineCostCenterHhHmRates(
     hh.composition.effectiveRatePerHour,
@@ -806,8 +892,10 @@ export function computeCostCenterHhHmSimulation(input: {
 }): CostCenterHhHmSimulationResult {
   const side = computeCostCenterHhHmSideSimulation({
     form: {
+      ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
       averagePeriod: input.form.averagePeriod,
       selectedCostCenterIds: input.form.selectedCostCenterIds,
+      useManualBaseHours: true,
       baseMonthlyHours: input.form.baseMonthlyHours,
       useManualRate: input.form.useManualRate,
       manualRatePerHour: input.form.manualRatePerHour,
@@ -815,6 +903,7 @@ export function computeCostCenterHhHmSimulation(input: {
       filteredDueDateTo: input.form.filteredDueDateTo,
     },
     monthlyBuckets: input.monthlyBuckets,
+    hourType: input.form.hourType,
   });
   const quantityUsedInItem = parseNonNegativeNumber(input.form.quantityUsedInItem);
   const simulatedItemCost = computeCostCenterHhHmItemCost({

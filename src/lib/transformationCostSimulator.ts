@@ -2,6 +2,13 @@
  * Simulador puro de custo de transformação — sem Prisma, sem custo oficial.
  */
 
+import {
+  computeHhHmAdjustedHours,
+  computeHhHmTheoreticalHours,
+  parseHhHmCapacityEfficiencyPercent,
+  parsePositiveCapacityNumber,
+} from "./hhHmCapacityCalculation.js";
+
 export const TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE =
   "Informe os dados necessários para calcular";
 
@@ -116,14 +123,6 @@ function safeDivide(numerator: number, denominator: number): number | null {
   return Number.isFinite(result) ? result : null;
 }
 
-function parseEfficiencyPercent(raw: string): { value: number | null; error?: string } {
-  const parsed = parseNumber(raw);
-  if (parsed == null) return { value: null };
-  if (parsed <= 0) return { value: null, error: "Eficiência deve ser maior que 0%." };
-  if (parsed > 100) return { value: null, error: "Eficiência não pode ser maior que 100%." };
-  return { value: parsed };
-}
-
 function parseScrapPercent(raw: string): { value: number | null; error?: string } {
   const parsed = parseNumber(raw);
   if (parsed == null) return { value: null };
@@ -138,15 +137,15 @@ export function computeTransformationCostSimulator(
   const fieldErrors: TransformationCostSimulatorResult["fieldErrors"] = {};
 
   const monthlyPayroll = parseNumber(input.monthlyPayroll);
-  const productivePeople = parseNumber(input.productivePeople);
-  const hoursPerPerson = parseNumber(input.hoursPerPerson);
-  const laborEfficiency = parseEfficiencyPercent(input.laborEfficiencyPercent);
+  const productivePeople = parsePositiveCapacityNumber(input.productivePeople);
+  const hoursPerPerson = parsePositiveCapacityNumber(input.hoursPerPerson);
+  const laborEfficiency = parseHhHmCapacityEfficiencyPercent(input.laborEfficiencyPercent);
   if (laborEfficiency.error) fieldErrors.laborEfficiencyPercent = laborEfficiency.error;
 
   const monthlyEnergy = parseNumber(input.monthlyEnergy);
-  const machines = parseNumber(input.machines);
-  const hoursPerMachine = parseNumber(input.hoursPerMachine);
-  const machineEfficiency = parseEfficiencyPercent(input.machineEfficiencyPercent);
+  const machines = parsePositiveCapacityNumber(input.machines);
+  const hoursPerMachine = parsePositiveCapacityNumber(input.hoursPerMachine);
+  const machineEfficiency = parseHhHmCapacityEfficiencyPercent(input.machineEfficiencyPercent);
   if (machineEfficiency.error) fieldErrors.machineEfficiencyPercent = machineEfficiency.error;
 
   const cycleSeconds = parseNumber(input.cycleSeconds);
@@ -167,38 +166,34 @@ export function computeTransformationCostSimulator(
   const scrap = parseScrapPercent(input.scrapPercent);
   if (scrap.error) fieldErrors.scrapPercent = scrap.error;
 
-  const theoreticalLaborHours =
-    isPositive(productivePeople) && isPositive(hoursPerPerson)
-      ? productivePeople * hoursPerPerson
-      : null;
+  const theoreticalLaborHours = computeHhHmTheoreticalHours(productivePeople, hoursPerPerson);
 
   const theoreticalHH =
     monthlyPayroll != null && isPositive(theoreticalLaborHours)
       ? safeDivide(monthlyPayroll, theoreticalLaborHours)
       : null;
 
-  const adjustedLaborHours =
-    isPositive(theoreticalLaborHours) && laborEfficiency.value != null
-      ? theoreticalLaborHours * (laborEfficiency.value / 100)
-      : null;
+  const adjustedLaborHours = computeHhHmAdjustedHours(
+    theoreticalLaborHours,
+    laborEfficiency.value
+  );
 
   const adjustedHH =
     monthlyPayroll != null && isPositive(adjustedLaborHours)
       ? safeDivide(monthlyPayroll, adjustedLaborHours)
       : null;
 
-  const theoreticalMachineHours =
-    isPositive(machines) && isPositive(hoursPerMachine) ? machines * hoursPerMachine : null;
+  const theoreticalMachineHours = computeHhHmTheoreticalHours(machines, hoursPerMachine);
 
   const theoreticalHM =
     monthlyEnergy != null && isPositive(theoreticalMachineHours)
       ? safeDivide(monthlyEnergy, theoreticalMachineHours)
       : null;
 
-  const adjustedMachineHours =
-    isPositive(theoreticalMachineHours) && machineEfficiency.value != null
-      ? theoreticalMachineHours * (machineEfficiency.value / 100)
-      : null;
+  const adjustedMachineHours = computeHhHmAdjustedHours(
+    theoreticalMachineHours,
+    machineEfficiency.value
+  );
 
   const adjustedHM =
     monthlyEnergy != null && isPositive(adjustedMachineHours)

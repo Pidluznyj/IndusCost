@@ -91,11 +91,108 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.equal(rate, 30);
   });
 
+  it("3b — capacidade 60×180×80% gera 8640 e taxa HH", () => {
+    const hh = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "60",
+        hoursPerUnit: "180",
+        efficiencyPercent: "80",
+      },
+      monthlyBuckets: [
+        { year: 2026, month: 1, totalAmount: 337_536.26 },
+      ],
+      hourType: "HH",
+    });
+    assert.equal(hh.composition.theoreticalHours, 10_800);
+    assert.equal(hh.composition.adjustedHours, 8_640);
+    assert.equal(hh.composition.baseMonthlyHours, 8_640);
+    assert.equal(hh.composition.calculatedRatePerHour, 39.07);
+    assert.equal(hh.composition.effectiveRatePerHour, 39.07);
+  });
+
+  it("3c — capacidade 13×180×80% gera 1872 e taxa HM", () => {
+    const hm = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "13",
+        hoursPerUnit: "180",
+        efficiencyPercent: "80",
+      },
+      monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 23_310.3 }],
+      hourType: "HM",
+    });
+    assert.equal(hm.composition.theoreticalHours, 2_340);
+    assert.equal(hm.composition.adjustedHours, 1_872);
+    assert.equal(hm.composition.calculatedRatePerHour, 12.45);
+    assert.equal(hm.composition.effectiveRatePerHour, 12.45);
+  });
+
+  it("3d — HH + HM com capacidade automática", () => {
+    const dual = computeCostCenterHhHmDualRateSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_FORM,
+        hh: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-hh"],
+          productiveCount: "60",
+          hoursPerUnit: "180",
+          efficiencyPercent: "80",
+        },
+        hm: {
+          ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+          selectedCostCenterIds: ["cc-hm"],
+          productiveCount: "13",
+          hoursPerUnit: "180",
+          efficiencyPercent: "80",
+        },
+      },
+      monthlyBucketsHh: [{ year: 2026, month: 1, totalAmount: 337_536.26 }],
+      monthlyBucketsHm: [{ year: 2026, month: 1, totalAmount: 23_310.3 }],
+    });
+    assert.equal(dual.hh.composition.effectiveRatePerHour, 39.07);
+    assert.equal(dual.hm.composition.effectiveRatePerHour, 12.45);
+    assert.equal(dual.combinedRatePerHour, 51.52);
+  });
+
+  it("3e — eficiência inválida e divisão por zero bloqueadas", () => {
+    const invalid = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "60",
+        hoursPerUnit: "180",
+        efficiencyPercent: "0",
+      },
+      monthlyBuckets: SIX_MONTH_BUCKETS,
+      hourType: "HH",
+    });
+    assert.equal(invalid.composition.effectiveRatePerHour, null);
+    assert.ok(invalid.errors.some((message) => /eficiência|pessoas\/horas/i.test(message)));
+
+    const empty = computeCostCenterHhHmSideSimulation({
+      form: {
+        ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
+        selectedCostCenterIds: ["cc-a"],
+        productiveCount: "",
+        hoursPerUnit: "180",
+        efficiencyPercent: "80",
+      },
+      monthlyBuckets: SIX_MONTH_BUCKETS,
+      hourType: "HM",
+    });
+    assert.equal(empty.composition.effectiveRatePerHour, null);
+    assert.ok(empty.errors.some((message) => /máquinas\/horas\/eficiência/i.test(message)));
+  });
+
   it("4 — taxa HM por lado (HH/HM separados)", () => {
     const hm = computeCostCenterHhHmSideSimulation({
       form: {
         ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
+        useManualBaseHours: true,
         baseMonthlyHours: "4000",
       },
       monthlyBuckets: SIX_MONTH_BUCKETS,
@@ -109,23 +206,27 @@ describe("financeCostCenterHhHmSimulation", () => {
       form: {
         ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
-        baseMonthlyHours: "4000",
+        productiveCount: "60",
+        hoursPerUnit: "180",
+        efficiencyPercent: "80",
       },
       monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 120_000 }],
     });
-    assert.equal(calculated.composition.calculatedRatePerHour, 30);
+    assert.equal(calculated.composition.baseMonthlyHours, 8_640);
+    assert.ok(calculated.composition.calculatedRatePerHour != null);
 
     const manual = computeCostCenterHhHmSideSimulation({
       form: {
         ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
-        baseMonthlyHours: "4000",
+        productiveCount: "60",
+        hoursPerUnit: "180",
+        efficiencyPercent: "80",
         useManualRate: true,
         manualRatePerHour: "45",
       },
       monthlyBuckets: [{ year: 2026, month: 1, totalAmount: 120_000 }],
     });
-    assert.equal(manual.composition.calculatedRatePerHour, 30);
     assert.equal(manual.composition.effectiveRatePerHour, 45);
     assert.equal(manual.composition.useManualRate, true);
   });
@@ -135,6 +236,7 @@ describe("financeCostCenterHhHmSimulation", () => {
       form: {
         ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
         selectedCostCenterIds: ["cc-a"],
+        useManualBaseHours: true,
         baseMonthlyHours: "1000",
       },
       monthlyBuckets: [
@@ -153,6 +255,7 @@ describe("financeCostCenterHhHmSimulation", () => {
       hourType: "HM" as const,
       ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
       selectedCostCenterIds: ["cc-a"],
+      useManualBaseHours: true,
       baseMonthlyHours: "4000",
       quantityUsedInItem: "10",
     };
@@ -210,6 +313,7 @@ describe("financeCostCenterHhHmSimulation", () => {
     assert.deepEqual(hhForm.hh.selectedCostCenterIds, []);
     assert.deepEqual(hhForm.hm.selectedCostCenterIds, []);
     assert.equal(hhForm.hh.baseMonthlyHours, "100");
+    assert.equal(hhForm.hh.useManualBaseHours, true);
 
     const hmForm = normalizeCostCenterHhHmSimulationStoredForm({
       hourType: "HM",
@@ -274,7 +378,8 @@ describe("financeCostCenterHhHmSimulation", () => {
       monthlyBuckets: [],
     });
     assert.equal(result.composition.effectiveRatePerHour, 38);
-    assert.ok(result.errors.some((message) => /Selecione ao menos um centro/i.test(message)));
+    assert.equal(result.composition.useManualRate, true);
+    assert.ok(!result.errors.some((message) => /Selecione ao menos um centro/i.test(message)));
   });
 
   it("17 — prune remove ids inexistentes após reload", () => {
@@ -315,11 +420,13 @@ describe("financeCostCenterHhHmSimulation", () => {
         hh: {
           ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
           selectedCostCenterIds: ["cc-a", "cc-b"],
+          useManualBaseHours: true,
           baseMonthlyHours: "4000",
         },
         hm: {
           ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
           selectedCostCenterIds: ["cc-c"],
+          useManualBaseHours: true,
           baseMonthlyHours: "2000",
         },
       },
@@ -355,6 +462,7 @@ describe("financeCostCenterHhHmSimulation", () => {
         hh: {
           ...EMPTY_COST_CENTER_HH_HM_SIMULATION_SIDE,
           selectedCostCenterIds: ["cc-a"],
+          useManualBaseHours: true,
           baseMonthlyHours: "4000",
         },
         hm: {
