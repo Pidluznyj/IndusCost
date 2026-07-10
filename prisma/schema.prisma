@@ -2094,6 +2094,54 @@ enum NomusNfeBillingClassification {
   MARKET_REVENUE
 }
 
+/// Documento de estoque Nomus (`/rest/documentosEstoque`) — stage isolado para conciliação Pedido × NF × saída.
+/// Não altera Contas a Receber, Faturamento, Fluxo de Caixa nem Comissões.
+model NomusStockDocument {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  idNfe                Int?
+  tipoDocumentoEstoque String?
+  dataDocumento        DateTime?
+
+  rawJson Json
+
+  syncedAt  DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items NomusStockDocumentItem[]
+
+  @@index([idNfe])
+  @@index([tipoDocumentoEstoque])
+  @@index([dataDocumento])
+  @@index([syncedAt])
+}
+
+model NomusStockDocumentItem {
+  id String @id @default(uuid())
+
+  stockDocumentId String
+  stockDocument   NomusStockDocument @relation(fields: [stockDocumentId], references: [id], onDelete: Cascade)
+
+  externalItemId    Int?
+  externalProductId Int?
+
+  quantity             Decimal @db.Decimal(20, 6)
+  unitValue            Decimal @db.Decimal(20, 6)
+  estimatedTotalValue  Decimal @db.Decimal(20, 6)
+
+  rawJson Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stockDocumentId])
+  @@index([externalProductId])
+  @@index([externalItemId])
+}
+
 /// NF-e Nomus sincronizada via `/rest/nfes` — fonte oficial futura do Financeiro > Faturamento.
 model NomusNfe {
   id String @id @default(uuid())
