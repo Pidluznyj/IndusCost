@@ -144,6 +144,12 @@ export type PortfolioReconciliationFactDraft = {
   remainingOrderValueAfterAllocation: number | null;
   priceDifferenceUnit: number | null;
   priceDifferenceTotal: number | null;
+  receivableIdsJson: number[] | null;
+  receivableTotalValue: number | null;
+  receivedValue: number | null;
+  openReceivableValue: number | null;
+  dueDatesJson: Array<string | null> | null;
+  settlementDatesJson: Array<string | null> | null;
   forecastSource: PortfolioForecastSource;
   forecastDate: Date | null;
   forecastValue: number | null;
@@ -263,6 +269,12 @@ function baseFact(
     remainingOrderValueAfterAllocation: null,
     priceDifferenceUnit: null,
     priceDifferenceTotal: null,
+    receivableIdsJson: null,
+    receivableTotalValue: null,
+    receivedValue: null,
+    openReceivableValue: null,
+    dueDatesJson: null,
+    settlementDatesJson: null,
     forecastDate: null,
     forecastValue: null,
     alertsJson: [],
