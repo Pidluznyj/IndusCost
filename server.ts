@@ -353,6 +353,7 @@ import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAud
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
 import { registerComponentPerformanceRoutes } from "./src/lib/componentPerformanceRoutes.js";
 import { registerTransformationHhHmSimulationHistoryRoutes } from "./src/lib/transformationHhHmSimulationHistoryRoutes.js";
+import { registerProposalInternalManagementPdfRoutes } from "./src/lib/proposalInternalManagementPdfRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -13312,6 +13313,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
   });
+
+  registerProposalInternalManagementPdfRoutes(
+    app,
+    { requireAppAuth, requirePermission },
+    { prisma, isUuid }
+  );
 
   app.get("/api/proposals/:id/pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
     try {

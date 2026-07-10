@@ -33,7 +33,7 @@ import {
   Eye,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import { fetchJsonOk, fetchOk, parseApiErrorMessage } from "@/src/lib/http";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
@@ -55,6 +55,10 @@ import {
   canPrintProposal,
   canViewProposalIndicators,
 } from "@/src/lib/modulePermissions";
+import {
+  buildProposalInternalManagementPdfApiPath,
+  PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL,
+} from "@/src/lib/proposalInternalManagementPdf";
 const PAGE_SIZE = 20;
 
 /** Mesma aba de impressão para cliente que o ícone de impressora da listagem (`/proposals/:id/print`). */
@@ -455,6 +459,7 @@ export const ProposalModule = () => {
   const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [salesOrderActionId, setSalesOrderActionId] = useState<string | null>(null);
+  const [internalPdfActionId, setInternalPdfActionId] = useState<string | null>(null);
   const [priceTables, setPriceTables] = useState<PriceTableListRow[]>([]);
   /** Avisos de preço publicado (piloto etc.) nesta sessão de edição; limpa ao mudar tabela. */
   const [tablePriceSessionAlerts, setTablePriceSessionAlerts] = useState<string[]>([]);
@@ -983,13 +988,44 @@ export const ProposalModule = () => {
     [navigate, loadProposalListPage, currentPage]
   );
 
-  const handleDownloadPptx = (proposalId: string) => {
-    const link = document.createElement("a");
-    link.href = `/api/projects/${proposalId}/client-proposal-pptx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const handleDownloadInternalManagementPdf = useCallback(async (proposalId: string) => {
+    setInternalPdfActionId(proposalId);
+    try {
+      const res = await fetch(buildProposalInternalManagementPdfApiPath(proposalId), {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const message = await parseApiErrorMessage(res);
+        alert(
+          message.startsWith("Não foi possível")
+            ? message
+            : `Não foi possível gerar o PDF gerencial: ${message}`
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? `proposta-gerencial-interna-${proposalId}.pdf`;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error("Erro ao gerar PDF gerencial interno:", error);
+      alert(
+        error instanceof Error
+          ? `Não foi possível gerar o PDF gerencial: ${error.message}`
+          : "Não foi possível gerar o PDF gerencial interno."
+      );
+    } finally {
+      setInternalPdfActionId(null);
+    }
+  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
@@ -1499,12 +1535,20 @@ export const ProposalModule = () => {
               />
             </div>
             {editingProposal && (
-              <button 
-                onClick={() => handleDownloadPptx(editingProposal.id)}
-                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg"
+              <button
+                type="button"
+                onClick={() => void handleDownloadInternalManagementPdf(editingProposal.id)}
+                disabled={internalPdfActionId === editingProposal.id}
+                title="Uso interno — inclui custo, margem e comissão."
+                className="flex items-center gap-2 bg-slate-800 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-700 transition-colors shadow-lg disabled:opacity-60"
+                data-testid="proposal-internal-management-pdf"
               >
-                <FileText className="h-4 w-4" />
-                Gerar PPT Executivo
+                {internalPdfActionId === editingProposal.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                {PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL}
               </button>
             )}
             <button 
@@ -2533,12 +2577,19 @@ export const ProposalModule = () => {
                             <Printer className="h-4 w-4" />
                           </button>
                         ) : null}
-                        <button 
-                          onClick={() => handleDownloadPptx(p.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-orange-500 transition-all"
-                          title="Gerar PPT Executivo"
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadInternalManagementPdf(p.id)}
+                          disabled={internalPdfActionId === p.id}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-slate-800 transition-all disabled:opacity-60"
+                          title="PDF gerencial interno — uso interno; inclui custo, margem e comissão."
+                          data-testid={`proposal-internal-management-pdf-${p.id}`}
                         >
-                          <FileText className="h-4 w-4" />
+                          {internalPdfActionId === p.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
                         </button>
                         {allowDelete ? (
                           <button
