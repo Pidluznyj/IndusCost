@@ -14,6 +14,10 @@ import {
   type SnapshotNfe,
   type SnapshotNfeLink,
 } from "./portfolioReconciliationAllocationEngine.js";
+import {
+  applyPortfolioPaymentCalendarToFacts,
+  type PortfolioPaymentRule,
+} from "./portfolioPaymentCalendar.js";
 
 export type SnapshotReceivable = {
   id?: string | null;
@@ -43,6 +47,10 @@ export type EnrichPortfolioFactsWithReceivablesInput = {
   receivables: SnapshotReceivable[];
   nfes: SnapshotNfe[];
   nfeLinks?: SnapshotNfeLink[];
+  /** Regras de calendário (DB). Britânia usa fallback embutido se ausente. */
+  paymentRules?: readonly PortfolioPaymentRule[];
+  /** Default true — aplica calendário após vínculo CR. */
+  applyPaymentCalendar?: boolean;
 };
 
 const CONFIDENT_ALLOCATION_STATUSES = new Set<PortfolioFactStatus>([
@@ -478,7 +486,7 @@ export function enrichPortfolioFactsWithReceivables(
 
   // Prioridade de forecast em linhas sem CR: mantém NFE/ORDER; com CR já viraram RECEIVABLE.
   // ORDER_ONLY permanece ORDER.
-  return facts.map((fact) => {
+  const withSources = facts.map((fact) => {
     if (fact.forecastSource === "RECEIVABLE") return fact;
     if (
       fact.status === "ITEM_ALLOCATED" ||
@@ -491,6 +499,13 @@ export function enrichPortfolioFactsWithReceivables(
       }
     }
     return fact;
+  });
+
+  if (input.applyPaymentCalendar === false) return withSources;
+
+  return applyPortfolioPaymentCalendarToFacts({
+    facts: withSources,
+    rules: input.paymentRules ?? [],
   });
 }
 

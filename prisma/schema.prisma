@@ -2288,6 +2288,29 @@ model PortfolioReconciliationFact {
   @@index([forecastSource])
 }
 
+/// Calendário de pagamento por cliente (camada Conciliação de Carteira).
+/// Isolado do cadastro oficial de Customer e do Fluxo/AR/Faturamento/Comissões.
+model PortfolioCustomerPaymentRule {
+  id String @id @default(uuid())
+
+  customerExternalId   Int     @unique
+  customerNameSnapshot String?
+
+  /// Dias do mês permitidos para pagamento, ex.: [10, 20, 30].
+  allowedDaysJson Json
+
+  defaultTermDays      Int     @default(0)
+  moveToNextAllowedDay Boolean @default(true)
+  isActive             Boolean @default(true)
+  notes                String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([customerExternalId])
+}
+
 /// NF-e Nomus sincronizada via `/rest/nfes` — fonte oficial futura do Financeiro > Faturamento.
 model NomusNfe {
   id String @id @default(uuid())

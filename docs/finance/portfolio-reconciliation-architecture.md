@@ -270,6 +270,57 @@ Este caso é o **acceptance test** da primeira materialização da fato.
 
 ---
 
+## 10.1 Calendário de pagamento por cliente (isolado)
+
+Model: `PortfolioCustomerPaymentRule` (migration `20260710200000_portfolio_customer_payment_rule`).
+
+- **Não** altera cadastro oficial de `Customer`.
+- **Não** altera Fluxo/AR/Faturamento/Comissões.
+- Service: `src/lib/finance/portfolioPaymentCalendar.ts`.
+
+### Britânia (fallback embutido + insert manual opcional)
+
+| Campo | Valor |
+|-------|-------|
+| `customerExternalId` | `200` |
+| `allowedDaysJson` | `[10, 20, 30]` |
+| `moveToNextAllowedDay` | `true` |
+
+Ajuste: nunca antecipa (1–10→10, 11–20→20, 21–30→30, 31→10 do mês seguinte).
+
+Forecast:
+- `RECEIVABLE` → vencimento real do CR (**soberano**, sem recalcular).
+- `NFE` → data NF + `defaultTermDays` + calendário.
+- `ORDER` → entrega prevista + prazo + calendário.
+
+### Configurar no servidor (após migrate deploy)
+
+Sem seed automático. Insert manual opcional (o fallback em código já cobre Britânia):
+
+```sql
+INSERT INTO "PortfolioCustomerPaymentRule" (
+  "id", "customerExternalId", "customerNameSnapshot", "allowedDaysJson",
+  "defaultTermDays", "moveToNextAllowedDay", "isActive", "notes", "updatedAt"
+) VALUES (
+  gen_random_uuid()::text,
+  200,
+  'Britânia',
+  '[10, 20, 30]'::jsonb,
+  0,
+  true,
+  true,
+  'Paga nos dias 10, 20 e 30',
+  NOW()
+)
+ON CONFLICT ("customerExternalId") DO UPDATE SET
+  "allowedDaysJson" = EXCLUDED."allowedDaysJson",
+  "moveToNextAllowedDay" = EXCLUDED."moveToNextAllowedDay",
+  "isActive" = true,
+  "updatedAt" = NOW();
+```
+
+---
+
 ## 11. Riscos registrados
 
 | Risco | Impacto | Mitigação |
