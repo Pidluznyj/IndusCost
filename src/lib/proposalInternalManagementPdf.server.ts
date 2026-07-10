@@ -65,7 +65,13 @@ export async function loadAndBuildProposalInternalManagementPdf(
     internalNotes: proposal.internalNotes,
     createdAt: proposal.createdAt,
     customerName: proposal.Customer?.companyName ?? proposal.Customer?.tradeName ?? null,
+    customerTradeName: proposal.Customer?.tradeName ?? null,
     customerDocument: proposal.Customer?.taxId ?? null,
+    customerPhone: proposal.Customer?.phone ?? null,
+    customerAddress: proposal.Customer?.address ?? null,
+    customerCity: proposal.Customer?.city ?? null,
+    customerState: proposal.Customer?.state ?? null,
+    customerZip: proposal.Customer?.zipCode ?? null,
     totalGrossValue: decimalToNumber(proposal.totalGrossValue),
     totalDiscount: decimalToNumber(proposal.totalDiscount),
     totalNetValue: decimalToNumber(proposal.totalNetValue),
@@ -90,6 +96,7 @@ export async function loadAndBuildProposalInternalManagementPdf(
       taxesValue: decimalToNumber(item.taxesValue),
       freightValue: decimalToNumber(item.freightValue),
       notes: item.notes,
+      pricingSnapshotJson: item.pricingSnapshotJson,
     })),
   });
 

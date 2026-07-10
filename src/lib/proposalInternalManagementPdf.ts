@@ -1,21 +1,35 @@
 /**
- * PDF gerencial interno da proposta comercial.
- * Usa dados próprios da Proposal/ProposalItem (custo, margem, comissão já gravados).
- * Não altera PDF cliente nem motor de comissão realizada.
+ * PDF / documento gerencial interno da proposta comercial.
+ * Dados da Proposal/ProposalItem + breakdown do snapshot quando disponível.
+ * Não altera PDF cliente nem motores oficiais.
  */
 
-import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
+import { extractProposalItemCostBreakdown } from "./proposalItemCostBreakdown.js";
+import {
+  buildFormattedLandscapePdf,
+  formatPdfMoneyBr,
+  formatPdfNumberBr,
+  formatPdfPercentBr,
+  type PdfLine,
+} from "./proposalInternalManagementPdfLayout.js";
 
 export const PROPOSAL_INTERNAL_MANAGEMENT_PDF_API =
   "/api/proposals/:proposalId/internal-management-pdf" as const;
 
+export const PROPOSAL_INTERNAL_MANAGEMENT_PRINT_PATH =
+  "/proposals/:proposalId/internal-management-print" as const;
+
 export const PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL = "PDF gerencial interno";
 
 export const PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK =
-  "Documento interno e confidencial. Nao compartilhar com clientes.";
+  "Documento interno e confidencial. Não compartilhar com clientes.";
 
 export function buildProposalInternalManagementPdfApiPath(proposalId: string): string {
   return `/api/proposals/${encodeURIComponent(proposalId)}/internal-management-pdf`;
+}
+
+export function buildProposalInternalManagementPrintPath(proposalId: string): string {
+  return `/proposals/${encodeURIComponent(proposalId)}/internal-management-print`;
 }
 
 export type ProposalInternalManagementPdfItemInput = {
@@ -33,6 +47,7 @@ export type ProposalInternalManagementPdfItemInput = {
   taxesValue?: number | string | null;
   freightValue?: number | string | null;
   notes?: string | null;
+  pricingSnapshotJson?: unknown;
 };
 
 export type ProposalInternalManagementPdfInput = {
@@ -52,6 +67,12 @@ export type ProposalInternalManagementPdfInput = {
   createdAt?: string | Date | null;
   customerName?: string | null;
   customerDocument?: string | null;
+  customerTradeName?: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+  customerState?: string | null;
+  customerZip?: string | null;
   totalGrossValue: number | string | null;
   totalDiscount: number | string | null;
   totalNetValue: number | string | null;
@@ -65,6 +86,7 @@ export type ProposalInternalManagementPdfInput = {
 };
 
 export type ProposalInternalManagementPdfItemRow = {
+  lineNo: string;
   code: string;
   name: string;
   quantity: number;
@@ -73,14 +95,20 @@ export type ProposalInternalManagementPdfItemRow = {
   totalPrice: number;
   unitCost: number;
   totalCost: number;
-  marginValue: number;
-  marginPerc: number;
+  materialTotal: number | null;
+  fabricationTotal: number | null;
+  taxesValue: number;
   commissionValue: number;
   commissionPerc: number;
+  marginValue: number;
+  marginPerc: number;
+  markup: number | null;
   notes: string | null;
   costIncomplete: boolean;
   marginMissing: boolean;
   commissionPending: boolean;
+  breakdownPending: boolean;
+  breakdownPendingReason: string | null;
 };
 
 export type ProposalInternalManagementPdfDocument = {
@@ -89,7 +117,12 @@ export type ProposalInternalManagementPdfDocument = {
   proposalCode: string;
   proposalTitle: string;
   customerName: string;
+  customerTradeName: string | null;
   customerDocument: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  customerCityUf: string | null;
+  customerZip: string | null;
   status: string;
   responsible: string;
   issuer: string;
@@ -106,6 +139,8 @@ export type ProposalInternalManagementPdfDocument = {
     discount: number;
     net: number;
     cost: number;
+    materialCost: number | null;
+    fabricationCost: number | null;
     marginValue: number;
     marginPerc: number;
     markup: number | null;
@@ -131,31 +166,6 @@ function text(value: unknown, fallback = "—"): string {
   return s || fallback;
 }
 
-function pdfSafeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, "?");
-}
-
-function formatMoney(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatPercent(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return `${value.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}%`;
-}
-
 function formatDateLabel(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const date = value instanceof Date ? value : new Date(value);
@@ -164,13 +174,15 @@ function formatDateLabel(value: string | Date | null | undefined): string {
 }
 
 function slugPart(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w.-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40) || "proposta";
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40) || "proposta"
+  );
 }
 
 export function buildProposalInternalManagementPdfFilename(input: {
@@ -196,7 +208,7 @@ export function buildProposalInternalManagementPdfDocument(
   const commission = n(input.totalCommission);
   const markup = cost > 0 ? net / cost : null;
 
-  const rows: ProposalInternalManagementPdfItemRow[] = items.map((item) => {
+  const rows: ProposalInternalManagementPdfItemRow[] = items.map((item, index) => {
     const quantity = n(item.quantity);
     const unitCost = n(item.unitCost);
     const unitPrice = n(item.negotiatedPrice);
@@ -206,11 +218,16 @@ export function buildProposalInternalManagementPdfDocument(
     const itemMarginPerc = n(item.marginPerc);
     const itemCommission = n(item.commissionValue);
     const itemCommissionPerc = n(item.commissionPerc);
+    const taxesValue = n(item.taxesValue);
+    const breakdown = extractProposalItemCostBreakdown(item.pricingSnapshotJson, quantity);
     const costIncomplete = !(unitCost > 0);
-    const marginMissing = !(itemMargin !== 0 || itemMarginPerc !== 0) && totalPrice > 0 && costIncomplete;
+    const marginMissing =
+      !(itemMargin !== 0 || itemMarginPerc !== 0) && totalPrice > 0 && costIncomplete;
     const commissionPending = !(itemCommission > 0 || itemCommissionPerc > 0);
+    const itemMarkup = totalCost > 0 ? totalPrice / totalCost : null;
     return {
-      code: text(item.sku, "s/ codigo"),
+      lineNo: String((index + 1) * 10).padStart(5, "0"),
+      code: text(item.sku, "s/ código"),
       name: text(item.name, "Item sem nome"),
       quantity,
       unit: text(item.unit, "UN"),
@@ -218,55 +235,85 @@ export function buildProposalInternalManagementPdfDocument(
       totalPrice,
       unitCost,
       totalCost,
-      marginValue: itemMargin,
-      marginPerc: itemMarginPerc,
+      materialTotal: breakdown.materialTotal,
+      fabricationTotal: breakdown.fabricationTotal,
+      taxesValue,
       commissionValue: itemCommission,
       commissionPerc: itemCommissionPerc,
+      marginValue: itemMargin,
+      marginPerc: itemMarginPerc,
+      markup: itemMarkup,
       notes: item.notes?.trim() ? item.notes.trim() : null,
       costIncomplete,
       marginMissing,
       commissionPending,
+      breakdownPending: breakdown.source === "UNAVAILABLE",
+      breakdownPendingReason: breakdown.pendingReason,
     };
   });
+
+  const materialSum = rows.reduce(
+    (acc, row) => (row.materialTotal != null ? acc + row.materialTotal : acc),
+    0
+  );
+  const fabricationSum = rows.reduce(
+    (acc, row) => (row.fabricationTotal != null ? acc + row.fabricationTotal : acc),
+    0
+  );
+  const hasMaterial = rows.some((row) => row.materialTotal != null);
+  const hasFabrication = rows.some((row) => row.fabricationTotal != null);
 
   const pendencies: string[] = [];
   const incompleteCostItems = rows.filter((row) => row.costIncomplete);
   if (incompleteCostItems.length > 0) {
-    pendencies.push(
-      `${incompleteCostItems.length} item(ns) com custo incompleto ou zerado.`
-    );
+    pendencies.push(`${incompleteCostItems.length} item(ns) com custo incompleto ou zerado.`);
   }
   const missingMargin = rows.filter((row) => row.marginMissing);
   if (missingMargin.length > 0) {
-    pendencies.push(`${missingMargin.length} item(ns) sem margem calculavel.`);
+    pendencies.push(`${missingMargin.length} item(ns) sem margem calculável.`);
   }
   if (!(commission > 0) && rows.every((row) => row.commissionPending)) {
-    pendencies.push("Comissao estimada nao informada na proposta (exibir como pendente).");
+    pendencies.push("Comissão estimada não informada na proposta (exibir como pendente).");
   }
   if (cost <= 0 && rows.length > 0) {
     pendencies.push("Custo total da proposta ausente ou zerado.");
   }
+  const breakdownPending = rows.filter((row) => row.breakdownPending);
+  if (breakdownPending.length > 0) {
+    pendencies.push(
+      `${breakdownPending.length} item(ns) sem breakdown MP/fabricação no snapshot.`
+    );
+  }
 
   const commissionSummaryLabel =
     commission > 0
-      ? formatMoney(commission)
-      : "Pendente: comissao nao informada na proposta";
+      ? formatPdfMoneyBr(commission)
+      : "Pendente: comissão não informada na proposta";
 
   const proposalCode =
     input.number != null && Number.isFinite(Number(input.number))
-      ? `CP ${input.number}`
+      ? `CP ${String(Math.floor(Number(input.number))).padStart(5, "0")}`
       : "Proposta";
 
+  const city = input.customerCity?.trim() || null;
+  const state = input.customerState?.trim() || null;
+  const cityUf = [city, state].filter(Boolean).join(" - ") || null;
+
   return {
-    title: "Proposta Comercial — Relatorio Gerencial Interno",
+    title: "Proposta Comercial — Relatório Gerencial Interno",
     confidentialMark: PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK,
     proposalCode,
-    proposalTitle: text(input.title, "Sem titulo"),
-    customerName: text(input.customerName, "Cliente nao informado"),
+    proposalTitle: text(input.title, "Sem título"),
+    customerName: text(input.customerName, "Cliente não informado"),
+    customerTradeName: input.customerTradeName?.trim() || null,
     customerDocument: input.customerDocument?.trim() || null,
+    customerPhone: input.customerPhone?.trim() || null,
+    customerAddress: input.customerAddress?.trim() || null,
+    customerCityUf: cityUf,
+    customerZip: input.customerZip?.trim() || null,
     status: text(input.status, "—"),
-    responsible: text(input.responsible, "Nao informado"),
-    issuer: text(input.companyIssuer, "Nao informado"),
+    responsible: text(input.responsible, "Não informado"),
+    issuer: text(input.companyIssuer, "Não informado"),
     issuedAtLabel: formatDateLabel(input.createdAt),
     validityDays:
       input.validityDays != null && Number.isFinite(Number(input.validityDays))
@@ -283,6 +330,8 @@ export function buildProposalInternalManagementPdfDocument(
       discount: n(input.totalDiscount),
       net,
       cost,
+      materialCost: hasMaterial ? materialSum : null,
+      fabricationCost: hasFabrication ? fabricationSum : null,
       marginValue,
       marginPerc,
       markup,
@@ -300,89 +349,122 @@ export function buildProposalInternalManagementPdfDocument(
 export function buildProposalInternalManagementPdfBuffer(
   doc: ProposalInternalManagementPdfDocument
 ): Buffer {
-  const lines: string[] = [
-    doc.confidentialMark,
-    "",
-    "=== CAPA / IDENTIFICACAO ===",
-    `Proposta: ${doc.proposalCode}`,
-    `Titulo: ${doc.proposalTitle}`,
-    `Cliente: ${doc.customerName}`,
-    doc.customerDocument ? `Documento cliente: ${doc.customerDocument}` : "Documento cliente: —",
-    `Status: ${doc.status}`,
-    `Responsavel comercial: ${doc.responsible}`,
-    `Empresa emissora: ${doc.issuer}`,
-    `Data: ${doc.issuedAtLabel}`,
-    doc.validityDays != null ? `Validade: ${doc.validityDays} dia(s)` : "Validade: —",
-    "",
-    "=== RESUMO EXECUTIVO INTERNO ===",
-    `Valor bruto: ${formatMoney(doc.totals.gross)}`,
-    `Desconto: ${formatMoney(doc.totals.discount)}`,
-    `Valor liquido / preco final proposto: ${formatMoney(doc.totals.net)}`,
-    `Custo total estimado: ${formatMoney(doc.totals.cost)}`,
-    `Margem bruta: ${formatMoney(doc.totals.marginValue)} (${formatPercent(doc.totals.marginPerc)})`,
-    `Markup (venda/custo): ${
-      doc.totals.markup != null
-        ? doc.totals.markup.toLocaleString("pt-BR", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 4,
-          })
-        : "pendente"
-    }`,
-    `Impostos estimados: ${formatMoney(doc.totals.taxes)}`,
-    `Comissao estimada: ${doc.commissionSummaryLabel}`,
-    `Frete: ${formatMoney(doc.totals.freight)}`,
-    doc.paymentTerms ? `Condicao de pagamento: ${doc.paymentTerms}` : "Condicao de pagamento: —",
-    doc.paymentMethod ? `Forma de pagamento: ${doc.paymentMethod}` : "Forma de pagamento: —",
-    doc.freightCondition ? `Frete: ${doc.freightCondition}` : null,
-    doc.deliveryLocation ? `Local de entrega: ${doc.deliveryLocation}` : null,
-    "",
-    "=== ITENS / PRODUTOS ===",
-  ].filter((line): line is string => line != null);
+  const lines: PdfLine[] = [
+    { type: "title", text: doc.title },
+    { type: "banner", text: `RELATÓRIO GERENCIAL INTERNO — ${doc.confidentialMark}` },
+    { type: "spacer" },
+    { type: "subtitle", text: "Identificação" },
+    { type: "kv", label: "Proposta", value: doc.proposalCode },
+    { type: "kv", label: "Título", value: doc.proposalTitle },
+    { type: "kv", label: "Cliente", value: doc.customerName },
+    {
+      type: "kv",
+      label: "CNPJ/CPF",
+      value: doc.customerDocument ?? "—",
+    },
+    { type: "kv", label: "Status", value: doc.status },
+    { type: "kv", label: "Vendedor", value: doc.responsible },
+    { type: "kv", label: "Data", value: doc.issuedAtLabel },
+    {
+      type: "kv",
+      label: "Validade",
+      value: doc.validityDays != null ? `${doc.validityDays} dia(s)` : "—",
+    },
+    { type: "rule" },
+    { type: "subtitle", text: "Resumo gerencial da proposta" },
+    {
+      type: "table",
+      headers: [
+        "Venda",
+        "Custo total",
+        "MP",
+        "Fabricação",
+        "Impostos",
+        "Comissão",
+        "Margem R$",
+        "Margem %",
+        "Markup",
+      ],
+      rows: [
+        [
+          formatPdfMoneyBr(doc.totals.net),
+          formatPdfMoneyBr(doc.totals.cost),
+          formatPdfMoneyBr(doc.totals.materialCost),
+          formatPdfMoneyBr(doc.totals.fabricationCost),
+          formatPdfMoneyBr(doc.totals.taxes),
+          doc.totals.commission > 0
+            ? formatPdfMoneyBr(doc.totals.commission)
+            : "Pendente",
+          formatPdfMoneyBr(doc.totals.marginValue),
+          formatPdfPercentBr(doc.totals.marginPerc),
+          doc.totals.markup != null ? formatPdfNumberBr(doc.totals.markup, 4) : "—",
+        ],
+      ],
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "Itens — visão comercial" },
+    {
+      type: "table",
+      headers: ["Item", "Código", "Produto", "Qtde", "Preço", "Receita"],
+      colWidths: [50, 80, 280, 60, 90, 90],
+      rows: doc.items.map((item) => [
+        item.lineNo,
+        item.code,
+        item.name,
+        formatPdfNumberBr(item.quantity, 0),
+        formatPdfMoneyBr(item.unitPrice),
+        formatPdfMoneyBr(item.totalPrice),
+      ]),
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "Itens — visão gerencial" },
+    {
+      type: "table",
+      headers: ["Item", "MP", "Fabricação", "Impostos", "Comissão", "Custo", "Margem", "%", "Markup"],
+      rows: doc.items.map((item) => [
+        item.lineNo,
+        item.materialTotal != null ? formatPdfMoneyBr(item.materialTotal) : "Pendente",
+        item.fabricationTotal != null ? formatPdfMoneyBr(item.fabricationTotal) : "Pendente",
+        formatPdfMoneyBr(item.taxesValue),
+        item.commissionPending && !(item.commissionValue > 0)
+          ? "Pendente"
+          : formatPdfMoneyBr(item.commissionValue),
+        formatPdfMoneyBr(item.totalCost),
+        formatPdfMoneyBr(item.marginValue),
+        formatPdfPercentBr(item.marginPerc),
+        item.markup != null ? formatPdfNumberBr(item.markup, 2) : "—",
+      ]),
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "Observações gerenciais" },
+  ];
 
-  if (doc.items.length === 0) {
-    lines.push("Nenhum item na proposta.");
-  } else {
-    doc.items.forEach((item, index) => {
-      lines.push(
-        `${index + 1}. ${item.code} — ${item.name} | Qtd ${item.quantity} ${item.unit}`
-      );
-      lines.push(
-        `   Preco unit ${formatMoney(item.unitPrice)} | Preco total ${formatMoney(item.totalPrice)}`
-      );
-      lines.push(
-        `   Custo unit ${formatMoney(item.unitCost)} | Custo total ${formatMoney(item.totalCost)}`
-      );
-      lines.push(
-        `   Margem ${formatMoney(item.marginValue)} (${formatPercent(item.marginPerc)}) | Comissao ${
-          item.commissionPending && !(item.commissionValue > 0)
-            ? "pendente"
-            : `${formatMoney(item.commissionValue)} (${formatPercent(item.commissionPerc)})`
-        }`
-      );
-      if (item.costIncomplete) lines.push("   ALERTA: custo incompleto.");
-      if (item.marginMissing) lines.push("   ALERTA: margem ausente.");
-      if (item.notes) lines.push(`   Obs.: ${item.notes}`);
-    });
-  }
-
-  lines.push("", "=== OBSERVACOES GERENCIAIS ===");
   if (doc.pendencies.length === 0) {
-    lines.push("Nenhuma pendencia critica identificada nos dados da proposta.");
+    lines.push({
+      type: "text",
+      text: "Nenhuma pendência crítica identificada nos dados da proposta.",
+    });
   } else {
-    doc.pendencies.forEach((p) => lines.push(`- ${p}`));
+    for (const p of doc.pendencies) {
+      lines.push({ type: "text", text: `- ${p}` });
+    }
   }
   if (doc.internalNotes) {
-    lines.push(`Notas internas: ${doc.internalNotes}`);
+    lines.push({ type: "text", text: `Notas internas: ${doc.internalNotes}` });
   }
   if (doc.commercialNotes) {
-    lines.push(`Notas comerciais: ${doc.commercialNotes}`);
+    lines.push({ type: "text", text: `Notas comerciais: ${doc.commercialNotes}` });
   }
-  lines.push("", doc.confidentialMark);
-  lines.push(`Gerado em ${formatDateLabel(doc.generatedAt)}`);
+  lines.push({ type: "spacer" });
+  lines.push({ type: "banner", text: doc.confidentialMark });
+  lines.push({
+    type: "text",
+    text: `Gerado em ${formatDateLabel(doc.generatedAt)}`,
+  });
 
-  return buildMinimalPdfDocument({
-    title: pdfSafeText(doc.title),
-    lines: lines.map((line) => pdfSafeText(line)),
+  return buildFormattedLandscapePdf({
+    title: doc.title,
+    lines,
   });
 }
 
@@ -393,6 +475,16 @@ export function proposalInternalManagementPdfContainsClientOnlyGuard(
   return (
     textContent.includes("confidencial") ||
     textContent.includes("documento interno") ||
-    textContent.includes("nao compartilhar")
+    textContent.includes("gerencial interno")
+  );
+}
+
+export function proposalInternalManagementPdfLooksFormatted(buffer: Buffer): boolean {
+  const textContent = buffer.toString("latin1");
+  return (
+    textContent.startsWith("%PDF-") &&
+    textContent.includes("WinAnsiEncoding") &&
+    textContent.includes("MediaBox [0 0 842 595]") &&
+    !textContent.includes("R$?")
   );
 }

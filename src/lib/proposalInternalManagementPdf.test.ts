@@ -7,10 +7,14 @@ import {
   buildProposalInternalManagementPdfBuffer,
   buildProposalInternalManagementPdfDocument,
   buildProposalInternalManagementPdfFilename,
+  buildProposalInternalManagementPrintPath,
   PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL,
   PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK,
   proposalInternalManagementPdfContainsClientOnlyGuard,
+  proposalInternalManagementPdfLooksFormatted,
 } from "./proposalInternalManagementPdf.js";
+import { formatPdfMoneyBr } from "./proposalInternalManagementPdfLayout.js";
+import { extractProposalItemCostBreakdown } from "./proposalItemCostBreakdown.js";
 
 function read(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");
@@ -54,7 +58,15 @@ const SAMPLE_PROPOSAL = {
       marginPerc: 30,
       commissionPerc: 2,
       commissionValue: 20,
+      taxesValue: 50,
       notes: null,
+      pricingSnapshotJson: {
+        item: {
+          frozenMaterialCost: 40,
+          frozenHhCost: 20,
+          frozenHmCost: 10,
+        },
+      },
     },
     {
       sku: "P-02",
@@ -79,10 +91,15 @@ describe("proposalInternalManagementPdf", () => {
     assert.equal(doc.totals.cost, 7000);
     assert.equal(doc.totals.marginValue, 3000);
     assert.equal(doc.totals.commission, 200);
+    assert.equal(doc.totals.materialCost, 400);
+    assert.equal(doc.totals.fabricationCost, 300);
     assert.ok(doc.totals.markup != null);
     assert.match(doc.confidentialMark, /confidencial/i);
     assert.equal(doc.items.length, 2);
+    assert.equal(doc.items[0]?.materialTotal, 400);
+    assert.equal(doc.items[0]?.fabricationTotal, 300);
     assert.equal(doc.items[1]?.costIncomplete, true);
+    assert.equal(doc.items[1]?.breakdownPending, true);
     assert.ok(doc.pendencies.some((p) => /custo incompleto/i.test(p)));
   });
 
@@ -99,23 +116,53 @@ describe("proposalInternalManagementPdf", () => {
     assert.match(doc.commissionSummaryLabel, /Pendente/i);
   });
 
-  it("gera PDF com Content-Type util e marcador interno", () => {
+  it("gera PDF formatado (nao texto puro) com marcador interno e sem R$?", () => {
     const doc = buildProposalInternalManagementPdfDocument(SAMPLE_PROPOSAL);
     const buffer = buildProposalInternalManagementPdfBuffer(doc);
     assert.ok(buffer.length > 100);
     assert.equal(buffer.subarray(0, 5).toString("utf8"), "%PDF-");
     assert.equal(proposalInternalManagementPdfContainsClientOnlyGuard(buffer), true);
+    assert.equal(proposalInternalManagementPdfLooksFormatted(buffer), true);
     const text = buffer.toString("latin1");
     assert.match(text, /Gerencial Interno/i);
     assert.match(text, /confidencial/i);
-    assert.match(text, /Custo total estimado/i);
-    assert.match(text, /Comissao estimada/i);
+    assert.match(text, /Resumo gerencial/i);
+    assert.match(text, /visao gerencial|vis[aã]o gerencial|Itens/i);
+    assert.match(text, /R\$ 10\.000,00/);
+    assert.doesNotMatch(text, /R\$\?/);
+    assert.match(text, /WinAnsiEncoding/);
+    assert.match(text, /MediaBox \[0 0 842 595\]/);
   });
 
-  it("filename e path usam proposalId", () => {
+  it("formata moeda sem NBSP (evita R$?)", () => {
+    assert.equal(formatPdfMoneyBr(31.97), "R$ 31,97");
+    assert.doesNotMatch(formatPdfMoneyBr(31.97), /\u00a0/);
+    assert.doesNotMatch(formatPdfMoneyBr(31.97), /R\$\?/);
+  });
+
+  it("breakdown do snapshot separa MP e fabricacao; sem snapshot fica pendente", () => {
+    const ok = extractProposalItemCostBreakdown(
+      { item: { frozenMaterialCost: 5, frozenHhCost: 2, frozenHmCost: 1 } },
+      3
+    );
+    assert.equal(ok.source, "SNAPSHOT");
+    assert.equal(ok.materialTotal, 15);
+    assert.equal(ok.fabricationTotal, 9);
+
+    const pending = extractProposalItemCostBreakdown(null, 2);
+    assert.equal(pending.source, "UNAVAILABLE");
+    assert.equal(pending.materialTotal, null);
+    assert.match(pending.pendingReason ?? "", /Breakdown/i);
+  });
+
+  it("filename e paths usam proposalId", () => {
     assert.equal(
       buildProposalInternalManagementPdfApiPath("abc-123"),
       "/api/proposals/abc-123/internal-management-pdf"
+    );
+    assert.equal(
+      buildProposalInternalManagementPrintPath("abc-123"),
+      "/proposals/abc-123/internal-management-print"
     );
     assert.match(
       buildProposalInternalManagementPdfFilename({
@@ -126,25 +173,45 @@ describe("proposalInternalManagementPdf", () => {
     );
   });
 
-  it("UI remove PPT executivo e aponta para PDF gerencial", () => {
+  it("UI abre print gerencial formatado e nao altera PDF cliente", () => {
     const mod = read("src/components/ProposalModule.tsx");
     const clientDoc = read("src/components/proposal/ProposalClientDocument.tsx");
     const printView = read("src/components/proposal/ProposalPrintView.tsx");
+    const internalPrint = read(
+      "src/components/proposal/ProposalInternalManagementPrintView.tsx"
+    );
+    const internalDoc = read(
+      "src/components/proposal/ProposalInternalManagementDocument.tsx"
+    );
+    const app = read("src/App.tsx");
     const routes = read("src/lib/proposalInternalManagementPdfRoutes.ts");
     const server = read("server.ts");
+    const pdfLib = read("src/lib/proposalInternalManagementPdf.ts");
 
     assert.doesNotMatch(mod, /Gerar PPT Executivo/);
     assert.doesNotMatch(mod, /\/api\/projects\/\$\{proposalId\}\/client-proposal-pptx/);
     assert.match(mod, new RegExp(PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL));
-    assert.match(mod, /internal-management-pdf/);
-    assert.match(mod, /parseApiErrorMessage/);
+    assert.match(mod, /buildProposalInternalManagementPrintPath|internal-management-print/);
+    assert.match(app, /internal-management-print/);
+    assert.match(internalPrint, /ProposalInternalManagementDocument/);
+    assert.match(internalDoc, /RELATÓRIO GERENCIAL INTERNO|RELAT.RIO GERENCIAL INTERNO/);
+    assert.match(internalDoc, /Resumo gerencial da proposta/);
+    assert.match(internalDoc, /matéria-prima|mat.ria-prima|Matéria-prima|Mat.ria-prima/i);
+    assert.match(internalDoc, /PrintHeader/);
     assert.match(routes, /internal-management-pdf/);
     assert.match(server, /registerProposalInternalManagementPdfRoutes/);
+    assert.match(pdfLib, /buildFormattedLandscapePdf/);
+    assert.doesNotMatch(pdfLib, /buildMinimalPdfDocument/);
     assert.doesNotMatch(clientDoc, /totalCost|commissionValue|margem bruta/i);
-    assert.doesNotMatch(printView, /internal-management-pdf/);
+    assert.doesNotMatch(printView, /internal-management|totalCost|commissionValue/i);
     assert.match(
-      read("src/lib/proposalInternalManagementPdf.ts"),
-      new RegExp(PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      pdfLib,
+      new RegExp(
+        PROPOSAL_INTERNAL_MANAGEMENT_PDF_CONFIDENTIAL_MARK.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        )
+      )
     );
   });
 });

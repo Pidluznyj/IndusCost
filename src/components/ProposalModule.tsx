@@ -33,7 +33,7 @@ import {
   Eye,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { fetchJsonOk, fetchOk, parseApiErrorMessage } from "@/src/lib/http";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
@@ -56,7 +56,7 @@ import {
   canViewProposalIndicators,
 } from "@/src/lib/modulePermissions";
 import {
-  buildProposalInternalManagementPdfApiPath,
+  buildProposalInternalManagementPrintPath,
   PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL,
 } from "@/src/lib/proposalInternalManagementPdf";
 const PAGE_SIZE = 20;
@@ -64,6 +64,15 @@ const PAGE_SIZE = 20;
 /** Mesma aba de impressão para cliente que o ícone de impressora da listagem (`/proposals/:id/print`). */
 function openProposalClientPrintTab(proposalId: string) {
   window.open(`/proposals/${proposalId}/print`, "_blank", "noopener,noreferrer");
+}
+
+/** Relatório gerencial interno — mesma base visual da proposta cliente, com grids de custo/margem. */
+function openProposalInternalManagementPrintTab(proposalId: string) {
+  window.open(
+    buildProposalInternalManagementPrintPath(proposalId),
+    "_blank",
+    "noopener,noreferrer"
+  );
 }
 
 type ProposalListResponse = {
@@ -459,7 +468,6 @@ export const ProposalModule = () => {
   const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [salesOrderActionId, setSalesOrderActionId] = useState<string | null>(null);
-  const [internalPdfActionId, setInternalPdfActionId] = useState<string | null>(null);
   const [priceTables, setPriceTables] = useState<PriceTableListRow[]>([]);
   /** Avisos de preço publicado (piloto etc.) nesta sessão de edição; limpa ao mudar tabela. */
   const [tablePriceSessionAlerts, setTablePriceSessionAlerts] = useState<string[]>([]);
@@ -988,43 +996,8 @@ export const ProposalModule = () => {
     [navigate, loadProposalListPage, currentPage]
   );
 
-  const handleDownloadInternalManagementPdf = useCallback(async (proposalId: string) => {
-    setInternalPdfActionId(proposalId);
-    try {
-      const res = await fetch(buildProposalInternalManagementPdfApiPath(proposalId), {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const message = await parseApiErrorMessage(res);
-        alert(
-          message.startsWith("Não foi possível")
-            ? message
-            : `Não foi possível gerar o PDF gerencial: ${message}`
-        );
-        return;
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match?.[1] ?? `proposta-gerencial-interna-${proposalId}.pdf`;
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(objectUrl);
-    } catch (error) {
-      console.error("Erro ao gerar PDF gerencial interno:", error);
-      alert(
-        error instanceof Error
-          ? `Não foi possível gerar o PDF gerencial: ${error.message}`
-          : "Não foi possível gerar o PDF gerencial interno."
-      );
-    } finally {
-      setInternalPdfActionId(null);
-    }
+  const handleOpenInternalManagementPdf = useCallback((proposalId: string) => {
+    openProposalInternalManagementPrintTab(proposalId);
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -1537,17 +1510,12 @@ export const ProposalModule = () => {
             {editingProposal && (
               <button
                 type="button"
-                onClick={() => void handleDownloadInternalManagementPdf(editingProposal.id)}
-                disabled={internalPdfActionId === editingProposal.id}
-                title="Uso interno — inclui custo, margem e comissão."
-                className="flex items-center gap-2 bg-slate-800 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-700 transition-colors shadow-lg disabled:opacity-60"
+                onClick={() => handleOpenInternalManagementPdf(editingProposal.id)}
+                title="Uso interno — inclui custo, margem e comissão. Abre layout formatado para imprimir/salvar PDF."
+                className="flex items-center gap-2 bg-slate-800 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-700 transition-colors shadow-lg"
                 data-testid="proposal-internal-management-pdf"
               >
-                {internalPdfActionId === editingProposal.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileText className="h-4 w-4" />
-                )}
+                <FileText className="h-4 w-4" />
                 {PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL}
               </button>
             )}
@@ -2579,17 +2547,12 @@ export const ProposalModule = () => {
                         ) : null}
                         <button
                           type="button"
-                          onClick={() => void handleDownloadInternalManagementPdf(p.id)}
-                          disabled={internalPdfActionId === p.id}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-slate-800 transition-all disabled:opacity-60"
+                          onClick={() => handleOpenInternalManagementPdf(p.id)}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-slate-800 transition-all"
                           title="PDF gerencial interno — uso interno; inclui custo, margem e comissão."
                           data-testid={`proposal-internal-management-pdf-${p.id}`}
                         >
-                          {internalPdfActionId === p.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <FileText className="h-4 w-4" />
-                          )}
+                          <FileText className="h-4 w-4" />
                         </button>
                         {allowDelete ? (
                           <button
