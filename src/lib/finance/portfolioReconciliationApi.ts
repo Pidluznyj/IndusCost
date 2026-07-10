@@ -152,16 +152,28 @@ export type PortfolioReconciliationOrderRow = {
 export type PortfolioReconciliationSummaryCards = {
   /** Quantidade de pedidos no filtro (para subtexto). */
   totalPedidos: number;
-  /** Soma monetária de valorPedido no filtro. */
+  /** Soma monetária de valorPedido no filtro (= totalOrderValue oficial). */
   totalValorPedidos: number;
+  /** Alocado ao pedido (preço pedido × qtde) — summaryJson.totalAllocatedValue. */
   totalAlocadoPorPrecoPedido: number;
+  /** Secundário: alocado a preço de documento de estoque. */
   totalAlocadoPorPrecoDocumento: number;
+  /** CR rateado/vinculado ao pedido — summaryJson.totalReceivableValue. */
   totalContasReceber: number;
+  /** Recebido rateado ao pedido (sem duplicar rollup + item). */
   totalRecebido: number;
+  /** Saldo projetado oficial (projectedOpenBalance). */
   saldoCarteira: number;
+  /** Valor de pedidos com divergência (deduplicado por pedido). */
   valorComDivergencia: number;
+  /** Valor de pedidos com confiança LOW/BLOCKED (deduplicado por pedido). */
   valorSemConfianca: number;
+  /** Pedidos com pelo menos um alerta. */
   pedidosComAlerta: number;
+  /** Soma de alertas nas facts do filtro (≠ pedidosComAlerta). */
+  alertasEncontrados: number;
+  /** Quantidade de facts com status divergente no filtro. */
+  divergenciasEncontradas: number;
   nfsHeaderOnly: number;
 };
 
@@ -370,8 +382,146 @@ function pickDominantStatus(current: string | null, next: string | null): string
   return statusPriority(a) <= statusPriority(b) ? a : b;
 }
 
-export function aggregateFactsToOrderRows(
+function readTraceOrderTotal(traceJson: unknown): number | null {
+  if (!traceJson || typeof traceJson !== "object" || Array.isArray(traceJson)) return null;
+  const raw = (traceJson as Record<string, unknown>).orderTotal;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  return null;
+}
+
+/**
+ * CR / recebido rateados ao pedido: só linhas com alocação itemizada (qty > 0).
+ * Não usa CR bruto de NF (HEADER_ONLY / DATA_QUALITY) nem linha sintética FULLY_ALLOCATED.
+ */
+export function computeOrderRateadoReceivableTotals(
   facts: readonly PortfolioReconciliationFactApiRow[]
+): { receivable: number; received: number } {
+  let receivable = 0;
+  let received = 0;
+  for (const fact of facts) {
+    if ((fact.allocatedQuantity ?? 0) <= 0) continue;
+    if (fact.receivableTotalValue == null && fact.receivedValue == null) continue;
+    receivable += toNumber(fact.receivableTotalValue);
+    received += toNumber(fact.receivedValue);
+  }
+  return { receivable: round2(receivable), received: round2(received) };
+}
+
+export function resolveOrderValorPedido(args: {
+  facts: readonly PortfolioReconciliationFactApiRow[];
+  itemValuesSum: number;
+  salesOrderId: string | null;
+  orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
+}): number {
+  if (args.salesOrderId && args.orderTotalBySalesOrderId?.has(args.salesOrderId)) {
+    return round2(args.orderTotalBySalesOrderId.get(args.salesOrderId) ?? 0);
+  }
+
+  let fromTrace = 0;
+  for (const fact of args.facts) {
+    const traced = readTraceOrderTotal(fact.traceJson);
+    if (traced != null) fromTrace = Math.max(fromTrace, traced);
+  }
+
+  const fromItems = args.itemValuesSum;
+  if (fromTrace > 0 && fromItems > 0) return round2(Math.max(fromTrace, fromItems));
+  if (fromTrace > 0) return round2(fromTrace);
+  return round2(fromItems);
+}
+
+/**
+ * Filtros que restringem o universo além da run/cliente — impedem usar summaryJson da run.
+ */
+export function hasRestrictivePortfolioListFilters(
+  filters: PortfolioReconciliationListFilters
+): boolean {
+  return (
+    filters.year != null ||
+    filters.month != null ||
+    filters.orderCode != null ||
+    filters.status != null ||
+    filters.confidenceLevel != null ||
+    filters.forecastSource != null ||
+    filters.onlyIssues
+  );
+}
+
+export type PortfolioRunSummaryJsonLike = {
+  ordersAnalyzed?: number;
+  alertCount?: number;
+  divergenceCount?: number;
+  totalOrderValue?: number;
+  totalAllocatedValue?: number;
+  totalReceivableValue?: number;
+  projectedOpenBalance?: number;
+};
+
+export function parsePortfolioRunSummaryJson(value: unknown): PortfolioRunSummaryJsonLike | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const o = value as Record<string, unknown>;
+  const num = (k: string): number | undefined => {
+    const v = o[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  return {
+    ordersAnalyzed: num("ordersAnalyzed"),
+    alertCount: num("alertCount"),
+    divergenceCount: num("divergenceCount"),
+    totalOrderValue: num("totalOrderValue"),
+    totalAllocatedValue: num("totalAllocatedValue"),
+    totalReceivableValue: num("totalReceivableValue"),
+    projectedOpenBalance: num("projectedOpenBalance"),
+  };
+}
+
+/**
+ * Quando o filtro cobre a run inteira (sem restrições), alinha cards ao summaryJson oficial.
+ */
+export function applyRunSummaryJsonToCards(
+  cards: PortfolioReconciliationSummaryCards,
+  runSummary: PortfolioRunSummaryJsonLike | null,
+  opts: { orderRowCount: number }
+): PortfolioReconciliationSummaryCards {
+  if (!runSummary) return cards;
+  if (
+    runSummary.ordersAnalyzed != null &&
+    runSummary.ordersAnalyzed !== opts.orderRowCount
+  ) {
+    return cards;
+  }
+
+  return {
+    ...cards,
+    totalValorPedidos:
+      runSummary.totalOrderValue != null
+        ? round2(runSummary.totalOrderValue)
+        : cards.totalValorPedidos,
+    totalAlocadoPorPrecoPedido:
+      runSummary.totalAllocatedValue != null
+        ? round2(runSummary.totalAllocatedValue)
+        : cards.totalAlocadoPorPrecoPedido,
+    totalContasReceber:
+      runSummary.totalReceivableValue != null
+        ? round2(runSummary.totalReceivableValue)
+        : cards.totalContasReceber,
+    saldoCarteira:
+      runSummary.projectedOpenBalance != null
+        ? round2(runSummary.projectedOpenBalance)
+        : cards.saldoCarteira,
+    alertasEncontrados:
+      runSummary.alertCount != null ? runSummary.alertCount : cards.alertasEncontrados,
+    divergenciasEncontradas:
+      runSummary.divergenceCount != null
+        ? runSummary.divergenceCount
+        : cards.divergenciasEncontradas,
+  };
+}
+
+export function aggregateFactsToOrderRows(
+  facts: readonly PortfolioReconciliationFactApiRow[],
+  options?: {
+    orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
+  }
 ): PortfolioReconciliationOrderRow[] {
   type Acc = {
     salesOrderId: string | null;
@@ -381,8 +531,6 @@ export function aggregateFactsToOrderRows(
     itemValues: Map<string, number>;
     valorAlocado: number;
     valorAlocadoPorDocumento: number;
-    valorCR: number;
-    recebido: number;
     confidenceLevel: string;
     status: string;
     alertas: Set<string>;
@@ -391,6 +539,7 @@ export function aggregateFactsToOrderRows(
   };
 
   const byOrder = new Map<string, Acc>();
+  const orderTotals = options?.orderTotalBySalesOrderId ?? null;
 
   for (const fact of facts) {
     const key =
@@ -411,8 +560,6 @@ export function aggregateFactsToOrderRows(
         itemValues: new Map(),
         valorAlocado: 0,
         valorAlocadoPorDocumento: 0,
-        valorCR: 0,
-        recebido: 0,
         confidenceLevel: fact.confidenceLevel,
         status: fact.status ?? "ORDER_ONLY",
         alertas: new Set(),
@@ -444,8 +591,11 @@ export function aggregateFactsToOrderRows(
       }
     }
 
-    acc.valorAlocado += toNumber(fact.allocatedValueByOrderPrice);
-    acc.valorAlocadoPorDocumento += toNumber(fact.allocatedValueByStockPrice);
+    // Só linhas itemizadas com quantidade alocada — evita rollup FULLY_ALLOCATED.
+    if ((fact.allocatedQuantity ?? 0) > 0) {
+      acc.valorAlocado += toNumber(fact.allocatedValueByOrderPrice);
+      acc.valorAlocadoPorDocumento += toNumber(fact.allocatedValueByStockPrice);
+    }
 
     acc.confidenceLevel = pickWorseConfidence(acc.confidenceLevel, fact.confidenceLevel);
     acc.status = pickDominantStatus(acc.status, fact.status);
@@ -455,36 +605,19 @@ export function aggregateFactsToOrderRows(
 
   const rows: PortfolioReconciliationOrderRow[] = [];
   for (const acc of byOrder.values()) {
-    let valorPedido = 0;
-    for (const v of acc.itemValues.values()) valorPedido += v;
-    if (valorPedido === 0 && acc.valorAlocado > 0) {
-      valorPedido = acc.valorAlocado;
-    }
+    let itemValuesSum = 0;
+    for (const v of acc.itemValues.values()) itemValuesSum += v;
 
-    // CR / recebido: soma linhas itemizadas rateadas; senão um valor por NF.
-    const crLines = acc.facts.filter(
-      (f) =>
-        f.receivableTotalValue != null &&
-        (f.allocatedQuantity ?? 0) > 0 &&
-        (f.status === "ITEM_ALLOCATED" ||
-          f.status === "PRICE_MISMATCH" ||
-          f.status === "RECEIVABLE_CONFIRMED" ||
-          f.status === "RECEIVED")
+    const valorPedido = resolveOrderValorPedido({
+      facts: acc.facts,
+      itemValuesSum,
+      salesOrderId: acc.salesOrderId,
+      orderTotalBySalesOrderId: orderTotals,
+    });
+
+    const { receivable: valorCR, received: recebido } = computeOrderRateadoReceivableTotals(
+      acc.facts
     );
-    if (crLines.length > 0) {
-      acc.valorCR = crLines.reduce((s, f) => s + toNumber(f.receivableTotalValue), 0);
-      acc.recebido = crLines.reduce((s, f) => s + toNumber(f.receivedValue), 0);
-    } else {
-      const seenNfe = new Set<string>();
-      for (const f of acc.facts) {
-        if (f.receivableTotalValue == null) continue;
-        const nfeKey = f.nfeExternalId != null ? String(f.nfeExternalId) : f.id;
-        if (seenNfe.has(nfeKey)) continue;
-        seenNfe.add(nfeKey);
-        acc.valorCR += toNumber(f.receivableTotalValue);
-        acc.recebido += toNumber(f.receivedValue);
-      }
-    }
 
     const saldo = computeOrderProjectedOpenBalance(acc.facts);
     const forecast = resolveOrderAggregatedForecast(acc.facts);
@@ -503,8 +636,8 @@ export function aggregateFactsToOrderRows(
       valorPedido: round2(valorPedido),
       valorAlocado: round2(acc.valorAlocado),
       valorAlocadoPorDocumento: round2(acc.valorAlocadoPorDocumento),
-      valorCR: round2(acc.valorCR),
-      recebido: round2(acc.recebido),
+      valorCR: round2(valorCR),
+      recebido: round2(recebido),
       saldo: round2(saldo),
       forecastDate: forecast.primaryDate,
       forecastSource: forecast.source,
@@ -562,7 +695,10 @@ export function filterOrderRows(
 }
 
 export function buildPortfolioReconciliationSummaryCards(
-  rows: readonly PortfolioReconciliationOrderRow[]
+  rows: readonly PortfolioReconciliationOrderRow[],
+  options?: {
+    facts?: readonly PortfolioReconciliationFactApiRow[];
+  }
 ): PortfolioReconciliationSummaryCards {
   let totalValorPedidos = 0;
   let totalAlocadoPorPrecoPedido = 0;
@@ -592,6 +728,17 @@ export function buildPortfolioReconciliationSummaryCards(
     if (row.nfsHeaderOnly) nfsHeaderOnly += 1;
   }
 
+  let alertasEncontrados = 0;
+  let divergenciasEncontradas = 0;
+  if (options?.facts) {
+    for (const fact of options.facts) {
+      alertasEncontrados += parseAlertsJson(fact.alertsJson).length;
+      if (fact.status && DIVERGENCE_STATUSES.has(fact.status)) {
+        divergenciasEncontradas += 1;
+      }
+    }
+  }
+
   return {
     totalPedidos: rows.length,
     totalValorPedidos: round2(totalValorPedidos),
@@ -603,6 +750,8 @@ export function buildPortfolioReconciliationSummaryCards(
     valorComDivergencia: round2(valorComDivergencia),
     valorSemConfianca: round2(valorSemConfianca),
     pedidosComAlerta,
+    alertasEncontrados,
+    divergenciasEncontradas,
     nfsHeaderOnly,
   };
 }
@@ -845,11 +994,40 @@ export function buildListPayload(args: {
   run: PortfolioReconciliationRunMeta;
   facts: readonly PortfolioReconciliationFactApiRow[];
   filters: PortfolioReconciliationListFilters;
+  orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
 }) {
   const filteredFacts = args.facts.filter((f) => factMatchesListFilters(f, args.filters));
-  const allOrderRows = aggregateFactsToOrderRows(filteredFacts);
+  const allOrderRows = aggregateFactsToOrderRows(filteredFacts, {
+    orderTotalBySalesOrderId: args.orderTotalBySalesOrderId,
+  });
   const orderRows = filterOrderRows(allOrderRows, args.filters);
-  const summary = buildPortfolioReconciliationSummaryCards(orderRows);
+
+  // Facts que entram nos cards: mesmo universo dos pedidos filtrados (por salesOrderId).
+  const orderIds = new Set(
+    orderRows.map((r) => r.salesOrderId).filter((id): id is string => id != null)
+  );
+  const orderCodes = new Set(
+    orderRows.filter((r) => r.salesOrderId == null && r.pedido).map((r) => r.pedido as string)
+  );
+  const summaryFacts = filteredFacts.filter((f) => {
+    if (f.salesOrderId && orderIds.has(f.salesOrderId)) return true;
+    if (!f.salesOrderId && f.orderCode && orderCodes.has(f.orderCode)) return true;
+    if (orderIds.size === 0 && orderCodes.size === 0) return true;
+    return f.salesOrderId != null && orderIds.has(f.salesOrderId);
+  });
+
+  let summary = buildPortfolioReconciliationSummaryCards(orderRows, {
+    facts: summaryFacts,
+  });
+
+  if (!hasRestrictivePortfolioListFilters(args.filters)) {
+    summary = applyRunSummaryJsonToCards(
+      summary,
+      parsePortfolioRunSummaryJson(args.run.summaryJson),
+      { orderRowCount: orderRows.length }
+    );
+  }
+
   const page = paginateRows(orderRows, args.filters.page, args.filters.pageSize);
   const availableFilters = buildAvailableFilters(args.facts, allOrderRows);
 

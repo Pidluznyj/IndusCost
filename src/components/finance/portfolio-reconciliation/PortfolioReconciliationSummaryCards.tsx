@@ -20,6 +20,10 @@ export function PortfolioReconciliationSummaryCardsView({
 }: {
   summary: PortfolioReconciliationSummaryCards;
 }) {
+  const pedidosLabel = `${formatFinanceInteger(summary.totalPedidos)} pedido${
+    summary.totalPedidos === 1 ? "" : "s"
+  } no filtro atual`;
+
   return (
     <div
       className={SYSTEM_TOTALIZER_GRID_CLASS}
@@ -31,15 +35,15 @@ export function PortfolioReconciliationSummaryCardsView({
         value={formatFinanceCurrencyCompact(summary.totalValorPedidos)}
         icon={Package}
         tone="neutral"
-        subtitle={`${formatFinanceInteger(summary.totalPedidos)} pedido${summary.totalPedidos === 1 ? "" : "s"} no filtro atual`}
+        subtitle={pedidosLabel}
       />
       <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-        label="Total alocado por documento"
-        value={formatFinanceCurrencyCompact(summary.totalAlocadoPorPrecoDocumento)}
+        label="Total alocado ao pedido"
+        value={formatFinanceCurrencyCompact(summary.totalAlocadoPorPrecoPedido)}
         icon={Scale}
         tone="info"
-        subtitle="Preço do documento de estoque"
+        subtitle="Preço do pedido × quantidade alocada"
       />
       <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -47,7 +51,7 @@ export function PortfolioReconciliationSummaryCardsView({
         value={formatFinanceCurrencyCompact(summary.totalContasReceber)}
         icon={Receipt}
         tone="money"
-        subtitle="CR vinculado na conciliação"
+        subtitle="CR rateado / vinculado à conciliação do pedido"
       />
       <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -55,7 +59,7 @@ export function PortfolioReconciliationSummaryCardsView({
         value={formatFinanceCurrencyCompact(summary.totalRecebido)}
         icon={Wallet}
         tone="success"
-        subtitle="Baixas / recebimentos"
+        subtitle="Recebido rateado ao pedido"
       />
       <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -71,7 +75,7 @@ export function PortfolioReconciliationSummaryCardsView({
         value={formatFinanceCurrencyCompact(summary.valorComDivergencia)}
         icon={AlertTriangle}
         tone="danger"
-        subtitle="Valor de pedidos com divergência"
+        subtitle={`Valor de pedidos com divergência · ${formatFinanceInteger(summary.divergenciasEncontradas)} facts divergentes`}
       />
       <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -80,13 +84,14 @@ export function PortfolioReconciliationSummaryCardsView({
         icon={ShieldAlert}
         tone="warning"
         subtitle="Valor de pedidos com itens LOW/BLOCKED ou alertas bloqueantes"
-      />      <SystemTotalizerCard
+      />
+      <SystemTotalizerCard
         className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
         label="Pedidos com alerta"
         value={formatFinanceInteger(summary.pedidosComAlerta)}
         icon={AlertTriangle}
         tone="danger"
-        subtitle={`NF só cabeçalho: ${formatFinanceInteger(summary.nfsHeaderOnly)}`}
+        subtitle={`${formatFinanceInteger(summary.alertasEncontrados)} alertas encontrados`}
       />
     </div>
   );

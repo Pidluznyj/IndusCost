@@ -211,7 +211,27 @@ export async function loadPortfolioReconciliationList(query: Record<string, unkn
   if (!run) return buildNoRunPayload();
 
   const facts = await loadPortfolioReconciliationFactsForRun(run.id);
-  return buildListPayload({ run, facts, filters });
+  const orderIds = [
+    ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),
+  ];
+  const orderTotalBySalesOrderId = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const orders = await prisma.salesOrder.findMany({
+      where: { id: { in: orderIds } },
+      select: { id: true, totalNetValue: true },
+    });
+    for (const order of orders) {
+      const n = decimalToNumber(order.totalNetValue);
+      if (n != null) orderTotalBySalesOrderId.set(order.id, n);
+    }
+  }
+
+  return buildListPayload({
+    run,
+    facts,
+    filters,
+    orderTotalBySalesOrderId,
+  });
 }
 
 export async function loadPortfolioReconciliationOrderDetail(
@@ -290,6 +310,21 @@ export async function loadPortfolioReconciliationRunSummary(runId: string) {
   }
 
   const facts = await loadPortfolioReconciliationFactsForRun(runId);
+  const orderIds = [
+    ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),
+  ];
+  const orderTotalBySalesOrderId = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const orders = await prisma.salesOrder.findMany({
+      where: { id: { in: orderIds } },
+      select: { id: true, totalNetValue: true },
+    });
+    for (const order of orders) {
+      const n = decimalToNumber(order.totalNetValue);
+      if (n != null) orderTotalBySalesOrderId.set(order.id, n);
+    }
+  }
+
   const list = buildListPayload({
     run: mapped,
     facts,
@@ -306,6 +341,7 @@ export async function loadPortfolioReconciliationRunSummary(runId: string) {
       page: 1,
       pageSize: 1,
     },
+    orderTotalBySalesOrderId,
   });
 
   return {

@@ -28,6 +28,8 @@ export type PortfolioReconciliationSummaryCards = {
   valorComDivergencia: number;
   valorSemConfianca: number;
   pedidosComAlerta: number;
+  alertasEncontrados: number;
+  divergenciasEncontradas: number;
   nfsHeaderOnly: number;
 };
 
