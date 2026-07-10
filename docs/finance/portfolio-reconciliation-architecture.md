@@ -1,7 +1,7 @@
 # Arquitetura — Conciliação de Carteira (Pedido × Saída × NF × CR × Caixa)
 
-Documento de **arquitetura técnica** (pré-implementação da tabela fato).  
-**Não implementa** UI, migration da fato, motor de alocação, cron nem alteração em módulos oficiais.
+Documento de **arquitetura técnica** da Conciliação de Carteira.  
+Models/migration da fato e do run: **implementados**. Motor de alocação, UI e cron: **ainda não**.
 
 Relacionado: [Inventário Nomus documentosEstoque](./nomus-portfolio-reconciliation-inventory.md).
 
@@ -12,12 +12,10 @@ Relacionado: [Inventário Nomus documentosEstoque](./nomus-portfolio-reconciliat
 | Pergunta | Resposta |
 |----------|----------|
 | Isso realmente precisa existir? | **Sim.** Hoje o vínculo Pedido→NF é só por cabeçalho (`SalesOrderNfeLink`). Sem itemização + alocação, a carteira e a previsão de caixa misturam NFs compartilhadas (ex. PD 02339). |
-| Já existe algo semelhante? | **Parcial.** Comissões resolvem pedido a partir de NF (`commissionSalesOrderNfeLinkResolution`) no nível de título/cabeçalho. Fluxo de Caixa e Faturamento usam AR/NF oficiais sem grão item×pedido. **Não** existe fato de conciliação de carteira. |
-| Nomus já fornece o dado? | Pedido, NF, CR e agora **documento de estoque itemizado** (`documentosEstoque`). A alocação Pedido↔item de saída é regra IndusCost. |
-| Banco já possui a informação? | Fontes sim (ver §1–2). Fato de conciliação **ainda não**. |
-| Camada paralela / read-only? | **Sim.** Lê stages e pedidos; grava só em tabelas novas propostas. Não escreve em AR/Faturamento/Fluxo/Comissões. |
-| Preserva rastreabilidade? | Cada linha da fato deve carregar IDs de origem + método de alocação + status/alerta. |
-| Evita mexer no financeiro oficial? | **Decisão explícita:** não alterar Fluxo de Caixa, Contas a Receber, Faturamento nem Comissões nesta linha. |
+| Já existe algo semelhante? | **Parcial.** Comissões resolvem pedido a partir de NF no nível de título/cabeçalho. Fluxo/Faturamento não têm grão item×pedido. |
+| Precisa ser tabela física? | **Sim** — ver §4.0 (view não basta). |
+| Camada paralela / read-only nas fontes? | **Sim.** Lê stages e pedidos; grava só em `PortfolioReconciliationRun` / `Fact`. |
+| Evita mexer no financeiro oficial? | **Sim.** Não altera Fluxo, AR, Faturamento, Comissões nem `CommissionRecord`. |
 
 ---
 
@@ -33,7 +31,7 @@ Pedido de Venda
   → Previsão de Caixa (derivada, não oficial)
 ```
 
-A **tabela fato** (proposta, ainda não criada) materializa evidências rastreáveis de atendimento / faturamento / recebimento.
+A **tabela fato** materializa evidências rastreáveis de atendimento / faturamento / recebimento.
 
 ### Perguntas que a fato deve responder
 
@@ -76,44 +74,57 @@ A **tabela fato** (proposta, ainda não criada) materializa evidências rastreá
 
 ---
 
-## 4. Tabelas novas propostas (ainda não implementar)
+## 4. Tabelas novas (implementadas)
 
-### 4.1 `PortfolioReconciliationFact` (nome sugerido)
+Migration: `prisma/migrations/20260710190000_portfolio_reconciliation_fact`
 
-Grão: **uma linha por combinação rastreável** de:
+### 4.0 Por que tabela fato materializada (e não só view)?
 
-- pedido;
-- item do pedido (quando resolvido);
-- NF / documento de saída;
-- item do documento de estoque (quando houver);
-- conta a receber (quando houver);
-- parcela / projeção (quando aplicável).
+| Opção | Avaliação |
+|-------|-----------|
+| **View SQL** | Recalcularia joins + regras de alocação a cada consulta; difícil versionar regra; sem snapshot histórico; ruim para comparar “antes/depois” de mudança de motor. |
+| **Tabela fato + run** | Materializa resultado por execução; performance de leitura; auditoria (`traceJson` / `alertsJson`); comparação entre runs; reconstrução idempotente (`delete` facts do run + `insert`). |
 
-Campos conceituais (esboço — sem migration nesta etapa):
+Esta tabela **não** é fonte oficial do financeiro — é camada paralela para auditoria/comparação.
 
-| Grupo | Campos |
-|-------|--------|
-| Identidade | `id`, `factKey` (hash estável da combinação), `asOf` / `computedAt` |
-| Pedido | `salesOrderId`, `orderCode`, `salesOrderItemId?`, `externalProductId?` |
-| NF / saída | `nfeExternalId?`, `nfeNumber?`, `stockDocumentId?`, `stockDocumentExternalId?`, `stockDocumentItemId?` |
-| CR / parcela | `receivableExternalId?`, `receivableId?`, `installmentKey?` |
-| Quantidades / valores | `orderQty`, `allocatedQty`, `orderUnitPrice`, `documentUnitPrice`, `allocatedOrderValue`, `allocatedDocumentValue`, `receivableAmount?`, `receivedAmount?`, `openAmount?` |
-| Caixa | `cashSource` (`RECEIVABLE` \| `ALLOCATED_DOCUMENT` \| `ORDER_BACKLOG`), `cashDate?`, `cashAmount?` |
-| Qualidade | `confidenceStatus`, `alerts[]` / `alertCodes`, `allocationMethod` (`ITEM_MATCH` \| `PARTIAL` \| `HEADER_ONLY` \| `MANUAL` \| `NONE`) |
-| Auditoria | `traceJson` (IDs + regras aplicadas), `createdAt`, `updatedAt` |
+### 4.1 `PortfolioReconciliationRun`
 
-Índices sugeridos: `salesOrderId`, `nfeExternalId`, `externalProductId`, `receivableExternalId`, `confidenceStatus`, `cashSource`, `cashDate`.
+Metadados de uma materialização manual (`preview` / `apply` / `manual`). Sem cron nesta etapa.
 
-### 4.2 (Opcional, fase posterior) `PortfolioReconciliationRun`
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| `id` | uuid | PK |
+| `startedAt` / `finishedAt` | DateTime? | |
+| `status` | enum `PENDING` \| `RUNNING` \| `SUCCESS` \| `FAILED` | |
+| `mode` | enum `preview` \| `apply` \| `manual` | |
+| `fromDate` / `toDate` | DateTime? | Janela |
+| `customerExternalId` | Int? | Filtro opcional |
+| `filtersJson` / `summaryJson` | Json? | |
+| `errorMessage` | String? | |
+| `createdAt` / `updatedAt` | DateTime | |
 
-Metadados de materialização (janela, versão de regra, contadores). **Fora do escopo imediato.**
+FK: `facts` → cascade delete ao apagar o run (reconstrução idempotente por run).
 
-### 4.3 O que **não** criar agora
+### 4.2 `PortfolioReconciliationFact`
+
+Grão: combinação rastreável pedido × item × NF/saída × item estoque × CR/previsão (campos nullable para dados parciais).
+
+**Sem FK obrigatória** para `SalesOrder`, `NomusNfe`, stock ou AR — apenas IDs/snapshots nullable, para não bloquear linhas incompletas. Única FK rígida: `runId`.
+
+Grupos de campos: identificação cliente; pedido/item; valores pedido; NF; documento de estoque; alocação (qtde/valores pedido vs estoque + diferença de preço); CR (`receivableIdsJson`, totais, datas); previsão (`forecastSource`, `forecastDate`, `forecastValue`, `confidenceLevel`, `status`, `alertsJson`, `traceJson`).
+
+Índices: `runId`, `salesOrderId`, `salesOrderItemId`, `customerExternalId`, `externalSalesOrderId`, `orderCode`, `nfeExternalId`, `stockDocumentExternalId`, `externalProductId`, `forecastDate`, `status`, `confidenceLevel`, `forecastSource`.
+
+`forecastSource`: `RECEIVABLE` \| `NFE` \| `ORDER` \| `UNRESOLVED` (alinhado à prioridade CR > NF/doc > pedido).  
+`confidenceLevel`: `HIGH` \| `MEDIUM` \| `LOW` \| `BLOCKED`.  
+`status` (String): status dominante da arquitetura (`ORDER_ONLY`, `ITEM_ALLOCATED`, `PRICE_MISMATCH`, …).
+
+### 4.3 O que ainda **não** criar
 
 - UI / rotas / dashboard.
-- Cron / sync automático da fato.
-- FK destrutiva ou escrita em tabelas oficiais.
-- Substituição do Fluxo de Caixa oficial.
+- Motor de alocação / script de materialização.
+- Cron.
+- Escrita em módulos oficiais.
 
 ---
 
@@ -165,7 +176,7 @@ Para **previsão / visão de carteira** (não altera o Fluxo oficial):
 CR confirmado  >  NF/documento alocado  >  pedido em carteira
 ```
 
-Cada linha da fato deve registrar `cashSource` correspondente para auditoria da pergunta 7.
+Cada linha da fato deve registrar `forecastSource` correspondente para auditoria da pergunta 7.
 
 ---
 
@@ -275,18 +286,17 @@ Este caso é o **acceptance test** da primeira materialização da fato.
 
 ## 12. Próximos passos (ordem sugerida)
 
-1. **Carga** `NomusStockDocument` 12 meses no servidor (preview → apply) — já documentada no inventário.
-2. **Spec fechada** do enum `confidenceStatus` + códigos de alerta (este doc).
-3. **Migration** `PortfolioReconciliationFact` (+ índices) — sem UI.
-4. **Motor read-only** de alocação (pure functions + testes com PD 02339).
-5. **Script manual** `preview` / `apply` da fato (sem cron).
-6. Só então: API/UI de conciliação e, se aprovado, *feed* opcional para visão de caixa paralela.
+1. **Carga** `NomusStockDocument` 12 meses no servidor (preview → apply).
+2. **`prisma migrate deploy`** da migration `20260710190000_portfolio_reconciliation_fact` no servidor.
+3. **Motor** de alocação (pure functions + testes PD 02339).
+4. **Script manual** materializa `Run` + `Fact` (`preview` / `apply`, sem cron).
+5. Só então: API/UI de conciliação e visão de caixa paralela (opcional).
 
 ---
 
-## 13. Fora de escopo deste documento
+## 13. Fora de escopo desta etapa de schema
 
-- Implementação de models/migration da fato.
+- Motor / script de materialização.
 - UI.
 - Acesso a servidor / carga real.
 - Alteração de Fluxo, AR, Faturamento ou Comissões.

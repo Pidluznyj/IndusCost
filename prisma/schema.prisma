@@ -2142,6 +2142,152 @@ model NomusStockDocumentItem {
   @@index([externalItemId])
 }
 
+/// Modo de materialização da conciliação de carteira (script manual; sem cron nesta etapa).
+enum PortfolioReconciliationRunMode {
+  preview
+  apply
+  manual
+}
+
+enum PortfolioReconciliationRunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+/// Fonte da previsão de caixa na camada paralela (não oficial).
+enum PortfolioReconciliationForecastSource {
+  RECEIVABLE
+  NFE
+  ORDER
+  UNRESOLVED
+}
+
+enum PortfolioReconciliationConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+  BLOCKED
+}
+
+/// Metadados de uma materialização da Conciliação de Carteira (camada paralela / auditoria).
+/// Não altera Fluxo de Caixa, Contas a Receber, Faturamento nem Comissões.
+model PortfolioReconciliationRun {
+  id String @id @default(uuid())
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  status     PortfolioReconciliationRunStatus @default(PENDING)
+  mode       PortfolioReconciliationRunMode
+
+  fromDate DateTime?
+  toDate   DateTime?
+
+  customerExternalId Int?
+  filtersJson        Json?
+  summaryJson        Json?
+  errorMessage       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  facts PortfolioReconciliationFact[]
+
+  @@index([status])
+  @@index([mode])
+  @@index([startedAt])
+  @@index([fromDate, toDate])
+  @@index([customerExternalId])
+  @@index([createdAt])
+}
+
+/// Fato materializado de conciliação Pedido × NF × Documento de Estoque × CR × previsão.
+/// Camada paralela para auditoria/comparação por run — não é fonte oficial do financeiro.
+model PortfolioReconciliationFact {
+  id String @id @default(uuid())
+
+  runId String
+  run   PortfolioReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  customerId           String?
+  customerExternalId   Int?
+  customerNameSnapshot String?
+
+  salesOrderId             String?
+  externalSalesOrderId     Int?
+  orderCode                String?
+  orderIssueDate           DateTime?
+  expectedDeliveryDate     DateTime?
+  salesOrderItemId         String?
+  externalSalesOrderItemId Int?
+  externalProductId        Int?
+  productSkuSnapshot       String?
+  productNameSnapshot      String?
+
+  orderQuantity  Decimal? @db.Decimal(20, 6)
+  orderUnitPrice Decimal? @db.Decimal(20, 6)
+  orderItemValue Decimal? @db.Decimal(20, 6)
+
+  nomusNfeId      String?
+  nfeExternalId   Int?
+  nfeNumber       String?
+  nfeSerie        String?
+  nfeKey          String?
+  nfeProcessedAt  DateTime?
+  nfeHeaderValue  Decimal? @db.Decimal(20, 6)
+
+  stockDocumentId             String?
+  stockDocumentExternalId     Int?
+  stockDocumentItemId         String?
+  stockDocumentItemExternalId Int?
+  stockDocumentDate           DateTime?
+  stockQuantity               Decimal? @db.Decimal(20, 6)
+  stockUnitValue              Decimal? @db.Decimal(20, 6)
+  stockItemValue              Decimal? @db.Decimal(20, 6)
+
+  allocatedQuantity                   Decimal? @db.Decimal(20, 6)
+  allocatedValueByOrderPrice          Decimal? @db.Decimal(20, 6)
+  allocatedValueByStockPrice          Decimal? @db.Decimal(20, 6)
+  remainingOrderQuantityAfterAllocation Decimal? @db.Decimal(20, 6)
+  remainingOrderValueAfterAllocation  Decimal? @db.Decimal(20, 6)
+  priceDifferenceUnit                 Decimal? @db.Decimal(20, 6)
+  priceDifferenceTotal                Decimal? @db.Decimal(20, 6)
+
+  receivableIdsJson    Json?
+  receivableTotalValue Decimal? @db.Decimal(20, 6)
+  receivedValue        Decimal? @db.Decimal(20, 6)
+  openReceivableValue  Decimal? @db.Decimal(20, 6)
+  dueDatesJson         Json?
+  settlementDatesJson  Json?
+
+  forecastSource   PortfolioReconciliationForecastSource @default(UNRESOLVED)
+  forecastDate     DateTime?
+  forecastValue    Decimal? @db.Decimal(20, 6)
+  confidenceLevel  PortfolioReconciliationConfidenceLevel @default(LOW)
+  /// Status dominante da linha (ex.: ORDER_ONLY, ITEM_ALLOCATED, PRICE_MISMATCH).
+  status           String?
+  alertsJson       Json?
+  traceJson        Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([runId])
+  @@index([salesOrderId])
+  @@index([salesOrderItemId])
+  @@index([customerExternalId])
+  @@index([externalSalesOrderId])
+  @@index([orderCode])
+  @@index([nfeExternalId])
+  @@index([stockDocumentExternalId])
+  @@index([externalProductId])
+  @@index([forecastDate])
+  @@index([status])
+  @@index([confidenceLevel])
+  @@index([forecastSource])
+}
+
 /// NF-e Nomus sincronizada via `/rest/nfes` — fonte oficial futura do Financeiro > Faturamento.
 model NomusNfe {
   id String @id @default(uuid())
