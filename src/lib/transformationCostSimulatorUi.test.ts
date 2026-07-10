@@ -49,6 +49,9 @@ describe("transformationCostSimulator UI isolation", () => {
     assert.match(panel, /Pessoas produtivas/i);
     assert.match(panel, /Máquinas produtivas/i);
     assert.match(panel, /Configuração avançada/i);
+    assert.match(panel, /Salvar simulação/);
+    assert.match(panel, /save-cc-hh-hm-simulation/);
+    assert.match(mod, /TransformationHhHmSavedSimulationsSection/);
     assert.match(panel, /não altera custos oficiais/i);
     assert.match(panel, /Taxa final HH \+ HM/i);
     assert.match(panel, /computeCostCenterHhHmDualRateSimulation/);

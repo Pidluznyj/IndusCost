@@ -1555,6 +1555,27 @@ model ProductionHourCostSimulation {
   @@index([createdAt])
 }
 
+/// Histórico de simulações HH/HM do Simulador de Custo de Injeção (não altera custo oficial).
+model TransformationHhHmCostSimulation {
+  id              String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type            TransformationHhHmCostSimulationType
+  observation     String?
+  periodLabel     String?
+  dateAxis        String?
+  hhEffectiveRate Decimal?                              @db.Decimal(20, 6)
+  hmEffectiveRate Decimal?                              @db.Decimal(20, 6)
+  finalHhHmRate   Decimal?                              @db.Decimal(20, 6)
+  inputSnapshot   Json
+  resultSnapshot  Json
+  createdByUserId String?                               @db.Uuid
+  createdByName   String?
+  createdAt       DateTime                              @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+}
+
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model ProductBOM_backup_420_01A_20260413 {
   id             String?  @db.Uuid
@@ -1725,6 +1746,11 @@ enum ProposalStatus {
 enum NewProductSimulationStatus {
   DRAFT
   SAVED
+}
+
+enum TransformationHhHmCostSimulationType {
+  CUSTO_MANUAL
+  CUSTO_CC
 }
 
 enum PurchaseRequestStatus {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, Calculator, ChevronDown, Loader2 } from "lucide-react";
+import { AlertTriangle, Building2, Calculator, ChevronDown, Loader2, Save } from "lucide-react";
 import { CostCenterHhHmSimulationMultiselect } from "@/src/components/CostCenterHhHmSimulationMultiselect";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -21,6 +21,10 @@ import {
   type CostCenterHhHmSideSimulationResult,
   type CostCenterMonthlyExpenseBucket,
 } from "@/src/lib/financeCostCenterHhHmSimulation";
+import {
+  buildCostCenterHhHmSimulationPayload,
+  TRANSFORMATION_HH_HM_SIMULATION_HISTORY_API,
+} from "@/src/lib/transformationHhHmSimulationHistory";
 import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
 
 const INPUT_CLASS =
@@ -469,12 +473,19 @@ function SideCalculationBlock({
   );
 }
 
-export function CostCenterHhHmSimulationPanel() {
+export function CostCenterHhHmSimulationPanel({
+  onSaved,
+}: {
+  onSaved?: () => void;
+} = {}) {
   const [form, setForm] = useState<CostCenterHhHmSimulationFormValues>(loadStoredForm);
   const [costCenters, setCostCenters] = useState<CostCenterHhHmSimulationCostCenterRow[]>([]);
   const [costCentersLoading, setCostCentersLoading] = useState(true);
   const [costCentersError, setCostCentersError] = useState<string | null>(null);
   const [costCentersReloadKey, setCostCentersReloadKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadCostCenters = useCallback(async (cancelled: () => boolean) => {
     setCostCentersLoading(true);
@@ -565,6 +576,72 @@ export function CostCenterHhHmSimulationPanel() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const saveCcSimulation = async () => {
+    const payload = buildCostCenterHhHmSimulationPayload({
+      observation: form.note,
+      periodLabelHh: hhMonthly.monthlyData?.periodLabel ?? null,
+      periodLabelHm: hmMonthly.monthlyData?.periodLabel ?? null,
+      hh: {
+        averagePeriod: form.hh.averagePeriod,
+        selectedCostCenterIds: form.hh.selectedCostCenterIds,
+        selectedCostCenterLabels: formatCostCenterHhHmSimulationSelectedLabels(
+          form.hh.selectedCostCenterIds,
+          costCenters
+        ),
+        productiveCount: form.hh.productiveCount,
+        hoursPerUnit: form.hh.hoursPerUnit,
+        efficiencyPercent: form.hh.efficiencyPercent,
+        useManualRate: form.hh.useManualRate || form.hh.averagePeriod === "MANUAL_VALUE",
+        manualRatePerHour: form.hh.manualRatePerHour,
+        monthlyAverageAmount: simulation.hh.composition.monthlyAverageAmount,
+        theoreticalHours: simulation.hh.composition.theoreticalHours,
+        adjustedHours: simulation.hh.composition.adjustedHours,
+        calculatedRatePerHour: simulation.hh.composition.calculatedRatePerHour,
+        effectiveRatePerHour: simulation.hh.composition.effectiveRatePerHour,
+      },
+      hm: {
+        averagePeriod: form.hm.averagePeriod,
+        selectedCostCenterIds: form.hm.selectedCostCenterIds,
+        selectedCostCenterLabels: formatCostCenterHhHmSimulationSelectedLabels(
+          form.hm.selectedCostCenterIds,
+          costCenters
+        ),
+        productiveCount: form.hm.productiveCount,
+        hoursPerUnit: form.hm.hoursPerUnit,
+        efficiencyPercent: form.hm.efficiencyPercent,
+        useManualRate: form.hm.useManualRate || form.hm.averagePeriod === "MANUAL_VALUE",
+        manualRatePerHour: form.hm.manualRatePerHour,
+        monthlyAverageAmount: simulation.hm.composition.monthlyAverageAmount,
+        theoreticalHours: simulation.hm.composition.theoreticalHours,
+        adjustedHours: simulation.hm.composition.adjustedHours,
+        calculatedRatePerHour: simulation.hm.composition.calculatedRatePerHour,
+        effectiveRatePerHour: simulation.hm.composition.effectiveRatePerHour,
+      },
+    });
+    if ("error" in payload) {
+      setSaveError(payload.error);
+      setSaveFeedback(null);
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setSaveFeedback(null);
+    try {
+      await fetchJsonOk(TRANSFORMATION_HH_HM_SIMULATION_HISTORY_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setSaveFeedback("Simulação salva com sucesso.");
+      onSaved?.();
+    } catch (error) {
+      console.error("CostCenterHhHmSimulation: falha ao salvar", error);
+      setSaveError("Não foi possível salvar a simulação.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
       <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
@@ -647,6 +724,29 @@ export function CostCenterHhHmSimulationPanel() {
             </dd>
           </div>
         </dl>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-600">
+            Salva como tipo Custo CC. Não altera custos oficiais.
+          </p>
+          <button
+            type="button"
+            onClick={() => void saveCcSimulation()}
+            disabled={
+              saving ||
+              (simulation.hh.composition.effectiveRatePerHour == null &&
+                simulation.hm.composition.effectiveRatePerHour == null)
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            data-testid="save-cc-hh-hm-simulation"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Salvar simulação
+          </button>
+        </div>
+        {saveFeedback ? (
+          <p className="mt-2 text-sm font-medium text-emerald-800">{saveFeedback}</p>
+        ) : null}
+        {saveError ? <p className="mt-2 text-sm font-medium text-amber-900">{saveError}</p> : null}
       </div>
 
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">

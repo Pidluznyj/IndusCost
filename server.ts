@@ -352,6 +352,7 @@ import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
 import { registerComponentPerformanceRoutes } from "./src/lib/componentPerformanceRoutes.js";
+import { registerTransformationHhHmSimulationHistoryRoutes } from "./src/lib/transformationHhHmSimulationHistoryRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -9686,6 +9687,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         });
       }
     }
+  );
+
+  registerTransformationHhHmSimulationHistoryRoutes(
+    app,
+    {
+      requireAppAuth,
+      requireBootstrapOrAnyPermission,
+      getCurrentAppUser,
+    },
+    { prisma, isUuid }
   );
 
   // --- API: Simulations (What-if Analysis) ---

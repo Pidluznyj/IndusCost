@@ -11,6 +11,7 @@ import {
   Loader2,
   AlertCircle,
   Scale,
+  Save,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -27,7 +28,12 @@ import {
   TRANSFORMATION_COST_SIMULATOR_UNAVAILABLE,
   type TransformationCostSimulatorFormValues,
 } from "@/src/lib/transformationCostSimulator";
+import {
+  buildManualHhHmSimulationPayload,
+  TRANSFORMATION_HH_HM_SIMULATION_HISTORY_API,
+} from "@/src/lib/transformationHhHmSimulationHistory";
 import { CostCenterHhHmSimulationPanel } from "@/src/components/CostCenterHhHmSimulationPanel";
+import { TransformationHhHmSavedSimulationsSection } from "@/src/components/TransformationHhHmSavedSimulationsSection";
 
 const INPUT_CLASS =
   "h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -204,6 +210,11 @@ export function TransformationCostSimulatorModule() {
     useState<OfficialDefaultIndustrialCostsReference | null>(null);
   const [officialReferenceError, setOfficialReferenceError] = useState<string | null>(null);
   const [officialReferenceLoading, setOfficialReferenceLoading] = useState(true);
+  const [manualObservation, setManualObservation] = useState("");
+  const [savingManual, setSavingManual] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +255,37 @@ export function TransformationCostSimulatorModule() {
 
   const patch = (key: keyof TransformationCostSimulatorFormValues, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const saveManualSimulation = async () => {
+    const payload = buildManualHhHmSimulationPayload({
+      observation: manualObservation,
+      form,
+      labor: result.labor,
+      energy: result.energy,
+    });
+    if ("error" in payload) {
+      setSaveError(payload.error);
+      setSaveFeedback(null);
+      return;
+    }
+    setSavingManual(true);
+    setSaveError(null);
+    setSaveFeedback(null);
+    try {
+      await fetchJsonOk(TRANSFORMATION_HH_HM_SIMULATION_HISTORY_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setSaveFeedback("Simulação salva com sucesso.");
+      setHistoryRefreshKey((value) => value + 1);
+    } catch (error) {
+      console.error("TransformationCostSimulator: falha ao salvar simulação manual", error);
+      setSaveError("Não foi possível salvar a simulação.");
+    } finally {
+      setSavingManual(false);
+    }
   };
 
   const heroCost = formatCostPerPiece(result.product.estimatedInjectionCostPerPiece);
@@ -698,7 +740,45 @@ export function TransformationCostSimulatorModule() {
         </div>
       </section>
 
-      <CostCenterHhHmSimulationPanel />
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">
+              Observação da simulação manual
+            </label>
+            <input
+              value={manualObservation}
+              onChange={(e) => setManualObservation(e.target.value)}
+              placeholder="Ex.: cenário folha + energia julho/2026"
+              className={INPUT_CLASS}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveManualSimulation()}
+            disabled={
+              savingManual ||
+              (result.labor.adjustedHH == null && result.energy.adjustedHM == null)
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+            data-testid="save-manual-hh-hm-simulation"
+          >
+            {savingManual ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Salvar simulação
+          </button>
+        </div>
+        {saveFeedback ? (
+          <p className="mt-3 text-sm font-medium text-emerald-700">{saveFeedback}</p>
+        ) : null}
+        {saveError ? <p className="mt-3 text-sm font-medium text-amber-800">{saveError}</p> : null}
+        <p className="mt-2 text-xs text-slate-500">
+          Salva como tipo Custo manual. Não altera custos oficiais.
+        </p>
+      </div>
+
+      <CostCenterHhHmSimulationPanel onSaved={() => setHistoryRefreshKey((value) => value + 1)} />
+
+      <TransformationHhHmSavedSimulationsSection refreshKey={historyRefreshKey} />
 
       <details className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-800 marker:content-none">
