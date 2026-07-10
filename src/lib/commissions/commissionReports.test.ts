@@ -34,6 +34,8 @@ function line(
     customerName: "Cliente A",
     orderCode: "PED-1",
     localOrderId: null,
+    linkResolutionSource: null,
+    linkResolutionStatus: null,
     nomusNfeId: null,
     nfeNumber: "NF-100",
     localItemId: null,
@@ -334,11 +336,21 @@ describe("commissionReports.shared", () => {
         { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
       ]
     );
-    assert.equal(bySeller.summary.sellerCount, 1);
+    // CUSTOMER_EXCLUDED agrupa em bucket unassigned, mas ainda filtra pelo sellerId canônico.
+    assert.equal(bySeller.summary.sellerCount, 2);
     assert.equal(bySeller.sellers[0]?.sellerName, "Rodrigo");
-    assert.equal(bySeller.summary.totalCommission, bySeller.sellers[0]?.finalCommission);
-    assert.equal(bySeller.summary.commissionableBase, bySeller.sellers[0]?.commissionableBase);
-    assert.equal(bySeller.summary.receivedAmount, bySeller.sellers[0]?.receivedAmount);
+    assert.equal(
+      bySeller.summary.totalCommission,
+      roundSellerSum(bySeller.sellers, "finalCommission")
+    );
+    assert.equal(
+      bySeller.summary.commissionableBase,
+      roundSellerSum(bySeller.sellers, "commissionableBase")
+    );
+    assert.equal(
+      bySeller.summary.receivedAmount,
+      roundSellerSum(bySeller.sellers, "receivedAmount")
+    );
     assert.equal(bySeller.summary.recordCount, 3);
 
     const multi = assembleCommissionReportsPayload(
@@ -448,6 +460,23 @@ describe("commissionReports.shared", () => {
     const without = mapSourceLineToReportRecord(line({ lineKey: "no-id", localOrderId: null }));
     assert.equal(without.localOrderId, null);
   });
+
+  it("propaga linkResolutionStatus AMBIGUOUS e não mascara no registro", () => {
+    const record = mapSourceLineToReportRecord(
+      line({
+        lineKey: "amb",
+        orderCode: "PD02341",
+        localOrderId: null,
+        linkResolutionSource: "AMBIGUOUS",
+        linkResolutionStatus: "AMBIGUOUS",
+        statusReason:
+          "Vínculo ambíguo: há múltiplos pedidos do mesmo cliente com mesmo valor/produto (ou a mesma NF ligada a mais de um pedido).",
+      })
+    );
+    assert.equal(record.linkResolutionStatus, "AMBIGUOUS");
+    assert.equal(record.localOrderId, null);
+    assert.match(record.statusReason ?? "", /Vínculo ambíguo/);
+  });
 });
 
 describe("commissionReports UI months multiselect", () => {
@@ -480,6 +509,8 @@ describe("commissionReports UI months multiselect", () => {
     const drawer = read("src/components/sales/SalesOrderMarginDetailDrawer.tsx");
     const server = read("src/lib/commissions/commissionReports.server.ts");
     assert.match(page, /commissions-reports-order-link/);
+    assert.match(page, /linkResolutionStatus !== "AMBIGUOUS"/);
+    assert.match(page, /commissions-reports-order-ambiguous/);
     assert.match(page, /SalesOrderMarginDetailDrawer/);
     assert.match(page, /setOrderDetailRow/);
     assert.match(page, /localOrderId/);
@@ -497,6 +528,8 @@ describe("commissionReports UI months multiselect", () => {
     assert.doesNotMatch(drawer, /finalCommissionAmount\s*\*|ratePercent\s*\*/);
     assert.match(server, /attachLocalOrderIdsToReportLines/);
     assert.match(server, /prisma\.salesOrder\.findMany/);
+    assert.match(server, /AMBIGUOUS/);
+    assert.match(server, /salesOrderNfeLink\.findMany/);
   });
 });
 

@@ -381,7 +381,7 @@ describe("commissionMaterializationOrchestrator", () => {
         findFirst: async () => ({ id: "sched-new" }),
       },
       salesOrderNfeLink: {
-        findFirst: async () => ({ salesOrderId: ORDER_A, nfeExternalId: nfeId }),
+        findMany: async () => [{ salesOrderId: ORDER_A, nfeExternalId: nfeId, orderCode: "PD-A" }],
       },
     };
 
@@ -406,5 +406,48 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(result.schedulesEnsured, 1);
     assert.equal(materializeCalls, 1);
     assert.equal(scheduleCalls, 1);
+  });
+
+  it("ensureCommissionMaterializationForReceiptMonth não materializa NF ambígua", async () => {
+    let materializeCalls = 0;
+    const db = {
+      nomusAccountsReceivable: {
+        findMany: async () => [
+          {
+            externalId: 6594,
+            sourceInvoiceId: 6594,
+            personName: "Fortline",
+            personCnpj: "12345678000199",
+          },
+        ],
+      },
+      commissionReceivableSchedule: {
+        findMany: async () => [],
+        findFirst: async () => null,
+      },
+      salesOrderNfeLink: {
+        findMany: async () => [
+          { salesOrderId: ORDER_A, nfeExternalId: 6594, orderCode: "PD02341" },
+          { salesOrderId: ORDER_B, nfeExternalId: 6594, orderCode: "PD02480" },
+        ],
+      },
+    };
+
+    const result = await ensureCommissionMaterializationForReceiptMonth(db as never, {
+      year: 2026,
+      month: 6,
+      apply: true,
+      deps: {
+        materialize: async () => {
+          materializeCalls += 1;
+          return snapshotResult();
+        },
+        rebuildSchedule: async () => scheduleResult(),
+      },
+    });
+
+    assert.equal(materializeCalls, 0);
+    assert.equal(result.schedulesEnsured, 0);
+    assert.equal(result.unlinkedReceivables, 1);
   });
 });

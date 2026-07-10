@@ -104,8 +104,15 @@ export type CommissionReportRecord = {
   sellerName: string;
   customerName: string | null;
   orderCode: string | null;
-  /** UUID do SalesOrder local, quando resolvido (preview ou lookup por orderCode). */
+  /** UUID do SalesOrder local, quando resolvido de forma única e confiável. */
   localOrderId: string | null;
+  /** Origem do vínculo pedido↔título (auditoria). */
+  linkResolutionSource:
+    | import("./commissionSalesOrderNfeLinkResolution.js").CommissionOrderLinkResolutionSource
+    | null;
+  linkResolutionStatus:
+    | import("./commissionSalesOrderNfeLinkResolution.js").CommissionOrderLinkResolutionStatus
+    | null;
   nfeNumber: string | null;
   receivableNumber: string | null;
   nomusReceivableId: number | null;
@@ -254,6 +261,8 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     customerName: line.customerName,
     orderCode: line.orderCode,
     localOrderId: line.localOrderId,
+    linkResolutionSource: line.linkResolutionSource ?? null,
+    linkResolutionStatus: line.linkResolutionStatus ?? null,
     nfeNumber: line.nfeNumber,
     receivableNumber: line.receivableNumber,
     nomusReceivableId: line.nomusReceivableId,

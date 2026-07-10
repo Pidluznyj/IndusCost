@@ -14,9 +14,12 @@ import type { CommissionReceiptSellerRecordInput } from "./commissionReceiptSell
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
 import {
-  indexOrderBundlesByNfeId,
+  indexUniqueOrderBundlesByNfeId,
   mapReceivableSource,
 } from "./commission-source-resolver.js";
+import {
+  COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
+} from "./commissionSalesOrderNfeLinkResolution.js";
 import {
   loadCommissionOrderSourcesByNfeExternalIds,
   resolveCommissionPeriod,
@@ -275,7 +278,8 @@ export async function loadCommissionReceiptPreview(
       : Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 0 }),
   ]);
 
-  const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+  const { byNfeId: ordersByNfeId, ambiguousNfeIds } =
+    indexUniqueOrderBundlesByNfeId(orderBundles);
   const orderSnapshotDiagnosisByNfeId = new Map(
     snapshotRows
       .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
@@ -303,6 +307,7 @@ export async function loadCommissionReceiptPreview(
     includeExceptions: input.includeExceptions,
     receivables,
     ordersByNfeId,
+    ambiguousNfeIds,
     materializedSchedulesByReceivableId,
     commissionRecordsByNfeId,
     orderSnapshotDiagnosisByNfeId,
@@ -514,7 +519,7 @@ export async function loadCommissionReceivableForecastPreview(
 
   if (input.orderCode?.trim()) {
     const needle = input.orderCode.trim().toLowerCase();
-    const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+    const { byNfeId: ordersByNfeId } = indexUniqueOrderBundlesByNfeId(orderBundles);
     receivables = receivables.filter((row) => {
       const nfeId = row.nomusNfeId ?? null;
       const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
@@ -522,7 +527,8 @@ export async function loadCommissionReceivableForecastPreview(
     });
   }
 
-  const ordersByNfeId = indexOrderBundlesByNfeId(orderBundles);
+  const { byNfeId: ordersByNfeId, ambiguousNfeIds } =
+    indexUniqueOrderBundlesByNfeId(orderBundles);
   const orderSnapshotDiagnosisByNfeId = new Map(
     snapshotRows
       .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
@@ -542,6 +548,7 @@ export async function loadCommissionReceivableForecastPreview(
     customer: input.customer ?? null,
     receivables,
     ordersByNfeId,
+    ambiguousNfeIds,
     materializedSchedulesByReceivableId,
     commissionRecordsByNfeId,
     orderSnapshotDiagnosisByNfeId,

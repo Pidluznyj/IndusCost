@@ -888,4 +888,34 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.status, "NO_MARGIN");
     assert.equal(result.countByStatus.NO_SCHEDULE, 0);
   });
+
+  it("NF ambígua (múltiplos pedidos) não resolve pedido e marca AMBIGUOUS", () => {
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 6594,
+          nomusNfeId: 6594,
+          nfeNumber: "6594",
+          amountReceivable: 5925,
+          amountReceived: 5925,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      ambiguousNfeIds: new Set([6594]),
+      materializedSchedulesByReceivableId: new Map(),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines.length, 1);
+    assert.equal(result.lines[0]?.status, "NO_SALES_LINK");
+    assert.equal(result.lines[0]?.orderCode, null);
+    assert.equal(result.lines[0]?.localOrderId, null);
+    assert.equal(result.lines[0]?.linkResolutionStatus, "AMBIGUOUS");
+    assert.equal(result.lines[0]?.linkResolutionSource, "AMBIGUOUS");
+    assert.match(result.lines[0]?.statusReason ?? "", /Vínculo ambíguo/);
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+  });
 });

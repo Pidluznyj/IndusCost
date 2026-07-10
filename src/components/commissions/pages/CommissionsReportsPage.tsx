@@ -552,7 +552,9 @@ export function CommissionsReportsPage() {
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
-                    {row.orderCode ? (
+                    {row.orderCode &&
+                    row.localOrderId &&
+                    row.linkResolutionStatus !== "AMBIGUOUS" ? (
                       <button
                         type="button"
                         data-testid="commissions-reports-order-link"
@@ -562,6 +564,23 @@ export function CommissionsReportsPage() {
                       >
                         {formatSalesOrderDisplayCode(row.orderCode)}
                       </button>
+                    ) : row.orderCode ? (
+                      <span
+                        className="text-muted-foreground"
+                        title={
+                          row.linkResolutionStatus === "AMBIGUOUS"
+                            ? row.statusReason ?? "Vínculo ambíguo com o pedido"
+                            : undefined
+                        }
+                        data-testid="commissions-reports-order-ambiguous"
+                      >
+                        {formatSalesOrderDisplayCode(row.orderCode)}
+                        {row.linkResolutionStatus === "AMBIGUOUS" ? (
+                          <span className="ml-1 text-[10px] font-semibold text-amber-800">
+                            vínculo ambíguo
+                          </span>
+                        ) : null}
+                      </span>
                     ) : (
                       "—"
                     )}

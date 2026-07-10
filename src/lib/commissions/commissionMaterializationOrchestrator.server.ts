@@ -19,6 +19,7 @@ import {
   OrderSnapshotNotFoundError,
   rebuildCommissionReceivableSchedule,
 } from "./commissionReceivableScheduler.server.js";
+import { resolveUniqueSalesOrderFromNfeLinkCandidates } from "./commissionSalesOrderNfeLinkResolution.js";
 
 export type RebuildCommissionMaterializationInput = {
   since?: Date | null;
@@ -636,27 +637,28 @@ async function ensureSchedulesForReceivableRefList(
       continue;
     }
 
-    const link = await db.salesOrderNfeLink.findFirst({
+    const links = await db.salesOrderNfeLink.findMany({
       where: { nfeExternalId: receivable.sourceInvoiceId },
-      select: { salesOrderId: true, nfeExternalId: true },
+      select: { salesOrderId: true, nfeExternalId: true, orderCode: true },
     });
-    if (!link) {
+    const resolution = resolveUniqueSalesOrderFromNfeLinkCandidates(links);
+    if (resolution.status !== "OK" || !resolution.salesOrderId) {
       unlinkedReceivables += 1;
       continue;
     }
 
-    const pairKey = `${link.salesOrderId}|${link.nfeExternalId}`;
+    const pairKey = `${resolution.salesOrderId}|${receivable.sourceInvoiceId}`;
     input.processedPairs.add(pairKey);
 
     try {
       const snapshot = await input.deps.materialize(db, {
-        salesOrderId: link.salesOrderId,
-        nfeId: link.nfeExternalId,
+        salesOrderId: resolution.salesOrderId,
+        nfeId: receivable.sourceInvoiceId,
         dryRun: input.dryRun,
       });
       const schedule = await rebuildScheduleAfterMaterialize(db, input.deps, {
-        salesOrderId: link.salesOrderId,
-        requestedNfeId: link.nfeExternalId,
+        salesOrderId: resolution.salesOrderId,
+        requestedNfeId: receivable.sourceInvoiceId,
         materializedNfeId: snapshot.preview.nfeId,
         dryRun: input.dryRun,
       });

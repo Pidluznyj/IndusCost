@@ -25,6 +25,7 @@ import {
 } from "./commissionReceiptEngine.js";
 import { findClosedReceiptClosing } from "./commissionReceiptClosing.server.js";
 import { sellerNameMatchesFilter } from "./commissionSellerIdentity.js";
+import { resolveUniqueSalesOrderFromNfeLinkCandidates } from "./commissionSalesOrderNfeLinkResolution.js";
 
 function sellerMatches(
   canonicalName: string | null | undefined,
@@ -60,14 +61,25 @@ async function resolveSalesOrderId(
   }
 
   if (nfeNumber) {
-    const link = await db.salesOrderNfeLink.findFirst({
+    const links = await db.salesOrderNfeLink.findMany({
       where: { nfeNumber },
-      select: { salesOrderId: true },
+      select: { salesOrderId: true, orderCode: true },
     });
-    if (!link) {
+    const resolution = resolveUniqueSalesOrderFromNfeLinkCandidates(links);
+    if (resolution.status === "UNRESOLVED") {
       return { salesOrderId: null, errorMessage: `Pedido não encontrado para NF: ${nfeNumber}` };
     }
-    return { salesOrderId: link.salesOrderId, errorMessage: null };
+    if (resolution.status === "AMBIGUOUS") {
+      const codes =
+        resolution.candidateOrderCodes.length > 0
+          ? resolution.candidateOrderCodes.join(", ")
+          : resolution.candidateOrderIds.join(", ");
+      return {
+        salesOrderId: null,
+        errorMessage: `Vínculo ambíguo para NF ${nfeNumber} (${codes}). Informe --order-number ou --sales-order-id.`,
+      };
+    }
+    return { salesOrderId: resolution.salesOrderId, errorMessage: null };
   }
 
   if (receivableCode) {

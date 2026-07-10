@@ -24,6 +24,10 @@ import {
   type CommissionReportsPayload,
   type CommissionReportsQuery,
 } from "./commissionReports.shared.js";
+import {
+  COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
+  resolveUniqueSalesOrderFromNfeLinkCandidates,
+} from "./commissionSalesOrderNfeLinkResolution.js";
 import * as XLSX from "xlsx";
 
 function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -79,6 +83,8 @@ function mapLedgerPrismaRowToApiLine(row: {
     customerName: row.customerNameSnapshot,
     orderCode: row.orderCode,
     localOrderId: null,
+    linkResolutionSource: null,
+    linkResolutionStatus: null,
     nomusNfeId: row.nomusNfeId,
     nfeNumber: row.nfeNumber,
     localItemId: null,
@@ -276,20 +282,108 @@ async function attachLocalOrderIdsToReportLines(
         .map((line) => line.orderCode!.trim())
     ),
   ];
-  if (missingCodes.length === 0) return lines;
+  const nfeIds = [
+    ...new Set(
+      lines
+        .map((line) => line.nomusNfeId)
+        .filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ];
 
-  const orders = await prisma.salesOrder.findMany({
-    where: { orderCode: { in: missingCodes } },
-    select: { id: true, orderCode: true },
+  const [orders, nfeLinks] = await Promise.all([
+    missingCodes.length > 0
+      ? prisma.salesOrder.findMany({
+          where: { orderCode: { in: missingCodes } },
+          select: { id: true, orderCode: true },
+        })
+      : Promise.resolve([]),
+    nfeIds.length > 0
+      ? prisma.salesOrderNfeLink.findMany({
+          where: { nfeExternalId: { in: nfeIds } },
+          select: { salesOrderId: true, nfeExternalId: true, orderCode: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const idsByCode = new Map<string, string[]>();
+  for (const order of orders) {
+    const list = idsByCode.get(order.orderCode) ?? [];
+    list.push(order.id);
+    idsByCode.set(order.orderCode, list);
+  }
+  const linksByNfe = new Map<number, Array<{ salesOrderId: string; orderCode: string | null }>>();
+  for (const link of nfeLinks) {
+    const list = linksByNfe.get(link.nfeExternalId) ?? [];
+    list.push({ salesOrderId: link.salesOrderId, orderCode: link.orderCode });
+    linksByNfe.set(link.nfeExternalId, list);
+  }
+
+  const withAmbiguousReason = (
+    line: CommissionReportSourceLine
+  ): CommissionReportSourceLine => ({
+    ...line,
+    localOrderId: null,
+    linkResolutionSource: "AMBIGUOUS",
+    linkResolutionStatus: "AMBIGUOUS",
+    statusReason:
+      line.statusReason?.includes("Vínculo ambíguo")
+        ? line.statusReason
+        : line.statusReason
+          ? `${line.statusReason} · ${COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON}`
+          : COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
   });
-  const byCode = new Map(orders.map((order) => [order.orderCode, order.id]));
 
   return lines.map((line) => {
-    if (line.localOrderId) return line;
+    const nfeId = line.nomusNfeId;
+    if (nfeId != null && linksByNfe.has(nfeId)) {
+      const resolution = resolveUniqueSalesOrderFromNfeLinkCandidates(
+        linksByNfe.get(nfeId) ?? []
+      );
+      if (resolution.status === "AMBIGUOUS") {
+        return withAmbiguousReason(line);
+      }
+      if (resolution.status === "OK") {
+        return {
+          ...line,
+          localOrderId: resolution.salesOrderId,
+          orderCode: line.orderCode ?? resolution.orderCode,
+          linkResolutionSource: line.linkResolutionSource ?? "INVOICE_SALES_ORDER",
+          linkResolutionStatus: "OK",
+        };
+      }
+    }
+
+    if (line.localOrderId) {
+      return {
+        ...line,
+        linkResolutionSource: line.linkResolutionSource ?? "SCHEDULE",
+        linkResolutionStatus: line.linkResolutionStatus ?? "OK",
+      };
+    }
+
     const code = line.orderCode?.trim();
-    if (!code) return line;
-    const localOrderId = byCode.get(code) ?? null;
-    return localOrderId ? { ...line, localOrderId } : line;
+    if (!code) {
+      return {
+        ...line,
+        linkResolutionSource: line.linkResolutionSource ?? "UNRESOLVED",
+        linkResolutionStatus: line.linkResolutionStatus ?? "UNRESOLVED",
+      };
+    }
+    const idsForCode = idsByCode.get(code) ?? [];
+    if (idsForCode.length > 1) {
+      return withAmbiguousReason(line);
+    }
+    const localOrderId = idsForCode[0] ?? null;
+    return {
+      ...line,
+      localOrderId,
+      linkResolutionSource: localOrderId
+        ? line.linkResolutionSource ?? "EXTERNAL_ID"
+        : line.linkResolutionSource ?? "UNRESOLVED",
+      linkResolutionStatus: localOrderId
+        ? line.linkResolutionStatus ?? "OK"
+        : line.linkResolutionStatus ?? "UNRESOLVED",
+    };
   });
 }
 

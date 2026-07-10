@@ -247,20 +247,12 @@ export function filterAuthorizedOutputNfes(nfes: CommissionLinkedNfeSource[]): C
   return nfes.filter((n) => n.isAuthorized && n.isOutputOperation && !n.isCancelled);
 }
 
-/** Primeira ocorrência de bundle por NF externa (para vínculo AR → pedido). */
-export function indexOrderBundlesByNfeId(
-  bundles: CommissionOrderSourceBundle[]
-): Map<number, CommissionOrderSourceBundle> {
-  const map = new Map<number, CommissionOrderSourceBundle>();
-  for (const bundle of bundles) {
-    for (const nfe of bundle.linkedNfes) {
-      if (!map.has(nfe.nfeExternalId)) {
-        map.set(nfe.nfeExternalId, bundle);
-      }
-    }
-  }
-  return map;
-}
+/** Indexa bundles por NF — ambíguos (NF em 2+ pedidos) ficam de fora do mapa. */
+export {
+  indexOrderBundlesByNfeId,
+  indexUniqueOrderBundlesByNfeId,
+} from "./commissionSalesOrderNfeLinkResolution.js";
+export type { OrderBundleNfeIndexResult } from "./commissionSalesOrderNfeLinkResolution.js";
 
 /** Data de referência para regra de comissão (NF autorizada ou emissão do pedido). */
 export function resolveCommissionRuleReferenceDate(

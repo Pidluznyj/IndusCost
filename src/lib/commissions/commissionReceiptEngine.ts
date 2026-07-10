@@ -49,6 +49,7 @@ import {
   COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
   isCommissionInternalGroupReceivable,
 } from "./commissionInternalGroupExclusion.js";
+import { COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON } from "./commissionSalesOrderNfeLinkResolution.js";
 
 import type { VisualAuditRow } from "./commissionVisualAudit.js";
 
@@ -183,6 +184,8 @@ export type CommissionReceiptPreviewContext = {
   includeExceptions?: boolean;
   receivables: CommissionReceiptReceivableInput[];
   ordersByNfeId: Map<number, CommissionOrderSourceBundle>;
+  /** NFEs ligadas a 2+ pedidos — não resolver automaticamente. */
+  ambiguousNfeIds?: Set<number>;
   persistedAuditRows?: VisualAuditRow[];
   /** Schedules materializados por receivableId — quando definido, fechamento usa schedule (não recalcula itens). */
   materializedSchedulesByReceivableId?: Map<number, MaterializedReceivableScheduleInput[]>;
@@ -228,6 +231,9 @@ export type CommissionReceiptPreviewLine = {
   nfeNumber: string | null;
   orderCode: string | null;
   localOrderId: string | null;
+  /** Origem do vínculo pedido↔título (auditoria; não altera cálculo). */
+  linkResolutionSource?: import("./commissionSalesOrderNfeLinkResolution.js").CommissionOrderLinkResolutionSource | null;
+  linkResolutionStatus?: import("./commissionSalesOrderNfeLinkResolution.js").CommissionOrderLinkResolutionStatus | null;
   nomusOrderItemId: number | null;
   localItemId: string | null;
   productCode: string | null;
@@ -1633,6 +1639,7 @@ export function buildCommissionReceiptPreview(
   const isForecast = input.receivableScope === "open";
 
   const ordersByNfeId = input.ordersByNfeId;
+  const ambiguousNfeIds = input.ambiguousNfeIds ?? new Set<number>();
   const useMaterializedSchedules = input.materializedSchedulesByReceivableId !== undefined;
   const auditByReceivable = groupAuditRowsByReceivable(input.persistedAuditRows ?? []);
   const lines: CommissionReceiptPreviewLine[] = [];
@@ -1658,6 +1665,25 @@ export function buildCommissionReceiptPreview(
       continue;
     }
 
+    const nfeIdForLink = receivable.nomusNfeId ?? null;
+    if (nfeIdForLink != null && ambiguousNfeIds.has(nfeIdForLink)) {
+      const line: CommissionReceiptPreviewLine = {
+        ...buildExceptionLine({
+          receivable,
+          year: input.year,
+          month: input.month,
+          status: "NO_SALES_LINK",
+          statusReason: COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
+        }),
+        orderCode: null,
+        localOrderId: null,
+        linkResolutionSource: "AMBIGUOUS",
+        linkResolutionStatus: "AMBIGUOUS",
+      };
+      lines.push(isForecast ? applyOpenForecastAmountsToLine(line, receivable) : line);
+      continue;
+    }
+
     if (useMaterializedSchedules) {
       const schedules =
         input.materializedSchedulesByReceivableId!.get(receivable.nomusReceivableId) ?? [];
@@ -1677,7 +1703,23 @@ export function buildCommissionReceiptPreview(
         identityCtx: input.identityCtx,
         commissionRecord,
         commissionMode,
-      });
+      }).map((line) =>
+        line.commissionReceivableScheduleId
+          ? {
+              ...line,
+              linkResolutionSource: "SCHEDULE" as const,
+              linkResolutionStatus: "OK" as const,
+            }
+          : {
+              ...line,
+              linkResolutionSource: line.localOrderId
+                ? ("INVOICE_SALES_ORDER" as const)
+                : ("UNRESOLVED" as const),
+              linkResolutionStatus: line.localOrderId
+                ? ("OK" as const)
+                : ("UNRESOLVED" as const),
+            }
+      );
       for (const line of scheduleLines) {
         if (
           !sellerMatchesFilter(

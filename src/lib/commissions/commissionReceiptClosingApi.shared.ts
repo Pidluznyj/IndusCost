@@ -133,6 +133,8 @@ export type ReceiptClosingApiLine = {
   customerName: string | null;
   orderCode: string | null;
   localOrderId: string | null;
+  linkResolutionSource?: string | null;
+  linkResolutionStatus?: string | null;
   nomusNfeId: number | null;
   nfeNumber: string | null;
   localItemId: string | null;

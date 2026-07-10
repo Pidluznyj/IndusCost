@@ -9,6 +9,7 @@ import {
   type CommissionReceivableScheduleInput,
   type CommissionReceivableScheduleRebuildResult,
 } from "./commissionReceivableScheduler.js";
+import { resolveUniqueSalesOrderFromNfeLinkCandidates } from "./commissionSalesOrderNfeLinkResolution.js";
 
 export class OrderSnapshotNotFoundError extends Error {
   constructor(
@@ -87,11 +88,17 @@ async function resolveActiveOrderSnapshot(
   let nfeId = input.nfeId ?? null;
 
   if (!salesOrderId && nfeId != null) {
-    const order = await db.salesOrder.findFirst({
+    const links = await db.salesOrder.findMany({
       where: { nfeLinks: { some: { nfeExternalId: nfeId } } },
-      select: { id: true },
+      select: { id: true, orderCode: true },
     });
-    salesOrderId = order?.id ?? null;
+    const resolution = resolveUniqueSalesOrderFromNfeLinkCandidates(
+      links.map((row) => ({ salesOrderId: row.id, orderCode: row.orderCode }))
+    );
+    if (resolution.status === "AMBIGUOUS") {
+      throw new OrderSnapshotNotFoundError(null, nfeId);
+    }
+    salesOrderId = resolution.salesOrderId;
   }
 
   if (!salesOrderId) {
