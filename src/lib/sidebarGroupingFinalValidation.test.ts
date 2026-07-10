@@ -147,8 +147,9 @@ describe("validação final — rotas preservadas", () => {
         moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
-        assert.match(appTsx, /path=["']finance\/\*["']/);
-        assert.match(read("src/components/FinanceModule.tsx"), /path="suppliers"/);
+        assert.match(appTsx, /path=["']finance\/suppliers["']/);
+        assert.match(appTsx, /FinanceSuppliersPage/);
+        assert.doesNotMatch(read("src/components/FinanceModule.tsx"), /path="suppliers"/);
         continue;
       }
       const escaped = moduleId.replace(/-/g, "\\-");

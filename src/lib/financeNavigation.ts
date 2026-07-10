@@ -8,12 +8,18 @@ export const FINANCE_SECTION_IDS = [
   "accounts-payable",
   "billing",
   "sales-orders",
-  "suppliers",
   "cost-centers",
   "executive-report",
 ] as const;
 
 export type FinanceSectionId = (typeof FINANCE_SECTION_IDS)[number];
+
+/** Rotas financeiras fora das abas do FinanceModule (tela própria). */
+export const FINANCE_STANDALONE_PATHS = {
+  suppliers: "/finance/suppliers",
+} as const;
+
+export type FinanceStandaloneId = keyof typeof FINANCE_STANDALONE_PATHS;
 
 export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   "cash-flow": "/finance/cash-flow",
@@ -21,7 +27,6 @@ export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   "accounts-payable": "/finance/accounts-payable",
   billing: "/finance/billing",
   "sales-orders": "/finance/sales-orders",
-  suppliers: "/finance/suppliers",
   "cost-centers": "/finance/cost-centers",
   "executive-report": "/finance/executive-report",
 };
@@ -61,11 +66,6 @@ export const FINANCE_SECTIONS: FinanceSectionDef[] = [
     path: FINANCE_SECTION_PATHS["sales-orders"],
   },
   {
-    id: "suppliers",
-    label: "Fornecedores",
-    path: FINANCE_SECTION_PATHS.suppliers,
-  },
-  {
     id: "cost-centers",
     label: "Centros de Custo",
     path: FINANCE_SECTION_PATHS["cost-centers"],
@@ -79,6 +79,15 @@ export const FINANCE_SECTIONS: FinanceSectionDef[] = [
 
 export function getFinanceSectionPath(sectionId: FinanceSectionId): string {
   return FINANCE_SECTION_PATHS[sectionId];
+}
+
+export function getFinanceSuppliersPath(): string {
+  return FINANCE_STANDALONE_PATHS.suppliers;
+}
+
+export function isFinanceSuppliersStandalonePath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  return normalized === FINANCE_STANDALONE_PATHS.suppliers;
 }
 
 export function getFinanceDefaultPath(): string {
@@ -102,6 +111,7 @@ export function buildFinanceCostCenterDetailPath(costCenterId: string): string {
 export function isFinanceCanonicalPath(pathname: string): boolean {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   if (normalized === FINANCE_BASE_PATH) return true;
+  if (isFinanceSuppliersStandalonePath(normalized)) return true;
   if (isFinanceCostCenterDetailPath(normalized)) return true;
   return FINANCE_SECTION_IDS.some((id) => normalized === FINANCE_SECTION_PATHS[id]);
 }
@@ -113,7 +123,12 @@ export function hasNestedFinanceSectionPath(pathname: string): boolean {
   const remainder = normalized.slice(FINANCE_BASE_PATH.length + 1);
   const segments = remainder.split("/").filter(Boolean);
   if (segments.length <= 1) {
-    return segments.length === 1 && !isFinanceSectionId(segments[0] ?? "");
+    const only = segments[0] ?? "";
+    return (
+      segments.length === 1 &&
+      !isFinanceSectionId(only) &&
+      only !== "suppliers"
+    );
   }
   return true;
 }

@@ -96,7 +96,7 @@ function isDirectGroup(groupId: NavigationGroupId): boolean {
 
 function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "suppliers") {
-    return /path=["']finance\/\*["']/.test(appTsx);
+    return /path=["']finance\/suppliers["']/.test(appTsx);
   }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);

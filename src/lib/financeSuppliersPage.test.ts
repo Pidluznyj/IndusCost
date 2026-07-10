@@ -14,8 +14,10 @@ import {
   type PermissionChecker,
 } from "./modulePermissions.js";
 import {
-  FINANCE_SECTION_PATHS,
+  FINANCE_SECTIONS,
+  FINANCE_STANDALONE_PATHS,
   isFinanceCanonicalPath,
+  isFinanceSuppliersStandalonePath,
 } from "./financeNavigation.js";
 
 function read(rel: string): string {
@@ -46,11 +48,13 @@ describe("finance suppliers menu + route", () => {
     assert.equal(canAccessModule("suppliers", checker(["dashboard.view"])), false);
   });
 
-  it("rota /finance/suppliers é canônica e resolve módulo suppliers", () => {
-    assert.equal(FINANCE_SECTION_PATHS.suppliers, "/finance/suppliers");
+  it("rota /finance/suppliers é standalone e resolve módulo suppliers", () => {
+    assert.equal(FINANCE_STANDALONE_PATHS.suppliers, "/finance/suppliers");
     assert.equal(isFinanceCanonicalPath("/finance/suppliers"), true);
+    assert.equal(isFinanceSuppliersStandalonePath("/finance/suppliers"), true);
     assert.equal(resolveModuleIdFromPath("/finance/suppliers"), "suppliers");
     assert.equal(resolveActiveModuleFromPath("/finance/suppliers"), "suppliers");
+    assert.ok(!FINANCE_SECTIONS.some((s) => s.id === "suppliers"));
   });
 
   it("breadcrumb Financeiro > Fornecedores", () => {
@@ -76,6 +80,7 @@ describe("finance suppliers menu + route", () => {
     const page = read("src/components/finance/FinanceSuppliersPage.tsx");
     const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
     const mod = read("src/components/FinanceModule.tsx");
+    const app = read("src/App.tsx");
     assert.match(shared, /\/api\/finance\/suppliers\/search/);
     assert.match(shared, /\/api\/finance\/suppliers\/rebuild-from-ap-preview/);
     assert.match(shared, /\/api\/finance\/supplier-cost-center-rules/);
@@ -83,8 +88,34 @@ describe("finance suppliers menu + route", () => {
     assert.match(page, /SuppliersManagementView/);
     assert.match(page, /finance-menu/);
     assert.match(tab, /SuppliersManagementView/);
-    assert.match(mod, /FinanceSuppliersPage/);
-    assert.match(mod, /path="suppliers"/);
+    assert.match(app, /path="finance\/suppliers"/);
+    assert.match(app, /FinanceSuppliersPage/);
+    assert.doesNotMatch(mod, /path="suppliers"/);
+    assert.doesNotMatch(mod, /FinanceSuppliersPage/);
+  });
+
+  it("rota Financeiro > Fornecedores renderiza sem tabs financeiras", () => {
+    const app = read("src/App.tsx");
+    const mod = read("src/components/FinanceModule.tsx");
+    const page = read("src/components/finance/FinanceSuppliersPage.tsx");
+    assert.match(app, /path="finance\/suppliers"/);
+    assert.match(app, /element=\{<FinanceSuppliersPage/);
+    assert.doesNotMatch(page, /finance-module-tabs/);
+    assert.doesNotMatch(page, /Fluxo de Caixa/);
+    assert.doesNotMatch(page, /Contas a Receber/);
+    assert.doesNotMatch(page, /Relatório Presidencial/);
+    assert.match(mod, /finance-module-tabs/);
+    assert.doesNotMatch(mod, /Fornecedores/);
+    assert.ok(!FINANCE_SECTIONS.some((s) => s.label === "Fornecedores"));
+  });
+
+  it("usuário só com permissão de fornecedores não vê item Financeiro do módulo com abas", () => {
+    const nav = buildAccessibleSidebarNavigation(checker(["finance.suppliers.view"]));
+    const financeiro = nav.groups.find((g) => g.id === "financeiro");
+    assert.ok(financeiro);
+    const ids = financeiro!.items.map((i) => i.itemId);
+    assert.ok(ids.includes("suppliers"));
+    assert.ok(!ids.includes("finance"));
   });
 
   it("página standalone tem título, subtítulo e aviso de base compartilhada", () => {

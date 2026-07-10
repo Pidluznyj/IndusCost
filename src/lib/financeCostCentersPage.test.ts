@@ -34,7 +34,8 @@ describe("financeCostCentersPage", () => {
   it("componentes de abas existem", () => {
     assert.match(read("src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx"), /finance-cost-centers-overview-tab/);
     assert.match(read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx"), /finance-cost-centers-crud-tab/);
-    assert.match(read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx"), /finance-cost-centers-suppliers-tab/);
+    assert.match(read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx"), /SuppliersManagementView/);
+    assert.match(read("src/components/finance/cost-centers/SuppliersManagementView.tsx"), /finance-cost-centers-suppliers-tab/);
     assert.match(read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx"), /finance-cost-centers-rules-tab/);
     assert.match(read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx"), /finance-cost-centers-unclassified-tab/);
     assert.match(read("src/components/finance/cost-centers/financeUnclassifiedModalUi.tsx"), /CostCenterDialog/);
@@ -65,7 +66,7 @@ describe("financeCostCentersPage", () => {
     const kit = read("src/lib/financeCostCenterGridKit.ts");
     const ui = read("src/components/finance/cost-centers/FinanceCostCenterGridKit.tsx");
     const crud = read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx");
-    const suppliers = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const suppliers = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     const rules = read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx");
     const unclassified = read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
     const audit = read("src/components/finance/cost-centers/FinanceCostCenterAuditTab.tsx");
@@ -102,7 +103,7 @@ describe("financeCostCentersPage", () => {
     const crud = read("src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx");
     const rules = read("src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx");
     const unclassified = read("src/components/finance/cost-centers/FinanceUnclassifiedPayablesTab.tsx");
-    const suppliers = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const suppliers = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(crud, /finance-cost-centers-create-button/);
     assert.match(rules, /finance-rules-create-button/);
     assert.match(rules, /finance-rules-preview-button/);
@@ -122,6 +123,7 @@ describe("financeCostCentersPage", () => {
       "src/components/finance/cost-centers/FinanceCostCenterOverviewTab.tsx",
       "src/components/finance/cost-centers/FinanceCostCentersCrudTab.tsx",
       "src/components/finance/cost-centers/FinanceSuppliersTab.tsx",
+      "src/components/finance/cost-centers/SuppliersManagementView.tsx",
       "src/components/finance/cost-centers/FinanceSupplierTitlesModal.tsx",
       "src/components/finance/cost-centers/FinanceSupplierCadastroDrawer.tsx",
       "src/components/finance/cost-centers/FinanceSupplierRulesTab.tsx",

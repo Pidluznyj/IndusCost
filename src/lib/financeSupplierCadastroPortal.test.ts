@@ -30,7 +30,7 @@ describe("finance supplier cadastro portal", () => {
   });
 
   it("aba fornecedores mantém ação Criar cadastro e drawer de cadastro", () => {
-    const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const tab = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(tab, /finance-suppliers-create-cadastro-button/);
     assert.match(tab, /Criar cadastro/);
     assert.match(tab, /FinanceSupplierCadastroDrawer/);
@@ -41,7 +41,7 @@ describe("finance supplier cadastro portal", () => {
   });
 
   it("fechar cadastro não limpa filtros de URL", () => {
-    const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
+    const tab = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(tab, /onClose=\{\(\) => setCadastroSupplierId\(null\)\}/);
     assert.doesNotMatch(tab, /setCadastroSupplierId\(null\)[\s\S]*patchUrl/);
   });

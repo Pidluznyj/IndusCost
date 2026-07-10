@@ -13,6 +13,7 @@ import { SimulationModule } from "./components/SimulationModule";
 import { TransformationCostSimulatorModule } from "./components/TransformationCostSimulatorModule";
 import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
+import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
@@ -906,6 +907,10 @@ export default function App() {
               <CommissionsModule />
             </ModulePageShell>
           }
+        />
+        <Route
+          path="finance/suppliers"
+          element={<FinanceSuppliersPage />}
         />
         <Route
           path="finance"
