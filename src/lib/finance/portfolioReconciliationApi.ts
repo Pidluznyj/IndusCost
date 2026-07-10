@@ -727,6 +727,15 @@ export function buildOrderTimeline(
         sort: 1,
       });
     }
+    const deliveryAt = toIsoDate(first.expectedDeliveryDate);
+    if (deliveryAt) {
+      events.push({
+        at: deliveryAt,
+        kind: "ORDER_DELIVERY",
+        label: "Entrega prevista",
+        sort: 2,
+      });
+    }
   }
 
   const seenNfe = new Set<string>();
@@ -744,8 +753,8 @@ export function buildOrderTimeline(
           events.push({
             at,
             kind: "NFE",
-            label: `NF ${fact.nfeNumber ?? fact.nfeExternalId}`,
-            sort: 2,
+            label: `NF emitida ${fact.nfeNumber ?? fact.nfeExternalId}`,
+            sort: 3,
           });
         }
       }
@@ -760,7 +769,7 @@ export function buildOrderTimeline(
             at,
             kind: "STOCK_DOCUMENT",
             label: `Documento de estoque ${fact.stockDocumentExternalId}`,
-            sort: 3,
+            sort: 4,
           });
         }
       }
@@ -775,7 +784,7 @@ export function buildOrderTimeline(
               : null;
         if (at && !seenDue.has(at)) {
           seenDue.add(at);
-          events.push({ at, kind: "RECEIVABLE_DUE", label: `Vencimento CR ${at}`, sort: 4 });
+          events.push({ at, kind: "RECEIVABLE_DUE", label: `Vencimento CR ${at}`, sort: 5 });
         }
       }
     }
@@ -789,22 +798,12 @@ export function buildOrderTimeline(
               : null;
         if (at && !seenSettle.has(at)) {
           seenSettle.add(at);
-          events.push({ at, kind: "RECEIVABLE_SETTLED", label: `Recebimento ${at}`, sort: 5 });
+          events.push({ at, kind: "RECEIVABLE_SETTLED", label: `Recebimento ${at}`, sort: 6 });
         }
       }
     }
-    const forecastAt = toIsoDate(fact.forecastDate);
-    if (forecastAt) {
-      events.push({
-        at: forecastAt,
-        kind: "FORECAST",
-        label: `Previsão (${fact.forecastSource})`,
-        sort: 6,
-      });
-    }
   }
 
-  // dedupe forecast by date
   const seen = new Set<string>();
   const deduped = events.filter((e) => {
     const key = `${e.kind}:${e.at}:${e.label}`;
@@ -822,163 +821,7 @@ export function buildOrderTimeline(
   return deduped.map(({ at, kind, label }) => ({ at, kind, label }));
 }
 
-export function buildOrderDetailFromFacts(
-  salesOrderId: string,
-  facts: readonly PortfolioReconciliationFactApiRow[],
-  run: PortfolioReconciliationRunMeta | null
-) {
-  const orderRows = aggregateFactsToOrderRows(facts);
-  const order = orderRows[0] ?? null;
-  const alerts = new Set<string>();
-  for (const fact of facts) {
-    for (const a of parseAlertsJson(fact.alertsJson)) alerts.add(a);
-  }
-
-  const itemsMap = new Map<
-    string,
-    {
-      salesOrderItemId: string | null;
-      externalProductId: number | null;
-      productSkuSnapshot: string | null;
-      productNameSnapshot: string | null;
-      orderQuantity: number | null;
-      orderUnitPrice: number | null;
-      orderItemValue: number | null;
-    }
-  >();
-  const nfes = new Map<
-    string,
-    {
-      nomusNfeId: string | null;
-      nfeExternalId: number | null;
-      nfeNumber: string | null;
-      nfeSerie: string | null;
-      nfeKey: string | null;
-      nfeProcessedAt: string | null;
-      nfeHeaderValue: number | null;
-      headerOnly: boolean;
-    }
-  >();
-  const stockDocs = new Map<
-    string,
-    {
-      stockDocumentId: string | null;
-      stockDocumentExternalId: number | null;
-      stockDocumentDate: string | null;
-      nfeExternalId: number | null;
-    }
-  >();
-  const allocations: Array<Record<string, unknown>> = [];
-  let receivable: {
-    receivableIds: number[];
-    receivableTotalValue: number;
-    receivedValue: number;
-    openReceivableValue: number;
-    dueDates: unknown;
-    settlementDates: unknown;
-  } | null = null;
-
-  for (const fact of facts) {
-    const itemKey =
-      fact.salesOrderItemId ??
-      (fact.externalProductId != null ? `p:${fact.externalProductId}` : null);
-    if (itemKey && !itemsMap.has(itemKey)) {
-      itemsMap.set(itemKey, {
-        salesOrderItemId: fact.salesOrderItemId,
-        externalProductId: fact.externalProductId,
-        productSkuSnapshot: fact.productSkuSnapshot,
-        productNameSnapshot: fact.productNameSnapshot,
-        orderQuantity: fact.orderQuantity,
-        orderUnitPrice: fact.orderUnitPrice,
-        orderItemValue: fact.orderItemValue,
-      });
-    }
-
-    if (fact.nfeExternalId != null) {
-      const key = String(fact.nfeExternalId);
-      const existing = nfes.get(key);
-      nfes.set(key, {
-        nomusNfeId: fact.nomusNfeId,
-        nfeExternalId: fact.nfeExternalId,
-        nfeNumber: fact.nfeNumber,
-        nfeSerie: fact.nfeSerie,
-        nfeKey: fact.nfeKey,
-        nfeProcessedAt: toIsoDate(fact.nfeProcessedAt),
-        nfeHeaderValue: fact.nfeHeaderValue,
-        headerOnly:
-          (existing?.headerOnly ?? false) || fact.status === "HEADER_ONLY_LINK",
-      });
-    }
-
-    if (fact.stockDocumentExternalId != null || fact.stockDocumentId != null) {
-      const key = String(fact.stockDocumentExternalId ?? fact.stockDocumentId);
-      if (!stockDocs.has(key)) {
-        stockDocs.set(key, {
-          stockDocumentId: fact.stockDocumentId,
-          stockDocumentExternalId: fact.stockDocumentExternalId,
-          stockDocumentDate: toIsoDate(fact.stockDocumentDate),
-          nfeExternalId: fact.nfeExternalId,
-        });
-      }
-    }
-
-    if (
-      fact.allocatedQuantity != null ||
-      fact.allocatedValueByOrderPrice != null ||
-      fact.stockDocumentItemId != null
-    ) {
-      allocations.push({
-        factId: fact.id,
-        salesOrderItemId: fact.salesOrderItemId,
-        externalProductId: fact.externalProductId,
-        productSkuSnapshot: fact.productSkuSnapshot,
-        stockDocumentExternalId: fact.stockDocumentExternalId,
-        stockDocumentItemExternalId: fact.stockDocumentItemExternalId,
-        nfeExternalId: fact.nfeExternalId,
-        allocatedQuantity: fact.allocatedQuantity,
-        allocatedValueByOrderPrice: fact.allocatedValueByOrderPrice,
-        allocatedValueByStockPrice: fact.allocatedValueByStockPrice,
-        priceDifferenceTotal: fact.priceDifferenceTotal,
-        status: fact.status,
-        confidenceLevel: fact.confidenceLevel,
-      });
-    }
-
-    if (!receivable && fact.receivableTotalValue != null) {
-      receivable = {
-        receivableIds: parseIdListJson(fact.receivableIdsJson),
-        receivableTotalValue: toNumber(fact.receivableTotalValue),
-        receivedValue: toNumber(fact.receivedValue),
-        openReceivableValue: toNumber(fact.openReceivableValue),
-        dueDates: fact.dueDatesJson ?? null,
-        settlementDates: fact.settlementDatesJson ?? null,
-      };
-    }
-  }
-
-  const traces = facts
-    .map((fact) => ({
-      factId: fact.id,
-      status: fact.status,
-      confidenceLevel: fact.confidenceLevel,
-      trace: sanitizeTraceJson(fact.traceJson),
-    }))
-    .filter((t) => t.trace != null);
-
-  return {
-    salesOrderId,
-    run: run ? serializeRunMeta(run) : null,
-    order,
-    items: [...itemsMap.values()],
-    linkedNfes: [...nfes.values()],
-    stockDocuments: [...stockDocs.values()],
-    allocatedItems: allocations,
-    receivables: receivable,
-    timeline: buildOrderTimeline(facts),
-    alertas: [...alerts],
-    traces,
-  };
-}
+export { buildPortfolioOrderTraceViewModel as buildOrderDetailFromFacts } from "./portfolioReconciliationOrderTrace.js";
 
 export function buildListPayload(args: {
   run: PortfolioReconciliationRunMeta;

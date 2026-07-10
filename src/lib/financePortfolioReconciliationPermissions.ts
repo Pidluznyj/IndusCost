@@ -18,3 +18,14 @@ export function canViewFinancePortfolioReconciliation(
 ): boolean {
   return auth.hasAnyPermission([...FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS]);
 }
+
+/** TraceJson técnico completo — apenas admin/configuração. */
+export function canViewPortfolioReconciliationTechnicalTrace(
+  auth: FinancePortfolioReconciliationPermissionCheck
+): boolean {
+  return (
+    auth.hasPermission("users.manage") ||
+    auth.hasPermission("settings.view") ||
+    auth.hasPermission("accessProfiles.manage")
+  );
+}

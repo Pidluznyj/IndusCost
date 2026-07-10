@@ -254,15 +254,17 @@ describe("portfolioReconciliationApi", () => {
 
     const detail = buildOrderDetailFromFacts("order-1", facts, runMeta);
     assert.equal(detail.salesOrderId, "order-1");
-    assert.equal(detail.items.length, 1);
-    assert.equal(detail.linkedNfes.length, 1);
+    assert.equal(detail.orderItems.length, 1);
+    assert.equal(detail.documentLinks.length, 1);
     assert.equal(detail.stockDocuments.length, 1);
-    assert.equal(detail.allocatedItems.length, 1);
+    assert.equal(detail.allocations.length, 1);
     assert.ok(detail.receivables);
     assert.deepEqual(detail.receivables!.receivableIds, [11, 12]);
     assert.ok(detail.timeline.length >= 2);
     assert.deepEqual(detail.alertas, ["Diferença de preço"]);
     assert.equal(detail.traces[0]!.trace!.raw, "[omitido]");
+    assert.ok(detail.managerNotes.length > 0);
+    assert.ok(detail.technical.nfeExternalIds.includes(6937));
   });
 
   it("cards agregam totais confiáveis do conjunto filtrado", () => {

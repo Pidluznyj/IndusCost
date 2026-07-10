@@ -97,6 +97,35 @@ export type PortfolioReconciliationOrderDetailPayload = {
     salesOrderId: string;
     run: PortfolioReconciliationRunDto | null;
     order: PortfolioReconciliationOrderRow | null;
+    header?: {
+      order: PortfolioReconciliationOrderRow | null;
+      orderIssueDate: string | null;
+      expectedDeliveryDate: string | null;
+      externalSalesOrderId: number | null;
+      primaryAlerts: string[];
+    };
+    orderItems?: Array<Record<string, unknown>>;
+    documentLinks?: Array<Record<string, unknown>>;
+    allocations?: Array<Record<string, unknown>>;
+    receivableTitles?: Array<Record<string, unknown>>;
+    receivablesSummary?: Record<string, unknown> | null;
+    managerNotes?: string[];
+    technical?: {
+      salesOrderId: string | null;
+      externalSalesOrderId: number | null;
+      orderCode: string | null;
+      customerExternalId: number | null;
+      nfeExternalIds: number[];
+      stockDocumentExternalIds: number[];
+      receivableIds: number[];
+      links: Array<{ from: string; to: string; via: string }>;
+      sanitizedTraces: Array<{
+        factId: string;
+        status: string | null;
+        confidenceLevel: string;
+        trace: Record<string, unknown> | null;
+      }>;
+    };
     items: Array<Record<string, unknown>>;
     linkedNfes: Array<Record<string, unknown>>;
     stockDocuments: Array<Record<string, unknown>>;
