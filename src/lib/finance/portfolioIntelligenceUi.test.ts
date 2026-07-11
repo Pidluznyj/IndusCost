@@ -240,6 +240,7 @@ describe("portfolio intelligence UI", () => {
     const cards = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceCards.tsx"
     );
+    const copy = read("src/lib/finance/portfolioIntelligenceUiCopy.ts");
     const accordions = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
     );
@@ -260,8 +261,19 @@ describe("portfolio intelligence UI", () => {
 
     assert.match(cards, /summaryCards|card\.value|card\.count/);
     assert.match(cards, /MetricHelpTooltip/);
-    assert.match(cards, /Financeiro confirmado|Carteira operacional|Alertas técnicos/);
-    assert.match(cards, /não soma carteira|alerts-notice|Alerta — pode coexistir/);
+    assert.match(
+      cards + copy,
+      /Financeiro confirmado|INTELLIGENCE_BLOCK_FINANCIAL_TITLE/
+    );
+    assert.match(
+      cards + copy,
+      /Carteira operacional|INTELLIGENCE_BLOCK_OPERATIONAL_TITLE/
+    );
+    assert.match(
+      cards + copy,
+      /Atendimento e alertas|INTELLIGENCE_BLOCK_ALERTS_TITLE/
+    );
+    assert.match(cards, /não soma carteira|alerts-notice|Alertas técnicos|INTELLIGENCE_ALERTS/);
     assert.match(accordions, /accordion-group-financial|INTELLIGENCE_ACCORDION_GROUPS/);
     assert.match(accordions, /CARTEIRA_VENCIDA_BLOQUEADA/);
     assert.match(accordions, /CARTEIRA_FUTURA_PROVAVEL|CARTEIRA_PRESENTE_ATENCAO/);
@@ -299,21 +311,37 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /portfolio-intelligence-freshness-banner|dataFreshness/);
     assert.match(section, /INTELLIGENCE_READING_GUIDE|portfolio-intelligence-header/);
     assert.match(section, /portfolio-intelligence-pd-warning/);
-    assert.match(section, /portfolio-intelligence-alerts-copy/);
-    assert.match(section, /portfolio-intelligence-axis-legend/);
-    assert.match(copy, /maturidade da carteira/);
-    assert.match(copy, /Pedido de venda não é dinheiro confirmado até virar CR/);
+    assert.match(section, /Central de Auditoria da Carteira|INTELLIGENCE_SCREEN_TITLE/);
+    assert.match(copy, /Central de Auditoria da Carteira/);
+    assert.match(copy, /Pedido de venda não é dinheiro confirmado/);
+    assert.match(copy, /Entenda o caminho de cada pedido/);
     assert.match(
       copy,
-      /Alertas técnicos não são valores adicionais|não somam carteira|Não soma carteira/
+      /Alertas técnicos podem coexistir|não somam carteira|Não soma carteira|INTELLIGENCE_ALERTS_SHORT/
     );
-    assert.match(copy, /Financeiro = CR\/baixa/);
+    assert.match(copy, /Financeiro confirmado|INTELLIGENCE_BLOCK_FINANCIAL/);
+    assert.match(copy, /Carteira operacional|INTELLIGENCE_BLOCK_OPERATIONAL/);
+    assert.match(copy, /Atendimento e alertas técnicos|INTELLIGENCE_BLOCK_ALERTS/);
     assert.match(copy, /Não tratar como caixa confiável/);
     assert.match(cards, /portfolio-intelligence-cards-financial/);
     assert.match(cards, /portfolio-intelligence-cards-operational/);
     assert.match(cards, /portfolio-intelligence-cards-alerts/);
+    assert.match(cards, /INTELLIGENCE_BLOCK_FINANCIAL_TITLE|Financeiro confirmado/);
+    assert.match(cards, /INTELLIGENCE_BLOCK_OPERATIONAL_TITLE|Carteira operacional/);
+    assert.match(cards, /INTELLIGENCE_BLOCK_ALERTS_TITLE|Atendimento e alertas/);
+    assert.match(cards, /Alertas técnicos não somam carteira|INTELLIGENCE_ALERTS_SHORT|INTELLIGENCE_ALERTS_NOTICE/);
     assert.match(cards, /data-alert-card|não soma carteira/);
     assert.match(cards, /MetricHelpTooltip/);
+    assert.match(cards, /minmax\(220px/);
+    assert.match(cards, /min-h-\[112px\]|min-h-\[112px\]/);
+    assert.ok(
+      cards.indexOf("portfolio-intelligence-cards-financial") <
+        cards.indexOf("portfolio-intelligence-cards-operational")
+    );
+    assert.ok(
+      cards.indexOf("portfolio-intelligence-cards-operational") <
+        cards.indexOf("portfolio-intelligence-cards-alerts")
+    );
     assert.match(accordions, /INTELLIGENCE_ACCORDION_GROUPS/);
     assert.match(accordions, /portfolio-intelligence-accordion-group-\$\{group\.id\}/);
     const drilldown = read("src/lib/finance/portfolioIntelligenceDrilldown.ts");

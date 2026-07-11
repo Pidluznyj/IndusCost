@@ -26,8 +26,6 @@ import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDr
 import { PortfolioIntelligenceSellerKpis } from "./PortfolioIntelligenceSellerKpis";
 import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfolioReconciliationClient";
 import {
-  INTELLIGENCE_ALERTS_NOTICE,
-  INTELLIGENCE_AXIS_LEGEND,
   INTELLIGENCE_READING_GUIDE,
   INTELLIGENCE_SCREEN_INTRO,
   INTELLIGENCE_SCREEN_TITLE,
@@ -217,48 +215,34 @@ export function PortfolioIntelligenceSection({
 
   return (
     <section
-      className="space-y-4"
+      className="space-y-6"
       data-testid="portfolio-intelligence-section"
-      aria-label="Inteligência da Carteira"
+      aria-label="Central de Auditoria da Carteira"
     >
       <header
-        className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50/90 via-white to-sky-50/40 px-4 py-4 shadow-sm sm:px-5"
+        className="space-y-4 rounded-[14px] border border-[#EAECF0] bg-white p-4 sm:p-5"
         data-testid="portfolio-intelligence-header"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-200/80 bg-sky-50 text-sky-800">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#B2DDFF] bg-[#EFF8FF] text-[#175CD3]">
             <BrainCircuit className="h-5 w-5" aria-hidden />
           </span>
-          <div className="min-w-0 space-y-2">
-            <div>
-              <h2 className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
-                {INTELLIGENCE_SCREEN_TITLE}
-              </h2>
-              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                {INTELLIGENCE_SCREEN_INTRO}
-              </p>
-            </div>
-            <p
-              className="inline-flex max-w-3xl rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950"
-              data-testid="portfolio-intelligence-pd-warning"
-            >
-              {INTELLIGENCE_SCREEN_WARNING}
+          <div className="min-w-0">
+            <h2 className="text-[20px] font-bold tracking-tight text-[#101828] sm:text-[22px]">
+              {INTELLIGENCE_SCREEN_TITLE}
+            </h2>
+            <p className="mt-1 max-w-3xl text-[14px] leading-relaxed text-[#667085]">
+              {INTELLIGENCE_SCREEN_INTRO}
             </p>
-            <p
-              className="max-w-3xl text-[11px] leading-relaxed text-muted-foreground"
-              data-testid="portfolio-intelligence-alerts-copy"
-            >
-              {INTELLIGENCE_ALERTS_NOTICE}
-            </p>
-            <p
-              className="max-w-3xl text-[11px] leading-relaxed text-muted-foreground"
-              data-testid="portfolio-intelligence-axis-legend"
-            >
-              {INTELLIGENCE_AXIS_LEGEND}
-            </p>
-            <p className="text-[11px] text-muted-foreground">{INTELLIGENCE_READING_GUIDE}</p>
+            <p className="mt-2 text-[12px] text-[#667085]">{INTELLIGENCE_READING_GUIDE}</p>
           </div>
         </div>
+        <p
+          className="rounded-[12px] border border-[#FEDF89] bg-[#FFFAEB] p-4 text-[13px] font-medium leading-relaxed text-[#B54708]"
+          data-testid="portfolio-intelligence-pd-warning"
+        >
+          {INTELLIGENCE_SCREEN_WARNING}
+        </p>
       </header>
 
       {payload?.dataFreshness ? (

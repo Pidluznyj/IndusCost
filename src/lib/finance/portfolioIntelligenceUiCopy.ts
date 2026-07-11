@@ -1,43 +1,58 @@
 /**
- * Textos e rótulos de apresentação da Inteligência da Carteira.
+ * Textos e rótulos de apresentação da Central de Auditoria da Carteira.
  * Não altera cálculo nem classificação — só UX / leigo.
  */
 
-export const INTELLIGENCE_SCREEN_TITLE = "Inteligência da Carteira";
+export const INTELLIGENCE_SCREEN_TITLE = "Central de Auditoria da Carteira";
 
 export const INTELLIGENCE_SCREEN_INTRO =
-  "Esta central mostra a maturidade da carteira: o que já virou financeiro, o que ainda é pedido e o que precisa revisão técnica/comercial.";
+  "Entenda o caminho de cada pedido: previsão, entrega, NF, Contas a Receber e caixa.";
 
 export const INTELLIGENCE_SCREEN_WARNING =
-  "Pedido de venda não é dinheiro confirmado até virar CR.";
+  "Pedido de venda não é dinheiro confirmado. Ele entra como previsão e ganha confiança conforme evolui para documento de saída, NF, CR e recebimento.";
 
 export const INTELLIGENCE_ALERTS_NOTICE =
-  "Alertas técnicos não são valores adicionais; eles sinalizam risco ou divergência em pedidos já classificados. Alerta — pode coexistir com outro status. Não soma carteira.";
+  "Alertas técnicos podem coexistir com outros status. Eles não são dinheiro adicional e não somam carteira.";
+
+export const INTELLIGENCE_ALERTS_SHORT =
+  "Alertas técnicos não somam carteira.";
 
 export const INTELLIGENCE_AXIS_LEGEND =
   "Financeiro = CR/baixa · Operacional = pedido versus documentos de saída · Alerta = risco de vínculo, excesso, preço ou cabeçalho.";
 
 export const INTELLIGENCE_READING_GUIDE =
-  "Leitura: financeiro confirmado → carteira operacional → alertas técnicos (sem somar carteira).";
+  "Leitura: financeiro confirmado → carteira operacional → atendimento e alertas técnicos (sem somar carteira).";
+
+export const INTELLIGENCE_BLOCK_FINANCIAL_TITLE = "Financeiro confirmado";
+export const INTELLIGENCE_BLOCK_FINANCIAL_DESC =
+  "Valores com evidência financeira: recebimento, CR aberto ou faturamento/documento já identificado.";
+
+export const INTELLIGENCE_BLOCK_OPERATIONAL_TITLE = "Carteira operacional";
+export const INTELLIGENCE_BLOCK_OPERATIONAL_DESC =
+  "Pedidos que ainda dependem de entrega, faturamento ou validação operacional.";
+
+export const INTELLIGENCE_BLOCK_ALERTS_TITLE = "Atendimento e alertas técnicos";
+export const INTELLIGENCE_BLOCK_ALERTS_DESC =
+  "Riscos de vínculo, entrega parcial, excesso, produto fora do pedido ou possível inflação de valor. Alertas não somam carteira.";
 
 /** Títulos amigáveis por chave de card/status (override visual). */
 export const INTELLIGENCE_CARD_DISPLAY_TITLE: Record<string, string> = {
   CARTEIRA_TOTAL_ANALISADA: "Carteira total",
-  RECEBIDO: "Já recebido",
-  CR_ABERTO: "Já virou financeiro / CR aberto",
-  FATURADO_SEM_CR: "Faturado, ainda sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Ainda só pedido — futuro",
-  CARTEIRA_PRESENTE_ATENCAO: "Ainda só pedido — atenção",
+  RECEBIDO: "Recebido",
+  CR_ABERTO: "CR aberto",
+  FATURADO_SEM_CR: "Faturado sem CR",
+  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro provável",
+  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
   CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
   NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
-  DIVERGENCIA_TECNICA: "Alerta de divergência",
+  DIVERGENCIA_TECNICA: "Divergência técnica",
   QUANTIDADE_EXCEDENTE_DOCUMENTO: "Quantidade excedente",
   PRODUTO_FORA_DO_PEDIDO: "Produto fora do pedido",
   SEM_EVIDENCIA: "Sem evidência suficiente",
   RISCO_SUPERESTIMACAO: "Risco de superestimação",
-  OP_PCT_TOTALMENTE_ATENDIDO: "% totalmente atendidos",
-  OP_PCT_PARCIALMENTE_ATENDIDO: "% parcialmente atendidos",
-  OP_PCT_NAO_ATENDIDO: "% não atendidos",
+  OP_PCT_TOTALMENTE_ATENDIDO: "Totalmente atendidos",
+  OP_PCT_PARCIALMENTE_ATENDIDO: "Parcialmente atendidos",
+  OP_PCT_NAO_ATENDIDO: "Não atendidos",
   OP_VALOR_TOTALMENTE_ATENDIDO: "Valor totalmente atendido",
   OP_VALOR_PARCIALMENTE_ATENDIDO: "Valor parcialmente atendido",
   OP_VALOR_NAO_ATENDIDO: "Valor não atendido",
@@ -67,9 +82,9 @@ export const INTELLIGENCE_CARD_SUBTITLE: Record<string, string> = {
   PRODUTO_FORA_DO_PEDIDO: "Alerta — não soma carteira",
   SEM_EVIDENCIA: "Falta informação na importação",
   RISCO_SUPERESTIMACAO: "Alerta — mesmo valor do bloqueado",
-  OP_PCT_TOTALMENTE_ATENDIDO: "Eixo operacional — não soma carteira",
-  OP_PCT_PARCIALMENTE_ATENDIDO: "Eixo operacional — não soma carteira",
-  OP_PCT_NAO_ATENDIDO: "Eixo operacional — não soma carteira",
+  OP_PCT_TOTALMENTE_ATENDIDO: "Cobertura de itens — não soma carteira",
+  OP_PCT_PARCIALMENTE_ATENDIDO: "Cobertura de itens — não soma carteira",
+  OP_PCT_NAO_ATENDIDO: "Cobertura de itens — não soma carteira",
   OP_VALOR_TOTALMENTE_ATENDIDO: "Mesmo pedido — eixo operacional",
   OP_VALOR_PARCIALMENTE_ATENDIDO: "Mesmo pedido — eixo operacional",
   OP_VALOR_NAO_ATENDIDO: "Mesmo pedido — eixo operacional",
@@ -86,14 +101,14 @@ export const INTELLIGENCE_CARD_SUBTITLE: Record<string, string> = {
 };
 
 export const INTELLIGENCE_ACCORDION_DISPLAY_TITLE: Record<string, string> = {
-  RECEBIDO: "Já recebido",
-  CR_ABERTO: "Já virou financeiro (CR aberto)",
-  FATURADO_SEM_CR: "Faturado, ainda sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Ainda só pedido — futuro",
-  CARTEIRA_PRESENTE_ATENCAO: "Ainda só pedido — atenção",
+  RECEBIDO: "Recebido",
+  CR_ABERTO: "CR aberto",
+  FATURADO_SEM_CR: "Faturado sem CR",
+  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro provável",
+  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
   CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
   SEM_EVIDENCIA: "Sem evidência suficiente",
-  DIVERGENCIA_TECNICA: "Alerta de divergência",
+  DIVERGENCIA_TECNICA: "Divergência técnica",
   NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
 };
 

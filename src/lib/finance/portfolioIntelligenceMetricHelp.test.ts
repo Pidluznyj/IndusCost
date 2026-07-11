@@ -89,5 +89,30 @@ describe("portfolio intelligence metric help", () => {
     assert.match(help, /MetricHelpTooltip/);
     assert.match(help, /portfolio-intelligence-help-operational/);
     assert.match(help, /Escape/);
+    assert.match(help, /O que significa\?/);
+    assert.match(help, /Como calculamos\?/);
+    assert.match(help, /O que entra\?/);
+    assert.match(help, /O que não entra\?/);
+    assert.match(help, /Como interpretar\?/);
+
+    const cards = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceCards.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(cards, /MetricHelpTooltip/);
+    assert.match(cards, /portfolio-intelligence-cards-financial/);
+    assert.match(cards, /portfolio-intelligence-cards-operational/);
+    assert.match(cards, /portfolio-intelligence-cards-alerts/);
+    assert.match(cards, /data-alert-card/);
+    assert.doesNotMatch(
+      cards.slice(
+        cards.indexOf("portfolio-intelligence-cards-financial"),
+        cards.indexOf("portfolio-intelligence-cards-operational")
+      ),
+      /RISCO_SUPERESTIMACAO|NF_CABECALHO_MAIOR_PEDIDO/
+    );
   });
 });

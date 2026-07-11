@@ -1,25 +1,19 @@
 import React from "react";
 import {
-  AlertTriangle,
-  CircleHelp,
-  FileOutput,
-  Gauge,
-  PackageX,
-  Receipt,
-  Scale,
-  ShieldAlert,
-  TrendingUp,
-  Wallet,
-  WalletCards,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import {
   formatFinanceCurrencyCompact,
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import type { PortfolioIntelligenceCardDto } from "@/src/lib/financePortfolioReconciliationClient";
 import {
+  INTELLIGENCE_ALERTS_NOTICE,
+  INTELLIGENCE_ALERTS_SHORT,
+  INTELLIGENCE_BLOCK_ALERTS_DESC,
+  INTELLIGENCE_BLOCK_ALERTS_TITLE,
+  INTELLIGENCE_BLOCK_FINANCIAL_DESC,
+  INTELLIGENCE_BLOCK_FINANCIAL_TITLE,
+  INTELLIGENCE_BLOCK_OPERATIONAL_DESC,
+  INTELLIGENCE_BLOCK_OPERATIONAL_TITLE,
   INTELLIGENCE_CARD_SUBTITLE,
   intelligenceCardTitle,
 } from "@/src/lib/finance/portfolioIntelligenceUiCopy";
@@ -40,26 +34,14 @@ const OPERATIONAL_CARD_KEYS = [
   "SEM_EVIDENCIA",
 ] as const;
 
-const FULFILLMENT_CARD_KEYS = [
+/** Bloco 3: atendimento + alertas (curadoria visual; valores vêm da API). */
+const ATTENTION_CARD_KEYS = [
   "OP_PCT_TOTALMENTE_ATENDIDO",
   "OP_PCT_PARCIALMENTE_ATENDIDO",
   "OP_PCT_NAO_ATENDIDO",
-  "OP_VALOR_TOTALMENTE_ATENDIDO",
-  "OP_VALOR_PARCIALMENTE_ATENDIDO",
-  "OP_VALOR_NAO_ATENDIDO",
-] as const;
-
-const ALERT_CARD_KEYS = [
-  "DIVERGENCIA_TECNICA",
-  "NF_CABECALHO_MAIOR_PEDIDO",
-  "VALOR_CABECALHO_NAO_ATRIBUIDO",
   "QUANTIDADE_EXCEDENTE_DOCUMENTO",
-  "PEDIDOS_COM_QTD_EXCEDENTE",
-  "QTD_EXCEDENTE_TOTAL",
-  "VALOR_ESTIMADO_EXCEDENTE",
   "PRODUTO_FORA_DO_PEDIDO",
-  "PEDIDOS_COM_PRODUTO_FORA",
-  "VALOR_DOCUMENTO_FORA_PEDIDO",
+  "NF_CABECALHO_MAIOR_PEDIDO",
   "RISCO_SUPERESTIMACAO",
 ] as const;
 
@@ -74,8 +56,7 @@ const CARD_ORDER = [
   "CARTEIRA_TOTAL_ANALISADA",
   ...FINANCIAL_CARD_KEYS,
   ...OPERATIONAL_CARD_KEYS,
-  ...FULFILLMENT_CARD_KEYS,
-  ...ALERT_CARD_KEYS,
+  ...ATTENTION_CARD_KEYS,
   ...SECONDARY_CARD_KEYS,
 ] as const;
 
@@ -92,17 +73,17 @@ const TONE_BY_KEY: Record<string, SoftTone> = {
   CARTEIRA_TOTAL_ANALISADA: "neutral",
   RECEBIDO: "green",
   CR_ABERTO: "blue",
-  FATURADO_SEM_CR: "blue",
+  FATURADO_SEM_CR: "amber",
   CARTEIRA_FUTURA_PROVAVEL: "blue",
   CARTEIRA_PRESENTE_ATENCAO: "amber",
   CARTEIRA_VENCIDA_BLOQUEADA: "red",
   SEM_EVIDENCIA: "gray",
-  OP_PCT_TOTALMENTE_ATENDIDO: "blue",
+  OP_PCT_TOTALMENTE_ATENDIDO: "green",
   OP_PCT_PARCIALMENTE_ATENDIDO: "amber",
-  OP_PCT_NAO_ATENDIDO: "gray",
-  OP_VALOR_TOTALMENTE_ATENDIDO: "blue",
+  OP_PCT_NAO_ATENDIDO: "red",
+  OP_VALOR_TOTALMENTE_ATENDIDO: "green",
   OP_VALOR_PARCIALMENTE_ATENDIDO: "amber",
-  OP_VALOR_NAO_ATENDIDO: "gray",
+  OP_VALOR_NAO_ATENDIDO: "red",
   DIVERGENCIA_TECNICA: "orange",
   NF_CABECALHO_MAIOR_PEDIDO: "orange",
   VALOR_CABECALHO_NAO_ATRIBUIDO: "orange",
@@ -120,46 +101,43 @@ const TONE_BY_KEY: Record<string, SoftTone> = {
   CONFIANCA_MEDIA_CARTEIRA: "blue",
 };
 
-const ICON_BY_KEY: Record<string, LucideIcon> = {
-  CARTEIRA_TOTAL_ANALISADA: WalletCards,
-  RECEBIDO: Wallet,
-  CR_ABERTO: Receipt,
-  FATURADO_SEM_CR: FileOutput,
-  CARTEIRA_FUTURA_PROVAVEL: TrendingUp,
-  CARTEIRA_PRESENTE_ATENCAO: Scale,
-  CARTEIRA_VENCIDA_BLOQUEADA: ShieldAlert,
-  SEM_EVIDENCIA: CircleHelp,
-  OP_PCT_TOTALMENTE_ATENDIDO: Scale,
-  OP_PCT_PARCIALMENTE_ATENDIDO: Scale,
-  OP_PCT_NAO_ATENDIDO: CircleHelp,
-  OP_VALOR_TOTALMENTE_ATENDIDO: TrendingUp,
-  OP_VALOR_PARCIALMENTE_ATENDIDO: Scale,
-  OP_VALOR_NAO_ATENDIDO: CircleHelp,
-  DIVERGENCIA_TECNICA: AlertTriangle,
-  NF_CABECALHO_MAIOR_PEDIDO: AlertTriangle,
-  VALOR_CABECALHO_NAO_ATRIBUIDO: AlertTriangle,
-  QUANTIDADE_EXCEDENTE_DOCUMENTO: AlertTriangle,
-  PEDIDOS_COM_QTD_EXCEDENTE: AlertTriangle,
-  QTD_EXCEDENTE_TOTAL: AlertTriangle,
-  VALOR_ESTIMADO_EXCEDENTE: AlertTriangle,
-  PRODUTO_FORA_DO_PEDIDO: PackageX,
-  PEDIDOS_COM_PRODUTO_FORA: PackageX,
-  VALOR_DOCUMENTO_FORA_PEDIDO: PackageX,
-  RISCO_SUPERESTIMACAO: PackageX,
-  CONVERSAO_PEDIDOS_CR_QTD: Receipt,
-  CONVERSAO_DOC_SAIDA_QTD: FileOutput,
-  TAXA_RECEBIMENTO_CR: Wallet,
-  CONFIANCA_MEDIA_CARTEIRA: Gauge,
+/** Ícones simples: ✓ confirmado · ⏳ previsto · ! alerta. Sem tendência inventada. */
+const MARK_BY_KEY: Record<string, string> = {
+  RECEBIDO: "✓",
+  CR_ABERTO: "✓",
+  FATURADO_SEM_CR: "✓",
+  CARTEIRA_FUTURA_PROVAVEL: "⏳",
+  CARTEIRA_PRESENTE_ATENCAO: "⏳",
+  CARTEIRA_VENCIDA_BLOQUEADA: "!",
+  SEM_EVIDENCIA: "⏳",
+  OP_PCT_TOTALMENTE_ATENDIDO: "✓",
+  OP_PCT_PARCIALMENTE_ATENDIDO: "⏳",
+  OP_PCT_NAO_ATENDIDO: "!",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "!",
+  PRODUTO_FORA_DO_PEDIDO: "!",
+  NF_CABECALHO_MAIOR_PEDIDO: "!",
+  RISCO_SUPERESTIMACAO: "!",
+  DIVERGENCIA_TECNICA: "!",
 };
 
 const TONE_CLASS: Record<SoftTone, string> = {
-  neutral: "border-slate-200/80 bg-gradient-to-br from-slate-50/90 to-white",
-  green: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-white",
-  blue: "border-sky-200/80 bg-gradient-to-br from-sky-50/80 to-white",
-  amber: "border-amber-200/70 bg-gradient-to-br from-amber-50/70 to-white",
-  red: "border-rose-200/70 bg-gradient-to-br from-rose-50/60 to-white",
-  orange: "border-orange-200/70 bg-gradient-to-br from-orange-50/50 to-white",
-  gray: "border-zinc-200/80 bg-gradient-to-br from-zinc-50/80 to-white",
+  neutral: "border-[#D0D5DD] bg-[#F9FAFB]",
+  green: "border-[#ABEFC6] bg-[#ECFDF3]",
+  blue: "border-[#B2DDFF] bg-[#EFF8FF]",
+  amber: "border-[#FEDF89] bg-[#FFFAEB]",
+  red: "border-[#FECDCA] bg-[#FEF3F2]",
+  orange: "border-[#FDBA74] bg-[#FFF6ED]",
+  gray: "border-[#D0D5DD] bg-[#F2F4F7]",
+};
+
+const MARK_TONE: Record<SoftTone, string> = {
+  neutral: "text-[#475467]",
+  green: "text-[#067647]",
+  blue: "text-[#175CD3]",
+  amber: "text-[#B54708]",
+  red: "text-[#B42318]",
+  orange: "text-[#C2410C]",
+  gray: "text-[#667085]",
 };
 
 const PERCENT_KEYS = new Set([
@@ -175,6 +153,26 @@ const PERCENT_KEYS = new Set([
 ]);
 
 const QUANTITY_KEYS = new Set(["QTD_EXCEDENTE_TOTAL"]);
+
+const ALERT_KEYS = new Set<string>([
+  "DIVERGENCIA_TECNICA",
+  "NF_CABECALHO_MAIOR_PEDIDO",
+  "VALOR_CABECALHO_NAO_ATRIBUIDO",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PEDIDOS_COM_QTD_EXCEDENTE",
+  "QTD_EXCEDENTE_TOTAL",
+  "VALOR_ESTIMADO_EXCEDENTE",
+  "PRODUTO_FORA_DO_PEDIDO",
+  "PEDIDOS_COM_PRODUTO_FORA",
+  "VALOR_DOCUMENTO_FORA_PEDIDO",
+  "RISCO_SUPERESTIMACAO",
+  "OP_PCT_TOTALMENTE_ATENDIDO",
+  "OP_PCT_PARCIALMENTE_ATENDIDO",
+  "OP_PCT_NAO_ATENDIDO",
+  "OP_VALOR_TOTALMENTE_ATENDIDO",
+  "OP_VALOR_PARCIALMENTE_ATENDIDO",
+  "OP_VALOR_NAO_ATENDIDO",
+]);
 
 function hasCompleteExplanation(card: PortfolioIntelligenceCardDto): boolean {
   const e = card.explanation;
@@ -207,25 +205,23 @@ type Props = {
 
 function CardArticle({
   card,
-  hero,
   alertStyle,
   onCardClick,
   activeCardKey,
 }: {
   card: PortfolioIntelligenceCardDto;
-  hero: boolean;
   alertStyle: boolean;
   onCardClick?: (cardKey: string) => void;
   activeCardKey?: string | null;
 }) {
   const tone = TONE_BY_KEY[card.key] ?? "neutral";
-  const Icon = ICON_BY_KEY[card.key] ?? Wallet;
+  const mark = MARK_BY_KEY[card.key] ?? (alertStyle ? "!" : "✓");
   const complete = hasCompleteExplanation(card);
   const clickable = Boolean(onCardClick);
   const isActive = activeCardKey === card.key;
   const title = intelligenceCardTitle(card.key, card.title);
   const subtitle = INTELLIGENCE_CARD_SUBTITLE[card.key];
-  const isAlert = alertStyle || Boolean(card.isAlertCard);
+  const isAlert = alertStyle || Boolean(card.isAlertCard) || ALERT_KEYS.has(card.key);
 
   return (
     <article
@@ -249,11 +245,8 @@ function CardArticle({
           : undefined
       }
       className={cn(
-        "relative flex flex-col rounded-2xl border px-3 py-3 shadow-sm outline-none",
-        hero && !isAlert ? "min-h-[7.25rem]" : "min-h-[5.75rem]",
+        "relative flex min-h-[112px] flex-col rounded-[14px] border border-solid p-4 outline-none",
         TONE_CLASS[tone],
-        isAlert &&
-          "border-dashed border-orange-300/80 bg-gradient-to-br from-orange-50/40 via-zinc-50/50 to-white shadow-none",
         clickable &&
           "cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/70",
         isActive && "ring-2 ring-sky-400/45"
@@ -267,67 +260,41 @@ function CardArticle({
         explanation={card.explanation}
         missingExplanation={!complete}
       />
-      <div className={cn("mb-1.5 flex items-start gap-2 pr-7", hero && !isAlert && "mb-2")}>
+      <div className="mb-2 flex items-start gap-2 pr-7">
         <span
           className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/70",
-            tone === "red" && "text-rose-700",
-            tone === "green" && "text-emerald-700",
-            tone === "blue" && "text-sky-700",
-            tone === "amber" && "text-amber-700",
-            tone === "orange" && "text-orange-700",
-            (tone === "neutral" || tone === "gray") && "text-slate-600"
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/80 text-[14px] font-semibold leading-none",
+            MARK_TONE[tone]
           )}
+          aria-hidden
         >
-          <Icon className="h-3.5 w-3.5" aria-hidden />
+          {mark}
         </span>
         <div className="min-w-0">
-          <h3
-            className={cn(
-              "flex flex-wrap items-center gap-1.5 font-semibold leading-snug text-foreground",
-              hero && !isAlert ? "text-xs sm:text-[13px]" : "text-[11px] sm:text-xs"
-            )}
-          >
-            <span>{title}</span>
-            {isAlert ? (
-              <span className="rounded border border-orange-300/80 bg-orange-100/80 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-orange-950">
-                alerta
-              </span>
-            ) : null}
+          <h3 className="text-[12px] font-semibold uppercase leading-snug tracking-wide text-[#344054]">
+            {title}
           </h3>
           {subtitle ? (
-            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{subtitle}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-[#667085]">{subtitle}</p>
           ) : null}
         </div>
       </div>
-      <p
-        className={cn(
-          "font-semibold tabular-nums leading-tight tracking-tight",
-          isAlert ? "text-base text-orange-950/80 sm:text-lg" : "text-foreground",
-          !isAlert && (hero ? "text-xl sm:text-2xl" : "text-base sm:text-lg")
-        )}
-      >
+      <p className="text-[24px] font-bold tabular-nums leading-tight tracking-tight text-[#101828] sm:text-[28px]">
         {formatPrimaryValue(card)}
       </p>
-      <p
-        className={cn(
-          "mt-auto pt-2 text-[10px] tabular-nums",
-          isAlert ? "text-orange-900/70" : "text-muted-foreground"
-        )}
-      >
+      <p className="mt-auto pt-2 text-[12px] tabular-nums text-[#667085] sm:text-[13px]">
         {formatFinanceInteger(card.count)} pedido(s)
         {card.percentage != null && !PERCENT_KEYS.has(card.key)
           ? ` · ${formatFinancePercent(card.percentage)} da carteira`
           : ""}
-        {isAlert ? " · não soma carteira" : ""}
+        {isAlert ? ` · ${INTELLIGENCE_ALERTS_SHORT.replace(/\.$/, "")}` : ""}
       </p>
     </article>
   );
 }
 
 /**
- * Grade horizontal de cards da Inteligência da Carteira.
- * Só formata — números e explanations vêm da API.
+ * Grade de cards da Central de Auditoria — só formata; números e explanations vêm da API.
  */
 export function PortfolioIntelligenceCards({
   cards,
@@ -342,15 +309,13 @@ export function PortfolioIntelligenceCards({
   const totalCard = byKey.get("CARTEIRA_TOTAL_ANALISADA") ?? null;
   const financialCards = pick(FINANCIAL_CARD_KEYS);
   const operationalCards = pick(OPERATIONAL_CARD_KEYS);
-  const fulfillmentCards = pick(FULFILLMENT_CARD_KEYS);
-  const alertCards = pick(ALERT_CARD_KEYS);
+  const attentionCards = pick(ATTENTION_CARD_KEYS);
   const secondaryCards = pick(SECONDARY_CARD_KEYS);
   const ordered = [
     ...(totalCard ? [totalCard] : []),
     ...financialCards,
     ...operationalCards,
-    ...fulfillmentCards,
-    ...alertCards,
+    ...attentionCards,
     ...secondaryCards,
   ];
 
@@ -359,12 +324,12 @@ export function PortfolioIntelligenceCards({
 
   if (loading) {
     return (
-      <div className="space-y-3" data-testid="portfolio-intelligence-cards-loading">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="space-y-6" data-testid="portfolio-intelligence-cards-loading">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="h-[7.25rem] animate-pulse rounded-2xl border border-border/50 bg-muted/30"
+              className="h-[112px] animate-pulse rounded-[14px] border border-[#EAECF0] bg-[#F9FAFB]"
             />
           ))}
         </div>
@@ -375,78 +340,77 @@ export function PortfolioIntelligenceCards({
   if (ordered.length === 0) {
     return (
       <div
-        className="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-4 py-10 text-center"
+        className="rounded-[14px] border border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-4 py-10 text-center"
         data-testid="portfolio-intelligence-cards-empty"
       >
-        <p className="text-sm font-medium text-foreground">Nenhum indicador neste filtro</p>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-sm font-medium text-[#101828]">Nenhum indicador neste filtro</p>
+        <p className="mt-1 text-xs text-[#667085]">
           Ajuste cliente, período ou status — ou limpe os filtros para ver a carteira completa.
         </p>
       </div>
     );
   }
 
-  const renderGrid = (
+  const renderBlock = (
     title: string,
     description: string,
     blockCards: PortfolioIntelligenceCardDto[],
-    opts?: { alert?: boolean; testId?: string }
+    opts: {
+      alert?: boolean;
+      testId: string;
+      notice?: string;
+    }
   ) => {
     if (blockCards.length === 0) return null;
     return (
-      <div data-testid={opts?.testId}>
-        <div className="mb-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {title}
-          </p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+      <section
+        className="rounded-[14px] border border-[#EAECF0] bg-white p-4 sm:p-5"
+        data-testid={opts.testId}
+      >
+        <div className="mb-3">
+          <h3 className="text-[16px] font-bold text-[#101828]">{title}</h3>
+          <p className="mt-1 text-[13px] leading-relaxed text-[#667085]">{description}</p>
         </div>
-        {opts?.alert ? (
+        {opts.notice ? (
           <p
-            className="mb-2 rounded-lg border border-dashed border-orange-300/80 bg-orange-50/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-orange-950"
+            className="mb-3 rounded-[12px] border border-[#FDBA74] bg-[#FFF6ED] px-3 py-2.5 text-[12px] leading-relaxed text-[#C2410C]"
             data-testid="portfolio-intelligence-alerts-notice"
           >
-            Alerta — pode coexistir com outro status. Não soma carteira.
+            {opts.notice}
           </p>
         ) : null}
-        <div
-          className={cn(
-            "grid grid-cols-2 gap-3 sm:grid-cols-3",
-            opts?.alert ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4"
-          )}
-        >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-4">
           {blockCards.map((card) => (
             <CardArticle
               key={card.key}
               card={card}
-              hero={!opts?.alert}
-              alertStyle={Boolean(opts?.alert)}
+              alertStyle={Boolean(opts.alert)}
               onCardClick={onCardClick}
               activeCardKey={activeCardKey}
             />
           ))}
         </div>
-      </div>
+      </section>
     );
   };
 
   return (
-    <div className="space-y-5" data-testid="portfolio-intelligence-cards">
+    <div className="space-y-6" data-testid="portfolio-intelligence-cards">
       {totalCard ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-[#D0D5DD] bg-[#F9FAFB] px-4 py-3"
           data-testid="portfolio-intelligence-card-CARTEIRA_TOTAL_ANALISADA"
         >
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted-foreground">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-[#667085]">
               {intelligenceCardTitle(totalCard.key, totalCard.title)}
             </p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[11px] text-[#667085]">
               {INTELLIGENCE_CARD_SUBTITLE[totalCard.key] ?? "Base 100% do filtro"}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <p className="text-lg font-semibold tabular-nums text-foreground sm:text-xl">
+            <p className="text-[24px] font-bold tabular-nums text-[#101828]">
               {formatPrimaryValue(totalCard)}
             </p>
             <MetricHelpTooltip
@@ -458,36 +422,53 @@ export function PortfolioIntelligenceCards({
         </div>
       ) : null}
 
-      {renderGrid(
-        "1. Financeiro confirmado",
-        "O que já virou CR ou baixa — dinheiro confirmado na conciliação.",
+      {renderBlock(
+        INTELLIGENCE_BLOCK_FINANCIAL_TITLE,
+        INTELLIGENCE_BLOCK_FINANCIAL_DESC,
         financialCards,
         { testId: "portfolio-intelligence-cards-financial" }
       )}
-      {renderGrid(
-        "2. Carteira operacional",
-        "Ainda é pedido de venda — futuro, atenção, vencido ou sem evidência.",
+      {renderBlock(
+        INTELLIGENCE_BLOCK_OPERATIONAL_TITLE,
+        INTELLIGENCE_BLOCK_OPERATIONAL_DESC,
         operationalCards,
         { testId: "portfolio-intelligence-cards-operational" }
       )}
-      {renderGrid(
-        "2b. Atendimento operacional",
-        "Eixo paralelo: % e valor por cobertura item a item — não substitui nem soma o financeiro.",
-        fulfillmentCards,
-        { testId: "portfolio-intelligence-cards-fulfillment" }
+      {renderBlock(
+        INTELLIGENCE_BLOCK_ALERTS_TITLE,
+        INTELLIGENCE_BLOCK_ALERTS_DESC,
+        attentionCards,
+        {
+          alert: true,
+          testId: "portfolio-intelligence-cards-alerts",
+          notice: `${INTELLIGENCE_ALERTS_NOTICE} ${INTELLIGENCE_ALERTS_SHORT}`,
+        }
       )}
-      {renderGrid(
-        "3. Alertas técnicos",
-        "Risco ou divergência em pedidos já classificados — não é carteira extra.",
-        alertCards,
-        { alert: true, testId: "portfolio-intelligence-cards-alerts" }
-      )}
-      {renderGrid(
-        "Conversão e confiança",
-        "Indicadores de conversão operacional — não somam com os blocos acima.",
-        secondaryCards,
-        { testId: "portfolio-intelligence-cards-secondary" }
-      )}
+
+      {secondaryCards.length > 0 ? (
+        <section
+          className="rounded-[14px] border border-dashed border-[#EAECF0] bg-[#FCFCFD] p-4 sm:p-5"
+          data-testid="portfolio-intelligence-cards-secondary"
+        >
+          <div className="mb-3">
+            <h3 className="text-[14px] font-bold text-[#344054]">Conversão e confiança</h3>
+            <p className="mt-1 text-[12px] leading-relaxed text-[#667085]">
+              Indicadores auxiliares — não somam com os blocos acima.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
+            {secondaryCards.map((card) => (
+              <CardArticle
+                key={card.key}
+                card={card}
+                alertStyle={false}
+                onCardClick={onCardClick}
+                activeCardKey={activeCardKey}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
