@@ -12,26 +12,39 @@ export type PortfolioIntelligenceExplanation = {
 };
 
 const FALLBACK: PortfolioIntelligenceExplanation = {
-  whatItMeans: "Explicação não disponível para esta métrica na resposta atual.",
+  whatItMeans: "Ainda não temos uma explicação completa para esta métrica nesta tela.",
   howWeCalculate: "Informação não disponível na importação atual.",
   whatIsIncluded: "Informação não disponível na importação atual.",
   whatIsExcluded: "Informação não disponível na importação atual.",
-  howToInterpret: "Atualize a conciliação ou consulte o suporte se o problema persistir.",
+  howToInterpret:
+    "Trate o número com cautela até a conciliação trazer a explicação completa.",
 };
+
+const OPERATIONAL_NOTICE =
+  "Atenção: esta é uma métrica operacional/evidencial da Central de Inteligência. Não substitui o Fluxo de Caixa, Contas a Receber oficial nem o Relatório Presidencial.";
 
 type Props = {
   title: string;
   explanation?: PortfolioIntelligenceExplanation | null;
   missingExplanation?: boolean;
+  /** Mostra aviso de métrica operacional (padrão: true). */
+  showOperationalNotice?: boolean;
+  className?: string;
+  /** Posição do botão no card (canto superior direito). */
+  corner?: boolean;
 };
 
 /**
- * Ícone “?” discreto com popover ao clicar (não inventa regra — só exibe explanation da API).
+ * MetricHelpTooltip — ícone “?” discreto com popover padronizado (acessível).
+ * Alias exportado também como PortfolioIntelligenceHelpPopover.
  */
-export function PortfolioIntelligenceHelpPopover({
+export function MetricHelpTooltip({
   title,
   explanation,
   missingExplanation = false,
+  showOperationalNotice = true,
+  className,
+  corner = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -40,18 +53,32 @@ export function PortfolioIntelligenceHelpPopover({
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   const content = explanation ?? FALLBACK;
+  const incomplete = missingExplanation || !explanation;
 
   useEffect(() => {
     if (!open || !buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const width = Math.min(window.innerWidth - 16, 320);
-    let left = rect.right - width;
-    if (left < 8) left = 8;
-    let top = rect.bottom + 8;
-    if (top + 280 > window.innerHeight) {
-      top = Math.max(8, rect.top - 288);
-    }
-    setPos({ top, left });
+    const place = () => {
+      const rect = buttonRef.current!.getBoundingClientRect();
+      const width = Math.min(window.innerWidth - 16, 340);
+      const approxHeight = 360;
+      let left = rect.right - width;
+      if (left < 8) left = 8;
+      if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - width - 8);
+      }
+      let top = rect.bottom + 8;
+      if (top + approxHeight > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - approxHeight - 8);
+      }
+      setPos({ top, left });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -73,21 +100,28 @@ export function PortfolioIntelligenceHelpPopover({
   }, [open]);
 
   return (
-    <>
+    <span
+      className={cn(corner && "absolute right-1.5 top-1.5 z-10", className)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
       <button
         ref={buttonRef}
         type="button"
         className={cn(
-          "inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background/80 text-muted-foreground",
+          "inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground shadow-sm",
           "hover:border-sky-300 hover:text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50",
-          missingExplanation && "border-amber-300 text-amber-700"
+          incomplete && "border-amber-300 text-amber-700"
         )}
         aria-expanded={open}
         aria-controls={tooltipId}
-        aria-label={`Explicação: ${title}`}
+        aria-haspopup="dialog"
+        aria-label={`Ajuda: ${title}`}
         data-testid="portfolio-intelligence-help"
+        data-metric-help={title}
         onClick={(e) => {
           e.stopPropagation();
+          e.preventDefault();
           setOpen((v) => !v);
         }}
       >
@@ -99,15 +133,17 @@ export function PortfolioIntelligenceHelpPopover({
               ref={panelRef}
               id={tooltipId}
               role="dialog"
+              aria-modal="false"
               aria-label={`Como interpretar ${title}`}
               data-testid="portfolio-intelligence-help-panel"
-              className="fixed z-[220] w-[min(100vw-1rem,20rem)] rounded-xl border border-border bg-popover p-3 text-[11px] leading-snug text-popover-foreground shadow-xl"
+              className="fixed z-[220] max-h-[min(70vh,28rem)] w-[min(100vw-1rem,21rem)] overflow-y-auto rounded-xl border border-border bg-popover p-3 text-[11px] leading-snug text-popover-foreground shadow-xl"
               style={{ top: pos.top, left: pos.left }}
+              onMouseDown={(e) => e.stopPropagation()}
             >
               <p className="text-xs font-semibold text-foreground">{title}</p>
-              {missingExplanation ? (
+              {incomplete ? (
                 <p className="mt-1 text-[10px] text-amber-800">
-                  Explicação incompleta na API — usando texto de apoio.
+                  Explicação incompleta na origem — usando texto de apoio.
                 </p>
               ) : null}
               <dl className="mt-2 space-y-2">
@@ -132,10 +168,21 @@ export function PortfolioIntelligenceHelpPopover({
                   <dd className="text-foreground">{content.howToInterpret}</dd>
                 </div>
               </dl>
+              {showOperationalNotice ? (
+                <p
+                  className="mt-3 rounded-md border border-sky-200/80 bg-sky-50/70 px-2 py-1.5 text-[10px] text-sky-950"
+                  data-testid="portfolio-intelligence-help-operational"
+                >
+                  {OPERATIONAL_NOTICE}
+                </p>
+              ) : null}
             </div>,
             document.body
           )
         : null}
-    </>
+    </span>
   );
 }
+
+/** Nome legado — mesmo componente. */
+export const PortfolioIntelligenceHelpPopover = MetricHelpTooltip;

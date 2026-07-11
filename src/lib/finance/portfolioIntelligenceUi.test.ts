@@ -34,13 +34,38 @@ describe("portfolio intelligence UI", () => {
     const help = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover.tsx"
     );
-    assert.match(cards, /PortfolioIntelligenceHelpPopover/);
+    assert.match(cards, /MetricHelpTooltip|PortfolioIntelligenceHelpPopover/);
     assert.match(cards, /CARD_ORDER/);
     assert.match(cards, /formatFinanceCurrencyCompact|formatFinancePercent/);
     assert.match(cards, /onCardClick/);
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);
-    assert.match(help, /FALLBACK|Informação não disponível/);
+    assert.match(help, /O que entra/);
+    assert.match(help, /O que não entra/);
+    assert.match(help, /Como interpretar/);
+    assert.match(help, /operacional|OPERATIONAL_NOTICE|métrica operacional/);
+    assert.match(help, /FALLBACK|Informação não disponível|texto de apoio/);
+    assert.match(help, /export function MetricHelpTooltip/);
+  });
+
+  it("sanfonas e KPIs por vendedor sempre expõem ajuda", () => {
+    const accordions = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
+    );
+    const sellers = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx"
+    );
+    const filters = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx"
+    );
+    assert.match(accordions, /MetricHelpTooltip/);
+    assert.match(sellers, /MetricHelpTooltip/);
+    assert.match(sellers, /SELLER_KPI_EXPLANATIONS/);
+    assert.match(filters, /MetricHelpTooltip|DATE_AXIS_HELP/);
+    assert.match(
+      read("src/lib/finance/portfolioIntelligenceFilters.ts"),
+      /Pedidos por emissão são diferentes de CR por vencimento/
+    );
   });
 
   it("seção chama endpoint intelligence e trata loading/erro", () => {

@@ -8,7 +8,7 @@ import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfol
 import { SELLER_KPI_EXPLANATIONS } from "@/src/lib/finance/portfolioIntelligenceSellerKpiExplanations";
 import { cn } from "@/src/lib/utils";
 import { financeModuleFilterFieldClass } from "@/src/lib/financeModuleUiStandards";
-import { PortfolioIntelligenceHelpPopover } from "./PortfolioIntelligenceHelpPopover";
+import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
 
 type SortKey =
   | "risk"
@@ -32,14 +32,16 @@ function HeaderCell({
   explainKey: string;
   className?: string;
 }) {
-  const explanation = SELLER_KPI_EXPLANATIONS[explainKey];
+  const explanation = SELLER_KPI_EXPLANATIONS[explainKey] ?? null;
   return (
     <th className={cn("px-2 py-2 font-semibold", className)}>
       <span className="inline-flex items-center gap-1">
         {label}
-        {explanation ? (
-          <PortfolioIntelligenceHelpPopover title={label} explanation={explanation} />
-        ) : null}
+        <MetricHelpTooltip
+          title={label}
+          explanation={explanation}
+          missingExplanation={!explanation}
+        />
       </span>
     </th>
   );

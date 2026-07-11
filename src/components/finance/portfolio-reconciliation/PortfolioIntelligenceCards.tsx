@@ -20,7 +20,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import type { PortfolioIntelligenceCardDto } from "@/src/lib/financePortfolioReconciliationClient";
 import { cn } from "@/src/lib/utils";
-import { PortfolioIntelligenceHelpPopover } from "./PortfolioIntelligenceHelpPopover";
+import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
 
 /** Ordem visual dos cards (API pode trazer extras; só exibimos estes). */
 const CARD_ORDER = [
@@ -213,17 +213,12 @@ export function PortfolioIntelligenceCards({
             )}
             data-testid={`portfolio-intelligence-card-${card.key}`}
           >
-            <div
-              className="absolute right-1.5 top-1.5 z-10"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-            >
-              <PortfolioIntelligenceHelpPopover
-                title={card.title}
-                explanation={card.explanation}
-                missingExplanation={!complete}
-              />
-            </div>
+            <MetricHelpTooltip
+              corner
+              title={card.title}
+              explanation={card.explanation}
+              missingExplanation={!complete}
+            />
             <div className="mb-1 flex items-start gap-1.5 pr-6">
               <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <h3 className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">

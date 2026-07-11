@@ -280,7 +280,7 @@ describe("portfolioMaturityClassification", () => {
     assert.match(summary, /Contas a Receber/i);
 
     const expl = getMetricExplanation("CARTEIRA_VENCIDA_BLOQUEADA");
-    assert.match(expl.comoInterpretar, /não acusar cliente/i);
+    assert.match(expl.comoInterpretar, /caixa confiável|validação comercial/i);
     const missing = getMetricExplanation("METRICA_INEXISTENTE");
     assert.match(missing.oQueSignifica, /Informação não disponível/);
   });

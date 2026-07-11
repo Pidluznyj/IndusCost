@@ -19,6 +19,8 @@ import {
 } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
 import { cn } from "@/src/lib/utils";
 import { PortfolioIntelligenceOrdersGrid } from "./PortfolioIntelligenceOrdersGrid";
+import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
+import type { PortfolioIntelligenceExplanation } from "./PortfolioIntelligenceHelpPopover";
 
 export {
   cardKeyToAccordionKey,
@@ -47,6 +49,14 @@ const TONE_CLASS: Record<IntelligenceAccordionKey, string> = {
   DIVERGENCIA_TECNICA: "border-orange-200/90 bg-orange-50/50",
   SEM_EVIDENCIA: "border-zinc-200/90 bg-zinc-50/60",
 };
+
+function explanationForAccordion(
+  key: IntelligenceAccordionKey,
+  cards: readonly PortfolioIntelligenceCardDto[]
+): PortfolioIntelligenceExplanation | null {
+  const card = cards.find((c) => c.key === key);
+  return card?.explanation ?? null;
+}
 
 type Props = {
   groups: PortfolioIntelligenceGroupDto[];
@@ -123,14 +133,23 @@ export function PortfolioIntelligenceAccordions({
               onClick={() => onExpandedChange(expanded ? null : key)}
               data-testid={`portfolio-intelligence-accordion-toggle-${key}`}
             >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">
-                  {TITLE_BY_KEY[key]}
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <span>{TITLE_BY_KEY[key]}</span>
                   {stats.isAlert ? (
-                    <span className="ml-1.5 text-[10px] font-medium text-orange-800">
-                      (alerta)
-                    </span>
+                    <span className="text-[10px] font-medium text-orange-800">(alerta)</span>
                   ) : null}
+                  <span
+                    className="inline-flex"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <MetricHelpTooltip
+                      title={TITLE_BY_KEY[key]}
+                      explanation={explanationForAccordion(key, cards)}
+                      missingExplanation={!explanationForAccordion(key, cards)}
+                    />
+                  </span>
                 </p>
                 <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
                   {formatFinanceCurrencyCompact(stats.value)} ·{" "}

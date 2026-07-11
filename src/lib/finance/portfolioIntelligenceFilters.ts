@@ -149,15 +149,15 @@ export const PORTFOLIO_INTELLIGENCE_TAG_OPTIONS = [
 
 export const PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP = {
   whatItMeans:
-    "O eixo de data define qual data do pedido entra no filtro de período. Pedidos de venda por emissão é diferente de Contas a Receber por vencimento.",
+    "Pedidos por emissão são diferentes de CR por vencimento. Comparar eixos diferentes pode gerar divergências.",
   howWeCalculate:
-    "A API compara from/to apenas com a data do eixo escolhido (emissão, previsão, NF, documento, vencimento CR, baixa, forecast ou atualização).",
+    "O filtro de período usa só a data do eixo escolhido (emissão, previsão, NF, documento, vencimento do CR, baixa, forecast ou atualização).",
   whatIsIncluded:
-    "Pedidos que possuem a data do eixo dentro do intervalo (inclusive). Atalhos como “Próximos 30 dias” e “Vencidos” preenchem from/to automaticamente.",
+    "Pedidos que têm a data desse eixo dentro do intervalo. Atalhos como “Próximos 30 dias” e “Vencidos” preenchem as datas automaticamente.",
   whatIsExcluded:
-    "Pedidos sem a data do eixo escolhido são excluídos do recorte e podem gerar aviso na API. Não misture emissão de pedido com vencimento de CR na mesma leitura.",
+    "Pedidos sem a data do eixo escolhido ficam de fora do recorte. Não misture emissão de pedido com vencimento de Contas a Receber na mesma leitura.",
   howToInterpret:
-    "Antes de comparar números, confira o chip “Eixo: …”. Ex.: emissão = carteira comercial; vencimento CR = títulos financeiros.",
+    "Antes de comparar números, confira o chip “Eixo: …”. Emissão = carteira comercial; vencimento de CR = títulos financeiros.",
 };
 
 function formatYmdLocal(d: Date): string {

@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { PortfolioIntelligenceHelpPopover } from "./PortfolioIntelligenceHelpPopover";
+import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
 import {
   applyPeriodPresetToFilters,
   buildPortfolioIntelligenceFilterChips,
@@ -153,7 +153,7 @@ export function PortfolioIntelligenceFiltersBar({
               <div className="min-w-[200px] flex-1">
                 <div className="mb-1 flex items-center gap-1">
                   <FieldLabel>Eixo de data</FieldLabel>
-                  <PortfolioIntelligenceHelpPopover
+                  <MetricHelpTooltip
                     title="Eixo de data do período"
                     explanation={PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP}
                   />

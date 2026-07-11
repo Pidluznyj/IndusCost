@@ -572,7 +572,14 @@ export type PortfolioMaturityMetricKey =
   | "SEM_EVIDENCIA"
   | "DIVERGENCIA_TECNICA"
   | "CONFIDENCE_SCORE"
-  | "RISCO_SUPERESTIMACAO";
+  | "CONFIANCA_MEDIA_CARTEIRA"
+  | "RISCO_SUPERESTIMACAO"
+  | "CARTEIRA_TOTAL_ANALISADA"
+  | "CONVERSAO_PEDIDOS_CR_QTD"
+  | "CONVERSAO_PEDIDOS_CR_VALOR"
+  | "CONVERSAO_DOC_SAIDA_QTD"
+  | "CONVERSAO_DOC_SAIDA_VALOR"
+  | "TAXA_RECEBIMENTO_CR";
 
 export type PortfolioMetricExplanation = {
   metricKey: PortfolioMaturityMetricKey | string;
@@ -584,88 +591,158 @@ export type PortfolioMetricExplanation = {
 };
 
 const METRIC_EXPLANATIONS: Record<string, PortfolioMetricExplanation> = {
+  CARTEIRA_TOTAL_ANALISADA: {
+    metricKey: "CARTEIRA_TOTAL_ANALISADA",
+    oQueSignifica:
+      "Soma do valor oficial de todos os pedidos no filtro atual — a base 100% da carteira analisada.",
+    comoCalculamos: "Somamos o valor de cada pedido uma única vez (sem duplicar).",
+    oQueEntra: "Valor oficial do pedido de venda.",
+    oQueNaoEntra: "Cabeçalho de NF, previsões inventadas e valores de comissão.",
+    comoInterpretar:
+      "É o denominador dos percentuais. Métrica operacional da inteligência — não substitui o caixa oficial.",
+  },
   RECEBIDO: {
     metricKey: "RECEBIDO",
-    oQueSignifica: "Pedido com recebimento/baixa identificado na conciliação.",
-    comoCalculamos:
-      "Status principal RECEBIDO quando receivedValue > 0 e openReceivableValue ≈ 0 (ou factStatus RECEIVED).",
-    oQueEntra: "Valores rateados de baixa/recebimento na fato do pedido.",
-    oQueNaoEntra: "Cabeçalho de NF; forecastValue bruto; comissões.",
-    comoInterpretar: "Não há saldo em aberto deste pedido na carteira projetada.",
+    oQueSignifica: "Pedidos em que já identificamos baixa/recebimento na conciliação.",
+    comoCalculamos: "Pedidos com recebimento e sem saldo aberto relevante de CR.",
+    oQueEntra: "Evidência de baixa/recebimento ligada ao pedido.",
+    oQueNaoEntra: "Cabeçalho de NF e comissões.",
+    comoInterpretar: "Parte da carteira que já virou dinheiro recebido.",
   },
   CR_ABERTO: {
     metricKey: "CR_ABERTO",
-    oQueSignifica: "Pedido com Contas a Receber aberto rateado.",
-    comoCalculamos: "openReceivableValue > 0; prioridade sobre faturado/carteira.",
-    oQueEntra: "CR rateado por alocação itemizada.",
-    oQueNaoEntra: "CR bruto de NF sem rateio; pedido sem título.",
+    oQueSignifica: "Pedidos que já têm Contas a Receber em aberto.",
+    comoCalculamos: "Pedidos com título de CR ainda não totalmente baixado.",
+    oQueEntra: "CR vinculado e rateado ao pedido.",
+    oQueNaoEntra: "Pedido sem título e CR sem vínculo confiável.",
     comoInterpretar:
-      "É o que o financeiro já enxerga como título. Divergência técnica vira tag, não muda o status.",
+      "Já está no financeiro. Divergência técnica pode aparecer como alerta, sem mudar este status.",
   },
   FATURADO_SEM_CR: {
     metricKey: "FATURADO_SEM_CR",
-    oQueSignifica: "Há NF e/ou documento de saída, mas ainda sem CR.",
-    comoCalculamos: "hasNfe/hasStockDocument/hasAllocation e sem CR aberto/recebido.",
-    oQueEntra: "Evidência de faturamento/saída na fato.",
-    oQueNaoEntra: "Soma de cabeçalhos NF como valor do pedido.",
-    comoInterpretar: "Gap operacional entre faturamento e financeiro.",
+    oQueSignifica: "Há NF e/ou documento de saída, mas ainda não há Contas a Receber.",
+    comoCalculamos: "Pedidos com evidência de faturamento/saída e sem CR.",
+    oQueEntra: "NF e/ou documento de saída vinculados.",
+    oQueNaoEntra: "Soma de cabeçalhos de NF como se fosse o valor do pedido.",
+    comoInterpretar: "Gap entre faturamento e financeiro — vale acompanhar.",
   },
   CARTEIRA_FUTURA_PROVAVEL: {
     metricKey: "CARTEIRA_FUTURA_PROVAVEL",
-    oQueSignifica: "Só pedido em carteira com previsão > 30 dias.",
-    comoCalculamos: "Sem NF/doc/CR; daysUntilForecast > 30.",
-    oQueEntra: "Valor oficial do pedido / saldo ORDER.",
-    oQueNaoEntra: "CR; cabeçalho NF; probabilidade inventada.",
+    oQueSignifica: "Pedidos só em carteira, com previsão ainda distante (mais de 30 dias).",
+    comoCalculamos: "Sem NF, documento ou CR; previsão além de 30 dias.",
+    oQueEntra: "Valor oficial do pedido.",
+    oQueNaoEntra: "CR, cabeçalho de NF e probabilidade inventada de recebimento.",
     comoInterpretar: "Carteira futura — não é atraso de cliente.",
   },
   CARTEIRA_PRESENTE_ATENCAO: {
     metricKey: "CARTEIRA_PRESENTE_ATENCAO",
-    oQueSignifica: "Só pedido; previsão nos próximos 30 dias ou atraso ≤ 60 dias.",
-    comoCalculamos: "Sem NF/doc/CR; janela presente/atenção.",
-    oQueEntra: "Pedido oficial com forecastDate na janela.",
-    oQueNaoEntra: "Título CR vencido (esse é outro conceito).",
-    comoInterpretar: "Priorizar faturamento ou atualizar previsão.",
+    oQueSignifica:
+      "Pedidos só em carteira com previsão próxima (até 30 dias) ou recentemente ultrapassada.",
+    comoCalculamos: "Sem NF/documento/CR; janela de atenção comercial.",
+    oQueEntra: "Pedidos com data prevista nessa janela.",
+    oQueNaoEntra: "Título de CR vencido (isso é outro conceito).",
+    comoInterpretar: "Priorizar faturamento ou atualizar a previsão.",
   },
   CARTEIRA_VENCIDA_BLOQUEADA: {
     metricKey: "CARTEIRA_VENCIDA_BLOQUEADA",
-    oQueSignifica: "Pedido antigo/sem evolução, sem NF/documento/CR.",
-    comoCalculamos: "Sem NF/doc/CR; atraso de previsão > 60 dias ou pedido stale.",
-    oQueEntra: "Pedidos ORDER_ONLY antigos (ex.: Britânia críticos).",
-    oQueNaoEntra: "Títulos CR abertos vencidos (usar OPEN_OVERDUE_RECEIVABLE).",
+    oQueSignifica:
+      "Pedidos que passaram da data prevista e ainda não possuem NF, documento de saída ou CR.",
+    comoCalculamos:
+      "Sem NF/documento/CR e com previsão ultrapassada há mais de 60 dias (ou pedido antigo sem evolução).",
+    oQueEntra: "Pedidos antigos ainda só em pedido.",
+    oQueNaoEntra: "Títulos de CR abertos vencidos (inadimplência financeira é outro indicador).",
     comoInterpretar:
-      "Baixa confiança; não acusar cliente de inadimplência sem CR aberto vencido.",
+      "Não devem ser tratados como caixa confiável até validação comercial.",
   },
   SEM_EVIDENCIA: {
     metricKey: "SEM_EVIDENCIA",
-    oQueSignifica: "Dados insuficientes para classificar.",
-    comoCalculamos: "Nenhuma regra anterior casou com segurança.",
-    oQueEntra: "Pedidos sem forecast/evidência mínima.",
+    oQueSignifica: "Pedidos sem evidência suficiente para classificar com segurança.",
+    comoCalculamos: "Nenhuma regra de maturidade casou de forma confiável.",
+    oQueEntra: "Pedidos com dados incompletos na importação.",
     oQueNaoEntra: "Valores inventados.",
-    comoInterpretar: PORTFOLIO_INFO_UNAVAILABLE,
+    comoInterpretar: "Revisar cadastro/importação antes de usar no caixa.",
   },
   DIVERGENCIA_TECNICA: {
     metricKey: "DIVERGENCIA_TECNICA",
-    oQueSignifica: "Alerta técnico (vínculo/alocação/qualidade), não status de carteira.",
-    comoCalculamos: "Tags a partir de factStatus/alerts; status principal permanece o financeiro.",
-    oQueEntra: "OVER_LINKED, DATA_QUALITY, AMBIGUOUS, alertas de cabeçalho, etc.",
-    oQueNaoEntra: "Não move o pedido para outro card de maturidade.",
-    comoInterpretar: "Revisar vínculo; o valor do pedido não deve ser duplicado.",
+    oQueSignifica:
+      "Alerta de inconsistência técnica (vínculo, alocação ou qualidade de dados) — não é um status de carteira.",
+    comoCalculamos: "Tags a partir de alertas da conciliação; o status principal permanece o financeiro.",
+    oQueEntra: "Alertas como vínculo incompleto, alocação ambígua ou cabeçalho maior que o pedido.",
+    oQueNaoEntra: "Não move o pedido para outro card de maturidade nem duplica valor.",
+    comoInterpretar: "Revisar o vínculo; o valor do pedido continua em um único status principal.",
   },
   CONFIDENCE_SCORE: {
     metricKey: "CONFIDENCE_SCORE",
-    oQueSignifica: "Índice 0–100 da qualidade evidencial do pedido.",
-    comoCalculamos: "Faixa por status + ajustes (divergência, cabeçalho, condição, fato LOW/BLOCKED).",
-    oQueEntra: "Sinais de recebimento, CR, NF, documento, alocação, datas.",
-    oQueNaoEntra: "Score de comissão; probabilidade comercial inventada.",
-    comoInterpretar: "ALTA ≥80; MEDIA 60–79; BAIXA 30–59; MUITO_BAIXA <30.",
+    oQueSignifica:
+      "Nota de 0 a 100 que mostra quanta evidência existe de que o pedido virou ou vai virar dinheiro.",
+    comoCalculamos:
+      "Partimos do status do pedido e ajustamos conforme NF, documento, CR, recebimento e alertas.",
+    oQueEntra: "Sinais de recebimento, CR, NF, documento, alocação e datas.",
+    oQueNaoEntra: "Score de comissão ou probabilidade comercial inventada.",
+    comoInterpretar:
+      "Importante: não é previsão perfeita; é indicador operacional/evidencial. Alta ≥80; média 60–79; baixa 30–59; muito baixa <30.",
+  },
+  CONFIANCA_MEDIA_CARTEIRA: {
+    metricKey: "CONFIANCA_MEDIA_CARTEIRA",
+    oQueSignifica:
+      "Nota média de confiança da carteira no filtro, ponderada pelo valor dos pedidos.",
+    comoCalculamos: "Média das notas de confiança, pesada pelo valor de cada pedido.",
+    oQueEntra: "Todos os pedidos do filtro.",
+    oQueNaoEntra: "Comissões e metas comerciais externas.",
+    comoInterpretar:
+      "Importante: não é previsão perfeita; é indicador operacional/evidencial da qualidade da evidência.",
   },
   RISCO_SUPERESTIMACAO: {
     metricKey: "RISCO_SUPERESTIMACAO",
-    oQueSignifica: "Risco de inflar a carteira se usar cabeçalho de NF.",
-    comoCalculamos: "nfeHeaderValue > orderValue (deduplicado por NF).",
-    oQueEntra: "Diferença cabeçalho − pedido como risco.",
-    oQueNaoEntra: "Cabeçalho como saldo projetado.",
-    comoInterpretar: "Sempre limitar ao valor oficial do pedido.",
+    oQueSignifica:
+      "Valor de pedidos antigos, sem NF/documento/CR, que podem estar inflando a carteira.",
+    comoCalculamos: "Soma do valor dos pedidos em carteira vencida/bloqueada.",
+    oQueEntra: "Pedidos antigos ainda só em pedido, sem evolução comercial.",
+    oQueNaoEntra: "CR aberto, pedidos futuros/presentes e cabeçalho de NF como se fosse caixa.",
+    comoInterpretar: "Precisa validação antes de entrar no caixa.",
+  },
+  CONVERSAO_PEDIDOS_CR_QTD: {
+    metricKey: "CONVERSAO_PEDIDOS_CR_QTD",
+    oQueSignifica: "Mostra quanto dos pedidos de venda já virou Contas a Receber.",
+    comoCalculamos: "Pedidos com CR dividido pelo total de pedidos do filtro.",
+    oQueEntra: "Pedidos com Contas a Receber (aberto ou recebido).",
+    oQueNaoEntra: "Pedidos ainda só em carteira ou só com NF sem título.",
+    comoInterpretar:
+      "Quanto maior, mais a carteira comercial está virando financeiro real.",
+  },
+  CONVERSAO_PEDIDOS_CR_VALOR: {
+    metricKey: "CONVERSAO_PEDIDOS_CR_VALOR",
+    oQueSignifica:
+      "Mostra, em valor, quanto dos pedidos de venda já virou Contas a Receber.",
+    comoCalculamos: "Valor dos pedidos com CR dividido pelo valor total do filtro.",
+    oQueEntra: "Valor oficial dos pedidos que já têm CR.",
+    oQueNaoEntra: "Cabeçalho de NF e pedidos sem título.",
+    comoInterpretar:
+      "Quanto maior, mais a carteira comercial está virando financeiro real.",
+  },
+  CONVERSAO_DOC_SAIDA_QTD: {
+    metricKey: "CONVERSAO_DOC_SAIDA_QTD",
+    oQueSignifica: "Percentual de pedidos que já têm documento de saída.",
+    comoCalculamos: "Pedidos com documento de saída dividido pelo total de pedidos.",
+    oQueEntra: "Pedidos com evidência de documento de estoque/saída.",
+    oQueNaoEntra: "NF só de cabeçalho, sem documento.",
+    comoInterpretar: "Sinal de que o pedido avançou na operação de atendimento.",
+  },
+  CONVERSAO_DOC_SAIDA_VALOR: {
+    metricKey: "CONVERSAO_DOC_SAIDA_VALOR",
+    oQueSignifica: "Participação em valor dos pedidos com documento de saída.",
+    comoCalculamos: "Valor dos pedidos com documento dividido pelo valor total.",
+    oQueEntra: "Valor oficial dos pedidos com documento.",
+    oQueNaoEntra: "Cabeçalho de NF sem documento.",
+    comoInterpretar: "Quanto da carteira já tem evidência física/operacional de saída.",
+  },
+  TAXA_RECEBIMENTO_CR: {
+    metricKey: "TAXA_RECEBIMENTO_CR",
+    oQueSignifica: "Quanto do Contas a Receber já foi efetivamente recebido/baixado.",
+    comoCalculamos: "Valor recebido dividido pelo valor total de CR do filtro.",
+    oQueEntra: "Baixas e CR rateados aos pedidos.",
+    oQueNaoEntra: "CR sem vínculo confiável ao pedido.",
+    comoInterpretar: "Eficiência de recebimento sobre o que já é financeiro.",
   },
 };
 

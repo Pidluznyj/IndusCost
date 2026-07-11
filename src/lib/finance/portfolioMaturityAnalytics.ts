@@ -783,13 +783,7 @@ function buildSummaryCards(
       percentage: 100,
       colorTone: "money",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Soma única do valor oficial de cada pedido no filtro.",
-        howWeCalculate: "Σ orderValue deduplicado por salesOrderId/pedido.",
-        whatIsIncluded: "Valor oficial do pedido (SalesOrder / itens / trace).",
-        whatIsExcluded: "Cabeçalho NF; forecastValue bruto; duplicata rollup+item.",
-        howToInterpret: "Base 100% dos demais percentuais de status.",
-      },
+      explanation: explanationFromMetric("CARTEIRA_TOTAL_ANALISADA"),
     },
     statusCard("RECEBIDO"),
     statusCard("CR_ABERTO"),
@@ -816,17 +810,7 @@ function buildSummaryCards(
       percentage: pct(blocked.value, valorTotal),
       colorTone: "danger",
       isAlertCard: false,
-      explanation: {
-        whatItMeans:
-          "Valor de pedidos em carteira vencida/bloqueada sem NF/documento/CR.",
-        howWeCalculate:
-          "Soma orderValue dos pedidos com status CARTEIRA_VENCIDA_BLOQUEADA.",
-        whatIsIncluded: "Pedidos antigos/sem evolução ainda só em pedido.",
-        whatIsExcluded:
-          "Cabeçalho NF; títulos CR abertos; pedidos futuros/presentes.",
-        howToInterpret:
-          "Risco de contar carteira que provavelmente não se realizará sem revisão.",
-      },
+      explanation: explanationFromMetric("RISCO_SUPERESTIMACAO"),
     },
     {
       key: "CONVERSAO_PEDIDOS_CR_QTD",
@@ -836,13 +820,7 @@ function buildSummaryCards(
       percentage: pct(withCr.length, totalPedidos),
       colorTone: "info",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Percentual de pedidos que já têm Contas a Receber.",
-        howWeCalculate: "pedidosComCR / totalPedidos × 100.",
-        whatIsIncluded: "Pedidos com CR rateado (aberto ou recebido).",
-        whatIsExcluded: "Pedidos só ORDER/NFE sem título.",
-        howToInterpret: "Quanto da carteira já entrou no financeiro.",
-      },
+      explanation: explanationFromMetric("CONVERSAO_PEDIDOS_CR_QTD"),
     },
     {
       key: "CONVERSAO_PEDIDOS_CR_VALOR",
@@ -858,13 +836,7 @@ function buildSummaryCards(
       ),
       colorTone: "info",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Participação em valor dos pedidos que já têm CR.",
-        howWeCalculate: "Σ valorPedidosComCR / Σ valorTotal × 100.",
-        whatIsIncluded: "Valor oficial dos pedidos com CR.",
-        whatIsExcluded: "Cabeçalho NF; pedidos sem CR.",
-        howToInterpret: "Conversão financeira ponderada por valor.",
-      },
+      explanation: explanationFromMetric("CONVERSAO_PEDIDOS_CR_VALOR"),
     },
     {
       key: "CONVERSAO_DOC_SAIDA_QTD",
@@ -874,13 +846,7 @@ function buildSummaryCards(
       percentage: pct(withDoc.length, totalPedidos),
       colorTone: "info",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Percentual de pedidos com documento de estoque/saída.",
-        howWeCalculate: "pedidosComDocumento / totalPedidos × 100.",
-        whatIsIncluded: "Pedidos com stockDocument na fato.",
-        whatIsExcluded: "NF só cabeçalho sem documento.",
-        howToInterpret: "Evidência física de atendimento.",
-      },
+      explanation: explanationFromMetric("CONVERSAO_DOC_SAIDA_QTD"),
     },
     {
       key: "CONVERSAO_DOC_SAIDA_VALOR",
@@ -896,13 +862,7 @@ function buildSummaryCards(
       ),
       colorTone: "info",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Participação em valor dos pedidos com documento de saída.",
-        howWeCalculate: "Σ valorComDoc / Σ valorTotal × 100.",
-        whatIsIncluded: "Valor oficial dos pedidos com documento.",
-        whatIsExcluded: "Cabeçalho NF sem documento.",
-        howToInterpret: "Conversão operacional ponderada por valor.",
-      },
+      explanation: explanationFromMetric("CONVERSAO_DOC_SAIDA_VALOR"),
     },
     {
       key: "TAXA_RECEBIMENTO_CR",
@@ -912,13 +872,7 @@ function buildSummaryCards(
       percentage: pct(receivedCr, totalCr),
       colorTone: "success",
       isAlertCard: false,
-      explanation: {
-        whatItMeans: "Quanto do CR rateado já foi recebido.",
-        howWeCalculate: "Σ receivedValue / Σ receivableTotalValue × 100.",
-        whatIsIncluded: "CR rateado itemizado na fato.",
-        whatIsExcluded: "CR bruto de NF sem rateio.",
-        howToInterpret: "Efetividade de baixa sobre o CR vinculado.",
-      },
+      explanation: explanationFromMetric("TAXA_RECEBIMENTO_CR"),
     },
     {
       key: "CONFIANCA_MEDIA_CARTEIRA",
@@ -928,7 +882,7 @@ function buildSummaryCards(
       percentage: avgConf,
       colorTone: avgConf >= 80 ? "success" : avgConf >= 60 ? "info" : avgConf >= 30 ? "warning" : "danger",
       isAlertCard: false,
-      explanation: explanationFromMetric("CONFIDENCE_SCORE"),
+      explanation: explanationFromMetric("CONFIANCA_MEDIA_CARTEIRA"),
     },
   ];
 
@@ -1230,33 +1184,14 @@ export function buildPortfolioMaturityAnalytics(args: {
 
   const metricExplanations: Record<string, PortfolioMetricExplanation> = {};
   for (const card of summaryCards) {
-    metricExplanations[card.key] = getMetricExplanation(
-      card.key === "CARTEIRA_TOTAL_ANALISADA" ? "CONFIDENCE_SCORE" : card.key
-    );
-    if (card.key === "CARTEIRA_TOTAL_ANALISADA") {
-      metricExplanations[card.key] = {
-        metricKey: card.key,
-        oQueSignifica: card.explanation.whatItMeans,
-        comoCalculamos: card.explanation.howWeCalculate,
-        oQueEntra: card.explanation.whatIsIncluded,
-        oQueNaoEntra: card.explanation.whatIsExcluded,
-        comoInterpretar: card.explanation.howToInterpret,
-      };
-    } else if (
-      card.key.startsWith("CONVERSAO_") ||
-      card.key === "TAXA_RECEBIMENTO_CR" ||
-      card.key === "RISCO_SUPERESTIMACAO" ||
-      card.key === "CONFIANCA_MEDIA_CARTEIRA"
-    ) {
-      metricExplanations[card.key] = {
-        metricKey: card.key,
-        oQueSignifica: card.explanation.whatItMeans,
-        comoCalculamos: card.explanation.howWeCalculate,
-        oQueEntra: card.explanation.whatIsIncluded,
-        oQueNaoEntra: card.explanation.whatIsExcluded,
-        comoInterpretar: card.explanation.howToInterpret,
-      };
-    }
+    metricExplanations[card.key] = {
+      metricKey: card.key,
+      oQueSignifica: card.explanation.whatItMeans,
+      comoCalculamos: card.explanation.howWeCalculate,
+      oQueEntra: card.explanation.whatIsIncluded,
+      oQueNaoEntra: card.explanation.whatIsExcluded,
+      comoInterpretar: card.explanation.howToInterpret,
+    };
   }
 
   return {
