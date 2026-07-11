@@ -168,4 +168,40 @@ describe("portfolio intelligence UI", () => {
     assert.match(page, /PortfolioIntelligenceSection/);
     assert.match(page, /activeView/);
   });
+
+  it("contrato Britânia: cards, sanfonas, drawer PD 02159 e tooltip", () => {
+    const cards = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceCards.tsx"
+    );
+    const accordions = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
+    );
+    const drawer = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx"
+    );
+    const help = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover.tsx"
+    );
+    const analytics = read("src/lib/finance/portfolioMaturityAnalytics.ts");
+
+    assert.match(analytics, /1dc2ead7-533d-4ad4-bc4c-621061fa5623/);
+    assert.match(analytics, /valorFuturoPresentePlausivel:\s*495_460/);
+    assert.match(analytics, /valorVencidoBloqueado:\s*884_836/);
+    assert.match(analytics, /PD 02607/);
+    assert.match(analytics, /PD 02159/);
+    assert.match(analytics, /320_070/);
+
+    assert.match(cards, /summaryCards|card\.value|card\.count/);
+    assert.match(cards, /MetricHelpTooltip/);
+    assert.match(accordions, /CARTEIRA_VENCIDA_BLOQUEADA/);
+    assert.match(accordions, /CARTEIRA_FUTURA_PROVAVEL|CARTEIRA_PRESENTE_ATENCAO/);
+    assert.match(accordions, /ordersCount|orderCodes|rowsForIntelligenceAccordion/);
+    assert.match(
+      drawer,
+      /Não encontramos NF ou documento de saída vinculado a este pedido/
+    );
+    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
+    assert.match(help, /O que significa/);
+    assert.match(help, /Como calculamos/);
+  });
 });

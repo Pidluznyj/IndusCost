@@ -423,9 +423,10 @@ describe("portfolioMaturityAnalytics", () => {
   it("fixture Britânia-shaped: totais e split futuro/presente vs bloqueada", () => {
     const orderTotals = new Map<string, number>();
     const facts: PortfolioReconciliationFactApiRow[] = [];
+    const expected = BRITANIA_INTELLIGENCE_EXPECTED;
 
     // 18 com CR — valor restante após 1.380.296
-    const crPool = 3_324_636.5 - 1_380_296;
+    const crPool = expected.valorTotalPedidos - expected.valorSemNfDocCr;
     const crEach = round2(crPool / 18);
     let crAssigned = 0;
     for (let i = 0; i < 18; i++) {
@@ -456,59 +457,41 @@ describe("portfolioMaturityAnalytics", () => {
       );
     }
 
-    // Futuro+presente = 495.460 (ex.: 2 futuros + 1 presente)
-    const futureParts = [200_000, 200_000, 95_460];
-    const futureCodes = ["PD 02607", "PD 02740", "PD 02739"];
-    const futureDates = ["2026-09-15", "2026-10-01", "2026-07-20"];
-    for (let i = 0; i < 3; i++) {
+    for (const [i, o] of expected.futurePresentOrders.entries()) {
       const id = `fut-${i}`;
-      orderTotals.set(id, futureParts[i]!);
+      orderTotals.set(id, o.orderValue);
       facts.push(
         fact({
           id: `f-fut-${i}`,
           salesOrderId: id,
-          orderCode: futureCodes[i]!,
+          orderCode: o.orderCode,
           salesOrderItemId: `item-fut-${i}`,
-          orderItemValue: futureParts[i]!,
+          orderItemValue: o.orderValue,
           forecastSource: "ORDER",
-          forecastDate: futureDates[i]!,
-          forecastValue: futureParts[i]!,
+          forecastDate:
+            o.statusPrincipal === "CARTEIRA_PRESENTE_ATENCAO"
+              ? "2026-07-20"
+              : "2026-09-15",
+          forecastValue: o.orderValue,
           status: "ORDER_ONLY",
           orderIssueDate: "2026-06-01",
         })
       );
     }
 
-    // Bloqueados = 884.836 em 10 pedidos críticos
-    const blockedCodes = [
-      "PD 02159",
-      "PD 01604",
-      "PD 01953",
-      "PD 02092",
-      "PD 01954",
-      "PD 01955",
-      "PD 02080",
-      "PD 01603",
-      "PD 02158",
-      "PD 01562",
-    ];
-    const blockedBase = Math.floor(884_836 / 10);
-    let blockedAssigned = 0;
-    for (let i = 0; i < 10; i++) {
+    for (const [i, o] of expected.blockedOrders.entries()) {
       const id = `blk-${i}`;
-      const value = i === 9 ? 884_836 - blockedAssigned : blockedBase;
-      blockedAssigned += value;
-      orderTotals.set(id, value);
+      orderTotals.set(id, o.orderValue);
       facts.push(
         fact({
           id: `f-blk-${i}`,
           salesOrderId: id,
-          orderCode: blockedCodes[i]!,
+          orderCode: o.orderCode,
           salesOrderItemId: `item-blk-${i}`,
-          orderItemValue: value,
+          orderItemValue: o.orderValue,
           forecastSource: "ORDER",
           forecastDate: "2025-11-01",
-          forecastValue: value,
+          forecastValue: o.orderValue,
           status: "ORDER_ONLY",
           orderIssueDate: "2025-01-01",
           confidenceLevel: "LOW",
@@ -527,19 +510,42 @@ describe("portfolioMaturityAnalytics", () => {
       },
     });
 
-    assert.equal(result.totals.totalPedidos, 31);
-    assert.equal(result.totals.valorTotalPedidos, 3_324_636.5);
-    assert.equal(result.totals.pedidosSemNfDocCr, 13);
-    assert.equal(result.totals.valorSemNfDocCr, 1_380_296);
-    assert.equal(result.totals.valorFuturoPresentePlausivel, 495_460);
-    assert.equal(result.totals.valorVencidoBloqueado, 884_836);
+    assert.equal(result.totals.totalPedidos, expected.totalPedidos);
+    assert.equal(result.totals.valorTotalPedidos, expected.valorTotalPedidos);
+    assert.equal(result.totals.pedidosSemNfDocCr, expected.pedidosSemNfDocCr);
+    assert.equal(result.totals.valorSemNfDocCr, expected.valorSemNfDocCr);
+    assert.equal(
+      result.totals.valorFuturoPresentePlausivel,
+      expected.valorFuturoPresentePlausivel
+    );
+    assert.equal(result.totals.valorVencidoBloqueado, expected.valorVencidoBloqueado);
 
-    const pd02739 = result.rows.find((r) => r.orderCode === "PD 02739");
-    assert.equal(pd02739?.statusPrincipal, "CARTEIRA_PRESENTE_ATENCAO");
-    const pd02607 = result.rows.find((r) => r.orderCode === "PD 02607");
-    assert.equal(pd02607?.statusPrincipal, "CARTEIRA_FUTURA_PROVAVEL");
-    const pd02159 = result.rows.find((r) => r.orderCode === "PD 02159");
-    assert.equal(pd02159?.statusPrincipal, "CARTEIRA_VENCIDA_BLOQUEADA");
+    for (const o of expected.futurePresentOrders) {
+      const row = result.rows.find((r) => r.orderCode === o.orderCode);
+      assert.equal(row?.statusPrincipal, o.statusPrincipal, o.orderCode);
+      assert.equal(row?.orderValue, o.orderValue, o.orderCode);
+    }
+    for (const o of expected.blockedOrders) {
+      const row = result.rows.find((r) => r.orderCode === o.orderCode);
+      assert.equal(row?.statusPrincipal, "CARTEIRA_VENCIDA_BLOQUEADA", o.orderCode);
+      assert.equal(row?.orderValue, o.orderValue, o.orderCode);
+      assert.ok(
+        row!.confidenceLabel === "MUITO_BAIXA" || row!.confidenceScore < 30,
+        o.orderCode
+      );
+    }
+
+    const blockedGroup = result.statusGroups.find(
+      (g) => g.statusPrincipal === "CARTEIRA_VENCIDA_BLOQUEADA"
+    );
+    assert.equal(blockedGroup?.ordersCount, 10);
+    const futura = result.statusGroups.find(
+      (g) => g.statusPrincipal === "CARTEIRA_FUTURA_PROVAVEL"
+    );
+    const presente = result.statusGroups.find(
+      (g) => g.statusPrincipal === "CARTEIRA_PRESENTE_ATENCAO"
+    );
+    assert.equal((futura?.ordersCount ?? 0) + (presente?.ordersCount ?? 0), 3);
   });
 });
 

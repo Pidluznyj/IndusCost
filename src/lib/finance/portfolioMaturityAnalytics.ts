@@ -1217,4 +1217,21 @@ export const BRITANIA_INTELLIGENCE_EXPECTED = {
   valorSemNfDocCr: 1_380_296,
   valorFuturoPresentePlausivel: 495_460,
   valorVencidoBloqueado: 884_836,
+  futurePresentOrders: [
+    { orderCode: "PD 02607", orderValue: 202_860, statusPrincipal: "CARTEIRA_FUTURA_PROVAVEL" },
+    { orderCode: "PD 02740", orderValue: 175_600, statusPrincipal: "CARTEIRA_FUTURA_PROVAVEL" },
+    { orderCode: "PD 02739", orderValue: 117_000, statusPrincipal: "CARTEIRA_PRESENTE_ATENCAO" },
+  ],
+  blockedOrders: [
+    { orderCode: "PD 02159", orderValue: 320_070 },
+    { orderCode: "PD 01604", orderValue: 216_700 },
+    { orderCode: "PD 01953", orderValue: 123_050 },
+    { orderCode: "PD 02092", orderValue: 41_328 },
+    { orderCode: "PD 01954", orderValue: 39_360 },
+    { orderCode: "PD 01955", orderValue: 39_360 },
+    { orderCode: "PD 02080", orderValue: 36_975 },
+    { orderCode: "PD 01603", orderValue: 31_065 },
+    { orderCode: "PD 02158", orderValue: 26_568 },
+    { orderCode: "PD 01562", orderValue: 10_360 },
+  ],
 } as const;
