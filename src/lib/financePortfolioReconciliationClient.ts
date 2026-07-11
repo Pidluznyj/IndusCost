@@ -381,6 +381,132 @@ export type PortfolioIntelligenceListPayload = {
   run: { id: string; status: string; finishedAt?: string | Date | null } | null;
 };
 
+/** Detalhe do pedido na Central de Inteligência (API read-only). */
+export type PortfolioIntelligenceOrderItemDto = {
+  salesOrderItemId: string | null;
+  externalProductId: number | null;
+  productSku: string | null;
+  productDescription: string | null;
+  orderQuantity: number;
+  orderUnitPrice: number;
+  orderItemValue: number;
+  allocatedQuantity: number;
+  remainingQuantity: number;
+  status: string;
+  alerts: string[];
+};
+
+export type PortfolioIntelligenceDocumentDto = {
+  nfeNumber: string | null;
+  nfeExternalId: number | null;
+  nfeProcessedAt: string | null;
+  nfeHeaderValue: number | null;
+  stockDocumentExternalId: number | null;
+  stockDocumentDate: string | null;
+  allocatedValueToOrder: number;
+  surplusOrUnallocatedValue: number;
+  headerOnly: boolean;
+  alerts: string[];
+  productsAllocated: number[];
+  productsSurplus: number[];
+};
+
+export type PortfolioIntelligenceReceivableTitleDto = {
+  receivableId: number | null;
+  label: string;
+  amount: number | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  received: number | null;
+  open: number | null;
+  status: string;
+};
+
+export type PortfolioIntelligenceOrderDetail = {
+  executiveSummary: string;
+  order: {
+    salesOrderId: string | null;
+    orderCode: string;
+    externalSalesOrderId: number | null;
+    orderValue: number;
+    issueDate: string | null;
+    expectedDeliveryDate: string | null;
+    forecastDate: string | null;
+    forecastSource: string;
+  };
+  customer: {
+    customerId: string | null;
+    customerExternalId: number | null;
+    customerName: string | null;
+  };
+  seller: {
+    sellerId: string | null;
+    sellerExternalId: number | null;
+    sellerName: string | null;
+    available: boolean;
+    note: string | null;
+  };
+  dates: {
+    issueDate: string | null;
+    expectedDeliveryDate: string | null;
+    nfeDate: string | null;
+    stockDocumentDate: string | null;
+    receivableDueDate: string | null;
+    receivableSettlementDate: string | null;
+    forecastDate: string | null;
+    updatedAt: string | null;
+    nextRelevantDate: string | null;
+  };
+  paymentCondition: {
+    available: boolean;
+    paymentTerms: string | null;
+    paymentMethod: string | null;
+    note: string | null;
+  };
+  items: PortfolioIntelligenceOrderItemDto[];
+  nfeDocuments: PortfolioIntelligenceDocumentDto[];
+  stockDocuments: PortfolioIntelligenceDocumentDto[];
+  receivables: {
+    summary: {
+      receivableIds: number[];
+      receivableTotalValue: number;
+      receivedValue: number;
+      openReceivableValue: number;
+    } | null;
+    titles: PortfolioIntelligenceReceivableTitleDto[];
+    receivableTotalValue: number;
+    receivedValue: number;
+    openReceivableValue: number;
+  };
+  classification: {
+    statusPrincipal: string;
+    tagsAlerta: string[];
+    confidenceScore: number;
+    confidenceLabel: string;
+    confidenceReasons: string[];
+    recommendedAction: string;
+    mainReason: string;
+    evidenceFlags: PortfolioIntelligenceEvidenceFlags;
+  };
+  timeline: Array<{ at: string; kind: string; label: string }>;
+  values: {
+    orderValue: number;
+    nfeHeaderValue: number;
+    stockDocumentValue: number;
+    itemizedAllocatedValue: number;
+    receivableTotalValue: number;
+    receivedValue: number;
+    openReceivableValue: number;
+  };
+};
+
+export type PortfolioIntelligenceOrderDetailPayload = {
+  ok: boolean;
+  message: string | null;
+  detail: PortfolioIntelligenceOrderDetail | null;
+  run?: { id: string; status: string; finishedAt?: string | Date | null } | null;
+};
+
 export function buildPortfolioIntelligenceListQuery(args: {
   runId?: string;
   customerExternalId?: string;

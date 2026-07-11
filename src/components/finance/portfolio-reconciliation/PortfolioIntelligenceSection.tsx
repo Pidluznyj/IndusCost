@@ -15,6 +15,7 @@ import { cardKeyToAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDr
 import type { IntelligenceAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
 import { PortfolioIntelligenceAccordions } from "./PortfolioIntelligenceAccordions";
 import { PortfolioIntelligenceCards } from "./PortfolioIntelligenceCards";
+import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDrawer";
 
 type Props = {
   runId?: string;
@@ -35,7 +36,6 @@ export function PortfolioIntelligenceSection({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<IntelligenceAccordionKey | null>(null);
-  /** Preparado para drawer futuro — clique na linha do grid. */
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -106,12 +106,15 @@ export function PortfolioIntelligenceSection({
     setSelectedSalesOrderId(salesOrderId);
   }, []);
 
+  const handleCloseOrder = useCallback(() => {
+    setSelectedSalesOrderId(null);
+  }, []);
+
   return (
     <section
       className="space-y-3"
       data-testid="portfolio-intelligence-section"
       aria-label="Inteligência da Carteira"
-      data-selected-order={selectedSalesOrderId ?? undefined}
     >
       <div className="flex items-start gap-2">
         <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" aria-hidden />
@@ -185,6 +188,14 @@ export function PortfolioIntelligenceSection({
           onOpenOrder={handleOpenOrder}
         />
       ) : null}
+
+      <PortfolioIntelligenceOrderDrawer
+        open={Boolean(selectedSalesOrderId)}
+        salesOrderId={selectedSalesOrderId}
+        runId={runId}
+        customerExternalId={customerExternalId}
+        onClose={handleCloseOrder}
+      />
     </section>
   );
 }

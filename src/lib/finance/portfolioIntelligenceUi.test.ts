@@ -15,6 +15,7 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx",
     ];
     for (const f of files) {
       const src = read(f);
@@ -51,6 +52,7 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /FinanceModuleErrorBanner/);
     assert.match(section, /FinanceModuleEmptyState/);
     assert.match(section, /PortfolioIntelligenceAccordions/);
+    assert.match(section, /PortfolioIntelligenceOrderDrawer/);
     assert.match(section, /handleCardClick|onCardClick/);
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
   });
@@ -69,6 +71,37 @@ describe("portfolio intelligence UI", () => {
     assert.match(grid, /Nenhum pedido neste status/);
     assert.match(grid, /CONFIDENCE_LABEL|Alta|Média|Baixa|Muito baixa/);
     assert.match(grid, /onOpenOrder/);
+  });
+
+  it("drawer de detalhe tem 7 abas e estados vazios sem inventar dados", () => {
+    const drawer = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx"
+    );
+    assert.match(
+      drawer,
+      /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
+    );
+    assert.match(drawer, /Resumo executivo/);
+    assert.match(drawer, /Pedido de venda/);
+    assert.match(drawer, /Itens/);
+    assert.match(drawer, /NF \/ Documento de saída/);
+    assert.match(drawer, /Contas a Receber/);
+    assert.match(drawer, /Condição de pagamento/);
+    assert.match(drawer, /Histórico \/ linha do tempo/);
+    assert.match(
+      drawer,
+      /Não encontramos NF ou documento de saída vinculado a este pedido/
+    );
+    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
+    assert.match(
+      drawer,
+      /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
+    );
+    assert.match(drawer, /formatFinanceCurrency/);
+    assert.match(drawer, /formatFinanceDate/);
+    assert.match(drawer, /buildFinanceTabLoadError/);
+    assert.doesNotMatch(drawer, /stack|e\.stack|JSON\.stringify\(e/);
+    assert.doesNotMatch(drawer, /@prisma\/client/);
   });
 
   it("página registra aba Inteligência da Carteira", () => {
