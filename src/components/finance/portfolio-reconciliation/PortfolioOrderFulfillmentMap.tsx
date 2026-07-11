@@ -7,6 +7,8 @@ import type { PortfolioIntelligenceOrderDetail } from "@/src/lib/financePortfoli
 import { PortfolioFulfillmentItemsGrid } from "./PortfolioFulfillmentItemsGrid";
 import { PortfolioFulfillmentDocumentsGrid } from "./PortfolioFulfillmentDocumentsGrid";
 import { PortfolioFulfillmentReceivablesGrid } from "./PortfolioFulfillmentReceivablesGrid";
+import { PortfolioOperationalDeviationAlertsPanel } from "./PortfolioOperationalDeviationAlertsPanel";
+import { PortfolioOrderDataFreshnessPanel } from "./PortfolioOrderDataFreshnessPanel";
 
 function pctDisplay(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -40,17 +42,24 @@ export function PortfolioOrderFulfillmentMap({
   const map = detail.fulfillmentMap;
   if (!map) {
     return (
-      <p
-        className="rounded-xl border border-dashed border-[#EAECF0] bg-[#F9FAFB] px-3 py-6 text-center text-sm text-[#667085]"
-        data-testid="portfolio-intelligence-drawer-mapa"
-      >
-        {detail.fulfillmentMapWarning?.trim() ||
-          "Mapa de atendimento indisponível com os dados atuais."}
-      </p>
+      <div className="space-y-5" data-testid="portfolio-intelligence-drawer-mapa">
+        <p
+          className="rounded-xl border border-dashed border-[#EAECF0] bg-[#F9FAFB] px-3 py-6 text-center text-sm text-[#667085]"
+        >
+          {detail.fulfillmentMapWarning?.trim() ||
+            "Mapa de atendimento indisponível com os dados atuais."}
+        </p>
+        <PortfolioOperationalDeviationAlertsPanel
+          alerts={detail.operationalDeviationAlerts}
+        />
+        <PortfolioOrderDataFreshnessPanel freshness={detail.dataFreshness} />
+      </div>
     );
   }
 
   const s = map.fulfillmentSummary;
+  const alerts =
+    detail.operationalDeviationAlerts ?? map.operationalDeviationAlerts ?? [];
 
   return (
     <div className="space-y-5" data-testid="portfolio-intelligence-drawer-mapa">
@@ -106,6 +115,10 @@ export function PortfolioOrderFulfillmentMap({
           <strong>não</strong> é o valor do pedido e não deve ser somado à carteira.
         </p>
       ) : null}
+
+      <PortfolioOperationalDeviationAlertsPanel alerts={alerts} />
+
+      <PortfolioOrderDataFreshnessPanel freshness={detail.dataFreshness} />
 
       <div className="space-y-2">
         <SectionTitle>Itens do pedido</SectionTitle>

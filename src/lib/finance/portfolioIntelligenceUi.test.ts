@@ -17,6 +17,8 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioOrderFulfillmentMap.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioOrderDataFreshnessPanel.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioOperationalDeviationAlertsPanel.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentStatusCards.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentItemsGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentDocumentsGrid.tsx",
@@ -145,7 +147,22 @@ describe("portfolio intelligence UI", () => {
     const crs = read(
       "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentReceivablesGrid.tsx"
     );
-    const ui = [drawer, map, statusCards, items, docs, crs].join("\n");
+    const freshness = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioOrderDataFreshnessPanel.tsx"
+    );
+    const alertsPanel = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioOperationalDeviationAlertsPanel.tsx"
+    );
+    const ui = [
+      drawer,
+      map,
+      statusCards,
+      items,
+      docs,
+      crs,
+      freshness,
+      alertsPanel,
+    ].join("\n");
 
     assert.match(
       drawer,
@@ -158,6 +175,7 @@ describe("portfolio intelligence UI", () => {
     );
     assert.match(drawer, /PortfolioOrderFulfillmentMap/);
     assert.match(drawer, /PortfolioFulfillmentStatusCards/);
+    assert.match(drawer, /PortfolioOperationalDeviationAlertsPanel/);
     assert.match(drawer, /w-\[75vw\]|min-w-\[720px\]|max-w-\[1200px\]/);
 
     assert.match(ui, /Status financeiro|financialStatus/);
@@ -172,6 +190,40 @@ describe("portfolio intelligence UI", () => {
       map,
       /Mapa de atendimento indisponível com os dados atuais/
     );
+    assert.match(map, /PortfolioOperationalDeviationAlertsPanel/);
+    assert.match(map, /PortfolioOrderDataFreshnessPanel/);
+    assert.match(map, /Alertas operacionais|PortfolioOperationalDeviationAlertsPanel/);
+    assert.match(map, /Frescor dos dados|PortfolioOrderDataFreshnessPanel/);
+    // Ordem na aba: Resumo → Alertas → Frescor → Itens → Docs → CR → Conclusão
+    const resumoIdx = map.indexOf("Resumo do atendimento");
+    const alertasIdx = map.lastIndexOf("<PortfolioOperationalDeviationAlertsPanel");
+    const frescorIdx = map.lastIndexOf("<PortfolioOrderDataFreshnessPanel");
+    const itensIdx = map.indexOf("Itens do pedido");
+    const docsIdx = map.indexOf("Documentos de saída");
+    const crIdx = map.indexOf("Contas a Receber");
+    const conclIdx = map.indexOf("Conclusão executiva");
+    assert.ok(resumoIdx > 0 && alertasIdx > resumoIdx);
+    assert.ok(frescorIdx > alertasIdx);
+    assert.ok(itensIdx > frescorIdx);
+    assert.ok(docsIdx > itensIdx);
+    assert.ok(crIdx > docsIdx);
+    assert.ok(conclIdx > crIdx);
+    assert.match(freshness, /Frescor dos dados/);
+    assert.match(
+      freshness,
+      /Se o cliente pagou hoje ou ontem, o valor só aparecerá aqui após sincronizar o Contas a Receber e reconstruir a conciliação/
+    );
+    assert.match(
+      freshness,
+      /Nenhuma baixa encontrada até a última sincronização/
+    );
+    assert.match(alertsPanel, /Alertas operacionais/);
+    assert.match(
+      alertsPanel,
+      /Nenhum alerta operacional encontrado com os dados atuais/
+    );
+    assert.match(alertsPanel, /#EFF8FF|#FFFAEB|#FEF3F2/);
+    assert.match(alertsPanel, /INFO|WARNING|CRITICAL|data-severity/);
     assert.match(items, /Atendido com excedente/);
     assert.match(items, /Pendente/);
     assert.match(items, /Parcial/);
@@ -186,6 +238,7 @@ describe("portfolio intelligence UI", () => {
     );
     assert.doesNotMatch(ui, /JSON\.stringify\(/);
     assert.doesNotMatch(ui, /<pre[^>]*>[\s\S]*fulfillmentMap/);
+    assert.doesNotMatch(ui, /<pre[^>]*>[\s\S]*operationalDeviation/);
 
     assert.match(drawer, /label: "Resumo"/);
     assert.match(drawer, /label: "Pedido"/);
@@ -198,11 +251,10 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
     );
-    assert.match(drawer, /portfolio-intelligence-drawer-freshness/);
-    assert.match(drawer, /Frescor dos dados/);
+    assert.match(freshness, /portfolio-intelligence-drawer-freshness/);
     assert.match(
-      drawer,
-      /sincronizar o Contas a Receber e reconstruir a conciliação|laymanNotice|syncRebuildNotice/
+      freshness,
+      /sincronizar o Contas a Receber e reconstruir a conciliação|DRAWER_FRESHNESS_SYNC_MESSAGE|syncRebuildNotice/
     );
     assert.match(drawer, /formatFinanceCurrency/);
     assert.match(drawer, /formatFinanceDate/);

@@ -6,12 +6,10 @@ import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   formatFinanceCurrency,
   formatFinanceDate,
-  formatFinanceDateTime,
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   buildPortfolioIntelligenceListQuery,
-  type PortfolioIntelligenceDataFreshnessDto,
   type PortfolioIntelligenceOrderDetail,
   type PortfolioIntelligenceOrderDetailPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
@@ -28,6 +26,7 @@ import {
 } from "@/src/lib/finance/portfolioOrderFulfillmentMap";
 import { PortfolioFulfillmentStatusCards } from "./PortfolioFulfillmentStatusCards";
 import { PortfolioOrderFulfillmentMap } from "./PortfolioOrderFulfillmentMap";
+import { PortfolioOperationalDeviationAlertsPanel } from "./PortfolioOperationalDeviationAlertsPanel";
 
 const UNAVAILABLE = "Informação não disponível na importação atual.";
 
@@ -61,79 +60,6 @@ function statusLabel(status: string): string {
 
 function tagLabel(tag: string): string {
   return TAG_LABEL[tag] ?? tag;
-}
-
-function formatFreshnessWhen(iso: string | null | undefined): string {
-  if (!iso) return "Informação não disponível";
-  if (iso.length > 10) return formatFinanceDateTime(iso);
-  return formatFinanceDate(iso);
-}
-
-function DataFreshnessBlock({
-  freshness,
-}: {
-  freshness: PortfolioIntelligenceDataFreshnessDto | null | undefined;
-}) {
-  if (!freshness) return null;
-  return (
-    <div
-      className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3 py-2.5 space-y-2"
-      data-testid="portfolio-intelligence-drawer-freshness"
-    >
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-950">
-        Frescor dos dados
-      </p>
-      <dl className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Última atualização da run</dt>
-          <dd className="font-medium tabular-nums text-foreground">
-            {formatFreshnessWhen(freshness.runUpdatedAt ?? freshness.runFinishedAt)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Última evidência de CR</dt>
-          <dd className="font-medium tabular-nums text-foreground">
-            {formatFreshnessWhen(freshness.lastReceivableEvidenceAt)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Última baixa encontrada</dt>
-          <dd className="font-medium tabular-nums text-foreground">
-            {freshness.hasSettlementEvidence
-              ? formatFreshnessWhen(freshness.lastSettlementAt)
-              : "Nenhuma baixa nesta run"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Atualização do pedido/fato</dt>
-          <dd className="font-medium tabular-nums text-foreground">
-            {formatFreshnessWhen(freshness.lastOrderOrFactUpdatedAt)}
-          </dd>
-        </div>
-      </dl>
-      <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Fonte: {freshness.sourceLabel}
-      </p>
-      {!freshness.isLatestRun ? (
-        <p className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-2 py-1.5 text-[10px] text-amber-950">
-          Esta run não é a mais recente ({freshness.latestRunId?.slice(0, 8)}…).
-          Reabra a conciliação atual ou reconstrua após sincronizar o CR.
-        </p>
-      ) : null}
-      <p
-        className="text-[10px] leading-relaxed text-sky-950"
-        data-testid="portfolio-intelligence-drawer-freshness-layman"
-      >
-        {freshness.laymanNotice}
-      </p>
-      <p
-        className="text-[10px] leading-relaxed text-muted-foreground"
-        data-testid="portfolio-intelligence-drawer-freshness-sync"
-      >
-        {freshness.syncRebuildNotice}
-      </p>
-    </div>
-  );
 }
 
 function financialRiskText(status: string, confidenceLabelRaw: string): string {
@@ -449,10 +375,12 @@ export function PortfolioIntelligenceOrderDrawer({
                 </div>
               ) : null}
 
-              <DataFreshnessBlock
-                freshness={
-                  detail.dataFreshness ?? payload?.dataFreshness ?? null
+              <PortfolioOperationalDeviationAlertsPanel
+                alerts={
+                  detail.operationalDeviationAlerts ??
+                  detail.fulfillmentMap?.operationalDeviationAlerts
                 }
+                compactSummary
               />
 
               <PortfolioFulfillmentStatusCards detail={detail} />
