@@ -16,6 +16,11 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioOrderFulfillmentMap.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentStatusCards.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentItemsGrid.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentDocumentsGrid.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentReceivablesGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx",
     ];
@@ -125,6 +130,23 @@ describe("portfolio intelligence UI", () => {
     const drawer = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx"
     );
+    const map = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioOrderFulfillmentMap.tsx"
+    );
+    const statusCards = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentStatusCards.tsx"
+    );
+    const items = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentItemsGrid.tsx"
+    );
+    const docs = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentDocumentsGrid.tsx"
+    );
+    const crs = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentReceivablesGrid.tsx"
+    );
+    const ui = [drawer, map, statusCards, items, docs, crs].join("\n");
+
     assert.match(
       drawer,
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
@@ -134,32 +156,44 @@ describe("portfolio intelligence UI", () => {
       drawer.indexOf("Mapa de Atendimento") < drawer.indexOf('label: "Resumo"') ||
         drawer.indexOf('{ id: "mapa"') < drawer.indexOf('{ id: "resumo"')
     );
-    assert.match(drawer, /Resumo/);
-    assert.match(drawer, /Pedido/);
-    assert.match(drawer, /Itens/);
-    assert.match(drawer, /NF \/ saída/);
-    assert.match(drawer, /Contas a Receber/);
-    assert.match(drawer, /Pagamento/);
-    assert.match(drawer, /Histórico/);
-    assert.match(drawer, /fulfillmentMap|FulfillmentMapTab|drawer-mapa/);
-    assert.match(drawer, /Financeiro|Atendimento do pedido|Alertas técnicos/);
-    assert.match(drawer, /Excedente|excessQuantity|totalExcessQuantity/);
-    assert.match(drawer, /Fora deste pedido|valueNotAttributedToOrder|Não atribuído ao pedido/);
-    assert.match(drawer, /financialStatus|FINANCIAL_STATUS_LABEL/);
-    assert.match(drawer, /operationalStatus|OPERATIONAL_STATUS_LABEL/);
-    assert.match(drawer, /Valor do pedido|orderValue/);
-    assert.match(drawer, /Cabeçalho NF|nfeHeaderTotal/);
+    assert.match(drawer, /PortfolioOrderFulfillmentMap/);
+    assert.match(drawer, /PortfolioFulfillmentStatusCards/);
+    assert.match(drawer, /w-\[75vw\]|min-w-\[720px\]|max-w-\[1200px\]/);
+
+    assert.match(ui, /Status financeiro|financialStatus/);
+    assert.match(ui, /Status operacional|operationalStatus/);
+    assert.match(ui, /Valor atribuído ao pedido|attributedOrderValue/);
+    assert.match(ui, /Valor cabeçalho|nfeHeaderTotal|Cabeçalho NF/);
+    assert.match(ui, /Excedente|totalExcessQuantity|excessQuantity/);
+    assert.match(ui, /Produto fora|itemsOutsideOrder|PRODUTO_FORA_DO_PEDIDO/);
+    assert.match(crs, /portfolio-fulfillment-receivables-grid|Contas a Receber/);
+    assert.match(map, /executiveConclusion|Conclusão executiva|drawer-executive/);
     assert.match(
-      drawer,
-      /não é o valor do pedido|não deve ser somado à carteira/i
+      map,
+      /Mapa de atendimento indisponível com os dados atuais/
     );
-    assert.match(drawer, /Atendido com excedente/);
-    assert.match(drawer, /pctDisplay|Math\.min\(100/);
+    assert.match(items, /Atendido com excedente/);
+    assert.match(items, /Pendente/);
+    assert.match(items, /Parcial/);
+    assert.match(items, /Math\.min\(100/);
     assert.match(
-      drawer,
+      docs,
       /Nenhum documento de saída encontrado para este pedido/
     );
-    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
+    assert.match(
+      crs,
+      /Nenhum Contas a Receber encontrado para este pedido/
+    );
+    assert.doesNotMatch(ui, /JSON\.stringify\(/);
+    assert.doesNotMatch(ui, /<pre[^>]*>[\s\S]*fulfillmentMap/);
+
+    assert.match(drawer, /label: "Resumo"/);
+    assert.match(drawer, /label: "Pedido"/);
+    assert.match(drawer, /label: "Itens"/);
+    assert.match(drawer, /label: "NF \/ saída"/);
+    assert.match(drawer, /label: "Contas a Receber"/);
+    assert.match(drawer, /label: "Pagamento"/);
+    assert.match(drawer, /label: "Histórico"/);
     assert.match(
       drawer,
       /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
@@ -173,10 +207,7 @@ describe("portfolio intelligence UI", () => {
     assert.match(drawer, /formatFinanceCurrency/);
     assert.match(drawer, /formatFinanceDate/);
     assert.match(drawer, /buildFinanceTabLoadError/);
-    assert.match(
-      drawer,
-      /status >= 500|Tente novamente em instantes/
-    );
+    assert.match(drawer, /status >= 500|Tente novamente em instantes/);
     assert.doesNotMatch(drawer, /stack|e\.stack|JSON\.stringify\(e/);
     assert.doesNotMatch(drawer, /JSON\.stringify\(detail|JSON\.stringify\(map/);
     assert.doesNotMatch(drawer, /@prisma\/client/);
@@ -237,13 +268,18 @@ describe("portfolio intelligence UI", () => {
     assert.match(accordions, /SEM_EVIDENCIA/);
     assert.match(accordions, /DIVERGENCIA_TECNICA|NF_CABECALHO_MAIOR_PEDIDO/);
     assert.match(accordions, /ordersCount|orderCodes|rowsForIntelligenceAccordion/);
+    assert.match(drawer, /Mapa de Atendimento|PortfolioOrderFulfillmentMap/);
     assert.match(
-      drawer,
+      read(
+        "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentDocumentsGrid.tsx"
+      ),
       /Nenhum documento de saída encontrado para este pedido/
     );
     assert.match(
-      drawer,
-      /Nenhum Contas a Receber encontrado para este pedido|Mapa de Atendimento/
+      read(
+        "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentReceivablesGrid.tsx"
+      ),
+      /Nenhum Contas a Receber encontrado para este pedido/
     );
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);
