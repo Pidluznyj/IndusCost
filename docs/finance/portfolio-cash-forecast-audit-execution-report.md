@@ -7,7 +7,7 @@
 | **Data** | 2026-07-11 |
 | **Tipo** | Relatório final de negócio + técnico (somente documentação) |
 | **Status final** | **PRONTO** |
-| **HEAD no momento da documentação** | `a95631c` (antes deste commit de relatório) |
+| **HEAD do relatório** | `4b7f97c` |
 
 > Relacionados:  
 > [`portfolio-cash-forecast-audit-requirements.md`](./portfolio-cash-forecast-audit-requirements.md) ·  
