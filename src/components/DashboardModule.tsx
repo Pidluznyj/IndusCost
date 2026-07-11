@@ -29,7 +29,7 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion } from "motion/react";
-import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
+import { OrderToCashFunnelPanel } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelPanel";
 import { ExecutiveDashboardPanel } from "@/src/components/dashboard/ExecutiveDashboardPanel";
 import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -180,17 +180,7 @@ export const DashboardModule = () => {
           />
         )}
 
-        {dashboardTab === "funil" && (
-          <SalesFunnelPanel
-            tab={executiveData?.tabs.salesFunnel ?? null}
-            loading={executiveLoading}
-            error={executiveError}
-            selectedYear={executiveYear}
-            onYearChange={setExecutiveYear}
-            onRefresh={() => void fetchExecutive()}
-            generatedAt={executiveData?.generatedAt ?? null}
-          />
-        )}
+        {dashboardTab === "funil" && <OrderToCashFunnelPanel />}
 
         {dashboardTab === "operacao" && (
           <>
