@@ -8,6 +8,7 @@ function read(rel: string): string {
 }
 
 const PANEL = "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelPanel.tsx";
+const DRAWER = "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelDrawer.tsx";
 const CLIENT = "src/lib/sales/salesOrderToCashFunnelClient.ts";
 const COPY = "src/lib/sales/salesOrderToCashFunnelUiCopy.ts";
 const DASH = "src/components/DashboardModule.tsx";
@@ -71,7 +72,7 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("8. não há import de Prisma no frontend", () => {
-    for (const f of [PANEL, CLIENT, COPY]) {
+    for (const f of [PANEL, DRAWER, CLIENT, COPY]) {
       const src = read(f);
       assert.doesNotMatch(src, /@prisma\/client/);
       assert.doesNotMatch(src, /from ["'].*prisma/);
@@ -80,7 +81,7 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("9. não há import de comissão", () => {
-    for (const f of [PANEL, CLIENT, COPY]) {
+    for (const f of [PANEL, DRAWER, CLIENT, COPY]) {
       const src = read(f);
       assert.doesNotMatch(src, /from\s+["'][^"']*comiss/i);
       assert.doesNotMatch(src, /from\s+["'][^"']*commission/i);
@@ -93,5 +94,50 @@ describe("salesOrderToCashFunnelUi", () => {
     assert.match(client, /\/api\/sales\/order-to-cash-funnel/);
     assert.match(client, /fetchJsonOk/);
     assert.doesNotMatch(client, /from\s+["'][^"']*proposal/i);
+  });
+
+  it("drawer abre com largura e scroll internos", () => {
+    const drawer = read(DRAWER);
+    const panel = read(PANEL);
+    assert.match(panel, /OrderToCashFunnelDrawer/);
+    assert.match(drawer, /data-testid=\"otc-drawer\"/);
+    assert.match(drawer, /75vw|min-w-\[720px\]|max-w-\[1200px\]/);
+    assert.match(drawer, /overflow-y-auto/);
+  });
+
+  it("drawer mostra estágio, temperatura e ação recomendada", () => {
+    const drawer = read(DRAWER);
+    assert.match(drawer, /otc-drawer-stage|funnelStageLabel/);
+    assert.match(drawer, /otc-drawer-temperature|temperature/);
+    assert.match(drawer, /otc-drawer-action|actionRecommendation/);
+  });
+
+  it("drawer mostra abas oficiais", () => {
+    const drawer = read(DRAWER);
+    assert.match(drawer, /otc-drawer-tabs/);
+    assert.match(drawer, /Resumo do funil/);
+    assert.match(drawer, /Mapa de atendimento/);
+    assert.match(drawer, /Pedido e itens/);
+    assert.match(drawer, /Documento de saída \/ NF/);
+    assert.match(drawer, /Contas a Receber/);
+    assert.match(drawer, /Timeline/);
+    assert.match(drawer, /Dados indisponíveis \/ observações/);
+  });
+
+  it("drawer mostra OP indisponível e mapa quando disponível", () => {
+    const drawer = read(DRAWER);
+    assert.match(drawer, /Ordem de produção não disponível na integração atual/);
+    assert.match(drawer, /otc-drawer-fulfillment-map|FulfillmentMapView/);
+    assert.match(drawer, /Mapa de atendimento indisponível/);
+  });
+
+  it("drawer não exibe JSON cru", () => {
+    const drawer = read(DRAWER);
+    assert.doesNotMatch(drawer, /JSON\.stringify/);
+    assert.doesNotMatch(drawer, /<pre[\s>]/);
+    assert.doesNotMatch(drawer, /nomusRawResponse|rawPayload/);
+    assert.match(drawer, /Nenhum documento encontrado/);
+    assert.match(drawer, /Nenhuma NF encontrada/);
+    assert.match(drawer, /Nenhum CR encontrado/);
   });
 });

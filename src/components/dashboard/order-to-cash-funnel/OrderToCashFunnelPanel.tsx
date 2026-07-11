@@ -6,9 +6,9 @@ import {
   Loader2,
   RefreshCw,
   Thermometer,
-  X,
 } from "lucide-react";
 import { MetricHelpTooltip } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover";
+import { OrderToCashFunnelDrawer } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelDrawer";
 import {
   formatFinanceCurrency,
   formatFinanceCurrencyCompact,
@@ -17,9 +17,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   createDefaultOrderToCashFunnelUiFilters,
-  fetchOrderToCashFunnelDetail,
   fetchOrderToCashFunnelList,
-  type OrderToCashFunnelDetailPayload,
   type OrderToCashFunnelListPayload,
   type OrderToCashFunnelListRowDto,
   type OrderToCashFunnelSummaryCardDto,
@@ -358,154 +356,6 @@ function OrdersGrid({
   );
 }
 
-function DetailDrawer({
-  salesOrderId,
-  onClose,
-}: {
-  salesOrderId: string;
-  onClose: () => void;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<OrderToCashFunnelDetailPayload | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void fetchOrderToCashFunnelDetail(salesOrderId)
-      .then((payload) => {
-        if (cancelled) return;
-        if (!payload.ok) {
-          setError(payload.message || "Pedido não encontrado no funil.");
-          setDetail(payload);
-          return;
-        }
-        setDetail(payload);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        const msg =
-          err instanceof HttpError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : ORDER_TO_CASH_FUNNEL_ERROR_FALLBACK;
-        setError(msg || ORDER_TO_CASH_FUNNEL_ERROR_FALLBACK);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [salesOrderId]);
-
-  const map = detail?.fulfillmentMap as
-    | {
-        financialStatusLabel?: string;
-        operationalStatusLabel?: string;
-        fulfillmentSummary?: { fulfillmentPercent?: number | null };
-        executiveConclusion?: string;
-      }
-    | null
-    | undefined;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/30"
-      data-testid="otc-drawer"
-      role="dialog"
-      aria-modal="true"
-    >
-      <button type="button" className="flex-1 cursor-default" aria-label="Fechar" onClick={onClose} />
-      <aside className="flex h-full w-full max-w-xl flex-col bg-white shadow-xl">
-        <header className="flex items-start justify-between border-b border-[#EAECF0] px-5 py-4">
-          <div>
-            <p className="text-[12px] font-semibold uppercase text-[#667085]">Detalhe do pedido</p>
-            <h2 className="text-[18px] font-bold text-[#101828]">
-              {detail?.order?.orderCode ?? salesOrderId}
-            </h2>
-            <p className="text-[13px] text-[#475467]">{detail?.order?.customerName ?? ""}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-[#667085] hover:bg-[#F9FAFB]"
-            aria-label="Fechar detalhe"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </header>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {loading ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-[#667085]">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm">Carregando detalhe…</p>
-            </div>
-          ) : error && !detail?.classification ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-sm text-red-800">
-              {error}
-            </div>
-          ) : detail?.classification ? (
-            <div className="space-y-5">
-              <div className="rounded-xl border border-[#EAECF0] bg-[#F9FAFB] p-4">
-                <p className="text-[12px] font-semibold uppercase text-[#667085]">Classificação</p>
-                <p className="mt-1 text-[16px] font-bold text-[#101828]">
-                  {detail.classification.funnelStageLabel}
-                </p>
-                <p className="mt-2 text-[13px] text-[#475467]">{detail.classification.explanation}</p>
-                <p className="mt-2 text-[13px] font-medium text-[#101828]">
-                  Ação: {detail.classification.actionRecommendation}
-                </p>
-              </div>
-              {map ? (
-                <div className="rounded-xl border border-[#EAECF0] p-4">
-                  <p className="text-[12px] font-semibold uppercase text-[#667085]">
-                    Mapa de atendimento
-                  </p>
-                  <p className="mt-2 text-[13px]">Operacional: {map.operationalStatusLabel ?? "—"}</p>
-                  <p className="text-[13px]">Financeiro: {map.financialStatusLabel ?? "—"}</p>
-                  <p className="text-[13px]">
-                    Atendimento:{" "}
-                    {map.fulfillmentSummary?.fulfillmentPercent != null
-                      ? formatFinancePercent(map.fulfillmentSummary.fulfillmentPercent)
-                      : "—"}
-                  </p>
-                </div>
-              ) : null}
-              <div>
-                <p className="text-[12px] font-semibold uppercase text-[#667085]">Timeline</p>
-                <ul className="mt-2 space-y-2">
-                  {(detail.timeline ?? []).map((ev, i) => (
-                    <li
-                      key={`${ev.kind}-${ev.at}-${i}`}
-                      className="rounded-lg border border-[#EAECF0] px-3 py-2 text-[13px]"
-                    >
-                      <span className="font-semibold">{ev.label}</span>
-                      <span className="ml-2 text-[#667085]">
-                        {ev.at ?? "—"} · {ev.kind}
-                      </span>
-                    </li>
-                  ))}
-                  {(detail.timeline ?? []).length === 0 ? (
-                    <li className="text-[13px] text-[#667085]">Sem eventos na timeline.</li>
-                  ) : null}
-                </ul>
-              </div>
-              {detail.executiveConclusion ? (
-                <p className="rounded-xl border border-[#B2DDFF] bg-[#EFF8FF] px-4 py-3 text-[13px] text-[#175CD3]">
-                  {detail.executiveConclusion}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
 /** Aba Funil Pedido → Caixa (Dashboard). Consome apenas API read-only. */
 export function OrderToCashFunnelPanel() {
   const [draft, setDraft] = useState(createDefaultOrderToCashFunnelUiFilters);
@@ -806,7 +656,7 @@ export function OrderToCashFunnelPanel() {
       ) : null}
 
       {selectedId ? (
-        <DetailDrawer salesOrderId={selectedId} onClose={() => setSelectedId(null)} />
+        <OrderToCashFunnelDrawer salesOrderId={selectedId} onClose={() => setSelectedId(null)} />
       ) : null}
     </div>
   );

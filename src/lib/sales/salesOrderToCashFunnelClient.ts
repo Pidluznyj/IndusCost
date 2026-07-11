@@ -128,6 +128,43 @@ export type OrderToCashFunnelListPayload = {
   warnings: string[];
 };
 
+export type OrderToCashFulfillmentMapDto = {
+  financialStatus?: string;
+  financialStatusLabel?: string;
+  operationalStatus?: string;
+  operationalStatusLabel?: string;
+  technicalAlerts?: string[];
+  fulfillmentSummary?: {
+    orderValue?: number;
+    attributedOrderValueByOrderPrice?: number;
+    attributedOrderValue?: number;
+    totalOrderedQuantity?: number;
+    totalOrderQuantity?: number;
+    totalAttendedQuantityCapped?: number;
+    attendedQuantity?: number;
+    totalRemainingQuantity?: number;
+    remainingQuantity?: number;
+    totalExcessQuantity?: number;
+    fulfillmentPercent?: number | null;
+    receivableTotalValue?: number;
+    receivedValue?: number;
+    openReceivableValue?: number;
+    nfeHeaderTotalValue?: number;
+    nfeHeaderTotal?: number;
+    nfeHeaderNotAttributedToOrderValue?: number;
+    nfeHeaderNotAttributed?: number;
+    isFullyFulfilledByItems?: boolean;
+    hasExcessQuantity?: boolean;
+    hasHeaderInflationRisk?: boolean;
+    hasProductsOutsideOrder?: boolean;
+  };
+  orderItemsCoverage?: Array<Record<string, unknown>>;
+  stockDocumentsCoverage?: Array<Record<string, unknown>>;
+  receivablesCoverage?: Array<Record<string, unknown>>;
+  executiveConclusion?: string;
+  evidenceWarnings?: string[];
+};
+
 export type OrderToCashFunnelDetailPayload = {
   ok: boolean;
   message: string | null;
@@ -156,7 +193,7 @@ export type OrderToCashFunnelDetailPayload = {
     responsibleArea: string;
     explanation: string;
   } | null;
-  fulfillmentMap: Record<string, unknown> | null;
+  fulfillmentMap: OrderToCashFulfillmentMapDto | null;
   timeline: Array<{ at: string | null; kind: string; label: string; detail: string | null }>;
   documents: Array<{
     stockDocumentExternalId: number | null;
