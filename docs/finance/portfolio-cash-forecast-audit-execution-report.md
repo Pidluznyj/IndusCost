@@ -7,7 +7,7 @@
 | **Data** | 2026-07-11 |
 | **Tipo** | Relatório final de negócio + técnico (somente documentação) |
 | **Status final** | **PRONTO** |
-| **HEAD deste relat�rio** | `4b1108b851cdb8a2326a6ae785da7aba849ec85a` |
+| **HEAD deste relat�rio** | `4b1108b` |
 | **Revalidação deste relatório** | Gates + scripts **PASS** (FIXTURE / motor puro) — alinhado à QA `d28d969`/`43f062c` |
 
 > Relacionados:  
