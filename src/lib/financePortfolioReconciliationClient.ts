@@ -404,6 +404,38 @@ export type PortfolioIntelligenceListPayload = {
   groups: PortfolioIntelligenceGroupDto[];
   sellerKpis: PortfolioIntelligenceSellerKpiDto[];
   rows: PortfolioIntelligenceOrderRow[];
+  /** Forecast por maturidade (auditoria; paralelo ao Fluxo de Caixa oficial). */
+  cashForecast?: {
+    lines: Array<{
+      salesOrderId: string | null;
+      orderCode: string;
+      sourceType: string;
+      sourceLabel: string;
+      forecastDate: string | null;
+      forecastValue: number;
+      confidenceScore: number;
+      confidenceLabel: string;
+      maturityBucket: string;
+      isReliableCash: boolean;
+      evidence: string[];
+      warnings: string[];
+      explanation: string;
+    }>;
+    byMaturity: Array<{
+      maturityBucket: string;
+      label: string;
+      linesCount: number;
+      forecastValue: number;
+      averageConfidence: number;
+      isReliableCash: boolean;
+    }>;
+    totals: {
+      reliableCashValue: number;
+      unreliableValue: number;
+      linesCount: number;
+    };
+    warnings: string[];
+  } | null;
   pagination: {
     page: number;
     pageSize: number;

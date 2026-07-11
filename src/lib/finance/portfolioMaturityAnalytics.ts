@@ -34,6 +34,10 @@ import {
   type PortfolioOperationalStatus,
   type PortfolioOrderFulfillmentMap,
 } from "./portfolioOrderFulfillmentMap.js";
+import {
+  buildCashForecastFromMaturityOrders,
+  type PortfolioCashForecastMaturityResult,
+} from "./portfolioCashForecastMaturity.js";
 
 function round2(n: number): number {
   return Number(n.toFixed(2));
@@ -346,6 +350,8 @@ export type PortfolioMaturityAnalyticsResult = {
   alertGroups: PortfolioMaturityAlertGroup[];
   sellerKpis: PortfolioMaturitySellerKpi[];
   rows: PortfolioMaturityOrderRow[];
+  /** Forecast de caixa por maturidade (auditoria; não é Fluxo de Caixa oficial). */
+  cashForecast: PortfolioCashForecastMaturityResult;
   pagination: {
     page: number;
     pageSize: number;
@@ -1659,6 +1665,10 @@ export function buildPortfolioMaturityAnalytics(args: {
   const alertGroups = buildAlertGroups(sorted);
   const sellerKpis = buildSellerKpis(sorted);
   const totals = buildTotals(sorted);
+  const cashForecast = buildCashForecastFromMaturityOrders({
+    orders: sorted,
+    asOfDate: asOf,
+  });
 
   // Não duplicidade: soma dos status principais = carteira total
   // (cards operacionais/alertas são eixos paralelos e não entram nesta soma)
@@ -1695,10 +1705,14 @@ export function buildPortfolioMaturityAnalytics(args: {
     alertGroups,
     sellerKpis,
     rows,
+    cashForecast,
     pagination: { page, pageSize, totalRows, totalPages },
     metricExplanations,
     appliedFilters: { ...filters, asOfDate: asOf },
-    warnings,
+    warnings: [
+      ...warnings,
+      ...cashForecast.warnings.filter((w) => !warnings.includes(w)),
+    ],
     totals,
   };
 }

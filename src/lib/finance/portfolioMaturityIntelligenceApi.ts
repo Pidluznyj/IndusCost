@@ -375,6 +375,7 @@ export function buildPortfolioIntelligenceListPayload(args: {
       operationalGroups: [],
       alertGroups: [],
       rows: [],
+      cashForecast: null,
       pagination: {
         page: 1,
         pageSize: PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE,
@@ -413,6 +414,7 @@ export function buildPortfolioIntelligenceListPayload(args: {
     alertGroups: analytics.alertGroups,
     sellerKpis: analytics.sellerKpis,
     rows: analytics.rows,
+    cashForecast: analytics.cashForecast,
     pagination: analytics.pagination,
     filters: analytics.appliedFilters,
     metricExplanations: analytics.metricExplanations,
