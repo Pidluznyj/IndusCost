@@ -7,7 +7,8 @@
 | **Data** | 2026-07-11 |
 | **Tipo** | Relatório final de negócio + técnico (somente documentação) |
 | **Status final** | **PRONTO** |
-| **HEAD do relatório** | `4b7f97c` |
+| **HEAD base documentado** | `aceb54f` (QA final reexecutada) |
+| **Revalidação deste relatório** | Gates + scripts **PASS** na mesma data (FIXTURE / motor puro) |
 
 > Relacionados:  
 > [`portfolio-cash-forecast-audit-requirements.md`](./portfolio-cash-forecast-audit-requirements.md) ·  
