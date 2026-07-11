@@ -316,6 +316,7 @@ import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRout
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
+import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCashFunnelRoutes.js";
 import { registerSalesOrderMarginIndicatorsRoutes } from "./src/lib/salesOrderMarginIndicatorsRoutes.js";
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
@@ -13465,6 +13466,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requireAnyPermission,
     requireUserAdminOrBootstrap,
+  });
+
+  registerSalesOrderToCashFunnelRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
   });
 
   registerSalesOrderMarginIndicatorsRoutes(app, {

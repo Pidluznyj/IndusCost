@@ -35,6 +35,7 @@ export const SERVER_IMPORT_CHECK_ENTRIES = [
   "src/lib/salesOrderManagementMetrics.ts",
   "src/lib/salesOrderManagementMetrics.server.ts",
   "src/lib/salesOrderIntelligenceRoutes.ts",
+  "src/lib/salesOrderToCashFunnelRoutes.ts",
 ] as const;
 
 /** Módulos carregados dinamicamente (registrars; NÃO o server.ts completo). */
@@ -49,6 +50,7 @@ export const SERVER_IMPORT_DYNAMIC_MODULES = [
   "src/lib/marketGlobalIndicatorsRoutes.ts",
   "src/lib/salesOrderManagementMetrics.server.ts",
   "src/lib/salesOrderIntelligenceRoutes.ts",
+  "src/lib/salesOrderToCashFunnelRoutes.ts",
 ] as const;
 
 export type NamedImportRef = {
