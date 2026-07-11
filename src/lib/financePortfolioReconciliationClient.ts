@@ -403,6 +403,45 @@ export type PortfolioIntelligenceSellerKpiDto = {
   note: string | null;
 };
 
+export type PortfolioO2cBusinessKpisDto = {
+  asOfDate: string;
+  cards: Array<{
+    key: string;
+    title: string;
+    value: number;
+    count: number;
+    tone: "neutral" | "green" | "blue" | "amber" | "red" | "gray";
+    explanation: string;
+    filterHint?: {
+      statusPrincipal?: string;
+      onlyWithoutNfe?: boolean;
+      onlyWithoutStockDocument?: boolean;
+      onlyWithoutReceivable?: boolean;
+      onlyFutureDelivery?: boolean;
+      onlyPastDelivery?: boolean;
+      onlyWithCr?: boolean;
+      onlyWithDocOrNfe?: boolean;
+      onlyOrderOnly?: boolean;
+      onlyOrderWithPaymentTerms?: boolean;
+      onlyOrderWithoutPaymentTerms?: boolean;
+    };
+  }>;
+  evidenceFunnel: Array<{
+    key: "SO_PEDIDO" | "DOC_OU_NF" | "CR_ABERTO" | "RECEBIDO" | "BLOQUEADO";
+    label: string;
+    count: number;
+    value: number;
+  }>;
+  agingBuckets: Array<{
+    key: "OVERDUE" | "D0_30" | "D31_60" | "D61_90_PLUS" | "SEM_DATA";
+    label: string;
+    count: number;
+    value: number;
+  }>;
+  soPedidoComCondicao: { count: number; value: number };
+  soPedidoSemCondicao: { count: number; value: number };
+};
+
 export type PortfolioIntelligenceListPayload = {
   ok: boolean;
   message: string | null;
@@ -410,6 +449,8 @@ export type PortfolioIntelligenceListPayload = {
   groups: PortfolioIntelligenceGroupDto[];
   sellerKpis: PortfolioIntelligenceSellerKpiDto[];
   rows: PortfolioIntelligenceOrderRow[];
+  /** KPIs O2C de negócio (layout principal da Inteligência). */
+  o2cBusinessKpis?: PortfolioO2cBusinessKpisDto | null;
   /** Forecast por maturidade (auditoria; paralelo ao Fluxo de Caixa oficial). */
   cashForecast?: {
     lines: Array<{
@@ -801,6 +842,13 @@ export function buildPortfolioIntelligenceListQuery(args: {
   onlyWithoutStockDocument?: boolean;
   onlyWithoutReceivable?: boolean;
   onlyWithoutSeller?: boolean;
+  onlyFutureDelivery?: boolean;
+  onlyPastDelivery?: boolean;
+  onlyWithCr?: boolean;
+  onlyWithDocOrNfe?: boolean;
+  onlyOrderOnly?: boolean;
+  onlyOrderWithPaymentTerms?: boolean;
+  onlyOrderWithoutPaymentTerms?: boolean;
   sortBy?: string;
   sortDirection?: string;
 }): string {
@@ -836,6 +884,15 @@ export function buildPortfolioIntelligenceListQuery(args: {
   if (args.onlyWithoutStockDocument) params.set("onlyWithoutStockDocument", "true");
   if (args.onlyWithoutReceivable) params.set("onlyWithoutReceivable", "true");
   if (args.onlyWithoutSeller) params.set("onlyWithoutSeller", "true");
+  if (args.onlyFutureDelivery) params.set("onlyFutureDelivery", "true");
+  if (args.onlyPastDelivery) params.set("onlyPastDelivery", "true");
+  if (args.onlyWithCr) params.set("onlyWithCr", "true");
+  if (args.onlyWithDocOrNfe) params.set("onlyWithDocOrNfe", "true");
+  if (args.onlyOrderOnly) params.set("onlyOrderOnly", "true");
+  if (args.onlyOrderWithPaymentTerms) params.set("onlyOrderWithPaymentTerms", "true");
+  if (args.onlyOrderWithoutPaymentTerms) {
+    params.set("onlyOrderWithoutPaymentTerms", "true");
+  }
   params.set("page", String(args.page ?? 1));
   params.set("pageSize", String(args.pageSize ?? 50));
   return params.toString();

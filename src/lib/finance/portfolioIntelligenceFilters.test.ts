@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyPeriodPresetToFilters,
+  applyPortfolioO2cFilterHint,
   buildPortfolioIntelligenceFilterChips,
   countActivePortfolioIntelligenceFilters,
   createDefaultPortfolioIntelligenceUiFilters,
@@ -248,5 +249,32 @@ describe("portfolioIntelligenceFilters", () => {
     );
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]!.orderCode, "PD A");
+  });
+
+  it("applyPortfolioO2cFilterHint aplica recortes de card/funil/aging", () => {
+    const base = createDefaultPortfolioIntelligenceUiFilters();
+    const withCr = applyPortfolioO2cFilterHint(base, { onlyWithCr: true });
+    assert.equal(withCr.onlyWithCr, true);
+    assert.equal(withCr.onlyOrderOnly, false);
+
+    const funnel = applyPortfolioO2cFilterHint(withCr, { evidenceStage: "SO_PEDIDO" });
+    assert.equal(funnel.onlyOrderOnly, true);
+    assert.equal(funnel.onlyWithCr, false);
+
+    const aging = applyPortfolioO2cFilterHint(base, {
+      agingBucket: "D0_30",
+      asOfDate: "2026-07-11",
+    });
+    assert.equal(aging.dateAxis, "FORECAST_DATE");
+    assert.equal(aging.from, "2026-07-11");
+    assert.equal(aging.to, "2026-08-10");
+
+    const qs = buildPortfolioIntelligenceListQuery(
+      portfolioIntelligenceUiFiltersToQueryArgs(
+        applyPortfolioO2cFilterHint(base, { onlyFutureDelivery: true }),
+        { pageSize: 50 }
+      )
+    );
+    assert.match(qs, /onlyFutureDelivery=true/);
   });
 });

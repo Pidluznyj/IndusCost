@@ -367,6 +367,13 @@ export function parsePortfolioIntelligenceFilters(
     onlyWithoutStockDocument: asBoolFlag(query.onlyWithoutStockDocument) || null,
     onlyWithoutReceivable: asBoolFlag(query.onlyWithoutReceivable) || null,
     onlyWithoutSeller: asBoolFlag(query.onlyWithoutSeller) || null,
+    onlyFutureDelivery: asBoolFlag(query.onlyFutureDelivery) || null,
+    onlyPastDelivery: asBoolFlag(query.onlyPastDelivery) || null,
+    onlyWithCr: asBoolFlag(query.onlyWithCr) || null,
+    onlyWithDocOrNfe: asBoolFlag(query.onlyWithDocOrNfe) || null,
+    onlyOrderOnly: asBoolFlag(query.onlyOrderOnly) || null,
+    onlyOrderWithPaymentTerms: asBoolFlag(query.onlyOrderWithPaymentTerms) || null,
+    onlyOrderWithoutPaymentTerms: asBoolFlag(query.onlyOrderWithoutPaymentTerms) || null,
   };
 }
 
@@ -402,6 +409,7 @@ export function buildPortfolioIntelligenceListPayload(args: {
       totals: null,
       run: null,
       dataFreshness: null as PortfolioIntelligenceDataFreshness | null,
+      o2cBusinessKpis: null,
     };
   }
 
@@ -443,6 +451,7 @@ export function buildPortfolioIntelligenceListPayload(args: {
       customerExternalId: args.run.customerExternalId,
     },
     dataFreshness,
+    o2cBusinessKpis: analytics.o2cBusinessKpis,
   };
 }
 

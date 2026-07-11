@@ -451,7 +451,18 @@ function TabContent({
   const flags = c.evidenceFlags;
 
   if (tab === "mapa") {
-    return <PortfolioOrderFulfillmentMap detail={detail} />;
+    return (
+      <div className="space-y-3" data-testid="portfolio-intelligence-drawer-mapa">
+        <p
+          className="rounded-lg border border-sky-200/70 bg-sky-50/50 px-3 py-2 text-[12px] leading-relaxed text-sky-950"
+          data-testid="portfolio-intelligence-drawer-mapa-hint"
+        >
+          Mapa de atendimento: itens do pedido ↔ NF / documentos de saída. Se já houver Contas a
+          Receber, o vencimento do título manda sobre o forecast do pedido na leitura de caixa.
+        </p>
+        <PortfolioOrderFulfillmentMap detail={detail} />
+      </div>
+    );
   }
 
   if (tab === "resumo") {
@@ -837,8 +848,21 @@ function TabContent({
 
   if (tab === "pagamento") {
     const pc = detail.paymentCondition;
+    const hasCr = Boolean(
+      detail.classification.evidenceFlags.hasReceivable ||
+        detail.classification.statusPrincipal === "CR_ABERTO" ||
+        detail.classification.statusPrincipal === "RECEBIDO"
+    );
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-drawer-pagamento">
+        <p
+          className="rounded-lg border border-amber-200/70 bg-amber-50/50 px-3 py-2 text-[12px] leading-relaxed text-amber-950"
+          data-testid="portfolio-intelligence-drawer-pagamento-priority"
+        >
+          {hasCr
+            ? "Já há Contas a Receber: use o vencimento do título como referência de caixa. A condição do pedido é complementar."
+            : "Sem CR ainda: a condição de pagamento do pedido alimenta o forecast. Quando virar CR, o título passa a mandar."}
+        </p>
         {!pc.available ? (
           <EmptyState
             message={

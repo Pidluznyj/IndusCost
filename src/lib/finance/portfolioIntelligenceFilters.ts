@@ -60,6 +60,14 @@ export type PortfolioIntelligenceUiFilters = {
   onlyBlockedPortfolio: boolean;
   onlyOverdueStatus: boolean;
   onlyAboveMinValue: boolean;
+  /** Recortes O2C (cards/funil de negócio). */
+  onlyFutureDelivery: boolean;
+  onlyPastDelivery: boolean;
+  onlyWithCr: boolean;
+  onlyWithDocOrNfe: boolean;
+  onlyOrderOnly: boolean;
+  onlyOrderWithPaymentTerms: boolean;
+  onlyOrderWithoutPaymentTerms: boolean;
 };
 
 export const PORTFOLIO_INTELLIGENCE_DATE_AXIS_OPTIONS: Array<{
@@ -245,6 +253,13 @@ export function createDefaultPortfolioIntelligenceUiFilters(
     onlyBlockedPortfolio: false,
     onlyOverdueStatus: false,
     onlyAboveMinValue: false,
+    onlyFutureDelivery: false,
+    onlyPastDelivery: false,
+    onlyWithCr: false,
+    onlyWithDocOrNfe: false,
+    onlyOrderOnly: false,
+    onlyOrderWithPaymentTerms: false,
+    onlyOrderWithoutPaymentTerms: false,
   };
 }
 
@@ -489,6 +504,17 @@ export function buildPortfolioIntelligenceFilterChips(
   if (filters.onlyBlockedPortfolio) push("onlyBlockedPortfolio", "Carteira bloqueada");
   if (filters.onlyOverdueStatus) push("onlyOverdueStatus", "Somente vencidos (status)");
   if (filters.onlyAboveMinValue) push("onlyAboveMinValue", "Acima do valor mínimo");
+  if (filters.onlyFutureDelivery) push("onlyFutureDelivery", "Entrega futura");
+  if (filters.onlyPastDelivery) push("onlyPastDelivery", "Entrega vencida");
+  if (filters.onlyWithCr) push("onlyWithCr", "Já virou CR");
+  if (filters.onlyWithDocOrNfe) push("onlyWithDocOrNfe", "Com doc/NF");
+  if (filters.onlyOrderOnly) push("onlyOrderOnly", "Só pedido");
+  if (filters.onlyOrderWithPaymentTerms) {
+    push("onlyOrderWithPaymentTerms", "Só pedido com condição");
+  }
+  if (filters.onlyOrderWithoutPaymentTerms) {
+    push("onlyOrderWithoutPaymentTerms", "Só pedido sem condição");
+  }
 
   return chips;
 }
@@ -521,6 +547,13 @@ export function countActivePortfolioIntelligenceFilters(
   if (filters.onlyBlockedPortfolio) n += 1;
   if (filters.onlyOverdueStatus) n += 1;
   if (filters.onlyAboveMinValue) n += 1;
+  if (filters.onlyFutureDelivery) n += 1;
+  if (filters.onlyPastDelivery) n += 1;
+  if (filters.onlyWithCr) n += 1;
+  if (filters.onlyWithDocOrNfe) n += 1;
+  if (filters.onlyOrderOnly) n += 1;
+  if (filters.onlyOrderWithPaymentTerms) n += 1;
+  if (filters.onlyOrderWithoutPaymentTerms) n += 1;
   return n;
 }
 
@@ -559,7 +592,130 @@ export function portfolioIntelligenceUiFiltersToQueryArgs(
     onlyWithoutStockDocument: effective.onlyWithoutStockDocument,
     onlyWithoutReceivable: effective.onlyWithoutReceivable,
     onlyWithoutSeller: effective.onlyWithoutSeller,
+    onlyFutureDelivery: effective.onlyFutureDelivery,
+    onlyPastDelivery: effective.onlyPastDelivery,
+    onlyWithCr: effective.onlyWithCr,
+    onlyWithDocOrNfe: effective.onlyWithDocOrNfe,
+    onlyOrderOnly: effective.onlyOrderOnly,
+    onlyOrderWithPaymentTerms: effective.onlyOrderWithPaymentTerms,
+    onlyOrderWithoutPaymentTerms: effective.onlyOrderWithoutPaymentTerms,
     page: extras?.page ?? 1,
     pageSize: extras?.pageSize ?? 200,
   };
+}
+
+/** Limpa recortes O2C (cards/funil) mantendo cliente/período/eixo. */
+export function clearPortfolioIntelligenceO2cSliceFilters(
+  filters: PortfolioIntelligenceUiFilters
+): PortfolioIntelligenceUiFilters {
+  return {
+    ...filters,
+    statusPrincipal: "",
+    onlyFuturePortfolio: false,
+    onlyBlockedPortfolio: false,
+    onlyOverdueStatus: false,
+    onlyFutureDelivery: false,
+    onlyPastDelivery: false,
+    onlyWithCr: false,
+    onlyWithDocOrNfe: false,
+    onlyOrderOnly: false,
+    onlyOrderWithPaymentTerms: false,
+    onlyOrderWithoutPaymentTerms: false,
+    onlyWithoutNfe: false,
+    onlyWithoutStockDocument: false,
+    onlyWithoutReceivable: false,
+  };
+}
+
+export type PortfolioO2cUiFilterHint = {
+  statusPrincipal?: string;
+  onlyWithoutNfe?: boolean;
+  onlyWithoutStockDocument?: boolean;
+  onlyWithoutReceivable?: boolean;
+  onlyFutureDelivery?: boolean;
+  onlyPastDelivery?: boolean;
+  onlyWithCr?: boolean;
+  onlyWithDocOrNfe?: boolean;
+  onlyOrderOnly?: boolean;
+  onlyOrderWithPaymentTerms?: boolean;
+  onlyOrderWithoutPaymentTerms?: boolean;
+  /** Atalho de funil / status. */
+  evidenceStage?: "SO_PEDIDO" | "DOC_OU_NF" | "CR_ABERTO" | "RECEBIDO" | "BLOQUEADO";
+  /** Bucket de aging (eixo forecast + from/to). */
+  agingBucket?: "OVERDUE" | "D0_30" | "D31_60" | "D61_90_PLUS" | "SEM_DATA";
+  asOfDate?: string;
+};
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y!, m! - 1, d!);
+  dt.setDate(dt.getDate() + days);
+  return formatYmdLocal(dt);
+}
+
+/** Aplica clique de card/funil/bucket O2C nos filtros UI (substitui o recorte anterior). */
+export function applyPortfolioO2cFilterHint(
+  filters: PortfolioIntelligenceUiFilters,
+  hint: PortfolioO2cUiFilterHint
+): PortfolioIntelligenceUiFilters {
+  let next = clearPortfolioIntelligenceO2cSliceFilters(filters);
+
+  if (hint.evidenceStage) {
+    switch (hint.evidenceStage) {
+      case "SO_PEDIDO":
+        next.onlyOrderOnly = true;
+        break;
+      case "DOC_OU_NF":
+        next.onlyWithDocOrNfe = true;
+        next.onlyWithoutReceivable = true;
+        break;
+      case "CR_ABERTO":
+        next.statusPrincipal = "CR_ABERTO";
+        break;
+      case "RECEBIDO":
+        next.statusPrincipal = "RECEBIDO";
+        break;
+      case "BLOQUEADO":
+        next.statusPrincipal = "CARTEIRA_VENCIDA_BLOQUEADA";
+        break;
+    }
+  }
+
+  if (hint.agingBucket) {
+    const asOf = hint.asOfDate?.trim() || formatYmdLocal(startOfToday());
+    next.dateAxis = "FORECAST_DATE";
+    next.periodPreset = "custom";
+    if (hint.agingBucket === "OVERDUE") {
+      next.from = "";
+      next.to = addDaysYmd(asOf, -1);
+    } else if (hint.agingBucket === "D0_30") {
+      next.from = asOf;
+      next.to = addDaysYmd(asOf, 30);
+    } else if (hint.agingBucket === "D31_60") {
+      next.from = addDaysYmd(asOf, 31);
+      next.to = addDaysYmd(asOf, 60);
+    } else if (hint.agingBucket === "D61_90_PLUS") {
+      next.from = addDaysYmd(asOf, 61);
+      next.to = "";
+    } else {
+      // SEM_DATA: sem recorte de período — deixa o restante dos filtros
+      next.from = "";
+      next.to = "";
+      next.periodPreset = "";
+    }
+  }
+
+  if (hint.statusPrincipal) next.statusPrincipal = hint.statusPrincipal;
+  if (hint.onlyWithoutNfe) next.onlyWithoutNfe = true;
+  if (hint.onlyWithoutStockDocument) next.onlyWithoutStockDocument = true;
+  if (hint.onlyWithoutReceivable) next.onlyWithoutReceivable = true;
+  if (hint.onlyFutureDelivery) next.onlyFutureDelivery = true;
+  if (hint.onlyPastDelivery) next.onlyPastDelivery = true;
+  if (hint.onlyWithCr) next.onlyWithCr = true;
+  if (hint.onlyWithDocOrNfe) next.onlyWithDocOrNfe = true;
+  if (hint.onlyOrderOnly) next.onlyOrderOnly = true;
+  if (hint.onlyOrderWithPaymentTerms) next.onlyOrderWithPaymentTerms = true;
+  if (hint.onlyOrderWithoutPaymentTerms) next.onlyOrderWithoutPaymentTerms = true;
+
+  return next;
 }

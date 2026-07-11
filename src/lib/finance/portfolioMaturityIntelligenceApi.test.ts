@@ -148,6 +148,8 @@ describe("portfolioMaturityIntelligenceApi", () => {
     });
     assert.equal(payload.ok, true);
     assert.ok(payload.rows.every((r) => r.customerExternalId === 200));
+    assert.ok(payload.o2cBusinessKpis);
+    assert.ok(payload.o2cBusinessKpis.cards.some((c) => c.key === "VALOR_EM_PEDIDOS"));
   });
 
   it("aceita filtro por vendedor", () => {

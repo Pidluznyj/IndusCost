@@ -38,6 +38,15 @@ import {
   buildCashForecastFromMaturityOrders,
   type PortfolioCashForecastMaturityResult,
 } from "./portfolioCashForecastMaturity.js";
+import {
+  buildPortfolioO2cBusinessKpis,
+  isPortfolioO2cOnlyOrder,
+  portfolioO2cDeliveryDeltaDays,
+  portfolioO2cRowHasCr,
+  portfolioO2cRowHasDocOrNfe,
+  portfolioO2cRowHasPaymentTerms,
+  type PortfolioO2cBusinessKpis,
+} from "./portfolioO2cBusinessKpis.js";
 
 function round2(n: number): number {
   return Number(n.toFixed(2));
@@ -167,6 +176,14 @@ export type PortfolioMaturityAnalyticsFilters = {
   onlyWithoutReceivable?: boolean | null;
   /** Pedidos sem vendedor identificado no pedido. */
   onlyWithoutSeller?: boolean | null;
+  /** Recortes O2C (layout Inteligência) — só filtro, sem recalcular. */
+  onlyFutureDelivery?: boolean | null;
+  onlyPastDelivery?: boolean | null;
+  onlyWithCr?: boolean | null;
+  onlyWithDocOrNfe?: boolean | null;
+  onlyOrderOnly?: boolean | null;
+  onlyOrderWithPaymentTerms?: boolean | null;
+  onlyOrderWithoutPaymentTerms?: boolean | null;
 };
 
 export type PortfolioMaturitySortBy =
@@ -390,6 +407,8 @@ export type PortfolioMaturityAnalyticsResult = {
     valorFuturoPresentePlausivel: number;
     valorVencidoBloqueado: number;
   };
+  /** KPIs O2C de negócio (layout Inteligência) — sobre o conjunto filtrado. */
+  o2cBusinessKpis: PortfolioO2cBusinessKpis;
 };
 
 const STATUS_TITLES: Record<PortfolioMaturityStatus, string> = {
@@ -835,6 +854,7 @@ export function filterMaturityOrders(
   const from = toIsoDate(filters.from);
   const to = toIsoDate(filters.to);
   const axis = filters.dateAxis ?? null;
+  const asOf = toIsoDate(filters.asOfDate) ?? startOfDayIso();
   let missingDateAxisCount = 0;
 
   const filtered = rows.filter((row) => {
@@ -908,6 +928,24 @@ export function filterMaturityOrders(
     if (filters.onlyWithoutSeller) {
       const hasSeller = Boolean(row.sellerName || row.sellerExternalId != null);
       if (hasSeller) return false;
+    }
+    if (filters.onlyWithCr && !portfolioO2cRowHasCr(row)) return false;
+    if (filters.onlyWithDocOrNfe && !portfolioO2cRowHasDocOrNfe(row)) return false;
+    if (filters.onlyOrderOnly && !isPortfolioO2cOnlyOrder(row)) return false;
+    if (filters.onlyOrderWithPaymentTerms) {
+      if (!isPortfolioO2cOnlyOrder(row) || !portfolioO2cRowHasPaymentTerms(row)) return false;
+    }
+    if (filters.onlyOrderWithoutPaymentTerms) {
+      if (!isPortfolioO2cOnlyOrder(row) || portfolioO2cRowHasPaymentTerms(row)) return false;
+    }
+    if (filters.onlyFutureDelivery || filters.onlyPastDelivery) {
+      const delta = portfolioO2cDeliveryDeltaDays(row, asOf);
+      if (delta == null) return false;
+      if (filters.onlyFutureDelivery && delta <= 0) return false;
+      if (filters.onlyPastDelivery) {
+        if (delta >= 0) return false;
+        if (row.statusPrincipal === "RECEBIDO") return false;
+      }
     }
 
     if (axis && (from || to)) {
@@ -1780,7 +1818,7 @@ export function buildPortfolioMaturityAnalytics(args: {
     orders: sorted,
     asOfDate: asOf,
   });
-
+  const o2cBusinessKpis = buildPortfolioO2cBusinessKpis(sorted, asOf);
   // Não duplicidade: soma dos status principais = carteira total
   // (cards operacionais/alertas são eixos paralelos e não entram nesta soma)
   const statusSum = statusGroups.reduce((s, g) => s + g.orderValue, 0);
@@ -1825,6 +1863,7 @@ export function buildPortfolioMaturityAnalytics(args: {
       ...cashForecast.warnings.filter((w) => !warnings.includes(w)),
     ],
     totals,
+    o2cBusinessKpis,
   };
 }
 

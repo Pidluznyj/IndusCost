@@ -7,10 +7,12 @@ import {
   type PortfolioIntelligenceListPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
 import {
+  applyPortfolioO2cFilterHint,
   createDefaultPortfolioIntelligenceUiFilters,
   dateAxisLabel,
   portfolioIntelligenceUiFiltersToQueryArgs,
   type PortfolioIntelligenceUiFilters,
+  type PortfolioO2cUiFilterHint,
 } from "@/src/lib/finance/portfolioIntelligenceFilters";
 import {
   FinanceModuleEmptyState,
@@ -24,6 +26,7 @@ import { PortfolioIntelligenceCards } from "./PortfolioIntelligenceCards";
 import { PortfolioIntelligenceFiltersBar } from "./PortfolioIntelligenceFiltersBar";
 import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDrawer";
 import { PortfolioIntelligenceSellerKpis } from "./PortfolioIntelligenceSellerKpis";
+import { PortfolioO2cBusinessBoard } from "./PortfolioO2cBusinessBoard";
 import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfolioReconciliationClient";
 import {
   INTELLIGENCE_READING_GUIDE,
@@ -55,6 +58,8 @@ export function PortfolioIntelligenceSection({
   const [expandedKey, setExpandedKey] = useState<IntelligenceAccordionKey | null>(null);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState<string | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [activeO2cHintKey, setActiveO2cHintKey] = useState<string | null>(null);
+  const [maturityCardsOpen, setMaturityCardsOpen] = useState(false);
 
   const [draftFilters, setDraftFilters] = useState<PortfolioIntelligenceUiFilters>(() =>
     createDefaultPortfolioIntelligenceUiFilters({ customerExternalId })
@@ -152,6 +157,16 @@ export function PortfolioIntelligenceSection({
     setExpandedKey((prev) => (prev === accordion ? null : accordion));
   }, []);
 
+  const handleO2cFilterHint = useCallback((hint: PortfolioO2cUiFilterHint, activeKey: string) => {
+    setActiveO2cHintKey(activeKey);
+    setAppliedFilters((prev) => {
+      const next = applyPortfolioO2cFilterHint(prev, hint);
+      setDraftFilters(next);
+      return next;
+    });
+    setFiltersExpanded(true);
+  }, []);
+
   const handleOpenOrder = useCallback((salesOrderId: string) => {
     setSelectedSalesOrderId(salesOrderId);
   }, []);
@@ -175,6 +190,7 @@ export function PortfolioIntelligenceSection({
     });
     setDraftFilters(cleared);
     setAppliedFilters(cleared);
+    setActiveO2cHintKey(null);
   }, []);
 
   const handleSelectSeller = useCallback((kpi: PortfolioIntelligenceSellerKpiDto) => {
@@ -327,25 +343,16 @@ export function PortfolioIntelligenceSection({
         />
       ) : null}
 
-      {!noRun ? (
-        <PortfolioIntelligenceCards
-          cards={payload?.cards ?? []}
-          loading={loading && !hasCards}
-          onCardClick={handleCardClick}
-          activeCardKey={activeCardKey}
+      {!noRun && payload?.o2cBusinessKpis ? (
+        <PortfolioO2cBusinessBoard
+          kpis={payload.o2cBusinessKpis}
+          loading={loading && !payload.o2cBusinessKpis}
+          activeHintKey={activeO2cHintKey}
+          onFilterHint={handleO2cFilterHint}
         />
       ) : null}
 
-      {!noRun && payload ? (
-        <PortfolioIntelligenceSellerKpis
-          sellerKpis={payload.sellerKpis ?? []}
-          loading={loading && !payload.sellerKpis}
-          activeSellerKey={activeSellerKey}
-          onSelectSeller={handleSelectSeller}
-        />
-      ) : null}
-
-      {!loading && !noRun && !error && payload && !hasCards ? (
+      {!loading && !noRun && !error && payload && !hasCards && !payload.o2cBusinessKpis ? (
         <FinanceModuleEmptyState
           title="Nenhum indicador neste filtro"
           description="Tente limpar filtros ou escolher outro cliente/período. A carteira pode estar vazia neste recorte."
@@ -362,6 +369,39 @@ export function PortfolioIntelligenceSection({
           expandedKey={expandedKey}
           onExpandedChange={setExpandedKey}
           onOpenOrder={handleOpenOrder}
+        />
+      ) : null}
+
+      {!noRun ? (
+        <details
+          className="rounded-[14px] border border-dashed border-[#D0D5DD] bg-[#FCFCFD] p-3 sm:p-4"
+          data-testid="portfolio-intelligence-maturity-cards-secondary"
+          open={maturityCardsOpen}
+          onToggle={(e) => setMaturityCardsOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer list-none text-[13px] font-semibold text-[#344054]">
+            Indicadores técnicos de maturidade (secundário)
+            <span className="ml-2 text-[11px] font-normal text-[#667085]">
+              conversão, OP, alertas — não substituem a leitura O2C acima
+            </span>
+          </summary>
+          <div className="mt-3">
+            <PortfolioIntelligenceCards
+              cards={payload?.cards ?? []}
+              loading={loading && !hasCards}
+              onCardClick={handleCardClick}
+              activeCardKey={activeCardKey}
+            />
+          </div>
+        </details>
+      ) : null}
+
+      {!noRun && payload ? (
+        <PortfolioIntelligenceSellerKpis
+          sellerKpis={payload.sellerKpis ?? []}
+          loading={loading && !payload.sellerKpis}
+          activeSellerKey={activeSellerKey}
+          onSelectSeller={handleSelectSeller}
         />
       ) : null}
 

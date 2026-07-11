@@ -25,6 +25,7 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioFulfillmentReceivablesGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioO2cBusinessBoard.tsx",
     ];
     for (const f of files) {
       const src = read(f);
@@ -88,11 +89,28 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /PortfolioIntelligenceAccordions/);
     assert.match(section, /PortfolioIntelligenceOrderDrawer/);
     assert.match(section, /PortfolioIntelligenceFiltersBar/);
+    assert.match(section, /PortfolioO2cBusinessBoard/);
+    assert.match(section, /o2cBusinessKpis|handleO2cFilterHint|applyPortfolioO2cFilterHint/);
+    assert.match(section, /portfolio-intelligence-maturity-cards-secondary/);
     assert.match(section, /portfolioIntelligenceUiFiltersToQueryArgs/);
     assert.match(section, /handleCardClick|onCardClick/);
     assert.match(section, /portfolio-intelligence-pagination-notice|rowsTruncated/);
     assert.match(section, /status >= 500/);
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
+  });
+
+  it("board O2C tem 6 cards, funil, buckets e clique → filtro", () => {
+    const board = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioO2cBusinessBoard.tsx"
+    );
+    assert.match(board, /portfolio-o2c-business-board/);
+    assert.match(board, /VALOR_EM_PEDIDOS|ENTREGA_FUTURA|VIROU_CR|SO_PEDIDO/);
+    assert.match(board, /evidenceFunnel|portfolio-o2c-evidence-funnel/);
+    assert.match(board, /agingBuckets|portfolio-o2c-aging/);
+    assert.match(board, /onFilterHint/);
+    assert.match(board, /soPedidoComCondicao|SO_PEDIDO_COM_CONDICAO/);
+    assert.match(board, /MetricHelpTooltip/);
+    assert.doesNotMatch(board, /@prisma\/client/);
   });
 
   it("barra de filtros cobre eixo de data, atalhos, chips e limpar", () => {
@@ -195,6 +213,8 @@ describe("portfolio intelligence UI", () => {
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
     );
     assert.match(drawer, /Mapa de Atendimento/);
+    assert.match(drawer, /itens do pedido ↔ NF|portfolio-intelligence-drawer-mapa-hint/);
+    assert.match(drawer, /useState<TabId>\("mapa"\)|setTab\("mapa"\)/);
     assert.ok(
       drawer.indexOf("Mapa de Atendimento") < drawer.indexOf('label: "Resumo"') ||
         drawer.indexOf('{ id: "mapa"') < drawer.indexOf('{ id: "resumo"')
@@ -299,6 +319,14 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx"
     );
     assert.match(section, /PortfolioIntelligenceSellerKpis/);
+    assert.ok(
+      section.lastIndexOf("<PortfolioO2cBusinessBoard") <
+        section.lastIndexOf("<PortfolioIntelligenceSellerKpis")
+    );
+    assert.ok(
+      section.lastIndexOf("<PortfolioIntelligenceAccordions") <
+        section.lastIndexOf("<PortfolioIntelligenceSellerKpis")
+    );
     assert.match(section, /handleSelectSeller|onSelectSeller/);
     assert.match(table, /Qualidade da Carteira por Vendedor/);
     assert.match(table, /SELLER_KPI_EXPLANATIONS/);
