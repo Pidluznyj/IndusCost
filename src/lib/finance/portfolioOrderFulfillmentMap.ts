@@ -1,21 +1,32 @@
 /**
- * Order Fulfillment Map — atendimento item a item (read-only).
+ * Order Fulfillment Map — motor puro read-only de atendimento item a item.
  *
- * Separa três eixos:
- * - financeiro (CR / recebimento)
- * - operacional (atendimento por documento de saída)
- * - alertas técnicos (não somam carteira)
+ * Reutiliza `buildPortfolioReconciliationFacts` / alocação existente quando a entrada
+ * traz pedido + documentos. Quando há fatos materializados, deriva o mapa deles
+ * (não recalcula de forma contraditória).
  *
- * Não usa cabeçalho de NF como valor do pedido.
- * Não inventa rateio de títulos CR por linha.
+ * Cabeçalho de NF nunca aumenta valor atribuído ao pedido.
+ * Excedente e produto fora do pedido ficam separados.
+ *
+ * Contrato: docs/finance/portfolio-order-fulfillment-map-requirements.md
  */
 
+import {
+  buildPortfolioReconciliationFacts,
+  pricesMismatch,
+  type PortfolioReconciliationSnapshot,
+  type SnapshotNfe,
+  type SnapshotNfeLink,
+  type SnapshotOrder,
+  type SnapshotOrderItem,
+  type SnapshotStockDocument,
+  type SnapshotStockItem,
+} from "./portfolioReconciliationAllocationEngine.js";
 import type { PortfolioReconciliationFactApiRow } from "./portfolioReconciliationApi.js";
 import { parseAlertsJson } from "./portfolioReconciliationApi.js";
 import {
-  buildPortfolioDocumentLinkRows,
-  buildPortfolioOrderItemRows,
   buildPortfolioReceivableTitleRows,
+  portfolioFactDraftToApiRow,
 } from "./portfolioReconciliationOrderTrace.js";
 
 export type PortfolioFinancialStatus =
@@ -46,6 +57,210 @@ export type PortfolioTechnicalAlert =
   | "NF_SEM_DOCUMENTO"
   | "PEDIDO_ANTIGO_SEM_EVOLUCAO";
 
+export type FulfillmentOrderInput = {
+  id: string;
+  orderCode?: string | null;
+  totalNetValue: number;
+  externalSalesOrderId?: number | null;
+  issueDate?: Date | string | null;
+  customerNameSnapshot?: string | null;
+};
+
+export type FulfillmentOrderItemInput = {
+  id: string;
+  externalProductId: number;
+  quantity: number;
+  unitPrice: number;
+  productSkuSnapshot?: string | null;
+  productNameSnapshot?: string | null;
+  totalNetValue?: number | null;
+  externalSalesOrderItemId?: number | null;
+};
+
+export type FulfillmentNfeLinkInput = {
+  salesOrderId: string;
+  nfeExternalId: number;
+  nfeNumber?: string | null;
+  dataProcessamento?: Date | string | null;
+};
+
+export type FulfillmentNfeInput = {
+  id?: string;
+  externalId: number;
+  numero?: string | null;
+  valorLiquido?: number | null;
+};
+
+export type FulfillmentStockItemInput = {
+  id: string;
+  externalProductId: number;
+  quantity: number;
+  unitValue: number;
+};
+
+export type FulfillmentStockDocumentInput = {
+  id: string;
+  externalId: number;
+  idNfe: number | null;
+  dataDocumento?: Date | string | null;
+  items: FulfillmentStockItemInput[];
+};
+
+export type FulfillmentReceivableInput = {
+  receivableId?: number | null;
+  dueDate?: string | null;
+  settlementDate?: string | null;
+  totalValue?: number | null;
+  receivedValue?: number | null;
+  openValue?: number | null;
+  sourceNfe?: number | null;
+};
+
+export type BuildOrderFulfillmentMapInput = {
+  order?: FulfillmentOrderInput | null;
+  orderItems?: readonly FulfillmentOrderItemInput[];
+  reconciliationFacts?: readonly PortfolioReconciliationFactApiRow[];
+  nfeLinks?: readonly FulfillmentNfeLinkInput[];
+  nfes?: readonly FulfillmentNfeInput[];
+  stockDocuments?: readonly FulfillmentStockDocumentInput[];
+  stockDocumentItems?: readonly (FulfillmentStockItemInput & {
+    stockDocumentId?: string;
+    stockDocumentExternalId?: number | null;
+    nfeExternalId?: number | null;
+  })[];
+  receivables?: readonly FulfillmentReceivableInput[];
+  /** Valor oficial do pedido quando não há `order.totalNetValue`. */
+  orderValue?: number | null;
+  paymentTermsAvailable?: boolean | null;
+  runId?: string;
+};
+
+export type FulfillmentDocumentUsed = {
+  nfeNumber: string | null;
+  nfeExternalId: number | null;
+  stockDocumentExternalId: number | null;
+  allocatedQuantity: number;
+};
+
+export type OrderItemCoverageRow = {
+  salesOrderItemId: string | null;
+  externalProductId: number | null;
+  /** Alias legado UI */
+  productExternalId: number | null;
+  productCode: string | null;
+  description: string | null;
+  orderedQuantity: number;
+  attendedQuantityCapped: number;
+  /** Alias legado UI */
+  attendedQuantity: number;
+  remainingQuantity: number;
+  excessQuantityForThisProduct: number;
+  fulfillmentPercentCapped: number | null;
+  /** Alias legado UI */
+  fulfillmentPercent: number | null;
+  orderUnitValue: number;
+  orderItemValue: number;
+  attendedValueByOrderPrice: number;
+  documentsUsed: FulfillmentDocumentUsed[];
+  alerts: string[];
+};
+
+export type StockDocumentMatchedItem = {
+  productExternalId: number | null;
+  allocatedQuantity: number;
+  allocatedValueByOrderPrice: number;
+};
+
+export type StockDocumentSurplusItem = {
+  productExternalId: number | null;
+  stockQuantity: number | null;
+  stockItemValue: number | null;
+};
+
+export type StockDocumentOutsideItem = {
+  productExternalId: number | null;
+  stockQuantity: number | null;
+  stockItemValue: number | null;
+  reason: string;
+};
+
+export type StockDocumentCoverageRow = {
+  nfeNumber: string | null;
+  nfeExternalId: number | null;
+  stockDocumentExternalId: number | null;
+  date: string | null;
+  nfeHeaderValue: number | null;
+  documentTotalValue: number | null;
+  valueAttributedToOrder: number;
+  valueNotAttributedToOrder: number;
+  matchedItems: StockDocumentMatchedItem[];
+  surplusItems: StockDocumentSurplusItem[];
+  itemsOutsideOrder: StockDocumentOutsideItem[];
+  /** Alias legado */
+  unmatchedItems: StockDocumentOutsideItem[];
+  alerts: string[];
+};
+
+export type ReceivableCoverageRow = {
+  receivableId: number | null;
+  receivableIds: number[];
+  dueDate: string | null;
+  dueDates: string[];
+  settlementDate: string | null;
+  settlementDates: string[];
+  totalValue: number | null;
+  receivedValue: number | null;
+  openValue: number | null;
+  sourceNfe: number | null;
+  attributionStatus: "ORDER_AGGREGATE" | "TITLE_IDS_ONLY" | "UNAVAILABLE";
+};
+
+export type FulfillmentSummary = {
+  orderValue: number;
+  attributedOrderValueByOrderPrice: number;
+  /** Alias legado */
+  attributedOrderValue: number;
+  totalOrderedQuantity: number;
+  /** Alias legado */
+  totalOrderQuantity: number;
+  totalAttendedQuantityCapped: number;
+  /** Alias legado */
+  attendedQuantity: number;
+  totalRemainingQuantity: number;
+  /** Alias legado */
+  remainingQuantity: number;
+  totalExcessQuantity: number;
+  fulfillmentPercent: number | null;
+  receivableTotalValue: number;
+  /** Alias legado */
+  receivableTotal: number;
+  receivedValue: number;
+  openReceivableValue: number;
+  nfeHeaderTotalValue: number;
+  /** Alias legado */
+  nfeHeaderTotal: number;
+  nfeHeaderAttributedToOrderValue: number;
+  nfeHeaderNotAttributedToOrderValue: number;
+  /** Alias legado */
+  nfeHeaderNotAttributed: number;
+  isFullyFulfilledByItems: boolean;
+  hasExcessQuantity: boolean;
+  hasHeaderInflationRisk: boolean;
+  hasProductsOutsideOrder: boolean;
+};
+
+export type PortfolioOrderFulfillmentMap = {
+  financialStatus: PortfolioFinancialStatus;
+  operationalStatus: PortfolioOperationalStatus;
+  technicalAlerts: PortfolioTechnicalAlert[];
+  fulfillmentSummary: FulfillmentSummary;
+  orderItemsCoverage: OrderItemCoverageRow[];
+  stockDocumentsCoverage: StockDocumentCoverageRow[];
+  receivablesCoverage: ReceivableCoverageRow[];
+  executiveConclusion: string;
+  evidenceWarnings: string[];
+};
+
 function toNumber(value: number | null | undefined): number {
   if (value == null || !Number.isFinite(value)) return 0;
   return value;
@@ -59,18 +274,190 @@ function round6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function pct(part: number, whole: number): number | null {
+function pctCapped(part: number, whole: number): number | null {
   if (!Number.isFinite(whole) || whole <= 0) return null;
-  return round2((part / whole) * 100);
+  return round2(Math.min(100, (part / whole) * 100));
 }
 
-export function resolveFinancialStatus(input: {
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toIsoDate(value: Date | string | null | undefined): string | null {
+  const d = toDate(value);
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function docKey(nfeExternalId: number | null, stockDocumentExternalId: number | null): string {
+  return `${nfeExternalId ?? "n"}::${stockDocumentExternalId ?? "d"}`;
+}
+
+function isAllocationStatus(status: string | null | undefined): boolean {
+  return (
+    status === "ITEM_ALLOCATED" ||
+    status === "PRICE_MISMATCH" ||
+    status === "FULLY_ALLOCATED" ||
+    status === "PARTIALLY_ALLOCATED"
+  );
+}
+
+function isSurplusStatus(status: string | null | undefined): boolean {
+  return status === "QUANTITY_SURPLUS_IN_NFE";
+}
+
+function isOutsideOrderFact(fact: PortfolioReconciliationFactApiRow): boolean {
+  if (fact.status === "STOCK_PRODUCT_NOT_IN_ORDER") return true;
+  if (fact.status !== "DATA_QUALITY_ISSUE") return false;
+  const rule =
+    fact.traceJson &&
+    typeof fact.traceJson === "object" &&
+    "rule" in fact.traceJson
+      ? String((fact.traceJson as { rule?: string }).rule ?? "")
+      : "";
+  return rule === "STOCK_PRODUCT_NOT_IN_ORDER";
+}
+
+function resolveFacts(input: BuildOrderFulfillmentMapInput): {
+  facts: PortfolioReconciliationFactApiRow[];
+  evidenceWarnings: string[];
+} {
+  const warnings: string[] = [];
+  if (input.reconciliationFacts && input.reconciliationFacts.length > 0) {
+    return { facts: [...input.reconciliationFacts], evidenceWarnings: warnings };
+  }
+
+  const order = input.order;
+  const orderItems = input.orderItems ?? [];
+  if (!order || orderItems.length === 0) {
+    warnings.push(
+      "Sem fatos materializados e sem pedido/itens suficientes para rodar o motor de alocação."
+    );
+    return { facts: [], evidenceWarnings: warnings };
+  }
+
+  const stockDocuments = (input.stockDocuments ?? []).map((doc): SnapshotStockDocument => ({
+    id: doc.id,
+    externalId: doc.externalId,
+    idNfe: doc.idNfe,
+    dataDocumento: toDate(doc.dataDocumento) ?? undefined,
+    items: doc.items.map(
+      (it): SnapshotStockItem => ({
+        id: it.id,
+        externalProductId: it.externalProductId,
+        quantity: it.quantity,
+        unitValue: it.unitValue,
+      })
+    ),
+  }));
+
+  // Itens soltos (quando API passa stockDocumentItems sem agrupar)
+  if ((input.stockDocumentItems?.length ?? 0) > 0 && stockDocuments.length === 0) {
+    const byDoc = new Map<string, SnapshotStockDocument>();
+    for (const it of input.stockDocumentItems!) {
+      const key = String(it.stockDocumentExternalId ?? it.stockDocumentId ?? "unknown");
+      let doc = byDoc.get(key);
+      if (!doc) {
+        doc = {
+          id: it.stockDocumentId ?? `doc-${key}`,
+          externalId: it.stockDocumentExternalId ?? 0,
+          idNfe: it.nfeExternalId ?? null,
+          items: [],
+        };
+        byDoc.set(key, doc);
+      }
+      doc.items.push({
+        id: it.id,
+        externalProductId: it.externalProductId,
+        quantity: it.quantity,
+        unitValue: it.unitValue,
+      });
+    }
+    stockDocuments.push(...byDoc.values());
+  }
+
+  const snapshotOrder: SnapshotOrder = {
+    id: order.id,
+    externalSalesOrderId: order.externalSalesOrderId ?? null,
+    orderCode: order.orderCode ?? "",
+    issueDate: toDate(order.issueDate),
+    customerNameSnapshot: order.customerNameSnapshot ?? null,
+    totalNetValue: order.totalNetValue,
+    items: orderItems.map(
+      (it): SnapshotOrderItem => ({
+        id: it.id,
+        externalProductId: it.externalProductId,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        productSkuSnapshot: it.productSkuSnapshot ?? null,
+        productNameSnapshot: it.productNameSnapshot ?? null,
+        totalNetValue: it.totalNetValue ?? null,
+        externalSalesOrderItemId: it.externalSalesOrderItemId ?? null,
+      })
+    ),
+  };
+
+  const nfeLinks: SnapshotNfeLink[] = (input.nfeLinks ?? []).map((l) => ({
+    salesOrderId: l.salesOrderId,
+    nfeExternalId: l.nfeExternalId,
+    nfeNumber: l.nfeNumber ?? null,
+    dataProcessamento: toDate(l.dataProcessamento),
+  }));
+
+  const nfes: SnapshotNfe[] = (input.nfes ?? []).map((n) => ({
+    id: n.id ?? `nfe-${n.externalId}`,
+    externalId: n.externalId,
+    numero: n.numero ?? null,
+    valorLiquido: n.valorLiquido ?? null,
+  }));
+
+  // Se há docs sem links, sintetiza links por idNfe
+  if (nfeLinks.length === 0 && stockDocuments.some((d) => d.idNfe != null)) {
+    const seen = new Set<number>();
+    for (const doc of stockDocuments) {
+      if (doc.idNfe == null || seen.has(doc.idNfe)) continue;
+      seen.add(doc.idNfe);
+      const nfe = nfes.find((n) => n.externalId === doc.idNfe);
+      nfeLinks.push({
+        salesOrderId: order.id,
+        nfeExternalId: doc.idNfe,
+        nfeNumber: nfe?.numero ?? null,
+        dataProcessamento: toDate(doc.dataDocumento),
+      });
+    }
+  }
+
+  const snapshot: PortfolioReconciliationSnapshot = {
+    orders: [snapshotOrder],
+    nfeLinks,
+    nfes,
+    stockDocuments,
+  };
+
+  const built = buildPortfolioReconciliationFacts({
+    runId: input.runId ?? "fulfillment-map-preview",
+    mode: "preview",
+    snapshot,
+  });
+
+  const facts = built.facts.map((draft, idx) =>
+    portfolioFactDraftToApiRow(draft, `ff-${idx}`)
+  );
+  return { facts, evidenceWarnings: warnings };
+}
+
+export function classifyFinancialStatus(input: {
   receivedValue: number;
   openReceivableValue: number;
   receivableTotalValue?: number | null;
-  hasNfe: boolean;
-  hasStockDocument: boolean;
-  hasAllocation: boolean;
+  hasNfe?: boolean;
+  hasStockDocument?: boolean;
+  hasAllocation?: boolean;
 }): PortfolioFinancialStatus {
   const received = toNumber(input.receivedValue);
   const open = toNumber(input.openReceivableValue);
@@ -88,12 +475,49 @@ export function resolveFinancialStatus(input: {
   return "FIN_SEM_CR";
 }
 
-/**
- * Resolve status operacional a partir do atendimento itemizado.
- * Contrato: ver docs/finance/portfolio-order-fulfillment-map-requirements.md
- * (`OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE` — emissão dedicada na entrega seguinte;
- * excedente já aparece em alertas / surplusItems).
- */
+/** @deprecated use classifyFinancialStatus */
+export const resolveFinancialStatus = classifyFinancialStatus;
+
+export function classifyOperationalStatus(input: {
+  hasNfe: boolean;
+  hasStockDocument: boolean;
+  hasItemAllocation: boolean;
+  headerOnlyLink: boolean;
+  totalOrderedQuantity: number;
+  totalAttendedQuantityCapped: number;
+  totalRemainingQuantity: number;
+  hasExcessQuantity: boolean;
+}): PortfolioOperationalStatus {
+  if (input.headerOnlyLink && !input.hasItemAllocation) {
+    return "OP_VINCULO_APENAS_CABECALHO";
+  }
+  if (input.hasStockDocument && !input.hasItemAllocation) {
+    return "OP_DOCUMENTO_SEM_ITEMIZACAO";
+  }
+  if (input.totalAttendedQuantityCapped <= 0.000001) {
+    return "OP_NAO_ATENDIDO";
+  }
+  const fully =
+    input.totalOrderedQuantity > 0 &&
+    input.totalRemainingQuantity <= 0.000001 &&
+    input.totalAttendedQuantityCapped + 0.000001 >= input.totalOrderedQuantity;
+  if (fully) {
+    return input.hasExcessQuantity
+      ? "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+      : "OP_TOTALMENTE_ATENDIDO";
+  }
+  if (input.totalAttendedQuantityCapped > 0 && input.totalRemainingQuantity > 0.000001) {
+    return "OP_PARCIALMENTE_ATENDIDO";
+  }
+  if (input.totalAttendedQuantityCapped > 0) {
+    return input.hasExcessQuantity
+      ? "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+      : "OP_TOTALMENTE_ATENDIDO";
+  }
+  return "OP_NAO_ATENDIDO";
+}
+
+/** @deprecated use classifyOperationalStatus */
 export function resolveOperationalStatus(input: {
   hasNfe: boolean;
   hasStockDocument: boolean;
@@ -102,152 +526,64 @@ export function resolveOperationalStatus(input: {
   totalOrderQuantity: number;
   attendedQuantity: number;
   remainingQuantity: number;
+  hasExcessQuantity?: boolean;
 }): PortfolioOperationalStatus {
-  if (input.headerOnlyLink && !input.hasItemAllocation) {
-    return "OP_VINCULO_APENAS_CABECALHO";
-  }
-  if (input.hasStockDocument && !input.hasItemAllocation) {
-    return "OP_DOCUMENTO_SEM_ITEMIZACAO";
-  }
-  if (input.attendedQuantity <= 0.000001) {
-    return "OP_NAO_ATENDIDO";
-  }
-  if (
-    input.totalOrderQuantity > 0 &&
-    input.remainingQuantity <= 0.000001 &&
-    input.attendedQuantity + 0.000001 >= input.totalOrderQuantity
-  ) {
-    return "OP_TOTALMENTE_ATENDIDO";
-  }
-  if (input.attendedQuantity > 0 && input.remainingQuantity > 0.000001) {
-    return "OP_PARCIALMENTE_ATENDIDO";
-  }
-  if (input.attendedQuantity > 0) return "OP_TOTALMENTE_ATENDIDO";
-  return "OP_NAO_ATENDIDO";
+  return classifyOperationalStatus({
+    hasNfe: input.hasNfe,
+    hasStockDocument: input.hasStockDocument,
+    hasItemAllocation: input.hasItemAllocation,
+    headerOnlyLink: input.headerOnlyLink,
+    totalOrderedQuantity: input.totalOrderQuantity,
+    totalAttendedQuantityCapped: input.attendedQuantity,
+    totalRemainingQuantity: input.remainingQuantity,
+    hasExcessQuantity: Boolean(input.hasExcessQuantity),
+  });
 }
 
-export type FulfillmentSummary = {
+export function detectTechnicalAlerts(input: {
   orderValue: number;
-  attributedOrderValue: number;
-  totalOrderQuantity: number;
-  attendedQuantity: number;
-  remainingQuantity: number;
-  fulfillmentPercent: number | null;
-  receivableTotal: number;
-  receivedValue: number;
-  openReceivableValue: number;
-  nfeHeaderTotal: number;
-  nfeHeaderNotAttributed: number;
-  isFullyFulfilledByItems: boolean;
-  hasHeaderInflationRisk: boolean;
-};
-
-export type OrderItemCoverageRow = {
-  salesOrderItemId: string | null;
-  productExternalId: number | null;
-  productCode: string | null;
-  description: string | null;
-  orderedQuantity: number;
-  attendedQuantity: number;
-  remainingQuantity: number;
-  fulfillmentPercent: number | null;
-  orderUnitValue: number;
-  orderItemValue: number;
-  attendedValueByOrderPrice: number;
-  documentsUsed: Array<{
-    nfeNumber: string | null;
-    nfeExternalId: number | null;
-    stockDocumentExternalId: number | null;
-    allocatedQuantity: number;
-  }>;
-  alerts: string[];
-};
-
-export type StockDocumentCoverageRow = {
-  nfeNumber: string | null;
-  nfeExternalId: number | null;
-  stockDocumentExternalId: number | null;
-  date: string | null;
-  nfeHeaderValue: number | null;
-  valueAttributedToOrder: number;
-  valueNotAttributedToOrder: number;
-  matchedItems: Array<{
-    productExternalId: number | null;
-    allocatedQuantity: number;
-    allocatedValueByOrderPrice: number;
-  }>;
-  unmatchedItems: Array<{
-    productExternalId: number | null;
-    stockQuantity: number | null;
-    reason: string;
-  }>;
-  surplusItems: Array<{
-    productExternalId: number | null;
-    stockQuantity: number | null;
-    stockItemValue: number | null;
-  }>;
-  alerts: string[];
-};
-
-export type ReceivableCoverageRow = {
-  receivableId: number | null;
-  dueDate: string | null;
-  settlementDate: string | null;
-  totalValue: number | null;
-  receivedValue: number | null;
-  openValue: number | null;
-  sourceNfe: number | null;
-  attributionStatus: "ORDER_AGGREGATE" | "TITLE_IDS_ONLY" | "UNAVAILABLE";
-};
-
-export type PortfolioOrderFulfillmentMap = {
-  financialStatus: PortfolioFinancialStatus;
-  operationalStatus: PortfolioOperationalStatus;
-  technicalAlerts: PortfolioTechnicalAlert[];
-  fulfillmentSummary: FulfillmentSummary;
-  orderItemsCoverage: OrderItemCoverageRow[];
-  stockDocumentsCoverage: StockDocumentCoverageRow[];
-  receivablesCoverage: ReceivableCoverageRow[];
-  executiveConclusion: string;
-};
-
-function collectTechnicalAlerts(args: {
-  facts: readonly PortfolioReconciliationFactApiRow[];
-  orderValue: number;
-  nfeHeaderTotal: number;
+  attributedOrderValueByOrderPrice: number;
+  nfeHeaderTotalValue: number;
   hasItemAllocation: boolean;
   headerOnlyLink: boolean;
   hasNfe: boolean;
   hasStockDocument: boolean;
   hasReceivable: boolean;
-  paymentTermsAvailable: boolean | null | undefined;
-  surplusProducts: boolean;
-  productsOutsideOrder: boolean;
+  paymentTermsAvailable?: boolean | null;
+  hasExcessQuantity: boolean;
+  hasProductsOutsideOrder: boolean;
   priceMismatch: boolean;
   crWithoutSafeRateio: boolean;
+  hasUnattendedOrderItems: boolean;
+  facts?: readonly PortfolioReconciliationFactApiRow[];
 }): PortfolioTechnicalAlert[] {
   const tags = new Set<PortfolioTechnicalAlert>();
+  const facts = input.facts ?? [];
 
-  if (args.nfeHeaderTotal > args.orderValue + 0.05) {
+  if (
+    input.nfeHeaderTotalValue >
+    Math.max(input.attributedOrderValueByOrderPrice, input.orderValue) + 0.05
+  ) {
+    tags.add("NF_CABECALHO_MAIOR_PEDIDO");
+  } else if (input.nfeHeaderTotalValue > input.orderValue + 0.05) {
     tags.add("NF_CABECALHO_MAIOR_PEDIDO");
   }
-  if (args.priceMismatch) tags.add("DIVERGENCIA_PRECO");
-  if (args.surplusProducts) tags.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
-  if (args.productsOutsideOrder) tags.add("PRODUTO_FORA_DO_PEDIDO");
-  if (args.crWithoutSafeRateio) tags.add("CR_SEM_RATEIO_SEGURO");
-  if (
-    (args.hasStockDocument || args.hasItemAllocation) &&
-    !args.hasReceivable
-  ) {
+
+  if (input.priceMismatch) tags.add("DIVERGENCIA_PRECO");
+  if (input.hasExcessQuantity) tags.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
+  if (input.hasProductsOutsideOrder) tags.add("PRODUTO_FORA_DO_PEDIDO");
+  if (input.hasUnattendedOrderItems) tags.add("ITEM_DO_PEDIDO_NAO_ATENDIDO");
+  if (input.crWithoutSafeRateio) tags.add("CR_SEM_RATEIO_SEGURO");
+  if ((input.hasStockDocument || input.hasItemAllocation) && !input.hasReceivable) {
     tags.add("DOCUMENTO_SEM_CR");
   }
-  if (args.paymentTermsAvailable !== true) {
+  if (input.paymentTermsAvailable !== true) {
     tags.add("SEM_CONDICAO_PAGAMENTO");
   }
   if (
-    args.headerOnlyLink ||
-    (args.hasNfe && !args.hasStockDocument && !args.hasItemAllocation) ||
-    args.facts.some(
+    input.headerOnlyLink ||
+    (input.hasNfe && !input.hasStockDocument && !input.hasItemAllocation) ||
+    facts.some(
       (f) =>
         f.status === "HEADER_ONLY_LINK" ||
         f.status === "PARTIALLY_ALLOCATED" ||
@@ -256,27 +592,25 @@ function collectTechnicalAlerts(args: {
   ) {
     tags.add("VINCULO_INCOMPLETO");
   }
-  if (args.hasNfe && !args.hasStockDocument) {
+  if (input.hasNfe && !input.hasStockDocument && !input.hasItemAllocation) {
     tags.add("NF_SEM_DOCUMENTO");
   }
-
-  for (const fact of args.facts) {
-    const st = fact.status ?? "";
+  for (const f of facts) {
+    const st = f.status ?? "";
     if (
       st === "OVER_LINKED_BY_HEADER" ||
-      st === "AMBIGUOUS_ALLOCATION" ||
       st === "DATA_QUALITY_ISSUE" ||
-      st === "QUANTITY_SURPLUS_IN_NFE"
+      st === "AMBIGUOUS_ALLOCATION"
     ) {
       tags.add("DIVERGENCIA_TECNICA");
     }
-    for (const a of parseAlertsJson(fact.alertsJson)) {
+    for (const a of parseAlertsJson(f.alertsJson)) {
       const u = a.toUpperCase();
       if (
         u.includes("OVER_LINKED") ||
-        u.includes("AMBIGUOUS") ||
         u.includes("DATA_QUALITY") ||
-        u.includes("SURPLUS")
+        u.includes("AMBIGUOUS") ||
+        u.includes("DIVERGENCIA")
       ) {
         tags.add("DIVERGENCIA_TECNICA");
       }
@@ -286,463 +620,466 @@ function collectTechnicalAlerts(args: {
   return [...tags];
 }
 
-/**
- * Constrói o mapa de atendimento a partir dos fatos materializados (sem recalcular alocação).
- */
-export function buildPortfolioOrderFulfillmentMap(args: {
+export function buildOrderItemsCoverage(input: {
   facts: readonly PortfolioReconciliationFactApiRow[];
-  orderValue: number;
-  paymentTermsAvailable?: boolean | null;
-}): PortfolioOrderFulfillmentMap {
-  const facts = args.facts;
-  const orderValue = round2(Math.max(0, args.orderValue));
-
-  const itemRows = buildPortfolioOrderItemRows(facts);
-  const docLinks = buildPortfolioDocumentLinkRows(facts);
-  const receivables = buildPortfolioReceivableTitleRows(facts);
-
-  const orderProductIds = new Set(
-    itemRows
-      .map((i) => i.externalProductId)
-      .filter((id): id is number => id != null)
-  );
-
-  // Docs usados por item
-  const docsByItem = new Map<
+  orderItems?: readonly FulfillmentOrderItemInput[];
+  excessByProduct?: Map<number, number>;
+}): OrderItemCoverageRow[] {
+  const facts = input.facts;
+  const byItem = new Map<
     string,
-    Array<{
-      nfeNumber: string | null;
-      nfeExternalId: number | null;
-      stockDocumentExternalId: number | null;
-      allocatedQuantity: number;
-    }>
+    {
+      salesOrderItemId: string | null;
+      externalProductId: number | null;
+      productCode: string | null;
+      description: string | null;
+      orderedQuantity: number;
+      attendedQuantityCapped: number;
+      orderUnitValue: number;
+      orderItemValue: number;
+      documentsUsed: Map<string, FulfillmentDocumentUsed>;
+      alerts: Set<string>;
+    }
   >();
-  const attendedValueByItem = new Map<string, number>();
 
-  for (const fact of facts) {
-    if (!fact.salesOrderItemId) continue;
-    const qty = toNumber(fact.allocatedQuantity);
-    if (qty <= 0) continue;
-    const list = docsByItem.get(fact.salesOrderItemId) ?? [];
-    const existing = list.find(
-      (d) =>
-        d.nfeExternalId === fact.nfeExternalId &&
-        d.stockDocumentExternalId === fact.stockDocumentExternalId
-    );
-    if (existing) {
-      existing.allocatedQuantity = round6(existing.allocatedQuantity + qty);
-    } else {
-      list.push({
-        nfeNumber: fact.nfeNumber,
-        nfeExternalId: fact.nfeExternalId,
-        stockDocumentExternalId: fact.stockDocumentExternalId,
-        allocatedQuantity: round6(qty),
+  const seedFromOrderItems = () => {
+    for (const it of input.orderItems ?? []) {
+      byItem.set(it.id, {
+        salesOrderItemId: it.id,
+        externalProductId: it.externalProductId,
+        productCode: it.productSkuSnapshot ?? null,
+        description: it.productNameSnapshot ?? null,
+        orderedQuantity: round6(it.quantity),
+        attendedQuantityCapped: 0,
+        orderUnitValue: round6(it.unitPrice),
+        orderItemValue: round2(
+          it.totalNetValue != null && Number.isFinite(it.totalNetValue)
+            ? it.totalNetValue
+            : it.quantity * it.unitPrice
+        ),
+        documentsUsed: new Map(),
+        alerts: new Set(),
       });
     }
-    docsByItem.set(fact.salesOrderItemId, list);
-    attendedValueByItem.set(
-      fact.salesOrderItemId,
-      round2(
-        toNumber(attendedValueByItem.get(fact.salesOrderItemId)) +
-          toNumber(fact.allocatedValueByOrderPrice)
-      )
-    );
+  };
+  seedFromOrderItems();
+
+  for (const fact of facts) {
+    const itemId = fact.salesOrderItemId;
+    if (!itemId) continue;
+    let row = byItem.get(itemId);
+    if (!row) {
+      row = {
+        salesOrderItemId: itemId,
+        externalProductId: fact.externalProductId,
+        productCode: fact.productSkuSnapshot,
+        description: fact.productNameSnapshot,
+        orderedQuantity: round6(toNumber(fact.orderQuantity)),
+        attendedQuantityCapped: 0,
+        orderUnitValue: round6(toNumber(fact.orderUnitPrice)),
+        orderItemValue: round2(toNumber(fact.orderItemValue)),
+        documentsUsed: new Map(),
+        alerts: new Set(),
+      };
+      byItem.set(itemId, row);
+    }
+
+    const qty = toNumber(fact.allocatedQuantity);
+    if (qty > 0 && (isAllocationStatus(fact.status) || fact.status === "PRICE_MISMATCH")) {
+      // Cap: never exceed ordered quantity (motor de alocação já limita; reforço aqui)
+      const room = Math.max(0, row.orderedQuantity - row.attendedQuantityCapped);
+      const add = round6(Math.min(qty, room));
+      row.attendedQuantityCapped = round6(row.attendedQuantityCapped + add);
+
+      const key = docKey(fact.nfeExternalId, fact.stockDocumentExternalId);
+      const existing = row.documentsUsed.get(key);
+      if (existing) {
+        existing.allocatedQuantity = round6(existing.allocatedQuantity + add);
+      } else {
+        row.documentsUsed.set(key, {
+          nfeNumber: fact.nfeNumber,
+          nfeExternalId: fact.nfeExternalId,
+          stockDocumentExternalId: fact.stockDocumentExternalId,
+          allocatedQuantity: add,
+        });
+      }
+    }
+
+    if (fact.status === "PRICE_MISMATCH") row.alerts.add("DIVERGENCIA_PRECO");
+    if (isSurplusStatus(fact.status)) row.alerts.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
   }
 
-  const orderItemsCoverage: OrderItemCoverageRow[] = itemRows.map((row) => {
-    const key = row.salesOrderItemId ?? "";
-    const alerts: string[] = [...row.alerts];
-    if (row.remainingQuantity > 0.000001 && row.allocatedQuantity > 0) {
-      alerts.push("ATENDIMENTO_PARCIAL");
-    }
-    if (row.allocatedQuantity <= 0 && row.orderQuantity > 0) {
-      alerts.push("NAO_ATENDIDO");
-    }
-    return {
-      salesOrderItemId: row.salesOrderItemId,
-      productExternalId: row.externalProductId,
-      productCode: row.productSku,
-      description: row.productDescription,
-      orderedQuantity: row.orderQuantity,
-      attendedQuantity: row.allocatedQuantity,
-      remainingQuantity: row.remainingQuantity,
-      fulfillmentPercent: pct(row.allocatedQuantity, row.orderQuantity),
-      orderUnitValue: row.orderUnitPrice,
-      orderItemValue: row.orderItemValue,
-      attendedValueByOrderPrice: attendedValueByItem.get(key) ?? round2(row.allocatedQuantity * row.orderUnitPrice),
-      documentsUsed: docsByItem.get(key) ?? [],
-      alerts,
-    };
-  });
+  const excessByProduct = input.excessByProduct ?? new Map<number, number>();
 
-  const totalOrderQuantity = round6(
-    orderItemsCoverage.reduce((s, r) => s + r.orderedQuantity, 0)
-  );
-  const attendedQuantity = round6(
-    orderItemsCoverage.reduce((s, r) => s + r.attendedQuantity, 0)
-  );
-  const remainingQuantity = round6(
-    orderItemsCoverage.reduce((s, r) => s + r.remainingQuantity, 0)
-  );
-  const attributedOrderValue = round2(
-    orderItemsCoverage.reduce((s, r) => s + r.attendedValueByOrderPrice, 0)
-  );
+  return [...byItem.values()]
+    .map((row) => {
+      const remaining = round6(
+        Math.max(0, row.orderedQuantity - row.attendedQuantityCapped)
+      );
+      const excess =
+        row.externalProductId != null
+          ? round6(excessByProduct.get(row.externalProductId) ?? 0)
+          : 0;
+      const fulfillmentPercentCapped = pctCapped(
+        row.attendedQuantityCapped,
+        row.orderedQuantity
+      );
+      const alerts = [...row.alerts];
+      if (remaining > 0.000001) alerts.push("ITEM_DO_PEDIDO_NAO_ATENDIDO");
+      if (excess > 0.000001) alerts.push("QUANTIDADE_EXCEDENTE_DOCUMENTO");
 
-  // Documentos
-  type DocAcc = {
+      return {
+        salesOrderItemId: row.salesOrderItemId,
+        externalProductId: row.externalProductId,
+        productExternalId: row.externalProductId,
+        productCode: row.productCode,
+        description: row.description,
+        orderedQuantity: row.orderedQuantity,
+        attendedQuantityCapped: row.attendedQuantityCapped,
+        attendedQuantity: row.attendedQuantityCapped,
+        remainingQuantity: remaining,
+        excessQuantityForThisProduct: excess,
+        fulfillmentPercentCapped,
+        fulfillmentPercent: fulfillmentPercentCapped,
+        orderUnitValue: row.orderUnitValue,
+        orderItemValue: row.orderItemValue,
+        attendedValueByOrderPrice: round2(
+          row.attendedQuantityCapped * row.orderUnitValue
+        ),
+        documentsUsed: [...row.documentsUsed.values()],
+        alerts: [...new Set(alerts)],
+      } satisfies OrderItemCoverageRow;
+    })
+    .sort((a, b) =>
+      String(a.externalProductId ?? "").localeCompare(String(b.externalProductId ?? ""))
+    );
+}
+
+export function buildStockDocumentsCoverage(input: {
+  facts: readonly PortfolioReconciliationFactApiRow[];
+  orderUnitPriceByProduct: Map<number, number>;
+}): {
+  rows: StockDocumentCoverageRow[];
+  excessByProduct: Map<number, number>;
+  totalExcessQuantity: number;
+  hasProductsOutsideOrder: boolean;
+  priceMismatch: boolean;
+} {
+  const facts = input.facts;
+  type Acc = {
     nfeNumber: string | null;
     nfeExternalId: number | null;
     stockDocumentExternalId: number | null;
     date: string | null;
     nfeHeaderValue: number | null;
+    documentTotalValue: number;
     valueAttributedToOrder: number;
-    matchedItems: StockDocumentCoverageRow["matchedItems"];
-    unmatchedItems: StockDocumentCoverageRow["unmatchedItems"];
-    surplusItems: StockDocumentCoverageRow["surplusItems"];
+    matchedItems: Map<number, StockDocumentMatchedItem>;
+    surplusItems: StockDocumentSurplusItem[];
+    itemsOutsideOrder: StockDocumentOutsideItem[];
     alerts: Set<string>;
   };
 
-  const docMap = new Map<string, DocAcc>();
+  const byDoc = new Map<string, Acc>();
+  const excessByProduct = new Map<number, number>();
+  let totalExcessQuantity = 0;
+  let hasProductsOutsideOrder = false;
+  let priceMismatch = false;
 
-  for (const link of docLinks) {
-    const key = String(
-      link.nfeExternalId ?? `stock:${link.stockDocumentExternalId}`
-    );
-    if (!docMap.has(key)) {
-      docMap.set(key, {
-        nfeNumber: link.nfeNumber,
-        nfeExternalId: link.nfeExternalId,
-        stockDocumentExternalId: link.stockDocumentExternalId,
-        date: link.stockDocumentDate ?? link.nfeProcessedAt,
-        nfeHeaderValue: link.nfeHeaderValue,
-        valueAttributedToOrder: link.allocatedValueToOrder,
-        matchedItems: [],
-        unmatchedItems: [],
-        surplusItems: [],
-        alerts: new Set(link.alerts),
-      });
-    }
-  }
-
-  for (const fact of facts) {
-    if (fact.nfeExternalId == null && fact.stockDocumentExternalId == null) continue;
-    const key = String(
-      fact.nfeExternalId ?? `stock:${fact.stockDocumentExternalId}`
-    );
-    let acc = docMap.get(key);
+  const ensure = (fact: PortfolioReconciliationFactApiRow): Acc => {
+    const key = docKey(fact.nfeExternalId, fact.stockDocumentExternalId);
+    let acc = byDoc.get(key);
     if (!acc) {
       acc = {
         nfeNumber: fact.nfeNumber,
         nfeExternalId: fact.nfeExternalId,
         stockDocumentExternalId: fact.stockDocumentExternalId,
-        date: fact.stockDocumentDate
-          ? String(fact.stockDocumentDate).slice(0, 10)
-          : null,
-        nfeHeaderValue: fact.nfeHeaderValue,
+        date:
+          toIsoDate(fact.stockDocumentDate) ??
+          toIsoDate(fact.nfeProcessedAt),
+        nfeHeaderValue:
+          fact.nfeHeaderValue != null ? round2(toNumber(fact.nfeHeaderValue)) : null,
+        documentTotalValue: 0,
         valueAttributedToOrder: 0,
-        matchedItems: [],
-        unmatchedItems: [],
+        matchedItems: new Map(),
         surplusItems: [],
+        itemsOutsideOrder: [],
         alerts: new Set(),
       };
-      docMap.set(key, acc);
+      byDoc.set(key, acc);
+    }
+    if (fact.nfeNumber) acc.nfeNumber = fact.nfeNumber;
+    if (fact.nfeHeaderValue != null) {
+      acc.nfeHeaderValue = round2(toNumber(fact.nfeHeaderValue));
+    }
+    return acc;
+  };
+
+  for (const fact of facts) {
+    if (
+      fact.nfeExternalId == null &&
+      fact.stockDocumentExternalId == null &&
+      !isOutsideOrderFact(fact) &&
+      !isSurplusStatus(fact.status) &&
+      toNumber(fact.allocatedQuantity) <= 0
+    ) {
+      continue;
     }
 
-    const qty = toNumber(fact.allocatedQuantity);
-    if (qty > 0 && fact.externalProductId != null) {
-      const existing = acc.matchedItems.find(
-        (m) => m.productExternalId === fact.externalProductId
-      );
+    // Skip pure order-item rows without document
+    if (
+      fact.stockDocumentExternalId == null &&
+      fact.nfeExternalId == null &&
+      fact.status !== "HEADER_ONLY_LINK" &&
+      fact.status !== "OVER_LINKED_BY_HEADER"
+    ) {
+      continue;
+    }
+
+    const acc = ensure(fact);
+    const productId = fact.externalProductId;
+    const stockQty = toNumber(fact.stockQuantity);
+    const stockValue = toNumber(fact.stockItemValue);
+    if (stockQty > 0) {
+      acc.documentTotalValue = round2(acc.documentTotalValue + stockValue);
+    }
+
+    const allocatedQty = toNumber(fact.allocatedQuantity);
+    if (allocatedQty > 0 && productId != null) {
+      const orderUnit =
+        input.orderUnitPriceByProduct.get(productId) ?? toNumber(fact.orderUnitPrice);
+      const attributed = round2(allocatedQty * orderUnit);
+      acc.valueAttributedToOrder = round2(acc.valueAttributedToOrder + attributed);
+      const existing = acc.matchedItems.get(productId);
       if (existing) {
-        existing.allocatedQuantity = round6(existing.allocatedQuantity + qty);
+        existing.allocatedQuantity = round6(existing.allocatedQuantity + allocatedQty);
         existing.allocatedValueByOrderPrice = round2(
-          existing.allocatedValueByOrderPrice +
-            toNumber(fact.allocatedValueByOrderPrice)
+          existing.allocatedValueByOrderPrice + attributed
         );
       } else {
-        acc.matchedItems.push({
-          productExternalId: fact.externalProductId,
-          allocatedQuantity: round6(qty),
-          allocatedValueByOrderPrice: round2(
-            toNumber(fact.allocatedValueByOrderPrice)
-          ),
+        acc.matchedItems.set(productId, {
+          productExternalId: productId,
+          allocatedQuantity: allocatedQty,
+          allocatedValueByOrderPrice: attributed,
         });
       }
     }
 
-    if (fact.status === "QUANTITY_SURPLUS_IN_NFE") {
-      acc.surplusItems.push({
-        productExternalId: fact.externalProductId,
-        stockQuantity: fact.stockQuantity,
-        stockItemValue: fact.stockItemValue,
-      });
-      acc.alerts.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
-      if (
-        fact.externalProductId != null &&
-        !orderProductIds.has(fact.externalProductId)
-      ) {
-        acc.alerts.add("PRODUTO_FORA_DO_PEDIDO");
-        acc.unmatchedItems.push({
-          productExternalId: fact.externalProductId,
-          stockQuantity: fact.stockQuantity,
-          reason: "Produto não pertence ao pedido",
-        });
-      }
-    }
-
-    if (
-      fact.externalProductId != null &&
-      !orderProductIds.has(fact.externalProductId) &&
-      toNumber(fact.stockQuantity) > 0 &&
-      qty <= 0
-    ) {
-      acc.alerts.add("PRODUTO_FORA_DO_PEDIDO");
-      if (
-        !acc.unmatchedItems.some(
-          (u) => u.productExternalId === fact.externalProductId
-        )
-      ) {
-        acc.unmatchedItems.push({
-          productExternalId: fact.externalProductId,
-          stockQuantity: fact.stockQuantity,
-          reason: "Produto fora do pedido",
-        });
-      }
-    }
-
-    if (fact.status === "PRICE_MISMATCH") {
+    if (fact.status === "PRICE_MISMATCH" || (fact.priceDifferenceUnit != null && Math.abs(toNumber(fact.priceDifferenceUnit)) > 0.005)) {
+      priceMismatch = true;
       acc.alerts.add("DIVERGENCIA_PRECO");
     }
+    if (
+      productId != null &&
+      fact.stockUnitValue != null &&
+      fact.orderUnitPrice != null &&
+      pricesMismatch(toNumber(fact.orderUnitPrice), toNumber(fact.stockUnitValue))
+    ) {
+      priceMismatch = true;
+      acc.alerts.add("DIVERGENCIA_PRECO");
+    }
+
+    if (isSurplusStatus(fact.status)) {
+      const surplusQty =
+        toNumber(
+          (fact.traceJson &&
+          typeof fact.traceJson === "object" &&
+          "surplusQuantity" in (fact.traceJson as object)
+            ? Number((fact.traceJson as { surplusQuantity?: number }).surplusQuantity)
+            : null) ?? stockQty
+        ) || stockQty;
+      totalExcessQuantity = round6(totalExcessQuantity + surplusQty);
+      if (productId != null) {
+        excessByProduct.set(
+          productId,
+          round6((excessByProduct.get(productId) ?? 0) + surplusQty)
+        );
+      }
+      acc.surplusItems.push({
+        productExternalId: productId,
+        stockQuantity: surplusQty,
+        stockItemValue: stockValue || null,
+      });
+      acc.alerts.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
+    }
+
+    if (isOutsideOrderFact(fact) && productId != null) {
+      hasProductsOutsideOrder = true;
+      acc.itemsOutsideOrder.push({
+        productExternalId: productId,
+        stockQuantity: stockQty || null,
+        stockItemValue: stockValue || null,
+        reason: "PRODUTO_FORA_DO_PEDIDO",
+      });
+      acc.alerts.add("PRODUTO_FORA_DO_PEDIDO");
+    }
+
     if (fact.status === "HEADER_ONLY_LINK") {
-      acc.alerts.add("VINCULO_APENAS_CABECALHO");
+      acc.alerts.add("VINCULO_INCOMPLETO");
+    }
+    if (fact.status === "OVER_LINKED_BY_HEADER") {
+      acc.alerts.add("NF_CABECALHO_MAIOR_PEDIDO");
     }
   }
 
-  const stockDocumentsCoverage: StockDocumentCoverageRow[] = [...docMap.values()].map(
-    (acc) => {
-      const header = toNumber(acc.nfeHeaderValue);
-      const attributed = round2(acc.valueAttributedToOrder);
-      const notAttributed = round2(Math.max(0, header - attributed));
-      if (header > orderValue + 0.05) {
-        acc.alerts.add("NF_CABECALHO_MAIOR_PEDIDO");
-      }
+  const rows: StockDocumentCoverageRow[] = [...byDoc.values()]
+    .filter(
+      (acc) =>
+        acc.stockDocumentExternalId != null ||
+        acc.nfeExternalId != null ||
+        acc.matchedItems.size > 0 ||
+        acc.surplusItems.length > 0 ||
+        acc.itemsOutsideOrder.length > 0
+    )
+    .map((acc) => {
+      const header = acc.nfeHeaderValue ?? 0;
+      const attributed = acc.valueAttributedToOrder;
+      // Cabeçalho nunca aumenta o atribuído; valor fora = max(header - attributed, docTotal - attributed, 0)
+      const notAttributed = round2(
+        Math.max(0, Math.max(header, acc.documentTotalValue) - attributed)
+      );
       return {
         nfeNumber: acc.nfeNumber,
         nfeExternalId: acc.nfeExternalId,
         stockDocumentExternalId: acc.stockDocumentExternalId,
         date: acc.date,
         nfeHeaderValue: acc.nfeHeaderValue,
+        documentTotalValue: round2(acc.documentTotalValue) || null,
         valueAttributedToOrder: attributed,
         valueNotAttributedToOrder: notAttributed,
-        matchedItems: acc.matchedItems,
-        unmatchedItems: acc.unmatchedItems,
+        matchedItems: [...acc.matchedItems.values()],
         surplusItems: acc.surplusItems,
+        itemsOutsideOrder: acc.itemsOutsideOrder,
+        unmatchedItems: acc.itemsOutsideOrder,
         alerts: [...acc.alerts],
       };
-    }
-  );
-
-  const nfeHeaderTotal = round2(
-    [...new Map(
-      stockDocumentsCoverage
-        .filter((d) => d.nfeExternalId != null && d.nfeHeaderValue != null)
-        .map((d) => [d.nfeExternalId!, toNumber(d.nfeHeaderValue)])
-    ).values()].reduce((s, v) => s + v, 0)
-  );
-  const nfeHeaderNotAttributed = round2(
-    Math.max(0, nfeHeaderTotal - attributedOrderValue)
-  );
-
-  const withCr = facts.find((f) => f.receivableTotalValue != null);
-  const receivableTotal = toNumber(withCr?.receivableTotalValue ?? receivables.summary?.receivableTotalValue);
-  const receivedValue = toNumber(withCr?.receivedValue ?? receivables.summary?.receivedValue);
-  const openReceivableValue = toNumber(
-    withCr?.openReceivableValue ?? receivables.summary?.openReceivableValue
-  );
-
-  const sourceNfeIds = [
-    ...new Set(
-      facts
-        .map((f) => f.nfeExternalId)
-        .filter((id): id is number => id != null)
-    ),
-  ];
-
-  const receivablesCoverage: ReceivableCoverageRow[] = receivables.titles.map(
-    (t) => ({
-      receivableId: t.receivableId,
-      dueDate: t.dueDate,
-      settlementDate: t.settlementDate,
-      totalValue: t.amount,
-      receivedValue: t.received,
-      openValue: t.open,
-      sourceNfe: sourceNfeIds.length === 1 ? sourceNfeIds[0]! : null,
-      attributionStatus:
-        t.amount != null
-          ? "ORDER_AGGREGATE"
-          : t.receivableId != null
-            ? "TITLE_IDS_ONLY"
-            : "UNAVAILABLE",
     })
-  );
-
-  if (receivablesCoverage.length === 0 && receivableTotal > 0) {
-    receivablesCoverage.push({
-      receivableId: null,
-      dueDate: null,
-      settlementDate: null,
-      totalValue: receivableTotal,
-      receivedValue,
-      openValue: openReceivableValue,
-      sourceNfe: sourceNfeIds.length === 1 ? sourceNfeIds[0]! : null,
-      attributionStatus: "ORDER_AGGREGATE",
-    });
-  }
-
-  const hasItemAllocation = facts.some((f) => toNumber(f.allocatedQuantity) > 0);
-  const headerOnlyLink = facts.some((f) => f.status === "HEADER_ONLY_LINK");
-  const hasNfe = facts.some((f) => f.nfeExternalId != null);
-  const hasStockDocument = facts.some((f) => f.stockDocumentExternalId != null);
-  const hasReceivable = receivableTotal > 0.01 || openReceivableValue > 0.01 || receivedValue > 0.01;
-  const surplusProducts = facts.some((f) => f.status === "QUANTITY_SURPLUS_IN_NFE");
-  const productsOutsideOrder = stockDocumentsCoverage.some((d) =>
-    d.unmatchedItems.some(
-      (u) =>
-        u.productExternalId != null && !orderProductIds.has(u.productExternalId)
-    )
-  );
-  const priceMismatch = facts.some((f) => f.status === "PRICE_MISMATCH");
-  // CR ligado sem alocação itemizada confiável
-  const crWithoutSafeRateio =
-    hasReceivable &&
-    !hasItemAllocation &&
-    (hasNfe || headerOnlyLink);
-
-  const financialStatus = resolveFinancialStatus({
-    receivedValue,
-    openReceivableValue,
-    receivableTotalValue: receivableTotal,
-    hasNfe,
-    hasStockDocument,
-    hasAllocation: hasItemAllocation,
-  });
-
-  const operationalStatus = resolveOperationalStatus({
-    hasNfe,
-    hasStockDocument,
-    hasItemAllocation,
-    headerOnlyLink,
-    totalOrderQuantity,
-    attendedQuantity,
-    remainingQuantity,
-  });
-
-  const technicalAlerts = collectTechnicalAlerts({
-    facts,
-    orderValue,
-    nfeHeaderTotal,
-    hasItemAllocation,
-    headerOnlyLink,
-    hasNfe,
-    hasStockDocument,
-    hasReceivable,
-    paymentTermsAvailable: args.paymentTermsAvailable,
-    surplusProducts,
-    productsOutsideOrder,
-    priceMismatch,
-    crWithoutSafeRateio,
-  });
-
-  const isFullyFulfilledByItems =
-    totalOrderQuantity > 0 && remainingQuantity <= 0.000001;
-  const hasHeaderInflationRisk = nfeHeaderTotal > orderValue + 0.05;
-
-  const fulfillmentPercent = pct(attendedQuantity, totalOrderQuantity);
-
-  const fulfillmentSummary: FulfillmentSummary = {
-    orderValue,
-    attributedOrderValue,
-    totalOrderQuantity,
-    attendedQuantity,
-    remainingQuantity,
-    fulfillmentPercent,
-    receivableTotal,
-    receivedValue,
-    openReceivableValue,
-    nfeHeaderTotal,
-    nfeHeaderNotAttributed,
-    isFullyFulfilledByItems,
-    hasHeaderInflationRisk,
-  };
-
-  const executiveConclusion = buildExecutiveConclusion({
-    financialStatus,
-    operationalStatus,
-    technicalAlerts,
-    fulfillmentSummary,
-  });
+    .sort((a, b) =>
+      String(a.nfeExternalId ?? a.stockDocumentExternalId ?? "").localeCompare(
+        String(b.nfeExternalId ?? b.stockDocumentExternalId ?? "")
+      )
+    );
 
   return {
-    financialStatus,
-    operationalStatus,
-    technicalAlerts,
-    fulfillmentSummary,
-    orderItemsCoverage,
-    stockDocumentsCoverage,
-    receivablesCoverage,
-    executiveConclusion,
+    rows,
+    excessByProduct,
+    totalExcessQuantity,
+    hasProductsOutsideOrder,
+    priceMismatch,
   };
 }
 
-function buildExecutiveConclusion(args: {
+export function buildReceivablesCoverage(input: {
+  facts: readonly PortfolioReconciliationFactApiRow[];
+  receivables?: readonly FulfillmentReceivableInput[];
+}): ReceivableCoverageRow[] {
+  if (input.receivables && input.receivables.length > 0) {
+    return input.receivables.map((r) => ({
+      receivableId: r.receivableId ?? null,
+      receivableIds: r.receivableId != null ? [r.receivableId] : [],
+      dueDate: r.dueDate ?? null,
+      dueDates: r.dueDate ? [r.dueDate] : [],
+      settlementDate: r.settlementDate ?? null,
+      settlementDates: r.settlementDate ? [r.settlementDate] : [],
+      totalValue: r.totalValue ?? null,
+      receivedValue: r.receivedValue ?? null,
+      openValue: r.openValue ?? null,
+      sourceNfe: r.sourceNfe ?? null,
+      attributionStatus:
+        r.totalValue != null ? ("ORDER_AGGREGATE" as const) : ("UNAVAILABLE" as const),
+    }));
+  }
+
+  const built = buildPortfolioReceivableTitleRows(input.facts);
+  if (built.titles.length === 0) {
+    const first = input.facts.find(
+      (f) =>
+        toNumber(f.receivableTotalValue) > 0 ||
+        toNumber(f.receivedValue) > 0 ||
+        toNumber(f.openReceivableValue) > 0
+    );
+    if (!first) return [];
+    return [
+      {
+        receivableId: null,
+        receivableIds: [],
+        dueDate: null,
+        dueDates: [],
+        settlementDate: null,
+        settlementDates: [],
+        totalValue: first.receivableTotalValue,
+        receivedValue: first.receivedValue,
+        openValue: first.openReceivableValue,
+        sourceNfe: first.nfeExternalId,
+        attributionStatus: "ORDER_AGGREGATE",
+      },
+    ];
+  }
+
+  return built.titles.map((t) => ({
+    receivableId: t.receivableId,
+    receivableIds: t.receivableId != null ? [t.receivableId] : [],
+    dueDate: t.dueDate,
+    dueDates: t.dueDate ? [t.dueDate] : [],
+    settlementDate: t.settlementDate,
+    settlementDates: t.settlementDate ? [t.settlementDate] : [],
+    totalValue: t.amount,
+    receivedValue: t.received,
+    openValue: t.open,
+    sourceNfe: t.sourceNfeExternalId ?? null,
+    attributionStatus: built.summary.attributionStatus,
+  }));
+}
+
+export function buildFulfillmentExecutiveConclusion(input: {
   financialStatus: PortfolioFinancialStatus;
   operationalStatus: PortfolioOperationalStatus;
   technicalAlerts: readonly PortfolioTechnicalAlert[];
   fulfillmentSummary: FulfillmentSummary;
 }): string {
   const fin =
-    args.financialStatus === "FIN_RECEBIDO"
+    input.financialStatus === "FIN_RECEBIDO"
       ? "Financeiro: já recebido."
-      : args.financialStatus === "FIN_CR_ABERTO"
+      : input.financialStatus === "FIN_CR_ABERTO"
         ? "Financeiro: CR aberto (pode haver baixa parcial)."
-        : args.financialStatus === "FIN_FATURADO_SEM_CR"
+        : input.financialStatus === "FIN_FATURADO_SEM_CR"
           ? "Financeiro: faturado/documento sem CR."
           : "Financeiro: ainda sem CR.";
 
   const pctLabel =
-    args.fulfillmentSummary.fulfillmentPercent != null
-      ? `${args.fulfillmentSummary.fulfillmentPercent}%`
+    input.fulfillmentSummary.fulfillmentPercent != null
+      ? `${input.fulfillmentSummary.fulfillmentPercent}%`
       : "sem quantidade";
 
   const op =
-    args.operationalStatus === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+    input.operationalStatus === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
       ? `Atendimento: ${pctLabel} dos itens cobertos — com quantidade/produto excedente nos documentos (excedente não soma carteira).`
-      : args.operationalStatus === "OP_TOTALMENTE_ATENDIDO"
+      : input.operationalStatus === "OP_TOTALMENTE_ATENDIDO"
         ? `Atendimento: ${pctLabel} dos itens do pedido cobertos por documento de saída (itemização).`
-        : args.operationalStatus === "OP_PARCIALMENTE_ATENDIDO"
+        : input.operationalStatus === "OP_PARCIALMENTE_ATENDIDO"
           ? `Atendimento: ${pctLabel} dos itens — ainda há saldo a atender.`
-          : args.operationalStatus === "OP_VINCULO_APENAS_CABECALHO"
+          : input.operationalStatus === "OP_VINCULO_APENAS_CABECALHO"
             ? "Atendimento: só vínculo de cabeçalho de NF — sem itemização confiável."
-            : args.operationalStatus === "OP_DOCUMENTO_SEM_ITEMIZACAO"
+            : input.operationalStatus === "OP_DOCUMENTO_SEM_ITEMIZACAO"
               ? "Atendimento: há documento, mas sem alocação item a item."
               : "Atendimento: pedido ainda não atendido por documento de saída.";
 
   const alertParts: string[] = [];
-  if (args.fulfillmentSummary.hasHeaderInflationRisk) {
+  if (input.fulfillmentSummary.hasHeaderInflationRisk) {
     alertParts.push(
-      `cabeçalho de NF (R$ ${args.fulfillmentSummary.nfeHeaderTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}) é maior que o pedido (R$ ${args.fulfillmentSummary.orderValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}) — o cabeçalho não é o valor do pedido`
+      `cabeçalho de NF (R$ ${input.fulfillmentSummary.nfeHeaderTotalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}) é maior que o valor atribuído/pedido — o cabeçalho não é o valor do pedido`
     );
   }
-  if (args.technicalAlerts.includes("DIVERGENCIA_PRECO")) {
+  if (input.technicalAlerts.includes("DIVERGENCIA_PRECO")) {
     alertParts.push("há divergência de preço documento vs pedido");
   }
-  if (args.technicalAlerts.includes("PRODUTO_FORA_DO_PEDIDO")) {
+  if (input.technicalAlerts.includes("PRODUTO_FORA_DO_PEDIDO")) {
     alertParts.push("há produto no documento fora do pedido");
   }
-  if (args.technicalAlerts.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO")) {
+  if (input.technicalAlerts.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO")) {
     alertParts.push("há quantidade excedente no documento");
   }
-  if (args.technicalAlerts.includes("CR_SEM_RATEIO_SEGURO")) {
+  if (input.technicalAlerts.includes("CR_SEM_RATEIO_SEGURO")) {
     alertParts.push("CR sem rateio itemizado seguro ao pedido");
   }
 
@@ -752,6 +1089,278 @@ function buildExecutiveConclusion(args: {
       : "Sem alertas técnicos críticos neste mapa.";
 
   return `${fin} ${op} ${alerts}`;
+}
+
+export function buildOrderFulfillmentMap(
+  input: BuildOrderFulfillmentMapInput
+): PortfolioOrderFulfillmentMap {
+  const { facts, evidenceWarnings } = resolveFacts(input);
+
+  const orderValue = round2(
+    toNumber(
+      input.orderValue ??
+        input.order?.totalNetValue ??
+        facts.find((f) => f.orderItemValue != null)?.orderItemValue
+    ) ||
+      facts.reduce((s, f) => {
+        // Prefer explicit order total from unique item values once
+        return s;
+      }, 0)
+  );
+
+  // Prefer sum of distinct order items for orderValue fallback
+  let resolvedOrderValue = orderValue;
+  if (resolvedOrderValue <= 0 && (input.orderItems?.length ?? 0) > 0) {
+    resolvedOrderValue = round2(
+      input.orderItems!.reduce(
+        (s, it) =>
+          s +
+          (it.totalNetValue != null && Number.isFinite(it.totalNetValue)
+            ? it.totalNetValue
+            : it.quantity * it.unitPrice),
+        0
+      )
+    );
+  }
+  if (resolvedOrderValue <= 0) {
+    const seenItems = new Set<string>();
+    let sum = 0;
+    for (const f of facts) {
+      const id = f.salesOrderItemId;
+      if (!id || seenItems.has(id)) continue;
+      seenItems.add(id);
+      sum += toNumber(f.orderItemValue);
+    }
+    resolvedOrderValue = round2(sum);
+  }
+
+  const orderUnitPriceByProduct = new Map<number, number>();
+  for (const it of input.orderItems ?? []) {
+    orderUnitPriceByProduct.set(it.externalProductId, it.unitPrice);
+  }
+  for (const f of facts) {
+    if (f.externalProductId != null && !orderUnitPriceByProduct.has(f.externalProductId)) {
+      orderUnitPriceByProduct.set(f.externalProductId, toNumber(f.orderUnitPrice));
+    }
+  }
+
+  const docsBuilt = buildStockDocumentsCoverage({ facts, orderUnitPriceByProduct });
+  const orderItemsCoverage = buildOrderItemsCoverage({
+    facts,
+    orderItems: input.orderItems,
+    excessByProduct: docsBuilt.excessByProduct,
+  });
+  const receivablesCoverage = buildReceivablesCoverage({
+    facts,
+    receivables: input.receivables,
+  });
+
+  const totalOrderedQuantity = round6(
+    orderItemsCoverage.reduce((s, r) => s + r.orderedQuantity, 0)
+  );
+  const totalAttendedQuantityCapped = round6(
+    orderItemsCoverage.reduce((s, r) => s + r.attendedQuantityCapped, 0)
+  );
+  const totalRemainingQuantity = round6(
+    orderItemsCoverage.reduce((s, r) => s + r.remainingQuantity, 0)
+  );
+  const attributedOrderValueByOrderPrice = round2(
+    orderItemsCoverage.reduce((s, r) => s + r.attendedValueByOrderPrice, 0)
+  );
+  // Nunca deixa atribuído passar do valor do pedido
+  const attributedCapped = round2(
+    Math.min(attributedOrderValueByOrderPrice, resolvedOrderValue || attributedOrderValueByOrderPrice)
+  );
+
+  const nfeHeaderIds = new Set<number>();
+  let nfeHeaderTotalValue = 0;
+  for (const f of facts) {
+    if (f.nfeExternalId == null || f.nfeHeaderValue == null) continue;
+    if (nfeHeaderIds.has(f.nfeExternalId)) continue;
+    nfeHeaderIds.add(f.nfeExternalId);
+    nfeHeaderTotalValue = round2(nfeHeaderTotalValue + toNumber(f.nfeHeaderValue));
+  }
+  for (const n of input.nfes ?? []) {
+    if (nfeHeaderIds.has(n.externalId)) continue;
+    if (n.valorLiquido == null) continue;
+    nfeHeaderIds.add(n.externalId);
+    nfeHeaderTotalValue = round2(nfeHeaderTotalValue + toNumber(n.valorLiquido));
+  }
+
+  const nfeHeaderAttributedToOrderValue = attributedCapped;
+  const nfeHeaderNotAttributedToOrderValue = round2(
+    Math.max(0, nfeHeaderTotalValue - attributedCapped)
+  );
+
+  const receivableFact = facts.find(
+    (f) =>
+      toNumber(f.receivableTotalValue) > 0 ||
+      toNumber(f.receivedValue) > 0 ||
+      toNumber(f.openReceivableValue) > 0
+  );
+  let receivableTotalValue = toNumber(receivableFact?.receivableTotalValue);
+  let receivedValue = toNumber(receivableFact?.receivedValue);
+  let openReceivableValue = toNumber(receivableFact?.openReceivableValue);
+  if (input.receivables && input.receivables.length > 0) {
+    receivableTotalValue = round2(
+      input.receivables.reduce((s, r) => s + toNumber(r.totalValue), 0)
+    );
+    receivedValue = round2(
+      input.receivables.reduce((s, r) => s + toNumber(r.receivedValue), 0)
+    );
+    openReceivableValue = round2(
+      input.receivables.reduce((s, r) => s + toNumber(r.openValue), 0)
+    );
+  }
+
+  const hasItemAllocation = facts.some((f) => toNumber(f.allocatedQuantity) > 0);
+  const hasNfe = facts.some((f) => f.nfeExternalId != null) || (input.nfes?.length ?? 0) > 0;
+  const hasStockDocument =
+    facts.some((f) => f.stockDocumentExternalId != null) ||
+    (input.stockDocuments?.length ?? 0) > 0;
+  const headerOnlyLink = facts.some(
+    (f) => f.status === "HEADER_ONLY_LINK" && toNumber(f.allocatedQuantity) <= 0
+  );
+  const hasReceivable =
+    receivableTotalValue > 0.01 || receivedValue > 0.01 || openReceivableValue > 0.01;
+  const hasExcessQuantity = docsBuilt.totalExcessQuantity > 0.000001;
+  const isFullyFulfilledByItems =
+    totalOrderedQuantity > 0 && totalRemainingQuantity <= 0.000001;
+  const hasHeaderInflationRisk =
+    nfeHeaderTotalValue > attributedCapped + 0.05 ||
+    nfeHeaderTotalValue > resolvedOrderValue + 0.05;
+  const hasUnattendedOrderItems = orderItemsCoverage.some(
+    (r) => r.remainingQuantity > 0.000001
+  );
+  const crWithoutSafeRateio =
+    hasReceivable &&
+    receivablesCoverage.some(
+      (r) =>
+        r.attributionStatus === "TITLE_IDS_ONLY" ||
+        r.attributionStatus === "UNAVAILABLE" ||
+        (r.receivableIds.length > 1 && r.totalValue == null)
+    );
+
+  const financialStatus = classifyFinancialStatus({
+    receivedValue,
+    openReceivableValue,
+    receivableTotalValue,
+    hasNfe,
+    hasStockDocument,
+    hasAllocation: hasItemAllocation,
+  });
+
+  const operationalStatus = classifyOperationalStatus({
+    hasNfe,
+    hasStockDocument,
+    hasItemAllocation,
+    headerOnlyLink,
+    totalOrderedQuantity,
+    totalAttendedQuantityCapped,
+    totalRemainingQuantity,
+    hasExcessQuantity,
+  });
+
+  const technicalAlerts = detectTechnicalAlerts({
+    orderValue: resolvedOrderValue,
+    attributedOrderValueByOrderPrice: attributedCapped,
+    nfeHeaderTotalValue,
+    hasItemAllocation,
+    headerOnlyLink,
+    hasNfe,
+    hasStockDocument,
+    hasReceivable,
+    paymentTermsAvailable: input.paymentTermsAvailable,
+    hasExcessQuantity,
+    hasProductsOutsideOrder: docsBuilt.hasProductsOutsideOrder,
+    priceMismatch: docsBuilt.priceMismatch,
+    crWithoutSafeRateio,
+    hasUnattendedOrderItems,
+    facts,
+  });
+
+  const fulfillmentPercent = pctCapped(
+    totalAttendedQuantityCapped,
+    totalOrderedQuantity
+  );
+
+  const fulfillmentSummary: FulfillmentSummary = {
+    orderValue: resolvedOrderValue,
+    attributedOrderValueByOrderPrice: attributedCapped,
+    attributedOrderValue: attributedCapped,
+    totalOrderedQuantity,
+    totalOrderQuantity: totalOrderedQuantity,
+    totalAttendedQuantityCapped,
+    attendedQuantity: totalAttendedQuantityCapped,
+    totalRemainingQuantity,
+    remainingQuantity: totalRemainingQuantity,
+    totalExcessQuantity: docsBuilt.totalExcessQuantity,
+    fulfillmentPercent,
+    receivableTotalValue,
+    receivableTotal: receivableTotalValue,
+    receivedValue,
+    openReceivableValue,
+    nfeHeaderTotalValue,
+    nfeHeaderTotal: nfeHeaderTotalValue,
+    nfeHeaderAttributedToOrderValue,
+    nfeHeaderNotAttributedToOrderValue,
+    nfeHeaderNotAttributed: nfeHeaderNotAttributedToOrderValue,
+    isFullyFulfilledByItems,
+    hasExcessQuantity,
+    hasHeaderInflationRisk,
+    hasProductsOutsideOrder: docsBuilt.hasProductsOutsideOrder,
+  };
+
+  const executiveConclusion = buildFulfillmentExecutiveConclusion({
+    financialStatus,
+    operationalStatus,
+    technicalAlerts,
+    fulfillmentSummary,
+  });
+
+  if (hasHeaderInflationRisk) {
+    evidenceWarnings.push(
+      "Soma de cabeçalhos de NF maior que o valor atribuído ao pedido — cabeçalho não entra na carteira."
+    );
+  }
+  if (docsBuilt.hasProductsOutsideOrder) {
+    evidenceWarnings.push(
+      "Há produtos em documentos de saída que não pertencem a este pedido."
+    );
+  }
+  if (hasExcessQuantity) {
+    evidenceWarnings.push(
+      "Há quantidade excedente nos documentos em relação ao saldo do pedido."
+    );
+  }
+
+  return {
+    financialStatus,
+    operationalStatus,
+    technicalAlerts,
+    fulfillmentSummary,
+    orderItemsCoverage,
+    stockDocumentsCoverage: docsBuilt.rows,
+    receivablesCoverage,
+    executiveConclusion,
+    evidenceWarnings,
+  };
+}
+
+/**
+ * Adapter para API/detalhe: fatos materializados + valor oficial do pedido.
+ * @deprecated prefer buildOrderFulfillmentMap
+ */
+export function buildPortfolioOrderFulfillmentMap(args: {
+  facts: readonly PortfolioReconciliationFactApiRow[];
+  orderValue: number;
+  paymentTermsAvailable?: boolean | null;
+}): PortfolioOrderFulfillmentMap {
+  return buildOrderFulfillmentMap({
+    reconciliationFacts: args.facts,
+    orderValue: args.orderValue,
+    paymentTermsAvailable: args.paymentTermsAvailable,
+  });
 }
 
 export const FINANCIAL_STATUS_LABEL: Record<PortfolioFinancialStatus, string> = {

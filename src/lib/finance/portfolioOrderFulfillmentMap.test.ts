@@ -1,76 +1,94 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildPortfolioReconciliationFacts } from "./portfolioReconciliationAllocationEngine.js";
-import type { PortfolioReconciliationSnapshot } from "./portfolioReconciliationAllocationEngine.js";
-import type { SnapshotOrder } from "./portfolioReconciliationAllocationEngine.js";
 import {
-  buildPortfolioOrderFulfillmentMap,
-  resolveFinancialStatus,
-  resolveOperationalStatus,
+  buildOrderFulfillmentMap,
+  classifyFinancialStatus,
+  classifyOperationalStatus,
 } from "./portfolioOrderFulfillmentMap.js";
+import type { BuildOrderFulfillmentMapInput } from "./portfolioOrderFulfillmentMap.js";
 import type { PortfolioReconciliationFactApiRow } from "./portfolioReconciliationApi.js";
 
-function pd02339Snapshot(): PortfolioReconciliationSnapshot {
-  const order: SnapshotOrder = {
-    id: "3915fa28-1947-4388-bb27-2699c3cbb516",
-    externalSalesOrderId: 2335,
-    orderCode: "PD 02339",
-    issueDate: new Date(2026, 4, 1),
-    customerNameSnapshot: "Britania",
-    totalNetValue: 158000,
-    items: [
-      {
-        id: "item-456",
-        externalProductId: 456,
-        quantity: 3000,
-        unitPrice: 5.85,
-        productSkuSnapshot: "456",
-      },
-      {
-        id: "item-452",
-        externalProductId: 452,
-        quantity: 9000,
-        unitPrice: 5.85,
-        productSkuSnapshot: "452",
-      },
-      {
-        id: "item-537",
-        externalProductId: 537,
-        quantity: 5000,
-        unitPrice: 5.86,
-        productSkuSnapshot: "537",
-      },
-      {
-        id: "item-455",
-        externalProductId: 455,
-        quantity: 10000,
-        unitPrice: 5.85,
-        productSkuSnapshot: "455",
-      },
-    ],
-  };
-
+function baseFact(
+  partial: Partial<PortfolioReconciliationFactApiRow>
+): PortfolioReconciliationFactApiRow {
   return {
-    orders: [order],
+    id: partial.id ?? "f1",
+    runId: partial.runId ?? "run",
+    customerId: null,
+    customerExternalId: null,
+    customerNameSnapshot: null,
+    salesOrderId: partial.salesOrderId ?? "order-1",
+    externalSalesOrderId: null,
+    orderCode: partial.orderCode ?? "PD T",
+    orderIssueDate: null,
+    expectedDeliveryDate: null,
+    salesOrderItemId: partial.salesOrderItemId ?? null,
+    externalSalesOrderItemId: null,
+    externalProductId: partial.externalProductId ?? null,
+    productSkuSnapshot: partial.productSkuSnapshot ?? null,
+    productNameSnapshot: null,
+    orderQuantity: partial.orderQuantity ?? null,
+    orderUnitPrice: partial.orderUnitPrice ?? null,
+    orderItemValue: partial.orderItemValue ?? null,
+    nomusNfeId: null,
+    nfeExternalId: partial.nfeExternalId ?? null,
+    nfeNumber: partial.nfeNumber ?? null,
+    nfeSerie: null,
+    nfeKey: null,
+    nfeProcessedAt: null,
+    nfeHeaderValue: partial.nfeHeaderValue ?? null,
+    stockDocumentId: partial.stockDocumentId ?? null,
+    stockDocumentExternalId: partial.stockDocumentExternalId ?? null,
+    stockDocumentItemId: null,
+    stockDocumentItemExternalId: null,
+    stockDocumentDate: null,
+    stockQuantity: partial.stockQuantity ?? null,
+    stockUnitValue: partial.stockUnitValue ?? null,
+    stockItemValue: partial.stockItemValue ?? null,
+    allocatedQuantity: partial.allocatedQuantity ?? null,
+    allocatedValueByOrderPrice: partial.allocatedValueByOrderPrice ?? null,
+    allocatedValueByStockPrice: null,
+    remainingOrderQuantityAfterAllocation:
+      partial.remainingOrderQuantityAfterAllocation ?? null,
+    remainingOrderValueAfterAllocation: null,
+    priceDifferenceUnit: partial.priceDifferenceUnit ?? null,
+    priceDifferenceTotal: null,
+    receivableIdsJson: partial.receivableIdsJson ?? null,
+    receivableTotalValue: partial.receivableTotalValue ?? null,
+    receivedValue: partial.receivedValue ?? null,
+    openReceivableValue: partial.openReceivableValue ?? null,
+    dueDatesJson: null,
+    settlementDatesJson: null,
+    forecastSource: "ORDER",
+    forecastDate: null,
+    forecastValue: null,
+    confidenceLevel: "MEDIUM",
+    status: partial.status ?? "ORDER_ONLY",
+    alertsJson: partial.alertsJson ?? [],
+    traceJson: partial.traceJson ?? {},
+    ...partial,
+  };
+}
+
+function pd02339Input(): BuildOrderFulfillmentMapInput {
+  const orderId = "3915fa28-1947-4388-bb27-2699c3cbb516";
+  return {
+    order: {
+      id: orderId,
+      orderCode: "PD 02339",
+      totalNetValue: 158_000,
+      externalSalesOrderId: 2335,
+    },
+    orderItems: [
+      { id: "item-456", externalProductId: 456, quantity: 3000, unitPrice: 5.85, productSkuSnapshot: "456" },
+      { id: "item-452", externalProductId: 452, quantity: 9000, unitPrice: 5.85, productSkuSnapshot: "452" },
+      { id: "item-537", externalProductId: 537, quantity: 5000, unitPrice: 5.86, productSkuSnapshot: "537" },
+      { id: "item-455", externalProductId: 455, quantity: 10000, unitPrice: 5.85, productSkuSnapshot: "455" },
+    ],
     nfeLinks: [
-      {
-        salesOrderId: order.id,
-        nfeExternalId: 6937,
-        nfeNumber: "6845",
-        dataProcessamento: new Date(2026, 4, 13, 8, 10, 33),
-      },
-      {
-        salesOrderId: order.id,
-        nfeExternalId: 7188,
-        nfeNumber: "7052",
-        dataProcessamento: new Date(2026, 5, 8, 14, 58, 10),
-      },
-      {
-        salesOrderId: order.id,
-        nfeExternalId: 7377,
-        nfeNumber: "7195",
-        dataProcessamento: new Date(2026, 5, 26, 15, 6, 10),
-      },
+      { salesOrderId: orderId, nfeExternalId: 6937, nfeNumber: "6845" },
+      { salesOrderId: orderId, nfeExternalId: 7188, nfeNumber: "7052" },
+      { salesOrderId: orderId, nfeExternalId: 7377, nfeNumber: "7195" },
     ],
     nfes: [
       { id: "nfe-6937", externalId: 6937, numero: "6845", valorLiquido: 108240 },
@@ -82,7 +100,6 @@ function pd02339Snapshot(): PortfolioReconciliationSnapshot {
         id: "doc-7951",
         externalId: 7951,
         idNfe: 6937,
-        dataDocumento: new Date(2026, 4, 13, 8, 10, 33),
         items: [
           { id: "si-456", externalProductId: 456, quantity: 3000, unitValue: 4.92 },
           { id: "si-452", externalProductId: 452, quantity: 9000, unitValue: 4.92 },
@@ -93,7 +110,6 @@ function pd02339Snapshot(): PortfolioReconciliationSnapshot {
         id: "doc-8175",
         externalId: 8175,
         idNfe: 7188,
-        dataDocumento: new Date(2026, 5, 8, 14, 58, 10),
         items: [
           { id: "si-537", externalProductId: 537, quantity: 10000, unitValue: 5.86 },
           { id: "si-452b", externalProductId: 452, quantity: 4500, unitValue: 5.85 },
@@ -105,275 +121,408 @@ function pd02339Snapshot(): PortfolioReconciliationSnapshot {
         id: "doc-8422",
         externalId: 8422,
         idNfe: 7377,
-        dataDocumento: new Date(2026, 5, 26, 15, 6, 10),
         items: [
           { id: "si-452c", externalProductId: 452, quantity: 3500, unitValue: 5.85 },
           { id: "si-455b", externalProductId: 455, quantity: 10000, unitValue: 5.85 },
         ],
       },
     ],
+    paymentTermsAvailable: false,
   };
 }
 
-function factsToApiRows(
-  drafts: ReturnType<typeof buildPortfolioReconciliationFacts>["facts"]
-): PortfolioReconciliationFactApiRow[] {
-  return drafts.map((d, i) => ({
-    id: `f-${i}`,
-    runId: d.runId,
-    customerId: null,
-    customerExternalId: null,
-    customerNameSnapshot: d.customerNameSnapshot,
-    salesOrderId: d.salesOrderId,
-    externalSalesOrderId: d.externalSalesOrderId,
-    orderCode: d.orderCode,
-    orderIssueDate: d.orderIssueDate,
-    expectedDeliveryDate: null,
-    salesOrderItemId: d.salesOrderItemId,
-    externalSalesOrderItemId: null,
-    externalProductId: d.externalProductId,
-    productSkuSnapshot: d.productSkuSnapshot,
-    productNameSnapshot: d.productNameSnapshot,
-    orderQuantity: d.orderQuantity,
-    orderUnitPrice: d.orderUnitPrice,
-    orderItemValue: d.orderItemValue,
-    nomusNfeId: d.nomusNfeId,
-    nfeExternalId: d.nfeExternalId,
-    nfeNumber: d.nfeNumber,
-    nfeSerie: null,
-    nfeKey: null,
-    nfeProcessedAt: d.nfeProcessedAt,
-    nfeHeaderValue: d.nfeHeaderValue,
-    stockDocumentId: d.stockDocumentId,
-    stockDocumentExternalId: d.stockDocumentExternalId,
-    stockDocumentItemId: d.stockDocumentItemId,
-    stockDocumentItemExternalId: null,
-    stockDocumentDate: d.stockDocumentDate,
-    stockQuantity: d.stockQuantity,
-    stockUnitValue: d.stockUnitValue,
-    stockItemValue: d.stockItemValue,
-    allocatedQuantity: d.allocatedQuantity,
-    allocatedValueByOrderPrice: d.allocatedValueByOrderPrice,
-    allocatedValueByStockPrice: d.allocatedValueByStockPrice,
-    remainingOrderQuantityAfterAllocation: d.remainingOrderQuantityAfterAllocation,
-    remainingOrderValueAfterAllocation: d.remainingOrderValueAfterAllocation,
-    priceDifferenceUnit: d.priceDifferenceUnit,
-    priceDifferenceTotal: d.priceDifferenceTotal,
-    receivableIdsJson: d.receivableIdsJson ?? null,
-    receivableTotalValue: d.receivableTotalValue ?? null,
-    receivedValue: d.receivedValue ?? null,
-    openReceivableValue: d.openReceivableValue ?? null,
-    dueDatesJson: d.dueDatesJson ?? null,
-    settlementDatesJson: d.settlementDatesJson ?? null,
-    forecastSource: d.forecastSource ?? "UNRESOLVED",
-    forecastDate: d.forecastDate ?? null,
-    forecastValue: d.forecastValue ?? null,
-    confidenceLevel: d.confidenceLevel,
-    status: d.status,
-    alertsJson: d.alertsJson,
-    traceJson: d.traceJson,
-  }));
-}
-
 describe("portfolioOrderFulfillmentMap", () => {
-  it("PD 02339: cabeçalho NF não é valor do pedido; itens e docs aparecem", () => {
-    const built = buildPortfolioReconciliationFacts({
-      runId: "run-pd",
-      mode: "preview",
-      snapshot: pd02339Snapshot(),
+  it("1) um item atendido em um documento", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 1", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1, nfeNumber: "100" }],
+      nfes: [{ externalId: 1, numero: "100", valorLiquido: 1000 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 501,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 100, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
     });
-    const facts = factsToApiRows(built.facts);
-    const map = buildPortfolioOrderFulfillmentMap({
-      facts,
-      orderValue: 158000,
+
+    assert.equal(map.orderItemsCoverage.length, 1);
+    assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 100);
+    assert.equal(map.orderItemsCoverage[0]!.remainingQuantity, 0);
+    assert.equal(map.orderItemsCoverage[0]!.documentsUsed.length, 1);
+    assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO");
+    assert.equal(map.fulfillmentSummary.totalExcessQuantity, 0);
+  });
+
+  it("2) um item atendido em dois documentos", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 2", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [
+        { salesOrderId: "o1", nfeExternalId: 1, nfeNumber: "1" },
+        { salesOrderId: "o1", nfeExternalId: 2, nfeNumber: "2" },
+      ],
+      nfes: [
+        { externalId: 1, valorLiquido: 600 },
+        { externalId: 2, valorLiquido: 400 },
+      ],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 60, unitValue: 10 }],
+        },
+        {
+          id: "d2",
+          externalId: 2,
+          idNfe: 2,
+          items: [{ id: "s2", externalProductId: 10, quantity: 40, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    const item = map.orderItemsCoverage[0]!;
+    assert.equal(item.attendedQuantityCapped, 100);
+    assert.equal(item.remainingQuantity, 0);
+    assert.equal(item.documentsUsed.length, 2);
+    assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO");
+  });
+
+  it("3) parcialmente atendido em múltiplos documentos", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 3", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [
+        { salesOrderId: "o1", nfeExternalId: 1 },
+        { salesOrderId: "o1", nfeExternalId: 2 },
+      ],
+      nfes: [
+        { externalId: 1, valorLiquido: 300 },
+        { externalId: 2, valorLiquido: 200 },
+      ],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 30, unitValue: 10 }],
+        },
+        {
+          id: "d2",
+          externalId: 2,
+          idNfe: 2,
+          items: [{ id: "s2", externalProductId: 10, quantity: 20, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 50);
+    assert.equal(map.orderItemsCoverage[0]!.remainingQuantity, 50);
+    assert.equal(map.operationalStatus, "OP_PARCIALMENTE_ATENDIDO");
+    assert.ok((map.fulfillmentSummary.fulfillmentPercent ?? 0) <= 100);
+  });
+
+  it("4) excedente: pedido 100, docs 60+50 => atendido 100, excedente 10", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 4", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [
+        { salesOrderId: "o1", nfeExternalId: 1 },
+        { salesOrderId: "o1", nfeExternalId: 2 },
+      ],
+      nfes: [
+        { externalId: 1, valorLiquido: 600 },
+        { externalId: 2, valorLiquido: 500 },
+      ],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 60, unitValue: 10 }],
+        },
+        {
+          id: "d2",
+          externalId: 2,
+          idNfe: 2,
+          items: [{ id: "s2", externalProductId: 10, quantity: 50, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 100);
+    assert.equal(map.orderItemsCoverage[0]!.remainingQuantity, 0);
+    assert.equal(map.fulfillmentSummary.totalExcessQuantity, 10);
+    assert.equal(map.orderItemsCoverage[0]!.excessQuantityForThisProduct, 10);
+    assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE");
+    assert.ok(map.technicalAlerts.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO"));
+    assert.equal(map.fulfillmentSummary.fulfillmentPercent, 100);
+  });
+
+  it("5) documento com produto fora do pedido", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 5", totalNetValue: 500 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 50, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 800 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [
+            { id: "s1", externalProductId: 10, quantity: 50, unitValue: 10 },
+            { id: "s2", externalProductId: 99, quantity: 20, unitValue: 10 },
+          ],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.ok(map.fulfillmentSummary.hasProductsOutsideOrder);
+    assert.ok(map.technicalAlerts.includes("PRODUTO_FORA_DO_PEDIDO"));
+    const outside = map.stockDocumentsCoverage.flatMap((d) => d.itemsOutsideOrder);
+    assert.ok(outside.some((x) => x.productExternalId === 99));
+    assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 50);
+  });
+
+  it("6) cabeçalho NF maior que valor atribuído ao pedido", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 6", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 5000 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 100, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.ok(map.fulfillmentSummary.hasHeaderInflationRisk);
+    assert.ok(
+      map.fulfillmentSummary.nfeHeaderTotalValue >
+        map.fulfillmentSummary.attributedOrderValueByOrderPrice
+    );
+    assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
+    assert.equal(map.fulfillmentSummary.orderValue, 1000);
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <= 1000 + 0.05
+    );
+  });
+
+  it("7) divergência de preço", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 7", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 800 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 100, unitValue: 8 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.ok(map.technicalAlerts.includes("DIVERGENCIA_PRECO"));
+    assert.equal(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice,
+      1000
+    );
+  });
+
+  it("8) sem NF/doc/CR => OP_NAO_ATENDIDO e FIN_SEM_CR", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 8", totalNetValue: 320070 },
+      orderItems: [
+        { id: "i1", externalProductId: 1, quantity: 10, unitPrice: 32007 },
+      ],
+      nfeLinks: [],
+      nfes: [],
+      stockDocuments: [],
       paymentTermsAvailable: false,
     });
 
-    assert.equal(map.fulfillmentSummary.orderValue, 158000);
-    assert.ok(map.fulfillmentSummary.nfeHeaderTotal > 158000);
-    assert.ok(map.fulfillmentSummary.hasHeaderInflationRisk);
-    assert.ok(
-      map.fulfillmentSummary.nfeHeaderTotal !== map.fulfillmentSummary.orderValue
-    );
-    assert.ok(map.orderItemsCoverage.length >= 4);
-    for (const item of map.orderItemsCoverage) {
-      assert.ok(item.orderedQuantity > 0);
-      assert.ok(typeof item.attendedQuantity === "number");
-      assert.ok(typeof item.remainingQuantity === "number");
-    }
-    assert.ok(map.stockDocumentsCoverage.length >= 1);
-    assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
-    assert.ok(
-      map.technicalAlerts.includes("DIVERGENCIA_PRECO") ||
-        map.stockDocumentsCoverage.some((d) => d.alerts.includes("DIVERGENCIA_PRECO"))
-    );
-    assert.ok(
-      map.technicalAlerts.includes("PRODUTO_FORA_DO_PEDIDO") ||
-        map.technicalAlerts.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO")
-    );
-    assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO");
-    assert.equal(map.financialStatus, "FIN_FATURADO_SEM_CR");
-    assert.match(map.executiveConclusion, /cabeçalho|não é o valor/i);
-  });
-
-  it("atendimento parcial → OP_PARCIALMENTE_ATENDIDO", () => {
-    const facts: PortfolioReconciliationFactApiRow[] = [
-      {
-        id: "1",
-        runId: "r",
-        customerId: null,
-        customerExternalId: 1,
-        customerNameSnapshot: "X",
-        salesOrderId: "o1",
-        externalSalesOrderId: 1,
-        orderCode: "PD T",
-        orderIssueDate: "2026-01-01",
-        expectedDeliveryDate: null,
-        salesOrderItemId: "i1",
-        externalSalesOrderItemId: null,
-        externalProductId: 10,
-        productSkuSnapshot: "10",
-        productNameSnapshot: "P",
-        orderQuantity: 100,
-        orderUnitPrice: 10,
-        orderItemValue: 1000,
-        nomusNfeId: null,
-        nfeExternalId: 1,
-        nfeNumber: "1",
-        nfeSerie: null,
-        nfeKey: null,
-        nfeProcessedAt: null,
-        nfeHeaderValue: 500,
-        stockDocumentId: "s",
-        stockDocumentExternalId: 1,
-        stockDocumentItemId: "si",
-        stockDocumentItemExternalId: null,
-        stockDocumentDate: "2026-02-01",
-        stockQuantity: 40,
-        stockUnitValue: 10,
-        stockItemValue: 400,
-        allocatedQuantity: 40,
-        allocatedValueByOrderPrice: 400,
-        allocatedValueByStockPrice: 400,
-        remainingOrderQuantityAfterAllocation: 60,
-        remainingOrderValueAfterAllocation: 600,
-        priceDifferenceUnit: null,
-        priceDifferenceTotal: null,
-        receivableIdsJson: null,
-        receivableTotalValue: null,
-        receivedValue: null,
-        openReceivableValue: null,
-        dueDatesJson: null,
-        settlementDatesJson: null,
-        forecastSource: "NFE",
-        forecastDate: null,
-        forecastValue: null,
-        confidenceLevel: "MEDIUM",
-        status: "ITEM_ALLOCATED",
-        alertsJson: null,
-        traceJson: null,
-      },
-    ];
-    const map = buildPortfolioOrderFulfillmentMap({
-      facts,
-      orderValue: 1000,
-      paymentTermsAvailable: true,
-    });
-    assert.equal(map.operationalStatus, "OP_PARCIALMENTE_ATENDIDO");
-    assert.equal(map.orderItemsCoverage[0]!.attendedQuantity, 40);
-    assert.equal(map.orderItemsCoverage[0]!.remainingQuantity, 60);
-  });
-
-  it("status financeiro e alertas são eixos separados", () => {
-    assert.equal(
-      resolveFinancialStatus({
-        receivedValue: 0,
-        openReceivableValue: 500,
-        receivableTotalValue: 500,
-        hasNfe: true,
-        hasStockDocument: true,
-        hasAllocation: true,
-      }),
-      "FIN_CR_ABERTO"
-    );
-    assert.equal(
-      resolveOperationalStatus({
-        hasNfe: true,
-        hasStockDocument: false,
-        hasItemAllocation: false,
-        headerOnlyLink: true,
-        totalOrderQuantity: 10,
-        attendedQuantity: 0,
-        remainingQuantity: 10,
-      }),
-      "OP_VINCULO_APENAS_CABECALHO"
-    );
-  });
-
-  it("pedido sem NF/doc/CR → FIN_SEM_CR + OP_NAO_ATENDIDO", () => {
-    const facts: PortfolioReconciliationFactApiRow[] = [
-      {
-        id: "1",
-        runId: "r",
-        customerId: null,
-        customerExternalId: 1,
-        customerNameSnapshot: "X",
-        salesOrderId: "old",
-        externalSalesOrderId: 2,
-        orderCode: "PD OLD",
-        orderIssueDate: "2025-01-01",
-        expectedDeliveryDate: null,
-        salesOrderItemId: "i1",
-        externalSalesOrderItemId: null,
-        externalProductId: 1,
-        productSkuSnapshot: "1",
-        productNameSnapshot: "A",
-        orderQuantity: 10,
-        orderUnitPrice: 100,
-        orderItemValue: 1000,
-        nomusNfeId: null,
-        nfeExternalId: null,
-        nfeNumber: null,
-        nfeSerie: null,
-        nfeKey: null,
-        nfeProcessedAt: null,
-        nfeHeaderValue: null,
-        stockDocumentId: null,
-        stockDocumentExternalId: null,
-        stockDocumentItemId: null,
-        stockDocumentItemExternalId: null,
-        stockDocumentDate: null,
-        stockQuantity: null,
-        stockUnitValue: null,
-        stockItemValue: null,
-        allocatedQuantity: null,
-        allocatedValueByOrderPrice: null,
-        allocatedValueByStockPrice: null,
-        remainingOrderQuantityAfterAllocation: null,
-        remainingOrderValueAfterAllocation: null,
-        priceDifferenceUnit: null,
-        priceDifferenceTotal: null,
-        receivableIdsJson: null,
-        receivableTotalValue: null,
-        receivedValue: null,
-        openReceivableValue: null,
-        dueDatesJson: null,
-        settlementDatesJson: null,
-        forecastSource: "ORDER",
-        forecastDate: "2025-02-01",
-        forecastValue: 1000,
-        confidenceLevel: "LOW",
-        status: "ORDER_ONLY",
-        alertsJson: null,
-        traceJson: null,
-      },
-    ];
-    const map = buildPortfolioOrderFulfillmentMap({
-      facts,
-      orderValue: 1000,
-      paymentTermsAvailable: true,
-    });
     assert.equal(map.financialStatus, "FIN_SEM_CR");
     assert.equal(map.operationalStatus, "OP_NAO_ATENDIDO");
+    assert.equal(map.fulfillmentSummary.totalAttendedQuantityCapped, 0);
+  });
+
+  it("9) CR aberto + atendimento parcial: eixos separados", () => {
+    const map = buildOrderFulfillmentMap({
+      reconciliationFacts: [
+        baseFact({
+          id: "a",
+          salesOrderItemId: "i1",
+          externalProductId: 10,
+          orderQuantity: 100,
+          orderUnitPrice: 10,
+          orderItemValue: 1000,
+          allocatedQuantity: 40,
+          remainingOrderQuantityAfterAllocation: 60,
+          nfeExternalId: 1,
+          nfeNumber: "1",
+          nfeHeaderValue: 400,
+          stockDocumentExternalId: 9,
+          stockQuantity: 40,
+          stockUnitValue: 10,
+          stockItemValue: 400,
+          status: "ITEM_ALLOCATED",
+          receivableTotalValue: 1000,
+          receivedValue: 200,
+          openReceivableValue: 800,
+          receivableIdsJson: [55],
+        }),
+      ],
+      orderValue: 1000,
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.financialStatus, "FIN_CR_ABERTO");
+    assert.equal(map.operationalStatus, "OP_PARCIALMENTE_ATENDIDO");
+    assert.ok(map.technicalAlerts.includes("ITEM_DO_PEDIDO_NAO_ATENDIDO"));
+  });
+
+  it("10) recebido + alerta técnico: FIN_RECEBIDO preservado", () => {
+    const map = buildOrderFulfillmentMap({
+      reconciliationFacts: [
+        baseFact({
+          id: "a",
+          salesOrderItemId: "i1",
+          externalProductId: 10,
+          orderQuantity: 100,
+          orderUnitPrice: 10,
+          orderItemValue: 1000,
+          allocatedQuantity: 100,
+          nfeExternalId: 1,
+          nfeHeaderValue: 5000,
+          stockDocumentExternalId: 9,
+          stockQuantity: 100,
+          stockUnitValue: 8,
+          stockItemValue: 800,
+          status: "PRICE_MISMATCH",
+          priceDifferenceUnit: -2,
+          receivableTotalValue: 1000,
+          receivedValue: 1000,
+          openReceivableValue: 0,
+          receivableIdsJson: [1],
+        }),
+        baseFact({
+          id: "b",
+          status: "OVER_LINKED_BY_HEADER",
+          nfeExternalId: 1,
+          nfeHeaderValue: 5000,
+          allocatedQuantity: 0,
+          alertsJson: ["OVER_LINKED_BY_HEADER"],
+        }),
+      ],
+      orderValue: 1000,
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.financialStatus, "FIN_RECEBIDO");
+    assert.ok(map.technicalAlerts.includes("DIVERGENCIA_PRECO"));
+    assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
+    assert.notEqual(map.financialStatus, "FIN_FATURADO_SEM_CR");
+  });
+
+  it("fixture PD 02339: cabeçalho não infla pedido; excesso e fora do pedido", () => {
+    const map = buildOrderFulfillmentMap(pd02339Input());
+
+    assert.equal(map.fulfillmentSummary.orderValue, 158_000);
+    assert.ok(map.fulfillmentSummary.nfeHeaderTotalValue > 158_000);
+    assert.ok(map.fulfillmentSummary.hasHeaderInflationRisk);
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <= 158_000 + 0.05
+    );
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice !==
+        map.fulfillmentSummary.nfeHeaderTotalValue
+    );
+    assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
+    assert.ok(map.technicalAlerts.includes("DIVERGENCIA_PRECO"));
+    assert.ok(map.fulfillmentSummary.hasProductsOutsideOrder);
+    assert.ok(map.fulfillmentSummary.hasExcessQuantity);
+    assert.ok(map.orderItemsCoverage.length >= 4);
+    assert.ok(map.stockDocumentsCoverage.length >= 3);
+    assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE");
+    assert.equal(map.financialStatus, "FIN_FATURADO_SEM_CR");
+
+    for (const item of map.orderItemsCoverage) {
+      assert.ok(item.attendedQuantityCapped <= item.orderedQuantity + 0.000001);
+      assert.ok((item.fulfillmentPercentCapped ?? 0) <= 100);
+    }
+  });
+
+  it("classificadores unitários", () => {
+    assert.equal(
+      classifyFinancialStatus({
+        receivedValue: 0,
+        openReceivableValue: 0,
+        hasNfe: false,
+      }),
+      "FIN_SEM_CR"
+    );
+    assert.equal(
+      classifyOperationalStatus({
+        hasNfe: false,
+        hasStockDocument: false,
+        hasItemAllocation: false,
+        headerOnlyLink: false,
+        totalOrderedQuantity: 10,
+        totalAttendedQuantityCapped: 0,
+        totalRemainingQuantity: 10,
+        hasExcessQuantity: false,
+      }),
+      "OP_NAO_ATENDIDO"
+    );
+    assert.equal(
+      classifyOperationalStatus({
+        hasNfe: true,
+        hasStockDocument: true,
+        hasItemAllocation: true,
+        headerOnlyLink: false,
+        totalOrderedQuantity: 100,
+        totalAttendedQuantityCapped: 100,
+        totalRemainingQuantity: 0,
+        hasExcessQuantity: true,
+      }),
+      "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+    );
   });
 });

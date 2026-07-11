@@ -521,27 +521,42 @@ export type PortfolioIntelligenceOrderDetail = {
     technicalAlerts: string[];
     fulfillmentSummary: {
       orderValue: number;
+      attributedOrderValueByOrderPrice?: number;
       attributedOrderValue: number;
+      totalOrderedQuantity?: number;
       totalOrderQuantity: number;
+      totalAttendedQuantityCapped?: number;
       attendedQuantity: number;
+      totalRemainingQuantity?: number;
       remainingQuantity: number;
+      totalExcessQuantity?: number;
       fulfillmentPercent: number | null;
+      receivableTotalValue?: number;
       receivableTotal: number;
       receivedValue: number;
       openReceivableValue: number;
+      nfeHeaderTotalValue?: number;
       nfeHeaderTotal: number;
+      nfeHeaderAttributedToOrderValue?: number;
+      nfeHeaderNotAttributedToOrderValue?: number;
       nfeHeaderNotAttributed: number;
       isFullyFulfilledByItems: boolean;
+      hasExcessQuantity?: boolean;
       hasHeaderInflationRisk: boolean;
+      hasProductsOutsideOrder?: boolean;
     };
     orderItemsCoverage: Array<{
       salesOrderItemId: string | null;
+      externalProductId?: number | null;
       productExternalId: number | null;
       productCode: string | null;
       description: string | null;
       orderedQuantity: number;
+      attendedQuantityCapped?: number;
       attendedQuantity: number;
       remainingQuantity: number;
+      excessQuantityForThisProduct?: number;
+      fulfillmentPercentCapped?: number | null;
       fulfillmentPercent: number | null;
       orderUnitValue: number;
       orderItemValue: number;
@@ -560,6 +575,7 @@ export type PortfolioIntelligenceOrderDetail = {
       stockDocumentExternalId: number | null;
       date: string | null;
       nfeHeaderValue: number | null;
+      documentTotalValue?: number | null;
       valueAttributedToOrder: number;
       valueNotAttributedToOrder: number;
       matchedItems: Array<{
@@ -570,6 +586,13 @@ export type PortfolioIntelligenceOrderDetail = {
       unmatchedItems: Array<{
         productExternalId: number | null;
         stockQuantity: number | null;
+        stockItemValue?: number | null;
+        reason: string;
+      }>;
+      itemsOutsideOrder?: Array<{
+        productExternalId: number | null;
+        stockQuantity: number | null;
+        stockItemValue?: number | null;
         reason: string;
       }>;
       surplusItems: Array<{
@@ -581,8 +604,11 @@ export type PortfolioIntelligenceOrderDetail = {
     }>;
     receivablesCoverage: Array<{
       receivableId: number | null;
+      receivableIds?: number[];
       dueDate: string | null;
+      dueDates?: string[];
       settlementDate: string | null;
+      settlementDates?: string[];
       totalValue: number | null;
       receivedValue: number | null;
       openValue: number | null;
@@ -590,6 +616,7 @@ export type PortfolioIntelligenceOrderDetail = {
       attributionStatus: string;
     }>;
     executiveConclusion: string;
+    evidenceWarnings?: string[];
   };
   timeline: Array<{ at: string; kind: string; label: string }>;
   values: {

@@ -917,21 +917,31 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
         <InfoCard label="Pedido" value={formatFinanceCurrency(s.orderValue)} />
         <InfoCard
           label="Atendido (itens)"
-          value={`${formatFinanceInteger(s.attendedQuantity)} · ${
+          value={`${formatFinanceInteger(
+            s.totalAttendedQuantityCapped ?? s.attendedQuantity
+          )} · ${
             s.fulfillmentPercent != null ? `${s.fulfillmentPercent}%` : "—"
           }`}
         />
-        <InfoCard label="Restante" value={formatFinanceInteger(s.remainingQuantity)} />
-        <InfoCard label="CR" value={formatFinanceCurrency(s.receivableTotal)} />
+        <InfoCard
+          label="Restante"
+          value={formatFinanceInteger(s.totalRemainingQuantity ?? s.remainingQuantity)}
+        />
+        <InfoCard
+          label="CR"
+          value={formatFinanceCurrency(s.receivableTotalValue ?? s.receivableTotal)}
+        />
         <InfoCard label="Recebido" value={formatFinanceCurrency(s.receivedValue)} />
         <InfoCard label="Aberto" value={formatFinanceCurrency(s.openReceivableValue)} />
         <InfoCard
           label="Cabeçalho NF"
-          value={formatFinanceCurrency(s.nfeHeaderTotal)}
+          value={formatFinanceCurrency(s.nfeHeaderTotalValue ?? s.nfeHeaderTotal)}
         />
         <InfoCard
           label="Cabeçalho não atribuído"
-          value={formatFinanceCurrency(s.nfeHeaderNotAttributed)}
+          value={formatFinanceCurrency(
+            s.nfeHeaderNotAttributedToOrderValue ?? s.nfeHeaderNotAttributed
+          )}
         />
       </div>
       {s.hasHeaderInflationRisk ? (
@@ -977,13 +987,17 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
                       {formatFinanceInteger(row.orderedQuantity)}
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceInteger(row.attendedQuantity)}
+                      {formatFinanceInteger(
+                        row.attendedQuantityCapped ?? row.attendedQuantity
+                      )}
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">
                       {formatFinanceInteger(row.remainingQuantity)}
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {row.fulfillmentPercent != null ? `${row.fulfillmentPercent}%` : "—"}
+                      {(row.fulfillmentPercentCapped ?? row.fulfillmentPercent) != null
+                        ? `${row.fulfillmentPercentCapped ?? row.fulfillmentPercent}%`
+                        : "—"}
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">
                       {formatFinanceCurrency(row.orderItemValue)}
@@ -1068,13 +1082,14 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
                             .join(", ")}
                     </td>
                     <td className="py-1.5 text-[10px] text-orange-900">
-                      {doc.surplusItems.length === 0 && doc.unmatchedItems.length === 0
+                      {doc.surplusItems.length === 0 &&
+                      (doc.itemsOutsideOrder ?? doc.unmatchedItems).length === 0
                         ? "—"
                         : [
                             ...doc.surplusItems.map(
                               (x) => `excedente ${x.productExternalId ?? "?"}`
                             ),
-                            ...doc.unmatchedItems.map(
+                            ...(doc.itemsOutsideOrder ?? doc.unmatchedItems).map(
                               (x) => `fora ${x.productExternalId ?? "?"}`
                             ),
                           ].join(", ")}

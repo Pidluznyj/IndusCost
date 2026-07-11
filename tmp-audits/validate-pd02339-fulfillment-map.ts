@@ -307,9 +307,12 @@ function runChecks(
   );
   add(
     "cabecalho.NF.nao.e.valor.pedido",
-    map.fulfillmentSummary.nfeHeaderTotal > EXPECTED_ORDER_VALUE + MONEY_TOL &&
-      !moneyClose(map.fulfillmentSummary.nfeHeaderTotal, map.fulfillmentSummary.orderValue),
-    `header=${map.fulfillmentSummary.nfeHeaderTotal} order=${map.fulfillmentSummary.orderValue}`
+    map.fulfillmentSummary.nfeHeaderTotalValue > EXPECTED_ORDER_VALUE + MONEY_TOL &&
+      !moneyClose(
+        map.fulfillmentSummary.nfeHeaderTotalValue,
+        map.fulfillmentSummary.orderValue
+      ),
+    `header=${map.fulfillmentSummary.nfeHeaderTotalValue} order=${map.fulfillmentSummary.orderValue}`
   );
   add(
     "docs.vinculados.listados",
@@ -324,10 +327,12 @@ function runChecks(
 
   let itemsOk = map.orderItemsCoverage.length > 0;
   for (const item of map.orderItemsCoverage) {
+    const attended = item.attendedQuantityCapped ?? item.attendedQuantity;
     if (
       !(item.orderedQuantity >= 0) ||
-      !(item.attendedQuantity >= 0) ||
-      !(item.remainingQuantity >= 0)
+      !(attended >= 0) ||
+      !(item.remainingQuantity >= 0) ||
+      attended > item.orderedQuantity + 0.000001
     ) {
       itemsOk = false;
       break;
@@ -335,6 +340,12 @@ function runChecks(
   }
   add("itens.qtde.pedida.atendida.saldo", itemsOk, "ok");
 
+  add(
+    "valor.atribuido.nao.passa.pedido",
+    map.fulfillmentSummary.attributedOrderValueByOrderPrice <=
+      EXPECTED_ORDER_VALUE + MONEY_TOL,
+    `attributed=${map.fulfillmentSummary.attributedOrderValueByOrderPrice}`
+  );
   add(
     "financeiro.separado",
     Boolean(map.financialStatus?.startsWith("FIN_")),
@@ -354,8 +365,13 @@ function runChecks(
   add(
     "operacional.totalmente.atendido.quando.itens.completos",
     map.operationalStatus === "OP_TOTALMENTE_ATENDIDO" ||
-      map.fulfillmentSummary.remainingQuantity > 0,
-    `op=${map.operationalStatus} remaining=${map.fulfillmentSummary.remainingQuantity}`
+      map.operationalStatus === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE" ||
+      (map.fulfillmentSummary.totalRemainingQuantity ??
+        map.fulfillmentSummary.remainingQuantity) > 0.000001,
+    `op=${map.operationalStatus} remaining=${
+      map.fulfillmentSummary.totalRemainingQuantity ??
+      map.fulfillmentSummary.remainingQuantity
+    }`
   );
 
   // CR: se materializado, aparece; fixture sem CR é aceitável

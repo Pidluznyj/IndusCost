@@ -31,7 +31,7 @@ import {
   type PortfolioMaturityAlertTag,
   type PortfolioMaturityStatus,
 } from "./portfolioMaturityClassification.js";
-import { buildPortfolioOrderFulfillmentMap } from "./portfolioOrderFulfillmentMap.js";
+import { buildOrderFulfillmentMap } from "./portfolioOrderFulfillmentMap.js";
 
 export const PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE = 50;
 export const PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE = 200;
@@ -374,8 +374,8 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   const paymentMethod = args.enrichment?.paymentMethod?.trim() || null;
   const paymentAvailable = Boolean(paymentTerms || paymentMethod);
 
-  const fulfillmentMap = buildPortfolioOrderFulfillmentMap({
-    facts: args.facts,
+  const fulfillmentMap = buildOrderFulfillmentMap({
+    reconciliationFacts: args.facts,
     orderValue: maturity.orderValue,
     paymentTermsAvailable: paymentAvailable,
   });
