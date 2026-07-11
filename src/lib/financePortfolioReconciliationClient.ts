@@ -384,9 +384,15 @@ export type PortfolioIntelligenceSellerKpiDto = {
   conversionDocValuePct: number | null;
   receivedValue: number;
   receiptRatePct: number | null;
+  openReceivableValue?: number;
+  futureProbableValue?: number;
+  presentAttentionValue?: number;
   stuckWithoutNfCrValue: number;
   blockedValue: number;
   operationalFulfillmentPct?: number | null;
+  overdueWithoutDocumentCount?: number;
+  partiallyAttendedCount?: number;
+  ordersWithExcessCount?: number;
   excessValue?: number;
   ordersWithProductOutside?: number;
   lowConfidenceValuePct: number | null;

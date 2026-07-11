@@ -313,34 +313,52 @@ export type PortfolioMaturitySellerKpi = {
   sellerExternalId: number | null;
   /** Fonte do vendedor: pedido (SalesOrder/Nomus), nunca CRM/comissões. */
   sellerSource: "SALES_ORDER" | "UNAVAILABLE";
-  ordersCount: number;
+  /** 1. Total vendido em pedidos. */
   orderValue: number;
-  /** Soma dos valores de CR rateados aos pedidos do vendedor. */
+  /** 2. Quantidade de pedidos. */
+  ordersCount: number;
+  /** 3. Valor que virou CR (total de títulos rateados). */
   receivableValue: number;
-  /** Σ orderValue dos pedidos com CR / orderValue. */
+  /** 4. % conversão pedido → CR por valor. */
   conversionCrValuePct: number | null;
-  /** Qtd pedidos com CR / qtd pedidos. */
+  /** 5. % conversão pedido → CR por quantidade. */
   conversionCrQtyPct: number | null;
-  /** Σ orderValue dos pedidos com documento de saída. */
+  /** 6. Valor que virou documento de saída. */
   documentConvertedValue: number;
+  /** Participação em valor com documento (auxiliar). */
   conversionDocValuePct: number | null;
-  receivedValue: number;
-  /** receivedValue / receivableValue. */
-  receiptRatePct: number | null;
-  /** Pedidos sem NF e sem CR (valor). */
-  stuckWithoutNfCrValue: number;
-  /** Status CARTEIRA_VENCIDA_BLOQUEADA (valor). */
-  blockedValue: number;
-  /** % pedidos com atendimento operacional total (quando disponível). */
+  /** 7. % atendimento operacional (média ponderada por valor quando disponível). */
   operationalFulfillmentPct: number | null;
-  /** Valor estimado de excedente nos documentos (não entra na carteira). */
+  /** 8. Valor recebido (baixas). */
+  receivedValue: number;
+  /** Taxa recebimento / CR (auxiliar). */
+  receiptRatePct: number | null;
+  /** 9. Valor em CR aberto. */
+  openReceivableValue: number;
+  /** 10. Valor futuro provável. */
+  futureProbableValue: number;
+  /** 11. Valor presente/atenção. */
+  presentAttentionValue: number;
+  /** 12. Valor vencido/bloqueado. */
+  blockedValue: number;
+  /** Pedidos sem NF e sem CR (valor) — auxiliar de risco. */
+  stuckWithoutNfCrValue: number;
+  /** 13. Pedidos com entrega vencida sem documento. */
+  overdueWithoutDocumentCount: number;
+  /** 14. Pedidos parcialmente atendidos. */
+  partiallyAttendedCount: number;
+  /** 15. Pedidos com excedente. */
+  ordersWithExcessCount: number;
+  /** Valor estimado de excedente (alerta — não soma carteira). */
   excessValue: number;
-  /** Pedidos com produto fora do pedido. */
+  /** 16. Pedidos com produto fora do pedido. */
   ordersWithProductOutside: number;
-  /** Participação em valor com confiança BAIXA ou MUITO_BAIXA. */
+  /** Participação em valor com confiança baixa (auxiliar). */
   lowConfidenceValuePct: number | null;
+  /** 17. Confiança média ponderada por valor. */
   averageConfidence: number;
   confidenceAvailable: boolean;
+  /** 18. Principal gargalo (prioridade fixa). */
   mainBottleneck: string;
   mainBottleneckKey: string;
   note: string | null;
@@ -1421,6 +1439,56 @@ function buildStatusGroups(
   });
 }
 
+export function resolveSellerMainBottleneck(input: {
+  ordersCount: number;
+  overdueWithoutDocumentCount: number;
+  conversionCrValuePct: number | null;
+  docsWithoutCrCount: number;
+  partiallyAttendedCount: number;
+  ordersWithExcessCount: number;
+  ordersWithProductOutside: number;
+}): { key: string; label: string } {
+  const n = Math.max(input.ordersCount, 1);
+  const overdue = input.overdueWithoutDocumentCount;
+  if (overdue >= 2 || (overdue >= 1 && overdue / n >= 0.2)) {
+    return {
+      key: "OVERDUE_WITHOUT_DOC",
+      label: "Muitos pedidos vencidos sem documento",
+    };
+  }
+  if (
+    input.conversionCrValuePct != null &&
+    input.conversionCrValuePct < 40 &&
+    input.ordersCount >= 2
+  ) {
+    return {
+      key: "LOW_CR_CONVERSION",
+      label: "Baixa conversão para CR",
+    };
+  }
+  const docsNoCr = input.docsWithoutCrCount;
+  if (docsNoCr >= 2 || (docsNoCr >= 1 && docsNoCr / n >= 0.2)) {
+    return {
+      key: "DOC_WITHOUT_CR",
+      label: "Muitos documentos sem CR",
+    };
+  }
+  const partial = input.partiallyAttendedCount;
+  if (partial >= 2 || (partial >= 1 && partial / n >= 0.25)) {
+    return {
+      key: "PARTIAL_FULFILLMENT",
+      label: "Muitos pedidos parciais",
+    };
+  }
+  if (input.ordersWithExcessCount + input.ordersWithProductOutside >= 1) {
+    return {
+      key: "EXCESS_OR_OUTSIDE",
+      label: "Excesso/produto fora",
+    };
+  }
+  return { key: "NONE", label: "Sem gargalo relevante" };
+}
+
 export function buildSellerKpis(
   rows: readonly PortfolioMaturityOrderRow[]
 ): PortfolioMaturitySellerKpi[] {
@@ -1433,19 +1501,24 @@ export function buildSellerKpis(
     conf: number;
     receivableValue: number;
     receivedValue: number;
+    openReceivableValue: number;
     withCrCount: number;
     withCrOrderValue: number;
     withDocOrderValue: number;
     stuckWithoutNfCrValue: number;
     blockedValue: number;
+    futureProbableValue: number;
+    presentAttentionValue: number;
     lowConfidenceValue: number;
-    faturadoSemCrValue: number;
-    presenteValue: number;
-    futuraValue: number;
-    divergenceValue: number;
     fullyAttendedCount: number;
+    fulfillmentWeighted: number;
+    fulfillmentWeight: number;
     excessValue: number;
     ordersWithProductOutside: number;
+    overdueWithoutDocumentCount: number;
+    partiallyAttendedCount: number;
+    ordersWithExcessCount: number;
+    docsWithoutCrCount: number;
   };
 
   const map = new Map<string, Acc>();
@@ -1469,19 +1542,24 @@ export function buildSellerKpis(
         conf: 0,
         receivableValue: 0,
         receivedValue: 0,
+        openReceivableValue: 0,
         withCrCount: 0,
         withCrOrderValue: 0,
         withDocOrderValue: 0,
         stuckWithoutNfCrValue: 0,
         blockedValue: 0,
+        futureProbableValue: 0,
+        presentAttentionValue: 0,
         lowConfidenceValue: 0,
-        faturadoSemCrValue: 0,
-        presenteValue: 0,
-        futuraValue: 0,
-        divergenceValue: 0,
         fullyAttendedCount: 0,
+        fulfillmentWeighted: 0,
+        fulfillmentWeight: 0,
         excessValue: 0,
         ordersWithProductOutside: 0,
+        overdueWithoutDocumentCount: 0,
+        partiallyAttendedCount: 0,
+        ordersWithExcessCount: 0,
+        docsWithoutCrCount: 0,
       };
       map.set(key, g);
     }
@@ -1490,6 +1568,7 @@ export function buildSellerKpis(
     g.conf += row.confidenceScore * row.orderValue;
     g.receivableValue = round2(g.receivableValue + row.receivableTotalValue);
     g.receivedValue = round2(g.receivedValue + row.receivedValue);
+    g.openReceivableValue = round2(g.openReceivableValue + row.openReceivableValue);
 
     const hasCr =
       row.evidenceFlags.hasReceivable ||
@@ -1501,6 +1580,11 @@ export function buildSellerKpis(
     }
     if (row.evidenceFlags.hasStockDocument) {
       g.withDocOrderValue = round2(g.withDocOrderValue + row.orderValue);
+      if (!hasCr) {
+        g.docsWithoutCrCount += 1;
+      }
+    } else if (row.statusPrincipal === "FATURADO_SEM_CR") {
+      g.docsWithoutCrCount += 1;
     }
     if (!row.evidenceFlags.hasNfe && !row.evidenceFlags.hasReceivable) {
       g.stuckWithoutNfCrValue = round2(g.stuckWithoutNfCrValue + row.orderValue);
@@ -1508,72 +1592,69 @@ export function buildSellerKpis(
     if (row.statusPrincipal === "CARTEIRA_VENCIDA_BLOQUEADA") {
       g.blockedValue = round2(g.blockedValue + row.orderValue);
     }
-    if (row.confidenceLabel === "BAIXA" || row.confidenceLabel === "MUITO_BAIXA") {
-      g.lowConfidenceValue = round2(g.lowConfidenceValue + row.orderValue);
-    }
-    if (row.statusPrincipal === "FATURADO_SEM_CR") {
-      g.faturadoSemCrValue = round2(g.faturadoSemCrValue + row.orderValue);
+    if (row.statusPrincipal === "CARTEIRA_FUTURA_PROVAVEL") {
+      g.futureProbableValue = round2(g.futureProbableValue + row.orderValue);
     }
     if (row.statusPrincipal === "CARTEIRA_PRESENTE_ATENCAO") {
-      g.presenteValue = round2(g.presenteValue + row.orderValue);
+      g.presentAttentionValue = round2(g.presentAttentionValue + row.orderValue);
     }
-    if (row.statusPrincipal === "CARTEIRA_FUTURA_PROVAVEL") {
-      g.futuraValue = round2(g.futuraValue + row.orderValue);
-    }
-    if (row.tagsAlerta.includes("DIVERGENCIA_TECNICA")) {
-      g.divergenceValue = round2(g.divergenceValue + row.orderValue);
+    if (row.confidenceLabel === "BAIXA" || row.confidenceLabel === "MUITO_BAIXA") {
+      g.lowConfidenceValue = round2(g.lowConfidenceValue + row.orderValue);
     }
     if (isFullyAttendedOp(row.operationalStatus)) {
       g.fullyAttendedCount += 1;
     }
+    if (isPartialAttendedOp(row.operationalStatus)) {
+      g.partiallyAttendedCount += 1;
+    }
+    if (
+      row.fulfillmentPercent != null &&
+      Number.isFinite(row.fulfillmentPercent) &&
+      row.orderValue > 0
+    ) {
+      g.fulfillmentWeighted +=
+        Math.min(100, Math.max(0, row.fulfillmentPercent)) * row.orderValue;
+      g.fulfillmentWeight += row.orderValue;
+    }
     g.excessValue = round2(g.excessValue + toNumber(row.estimatedExcessValue));
+    const hasExcess =
+      row.tagsAlerta.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO") ||
+      toNumber(row.excessQuantity) > 0.000001 ||
+      toNumber(row.estimatedExcessValue) > 0.01;
+    if (hasExcess) {
+      g.ordersWithExcessCount += 1;
+    }
     if (
       row.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO") ||
       toNumber(row.valueOutsideOrder) > 0.01
     ) {
       g.ordersWithProductOutside += 1;
     }
+    const deliveryOverdue =
+      (row.daysSinceExpected != null && row.daysSinceExpected > 0) ||
+      row.statusPrincipal === "CARTEIRA_VENCIDA_BLOQUEADA";
+    if (deliveryOverdue && !row.evidenceFlags.hasStockDocument) {
+      g.overdueWithoutDocumentCount += 1;
+    }
   }
 
   return [...map.entries()]
     .map(([sellerKey, g]) => {
-      const bottleneckCandidates: Array<{ key: string; label: string; value: number }> = [
-        {
-          key: "CARTEIRA_VENCIDA_BLOQUEADA",
-          label: "Carteira vencida / bloqueada",
-          value: g.blockedValue,
-        },
-        {
-          key: "SEM_NF_CR",
-          label: "Parado sem NF/CR",
-          value: g.stuckWithoutNfCrValue,
-        },
-        {
-          key: "FATURADO_SEM_CR",
-          label: "Faturado sem CR",
-          value: g.faturadoSemCrValue,
-        },
-        {
-          key: "CARTEIRA_PRESENTE_ATENCAO",
-          label: "Presente / atenção",
-          value: g.presenteValue,
-        },
-        {
-          key: "DIVERGENCIA_TECNICA",
-          label: "Divergência técnica",
-          value: g.divergenceValue,
-        },
-        {
-          key: "CARTEIRA_FUTURA_PROVAVEL",
-          label: "Carteira futura (ainda sem evolução)",
-          value: g.futuraValue,
-        },
-      ];
-      bottleneckCandidates.sort((a, b) => b.value - a.value);
-      const top = bottleneckCandidates[0];
-      const mainBottleneck =
-        !top || top.value <= 0 ? "Sem gargalo evidente" : top.label;
-      const mainBottleneckKey = !top || top.value <= 0 ? "NONE" : top.key;
+      const conversionCrValuePct = pct(g.withCrOrderValue, g.value);
+      const bottleneck = resolveSellerMainBottleneck({
+        ordersCount: g.count,
+        overdueWithoutDocumentCount: g.overdueWithoutDocumentCount,
+        conversionCrValuePct,
+        docsWithoutCrCount: g.docsWithoutCrCount,
+        partiallyAttendedCount: g.partiallyAttendedCount,
+        ordersWithExcessCount: g.ordersWithExcessCount,
+        ordersWithProductOutside: g.ordersWithProductOutside,
+      });
+
+      const operationalFulfillmentPct =
+        g.fulfillmentWeight > 0
+          ? round2(g.fulfillmentWeighted / g.fulfillmentWeight)
+          : pct(g.fullyAttendedCount, g.count);
 
       return {
         sellerKey,
@@ -1583,24 +1664,30 @@ export function buildSellerKpis(
         ordersCount: g.count,
         orderValue: g.value,
         receivableValue: g.receivableValue,
-        conversionCrValuePct: pct(g.withCrOrderValue, g.value),
+        conversionCrValuePct,
         conversionCrQtyPct: pct(g.withCrCount, g.count),
         documentConvertedValue: g.withDocOrderValue,
         conversionDocValuePct: pct(g.withDocOrderValue, g.value),
+        operationalFulfillmentPct,
         receivedValue: g.receivedValue,
         receiptRatePct: pct(g.receivedValue, g.receivableValue),
-        stuckWithoutNfCrValue: g.stuckWithoutNfCrValue,
+        openReceivableValue: g.openReceivableValue,
+        futureProbableValue: g.futureProbableValue,
+        presentAttentionValue: g.presentAttentionValue,
         blockedValue: g.blockedValue,
-        operationalFulfillmentPct: pct(g.fullyAttendedCount, g.count),
+        stuckWithoutNfCrValue: g.stuckWithoutNfCrValue,
+        overdueWithoutDocumentCount: g.overdueWithoutDocumentCount,
+        partiallyAttendedCount: g.partiallyAttendedCount,
+        ordersWithExcessCount: g.ordersWithExcessCount,
         excessValue: g.excessValue,
         ordersWithProductOutside: g.ordersWithProductOutside,
         lowConfidenceValuePct: pct(g.lowConfidenceValue, g.value),
         averageConfidence: g.value > 0 ? round2(g.conf / g.value) : 0,
-        confidenceAvailable: g.available,
-        mainBottleneck,
-        mainBottleneckKey,
+        confidenceAvailable: g.count > 0,
+        mainBottleneck: bottleneck.label,
+        mainBottleneckKey: bottleneck.key,
         note: g.available
-          ? "Vendedor do pedido (SalesOrder / Nomus)."
+          ? "Vendedor comercial do pedido (SalesOrder / Nomus)."
           : "Sem vendedor informado na importação do pedido.",
       };
     })

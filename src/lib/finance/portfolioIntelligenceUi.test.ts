@@ -302,9 +302,19 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /handleSelectSeller|onSelectSeller/);
     assert.match(table, /Qualidade da Carteira por Vendedor/);
     assert.match(table, /SELLER_KPI_EXPLANATIONS/);
+    assert.match(table, /openReceivableValue|CR aberto/);
+    assert.match(table, /futureProbableValue|Futuro/);
+    assert.match(table, /presentAttentionValue|Presente/);
+    assert.match(table, /overdueWithoutDocumentCount|Venc\. s\/ doc/);
+    assert.match(table, /partiallyAttendedCount|Parciais/);
+    assert.match(table, /ordersWithExcessCount|Excedente/);
+    assert.match(table, /mainBottleneck|Gargalo/);
+    assert.match(table, /MetricHelpTooltip/);
+    assert.match(table, /Maior valor em risco|Maior valor de carteira/);
     assert.doesNotMatch(table, /from ["']@\/src\/lib\/commissions/);
     assert.doesNotMatch(section, /from ["']@\/src\/lib\/commissions/);
-    assert.doesNotMatch(table, /commissionReceipt|commissionMaterialization/i);
+    assert.doesNotMatch(table, /commissionReceipt|commissionMaterialization|comissionável/i);
+    assert.doesNotMatch(table, /vendedor comission/i);
   });
 
   it("página registra aba Inteligência da Carteira", () => {

@@ -78,7 +78,43 @@ describe("portfolio intelligence metric help", () => {
   });
 
   it("KPIs por vendedor e tooltip padronizado existem", () => {
-    assert.ok(Object.keys(SELLER_KPI_EXPLANATIONS).length >= 10);
+    assert.ok(Object.keys(SELLER_KPI_EXPLANATIONS).length >= 18);
+    for (const key of [
+      "orderValue",
+      "ordersCount",
+      "receivableValue",
+      "conversionCrValuePct",
+      "conversionCrQtyPct",
+      "documentConvertedValue",
+      "operationalFulfillmentPct",
+      "receivedValue",
+      "openReceivableValue",
+      "futureProbableValue",
+      "presentAttentionValue",
+      "blockedValue",
+      "overdueWithoutDocumentCount",
+      "partiallyAttendedCount",
+      "ordersWithExcessCount",
+      "ordersWithProductOutside",
+      "averageConfidence",
+      "mainBottleneck",
+    ]) {
+      const exp = SELLER_KPI_EXPLANATIONS[key];
+      assert.ok(exp, key);
+      assert.ok(exp.whatItMeans.length > 10, key);
+      assert.ok(exp.howWeCalculate.length > 10, key);
+      assert.ok(exp.howToInterpret.length > 10, key);
+      assert.doesNotMatch(exp.whatItMeans + exp.howWeCalculate, /comiss/i);
+    }
+    assert.match(
+      SELLER_KPI_EXPLANATIONS.mainBottleneck.howWeCalculate,
+      /vencidos sem documento|baixa conversão|documentos sem CR|parciais|Excesso/i
+    );
+    assert.match(
+      SELLER_KPI_EXPLANATIONS.ordersWithExcessCount.whatIsExcluded +
+        SELLER_KPI_EXPLANATIONS.ordersWithProductOutside.whatIsExcluded,
+      /não soma|não aumenta|não entra/i
+    );
     const help = readFileSync(
       join(
         process.cwd(),
