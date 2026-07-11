@@ -557,7 +557,9 @@ export type PortfolioIntelligenceOrderDetail = {
   };
   fulfillmentMap?: {
     financialStatus: string;
+    financialStatusLabel?: string;
     operationalStatus: string;
+    operationalStatusLabel?: string;
     technicalAlerts: string[];
     fulfillmentSummary: {
       orderValue: number;
@@ -590,6 +592,7 @@ export type PortfolioIntelligenceOrderDetail = {
       externalProductId?: number | null;
       productExternalId: number | null;
       productCode: string | null;
+      sku?: string | null;
       description: string | null;
       orderedQuantity: number;
       attendedQuantityCapped?: number;
@@ -619,23 +622,45 @@ export type PortfolioIntelligenceOrderDetail = {
       valueAttributedToOrder: number;
       valueNotAttributedToOrder: number;
       matchedItems: Array<{
+        externalProductId?: number | null;
         productExternalId: number | null;
+        productCode?: string | null;
+        documentQuantity?: number;
+        quantityUsedForOrder?: number;
         allocatedQuantity: number;
+        excessQuantity?: number;
+        orderUnitValue?: number;
+        documentUnitValue?: number | null;
+        valueAttributedByOrderPrice?: number;
         allocatedValueByOrderPrice: number;
+        priceMismatch?: boolean;
       }>;
       unmatchedItems: Array<{
+        externalProductId?: number | null;
         productExternalId: number | null;
+        productCode?: string | null;
+        description?: string | null;
+        documentQuantity?: number | null;
+        documentUnitValue?: number | null;
+        documentValue?: number | null;
         stockQuantity: number | null;
         stockItemValue?: number | null;
         reason: string;
       }>;
       itemsOutsideOrder?: Array<{
+        externalProductId?: number | null;
         productExternalId: number | null;
+        productCode?: string | null;
+        description?: string | null;
+        documentQuantity?: number | null;
+        documentUnitValue?: number | null;
+        documentValue?: number | null;
         stockQuantity: number | null;
         stockItemValue?: number | null;
         reason: string;
       }>;
       surplusItems: Array<{
+        externalProductId?: number | null;
         productExternalId: number | null;
         stockQuantity: number | null;
         stockItemValue: number | null;
@@ -658,6 +683,8 @@ export type PortfolioIntelligenceOrderDetail = {
     executiveConclusion: string;
     evidenceWarnings?: string[];
   } | null;
+  /** Aviso dedicado quando o mapa não pôde ser montado. */
+  fulfillmentMapWarning?: string | null;
   /** Avisos amigáveis (ex.: mapa de atendimento indisponível). */
   warnings?: string[];
   timeline: Array<{ at: string; kind: string; label: string }>;

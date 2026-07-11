@@ -36,9 +36,12 @@ import {
   type PortfolioMaturityStatus,
 } from "./portfolioMaturityClassification.js";
 import { buildOrderFulfillmentMap } from "./portfolioOrderFulfillmentMap.js";
-import type {
-  BuildOrderFulfillmentMapInput,
-  PortfolioOrderFulfillmentMap,
+import {
+  FINANCIAL_STATUS_LABEL,
+  OPERATIONAL_STATUS_LABEL,
+  type BuildOrderFulfillmentMapInput,
+  type PortfolioOrderFulfillmentMap,
+  type PortfolioTechnicalAlert,
 } from "./portfolioOrderFulfillmentMap.js";
 
 export const PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE = 50;
@@ -46,8 +49,65 @@ export const PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE = 200;
 
 /** Aviso amigável quando o mapa de atendimento não puder ser montado. */
 export const PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING =
-  "Não foi possível montar o mapa de atendimento deste pedido com as evidências atuais. Os demais dados do detalhe continuam disponíveis.";
+  "Não foi possível montar o mapa de atendimento com os dados disponíveis.";
 
+/** Payload sanitizado do mapa para o frontend (sem campos internos/Prisma). */
+export type PortfolioFulfillmentMapApiDto = {
+  financialStatus: string;
+  financialStatusLabel: string;
+  operationalStatus: string;
+  operationalStatusLabel: string;
+  /** Códigos de alerta (UI resolve labels via TECHNICAL_ALERT_LABEL). */
+  technicalAlerts: string[];
+  fulfillmentSummary: PortfolioOrderFulfillmentMap["fulfillmentSummary"];
+  orderItemsCoverage: PortfolioOrderFulfillmentMap["orderItemsCoverage"];
+  stockDocumentsCoverage: PortfolioOrderFulfillmentMap["stockDocumentsCoverage"];
+  receivablesCoverage: PortfolioOrderFulfillmentMap["receivablesCoverage"];
+  executiveConclusion: string;
+  evidenceWarnings: string[];
+};
+
+export function sanitizeFulfillmentMapForApi(
+  map: PortfolioOrderFulfillmentMap
+): PortfolioFulfillmentMapApiDto {
+  const technicalAlerts = (map.technicalAlerts ?? []).filter(
+    (code): code is PortfolioTechnicalAlert =>
+      typeof code === "string" && code.length > 0 && !/Prisma|stack/i.test(code)
+  );
+
+  return {
+    financialStatus: map.financialStatus,
+    financialStatusLabel:
+      map.financialStatusLabel || FINANCIAL_STATUS_LABEL[map.financialStatus] || map.financialStatus,
+    operationalStatus: map.operationalStatus,
+    operationalStatusLabel:
+      map.operationalStatusLabel ||
+      OPERATIONAL_STATUS_LABEL[map.operationalStatus] ||
+      map.operationalStatus,
+    technicalAlerts: [...technicalAlerts],
+    fulfillmentSummary: { ...map.fulfillmentSummary },
+    orderItemsCoverage: map.orderItemsCoverage.map((row) => ({
+      ...row,
+      documentsUsed: row.documentsUsed.map((d) => ({ ...d })),
+      alerts: [...row.alerts],
+    })),
+    stockDocumentsCoverage: map.stockDocumentsCoverage.map((doc) => ({
+      ...doc,
+      matchedItems: doc.matchedItems.map((m) => ({ ...m })),
+      surplusItems: doc.surplusItems.map((s) => ({ ...s })),
+      itemsOutsideOrder: (doc.itemsOutsideOrder ?? []).map((x) => ({ ...x })),
+      unmatchedItems: (doc.unmatchedItems ?? doc.itemsOutsideOrder ?? []).map((x) => ({
+        ...x,
+      })),
+      alerts: [...doc.alerts],
+    })),
+    receivablesCoverage: map.receivablesCoverage.map((r) => ({ ...r })),
+    executiveConclusion: String(map.executiveConclusion ?? "").trim(),
+    evidenceWarnings: [...(map.evidenceWarnings ?? [])].filter(
+      (w) => typeof w === "string" && w.trim().length > 0 && !/Prisma|stack trace/i.test(w)
+    ),
+  };
+}
 export class PortfolioIntelligenceApiParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -418,20 +478,23 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   const paymentAvailable = Boolean(paymentTerms || paymentMethod);
 
   const detailWarnings: string[] = [];
-  let fulfillmentMap: PortfolioOrderFulfillmentMap | null = null;
+  let fulfillmentMap: PortfolioFulfillmentMapApiDto | null = null;
+  let fulfillmentMapWarning: string | null = null;
   try {
     const builder = args.buildFulfillmentMap ?? buildOrderFulfillmentMap;
-    fulfillmentMap = builder({
+    const rawMap = builder({
       reconciliationFacts: args.facts,
       orderValue: maturity.orderValue,
       paymentTermsAvailable: paymentAvailable,
     });
+    fulfillmentMap = sanitizeFulfillmentMapForApi(rawMap);
     if (fulfillmentMap.evidenceWarnings?.length) {
       detailWarnings.push(...fulfillmentMap.evidenceWarnings);
     }
   } catch {
     // Read-only / explicativo: não derruba o detalhe nem vaza stack/Prisma.
     fulfillmentMap = null;
+    fulfillmentMapWarning = PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING;
     detailWarnings.push(PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING);
   }
 
@@ -551,6 +614,7 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
         technicalAlerts: fulfillmentMap?.technicalAlerts ?? [],
       },
       fulfillmentMap,
+      fulfillmentMapWarning,
       warnings: detailWarnings,
       timeline,
       values: {

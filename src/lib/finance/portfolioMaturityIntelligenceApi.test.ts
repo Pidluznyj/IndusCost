@@ -374,16 +374,23 @@ describe("portfolioMaturityIntelligenceApi", () => {
     });
     assert.equal(detail.ok, true);
     const map = detail.detail!.fulfillmentMap;
-    assert.ok(map, "fulfillmentMap presente");
-    assert.ok(map!.financialStatus.startsWith("FIN_"), "financialStatus");
-    assert.ok(map!.operationalStatus.startsWith("OP_"), "operationalStatus");
-    assert.ok(Array.isArray(map!.technicalAlerts), "technicalAlerts");
-    assert.ok(Array.isArray(map!.orderItemsCoverage), "orderItemsCoverage");
+    assert.ok(map, "1) fulfillmentMap presente quando há dados");
+    assert.ok(map!.financialStatus.startsWith("FIN_"), "2) financialStatus");
+    assert.ok(typeof map!.financialStatusLabel === "string" && map!.financialStatusLabel.length > 0);
+    assert.ok(map!.operationalStatus.startsWith("OP_"), "3) operationalStatus");
+    assert.ok(
+      typeof map!.operationalStatusLabel === "string" && map!.operationalStatusLabel.length > 0
+    );
+    assert.ok(Array.isArray(map!.technicalAlerts), "4) technicalAlerts");
+    assert.ok(map!.fulfillmentSummary, "5) fulfillmentSummary");
+    assert.equal(typeof map!.fulfillmentSummary.orderValue, "number");
+    assert.ok(Array.isArray(map!.orderItemsCoverage), "6) orderItemsCoverage");
     assert.ok(map!.orderItemsCoverage.length >= 1);
-    assert.ok(Array.isArray(map!.stockDocumentsCoverage), "stockDocumentsCoverage");
-    assert.ok(Array.isArray(map!.receivablesCoverage), "receivablesCoverage");
+    assert.ok(Array.isArray(map!.stockDocumentsCoverage), "7) stockDocumentsCoverage");
+    assert.ok(Array.isArray(map!.receivablesCoverage), "8) receivablesCoverage");
     assert.ok(typeof map!.executiveConclusion === "string");
     assert.ok(Array.isArray(map!.evidenceWarnings));
+    assert.equal(detail.detail!.fulfillmentMapWarning ?? null, null);
     // Maturidade (statusPrincipal) ≠ eixo financeiro do mapa
     assert.notEqual(
       detail.detail!.classification.statusPrincipal,
@@ -411,6 +418,10 @@ describe("portfolioMaturityIntelligenceApi", () => {
     assert.equal(detail.ok, true);
     assert.ok(detail.detail);
     assert.equal(detail.detail!.fulfillmentMap, null);
+    assert.equal(
+      detail.detail!.fulfillmentMapWarning,
+      PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING
+    );
     assert.ok(Array.isArray(detail.detail!.warnings));
     assert.ok(
       detail.detail!.warnings!.some((w) =>
@@ -507,6 +518,10 @@ describe("portfolioMaturityIntelligenceApi", () => {
     assert.ok(
       map.fulfillmentSummary.attributedOrderValueByOrderPrice <= 158000.05
     );
+    assert.notEqual(
+      map.fulfillmentSummary.nfeHeaderTotalValue,
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice
+    );
     assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
     assert.ok(map.technicalAlerts.includes("DIVERGENCIA_PRECO"));
     assert.ok(map.orderItemsCoverage.length >= 4);
@@ -517,6 +532,7 @@ describe("portfolioMaturityIntelligenceApi", () => {
       detail.detail!.classification.statusPrincipal,
       map.financialStatus
     );
+    assert.doesNotMatch(JSON.stringify(map), /PrismaClient|stack/i);
   });
 
   it("erro de parâmetro inválido é amigável", () => {
