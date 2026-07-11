@@ -801,6 +801,22 @@ function buildSummaryCards(
       isAlertCard: true,
       explanation: explanationFromMetric("DIVERGENCIA_TECNICA"),
     },
+    (() => {
+      const headerInflation = rows.filter((r) =>
+        r.tagsAlerta.includes("NF_CABECALHO_MAIOR_PEDIDO")
+      );
+      const headerValue = headerInflation.reduce((s, r) => s + r.orderValue, 0);
+      return {
+        key: "NF_CABECALHO_MAIOR_PEDIDO",
+        title: "NF maior que pedido (alerta)",
+        value: headerValue,
+        count: headerInflation.length,
+        percentage: pct(headerValue, valorTotal),
+        colorTone: "alert" as const,
+        isAlertCard: true,
+        explanation: explanationFromMetric("NF_CABECALHO_MAIOR_PEDIDO"),
+      };
+    })(),
     statusCard("SEM_EVIDENCIA"),
     {
       key: "RISCO_SUPERESTIMACAO",

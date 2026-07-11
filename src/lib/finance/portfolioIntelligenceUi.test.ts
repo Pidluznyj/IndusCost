@@ -120,7 +120,7 @@ describe("portfolio intelligence UI", () => {
     assert.match(grid, /portfolio-intelligence-tags-legend/);
   });
 
-  it("drawer de detalhe tem 7 abas e estados vazios sem inventar dados", () => {
+  it("drawer de detalhe tem mapa de atendimento e estados vazios sem inventar dados", () => {
     const drawer = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx"
     );
@@ -128,6 +128,7 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
     );
+    assert.match(drawer, /Mapa de atendimento/);
     assert.match(drawer, /Resumo/);
     assert.match(drawer, /Pedido/);
     assert.match(drawer, /Itens/);
@@ -135,6 +136,8 @@ describe("portfolio intelligence UI", () => {
     assert.match(drawer, /Contas a Receber/);
     assert.match(drawer, /Pagamento/);
     assert.match(drawer, /Histórico/);
+    assert.match(drawer, /fulfillmentMap|FulfillmentMapTab|drawer-mapa/);
+    assert.match(drawer, /Financeiro|Atendimento do pedido|Alertas técnicos/);
     assert.match(
       drawer,
       /Não encontramos NF ou documento de saída vinculado a este pedido/
@@ -202,6 +205,8 @@ describe("portfolio intelligence UI", () => {
 
     assert.match(cards, /summaryCards|card\.value|card\.count/);
     assert.match(cards, /MetricHelpTooltip/);
+    assert.match(cards, /Financeiro confirmado|Carteira operacional|Alertas técnicos/);
+    assert.match(cards, /não somam carteira|alerts-notice/);
     assert.match(accordions, /CARTEIRA_VENCIDA_BLOQUEADA/);
     assert.match(accordions, /CARTEIRA_FUTURA_PROVAVEL|CARTEIRA_PRESENTE_ATENCAO/);
     assert.match(accordions, /ordersCount|orderCodes|rowsForIntelligenceAccordion/);
@@ -209,7 +214,10 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /Não encontramos NF ou documento de saída vinculado a este pedido/
     );
-    assert.match(drawer, /Ainda não virou Contas a Receber|Nenhum Contas a Receber/);
+    assert.match(
+      drawer,
+      /Ainda não virou Contas a Receber|Nenhum Contas a Receber|Mapa de atendimento/
+    );
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);
   });

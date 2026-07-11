@@ -31,6 +31,7 @@ import {
   type PortfolioMaturityAlertTag,
   type PortfolioMaturityStatus,
 } from "./portfolioMaturityClassification.js";
+import { buildPortfolioOrderFulfillmentMap } from "./portfolioOrderFulfillmentMap.js";
 
 export const PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE = 50;
 export const PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE = 200;
@@ -369,15 +370,21 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
     asOfDate: args.asOfDate,
   });
 
+  const paymentTerms = args.enrichment?.paymentTerms?.trim() || null;
+  const paymentMethod = args.enrichment?.paymentMethod?.trim() || null;
+  const paymentAvailable = Boolean(paymentTerms || paymentMethod);
+
+  const fulfillmentMap = buildPortfolioOrderFulfillmentMap({
+    facts: args.facts,
+    orderValue: maturity.orderValue,
+    paymentTermsAvailable: paymentAvailable,
+  });
+
   const items = buildPortfolioOrderItemRows(args.facts);
   const documents = buildPortfolioDocumentLinkRows(args.facts);
   const receivables = buildPortfolioReceivableTitleRows(args.facts);
   const timelineTrace = buildPortfolioOrderTimeline(args.facts);
   const timelineApi = buildOrderTimeline(args.facts);
-
-  const paymentTerms = args.enrichment?.paymentTerms?.trim() || null;
-  const paymentMethod = args.enrichment?.paymentMethod?.trim() || null;
-  const paymentAvailable = Boolean(paymentTerms || paymentMethod);
 
   // Última atualização IndusCost
   const updatedAt = maturity.updatedAt;
@@ -469,7 +476,11 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
         recommendedAction: maturity.recommendedAction,
         mainReason: maturity.mainReason,
         evidenceFlags: maturity.evidenceFlags,
+        financialStatus: fulfillmentMap.financialStatus,
+        operationalStatus: fulfillmentMap.operationalStatus,
+        technicalAlerts: fulfillmentMap.technicalAlerts,
       },
+      fulfillmentMap,
       timeline,
       values: {
         orderValue: maturity.orderValue,

@@ -21,31 +21,45 @@ import {
 import type { PortfolioIntelligenceCardDto } from "@/src/lib/financePortfolioReconciliationClient";
 import {
   INTELLIGENCE_CARD_SUBTITLE,
-  INTELLIGENCE_HERO_CARD_KEYS,
   intelligenceCardTitle,
 } from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 import { cn } from "@/src/lib/utils";
 import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
 
 /** Ordem visual dos cards (API pode trazer extras; só exibimos estes). */
-const CARD_ORDER = [
-  "CARTEIRA_TOTAL_ANALISADA",
-  "CR_ABERTO",
+const FINANCIAL_CARD_KEYS = [
   "RECEBIDO",
+  "CR_ABERTO",
+  "FATURADO_SEM_CR",
+] as const;
+
+const OPERATIONAL_CARD_KEYS = [
+  "CARTEIRA_TOTAL_ANALISADA",
   "CARTEIRA_FUTURA_PROVAVEL",
   "CARTEIRA_PRESENTE_ATENCAO",
   "CARTEIRA_VENCIDA_BLOQUEADA",
-  "RISCO_SUPERESTIMACAO",
-  "FATURADO_SEM_CR",
+] as const;
+
+const ALERT_CARD_KEYS = [
   "DIVERGENCIA_TECNICA",
+  "NF_CABECALHO_MAIOR_PEDIDO",
   "SEM_EVIDENCIA",
+  "RISCO_SUPERESTIMACAO",
+] as const;
+
+const SECONDARY_CARD_KEYS = [
   "CONVERSAO_PEDIDOS_CR_QTD",
   "CONVERSAO_DOC_SAIDA_QTD",
   "TAXA_RECEBIMENTO_CR",
   "CONFIANCA_MEDIA_CARTEIRA",
 ] as const;
 
-const HERO_SET = new Set<string>(INTELLIGENCE_HERO_CARD_KEYS);
+const CARD_ORDER = [
+  ...FINANCIAL_CARD_KEYS,
+  ...OPERATIONAL_CARD_KEYS,
+  ...ALERT_CARD_KEYS,
+  ...SECONDARY_CARD_KEYS,
+] as const;
 
 type SoftTone =
   | "neutral"
@@ -65,6 +79,7 @@ const TONE_BY_KEY: Record<string, SoftTone> = {
   CARTEIRA_PRESENTE_ATENCAO: "amber",
   CARTEIRA_VENCIDA_BLOQUEADA: "red",
   DIVERGENCIA_TECNICA: "orange",
+  NF_CABECALHO_MAIOR_PEDIDO: "orange",
   SEM_EVIDENCIA: "gray",
   RISCO_SUPERESTIMACAO: "red",
   CONVERSAO_PEDIDOS_CR_QTD: "green",
@@ -82,6 +97,7 @@ const ICON_BY_KEY: Record<string, LucideIcon> = {
   CARTEIRA_PRESENTE_ATENCAO: Scale,
   CARTEIRA_VENCIDA_BLOQUEADA: ShieldAlert,
   DIVERGENCIA_TECNICA: AlertTriangle,
+  NF_CABECALHO_MAIOR_PEDIDO: AlertTriangle,
   SEM_EVIDENCIA: CircleHelp,
   RISCO_SUPERESTIMACAO: PackageX,
   CONVERSAO_PEDIDOS_CR_QTD: Receipt,
@@ -249,17 +265,20 @@ export function PortfolioIntelligenceCards({
   activeCardKey = null,
 }: Props) {
   const byKey = new Map(cards.map((c) => [c.key, c]));
-  const ordered = CARD_ORDER.map((key) => byKey.get(key)).filter(
-    (c): c is PortfolioIntelligenceCardDto => c != null
-  );
-  const heroCards = ordered.filter((c) => HERO_SET.has(c.key));
-  const secondaryCards = ordered.filter((c) => !HERO_SET.has(c.key));
+  const pick = (keys: readonly string[]) =>
+    keys.map((key) => byKey.get(key)).filter((c): c is PortfolioIntelligenceCardDto => c != null);
+
+  const financialCards = pick(FINANCIAL_CARD_KEYS);
+  const operationalCards = pick(OPERATIONAL_CARD_KEYS);
+  const alertCards = pick(ALERT_CARD_KEYS);
+  const secondaryCards = pick(SECONDARY_CARD_KEYS);
+  const ordered = [...financialCards, ...operationalCards, ...alertCards, ...secondaryCards];
 
   if (loading) {
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-cards-loading">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
               className="h-[7.25rem] animate-pulse rounded-2xl border border-border/50 bg-muted/30"
@@ -284,45 +303,60 @@ export function PortfolioIntelligenceCards({
     );
   }
 
-  return (
-    <div className="space-y-4" data-testid="portfolio-intelligence-cards">
-      {heroCards.length > 0 ? (
-        <div>
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Visão executiva
+  const renderGrid = (
+    title: string,
+    blockCards: PortfolioIntelligenceCardDto[],
+    opts?: { alert?: boolean; testId?: string }
+  ) => {
+    if (blockCards.length === 0) return null;
+    return (
+      <div data-testid={opts?.testId}>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
+        {opts?.alert ? (
+          <p
+            className="mb-2 rounded-lg border border-orange-200/70 bg-orange-50/50 px-2.5 py-1.5 text-[11px] text-orange-950"
+            data-testid="portfolio-intelligence-alerts-notice"
+          >
+            Alertas técnicos podem coexistir com um status financeiro. Eles não somam carteira.
           </p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-            {heroCards.map((card) => (
-              <CardArticle
-                key={card.key}
-                card={card}
-                hero
-                onCardClick={onCardClick}
-                activeCardKey={activeCardKey}
-              />
-            ))}
-          </div>
+        ) : null}
+        <div
+          className={cn(
+            "grid grid-cols-2 gap-3 sm:grid-cols-3",
+            opts?.alert ? "lg:grid-cols-4" : "lg:grid-cols-4 xl:grid-cols-4"
+          )}
+        >
+          {blockCards.map((card) => (
+            <CardArticle
+              key={card.key}
+              card={card}
+              hero={!opts?.alert}
+              onCardClick={onCardClick}
+              activeCardKey={activeCardKey}
+            />
+          ))}
         </div>
-      ) : null}
+      </div>
+    );
+  };
 
-      {secondaryCards.length > 0 ? (
-        <div>
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Conversão e confiança
-          </p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-            {secondaryCards.map((card) => (
-              <CardArticle
-                key={card.key}
-                card={card}
-                hero={false}
-                onCardClick={onCardClick}
-                activeCardKey={activeCardKey}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
+  return (
+    <div className="space-y-5" data-testid="portfolio-intelligence-cards">
+      {renderGrid("1. Financeiro confirmado", financialCards, {
+        testId: "portfolio-intelligence-cards-financial",
+      })}
+      {renderGrid("2. Carteira operacional", operationalCards, {
+        testId: "portfolio-intelligence-cards-operational",
+      })}
+      {renderGrid("3. Alertas técnicos", alertCards, {
+        alert: true,
+        testId: "portfolio-intelligence-cards-alerts",
+      })}
+      {renderGrid("Conversão e confiança", secondaryCards, {
+        testId: "portfolio-intelligence-cards-secondary",
+      })}
     </div>
   );
 }

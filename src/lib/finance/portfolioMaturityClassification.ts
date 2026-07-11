@@ -571,6 +571,7 @@ export type PortfolioMaturityMetricKey =
   | "CARTEIRA_VENCIDA_BLOQUEADA"
   | "SEM_EVIDENCIA"
   | "DIVERGENCIA_TECNICA"
+  | "NF_CABECALHO_MAIOR_PEDIDO"
   | "CONFIDENCE_SCORE"
   | "CONFIANCA_MEDIA_CARTEIRA"
   | "RISCO_SUPERESTIMACAO"
@@ -670,6 +671,17 @@ const METRIC_EXPLANATIONS: Record<string, PortfolioMetricExplanation> = {
     oQueEntra: "Alertas como vínculo incompleto, alocação ambígua ou cabeçalho maior que o pedido.",
     oQueNaoEntra: "Não move o pedido para outro card de maturidade nem duplica valor.",
     comoInterpretar: "Revisar o vínculo; o valor do pedido continua em um único status principal.",
+  },
+  NF_CABECALHO_MAIOR_PEDIDO: {
+    metricKey: "NF_CABECALHO_MAIOR_PEDIDO",
+    oQueSignifica:
+      "A soma dos cabeçalhos de NF vinculadas supera o valor oficial do pedido — risco de leitura inflada.",
+    comoCalculamos:
+      "Pedidos com esse alerta. O valor do card é o valor do pedido (não a soma dos cabeçalhos).",
+    oQueEntra: "Pedidos com cabeçalho de NF maior que o pedido.",
+    oQueNaoEntra: "Soma dos cabeçalhos de NF como se fosse o pedido.",
+    comoInterpretar:
+      "Alerta técnico — não some carteira. Use o mapa de atendimento para ver o que pertence ao pedido.",
   },
   CONFIDENCE_SCORE: {
     metricKey: "CONFIDENCE_SCORE",
