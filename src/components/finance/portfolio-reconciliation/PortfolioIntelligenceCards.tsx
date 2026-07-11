@@ -19,26 +19,33 @@ import {
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import type { PortfolioIntelligenceCardDto } from "@/src/lib/financePortfolioReconciliationClient";
+import {
+  INTELLIGENCE_CARD_SUBTITLE,
+  INTELLIGENCE_HERO_CARD_KEYS,
+  intelligenceCardTitle,
+} from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 import { cn } from "@/src/lib/utils";
 import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
 
 /** Ordem visual dos cards (API pode trazer extras; só exibimos estes). */
 const CARD_ORDER = [
   "CARTEIRA_TOTAL_ANALISADA",
-  "RECEBIDO",
   "CR_ABERTO",
-  "FATURADO_SEM_CR",
+  "RECEBIDO",
   "CARTEIRA_FUTURA_PROVAVEL",
   "CARTEIRA_PRESENTE_ATENCAO",
   "CARTEIRA_VENCIDA_BLOQUEADA",
+  "RISCO_SUPERESTIMACAO",
+  "FATURADO_SEM_CR",
   "DIVERGENCIA_TECNICA",
   "SEM_EVIDENCIA",
-  "RISCO_SUPERESTIMACAO",
   "CONVERSAO_PEDIDOS_CR_QTD",
   "CONVERSAO_DOC_SAIDA_QTD",
   "TAXA_RECEBIMENTO_CR",
   "CONFIANCA_MEDIA_CARTEIRA",
 ] as const;
+
+const HERO_SET = new Set<string>(INTELLIGENCE_HERO_CARD_KEYS);
 
 type SoftTone =
   | "neutral"
@@ -84,13 +91,13 @@ const ICON_BY_KEY: Record<string, LucideIcon> = {
 };
 
 const TONE_CLASS: Record<SoftTone, string> = {
-  neutral: "border-slate-200/90 bg-slate-50/80",
-  green: "border-emerald-200/90 bg-emerald-50/70",
-  blue: "border-sky-200/90 bg-sky-50/70",
-  amber: "border-amber-200/90 bg-amber-50/70",
-  red: "border-rose-200/90 bg-rose-50/70",
-  orange: "border-orange-200/90 bg-orange-50/70",
-  gray: "border-zinc-200/90 bg-zinc-50/80",
+  neutral: "border-slate-200/80 bg-gradient-to-br from-slate-50/90 to-white",
+  green: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-white",
+  blue: "border-sky-200/80 bg-gradient-to-br from-sky-50/80 to-white",
+  amber: "border-amber-200/70 bg-gradient-to-br from-amber-50/70 to-white",
+  red: "border-rose-200/70 bg-gradient-to-br from-rose-50/60 to-white",
+  orange: "border-orange-200/70 bg-gradient-to-br from-orange-50/60 to-white",
+  gray: "border-zinc-200/80 bg-gradient-to-br from-zinc-50/80 to-white",
 };
 
 const PERCENT_KEYS = new Set([
@@ -124,11 +131,112 @@ function formatPrimaryValue(card: PortfolioIntelligenceCardDto): string {
 type Props = {
   cards: PortfolioIntelligenceCardDto[];
   loading?: boolean;
-  /** Clique no card (exceto no ?) — filtra/abre sanfona correspondente. */
   onCardClick?: (cardKey: string) => void;
-  /** Card cuja sanfona está aberta (destaque suave). */
   activeCardKey?: string | null;
 };
+
+function CardArticle({
+  card,
+  hero,
+  onCardClick,
+  activeCardKey,
+}: {
+  card: PortfolioIntelligenceCardDto;
+  hero: boolean;
+  onCardClick?: (cardKey: string) => void;
+  activeCardKey?: string | null;
+}) {
+  const tone = TONE_BY_KEY[card.key] ?? "neutral";
+  const Icon = ICON_BY_KEY[card.key] ?? Wallet;
+  const complete = hasCompleteExplanation(card);
+  const clickable = Boolean(onCardClick);
+  const isActive = activeCardKey === card.key;
+  const title = intelligenceCardTitle(card.key, card.title);
+  const subtitle = INTELLIGENCE_CARD_SUBTITLE[card.key];
+
+  return (
+    <article
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={
+        clickable
+          ? () => {
+              onCardClick?.(card.key);
+            }
+          : undefined
+      }
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onCardClick?.(card.key);
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        "relative flex flex-col rounded-2xl border px-3 py-3 shadow-sm outline-none",
+        hero ? "min-h-[7.25rem]" : "min-h-[5.75rem]",
+        TONE_CLASS[tone],
+        clickable &&
+          "cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/70",
+        isActive && "ring-2 ring-sky-400/45"
+      )}
+      data-testid={`portfolio-intelligence-card-${card.key}`}
+    >
+      <MetricHelpTooltip
+        corner
+        title={title}
+        explanation={card.explanation}
+        missingExplanation={!complete}
+      />
+      <div className={cn("mb-1.5 flex items-start gap-2 pr-7", hero && "mb-2")}>
+        <span
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/70",
+            tone === "red" && "text-rose-700",
+            tone === "green" && "text-emerald-700",
+            tone === "blue" && "text-sky-700",
+            tone === "amber" && "text-amber-700",
+            tone === "orange" && "text-orange-700",
+            (tone === "neutral" || tone === "gray") && "text-slate-600"
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h3
+            className={cn(
+              "font-semibold leading-snug text-foreground",
+              hero ? "text-xs sm:text-[13px]" : "text-[11px] sm:text-xs"
+            )}
+          >
+            {title}
+          </h3>
+          {subtitle ? (
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{subtitle}</p>
+          ) : null}
+        </div>
+      </div>
+      <p
+        className={cn(
+          "font-semibold tabular-nums leading-tight tracking-tight text-foreground",
+          hero ? "text-xl sm:text-2xl" : "text-base sm:text-lg"
+        )}
+      >
+        {formatPrimaryValue(card)}
+      </p>
+      <p className="mt-auto pt-2 text-[10px] tabular-nums text-muted-foreground">
+        {formatFinanceInteger(card.count)} pedido(s)
+        {card.percentage != null && !PERCENT_KEYS.has(card.key)
+          ? ` · ${formatFinancePercent(card.percentage)} da carteira`
+          : ""}
+        {card.isAlertCard ? " · alerta" : ""}
+      </p>
+    </article>
+  );
+}
 
 /**
  * Grade horizontal de cards da Inteligência da Carteira.
@@ -144,19 +252,20 @@ export function PortfolioIntelligenceCards({
   const ordered = CARD_ORDER.map((key) => byKey.get(key)).filter(
     (c): c is PortfolioIntelligenceCardDto => c != null
   );
+  const heroCards = ordered.filter((c) => HERO_SET.has(c.key));
+  const secondaryCards = ordered.filter((c) => !HERO_SET.has(c.key));
 
   if (loading) {
     return (
-      <div
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
-        data-testid="portfolio-intelligence-cards-loading"
-      >
-        {Array.from({ length: 7 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-[5.5rem] animate-pulse rounded-xl border border-border/60 bg-muted/40"
-          />
-        ))}
+      <div className="space-y-3" data-testid="portfolio-intelligence-cards-loading">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-[7.25rem] animate-pulse rounded-2xl border border-border/50 bg-muted/30"
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -164,80 +273,56 @@ export function PortfolioIntelligenceCards({
   if (ordered.length === 0) {
     return (
       <div
-        className="rounded-xl border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground"
+        className="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-4 py-10 text-center"
         data-testid="portfolio-intelligence-cards-empty"
       >
-        Nenhum indicador disponível para o filtro atual.
+        <p className="text-sm font-medium text-foreground">Nenhum indicador neste filtro</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Ajuste cliente, período ou status — ou limpe os filtros para ver a carteira completa.
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
-      data-testid="portfolio-intelligence-cards"
-    >
-      {ordered.map((card) => {
-        const tone = TONE_BY_KEY[card.key] ?? "neutral";
-        const Icon = ICON_BY_KEY[card.key] ?? Wallet;
-        const complete = hasCompleteExplanation(card);
-        const clickable = Boolean(onCardClick);
-        const isActive = activeCardKey === card.key;
-        return (
-          <article
-            key={card.key}
-            role={clickable ? "button" : undefined}
-            tabIndex={clickable ? 0 : undefined}
-            onClick={
-              clickable
-                ? () => {
-                    onCardClick?.(card.key);
-                  }
-                : undefined
-            }
-            onKeyDown={
-              clickable
-                ? (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onCardClick?.(card.key);
-                    }
-                  }
-                : undefined
-            }
-            className={cn(
-              "relative flex min-h-[5.5rem] flex-col rounded-xl border px-2.5 py-2 shadow-sm outline-none",
-              TONE_CLASS[tone],
-              clickable && "cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/80",
-              isActive && "ring-2 ring-sky-400/50"
-            )}
-            data-testid={`portfolio-intelligence-card-${card.key}`}
-          >
-            <MetricHelpTooltip
-              corner
-              title={card.title}
-              explanation={card.explanation}
-              missingExplanation={!complete}
-            />
-            <div className="mb-1 flex items-start gap-1.5 pr-6">
-              <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <h3 className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">
-                {card.title}
-              </h3>
-            </div>
-            <p className="text-base font-semibold tabular-nums leading-tight text-foreground sm:text-lg">
-              {formatPrimaryValue(card)}
-            </p>
-            <p className="mt-auto pt-1 text-[10px] tabular-nums text-muted-foreground">
-              {formatFinanceInteger(card.count)} ped.
-              {card.percentage != null && !PERCENT_KEYS.has(card.key)
-                ? ` · ${formatFinancePercent(card.percentage)}`
-                : ""}
-              {card.isAlertCard ? " · alerta" : ""}
-            </p>
-          </article>
-        );
-      })}
+    <div className="space-y-4" data-testid="portfolio-intelligence-cards">
+      {heroCards.length > 0 ? (
+        <div>
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Visão executiva
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+            {heroCards.map((card) => (
+              <CardArticle
+                key={card.key}
+                card={card}
+                hero
+                onCardClick={onCardClick}
+                activeCardKey={activeCardKey}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {secondaryCards.length > 0 ? (
+        <div>
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Conversão e confiança
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+            {secondaryCards.map((card) => (
+              <CardArticle
+                key={card.key}
+                card={card}
+                hero={false}
+                onCardClick={onCardClick}
+                activeCardKey={activeCardKey}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

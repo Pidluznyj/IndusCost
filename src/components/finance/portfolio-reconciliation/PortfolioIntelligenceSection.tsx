@@ -25,6 +25,12 @@ import { PortfolioIntelligenceFiltersBar } from "./PortfolioIntelligenceFiltersB
 import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDrawer";
 import { PortfolioIntelligenceSellerKpis } from "./PortfolioIntelligenceSellerKpis";
 import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfolioReconciliationClient";
+import {
+  INTELLIGENCE_READING_GUIDE,
+  INTELLIGENCE_SCREEN_INTRO,
+  INTELLIGENCE_SCREEN_TITLE,
+  INTELLIGENCE_SCREEN_WARNING,
+} from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 
 type Props = {
   runId?: string;
@@ -209,20 +215,37 @@ export function PortfolioIntelligenceSection({
 
   return (
     <section
-      className="space-y-3"
+      className="space-y-4"
       data-testid="portfolio-intelligence-section"
       aria-label="Inteligência da Carteira"
     >
-      <div className="flex items-start gap-2">
-        <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" aria-hidden />
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Inteligência da Carteira</h2>
-          <p className="text-xs text-muted-foreground">
-            Maturidade dos pedidos: o que já virou CR, o que é previsão e o que precisa revisão.
-            Valores vêm da API — a tela só formata.
-          </p>
+      <header
+        className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50/90 via-white to-sky-50/40 px-4 py-4 shadow-sm sm:px-5"
+        data-testid="portfolio-intelligence-header"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-200/80 bg-sky-50 text-sky-800">
+            <BrainCircuit className="h-5 w-5" aria-hidden />
+          </span>
+          <div className="min-w-0 space-y-2">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                {INTELLIGENCE_SCREEN_TITLE}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                {INTELLIGENCE_SCREEN_INTRO}
+              </p>
+            </div>
+            <p
+              className="inline-flex max-w-3xl rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950"
+              data-testid="portfolio-intelligence-pd-warning"
+            >
+              {INTELLIGENCE_SCREEN_WARNING}
+            </p>
+            <p className="text-[11px] text-muted-foreground">{INTELLIGENCE_READING_GUIDE}</p>
+          </div>
         </div>
-      </div>
+      </header>
 
       <PortfolioIntelligenceFiltersBar
         draft={draftFilters}
@@ -237,14 +260,14 @@ export function PortfolioIntelligenceSection({
       />
 
       <p
-        className="rounded-md border border-sky-200/70 bg-sky-50/40 px-2.5 py-1.5 text-[11px] text-sky-950"
+        className="rounded-xl border border-sky-200/60 bg-sky-50/40 px-3 py-2 text-[11px] text-sky-950"
         data-testid="portfolio-intelligence-active-axis"
       >
         Recorte por <strong>{dateAxisLabel(appliedFilters.dateAxis)}</strong>
         {appliedFilters.from || appliedFilters.to
           ? ` · ${appliedFilters.from || "…"} → ${appliedFilters.to || "…"}`
-          : " · período completo (sem from/to)"}
-        . Pedidos por emissão ≠ Contas a Receber por vencimento.
+          : " · período completo"}
+        . Pedidos por emissão são diferentes de Contas a Receber por vencimento.
       </p>
 
       {error ? (
@@ -257,7 +280,7 @@ export function PortfolioIntelligenceSection({
 
       {(payload?.warnings?.length ?? 0) > 0 ? (
         <p
-          className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-1.5 text-[11px] text-amber-950"
+          className="rounded-xl border border-amber-200/70 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-950"
           data-testid="portfolio-intelligence-warnings"
         >
           {payload!.warnings.slice(0, 3).join(" · ")}
@@ -267,25 +290,25 @@ export function PortfolioIntelligenceSection({
 
       {rowsTruncated ? (
         <p
-          className="rounded-md border border-sky-200/80 bg-sky-50/50 px-2.5 py-1.5 text-[11px] text-sky-950"
+          className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3 py-2 text-[11px] text-sky-950"
           data-testid="portfolio-intelligence-pagination-notice"
         >
-          Listagem limitada a {pagination!.pageSize} pedido(s) nesta página (
-          {payload!.rows.length} exibidos de {pagination!.totalRows}). Cards, sanfonas e KPIs
-          usam o conjunto filtrado completo; refine filtros para ver todos na grade.
+          A lista mostra até {pagination!.pageSize} pedidos (
+          {payload!.rows.length} de {pagination!.totalRows}). Os cards e as sanfonas já usam o
+          filtro completo — refine a busca se precisar ver todos na grade.
         </p>
       ) : null}
 
       {loading && !payload ? (
-        <FinanceModuleLoadingBlock label="Carregando inteligência da carteira…" />
+        <FinanceModuleLoadingBlock label="Carregando maturidade da carteira…" />
       ) : null}
 
       {noRun ? (
         <FinanceModuleEmptyState
-          title="Sem run materializada"
+          title="Ainda não há conciliação pronta"
           description={
             payload?.message ??
-            "Nenhuma conciliação materializada encontrada para montar a inteligência."
+            "Quando a conciliação da carteira for materializada, esta tela mostra o que já virou financeiro, o que ainda é pedido e o que precisa revisão."
           }
           icon={<BrainCircuit className="h-5 w-5" />}
         />
@@ -311,8 +334,8 @@ export function PortfolioIntelligenceSection({
 
       {!loading && !noRun && !error && payload && !hasCards ? (
         <FinanceModuleEmptyState
-          title="Sem indicadores"
-          description="A API não retornou cards para o filtro atual."
+          title="Nenhum indicador neste filtro"
+          description="Tente limpar filtros ou escolher outro cliente/período. A carteira pode estar vazia neste recorte."
           icon={<BrainCircuit className="h-5 w-5" />}
         />
       ) : null}

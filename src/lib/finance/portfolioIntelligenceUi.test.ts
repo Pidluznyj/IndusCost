@@ -112,12 +112,12 @@ describe("portfolio intelligence UI", () => {
     assert.match(accordions, /PortfolioIntelligenceOrdersGrid/);
     assert.match(accordions, /DIVERGENCIA_TECNICA/);
     assert.match(accordions, /Nenhum pedido|portfolio-intelligence-grid-empty|rowsForIntelligenceAccordion/);
-    assert.match(accordions, /único status principal|coexistir/);
+    assert.match(accordions, /único status|não trocam o status/);
     assert.match(grid, /Nenhum pedido neste status/);
-    assert.match(grid, /CONFIDENCE_LABEL|Alta|Média|Baixa|Muito baixa/);
+    assert.match(grid, /confidenceDisplay|Alta confiança|Confiança média|Confiança baixa|muito baixa/i);
     assert.match(grid, /onOpenOrder/);
-    assert.match(grid, /tagsAlerta|Tags/);
-    assert.match(grid, /coexistir|portfolio-intelligence-tags-legend/);
+    assert.match(grid, /tagsAlerta|Alertas/);
+    assert.match(grid, /portfolio-intelligence-tags-legend/);
   });
 
   it("drawer de detalhe tem 7 abas e estados vazios sem inventar dados", () => {
@@ -128,18 +128,18 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
     );
-    assert.match(drawer, /Resumo executivo/);
-    assert.match(drawer, /Pedido de venda/);
+    assert.match(drawer, /Resumo/);
+    assert.match(drawer, /Pedido/);
     assert.match(drawer, /Itens/);
-    assert.match(drawer, /NF \/ Documento de saída/);
+    assert.match(drawer, /NF \/ saída/);
     assert.match(drawer, /Contas a Receber/);
-    assert.match(drawer, /Condição de pagamento/);
-    assert.match(drawer, /Histórico \/ linha do tempo/);
+    assert.match(drawer, /Pagamento/);
+    assert.match(drawer, /Histórico/);
     assert.match(
       drawer,
       /Não encontramos NF ou documento de saída vinculado a este pedido/
     );
-    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
+    assert.match(drawer, /Ainda não virou Contas a Receber|Nenhum Contas a Receber/);
     assert.match(
       drawer,
       /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
@@ -209,8 +209,21 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /Não encontramos NF ou documento de saída vinculado a este pedido/
     );
-    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
+    assert.match(drawer, /Ainda não virou Contas a Receber|Nenhum Contas a Receber/);
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);
+  });
+
+  it("cabeçalho executivo e aviso de pedido ≠ caixa", () => {
+    const section = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx"
+    );
+    const copy = read("src/lib/finance/portfolioIntelligenceUiCopy.ts");
+    assert.match(section, /portfolio-intelligence-header/);
+    assert.match(section, /portfolio-intelligence-pd-warning/);
+    assert.match(copy, /já virou financeiro/);
+    assert.match(copy, /Pedido de venda não é dinheiro confirmado até virar CR/);
+    assert.match(copy, /Não tratar como caixa confiável/);
+    assert.match(copy, /Pedido antigo sem evolução/);
   });
 });

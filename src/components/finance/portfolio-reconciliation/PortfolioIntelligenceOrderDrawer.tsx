@@ -14,62 +14,38 @@ import {
 } from "@/src/lib/financePortfolioReconciliationClient";
 import { cn } from "@/src/lib/utils";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
+import {
+  confidenceDisplay,
+  intelligenceAccordionTitle,
+} from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 
 const UNAVAILABLE = "Informação não disponível na importação atual.";
 
 const TABS = [
-  { id: "resumo", label: "Resumo executivo" },
-  { id: "pedido", label: "Pedido de venda" },
+  { id: "resumo", label: "Resumo" },
+  { id: "pedido", label: "Pedido" },
   { id: "itens", label: "Itens" },
-  { id: "nf", label: "NF / Documento de saída" },
+  { id: "nf", label: "NF / saída" },
   { id: "cr", label: "Contas a Receber" },
-  { id: "pagamento", label: "Condição de pagamento" },
-  { id: "timeline", label: "Histórico / linha do tempo" },
+  { id: "pagamento", label: "Pagamento" },
+  { id: "timeline", label: "Histórico" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-const STATUS_LABEL: Record<string, string> = {
-  RECEBIDO: "Recebido",
-  CR_ABERTO: "CR aberto",
-  FATURADO_SEM_CR: "Faturado sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Carteira futura provável",
-  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
-  SEM_EVIDENCIA: "Sem evidência suficiente",
-};
-
-const CONFIDENCE_LABEL: Record<string, string> = {
-  ALTA: "Alta",
-  MEDIA: "Média",
-  BAIXA: "Baixa",
-  MUITO_BAIXA: "Muito baixa",
-};
-
-const CONFIDENCE_CLASS: Record<string, string> = {
-  ALTA: "bg-emerald-100 text-emerald-900 border-emerald-200",
-  MEDIA: "bg-sky-100 text-sky-900 border-sky-200",
-  BAIXA: "bg-amber-100 text-amber-900 border-amber-200",
-  MUITO_BAIXA: "bg-rose-100 text-rose-900 border-rose-200",
-};
-
 const TAG_LABEL: Record<string, string> = {
-  DIVERGENCIA_TECNICA: "Divergência técnica",
-  NF_SEM_DOCUMENTO: "NF sem documento",
-  DOCUMENTO_SEM_CR: "Documento sem CR",
-  NF_CABECALHO_MAIOR_PEDIDO: "NF cabeçalho > pedido",
-  DIVERGENCIA_PRECO: "Divergência de preço",
+  DIVERGENCIA_TECNICA: "Divergência a revisar",
+  NF_SEM_DOCUMENTO: "NF sem documento de saída",
+  DOCUMENTO_SEM_CR: "Documento sem Contas a Receber",
+  NF_CABECALHO_MAIOR_PEDIDO: "Valor da NF maior que o pedido",
+  DIVERGENCIA_PRECO: "Diferença de preço",
   SEM_CONDICAO_PAGAMENTO: "Sem condição de pagamento",
   VINCULO_INCOMPLETO: "Vínculo incompleto",
   PEDIDO_ANTIGO_SEM_EVOLUCAO: "Pedido antigo sem evolução",
 };
 
 function statusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status;
-}
-
-function confidenceLabel(label: string): string {
-  return CONFIDENCE_LABEL[label?.toUpperCase()] ?? label;
+  return intelligenceAccordionTitle(status) || status;
 }
 
 function tagLabel(tag: string): string {
@@ -77,34 +53,35 @@ function tagLabel(tag: string): string {
 }
 
 function financialRiskText(status: string, confidenceLabelRaw: string): string {
+  const conf = confidenceDisplay(confidenceLabelRaw);
   switch (status) {
     case "RECEBIDO":
-      return "Baixo — pedido com recebimento evidenciado.";
+      return "Baixo risco — já há recebimento evidenciado.";
     case "CR_ABERTO":
-      return "Moderado — há CR aberto; acompanhar vencimentos e baixas.";
+      return "Já virou financeiro — acompanhar vencimentos e baixas.";
     case "FATURADO_SEM_CR":
-      return "Atenção — faturado/documento sem CR vinculado.";
+      return "Atenção — saiu nota/documento, mas ainda não virou Contas a Receber.";
     case "CARTEIRA_FUTURA_PROVAVEL":
-      return "Previsão — carteira futura; ainda sem NF/doc/CR.";
+      return "Ainda só pedido (futuro) — não tratar como caixa confirmado.";
     case "CARTEIRA_PRESENTE_ATENCAO":
-      return "Atenção — previsão próxima ou recentemente ultrapassada, sem evolução comercial.";
+      return "Ainda só pedido (atenção) — previsão próxima; acompanhar evolução.";
     case "CARTEIRA_VENCIDA_BLOQUEADA":
-      return "Alto — pedido antigo/vencido sem NF, documento ou CR; não tratar como caixa confiável.";
+      return "Precisa validação — pedido antigo sem evolução. Não tratar como caixa confiável.";
     case "SEM_EVIDENCIA":
-      return "Indeterminado — evidência insuficiente na importação atual.";
+      return "Falta evidência na importação atual.";
     default:
-      return `Classificação ${statusLabel(status)} · confiança ${confidenceLabel(confidenceLabelRaw)}.`;
+      return `${statusLabel(status)} · ${conf.label}.`;
   }
 }
 
 function evidencePresent(flags: PortfolioIntelligenceOrderDetail["classification"]["evidenceFlags"]): string[] {
   const out: string[] = [];
-  if (flags.hasNfe) out.push("NF vinculada");
+  if (flags.hasNfe) out.push("Nota fiscal vinculada");
   if (flags.hasStockDocument) out.push("Documento de saída");
-  if (flags.hasAllocatedStockDocument) out.push("Alocação itemizada");
+  if (flags.hasAllocatedStockDocument) out.push("Itens do pedido vinculados à saída");
   if (flags.hasReceivable) out.push("Contas a Receber");
-  if (flags.hasReceived) out.push("Baixa / recebimento");
-  if (flags.hasOpenReceivable) out.push("CR com saldo aberto");
+  if (flags.hasReceived) out.push("Recebimento / baixa");
+  if (flags.hasOpenReceivable) out.push("CR com saldo em aberto");
   return out;
 }
 
@@ -228,7 +205,7 @@ export function PortfolioIntelligenceOrderDrawer({
 
   const detail = payload?.detail ?? null;
   const classification = detail?.classification;
-  const confKey = classification?.confidenceLabel?.toUpperCase() ?? "";
+  const conf = confidenceDisplay(classification?.confidenceLabel);
 
   return createPortal(
     <div
@@ -244,12 +221,12 @@ export function PortfolioIntelligenceOrderDrawer({
         aria-label="Fechar detalhe"
         onClick={onClose}
       />
-      <aside className="relative z-[81] flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-border bg-card shadow-xl sm:max-w-3xl lg:max-w-4xl">
-        <header className="shrink-0 border-b border-border px-4 py-3">
+      <aside className="relative z-[81] flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-border bg-card shadow-2xl sm:max-w-3xl lg:max-w-4xl">
+        <header className="shrink-0 border-b border-border/80 bg-gradient-to-b from-slate-50/80 to-card px-4 py-4 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                Inteligência da Carteira · somente leitura
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Detalhe do pedido · somente leitura
               </p>
               <h2 className="truncate text-base font-semibold text-foreground">
                 {detail?.order.orderCode ?? "Pedido"}
@@ -274,26 +251,29 @@ export function PortfolioIntelligenceOrderDrawer({
           </div>
 
           {detail && classification ? (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2.5">
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-semibold tabular-nums text-foreground">
+                <span className="text-base font-semibold tabular-nums tracking-tight text-foreground">
                   {formatFinanceCurrency(detail.values.orderValue)}
                 </span>
-                <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-medium">
+                <span className="rounded-lg border border-border/80 bg-muted/30 px-2.5 py-1 font-medium">
                   {statusLabel(classification.statusPrincipal)}
                 </span>
                 <span
                   className={cn(
-                    "rounded-md border px-2 py-0.5 font-semibold",
-                    CONFIDENCE_CLASS[confKey] ?? "bg-muted text-muted-foreground border-border"
+                    "inline-flex flex-col rounded-lg border px-2.5 py-1",
+                    conf.className
                   )}
+                  title={conf.hint}
                 >
-                  {confidenceLabel(classification.confidenceLabel)} (
-                  {classification.confidenceScore})
+                  <span className="text-[11px] font-semibold leading-tight">{conf.label}</span>
+                  <span className="text-[10px] tabular-nums opacity-80">
+                    score {classification.confidenceScore}
+                  </span>
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Ação: </span>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">Próximo passo: </span>
                 {classification.recommendedAction}
               </p>
               {classification.tagsAlerta.length > 0 ? (
@@ -301,7 +281,7 @@ export function PortfolioIntelligenceOrderDrawer({
                   {classification.tagsAlerta.map((tag) => (
                     <span
                       key={tag}
-                      className="rounded-md border border-orange-200 bg-orange-50/80 px-2 py-0.5 text-[10px] font-semibold text-orange-950"
+                      className="rounded-lg border border-orange-200/80 bg-orange-50/70 px-2 py-0.5 text-[10px] font-medium text-orange-950"
                     >
                       {tagLabel(tag)}
                     </span>
@@ -309,7 +289,7 @@ export function PortfolioIntelligenceOrderDrawer({
                 </div>
               ) : null}
               <p
-                className="rounded-lg border border-sky-200/80 bg-sky-50/50 px-3 py-2 text-sm leading-relaxed text-foreground"
+                className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3.5 py-2.5 text-sm leading-relaxed text-foreground"
                 data-testid="portfolio-intelligence-drawer-executive"
               >
                 {detail.executiveSummary}
@@ -386,13 +366,13 @@ function TabContent({
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-drawer-resumo">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <InfoCard label="Status principal" value={statusLabel(c.statusPrincipal)} />
+          <InfoCard label="Status" value={statusLabel(c.statusPrincipal)} />
           <InfoCard
             label="Confiança"
-            value={`${confidenceLabel(c.confidenceLabel)} (${c.confidenceScore})`}
+            value={`${confidenceDisplay(c.confidenceLabel).label} (${c.confidenceScore})`}
           />
         </div>
-        <SectionCard title="Motivos da classificação">
+        <SectionCard title="Por que esta classificação?">
           <ul className="list-disc space-y-1 pl-4 text-sm text-foreground">
             <li>{c.mainReason}</li>
             {c.confidenceReasons.map((r) => (
@@ -400,10 +380,10 @@ function TabContent({
             ))}
           </ul>
         </SectionCard>
-        <SectionCard title="Ação recomendada">
+        <SectionCard title="Próximo passo">
           <p className="text-sm text-foreground">{c.recommendedAction}</p>
         </SectionCard>
-        <SectionCard title="Risco financeiro">
+        <SectionCard title="Leitura de risco">
           <p className="text-sm text-foreground">
             {financialRiskText(c.statusPrincipal, c.confidenceLabel)}
           </p>
@@ -484,7 +464,7 @@ function TabContent({
     return (
       <div data-testid="portfolio-intelligence-drawer-itens">
         {items.length === 0 ? (
-          <EmptyState message="Nenhum item de pedido encontrado na materialização." />
+          <EmptyState message="Não há itens deste pedido na conciliação atual." />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border/70">
             <table className="min-w-[900px] w-full border-collapse text-left text-xs">
@@ -691,7 +671,7 @@ function TabContent({
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-drawer-cr">
         {!hasCr ? (
-          <EmptyState message="Nenhum Contas a Receber encontrado para este pedido." />
+          <EmptyState message="Ainda não virou Contas a Receber — nenhum título encontrado para este pedido." />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -795,7 +775,7 @@ function TabContent({
   return (
     <div data-testid="portfolio-intelligence-drawer-timeline">
       {events.length === 0 ? (
-        <EmptyState message="Sem eventos na linha do tempo deste pedido." />
+        <EmptyState message="Ainda não há histórico registrado para este pedido." />
       ) : (
         <ol className="space-y-2">
           {events.map((ev, idx) => (
@@ -857,7 +837,7 @@ function SectionCard({
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <p className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">
+    <p className="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-4 py-8 text-center text-sm leading-relaxed text-muted-foreground">
       {message}
     </p>
   );

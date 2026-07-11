@@ -17,6 +17,11 @@ import {
   statsForIntelligenceAccordion,
   sumPrincipalGroupValues,
 } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
+import {
+  INTELLIGENCE_ACCORDION_HINT,
+  intelligenceAccordionTitle,
+  intelligenceCardTitle,
+} from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 import { cn } from "@/src/lib/utils";
 import { PortfolioIntelligenceOrdersGrid } from "./PortfolioIntelligenceOrdersGrid";
 import { MetricHelpTooltip } from "./PortfolioIntelligenceHelpPopover";
@@ -28,26 +33,15 @@ export {
   type IntelligenceAccordionKey,
 } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
 
-const TITLE_BY_KEY: Record<IntelligenceAccordionKey, string> = {
-  RECEBIDO: "Recebido",
-  CR_ABERTO: "CR aberto",
-  FATURADO_SEM_CR: "Faturado sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Carteira futura provável",
-  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
-  DIVERGENCIA_TECNICA: "Divergência técnica",
-  SEM_EVIDENCIA: "Sem evidência suficiente",
-};
-
 const TONE_CLASS: Record<IntelligenceAccordionKey, string> = {
-  RECEBIDO: "border-emerald-200/90 bg-emerald-50/50",
-  CR_ABERTO: "border-emerald-200/90 bg-emerald-50/40",
-  FATURADO_SEM_CR: "border-amber-200/90 bg-amber-50/50",
-  CARTEIRA_FUTURA_PROVAVEL: "border-sky-200/90 bg-sky-50/50",
-  CARTEIRA_PRESENTE_ATENCAO: "border-amber-200/80 bg-amber-50/40",
-  CARTEIRA_VENCIDA_BLOQUEADA: "border-rose-200/80 bg-rose-50/40",
-  DIVERGENCIA_TECNICA: "border-orange-200/90 bg-orange-50/50",
-  SEM_EVIDENCIA: "border-zinc-200/90 bg-zinc-50/60",
+  RECEBIDO: "border-emerald-200/80 bg-gradient-to-r from-emerald-50/70 to-white",
+  CR_ABERTO: "border-emerald-200/70 bg-gradient-to-r from-emerald-50/50 to-white",
+  FATURADO_SEM_CR: "border-amber-200/70 bg-gradient-to-r from-amber-50/60 to-white",
+  CARTEIRA_FUTURA_PROVAVEL: "border-sky-200/80 bg-gradient-to-r from-sky-50/60 to-white",
+  CARTEIRA_PRESENTE_ATENCAO: "border-amber-200/70 bg-gradient-to-r from-amber-50/50 to-white",
+  CARTEIRA_VENCIDA_BLOQUEADA: "border-rose-200/70 bg-gradient-to-r from-rose-50/50 to-white",
+  DIVERGENCIA_TECNICA: "border-orange-200/70 bg-gradient-to-r from-orange-50/50 to-white",
+  SEM_EVIDENCIA: "border-zinc-200/80 bg-gradient-to-r from-zinc-50/70 to-white",
 };
 
 function explanationForAccordion(
@@ -86,24 +80,22 @@ export function PortfolioIntelligenceAccordions({
 
   const duplicationWarning =
     carteiraTotal > 0 && Math.abs(principalSum - carteiraTotal) > 0.05
-      ? `Soma dos status principais (${principalSum.toLocaleString("pt-BR")}) difere da carteira total (${carteiraTotal.toLocaleString("pt-BR")}).`
+      ? `A soma dos status principais difere da carteira total. Revise o filtro ou a conciliação.`
       : null;
 
   return (
-    <div className="space-y-2" data-testid="portfolio-intelligence-accordions">
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Pedidos por maturidade</h3>
-          <p className="text-[11px] text-muted-foreground">
-            Cada pedido entra em um único status principal. Divergência técnica é alerta e pode
-            coexistir.
-          </p>
-        </div>
+    <div className="space-y-3" data-testid="portfolio-intelligence-accordions">
+      <div>
+        <h3 className="text-sm font-semibold text-foreground">Pedidos por maturidade</h3>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          Cada pedido tem um único status. Alertas (como divergência) podem aparecer junto e não
+          trocam o status.
+        </p>
       </div>
 
       {duplicationWarning ? (
         <p
-          className="rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[11px] text-amber-950"
+          className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-950"
           data-testid="portfolio-intelligence-duplication-warning"
         >
           {duplicationWarning}
@@ -120,24 +112,28 @@ export function PortfolioIntelligenceAccordions({
         );
         const expanded = expandedKey === key;
         const groupRows = rowsForIntelligenceAccordion(key, rows);
+        const title = intelligenceAccordionTitle(key);
+        const hint = INTELLIGENCE_ACCORDION_HINT[key];
         return (
           <section
             key={key}
-            className={cn("overflow-hidden rounded-xl border shadow-sm", TONE_CLASS[key])}
+            className={cn("overflow-hidden rounded-2xl border shadow-sm", TONE_CLASS[key])}
             data-testid={`portfolio-intelligence-accordion-${key}`}
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/40"
+              className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/50"
               aria-expanded={expanded}
               onClick={() => onExpandedChange(expanded ? null : key)}
               data-testid={`portfolio-intelligence-accordion-toggle-${key}`}
             >
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                  <span>{TITLE_BY_KEY[key]}</span>
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                  <span>{title}</span>
                   {stats.isAlert ? (
-                    <span className="text-[10px] font-medium text-orange-800">(alerta)</span>
+                    <span className="rounded-md border border-orange-200/80 bg-orange-50/90 px-1.5 py-0.5 text-[10px] font-medium text-orange-900">
+                      alerta
+                    </span>
                   ) : null}
                   <span
                     className="inline-flex"
@@ -145,20 +141,25 @@ export function PortfolioIntelligenceAccordions({
                     onKeyDown={(e) => e.stopPropagation()}
                   >
                     <MetricHelpTooltip
-                      title={TITLE_BY_KEY[key]}
+                      title={intelligenceCardTitle(key, title)}
                       explanation={explanationForAccordion(key, cards)}
                       missingExplanation={!explanationForAccordion(key, cards)}
                     />
                   </span>
                 </p>
-                <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                  {formatFinanceCurrencyCompact(stats.value)} ·{" "}
-                  {formatFinanceInteger(stats.count)} ped.
+                {hint ? (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+                ) : null}
+                <p className="mt-1.5 text-[11px] tabular-nums text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {formatFinanceCurrencyCompact(stats.value)}
+                  </span>
+                  {" · "}
+                  {formatFinanceInteger(stats.count)} pedido(s)
                   {stats.percentage != null
                     ? ` · ${formatFinancePercent(stats.percentage)}`
                     : ""}
-                  {" · "}
-                  conf. média{" "}
+                  {" · confiança média "}
                   {stats.averageConfidence.toLocaleString("pt-BR", {
                     maximumFractionDigits: 0,
                   })}
@@ -172,7 +173,7 @@ export function PortfolioIntelligenceAccordions({
             </button>
 
             {expanded ? (
-              <div className="border-t border-border/50 bg-background/70 px-3 py-3">
+              <div className="border-t border-border/40 bg-white/80 px-3 py-3 sm:px-4">
                 <PortfolioIntelligenceOrdersGrid
                   rows={groupRows}
                   searchQuery={searchByKey[key] ?? ""}

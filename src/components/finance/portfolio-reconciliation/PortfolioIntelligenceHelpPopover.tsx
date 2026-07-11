@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 export type PortfolioIntelligenceExplanation = {
@@ -12,31 +12,39 @@ export type PortfolioIntelligenceExplanation = {
 };
 
 const FALLBACK: PortfolioIntelligenceExplanation = {
-  whatItMeans: "Ainda não temos uma explicação completa para esta métrica nesta tela.",
+  whatItMeans: "Ainda não temos uma explicação completa para este indicador nesta tela.",
   howWeCalculate: "Informação não disponível na importação atual.",
   whatIsIncluded: "Informação não disponível na importação atual.",
   whatIsExcluded: "Informação não disponível na importação atual.",
   howToInterpret:
-    "Trate o número com cautela até a conciliação trazer a explicação completa.",
+    "Use o número com cautela até a conciliação trazer a explicação completa.",
 };
 
 const OPERATIONAL_NOTICE =
-  "Atenção: esta é uma métrica operacional/evidencial da Central de Inteligência. Não substitui o Fluxo de Caixa, Contas a Receber oficial nem o Relatório Presidencial.";
+  "Este indicador é operacional (evidência da carteira comercial). Não substitui Fluxo de Caixa, Contas a Receber oficial nem Relatório Presidencial.";
+
+const SECTIONS: Array<{
+  key: keyof PortfolioIntelligenceExplanation;
+  label: string;
+}> = [
+  { key: "whatItMeans", label: "O que significa?" },
+  { key: "howWeCalculate", label: "Como calculamos?" },
+  { key: "whatIsIncluded", label: "O que entra?" },
+  { key: "whatIsExcluded", label: "O que não entra?" },
+  { key: "howToInterpret", label: "Como interpretar?" },
+];
 
 type Props = {
   title: string;
   explanation?: PortfolioIntelligenceExplanation | null;
   missingExplanation?: boolean;
-  /** Mostra aviso de métrica operacional (padrão: true). */
   showOperationalNotice?: boolean;
   className?: string;
-  /** Posição do botão no card (canto superior direito). */
   corner?: boolean;
 };
 
 /**
  * MetricHelpTooltip — ícone “?” discreto com popover padronizado (acessível).
- * Alias exportado também como PortfolioIntelligenceHelpPopover.
  */
 export function MetricHelpTooltip({
   title,
@@ -59,8 +67,8 @@ export function MetricHelpTooltip({
     if (!open || !buttonRef.current) return;
     const place = () => {
       const rect = buttonRef.current!.getBoundingClientRect();
-      const width = Math.min(window.innerWidth - 16, 340);
-      const approxHeight = 360;
+      const width = Math.min(window.innerWidth - 16, 360);
+      const approxHeight = 400;
       let left = rect.right - width;
       if (left < 8) left = 8;
       if (left + width > window.innerWidth - 8) {
@@ -101,7 +109,7 @@ export function MetricHelpTooltip({
 
   return (
     <span
-      className={cn(corner && "absolute right-1.5 top-1.5 z-10", className)}
+      className={cn(corner && "absolute right-2 top-2 z-10", className)}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
@@ -109,9 +117,9 @@ export function MetricHelpTooltip({
         ref={buttonRef}
         type="button"
         className={cn(
-          "inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground shadow-sm",
+          "inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-white/95 text-muted-foreground shadow-sm",
           "hover:border-sky-300 hover:text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50",
-          incomplete && "border-amber-300 text-amber-700"
+          incomplete && "border-amber-300/90 text-amber-700"
         )}
         aria-expanded={open}
         aria-controls={tooltipId}
@@ -136,46 +144,53 @@ export function MetricHelpTooltip({
               aria-modal="false"
               aria-label={`Como interpretar ${title}`}
               data-testid="portfolio-intelligence-help-panel"
-              className="fixed z-[220] max-h-[min(70vh,28rem)] w-[min(100vw-1rem,21rem)] overflow-y-auto rounded-xl border border-border bg-popover p-3 text-[11px] leading-snug text-popover-foreground shadow-xl"
+              className="fixed z-[220] max-h-[min(72vh,30rem)] w-[min(100vw-1rem,22.5rem)] overflow-y-auto rounded-2xl border border-border/80 bg-popover p-0 text-[12px] leading-relaxed text-popover-foreground shadow-2xl"
               style={{ top: pos.top, left: pos.left }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <p className="text-xs font-semibold text-foreground">{title}</p>
-              {incomplete ? (
-                <p className="mt-1 text-[10px] text-amber-800">
-                  Explicação incompleta na origem — usando texto de apoio.
-                </p>
-              ) : null}
-              <dl className="mt-2 space-y-2">
-                <div>
-                  <dt className="font-semibold text-muted-foreground">O que significa?</dt>
-                  <dd className="text-foreground">{content.whatItMeans}</dd>
+              <div className="sticky top-0 flex items-start justify-between gap-2 border-b border-border/60 bg-popover/95 px-3.5 py-2.5 backdrop-blur">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Ajuda do indicador
+                  </p>
+                  <p className="truncate text-sm font-semibold text-foreground">{title}</p>
                 </div>
-                <div>
-                  <dt className="font-semibold text-muted-foreground">Como calculamos?</dt>
-                  <dd className="text-foreground">{content.howWeCalculate}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-muted-foreground">O que entra?</dt>
-                  <dd className="text-foreground">{content.whatIsIncluded}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-muted-foreground">O que não entra?</dt>
-                  <dd className="text-foreground">{content.whatIsExcluded}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-muted-foreground">Como interpretar?</dt>
-                  <dd className="text-foreground">{content.howToInterpret}</dd>
-                </div>
-              </dl>
-              {showOperationalNotice ? (
-                <p
-                  className="mt-3 rounded-md border border-sky-200/80 bg-sky-50/70 px-2 py-1.5 text-[10px] text-sky-950"
-                  data-testid="portfolio-intelligence-help-operational"
+                <button
+                  type="button"
+                  className="rounded-lg border border-border/70 p-1 text-muted-foreground hover:bg-muted/50"
+                  aria-label="Fechar ajuda"
+                  onClick={() => setOpen(false)}
                 >
-                  {OPERATIONAL_NOTICE}
-                </p>
-              ) : null}
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="space-y-3 px-3.5 py-3">
+                {incomplete ? (
+                  <p className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-2.5 py-1.5 text-[11px] text-amber-950">
+                    Explicação incompleta na origem — usando texto de apoio.
+                  </p>
+                ) : null}
+                <dl className="space-y-3">
+                  {SECTIONS.map((section) => (
+                    <div key={section.key}>
+                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {section.label}
+                      </dt>
+                      <dd className="mt-0.5 text-[12px] text-foreground">
+                        {content[section.key]}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {showOperationalNotice ? (
+                  <p
+                    className="rounded-xl border border-sky-200/70 bg-sky-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-sky-950"
+                    data-testid="portfolio-intelligence-help-operational"
+                  >
+                    {OPERATIONAL_NOTICE}
+                  </p>
+                ) : null}
+              </div>
             </div>,
             document.body
           )
@@ -184,5 +199,4 @@ export function MetricHelpTooltip({
   );
 }
 
-/** Nome legado — mesmo componente. */
 export const PortfolioIntelligenceHelpPopover = MetricHelpTooltip;
