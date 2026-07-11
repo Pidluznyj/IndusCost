@@ -5,7 +5,7 @@
 **Atualizado:** 2026-07-10  
 **Status:** requisitos + classificador + analytics + **API HTTP read-only**. UI: etapa seguinte.
 
-> Complementa: [`portfolio-reconciliation-architecture.md`](./portfolio-reconciliation-architecture.md), [`portfolio-reconciliation-handoff.md`](./portfolio-reconciliation-handoff.md).
+> Complementa: [`portfolio-reconciliation-architecture.md`](./portfolio-reconciliation-architecture.md), [`portfolio-reconciliation-handoff.md`](./portfolio-reconciliation-handoff.md), [`portfolio-order-fulfillment-map-requirements.md`](./portfolio-order-fulfillment-map-requirements.md) (eixos financeiro / operacional / alertas + mapa item a item).
 
 ---
 

@@ -26,6 +26,7 @@ export type PortfolioFinancialStatus =
 
 export type PortfolioOperationalStatus =
   | "OP_TOTALMENTE_ATENDIDO"
+  | "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
   | "OP_PARCIALMENTE_ATENDIDO"
   | "OP_NAO_ATENDIDO"
   | "OP_DOCUMENTO_SEM_ITEMIZACAO"
@@ -36,6 +37,7 @@ export type PortfolioTechnicalAlert =
   | "DIVERGENCIA_PRECO"
   | "QUANTIDADE_EXCEDENTE_DOCUMENTO"
   | "PRODUTO_FORA_DO_PEDIDO"
+  | "ITEM_DO_PEDIDO_NAO_ATENDIDO"
   | "CR_SEM_RATEIO_SEGURO"
   | "DOCUMENTO_SEM_CR"
   | "SEM_CONDICAO_PAGAMENTO"
@@ -86,6 +88,12 @@ export function resolveFinancialStatus(input: {
   return "FIN_SEM_CR";
 }
 
+/**
+ * Resolve status operacional a partir do atendimento itemizado.
+ * Contrato: ver docs/finance/portfolio-order-fulfillment-map-requirements.md
+ * (`OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE` — emissão dedicada na entrega seguinte;
+ * excedente já aparece em alertas / surplusItems).
+ */
 export function resolveOperationalStatus(input: {
   hasNfe: boolean;
   hasStockDocument: boolean;
@@ -707,15 +715,17 @@ function buildExecutiveConclusion(args: {
       : "sem quantidade";
 
   const op =
-    args.operationalStatus === "OP_TOTALMENTE_ATENDIDO"
-      ? `Atendimento: ${pctLabel} dos itens do pedido cobertos por documento de saída (itemização).`
-      : args.operationalStatus === "OP_PARCIALMENTE_ATENDIDO"
-        ? `Atendimento: ${pctLabel} dos itens — ainda há saldo a atender.`
-        : args.operationalStatus === "OP_VINCULO_APENAS_CABECALHO"
-          ? "Atendimento: só vínculo de cabeçalho de NF — sem itemização confiável."
-          : args.operationalStatus === "OP_DOCUMENTO_SEM_ITEMIZACAO"
-            ? "Atendimento: há documento, mas sem alocação item a item."
-            : "Atendimento: pedido ainda não atendido por documento de saída.";
+    args.operationalStatus === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+      ? `Atendimento: ${pctLabel} dos itens cobertos — com quantidade/produto excedente nos documentos (excedente não soma carteira).`
+      : args.operationalStatus === "OP_TOTALMENTE_ATENDIDO"
+        ? `Atendimento: ${pctLabel} dos itens do pedido cobertos por documento de saída (itemização).`
+        : args.operationalStatus === "OP_PARCIALMENTE_ATENDIDO"
+          ? `Atendimento: ${pctLabel} dos itens — ainda há saldo a atender.`
+          : args.operationalStatus === "OP_VINCULO_APENAS_CABECALHO"
+            ? "Atendimento: só vínculo de cabeçalho de NF — sem itemização confiável."
+            : args.operationalStatus === "OP_DOCUMENTO_SEM_ITEMIZACAO"
+              ? "Atendimento: há documento, mas sem alocação item a item."
+              : "Atendimento: pedido ainda não atendido por documento de saída.";
 
   const alertParts: string[] = [];
   if (args.fulfillmentSummary.hasHeaderInflationRisk) {
@@ -753,6 +763,7 @@ export const FINANCIAL_STATUS_LABEL: Record<PortfolioFinancialStatus, string> = 
 
 export const OPERATIONAL_STATUS_LABEL: Record<PortfolioOperationalStatus, string> = {
   OP_TOTALMENTE_ATENDIDO: "Totalmente atendido",
+  OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE: "Totalmente atendido (com excedente)",
   OP_PARCIALMENTE_ATENDIDO: "Parcialmente atendido",
   OP_NAO_ATENDIDO: "Não atendido",
   OP_DOCUMENTO_SEM_ITEMIZACAO: "Documento sem itemização",
@@ -764,6 +775,7 @@ export const TECHNICAL_ALERT_LABEL: Record<string, string> = {
   DIVERGENCIA_PRECO: "Divergência de preço",
   QUANTIDADE_EXCEDENTE_DOCUMENTO: "Quantidade excedente no documento",
   PRODUTO_FORA_DO_PEDIDO: "Produto fora do pedido",
+  ITEM_DO_PEDIDO_NAO_ATENDIDO: "Item do pedido não atendido",
   CR_SEM_RATEIO_SEGURO: "CR sem rateio seguro",
   DOCUMENTO_SEM_CR: "Documento sem CR",
   SEM_CONDICAO_PAGAMENTO: "Sem condição de pagamento",

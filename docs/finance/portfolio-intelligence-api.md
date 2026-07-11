@@ -53,7 +53,9 @@ curl -sS -H "Cookie: ..." \
 
 Resposta inclui: resumo executivo, pedido, cliente, vendedor, datas, itens, NF/documento/CR,
 condição de pagamento (ou “Informação não disponível na importação atual.”), timeline,
-classificação, confiança, tags e ação recomendada.
+classificação, confiança, tags, ação recomendada e **`fulfillmentMap`** (eixos financeiro /
+operacional / alertas + cobertura item a item). Contrato de negócio:
+[`portfolio-order-fulfillment-map-requirements.md`](./portfolio-order-fulfillment-map-requirements.md).
 
 ## Payload listagem (resumo)
 
