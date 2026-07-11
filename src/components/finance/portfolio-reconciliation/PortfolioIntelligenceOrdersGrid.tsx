@@ -22,6 +22,17 @@ const CONFIDENCE_CLASS: Record<string, string> = {
   MUITO_BAIXA: "bg-rose-100 text-rose-900 border-rose-200",
 };
 
+const TAG_LABEL: Record<string, string> = {
+  DIVERGENCIA_TECNICA: "Divergência",
+  NF_SEM_DOCUMENTO: "NF sem doc.",
+  DOCUMENTO_SEM_CR: "Doc. sem CR",
+  NF_CABECALHO_MAIOR_PEDIDO: "NF > pedido",
+  DIVERGENCIA_PRECO: "Div. preço",
+  SEM_CONDICAO_PAGAMENTO: "Sem cond. pag.",
+  VINCULO_INCOMPLETO: "Vínculo incompleto",
+  PEDIDO_ANTIGO_SEM_EVOLUCAO: "Pedido antigo",
+};
+
 function yesNo(v: boolean): string {
   return v ? "Sim" : "Não";
 }
@@ -102,13 +113,18 @@ export function PortfolioIntelligenceOrdersGrid({
         </span>
       </div>
 
+      <p className="text-[10px] text-muted-foreground" data-testid="portfolio-intelligence-tags-legend">
+        Tags/alertas podem coexistir com o status principal e não substituem a classificação.
+        Em telas menores, deslize a tabela horizontalmente.
+      </p>
+
       {filtered.length === 0 ? (
         <p className="py-3 text-center text-xs text-muted-foreground">
           Nenhum pedido corresponde à busca.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border/70">
-          <table className="min-w-[1600px] w-full border-collapse text-left text-xs">
+        <div className="overflow-x-auto rounded-lg border border-border/70 -mx-1 px-1 sm:mx-0 sm:px-0">
+          <table className="min-w-[980px] md:min-w-[1700px] w-full border-collapse text-left text-xs">
             <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-2 py-2 font-semibold">Pedido</th>
@@ -123,6 +139,7 @@ export function PortfolioIntelligenceOrdersGrid({
                 <th className="px-2 py-2 font-semibold text-right">Recebido</th>
                 <th className="px-2 py-2 font-semibold text-right">Aberto</th>
                 <th className="px-2 py-2 font-semibold">Status</th>
+                <th className="px-2 py-2 font-semibold">Tags</th>
                 <th className="px-2 py-2 font-semibold">Confiança</th>
                 <th className="px-2 py-2 font-semibold">Motivo</th>
                 <th className="px-2 py-2 font-semibold">Ação</th>
@@ -139,6 +156,7 @@ export function PortfolioIntelligenceOrdersGrid({
               {filtered.map((row) => {
                 const canOpen = Boolean(row.salesOrderId && onOpenOrder);
                 const conf = row.confidenceLabel?.toUpperCase() ?? "";
+                const tags = row.tagsAlerta ?? [];
                 return (
                   <tr
                     key={row.salesOrderId ?? row.orderCode}
@@ -189,6 +207,23 @@ export function PortfolioIntelligenceOrdersGrid({
                       <span className="rounded-md border border-border/70 bg-background px-1.5 py-0.5 text-[10px] font-medium">
                         {row.statusPrincipal}
                       </span>
+                    </td>
+                    <td className="px-2 py-2">
+                      {tags.length === 0 ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <div className="flex max-w-[180px] flex-wrap gap-1">
+                          {tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded border border-orange-200/80 bg-orange-50 px-1 py-0.5 text-[9px] font-medium text-orange-950"
+                              title={tag}
+                            >
+                              {TAG_LABEL[tag] ?? tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-2">
                       <span

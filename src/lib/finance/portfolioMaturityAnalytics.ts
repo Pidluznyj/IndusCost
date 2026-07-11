@@ -809,7 +809,8 @@ function buildSummaryCards(
       count: blocked.count,
       percentage: pct(blocked.value, valorTotal),
       colorTone: "danger",
-      isAlertCard: false,
+      // Derivado de CARTEIRA_VENCIDA_BLOQUEADA — alerta, não soma no bucket principal.
+      isAlertCard: true,
       explanation: explanationFromMetric("RISCO_SUPERESTIMACAO"),
     },
     {

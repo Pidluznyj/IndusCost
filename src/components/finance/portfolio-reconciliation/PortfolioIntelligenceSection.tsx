@@ -94,9 +94,19 @@ export function PortfolioIntelligenceSection({
       setPayload(data);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(
-        buildFinanceTabLoadError("Não foi possível carregar a inteligência da carteira.", e)
-      );
+      // 5xx: mensagem fixa (não vazar detalhe técnico). 4xx: detalhe amigável da API.
+      if (e instanceof HttpError && e.status >= 500) {
+        setError(
+          "Não foi possível carregar a inteligência da carteira. Tente novamente em instantes."
+        );
+      } else {
+        setError(
+          buildFinanceTabLoadError(
+            "Não foi possível carregar a inteligência da carteira.",
+            e
+          )
+        );
+      }
       if (!(e instanceof HttpError && e.status === 404)) {
         setPayload(null);
       }
@@ -112,6 +122,11 @@ export function PortfolioIntelligenceSection({
 
   const noRun = payload != null && payload.ok === false;
   const hasCards = (payload?.cards?.length ?? 0) > 0;
+  const pagination = payload?.pagination;
+  const rowsTruncated =
+    pagination != null &&
+    Number.isFinite(pagination.totalRows) &&
+    pagination.totalRows > (payload?.rows?.length ?? 0);
 
   const carteiraTotal = useMemo(() => {
     const fromTotals = payload?.totals?.orderValue;
@@ -247,6 +262,17 @@ export function PortfolioIntelligenceSection({
         >
           {payload!.warnings.slice(0, 3).join(" · ")}
           {payload!.warnings.length > 3 ? "…" : ""}
+        </p>
+      ) : null}
+
+      {rowsTruncated ? (
+        <p
+          className="rounded-md border border-sky-200/80 bg-sky-50/50 px-2.5 py-1.5 text-[11px] text-sky-950"
+          data-testid="portfolio-intelligence-pagination-notice"
+        >
+          Listagem limitada a {pagination!.pageSize} pedido(s) nesta página (
+          {payload!.rows.length} exibidos de {pagination!.totalRows}). Cards, sanfonas e KPIs
+          usam o conjunto filtrado completo; refine filtros para ver todos na grade.
         </p>
       ) : null}
 

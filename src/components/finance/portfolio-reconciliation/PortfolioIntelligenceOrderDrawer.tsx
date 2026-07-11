@@ -188,9 +188,15 @@ export function PortfolioIntelligenceOrderDrawer({
           setPayload(null);
           return;
         }
-        setError(
-          buildFinanceTabLoadError("Não foi possível carregar o detalhe do pedido.", e)
-        );
+        if (e instanceof HttpError && e.status >= 500) {
+          setError(
+            "Não foi possível carregar o detalhe do pedido. Tente novamente em instantes."
+          );
+        } else {
+          setError(
+            buildFinanceTabLoadError("Não foi possível carregar o detalhe do pedido.", e)
+          );
+        }
         setPayload(null);
       } finally {
         if (!ac.signal.aborted) setLoading(false);

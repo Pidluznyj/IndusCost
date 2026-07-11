@@ -83,6 +83,8 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /PortfolioIntelligenceFiltersBar/);
     assert.match(section, /portfolioIntelligenceUiFiltersToQueryArgs/);
     assert.match(section, /handleCardClick|onCardClick/);
+    assert.match(section, /portfolio-intelligence-pagination-notice|rowsTruncated/);
+    assert.match(section, /status >= 500/);
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
   });
 
@@ -110,9 +112,12 @@ describe("portfolio intelligence UI", () => {
     assert.match(accordions, /PortfolioIntelligenceOrdersGrid/);
     assert.match(accordions, /DIVERGENCIA_TECNICA/);
     assert.match(accordions, /Nenhum pedido|portfolio-intelligence-grid-empty|rowsForIntelligenceAccordion/);
+    assert.match(accordions, /único status principal|coexistir/);
     assert.match(grid, /Nenhum pedido neste status/);
     assert.match(grid, /CONFIDENCE_LABEL|Alta|Média|Baixa|Muito baixa/);
     assert.match(grid, /onOpenOrder/);
+    assert.match(grid, /tagsAlerta|Tags/);
+    assert.match(grid, /coexistir|portfolio-intelligence-tags-legend/);
   });
 
   it("drawer de detalhe tem 7 abas e estados vazios sem inventar dados", () => {
@@ -142,6 +147,10 @@ describe("portfolio intelligence UI", () => {
     assert.match(drawer, /formatFinanceCurrency/);
     assert.match(drawer, /formatFinanceDate/);
     assert.match(drawer, /buildFinanceTabLoadError/);
+    assert.match(
+      drawer,
+      /status >= 500|Tente novamente em instantes/
+    );
     assert.doesNotMatch(drawer, /stack|e\.stack|JSON\.stringify\(e/);
     assert.doesNotMatch(drawer, /@prisma\/client/);
   });

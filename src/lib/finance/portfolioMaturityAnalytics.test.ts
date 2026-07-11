@@ -327,6 +327,7 @@ describe("portfolioMaturityAnalytics", () => {
     });
     const risco = result.summaryCards.find((c) => c.key === "RISCO_SUPERESTIMACAO")!;
     assert.equal(risco.value, 884_836);
+    assert.equal(risco.isAlertCard, true);
     assert.equal(result.totals.valorVencidoBloqueado, 884_836);
   });
 

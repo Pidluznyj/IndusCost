@@ -202,10 +202,25 @@ export async function resolvePortfolioReconciliationRun(
 }
 
 export async function loadPortfolioReconciliationFactsForRun(
-  runId: string
+  runId: string,
+  options?: {
+    customerExternalId?: number | null;
+    customerId?: string | null;
+  }
 ): Promise<PortfolioReconciliationFactApiRow[]> {
+  const where: {
+    runId: string;
+    customerExternalId?: number;
+    customerId?: string;
+  } = { runId };
+  if (options?.customerExternalId != null) {
+    where.customerExternalId = options.customerExternalId;
+  }
+  if (options?.customerId != null) {
+    where.customerId = options.customerId;
+  }
   const rows = await prisma.portfolioReconciliationFact.findMany({
-    where: { runId },
+    where,
     orderBy: [{ orderCode: "asc" }, { salesOrderItemId: "asc" }, { id: "asc" }],
   });
   return rows.map(mapFact);
@@ -424,13 +439,10 @@ export async function loadPortfolioIntelligenceList(query: Record<string, unknow
     });
   }
 
-  let facts = await loadPortfolioReconciliationFactsForRun(run.id);
-  if (filters.customerExternalId != null) {
-    facts = facts.filter((f) => f.customerExternalId === filters.customerExternalId);
-  }
-  if (filters.customerId != null) {
-    facts = facts.filter((f) => f.customerId === filters.customerId);
-  }
+  const facts = await loadPortfolioReconciliationFactsForRun(run.id, {
+    customerExternalId: filters.customerExternalId,
+    customerId: filters.customerId,
+  });
 
   const orderIds = [
     ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),

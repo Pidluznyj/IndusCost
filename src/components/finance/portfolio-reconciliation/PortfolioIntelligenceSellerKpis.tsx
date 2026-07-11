@@ -132,7 +132,10 @@ export function PortfolioIntelligenceSellerKpis({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border/70">
-          <table className="min-w-[1400px] w-full border-collapse text-left text-xs">
+          <p className="border-b border-border/50 px-2 py-1.5 text-[10px] text-muted-foreground md:hidden">
+            Deslize horizontalmente para ver todas as colunas.
+          </p>
+          <table className="min-w-[980px] md:min-w-[1400px] w-full border-collapse text-left text-xs">
             <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <HeaderCell label="Vendedor" explainKey="sellerName" />
