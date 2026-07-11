@@ -3,7 +3,7 @@
 **Projeto:** IndusCost / My Industry  
 **Módulo:** Financeiro → Conciliação de Carteira (camada **paralela** / read-only)  
 **Atualizado:** 2026-07-10  
-**Status:** requisitos + classificador de maturidade (service puro). UI/KPIs agregados: etapas seguintes.
+**Status:** requisitos + classificador + analytics/KPIs (service puro). UI/API HTTP: etapas seguintes.
 
 > Complementa: [`portfolio-reconciliation-architecture.md`](./portfolio-reconciliation-architecture.md), [`portfolio-reconciliation-handoff.md`](./portfolio-reconciliation-handoff.md).
 
@@ -93,8 +93,9 @@ Ajustes evidenciais: − divergência técnica, − cabeçalho > pedido, − sem
 
 ---
 
-## 6. Service
+## 6. Services
 
+### Classificador
 Arquivo: `src/lib/finance/portfolioMaturityClassification.ts`
 
 Funções puras:
@@ -104,6 +105,14 @@ Funções puras:
 - `buildOrderEvidenceTags(input)`
 - `buildOrderExecutiveSummary(input)`
 - `getMetricExplanation(metricKey)`
+
+### Analytics / KPIs
+Arquivo: `src/lib/finance/portfolioMaturityAnalytics.ts`
+
+- Agrega `PortfolioReconciliationFact` por pedido
+- Aplica o classificador
+- Calcula `summaryCards`, `statusGroups`, `sellerKpis`, rows paginadas
+- Auditoria Britânia: `tmp-audits/validate-portfolio-intelligence-britania.ts`
 
 Sem migration. Sem alterar módulos oficiais.
 
