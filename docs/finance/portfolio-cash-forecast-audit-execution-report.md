@@ -7,7 +7,7 @@
 | **Data** | 2026-07-11 |
 | **Tipo** | Relatório final de negócio + técnico (somente documentação) |
 | **Status final** | **PRONTO** |
-| **HEAD base documentado** | `aceb54f` (QA final reexecutada) |
+| **HEAD deste relatório** | `337b0b8` |
 | **Revalidação deste relatório** | Gates + scripts **PASS** na mesma data (FIXTURE / motor puro) |
 
 > Relacionados:  
@@ -374,14 +374,14 @@ Totais esperados (`BRITANIA_INTELLIGENCE_EXPECTED`):
 | Futuro + presente plausível | **R$ 495.460,00** (3 pedidos: PD 02607, 02740, 02739) |
 | Vencido / bloqueado | **R$ 884.836,00** (10 pedidos, âncora PD 02159 = R$ 320.070) |
 
-### PASS/FAIL dos scripts (2026-07-11)
+### PASS/FAIL dos scripts (revalidação 2026-07-11)
 
 | Script | Resultado |
 |--------|-----------|
 | `validate-pd02339-fulfillment-map.ts` | **PASS=15 FAIL=0** |
 | `validate-portfolio-intelligence-britania.ts` | **PASS=65 FAIL=0** |
 | `validate-portfolio-cash-forecast-audit.ts` | **PASS=11 FAIL=0** |
-| Gates npm (imports / test / build / browser-bundle) | **PASS** |
+| Gates npm (imports / test / build / browser-bundle) | **PASS** (fail 0; browser-bundle OK) |
 
 **Ressalva:** Britânia e PD 02339 rodaram em **FIXTURE** (DB local indisponível). Reexecutar com a run materializada em ambiente com Postgres.
 
