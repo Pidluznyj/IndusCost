@@ -129,6 +129,8 @@ export type PortfolioReconciliationRunMeta = {
   summaryJson: unknown;
   errorMessage: string | null;
   createdAt: Date | string;
+  /** Atualização da run no IndusCost (quando disponível). */
+  updatedAt?: Date | string | null;
 };
 
 export type PortfolioReconciliationOrderRow = {
@@ -839,6 +841,7 @@ export function serializeRunMeta(run: PortfolioReconciliationRunMeta) {
     summary: run.summaryJson ?? null,
     errorMessage: run.errorMessage,
     createdAt: new Date(run.createdAt).toISOString(),
+    updatedAt: run.updatedAt ? new Date(run.updatedAt).toISOString() : null,
   };
 }
 

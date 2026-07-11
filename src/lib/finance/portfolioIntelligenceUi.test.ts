@@ -164,6 +164,12 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
     );
+    assert.match(drawer, /portfolio-intelligence-drawer-freshness/);
+    assert.match(drawer, /Frescor dos dados/);
+    assert.match(
+      drawer,
+      /sincronizar o Contas a Receber e reconstruir a conciliação|laymanNotice|syncRebuildNotice/
+    );
     assert.match(drawer, /formatFinanceCurrency/);
     assert.match(drawer, /formatFinanceDate/);
     assert.match(drawer, /buildFinanceTabLoadError/);
@@ -254,7 +260,8 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
     );
     const copy = read("src/lib/finance/portfolioIntelligenceUiCopy.ts");
-    assert.match(section, /portfolio-intelligence-header/);
+    assert.match(section, /portfolio-intelligence-freshness-banner|dataFreshness/);
+    assert.match(section, /INTELLIGENCE_READING_GUIDE|portfolio-intelligence-header/);
     assert.match(section, /portfolio-intelligence-pd-warning/);
     assert.match(section, /portfolio-intelligence-alerts-copy/);
     assert.match(section, /portfolio-intelligence-axis-legend/);

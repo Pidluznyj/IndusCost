@@ -414,7 +414,35 @@ export type PortfolioIntelligenceListPayload = {
   metricExplanations: Record<string, unknown>;
   warnings: string[];
   totals: Record<string, number> | null;
-  run: { id: string; status: string; finishedAt?: string | Date | null } | null;
+  run: {
+    id: string;
+    status: string;
+    createdAt?: string | Date | null;
+    updatedAt?: string | Date | null;
+    finishedAt?: string | Date | null;
+    customerExternalId?: number | null;
+  } | null;
+  dataFreshness?: PortfolioIntelligenceDataFreshnessDto | null;
+};
+
+export type PortfolioIntelligenceDataFreshnessDto = {
+  runId: string;
+  runCreatedAt: string | null;
+  runUpdatedAt: string | null;
+  runFinishedAt: string | null;
+  isLatestRun: boolean;
+  latestRunId: string | null;
+  lastSettlementAt: string | null;
+  lastReceivableEvidenceAt: string | null;
+  lastOrderOrFactUpdatedAt: string | null;
+  receivedValue: number;
+  openReceivableValue: number;
+  hasReceivable: boolean;
+  hasSettlementEvidence: boolean;
+  sourceLabel: string;
+  syncRebuildNotice: string;
+  laymanNotice: string;
+  warnings: string[];
 };
 
 /** Detalhe do pedido na Central de Inteligência (API read-only). */
@@ -642,13 +670,21 @@ export type PortfolioIntelligenceOrderDetail = {
     receivedValue: number;
     openReceivableValue: number;
   };
+  dataFreshness?: PortfolioIntelligenceDataFreshnessDto | null;
 };
 
 export type PortfolioIntelligenceOrderDetailPayload = {
   ok: boolean;
   message: string | null;
   detail: PortfolioIntelligenceOrderDetail | null;
-  run?: { id: string; status: string; finishedAt?: string | Date | null } | null;
+  run?: {
+    id: string;
+    status: string;
+    createdAt?: string | Date | null;
+    updatedAt?: string | Date | null;
+    finishedAt?: string | Date | null;
+  } | null;
+  dataFreshness?: PortfolioIntelligenceDataFreshnessDto | null;
 };
 
 export function buildPortfolioIntelligenceListQuery(args: {

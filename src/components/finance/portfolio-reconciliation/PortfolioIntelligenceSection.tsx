@@ -261,6 +261,21 @@ export function PortfolioIntelligenceSection({
         </div>
       </header>
 
+      {payload?.dataFreshness ? (
+        <p
+          className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3 py-2 text-[11px] leading-relaxed text-sky-950"
+          data-testid="portfolio-intelligence-freshness-banner"
+        >
+          {payload.dataFreshness.laymanNotice} {payload.dataFreshness.syncRebuildNotice}
+          {payload.dataFreshness.runUpdatedAt
+            ? ` Run atualizada em ${payload.dataFreshness.runUpdatedAt.slice(0, 16).replace("T", " ")}.`
+            : ""}
+          {!payload.dataFreshness.isLatestRun
+            ? " Atenção: a run exibida não é a SUCCESS mais recente."
+            : ""}
+        </p>
+      ) : null}
+
       <PortfolioIntelligenceFiltersBar
         draft={draftFilters}
         applied={appliedFilters}

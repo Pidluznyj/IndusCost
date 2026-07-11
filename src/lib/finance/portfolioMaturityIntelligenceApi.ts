@@ -26,6 +26,10 @@ import {
   type PortfolioOrderEnrichment,
 } from "./portfolioMaturityAnalytics.js";
 import {
+  buildPortfolioIntelligenceDataFreshness,
+  type PortfolioIntelligenceDataFreshness,
+} from "./portfolioIntelligenceDataFreshness.js";
+import {
   PORTFOLIO_INFO_UNAVAILABLE,
   type PortfolioConfidenceLabel,
   type PortfolioMaturityAlertTag,
@@ -298,6 +302,8 @@ export function buildPortfolioIntelligenceListPayload(args: {
   filters: PortfolioMaturityAnalyticsFilters;
   enrichmentsBySalesOrderId?: ReadonlyMap<string, PortfolioOrderEnrichment> | null;
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
+  /** SUCCESS mais recente — para avisar se a run não é a atual. */
+  latestRunId?: string | null;
 }) {
   if (!args.run) {
     return {
@@ -320,6 +326,7 @@ export function buildPortfolioIntelligenceListPayload(args: {
       warnings: [PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE],
       totals: null,
       run: null,
+      dataFreshness: null as PortfolioIntelligenceDataFreshness | null,
     };
   }
 
@@ -328,6 +335,13 @@ export function buildPortfolioIntelligenceListPayload(args: {
     filters: args.filters,
     enrichmentsBySalesOrderId: args.enrichmentsBySalesOrderId,
     orderTotalBySalesOrderId: args.orderTotalBySalesOrderId,
+  });
+
+  const dataFreshness = buildPortfolioIntelligenceDataFreshness({
+    run: args.run,
+    facts: args.facts,
+    latestRunId: args.latestRunId ?? args.run.id,
+    scope: "list",
   });
 
   return {
@@ -342,14 +356,17 @@ export function buildPortfolioIntelligenceListPayload(args: {
     pagination: analytics.pagination,
     filters: analytics.appliedFilters,
     metricExplanations: analytics.metricExplanations,
-    warnings: analytics.warnings,
+    warnings: [...analytics.warnings, ...dataFreshness.warnings.filter((w) => !analytics.warnings.includes(w))],
     totals: analytics.totals,
     run: {
       id: args.run.id,
       status: args.run.status,
+      createdAt: args.run.createdAt,
+      updatedAt: args.run.updatedAt ?? args.run.finishedAt ?? args.run.createdAt,
       finishedAt: args.run.finishedAt,
       customerExternalId: args.run.customerExternalId,
     },
+    dataFreshness,
   };
 }
 
@@ -360,6 +377,7 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   enrichment?: PortfolioOrderEnrichment | null;
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
   asOfDate?: string | null;
+  latestRunId?: string | null;
   /** Override só para testes — força falha controlada do mapa. */
   buildFulfillmentMap?: (
     input: BuildOrderFulfillmentMapInput
@@ -370,6 +388,7 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
       ok: false as const,
       message: PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE,
       detail: null,
+      dataFreshness: null as PortfolioIntelligenceDataFreshness | null,
     };
   }
   if (args.facts.length === 0) {
@@ -378,6 +397,12 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
       message: "Pedido não encontrado na conciliação materializada deste run.",
       detail: null,
       run: { id: args.run.id, status: args.run.status },
+      dataFreshness: buildPortfolioIntelligenceDataFreshness({
+        run: args.run,
+        facts: [],
+        latestRunId: args.latestRunId ?? args.run.id,
+        scope: "order",
+      }),
     };
   }
 
@@ -439,6 +464,20 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
     });
   }
   timeline.sort((a, b) => a.at.localeCompare(b.at) || a.kind.localeCompare(b.kind));
+
+  const dataFreshness = buildPortfolioIntelligenceDataFreshness({
+    run: args.run,
+    facts: args.facts,
+    orderUpdatedAt: args.enrichment?.updatedAt ?? maturity.updatedAt,
+    receivedValueOverride: maturity.receivedValue,
+    openReceivableValueOverride: maturity.openReceivableValue,
+    latestRunId: args.latestRunId ?? args.run.id,
+    scope: "order",
+  });
+
+  for (const w of dataFreshness.warnings) {
+    if (!detailWarnings.includes(w)) detailWarnings.push(w);
+  }
 
   return {
     ok: true as const,
@@ -523,11 +562,15 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
         receivedValue: maturity.receivedValue,
         openReceivableValue: maturity.openReceivableValue,
       },
+      dataFreshness,
     },
     run: {
       id: args.run.id,
       status: args.run.status,
+      createdAt: args.run.createdAt,
+      updatedAt: args.run.updatedAt ?? args.run.finishedAt ?? args.run.createdAt,
       finishedAt: args.run.finishedAt,
     },
+    dataFreshness,
   };
 }

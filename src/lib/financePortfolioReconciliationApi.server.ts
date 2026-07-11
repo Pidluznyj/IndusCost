@@ -165,6 +165,7 @@ function mapRun(run: {
   summaryJson: unknown;
   errorMessage: string | null;
   createdAt: Date;
+  updatedAt?: Date | null;
 }): PortfolioReconciliationRunMeta {
   return {
     id: run.id,
@@ -179,7 +180,18 @@ function mapRun(run: {
     summaryJson: run.summaryJson,
     errorMessage: run.errorMessage,
     createdAt: run.createdAt,
+    updatedAt: run.updatedAt ?? null,
   };
+}
+
+/** SUCCESS mais recente (para comparar frescor sem sync automático). */
+export async function findLatestSuccessfulPortfolioReconciliationRunId(): Promise<string | null> {
+  const run = await prisma.portfolioReconciliationRun.findFirst({
+    where: { status: "SUCCESS" },
+    orderBy: [{ finishedAt: "desc" }, { createdAt: "desc" }],
+    select: { id: true },
+  });
+  return run?.id ?? null;
 }
 
 export async function resolvePortfolioReconciliationRun(
@@ -439,6 +451,8 @@ export async function loadPortfolioIntelligenceList(query: Record<string, unknow
     });
   }
 
+  const latestRunId = await findLatestSuccessfulPortfolioReconciliationRunId();
+
   const facts = await loadPortfolioReconciliationFactsForRun(run.id, {
     customerExternalId: filters.customerExternalId,
     customerId: filters.customerId,
@@ -456,6 +470,7 @@ export async function loadPortfolioIntelligenceList(query: Record<string, unknow
     filters,
     orderTotalBySalesOrderId,
     enrichmentsBySalesOrderId,
+    latestRunId,
   });
 }
 
@@ -488,6 +503,8 @@ export async function loadPortfolioIntelligenceOrderDetail(
     });
   }
 
+  const latestRunId = await findLatestSuccessfulPortfolioReconciliationRunId();
+
   const rows = await prisma.portfolioReconciliationFact.findMany({
     where: { runId: run.id, salesOrderId },
     orderBy: [{ salesOrderItemId: "asc" }, { id: "asc" }],
@@ -503,5 +520,6 @@ export async function loadPortfolioIntelligenceOrderDetail(
     enrichment: enrichmentsBySalesOrderId.get(salesOrderId) ?? null,
     orderTotalBySalesOrderId,
     asOfDate: filters.asOfDate,
+    latestRunId,
   });
 }
