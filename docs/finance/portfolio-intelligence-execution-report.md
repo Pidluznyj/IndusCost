@@ -4,7 +4,7 @@
 **Módulo:** Financeiro → Conciliação de Carteira → **Inteligência da Carteira**  
 **Data do relatório:** 2026-07-10  
 **Status geral:** **PRONTO**  
-**HEAD no momento do relatório:** ver commit deste documento após push  
+**HEAD no momento do relatório:** `9504aa64b9a438a1ade4c23036af253a07970b60`  
 
 > Complementa: [`portfolio-intelligence-requirements.md`](./portfolio-intelligence-requirements.md), [`portfolio-intelligence-api.md`](./portfolio-intelligence-api.md), [`portfolio-intelligence-handoff.md`](./portfolio-intelligence-handoff.md), [`portfolio-intelligence-release-checklist.md`](./portfolio-intelligence-release-checklist.md).
 
