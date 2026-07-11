@@ -128,6 +128,16 @@ function pd02339Input(): BuildOrderFulfillmentMapInput {
       },
     ],
     paymentTermsAvailable: false,
+    receivables: [
+      {
+        receivableId: 9001,
+        dueDate: "2025-06-15",
+        totalValue: 158_000,
+        receivedValue: 0,
+        openValue: 158_000,
+        sourceNfe: 6937,
+      },
+    ],
   };
 }
 
@@ -299,8 +309,19 @@ describe("portfolioOrderFulfillmentMap", () => {
     assert.ok(map.fulfillmentSummary.hasProductsOutsideOrder);
     assert.ok(map.technicalAlerts.includes("PRODUTO_FORA_DO_PEDIDO"));
     const outside = map.stockDocumentsCoverage.flatMap((d) => d.itemsOutsideOrder);
-    assert.ok(outside.some((x) => x.productExternalId === 99));
+    assert.ok(outside.some((x) => (x.externalProductId ?? x.productExternalId) === 99));
+    assert.ok(
+      outside.some(
+        (x) =>
+          (x.externalProductId ?? x.productExternalId) === 99 &&
+          (x.documentQuantity ?? x.stockQuantity) === 20
+      )
+    );
     assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 50);
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <=
+        map.fulfillmentSummary.orderValue + 0.05
+    );
   });
 
   it("6) cabeçalho NF maior que valor atribuído ao pedido", () => {
@@ -461,7 +482,7 @@ describe("portfolioOrderFulfillmentMap", () => {
     assert.notEqual(map.financialStatus, "FIN_FATURADO_SEM_CR");
   });
 
-  it("fixture PD 02339: cabeçalho não infla pedido; excesso e fora do pedido", () => {
+  it("fixture PD 02339: cabeçalho não infla; CR vinculado; excesso e fora do pedido", () => {
     const map = buildOrderFulfillmentMap(pd02339Input());
 
     assert.equal(map.fulfillmentSummary.orderValue, 158_000);
@@ -481,12 +502,160 @@ describe("portfolioOrderFulfillmentMap", () => {
     assert.ok(map.orderItemsCoverage.length >= 4);
     assert.ok(map.stockDocumentsCoverage.length >= 3);
     assert.equal(map.operationalStatus, "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE");
-    assert.equal(map.financialStatus, "FIN_FATURADO_SEM_CR");
+    assert.equal(map.financialStatus, "FIN_CR_ABERTO");
+    assert.equal(map.financialStatusLabel, "CR aberto");
+    assert.ok(map.operationalStatusLabel.length > 0);
+    assert.equal(map.receivablesCoverage.length, 1);
+    assert.equal(map.receivablesCoverage[0]!.receivableId, 9001);
+    assert.equal(map.fulfillmentSummary.openReceivableValue, 158_000);
+    assert.match(map.executiveConclusion, /não deve ser tratado como caixa|CR aberto|Contas a Receber/i);
 
     for (const item of map.orderItemsCoverage) {
       assert.ok(item.attendedQuantityCapped <= item.orderedQuantity + 0.000001);
       assert.ok((item.fulfillmentPercentCapped ?? 0) <= 100);
+      assert.equal(item.sku, item.productCode);
     }
+
+    const matched = map.stockDocumentsCoverage.flatMap((d) => d.matchedItems);
+    assert.ok(matched.length > 0);
+    assert.ok(matched.every((m) => m.quantityUsedForOrder === m.allocatedQuantity));
+    assert.ok(
+      matched.every(
+        (m) =>
+          m.valueAttributedByOrderPrice === m.allocatedValueByOrderPrice &&
+          (m.externalProductId ?? m.productExternalId) != null
+      )
+    );
+  });
+
+  it("11) percentual nunca passa de 100%", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 11", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 2000 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 250, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.fulfillmentSummary.fulfillmentPercent, 100);
+    assert.ok((map.orderItemsCoverage[0]!.fulfillmentPercentCapped ?? 0) <= 100);
+    assert.equal(map.orderItemsCoverage[0]!.attendedQuantityCapped, 100);
+  });
+
+  it("12) valor atribuído nunca passa do valor do pedido", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 12", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 9000 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 100, unitValue: 90 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <=
+        map.fulfillmentSummary.orderValue + 0.05
+    );
+    assert.equal(map.fulfillmentSummary.attributedOrderValueByOrderPrice, 1000);
+  });
+
+  it("13) excedente não aumenta carteira (orderValue / atribuído)", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 13", totalNetValue: 1000 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 100, unitPrice: 10 },
+      ],
+      nfeLinks: [
+        { salesOrderId: "o1", nfeExternalId: 1 },
+        { salesOrderId: "o1", nfeExternalId: 2 },
+      ],
+      nfes: [
+        { externalId: 1, valorLiquido: 600 },
+        { externalId: 2, valorLiquido: 500 },
+      ],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [{ id: "s1", externalProductId: 10, quantity: 60, unitValue: 10 }],
+        },
+        {
+          id: "d2",
+          externalId: 2,
+          idNfe: 2,
+          items: [{ id: "s2", externalProductId: 10, quantity: 50, unitValue: 10 }],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.fulfillmentSummary.orderValue, 1000);
+    assert.equal(map.fulfillmentSummary.attributedOrderValueByOrderPrice, 1000);
+    assert.equal(map.fulfillmentSummary.totalExcessQuantity, 10);
+    assert.ok(map.fulfillmentSummary.totalExcessQuantity > 0);
+  });
+
+  it("14) produto fora do pedido não aumenta carteira", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD 14", totalNetValue: 500 },
+      orderItems: [
+        { id: "i1", externalProductId: 10, quantity: 50, unitPrice: 10 },
+      ],
+      nfeLinks: [{ salesOrderId: "o1", nfeExternalId: 1 }],
+      nfes: [{ externalId: 1, valorLiquido: 1500 }],
+      stockDocuments: [
+        {
+          id: "d1",
+          externalId: 1,
+          idNfe: 1,
+          items: [
+            { id: "s1", externalProductId: 10, quantity: 50, unitValue: 10 },
+            { id: "s2", externalProductId: 99, quantity: 100, unitValue: 10 },
+          ],
+        },
+      ],
+      paymentTermsAvailable: true,
+    });
+
+    assert.equal(map.fulfillmentSummary.orderValue, 500);
+    assert.equal(map.fulfillmentSummary.attributedOrderValueByOrderPrice, 500);
+    assert.ok(map.fulfillmentSummary.hasProductsOutsideOrder);
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <
+        map.fulfillmentSummary.nfeHeaderTotalValue
+    );
+  });
+
+  it("dataStale marca DADO_DESATUALIZADO", () => {
+    const map = buildOrderFulfillmentMap({
+      order: { id: "o1", orderCode: "PD S", totalNetValue: 100 },
+      orderItems: [
+        { id: "i1", externalProductId: 1, quantity: 1, unitPrice: 100 },
+      ],
+      paymentTermsAvailable: true,
+      dataStale: true,
+    });
+    assert.ok(map.technicalAlerts.includes("DADO_DESATUALIZADO"));
   });
 
   it("classificadores unitários", () => {
