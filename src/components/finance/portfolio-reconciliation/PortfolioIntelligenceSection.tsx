@@ -23,6 +23,8 @@ import { PortfolioIntelligenceAccordions } from "./PortfolioIntelligenceAccordio
 import { PortfolioIntelligenceCards } from "./PortfolioIntelligenceCards";
 import { PortfolioIntelligenceFiltersBar } from "./PortfolioIntelligenceFiltersBar";
 import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDrawer";
+import { PortfolioIntelligenceSellerKpis } from "./PortfolioIntelligenceSellerKpis";
+import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfolioReconciliationClient";
 
 type Props = {
   runId?: string;
@@ -154,6 +156,42 @@ export function PortfolioIntelligenceSection({
     setAppliedFilters(cleared);
   }, []);
 
+  const handleSelectSeller = useCallback((kpi: PortfolioIntelligenceSellerKpiDto) => {
+    setAppliedFilters((prev) => {
+      const next: PortfolioIntelligenceUiFilters = {
+        ...prev,
+        sellerExternalId: "",
+        sellerName: "",
+        onlyWithoutSeller: false,
+      };
+      if (kpi.sellerSource === "UNAVAILABLE" || kpi.sellerKey === "seller:unavailable") {
+        next.onlyWithoutSeller = true;
+      } else if (kpi.sellerExternalId != null) {
+        next.sellerExternalId = String(kpi.sellerExternalId);
+      } else {
+        next.sellerName = kpi.sellerName;
+      }
+      setDraftFilters(next);
+      return next;
+    });
+    setFiltersExpanded(true);
+  }, []);
+
+  const activeSellerKey = useMemo(() => {
+    if (appliedFilters.onlyWithoutSeller) return "seller:unavailable";
+    if (appliedFilters.sellerExternalId.trim()) {
+      return `seller:${appliedFilters.sellerExternalId.trim()}`;
+    }
+    if (appliedFilters.sellerName.trim()) {
+      const match = payload?.sellerKpis?.find(
+        (s) =>
+          s.sellerName.toLowerCase() === appliedFilters.sellerName.trim().toLowerCase()
+      );
+      return match?.sellerKey ?? null;
+    }
+    return null;
+  }, [appliedFilters, payload?.sellerKpis]);
+
   return (
     <section
       className="space-y-3"
@@ -233,6 +271,15 @@ export function PortfolioIntelligenceSection({
           loading={loading && !hasCards}
           onCardClick={handleCardClick}
           activeCardKey={activeCardKey}
+        />
+      ) : null}
+
+      {!noRun && payload ? (
+        <PortfolioIntelligenceSellerKpis
+          sellerKpis={payload.sellerKpis ?? []}
+          loading={loading && !payload.sellerKpis}
+          activeSellerKey={activeSellerKey}
+          onSelectSeller={handleSelectSeller}
         />
       ) : null}
 

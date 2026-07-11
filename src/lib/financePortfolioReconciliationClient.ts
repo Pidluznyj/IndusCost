@@ -361,12 +361,36 @@ export type PortfolioIntelligenceGroupDto = {
   orderCodes: string[];
 };
 
+export type PortfolioIntelligenceSellerKpiDto = {
+  sellerKey: string;
+  sellerName: string;
+  sellerExternalId: number | null;
+  sellerSource: "SALES_ORDER" | "UNAVAILABLE" | string;
+  ordersCount: number;
+  orderValue: number;
+  receivableValue: number;
+  conversionCrValuePct: number | null;
+  conversionCrQtyPct: number | null;
+  documentConvertedValue: number;
+  conversionDocValuePct: number | null;
+  receivedValue: number;
+  receiptRatePct: number | null;
+  stuckWithoutNfCrValue: number;
+  blockedValue: number;
+  lowConfidenceValuePct: number | null;
+  averageConfidence: number;
+  confidenceAvailable: boolean;
+  mainBottleneck: string;
+  mainBottleneckKey: string;
+  note: string | null;
+};
+
 export type PortfolioIntelligenceListPayload = {
   ok: boolean;
   message: string | null;
   cards: PortfolioIntelligenceCardDto[];
   groups: PortfolioIntelligenceGroupDto[];
-  sellerKpis: Array<Record<string, unknown>>;
+  sellerKpis: PortfolioIntelligenceSellerKpiDto[];
   rows: PortfolioIntelligenceOrderRow[];
   pagination: {
     page: number;
@@ -531,6 +555,7 @@ export function buildPortfolioIntelligenceListQuery(args: {
   onlyWithoutNfe?: boolean;
   onlyWithoutStockDocument?: boolean;
   onlyWithoutReceivable?: boolean;
+  onlyWithoutSeller?: boolean;
   sortBy?: string;
   sortDirection?: string;
 }): string {
@@ -562,6 +587,7 @@ export function buildPortfolioIntelligenceListQuery(args: {
   if (args.onlyWithoutNfe) params.set("onlyWithoutNfe", "true");
   if (args.onlyWithoutStockDocument) params.set("onlyWithoutStockDocument", "true");
   if (args.onlyWithoutReceivable) params.set("onlyWithoutReceivable", "true");
+  if (args.onlyWithoutSeller) params.set("onlyWithoutSeller", "true");
   params.set("page", String(args.page ?? 1));
   params.set("pageSize", String(args.pageSize ?? 50));
   return params.toString();

@@ -46,6 +46,7 @@ export type PortfolioIntelligenceUiFilters = {
   onlyWithoutNfe: boolean;
   onlyWithoutStockDocument: boolean;
   onlyWithoutReceivable: boolean;
+  onlyWithoutSeller: boolean;
   onlyTechnicalDivergence: boolean;
   onlyVeryLowConfidence: boolean;
   onlyFuturePortfolio: boolean;
@@ -194,6 +195,7 @@ export function createDefaultPortfolioIntelligenceUiFilters(
     onlyWithoutNfe: false,
     onlyWithoutStockDocument: false,
     onlyWithoutReceivable: false,
+    onlyWithoutSeller: false,
     onlyTechnicalDivergence: false,
     onlyVeryLowConfidence: false,
     onlyFuturePortfolio: false,
@@ -380,6 +382,7 @@ export function buildPortfolioIntelligenceFilterChips(
     push("onlyWithoutStockDocument", "Sem documento de saída");
   }
   if (filters.onlyWithoutReceivable) push("onlyWithoutReceivable", "Sem CR");
+  if (filters.onlyWithoutSeller) push("onlyWithoutSeller", "Sem vendedor informado");
   if (filters.onlyTechnicalDivergence) {
     push("onlyTechnicalDivergence", "Divergência técnica");
   }
@@ -412,6 +415,7 @@ export function countActivePortfolioIntelligenceFilters(
   if (filters.onlyWithoutNfe) n += 1;
   if (filters.onlyWithoutStockDocument) n += 1;
   if (filters.onlyWithoutReceivable) n += 1;
+  if (filters.onlyWithoutSeller) n += 1;
   if (filters.onlyTechnicalDivergence) n += 1;
   if (filters.onlyVeryLowConfidence) n += 1;
   if (filters.onlyFuturePortfolio) n += 1;
@@ -452,6 +456,7 @@ export function portfolioIntelligenceUiFiltersToQueryArgs(
     onlyWithoutNfe: effective.onlyWithoutNfe,
     onlyWithoutStockDocument: effective.onlyWithoutStockDocument,
     onlyWithoutReceivable: effective.onlyWithoutReceivable,
+    onlyWithoutSeller: effective.onlyWithoutSeller,
     page: extras?.page ?? 1,
     pageSize: extras?.pageSize ?? 200,
   };

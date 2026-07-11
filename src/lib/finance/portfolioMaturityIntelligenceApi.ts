@@ -277,6 +277,7 @@ export function parsePortfolioIntelligenceFilters(
     onlyWithoutNfe: asBoolFlag(query.onlyWithoutNfe) || null,
     onlyWithoutStockDocument: asBoolFlag(query.onlyWithoutStockDocument) || null,
     onlyWithoutReceivable: asBoolFlag(query.onlyWithoutReceivable) || null,
+    onlyWithoutSeller: asBoolFlag(query.onlyWithoutSeller) || null,
   };
 }
 

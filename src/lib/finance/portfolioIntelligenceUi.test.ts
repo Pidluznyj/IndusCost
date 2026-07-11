@@ -17,6 +17,7 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx",
     ];
     for (const f of files) {
       const src = read(f);
@@ -118,6 +119,21 @@ describe("portfolio intelligence UI", () => {
     assert.match(drawer, /buildFinanceTabLoadError/);
     assert.doesNotMatch(drawer, /stack|e\.stack|JSON\.stringify\(e/);
     assert.doesNotMatch(drawer, /@prisma\/client/);
+  });
+
+  it("KPIs por vendedor usam sellerKpis e não importam comissões", () => {
+    const section = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx"
+    );
+    const table = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSellerKpis.tsx"
+    );
+    assert.match(section, /PortfolioIntelligenceSellerKpis/);
+    assert.match(section, /handleSelectSeller|onSelectSeller/);
+    assert.match(table, /Qualidade da Carteira por Vendedor/);
+    assert.match(table, /SELLER_KPI_EXPLANATIONS/);
+    assert.doesNotMatch(table, /commission|comiss/i);
+    assert.doesNotMatch(section, /commission|comiss/i);
   });
 
   it("página registra aba Inteligência da Carteira", () => {

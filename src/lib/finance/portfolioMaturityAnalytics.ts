@@ -152,6 +152,8 @@ export type PortfolioMaturityAnalyticsFilters = {
   onlyWithoutNfe?: boolean | null;
   onlyWithoutStockDocument?: boolean | null;
   onlyWithoutReceivable?: boolean | null;
+  /** Pedidos sem vendedor identificado no pedido. */
+  onlyWithoutSeller?: boolean | null;
 };
 
 export type PortfolioMaturitySortBy =
@@ -268,10 +270,32 @@ export type PortfolioMaturitySellerKpi = {
   sellerKey: string;
   sellerName: string;
   sellerExternalId: number | null;
+  /** Fonte do vendedor: pedido (SalesOrder/Nomus), nunca CRM/comissões. */
+  sellerSource: "SALES_ORDER" | "UNAVAILABLE";
   ordersCount: number;
   orderValue: number;
+  /** Soma dos valores de CR rateados aos pedidos do vendedor. */
+  receivableValue: number;
+  /** Σ orderValue dos pedidos com CR / orderValue. */
+  conversionCrValuePct: number | null;
+  /** Qtd pedidos com CR / qtd pedidos. */
+  conversionCrQtyPct: number | null;
+  /** Σ orderValue dos pedidos com documento de saída. */
+  documentConvertedValue: number;
+  conversionDocValuePct: number | null;
+  receivedValue: number;
+  /** receivedValue / receivableValue. */
+  receiptRatePct: number | null;
+  /** Pedidos sem NF e sem CR (valor). */
+  stuckWithoutNfCrValue: number;
+  /** Status CARTEIRA_VENCIDA_BLOQUEADA (valor). */
+  blockedValue: number;
+  /** Participação em valor com confiança BAIXA ou MUITO_BAIXA. */
+  lowConfidenceValuePct: number | null;
   averageConfidence: number;
   confidenceAvailable: boolean;
+  mainBottleneck: string;
+  mainBottleneckKey: string;
   note: string | null;
 };
 
@@ -662,6 +686,10 @@ export function filterMaturityOrders(
       return false;
     }
     if (filters.onlyWithoutReceivable && row.evidenceFlags.hasReceivable) return false;
+    if (filters.onlyWithoutSeller) {
+      const hasSeller = Boolean(row.sellerName || row.sellerExternalId != null);
+      if (hasSeller) return false;
+    }
 
     if (axis && (from || to)) {
       const d = dateForAxis(row, axis);
@@ -937,20 +965,31 @@ function buildStatusGroups(
   });
 }
 
-function buildSellerKpis(
+export function buildSellerKpis(
   rows: readonly PortfolioMaturityOrderRow[]
 ): PortfolioMaturitySellerKpi[] {
-  const map = new Map<
-    string,
-    {
-      sellerName: string;
-      sellerExternalId: number | null;
-      value: number;
-      count: number;
-      conf: number;
-      available: boolean;
-    }
-  >();
+  type Acc = {
+    sellerName: string;
+    sellerExternalId: number | null;
+    available: boolean;
+    value: number;
+    count: number;
+    conf: number;
+    receivableValue: number;
+    receivedValue: number;
+    withCrCount: number;
+    withCrOrderValue: number;
+    withDocOrderValue: number;
+    stuckWithoutNfCrValue: number;
+    blockedValue: number;
+    lowConfidenceValue: number;
+    faturadoSemCrValue: number;
+    presenteValue: number;
+    futuraValue: number;
+    divergenceValue: number;
+  };
+
+  const map = new Map<string, Acc>();
 
   for (const row of rows) {
     const available = Boolean(row.sellerName || row.sellerExternalId != null);
@@ -959,35 +998,137 @@ function buildSellerKpis(
       : "seller:unavailable";
     const name = available
       ? row.sellerName ?? `Vendedor ${row.sellerExternalId}`
-      : PORTFOLIO_INFO_UNAVAILABLE;
+      : "Sem vendedor informado";
     let g = map.get(key);
     if (!g) {
       g = {
         sellerName: name,
         sellerExternalId: row.sellerExternalId,
+        available,
         value: 0,
         count: 0,
         conf: 0,
-        available,
+        receivableValue: 0,
+        receivedValue: 0,
+        withCrCount: 0,
+        withCrOrderValue: 0,
+        withDocOrderValue: 0,
+        stuckWithoutNfCrValue: 0,
+        blockedValue: 0,
+        lowConfidenceValue: 0,
+        faturadoSemCrValue: 0,
+        presenteValue: 0,
+        futuraValue: 0,
+        divergenceValue: 0,
       };
       map.set(key, g);
     }
     g.value = round2(g.value + row.orderValue);
     g.count += 1;
     g.conf += row.confidenceScore * row.orderValue;
+    g.receivableValue = round2(g.receivableValue + row.receivableTotalValue);
+    g.receivedValue = round2(g.receivedValue + row.receivedValue);
+
+    const hasCr =
+      row.evidenceFlags.hasReceivable ||
+      row.statusPrincipal === "CR_ABERTO" ||
+      row.statusPrincipal === "RECEBIDO";
+    if (hasCr) {
+      g.withCrCount += 1;
+      g.withCrOrderValue = round2(g.withCrOrderValue + row.orderValue);
+    }
+    if (row.evidenceFlags.hasStockDocument) {
+      g.withDocOrderValue = round2(g.withDocOrderValue + row.orderValue);
+    }
+    if (!row.evidenceFlags.hasNfe && !row.evidenceFlags.hasReceivable) {
+      g.stuckWithoutNfCrValue = round2(g.stuckWithoutNfCrValue + row.orderValue);
+    }
+    if (row.statusPrincipal === "CARTEIRA_VENCIDA_BLOQUEADA") {
+      g.blockedValue = round2(g.blockedValue + row.orderValue);
+    }
+    if (row.confidenceLabel === "BAIXA" || row.confidenceLabel === "MUITO_BAIXA") {
+      g.lowConfidenceValue = round2(g.lowConfidenceValue + row.orderValue);
+    }
+    if (row.statusPrincipal === "FATURADO_SEM_CR") {
+      g.faturadoSemCrValue = round2(g.faturadoSemCrValue + row.orderValue);
+    }
+    if (row.statusPrincipal === "CARTEIRA_PRESENTE_ATENCAO") {
+      g.presenteValue = round2(g.presenteValue + row.orderValue);
+    }
+    if (row.statusPrincipal === "CARTEIRA_FUTURA_PROVAVEL") {
+      g.futuraValue = round2(g.futuraValue + row.orderValue);
+    }
+    if (row.tagsAlerta.includes("DIVERGENCIA_TECNICA")) {
+      g.divergenceValue = round2(g.divergenceValue + row.orderValue);
+    }
   }
 
   return [...map.entries()]
-    .map(([sellerKey, g]) => ({
-      sellerKey,
-      sellerName: g.sellerName,
-      sellerExternalId: g.sellerExternalId,
-      ordersCount: g.count,
-      orderValue: g.value,
-      averageConfidence: g.value > 0 ? round2(g.conf / g.value) : 0,
-      confidenceAvailable: g.available,
-      note: g.available ? null : PORTFOLIO_INFO_UNAVAILABLE,
-    }))
+    .map(([sellerKey, g]) => {
+      const bottleneckCandidates: Array<{ key: string; label: string; value: number }> = [
+        {
+          key: "CARTEIRA_VENCIDA_BLOQUEADA",
+          label: "Carteira vencida / bloqueada",
+          value: g.blockedValue,
+        },
+        {
+          key: "SEM_NF_CR",
+          label: "Parado sem NF/CR",
+          value: g.stuckWithoutNfCrValue,
+        },
+        {
+          key: "FATURADO_SEM_CR",
+          label: "Faturado sem CR",
+          value: g.faturadoSemCrValue,
+        },
+        {
+          key: "CARTEIRA_PRESENTE_ATENCAO",
+          label: "Presente / atenção",
+          value: g.presenteValue,
+        },
+        {
+          key: "DIVERGENCIA_TECNICA",
+          label: "Divergência técnica",
+          value: g.divergenceValue,
+        },
+        {
+          key: "CARTEIRA_FUTURA_PROVAVEL",
+          label: "Carteira futura (ainda sem evolução)",
+          value: g.futuraValue,
+        },
+      ];
+      bottleneckCandidates.sort((a, b) => b.value - a.value);
+      const top = bottleneckCandidates[0];
+      const mainBottleneck =
+        !top || top.value <= 0 ? "Sem gargalo evidente" : top.label;
+      const mainBottleneckKey = !top || top.value <= 0 ? "NONE" : top.key;
+
+      return {
+        sellerKey,
+        sellerName: g.sellerName,
+        sellerExternalId: g.sellerExternalId,
+        sellerSource: g.available ? ("SALES_ORDER" as const) : ("UNAVAILABLE" as const),
+        ordersCount: g.count,
+        orderValue: g.value,
+        receivableValue: g.receivableValue,
+        conversionCrValuePct: pct(g.withCrOrderValue, g.value),
+        conversionCrQtyPct: pct(g.withCrCount, g.count),
+        documentConvertedValue: g.withDocOrderValue,
+        conversionDocValuePct: pct(g.withDocOrderValue, g.value),
+        receivedValue: g.receivedValue,
+        receiptRatePct: pct(g.receivedValue, g.receivableValue),
+        stuckWithoutNfCrValue: g.stuckWithoutNfCrValue,
+        blockedValue: g.blockedValue,
+        lowConfidenceValuePct: pct(g.lowConfidenceValue, g.value),
+        averageConfidence: g.value > 0 ? round2(g.conf / g.value) : 0,
+        confidenceAvailable: g.available,
+        mainBottleneck,
+        mainBottleneckKey,
+        note: g.available
+          ? "Vendedor do pedido (SalesOrder / Nomus)."
+          : "Sem vendedor informado na importação do pedido.",
+      };
+    })
     .sort((a, b) => b.orderValue - a.orderValue || a.sellerName.localeCompare(b.sellerName, "pt-BR"));
 }
 
