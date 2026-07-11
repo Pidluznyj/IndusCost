@@ -5171,3 +5171,268 @@ model CommissionReceivableSchedule {
   @@index([status])
 }
 
+/// Metadados de uma materialização Order-to-Cash (auditoria Pedido → Caixa).
+/// Camada derivada/reconstruível — não altera SalesOrder, NF, CR, Fluxo de Caixa nem Comissões.
+/// Status: RUNNING | SUCCESS | FAILED | PARTIAL. Mode: PREVIEW | APPLY | MANUAL | SCHEDULED.
+model OrderToCashAuditRun {
+  id String @id @default(uuid())
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  status     String    @default("RUNNING")
+  mode       String
+
+  periodFrom DateTime?
+  periodTo   DateTime?
+  year       Int?
+  dateAxis   String?
+
+  customerFilter String?
+  sellerFilter   String?
+  orderFilter    String?
+
+  totalOrders         Int      @default(0)
+  totalOrderItems     Int      @default(0)
+  totalFacts          Int      @default(0)
+  totalOrderValue     Decimal? @db.Decimal(20, 6)
+  totalAllocatedValue Decimal? @db.Decimal(20, 6)
+  totalReceivableValue Decimal? @db.Decimal(20, 6)
+  totalReceivedValue  Decimal? @db.Decimal(20, 6)
+  totalOpenValue      Decimal? @db.Decimal(20, 6)
+  totalBlockedValue   Decimal? @db.Decimal(20, 6)
+
+  warningsJson Json?
+  errorMessage String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  facts OrderToCashAuditFact[]
+
+  @@index([status])
+  @@index([mode])
+  @@index([year])
+  @@index([startedAt])
+  @@index([periodFrom, periodTo])
+  @@index([createdAt])
+}
+
+/// Fato materializado da auditoria Pedido → Caixa (grão: linha de alocação pedido/item × documento/NF/CR).
+/// Derivado e read-only para a UI — gravação apenas pela rotina de materialização nas tabelas de auditoria.
+model OrderToCashAuditFact {
+  id String @id @default(uuid())
+
+  runId String
+  run   OrderToCashAuditRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  auditKey String
+  lineType String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Pedido
+  salesOrderId              String?
+  externalSalesOrderId      Int?
+  orderCode                 String?
+  orderStatus               String?
+  orderIssueDate            DateTime?
+  orderExpectedDeliveryDate DateTime?
+  orderTotalValue           Decimal? @db.Decimal(20, 6)
+  orderNetValue             Decimal? @db.Decimal(20, 6)
+  orderGrossValue           Decimal? @db.Decimal(20, 6)
+  companyId                 String?
+  companyName               String?
+
+  // Cliente
+  customerId         String?
+  externalCustomerId Int?
+  customerName       String?
+  customerDocument   String?
+  customerGroup      String?
+  customerCity       String?
+  customerState      String?
+
+  // Vendedor (conceito de negócio = Vendedor; nunca Representante)
+  sellerId            String?
+  externalSellerId    String?
+  sellerName          String?
+  sellerSource        String?
+  sellerQualityStatus String?
+
+  // Condição de pagamento
+  paymentConditionId       String?
+  paymentConditionName     String?
+  paymentConditionSource   String?
+  paymentTermsJson         Json?
+  plannedInstallmentsCount Int?
+  plannedFirstDueDate      DateTime?
+  plannedLastDueDate       DateTime?
+  plannedPaymentDatesJson  Json?
+  plannedReceivableValue   Decimal? @db.Decimal(20, 6)
+  plannedPaymentStatus     String?
+
+  // Item do pedido
+  salesOrderItemId              String?
+  externalSalesOrderItemId      Int?
+  orderItemSequence             Int?
+  externalProductId             Int?
+  productId                     String?
+  productCode                   String?
+  sku                           String?
+  productName                   String?
+  productDescription            String?
+  orderedQuantity               Decimal? @db.Decimal(20, 6)
+  orderUnitPrice                Decimal? @db.Decimal(20, 6)
+  orderItemTotalValue           Decimal? @db.Decimal(20, 6)
+  orderItemExpectedDeliveryDate DateTime?
+  orderItemStatus               String?
+
+  // Documento de saída
+  stockDocumentId         String?
+  stockDocumentExternalId Int?
+  stockDocumentType       String?
+  stockDocumentDate       DateTime?
+  stockDocumentTotalValue Decimal? @db.Decimal(20, 6)
+  stockDocumentPersonId   String?
+  stockDocumentPersonName String?
+  stockDocumentIdNfe      Int?
+
+  // Item do documento
+  stockDocumentItemId                 String?
+  stockDocumentItemExternalProductId  Int?
+  stockDocumentItemProductCode        String?
+  stockDocumentItemProductName        String?
+  stockDocumentItemQuantity           Decimal? @db.Decimal(20, 6)
+  stockDocumentItemUnitValue          Decimal? @db.Decimal(20, 6)
+  stockDocumentItemTotalValue         Decimal? @db.Decimal(20, 6)
+  matchedByProduct                    Boolean  @default(false)
+  quantityUsedForOrder                Decimal? @db.Decimal(20, 6)
+  quantityRemainingBeforeAllocation   Decimal? @db.Decimal(20, 6)
+  quantityRemainingAfterAllocation    Decimal? @db.Decimal(20, 6)
+  excessQuantity                      Decimal? @db.Decimal(20, 6)
+  outsideOrderQuantity                Decimal? @db.Decimal(20, 6)
+  allocatedValueByOrderPrice          Decimal? @db.Decimal(20, 6)
+  allocatedValueByDocumentPrice       Decimal? @db.Decimal(20, 6)
+  priceDifferenceValue                Decimal? @db.Decimal(20, 6)
+  priceDifferencePercent              Decimal? @db.Decimal(10, 6)
+
+  // NF
+  nfeId                 String?
+  nfeExternalId         Int?
+  nfeNumber             String?
+  nfeSerie              String?
+  nfeKey                String?
+  nfeStatus             String?
+  nfeOperationType      String?
+  nfeProcessedAt        DateTime?
+  nfeIssueDate          DateTime?
+  nfeHeaderValue        Decimal? @db.Decimal(20, 6)
+  nfeLinkedBy           String?
+  nfeItemsAvailable     Boolean  @default(false)
+  nfeItemsSource        String?
+  nfeItemProductCode    String?
+  nfeItemProductName    String?
+  nfeItemQuantity       Decimal? @db.Decimal(20, 6)
+  nfeItemUnitValue      Decimal? @db.Decimal(20, 6)
+  nfeItemTotalValue     Decimal? @db.Decimal(20, 6)
+  nfeItemMatchedOrderItem Boolean @default(false)
+
+  // Contas a Receber
+  receivableIdsJson            Json?
+  receivableCount              Int?
+  receivableTotalValue         Decimal? @db.Decimal(20, 6)
+  receivableOpenValue          Decimal? @db.Decimal(20, 6)
+  receivableReceivedValue      Decimal? @db.Decimal(20, 6)
+  receivableDueDatesJson       Json?
+  receivableSettlementDatesJson Json?
+  receivableStatus             String?
+  receivableSource             String?
+
+  // Pagamento
+  paymentScheduledDate  DateTime?
+  paymentDueDate        DateTime?
+  paymentSettlementDate DateTime?
+  paymentReceivedAt     DateTime?
+  paymentExpectedValue  Decimal? @db.Decimal(20, 6)
+  paymentReceivedValue  Decimal? @db.Decimal(20, 6)
+  paymentOpenValue      Decimal? @db.Decimal(20, 6)
+  paymentDelayDays      Int?
+  paymentStatus         String?
+
+  // Status consolidado
+  commercialStage    String?
+  operationalStage   String?
+  fiscalStage        String?
+  financialStage     String?
+  cashStage          String?
+  orderToCashStage   String?
+  temperature        String?
+  confidenceScore    Decimal? @db.Decimal(10, 4)
+  confidenceLabel    String?
+  responsibleArea    String?
+  recommendedAction  String?
+
+  // Alertas
+  hasDeliveryDelay              Boolean @default(false)
+  hasMissingStockDocument       Boolean @default(false)
+  hasPartialFulfillment         Boolean @default(false)
+  hasFullFulfillment            Boolean @default(false)
+  hasExcessQuantity             Boolean @default(false)
+  hasProductOutsideOrder        Boolean @default(false)
+  hasNfeHeaderGreaterThanOrder  Boolean @default(false)
+  hasPriceMismatch              Boolean @default(false)
+  hasDocumentWithoutReceivable  Boolean @default(false)
+  hasReceivableWithoutSafeLink  Boolean @default(false)
+  hasPaymentConditionMissing    Boolean @default(false)
+  hasPaymentDateDivergence      Boolean @default(false)
+  hasOverdueReceivable          Boolean @default(false)
+  hasRecentPaymentNotReflected  Boolean @default(false)
+  alertsJson                    Json?
+  blockingReasonsJson           Json?
+
+  // Datas / lead times
+  lastOrderUpdateAt              DateTime?
+  lastDocumentDate               DateTime?
+  lastNfeDate                    DateTime?
+  lastReceivableDueDate          DateTime?
+  lastReceivableSettlementDate   DateTime?
+  lastEvidenceDate               DateTime?
+  daysFromOrderToDocument        Int?
+  daysFromDocumentToNfe          Int?
+  daysFromNfeToReceivable        Int?
+  daysFromReceivableToSettlement Int?
+  daysDeliveryDelay              Int?
+  daysPaymentDelay               Int?
+
+  @@unique([runId, auditKey])
+  @@index([runId])
+  @@index([salesOrderId])
+  @@index([orderCode])
+  @@index([externalSalesOrderId])
+  @@index([externalCustomerId])
+  @@index([customerName])
+  @@index([externalSellerId])
+  @@index([sellerName])
+  @@index([externalProductId])
+  @@index([productCode])
+  @@index([sku])
+  @@index([nfeExternalId])
+  @@index([nfeNumber])
+  @@index([stockDocumentId])
+  @@index([receivableStatus])
+  @@index([paymentStatus])
+  @@index([orderToCashStage])
+  @@index([operationalStage])
+  @@index([financialStage])
+  @@index([temperature])
+  @@index([confidenceLabel])
+  @@index([orderIssueDate])
+  @@index([orderExpectedDeliveryDate])
+  @@index([stockDocumentDate])
+  @@index([nfeIssueDate])
+  @@index([paymentDueDate])
+  @@index([paymentSettlementDate])
+  @@index([lineType])
+  @@index([auditKey])
+}
+
