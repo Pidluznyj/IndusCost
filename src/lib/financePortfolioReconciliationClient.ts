@@ -295,6 +295,69 @@ export type PortfolioReconciliationRunsPayload = {
   runs: PortfolioReconciliationRunDto[];
 };
 
+/** Card da Central de Inteligência (vindo da API — UI só formata). */
+export type PortfolioIntelligenceCardDto = {
+  key: string;
+  title: string;
+  value: number;
+  count: number;
+  percentage: number | null;
+  colorTone: string;
+  isAlertCard: boolean;
+  explanation: {
+    whatItMeans: string;
+    howWeCalculate: string;
+    whatIsIncluded: string;
+    whatIsExcluded: string;
+    howToInterpret: string;
+  };
+};
+
+export type PortfolioIntelligenceListPayload = {
+  ok: boolean;
+  message: string | null;
+  cards: PortfolioIntelligenceCardDto[];
+  groups: Array<{
+    statusPrincipal: string;
+    title: string;
+    ordersCount: number;
+    orderValue: number;
+    averageConfidence: number;
+    orderCodes: string[];
+  }>;
+  sellerKpis: Array<Record<string, unknown>>;
+  rows: Array<Record<string, unknown>>;
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
+  filters: Record<string, unknown>;
+  metricExplanations: Record<string, unknown>;
+  warnings: string[];
+  totals: Record<string, number> | null;
+  run: { id: string; status: string; finishedAt?: string | Date | null } | null;
+};
+
+export function buildPortfolioIntelligenceListQuery(args: {
+  runId?: string;
+  customerExternalId?: string;
+  asOfDate?: string;
+  page?: number;
+  pageSize?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (args.runId?.trim()) params.set("runId", args.runId.trim());
+  if (args.customerExternalId?.trim()) {
+    params.set("customerExternalId", args.customerExternalId.trim());
+  }
+  if (args.asOfDate?.trim()) params.set("asOfDate", args.asOfDate.trim());
+  params.set("page", String(args.page ?? 1));
+  params.set("pageSize", String(args.pageSize ?? 50));
+  return params.toString();
+}
+
 export function createDefaultPortfolioReconciliationUiFilters(): PortfolioReconciliationUiFilters {
   return {
     runId: "",

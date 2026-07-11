@@ -33,12 +33,14 @@ import {
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { PortfolioReconciliationSummaryCardsView } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationSummaryCards";
 import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
+import { PortfolioIntelligenceSection } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection";
 import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
 import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
   formatPortfolioForecastSourceLabel,
   formatPortfolioStatusLabel,
 } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationBadges";
+import { cn } from "@/src/lib/utils";
 
 const MONTH_OPTIONS = [
   { value: "", label: "Todos" },
@@ -65,6 +67,9 @@ export function FinancePortfolioReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"conciliation" | "intelligence">(
+    "conciliation"
+  );
 
   const queryString = useMemo(
     () => buildPortfolioReconciliationListQuery(appliedFilters),
@@ -437,11 +442,59 @@ export function FinancePortfolioReconciliationPage() {
           </p>
         ) : null}
 
-        {loading && !payload ? (
+        <div
+          className="mb-4 flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
+          role="tablist"
+          aria-label="Visões da conciliação"
+          data-testid="portfolio-reconciliation-view-tabs"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === "conciliation"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+              activeView === "conciliation"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setActiveView("conciliation")}
+            data-testid="portfolio-tab-conciliation"
+          >
+            Conciliação
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === "intelligence"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+              activeView === "intelligence"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setActiveView("intelligence")}
+            data-testid="portfolio-tab-intelligence"
+          >
+            Inteligência da Carteira
+          </button>
+        </div>
+
+        {activeView === "intelligence" ? (
+          <div className="mb-6">
+            <PortfolioIntelligenceSection
+              enabled={canView && !noRun}
+              runId={appliedFilters.runId || payload?.run?.id || ""}
+              customerExternalId={appliedFilters.customerExternalId}
+            />
+          </div>
+        ) : null}
+
+        {activeView === "conciliation" && loading && !payload ? (
           <FinanceModuleLoadingBlock label="Carregando conciliação de carteira…" />
         ) : null}
 
-        {noRun ? (
+        {activeView === "conciliation" && noRun ? (
           <FinanceModuleEmptyState
             title="Sem conciliação materializada"
             description={PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE}
@@ -449,7 +502,7 @@ export function FinancePortfolioReconciliationPage() {
           />
         ) : null}
 
-        {!noRun && payload?.businessAnswers ? (
+        {activeView === "conciliation" && !noRun && payload?.businessAnswers ? (
           <div className="mb-4 space-y-3">
             <div
               className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
@@ -467,14 +520,19 @@ export function FinancePortfolioReconciliationPage() {
           </div>
         ) : null}
 
-        {!loading && !noRun && !error && payload && !hasRows ? (
+        {activeView === "conciliation" &&
+        !loading &&
+        !noRun &&
+        !error &&
+        payload &&
+        !hasRows ? (
           <FinanceModuleEmptyState
             title="Nenhum resultado"
             description="Não há pedidos para os filtros aplicados nesta conciliação materializada."
           />
         ) : null}
 
-        {!noRun && hasRows && payload ? (
+        {activeView === "conciliation" && !noRun && hasRows && payload ? (
           <>
             {hasAlerts ? (
               <div
