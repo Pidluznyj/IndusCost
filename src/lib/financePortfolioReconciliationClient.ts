@@ -617,7 +617,9 @@ export type PortfolioIntelligenceOrderDetail = {
     }>;
     executiveConclusion: string;
     evidenceWarnings?: string[];
-  };
+  } | null;
+  /** Avisos amigáveis (ex.: mapa de atendimento indisponível). */
+  warnings?: string[];
   timeline: Array<{ at: string; kind: string; label: string }>;
   values: {
     orderValue: number;

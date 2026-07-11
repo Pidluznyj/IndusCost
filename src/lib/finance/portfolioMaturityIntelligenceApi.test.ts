@@ -9,7 +9,10 @@ import {
   parsePortfolioIntelligenceFilters,
   PortfolioIntelligenceApiParseError,
   PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE,
+  PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING,
 } from "./portfolioMaturityIntelligenceApi.js";
+import { buildPortfolioReconciliationFacts } from "./portfolioReconciliationAllocationEngine.js";
+import { portfolioFactDraftToApiRow } from "./portfolioReconciliationOrderTrace.js";
 import { canViewFinancePortfolioReconciliation } from "../financePortfolioReconciliationPermissions.js";
 import { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS } from "../financePortfolioReconciliationPermissions.js";
 
@@ -337,6 +340,183 @@ describe("portfolioMaturityIntelligenceApi", () => {
     );
     assert.equal(detail.detail!.seller.available, false);
     assert.ok(detail.detail!.items.length >= 1);
+  });
+
+  it("detalhe retorna fulfillmentMap com eixos financeiro/operacional/alertas", () => {
+    const detail = buildPortfolioIntelligenceOrderDetailPayload({
+      salesOrderId: "order-1",
+      run: runMeta,
+      facts: [
+        fact({
+          id: "a",
+          salesOrderItemId: "item-1",
+          externalProductId: 10,
+          orderQuantity: 100,
+          orderUnitPrice: 10,
+          orderItemValue: 1000,
+          allocatedQuantity: 40,
+          nfeExternalId: 1,
+          nfeNumber: "100",
+          nfeHeaderValue: 400,
+          stockDocumentExternalId: 9,
+          stockQuantity: 40,
+          stockUnitValue: 10,
+          stockItemValue: 400,
+          status: "ITEM_ALLOCATED",
+          receivableTotalValue: 1000,
+          receivedValue: 200,
+          openReceivableValue: 800,
+          receivableIdsJson: [55],
+        }),
+      ],
+      orderTotalBySalesOrderId: new Map([["order-1", 1000]]),
+      asOfDate: "2026-07-10",
+    });
+    assert.equal(detail.ok, true);
+    const map = detail.detail!.fulfillmentMap;
+    assert.ok(map, "fulfillmentMap presente");
+    assert.ok(map!.financialStatus.startsWith("FIN_"), "financialStatus");
+    assert.ok(map!.operationalStatus.startsWith("OP_"), "operationalStatus");
+    assert.ok(Array.isArray(map!.technicalAlerts), "technicalAlerts");
+    assert.ok(Array.isArray(map!.orderItemsCoverage), "orderItemsCoverage");
+    assert.ok(map!.orderItemsCoverage.length >= 1);
+    assert.ok(Array.isArray(map!.stockDocumentsCoverage), "stockDocumentsCoverage");
+    assert.ok(Array.isArray(map!.receivablesCoverage), "receivablesCoverage");
+    assert.ok(typeof map!.executiveConclusion === "string");
+    assert.ok(Array.isArray(map!.evidenceWarnings));
+    // Maturidade (statusPrincipal) ≠ eixo financeiro do mapa
+    assert.notEqual(
+      detail.detail!.classification.statusPrincipal,
+      map!.financialStatus
+    );
+    assert.equal(
+      detail.detail!.classification.financialStatus,
+      map!.financialStatus
+    );
+    assert.equal(map!.financialStatus, "FIN_CR_ABERTO");
+    assert.equal(map!.operationalStatus, "OP_PARCIALMENTE_ATENDIDO");
+  });
+
+  it("erro de montagem do fulfillmentMap retorna warning amigável sem derrubar detalhe", () => {
+    const detail = buildPortfolioIntelligenceOrderDetailPayload({
+      salesOrderId: "order-1",
+      run: runMeta,
+      facts: [fact({ id: "a" })],
+      orderTotalBySalesOrderId: new Map([["order-1", 100]]),
+      asOfDate: "2026-07-10",
+      buildFulfillmentMap: () => {
+        throw new Error("PrismaClientKnownRequestError: raw boom");
+      },
+    });
+    assert.equal(detail.ok, true);
+    assert.ok(detail.detail);
+    assert.equal(detail.detail!.fulfillmentMap, null);
+    assert.ok(Array.isArray(detail.detail!.warnings));
+    assert.ok(
+      detail.detail!.warnings!.some((w) =>
+        w === PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING ||
+        /mapa de atendimento/i.test(w)
+      )
+    );
+    const serialized = JSON.stringify(detail);
+    assert.doesNotMatch(serialized, /PrismaClient|stack|raw boom/i);
+    assert.ok(detail.detail!.executiveSummary.length > 0);
+    assert.ok(detail.detail!.classification.statusPrincipal);
+  });
+
+  it("PD 02339 fixture no detalhe: cabeçalho não atribuído e alertas técnicos", () => {
+    const orderId = "3915fa28-1947-4388-bb27-2699c3cbb516";
+    const built = buildPortfolioReconciliationFacts({
+      runId: runMeta.id,
+      mode: "preview",
+      snapshot: {
+        orders: [
+          {
+            id: orderId,
+            externalSalesOrderId: 2335,
+            orderCode: "PD 02339",
+            issueDate: new Date(2026, 4, 1),
+            customerNameSnapshot: "Britania",
+            totalNetValue: 158000,
+            items: [
+              { id: "item-456", externalProductId: 456, quantity: 3000, unitPrice: 5.85 },
+              { id: "item-452", externalProductId: 452, quantity: 9000, unitPrice: 5.85 },
+              { id: "item-537", externalProductId: 537, quantity: 5000, unitPrice: 5.86 },
+              { id: "item-455", externalProductId: 455, quantity: 10000, unitPrice: 5.85 },
+            ],
+          },
+        ],
+        nfeLinks: [
+          { salesOrderId: orderId, nfeExternalId: 6937, nfeNumber: "6845" },
+          { salesOrderId: orderId, nfeExternalId: 7188, nfeNumber: "7052" },
+          { salesOrderId: orderId, nfeExternalId: 7377, nfeNumber: "7195" },
+        ],
+        nfes: [
+          { id: "nfe-6937", externalId: 6937, numero: "6845", valorLiquido: 108240 },
+          { id: "nfe-7188", externalId: 7188, numero: "7052", valorLiquido: 168075 },
+          { id: "nfe-7377", externalId: 7377, numero: "7195", valorLiquido: 78975 },
+        ],
+        stockDocuments: [
+          {
+            id: "doc-7951",
+            externalId: 7951,
+            idNfe: 6937,
+            items: [
+              { id: "si-456", externalProductId: 456, quantity: 3000, unitValue: 4.92 },
+              { id: "si-452", externalProductId: 452, quantity: 9000, unitValue: 4.92 },
+              { id: "si-455", externalProductId: 455, quantity: 10000, unitValue: 4.92 },
+            ],
+          },
+          {
+            id: "doc-8175",
+            externalId: 8175,
+            idNfe: 7188,
+            items: [
+              { id: "si-537", externalProductId: 537, quantity: 10000, unitValue: 5.86 },
+              { id: "si-452b", externalProductId: 452, quantity: 4500, unitValue: 5.85 },
+              { id: "si-538", externalProductId: 538, quantity: 6200, unitValue: 5.85 },
+              { id: "si-453", externalProductId: 453, quantity: 8000, unitValue: 5.86 },
+            ],
+          },
+          {
+            id: "doc-8422",
+            externalId: 8422,
+            idNfe: 7377,
+            items: [
+              { id: "si-452c", externalProductId: 452, quantity: 3500, unitValue: 5.85 },
+              { id: "si-455b", externalProductId: 455, quantity: 10000, unitValue: 5.85 },
+            ],
+          },
+        ],
+      },
+    });
+    const facts = built.facts.map((d, i) => portfolioFactDraftToApiRow(d, `pd-${i}`));
+    const detail = buildPortfolioIntelligenceOrderDetailPayload({
+      salesOrderId: orderId,
+      run: runMeta,
+      facts,
+      orderTotalBySalesOrderId: new Map([[orderId, 158000]]),
+      asOfDate: "2026-07-10",
+    });
+    assert.equal(detail.ok, true);
+    const map = detail.detail!.fulfillmentMap!;
+    assert.ok(map);
+    assert.equal(map.fulfillmentSummary.orderValue, 158000);
+    assert.ok(map.fulfillmentSummary.nfeHeaderTotalValue > 158000);
+    assert.ok(map.fulfillmentSummary.nfeHeaderNotAttributedToOrderValue > 0);
+    assert.ok(
+      map.fulfillmentSummary.attributedOrderValueByOrderPrice <= 158000.05
+    );
+    assert.ok(map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"));
+    assert.ok(map.technicalAlerts.includes("DIVERGENCIA_PRECO"));
+    assert.ok(map.orderItemsCoverage.length >= 4);
+    assert.ok(map.stockDocumentsCoverage.length >= 1);
+    assert.ok(Array.isArray(map.receivablesCoverage));
+    assert.ok(detail.detail!.classification.statusPrincipal);
+    assert.notEqual(
+      detail.detail!.classification.statusPrincipal,
+      map.financialStatus
+    );
   });
 
   it("erro de parâmetro inválido é amigável", () => {

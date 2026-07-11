@@ -32,9 +32,17 @@ import {
   type PortfolioMaturityStatus,
 } from "./portfolioMaturityClassification.js";
 import { buildOrderFulfillmentMap } from "./portfolioOrderFulfillmentMap.js";
+import type {
+  BuildOrderFulfillmentMapInput,
+  PortfolioOrderFulfillmentMap,
+} from "./portfolioOrderFulfillmentMap.js";
 
 export const PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE = 50;
 export const PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE = 200;
+
+/** Aviso amigável quando o mapa de atendimento não puder ser montado. */
+export const PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING =
+  "Não foi possível montar o mapa de atendimento deste pedido com as evidências atuais. Os demais dados do detalhe continuam disponíveis.";
 
 export class PortfolioIntelligenceApiParseError extends Error {
   constructor(message: string) {
@@ -346,6 +354,10 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   enrichment?: PortfolioOrderEnrichment | null;
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
   asOfDate?: string | null;
+  /** Override só para testes — força falha controlada do mapa. */
+  buildFulfillmentMap?: (
+    input: BuildOrderFulfillmentMapInput
+  ) => PortfolioOrderFulfillmentMap;
 }) {
   if (!args.run) {
     return {
@@ -374,11 +386,23 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   const paymentMethod = args.enrichment?.paymentMethod?.trim() || null;
   const paymentAvailable = Boolean(paymentTerms || paymentMethod);
 
-  const fulfillmentMap = buildOrderFulfillmentMap({
-    reconciliationFacts: args.facts,
-    orderValue: maturity.orderValue,
-    paymentTermsAvailable: paymentAvailable,
-  });
+  const detailWarnings: string[] = [];
+  let fulfillmentMap: PortfolioOrderFulfillmentMap | null = null;
+  try {
+    const builder = args.buildFulfillmentMap ?? buildOrderFulfillmentMap;
+    fulfillmentMap = builder({
+      reconciliationFacts: args.facts,
+      orderValue: maturity.orderValue,
+      paymentTermsAvailable: paymentAvailable,
+    });
+    if (fulfillmentMap.evidenceWarnings?.length) {
+      detailWarnings.push(...fulfillmentMap.evidenceWarnings);
+    }
+  } catch {
+    // Read-only / explicativo: não derruba o detalhe nem vaza stack/Prisma.
+    fulfillmentMap = null;
+    detailWarnings.push(PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING);
+  }
 
   const items = buildPortfolioOrderItemRows(args.facts);
   const documents = buildPortfolioDocumentLinkRows(args.facts);
@@ -476,11 +500,13 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
         recommendedAction: maturity.recommendedAction,
         mainReason: maturity.mainReason,
         evidenceFlags: maturity.evidenceFlags,
-        financialStatus: fulfillmentMap.financialStatus,
-        operationalStatus: fulfillmentMap.operationalStatus,
-        technicalAlerts: fulfillmentMap.technicalAlerts,
+        // Eixos do mapa — separados do statusPrincipal de maturidade
+        financialStatus: fulfillmentMap?.financialStatus,
+        operationalStatus: fulfillmentMap?.operationalStatus,
+        technicalAlerts: fulfillmentMap?.technicalAlerts ?? [],
       },
       fulfillmentMap,
+      warnings: detailWarnings,
       timeline,
       values: {
         orderValue: maturity.orderValue,

@@ -295,6 +295,21 @@ export function PortfolioIntelligenceOrderDrawer({
                   ))}
                 </div>
               ) : null}
+              {detail.warnings && detail.warnings.length > 0 ? (
+                <div
+                  className="space-y-1.5"
+                  data-testid="portfolio-intelligence-drawer-warnings"
+                >
+                  {detail.warnings.map((w) => (
+                    <p
+                      key={w}
+                      className="rounded-xl border border-amber-200/80 bg-amber-50/50 px-3 py-2 text-xs text-amber-950"
+                    >
+                      {w}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
               <p
                 className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3.5 py-2.5 text-sm leading-relaxed text-foreground"
                 data-testid="portfolio-intelligence-drawer-executive"
