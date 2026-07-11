@@ -4,21 +4,22 @@
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Módulo** | Financeiro → Conciliação de Carteira → Inteligência / Auditoria |
-| **Data** | 2026-07-11 |
-| **Commit desta QA** | c9a7b68dc398f5a38a7f3f0c239183389c1f4c2f |
+| **Data desta reexecução** | 2026-07-11 |
+| **Commit desta QA** | *(preenchido no push)* |
 | **Status geral** | **PRONTO** |
 
 ---
 
 ## 1. Status geral
 
-**PRONTO** para uso da Central de Auditoria da Carteira nesta branch.
+**PRONTO**
 
-- Checklist visual (código + contrato de UI): **PASS**
-- Gates técnicos (`imports` / `test` / `build` / `browser-bundle`): **PASS**
-- Scripts PD 02339, Britânia e forecast: **PASS** (modo FIXTURE / motor puro onde DB local indisponível)
-- Bugs de produto encontrados nesta QA: **nenhum** (apenas gap de script de audit do forecast, corrigido nesta entrega)
-- Módulos oficiais: **não afetados** pelos commits da Central de Auditoria
+- Checklist visual (contrato de código): **PASS** (11/11)
+- Gates técnicos: **PASS**
+- Scripts PD 02339 / Britânia / Forecast: **PASS** (FIXTURE / motor puro)
+- Bugs de produto nesta QA: **nenhum**
+- Feature nova / mudança de regra: **não**
+- Módulos oficiais: **não afetados**
 
 ---
 
@@ -26,11 +27,11 @@
 
 | Comando | Resultado |
 |---------|-----------|
-| `npm run check:server-imports` | **PASS** |
-| `npm run check:frontend-server-imports` | **PASS** |
-| `npm test` | **PASS** (fail 0) |
-| `npm run build` | **PASS** |
-| `npm run check:browser-bundle` | **PASS** |
+| `npm run check:server-imports` | **PASS** — estático OK; sem named export fantasma |
+| `npm run check:frontend-server-imports` | **PASS** — 628 arquivos; nenhum caminho até Prisma/server |
+| `npm test` | **PASS** — fail 0 |
+| `npm run build` | **PASS** — built ~21s |
+| `npm run check:browser-bundle` | **PASS** — dist livre de Prisma |
 
 ---
 
@@ -40,72 +41,62 @@
 |--------|-----------|------------|
 | `npx tsx tmp-audits/validate-pd02339-fulfillment-map.ts` | **PASS=15 FAIL=0** | Modo **FIXTURE** (DB local indisponível) |
 | `npx tsx tmp-audits/validate-portfolio-intelligence-britania.ts` | **PASS=65 FAIL=0** | Modo **FIXTURE** |
-| `npx tsx tmp-audits/validate-portfolio-cash-forecast-audit.ts` | **PASS=11 FAIL=0** | Motor puro (sem DB) — script criado nesta QA |
+| `npx tsx tmp-audits/validate-portfolio-cash-forecast-audit.ts` | **PASS=11 FAIL=0** | Motor puro (sem DB) |
 
 ---
 
 ## 4. Resumo PD 02339
 
-Pedido **PD 02339** (Britânia-shaped / fixture):
-
 | Regra | Resultado |
 |-------|-----------|
-| Pedido encontrado | PASS |
-| Valor do pedido = R$ 158.000 | PASS |
-| Itens + cobertura existem | PASS |
-| Documentos/NFs existem | PASS |
-| Mapa de atendimento gerado | PASS |
-| Quantidade atendida não passa o pedido | PASS |
-| % atendimento ≤ 100% | PASS |
+| Pedido encontrado / valor R$ 158.000 | PASS |
+| Itens + documentos/NFs | PASS |
+| Mapa gerado | PASS |
+| Qtd atendida capada ≤ pedido; % ≤ 100% | PASS |
 | Valor atribuído ≤ 158.000 | PASS |
-| Cabeçalho NF (R$ 355.290) **não infla** o pedido | PASS |
+| Cabeçalho NF (~355.290) **não infla** pedido | PASS |
 | Status financeiro `FIN_CR_ABERTO` | PASS |
-| Status operacional `OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE` | PASS |
+| Status operacional com excedente | PASS |
 | Alertas técnicos separados | PASS |
-| CR coverage existe | PASS |
-| Conclusão executiva em português (sem JSON cru) | PASS |
+| CR coverage + conclusão em português (sem JSON cru) | PASS |
 
-**Ressalva:** revalidar na run materializada quando o DB estiver disponível  
-(`runId` esperado da documentação: `1dc2ead7-533d-4ad4-bc4c-621061fa5623`).
+**Ressalva:** revalidar na run materializada (`1dc2ead7-533d-4ad4-bc4c-621061fa5623`) com DB.
 
 ---
 
 ## 5. Resumo Britânia
 
-Fixture Britânia-shaped (31 pedidos):
+| Métrica | Esperado | Resultado |
+|---------|----------|-----------|
+| Pedidos | 31 | PASS |
+| Valor total | R$ 3.324.636,50 | PASS |
+| Sem NF/doc/CR | 13 / R$ 1.380.296 | PASS |
+| Futuro + presente | R$ 495.460 (3 pedidos) | PASS |
+| Vencido/bloqueado | R$ 884.836 (10 pedidos) | PASS |
+| Sem duplicidade de status / soma = carteira | — | PASS |
+| Explanations / drawer PD 02159 | — | PASS |
 
-| Regra | Resultado |
-|-------|-----------|
-| Total pedidos = 31 / valor = 3.324.636,50 | PASS |
-| Futura+presente = 495.460 (3 pedidos) | PASS |
-| Vencida/bloqueada = 884.836 (10 pedidos) | PASS |
-| Soma status = carteira total (sem duplicidade) | PASS |
-| PD 02607 / 02740 futuras; PD 02739 presente | PASS |
-| PD 02159 e demais bloqueados com confiança muito baixa | PASS |
-| Explanations dos cards completas | PASS |
-| Drawer PD 02159: ausência NF/doc/CR coerente | PASS |
-
-**Ressalva:** reexecutar com DB para validar a run materializada.
+Script: **PASS=65 FAIL=0** (FIXTURE).
 
 ---
 
-## 6. Checklist visual (código / contrato de UI)
+## 6. Checklist visual
 
 | # | Item | Status | Evidência |
 |---|------|--------|-----------|
-| 1 | Tela em Financeiro → Conciliação de Carteira | PASS | `FinancePortfolioReconciliationPage` + aba Inteligência |
+| 1 | Tela em Financeiro → Conciliação de Carteira | PASS | `FinancePortfolioReconciliationPage` + aba `portfolio-tab-intelligence` |
 | 2 | Título “Central de Auditoria da Carteira” | PASS | `INTELLIGENCE_SCREEN_TITLE` |
-| 3 | Subtítulo aparece | PASS | `INTELLIGENCE_SCREEN_INTRO` |
-| 4 | Aviso “Pedido de venda não é dinheiro confirmado…” | PASS | `portfolio-intelligence-pd-warning` |
-| 5 | Blocos Financeiro / Operacional / Atendimento e alertas | PASS | `PortfolioIntelligenceCards` |
-| 6 | Cards: cor suave, borda, “?”, valor+qtd, alertas ≠ dinheiro | PASS | `TONE_CLASS` + `MetricHelpTooltip` + selo “não soma carteira” |
-| 7 | Filtros + chips + limpar | PASS | `PortfolioIntelligenceFiltersBar` |
-| 8 | Sanfonas em 3 grupos + grid | PASS | `INTELLIGENCE_ACCORDION_GROUPS` |
-| 9 | Grid: pedido, cliente, vendedor, valor, FIN/OP, confiança, % atendimento, alertas | PASS | `PortfolioIntelligenceOrdersGrid` |
-| 10 | Drawer: clique, ~75vw, 1ª aba Mapa, cards, itens/docs/CR, frescor, conclusão, sem JSON | PASS | `PortfolioIntelligenceOrderDrawer` |
-| 11 | Estados vazios (sem doc / sem CR / sem baixa / condição indisponível) | PASS | grids + freshness + aba Pagamento |
+| 3 | Subtítulo | PASS | `INTELLIGENCE_SCREEN_INTRO` |
+| 4 | Aviso “Pedido de venda não é dinheiro confirmado…” | PASS | `INTELLIGENCE_SCREEN_WARNING` / `portfolio-intelligence-pd-warning` |
+| 5 | Blocos Financeiro / Operacional / Atendimento e alertas | PASS | `INTELLIGENCE_BLOCK_*` + `PortfolioIntelligenceCards` |
+| 6 | Cards: cor suave, borda, “?”, valor+qtd, alertas ≠ dinheiro | PASS | `MetricHelpTooltip`, `data-alert-card`, “não somam” |
+| 7 | Filtros + chips + limpar | PASS | `PortfolioIntelligenceFiltersBar` (`onClear`, chips) |
+| 8 | Sanfonas 3 grupos + grid | PASS | `INTELLIGENCE_ACCORDION_GROUPS` + `PortfolioIntelligenceOrdersGrid` |
+| 9 | Grid: pedido, cliente, vendedor, valor, FIN, OP, confiança, % atendimento, alertas | PASS | headers em `PortfolioIntelligenceOrdersGrid` |
+| 10 | Drawer: clique, 75vw, 1ª aba Mapa, cards/itens/docs/CR, frescor, conclusão, sem JSON | PASS | `PortfolioIntelligenceOrderDrawer` (`w-[75vw]`, TABS[0]=mapa); JSON.stringify só no drawer legado de conciliação, não na inteligência |
+| 11 | Empty: sem doc / sem CR / sem baixa / condição indisponível | PASS | Documents/Receivables grids + freshness + aba Pagamento |
 
-**Nota de QA:** validação visual foi por contrato de código + testes de UI; não houve sessão browser com prints nesta execução.
+**Nota:** checklist por contrato de código + testes UI; sem sessão browser com prints nesta execução.
 
 ---
 
@@ -113,16 +104,15 @@ Fixture Britânia-shaped (31 pedidos):
 
 | Arquivo | Motivo |
 |---------|--------|
-| `tmp-audits/validate-portfolio-cash-forecast-audit.ts` | **Novo** — script faltava no DoD; fecha gap de validação do forecast |
-| `docs/finance/portfolio-cash-forecast-audit-qa-report.md` | **Novo** — este relatório |
+| `docs/finance/portfolio-cash-forecast-audit-qa-report.md` | Atualização desta reexecução de QA |
 
-Nenhuma alteração de regra de negócio, UI ou módulo oficial nesta QA.
+Nenhuma alteração de código de produto nesta passagem.
 
 ---
 
 ## 8. Módulos não afetados
 
-Confirmado por inspeção dos commits da evolução da Central (`213c797`…`f81c076` + este commit de QA):
+Inspeção do range da evolução da Central (`98bf8b4`…`HEAD`): **zero** alteração em:
 
 | Módulo | Afetado? |
 |--------|----------|
@@ -132,27 +122,23 @@ Confirmado por inspeção dos commits da evolução da Central (`213c797`…`f81
 | Relatório Presidencial | **Não** |
 | Precificação | **Não** |
 | Engenharia / BOM | **Não** |
-| Contas a Pagar / Suprimentos | **Não** |
 
-O forecast da Central permanece **camada paralela** (`portfolioCashForecastMaturity`), sem substituir o Fluxo de Caixa oficial.
+Forecast permanece paralelo (`portfolioCashForecastMaturity`).
 
 ---
 
 ## 9. Limitações conhecidas
 
-1. Scripts PD 02339 e Britânia rodaram em **FIXTURE** — DB local indisponível nesta máquina; revalidar run materializada em ambiente com dados.
-2. QA visual foi **por código/contrato**, não por screenshots de browser.
-3. KPIs por cliente (além de vendedor) ainda não têm tabela dedicada; a grade atual é por **vendedor comercial do pedido**.
-4. Frescor / alertas operacionais dependem do payload da API; sem run, a tela mostra empty/loading amigável.
+1. Scripts PD/Britânia em **FIXTURE** — revalidar com DB/run materializada.  
+2. QA visual sem screenshots de browser nesta passagem.  
+3. KPIs por cliente (além de vendedor) ainda sem grade dedicada.  
+4. Frescor depende de sync Contas a Receber + rebuild da run.
 
 ---
 
-## 10. Correções feitas nesta QA
+## 10. Correções nesta QA
 
-| Item | Ação |
-|------|------|
-| Script `validate-portfolio-cash-forecast-audit.ts` ausente | Criado (motor puro, 10 regras + paralelo ao fluxo oficial) |
-| Bugs de UI/regra na Central | **Nenhum** encontrado — sem patch de produto |
+Nenhuma — nenhum bug encontrado; só documentação atualizada.
 
 ---
 
@@ -160,4 +146,4 @@ O forecast da Central permanece **camada paralela** (`portfolioCashForecastMatur
 
 **Status: PRONTO**
 
-Gates e scripts obrigatórios PASS. Checklist visual PASS no contrato de código. Sem regressão nos módulos oficiais.
+Gates, scripts e checklist visual PASS. Sem regressão em módulos oficiais.
