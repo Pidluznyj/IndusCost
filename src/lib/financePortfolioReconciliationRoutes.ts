@@ -11,6 +11,12 @@ import {
   loadPortfolioReconciliationOrderDetail,
   loadPortfolioReconciliationRunSummary,
 } from "./financePortfolioReconciliationApi.server.js";
+import {
+  listOrderToCashAuditRuns,
+  loadOrderToCashAuditFactById,
+  loadOrderToCashAuditList,
+} from "./financeOrderToCashAuditApi.server.js";
+import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
 
 type AuthGuards = {
@@ -218,6 +224,96 @@ export function registerFinancePortfolioReconciliationRoutes(
             financeApiErrorJson(
               "Erro ao carregar resumo do run de conciliação.",
               new Error("Falha interna ao consultar resumo.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-to-cash-audit",
+    ...guard,
+    async (req, res) => {
+      try {
+        const payload = await loadOrderToCashAuditList(
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (error instanceof OrderToCashAuditApiParseError) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-to-cash-audit",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar auditoria Pedido → Caixa.",
+              new Error("Falha interna ao consultar fatos materializados.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-to-cash-audit/runs",
+    ...guard,
+    async (_req, res) => {
+      try {
+        const payload = await listOrderToCashAuditRuns();
+        res.json(payload);
+      } catch (error) {
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-to-cash-audit/runs",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao listar runs da auditoria Pedido → Caixa.",
+              new Error("Falha interna ao consultar runs.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-to-cash-audit/:factId",
+    ...guard,
+    async (req, res) => {
+      try {
+        const factId = String(req.params.factId ?? "").trim();
+        if (!factId || factId === "runs") {
+          res.status(400).json({
+            error: "factId obrigatório.",
+            message: "factId obrigatório.",
+          });
+          return;
+        }
+        const payload = await loadOrderToCashAuditFactById(factId);
+        if (!payload.ok) {
+          res.status(404).json(payload);
+          return;
+        }
+        res.json(payload);
+      } catch (error) {
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-to-cash-audit/:factId",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar fato da auditoria Pedido → Caixa.",
+              new Error("Falha interna ao consultar fato materializado.")
             )
           );
       }
