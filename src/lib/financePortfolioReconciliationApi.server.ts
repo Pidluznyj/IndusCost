@@ -14,6 +14,12 @@ import {
   type PortfolioReconciliationListFilters,
   type PortfolioReconciliationRunMeta,
 } from "./finance/portfolioReconciliationApi.js";
+import {
+  buildPortfolioIntelligenceListPayload,
+  buildPortfolioIntelligenceOrderDetailPayload,
+  parsePortfolioIntelligenceFilters,
+} from "./finance/portfolioMaturityIntelligenceApi.js";
+import type { PortfolioOrderEnrichment } from "./finance/portfolioMaturityAnalytics.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -353,4 +359,137 @@ export async function loadPortfolioReconciliationRunSummary(runId: string) {
     factCount: facts.length,
     orderCount: list.summary.totalPedidos,
   };
+}
+
+async function loadOrderEnrichments(orderIds: string[]) {
+  const orderTotalBySalesOrderId = new Map<string, number>();
+  const enrichmentsBySalesOrderId = new Map<string, PortfolioOrderEnrichment>();
+  if (orderIds.length === 0) {
+    return { orderTotalBySalesOrderId, enrichmentsBySalesOrderId };
+  }
+  const orders = await prisma.salesOrder.findMany({
+    where: { id: { in: orderIds } },
+    select: {
+      id: true,
+      totalNetValue: true,
+      nomusSellerName: true,
+      externalSellerId: true,
+      paymentTerms: true,
+      paymentMethod: true,
+      externalCompanyId: true,
+      updatedAt: true,
+    },
+  });
+  for (const order of orders) {
+    const n = decimalToNumber(order.totalNetValue);
+    if (n != null) orderTotalBySalesOrderId.set(order.id, n);
+    enrichmentsBySalesOrderId.set(order.id, {
+      salesOrderId: order.id,
+      orderValue: n,
+      sellerName: order.nomusSellerName,
+      sellerExternalId: order.externalSellerId,
+      paymentTerms: order.paymentTerms,
+      paymentMethod: order.paymentMethod,
+      companyId:
+        order.externalCompanyId != null ? String(order.externalCompanyId) : null,
+      updatedAt: order.updatedAt,
+    });
+  }
+  return { orderTotalBySalesOrderId, enrichmentsBySalesOrderId };
+}
+
+/**
+ * Listagem da Central de Inteligência (read-only).
+ */
+export async function loadPortfolioIntelligenceList(query: Record<string, unknown>) {
+  const filters = parsePortfolioIntelligenceFilters(query);
+  const run = await resolvePortfolioReconciliationRun({
+    runId: filters.runId ?? null,
+    customerExternalId: filters.customerExternalId ?? null,
+    year: null,
+    month: null,
+    orderCode: null,
+    status: null,
+    confidenceLevel: null,
+    forecastSource: null,
+    onlyIssues: false,
+    page: 1,
+    pageSize: 1,
+  });
+  if (!run) {
+    return buildPortfolioIntelligenceListPayload({
+      run: null,
+      facts: [],
+      filters,
+    });
+  }
+
+  let facts = await loadPortfolioReconciliationFactsForRun(run.id);
+  if (filters.customerExternalId != null) {
+    facts = facts.filter((f) => f.customerExternalId === filters.customerExternalId);
+  }
+  if (filters.customerId != null) {
+    facts = facts.filter((f) => f.customerId === filters.customerId);
+  }
+
+  const orderIds = [
+    ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),
+  ];
+  const { orderTotalBySalesOrderId, enrichmentsBySalesOrderId } =
+    await loadOrderEnrichments(orderIds);
+
+  return buildPortfolioIntelligenceListPayload({
+    run,
+    facts,
+    filters,
+    orderTotalBySalesOrderId,
+    enrichmentsBySalesOrderId,
+  });
+}
+
+/**
+ * Detalhe de maturidade de um pedido (read-only).
+ */
+export async function loadPortfolioIntelligenceOrderDetail(
+  salesOrderId: string,
+  query: Record<string, unknown>
+) {
+  const filters = parsePortfolioIntelligenceFilters(query);
+  const run = await resolvePortfolioReconciliationRun({
+    runId: filters.runId ?? null,
+    customerExternalId: filters.customerExternalId ?? null,
+    year: null,
+    month: null,
+    orderCode: null,
+    status: null,
+    confidenceLevel: null,
+    forecastSource: null,
+    onlyIssues: false,
+    page: 1,
+    pageSize: 1,
+  });
+  if (!run) {
+    return buildPortfolioIntelligenceOrderDetailPayload({
+      salesOrderId,
+      run: null,
+      facts: [],
+    });
+  }
+
+  const rows = await prisma.portfolioReconciliationFact.findMany({
+    where: { runId: run.id, salesOrderId },
+    orderBy: [{ salesOrderItemId: "asc" }, { id: "asc" }],
+  });
+  const facts = rows.map(mapFact);
+  const { orderTotalBySalesOrderId, enrichmentsBySalesOrderId } =
+    await loadOrderEnrichments(facts[0]?.salesOrderId ? [facts[0].salesOrderId] : []);
+
+  return buildPortfolioIntelligenceOrderDetailPayload({
+    salesOrderId,
+    run,
+    facts,
+    enrichment: enrichmentsBySalesOrderId.get(salesOrderId) ?? null,
+    orderTotalBySalesOrderId,
+    asOfDate: filters.asOfDate,
+  });
 }

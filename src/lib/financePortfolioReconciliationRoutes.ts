@@ -5,10 +5,13 @@ import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconci
 import { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS } from "./financePortfolioReconciliationPermissions.js";
 import {
   listPortfolioReconciliationRuns,
+  loadPortfolioIntelligenceList,
+  loadPortfolioIntelligenceOrderDetail,
   loadPortfolioReconciliationList,
   loadPortfolioReconciliationOrderDetail,
   loadPortfolioReconciliationRunSummary,
 } from "./financePortfolioReconciliationApi.server.js";
+import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -108,6 +111,82 @@ export function registerFinancePortfolioReconciliationRoutes(
         );
     }
   });
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/intelligence",
+    ...guard,
+    async (req, res) => {
+      try {
+        const payload = await loadPortfolioIntelligenceList(
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof PortfolioReconciliationApiParseError ||
+          error instanceof PortfolioIntelligenceApiParseError
+        ) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error("GET /api/finance/portfolio-reconciliation/intelligence", error);
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar a central de inteligência da carteira.",
+              new Error("Falha interna ao consultar maturidade da carteira.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/intelligence/orders/:salesOrderId",
+    ...guard,
+    async (req, res) => {
+      try {
+        const salesOrderId = String(req.params.salesOrderId ?? "").trim();
+        if (!salesOrderId) {
+          res.status(400).json({
+            error: "salesOrderId obrigatório.",
+            message: "salesOrderId obrigatório.",
+          });
+          return;
+        }
+        const payload = await loadPortfolioIntelligenceOrderDetail(
+          salesOrderId,
+          req.query as Record<string, unknown>
+        );
+        if (!payload.ok) {
+          res.status(404).json(payload);
+          return;
+        }
+        res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof PortfolioReconciliationApiParseError ||
+          error instanceof PortfolioIntelligenceApiParseError
+        ) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/intelligence/orders/:salesOrderId",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar detalhe de maturidade do pedido.",
+              new Error("Falha interna ao consultar maturidade do pedido.")
+            )
+          );
+      }
+    }
+  );
 
   app.get(
     "/api/finance/portfolio-reconciliation/runs/:runId/summary",

@@ -145,7 +145,19 @@ export type PortfolioMaturityAnalyticsFilters = {
   page?: number;
   pageSize?: number;
   asOfDate?: string | null;
+  sortBy?: PortfolioMaturitySortBy | null;
+  sortDirection?: "asc" | "desc" | null;
 };
+
+export type PortfolioMaturitySortBy =
+  | "orderCode"
+  | "orderValue"
+  | "confidenceScore"
+  | "statusPrincipal"
+  | "issueDate"
+  | "forecastDate"
+  | "customerName"
+  | "sellerName";
 
 export type PortfolioOrderEnrichment = {
   salesOrderId: string;
@@ -991,6 +1003,30 @@ function buildTotals(rows: readonly PortfolioMaturityOrderRow[]) {
   };
 }
 
+export function sortMaturityOrders(
+  rows: readonly PortfolioMaturityOrderRow[],
+  sortBy?: PortfolioMaturitySortBy | null,
+  sortDirection?: "asc" | "desc" | null
+): PortfolioMaturityOrderRow[] {
+  const dir = sortDirection === "desc" ? -1 : 1;
+  const key = sortBy ?? "orderCode";
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (av == null && bv == null) return a.orderCode.localeCompare(b.orderCode, "pt-BR");
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === "number" && typeof bv === "number") {
+      const c = av - bv;
+      return c !== 0 ? c * dir : a.orderCode.localeCompare(b.orderCode, "pt-BR");
+    }
+    const c = String(av).localeCompare(String(bv), "pt-BR");
+    return c !== 0 ? c * dir : a.orderCode.localeCompare(b.orderCode, "pt-BR");
+  });
+  return copy;
+}
+
 /**
  * Pipeline completo: agrega → classifica → filtra → cards/KPIs → página.
  */
@@ -1016,10 +1052,11 @@ export function buildPortfolioMaturityAnalytics(args: {
   });
 
   const filtered = filterMaturityOrders(allRows, filters, warnings);
-  const summaryCards = buildSummaryCards(filtered);
-  const statusGroups = buildStatusGroups(filtered);
-  const sellerKpis = buildSellerKpis(filtered);
-  const totals = buildTotals(filtered);
+  const sorted = sortMaturityOrders(filtered, filters.sortBy, filters.sortDirection);
+  const summaryCards = buildSummaryCards(sorted);
+  const statusGroups = buildStatusGroups(sorted);
+  const sellerKpis = buildSellerKpis(sorted);
+  const totals = buildTotals(sorted);
 
   // Não duplicidade: soma dos status principais = carteira total
   const statusSum = statusGroups.reduce((s, g) => s + g.orderValue, 0);
@@ -1031,10 +1068,10 @@ export function buildPortfolioMaturityAnalytics(args: {
 
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 50));
-  const totalRows = filtered.length;
+  const totalRows = sorted.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const start = (page - 1) * pageSize;
-  const rows = filtered.slice(start, start + pageSize);
+  const rows = sorted.slice(start, start + pageSize);
 
   const metricExplanations: Record<string, PortfolioMetricExplanation> = {};
   for (const card of summaryCards) {

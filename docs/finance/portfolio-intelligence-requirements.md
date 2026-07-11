@@ -3,7 +3,7 @@
 **Projeto:** IndusCost / My Industry  
 **Módulo:** Financeiro → Conciliação de Carteira (camada **paralela** / read-only)  
 **Atualizado:** 2026-07-10  
-**Status:** requisitos + classificador + analytics/KPIs (service puro). UI/API HTTP: etapas seguintes.
+**Status:** requisitos + classificador + analytics + **API HTTP read-only**. UI: etapa seguinte.
 
 > Complementa: [`portfolio-reconciliation-architecture.md`](./portfolio-reconciliation-architecture.md), [`portfolio-reconciliation-handoff.md`](./portfolio-reconciliation-handoff.md).
 
