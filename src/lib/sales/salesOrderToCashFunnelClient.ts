@@ -88,6 +88,8 @@ export type OrderToCashFunnelListPayload = {
       reason: string;
     }>;
   };
+  sellerSummary: OrderToCashSellerSummaryDto[];
+  customerSummary: OrderToCashCustomerSummaryDto[];
   rows: OrderToCashFunnelListRowDto[];
   pagination: {
     page: number;
@@ -105,6 +107,47 @@ export type OrderToCashFunnelListPayload = {
     laymanNotice: string;
   } | null;
   warnings: string[];
+};
+
+export type OrderToCashSellerSummaryDto = {
+  sellerId: string | null;
+  sellerName: string;
+  orderCount: number;
+  valorTotal: number;
+  valorFuturoSaudavel: number;
+  valorSaudavel?: number;
+  valorEmAtencao: number;
+  valorBloqueado: number;
+  valorParcialmenteAtendido: number;
+  valorCrAberto: number;
+  valorRecebido: number;
+  valorEmRisco: number;
+  taxaPedidoParaCr: number | null;
+  taxaPedidoParaRecebido: number | null;
+  taxaConversaoParaCr?: number | null;
+  confiancaMedia: number | null;
+  principalGargalo: string | null;
+  principalGargaloLabel: string | null;
+  acaoRecomendada: string;
+};
+
+export type OrderToCashCustomerSummaryDto = {
+  customerId: string | null;
+  customerName: string;
+  orderCount: number;
+  valorTotal: number;
+  valorBloqueado: number;
+  valorSemDocumento: number;
+  valorDocumentoNfSemCr: number;
+  valorCrAberto: number;
+  valorRecebido: number;
+  valorEmRisco: number;
+  taxaPedidoParaCr: number | null;
+  confiancaMedia: number | null;
+  pedidosAntigosCount: number;
+  principalGargalo: string | null;
+  principalGargaloLabel: string | null;
+  acaoRecomendada: string;
 };
 
 export type OrderToCashFulfillmentMapDto = {

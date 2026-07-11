@@ -75,7 +75,15 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("8. não há import de Prisma no frontend", () => {
-    for (const f of [PANEL, DRAWER, FILTERS_BAR, CLIENT, FILTERS, COPY]) {
+    for (const f of [
+      PANEL,
+      DRAWER,
+      FILTERS_BAR,
+      CLIENT,
+      FILTERS,
+      COPY,
+      "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelEntityKpis.tsx",
+    ]) {
       const src = read(f);
       assert.doesNotMatch(src, /@prisma\/client/);
       assert.doesNotMatch(src, /from ["'].*prisma/);
@@ -84,7 +92,15 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("9. não há import de comissão", () => {
-    for (const f of [PANEL, DRAWER, FILTERS_BAR, CLIENT, FILTERS, COPY]) {
+    for (const f of [
+      PANEL,
+      DRAWER,
+      FILTERS_BAR,
+      CLIENT,
+      FILTERS,
+      COPY,
+      "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelEntityKpis.tsx",
+    ]) {
       const src = read(f);
       assert.doesNotMatch(src, /from\s+["'][^"']*comiss/i);
       assert.doesNotMatch(src, /from\s+["'][^"']*commission/i);
@@ -116,6 +132,27 @@ describe("salesOrderToCashFunnelUi", () => {
     assert.match(filters, /buildOrderToCashFunnelQueryParams/);
     assert.match(filters, /applyOrderToCashFunnelPeriodPreset/);
     assert.match(read("src/components/finance/bi/FinanceBiFilterPanel.tsx"), /Limpar filtros/);
+  });
+
+  it("KPIs por vendedor/cliente com help e filtro", () => {
+    const panel = read(PANEL);
+    const entity = read(
+      "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelEntityKpis.tsx"
+    );
+    const copy = read(COPY);
+    assert.match(panel, /OrderToCashFunnelEntityKpis/);
+    assert.match(panel, /onFilterSeller|otc-filter-by-seller/);
+    assert.match(entity, /otc-seller-kpis/);
+    assert.match(entity, /otc-customer-kpis/);
+    assert.match(entity, /otc-filter-by-seller/);
+    assert.match(entity, /otc-filter-by-customer/);
+    assert.match(entity, /ORDER_TO_CASH_ENTITY_KPI_HELP/);
+    assert.match(entity, /Sem comissão/);
+    assert.doesNotMatch(entity, /commission|comission/i);
+    assert.match(copy, /ORDER_TO_CASH_ENTITY_KPI_HELP/);
+    assert.match(copy, /taxaPedidoParaCr/);
+    assert.match(copy, /principalGargalo/);
+    assert.match(copy, /pedidosAntigosCount/);
   });
 
   it("drawer abre com largura e scroll internos", () => {

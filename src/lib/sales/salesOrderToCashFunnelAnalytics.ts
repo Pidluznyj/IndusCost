@@ -41,6 +41,100 @@ function avg(nums: number[]): number | null {
   return round1(nums.reduce((s, n) => s + n, 0) / nums.length);
 }
 
+/** Confiança média ponderada pelo valor do estágio (sem remuneração). */
+function weightedConfidenceAvg(
+  rows: readonly ClassifiedSalesOrderFunnelRow[]
+): number | null {
+  let weight = 0;
+  let sum = 0;
+  for (const row of rows) {
+    const w = stageValue(row);
+    if (w <= 0) continue;
+    weight += w;
+    sum += row.confidenceScore * w;
+  }
+  if (weight <= 0) return avg(rows.map((r) => r.confidenceScore));
+  return round1(sum / weight);
+}
+
+export const ORDER_TO_CASH_SELLER_UNAVAILABLE_LABEL = "Sem vendedor informado";
+export const ORDER_TO_CASH_CUSTOMER_UNAVAILABLE_LABEL = "Cliente sem nome";
+
+export function displayOrderToCashSellerName(
+  sellerId: string | null | undefined,
+  sellerName: string | null | undefined
+): string {
+  const name = String(sellerName ?? "").trim();
+  if (name) return name;
+  const id = String(sellerId ?? "").trim();
+  if (id) return `Vendedor ${id}`;
+  return ORDER_TO_CASH_SELLER_UNAVAILABLE_LABEL;
+}
+
+export function displayOrderToCashCustomerName(
+  customerId: string | null | undefined,
+  customerName: string | null | undefined
+): string {
+  const name = String(customerName ?? "").trim();
+  if (name) return name;
+  const id = String(customerId ?? "").trim();
+  if (id) return `Cliente ${id}`;
+  return ORDER_TO_CASH_CUSTOMER_UNAVAILABLE_LABEL;
+}
+
+const RISK_STAGES: ReadonlySet<SalesOrderToCashFunnelStage> = new Set([
+  "BLOQUEADO_REVISAO",
+  "PEDIDO_ATRASADO_SEM_DOCUMENTO",
+  "SEM_EVIDENCIA",
+]);
+
+const NO_DOCUMENT_STAGES: ReadonlySet<SalesOrderToCashFunnelStage> = new Set([
+  "PEDIDO_EMITIDO",
+  "PEDIDO_FUTURO_SAUDAVEL",
+  "PEDIDO_PROXIMO_ATENCAO",
+  "PEDIDO_ATRASADO_SEM_DOCUMENTO",
+  "PEDIDO_PARCIALMENTE_ATENDIDO",
+  "PEDIDO_TOTALMENTE_ATENDIDO",
+  "PEDIDO_ATENDIDO_COM_EXCEDENTE",
+  "BLOQUEADO_REVISAO",
+  "SEM_EVIDENCIA",
+]);
+
+const OLD_ORDER_DAYS = 90;
+
+function sumStage(
+  rows: readonly ClassifiedSalesOrderFunnelRow[],
+  stages: readonly SalesOrderToCashFunnelStage[]
+): number {
+  const set = new Set(stages);
+  return round2(
+    rows.filter((r) => set.has(r.funnelStage)).reduce((s, r) => s + stageValue(r), 0)
+  );
+}
+
+function resolveRecommendedAction(
+  rows: readonly ClassifiedSalesOrderFunnelRow[],
+  bottleneck: SalesOrderToCashFunnelStage | null
+): string {
+  if (!bottleneck) return "Manter acompanhamento da carteira.";
+  const hit = rows.find((r) => r.funnelStage === bottleneck);
+  if (hit?.actionRecommendation?.trim()) return hit.actionRecommendation.trim();
+  return `Priorizar pedidos em ${getSalesOrderToCashFunnelStageLabel(bottleneck)}.`;
+}
+
+function hasCrOrBeyond(row: ClassifiedSalesOrderFunnelRow): boolean {
+  return (
+    row.hasOpenCr ||
+    row.hasReceipt ||
+    row.funnelStage === "CR_ABERTO" ||
+    row.funnelStage === "RECEBIDO"
+  );
+}
+
+function hasReceiptStage(row: ClassifiedSalesOrderFunnelRow): boolean {
+  return row.hasReceipt || row.funnelStage === "RECEBIDO";
+}
+
 export type FunnelAnalyticsCardSeverity =
   | "info"
   | "success"
@@ -111,29 +205,51 @@ export type SalesOrderToCashRiskSummary = {
 
 export type SalesOrderToCashSellerSummary = {
   sellerId: string | null;
-  sellerName: string | null;
+  /** Nome comercial do pedido; sem nome → “Sem vendedor informado”. */
+  sellerName: string;
+  orderCount: number;
   valorTotal: number;
+  valorFuturoSaudavel: number;
+  /** @deprecated alias de valorFuturoSaudavel (compat). */
   valorSaudavel: number;
   valorEmAtencao: number;
   valorBloqueado: number;
+  valorParcialmenteAtendido: number;
+  valorCrAberto: number;
   valorRecebido: number;
+  /** Bloqueado + atrasado sem documento + sem evidência (não duplica estágio). */
+  valorEmRisco: number;
+  /** % valor pedido → CR (CR aberto ou recebido) / valor total. */
+  taxaPedidoParaCr: number | null;
+  /** % valor pedido → recebido / valor total. */
+  taxaPedidoParaRecebido: number | null;
+  /** @deprecated alias de taxaPedidoParaCr (compat). */
   taxaConversaoParaCr: number | null;
+  /** Confiança média ponderada pelo valor do estágio. */
   confiancaMedia: number | null;
   principalGargalo: SalesOrderToCashFunnelStage | null;
   principalGargaloLabel: string | null;
-  orderCount: number;
+  acaoRecomendada: string;
 };
 
 export type SalesOrderToCashCustomerSummary = {
   customerId: string | null;
-  customerName: string | null;
+  /** Sem nome → “Cliente sem nome”. */
+  customerName: string;
+  orderCount: number;
   valorTotal: number;
   valorBloqueado: number;
+  valorSemDocumento: number;
+  valorDocumentoNfSemCr: number;
   valorCrAberto: number;
   valorRecebido: number;
+  valorEmRisco: number;
+  taxaPedidoParaCr: number | null;
+  confiancaMedia: number | null;
+  pedidosAntigosCount: number;
   principalGargalo: SalesOrderToCashFunnelStage | null;
   principalGargaloLabel: string | null;
-  orderCount: number;
+  acaoRecomendada: string;
 };
 
 export type SalesOrderToCashConversionMetrics = {
@@ -517,7 +633,7 @@ function buildSellerSummary(
   const bySeller = new Map<string, ClassifiedSalesOrderFunnelRow[]>();
   for (const row of rows) {
     if (row.isCanceled) continue;
-    const key = row.sellerId ?? row.sellerName ?? "sem-vendedor";
+    const key = (row.sellerId ?? row.sellerName?.trim()) || "sem-vendedor";
     const list = bySeller.get(key) ?? [];
     list.push(row);
     bySeller.set(key, list);
@@ -528,59 +644,53 @@ function buildSellerSummary(
     const first = list[0]!;
     const eligible = list.filter(isForecastEligible);
     const valorTotal = round2(eligible.reduce((s, r) => s + stageValue(r), 0));
-    const valorSaudavel = round2(
+    const valorFuturoSaudavel = sumStage(eligible, ["PEDIDO_FUTURO_SAUDAVEL"]);
+    const valorEmAtencao = sumStage(eligible, ["PEDIDO_PROXIMO_ATENCAO"]);
+    const valorBloqueado = sumStage(eligible, ["BLOQUEADO_REVISAO"]);
+    const valorParcialmenteAtendido = sumStage(eligible, [
+      "PEDIDO_PARCIALMENTE_ATENDIDO",
+    ]);
+    const valorCrAberto = sumStage(eligible, ["CR_ABERTO"]);
+    const valorRecebido = sumStage(list, ["RECEBIDO"]);
+    const valorEmRisco = round2(
       eligible
-        .filter((r) => r.funnelStage === "PEDIDO_FUTURO_SAUDAVEL")
+        .filter((r) => RISK_STAGES.has(r.funnelStage))
         .reduce((s, r) => s + stageValue(r), 0)
     );
-    const valorEmAtencao = round2(
-      eligible
-        .filter((r) =>
-          [
-            "PEDIDO_PROXIMO_ATENCAO",
-            "PEDIDO_PARCIALMENTE_ATENDIDO",
-            "NF_SEM_CR",
-            "DOCUMENTO_SEM_NF",
-          ].includes(r.funnelStage)
-        )
-        .reduce((s, r) => s + stageValue(r), 0)
+    const valorComCr = round2(
+      eligible.filter(hasCrOrBeyond).reduce((s, r) => s + stageValue(r), 0)
     );
-    const valorBloqueado = round2(
-      eligible
-        .filter((r) => r.funnelStage === "BLOQUEADO_REVISAO")
-        .reduce((s, r) => s + stageValue(r), 0)
+    const valorComRecebido = round2(
+      list.filter(hasReceiptStage).reduce((s, r) => s + stageValue(r), 0)
     );
-    const valorRecebido = round2(
-      list
-        .filter((r) => r.funnelStage === "RECEBIDO")
-        .reduce((s, r) => s + stageValue(r), 0)
-    );
-    const withCrOrBeyond = eligible.filter(
-      (r) =>
-        r.hasOpenCr ||
-        r.hasReceipt ||
-        r.funnelStage === "CR_ABERTO" ||
-        r.funnelStage === "RECEBIDO"
-    ).length;
+    const taxaPedidoParaCr = pct(valorComCr, valorTotal);
+    const taxaPedidoParaRecebido = pct(valorComRecebido, valorTotal);
     const bottleneck = resolveBottleneck(list);
     result.push({
       sellerId: first.sellerId,
-      sellerName: first.sellerName,
+      sellerName: displayOrderToCashSellerName(first.sellerId, first.sellerName),
+      orderCount: list.length,
       valorTotal,
-      valorSaudavel,
+      valorFuturoSaudavel,
+      valorSaudavel: valorFuturoSaudavel,
       valorEmAtencao,
       valorBloqueado,
+      valorParcialmenteAtendido,
+      valorCrAberto,
       valorRecebido,
-      taxaConversaoParaCr: pct(withCrOrBeyond, eligible.length),
-      confiancaMedia: avg(eligible.map((r) => r.confidenceScore)),
+      valorEmRisco,
+      taxaPedidoParaCr,
+      taxaPedidoParaRecebido,
+      taxaConversaoParaCr: taxaPedidoParaCr,
+      confiancaMedia: weightedConfidenceAvg(eligible),
       principalGargalo: bottleneck,
       principalGargaloLabel: bottleneck
         ? getSalesOrderToCashFunnelStageLabel(bottleneck)
         : null,
-      orderCount: list.length,
+      acaoRecomendada: resolveRecommendedAction(list, bottleneck),
     });
   }
-  return result.sort((a, b) => b.valorTotal - a.valorTotal);
+  return result.sort((a, b) => b.valorTotal - a.valorTotal || b.orderCount - a.orderCount);
 }
 
 function buildCustomerSummary(
@@ -589,7 +699,7 @@ function buildCustomerSummary(
   const byCustomer = new Map<string, ClassifiedSalesOrderFunnelRow[]>();
   for (const row of rows) {
     if (row.isCanceled) continue;
-    const key = row.customerId ?? row.customerName ?? "sem-cliente";
+    const key = (row.customerId ?? row.customerName?.trim()) || "sem-cliente";
     const list = byCustomer.get(key) ?? [];
     list.push(row);
     byCustomer.set(key, list);
@@ -599,34 +709,65 @@ function buildCustomerSummary(
   for (const list of byCustomer.values()) {
     const first = list[0]!;
     const eligible = list.filter(isForecastEligible);
+    const valorTotal = round2(eligible.reduce((s, r) => s + stageValue(r), 0));
+    const valorBloqueado = sumStage(eligible, ["BLOQUEADO_REVISAO"]);
+    const valorSemDocumento = round2(
+      eligible
+        .filter(
+          (r) =>
+            NO_DOCUMENT_STAGES.has(r.funnelStage) &&
+            !r.hasStockDocument &&
+            !r.hasNfe
+        )
+        .reduce((s, r) => s + stageValue(r), 0)
+    );
+    const valorDocumentoNfSemCr = sumStage(eligible, [
+      "DOCUMENTO_SEM_NF",
+      "NF_SEM_CR",
+    ]);
+    const valorCrAberto = sumStage(eligible, ["CR_ABERTO"]);
+    const valorRecebido = sumStage(list, ["RECEBIDO"]);
+    const valorEmRisco = round2(
+      eligible
+        .filter((r) => RISK_STAGES.has(r.funnelStage))
+        .reduce((s, r) => s + stageValue(r), 0)
+    );
+    const valorComCr = round2(
+      eligible.filter(hasCrOrBeyond).reduce((s, r) => s + stageValue(r), 0)
+    );
     const bottleneck = resolveBottleneck(list);
+    const pedidosAntigosCount = list.filter(
+      (r) =>
+        !r.isCanceled &&
+        ((r.daysSinceIssue != null && r.daysSinceIssue >= OLD_ORDER_DAYS) ||
+          r.funnelStage === "BLOQUEADO_REVISAO")
+    ).length;
+
     result.push({
       customerId: first.customerId,
-      customerName: first.customerName,
-      valorTotal: round2(eligible.reduce((s, r) => s + stageValue(r), 0)),
-      valorBloqueado: round2(
-        eligible
-          .filter((r) => r.funnelStage === "BLOQUEADO_REVISAO")
-          .reduce((s, r) => s + stageValue(r), 0)
+      customerName: displayOrderToCashCustomerName(
+        first.customerId,
+        first.customerName
       ),
-      valorCrAberto: round2(
-        eligible
-          .filter((r) => r.funnelStage === "CR_ABERTO")
-          .reduce((s, r) => s + stageValue(r), 0)
-      ),
-      valorRecebido: round2(
-        list
-          .filter((r) => r.funnelStage === "RECEBIDO")
-          .reduce((s, r) => s + stageValue(r), 0)
-      ),
+      orderCount: list.length,
+      valorTotal,
+      valorBloqueado,
+      valorSemDocumento,
+      valorDocumentoNfSemCr,
+      valorCrAberto,
+      valorRecebido,
+      valorEmRisco,
+      taxaPedidoParaCr: pct(valorComCr, valorTotal),
+      confiancaMedia: weightedConfidenceAvg(eligible),
+      pedidosAntigosCount,
       principalGargalo: bottleneck,
       principalGargaloLabel: bottleneck
         ? getSalesOrderToCashFunnelStageLabel(bottleneck)
         : null,
-      orderCount: list.length,
+      acaoRecomendada: resolveRecommendedAction(list, bottleneck),
     });
   }
-  return result.sort((a, b) => b.valorTotal - a.valorTotal);
+  return result.sort((a, b) => b.valorTotal - a.valorTotal || b.orderCount - a.orderCount);
 }
 
 function buildConversionMetrics(

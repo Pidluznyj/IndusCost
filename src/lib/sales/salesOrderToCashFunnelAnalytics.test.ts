@@ -8,6 +8,10 @@ import {
   type ClassifySalesOrderToCashFunnelInput,
 } from "./salesOrderToCashFunnelClassification.js";
 
+function round2(n: number): number {
+  return Number(n.toFixed(2));
+}
+
 const TODAY = "2026-07-11";
 
 function order(
@@ -154,6 +158,10 @@ describe("salesOrderToCashFunnelAnalytics", () => {
     assert.ok(sellerB);
     assert.equal(sellerB!.principalGargalo, "BLOQUEADO_REVISAO");
     assert.ok(sellerB!.valorBloqueado > 0);
+    assert.ok(sellerB!.acaoRecomendada.length > 5);
+    assert.ok(sellerB!.taxaPedidoParaCr == null || sellerB!.taxaPedidoParaCr >= 0);
+    assert.ok(sellerB!.valorParcialmenteAtendido >= 0);
+    assert.ok(sellerB!.valorCrAberto >= 0);
   });
 
   it("6. customerSummary calcula principal gargalo", () => {
@@ -162,6 +170,9 @@ describe("salesOrderToCashFunnelAnalytics", () => {
     assert.ok(customerB);
     assert.equal(customerB!.principalGargalo, "BLOQUEADO_REVISAO");
     assert.equal(customerB!.valorBloqueado, 200_000);
+    assert.ok(customerB!.pedidosAntigosCount >= 1);
+    assert.ok(customerB!.valorSemDocumento >= 0);
+    assert.ok(customerB!.valorDocumentoNfSemCr >= 0);
   });
 
   it("7. conversionMetrics calculam percentuais", () => {
@@ -213,8 +224,66 @@ describe("salesOrderToCashFunnelAnalytics", () => {
     // recebido e cancelado fora do card de ativos
     assert.ok(activeCard.value <= 50_000 + 30_000 + 200_000 + 80_000 + 25_000);
   });
-});
 
-function round2(n: number): number {
-  return Number(n.toFixed(2));
-}
+  it("sellerSummary não usa comissões e trata vendedor sem nome", () => {
+    const analytics = buildSalesOrderToCashFunnelAnalytics({
+      rows: [
+        row({
+          order: order({
+            id: "no-seller",
+            totalNetValue: 12_000,
+            sellerId: null,
+            sellerName: null,
+            expectedDeliveryDate: "2026-09-01",
+          }),
+        }),
+      ],
+    });
+    const orphan = analytics.sellerSummary.find(
+      (s) => s.sellerName === "Sem vendedor informado"
+    );
+    assert.ok(orphan);
+    assert.equal(orphan!.orderCount, 1);
+    assert.equal(orphan!.valorTotal, 12_000);
+    const src = readFileSync(
+      new URL("./salesOrderToCashFunnelAnalytics.ts", import.meta.url),
+      "utf8"
+    );
+    assert.doesNotMatch(src, /from\s+["'][^"']*comiss/i);
+    assert.doesNotMatch(src, /from\s+["'][^"']*commission/i);
+    assert.doesNotMatch(src, /commissionableSeller|vendedorComissionavel|estimatedCommission/i);
+  });
+
+  it("customerSummary trata cliente sem nome", () => {
+    const analytics = buildSalesOrderToCashFunnelAnalytics({
+      rows: [
+        row({
+          order: order({
+            id: "no-cust",
+            totalNetValue: 9_000,
+            customerId: null,
+            customerName: "   ",
+            expectedDeliveryDate: "2026-09-01",
+          }),
+        }),
+      ],
+    });
+    const orphan = analytics.customerSummary.find(
+      (c) => c.customerName === "Cliente sem nome"
+    );
+    assert.ok(orphan);
+    assert.equal(orphan!.valorTotal, 9_000);
+  });
+
+  it("valores por vendedor não duplicam pedidos", () => {
+    const analytics = buildSalesOrderToCashFunnelAnalytics({ rows: sampleRows });
+    const sumSellerOrders = analytics.sellerSummary.reduce((s, r) => s + r.orderCount, 0);
+    const nonCanceled = sampleRows.filter((r) => !r.isCanceled).length;
+    assert.equal(sumSellerOrders, nonCanceled);
+    const sumCustomerOrders = analytics.customerSummary.reduce(
+      (s, r) => s + r.orderCount,
+      0
+    );
+    assert.equal(sumCustomerOrders, nonCanceled);
+  });
+});

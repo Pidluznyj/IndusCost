@@ -39,7 +39,9 @@ export type OrderToCashFunnelPeriodPreset =
 
 export type OrderToCashFunnelUiFilters = {
   customerName: string;
+  customerId: string;
   sellerName: string;
+  sellerId: string;
   companyName: string;
   orderCode: string;
   productSku: string;
@@ -161,7 +163,9 @@ export function createDefaultOrderToCashFunnelUiFilters(
 ): OrderToCashFunnelUiFilters {
   const base: OrderToCashFunnelUiFilters = {
     customerName: "",
+    customerId: "",
     sellerName: "",
+    sellerId: "",
     companyName: "",
     orderCode: "",
     productSku: "",
@@ -205,8 +209,14 @@ export function buildOrderToCashFunnelFilterChips(
   if (filters.customerName.trim()) {
     push("customerName", `Cliente: ${filters.customerName.trim()}`);
   }
+  if (filters.customerId.trim() && !filters.customerName.trim()) {
+    push("customerId", `Cliente ID: ${filters.customerId.trim()}`);
+  }
   if (filters.sellerName.trim()) {
     push("sellerName", `Vendedor: ${filters.sellerName.trim()}`);
+  }
+  if (filters.sellerId.trim() && !filters.sellerName.trim()) {
+    push("sellerId", `Vendedor ID: ${filters.sellerId.trim()}`);
   }
   if (filters.companyName.trim()) {
     push("companyName", `Empresa: ${filters.companyName.trim()}`);
@@ -283,7 +293,9 @@ export function countActiveOrderToCashFunnelFilters(
 ): number {
   let n = 0;
   if (filters.customerName.trim()) n += 1;
+  if (filters.customerId.trim() && !filters.customerName.trim()) n += 1;
   if (filters.sellerName.trim()) n += 1;
+  if (filters.sellerId.trim() && !filters.sellerName.trim()) n += 1;
   if (filters.companyName.trim()) n += 1;
   if (filters.orderCode.trim()) n += 1;
   if (filters.productSku.trim()) n += 1;
@@ -324,7 +336,9 @@ export function buildOrderToCashFunnelQueryParams(
   put("dateFrom", filters.dateFrom);
   put("dateTo", filters.dateTo);
   put("cliente", filters.customerName);
+  put("clienteId", filters.customerId);
   put("vendedor", filters.sellerName);
+  put("vendedorId", filters.sellerId);
   put("empresa", filters.companyName);
   put("pedido", filters.orderCode);
   put("produto", filters.productSku);

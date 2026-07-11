@@ -282,6 +282,143 @@ export const ORDER_TO_CASH_CARD_HELP: Record<string, OrderToCashFunnelExplanatio
   ),
 };
 
+/** Help “?” dos KPIs por vendedor/cliente (sem comissão). */
+export const ORDER_TO_CASH_ENTITY_KPI_HELP: Record<string, OrderToCashFunnelExplanation> = {
+  sellerName: baseHelp(
+    "Vendedor comercial do pedido de venda.",
+    "Agrupamos pelo vendedor do SalesOrder (importação Nomus). Sem nome/ID → “Sem vendedor informado”.",
+    "Nome ou ID do vendedor do pedido.",
+    "Comissão, vendedor comissionável e responsável do CRM.",
+    "Use para qualidade da carteira sob o vendedor do pedido."
+  ),
+  customerName: baseHelp(
+    "Cliente do pedido de venda.",
+    "Agrupamos pelo cliente do SalesOrder. Sem nome → “Cliente sem nome”.",
+    "Nome ou ID do cliente do pedido.",
+    "Contatos CRM sem pedido.",
+    "Use para priorizar contas com risco ou conversão baixa."
+  ),
+  valorTotal: baseHelp(
+    "Valor total dos pedidos no recorte (um estágio principal por pedido).",
+    "Soma do valueForStage dos pedidos não cancelados do grupo.",
+    "Pedidos classificados no funil.",
+    "Cabeçalho de NF, excedente e produto fora (não duplicam).",
+    "Tamanho da carteira — não é caixa confirmado."
+  ),
+  orderCount: baseHelp(
+    "Quantidade de pedidos do grupo.",
+    "Contagem distinta de pedidos (cancelados fora).",
+    "Pedidos do vendedor/cliente no filtro.",
+    "Itens avulsos sem pedido.",
+    "Volume operacional além do valor."
+  ),
+  valorFuturoSaudavel: baseHelp(
+    "Valor em pedido futuro saudável.",
+    "Soma dos pedidos no estágio PEDIDO_FUTURO_SAUDAVEL.",
+    "Pedidos com previsão à frente, sem bloqueio.",
+    "Atrasados, bloqueados e com NF/CR.",
+    "Carteira saudável de horizonte futuro."
+  ),
+  valorEmAtencao: baseHelp(
+    "Valor em pedido em atenção.",
+    "Soma dos pedidos em PEDIDO_PROXIMO_ATENCAO.",
+    "Janela próxima da entrega.",
+    "Já faturados/com CR.",
+    "Prioridade de curto prazo."
+  ),
+  valorBloqueado: baseHelp(
+    "Valor bloqueado para revisão.",
+    "Soma dos pedidos em BLOQUEADO_REVISAO.",
+    "Pedidos antigos/vencidos sem evolução.",
+    "Futuro saudável e recebido.",
+    "Não trate como lead quente."
+  ),
+  valorParcialmenteAtendido: baseHelp(
+    "Valor parcialmente atendido.",
+    "Soma em PEDIDO_PARCIALMENTE_ATENDIDO.",
+    "Cobertura parcial no mapa.",
+    "Alertas de excedente (não duplicam).",
+    "Completar remessa/documento."
+  ),
+  valorCrAberto: baseHelp(
+    "Valor com Contas a Receber aberto.",
+    "Soma em CR_ABERTO.",
+    "Pedidos com título aberto.",
+    "Já recebidos.",
+    "Direito financeiro ainda a receber."
+  ),
+  valorRecebido: baseHelp(
+    "Valor já recebido/baixado.",
+    "Soma em RECEBIDO.",
+    "Baixas materializadas.",
+    "Previsão sem baixa.",
+    "Caixa confirmado ligado aos pedidos."
+  ),
+  valorEmRisco: baseHelp(
+    "Valor em risco (bloqueado, atrasado sem documento ou sem evidência).",
+    "Soma dos estágios de risco — um pedido em um estágio, sem duplicar.",
+    "BLOQUEADO_REVISAO, PEDIDO_ATRASADO_SEM_DOCUMENTO, SEM_EVIDENCIA.",
+    "Alertas técnicos de excedente/fora.",
+    "Fila de revisão prioritária."
+  ),
+  taxaPedidoParaCr: baseHelp(
+    "Taxa pedido → Contas a Receber (por valor).",
+    "Valor dos pedidos com CR ou recebido ÷ valor total × 100.",
+    "Pedidos com evidência de CR/baixa.",
+    "Pedidos só em carteira/documento.",
+    "Baixo = gargalo de formalização financeira."
+  ),
+  taxaPedidoParaRecebido: baseHelp(
+    "Taxa pedido → recebido (por valor).",
+    "Valor recebido ÷ valor total × 100.",
+    "Pedidos em RECEBIDO / com baixa.",
+    "CR ainda aberto.",
+    "Quanto da carteira já virou caixa."
+  ),
+  confiancaMedia: baseHelp(
+    "Confiança média ponderada pelo valor.",
+    "Σ (confiança × valor do estágio) ÷ Σ valor.",
+    "Pedidos do grupo no funil.",
+    "Comissão ou regras de remuneração.",
+    "Baixa confiança pede revisão de evidência."
+  ),
+  principalGargalo: baseHelp(
+    "Principal gargalo do grupo.",
+    "Estágio de maior prioridade entre pedidos ainda não recebidos (valor como desempate).",
+    "Um estágio principal por pedido.",
+    "Alertas auxiliares.",
+    "Onde concentrar a ação recomendada."
+  ),
+  acaoRecomendada: baseHelp(
+    "Ação sugerida a partir do gargalo.",
+    "Usa a recomendação do estágio gargalo (classificação do pedido).",
+    "Texto operacional do funil.",
+    "Comissão ou meta de vendedor.",
+    "Próximo passo para destravar a carteira."
+  ),
+  valorSemDocumento: baseHelp(
+    "Valor ainda sem documento de saída/NF.",
+    "Pedidos em estágios pré-documento sem stock document e sem NF.",
+    "Carteira só em pedido/atendimento.",
+    "Já com documento ou NF.",
+    "Fila de faturamento/expedição."
+  ),
+  valorDocumentoNfSemCr: baseHelp(
+    "Valor com documento/NF ainda sem CR.",
+    "Soma DOCUMENTO_SEM_NF + NF_SEM_CR.",
+    "Evidência fiscal/operacional sem título.",
+    "Já com CR ou recebido.",
+    "Gargalo típico de formalização financeira."
+  ),
+  pedidosAntigosCount: baseHelp(
+    "Quantidade de pedidos antigos (≥ 90 dias ou bloqueados).",
+    "Conta pedidos com idade ≥ 90 dias desde a emissão ou em BLOQUEADO_REVISAO.",
+    "Pedidos velhos no recorte.",
+    "Pedidos novos saudáveis.",
+    "Sinal de carteira estagnada no cliente."
+  ),
+};
+
 export const TONE_CLASSES: Record<
   string,
   { border: string; bg: string; text: string; accent: string }

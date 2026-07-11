@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { MetricHelpTooltip } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover";
 import { OrderToCashFunnelDrawer } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelDrawer";
+import { OrderToCashFunnelEntityKpis } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelEntityKpis";
 import { OrderToCashFunnelFiltersBar } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelFiltersBar";
 import {
   formatFinanceCurrency,
@@ -498,6 +499,41 @@ export function OrderToCashFunnelPanel() {
           </div>
 
           <VisualFunnel stages={payload.funnelStages} />
+
+          <OrderToCashFunnelEntityKpis
+            sellers={payload.sellerSummary ?? []}
+            customers={payload.customerSummary ?? []}
+            activeSellerName={applied.sellerName}
+            activeSellerId={applied.sellerId}
+            activeCustomerName={applied.customerName}
+            activeCustomerId={applied.customerId}
+            onFilterSeller={(row) =>
+              applyFilters({
+                ...applied,
+                sellerId: row.sellerId ?? "",
+                sellerName:
+                  row.sellerName === "Sem vendedor informado" ||
+                  (row.sellerId && row.sellerName === `Vendedor ${row.sellerId}`)
+                    ? ""
+                    : row.sellerName,
+                customerId: "",
+                customerName: "",
+              })
+            }
+            onFilterCustomer={(row) =>
+              applyFilters({
+                ...applied,
+                customerId: row.customerId ?? "",
+                customerName:
+                  row.customerName === "Cliente sem nome" ||
+                  (row.customerId && row.customerName === `Cliente ${row.customerId}`)
+                    ? ""
+                    : row.customerName,
+                sellerId: "",
+                sellerName: "",
+              })
+            }
+          />
 
           {empty ? (
             <div
