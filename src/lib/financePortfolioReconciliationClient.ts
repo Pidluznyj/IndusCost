@@ -778,8 +778,11 @@ export function buildPortfolioIntelligenceListQuery(args: {
   orderCode?: string;
   productExternalId?: string;
   statusPrincipal?: string;
+  financialStatus?: string;
+  operationalStatus?: string;
   confidenceLabel?: string;
   tagsAlerta?: string;
+  operationalAlert?: string;
   minValue?: string;
   maxValue?: string;
   dateAxis?: string;
@@ -810,8 +813,11 @@ export function buildPortfolioIntelligenceListQuery(args: {
   setIf("orderCode", args.orderCode);
   setIf("productExternalId", args.productExternalId);
   setIf("statusPrincipal", args.statusPrincipal);
+  setIf("financialStatus", args.financialStatus);
+  setIf("operationalStatus", args.operationalStatus);
   setIf("confidenceLabel", args.confidenceLabel);
   setIf("tagsAlerta", args.tagsAlerta);
+  setIf("operationalAlert", args.operationalAlert);
   setIf("minValue", args.minValue);
   setIf("maxValue", args.maxValue);
   setIf("dateAxis", args.dateAxis);

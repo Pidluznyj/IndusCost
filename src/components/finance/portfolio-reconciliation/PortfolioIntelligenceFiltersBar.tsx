@@ -10,9 +10,12 @@ import {
   PORTFOLIO_INTELLIGENCE_CONFIDENCE_OPTIONS,
   PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP,
   PORTFOLIO_INTELLIGENCE_DATE_AXIS_OPTIONS,
+  PORTFOLIO_INTELLIGENCE_FINANCIAL_STATUS_OPTIONS,
+  PORTFOLIO_INTELLIGENCE_OPERATIONAL_ALERT_OPTIONS,
+  PORTFOLIO_INTELLIGENCE_OPERATIONAL_STATUS_OPTIONS,
   PORTFOLIO_INTELLIGENCE_PERIOD_PRESETS,
   PORTFOLIO_INTELLIGENCE_STATUS_OPTIONS,
-  PORTFOLIO_INTELLIGENCE_TAG_OPTIONS,
+  PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS,
   type PortfolioIntelligencePeriodPreset,
   type PortfolioIntelligenceUiFilters,
 } from "@/src/lib/finance/portfolioIntelligenceFilters";
@@ -91,30 +94,44 @@ export function PortfolioIntelligenceFiltersBar({
     JSON.stringify(applied)
   );
 
+  const customerNameByExternalId = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of customers) {
+      if (c.customerName?.trim()) {
+        map[String(c.customerExternalId)] = c.customerName.trim();
+      }
+    }
+    return map;
+  }, [customers]);
+
   const chips = useMemo(
     () =>
-      buildPortfolioIntelligenceFilterChips(applied, (field) => {
-        const defaults = createDefaultPortfolioIntelligenceUiFilters();
-        const next: PortfolioIntelligenceUiFilters = {
-          ...applied,
-          [field]: defaults[field],
-        };
-        if (field === "periodPreset") {
-          next.periodPreset = "";
-          next.from = "";
-          next.to = "";
-        }
-        if (field === "dateAxis") {
-          next.dateAxis = "FORECAST_DATE";
-        }
-        if (field === "from" || field === "to") {
-          if (field === "from") next.from = "";
-          if (field === "to") next.to = "";
-          next.periodPreset = next.from || next.to ? "custom" : "";
-        }
-        onApplyFilters(next);
-      }),
-    [applied, onApplyFilters]
+      buildPortfolioIntelligenceFilterChips(
+        applied,
+        (field) => {
+          const defaults = createDefaultPortfolioIntelligenceUiFilters();
+          const next: PortfolioIntelligenceUiFilters = {
+            ...applied,
+            [field]: defaults[field],
+          };
+          if (field === "periodPreset") {
+            next.periodPreset = "";
+            next.from = "";
+            next.to = "";
+          }
+          if (field === "dateAxis") {
+            next.dateAxis = "FORECAST_DATE";
+          }
+          if (field === "from" || field === "to") {
+            if (field === "from") next.from = "";
+            if (field === "to") next.to = "";
+            next.periodPreset = next.from || next.to ? "custom" : "";
+          }
+          onApplyFilters(next);
+        },
+        { customerNameByExternalId }
+      ),
+    [applied, onApplyFilters, customerNameByExternalId]
   );
 
   const activeCount = countActivePortfolioIntelligenceFilters(applied);
@@ -126,13 +143,6 @@ export function PortfolioIntelligenceFiltersBar({
     key: K,
     value: PortfolioIntelligenceUiFilters[K]
   ) => onDraftChange({ ...draft, [key]: value });
-
-  const selectedTags = new Set(
-    draft.tagsAlerta
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-  );
 
   return (
     <div data-testid="portfolio-intelligence-filters">
@@ -208,14 +218,29 @@ export function PortfolioIntelligenceFiltersBar({
                 )}
               </div>
               <div className="min-w-[140px]">
-                <FieldLabel>Status principal</FieldLabel>
+                <FieldLabel>Status financeiro</FieldLabel>
                 <select
                   className={financeModuleFilterFieldClass()}
-                  value={draft.statusPrincipal}
-                  onChange={(e) => set("statusPrincipal", e.target.value)}
-                  data-testid="portfolio-intelligence-status"
+                  value={draft.financialStatus}
+                  onChange={(e) => set("financialStatus", e.target.value)}
+                  data-testid="portfolio-intelligence-financial-status"
                 >
-                  {PORTFOLIO_INTELLIGENCE_STATUS_OPTIONS.map((o) => (
+                  {PORTFOLIO_INTELLIGENCE_FINANCIAL_STATUS_OPTIONS.map((o) => (
+                    <option key={o.value || "all"} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[160px]">
+                <FieldLabel>Status operacional</FieldLabel>
+                <select
+                  className={financeModuleFilterFieldClass()}
+                  value={draft.operationalStatus}
+                  onChange={(e) => set("operationalStatus", e.target.value)}
+                  data-testid="portfolio-intelligence-operational-status"
+                >
+                  {PORTFOLIO_INTELLIGENCE_OPERATIONAL_STATUS_OPTIONS.map((o) => (
                     <option key={o.value || "all"} value={o.value}>
                       {o.label}
                     </option>
@@ -290,6 +315,51 @@ export function PortfolioIntelligenceFiltersBar({
             />
           </div>
           <div>
+            <FieldLabel>Status de maturidade</FieldLabel>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={draft.statusPrincipal}
+              onChange={(e) => set("statusPrincipal", e.target.value)}
+              data-testid="portfolio-intelligence-status"
+            >
+              {PORTFOLIO_INTELLIGENCE_STATUS_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Alerta técnico</FieldLabel>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={draft.tagsAlerta.split(",")[0]?.trim() || ""}
+              onChange={(e) => set("tagsAlerta", e.target.value)}
+              data-testid="portfolio-intelligence-technical-alert"
+            >
+              {PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Alerta operacional</FieldLabel>
+            <select
+              className={financeModuleFilterFieldClass()}
+              value={draft.operationalAlert}
+              onChange={(e) => set("operationalAlert", e.target.value)}
+              data-testid="portfolio-intelligence-operational-alert"
+            >
+              {PORTFOLIO_INTELLIGENCE_OPERATIONAL_ALERT_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <FieldLabel>Confiança</FieldLabel>
             <select
               className={financeModuleFilterFieldClass()}
@@ -315,7 +385,7 @@ export function PortfolioIntelligenceFiltersBar({
             />
           </div>
           <div>
-            <FieldLabel>Produto (ID Nomus)</FieldLabel>
+            <FieldLabel>Produto/SKU (ID Nomus)</FieldLabel>
             <input
               className={financeModuleFilterFieldClass()}
               value={draft.productExternalId}
@@ -379,36 +449,6 @@ export function PortfolioIntelligenceFiltersBar({
               }
               data-testid="portfolio-intelligence-to"
             />
-          </div>
-        </div>
-
-        <div>
-          <FieldLabel>Tags de alerta</FieldLabel>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {PORTFOLIO_INTELLIGENCE_TAG_OPTIONS.map((tag) => {
-              const on = selectedTags.has(tag.value);
-              return (
-                <button
-                  key={tag.value}
-                  type="button"
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-[11px] font-medium",
-                    on
-                      ? "border-orange-300 bg-orange-50 text-orange-950"
-                      : "border-border bg-background text-muted-foreground"
-                  )}
-                  onClick={() => {
-                    const next = new Set(selectedTags);
-                    if (on) next.delete(tag.value);
-                    else next.add(tag.value);
-                    set("tagsAlerta", [...next].join(","));
-                  }}
-                  data-testid={`portfolio-intelligence-tag-${tag.value}`}
-                >
-                  {tag.label}
-                </button>
-              );
-            })}
           </div>
         </div>
 

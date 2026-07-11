@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyPeriodPresetToFilters,
+  buildPortfolioIntelligenceFilterChips,
+  countActivePortfolioIntelligenceFilters,
   createDefaultPortfolioIntelligenceUiFilters,
   portfolioIntelligenceUiFiltersToQueryArgs,
   resolvePortfolioIntelligencePeriodPreset,
@@ -100,14 +102,21 @@ describe("portfolioIntelligenceFilters", () => {
       customerExternalId: "200",
     });
     filters.statusPrincipal = "CARTEIRA_VENCIDA_BLOQUEADA";
+    filters.financialStatus = "FIN_CR_ABERTO";
+    filters.operationalStatus = "OP_PARCIALMENTE_ATENDIDO";
+    filters.operationalAlert = "PRODUTO_FORA_DO_PEDIDO";
     filters.confidenceLabel = "MUITO_BAIXA";
     filters.sellerName = "João";
+    filters.companyId = "co-1";
+    filters.orderCode = "PD 02159";
+    filters.productExternalId = "9001";
     filters.dateAxis = "ORDER_ISSUE_DATE";
     filters.from = "2026-01-01";
     filters.to = "2026-12-31";
     filters.onlyWithoutNfe = true;
     filters.onlyWithoutReceivable = true;
     filters.minValue = "1000";
+    filters.maxValue = "500000";
 
     const qs = buildPortfolioIntelligenceListQuery(
       portfolioIntelligenceUiFiltersToQueryArgs(filters, { runId: "run-1", pageSize: 200 })
@@ -115,15 +124,80 @@ describe("portfolioIntelligenceFilters", () => {
     const params = new URLSearchParams(qs);
     assert.equal(params.get("customerExternalId"), "200");
     assert.equal(params.get("statusPrincipal"), "CARTEIRA_VENCIDA_BLOQUEADA");
+    assert.equal(params.get("financialStatus"), "FIN_CR_ABERTO");
+    assert.equal(params.get("operationalStatus"), "OP_PARCIALMENTE_ATENDIDO");
+    assert.equal(params.get("operationalAlert"), "PRODUTO_FORA_DO_PEDIDO");
+    assert.match(params.get("tagsAlerta") ?? "", /PRODUTO_FORA_DO_PEDIDO/);
     assert.equal(params.get("confidenceLabel"), "MUITO_BAIXA");
     assert.equal(params.get("sellerName"), "João");
+    assert.equal(params.get("companyId"), "co-1");
+    assert.equal(params.get("orderCode"), "PD 02159");
+    assert.equal(params.get("productExternalId"), "9001");
     assert.equal(params.get("dateAxis"), "ORDER_ISSUE_DATE");
     assert.equal(params.get("from"), "2026-01-01");
     assert.equal(params.get("to"), "2026-12-31");
     assert.equal(params.get("onlyWithoutNfe"), "true");
     assert.equal(params.get("onlyWithoutReceivable"), "true");
     assert.equal(params.get("minValue"), "1000");
+    assert.equal(params.get("maxValue"), "500000");
     assert.equal(params.get("pageSize"), "200");
+  });
+
+  it("chips exibem filtros aplicados e limpar zera o estado", () => {
+    const filters = createDefaultPortfolioIntelligenceUiFilters({
+      customerExternalId: "200",
+    });
+    filters.operationalStatus = "OP_PARCIALMENTE_ATENDIDO";
+    filters.operationalAlert = "PRODUTO_FORA_DO_PEDIDO";
+    filters.periodPreset = "next_30";
+    filters.from = "2026-07-10";
+    filters.to = "2026-08-09";
+
+    const chips = buildPortfolioIntelligenceFilterChips(filters, undefined, {
+      customerNameByExternalId: { "200": "Britânia" },
+    });
+    const labels = chips.map((c) => c.label);
+    assert.ok(labels.some((l) => l === "Cliente: Britânia"));
+    assert.ok(labels.some((l) => l === "Status operacional: Parcialmente atendido"));
+    assert.ok(labels.some((l) => l === "Alerta: Produto fora do pedido"));
+    assert.ok(labels.some((l) => l === "Período: Próximos 30 dias"));
+    assert.ok(countActivePortfolioIntelligenceFilters(filters) >= 4);
+
+    const cleared = createDefaultPortfolioIntelligenceUiFilters();
+    assert.equal(countActivePortfolioIntelligenceFilters(cleared), 0);
+    const clearedChips = buildPortfolioIntelligenceFilterChips(cleared);
+    assert.ok(!clearedChips.some((c) => c.label.startsWith("Cliente:")));
+    assert.ok(!clearedChips.some((c) => c.label.startsWith("Status operacional:")));
+    assert.ok(!clearedChips.some((c) => c.label.startsWith("Alerta:")));
+    assert.ok(!clearedChips.some((c) => c.label.startsWith("Período:")));
+  });
+
+  it("filterMaturityOrders respeita status financeiro/operacional e alerta operacional", () => {
+    const rows = [
+      baseRow({
+        orderCode: "PD A",
+        orderValue: 10,
+        statusPrincipal: "CR_ABERTO",
+        financialStatus: "FIN_CR_ABERTO",
+        operationalStatus: "OP_PARCIALMENTE_ATENDIDO",
+        tagsAlerta: ["PRODUTO_FORA_DO_PEDIDO"],
+      }),
+      baseRow({
+        orderCode: "PD B",
+        orderValue: 20,
+        statusPrincipal: "CARTEIRA_FUTURA_PROVAVEL",
+        financialStatus: "FIN_SEM_CR",
+        operationalStatus: "OP_NAO_ATENDIDO",
+        tagsAlerta: [],
+      }),
+    ];
+    const filtered = filterMaturityOrders(rows, {
+      financialStatus: "FIN_CR_ABERTO",
+      operationalStatus: "OP_PARCIALMENTE_ATENDIDO",
+      operationalAlert: "PRODUTO_FORA_DO_PEDIDO",
+    }, []);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]!.orderCode, "PD A");
   });
 
   it("atalhos rápidos mapeiam status/confiança/tags na query", () => {

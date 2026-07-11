@@ -15,6 +15,8 @@ export const INTELLIGENCE_ACCORDION_KEYS = [
   "SEM_EVIDENCIA",
   "DIVERGENCIA_TECNICA",
   "NF_CABECALHO_MAIOR_PEDIDO",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PRODUTO_FORA_DO_PEDIDO",
 ] as const;
 
 export type IntelligenceAccordionKey = (typeof INTELLIGENCE_ACCORDION_KEYS)[number];
@@ -22,14 +24,14 @@ export type IntelligenceAccordionKey = (typeof INTELLIGENCE_ACCORDION_KEYS)[numb
 export const INTELLIGENCE_ACCORDION_GROUPS = [
   {
     id: "financial",
-    title: "1. Financeiro",
-    description: "Já virou CR ou baixa.",
+    title: "Financeiro",
+    description: "Valores com evidência financeira: recebimento, CR ou faturamento.",
     keys: ["RECEBIDO", "CR_ABERTO", "FATURADO_SEM_CR"] as const,
   },
   {
     id: "operational",
-    title: "2. Carteira operacional",
-    description: "Ainda é pedido — futuro, atenção, vencido ou sem evidência.",
+    title: "Carteira operacional",
+    description: "Pedidos que ainda dependem de entrega, faturamento ou validação.",
     keys: [
       "CARTEIRA_FUTURA_PROVAVEL",
       "CARTEIRA_PRESENTE_ATENCAO",
@@ -39,9 +41,15 @@ export const INTELLIGENCE_ACCORDION_GROUPS = [
   },
   {
     id: "alerts",
-    title: "3. Alertas técnicos",
-    description: "Podem coexistir com o status. Não somam carteira.",
-    keys: ["DIVERGENCIA_TECNICA", "NF_CABECALHO_MAIOR_PEDIDO"] as const,
+    title: "Atendimento e alertas",
+    description:
+      "Riscos de vínculo, excesso e produto fora do pedido. Alertas não somam carteira.",
+    keys: [
+      "DIVERGENCIA_TECNICA",
+      "NF_CABECALHO_MAIOR_PEDIDO",
+      "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+      "PRODUTO_FORA_DO_PEDIDO",
+    ] as const,
   },
 ] as const;
 

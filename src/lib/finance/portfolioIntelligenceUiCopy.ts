@@ -110,6 +110,8 @@ export const INTELLIGENCE_ACCORDION_DISPLAY_TITLE: Record<string, string> = {
   SEM_EVIDENCIA: "Sem evidência suficiente",
   DIVERGENCIA_TECNICA: "Divergência técnica",
   NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "Quantidade excedente",
+  PRODUTO_FORA_DO_PEDIDO: "Produto fora do pedido",
 };
 
 export const INTELLIGENCE_ACCORDION_HINT: Record<string, string> = {
@@ -122,6 +124,8 @@ export const INTELLIGENCE_ACCORDION_HINT: Record<string, string> = {
   SEM_EVIDENCIA: "Revisar importação",
   DIVERGENCIA_TECNICA: "Alerta — pode coexistir; não soma carteira",
   NF_CABECALHO_MAIOR_PEDIDO: "Alerta — cabeçalho ≠ valor do pedido",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "Alerta — excedente não soma carteira",
+  PRODUTO_FORA_DO_PEDIDO: "Alerta — produto fora não soma carteira",
 };
 
 /** Cards da “leitura em 10 segundos” (destaque visual). */

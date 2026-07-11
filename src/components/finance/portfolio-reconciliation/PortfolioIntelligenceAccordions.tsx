@@ -1,5 +1,17 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CircleHelp,
+  Clock3,
+  PackageX,
+  Scale,
+  ShieldAlert,
+  Wallet,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   formatFinanceCurrencyCompact,
   formatFinanceInteger,
@@ -35,17 +47,38 @@ export {
 } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
 
 const TONE_CLASS: Record<IntelligenceAccordionKey, string> = {
-  RECEBIDO: "border-emerald-200/80 bg-gradient-to-r from-emerald-50/70 to-white",
-  CR_ABERTO: "border-sky-200/70 bg-gradient-to-r from-sky-50/50 to-white",
-  FATURADO_SEM_CR: "border-sky-200/70 bg-gradient-to-r from-sky-50/40 to-white",
-  CARTEIRA_FUTURA_PROVAVEL: "border-sky-200/80 bg-gradient-to-r from-sky-50/60 to-white",
-  CARTEIRA_PRESENTE_ATENCAO: "border-amber-200/70 bg-gradient-to-r from-amber-50/50 to-white",
-  CARTEIRA_VENCIDA_BLOQUEADA: "border-rose-200/70 bg-gradient-to-r from-rose-50/50 to-white",
-  SEM_EVIDENCIA: "border-zinc-200/80 bg-gradient-to-r from-zinc-50/70 to-white",
-  DIVERGENCIA_TECNICA:
-    "border-dashed border-orange-300/80 bg-gradient-to-r from-orange-50/40 to-white",
-  NF_CABECALHO_MAIOR_PEDIDO:
-    "border-dashed border-orange-300/80 bg-gradient-to-r from-orange-50/30 to-white",
+  RECEBIDO: "border-l-[4px] border-l-[#ABEFC6] border border-[#EAECF0] bg-white",
+  CR_ABERTO: "border-l-[4px] border-l-[#B2DDFF] border border-[#EAECF0] bg-white",
+  FATURADO_SEM_CR: "border-l-[4px] border-l-[#FEDF89] border border-[#EAECF0] bg-white",
+  CARTEIRA_FUTURA_PROVAVEL: "border-l-[4px] border-l-[#B2DDFF] border border-[#EAECF0] bg-white",
+  CARTEIRA_PRESENTE_ATENCAO: "border-l-[4px] border-l-[#FEDF89] border border-[#EAECF0] bg-white",
+  CARTEIRA_VENCIDA_BLOQUEADA: "border-l-[4px] border-l-[#FECDCA] border border-[#EAECF0] bg-white",
+  SEM_EVIDENCIA: "border-l-[4px] border-l-[#D0D5DD] border border-[#EAECF0] bg-white",
+  DIVERGENCIA_TECNICA: "border-l-[4px] border-l-[#FDBA74] border border-[#EAECF0] bg-white",
+  NF_CABECALHO_MAIOR_PEDIDO: "border-l-[4px] border-l-[#FDBA74] border border-[#EAECF0] bg-white",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO:
+    "border-l-[4px] border-l-[#FDBA74] border border-[#EAECF0] bg-white",
+  PRODUTO_FORA_DO_PEDIDO: "border-l-[4px] border-l-[#FDBA74] border border-[#EAECF0] bg-white",
+};
+
+const ICON_BY_KEY: Record<IntelligenceAccordionKey, LucideIcon> = {
+  RECEBIDO: CheckCircle2,
+  CR_ABERTO: Wallet,
+  FATURADO_SEM_CR: Scale,
+  CARTEIRA_FUTURA_PROVAVEL: Clock3,
+  CARTEIRA_PRESENTE_ATENCAO: AlertTriangle,
+  CARTEIRA_VENCIDA_BLOQUEADA: ShieldAlert,
+  SEM_EVIDENCIA: CircleHelp,
+  DIVERGENCIA_TECNICA: AlertTriangle,
+  NF_CABECALHO_MAIOR_PEDIDO: AlertTriangle,
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: AlertTriangle,
+  PRODUTO_FORA_DO_PEDIDO: PackageX,
+};
+
+const GROUP_ICON: Record<string, LucideIcon> = {
+  financial: Wallet,
+  operational: Clock3,
+  alerts: AlertTriangle,
 };
 
 function explanationForAccordion(
@@ -106,17 +139,22 @@ export function PortfolioIntelligenceAccordions({
         </p>
       ) : null}
 
-      {INTELLIGENCE_ACCORDION_GROUPS.map((group) => (
+      {INTELLIGENCE_ACCORDION_GROUPS.map((group) => {
+        const GroupIcon = GROUP_ICON[group.id] ?? Wallet;
+        return (
         <div
           key={group.id}
           className="space-y-2"
           data-testid={`portfolio-intelligence-accordion-group-${group.id}`}
         >
-          <div className="px-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {group.title}
-            </p>
-            <p className="text-[11px] text-muted-foreground">{group.description}</p>
+          <div className="flex items-start gap-2 px-0.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#EAECF0] bg-[#F9FAFB] text-[#344054]">
+              <GroupIcon className="h-3.5 w-3.5" aria-hidden />
+            </span>
+            <div>
+              <p className="text-[13px] font-bold text-[#101828]">{group.title}</p>
+              <p className="text-[11px] text-[#667085]">{group.description}</p>
+            </div>
           </div>
 
           {group.keys.map((key) => {
@@ -131,20 +169,25 @@ export function PortfolioIntelligenceAccordions({
             const groupRows = rowsForIntelligenceAccordion(key, rows);
             const title = intelligenceAccordionTitle(key);
             const hint = INTELLIGENCE_ACCORDION_HINT[key];
+            const Icon = ICON_BY_KEY[key];
             return (
               <section
                 key={key}
-                className={cn("overflow-hidden rounded-2xl border shadow-sm", TONE_CLASS[key])}
+                className={cn("overflow-hidden rounded-2xl shadow-sm", TONE_CLASS[key])}
                 data-testid={`portfolio-intelligence-accordion-${key}`}
               >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/50"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#F9FAFB]"
                   aria-expanded={expanded}
                   onClick={() => onExpandedChange(expanded ? null : key)}
                   data-testid={`portfolio-intelligence-accordion-toggle-${key}`}
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#EAECF0] bg-[#F9FAFB] text-[#344054]">
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
                       <span>{title}</span>
                       {stats.isAlert ? (
@@ -182,6 +225,7 @@ export function PortfolioIntelligenceAccordions({
                       })}
                       {stats.isAlert ? " · não soma carteira" : ""}
                     </p>
+                    </div>
                   </div>
                   {expanded ? (
                     <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -191,7 +235,7 @@ export function PortfolioIntelligenceAccordions({
                 </button>
 
                 {expanded ? (
-                  <div className="border-t border-border/40 bg-white/80 px-3 py-3 sm:px-4">
+                  <div className="border-t border-border/40 bg-white px-3 py-3 sm:px-4">
                     <PortfolioIntelligenceOrdersGrid
                       rows={groupRows}
                       searchQuery={searchByKey[key] ?? ""}
@@ -206,7 +250,8 @@ export function PortfolioIntelligenceAccordions({
             );
           })}
         </div>
-      ))}
+        );
+      })}
 
       {/* Mantém referência às chaves para testes de contrato. */}
       <span className="sr-only">{INTELLIGENCE_ACCORDION_KEYS.join(",")}</span>

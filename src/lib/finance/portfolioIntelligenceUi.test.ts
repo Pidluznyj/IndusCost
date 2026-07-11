@@ -95,10 +95,11 @@ describe("portfolio intelligence UI", () => {
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
   });
 
-  it("barra de filtros cobre eixo de data, atalhos e limpar", () => {
+  it("barra de filtros cobre eixo de data, atalhos, chips e limpar", () => {
     const bar = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx"
     );
+    const filtersLib = read("src/lib/finance/portfolioIntelligenceFilters.ts");
     assert.match(bar, /FinanceBiFilterPanel/);
     assert.match(bar, /dateAxis|Eixo de data/);
     assert.match(bar, /PORTFOLIO_INTELLIGENCE_PERIOD_PRESETS/);
@@ -106,6 +107,17 @@ describe("portfolio intelligence UI", () => {
     assert.match(bar, /Limpar|onClear/);
     assert.match(bar, /PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP/);
     assert.match(bar, /Pedidos por emissão|vencimento/);
+    assert.match(bar, /financialStatus|Status financeiro/);
+    assert.match(bar, /operationalStatus|Status operacional/);
+    assert.match(bar, /operationalAlert|Alerta operacional/);
+    assert.match(bar, /PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS|Alerta técnico/);
+    assert.match(bar, /buildPortfolioIntelligenceFilterChips|chips/);
+    assert.match(bar, /customerNameByExternalId|Cliente:/);
+    assert.match(filtersLib, /Status operacional:/);
+    assert.match(filtersLib, /Alerta:/);
+    assert.match(filtersLib, /Período:/);
+    assert.match(filtersLib, /financialStatus/);
+    assert.match(filtersLib, /operationalAlert/);
   });
 
   it("sanfonas e grid de drilldown estão ligados", () => {
@@ -115,17 +127,31 @@ describe("portfolio intelligence UI", () => {
     const grid = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx"
     );
+    const section = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx"
+    );
     assert.match(accordions, /INTELLIGENCE_ACCORDION_KEYS/);
+    assert.match(accordions, /INTELLIGENCE_ACCORDION_GROUPS/);
     assert.match(accordions, /PortfolioIntelligenceOrdersGrid/);
     assert.match(accordions, /DIVERGENCIA_TECNICA/);
+    assert.match(accordions, /QUANTIDADE_EXCEDENTE_DOCUMENTO|PRODUTO_FORA_DO_PEDIDO/);
     assert.match(accordions, /Nenhum pedido|portfolio-intelligence-grid-empty|rowsForIntelligenceAccordion/);
     assert.match(accordions, /único status|não trocam o status/);
+    assert.match(accordions, /portfolio-intelligence-accordion-group-\$\{group\.id\}/);
+    assert.match(accordions, /ICON_BY_KEY|GroupIcon/);
     assert.match(grid, /Nenhum pedido neste status/);
     assert.match(grid, /confidenceDisplay|Alta confiança|Confiança média|Confiança baixa|muito baixa/i);
     assert.match(grid, /onOpenOrder/);
-    assert.match(grid, /Status financeiro|Status operacional|% atendimento|Excedente|Valor fora/);
+    assert.match(grid, /Status financeiro/);
+    assert.match(grid, /Status operacional/);
+    assert.match(grid, /% atendimento/);
+    assert.match(grid, /Excedente/);
+    assert.match(grid, /Ação recomendada|recommendedAction/);
     assert.match(grid, /tagsAlerta|Alertas/);
+    assert.match(grid, /border-l-\[4px\]|rowBorderClass/);
     assert.match(grid, /portfolio-intelligence-tags-legend/);
+    assert.match(grid, /CR aberto|Recebido|Data prevista recebimento|Última evidência/);
+    assert.match(section, /onOpenOrder|handleOpenOrder|PortfolioIntelligenceOrderDrawer/);
   });
 
   it("drawer de detalhe tem mapa de atendimento e estados vazios sem inventar dados", () => {

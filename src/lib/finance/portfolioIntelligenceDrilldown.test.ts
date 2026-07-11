@@ -4,6 +4,7 @@ import type { PortfolioIntelligenceOrderRow } from "@/src/lib/financePortfolioRe
 import {
   cardKeyToAccordionKey,
   findDuplicateOrderCodesAcrossPrincipalGroups,
+  INTELLIGENCE_ACCORDION_GROUPS,
   INTELLIGENCE_ACCORDION_KEYS,
   rowsForIntelligenceAccordion,
   sumPrincipalGroupValues,
@@ -72,7 +73,17 @@ describe("portfolioIntelligenceDrilldown", () => {
       "SEM_EVIDENCIA",
       "DIVERGENCIA_TECNICA",
       "NF_CABECALHO_MAIOR_PEDIDO",
+      "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+      "PRODUTO_FORA_DO_PEDIDO",
     ]);
+    assert.equal(INTELLIGENCE_ACCORDION_GROUPS.length, 3);
+    assert.deepEqual(
+      INTELLIGENCE_ACCORDION_GROUPS.map((g) => g.id),
+      ["financial", "operational", "alerts"]
+    );
+    assert.equal(INTELLIGENCE_ACCORDION_GROUPS[0]!.title, "Financeiro");
+    assert.equal(INTELLIGENCE_ACCORDION_GROUPS[1]!.title, "Carteira operacional");
+    assert.equal(INTELLIGENCE_ACCORDION_GROUPS[2]!.title, "Atendimento e alertas");
   });
 
   it("pedido aparece em um único status principal; divergência só por tag", () => {
@@ -81,12 +92,13 @@ describe("portfolioIntelligenceDrilldown", () => {
         orderCode: "PD 02339",
         statusPrincipal: "CR_ABERTO",
         orderValue: 158_000,
-        tagsAlerta: ["DIVERGENCIA_TECNICA"],
+        tagsAlerta: ["DIVERGENCIA_TECNICA", "PRODUTO_FORA_DO_PEDIDO"],
       }),
       row({
         orderCode: "PD 02607",
         statusPrincipal: "CARTEIRA_FUTURA_PROVAVEL",
         orderValue: 100_000,
+        tagsAlerta: ["QUANTIDADE_EXCEDENTE_DOCUMENTO"],
       }),
       row({
         orderCode: "PD 02159",
@@ -95,9 +107,13 @@ describe("portfolioIntelligenceDrilldown", () => {
       }),
     ];
 
-    const byPrincipal = INTELLIGENCE_ACCORDION_KEYS.filter(
-      (k) => k !== "DIVERGENCIA_TECNICA" && k !== "NF_CABECALHO_MAIOR_PEDIDO"
-    )
+    const alertKeys = new Set([
+      "DIVERGENCIA_TECNICA",
+      "NF_CABECALHO_MAIOR_PEDIDO",
+      "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+      "PRODUTO_FORA_DO_PEDIDO",
+    ]);
+    const byPrincipal = INTELLIGENCE_ACCORDION_KEYS.filter((k) => !alertKeys.has(k))
       .flatMap((k) => rowsForIntelligenceAccordion(k, rows).map((r) => r.orderCode));
     assert.equal(byPrincipal.length, 3);
     assert.equal(new Set(byPrincipal).size, 3);
@@ -106,6 +122,14 @@ describe("portfolioIntelligenceDrilldown", () => {
     assert.equal(div.length, 1);
     assert.equal(div[0]!.orderCode, "PD 02339");
     assert.equal(div[0]!.statusPrincipal, "CR_ABERTO");
+
+    const fora = rowsForIntelligenceAccordion("PRODUTO_FORA_DO_PEDIDO", rows);
+    assert.equal(fora.length, 1);
+    assert.equal(fora[0]!.orderCode, "PD 02339");
+
+    const excedente = rowsForIntelligenceAccordion("QUANTIDADE_EXCEDENTE_DOCUMENTO", rows);
+    assert.equal(excedente.length, 1);
+    assert.equal(excedente[0]!.orderCode, "PD 02607");
   });
 
   it("Britânia: futura/presente e vencida não misturam pedidos", () => {

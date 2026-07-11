@@ -145,8 +145,11 @@ export type PortfolioMaturityAnalyticsFilters = {
   orderCode?: string | null;
   productExternalId?: number | null;
   statusPrincipal?: PortfolioMaturityStatus | null;
+  financialStatus?: string | null;
+  operationalStatus?: string | null;
   confidenceLabel?: PortfolioConfidenceLabel | null;
   tagsAlerta?: readonly PortfolioMaturityAlertTag[] | null;
+  operationalAlert?: string | null;
   minValue?: number | null;
   maxValue?: number | null;
   dateAxis?: PortfolioMaturityDateAxis | null;
@@ -848,6 +851,20 @@ export function filterMaturityOrders(
       return false;
     }
     if (
+      filters.financialStatus != null &&
+      filters.financialStatus.trim() &&
+      row.financialStatus !== filters.financialStatus
+    ) {
+      return false;
+    }
+    if (
+      filters.operationalStatus != null &&
+      filters.operationalStatus.trim() &&
+      row.operationalStatus !== filters.operationalStatus
+    ) {
+      return false;
+    }
+    if (
       filters.confidenceLabel != null &&
       row.confidenceLabel !== filters.confidenceLabel
     ) {
@@ -855,6 +872,13 @@ export function filterMaturityOrders(
     }
     if (filters.tagsAlerta != null && filters.tagsAlerta.length > 0) {
       if (!filters.tagsAlerta.every((t) => row.tagsAlerta.includes(t))) return false;
+    }
+    if (
+      filters.operationalAlert != null &&
+      filters.operationalAlert.trim() &&
+      !row.tagsAlerta.includes(filters.operationalAlert as PortfolioMaturityAlertTag)
+    ) {
+      return false;
     }
     if (filters.minValue != null && row.orderValue < filters.minValue) return false;
     if (filters.maxValue != null && row.orderValue > filters.maxValue) return false;

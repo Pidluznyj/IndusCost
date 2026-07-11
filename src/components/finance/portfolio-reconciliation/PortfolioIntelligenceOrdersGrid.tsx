@@ -20,13 +20,13 @@ const TAG_LABEL: Record<string, string> = {
   DIVERGENCIA_PRECO: "Div. preço",
   SEM_CONDICAO_PAGAMENTO: "Sem cond. pag.",
   VINCULO_INCOMPLETO: "Vínculo incompleto",
-  PEDIDO_ANTIGO_SEM_EVOLUCAO: "Pedido antigo sem evolução",
+  PEDIDO_ANTIGO_SEM_EVOLUCAO: "Pedido antigo",
   QUANTIDADE_EXCEDENTE_DOCUMENTO: "Qtd. excedente",
   PRODUTO_FORA_DO_PEDIDO: "Produto fora",
 };
 
 const FINANCIAL_STATUS_LABEL: Record<string, string> = {
-  FIN_RECEBIDO: "Já recebido",
+  FIN_RECEBIDO: "Recebido",
   FIN_CR_ABERTO: "CR aberto",
   FIN_FATURADO_SEM_CR: "Faturado sem CR",
   FIN_SEM_CR: "Sem CR",
@@ -34,11 +34,11 @@ const FINANCIAL_STATUS_LABEL: Record<string, string> = {
 
 const OPERATIONAL_STATUS_LABEL: Record<string, string> = {
   OP_TOTALMENTE_ATENDIDO: "Totalmente atendido",
-  OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE: "Totalmente atendido (com excedente)",
+  OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE: "Atendido com excedente",
   OP_PARCIALMENTE_ATENDIDO: "Parcialmente atendido",
   OP_NAO_ATENDIDO: "Não atendido",
-  OP_DOCUMENTO_SEM_ITEMIZACAO: "Documento sem itemização",
-  OP_VINCULO_APENAS_CABECALHO: "Vínculo só de cabeçalho",
+  OP_DOCUMENTO_SEM_ITEMIZACAO: "Doc. sem itemização",
+  OP_VINCULO_APENAS_CABECALHO: "Vínculo só cabeçalho",
 };
 
 function financialStatusLabel(code: string | null | undefined): string {
@@ -51,18 +51,21 @@ function operationalStatusLabel(code: string | null | undefined): string {
   return OPERATIONAL_STATUS_LABEL[code] ?? code;
 }
 
-function yesNo(v: boolean): string {
-  return v ? "Sim" : "Não";
-}
-
-function daysSinceForecast(forecastDate: string | null): number | null {
-  if (!forecastDate) return null;
-  const [y, m, d] = forecastDate.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const forecast = new Date(y, m - 1, d);
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.round((start.getTime() - forecast.getTime()) / 86_400_000);
+function rowBorderClass(row: PortfolioIntelligenceOrderRow): string {
+  switch (row.statusPrincipal) {
+    case "RECEBIDO":
+    case "CR_ABERTO":
+    case "FATURADO_SEM_CR":
+      return "border-l-[4px] border-l-[#ABEFC6]";
+    case "CARTEIRA_FUTURA_PROVAVEL":
+      return "border-l-[4px] border-l-[#B2DDFF]";
+    case "CARTEIRA_PRESENTE_ATENCAO":
+      return "border-l-[4px] border-l-[#FEDF89]";
+    case "CARTEIRA_VENCIDA_BLOQUEADA":
+      return "border-l-[4px] border-l-[#FECDCA]";
+    default:
+      return "border-l-[4px] border-l-[#D0D5DD]";
+  }
 }
 
 type Props = {
@@ -104,15 +107,13 @@ export function PortfolioIntelligenceOrdersGrid({
     });
   }, [rows, q]);
 
-  const showFulfillmentCols = useMemo(
+  const showCrCols = useMemo(
     () =>
       rows.some(
         (r) =>
-          r.financialStatus != null ||
-          r.operationalStatus != null ||
-          r.fulfillmentPercent != null ||
-          r.excessQuantity != null ||
-          r.valueOutsideOrder != null
+          (r.openReceivableValue ?? 0) > 0 ||
+          (r.receivedValue ?? 0) > 0 ||
+          (r.receivableTotalValue ?? 0) > 0
       ),
     [rows]
   );
@@ -146,9 +147,12 @@ export function PortfolioIntelligenceOrdersGrid({
         </span>
       </div>
 
-      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="portfolio-intelligence-tags-legend">
-        Alertas podem aparecer junto do status e não o substituem. Em telas menores, deslize a
-        tabela.
+      <p
+        className="text-[10px] leading-relaxed text-muted-foreground"
+        data-testid="portfolio-intelligence-tags-legend"
+      >
+        Alertas podem aparecer junto do status e não o substituem. Clique na linha para abrir o
+        detalhe.
       </p>
 
       {filtered.length === 0 ? (
@@ -156,50 +160,30 @@ export function PortfolioIntelligenceOrdersGrid({
           Nenhum pedido corresponde à busca.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border/60 -mx-1 px-1 sm:mx-0 sm:px-0">
-          <table
-            className={cn(
-              "w-full border-collapse text-left text-xs",
-              showFulfillmentCols ? "min-w-[980px] md:min-w-[1900px]" : "min-w-[980px] md:min-w-[1700px]"
-            )}
-          >
-            <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="overflow-x-auto rounded-xl border border-[#EAECF0] -mx-1 px-1 sm:mx-0 sm:px-0">
+          <table className="min-w-[1200px] w-full border-collapse bg-white text-left text-xs md:min-w-[1600px]">
+            <thead className="bg-[#F9FAFB] text-[10px] uppercase tracking-wide text-[#667085]">
               <tr>
                 <th className="px-2.5 py-2.5 font-semibold">Pedido</th>
                 <th className="px-2.5 py-2.5 font-semibold">Cliente</th>
                 <th className="px-2.5 py-2.5 font-semibold">Vendedor</th>
                 <th className="px-2.5 py-2.5 font-semibold">Emissão</th>
-                <th className="px-2.5 py-2.5 font-semibold">Prevista</th>
-                <th className="px-2.5 py-2.5 font-semibold text-right">Dias emissão</th>
-                <th className="px-2.5 py-2.5 font-semibold text-right">Dias previsão</th>
+                <th className="px-2.5 py-2.5 font-semibold">Previsão entrega</th>
                 <th className="px-2.5 py-2.5 font-semibold text-right">Valor pedido</th>
-                <th className="px-2.5 py-2.5 font-semibold text-right">Valor CR</th>
-                <th className="px-2.5 py-2.5 font-semibold text-right">Recebido</th>
-                <th className="px-2.5 py-2.5 font-semibold text-right">Aberto</th>
-                <th className="px-2.5 py-2.5 font-semibold">Status</th>
-                {showFulfillmentCols ? (
-                  <>
-                    <th className="px-2.5 py-2.5 font-semibold">Status financeiro</th>
-                    <th className="px-2.5 py-2.5 font-semibold">Status operacional</th>
-                  </>
-                ) : null}
-                <th className="px-2.5 py-2.5 font-semibold">Alertas</th>
-                {showFulfillmentCols ? (
-                  <>
-                    <th className="px-2.5 py-2.5 font-semibold text-right">% atendimento</th>
-                    <th className="px-2.5 py-2.5 font-semibold text-right">Excedente</th>
-                    <th className="px-2.5 py-2.5 font-semibold text-right">Valor fora do pedido</th>
-                  </>
-                ) : null}
+                <th className="px-2.5 py-2.5 font-semibold">Status financeiro</th>
+                <th className="px-2.5 py-2.5 font-semibold">Status operacional</th>
                 <th className="px-2.5 py-2.5 font-semibold">Confiança</th>
-                <th className="px-2.5 py-2.5 font-semibold">Motivo</th>
-                <th className="px-2.5 py-2.5 font-semibold">Próximo passo</th>
-                <th className="px-2.5 py-2.5 font-semibold">ID Nomus</th>
-                <th className="px-2.5 py-2.5 font-semibold">Produto</th>
-                <th className="px-2.5 py-2.5 font-semibold">NF</th>
-                <th className="px-2.5 py-2.5 font-semibold">Doc. saída</th>
-                <th className="px-2.5 py-2.5 font-semibold">CR</th>
-                <th className="px-2.5 py-2.5 font-semibold">Baixa</th>
+                <th className="px-2.5 py-2.5 font-semibold text-right">% atendimento</th>
+                <th className="px-2.5 py-2.5 font-semibold text-right">Excedente</th>
+                <th className="px-2.5 py-2.5 font-semibold">Alertas</th>
+                <th className="px-2.5 py-2.5 font-semibold">Ação recomendada</th>
+                {showCrCols ? (
+                  <>
+                    <th className="px-2.5 py-2.5 font-semibold text-right">CR aberto</th>
+                    <th className="px-2.5 py-2.5 font-semibold text-right">Recebido</th>
+                  </>
+                ) : null}
+                <th className="px-2.5 py-2.5 font-semibold">Data prevista recebimento</th>
                 <th className="px-2.5 py-2.5 font-semibold">Última evidência</th>
               </tr>
             </thead>
@@ -212,99 +196,43 @@ export function PortfolioIntelligenceOrdersGrid({
                   <tr
                     key={row.salesOrderId ?? row.orderCode}
                     className={cn(
-                      "border-t border-border/40 align-top",
-                      canOpen && "cursor-pointer hover:bg-sky-50/40"
+                      "border-t border-[#EAECF0] bg-white align-top",
+                      rowBorderClass(row),
+                      canOpen && "cursor-pointer hover:bg-[#F9FAFB]"
                     )}
                     onClick={() => {
                       if (row.salesOrderId && onOpenOrder) onOpenOrder(row.salesOrderId);
                     }}
                     data-testid="portfolio-intelligence-grid-row"
                   >
-                    <td className="px-2.5 py-2.5 font-medium text-foreground">{row.orderCode}</td>
+                    <td className="px-2.5 py-2.5 font-semibold text-[#101828]">
+                      {row.orderCode}
+                    </td>
                     <td className="px-2.5 py-2.5">
                       <div className="max-w-[140px] truncate">{row.customerName ?? "—"}</div>
                     </td>
                     <td className="px-2.5 py-2.5">
                       <div className="max-w-[120px] truncate">
-                        {row.sellerName ?? "Não informado na importação"}
+                        {row.sellerName ?? "Não informado"}
                       </div>
                     </td>
-                    <td className="px-2.5 py-2.5 tabular-nums">{formatFinanceDate(row.issueDate)}</td>
                     <td className="px-2.5 py-2.5 tabular-nums">
-                      {formatFinanceDate(row.forecastDate ?? row.expectedDeliveryDate)}
+                      {formatFinanceDate(row.issueDate)}
                     </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      {row.daysSinceIssue != null ? formatFinanceInteger(row.daysSinceIssue) : "—"}
+                    <td className="px-2.5 py-2.5 tabular-nums">
+                      {formatFinanceDate(row.expectedDeliveryDate)}
                     </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      {(() => {
-                        const d = daysSinceForecast(row.forecastDate);
-                        return d != null ? formatFinanceInteger(d) : "—";
-                      })()}
-                    </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
+                    <td className="px-2.5 py-2.5 text-right tabular-nums font-semibold">
                       {formatFinanceCurrency(row.orderValue)}
                     </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      {formatFinanceCurrency(row.receivableTotalValue)}
+                    <td className="px-2.5 py-2.5 text-[11px]">
+                      {financialStatusLabel(row.financialStatus) !== "—"
+                        ? financialStatusLabel(row.financialStatus)
+                        : intelligenceAccordionTitle(row.statusPrincipal)}
                     </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      {formatFinanceCurrency(row.receivedValue)}
+                    <td className="px-2.5 py-2.5 text-[11px]">
+                      {operationalStatusLabel(row.operationalStatus)}
                     </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      {formatFinanceCurrency(row.openReceivableValue)}
-                    </td>
-                    <td className="px-2.5 py-2.5">
-                      <span className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[10px] font-medium">
-                        {intelligenceAccordionTitle(row.statusPrincipal)}
-                      </span>
-                    </td>
-                    {showFulfillmentCols ? (
-                      <>
-                        <td className="px-2.5 py-2.5 text-[10px]">
-                          {financialStatusLabel(row.financialStatus)}
-                        </td>
-                        <td className="px-2.5 py-2.5 text-[10px]">
-                          {operationalStatusLabel(row.operationalStatus)}
-                        </td>
-                      </>
-                    ) : null}
-                    <td className="px-2.5 py-2.5">
-                      {tags.length === 0 ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <div className="flex max-w-[180px] flex-wrap gap-1">
-                          {tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded border border-orange-200/70 bg-orange-50/80 px-1 py-0.5 text-[9px] font-medium text-orange-950"
-                              title={tag}
-                            >
-                              {TAG_LABEL[tag] ?? tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    {showFulfillmentCols ? (
-                      <>
-                        <td className="px-2.5 py-2.5 text-right tabular-nums">
-                          {row.fulfillmentPercent != null
-                            ? `${Math.min(100, Math.max(0, row.fulfillmentPercent)).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`
-                            : "—"}
-                        </td>
-                        <td className="px-2.5 py-2.5 text-right tabular-nums">
-                          {row.excessQuantity != null
-                            ? formatFinanceInteger(row.excessQuantity)
-                            : "—"}
-                        </td>
-                        <td className="px-2.5 py-2.5 text-right tabular-nums">
-                          {row.valueOutsideOrder != null
-                            ? formatFinanceCurrency(row.valueOutsideOrder)
-                            : "—"}
-                        </td>
-                      </>
-                    ) : null}
                     <td className="px-2.5 py-2.5">
                       <span
                         className={cn(
@@ -313,35 +241,62 @@ export function PortfolioIntelligenceOrdersGrid({
                         )}
                         title={conf.hint}
                       >
-                        <span className="text-[10px] font-semibold leading-tight">{conf.label}</span>
+                        <span className="text-[10px] font-semibold leading-tight">
+                          {conf.label}
+                        </span>
                         <span className="text-[9px] tabular-nums opacity-80">
                           {row.confidenceScore}
                         </span>
                       </span>
                     </td>
+                    <td className="px-2.5 py-2.5 text-right tabular-nums">
+                      {row.fulfillmentPercent != null
+                        ? `${Math.min(100, Math.max(0, row.fulfillmentPercent)).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`
+                        : "—"}
+                    </td>
+                    <td className="px-2.5 py-2.5 text-right tabular-nums">
+                      {row.excessQuantity != null
+                        ? formatFinanceInteger(row.excessQuantity)
+                        : "—"}
+                    </td>
                     <td className="px-2.5 py-2.5">
-                      <div className="max-w-[220px] truncate text-muted-foreground" title={row.mainReason}>
-                        {row.mainReason}
-                      </div>
+                      {tags.length === 0 ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <div className="flex max-w-[200px] flex-wrap gap-1">
+                          {tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded border border-[#FDBA74] bg-[#FFF6ED] px-1 py-0.5 text-[9px] font-semibold text-[#C2410C]"
+                              title={tag}
+                            >
+                              {TAG_LABEL[tag] ?? tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-2.5 py-2.5">
                       <div
-                        className="max-w-[180px] truncate text-muted-foreground"
+                        className="max-w-[200px] truncate text-[#667085]"
                         title={row.recommendedAction}
                       >
-                        {row.recommendedAction}
+                        {row.recommendedAction || "—"}
                       </div>
                     </td>
+                    {showCrCols ? (
+                      <>
+                        <td className="px-2.5 py-2.5 text-right tabular-nums">
+                          {formatFinanceCurrency(row.openReceivableValue)}
+                        </td>
+                        <td className="px-2.5 py-2.5 text-right tabular-nums">
+                          {formatFinanceCurrency(row.receivedValue)}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="px-2.5 py-2.5 tabular-nums">
-                      {row.externalSalesOrderId != null ? row.externalSalesOrderId : "—"}
+                      {formatFinanceDate(row.forecastDate ?? row.nextRelevantDate)}
                     </td>
-                    <td className="px-2.5 py-2.5 tabular-nums">
-                      {row.productExternalIds[0] != null ? row.productExternalIds[0] : "—"}
-                    </td>
-                    <td className="px-2.5 py-2.5">{yesNo(row.evidenceFlags?.hasNfe)}</td>
-                    <td className="px-2.5 py-2.5">{yesNo(row.evidenceFlags?.hasStockDocument)}</td>
-                    <td className="px-2.5 py-2.5">{yesNo(row.evidenceFlags?.hasReceivable)}</td>
-                    <td className="px-2.5 py-2.5">{yesNo(row.evidenceFlags?.hasReceived)}</td>
                     <td className="px-2.5 py-2.5 tabular-nums">
                       {formatFinanceDate(row.updatedAt ?? row.nextRelevantDate)}
                     </td>

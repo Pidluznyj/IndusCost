@@ -33,8 +33,15 @@ export type PortfolioIntelligenceUiFilters = {
   sellerName: string;
   companyId: string;
   statusPrincipal: string;
+  /** Status financeiro do mapa (FIN_*). */
+  financialStatus: string;
+  /** Status operacional do mapa (OP_*). */
+  operationalStatus: string;
   confidenceLabel: string;
+  /** Alertas técnicos (tags). */
   tagsAlerta: string;
+  /** Alerta operacional (tag de atendimento/excesso/fora). */
+  operationalAlert: string;
   orderCode: string;
   productExternalId: string;
   minValue: string;
@@ -92,13 +99,13 @@ export const PORTFOLIO_INTELLIGENCE_DATE_AXIS_OPTIONS: Array<{
   },
   {
     value: "FORECAST_DATE",
-    label: "Forecast da conciliação",
-    hint: "Data de previsão usada na conciliação materializada.",
+    label: "Data prevista de recebimento",
+    hint: "Previsão de recebimento usada na conciliação (CR > NF > pedido).",
   },
   {
     value: "UPDATED_AT",
-    label: "Atualização IndusCost",
-    hint: "Última atualização do pedido na importação.",
+    label: "Atualização da run",
+    hint: "Última atualização do pedido/fato na materialização da run.",
   },
 ];
 
@@ -136,17 +143,48 @@ export const PORTFOLIO_INTELLIGENCE_CONFIDENCE_OPTIONS = [
   { value: "MUITO_BAIXA", label: "Muito baixa" },
 ] as const;
 
-export const PORTFOLIO_INTELLIGENCE_TAG_OPTIONS = [
+export const PORTFOLIO_INTELLIGENCE_FINANCIAL_STATUS_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "FIN_RECEBIDO", label: "Recebido" },
+  { value: "FIN_CR_ABERTO", label: "CR aberto" },
+  { value: "FIN_FATURADO_SEM_CR", label: "Faturado sem CR" },
+  { value: "FIN_SEM_CR", label: "Sem CR" },
+] as const;
+
+export const PORTFOLIO_INTELLIGENCE_OPERATIONAL_STATUS_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "OP_TOTALMENTE_ATENDIDO", label: "Totalmente atendido" },
+  {
+    value: "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE",
+    label: "Totalmente atendido (com excedente)",
+  },
+  { value: "OP_PARCIALMENTE_ATENDIDO", label: "Parcialmente atendido" },
+  { value: "OP_NAO_ATENDIDO", label: "Não atendido" },
+  { value: "OP_DOCUMENTO_SEM_ITEMIZACAO", label: "Documento sem itemização" },
+  { value: "OP_VINCULO_APENAS_CABECALHO", label: "Vínculo só de cabeçalho" },
+] as const;
+
+export const PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS = [
+  { value: "", label: "Todos" },
   { value: "DIVERGENCIA_TECNICA", label: "Divergência técnica" },
   { value: "NF_SEM_DOCUMENTO", label: "NF sem documento" },
-  { value: "DOCUMENTO_SEM_CR", label: "Documento sem CR" },
-  { value: "NF_CABECALHO_MAIOR_PEDIDO", label: "NF cabeçalho > pedido" },
-  { value: "QUANTIDADE_EXCEDENTE_DOCUMENTO", label: "Quantidade excedente" },
-  { value: "PRODUTO_FORA_DO_PEDIDO", label: "Produto fora do pedido" },
+  { value: "NF_CABECALHO_MAIOR_PEDIDO", label: "NF maior que pedido" },
   { value: "DIVERGENCIA_PRECO", label: "Divergência de preço" },
   { value: "SEM_CONDICAO_PAGAMENTO", label: "Sem condição de pagamento" },
   { value: "VINCULO_INCOMPLETO", label: "Vínculo incompleto" },
   { value: "PEDIDO_ANTIGO_SEM_EVOLUCAO", label: "Pedido antigo sem evolução" },
+] as const;
+
+export const PORTFOLIO_INTELLIGENCE_OPERATIONAL_ALERT_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "QUANTIDADE_EXCEDENTE_DOCUMENTO", label: "Quantidade excedente" },
+  { value: "PRODUTO_FORA_DO_PEDIDO", label: "Produto fora do pedido" },
+  { value: "DOCUMENTO_SEM_CR", label: "Documento sem CR" },
+] as const;
+
+export const PORTFOLIO_INTELLIGENCE_TAG_OPTIONS = [
+  ...PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS.filter((o) => o.value),
+  ...PORTFOLIO_INTELLIGENCE_OPERATIONAL_ALERT_OPTIONS.filter((o) => o.value),
 ] as const;
 
 export const PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP = {
@@ -184,8 +222,11 @@ export function createDefaultPortfolioIntelligenceUiFilters(
     sellerName: "",
     companyId: "",
     statusPrincipal: "",
+    financialStatus: "",
+    operationalStatus: "",
     confidenceLabel: "",
     tagsAlerta: "",
+    operationalAlert: "",
     orderCode: "",
     productExternalId: "",
     minValue: "",
@@ -318,6 +359,16 @@ export function resolvePortfolioIntelligenceEffectiveFilters(
     tags.add("DIVERGENCIA_TECNICA");
     next.tagsAlerta = [...tags].join(",");
   }
+  if (next.operationalAlert.trim()) {
+    const tags = new Set(
+      next.tagsAlerta
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+    );
+    tags.add(next.operationalAlert.trim());
+    next.tagsAlerta = [...tags].join(",");
+  }
   if (next.onlyAboveMinValue && !next.minValue.trim()) {
     // Sem valor mínimo configurado o atalho não restringe.
     next.onlyAboveMinValue = false;
@@ -331,7 +382,8 @@ export function resolvePortfolioIntelligenceEffectiveFilters(
 
 export function buildPortfolioIntelligenceFilterChips(
   filters: PortfolioIntelligenceUiFilters,
-  onRemoveField?: (field: keyof PortfolioIntelligenceUiFilters) => void
+  onRemoveField?: (field: keyof PortfolioIntelligenceUiFilters) => void,
+  options?: { customerNameByExternalId?: Record<string, string> }
 ): FinanceBiFilterChip[] {
   const chips: FinanceBiFilterChip[] = [];
   const push = (id: keyof PortfolioIntelligenceUiFilters, label: string) => {
@@ -353,7 +405,12 @@ export function buildPortfolioIntelligenceFilterChips(
   if (filters.from.trim()) push("from", `De: ${filters.from}`);
   if (filters.to.trim()) push("to", `Até: ${filters.to}`);
   if (filters.customerExternalId.trim()) {
-    push("customerExternalId", `Cliente: ${filters.customerExternalId}`);
+    const name =
+      options?.customerNameByExternalId?.[filters.customerExternalId.trim()]?.trim();
+    push(
+      "customerExternalId",
+      `Cliente: ${name || filters.customerExternalId}`
+    );
   }
   if (filters.sellerExternalId.trim()) {
     push("sellerExternalId", `Vendedor ID: ${filters.sellerExternalId}`);
@@ -366,16 +423,53 @@ export function buildPortfolioIntelligenceFilterChips(
       `Status: ${optionLabel([...PORTFOLIO_INTELLIGENCE_STATUS_OPTIONS], filters.statusPrincipal)}`
     );
   }
+  if (filters.financialStatus) {
+    push(
+      "financialStatus",
+      `Status financeiro: ${optionLabel(
+        [...PORTFOLIO_INTELLIGENCE_FINANCIAL_STATUS_OPTIONS],
+        filters.financialStatus
+      )}`
+    );
+  }
+  if (filters.operationalStatus) {
+    push(
+      "operationalStatus",
+      `Status operacional: ${optionLabel(
+        [...PORTFOLIO_INTELLIGENCE_OPERATIONAL_STATUS_OPTIONS],
+        filters.operationalStatus
+      )}`
+    );
+  }
   if (filters.confidenceLabel) {
     push(
       "confidenceLabel",
       `Confiança: ${optionLabel([...PORTFOLIO_INTELLIGENCE_CONFIDENCE_OPTIONS], filters.confidenceLabel)}`
     );
   }
-  if (filters.tagsAlerta.trim()) push("tagsAlerta", `Tags: ${filters.tagsAlerta}`);
+  if (filters.tagsAlerta.trim()) {
+    const tech = filters.tagsAlerta
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) =>
+        optionLabel([...PORTFOLIO_INTELLIGENCE_TECHNICAL_ALERT_OPTIONS], t)
+      )
+      .join(", ");
+    push("tagsAlerta", `Alerta técnico: ${tech || filters.tagsAlerta}`);
+  }
+  if (filters.operationalAlert.trim()) {
+    push(
+      "operationalAlert",
+      `Alerta: ${optionLabel(
+        [...PORTFOLIO_INTELLIGENCE_OPERATIONAL_ALERT_OPTIONS],
+        filters.operationalAlert
+      )}`
+    );
+  }
   if (filters.orderCode.trim()) push("orderCode", `Pedido: ${filters.orderCode}`);
   if (filters.productExternalId.trim()) {
-    push("productExternalId", `Produto: ${filters.productExternalId}`);
+    push("productExternalId", `Produto/SKU: ${filters.productExternalId}`);
   }
   if (filters.minValue.trim()) push("minValue", `Valor mín.: ${filters.minValue}`);
   if (filters.maxValue.trim()) push("maxValue", `Valor máx.: ${filters.maxValue}`);
@@ -407,8 +501,11 @@ export function countActivePortfolioIntelligenceFilters(
   if (filters.sellerExternalId.trim() || filters.sellerName.trim()) n += 1;
   if (filters.companyId.trim()) n += 1;
   if (filters.statusPrincipal) n += 1;
+  if (filters.financialStatus) n += 1;
+  if (filters.operationalStatus) n += 1;
   if (filters.confidenceLabel) n += 1;
   if (filters.tagsAlerta.trim()) n += 1;
+  if (filters.operationalAlert.trim()) n += 1;
   if (filters.orderCode.trim()) n += 1;
   if (filters.productExternalId.trim()) n += 1;
   if (filters.minValue.trim()) n += 1;
@@ -447,8 +544,11 @@ export function portfolioIntelligenceUiFiltersToQueryArgs(
     orderCode: effective.orderCode,
     productExternalId: effective.productExternalId,
     statusPrincipal: effective.statusPrincipal,
+    financialStatus: effective.financialStatus,
+    operationalStatus: effective.operationalStatus,
     confidenceLabel: effective.confidenceLabel,
     tagsAlerta: effective.tagsAlerta,
+    operationalAlert: effective.operationalAlert,
     minValue,
     maxValue: effective.maxValue,
     dateAxis:
