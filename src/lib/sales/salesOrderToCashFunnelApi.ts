@@ -54,6 +54,8 @@ export type OrderToCashFunnelFilters = {
   temperature: SalesOrderToCashTemperature | null;
   confidenceLabel: SalesOrderToCashConfidenceLabel | null;
   alert: SalesOrderToCashAlert | null;
+  /** Área responsável sugerida pela classificação (ex.: COMERCIAL). */
+  responsibleArea: string | null;
   minValue: number | null;
   maxValue: number | null;
   dateAxis: OrderToCashFunnelDateAxis | null;
@@ -316,6 +318,10 @@ export function parseOrderToCashFunnelFilters(
     alert = u;
   }
 
+  const responsibleArea = asQueryString(
+    query.responsibleArea ?? query.responsavel ?? query.responsible
+  );
+
   const minValue = asNonNegativeNumber(
     query.minValue ?? query.valorMinimo,
     "minValue"
@@ -346,6 +352,7 @@ export function parseOrderToCashFunnelFilters(
     temperature,
     confidenceLabel,
     alert,
+    responsibleArea: responsibleArea ? responsibleArea.toUpperCase() : null,
     minValue,
     maxValue,
     dateAxis,
@@ -409,6 +416,13 @@ export function filterOrderToCashFunnelRows(
       return false;
     }
     if (filters.alert && !row.alerts.includes(filters.alert)) return false;
+    if (
+      filters.responsibleArea &&
+      String(row.responsibleArea ?? "").toUpperCase() !==
+        filters.responsibleArea.toUpperCase()
+    ) {
+      return false;
+    }
 
     const value = row.valueForStage;
     if (filters.minValue != null && value < filters.minValue) return false;

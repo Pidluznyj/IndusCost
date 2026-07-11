@@ -4,35 +4,14 @@
  */
 
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  buildOrderToCashFunnelQueryParams,
+  createDefaultOrderToCashFunnelUiFilters,
+  type OrderToCashFunnelUiFilters,
+} from "@/src/lib/sales/salesOrderToCashFunnelFilters";
 
-export type OrderToCashFunnelUiFilters = {
-  dateFrom: string;
-  dateTo: string;
-  dateAxis: string;
-  customerName: string;
-  sellerName: string;
-  funnelStage: string;
-  temperature: string;
-  alert: string;
-  page: number;
-  pageSize: number;
-};
-
-export function createDefaultOrderToCashFunnelUiFilters(): OrderToCashFunnelUiFilters {
-  const year = new Date().getFullYear();
-  return {
-    dateFrom: `${year}-01-01`,
-    dateTo: `${year}-12-31`,
-    dateAxis: "ORDER_ISSUE_DATE",
-    customerName: "",
-    sellerName: "",
-    funnelStage: "",
-    temperature: "",
-    alert: "",
-    page: 1,
-    pageSize: 50,
-  };
-}
+export type { OrderToCashFunnelUiFilters } from "@/src/lib/sales/salesOrderToCashFunnelFilters";
+export { createDefaultOrderToCashFunnelUiFilters } from "@/src/lib/sales/salesOrderToCashFunnelFilters";
 
 export type OrderToCashFunnelSummaryCardDto = {
   key: string;
@@ -229,16 +208,10 @@ function append(params: URLSearchParams, key: string, value: string | number | n
 
 export function buildOrderToCashFunnelListUrl(filters: OrderToCashFunnelUiFilters): string {
   const params = new URLSearchParams();
-  append(params, "page", filters.page);
-  append(params, "pageSize", filters.pageSize);
-  append(params, "dateAxis", filters.dateAxis);
-  append(params, "dateFrom", filters.dateFrom);
-  append(params, "dateTo", filters.dateTo);
-  append(params, "cliente", filters.customerName);
-  append(params, "vendedor", filters.sellerName);
-  append(params, "estagio", filters.funnelStage);
-  append(params, "temperatura", filters.temperature);
-  append(params, "alerta", filters.alert);
+  const query = buildOrderToCashFunnelQueryParams(filters);
+  for (const [key, value] of Object.entries(query)) {
+    append(params, key, value);
+  }
   const qs = params.toString();
   return `/api/sales/order-to-cash-funnel${qs ? `?${qs}` : ""}`;
 }

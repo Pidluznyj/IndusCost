@@ -9,6 +9,7 @@ import {
   ORDER_TO_CASH_FUNNEL_VIEW_PERMISSIONS,
   OrderToCashFunnelApiParseError,
   parseOrderToCashFunnelFilters,
+  filterOrderToCashFunnelRows,
   type OrderToCashFunnelEnrichedRow,
 } from "./salesOrderToCashFunnelApi.js";
 import { classifySalesOrderToCashFunnelRow } from "./salesOrderToCashFunnelClassification.js";
@@ -86,6 +87,7 @@ describe("salesOrderToCashFunnelApi", () => {
       temperatura: "MORNO",
       confianca: "ALTA",
       alerta: "CR_VENCIDO",
+      responsavel: "COMERCIAL",
       valorMinimo: "1000",
       valorMaximo: "500000",
       dateAxis: "ORDER_ISSUE_DATE",
@@ -104,6 +106,7 @@ describe("salesOrderToCashFunnelApi", () => {
     assert.equal(filters.temperature, "MORNO");
     assert.equal(filters.confidenceLabel, "ALTA");
     assert.equal(filters.alert, "CR_VENCIDO");
+    assert.equal(filters.responsibleArea, "COMERCIAL");
     assert.equal(filters.minValue, 1000);
     assert.equal(filters.maxValue, 500000);
     assert.equal(filters.dateAxis, "ORDER_ISSUE_DATE");
@@ -316,5 +319,53 @@ describe("salesOrderToCashFunnelApi", () => {
       server,
       /Conciliação de Carteira|classifySalesOrderToCashFunnelRow|portfolio/
     );
+  });
+
+  it("13. filtra por responsável, estágio, temperatura e alerta", () => {
+    const rows = [
+      enriched({
+        orderId: "r1",
+        funnelStage: "BLOQUEADO_REVISAO",
+        temperature: "CONGELADO",
+        responsibleArea: "COMERCIAL",
+        alerts: ["PEDIDO_ANTIGO_SEM_EVOLUCAO"],
+      }),
+      enriched({
+        orderId: "r2",
+        hasOpenCr: true,
+        funnelStage: "CR_ABERTO",
+        temperature: "MORNO",
+        responsibleArea: "FINANCEIRO",
+        alerts: ["CR_VENCIDO"],
+      }),
+    ];
+
+    const byResponsible = filterOrderToCashFunnelRows(
+      rows,
+      parseOrderToCashFunnelFilters({ responsavel: "COMERCIAL" })
+    );
+    assert.equal(byResponsible.length, 1);
+    assert.equal(byResponsible[0]?.orderId, "r1");
+
+    const byStage = filterOrderToCashFunnelRows(
+      rows,
+      parseOrderToCashFunnelFilters({ estagio: "CR_ABERTO" })
+    );
+    assert.equal(byStage.length, 1);
+    assert.equal(byStage[0]?.orderId, "r2");
+
+    const byTemp = filterOrderToCashFunnelRows(
+      rows,
+      parseOrderToCashFunnelFilters({ temperatura: "CONGELADO" })
+    );
+    assert.equal(byTemp.length, 1);
+    assert.equal(byTemp[0]?.orderId, "r1");
+
+    const byAlert = filterOrderToCashFunnelRows(
+      rows,
+      parseOrderToCashFunnelFilters({ alerta: "CR_VENCIDO" })
+    );
+    assert.equal(byAlert.length, 1);
+    assert.equal(byAlert[0]?.orderId, "r2");
   });
 });

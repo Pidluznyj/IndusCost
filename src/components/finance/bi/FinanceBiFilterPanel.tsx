@@ -109,9 +109,14 @@ export function FinanceBiFilterPanel({
             <Filter className="h-3.5 w-3.5" />
             Aplicar filtros
           </button>
-          <button type="button" onClick={onClear} className={financeBiButtonOutlineClass}>
+          <button
+            type="button"
+            onClick={onClear}
+            className={financeBiButtonOutlineClass}
+            data-testid="finance-bi-clear-filters"
+          >
             <RotateCcw className="h-3.5 w-3.5" />
-            Limpar
+            Limpar filtros
           </button>
         </div>
       </section>

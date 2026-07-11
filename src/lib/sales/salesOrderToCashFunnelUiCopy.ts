@@ -68,13 +68,55 @@ export const ORDER_TO_CASH_TEMPERATURE_OPTIONS = [
 export const ORDER_TO_CASH_ALERT_OPTIONS = [
   { value: "", label: "Todos" },
   { value: "ENTREGA_VENCIDA_SEM_DOCUMENTO", label: "Entrega vencida sem documento" },
+  { value: "RECEBIMENTO_PREVISTO_SEM_CR", label: "Recebimento previsto sem CR" },
   { value: "DOCUMENTO_PARCIAL", label: "Documento parcial" },
   { value: "DOCUMENTO_COM_EXCEDENTE", label: "Documento com excedente" },
   { value: "PRODUTO_FORA_DO_PEDIDO", label: "Produto fora do pedido" },
   { value: "NF_SEM_CR", label: "NF sem CR" },
   { value: "CR_VENCIDO", label: "CR vencido" },
+  { value: "BAIXA_NAO_ENCONTRADA", label: "Baixa não encontrada" },
   { value: "FORECAST_EM_RISCO", label: "Forecast em risco" },
   { value: "PEDIDO_ANTIGO_SEM_EVOLUCAO", label: "Pedido antigo sem evolução" },
+] as const;
+
+export const ORDER_TO_CASH_STAGE_GROUP_OPTIONS = [
+  { value: "", label: "Todos os grupos" },
+  { value: "COMERCIAL", label: "Comercial" },
+  { value: "OPERACIONAL", label: "Operacional" },
+  { value: "FISCAL", label: "Fiscal" },
+  { value: "FINANCEIRO", label: "Financeiro" },
+  { value: "CAIXA", label: "Caixa" },
+  { value: "RISCO", label: "Risco" },
+] as const;
+
+export const ORDER_TO_CASH_CONFIDENCE_OPTIONS = [
+  { value: "", label: "Todas" },
+  { value: "ALTA", label: "Alta" },
+  { value: "MEDIA", label: "Média" },
+  { value: "BAIXA", label: "Baixa" },
+  { value: "MUITO_BAIXA", label: "Muito baixa" },
+] as const;
+
+export const ORDER_TO_CASH_RESPONSIBLE_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "COMERCIAL", label: "Comercial" },
+  { value: "PCP_PRODUCAO", label: "PCP / Produção" },
+  { value: "FATURAMENTO", label: "Faturamento" },
+  { value: "FINANCEIRO", label: "Financeiro" },
+  { value: "DIRETORIA", label: "Diretoria" },
+  { value: "TI", label: "TI" },
+] as const;
+
+export const ORDER_TO_CASH_PERIOD_PRESETS = [
+  { value: "this_month", label: "Este mês" },
+  { value: "last_month", label: "Mês anterior" },
+  { value: "next_30", label: "Próximos 30 dias" },
+  { value: "next_60", label: "Próximos 60 dias" },
+  { value: "next_90", label: "Próximos 90 dias" },
+  { value: "overdue", label: "Vencidos" },
+  { value: "current_year", label: "Ano atual" },
+  { value: "last_12_months", label: "Últimos 12 meses" },
+  { value: "custom", label: "Personalizado" },
 ] as const;
 
 /** Sequência visual do funil (raia principal). Códigos de estágio da API. */

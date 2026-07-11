@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { MetricHelpTooltip } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover";
 import { OrderToCashFunnelDrawer } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelDrawer";
+import { OrderToCashFunnelFiltersBar } from "@/src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelFiltersBar";
 import {
   formatFinanceCurrency,
   formatFinanceCurrencyCompact,
@@ -27,9 +28,7 @@ import {
   CARD_BLOCK_A_KEYS,
   CARD_BLOCK_B_KEYS,
   CARD_BLOCK_C_KEYS,
-  ORDER_TO_CASH_ALERT_OPTIONS,
   ORDER_TO_CASH_CARD_HELP,
-  ORDER_TO_CASH_DATE_AXIS_OPTIONS,
   ORDER_TO_CASH_FUNNEL_EMPTY,
   ORDER_TO_CASH_FUNNEL_ERROR_FALLBACK,
   ORDER_TO_CASH_FUNNEL_LOADING,
@@ -37,8 +36,6 @@ import {
   ORDER_TO_CASH_FUNNEL_SUBTITLE,
   ORDER_TO_CASH_FUNNEL_TITLE,
   ORDER_TO_CASH_RISK_LANE,
-  ORDER_TO_CASH_STAGE_FILTER_OPTIONS,
-  ORDER_TO_CASH_TEMPERATURE_OPTIONS,
   ORDER_TO_CASH_VISUAL_FUNNEL,
   TONE_CLASSES,
   temperatureTone,
@@ -86,18 +83,6 @@ function severityTone(card: OrderToCashFunnelSummaryCardDto): keyof typeof TONE_
   if (card.severity === "warning") return "amber";
   return "gray";
 }
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex min-w-[140px] flex-1 flex-col gap-1 text-[12px] font-semibold uppercase tracking-wide text-[#667085]">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "h-10 rounded-lg border border-[#EAECF0] bg-white px-3 text-[13px] font-medium text-[#101828] outline-none focus:border-[#98A2B3]";
 
 function KpiCard({ card }: { card: OrderToCashFunnelSummaryCardDto }) {
   const tone = TONE_CLASSES[severityTone(card)];
@@ -360,10 +345,17 @@ function OrdersGrid({
 export function OrderToCashFunnelPanel() {
   const [draft, setDraft] = useState(createDefaultOrderToCashFunnelUiFilters);
   const [applied, setApplied] = useState(createDefaultOrderToCashFunnelUiFilters);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<OrderToCashFunnelListPayload | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const applyFilters = useCallback((next: OrderToCashFunnelUiFilters) => {
+    const normalized = { ...next, page: 1 };
+    setDraft(normalized);
+    setApplied(normalized);
+  }, []);
 
   const load = useCallback(async (filters: OrderToCashFunnelUiFilters) => {
     setLoading(true);
@@ -442,118 +434,16 @@ export function OrderToCashFunnelPanel() {
         </div>
       </header>
 
-      <section
-        className="rounded-xl border border-[#EAECF0] bg-white p-4 shadow-sm"
-        data-testid="otc-filters"
-      >
-        <div className="flex flex-wrap gap-3">
-          <Field label="De">
-            <input
-              type="date"
-              className={inputClass}
-              value={draft.dateFrom}
-              onChange={(e) => setDraft((d) => ({ ...d, dateFrom: e.target.value }))}
-            />
-          </Field>
-          <Field label="Até">
-            <input
-              type="date"
-              className={inputClass}
-              value={draft.dateTo}
-              onChange={(e) => setDraft((d) => ({ ...d, dateTo: e.target.value }))}
-            />
-          </Field>
-          <Field label="Eixo de data">
-            <select
-              className={inputClass}
-              value={draft.dateAxis}
-              onChange={(e) => setDraft((d) => ({ ...d, dateAxis: e.target.value }))}
-            >
-              {ORDER_TO_CASH_DATE_AXIS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Cliente">
-            <input
-              className={inputClass}
-              value={draft.customerName}
-              placeholder="Nome do cliente"
-              onChange={(e) => setDraft((d) => ({ ...d, customerName: e.target.value }))}
-            />
-          </Field>
-          <Field label="Vendedor">
-            <input
-              className={inputClass}
-              value={draft.sellerName}
-              placeholder="Nome do vendedor"
-              onChange={(e) => setDraft((d) => ({ ...d, sellerName: e.target.value }))}
-            />
-          </Field>
-          <Field label="Estágio">
-            <select
-              className={inputClass}
-              value={draft.funnelStage}
-              onChange={(e) => setDraft((d) => ({ ...d, funnelStage: e.target.value }))}
-            >
-              {ORDER_TO_CASH_STAGE_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Temperatura">
-            <select
-              className={inputClass}
-              value={draft.temperature}
-              onChange={(e) => setDraft((d) => ({ ...d, temperature: e.target.value }))}
-            >
-              {ORDER_TO_CASH_TEMPERATURE_OPTIONS.map((o) => (
-                <option key={o.value || "all-t"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Alerta">
-            <select
-              className={inputClass}
-              value={draft.alert}
-              onChange={(e) => setDraft((d) => ({ ...d, alert: e.target.value }))}
-            >
-              {ORDER_TO_CASH_ALERT_OPTIONS.map((o) => (
-                <option key={o.value || "all-a"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
-            onClick={() => setApplied({ ...draft, page: 1 })}
-          >
-            Aplicar filtros
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-[#EAECF0] bg-white px-4 py-2 text-sm font-semibold text-[#344054]"
-            data-testid="otc-clear-filters"
-            onClick={() => {
-              const next = createDefaultOrderToCashFunnelUiFilters();
-              setDraft(next);
-              setApplied(next);
-            }}
-          >
-            Limpar
-          </button>
-        </div>
-      </section>
+      <OrderToCashFunnelFiltersBar
+        draft={draft}
+        applied={applied}
+        expanded={filtersExpanded}
+        onToggle={() => setFiltersExpanded((v) => !v)}
+        onDraftChange={setDraft}
+        onApply={() => applyFilters(draft)}
+        onClear={() => applyFilters(createDefaultOrderToCashFunnelUiFilters())}
+        onApplyFilters={applyFilters}
+      />
 
       {loading && !payload ? (
         <div

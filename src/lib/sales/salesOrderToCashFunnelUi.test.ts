@@ -9,7 +9,10 @@ function read(rel: string): string {
 
 const PANEL = "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelPanel.tsx";
 const DRAWER = "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelDrawer.tsx";
+const FILTERS_BAR =
+  "src/components/dashboard/order-to-cash-funnel/OrderToCashFunnelFiltersBar.tsx";
 const CLIENT = "src/lib/sales/salesOrderToCashFunnelClient.ts";
+const FILTERS = "src/lib/sales/salesOrderToCashFunnelFilters.ts";
 const COPY = "src/lib/sales/salesOrderToCashFunnelUiCopy.ts";
 const DASH = "src/components/DashboardModule.tsx";
 
@@ -72,7 +75,7 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("8. não há import de Prisma no frontend", () => {
-    for (const f of [PANEL, DRAWER, CLIENT, COPY]) {
+    for (const f of [PANEL, DRAWER, FILTERS_BAR, CLIENT, FILTERS, COPY]) {
       const src = read(f);
       assert.doesNotMatch(src, /@prisma\/client/);
       assert.doesNotMatch(src, /from ["'].*prisma/);
@@ -81,7 +84,7 @@ describe("salesOrderToCashFunnelUi", () => {
   });
 
   it("9. não há import de comissão", () => {
-    for (const f of [PANEL, DRAWER, CLIENT, COPY]) {
+    for (const f of [PANEL, DRAWER, FILTERS_BAR, CLIENT, FILTERS, COPY]) {
       const src = read(f);
       assert.doesNotMatch(src, /from\s+["'][^"']*comiss/i);
       assert.doesNotMatch(src, /from\s+["'][^"']*commission/i);
@@ -94,6 +97,25 @@ describe("salesOrderToCashFunnelUi", () => {
     assert.match(client, /\/api\/sales\/order-to-cash-funnel/);
     assert.match(client, /fetchJsonOk/);
     assert.doesNotMatch(client, /from\s+["'][^"']*proposal/i);
+  });
+
+  it("barra de filtros avançados + chips + limpar", () => {
+    const panel = read(PANEL);
+    const bar = read(FILTERS_BAR);
+    const filters = read(FILTERS);
+    assert.match(panel, /OrderToCashFunnelFiltersBar/);
+    assert.match(bar, /FinanceBiFilterPanel/);
+    assert.match(bar, /otc-filters/);
+    assert.match(bar, /otc-advanced-filters/);
+    assert.match(bar, /otc-period-presets/);
+    assert.match(bar, /buildOrderToCashFunnelFilterChips/);
+    assert.match(bar, /otc-filter-stage/);
+    assert.match(bar, /otc-filter-temperature/);
+    assert.match(bar, /otc-filter-alert/);
+    assert.match(bar, /otc-filter-responsible/);
+    assert.match(filters, /buildOrderToCashFunnelQueryParams/);
+    assert.match(filters, /applyOrderToCashFunnelPeriodPreset/);
+    assert.match(read("src/components/finance/bi/FinanceBiFilterPanel.tsx"), /Limpar filtros/);
   });
 
   it("drawer abre com largura e scroll internos", () => {
