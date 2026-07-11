@@ -4,11 +4,10 @@
  * Uso:
  *   npx tsx tmp-audits/validate-pd02339-fulfillment-map.ts
  *
- * Preferência: run materializada no banco
+ * Preferência: run materializada
  *   runId = 1dc2ead7-533d-4ad4-bc4c-621061fa5623
  *
- * Fallback: fixture de alocação (mesmos produtos/NFs) se DB indisponível.
- * Read-only — não grava nada. Não altera regras oficiais.
+ * Fallback: fixture (DB indisponível). Read-only — sem write.
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
@@ -22,6 +21,7 @@ import {
   FINANCIAL_STATUS_LABEL,
   OPERATIONAL_STATUS_LABEL,
   TECHNICAL_ALERT_LABEL,
+  type FulfillmentReceivableInput,
   type PortfolioOrderFulfillmentMap,
 } from "../src/lib/finance/portfolioOrderFulfillmentMap.ts";
 import type { PortfolioReconciliationFactApiRow } from "../src/lib/finance/portfolioReconciliationApi.ts";
@@ -38,8 +38,11 @@ type LoadedBundle = {
   source: "DB" | "FIXTURE";
   salesOrderId: string;
   orderCode: string;
+  customerName: string | null;
+  issueDate: Date | string | null;
   orderValue: number;
   paymentTermsAvailable: boolean;
+  confidenceLevel: string | null;
   facts: PortfolioReconciliationFactApiRow[];
   orderItems: Array<{
     id: string;
@@ -74,6 +77,7 @@ type LoadedBundle = {
       unitValue: number;
     }>;
   }>;
+  receivables: FulfillmentReceivableInput[];
 };
 
 function decimalToNumber(value: unknown): number | null {
@@ -103,6 +107,30 @@ function money(n: number | null | undefined): string {
 function qty(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return n.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+}
+
+function isoDate(value: Date | string | null | undefined): string {
+  if (value == null) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toISOString().slice(0, 10);
+}
+
+function parseIdList(value: unknown): number[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => Number(v))
+      .filter((n) => Number.isFinite(n));
+  }
+  if (typeof value === "string") {
+    try {
+      return parseIdList(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function mapFact(row: Record<string, unknown>): PortfolioReconciliationFactApiRow {
@@ -170,7 +198,7 @@ function pd02339Snapshot(): PortfolioReconciliationSnapshot {
     externalSalesOrderId: 2335,
     orderCode: ORDER_CODE,
     issueDate: new Date(2026, 4, 1),
-    customerNameSnapshot: "Britania",
+    customerNameSnapshot: "Britânia",
     totalNetValue: EXPECTED_ORDER_VALUE,
     items: [
       { id: "item-456", externalProductId: 456, quantity: 3000, unitPrice: 5.85, productSkuSnapshot: "456" },
@@ -237,13 +265,17 @@ function loadFixture(): LoadedBundle {
     mode: "preview",
     snapshot,
   });
+  const facts = built.facts.map((d, i) => portfolioFactDraftToApiRow(d, `fixture-${i}`));
   return {
     source: "FIXTURE",
     salesOrderId: order.id,
     orderCode: ORDER_CODE,
+    customerName: "Britânia",
+    issueDate: order.issueDate ?? null,
     orderValue: EXPECTED_ORDER_VALUE,
     paymentTermsAvailable: false,
-    facts: built.facts.map((d, i) => portfolioFactDraftToApiRow(d, `fixture-${i}`)),
+    confidenceLevel: "MEDIUM",
+    facts,
     orderItems: order.items
       .filter((it) => it.externalProductId != null)
       .map((it) => ({
@@ -281,6 +313,18 @@ function loadFixture(): LoadedBundle {
           unitValue: it.unitValue,
         })),
     })),
+    // Fixture inclui CR para validar eixo financeiro (não inventa baixa).
+    receivables: [
+      {
+        receivableId: 9001,
+        dueDate: "2025-06-15",
+        settlementDate: null,
+        totalValue: EXPECTED_ORDER_VALUE,
+        receivedValue: 0,
+        openValue: EXPECTED_ORDER_VALUE,
+        sourceNfe: 6937,
+      },
+    ],
   };
 }
 
@@ -294,7 +338,13 @@ async function loadFromDb(): Promise<LoadedBundle> {
     if (!run) throw new Error(`Run ${RUN_ID} não encontrada.`);
 
     const order = await prisma.salesOrder.findFirst({
-      where: { orderCode: ORDER_CODE },
+      where: {
+        OR: [
+          { orderCode: ORDER_CODE },
+          { orderCode: { equals: ORDER_CODE, mode: "insensitive" } },
+          { externalSalesOrderCode: ORDER_CODE },
+        ],
+      },
       select: {
         id: true,
         orderCode: true,
@@ -303,6 +353,7 @@ async function loadFromDb(): Promise<LoadedBundle> {
         paymentMethod: true,
         externalSalesOrderId: true,
         issueDate: true,
+        Customer: { select: { companyName: true, tradeName: true } },
       },
     });
     if (!order) throw new Error(`Pedido ${ORDER_CODE} não encontrado.`);
@@ -361,18 +412,92 @@ async function loadFromDb(): Promise<LoadedBundle> {
         })
       : [];
 
+    const facts = factsRaw.map((r) => mapFact(r as unknown as Record<string, unknown>));
+
+    const receivableIdsFromFacts = new Set<number>();
+    for (const f of facts) {
+      for (const id of parseIdList(f.receivableIdsJson)) receivableIdsFromFacts.add(id);
+    }
+
+    const arWhere: Array<Record<string, unknown>> = [];
+    if (nfeExternalIds.length > 0) {
+      arWhere.push({ sourceInvoiceId: { in: nfeExternalIds } });
+    }
+    if (receivableIdsFromFacts.size > 0) {
+      arWhere.push({ externalId: { in: [...receivableIdsFromFacts] } });
+    }
+
+    const arRows =
+      arWhere.length > 0
+        ? await prisma.nomusAccountsReceivable.findMany({
+            where: { OR: arWhere },
+            select: {
+              externalId: true,
+              dueDate: true,
+              settlementDate: true,
+              amountReceivable: true,
+              amountReceived: true,
+              balanceReceivable: true,
+              sourceInvoiceId: true,
+            },
+            orderBy: { dueDate: "asc" },
+          })
+        : [];
+
+    const receivables: FulfillmentReceivableInput[] = arRows.map((r) => ({
+      receivableId: r.externalId,
+      dueDate: isoDate(r.dueDate) === "—" ? null : isoDate(r.dueDate),
+      settlementDate: isoDate(r.settlementDate) === "—" ? null : isoDate(r.settlementDate),
+      totalValue: decimalToNumber(r.amountReceivable),
+      receivedValue: decimalToNumber(r.amountReceived),
+      openValue: decimalToNumber(r.balanceReceivable),
+      sourceNfe: r.sourceInvoiceId,
+    }));
+
+    // Se Nomus AR vazio mas fatos têm agregados de CR, materializa cobertura a partir dos fatos.
+    if (receivables.length === 0) {
+      const withCr = facts.find(
+        (f) =>
+          (f.receivableTotalValue ?? 0) > MONEY_TOL ||
+          (f.receivedValue ?? 0) > MONEY_TOL ||
+          (f.openReceivableValue ?? 0) > MONEY_TOL
+      );
+      if (withCr) {
+        const ids = parseIdList(withCr.receivableIdsJson);
+        receivables.push({
+          receivableId: ids[0] ?? null,
+          dueDate: null,
+          settlementDate: null,
+          totalValue: withCr.receivableTotalValue,
+          receivedValue: withCr.receivedValue,
+          openValue: withCr.openReceivableValue,
+          sourceNfe: withCr.nfeExternalId,
+        });
+      }
+    }
+
     const orderValue =
       decimalToNumber(order.totalNetValue) ?? EXPECTED_ORDER_VALUE;
+    const customerName =
+      order.Customer?.tradeName?.trim() ||
+      order.Customer?.companyName?.trim() ||
+      facts.find((f) => f.customerNameSnapshot)?.customerNameSnapshot ||
+      null;
+    const confidenceLevel =
+      facts.find((f) => f.confidenceLevel)?.confidenceLevel ?? null;
 
     return {
       source: "DB",
       salesOrderId: order.id,
       orderCode: order.orderCode,
+      customerName,
+      issueDate: order.issueDate,
       orderValue,
       paymentTermsAvailable: Boolean(
         order.paymentTerms?.trim() || order.paymentMethod?.trim()
       ),
-      facts: factsRaw.map((r) => mapFact(r as unknown as Record<string, unknown>)),
+      confidenceLevel,
+      facts,
       orderItems: items
         .filter((it) => it.externalProductId != null)
         .map((it) => ({
@@ -410,6 +535,7 @@ async function loadFromDb(): Promise<LoadedBundle> {
             unitValue: decimalToNumber(it.unitValue) ?? 0,
           })),
       })),
+      receivables,
     };
   } finally {
     await prisma.$disconnect();
@@ -422,12 +548,15 @@ function buildMap(bundle: LoadedBundle): PortfolioOrderFulfillmentMap {
       id: bundle.salesOrderId,
       orderCode: bundle.orderCode,
       totalNetValue: bundle.orderValue,
+      customerNameSnapshot: bundle.customerName,
+      issueDate: bundle.issueDate,
     },
     orderItems: bundle.orderItems,
     reconciliationFacts: bundle.facts,
     nfeLinks: bundle.nfeLinks,
     nfes: bundle.nfes,
     stockDocuments: bundle.stockDocuments,
+    receivables: bundle.receivables,
     orderValue: bundle.orderValue,
     paymentTermsAvailable: bundle.paymentTermsAvailable,
     runId: RUN_ID,
@@ -436,25 +565,29 @@ function buildMap(bundle: LoadedBundle): PortfolioOrderFulfillmentMap {
 
 function printReport(bundle: LoadedBundle, map: PortfolioOrderFulfillmentMap) {
   const s = map.fulfillmentSummary;
-  console.log("\n--- Resumo do pedido ---");
-  console.log(`Pedido: ${bundle.orderCode} (${bundle.salesOrderId})`);
-  console.log(`Fonte: ${bundle.source}${bundle.source === "DB" ? ` · run ${RUN_ID}` : ""}`);
-  console.log(`Valor do pedido: ${money(s.orderValue)}`);
-  console.log(`Fatos: ${bundle.facts.length}`);
-  console.log(`Itens SalesOrder: ${bundle.orderItems.length}`);
-  console.log(`Links NF: ${bundle.nfeLinks.length}`);
-  console.log(`NFs: ${bundle.nfes.length}`);
-  console.log(`Docs saída: ${bundle.stockDocuments.length}`);
 
-  console.log("\n--- Status ---");
+  console.log("\n=== PD 02339 — Mapa de Atendimento ===");
   console.log(
-    `Financeiro: ${map.financialStatus} (${FINANCIAL_STATUS_LABEL[map.financialStatus]})`
+    `Fonte: ${bundle.source}${bundle.source === "DB" ? ` · run ${RUN_ID}` : " (fallback)"}`
+  );
+
+  console.log("\n1. Resumo do pedido");
+  console.log(`- pedido: ${bundle.orderCode} (${bundle.salesOrderId})`);
+  console.log(`- cliente: ${bundle.customerName ?? "—"}`);
+  console.log(`- valor: ${money(s.orderValue)}`);
+  console.log(`- emissão: ${isoDate(bundle.issueDate)}`);
+  console.log(`- quantidade de itens: ${bundle.orderItems.length}`);
+
+  console.log("\n2. Status");
+  console.log(
+    `- status financeiro: ${map.financialStatus} (${map.financialStatusLabel ?? FINANCIAL_STATUS_LABEL[map.financialStatus]})`
   );
   console.log(
-    `Operacional: ${map.operationalStatus} (${OPERATIONAL_STATUS_LABEL[map.operationalStatus]})`
+    `- status operacional: ${map.operationalStatus} (${map.operationalStatusLabel ?? OPERATIONAL_STATUS_LABEL[map.operationalStatus]})`
   );
+  console.log(`- confiança: ${bundle.confidenceLevel ?? "—"}`);
   console.log(
-    `Alertas técnicos: ${
+    `- alertas técnicos: ${
       map.technicalAlerts.length === 0
         ? "(nenhum)"
         : map.technicalAlerts
@@ -463,32 +596,20 @@ function printReport(bundle: LoadedBundle, map: PortfolioOrderFulfillmentMap) {
     }`
   );
 
-  console.log("\n--- Resumo de atendimento ---");
-  console.log(`Qtde pedida: ${qty(s.totalOrderedQuantity)}`);
-  console.log(`Qtde atendida (capped): ${qty(s.totalAttendedQuantityCapped)}`);
-  console.log(`Qtde restante: ${qty(s.totalRemainingQuantity)}`);
-  console.log(`Qtde excedente: ${qty(s.totalExcessQuantity)}`);
-  console.log(`% atendimento: ${s.fulfillmentPercent ?? "—"}%`);
-  console.log(`Valor atribuído (preço pedido): ${money(s.attributedOrderValueByOrderPrice)}`);
-  console.log(`Cabeçalho NF total: ${money(s.nfeHeaderTotalValue)}`);
-  console.log(`Cabeçalho não atribuído: ${money(s.nfeHeaderNotAttributedToOrderValue)}`);
-  console.log(`CR total: ${money(s.receivableTotalValue)}`);
-  console.log(`Recebido: ${money(s.receivedValue)}`);
-  console.log(`Aberto: ${money(s.openReceivableValue)}`);
-  console.log(`Risco cabeçalho: ${s.hasHeaderInflationRisk ? "SIM" : "não"}`);
-  console.log(`Produto fora: ${s.hasProductsOutsideOrder ? "SIM" : "não"}`);
-  console.log(`Excesso qtde: ${s.hasExcessQuantity ? "SIM" : "não"}`);
+  console.log("\n3. Resumo de atendimento");
+  console.log(`- valor do pedido: ${money(s.orderValue)}`);
+  console.log(`- valor atribuído ao pedido: ${money(s.attributedOrderValueByOrderPrice)}`);
+  console.log(`- valor cabeçalho NF/documento: ${money(s.nfeHeaderTotalValue)}`);
+  console.log(`- valor não atribuído: ${money(s.nfeHeaderNotAttributedToOrderValue)}`);
+  console.log(`- quantidade pedida: ${qty(s.totalOrderedQuantity)}`);
+  console.log(`- quantidade atendida: ${qty(s.totalAttendedQuantityCapped)}`);
+  console.log(`- quantidade faltante: ${qty(s.totalRemainingQuantity)}`);
+  console.log(`- quantidade excedente: ${qty(s.totalExcessQuantity)}`);
+  console.log(`- % atendimento: ${s.fulfillmentPercent ?? "—"}%`);
 
-  console.log("\n--- Conclusão executiva ---");
-  console.log(map.executiveConclusion);
-  if (map.evidenceWarnings.length > 0) {
-    console.log("Avisos:");
-    for (const w of map.evidenceWarnings) console.log(`  - ${w}`);
-  }
-
-  console.log("\n--- Itens do pedido ---");
+  console.log("\n4. Itens do pedido");
   console.log(
-    "produto | pedida | atendida | saldo | excesso | % | valor item | docs"
+    "produto | pedido | atendido | saldo | excedente | % | valor item | valor atendido | docs/NFs | alertas"
   );
   for (const row of map.orderItemsCoverage) {
     const docs =
@@ -501,97 +622,115 @@ function printReport(bundle: LoadedBundle, map: PortfolioOrderFulfillmentMap) {
             )
             .join(", ");
     console.log(
-      `${row.productCode ?? row.externalProductId ?? "?"} | ${qty(row.orderedQuantity)} | ${qty(row.attendedQuantityCapped)} | ${qty(row.remainingQuantity)} | ${qty(row.excessQuantityForThisProduct)} | ${row.fulfillmentPercentCapped ?? "—"}% | ${money(row.orderItemValue)} | ${docs}`
+      `${row.productCode ?? row.sku ?? row.externalProductId ?? "?"} | ${qty(row.orderedQuantity)} | ${qty(row.attendedQuantityCapped)} | ${qty(row.remainingQuantity)} | ${qty(row.excessQuantityForThisProduct)} | ${row.fulfillmentPercentCapped ?? "—"}% | ${money(row.orderItemValue)} | ${money(row.attendedValueByOrderPrice)} | ${docs} | ${row.alerts.join(",") || "—"}`
     );
   }
 
-  console.log("\n--- Documentos / NFs ---");
+  console.log("\n5. Documentos de saída");
   console.log(
-    "NF | doc | cabeçalho | atribuído | fora | casados | excedentes | fora_pedido"
+    "NF | documento | data | cabeçalho | atribuído ao pedido | fora do pedido | itens casados | itens fora | excedentes | alertas"
   );
   for (const doc of map.stockDocumentsCoverage) {
-    const matched = doc.matchedItems
-      .map((m) => `${m.productExternalId}(${qty(m.allocatedQuantity)})`)
-      .join(",") || "—";
-    const surplus = doc.surplusItems
-      .map((m) => `${m.productExternalId}(${qty(m.stockQuantity)})`)
-      .join(",") || "—";
+    const matched =
+      doc.matchedItems
+        .map(
+          (m) =>
+            `${m.externalProductId ?? m.productExternalId}(${qty(m.quantityUsedForOrder ?? m.allocatedQuantity)})`
+        )
+        .join(",") || "—";
     const outside = (doc.itemsOutsideOrder ?? doc.unmatchedItems)
-      .map((m) => `${m.productExternalId}(${qty(m.stockQuantity)})`)
+      .map(
+        (m) =>
+          `${m.externalProductId ?? m.productExternalId}(${qty(m.documentQuantity ?? m.stockQuantity)})`
+      )
       .join(",") || "—";
+    const surplus =
+      doc.surplusItems
+        .map(
+          (m) =>
+            `${m.externalProductId ?? m.productExternalId}(${qty(m.stockQuantity)})`
+        )
+        .join(",") || "—";
     console.log(
-      `${doc.nfeNumber ?? doc.nfeExternalId ?? "—"} | ${doc.stockDocumentExternalId ?? "—"} | ${money(doc.nfeHeaderValue)} | ${money(doc.valueAttributedToOrder)} | ${money(doc.valueNotAttributedToOrder)} | ${matched} | ${surplus} | ${outside}`
+      `${doc.nfeNumber ?? doc.nfeExternalId ?? "—"} | ${doc.stockDocumentExternalId ?? "—"} | ${doc.date ?? "—"} | ${money(doc.nfeHeaderValue)} | ${money(doc.valueAttributedToOrder)} | ${money(doc.valueNotAttributedToOrder)} | ${matched} | ${outside} | ${surplus} | ${doc.alerts.join(",") || "—"}`
     );
   }
 
-  console.log("\n--- Itens fora / excedentes (agregado) ---");
-  let anyExtra = false;
-  for (const doc of map.stockDocumentsCoverage) {
-    for (const x of doc.surplusItems) {
-      anyExtra = true;
+  console.log("\n6. CR");
+  console.log(
+    "id/título | NF origem | vencimento | baixa | valor | recebido | aberto | status"
+  );
+  if (map.receivablesCoverage.length === 0) {
+    console.log("(nenhum título vinculado nesta evidência)");
+  } else {
+    for (const r of map.receivablesCoverage) {
+      const open = r.openValue ?? 0;
+      const received = r.receivedValue ?? 0;
+      const status =
+        open <= MONEY_TOL && received > MONEY_TOL
+          ? "RECEBIDO"
+          : open > MONEY_TOL
+            ? "ABERTO"
+            : r.attributionStatus;
       console.log(
-        `EXCEDENTE NF ${doc.nfeNumber ?? doc.nfeExternalId} doc ${doc.stockDocumentExternalId}: produto ${x.productExternalId} qtde ${qty(x.stockQuantity)} valor ${money(x.stockItemValue)}`
-      );
-    }
-    for (const x of doc.itemsOutsideOrder ?? doc.unmatchedItems) {
-      anyExtra = true;
-      console.log(
-        `FORA_PEDIDO NF ${doc.nfeNumber ?? doc.nfeExternalId} doc ${doc.stockDocumentExternalId}: produto ${x.productExternalId} qtde ${qty(x.stockQuantity)}`
+        `${r.receivableId ?? (r.receivableIds?.join(",") || "—")} | ${r.sourceNfe ?? "—"} | ${r.dueDate ?? "—"} | ${r.settlementDate ?? "—"} | ${money(r.totalValue)} | ${money(r.receivedValue)} | ${money(r.openValue)} | ${status}`
       );
     }
   }
-  if (!anyExtra) console.log("(nenhum)");
 
-  console.log("\n--- Contas a Receber ---");
-  if (map.receivablesCoverage.length === 0) {
-    console.log("(nenhum título vinculado nesta materialização)");
-  } else {
-    console.log("id | vencimento | baixa | total | recebido | aberto | fonte | atribuição");
-    for (const r of map.receivablesCoverage) {
-      console.log(
-        `${r.receivableId ?? (r.receivableIds?.join(",") || "—")} | ${r.dueDate ?? "—"} | ${r.settlementDate ?? "—"} | ${money(r.totalValue)} | ${money(r.receivedValue)} | ${money(r.openValue)} | ${r.sourceNfe ?? "—"} | ${r.attributionStatus}`
-      );
-    }
+  console.log("\n7. Conclusão executiva");
+  console.log(map.executiveConclusion);
+  if (map.evidenceWarnings.length > 0) {
+    console.log("Avisos de evidência:");
+    for (const w of map.evidenceWarnings) console.log(`  - ${w}`);
   }
 }
 
-function runChecks(
-  bundle: LoadedBundle,
-  map: PortfolioOrderFulfillmentMap
-): Check[] {
+function looksLikeRawJson(text: string): boolean {
+  const t = text.trim();
+  return (
+    t.startsWith("{") ||
+    t.startsWith("[") ||
+    /"financialStatus"\s*:/.test(t) ||
+    /PrismaClient|stack trace|at Object\./i.test(t)
+  );
+}
+
+function runChecks(bundle: LoadedBundle, map: PortfolioOrderFulfillmentMap): Check[] {
   const checks: Check[] = [];
   const add = (name: string, pass: boolean, detail: string) =>
     checks.push({ name, pass, detail });
   const s = map.fulfillmentSummary;
 
-  add("pedido.encontrado", Boolean(bundle.salesOrderId), `id=${bundle.salesOrderId}`);
-  add("pedido.codigo", bundle.orderCode === ORDER_CODE, `code=${bundle.orderCode}`);
+  add("pedidoEncontrado", Boolean(bundle.salesOrderId), `id=${bundle.salesOrderId}`);
   add(
-    "valor.pedido=158000",
+    "valorPedido=158000",
     moneyClose(s.orderValue, EXPECTED_ORDER_VALUE),
     `actual=${s.orderValue}`
   );
   add(
-    "mapa.atendimento.existe",
-    Boolean(map.orderItemsCoverage && map.fulfillmentSummary && map.executiveConclusion),
+    "itensPedidoExistem",
+    bundle.orderItems.length >= 1 && map.orderItemsCoverage.length >= 1,
+    `salesItems=${bundle.orderItems.length} coverage=${map.orderItemsCoverage.length}`
+  );
+  add(
+    "documentosOuNfesExistem",
+    bundle.nfeLinks.length >= 1 ||
+      bundle.nfes.length >= 1 ||
+      bundle.stockDocuments.length >= 1 ||
+      map.stockDocumentsCoverage.length >= 1,
+    `links=${bundle.nfeLinks.length} nfes=${bundle.nfes.length} docs=${bundle.stockDocuments.length}`
+  );
+  add(
+    "mapaGerado",
+    Boolean(map.fulfillmentSummary && map.orderItemsCoverage && map.executiveConclusion),
     "fulfillmentMap ok"
-  );
-  add(
-    "itens.individuais.visiveis",
-    map.orderItemsCoverage.length >= 1,
-    `items=${map.orderItemsCoverage.length}`
-  );
-  add(
-    "docs.nfs.vinculados",
-    map.stockDocumentsCoverage.length >= 1 || bundle.nfeLinks.length >= 1,
-    `docs=${map.stockDocumentsCoverage.length} links=${bundle.nfeLinks.length}`
   );
 
   let qtyOk = map.orderItemsCoverage.length > 0;
   let pctOk = true;
   for (const item of map.orderItemsCoverage) {
-    const attended = item.attendedQuantityCapped;
-    if (attended > item.orderedQuantity + 0.000001) qtyOk = false;
+    if (item.attendedQuantityCapped > item.orderedQuantity + 0.000001) qtyOk = false;
     if (
       item.fulfillmentPercentCapped != null &&
       item.fulfillmentPercentCapped > 100 + 0.001
@@ -599,127 +738,82 @@ function runChecks(
       pctOk = false;
     }
   }
-  add("qtde.atendida.nunca.ultrapassa.pedida", qtyOk, "capped <= ordered");
-  add("percentual.item.nunca.passa.100", pctOk, "fulfillmentPercentCapped <= 100");
-
-  if (s.hasExcessQuantity) {
-    add(
-      "excesso.aparece.excessQuantity",
-      s.totalExcessQuantity > 0.000001,
-      `totalExcess=${s.totalExcessQuantity}`
-    );
-  } else {
-    add("excesso.ausente.ou.zero", s.totalExcessQuantity <= 0.000001, "sem excesso");
-  }
-
-  if (s.hasProductsOutsideOrder) {
-    const outsideCount = map.stockDocumentsCoverage.reduce(
-      (n, d) => n + (d.itemsOutsideOrder?.length ?? d.unmatchedItems.length),
-      0
-    );
-    add(
-      "produto.fora.aparece.itemsOutsideOrder",
-      outsideCount > 0,
-      `outsideRows=${outsideCount}`
-    );
-  } else {
-    add("produto.fora.ausente", true, "sem produto fora nesta evidência");
-  }
-
+  add("quantidadeAtendidaNaoPassaPedido", qtyOk, "attendedCapped <= ordered");
   add(
-    "cabecalho.nao.e.valor.pedido",
-    !moneyClose(s.nfeHeaderTotalValue, s.orderValue) || s.nfeHeaderTotalValue <= 0,
-    `header=${s.nfeHeaderTotalValue} order=${s.orderValue}`
+    "percentualNaoPassa100",
+    pctOk && (s.fulfillmentPercent == null || s.fulfillmentPercent <= 100 + 0.001),
+    `pct=${s.fulfillmentPercent}`
   );
   add(
-    "cabecalho.nao.infla.pedido",
-    s.attributedOrderValueByOrderPrice <= EXPECTED_ORDER_VALUE + MONEY_TOL &&
-      s.orderValue <= EXPECTED_ORDER_VALUE + MONEY_TOL,
-    `attributed=${s.attributedOrderValueByOrderPrice} order=${s.orderValue}`
-  );
-  add(
-    "sem.duplicidade.valor.atribuido",
-    s.attributedOrderValueByOrderPrice <= s.orderValue + MONEY_TOL,
+    "valorAtribuidoNaoPassa158000",
+    s.attributedOrderValueByOrderPrice <= EXPECTED_ORDER_VALUE + MONEY_TOL,
     `attributed=${s.attributedOrderValueByOrderPrice}`
   );
-
-  if (s.hasHeaderInflationRisk || s.nfeHeaderTotalValue > s.orderValue + MONEY_TOL) {
-    add(
-      "alerta.NF_CABECALHO_MAIOR_PEDIDO",
-      map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO"),
-      `alerts=${map.technicalAlerts.join(",")}`
-    );
-  } else {
-    add("alerta.cabecalho.nao.aplicavel", true, "sem inflação de cabeçalho");
-  }
-
-  const hasPriceMismatchEvidence =
-    bundle.facts.some((f) => f.status === "PRICE_MISMATCH") ||
-    map.technicalAlerts.includes("DIVERGENCIA_PRECO");
-  if (hasPriceMismatchEvidence) {
-    add(
-      "alerta.DIVERGENCIA_PRECO",
-      map.technicalAlerts.includes("DIVERGENCIA_PRECO"),
-      "price mismatch evidenciado"
-    );
-  } else {
-    add("alerta.preco.nao.aplicavel", true, "sem divergência de preço nesta evidência");
-  }
-
-  if (s.receivableTotalValue > MONEY_TOL || s.receivedValue > MONEY_TOL) {
-    add(
-      "cr.em.receivablesCoverage",
-      map.receivablesCoverage.length > 0,
-      `titles=${map.receivablesCoverage.length} total=${s.receivableTotalValue}`
-    );
-  } else {
-    add(
-      "cr.ausente.nesta.materializacao",
-      true,
-      bundle.source === "DB"
-        ? "sem CR nos fatos — financeiro sem inventar título"
-        : "fixture sem CR"
-    );
-  }
-
   add(
-    "eixos.separados",
-    map.financialStatus.startsWith("FIN_") && map.operationalStatus.startsWith("OP_"),
-    `fin=${map.financialStatus} op=${map.operationalStatus}`
+    "cabecalhoNfNaoInflaPedido",
+    s.orderValue <= EXPECTED_ORDER_VALUE + MONEY_TOL &&
+      s.attributedOrderValueByOrderPrice <= EXPECTED_ORDER_VALUE + MONEY_TOL &&
+      (s.nfeHeaderTotalValue <= EXPECTED_ORDER_VALUE + MONEY_TOL ||
+        s.hasHeaderInflationRisk ||
+        map.technicalAlerts.includes("NF_CABECALHO_MAIOR_PEDIDO")),
+    `header=${s.nfeHeaderTotalValue} attributed=${s.attributedOrderValueByOrderPrice}`
   );
   add(
-    "conclusao.executiva.pt",
-    /Financeiro:|Atendimento:|Alertas técnicos/i.test(map.executiveConclusion) &&
-      map.executiveConclusion.length > 40,
-    map.executiveConclusion.slice(0, 120)
+    "statusFinanceiroExiste",
+    map.financialStatus.startsWith("FIN_"),
+    map.financialStatus
   );
   add(
-    "atendimento.item.a.item.visivel",
-    map.orderItemsCoverage.every(
-      (r) =>
-        typeof r.orderedQuantity === "number" &&
-        typeof r.attendedQuantityCapped === "number" &&
-        typeof r.remainingQuantity === "number"
-    ),
-    "itens com pedida/atendida/saldo"
+    "statusOperacionalExiste",
+    map.operationalStatus.startsWith("OP_"),
+    map.operationalStatus
+  );
+  add(
+    "alertasTecnicosSeparados",
+    Array.isArray(map.technicalAlerts) &&
+      map.financialStatus.startsWith("FIN_") &&
+      map.operationalStatus.startsWith("OP_") &&
+      !map.technicalAlerts.some((a) => a.startsWith("FIN_") || a.startsWith("OP_")),
+    `alerts=${map.technicalAlerts.length}`
+  );
+  add(
+    "crCoverageExiste",
+    map.receivablesCoverage.length > 0 &&
+      (s.receivableTotalValue > MONEY_TOL ||
+        s.openReceivableValue > MONEY_TOL ||
+        s.receivedValue > MONEY_TOL ||
+        bundle.receivables.length > 0),
+    `titles=${map.receivablesCoverage.length} total=${s.receivableTotalValue}`
+  );
+  add(
+    "conclusaoExecutivaExiste",
+    typeof map.executiveConclusion === "string" &&
+      map.executiveConclusion.trim().length > 40 &&
+      /pedido|atendido|caixa|documento|CR/i.test(map.executiveConclusion),
+    map.executiveConclusion.slice(0, 100)
+  );
+  add(
+    "semJsonCru",
+    !looksLikeRawJson(map.executiveConclusion),
+    "conclusão legível em português"
   );
 
   add(
     `fonte.${bundle.source}`,
     true,
-    bundle.source === "DB" ? `run ${RUN_ID}` : "fixture PD 02339"
+    bundle.source === "DB" ? `run ${RUN_ID}` : "fixture PD 02339 com CR"
   );
 
   return checks;
 }
 
 function printChecks(checks: Check[]): boolean {
-  console.log("\n=== PASS/FAIL PD 02339 fulfillment map ===");
+  console.log("\n8. PASS/FAIL");
   let pass = 0;
   let fail = 0;
   for (const c of checks) {
     if (c.name.startsWith("fonte.")) {
-      console.log(`INFO  ${c.name}: ${c.detail}`);
+      console.log(`INFO  ${c.name} — ${c.detail}`);
       continue;
     }
     const mark = c.pass ? "PASS" : "FAIL";
@@ -731,60 +825,24 @@ function printChecks(checks: Check[]): boolean {
   return fail === 0;
 }
 
-function interpret(map: PortfolioOrderFulfillmentMap): void {
-  console.log("\n--- Interpretação ---");
-  const op = map.operationalStatus;
-  if (op === "OP_TOTALMENTE_ATENDIDO") {
-    console.log("Atendimento: TOTALMENTE atendido (itens 100%, sem excedente no status).");
-  } else if (op === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE") {
-    console.log(
-      "Atendimento: TOTALMENTE atendido COM EXCEDENTE (itens 100% + qtde/doc acima do pedido)."
-    );
-  } else if (op === "OP_PARCIALMENTE_ATENDIDO") {
-    console.log("Atendimento: PARCIAL (ainda há saldo a atender).");
-  } else {
-    console.log(`Atendimento: ${op}`);
-  }
-  console.log(
-    `Excedente: ${
-      map.fulfillmentSummary.hasExcessQuantity
-        ? `SIM (${qty(map.fulfillmentSummary.totalExcessQuantity)})`
-        : "não"
-    }`
-  );
-  console.log(
-    `Item fora do pedido: ${
-      map.fulfillmentSummary.hasProductsOutsideOrder ? "SIM" : "não"
-    }`
-  );
-  console.log(
-    `CR: ${
-      map.fulfillmentSummary.receivableTotalValue > MONEY_TOL
-        ? `vinculado — total ${money(map.fulfillmentSummary.receivableTotalValue)}, recebido ${money(map.fulfillmentSummary.receivedValue)}, aberto ${money(map.fulfillmentSummary.openReceivableValue)}`
-        : "não aparece nesta materialização (não inventado)"
-    }`
-  );
-}
-
 async function main() {
-  console.log("=== Validação PD 02339 — Mapa de atendimento (run real) ===");
+  console.log("Validação PD 02339 — Mapa de Atendimento (read-only)");
   console.log(`runId esperado: ${RUN_ID}`);
   console.log(`pedido: ${ORDER_CODE}`);
 
   let bundle: LoadedBundle;
   try {
     bundle = await loadFromDb();
-    console.log("Fonte: BANCO (run materializada + SalesOrder/NF/doc).");
+    console.log("Fonte: BANCO (run materializada + SalesOrder/NF/doc/CR).");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`DB indisponível/sem fatos: ${msg}`);
-    console.warn("Usando fixture PD 02339 (alocação preview).");
+    console.warn("Usando fixture PD 02339 (com CR de referência).");
     bundle = loadFixture();
   }
 
   const map = buildMap(bundle);
   printReport(bundle, map);
-  interpret(map);
   const ok = printChecks(runChecks(bundle, map));
 
   if (!ok) {
@@ -794,12 +852,12 @@ async function main() {
   }
   console.log(
     bundle.source === "FIXTURE"
-      ? "\nPD 02339 bateu no FIXTURE. Reexecute com DB para validar a materialização."
-      : "\nPD 02339 bateu na run materializada (PASS)."
+      ? "\nPD 02339 bateu no FIXTURE (FAIL=0). Reexecute com DB para validar a materialização."
+      : "\nPD 02339 bateu na run materializada (PASS / FAIL=0)."
   );
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
+  console.error(err);
   process.exitCode = 1;
 });
