@@ -14,6 +14,10 @@ import {
   buildPortfolioReconciliationBusinessAnswers,
   type PortfolioBusinessAnswers,
 } from "./portfolioReconciliationBusinessAnswers.js";
+import {
+  buildPortfolioReconciliationComparison,
+  type PortfolioReconciliationComparison,
+} from "./portfolioReconciliationComparison.js";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE =
   "Nenhuma conciliação materializada encontrada. Rode o rebuild manual.";
@@ -1040,6 +1044,13 @@ export function buildListPayload(args: {
     runSummary: !hasRestrictivePortfolioListFilters(args.filters) ? runSummary : null,
   });
 
+  const comparison = buildPortfolioReconciliationComparison({
+    orderRows,
+    facts: summaryFacts,
+    summary,
+    businessAnswers,
+  });
+
   const page = paginateRows(orderRows, args.filters.page, args.filters.pageSize);
   const availableFilters = buildAvailableFilters(args.facts, allOrderRows);
 
@@ -1049,6 +1060,7 @@ export function buildListPayload(args: {
     run: serializeRunMeta(args.run),
     summary,
     businessAnswers,
+    comparison,
     rows: page.rows,
     pagination: {
       page: page.page,
@@ -1068,6 +1080,7 @@ export function buildNoRunPayload() {
     run: null,
     summary: null,
     businessAnswers: null as PortfolioBusinessAnswers | null,
+    comparison: null as PortfolioReconciliationComparison | null,
     rows: [] as PortfolioReconciliationOrderRow[],
     pagination: {
       page: 1,
@@ -1088,5 +1101,6 @@ export function buildNoRunPayload() {
 }
 
 export type { PortfolioBusinessAnswers };
+export type { PortfolioReconciliationComparison };
 
 export type { PortfolioConfidenceLevel, PortfolioForecastSource };

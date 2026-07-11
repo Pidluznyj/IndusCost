@@ -32,6 +32,7 @@ import {
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { PortfolioReconciliationSummaryCardsView } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationSummaryCards";
+import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
 import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
 import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
@@ -128,6 +129,7 @@ export function FinancePortfolioReconciliationPage() {
           run: null,
           summary: null,
           businessAnswers: null,
+          comparison: null,
           rows: [],
           pagination: { page: 1, pageSize: 50, totalRows: 0, totalPages: 0 },
           filters: null,
@@ -459,6 +461,9 @@ export function FinancePortfolioReconciliationPage() {
               answers={payload.businessAnswers}
               onFilterHint={applyBusinessAnswerFilter}
             />
+            {payload.comparison ? (
+              <PortfolioReconciliationComparisonPanel comparison={payload.comparison} />
+            ) : null}
           </div>
         ) : null}
 

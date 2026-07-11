@@ -86,6 +86,7 @@ export type PortfolioReconciliationListPayload = {
   run: PortfolioReconciliationRunDto | null;
   summary: PortfolioReconciliationSummaryCards | null;
   businessAnswers: PortfolioBusinessAnswers | null;
+  comparison: PortfolioReconciliationComparison | null;
   rows: PortfolioReconciliationOrderRow[];
   pagination: {
     page: number;
@@ -184,6 +185,56 @@ export type PortfolioBusinessAnswers = {
     question: string;
     filterHint: PortfolioBusinessAnswerFilterHint;
   };
+};
+
+export type PortfolioComparisonOrderBreakdown = {
+  orderCode: string;
+  orderValue: number;
+  currentReceivableValue: number;
+  receivedValue: number;
+  openReceivableValue: number;
+  nfeHeaderValue: number;
+  itemizedAllocatedValue: number;
+  projectedOpenBalance: number;
+  orderOnlyValue: number;
+  invoicedWithoutReceivableValue: number;
+  reviewValue: number;
+  headerInflationRiskValue: number;
+  mainStatus: string;
+  mainExplanation: string;
+  alerts: string[];
+};
+
+export type PortfolioReconciliationComparison = {
+  currentView: {
+    officialReceivableOpenValue: number;
+    officialReceivableTotalValue: number;
+    officialReceivedValue: number;
+    officialOverdueReceivableValue: number;
+    officialNfeHeaderValue: number;
+    officialOrderValue: number;
+    explanation: string;
+  };
+  reconciliationView: {
+    projectedOpenBalance: number;
+    receivableConfirmedValue: number;
+    invoicedWithoutReceivableValue: number;
+    orderOnlyValue: number;
+    orderOnlyReviewValue: number;
+    reviewRequiredValue: number;
+    reviewRequiredOrders: number;
+    alertsCount: number;
+    explanation: string;
+  };
+  differences: {
+    receivableVsReconciledDifference: number;
+    invisibleToReceivableValue: number;
+    headerInflationRiskValue: number;
+    orderOnlyReviewValue: number;
+    dataQualityRiskValue: number;
+    explanation: string;
+  };
+  orderBreakdown: PortfolioComparisonOrderBreakdown[];
 };
 
 export type PortfolioReconciliationOrderDetailPayload = {
