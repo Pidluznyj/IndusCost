@@ -6,27 +6,35 @@
 export const INTELLIGENCE_SCREEN_TITLE = "Inteligência da Carteira";
 
 export const INTELLIGENCE_SCREEN_INTRO =
-  "Esta tela mostra a maturidade da carteira comercial: o que já virou financeiro, o que ainda é pedido e o que precisa revisão.";
+  "Esta central mostra a maturidade da carteira: o que já virou financeiro, o que ainda é pedido e o que precisa revisão técnica/comercial.";
 
 export const INTELLIGENCE_SCREEN_WARNING =
   "Pedido de venda não é dinheiro confirmado até virar CR.";
 
+export const INTELLIGENCE_ALERTS_NOTICE =
+  "Alertas técnicos não são valores adicionais; eles sinalizam risco ou divergência em pedidos já classificados. Alerta — pode coexistir com outro status. Não soma carteira.";
+
+export const INTELLIGENCE_AXIS_LEGEND =
+  "Financeiro = CR/baixa · Operacional = pedido versus documentos de saída · Alerta = risco de vínculo, excesso, preço ou cabeçalho.";
+
 export const INTELLIGENCE_READING_GUIDE =
-  "Leitura rápida: total da carteira → já virou financeiro → carteira provável → precisa validação → onde está o risco.";
+  "Leitura: financeiro confirmado → carteira operacional → alertas técnicos (sem somar carteira).";
 
 /** Títulos amigáveis por chave de card/status (override visual). */
 export const INTELLIGENCE_CARD_DISPLAY_TITLE: Record<string, string> = {
   CARTEIRA_TOTAL_ANALISADA: "Carteira total",
   RECEBIDO: "Já recebido",
-  CR_ABERTO: "Já virou financeiro",
+  CR_ABERTO: "Já virou financeiro / CR aberto",
   FATURADO_SEM_CR: "Faturado, ainda sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Ainda só pedido (futuro)",
-  CARTEIRA_PRESENTE_ATENCAO: "Ainda só pedido (atenção)",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Precisa validação",
-  NF_CABECALHO_MAIOR_PEDIDO: "NF maior que o pedido",
+  CARTEIRA_FUTURA_PROVAVEL: "Ainda só pedido — futuro",
+  CARTEIRA_PRESENTE_ATENCAO: "Ainda só pedido — atenção",
+  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
+  NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
   DIVERGENCIA_TECNICA: "Alerta de divergência",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "Quantidade excedente",
+  PRODUTO_FORA_DO_PEDIDO: "Produto fora do pedido",
   SEM_EVIDENCIA: "Sem evidência suficiente",
-  RISCO_SUPERESTIMACAO: "Não tratar como caixa confiável",
+  RISCO_SUPERESTIMACAO: "Risco de superestimação",
   CONVERSAO_PEDIDOS_CR_QTD: "% pedidos que viraram CR",
   CONVERSAO_DOC_SAIDA_QTD: "% com documento de saída",
   TAXA_RECEBIMENTO_CR: "Taxa de recebimento",
@@ -41,10 +49,12 @@ export const INTELLIGENCE_CARD_SUBTITLE: Record<string, string> = {
   CARTEIRA_FUTURA_PROVAVEL: "Previsão à frente",
   CARTEIRA_PRESENTE_ATENCAO: "Janela próxima — acompanhar",
   CARTEIRA_VENCIDA_BLOQUEADA: "Pedido antigo sem evolução",
-  DIVERGENCIA_TECNICA: "Pode coexistir com o status",
-  NF_CABECALHO_MAIOR_PEDIDO: "Não soma carteira — só alerta",
+  DIVERGENCIA_TECNICA: "Alerta — não soma carteira",
+  NF_CABECALHO_MAIOR_PEDIDO: "Alerta — não soma carteira",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "Alerta — não soma carteira",
+  PRODUTO_FORA_DO_PEDIDO: "Alerta — não soma carteira",
   SEM_EVIDENCIA: "Falta informação na importação",
-  RISCO_SUPERESTIMACAO: "Mesmo valor do bloqueado",
+  RISCO_SUPERESTIMACAO: "Alerta — mesmo valor do bloqueado",
   CONVERSAO_PEDIDOS_CR_QTD: "Quantidade convertida",
   CONVERSAO_DOC_SAIDA_QTD: "Quantidade com saída",
   TAXA_RECEBIMENTO_CR: "Do CR já baixado",
@@ -57,20 +67,22 @@ export const INTELLIGENCE_ACCORDION_DISPLAY_TITLE: Record<string, string> = {
   FATURADO_SEM_CR: "Faturado, ainda sem CR",
   CARTEIRA_FUTURA_PROVAVEL: "Ainda só pedido — futuro",
   CARTEIRA_PRESENTE_ATENCAO: "Ainda só pedido — atenção",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Precisa validação",
-  DIVERGENCIA_TECNICA: "Alerta de divergência",
+  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
   SEM_EVIDENCIA: "Sem evidência suficiente",
+  DIVERGENCIA_TECNICA: "Alerta de divergência",
+  NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
 };
 
 export const INTELLIGENCE_ACCORDION_HINT: Record<string, string> = {
   RECEBIDO: "Baixa evidenciada",
   CR_ABERTO: "Já é financeiro confirmado",
   FATURADO_SEM_CR: "Falta virar Contas a Receber",
-  CARTEIRA_FUTURA_PROVAVEL: "Carteira provável",
-  CARTEIRA_PRESENTE_ATENCAO: "Carteira provável — olhar de perto",
+  CARTEIRA_FUTURA_PROVAVEL: "Carteira operacional — futuro",
+  CARTEIRA_PRESENTE_ATENCAO: "Carteira operacional — atenção",
   CARTEIRA_VENCIDA_BLOQUEADA: "Não tratar como caixa confiável",
-  DIVERGENCIA_TECNICA: "Alerta — não substitui o status",
   SEM_EVIDENCIA: "Revisar importação",
+  DIVERGENCIA_TECNICA: "Alerta — pode coexistir; não soma carteira",
+  NF_CABECALHO_MAIOR_PEDIDO: "Alerta — cabeçalho ≠ valor do pedido",
 };
 
 /** Cards da “leitura em 10 segundos” (destaque visual). */

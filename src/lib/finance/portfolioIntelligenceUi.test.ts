@@ -116,6 +116,7 @@ describe("portfolio intelligence UI", () => {
     assert.match(grid, /Nenhum pedido neste status/);
     assert.match(grid, /confidenceDisplay|Alta confiança|Confiança média|Confiança baixa|muito baixa/i);
     assert.match(grid, /onOpenOrder/);
+    assert.match(grid, /Status financeiro|Status operacional|% atendimento|Excedente|Valor fora/);
     assert.match(grid, /tagsAlerta|Alertas/);
     assert.match(grid, /portfolio-intelligence-tags-legend/);
   });
@@ -223,9 +224,12 @@ describe("portfolio intelligence UI", () => {
     assert.match(cards, /summaryCards|card\.value|card\.count/);
     assert.match(cards, /MetricHelpTooltip/);
     assert.match(cards, /Financeiro confirmado|Carteira operacional|Alertas técnicos/);
-    assert.match(cards, /não somam carteira|alerts-notice/);
+    assert.match(cards, /não soma carteira|alerts-notice|Alerta — pode coexistir/);
+    assert.match(accordions, /accordion-group-financial|INTELLIGENCE_ACCORDION_GROUPS/);
     assert.match(accordions, /CARTEIRA_VENCIDA_BLOQUEADA/);
     assert.match(accordions, /CARTEIRA_FUTURA_PROVAVEL|CARTEIRA_PRESENTE_ATENCAO/);
+    assert.match(accordions, /SEM_EVIDENCIA/);
+    assert.match(accordions, /DIVERGENCIA_TECNICA|NF_CABECALHO_MAIOR_PEDIDO/);
     assert.match(accordions, /ordersCount|orderCodes|rowsForIntelligenceAccordion/);
     assert.match(
       drawer,
@@ -239,16 +243,39 @@ describe("portfolio intelligence UI", () => {
     assert.match(help, /Como calculamos/);
   });
 
-  it("cabeçalho executivo e aviso de pedido ≠ caixa", () => {
+  it("cabeçalho executivo, três blocos e avisos de carteira vs alerta", () => {
     const section = read(
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx"
+    );
+    const cards = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceCards.tsx"
+    );
+    const accordions = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
     );
     const copy = read("src/lib/finance/portfolioIntelligenceUiCopy.ts");
     assert.match(section, /portfolio-intelligence-header/);
     assert.match(section, /portfolio-intelligence-pd-warning/);
-    assert.match(copy, /já virou financeiro/);
+    assert.match(section, /portfolio-intelligence-alerts-copy/);
+    assert.match(section, /portfolio-intelligence-axis-legend/);
+    assert.match(copy, /maturidade da carteira/);
     assert.match(copy, /Pedido de venda não é dinheiro confirmado até virar CR/);
+    assert.match(
+      copy,
+      /Alertas técnicos não são valores adicionais|não somam carteira|Não soma carteira/
+    );
+    assert.match(copy, /Financeiro = CR\/baixa/);
     assert.match(copy, /Não tratar como caixa confiável/);
-    assert.match(copy, /Pedido antigo sem evolução/);
+    assert.match(cards, /portfolio-intelligence-cards-financial/);
+    assert.match(cards, /portfolio-intelligence-cards-operational/);
+    assert.match(cards, /portfolio-intelligence-cards-alerts/);
+    assert.match(cards, /data-alert-card|não soma carteira/);
+    assert.match(cards, /MetricHelpTooltip/);
+    assert.match(accordions, /INTELLIGENCE_ACCORDION_GROUPS/);
+    assert.match(accordions, /portfolio-intelligence-accordion-group-\$\{group\.id\}/);
+    const drilldown = read("src/lib/finance/portfolioIntelligenceDrilldown.ts");
+    assert.match(drilldown, /id:\s*"financial"/);
+    assert.match(drilldown, /id:\s*"operational"/);
+    assert.match(drilldown, /id:\s*"alerts"/);
   });
 });

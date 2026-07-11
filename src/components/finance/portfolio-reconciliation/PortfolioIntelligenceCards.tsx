@@ -34,16 +34,17 @@ const FINANCIAL_CARD_KEYS = [
 ] as const;
 
 const OPERATIONAL_CARD_KEYS = [
-  "CARTEIRA_TOTAL_ANALISADA",
   "CARTEIRA_FUTURA_PROVAVEL",
   "CARTEIRA_PRESENTE_ATENCAO",
   "CARTEIRA_VENCIDA_BLOQUEADA",
+  "SEM_EVIDENCIA",
 ] as const;
 
 const ALERT_CARD_KEYS = [
   "DIVERGENCIA_TECNICA",
   "NF_CABECALHO_MAIOR_PEDIDO",
-  "SEM_EVIDENCIA",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PRODUTO_FORA_DO_PEDIDO",
   "RISCO_SUPERESTIMACAO",
 ] as const;
 
@@ -55,6 +56,7 @@ const SECONDARY_CARD_KEYS = [
 ] as const;
 
 const CARD_ORDER = [
+  "CARTEIRA_TOTAL_ANALISADA",
   ...FINANCIAL_CARD_KEYS,
   ...OPERATIONAL_CARD_KEYS,
   ...ALERT_CARD_KEYS,
@@ -73,14 +75,16 @@ type SoftTone =
 const TONE_BY_KEY: Record<string, SoftTone> = {
   CARTEIRA_TOTAL_ANALISADA: "neutral",
   RECEBIDO: "green",
-  CR_ABERTO: "green",
-  FATURADO_SEM_CR: "amber",
+  CR_ABERTO: "blue",
+  FATURADO_SEM_CR: "blue",
   CARTEIRA_FUTURA_PROVAVEL: "blue",
   CARTEIRA_PRESENTE_ATENCAO: "amber",
   CARTEIRA_VENCIDA_BLOQUEADA: "red",
+  SEM_EVIDENCIA: "gray",
   DIVERGENCIA_TECNICA: "orange",
   NF_CABECALHO_MAIOR_PEDIDO: "orange",
-  SEM_EVIDENCIA: "gray",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "orange",
+  PRODUTO_FORA_DO_PEDIDO: "orange",
   RISCO_SUPERESTIMACAO: "red",
   CONVERSAO_PEDIDOS_CR_QTD: "green",
   CONVERSAO_DOC_SAIDA_QTD: "blue",
@@ -96,9 +100,11 @@ const ICON_BY_KEY: Record<string, LucideIcon> = {
   CARTEIRA_FUTURA_PROVAVEL: TrendingUp,
   CARTEIRA_PRESENTE_ATENCAO: Scale,
   CARTEIRA_VENCIDA_BLOQUEADA: ShieldAlert,
+  SEM_EVIDENCIA: CircleHelp,
   DIVERGENCIA_TECNICA: AlertTriangle,
   NF_CABECALHO_MAIOR_PEDIDO: AlertTriangle,
-  SEM_EVIDENCIA: CircleHelp,
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: AlertTriangle,
+  PRODUTO_FORA_DO_PEDIDO: PackageX,
   RISCO_SUPERESTIMACAO: PackageX,
   CONVERSAO_PEDIDOS_CR_QTD: Receipt,
   CONVERSAO_DOC_SAIDA_QTD: FileOutput,
@@ -112,7 +118,7 @@ const TONE_CLASS: Record<SoftTone, string> = {
   blue: "border-sky-200/80 bg-gradient-to-br from-sky-50/80 to-white",
   amber: "border-amber-200/70 bg-gradient-to-br from-amber-50/70 to-white",
   red: "border-rose-200/70 bg-gradient-to-br from-rose-50/60 to-white",
-  orange: "border-orange-200/70 bg-gradient-to-br from-orange-50/60 to-white",
+  orange: "border-orange-200/70 bg-gradient-to-br from-orange-50/50 to-white",
   gray: "border-zinc-200/80 bg-gradient-to-br from-zinc-50/80 to-white",
 };
 
@@ -154,11 +160,13 @@ type Props = {
 function CardArticle({
   card,
   hero,
+  alertStyle,
   onCardClick,
   activeCardKey,
 }: {
   card: PortfolioIntelligenceCardDto;
   hero: boolean;
+  alertStyle: boolean;
   onCardClick?: (cardKey: string) => void;
   activeCardKey?: string | null;
 }) {
@@ -169,6 +177,7 @@ function CardArticle({
   const isActive = activeCardKey === card.key;
   const title = intelligenceCardTitle(card.key, card.title);
   const subtitle = INTELLIGENCE_CARD_SUBTITLE[card.key];
+  const isAlert = alertStyle || Boolean(card.isAlertCard);
 
   return (
     <article
@@ -193,13 +202,16 @@ function CardArticle({
       }
       className={cn(
         "relative flex flex-col rounded-2xl border px-3 py-3 shadow-sm outline-none",
-        hero ? "min-h-[7.25rem]" : "min-h-[5.75rem]",
+        hero && !isAlert ? "min-h-[7.25rem]" : "min-h-[5.75rem]",
         TONE_CLASS[tone],
+        isAlert &&
+          "border-dashed border-orange-300/80 bg-gradient-to-br from-orange-50/40 via-zinc-50/50 to-white shadow-none",
         clickable &&
           "cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/70",
         isActive && "ring-2 ring-sky-400/45"
       )}
       data-testid={`portfolio-intelligence-card-${card.key}`}
+      data-alert-card={isAlert ? "true" : undefined}
     >
       <MetricHelpTooltip
         corner
@@ -207,7 +219,7 @@ function CardArticle({
         explanation={card.explanation}
         missingExplanation={!complete}
       />
-      <div className={cn("mb-1.5 flex items-start gap-2 pr-7", hero && "mb-2")}>
+      <div className={cn("mb-1.5 flex items-start gap-2 pr-7", hero && !isAlert && "mb-2")}>
         <span
           className={cn(
             "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/70",
@@ -224,11 +236,16 @@ function CardArticle({
         <div className="min-w-0">
           <h3
             className={cn(
-              "font-semibold leading-snug text-foreground",
-              hero ? "text-xs sm:text-[13px]" : "text-[11px] sm:text-xs"
+              "flex flex-wrap items-center gap-1.5 font-semibold leading-snug text-foreground",
+              hero && !isAlert ? "text-xs sm:text-[13px]" : "text-[11px] sm:text-xs"
             )}
           >
-            {title}
+            <span>{title}</span>
+            {isAlert ? (
+              <span className="rounded border border-orange-300/80 bg-orange-100/80 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-orange-950">
+                alerta
+              </span>
+            ) : null}
           </h3>
           {subtitle ? (
             <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{subtitle}</p>
@@ -237,18 +254,24 @@ function CardArticle({
       </div>
       <p
         className={cn(
-          "font-semibold tabular-nums leading-tight tracking-tight text-foreground",
-          hero ? "text-xl sm:text-2xl" : "text-base sm:text-lg"
+          "font-semibold tabular-nums leading-tight tracking-tight",
+          isAlert ? "text-base text-orange-950/80 sm:text-lg" : "text-foreground",
+          !isAlert && (hero ? "text-xl sm:text-2xl" : "text-base sm:text-lg")
         )}
       >
         {formatPrimaryValue(card)}
       </p>
-      <p className="mt-auto pt-2 text-[10px] tabular-nums text-muted-foreground">
+      <p
+        className={cn(
+          "mt-auto pt-2 text-[10px] tabular-nums",
+          isAlert ? "text-orange-900/70" : "text-muted-foreground"
+        )}
+      >
         {formatFinanceInteger(card.count)} pedido(s)
         {card.percentage != null && !PERCENT_KEYS.has(card.key)
           ? ` · ${formatFinancePercent(card.percentage)} da carteira`
           : ""}
-        {card.isAlertCard ? " · alerta" : ""}
+        {isAlert ? " · não soma carteira" : ""}
       </p>
     </article>
   );
@@ -268,11 +291,21 @@ export function PortfolioIntelligenceCards({
   const pick = (keys: readonly string[]) =>
     keys.map((key) => byKey.get(key)).filter((c): c is PortfolioIntelligenceCardDto => c != null);
 
+  const totalCard = byKey.get("CARTEIRA_TOTAL_ANALISADA") ?? null;
   const financialCards = pick(FINANCIAL_CARD_KEYS);
   const operationalCards = pick(OPERATIONAL_CARD_KEYS);
   const alertCards = pick(ALERT_CARD_KEYS);
   const secondaryCards = pick(SECONDARY_CARD_KEYS);
-  const ordered = [...financialCards, ...operationalCards, ...alertCards, ...secondaryCards];
+  const ordered = [
+    ...(totalCard ? [totalCard] : []),
+    ...financialCards,
+    ...operationalCards,
+    ...alertCards,
+    ...secondaryCards,
+  ];
+
+  // Referência para testes de ordem visual (mantém CARD_ORDER no bundle).
+  void CARD_ORDER;
 
   if (loading) {
     return (
@@ -305,27 +338,31 @@ export function PortfolioIntelligenceCards({
 
   const renderGrid = (
     title: string,
+    description: string,
     blockCards: PortfolioIntelligenceCardDto[],
     opts?: { alert?: boolean; testId?: string }
   ) => {
     if (blockCards.length === 0) return null;
     return (
       <div data-testid={opts?.testId}>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {title}
-        </p>
+        <div className="mb-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {title}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+        </div>
         {opts?.alert ? (
           <p
-            className="mb-2 rounded-lg border border-orange-200/70 bg-orange-50/50 px-2.5 py-1.5 text-[11px] text-orange-950"
+            className="mb-2 rounded-lg border border-dashed border-orange-300/80 bg-orange-50/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-orange-950"
             data-testid="portfolio-intelligence-alerts-notice"
           >
-            Alertas técnicos podem coexistir com um status financeiro. Eles não somam carteira.
+            Alerta — pode coexistir com outro status. Não soma carteira.
           </p>
         ) : null}
         <div
           className={cn(
             "grid grid-cols-2 gap-3 sm:grid-cols-3",
-            opts?.alert ? "lg:grid-cols-4" : "lg:grid-cols-4 xl:grid-cols-4"
+            opts?.alert ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4"
           )}
         >
           {blockCards.map((card) => (
@@ -333,6 +370,7 @@ export function PortfolioIntelligenceCards({
               key={card.key}
               card={card}
               hero={!opts?.alert}
+              alertStyle={Boolean(opts?.alert)}
               onCardClick={onCardClick}
               activeCardKey={activeCardKey}
             />
@@ -344,19 +382,56 @@ export function PortfolioIntelligenceCards({
 
   return (
     <div className="space-y-5" data-testid="portfolio-intelligence-cards">
-      {renderGrid("1. Financeiro confirmado", financialCards, {
-        testId: "portfolio-intelligence-cards-financial",
-      })}
-      {renderGrid("2. Carteira operacional", operationalCards, {
-        testId: "portfolio-intelligence-cards-operational",
-      })}
-      {renderGrid("3. Alertas técnicos", alertCards, {
-        alert: true,
-        testId: "portfolio-intelligence-cards-alerts",
-      })}
-      {renderGrid("Conversão e confiança", secondaryCards, {
-        testId: "portfolio-intelligence-cards-secondary",
-      })}
+      {totalCard ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5"
+          data-testid="portfolio-intelligence-card-CARTEIRA_TOTAL_ANALISADA"
+        >
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-muted-foreground">
+              {intelligenceCardTitle(totalCard.key, totalCard.title)}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {INTELLIGENCE_CARD_SUBTITLE[totalCard.key] ?? "Base 100% do filtro"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-lg font-semibold tabular-nums text-foreground sm:text-xl">
+              {formatPrimaryValue(totalCard)}
+            </p>
+            <MetricHelpTooltip
+              title={intelligenceCardTitle(totalCard.key, totalCard.title)}
+              explanation={totalCard.explanation}
+              missingExplanation={!hasCompleteExplanation(totalCard)}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {renderGrid(
+        "1. Financeiro confirmado",
+        "O que já virou CR ou baixa — dinheiro confirmado na conciliação.",
+        financialCards,
+        { testId: "portfolio-intelligence-cards-financial" }
+      )}
+      {renderGrid(
+        "2. Carteira operacional",
+        "Ainda é pedido de venda — futuro, atenção, vencido ou sem evidência.",
+        operationalCards,
+        { testId: "portfolio-intelligence-cards-operational" }
+      )}
+      {renderGrid(
+        "3. Alertas técnicos",
+        "Risco ou divergência em pedidos já classificados — não é carteira extra.",
+        alertCards,
+        { alert: true, testId: "portfolio-intelligence-cards-alerts" }
+      )}
+      {renderGrid(
+        "Conversão e confiança",
+        "Indicadores de conversão operacional — não somam com os blocos acima.",
+        secondaryCards,
+        { testId: "portfolio-intelligence-cards-secondary" }
+      )}
     </div>
   );
 }

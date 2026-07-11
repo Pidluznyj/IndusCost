@@ -21,7 +21,35 @@ const TAG_LABEL: Record<string, string> = {
   SEM_CONDICAO_PAGAMENTO: "Sem cond. pag.",
   VINCULO_INCOMPLETO: "Vínculo incompleto",
   PEDIDO_ANTIGO_SEM_EVOLUCAO: "Pedido antigo sem evolução",
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: "Qtd. excedente",
+  PRODUTO_FORA_DO_PEDIDO: "Produto fora",
 };
+
+const FINANCIAL_STATUS_LABEL: Record<string, string> = {
+  FIN_RECEBIDO: "Já recebido",
+  FIN_CR_ABERTO: "CR aberto",
+  FIN_FATURADO_SEM_CR: "Faturado sem CR",
+  FIN_SEM_CR: "Sem CR",
+};
+
+const OPERATIONAL_STATUS_LABEL: Record<string, string> = {
+  OP_TOTALMENTE_ATENDIDO: "Totalmente atendido",
+  OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE: "Totalmente atendido (com excedente)",
+  OP_PARCIALMENTE_ATENDIDO: "Parcialmente atendido",
+  OP_NAO_ATENDIDO: "Não atendido",
+  OP_DOCUMENTO_SEM_ITEMIZACAO: "Documento sem itemização",
+  OP_VINCULO_APENAS_CABECALHO: "Vínculo só de cabeçalho",
+};
+
+function financialStatusLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return FINANCIAL_STATUS_LABEL[code] ?? intelligenceAccordionTitle(code) ?? code;
+}
+
+function operationalStatusLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return OPERATIONAL_STATUS_LABEL[code] ?? code;
+}
 
 function yesNo(v: boolean): string {
   return v ? "Sim" : "Não";
@@ -64,6 +92,8 @@ export function PortfolioIntelligenceOrdersGrid({
         r.customerName,
         r.sellerName,
         r.statusPrincipal,
+        r.financialStatus,
+        r.operationalStatus,
         r.mainReason,
         r.externalSalesOrderId != null ? String(r.externalSalesOrderId) : "",
       ]
@@ -73,6 +103,19 @@ export function PortfolioIntelligenceOrdersGrid({
       return hay.includes(q);
     });
   }, [rows, q]);
+
+  const showFulfillmentCols = useMemo(
+    () =>
+      rows.some(
+        (r) =>
+          r.financialStatus != null ||
+          r.operationalStatus != null ||
+          r.fulfillmentPercent != null ||
+          r.excessQuantity != null ||
+          r.valueOutsideOrder != null
+      ),
+    [rows]
+  );
 
   if (rows.length === 0) {
     return (
@@ -114,7 +157,12 @@ export function PortfolioIntelligenceOrdersGrid({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border/60 -mx-1 px-1 sm:mx-0 sm:px-0">
-          <table className="min-w-[980px] md:min-w-[1700px] w-full border-collapse text-left text-xs">
+          <table
+            className={cn(
+              "w-full border-collapse text-left text-xs",
+              showFulfillmentCols ? "min-w-[980px] md:min-w-[1900px]" : "min-w-[980px] md:min-w-[1700px]"
+            )}
+          >
             <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-2.5 py-2.5 font-semibold">Pedido</th>
@@ -129,7 +177,20 @@ export function PortfolioIntelligenceOrdersGrid({
                 <th className="px-2.5 py-2.5 font-semibold text-right">Recebido</th>
                 <th className="px-2.5 py-2.5 font-semibold text-right">Aberto</th>
                 <th className="px-2.5 py-2.5 font-semibold">Status</th>
+                {showFulfillmentCols ? (
+                  <>
+                    <th className="px-2.5 py-2.5 font-semibold">Status financeiro</th>
+                    <th className="px-2.5 py-2.5 font-semibold">Status operacional</th>
+                  </>
+                ) : null}
                 <th className="px-2.5 py-2.5 font-semibold">Alertas</th>
+                {showFulfillmentCols ? (
+                  <>
+                    <th className="px-2.5 py-2.5 font-semibold text-right">% atendimento</th>
+                    <th className="px-2.5 py-2.5 font-semibold text-right">Excedente</th>
+                    <th className="px-2.5 py-2.5 font-semibold text-right">Valor fora do pedido</th>
+                  </>
+                ) : null}
                 <th className="px-2.5 py-2.5 font-semibold">Confiança</th>
                 <th className="px-2.5 py-2.5 font-semibold">Motivo</th>
                 <th className="px-2.5 py-2.5 font-semibold">Próximo passo</th>
@@ -198,6 +259,16 @@ export function PortfolioIntelligenceOrdersGrid({
                         {intelligenceAccordionTitle(row.statusPrincipal)}
                       </span>
                     </td>
+                    {showFulfillmentCols ? (
+                      <>
+                        <td className="px-2.5 py-2.5 text-[10px]">
+                          {financialStatusLabel(row.financialStatus)}
+                        </td>
+                        <td className="px-2.5 py-2.5 text-[10px]">
+                          {operationalStatusLabel(row.operationalStatus)}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="px-2.5 py-2.5">
                       {tags.length === 0 ? (
                         <span className="text-muted-foreground">—</span>
@@ -215,6 +286,25 @@ export function PortfolioIntelligenceOrdersGrid({
                         </div>
                       )}
                     </td>
+                    {showFulfillmentCols ? (
+                      <>
+                        <td className="px-2.5 py-2.5 text-right tabular-nums">
+                          {row.fulfillmentPercent != null
+                            ? `${Math.min(100, Math.max(0, row.fulfillmentPercent)).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`
+                            : "—"}
+                        </td>
+                        <td className="px-2.5 py-2.5 text-right tabular-nums">
+                          {row.excessQuantity != null
+                            ? formatFinanceInteger(row.excessQuantity)
+                            : "—"}
+                        </td>
+                        <td className="px-2.5 py-2.5 text-right tabular-nums">
+                          {row.valueOutsideOrder != null
+                            ? formatFinanceCurrency(row.valueOutsideOrder)
+                            : "—"}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="px-2.5 py-2.5">
                       <span
                         className={cn(

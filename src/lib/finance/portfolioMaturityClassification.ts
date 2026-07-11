@@ -27,7 +27,9 @@ export type PortfolioMaturityAlertTag =
   | "DIVERGENCIA_PRECO"
   | "SEM_CONDICAO_PAGAMENTO"
   | "VINCULO_INCOMPLETO"
-  | "PEDIDO_ANTIGO_SEM_EVOLUCAO";
+  | "PEDIDO_ANTIGO_SEM_EVOLUCAO"
+  | "QUANTIDADE_EXCEDENTE_DOCUMENTO"
+  | "PRODUTO_FORA_DO_PEDIDO";
 
 export type PortfolioConfidenceLabel = "ALTA" | "MEDIA" | "BAIXA" | "MUITO_BAIXA";
 
@@ -326,6 +328,21 @@ export function buildOrderEvidenceTags(
   if (signals.headerExceedsOrder) {
     tags.add("NF_CABECALHO_MAIOR_PEDIDO");
   }
+  if (
+    factStatus === "QUANTITY_SURPLUS_IN_NFE" ||
+    (input.alerts ?? []).some((a) =>
+      /QUANTIDADE_EXCEDENTE|QUANTITY_SURPLUS|quantidade excedente/i.test(a)
+    )
+  ) {
+    tags.add("QUANTIDADE_EXCEDENTE_DOCUMENTO");
+  }
+  if (
+    (input.alerts ?? []).some((a) =>
+      /PRODUTO_FORA|STOCK_PRODUCT_NOT_IN_ORDER|produto fora/i.test(a)
+    )
+  ) {
+    tags.add("PRODUTO_FORA_DO_PEDIDO");
+  }
   if (input.paymentTermsAvailable !== true) {
     tags.add("SEM_CONDICAO_PAGAMENTO");
   }
@@ -572,6 +589,8 @@ export type PortfolioMaturityMetricKey =
   | "SEM_EVIDENCIA"
   | "DIVERGENCIA_TECNICA"
   | "NF_CABECALHO_MAIOR_PEDIDO"
+  | "QUANTIDADE_EXCEDENTE_DOCUMENTO"
+  | "PRODUTO_FORA_DO_PEDIDO"
   | "CONFIDENCE_SCORE"
   | "CONFIANCA_MEDIA_CARTEIRA"
   | "RISCO_SUPERESTIMACAO"
@@ -682,6 +701,28 @@ const METRIC_EXPLANATIONS: Record<string, PortfolioMetricExplanation> = {
     oQueNaoEntra: "Soma dos cabeçalhos de NF como se fosse o pedido.",
     comoInterpretar:
       "Alerta técnico — não some carteira. Use o mapa de atendimento para ver o que pertence ao pedido.",
+  },
+  QUANTIDADE_EXCEDENTE_DOCUMENTO: {
+    metricKey: "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+    oQueSignifica:
+      "Documento de saída/NF traz quantidade acima do saldo do pedido — excedente separado do atendimento.",
+    comoCalculamos:
+      "Pedidos com tag de quantidade excedente. O valor do card é o valor do pedido (não o excedente).",
+    oQueEntra: "Pedidos com excedente de quantidade nos documentos vinculados.",
+    oQueNaoEntra: "Não aumenta o valor oficial do pedido nem soma carteira extra.",
+    comoInterpretar:
+      "Alerta — pode coexistir com CR aberto. Não some carteira; revise o mapa de atendimento.",
+  },
+  PRODUTO_FORA_DO_PEDIDO: {
+    metricKey: "PRODUTO_FORA_DO_PEDIDO",
+    oQueSignifica:
+      "Há produto no documento que não pertence a este pedido — valor fora do pedido.",
+    comoCalculamos:
+      "Pedidos com tag de produto fora. O valor do card é o valor do pedido (não o valor fora).",
+    oQueEntra: "Pedidos com itens de documento não atribuídos ao pedido.",
+    oQueNaoEntra: "Não soma o valor fora como se fosse carteira deste pedido.",
+    comoInterpretar:
+      "Alerta técnico — pode coexistir com outro status. Não some carteira.",
   },
   CONFIDENCE_SCORE: {
     metricKey: "CONFIDENCE_SCORE",

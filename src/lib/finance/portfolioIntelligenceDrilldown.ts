@@ -4,7 +4,7 @@ import type {
   PortfolioIntelligenceOrderRow,
 } from "@/src/lib/financePortfolioReconciliationClient";
 
-/** Sanfonas de status principal + alerta de divergência técnica. */
+/** Sanfonas: financeiro → operacional → alertas técnicos. */
 export const INTELLIGENCE_ACCORDION_KEYS = [
   "RECEBIDO",
   "CR_ABERTO",
@@ -12,11 +12,45 @@ export const INTELLIGENCE_ACCORDION_KEYS = [
   "CARTEIRA_FUTURA_PROVAVEL",
   "CARTEIRA_PRESENTE_ATENCAO",
   "CARTEIRA_VENCIDA_BLOQUEADA",
-  "DIVERGENCIA_TECNICA",
   "SEM_EVIDENCIA",
+  "DIVERGENCIA_TECNICA",
+  "NF_CABECALHO_MAIOR_PEDIDO",
 ] as const;
 
 export type IntelligenceAccordionKey = (typeof INTELLIGENCE_ACCORDION_KEYS)[number];
+
+export const INTELLIGENCE_ACCORDION_GROUPS = [
+  {
+    id: "financial",
+    title: "1. Financeiro",
+    description: "Já virou CR ou baixa.",
+    keys: ["RECEBIDO", "CR_ABERTO", "FATURADO_SEM_CR"] as const,
+  },
+  {
+    id: "operational",
+    title: "2. Carteira operacional",
+    description: "Ainda é pedido — futuro, atenção, vencido ou sem evidência.",
+    keys: [
+      "CARTEIRA_FUTURA_PROVAVEL",
+      "CARTEIRA_PRESENTE_ATENCAO",
+      "CARTEIRA_VENCIDA_BLOQUEADA",
+      "SEM_EVIDENCIA",
+    ] as const,
+  },
+  {
+    id: "alerts",
+    title: "3. Alertas técnicos",
+    description: "Podem coexistir com o status. Não somam carteira.",
+    keys: ["DIVERGENCIA_TECNICA", "NF_CABECALHO_MAIOR_PEDIDO"] as const,
+  },
+] as const;
+
+const ALERT_ACCORDION_KEYS = new Set<string>([
+  "DIVERGENCIA_TECNICA",
+  "NF_CABECALHO_MAIOR_PEDIDO",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PRODUTO_FORA_DO_PEDIDO",
+]);
 
 /** Mapeia card do topo → sanfona. */
 export function cardKeyToAccordionKey(cardKey: string): IntelligenceAccordionKey | null {
@@ -27,13 +61,17 @@ export function cardKeyToAccordionKey(cardKey: string): IntelligenceAccordionKey
   return null;
 }
 
-/** Pedidos exibidos em cada sanfona (divergência = tag, sem mudar status principal). */
+export function isAlertAccordionKey(key: string): boolean {
+  return ALERT_ACCORDION_KEYS.has(key);
+}
+
+/** Pedidos exibidos em cada sanfona (alertas = tag, sem mudar status principal). */
 export function rowsForIntelligenceAccordion(
   key: IntelligenceAccordionKey,
   rows: readonly PortfolioIntelligenceOrderRow[]
 ): PortfolioIntelligenceOrderRow[] {
-  if (key === "DIVERGENCIA_TECNICA") {
-    return rows.filter((r) => r.tagsAlerta?.includes("DIVERGENCIA_TECNICA"));
+  if (isAlertAccordionKey(key)) {
+    return rows.filter((r) => r.tagsAlerta?.includes(key));
   }
   return rows.filter((r) => r.statusPrincipal === key);
 }
@@ -53,8 +91,8 @@ export function statsForIntelligenceAccordion(
   rows: readonly PortfolioIntelligenceOrderRow[],
   carteiraTotal: number
 ): AccordionHeaderStats {
-  if (key === "DIVERGENCIA_TECNICA") {
-    const card = cards.find((c) => c.key === "DIVERGENCIA_TECNICA");
+  if (isAlertAccordionKey(key)) {
+    const card = cards.find((c) => c.key === key);
     const list = rowsForIntelligenceAccordion(key, rows);
     const value = card?.value ?? list.reduce((s, r) => s + r.orderValue, 0);
     const valueWeight = list.reduce((s, r) => s + r.orderValue, 0);
@@ -89,12 +127,12 @@ export function statsForIntelligenceAccordion(
   };
 }
 
-/** Soma dos grupos principais (exclui alerta de divergência). */
+/** Soma dos grupos principais (exclui alertas técnicos). */
 export function sumPrincipalGroupValues(
   groups: readonly PortfolioIntelligenceGroupDto[]
 ): number {
   return groups
-    .filter((g) => g.statusPrincipal !== "DIVERGENCIA_TECNICA")
+    .filter((g) => !isAlertAccordionKey(g.statusPrincipal))
     .reduce((s, g) => s + g.orderValue, 0);
 }
 
@@ -108,7 +146,7 @@ export function findDuplicateOrderCodesAcrossPrincipalGroups(
   const seen = new Map<string, string>();
   const dupes: string[] = [];
   for (const g of groups) {
-    if (g.statusPrincipal === "DIVERGENCIA_TECNICA") continue;
+    if (isAlertAccordionKey(g.statusPrincipal)) continue;
     for (const code of g.orderCodes ?? []) {
       const prev = seen.get(code);
       if (prev && prev !== g.statusPrincipal) {

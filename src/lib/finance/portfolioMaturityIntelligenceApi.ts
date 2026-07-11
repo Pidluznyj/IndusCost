@@ -88,6 +88,8 @@ const ALERT_TAGS = new Set<PortfolioMaturityAlertTag>([
   "SEM_CONDICAO_PAGAMENTO",
   "VINCULO_INCOMPLETO",
   "PEDIDO_ANTIGO_SEM_EVOLUCAO",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PRODUTO_FORA_DO_PEDIDO",
 ]);
 
 const SORT_BY = new Set<PortfolioMaturitySortBy>([

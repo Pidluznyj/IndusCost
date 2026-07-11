@@ -817,6 +817,38 @@ function buildSummaryCards(
         explanation: explanationFromMetric("NF_CABECALHO_MAIOR_PEDIDO"),
       };
     })(),
+    (() => {
+      const qtyRows = rows.filter((r) =>
+        r.tagsAlerta.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO")
+      );
+      const qtyValue = qtyRows.reduce((s, r) => s + r.orderValue, 0);
+      return {
+        key: "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+        title: "Quantidade excedente (alerta)",
+        value: qtyValue,
+        count: qtyRows.length,
+        percentage: pct(qtyValue, valorTotal),
+        colorTone: "alert" as const,
+        isAlertCard: true,
+        explanation: explanationFromMetric("QUANTIDADE_EXCEDENTE_DOCUMENTO"),
+      };
+    })(),
+    (() => {
+      const outsideRows = rows.filter((r) =>
+        r.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO")
+      );
+      const outsideValue = outsideRows.reduce((s, r) => s + r.orderValue, 0);
+      return {
+        key: "PRODUTO_FORA_DO_PEDIDO",
+        title: "Produto fora do pedido (alerta)",
+        value: outsideValue,
+        count: outsideRows.length,
+        percentage: pct(outsideValue, valorTotal),
+        colorTone: "alert" as const,
+        isAlertCard: true,
+        explanation: explanationFromMetric("PRODUTO_FORA_DO_PEDIDO"),
+      };
+    })(),
     statusCard("SEM_EVIDENCIA"),
     {
       key: "RISCO_SUPERESTIMACAO",

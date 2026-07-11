@@ -26,6 +26,8 @@ import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDr
 import { PortfolioIntelligenceSellerKpis } from "./PortfolioIntelligenceSellerKpis";
 import type { PortfolioIntelligenceSellerKpiDto } from "@/src/lib/financePortfolioReconciliationClient";
 import {
+  INTELLIGENCE_ALERTS_NOTICE,
+  INTELLIGENCE_AXIS_LEGEND,
   INTELLIGENCE_READING_GUIDE,
   INTELLIGENCE_SCREEN_INTRO,
   INTELLIGENCE_SCREEN_TITLE,
@@ -241,6 +243,18 @@ export function PortfolioIntelligenceSection({
               data-testid="portfolio-intelligence-pd-warning"
             >
               {INTELLIGENCE_SCREEN_WARNING}
+            </p>
+            <p
+              className="max-w-3xl text-[11px] leading-relaxed text-muted-foreground"
+              data-testid="portfolio-intelligence-alerts-copy"
+            >
+              {INTELLIGENCE_ALERTS_NOTICE}
+            </p>
+            <p
+              className="max-w-3xl text-[11px] leading-relaxed text-muted-foreground"
+              data-testid="portfolio-intelligence-axis-legend"
+            >
+              {INTELLIGENCE_AXIS_LEGEND}
             </p>
             <p className="text-[11px] text-muted-foreground">{INTELLIGENCE_READING_GUIDE}</p>
           </div>

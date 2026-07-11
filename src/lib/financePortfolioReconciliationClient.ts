@@ -350,6 +350,12 @@ export type PortfolioIntelligenceOrderRow = {
   nextRelevantDate: string | null;
   evidenceFlags: PortfolioIntelligenceEvidenceFlags;
   productExternalIds: number[];
+  /** Eixos do mapa de atendimento — opcionais na listagem. */
+  financialStatus?: string | null;
+  operationalStatus?: string | null;
+  fulfillmentPercent?: number | null;
+  excessQuantity?: number | null;
+  valueOutsideOrder?: number | null;
 };
 
 export type PortfolioIntelligenceGroupDto = {

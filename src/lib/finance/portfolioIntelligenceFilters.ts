@@ -141,6 +141,8 @@ export const PORTFOLIO_INTELLIGENCE_TAG_OPTIONS = [
   { value: "NF_SEM_DOCUMENTO", label: "NF sem documento" },
   { value: "DOCUMENTO_SEM_CR", label: "Documento sem CR" },
   { value: "NF_CABECALHO_MAIOR_PEDIDO", label: "NF cabeçalho > pedido" },
+  { value: "QUANTIDADE_EXCEDENTE_DOCUMENTO", label: "Quantidade excedente" },
+  { value: "PRODUTO_FORA_DO_PEDIDO", label: "Produto fora do pedido" },
   { value: "DIVERGENCIA_PRECO", label: "Divergência de preço" },
   { value: "SEM_CONDICAO_PAGAMENTO", label: "Sem condição de pagamento" },
   { value: "VINCULO_INCOMPLETO", label: "Vínculo incompleto" },

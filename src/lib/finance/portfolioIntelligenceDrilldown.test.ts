@@ -61,7 +61,7 @@ describe("portfolioIntelligenceDrilldown", () => {
     assert.equal(cardKeyToAccordionKey("CONFIANCA_MEDIA_CARTEIRA"), null);
   });
 
-  it("lista as 8 sanfonas esperadas", () => {
+  it("lista as sanfonas na ordem financeiro → operacional → alertas", () => {
     assert.deepEqual([...INTELLIGENCE_ACCORDION_KEYS], [
       "RECEBIDO",
       "CR_ABERTO",
@@ -69,8 +69,9 @@ describe("portfolioIntelligenceDrilldown", () => {
       "CARTEIRA_FUTURA_PROVAVEL",
       "CARTEIRA_PRESENTE_ATENCAO",
       "CARTEIRA_VENCIDA_BLOQUEADA",
-      "DIVERGENCIA_TECNICA",
       "SEM_EVIDENCIA",
+      "DIVERGENCIA_TECNICA",
+      "NF_CABECALHO_MAIOR_PEDIDO",
     ]);
   });
 
@@ -94,7 +95,9 @@ describe("portfolioIntelligenceDrilldown", () => {
       }),
     ];
 
-    const byPrincipal = INTELLIGENCE_ACCORDION_KEYS.filter((k) => k !== "DIVERGENCIA_TECNICA")
+    const byPrincipal = INTELLIGENCE_ACCORDION_KEYS.filter(
+      (k) => k !== "DIVERGENCIA_TECNICA" && k !== "NF_CABECALHO_MAIOR_PEDIDO"
+    )
       .flatMap((k) => rowsForIntelligenceAccordion(k, rows).map((r) => r.orderCode));
     assert.equal(byPrincipal.length, 3);
     assert.equal(new Set(byPrincipal).size, 3);
