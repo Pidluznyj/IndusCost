@@ -5,7 +5,7 @@
 | **Projeto** | IndusCost / My Industry |
 | **Módulo** | Financeiro → Conciliação de Carteira → Inteligência / Auditoria |
 | **Data** | 2026-07-11 |
-| **Commit desta QA** | 0e5ca054e9543ba0477673b3d5bd143aac39bbc9 |
+| **Commit desta QA** | c9a7b68dc398f5a38a7f3f0c239183389c1f4c2f |
 | **Status geral** | **PRONTO** |
 
 ---
