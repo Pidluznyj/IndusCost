@@ -5,7 +5,7 @@
 | **Projeto** | IndusCost / My Industry |
 | **Contexto** | Funil Pedido → Caixa (OP = camada **opcional**) |
 | **Data** | 2026-07-11 |
-| **Tipo** | Guia de descoberta read-only |
+| **Tipo** | Guia de descoberta read-only + orientação para teste no servidor |
 | **Script** | `tmp-audits/discover-nomus-production-orders-api.ts` |
 
 > Relacionado: [`../sales/sales-order-to-cash-funnel-requirements.md`](../sales/sales-order-to-cash-funnel-requirements.md)
@@ -22,7 +22,11 @@ Esta descoberta **não**:
 - grava no banco;  
 - cria tabela;  
 - altera sync oficial;  
+- implementa integração de OP;  
 - torna OP obrigatória no funil.
+
+> **Escopo deste documento:** orientar o teste no servidor e documentar como interpretar o resultado.  
+> **Este prompt / esta etapa não integra OP.**
 
 ---
 
@@ -55,16 +59,18 @@ O código IndusCost já lê alguns desses campos do **raw do pedido** (`extractN
 1. Garantir `.env` com o **mesmo padrão** dos syncs Nomus:
    - `NOMUS_BASE_URL`
    - `NOMUS_TOKEN` e/ou `NOMUS_AUTH_HEADER_NAME` + `NOMUS_AUTH_HEADER_VALUE`
-2. No diretório do repositório:
+2. No servidor, no diretório do repositório:
 
 ```bash
-npx tsx tmp-audits/discover-nomus-production-orders-api.ts
+cd /opt/induscost
+npx tsx tmp-audits/discover-nomus-production-orders-api.ts --salesOrderCode "PD 02339" --verbose
 ```
 
-Com pedido específico:
+Variantes úteis:
 
 ```bash
-npx tsx tmp-audits/discover-nomus-production-orders-api.ts --salesOrderCode "PD 02339" --verbose
+cd /opt/induscost
+npx tsx tmp-audits/discover-nomus-production-orders-api.ts
 npx tsx tmp-audits/discover-nomus-production-orders-api.ts --salesOrderExternalId 12345 --limit 5
 ```
 
@@ -74,7 +80,7 @@ Autenticação: reutiliza `buildNomusHeaders` / `buildNomusUrl` de `src/lib/nomu
 
 ## 4. Como interpretar a saída
 
-Tabela:
+Tabela típica do script:
 
 ```text
 endpoint | status | resultado | campos detectados | classificação
@@ -91,19 +97,66 @@ endpoint | status | resultado | campos detectados | classificação
 
 Payloads são **sanitizados** (tokens, CPF/CNPJ/e-mail mascarados; amostra truncada).
 
+### Como agir conforme o resultado
+
+1. **Se endpoint CONFIRMADO**
+   - criar futura fase de integração **opcional** de OP;
+   - OP pode entrar entre Pedido e Documento no funil;
+   - ainda precisa validar se OP liga com **item de pedido** (não só com o cabeçalho).
+
+2. **Se endpoint POSSIVEL**
+   - **não** usar no funil ainda;
+   - pedir confirmação ao Nomus/suporte sobre recurso oficial e vínculo pedido↔OP.
+
+3. **Se endpoint INDISPONIVEL**
+   - manter funil **sem OP**;
+   - exibir “Produção não disponível na integração atual”.
+
+4. **Se endpoint INCONCLUSIVO**
+   - **não** implementar;
+   - revisar credenciais / documentação da API Nomus e repetir o teste.
+
 ---
 
-## 5. Decisão de arquitetura
+## 5. Resultado esperado do teste em produção/servidor
+
+O teste no servidor deve produzir, no mínimo:
+
+| Entrega | Conteúdo |
+|---------|----------|
+| **Tabela de endpoints** | Path, HTTP status, classificação (CONFIRMADO / POSSIVEL / INDISPONIVEL / INCONCLUSIVO) |
+| **Campos detectados** | Nomes de campos de OP no recurso próprio e/ou no raw de `pedidos` |
+| **Vínculo com pedido** | Evidência (ou ausência) de ligação OP ↔ pedido (ex.: código `PD 02339` / id externo) |
+| **Classificação final** | Uma das quatro classes acima, com justificativa curta |
+| **Amostra sanitizada** | Trecho truncado sem tokens/PII |
+
+**Não é resultado esperado:** migration, tabela nova, alteração de sync, write na Nomus, ou mudança no Funil Pedido → Caixa nesta etapa.
+
+Após o teste, registrar o resultado real (data, ambiente, classificação final e trecho sanitizado) neste documento ou em anexo versionado **sem dados sensíveis**.
+
+---
+
+## 6. Decisão de arquitetura
+
+**Mesmo se OP existir na API Nomus, ela será enriquecimento opcional — nunca dependência do funil.**
 
 | Resultado da descoberta | Ação no produto |
 |-------------------------|-----------------|
-| CONFIRMADO | Enriquecer Funil Pedido → Caixa com OP como **camada opcional** (sem migration sem autorização) |
-| POSSIVEL | Continuar investigação; preferir campos no raw do pedido se já existirem |
-| INDISPONIVEL / INCONCLUSIVO | Funil **segue sem OP**; UI mostra “Informação não disponível na importação atual.” quando o usuário pedir detalhe de produção |
+| **CONFIRMADO** | Planejar fase futura de integração **opcional**; OP entre Pedido e Documento; validar vínculo com item; sem migration sem autorização explícita |
+| **POSSIVEL** | Não usar no funil; confirmar com Nomus/suporte |
+| **INDISPONIVEL** | Funil segue sem OP; UI: “Produção não disponível na integração atual” |
+| **INCONCLUSIVO** | Não implementar; revisar credenciais/docs e retestar |
+
+Implicações fixas (independentes do resultado):
+
+- Fonte oficial do funil continua sendo **Pedido de Venda** (`SalesOrder`).  
+- Documento → NF → CR → Baixa não dependem de OP.  
+- Sem OP confiável, o funil **não quebra**.  
+- OP **não** manda em financeiro, comissões, CR ou baixa.
 
 ---
 
-## 6. OP é camada opcional
+## 7. OP é camada opcional
 
 Conforme requisitos do funil:
 
@@ -116,7 +169,7 @@ Cliente → Pedido → [OP, se API/dado confiável] → Documento → NF → CR 
 
 ---
 
-## 7. Funil não depende de OP
+## 8. Funil não depende de OP
 
 O **Funil Pedido → Caixa** / Funil de Receita Industrial tem fonte oficial = **Pedido de Venda**.
 
@@ -125,8 +178,9 @@ OP, se existir, é **enriquecimento operacional** — nunca requisito de DoD do 
 
 ---
 
-## 8. Segurança / escopo
+## 9. Segurança / escopo
 
 - Rodar apenas em ambiente com credencial autorizada (servidor/staging).  
 - Não commitar saída com dados sensíveis.  
-- Não habilitar write, sync ou migration a partir deste script.
+- Não habilitar write, sync ou migration a partir deste script.  
+- Esta etapa **não integra OP** — apenas prepara e documenta a descoberta.
