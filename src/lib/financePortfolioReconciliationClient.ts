@@ -714,9 +714,30 @@ export type PortfolioIntelligenceOrderDetail = {
     }>;
     executiveConclusion: string;
     evidenceWarnings?: string[];
+    operationalDeviationAlerts?: Array<{
+      code: string;
+      severity: string;
+      title: string;
+      message: string;
+      actionRecommendation: string;
+      affectedValue: number | null;
+      affectedItems: string[];
+      evidenceSource: string;
+    }>;
   } | null;
   /** Aviso dedicado quando o mapa não pôde ser montado. */
   fulfillmentMapWarning?: string | null;
+  /** Desvios operacionais (pedido × entrega × NF × CR × baixa). */
+  operationalDeviationAlerts?: Array<{
+    code: string;
+    severity: string;
+    title: string;
+    message: string;
+    actionRecommendation: string;
+    affectedValue: number | null;
+    affectedItems: string[];
+    evidenceSource: string;
+  }>;
   /** Avisos amigáveis (ex.: mapa de atendimento indisponível). */
   warnings?: string[];
   timeline: Array<{ at: string; kind: string; label: string }>;

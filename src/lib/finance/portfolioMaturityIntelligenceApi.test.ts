@@ -390,6 +390,8 @@ describe("portfolioMaturityIntelligenceApi", () => {
     assert.ok(Array.isArray(map!.receivablesCoverage), "8) receivablesCoverage");
     assert.ok(typeof map!.executiveConclusion === "string");
     assert.ok(Array.isArray(map!.evidenceWarnings));
+    assert.ok(Array.isArray(map!.operationalDeviationAlerts));
+    assert.ok(Array.isArray(detail.detail!.operationalDeviationAlerts));
     assert.equal(detail.detail!.fulfillmentMapWarning ?? null, null);
     // Maturidade (statusPrincipal) ≠ eixo financeiro do mapa
     assert.notEqual(

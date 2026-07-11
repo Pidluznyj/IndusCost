@@ -43,6 +43,10 @@ import {
   type PortfolioOrderFulfillmentMap,
   type PortfolioTechnicalAlert,
 } from "./portfolioOrderFulfillmentMap.js";
+import {
+  buildOperationalDeviationAlerts,
+  type OperationalDeviationAlert,
+} from "./portfolioOperationalDeviationAlerts.js";
 
 export const PORTFOLIO_INTELLIGENCE_DEFAULT_PAGE_SIZE = 50;
 export const PORTFOLIO_INTELLIGENCE_MAX_PAGE_SIZE = 200;
@@ -65,10 +69,13 @@ export type PortfolioFulfillmentMapApiDto = {
   receivablesCoverage: PortfolioOrderFulfillmentMap["receivablesCoverage"];
   executiveConclusion: string;
   evidenceWarnings: string[];
+  /** Desvios operacionais leigos (pedido × entrega × NF × CR × baixa). */
+  operationalDeviationAlerts: OperationalDeviationAlert[];
 };
 
 export function sanitizeFulfillmentMapForApi(
-  map: PortfolioOrderFulfillmentMap
+  map: PortfolioOrderFulfillmentMap,
+  operationalDeviationAlerts: OperationalDeviationAlert[] = []
 ): PortfolioFulfillmentMapApiDto {
   const technicalAlerts = (map.technicalAlerts ?? []).filter(
     (code): code is PortfolioTechnicalAlert =>
@@ -106,6 +113,10 @@ export function sanitizeFulfillmentMapForApi(
     evidenceWarnings: [...(map.evidenceWarnings ?? [])].filter(
       (w) => typeof w === "string" && w.trim().length > 0 && !/Prisma|stack trace/i.test(w)
     ),
+    operationalDeviationAlerts: operationalDeviationAlerts.map((a) => ({
+      ...a,
+      affectedItems: [...a.affectedItems],
+    })),
   };
 }
 export class PortfolioIntelligenceApiParseError extends Error {
@@ -482,22 +493,58 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
   const detailWarnings: string[] = [];
   let fulfillmentMap: PortfolioFulfillmentMapApiDto | null = null;
   let fulfillmentMapWarning: string | null = null;
+  let rawMap: PortfolioOrderFulfillmentMap | null = null;
   try {
     const builder = args.buildFulfillmentMap ?? buildOrderFulfillmentMap;
-    const rawMap = builder({
+    rawMap = builder({
       reconciliationFacts: args.facts,
       orderValue: maturity.orderValue,
       paymentTermsAvailable: paymentAvailable,
     });
-    fulfillmentMap = sanitizeFulfillmentMapForApi(rawMap);
+  } catch {
+    // Read-only / explicativo: não derruba o detalhe nem vaza stack/Prisma.
+    rawMap = null;
+    fulfillmentMapWarning = PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING;
+    detailWarnings.push(PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING);
+  }
+
+  const dataFreshness = buildPortfolioIntelligenceDataFreshness({
+    run: args.run,
+    facts: args.facts,
+    orderUpdatedAt: args.enrichment?.updatedAt ?? maturity.updatedAt,
+    receivedValueOverride: maturity.receivedValue,
+    openReceivableValueOverride: maturity.openReceivableValue,
+    latestRunId: args.latestRunId ?? args.run.id,
+    scope: "order",
+  });
+
+  const operationalDeviationAlerts = buildOperationalDeviationAlerts({
+    orderCode: maturity.orderCode,
+    orderValue: maturity.orderValue,
+    asOfDate: args.asOfDate ?? null,
+    expectedDeliveryDate: maturity.expectedDeliveryDate,
+    forecastDate: maturity.forecastDate,
+    forecastSource: maturity.forecastSource,
+    hasStockDocument: maturity.evidenceFlags.hasStockDocument,
+    hasNfe: maturity.evidenceFlags.hasNfe,
+    hasReceivable: maturity.evidenceFlags.hasReceivable,
+    hasOpenReceivable: maturity.evidenceFlags.hasOpenReceivable,
+    receivedValue: maturity.receivedValue,
+    openReceivableValue: maturity.openReceivableValue,
+    receivableDueDate: maturity.receivableDueDate,
+    receivableSettlementDate: maturity.receivableSettlementDate,
+    fulfillmentMap: rawMap,
+    // Não inventar baixa recente: só com evidência objetiva explícita (ausente aqui).
+    settlementEvidenceAfterRun: false,
+    runIsLatest: dataFreshness.isLatestRun,
+    dataStaleFlag: !dataFreshness.isLatestRun,
+  });
+
+  if (rawMap) {
+    fulfillmentMap = sanitizeFulfillmentMapForApi(rawMap, operationalDeviationAlerts);
     if (fulfillmentMap.evidenceWarnings?.length) {
       detailWarnings.push(...fulfillmentMap.evidenceWarnings);
     }
-  } catch {
-    // Read-only / explicativo: não derruba o detalhe nem vaza stack/Prisma.
-    fulfillmentMap = null;
-    fulfillmentMapWarning = PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING;
-    detailWarnings.push(PORTFOLIO_FULFILLMENT_MAP_UNAVAILABLE_WARNING);
   }
 
   const items = buildPortfolioOrderItemRows(args.facts);
@@ -529,16 +576,6 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
     });
   }
   timeline.sort((a, b) => a.at.localeCompare(b.at) || a.kind.localeCompare(b.kind));
-
-  const dataFreshness = buildPortfolioIntelligenceDataFreshness({
-    run: args.run,
-    facts: args.facts,
-    orderUpdatedAt: args.enrichment?.updatedAt ?? maturity.updatedAt,
-    receivedValueOverride: maturity.receivedValue,
-    openReceivableValueOverride: maturity.openReceivableValue,
-    latestRunId: args.latestRunId ?? args.run.id,
-    scope: "order",
-  });
 
   for (const w of dataFreshness.warnings) {
     if (!detailWarnings.includes(w)) detailWarnings.push(w);
@@ -617,6 +654,7 @@ export function buildPortfolioIntelligenceOrderDetailPayload(args: {
       },
       fulfillmentMap,
       fulfillmentMapWarning,
+      operationalDeviationAlerts,
       warnings: detailWarnings,
       timeline,
       values: {
