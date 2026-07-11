@@ -13,6 +13,8 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceCards.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceHelpPopover.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
     ];
     for (const f of files) {
       const src = read(f);
@@ -32,6 +34,7 @@ describe("portfolio intelligence UI", () => {
     assert.match(cards, /PortfolioIntelligenceHelpPopover/);
     assert.match(cards, /CARD_ORDER/);
     assert.match(cards, /formatFinanceCurrencyCompact|formatFinancePercent/);
+    assert.match(cards, /onCardClick/);
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);
     assert.match(help, /FALLBACK|Informação não disponível/);
@@ -43,10 +46,29 @@ describe("portfolio intelligence UI", () => {
     );
     assert.match(section, /\/api\/finance\/portfolio-reconciliation\/intelligence/);
     assert.match(section, /buildPortfolioIntelligenceListQuery/);
+    assert.match(section, /pageSize:\s*200/);
     assert.match(section, /FinanceModuleLoadingBlock/);
     assert.match(section, /FinanceModuleErrorBanner/);
     assert.match(section, /FinanceModuleEmptyState/);
+    assert.match(section, /PortfolioIntelligenceAccordions/);
+    assert.match(section, /handleCardClick|onCardClick/);
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
+  });
+
+  it("sanfonas e grid de drilldown estão ligados", () => {
+    const accordions = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx"
+    );
+    const grid = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx"
+    );
+    assert.match(accordions, /INTELLIGENCE_ACCORDION_KEYS/);
+    assert.match(accordions, /PortfolioIntelligenceOrdersGrid/);
+    assert.match(accordions, /DIVERGENCIA_TECNICA/);
+    assert.match(accordions, /Nenhum pedido|portfolio-intelligence-grid-empty|rowsForIntelligenceAccordion/);
+    assert.match(grid, /Nenhum pedido neste status/);
+    assert.match(grid, /CONFIDENCE_LABEL|Alta|Média|Baixa|Muito baixa/);
+    assert.match(grid, /onOpenOrder/);
   });
 
   it("página registra aba Inteligência da Carteira", () => {

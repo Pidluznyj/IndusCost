@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit } from "lucide-react";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -11,6 +11,9 @@ import {
   FinanceModuleErrorBanner,
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
+import { cardKeyToAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
+import type { IntelligenceAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
+import { PortfolioIntelligenceAccordions } from "./PortfolioIntelligenceAccordions";
 import { PortfolioIntelligenceCards } from "./PortfolioIntelligenceCards";
 
 type Props = {
@@ -31,6 +34,9 @@ export function PortfolioIntelligenceSection({
   const [payload, setPayload] = useState<PortfolioIntelligenceListPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<IntelligenceAccordionKey | null>(null);
+  /** Preparado para drawer futuro — clique na linha do grid. */
+  const [selectedSalesOrderId, setSelectedSalesOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!enabled) {
@@ -47,7 +53,7 @@ export function PortfolioIntelligenceSection({
         runId,
         customerExternalId,
         page: 1,
-        pageSize: 50,
+        pageSize: 200,
       });
       const data = await fetchJsonOk<PortfolioIntelligenceListPayload>(
         `/api/finance/portfolio-reconciliation/intelligence?${qs}`,
@@ -75,11 +81,37 @@ export function PortfolioIntelligenceSection({
   const noRun = payload != null && payload.ok === false;
   const hasCards = (payload?.cards?.length ?? 0) > 0;
 
+  const carteiraTotal = useMemo(() => {
+    const fromTotals = payload?.totals?.orderValue;
+    if (typeof fromTotals === "number" && Number.isFinite(fromTotals)) return fromTotals;
+    const card = payload?.cards?.find((c) => c.key === "CARTEIRA_TOTAL_ANALISADA");
+    return card?.value ?? 0;
+  }, [payload]);
+
+  const activeCardKey = useMemo(() => {
+    if (!expandedKey) return null;
+    if (expandedKey === "CARTEIRA_VENCIDA_BLOQUEADA") {
+      return "CARTEIRA_VENCIDA_BLOQUEADA";
+    }
+    return expandedKey;
+  }, [expandedKey]);
+
+  const handleCardClick = useCallback((cardKey: string) => {
+    const accordion = cardKeyToAccordionKey(cardKey);
+    if (!accordion) return;
+    setExpandedKey((prev) => (prev === accordion ? null : accordion));
+  }, []);
+
+  const handleOpenOrder = useCallback((salesOrderId: string) => {
+    setSelectedSalesOrderId(salesOrderId);
+  }, []);
+
   return (
     <section
       className="space-y-3"
       data-testid="portfolio-intelligence-section"
       aria-label="Inteligência da Carteira"
+      data-selected-order={selectedSalesOrderId ?? undefined}
     >
       <div className="flex items-start gap-2">
         <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" aria-hidden />
@@ -126,7 +158,12 @@ export function PortfolioIntelligenceSection({
       ) : null}
 
       {!noRun ? (
-        <PortfolioIntelligenceCards cards={payload?.cards ?? []} loading={loading && !hasCards} />
+        <PortfolioIntelligenceCards
+          cards={payload?.cards ?? []}
+          loading={loading && !hasCards}
+          onCardClick={handleCardClick}
+          activeCardKey={activeCardKey}
+        />
       ) : null}
 
       {!loading && !noRun && !error && payload && !hasCards ? (
@@ -134,6 +171,18 @@ export function PortfolioIntelligenceSection({
           title="Sem indicadores"
           description="A API não retornou cards para o filtro atual."
           icon={<BrainCircuit className="h-5 w-5" />}
+        />
+      ) : null}
+
+      {!noRun && payload && hasCards ? (
+        <PortfolioIntelligenceAccordions
+          groups={payload.groups ?? []}
+          cards={payload.cards ?? []}
+          rows={payload.rows ?? []}
+          carteiraTotal={carteiraTotal}
+          expandedKey={expandedKey}
+          onExpandedChange={setExpandedKey}
+          onOpenOrder={handleOpenOrder}
         />
       ) : null}
     </section>

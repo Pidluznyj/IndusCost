@@ -313,20 +313,61 @@ export type PortfolioIntelligenceCardDto = {
   };
 };
 
+export type PortfolioIntelligenceEvidenceFlags = {
+  hasNfe: boolean;
+  hasStockDocument: boolean;
+  hasAllocatedStockDocument: boolean;
+  hasReceivable: boolean;
+  hasReceived: boolean;
+  hasOpenReceivable: boolean;
+};
+
+export type PortfolioIntelligenceOrderRow = {
+  salesOrderId: string | null;
+  orderCode: string;
+  externalSalesOrderId: number | null;
+  customerName: string | null;
+  customerExternalId: number | null;
+  sellerName: string | null;
+  sellerExternalId: number | null;
+  issueDate: string | null;
+  expectedDeliveryDate: string | null;
+  forecastDate: string | null;
+  updatedAt: string | null;
+  orderValue: number;
+  receivableTotalValue: number;
+  receivedValue: number;
+  openReceivableValue: number;
+  statusPrincipal: string;
+  tagsAlerta: string[];
+  confidenceScore: number;
+  confidenceLabel: string;
+  confidenceReasons: string[];
+  recommendedAction: string;
+  mainReason: string;
+  daysSinceIssue: number | null;
+  daysSinceExpected: number | null;
+  nextRelevantDate: string | null;
+  evidenceFlags: PortfolioIntelligenceEvidenceFlags;
+  productExternalIds: number[];
+};
+
+export type PortfolioIntelligenceGroupDto = {
+  statusPrincipal: string;
+  title: string;
+  ordersCount: number;
+  orderValue: number;
+  averageConfidence: number;
+  orderCodes: string[];
+};
+
 export type PortfolioIntelligenceListPayload = {
   ok: boolean;
   message: string | null;
   cards: PortfolioIntelligenceCardDto[];
-  groups: Array<{
-    statusPrincipal: string;
-    title: string;
-    ordersCount: number;
-    orderValue: number;
-    averageConfidence: number;
-    orderCodes: string[];
-  }>;
+  groups: PortfolioIntelligenceGroupDto[];
   sellerKpis: Array<Record<string, unknown>>;
-  rows: Array<Record<string, unknown>>;
+  rows: PortfolioIntelligenceOrderRow[];
   pagination: {
     page: number;
     pageSize: number;

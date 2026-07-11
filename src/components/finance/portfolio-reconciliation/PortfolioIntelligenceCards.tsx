@@ -124,13 +124,22 @@ function formatPrimaryValue(card: PortfolioIntelligenceCardDto): string {
 type Props = {
   cards: PortfolioIntelligenceCardDto[];
   loading?: boolean;
+  /** Clique no card (exceto no ?) — filtra/abre sanfona correspondente. */
+  onCardClick?: (cardKey: string) => void;
+  /** Card cuja sanfona está aberta (destaque suave). */
+  activeCardKey?: string | null;
 };
 
 /**
  * Grade horizontal de cards da Inteligência da Carteira.
  * Só formata — números e explanations vêm da API.
  */
-export function PortfolioIntelligenceCards({ cards, loading = false }: Props) {
+export function PortfolioIntelligenceCards({
+  cards,
+  loading = false,
+  onCardClick,
+  activeCardKey = null,
+}: Props) {
   const byKey = new Map(cards.map((c) => [c.key, c]));
   const ordered = CARD_ORDER.map((key) => byKey.get(key)).filter(
     (c): c is PortfolioIntelligenceCardDto => c != null
@@ -172,16 +181,43 @@ export function PortfolioIntelligenceCards({ cards, loading = false }: Props) {
         const tone = TONE_BY_KEY[card.key] ?? "neutral";
         const Icon = ICON_BY_KEY[card.key] ?? Wallet;
         const complete = hasCompleteExplanation(card);
+        const clickable = Boolean(onCardClick);
+        const isActive = activeCardKey === card.key;
         return (
           <article
             key={card.key}
+            role={clickable ? "button" : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            onClick={
+              clickable
+                ? () => {
+                    onCardClick?.(card.key);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              clickable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onCardClick?.(card.key);
+                    }
+                  }
+                : undefined
+            }
             className={cn(
-              "relative flex min-h-[5.5rem] flex-col rounded-xl border px-2.5 py-2 shadow-sm",
-              TONE_CLASS[tone]
+              "relative flex min-h-[5.5rem] flex-col rounded-xl border px-2.5 py-2 shadow-sm outline-none",
+              TONE_CLASS[tone],
+              clickable && "cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/80",
+              isActive && "ring-2 ring-sky-400/50"
             )}
             data-testid={`portfolio-intelligence-card-${card.key}`}
           >
-            <div className="absolute right-1.5 top-1.5 z-10">
+            <div
+              className="absolute right-1.5 top-1.5 z-10"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
               <PortfolioIntelligenceHelpPopover
                 title={card.title}
                 explanation={card.explanation}
