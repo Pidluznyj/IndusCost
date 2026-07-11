@@ -2,7 +2,7 @@
 
 **Projeto:** IndusCost / My Industry  
 **Data:** 2026-07-10  
-**Commit de liberação:** `bedb440c1bea85432cd5a90ac18aeb3a055f71b1`  
+**Commit de liberação:** `6a114e11f9eeb38f389367fd1f990226e2a89fe0` (checklist em `bedb440`)  
 **Veredito:** **PRONTO PARA DEPLOY** (com ressalva de revalidar Britânia na run materializada em ambiente com DB)
 
 ---
