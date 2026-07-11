@@ -7,8 +7,8 @@
 | **Data** | 2026-07-11 |
 | **Tipo** | Relatório final de negócio + técnico (somente documentação) |
 | **Status final** | **PRONTO** |
-| **HEAD deste relatório** | `337b0b8` |
-| **Revalidação deste relatório** | Gates + scripts **PASS** na mesma data (FIXTURE / motor puro) |
+| **HEAD base (QA)** | `43f062c` |
+| **Revalidação deste relatório** | Gates + scripts **PASS** (FIXTURE / motor puro) — alinhado à QA `d28d969`/`43f062c` |
 
 > Relacionados:  
 > [`portfolio-cash-forecast-audit-requirements.md`](./portfolio-cash-forecast-audit-requirements.md) ·  
@@ -374,7 +374,7 @@ Totais esperados (`BRITANIA_INTELLIGENCE_EXPECTED`):
 | Futuro + presente plausível | **R$ 495.460,00** (3 pedidos: PD 02607, 02740, 02739) |
 | Vencido / bloqueado | **R$ 884.836,00** (10 pedidos, âncora PD 02159 = R$ 320.070) |
 
-### PASS/FAIL dos scripts (revalidação 2026-07-11)
+### PASS/FAIL dos scripts (revalidação 2026-07-11 — após QA `43f062c`)
 
 | Script | Resultado |
 |--------|-----------|
