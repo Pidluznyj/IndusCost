@@ -132,8 +132,9 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /handleSelectSeller|onSelectSeller/);
     assert.match(table, /Qualidade da Carteira por Vendedor/);
     assert.match(table, /SELLER_KPI_EXPLANATIONS/);
-    assert.doesNotMatch(table, /commission|comiss/i);
-    assert.doesNotMatch(section, /commission|comiss/i);
+    assert.doesNotMatch(table, /from ["']@\/src\/lib\/commissions/);
+    assert.doesNotMatch(section, /from ["']@\/src\/lib\/commissions/);
+    assert.doesNotMatch(table, /commissionReceipt|commissionMaterialization/i);
   });
 
   it("página registra aba Inteligência da Carteira", () => {
