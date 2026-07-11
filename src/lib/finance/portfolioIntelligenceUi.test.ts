@@ -128,7 +128,11 @@ describe("portfolio intelligence UI", () => {
       drawer,
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\//
     );
-    assert.match(drawer, /Mapa de atendimento/);
+    assert.match(drawer, /Mapa de Atendimento/);
+    assert.ok(
+      drawer.indexOf("Mapa de Atendimento") < drawer.indexOf('label: "Resumo"') ||
+        drawer.indexOf('{ id: "mapa"') < drawer.indexOf('{ id: "resumo"')
+    );
     assert.match(drawer, /Resumo/);
     assert.match(drawer, /Pedido/);
     assert.match(drawer, /Itens/);
@@ -138,11 +142,23 @@ describe("portfolio intelligence UI", () => {
     assert.match(drawer, /Histórico/);
     assert.match(drawer, /fulfillmentMap|FulfillmentMapTab|drawer-mapa/);
     assert.match(drawer, /Financeiro|Atendimento do pedido|Alertas técnicos/);
+    assert.match(drawer, /Excedente|excessQuantity|totalExcessQuantity/);
+    assert.match(drawer, /Fora deste pedido|valueNotAttributedToOrder|Não atribuído ao pedido/);
+    assert.match(drawer, /financialStatus|FINANCIAL_STATUS_LABEL/);
+    assert.match(drawer, /operationalStatus|OPERATIONAL_STATUS_LABEL/);
+    assert.match(drawer, /Valor do pedido|orderValue/);
+    assert.match(drawer, /Cabeçalho NF|nfeHeaderTotal/);
     assert.match(
       drawer,
-      /Não encontramos NF ou documento de saída vinculado a este pedido/
+      /não é o valor do pedido|não deve ser somado à carteira/i
     );
-    assert.match(drawer, /Ainda não virou Contas a Receber|Nenhum Contas a Receber/);
+    assert.match(drawer, /Atendido com excedente/);
+    assert.match(drawer, /pctDisplay|Math\.min\(100/);
+    assert.match(
+      drawer,
+      /Nenhum documento de saída encontrado para este pedido/
+    );
+    assert.match(drawer, /Nenhum Contas a Receber encontrado para este pedido/);
     assert.match(
       drawer,
       /Condição de pagamento não disponível na importação atual|Informação não disponível na importação atual/
@@ -155,6 +171,7 @@ describe("portfolio intelligence UI", () => {
       /status >= 500|Tente novamente em instantes/
     );
     assert.doesNotMatch(drawer, /stack|e\.stack|JSON\.stringify\(e/);
+    assert.doesNotMatch(drawer, /JSON\.stringify\(detail|JSON\.stringify\(map/);
     assert.doesNotMatch(drawer, /@prisma\/client/);
   });
 
@@ -212,11 +229,11 @@ describe("portfolio intelligence UI", () => {
     assert.match(accordions, /ordersCount|orderCodes|rowsForIntelligenceAccordion/);
     assert.match(
       drawer,
-      /Não encontramos NF ou documento de saída vinculado a este pedido/
+      /Nenhum documento de saída encontrado para este pedido/
     );
     assert.match(
       drawer,
-      /Ainda não virou Contas a Receber|Nenhum Contas a Receber|Mapa de atendimento/
+      /Nenhum Contas a Receber encontrado para este pedido|Mapa de Atendimento/
     );
     assert.match(help, /O que significa/);
     assert.match(help, /Como calculamos/);

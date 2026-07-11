@@ -28,7 +28,7 @@ import {
 const UNAVAILABLE = "Informação não disponível na importação atual.";
 
 const TABS = [
-  { id: "mapa", label: "Mapa de atendimento" },
+  { id: "mapa", label: "Mapa de Atendimento" },
   { id: "resumo", label: "Resumo" },
   { id: "pedido", label: "Pedido" },
   { id: "itens", label: "Itens" },
@@ -258,14 +258,12 @@ export function PortfolioIntelligenceOrderDrawer({
           </div>
 
           {detail && classification ? (
-            <div className="mt-3 space-y-2.5">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-base font-semibold tabular-nums tracking-tight text-foreground">
+            <div className="mt-3 space-y-3" data-testid="portfolio-intelligence-drawer-header">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-lg font-semibold tabular-nums tracking-tight text-foreground">
                   {formatFinanceCurrency(detail.values.orderValue)}
                 </span>
-                <span className="rounded-lg border border-border/80 bg-muted/30 px-2.5 py-1 font-medium">
-                  {statusLabel(classification.statusPrincipal)}
-                </span>
+                <span className="text-xs text-muted-foreground">valor do pedido</span>
                 <span
                   className={cn(
                     "inline-flex flex-col rounded-lg border px-2.5 py-1",
@@ -275,26 +273,59 @@ export function PortfolioIntelligenceOrderDrawer({
                 >
                   <span className="text-[11px] font-semibold leading-tight">{conf.label}</span>
                   <span className="text-[10px] tabular-nums opacity-80">
-                    score {classification.confidenceScore}
+                    confiança {classification.confidenceScore}
                   </span>
                 </span>
               </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                <span className="font-medium text-foreground">Próximo passo: </span>
-                {classification.recommendedAction}
-              </p>
-              {classification.tagsAlerta.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {classification.tagsAlerta.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-lg border border-orange-200/80 bg-orange-50/70 px-2 py-0.5 text-[10px] font-medium text-orange-950"
-                    >
-                      {tagLabel(tag)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                <MetaChip
+                  label="Financeiro"
+                  value={
+                    FINANCIAL_STATUS_LABEL[
+                      (detail.fulfillmentMap?.financialStatus ??
+                        classification.financialStatus ??
+                        "") as keyof typeof FINANCIAL_STATUS_LABEL
+                    ] ?? statusLabel(classification.statusPrincipal)
+                  }
+                />
+                <MetaChip
+                  label="Operacional"
+                  value={
+                    OPERATIONAL_STATUS_LABEL[
+                      (detail.fulfillmentMap?.operationalStatus ??
+                        classification.operationalStatus ??
+                        "") as keyof typeof OPERATIONAL_STATUS_LABEL
+                    ] ?? "—"
+                  }
+                />
+                <MetaChip
+                  label="Maturidade"
+                  value={statusLabel(classification.statusPrincipal)}
+                />
+              </div>
+
+              {(() => {
+                const alerts =
+                  detail.fulfillmentMap?.technicalAlerts ??
+                  classification.technicalAlerts ??
+                  classification.tagsAlerta ??
+                  [];
+                if (alerts.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1.5">
+                    {alerts.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-lg border border-orange-200/80 bg-orange-50/70 px-2 py-0.5 text-[10px] font-medium text-orange-950"
+                      >
+                        {TECHNICAL_ALERT_LABEL[tag] ?? tagLabel(tag)}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {detail.warnings && detail.warnings.length > 0 ? (
                 <div
                   className="space-y-1.5"
@@ -310,66 +341,8 @@ export function PortfolioIntelligenceOrderDrawer({
                   ))}
                 </div>
               ) : null}
-              <p
-                className="rounded-xl border border-sky-200/70 bg-sky-50/40 px-3.5 py-2.5 text-sm leading-relaxed text-foreground"
-                data-testid="portfolio-intelligence-drawer-executive"
-              >
-                {detail.fulfillmentMap?.executiveConclusion ?? detail.executiveSummary}
-              </p>
-              <div
-                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-                data-testid="portfolio-intelligence-drawer-axes"
-              >
-                <AxisCard
-                  title="Financeiro"
-                  value={
-                    FINANCIAL_STATUS_LABEL[
-                      (detail.fulfillmentMap?.financialStatus ??
-                        classification.financialStatus ??
-                        "") as keyof typeof FINANCIAL_STATUS_LABEL
-                    ] ??
-                    statusLabel(classification.statusPrincipal)
-                  }
-                  tone="green"
-                />
-                <AxisCard
-                  title="Atendimento do pedido"
-                  value={
-                    OPERATIONAL_STATUS_LABEL[
-                      (detail.fulfillmentMap?.operationalStatus ??
-                        classification.operationalStatus ??
-                        "") as keyof typeof OPERATIONAL_STATUS_LABEL
-                    ] ?? "—"
-                  }
-                  hint={
-                    detail.fulfillmentMap?.fulfillmentSummary.fulfillmentPercent != null
-                      ? `${detail.fulfillmentMap.fulfillmentSummary.fulfillmentPercent}% dos itens`
-                      : undefined
-                  }
-                  tone="blue"
-                />
-                <AxisCard
-                  title="Alertas técnicos"
-                  value={
-                    (detail.fulfillmentMap?.technicalAlerts ??
-                      classification.technicalAlerts ??
-                      classification.tagsAlerta ??
-                      []
-                    ).length > 0
-                      ? (
-                          detail.fulfillmentMap?.technicalAlerts ??
-                          classification.technicalAlerts ??
-                          classification.tagsAlerta
-                        )
-                          .slice(0, 2)
-                          .map((t) => TECHNICAL_ALERT_LABEL[t] ?? t)
-                          .join(" · ")
-                      : "Nenhum crítico"
-                  }
-                  hint="Podem coexistir com o financeiro; não somam carteira"
-                  tone="orange"
-                />
-              </div>
+
+              <DrawerAxisCards detail={detail} />
             </div>
           ) : null}
         </header>
@@ -611,7 +584,7 @@ function TabContent({
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-drawer-nf">
         {empty ? (
-          <EmptyState message="Não encontramos NF ou documento de saída vinculado a este pedido." />
+          <EmptyState message="Nenhum documento de saída encontrado para este pedido." />
         ) : (
           <>
             <SectionCard title={`Notas fiscais (${nfes.length})`}>
@@ -751,7 +724,7 @@ function TabContent({
     return (
       <div className="space-y-3" data-testid="portfolio-intelligence-drawer-cr">
         {!hasCr ? (
-          <EmptyState message="Ainda não virou Contas a Receber — nenhum título encontrado para este pedido." />
+          <EmptyState message="Nenhum Contas a Receber encontrado para este pedido." />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -889,79 +862,245 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MetaChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-muted/25 px-2 py-1">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="font-semibold text-foreground">{value}</span>
+    </span>
+  );
+}
+
+function pctDisplay(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.min(100, Math.max(0, value))}%`;
+}
+
+function hasAlert(
+  alerts: readonly string[] | undefined,
+  code: string
+): boolean {
+  return (alerts ?? []).includes(code);
+}
+
+function DrawerAxisCards({ detail }: { detail: PortfolioIntelligenceOrderDetail }) {
+  const map = detail.fulfillmentMap;
+  const s = map?.fulfillmentSummary;
+  const fin =
+    FINANCIAL_STATUS_LABEL[
+      (map?.financialStatus ??
+        detail.classification.financialStatus ??
+        "") as keyof typeof FINANCIAL_STATUS_LABEL
+    ] ?? statusLabel(detail.classification.statusPrincipal);
+  const alerts = map?.technicalAlerts ?? detail.classification.technicalAlerts ?? [];
+  const items = map?.orderItemsCoverage ?? [];
+  const attendedItems = items.filter(
+    (r) => (r.attendedQuantityCapped ?? r.attendedQuantity) > 0.000001
+  ).length;
+  const pendingItems = items.filter((r) => r.remainingQuantity > 0.000001).length;
+  const excessItems = items.filter(
+    (r) => (r.excessQuantityForThisProduct ?? 0) > 0.000001
+  ).length;
+
+  return (
+    <div
+      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+      data-testid="portfolio-intelligence-drawer-axes"
+    >
+      <AxisCard title="Financeiro" tone="green">
+        <p className="text-sm font-semibold text-foreground">{fin}</p>
+        <dl className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+          <div className="flex justify-between gap-2">
+            <dt>Valor CR</dt>
+            <dd className="tabular-nums font-medium text-foreground">
+              {formatFinanceCurrency(s?.receivableTotalValue ?? s?.receivableTotal ?? detail.values.receivableTotalValue)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>Recebido</dt>
+            <dd className="tabular-nums font-medium text-foreground">
+              {formatFinanceCurrency(s?.receivedValue ?? detail.values.receivedValue)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>Aberto</dt>
+            <dd className="tabular-nums font-medium text-foreground">
+              {formatFinanceCurrency(s?.openReceivableValue ?? detail.values.openReceivableValue)}
+            </dd>
+          </div>
+        </dl>
+      </AxisCard>
+
+      <AxisCard title="Atendimento do pedido" tone="blue">
+        <p className="text-sm font-semibold text-foreground">
+          {pctDisplay(s?.fulfillmentPercent)} atendimento
+        </p>
+        <dl className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+          <div className="flex justify-between gap-2">
+            <dt>Itens atendidos</dt>
+            <dd className="tabular-nums font-medium text-foreground">{attendedItems}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>Itens pendentes</dt>
+            <dd className="tabular-nums font-medium text-foreground">{pendingItems}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>Com excedente</dt>
+            <dd className="tabular-nums font-medium text-foreground">
+              {s?.hasExcessQuantity
+                ? `${excessItems || "sim"} · ${formatFinanceInteger(s.totalExcessQuantity ?? 0)}`
+                : "0"}
+            </dd>
+          </div>
+        </dl>
+      </AxisCard>
+
+      <AxisCard title="Alertas técnicos" tone="orange">
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Podem coexistir com o financeiro; não somam carteira
+        </p>
+        <ul className="mt-2 space-y-1 text-[11px] text-foreground">
+          <li className="flex justify-between gap-2">
+            <span>NF maior que pedido</span>
+            <span className="font-medium">
+              {hasAlert(alerts, "NF_CABECALHO_MAIOR_PEDIDO") || s?.hasHeaderInflationRisk
+                ? "Sim"
+                : "Não"}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span>Divergência de preço</span>
+            <span className="font-medium">
+              {hasAlert(alerts, "DIVERGENCIA_PRECO") ? "Sim" : "Não"}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span>Produto fora do pedido</span>
+            <span className="font-medium">
+              {hasAlert(alerts, "PRODUTO_FORA_DO_PEDIDO") || s?.hasProductsOutsideOrder
+                ? "Sim"
+                : "Não"}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span>Quantidade excedente</span>
+            <span className="font-medium">
+              {hasAlert(alerts, "QUANTIDADE_EXCEDENTE_DOCUMENTO") || s?.hasExcessQuantity
+                ? "Sim"
+                : "Não"}
+            </span>
+          </li>
+        </ul>
+      </AxisCard>
+    </div>
+  );
+}
+
 function AxisCard({
   title,
-  value,
-  hint,
   tone,
+  children,
 }: {
   title: string;
-  value: string;
-  hint?: string;
   tone: "green" | "blue" | "orange";
+  children: React.ReactNode;
 }) {
   const toneClass =
     tone === "green"
       ? "border-emerald-200/80 bg-emerald-50/50"
       : tone === "blue"
         ? "border-sky-200/80 bg-sky-50/50"
-        : "border-orange-200/80 bg-orange-50/50";
+        : "border-orange-200/80 bg-orange-50/40";
   return (
     <div className={cn("rounded-xl border px-3 py-2.5", toneClass)}>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
-      <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{value}</p>
-      {hint ? <p className="mt-1 text-[10px] text-muted-foreground">{hint}</p> : null}
+      <div className="mt-1">{children}</div>
     </div>
   );
+}
+
+function itemFulfillmentLabel(row: {
+  remainingQuantity: number;
+  excessQuantityForThisProduct?: number;
+  attendedQuantityCapped?: number;
+  attendedQuantity?: number;
+}): string | null {
+  const attended = row.attendedQuantityCapped ?? row.attendedQuantity ?? 0;
+  const excess = row.excessQuantityForThisProduct ?? 0;
+  if (row.remainingQuantity <= 0.000001 && excess > 0.000001) {
+    return "Atendido com excedente";
+  }
+  if (row.remainingQuantity <= 0.000001 && attended > 0) return null;
+  return null;
 }
 
 function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetail }) {
   const map = detail.fulfillmentMap;
   if (!map) {
     return (
-      <EmptyState message="Mapa de atendimento não disponível nesta conciliação." />
+      <EmptyState message="Não foi possível montar o mapa de atendimento deste pedido com as evidências atuais." />
     );
   }
   const s = map.fulfillmentSummary;
   return (
     <div className="space-y-4" data-testid="portfolio-intelligence-drawer-mapa">
-      <p className="text-sm leading-relaxed text-foreground">{map.executiveConclusion}</p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        <InfoCard label="Pedido" value={formatFinanceCurrency(s.orderValue)} />
+      <p
+        className="rounded-xl border border-sky-200/80 bg-sky-50/50 px-3.5 py-3 text-sm leading-relaxed text-foreground"
+        data-testid="portfolio-intelligence-drawer-executive"
+      >
+        {map.executiveConclusion}
+      </p>
+
+      <div
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+        data-testid="portfolio-intelligence-drawer-mapa-resumo"
+      >
+        <InfoCard label="Valor do pedido" value={formatFinanceCurrency(s.orderValue)} />
         <InfoCard
-          label="Atendido (itens)"
-          value={`${formatFinanceInteger(
-            s.totalAttendedQuantityCapped ?? s.attendedQuantity
-          )} · ${
-            s.fulfillmentPercent != null ? `${s.fulfillmentPercent}%` : "—"
-          }`}
+          label="Valor atribuído ao pedido"
+          value={formatFinanceCurrency(
+            s.attributedOrderValueByOrderPrice ?? s.attributedOrderValue
+          )}
         />
         <InfoCard
-          label="Restante"
-          value={formatFinanceInteger(s.totalRemainingQuantity ?? s.remainingQuantity)}
-        />
-        <InfoCard
-          label="CR"
-          value={formatFinanceCurrency(s.receivableTotalValue ?? s.receivableTotal)}
-        />
-        <InfoCard label="Recebido" value={formatFinanceCurrency(s.receivedValue)} />
-        <InfoCard label="Aberto" value={formatFinanceCurrency(s.openReceivableValue)} />
-        <InfoCard
-          label="Cabeçalho NF"
+          label="Cabeçalho NF/documento"
           value={formatFinanceCurrency(s.nfeHeaderTotalValue ?? s.nfeHeaderTotal)}
         />
         <InfoCard
-          label="Cabeçalho não atribuído"
+          label="Não atribuído ao pedido"
           value={formatFinanceCurrency(
             s.nfeHeaderNotAttributedToOrderValue ?? s.nfeHeaderNotAttributed
           )}
         />
+        <InfoCard label="% atendimento" value={pctDisplay(s.fulfillmentPercent)} />
+        <InfoCard
+          label="Qtde pedida"
+          value={formatFinanceInteger(s.totalOrderedQuantity ?? s.totalOrderQuantity)}
+        />
+        <InfoCard
+          label="Qtde atendida"
+          value={formatFinanceInteger(
+            s.totalAttendedQuantityCapped ?? s.attendedQuantity
+          )}
+        />
+        <InfoCard
+          label="Qtde faltante"
+          value={formatFinanceInteger(s.totalRemainingQuantity ?? s.remainingQuantity)}
+        />
+        <InfoCard
+          label="Qtde excedente"
+          value={formatFinanceInteger(s.totalExcessQuantity ?? 0)}
+        />
       </div>
+
       {s.hasHeaderInflationRisk ? (
         <p className="rounded-xl border border-orange-200/80 bg-orange-50/60 px-3 py-2 text-xs text-orange-950">
-          Alerta: soma dos cabeçalhos de NF é maior que o valor do pedido. O cabeçalho{" "}
+          Cabeçalho de NF ({formatFinanceCurrency(s.nfeHeaderTotalValue ?? s.nfeHeaderTotal)})
+          é maior que o valor do pedido ({formatFinanceCurrency(s.orderValue)}). O cabeçalho{" "}
           <strong>não</strong> é o valor do pedido e não deve ser somado à carteira.
         </p>
       ) : null}
@@ -971,72 +1110,97 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
           <EmptyState message="Sem itens do pedido na materialização." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[720px] w-full text-left text-xs">
+            <table className="min-w-[980px] w-full text-left text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground">
                 <tr>
                   <th className="py-1.5 pr-2">Produto</th>
+                  <th className="py-1.5 pr-2">Cód. externo</th>
+                  <th className="py-1.5 pr-2">Descrição</th>
                   <th className="py-1.5 pr-2 text-right">Pedida</th>
                   <th className="py-1.5 pr-2 text-right">Atendida</th>
                   <th className="py-1.5 pr-2 text-right">Saldo</th>
-                  <th className="py-1.5 pr-2 text-right">%</th>
-                  <th className="py-1.5 pr-2 text-right">Valor</th>
+                  <th className="py-1.5 pr-2 text-right">Excedente</th>
+                  <th className="py-1.5 pr-2 text-right">% atendido</th>
+                  <th className="py-1.5 pr-2 text-right">Valor item</th>
+                  <th className="py-1.5 pr-2 text-right">Valor atendido</th>
                   <th className="py-1.5 pr-2">Docs/NFs</th>
                   <th className="py-1.5">Alertas</th>
                 </tr>
               </thead>
               <tbody>
-                {map.orderItemsCoverage.map((row) => (
-                  <tr
-                    key={row.salesOrderItemId ?? String(row.productExternalId)}
-                    className="border-t border-border/40"
-                  >
-                    <td className="py-1.5 pr-2">
-                      {row.productCode ?? row.productExternalId ?? "—"}
-                      {row.description ? (
-                        <span className="block text-[10px] text-muted-foreground">
-                          {row.description}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceInteger(row.orderedQuantity)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceInteger(
-                        row.attendedQuantityCapped ?? row.attendedQuantity
-                      )}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceInteger(row.remainingQuantity)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {(row.fulfillmentPercentCapped ?? row.fulfillmentPercent) != null
-                        ? `${row.fulfillmentPercentCapped ?? row.fulfillmentPercent}%`
-                        : "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceCurrency(row.orderItemValue)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-[10px]">
-                      {row.documentsUsed.length === 0
-                        ? "—"
-                        : row.documentsUsed
-                            .map(
-                              (d) =>
-                                d.nfeNumber ??
-                                (d.nfeExternalId != null
-                                  ? `NF ${d.nfeExternalId}`
-                                  : d.stockDocumentExternalId != null
+                {map.orderItemsCoverage.map((row) => {
+                  const excess = row.excessQuantityForThisProduct ?? 0;
+                  const label = itemFulfillmentLabel(row);
+                  return (
+                    <tr
+                      key={row.salesOrderItemId ?? String(row.externalProductId ?? row.productExternalId)}
+                      className="border-t border-border/40 align-top"
+                    >
+                      <td className="py-1.5 pr-2">
+                        {row.productCode ?? row.externalProductId ?? row.productExternalId ?? "—"}
+                        {label ? (
+                          <span className="mt-0.5 block text-[10px] font-medium text-amber-800">
+                            {label}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-1.5 pr-2 tabular-nums">
+                        {row.externalProductId ?? row.productExternalId ?? "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 text-muted-foreground">
+                        {row.description?.trim() || "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceInteger(row.orderedQuantity)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceInteger(
+                          row.attendedQuantityCapped ?? row.attendedQuantity
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceInteger(row.remainingQuantity)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums text-orange-900">
+                        {formatFinanceInteger(excess)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {pctDisplay(
+                          row.fulfillmentPercentCapped ?? row.fulfillmentPercent
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(row.orderItemValue)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(row.attendedValueByOrderPrice)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-[10px]">
+                        {row.documentsUsed.length === 0
+                          ? "—"
+                          : row.documentsUsed
+                              .map((d) => {
+                                const nf =
+                                  d.nfeNumber ??
+                                  (d.nfeExternalId != null ? `NF ${d.nfeExternalId}` : null);
+                                const doc =
+                                  d.stockDocumentExternalId != null
                                     ? `Doc ${d.stockDocumentExternalId}`
-                                    : "—")
-                            )
-                            .join(", ")}
-                    </td>
-                    <td className="py-1.5 text-[10px] text-orange-900">
-                      {row.alerts.length ? row.alerts.join(", ") : "—"}
-                    </td>
-                  </tr>
-                ))}
+                                    : null;
+                                return [nf, doc].filter(Boolean).join(" / ") || "—";
+                              })
+                              .join(", ")}
+                      </td>
+                      <td className="py-1.5 text-[10px] text-orange-900">
+                        {row.alerts.length
+                          ? row.alerts
+                              .map((a) => TECHNICAL_ALERT_LABEL[a] ?? a)
+                              .join(", ")
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1045,72 +1209,93 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
 
       <SectionCard title="Documentos de saída / NFs">
         {map.stockDocumentsCoverage.length === 0 ? (
-          <EmptyState message="Não encontramos NF ou documento de saída vinculado a este pedido." />
+          <EmptyState message="Nenhum documento de saída encontrado para este pedido." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[720px] w-full text-left text-xs">
+            <table className="min-w-[960px] w-full text-left text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground">
                 <tr>
-                  <th className="py-1.5 pr-2">NF/doc</th>
+                  <th className="py-1.5 pr-2">NF</th>
+                  <th className="py-1.5 pr-2">Documento</th>
                   <th className="py-1.5 pr-2">Data</th>
-                  <th className="py-1.5 pr-2 text-right">Cabeçalho</th>
-                  <th className="py-1.5 pr-2 text-right">Atribuído</th>
-                  <th className="py-1.5 pr-2 text-right">Fora do pedido</th>
-                  <th className="py-1.5 pr-2">Casados</th>
-                  <th className="py-1.5">Excedentes</th>
+                  <th className="py-1.5 pr-2 text-right">Valor cabeçalho</th>
+                  <th className="py-1.5 pr-2 text-right">Atribuído ao pedido</th>
+                  <th className="py-1.5 pr-2 text-right">Fora deste pedido</th>
+                  <th className="py-1.5 pr-2">Itens casados</th>
+                  <th className="py-1.5 pr-2">Itens fora do pedido</th>
+                  <th className="py-1.5 pr-2">Excedentes</th>
+                  <th className="py-1.5">Alertas</th>
                 </tr>
               </thead>
               <tbody>
-                {map.stockDocumentsCoverage.map((doc) => (
-                  <tr
-                    key={`${doc.nfeExternalId ?? ""}-${doc.stockDocumentExternalId ?? ""}`}
-                    className="border-t border-border/40 align-top"
-                  >
-                    <td className="py-1.5 pr-2">
-                      {doc.nfeNumber ?? doc.nfeExternalId ?? "—"}
-                      {doc.stockDocumentExternalId != null ? (
-                        <span className="block text-[10px] text-muted-foreground">
-                          Doc {doc.stockDocumentExternalId}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-1.5 pr-2 tabular-nums">
-                      {formatFinanceDate(doc.date)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceCurrency(doc.nfeHeaderValue)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceCurrency(doc.valueAttributedToOrder)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatFinanceCurrency(doc.valueNotAttributedToOrder)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-[10px]">
-                      {doc.matchedItems.length === 0
-                        ? "—"
-                        : doc.matchedItems
-                            .map(
-                              (m) =>
-                                `${m.productExternalId ?? "?"} (${formatFinanceInteger(m.allocatedQuantity)})`
-                            )
-                            .join(", ")}
-                    </td>
-                    <td className="py-1.5 text-[10px] text-orange-900">
-                      {doc.surplusItems.length === 0 &&
-                      (doc.itemsOutsideOrder ?? doc.unmatchedItems).length === 0
-                        ? "—"
-                        : [
-                            ...doc.surplusItems.map(
-                              (x) => `excedente ${x.productExternalId ?? "?"}`
-                            ),
-                            ...(doc.itemsOutsideOrder ?? doc.unmatchedItems).map(
-                              (x) => `fora ${x.productExternalId ?? "?"}`
-                            ),
-                          ].join(", ")}
-                    </td>
-                  </tr>
-                ))}
+                {map.stockDocumentsCoverage.map((doc) => {
+                  const outside = doc.itemsOutsideOrder ?? doc.unmatchedItems ?? [];
+                  return (
+                    <tr
+                      key={`${doc.nfeExternalId ?? ""}-${doc.stockDocumentExternalId ?? ""}`}
+                      className="border-t border-border/40 align-top"
+                    >
+                      <td className="py-1.5 pr-2">
+                        {doc.nfeNumber ??
+                          (doc.nfeExternalId != null ? String(doc.nfeExternalId) : "—")}
+                      </td>
+                      <td className="py-1.5 pr-2 tabular-nums">
+                        {doc.stockDocumentExternalId != null
+                          ? String(doc.stockDocumentExternalId)
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 tabular-nums">
+                        {formatFinanceDate(doc.date)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(doc.nfeHeaderValue)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(doc.valueAttributedToOrder)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums text-orange-950">
+                        {formatFinanceCurrency(doc.valueNotAttributedToOrder)}
+                      </td>
+                      <td className="py-1.5 pr-2 text-[10px]">
+                        {doc.matchedItems.length === 0
+                          ? "—"
+                          : doc.matchedItems
+                              .map(
+                                (m) =>
+                                  `${m.productExternalId ?? "?"} (${formatFinanceInteger(m.allocatedQuantity)})`
+                              )
+                              .join(", ")}
+                      </td>
+                      <td className="py-1.5 pr-2 text-[10px] text-orange-900">
+                        {outside.length === 0
+                          ? "—"
+                          : outside
+                              .map(
+                                (x) =>
+                                  `${x.productExternalId ?? "?"} (${formatFinanceInteger(x.stockQuantity)})`
+                              )
+                              .join(", ")}
+                      </td>
+                      <td className="py-1.5 pr-2 text-[10px] text-orange-900">
+                        {doc.surplusItems.length === 0
+                          ? "—"
+                          : doc.surplusItems
+                              .map(
+                                (x) =>
+                                  `${x.productExternalId ?? "?"} (${formatFinanceInteger(x.stockQuantity)})`
+                              )
+                              .join(", ")}
+                      </td>
+                      <td className="py-1.5 text-[10px] text-orange-900">
+                        {doc.alerts.length
+                          ? doc.alerts
+                              .map((a) => TECHNICAL_ALERT_LABEL[a] ?? a)
+                              .join(", ")
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1119,57 +1304,80 @@ function FulfillmentMapTab({ detail }: { detail: PortfolioIntelligenceOrderDetai
 
       <SectionCard title="Contas a Receber">
         {map.receivablesCoverage.length === 0 ? (
-          <EmptyState message="Ainda não virou Contas a Receber — nenhum título encontrado para este pedido." />
+          <EmptyState message="Nenhum Contas a Receber encontrado para este pedido." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[640px] w-full text-left text-xs">
+            <table className="min-w-[720px] w-full text-left text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground">
                 <tr>
-                  <th className="py-1.5 pr-2">Título</th>
+                  <th className="py-1.5 pr-2">Título / IDs</th>
+                  <th className="py-1.5 pr-2">Fonte / NF</th>
                   <th className="py-1.5 pr-2">Vencimento</th>
                   <th className="py-1.5 pr-2">Baixa</th>
                   <th className="py-1.5 pr-2 text-right">Valor</th>
                   <th className="py-1.5 pr-2 text-right">Recebido</th>
                   <th className="py-1.5 pr-2 text-right">Aberto</th>
-                  <th className="py-1.5">Fonte / atribuição</th>
+                  <th className="py-1.5">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {map.receivablesCoverage.map((r, idx) => (
-                  <tr
-                    key={r.receivableId ?? `agg-${idx}`}
-                    className="border-t border-border/40"
-                  >
-                    <td className="py-1.5 pr-2">
-                      {r.receivableId != null ? `CR ${r.receivableId}` : "CR agregado"}
-                    </td>
-                    <td className="py-1.5 pr-2 tabular-nums">
-                      {formatFinanceDate(r.dueDate)}
-                    </td>
-                    <td className="py-1.5 pr-2 tabular-nums">
-                      {formatFinanceDate(r.settlementDate)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {r.totalValue != null ? formatFinanceCurrency(r.totalValue) : "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {r.receivedValue != null
-                        ? formatFinanceCurrency(r.receivedValue)
-                        : "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {r.openValue != null ? formatFinanceCurrency(r.openValue) : "—"}
-                    </td>
-                    <td className="py-1.5 text-[10px] text-muted-foreground">
-                      {r.attributionStatus === "TITLE_IDS_ONLY"
-                        ? "IDs sem rateio inventado por título"
-                        : r.attributionStatus === "ORDER_AGGREGATE"
-                          ? "Totais agregados ao pedido"
-                          : UNAVAILABLE}
-                      {r.sourceNfe != null ? ` · NF ${r.sourceNfe}` : ""}
-                    </td>
-                  </tr>
-                ))}
+                {map.receivablesCoverage.map((r, idx) => {
+                  const ids =
+                    (r.receivableIds && r.receivableIds.length > 0
+                      ? r.receivableIds
+                      : r.receivableId != null
+                        ? [r.receivableId]
+                        : []) ?? [];
+                  const open = r.openValue ?? 0;
+                  const received = r.receivedValue ?? 0;
+                  const status =
+                    r.totalValue == null && ids.length === 0
+                      ? UNAVAILABLE
+                      : open <= 0.01 && received > 0.01
+                        ? "Recebido"
+                        : open > 0.01
+                          ? "Aberto"
+                          : r.attributionStatus === "TITLE_IDS_ONLY"
+                            ? "IDs sem rateio inventado"
+                            : r.attributionStatus === "ORDER_AGGREGATE"
+                              ? "Agregado ao pedido"
+                              : r.attributionStatus;
+                  return (
+                    <tr
+                      key={r.receivableId ?? `agg-${idx}`}
+                      className="border-t border-border/40"
+                    >
+                      <td className="py-1.5 pr-2">
+                        {ids.length > 0
+                          ? ids.map((id) => `CR ${id}`).join(", ")
+                          : "CR agregado"}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {r.sourceNfe != null ? `NF ${r.sourceNfe}` : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 tabular-nums">
+                        {formatFinanceDate(r.dueDate ?? r.dueDates?.[0] ?? null)}
+                      </td>
+                      <td className="py-1.5 pr-2 tabular-nums">
+                        {formatFinanceDate(
+                          r.settlementDate ?? r.settlementDates?.[0] ?? null
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {r.totalValue != null ? formatFinanceCurrency(r.totalValue) : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {r.receivedValue != null
+                          ? formatFinanceCurrency(r.receivedValue)
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {r.openValue != null ? formatFinanceCurrency(r.openValue) : "—"}
+                      </td>
+                      <td className="py-1.5 text-[10px] text-muted-foreground">{status}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
