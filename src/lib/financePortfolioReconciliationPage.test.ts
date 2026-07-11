@@ -114,6 +114,9 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /PortfolioIntelligenceSection/);
     assert.match(page, /portfolio-tab-intelligence/);
     assert.match(page, /Inteligência da Carteira/);
+    assert.match(page, /portfolio-tab-order-to-cash-audit/);
+    assert.match(page, /Auditoria Pedido → Caixa/);
+    assert.match(page, /OrderToCashAuditTab/);
     assert.match(client, new RegExp(PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(page, /\/api\/finance\/portfolio-reconciliation/);
     assert.match(page, /\/api\/finance\/portfolio-reconciliation\/runs/);

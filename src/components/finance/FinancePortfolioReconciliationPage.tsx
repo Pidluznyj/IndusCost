@@ -34,6 +34,7 @@ import {
 import { PortfolioReconciliationSummaryCardsView } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationSummaryCards";
 import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
 import { PortfolioIntelligenceSection } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection";
+import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
 import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
 import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
@@ -67,9 +68,9 @@ export function FinancePortfolioReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"conciliation" | "intelligence">(
-    "conciliation"
-  );
+  const [activeView, setActiveView] = useState<
+    "conciliation" | "intelligence" | "order-to-cash-audit"
+  >("conciliation");
 
   const queryString = useMemo(
     () => buildPortfolioReconciliationListQuery(appliedFilters),
@@ -478,7 +479,28 @@ export function FinancePortfolioReconciliationPage() {
           >
             Inteligência da Carteira
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === "order-to-cash-audit"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+              activeView === "order-to-cash-audit"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setActiveView("order-to-cash-audit")}
+            data-testid="portfolio-tab-order-to-cash-audit"
+          >
+            Auditoria Pedido → Caixa
+          </button>
         </div>
+
+        {activeView === "order-to-cash-audit" ? (
+          <div className="mb-6">
+            <OrderToCashAuditTab />
+          </div>
+        ) : null}
 
         {activeView === "intelligence" ? (
           <div className="mb-6">
