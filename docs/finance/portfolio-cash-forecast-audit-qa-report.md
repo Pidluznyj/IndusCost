@@ -5,7 +5,7 @@
 | **Projeto** | IndusCost / My Industry |
 | **Módulo** | Financeiro → Conciliação de Carteira → Inteligência / Auditoria |
 | **Data desta reexecução** | 2026-07-11 |
-| **Commit desta QA** | 0de79ec39689bcbb1d41d3490a5bf2ecb346ce5e |
+| **Commit desta QA** | *(preenchido no push)* |
 | **Status geral** | **PRONTO** |
 
 ---
@@ -20,6 +20,8 @@
 - Bugs de produto nesta QA: **nenhum**
 - Feature nova / mudança de regra: **não**
 - Módulos oficiais: **não afetados**
+- Imports de comissão na UI de inteligência: **nenhum**
+- `JSON.stringify` no drawer de inteligência: **nenhum**
 
 ---
 
@@ -27,10 +29,10 @@
 
 | Comando | Resultado |
 |---------|-----------|
-| `npm run check:server-imports` | **PASS** — estático OK; sem named export fantasma |
-| `npm run check:frontend-server-imports` | **PASS** — 628 arquivos; nenhum caminho até Prisma/server |
+| `npm run check:server-imports` | **PASS** |
+| `npm run check:frontend-server-imports` | **PASS** |
 | `npm test` | **PASS** — fail 0 |
-| `npm run build` | **PASS** — built ~21s |
+| `npm run build` | **PASS** |
 | `npm run check:browser-bundle` | **PASS** — dist livre de Prisma |
 
 ---
@@ -51,12 +53,10 @@
 |-------|-----------|
 | Pedido encontrado / valor R$ 158.000 | PASS |
 | Itens + documentos/NFs | PASS |
-| Mapa gerado | PASS |
-| Qtd atendida capada ≤ pedido; % ≤ 100% | PASS |
+| Mapa gerado; qtd capada; % ≤ 100% | PASS |
 | Valor atribuído ≤ 158.000 | PASS |
-| Cabeçalho NF (~355.290) **não infla** pedido | PASS |
-| Status financeiro `FIN_CR_ABERTO` | PASS |
-| Status operacional com excedente | PASS |
+| Cabeçalho NF **não infla** pedido | PASS |
+| FIN_CR_ABERTO + OP com excedente | PASS |
 | Alertas técnicos separados | PASS |
 | CR coverage + conclusão em português (sem JSON cru) | PASS |
 
@@ -73,8 +73,7 @@
 | Sem NF/doc/CR | 13 / R$ 1.380.296 | PASS |
 | Futuro + presente | R$ 495.460 (3 pedidos) | PASS |
 | Vencido/bloqueado | R$ 884.836 (10 pedidos) | PASS |
-| Sem duplicidade de status / soma = carteira | — | PASS |
-| Explanations / drawer PD 02159 | — | PASS |
+| Sem duplicidade / soma = carteira | — | PASS |
 
 Script: **PASS=65 FAIL=0** (FIXTURE).
 
@@ -84,17 +83,17 @@ Script: **PASS=65 FAIL=0** (FIXTURE).
 
 | # | Item | Status | Evidência |
 |---|------|--------|-----------|
-| 1 | Tela em Financeiro → Conciliação de Carteira | PASS | `FinancePortfolioReconciliationPage` + aba `portfolio-tab-intelligence` |
-| 2 | Título “Central de Auditoria da Carteira” | PASS | `INTELLIGENCE_SCREEN_TITLE` |
+| 1 | Tela em Financeiro → Conciliação de Carteira | PASS | `FinancePortfolioReconciliationPage` + `portfolio-tab-intelligence` |
+| 2 | Título “Central de Auditoria da Carteira” | PASS | `INTELLIGENCE_SCREEN_TITLE` em `PortfolioIntelligenceSection` |
 | 3 | Subtítulo | PASS | `INTELLIGENCE_SCREEN_INTRO` |
-| 4 | Aviso “Pedido de venda não é dinheiro confirmado…” | PASS | `INTELLIGENCE_SCREEN_WARNING` / `portfolio-intelligence-pd-warning` |
+| 4 | Aviso “Pedido de venda não é dinheiro confirmado…” | PASS | `INTELLIGENCE_SCREEN_WARNING` |
 | 5 | Blocos Financeiro / Operacional / Atendimento e alertas | PASS | `INTELLIGENCE_BLOCK_*` + `PortfolioIntelligenceCards` |
-| 6 | Cards: cor suave, borda, “?”, valor+qtd, alertas ≠ dinheiro | PASS | `MetricHelpTooltip`, `data-alert-card`, “não somam” |
-| 7 | Filtros + chips + limpar | PASS | `PortfolioIntelligenceFiltersBar` (`onClear`, chips) |
-| 8 | Sanfonas 3 grupos + grid | PASS | `INTELLIGENCE_ACCORDION_GROUPS` + `PortfolioIntelligenceOrdersGrid` |
-| 9 | Grid: pedido, cliente, vendedor, valor, FIN, OP, confiança, % atendimento, alertas | PASS | headers em `PortfolioIntelligenceOrdersGrid` |
-| 10 | Drawer: clique, 75vw, 1ª aba Mapa, cards/itens/docs/CR, frescor, conclusão, sem JSON | PASS | `PortfolioIntelligenceOrderDrawer` (`w-[75vw]`, TABS[0]=mapa); JSON.stringify só no drawer legado de conciliação, não na inteligência |
-| 11 | Empty: sem doc / sem CR / sem baixa / condição indisponível | PASS | Documents/Receivables grids + freshness + aba Pagamento |
+| 6 | Cards: cor suave, borda, “?”, valor+qtd, alertas ≠ dinheiro | PASS | `MetricHelpTooltip`, `data-alert-card` |
+| 7 | Filtros + chips + limpar | PASS | `PortfolioIntelligenceFiltersBar` (`onClear`) |
+| 8 | Sanfonas 3 grupos + grid | PASS | `INTELLIGENCE_ACCORDION_GROUPS` |
+| 9 | Grid: pedido, cliente, vendedor, valor, FIN, OP, confiança, % atendimento, alertas | PASS | `PortfolioIntelligenceOrdersGrid` |
+| 10 | Drawer: clique, 75vw, 1ª aba Mapa, cards/itens/docs/CR, frescor, conclusão, sem JSON | PASS | `PortfolioIntelligenceOrderDrawer` (`w-[75vw]`, TABS[0]=mapa); sem `JSON.stringify` |
+| 11 | Empty: sem doc / sem CR / sem baixa / condição indisponível | PASS | Documents/Receivables + freshness + Pagamento |
 
 **Nota:** checklist por contrato de código + testes UI; sem sessão browser com prints nesta execução.
 
@@ -104,15 +103,15 @@ Script: **PASS=65 FAIL=0** (FIXTURE).
 
 | Arquivo | Motivo |
 |---------|--------|
-| `docs/finance/portfolio-cash-forecast-audit-qa-report.md` | Atualização desta reexecução de QA |
+| `docs/finance/portfolio-cash-forecast-audit-qa-report.md` | Atualização desta reexecução |
 
-Nenhuma alteração de código de produto nesta passagem.
+Nenhuma alteração de código de produto.
 
 ---
 
 ## 8. Módulos não afetados
 
-Inspeção do range da evolução da Central (`98bf8b4`…`HEAD`): **zero** alteração em:
+Scan do range da Central (`98bf8b4`…`HEAD`): **zero** hit em comissões / CashFlow / AR oficial / Presidencial / pricing / BOM.
 
 | Módulo | Afetado? |
 |--------|----------|
@@ -122,8 +121,6 @@ Inspeção do range da evolução da Central (`98bf8b4`…`HEAD`): **zero** alte
 | Relatório Presidencial | **Não** |
 | Precificação | **Não** |
 | Engenharia / BOM | **Não** |
-
-Forecast permanece paralelo (`portfolioCashForecastMaturity`).
 
 ---
 
