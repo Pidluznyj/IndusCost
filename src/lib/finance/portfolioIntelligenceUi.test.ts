@@ -16,6 +16,7 @@ describe("portfolio intelligence UI", () => {
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceAccordions.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrdersGrid.tsx",
       "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceOrderDrawer.tsx",
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx",
     ];
     for (const f of files) {
       const src = read(f);
@@ -53,8 +54,23 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /FinanceModuleEmptyState/);
     assert.match(section, /PortfolioIntelligenceAccordions/);
     assert.match(section, /PortfolioIntelligenceOrderDrawer/);
+    assert.match(section, /PortfolioIntelligenceFiltersBar/);
+    assert.match(section, /portfolioIntelligenceUiFiltersToQueryArgs/);
     assert.match(section, /handleCardClick|onCardClick/);
     assert.doesNotMatch(section, /openReceivableValue\s*\+/);
+  });
+
+  it("barra de filtros cobre eixo de data, atalhos e limpar", () => {
+    const bar = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceFiltersBar.tsx"
+    );
+    assert.match(bar, /FinanceBiFilterPanel/);
+    assert.match(bar, /dateAxis|Eixo de data/);
+    assert.match(bar, /PORTFOLIO_INTELLIGENCE_PERIOD_PRESETS/);
+    assert.match(bar, /onlyWithoutNfe/);
+    assert.match(bar, /Limpar|onClear/);
+    assert.match(bar, /PORTFOLIO_INTELLIGENCE_DATE_AXIS_HELP/);
+    assert.match(bar, /Pedidos por emissão|vencimento/);
   });
 
   it("sanfonas e grid de drilldown estão ligados", () => {

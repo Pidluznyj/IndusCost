@@ -510,16 +510,58 @@ export type PortfolioIntelligenceOrderDetailPayload = {
 export function buildPortfolioIntelligenceListQuery(args: {
   runId?: string;
   customerExternalId?: string;
+  customerId?: string;
+  sellerExternalId?: string;
+  sellerId?: string;
+  sellerName?: string;
+  companyId?: string;
+  orderCode?: string;
+  productExternalId?: string;
+  statusPrincipal?: string;
+  confidenceLabel?: string;
+  tagsAlerta?: string;
+  minValue?: string;
+  maxValue?: string;
+  dateAxis?: string;
+  from?: string;
+  to?: string;
   asOfDate?: string;
   page?: number;
   pageSize?: number;
+  onlyWithoutNfe?: boolean;
+  onlyWithoutStockDocument?: boolean;
+  onlyWithoutReceivable?: boolean;
+  sortBy?: string;
+  sortDirection?: string;
 }): string {
   const params = new URLSearchParams();
-  if (args.runId?.trim()) params.set("runId", args.runId.trim());
-  if (args.customerExternalId?.trim()) {
-    params.set("customerExternalId", args.customerExternalId.trim());
-  }
-  if (args.asOfDate?.trim()) params.set("asOfDate", args.asOfDate.trim());
+  const setIf = (key: string, value: string | undefined) => {
+    const v = value?.trim();
+    if (v) params.set(key, v);
+  };
+  setIf("runId", args.runId);
+  setIf("customerExternalId", args.customerExternalId);
+  setIf("customerId", args.customerId);
+  setIf("sellerExternalId", args.sellerExternalId);
+  setIf("sellerId", args.sellerId);
+  setIf("sellerName", args.sellerName);
+  setIf("companyId", args.companyId);
+  setIf("orderCode", args.orderCode);
+  setIf("productExternalId", args.productExternalId);
+  setIf("statusPrincipal", args.statusPrincipal);
+  setIf("confidenceLabel", args.confidenceLabel);
+  setIf("tagsAlerta", args.tagsAlerta);
+  setIf("minValue", args.minValue);
+  setIf("maxValue", args.maxValue);
+  setIf("dateAxis", args.dateAxis);
+  setIf("from", args.from);
+  setIf("to", args.to);
+  setIf("asOfDate", args.asOfDate);
+  setIf("sortBy", args.sortBy);
+  setIf("sortDirection", args.sortDirection);
+  if (args.onlyWithoutNfe) params.set("onlyWithoutNfe", "true");
+  if (args.onlyWithoutStockDocument) params.set("onlyWithoutStockDocument", "true");
+  if (args.onlyWithoutReceivable) params.set("onlyWithoutReceivable", "true");
   params.set("page", String(args.page ?? 1));
   params.set("pageSize", String(args.pageSize ?? 50));
   return params.toString();

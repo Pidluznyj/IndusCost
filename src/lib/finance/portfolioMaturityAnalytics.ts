@@ -130,6 +130,7 @@ export type PortfolioMaturityAnalyticsFilters = {
   customerId?: string | null;
   sellerExternalId?: number | null;
   sellerId?: string | null;
+  sellerName?: string | null;
   companyId?: string | null;
   orderCode?: string | null;
   productExternalId?: number | null;
@@ -147,6 +148,10 @@ export type PortfolioMaturityAnalyticsFilters = {
   asOfDate?: string | null;
   sortBy?: PortfolioMaturitySortBy | null;
   sortDirection?: "asc" | "desc" | null;
+  /** Filtros de evidência (não alteram classificação — só recorte). */
+  onlyWithoutNfe?: boolean | null;
+  onlyWithoutStockDocument?: boolean | null;
+  onlyWithoutReceivable?: boolean | null;
 };
 
 export type PortfolioMaturitySortBy =
@@ -625,6 +630,10 @@ export function filterMaturityOrders(
       return false;
     }
     if (filters.sellerId != null && row.sellerId !== filters.sellerId) return false;
+    if (filters.sellerName != null && filters.sellerName.trim()) {
+      const needle = filters.sellerName.trim().toLowerCase();
+      if (!(row.sellerName ?? "").toLowerCase().includes(needle)) return false;
+    }
     if (filters.companyId != null && row.companyId !== filters.companyId) return false;
     if (filters.orderCode != null) {
       if (!row.orderCode.toLowerCase().includes(filters.orderCode.toLowerCase())) {
@@ -648,6 +657,11 @@ export function filterMaturityOrders(
     }
     if (filters.minValue != null && row.orderValue < filters.minValue) return false;
     if (filters.maxValue != null && row.orderValue > filters.maxValue) return false;
+    if (filters.onlyWithoutNfe && row.evidenceFlags.hasNfe) return false;
+    if (filters.onlyWithoutStockDocument && row.evidenceFlags.hasStockDocument) {
+      return false;
+    }
+    if (filters.onlyWithoutReceivable && row.evidenceFlags.hasReceivable) return false;
 
     if (axis && (from || to)) {
       const d = dateForAxis(row, axis);

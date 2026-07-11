@@ -129,6 +129,13 @@ function asPageInt(value: unknown, field: string, fallback: number): number {
   return n;
 }
 
+function asBoolFlag(value: unknown): boolean {
+  const raw = asQueryString(value);
+  if (raw == null) return false;
+  const u = raw.toLowerCase();
+  return u === "1" || u === "true" || u === "yes" || u === "on";
+}
+
 function asIsoDate(value: unknown, field: string): string | null {
   const raw = asQueryString(value);
   if (raw == null) return null;
@@ -250,6 +257,7 @@ export function parsePortfolioIntelligenceFilters(
     customerId: asQueryString(query.customerId),
     sellerExternalId: asPositiveInt(query.sellerExternalId, "sellerExternalId"),
     sellerId: asQueryString(query.sellerId),
+    sellerName: asQueryString(query.sellerName),
     companyId: asQueryString(query.companyId),
     orderCode: asQueryString(query.orderCode),
     productExternalId: asPositiveInt(query.productExternalId, "productExternalId"),
@@ -266,6 +274,9 @@ export function parsePortfolioIntelligenceFilters(
     asOfDate: asIsoDate(query.asOfDate, "asOfDate"),
     sortBy,
     sortDirection,
+    onlyWithoutNfe: asBoolFlag(query.onlyWithoutNfe) || null,
+    onlyWithoutStockDocument: asBoolFlag(query.onlyWithoutStockDocument) || null,
+    onlyWithoutReceivable: asBoolFlag(query.onlyWithoutReceivable) || null,
   };
 }
 

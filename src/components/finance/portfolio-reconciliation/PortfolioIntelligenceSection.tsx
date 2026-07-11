@@ -7,6 +7,12 @@ import {
   type PortfolioIntelligenceListPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
 import {
+  createDefaultPortfolioIntelligenceUiFilters,
+  dateAxisLabel,
+  portfolioIntelligenceUiFiltersToQueryArgs,
+  type PortfolioIntelligenceUiFilters,
+} from "@/src/lib/finance/portfolioIntelligenceFilters";
+import {
   FinanceModuleEmptyState,
   FinanceModuleErrorBanner,
   FinanceModuleLoadingBlock,
@@ -15,12 +21,14 @@ import { cardKeyToAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDr
 import type { IntelligenceAccordionKey } from "@/src/lib/finance/portfolioIntelligenceDrilldown";
 import { PortfolioIntelligenceAccordions } from "./PortfolioIntelligenceAccordions";
 import { PortfolioIntelligenceCards } from "./PortfolioIntelligenceCards";
+import { PortfolioIntelligenceFiltersBar } from "./PortfolioIntelligenceFiltersBar";
 import { PortfolioIntelligenceOrderDrawer } from "./PortfolioIntelligenceOrderDrawer";
 
 type Props = {
   runId?: string;
   customerExternalId?: string;
   enabled?: boolean;
+  customers?: Array<{ customerExternalId: number; customerName: string | null }>;
 };
 
 /**
@@ -30,6 +38,7 @@ export function PortfolioIntelligenceSection({
   runId = "",
   customerExternalId = "",
   enabled = true,
+  customers = [],
 }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const [payload, setPayload] = useState<PortfolioIntelligenceListPayload | null>(null);
@@ -37,6 +46,26 @@ export function PortfolioIntelligenceSection({
   const [error, setError] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<IntelligenceAccordionKey | null>(null);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState<string | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+
+  const [draftFilters, setDraftFilters] = useState<PortfolioIntelligenceUiFilters>(() =>
+    createDefaultPortfolioIntelligenceUiFilters({ customerExternalId })
+  );
+  const [appliedFilters, setAppliedFilters] = useState<PortfolioIntelligenceUiFilters>(() =>
+    createDefaultPortfolioIntelligenceUiFilters({ customerExternalId })
+  );
+
+  // Sincroniza cliente herdado da página de conciliação quando muda.
+  useEffect(() => {
+    setDraftFilters((prev) => ({
+      ...prev,
+      customerExternalId: customerExternalId || prev.customerExternalId,
+    }));
+    setAppliedFilters((prev) => ({
+      ...prev,
+      customerExternalId: customerExternalId || prev.customerExternalId,
+    }));
+  }, [customerExternalId]);
 
   const load = useCallback(async () => {
     if (!enabled) {
@@ -49,12 +78,13 @@ export function PortfolioIntelligenceSection({
     setLoading(true);
     setError(null);
     try {
-      const qs = buildPortfolioIntelligenceListQuery({
-        runId,
-        customerExternalId,
-        page: 1,
-        pageSize: 200,
-      });
+      const qs = buildPortfolioIntelligenceListQuery(
+        portfolioIntelligenceUiFiltersToQueryArgs(appliedFilters, {
+          runId,
+          page: 1,
+          pageSize: 200,
+        })
+      );
       const data = await fetchJsonOk<PortfolioIntelligenceListPayload>(
         `/api/finance/portfolio-reconciliation/intelligence?${qs}`,
         { signal: ac.signal, credentials: "include" }
@@ -71,7 +101,7 @@ export function PortfolioIntelligenceSection({
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [enabled, runId, customerExternalId]);
+  }, [enabled, runId, appliedFilters]);
 
   useEffect(() => {
     void load();
@@ -90,9 +120,6 @@ export function PortfolioIntelligenceSection({
 
   const activeCardKey = useMemo(() => {
     if (!expandedKey) return null;
-    if (expandedKey === "CARTEIRA_VENCIDA_BLOQUEADA") {
-      return "CARTEIRA_VENCIDA_BLOQUEADA";
-    }
     return expandedKey;
   }, [expandedKey]);
 
@@ -108,6 +135,23 @@ export function PortfolioIntelligenceSection({
 
   const handleCloseOrder = useCallback(() => {
     setSelectedSalesOrderId(null);
+  }, []);
+
+  const handleApply = useCallback(() => {
+    setAppliedFilters(draftFilters);
+  }, [draftFilters]);
+
+  const handleApplyFilters = useCallback((next: PortfolioIntelligenceUiFilters) => {
+    setDraftFilters(next);
+    setAppliedFilters(next);
+  }, []);
+
+  const handleClear = useCallback(() => {
+    const cleared = createDefaultPortfolioIntelligenceUiFilters({
+      customerExternalId: "",
+    });
+    setDraftFilters(cleared);
+    setAppliedFilters(cleared);
   }, []);
 
   return (
@@ -126,6 +170,29 @@ export function PortfolioIntelligenceSection({
           </p>
         </div>
       </div>
+
+      <PortfolioIntelligenceFiltersBar
+        draft={draftFilters}
+        applied={appliedFilters}
+        expanded={filtersExpanded}
+        onToggle={() => setFiltersExpanded((v) => !v)}
+        onDraftChange={setDraftFilters}
+        onApply={handleApply}
+        onClear={handleClear}
+        onApplyFilters={handleApplyFilters}
+        customers={customers}
+      />
+
+      <p
+        className="rounded-md border border-sky-200/70 bg-sky-50/40 px-2.5 py-1.5 text-[11px] text-sky-950"
+        data-testid="portfolio-intelligence-active-axis"
+      >
+        Recorte por <strong>{dateAxisLabel(appliedFilters.dateAxis)}</strong>
+        {appliedFilters.from || appliedFilters.to
+          ? ` · ${appliedFilters.from || "…"} → ${appliedFilters.to || "…"}`
+          : " · período completo (sem from/to)"}
+        . Pedidos por emissão ≠ Contas a Receber por vencimento.
+      </p>
 
       {error ? (
         <FinanceModuleErrorBanner
@@ -193,7 +260,7 @@ export function PortfolioIntelligenceSection({
         open={Boolean(selectedSalesOrderId)}
         salesOrderId={selectedSalesOrderId}
         runId={runId}
-        customerExternalId={customerExternalId}
+        customerExternalId={appliedFilters.customerExternalId}
         onClose={handleCloseOrder}
       />
     </section>

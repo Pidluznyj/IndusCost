@@ -486,6 +486,7 @@ export function FinancePortfolioReconciliationPage() {
               enabled={canView && !noRun}
               runId={appliedFilters.runId || payload?.run?.id || ""}
               customerExternalId={appliedFilters.customerExternalId}
+              customers={available?.customers ?? []}
             />
           </div>
         ) : null}
