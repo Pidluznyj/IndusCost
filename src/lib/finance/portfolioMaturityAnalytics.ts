@@ -28,6 +28,12 @@ import {
   type PortfolioMaturityStatus,
   type PortfolioMetricExplanation,
 } from "./portfolioMaturityClassification.js";
+import {
+  buildOrderFulfillmentMap,
+  OPERATIONAL_STATUS_LABEL,
+  type PortfolioOperationalStatus,
+  type PortfolioOrderFulfillmentMap,
+} from "./portfolioOrderFulfillmentMap.js";
 
 function round2(n: number): number {
   return Number(n.toFixed(2));
@@ -228,6 +234,34 @@ export type PortfolioMaturityOrderRow = {
   forecastSource: string;
   factStatus: string;
   productExternalIds: number[];
+  /** Eixos do mapa de atendimento (read-only; não alteram statusPrincipal). */
+  financialStatus: string | null;
+  operationalStatus: string | null;
+  fulfillmentPercent: number | null;
+  excessQuantity: number;
+  estimatedExcessValue: number;
+  valueOutsideOrder: number;
+  nfeHeaderNotAttributed: number;
+  fulfillmentAvailable: boolean;
+};
+
+export type PortfolioMaturityOperationalGroup = {
+  operationalStatus: string;
+  title: string;
+  ordersCount: number;
+  orderValue: number;
+  orderCodes: string[];
+};
+
+export type PortfolioMaturityAlertGroup = {
+  alertKey: string;
+  title: string;
+  ordersCount: number;
+  /** Valor oficial dos pedidos com o alerta (referência; não soma carteira extra). */
+  orderValue: number;
+  /** Métrica do alerta (ex.: qtd excedente, valor fora, cabeçalho não atribuído). */
+  metricValue: number;
+  orderCodes: string[];
 };
 
 export type PortfolioMaturityCardTone =
@@ -290,6 +324,12 @@ export type PortfolioMaturitySellerKpi = {
   stuckWithoutNfCrValue: number;
   /** Status CARTEIRA_VENCIDA_BLOQUEADA (valor). */
   blockedValue: number;
+  /** % pedidos com atendimento operacional total (quando disponível). */
+  operationalFulfillmentPct: number | null;
+  /** Valor estimado de excedente nos documentos (não entra na carteira). */
+  excessValue: number;
+  /** Pedidos com produto fora do pedido. */
+  ordersWithProductOutside: number;
   /** Participação em valor com confiança BAIXA ou MUITO_BAIXA. */
   lowConfidenceValuePct: number | null;
   averageConfidence: number;
@@ -302,6 +342,8 @@ export type PortfolioMaturitySellerKpi = {
 export type PortfolioMaturityAnalyticsResult = {
   summaryCards: PortfolioMaturitySummaryCard[];
   statusGroups: PortfolioMaturityStatusGroup[];
+  operationalGroups: PortfolioMaturityOperationalGroup[];
+  alertGroups: PortfolioMaturityAlertGroup[];
   sellerKpis: PortfolioMaturitySellerKpi[];
   rows: PortfolioMaturityOrderRow[];
   pagination: {
@@ -352,6 +394,120 @@ function explanationFromMetric(key: string) {
     whatIsExcluded: e.oQueNaoEntra,
     howToInterpret: e.comoInterpretar,
   };
+}
+
+const MATURITY_ALERT_FROM_MAP = new Set<string>([
+  "DIVERGENCIA_TECNICA",
+  "NF_SEM_DOCUMENTO",
+  "DOCUMENTO_SEM_CR",
+  "NF_CABECALHO_MAIOR_PEDIDO",
+  "DIVERGENCIA_PRECO",
+  "SEM_CONDICAO_PAGAMENTO",
+  "VINCULO_INCOMPLETO",
+  "PEDIDO_ANTIGO_SEM_EVOLUCAO",
+  "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PRODUTO_FORA_DO_PEDIDO",
+]);
+
+function isFullyAttendedOp(status: string | null | undefined): boolean {
+  return (
+    status === "OP_TOTALMENTE_ATENDIDO" ||
+    status === "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE"
+  );
+}
+
+function isPartialAttendedOp(status: string | null | undefined): boolean {
+  return status === "OP_PARCIALMENTE_ATENDIDO";
+}
+
+function isNotAttendedOp(status: string | null | undefined): boolean {
+  return (
+    status === "OP_NAO_ATENDIDO" ||
+    status === "OP_VINCULO_APENAS_CABECALHO" ||
+    status === "OP_DOCUMENTO_SEM_ITEMIZACAO"
+  );
+}
+
+function estimateExcessValueFromMap(map: PortfolioOrderFulfillmentMap): number {
+  let sum = 0;
+  for (const doc of map.stockDocumentsCoverage) {
+    for (const s of doc.surplusItems) {
+      if (s.stockItemValue != null && Number.isFinite(s.stockItemValue) && s.stockItemValue > 0) {
+        sum += s.stockItemValue;
+        continue;
+      }
+      const item = map.orderItemsCoverage.find(
+        (i) => i.externalProductId != null && i.externalProductId === s.productExternalId
+      );
+      const unit = item?.orderUnitValue ?? 0;
+      sum += toNumber(s.stockQuantity) * unit;
+    }
+  }
+  return round2(sum);
+}
+
+function valueOutsideOrderFromMap(map: PortfolioOrderFulfillmentMap): number {
+  let sum = 0;
+  for (const doc of map.stockDocumentsCoverage) {
+    for (const it of doc.itemsOutsideOrder) {
+      sum += toNumber(it.stockItemValue);
+    }
+  }
+  return round2(sum);
+}
+
+function enrichRowFromFulfillmentMap(args: {
+  facts: readonly PortfolioReconciliationFactApiRow[];
+  orderValue: number;
+  paymentTermsAvailable: boolean;
+  tagsAlerta: PortfolioMaturityAlertTag[];
+}): {
+  tagsAlerta: PortfolioMaturityAlertTag[];
+  financialStatus: string | null;
+  operationalStatus: string | null;
+  fulfillmentPercent: number | null;
+  excessQuantity: number;
+  estimatedExcessValue: number;
+  valueOutsideOrder: number;
+  nfeHeaderNotAttributed: number;
+  fulfillmentAvailable: boolean;
+} {
+  try {
+    const map = buildOrderFulfillmentMap({
+      reconciliationFacts: args.facts,
+      orderValue: args.orderValue,
+      paymentTermsAvailable: args.paymentTermsAvailable,
+    });
+    const tags = new Set<PortfolioMaturityAlertTag>(args.tagsAlerta);
+    for (const alert of map.technicalAlerts) {
+      if (MATURITY_ALERT_FROM_MAP.has(alert)) {
+        tags.add(alert as PortfolioMaturityAlertTag);
+      }
+    }
+    return {
+      tagsAlerta: [...tags],
+      financialStatus: map.financialStatus,
+      operationalStatus: map.operationalStatus,
+      fulfillmentPercent: map.fulfillmentSummary.fulfillmentPercent,
+      excessQuantity: map.fulfillmentSummary.totalExcessQuantity,
+      estimatedExcessValue: estimateExcessValueFromMap(map),
+      valueOutsideOrder: valueOutsideOrderFromMap(map),
+      nfeHeaderNotAttributed: map.fulfillmentSummary.nfeHeaderNotAttributedToOrderValue,
+      fulfillmentAvailable: true,
+    };
+  } catch {
+    return {
+      tagsAlerta: args.tagsAlerta,
+      financialStatus: null,
+      operationalStatus: null,
+      fulfillmentPercent: null,
+      excessQuantity: 0,
+      estimatedExcessValue: 0,
+      valueOutsideOrder: 0,
+      nfeHeaderNotAttributed: 0,
+      fulfillmentAvailable: false,
+    };
+  }
 }
 
 function sumStockDocumentValue(facts: readonly PortfolioReconciliationFactApiRow[]): number {
@@ -517,6 +673,13 @@ export function buildMaturityOrderFromFacts(args: {
       expectedDeliveryDate && expectedDeliveryDate >= asOf ? expectedDeliveryDate : null,
     ]);
 
+  const fulfillment = enrichRowFromFulfillmentMap({
+    facts,
+    orderValue: finalOrderValue,
+    paymentTermsAvailable,
+    tagsAlerta: classification.tagsAlerta,
+  });
+
   return {
     salesOrderId,
     orderCode: first.orderCode ?? "—",
@@ -544,7 +707,7 @@ export function buildMaturityOrderFromFacts(args: {
     stockDocumentValue,
     itemizedAllocatedValue: round2(allocated),
     statusPrincipal: classification.statusPrincipal,
-    tagsAlerta: classification.tagsAlerta,
+    tagsAlerta: fulfillment.tagsAlerta,
     confidenceScore: classification.confidenceScore,
     confidenceLabel: classification.confidenceLabel,
     confidenceReasons: classification.motivosConfianca,
@@ -567,6 +730,14 @@ export function buildMaturityOrderFromFacts(args: {
     forecastSource: forecast.source,
     factStatus,
     productExternalIds: [...productIds],
+    financialStatus: fulfillment.financialStatus,
+    operationalStatus: fulfillment.operationalStatus,
+    fulfillmentPercent: fulfillment.fulfillmentPercent,
+    excessQuantity: fulfillment.excessQuantity,
+    estimatedExcessValue: fulfillment.estimatedExcessValue,
+    valueOutsideOrder: fulfillment.valueOutsideOrder,
+    nfeHeaderNotAttributed: fulfillment.nfeHeaderNotAttributed,
+    fulfillmentAvailable: fulfillment.fulfillmentAvailable,
   };
 }
 
@@ -935,7 +1106,259 @@ function buildSummaryCards(
     },
   ];
 
+  const withOp = rows.filter((r) => r.fulfillmentAvailable && r.operationalStatus);
+  const denom = withOp.length > 0 ? withOp.length : totalPedidos;
+  const fully = withOp.filter((r) => isFullyAttendedOp(r.operationalStatus));
+  const partial = withOp.filter((r) => isPartialAttendedOp(r.operationalStatus));
+  const notAtt = withOp.filter((r) => isNotAttendedOp(r.operationalStatus));
+  const fullyValue = round2(fully.reduce((s, r) => s + r.orderValue, 0));
+  const partialValue = round2(partial.reduce((s, r) => s + r.orderValue, 0));
+  const notAttValue = round2(notAtt.reduce((s, r) => s + r.orderValue, 0));
+  const excessOrders = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO") ||
+      (r.excessQuantity ?? 0) > 0.000001
+  );
+  const outsideOrders = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO") || (r.valueOutsideOrder ?? 0) > 0.01
+  );
+  const headerNotAttrOrders = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("NF_CABECALHO_MAIOR_PEDIDO") ||
+      (r.nfeHeaderNotAttributed ?? 0) > 0.05
+  );
+  const totalExcessQty = round2(
+    rows.reduce((s, r) => s + toNumber(r.excessQuantity), 0)
+  );
+  const estimatedExcess = round2(
+    rows.reduce((s, r) => s + toNumber(r.estimatedExcessValue), 0)
+  );
+  const valueOutside = round2(
+    rows.reduce((s, r) => s + toNumber(r.valueOutsideOrder), 0)
+  );
+  const headerNotAttr = round2(
+    rows.reduce((s, r) => s + toNumber(r.nfeHeaderNotAttributed), 0)
+  );
+
+  const unavailableNote = (base: ReturnType<typeof explanationFromMetric>) =>
+    withOp.length === 0
+      ? {
+          ...base,
+          whatItMeans: `${base.whatItMeans} ${PORTFOLIO_INFO_UNAVAILABLE}`,
+        }
+      : base;
+
+  cards.push(
+    {
+      key: "OP_PCT_TOTALMENTE_ATENDIDO",
+      title: "% pedidos totalmente atendidos",
+      value: pct(fully.length, denom) ?? 0,
+      count: fully.length,
+      percentage: pct(fully.length, denom),
+      colorTone: "info",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_PCT_TOTALMENTE_ATENDIDO")),
+    },
+    {
+      key: "OP_PCT_PARCIALMENTE_ATENDIDO",
+      title: "% pedidos parcialmente atendidos",
+      value: pct(partial.length, denom) ?? 0,
+      count: partial.length,
+      percentage: pct(partial.length, denom),
+      colorTone: "info",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_PCT_PARCIALMENTE_ATENDIDO")),
+    },
+    {
+      key: "OP_PCT_NAO_ATENDIDO",
+      title: "% pedidos não atendidos",
+      value: pct(notAtt.length, denom) ?? 0,
+      count: notAtt.length,
+      percentage: pct(notAtt.length, denom),
+      colorTone: "warning",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_PCT_NAO_ATENDIDO")),
+    },
+    {
+      key: "OP_VALOR_TOTALMENTE_ATENDIDO",
+      title: "Valor pedidos totalmente atendidos",
+      value: fullyValue,
+      count: fully.length,
+      percentage: pct(fullyValue, valorTotal),
+      colorTone: "info",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_VALOR_TOTALMENTE_ATENDIDO")),
+    },
+    {
+      key: "OP_VALOR_PARCIALMENTE_ATENDIDO",
+      title: "Valor pedidos parcialmente atendidos",
+      value: partialValue,
+      count: partial.length,
+      percentage: pct(partialValue, valorTotal),
+      colorTone: "info",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_VALOR_PARCIALMENTE_ATENDIDO")),
+    },
+    {
+      key: "OP_VALOR_NAO_ATENDIDO",
+      title: "Valor pedidos não atendidos",
+      value: notAttValue,
+      count: notAtt.length,
+      percentage: pct(notAttValue, valorTotal),
+      colorTone: "warning",
+      isAlertCard: false,
+      explanation: unavailableNote(explanationFromMetric("OP_VALOR_NAO_ATENDIDO")),
+    },
+    {
+      key: "PEDIDOS_COM_QTD_EXCEDENTE",
+      title: "Pedidos com quantidade excedente",
+      value: excessOrders.reduce((s, r) => s + r.orderValue, 0),
+      count: excessOrders.length,
+      percentage: pct(
+        excessOrders.reduce((s, r) => s + r.orderValue, 0),
+        valorTotal
+      ),
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("PEDIDOS_COM_QTD_EXCEDENTE"),
+    },
+    {
+      key: "QTD_EXCEDENTE_TOTAL",
+      title: "Quantidade excedente total",
+      value: totalExcessQty,
+      count: excessOrders.length,
+      percentage: null,
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("QTD_EXCEDENTE_TOTAL"),
+    },
+    {
+      key: "VALOR_ESTIMADO_EXCEDENTE",
+      title: "Valor estimado do excedente",
+      value: estimatedExcess,
+      count: excessOrders.length,
+      percentage: null,
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("VALOR_ESTIMADO_EXCEDENTE"),
+    },
+    {
+      key: "PEDIDOS_COM_PRODUTO_FORA",
+      title: "Pedidos com produto fora do pedido",
+      value: outsideOrders.reduce((s, r) => s + r.orderValue, 0),
+      count: outsideOrders.length,
+      percentage: pct(
+        outsideOrders.reduce((s, r) => s + r.orderValue, 0),
+        valorTotal
+      ),
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("PEDIDOS_COM_PRODUTO_FORA"),
+    },
+    {
+      key: "VALOR_DOCUMENTO_FORA_PEDIDO",
+      title: "Valor de documento fora do pedido",
+      value: valueOutside,
+      count: outsideOrders.length,
+      percentage: null,
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("VALOR_DOCUMENTO_FORA_PEDIDO"),
+    },
+    {
+      key: "VALOR_CABECALHO_NAO_ATRIBUIDO",
+      title: "Cabeçalho maior que valor atribuído",
+      value: headerNotAttr,
+      count: headerNotAttrOrders.length,
+      percentage: null,
+      colorTone: "alert",
+      isAlertCard: true,
+      explanation: explanationFromMetric("VALOR_CABECALHO_NAO_ATRIBUIDO"),
+    }
+  );
+
   return cards;
+}
+
+function buildOperationalGroups(
+  rows: readonly PortfolioMaturityOrderRow[]
+): PortfolioMaturityOperationalGroup[] {
+  const keys: PortfolioOperationalStatus[] = [
+    "OP_TOTALMENTE_ATENDIDO",
+    "OP_TOTALMENTE_ATENDIDO_COM_EXCEDENTE",
+    "OP_PARCIALMENTE_ATENDIDO",
+    "OP_NAO_ATENDIDO",
+    "OP_DOCUMENTO_SEM_ITEMIZACAO",
+    "OP_VINCULO_APENAS_CABECALHO",
+  ];
+  const map = new Map<string, { value: number; count: number; codes: string[] }>();
+  for (const k of keys) map.set(k, { value: 0, count: 0, codes: [] });
+  for (const row of rows) {
+    const status = row.operationalStatus;
+    if (!status || !map.has(status)) continue;
+    const g = map.get(status)!;
+    g.value = round2(g.value + row.orderValue);
+    g.count += 1;
+    g.codes.push(row.orderCode);
+  }
+  return keys.map((status) => {
+    const g = map.get(status)!;
+    return {
+      operationalStatus: status,
+      title: OPERATIONAL_STATUS_LABEL[status] ?? status,
+      ordersCount: g.count,
+      orderValue: g.value,
+      orderCodes: g.codes.sort((a, b) => a.localeCompare(b, "pt-BR")),
+    };
+  });
+}
+
+function buildAlertGroups(
+  rows: readonly PortfolioMaturityOrderRow[]
+): PortfolioMaturityAlertGroup[] {
+  const excess = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO") ||
+      (r.excessQuantity ?? 0) > 0.000001
+  );
+  const outside = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO") || (r.valueOutsideOrder ?? 0) > 0.01
+  );
+  const header = rows.filter(
+    (r) =>
+      r.tagsAlerta.includes("NF_CABECALHO_MAIOR_PEDIDO") ||
+      (r.nfeHeaderNotAttributed ?? 0) > 0.05
+  );
+  return [
+    {
+      alertKey: "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+      title: "Quantidade excedente",
+      ordersCount: excess.length,
+      orderValue: round2(excess.reduce((s, r) => s + r.orderValue, 0)),
+      metricValue: round2(excess.reduce((s, r) => s + toNumber(r.excessQuantity), 0)),
+      orderCodes: excess.map((r) => r.orderCode).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    },
+    {
+      alertKey: "PRODUTO_FORA_DO_PEDIDO",
+      title: "Produto fora do pedido",
+      ordersCount: outside.length,
+      orderValue: round2(outside.reduce((s, r) => s + r.orderValue, 0)),
+      metricValue: round2(outside.reduce((s, r) => s + toNumber(r.valueOutsideOrder), 0)),
+      orderCodes: outside.map((r) => r.orderCode).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    },
+    {
+      alertKey: "NF_CABECALHO_MAIOR_PEDIDO",
+      title: "Cabeçalho maior que valor atribuído",
+      ordersCount: header.length,
+      orderValue: round2(header.reduce((s, r) => s + r.orderValue, 0)),
+      metricValue: round2(
+        header.reduce((s, r) => s + toNumber(r.nfeHeaderNotAttributed), 0)
+      ),
+      orderCodes: header.map((r) => r.orderCode).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    },
+  ];
 }
 
 function buildStatusGroups(
@@ -990,6 +1413,9 @@ export function buildSellerKpis(
     presenteValue: number;
     futuraValue: number;
     divergenceValue: number;
+    fullyAttendedCount: number;
+    excessValue: number;
+    ordersWithProductOutside: number;
   };
 
   const map = new Map<string, Acc>();
@@ -1023,6 +1449,9 @@ export function buildSellerKpis(
         presenteValue: 0,
         futuraValue: 0,
         divergenceValue: 0,
+        fullyAttendedCount: 0,
+        excessValue: 0,
+        ordersWithProductOutside: 0,
       };
       map.set(key, g);
     }
@@ -1063,6 +1492,16 @@ export function buildSellerKpis(
     }
     if (row.tagsAlerta.includes("DIVERGENCIA_TECNICA")) {
       g.divergenceValue = round2(g.divergenceValue + row.orderValue);
+    }
+    if (isFullyAttendedOp(row.operationalStatus)) {
+      g.fullyAttendedCount += 1;
+    }
+    g.excessValue = round2(g.excessValue + toNumber(row.estimatedExcessValue));
+    if (
+      row.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO") ||
+      toNumber(row.valueOutsideOrder) > 0.01
+    ) {
+      g.ordersWithProductOutside += 1;
     }
   }
 
@@ -1122,6 +1561,9 @@ export function buildSellerKpis(
         receiptRatePct: pct(g.receivedValue, g.receivableValue),
         stuckWithoutNfCrValue: g.stuckWithoutNfCrValue,
         blockedValue: g.blockedValue,
+        operationalFulfillmentPct: pct(g.fullyAttendedCount, g.count),
+        excessValue: g.excessValue,
+        ordersWithProductOutside: g.ordersWithProductOutside,
         lowConfidenceValuePct: pct(g.lowConfidenceValue, g.value),
         averageConfidence: g.value > 0 ? round2(g.conf / g.value) : 0,
         confidenceAvailable: g.available,
@@ -1213,10 +1655,13 @@ export function buildPortfolioMaturityAnalytics(args: {
   const sorted = sortMaturityOrders(filtered, filters.sortBy, filters.sortDirection);
   const summaryCards = buildSummaryCards(sorted);
   const statusGroups = buildStatusGroups(sorted);
+  const operationalGroups = buildOperationalGroups(sorted);
+  const alertGroups = buildAlertGroups(sorted);
   const sellerKpis = buildSellerKpis(sorted);
   const totals = buildTotals(sorted);
 
   // Não duplicidade: soma dos status principais = carteira total
+  // (cards operacionais/alertas são eixos paralelos e não entram nesta soma)
   const statusSum = statusGroups.reduce((s, g) => s + g.orderValue, 0);
   if (Math.abs(statusSum - totals.valorTotalPedidos) > 0.05) {
     warnings.push(
@@ -1246,6 +1691,8 @@ export function buildPortfolioMaturityAnalytics(args: {
   return {
     summaryCards,
     statusGroups,
+    operationalGroups,
+    alertGroups,
     sellerKpis,
     rows,
     pagination: { page, pageSize, totalRows, totalPages },

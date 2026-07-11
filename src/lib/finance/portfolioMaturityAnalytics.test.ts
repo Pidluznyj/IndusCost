@@ -548,6 +548,149 @@ describe("portfolioMaturityAnalytics", () => {
     );
     assert.equal((futura?.ordersCount ?? 0) + (presente?.ordersCount ?? 0), 3);
   });
+
+  it("excesso / produto fora / cabeçalho não aumentam carteira total", () => {
+    const orderValue = 1000;
+    const facts = [
+      fact({
+        id: "base",
+        salesOrderId: "pd02339",
+        orderCode: "PD 02339",
+        salesOrderItemId: "item-1",
+        externalProductId: 10,
+        orderQuantity: 100,
+        orderUnitPrice: 10,
+        orderItemValue: orderValue,
+        allocatedQuantity: 100,
+        allocatedValueByOrderPrice: orderValue,
+        nfeExternalId: 1,
+        nfeHeaderValue: 5000,
+        stockDocumentId: "s1",
+        stockDocumentExternalId: 1,
+        stockDocumentItemId: "si1",
+        stockDocumentItemExternalId: 1,
+        stockQuantity: 100,
+        stockUnitValue: 10,
+        stockItemValue: 1000,
+        receivableTotalValue: 1000,
+        openReceivableValue: 1000,
+        receivedValue: 0,
+        status: "RECEIVABLE_CONFIRMED",
+        confidenceLevel: "HIGH",
+        forecastSource: "RECEIVABLE",
+        alertsJson: [],
+      }),
+      fact({
+        id: "surplus",
+        salesOrderId: "pd02339",
+        orderCode: "PD 02339",
+        salesOrderItemId: "item-1",
+        externalProductId: 10,
+        orderQuantity: 100,
+        orderUnitPrice: 10,
+        orderItemValue: orderValue,
+        nfeExternalId: 1,
+        nfeHeaderValue: 5000,
+        stockDocumentId: "s1",
+        stockDocumentExternalId: 1,
+        stockDocumentItemId: "si-surplus",
+        stockDocumentItemExternalId: 2,
+        stockQuantity: 15,
+        stockUnitValue: 10,
+        stockItemValue: 150,
+        status: "QUANTITY_SURPLUS_IN_NFE",
+        confidenceLevel: "MEDIUM",
+        alertsJson: ["QUANTIDADE_EXCEDENTE_DOCUMENTO"],
+        traceJson: { surplusQuantity: 15 },
+      }),
+      fact({
+        id: "outside",
+        salesOrderId: "pd02339",
+        orderCode: "PD 02339",
+        externalProductId: 99,
+        nfeExternalId: 1,
+        nfeHeaderValue: 5000,
+        stockDocumentId: "s1",
+        stockDocumentExternalId: 1,
+        stockDocumentItemId: "si-out",
+        stockDocumentItemExternalId: 3,
+        stockQuantity: 20,
+        stockUnitValue: 10,
+        stockItemValue: 200,
+        status: "STOCK_PRODUCT_NOT_IN_ORDER",
+        confidenceLevel: "MEDIUM",
+        alertsJson: ["PRODUTO_FORA_DO_PEDIDO"],
+        traceJson: { rule: "STOCK_PRODUCT_NOT_IN_ORDER" },
+      }),
+    ];
+
+    const result = buildPortfolioMaturityAnalytics({
+      facts,
+      orderTotalBySalesOrderId: new Map([["pd02339", orderValue]]),
+      filters: { asOfDate: AS_OF, pageSize: 50 },
+    });
+
+    const total = result.summaryCards.find((c) => c.key === "CARTEIRA_TOTAL_ANALISADA")!;
+    assert.equal(total.value, orderValue);
+
+    const statusSum = result.statusGroups.reduce((s, g) => s + g.orderValue, 0);
+    assert.equal(statusSum, orderValue);
+
+    const row = result.rows.find((r) => r.orderCode === "PD 02339")!;
+    assert.equal(row.orderValue, orderValue);
+    assert.equal(row.statusPrincipal, "CR_ABERTO");
+    assert.ok(row.tagsAlerta.includes("NF_CABECALHO_MAIOR_PEDIDO"));
+    assert.ok(
+      row.tagsAlerta.includes("QUANTIDADE_EXCEDENTE_DOCUMENTO") ||
+        row.excessQuantity > 0
+    );
+    assert.ok(
+      row.tagsAlerta.includes("PRODUTO_FORA_DO_PEDIDO") || row.valueOutsideOrder > 0
+    );
+
+    const excessQtyCard = result.summaryCards.find((c) => c.key === "QTD_EXCEDENTE_TOTAL")!;
+    assert.ok(excessQtyCard.isAlertCard);
+    assert.ok(excessQtyCard.value > 0);
+    assert.ok(excessQtyCard.value + orderValue !== total.value || excessQtyCard.value > 0);
+    // Excesso não entra na carteira
+    assert.equal(total.value, orderValue);
+
+    const outsideCard = result.summaryCards.find(
+      (c) => c.key === "VALOR_DOCUMENTO_FORA_PEDIDO"
+    )!;
+    assert.ok(outsideCard.isAlertCard);
+    assert.ok(outsideCard.value > 0);
+
+    const headerCard = result.summaryCards.find(
+      (c) => c.key === "VALOR_CABECALHO_NAO_ATRIBUIDO"
+    )!;
+    assert.ok(headerCard.isAlertCard);
+    assert.ok(headerCard.value > 0);
+
+    assert.ok(result.operationalGroups.some((g) => g.ordersCount > 0));
+    assert.ok(
+      result.alertGroups.some(
+        (g) => g.alertKey === "QUANTIDADE_EXCEDENTE_DOCUMENTO" && g.ordersCount >= 1
+      )
+    );
+
+    for (const key of [
+      "OP_PCT_TOTALMENTE_ATENDIDO",
+      "QTD_EXCEDENTE_TOTAL",
+      "VALOR_ESTIMADO_EXCEDENTE",
+      "VALOR_DOCUMENTO_FORA_PEDIDO",
+      "VALOR_CABECALHO_NAO_ATRIBUIDO",
+    ]) {
+      const card = result.summaryCards.find((c) => c.key === key)!;
+      assert.ok(card.explanation.whatItMeans.length > 20, key);
+      assert.match(card.explanation.howWeCalculate + card.explanation.whatItMeans, /excede|fora|cabeçalho|atendid/i);
+    }
+
+    const seller = result.sellerKpis[0]!;
+    assert.ok("operationalFulfillmentPct" in seller);
+    assert.ok("excessValue" in seller);
+    assert.ok("ordersWithProductOutside" in seller);
+  });
 });
 
 function round2(n: number): number {

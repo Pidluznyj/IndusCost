@@ -40,11 +40,26 @@ const OPERATIONAL_CARD_KEYS = [
   "SEM_EVIDENCIA",
 ] as const;
 
+const FULFILLMENT_CARD_KEYS = [
+  "OP_PCT_TOTALMENTE_ATENDIDO",
+  "OP_PCT_PARCIALMENTE_ATENDIDO",
+  "OP_PCT_NAO_ATENDIDO",
+  "OP_VALOR_TOTALMENTE_ATENDIDO",
+  "OP_VALOR_PARCIALMENTE_ATENDIDO",
+  "OP_VALOR_NAO_ATENDIDO",
+] as const;
+
 const ALERT_CARD_KEYS = [
   "DIVERGENCIA_TECNICA",
   "NF_CABECALHO_MAIOR_PEDIDO",
+  "VALOR_CABECALHO_NAO_ATRIBUIDO",
   "QUANTIDADE_EXCEDENTE_DOCUMENTO",
+  "PEDIDOS_COM_QTD_EXCEDENTE",
+  "QTD_EXCEDENTE_TOTAL",
+  "VALOR_ESTIMADO_EXCEDENTE",
   "PRODUTO_FORA_DO_PEDIDO",
+  "PEDIDOS_COM_PRODUTO_FORA",
+  "VALOR_DOCUMENTO_FORA_PEDIDO",
   "RISCO_SUPERESTIMACAO",
 ] as const;
 
@@ -59,6 +74,7 @@ const CARD_ORDER = [
   "CARTEIRA_TOTAL_ANALISADA",
   ...FINANCIAL_CARD_KEYS,
   ...OPERATIONAL_CARD_KEYS,
+  ...FULFILLMENT_CARD_KEYS,
   ...ALERT_CARD_KEYS,
   ...SECONDARY_CARD_KEYS,
 ] as const;
@@ -81,10 +97,22 @@ const TONE_BY_KEY: Record<string, SoftTone> = {
   CARTEIRA_PRESENTE_ATENCAO: "amber",
   CARTEIRA_VENCIDA_BLOQUEADA: "red",
   SEM_EVIDENCIA: "gray",
+  OP_PCT_TOTALMENTE_ATENDIDO: "blue",
+  OP_PCT_PARCIALMENTE_ATENDIDO: "amber",
+  OP_PCT_NAO_ATENDIDO: "gray",
+  OP_VALOR_TOTALMENTE_ATENDIDO: "blue",
+  OP_VALOR_PARCIALMENTE_ATENDIDO: "amber",
+  OP_VALOR_NAO_ATENDIDO: "gray",
   DIVERGENCIA_TECNICA: "orange",
   NF_CABECALHO_MAIOR_PEDIDO: "orange",
+  VALOR_CABECALHO_NAO_ATRIBUIDO: "orange",
   QUANTIDADE_EXCEDENTE_DOCUMENTO: "orange",
+  PEDIDOS_COM_QTD_EXCEDENTE: "orange",
+  QTD_EXCEDENTE_TOTAL: "orange",
+  VALOR_ESTIMADO_EXCEDENTE: "orange",
   PRODUTO_FORA_DO_PEDIDO: "orange",
+  PEDIDOS_COM_PRODUTO_FORA: "orange",
+  VALOR_DOCUMENTO_FORA_PEDIDO: "orange",
   RISCO_SUPERESTIMACAO: "red",
   CONVERSAO_PEDIDOS_CR_QTD: "green",
   CONVERSAO_DOC_SAIDA_QTD: "blue",
@@ -101,10 +129,22 @@ const ICON_BY_KEY: Record<string, LucideIcon> = {
   CARTEIRA_PRESENTE_ATENCAO: Scale,
   CARTEIRA_VENCIDA_BLOQUEADA: ShieldAlert,
   SEM_EVIDENCIA: CircleHelp,
+  OP_PCT_TOTALMENTE_ATENDIDO: Scale,
+  OP_PCT_PARCIALMENTE_ATENDIDO: Scale,
+  OP_PCT_NAO_ATENDIDO: CircleHelp,
+  OP_VALOR_TOTALMENTE_ATENDIDO: TrendingUp,
+  OP_VALOR_PARCIALMENTE_ATENDIDO: Scale,
+  OP_VALOR_NAO_ATENDIDO: CircleHelp,
   DIVERGENCIA_TECNICA: AlertTriangle,
   NF_CABECALHO_MAIOR_PEDIDO: AlertTriangle,
+  VALOR_CABECALHO_NAO_ATRIBUIDO: AlertTriangle,
   QUANTIDADE_EXCEDENTE_DOCUMENTO: AlertTriangle,
+  PEDIDOS_COM_QTD_EXCEDENTE: AlertTriangle,
+  QTD_EXCEDENTE_TOTAL: AlertTriangle,
+  VALOR_ESTIMADO_EXCEDENTE: AlertTriangle,
   PRODUTO_FORA_DO_PEDIDO: PackageX,
+  PEDIDOS_COM_PRODUTO_FORA: PackageX,
+  VALOR_DOCUMENTO_FORA_PEDIDO: PackageX,
   RISCO_SUPERESTIMACAO: PackageX,
   CONVERSAO_PEDIDOS_CR_QTD: Receipt,
   CONVERSAO_DOC_SAIDA_QTD: FileOutput,
@@ -129,7 +169,12 @@ const PERCENT_KEYS = new Set([
   "CONVERSAO_DOC_SAIDA_VALOR",
   "TAXA_RECEBIMENTO_CR",
   "CONFIANCA_MEDIA_CARTEIRA",
+  "OP_PCT_TOTALMENTE_ATENDIDO",
+  "OP_PCT_PARCIALMENTE_ATENDIDO",
+  "OP_PCT_NAO_ATENDIDO",
 ]);
+
+const QUANTITY_KEYS = new Set(["QTD_EXCEDENTE_TOTAL"]);
 
 function hasCompleteExplanation(card: PortfolioIntelligenceCardDto): boolean {
   const e = card.explanation;
@@ -146,6 +191,9 @@ function hasCompleteExplanation(card: PortfolioIntelligenceCardDto): boolean {
 function formatPrimaryValue(card: PortfolioIntelligenceCardDto): string {
   if (PERCENT_KEYS.has(card.key)) {
     return formatFinancePercent(card.percentage ?? card.value);
+  }
+  if (QUANTITY_KEYS.has(card.key)) {
+    return formatFinanceInteger(card.value);
   }
   return formatFinanceCurrencyCompact(card.value);
 }
@@ -294,12 +342,14 @@ export function PortfolioIntelligenceCards({
   const totalCard = byKey.get("CARTEIRA_TOTAL_ANALISADA") ?? null;
   const financialCards = pick(FINANCIAL_CARD_KEYS);
   const operationalCards = pick(OPERATIONAL_CARD_KEYS);
+  const fulfillmentCards = pick(FULFILLMENT_CARD_KEYS);
   const alertCards = pick(ALERT_CARD_KEYS);
   const secondaryCards = pick(SECONDARY_CARD_KEYS);
   const ordered = [
     ...(totalCard ? [totalCard] : []),
     ...financialCards,
     ...operationalCards,
+    ...fulfillmentCards,
     ...alertCards,
     ...secondaryCards,
   ];
@@ -419,6 +469,12 @@ export function PortfolioIntelligenceCards({
         "Ainda é pedido de venda — futuro, atenção, vencido ou sem evidência.",
         operationalCards,
         { testId: "portfolio-intelligence-cards-operational" }
+      )}
+      {renderGrid(
+        "2b. Atendimento operacional",
+        "Eixo paralelo: % e valor por cobertura item a item — não substitui nem soma o financeiro.",
+        fulfillmentCards,
+        { testId: "portfolio-intelligence-cards-fulfillment" }
       )}
       {renderGrid(
         "3. Alertas técnicos",

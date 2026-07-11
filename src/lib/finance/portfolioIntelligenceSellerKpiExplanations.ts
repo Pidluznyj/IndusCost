@@ -92,6 +92,27 @@ export const SELLER_KPI_EXPLANATIONS: Record<string, SellerKpiExplanation> = {
     whatIsExcluded: "CR aberto e pedidos futuros/presentes.",
     howToInterpret: "Principal risco de superestimar a carteira do vendedor.",
   },
+  operationalFulfillmentPct: {
+    whatItMeans: "Percentual de pedidos do vendedor totalmente atendidos no eixo operacional.",
+    howWeCalculate: "Qtd totalmente atendidos ÷ qtd pedidos do vendedor × 100.",
+    whatIsIncluded: "Atendimento item a item (com ou sem excedente).",
+    whatIsExcluded: "Não substitui conversão em CR nem altera carteira.",
+    howToInterpret: "Cobertura operacional — eixo paralelo ao financeiro.",
+  },
+  excessValue: {
+    whatItMeans: "Valor estimado de quantidade excedente nos documentos do vendedor.",
+    howWeCalculate: "Σ valor estimado do excedente por pedido.",
+    whatIsIncluded: "Somente a fatia excedente dos documentos.",
+    whatIsExcluded: "Não entra na carteira total nem no valor oficial do pedido.",
+    howToInterpret: "Alerta de risco — não tratar como dinheiro adicional.",
+  },
+  ordersWithProductOutside: {
+    whatItMeans: "Quantidade de pedidos com produto no documento fora do pedido.",
+    howWeCalculate: "Contagem de pedidos com alerta de produto fora.",
+    whatIsIncluded: "Pedidos com itens de documento não pertencentes ao pedido.",
+    whatIsExcluded: "Não aumenta o valor do pedido.",
+    howToInterpret: "Pode indicar vínculo cruzado ou NF com itens de outros pedidos.",
+  },
   lowConfidenceValuePct: {
     whatItMeans: "Quanto da carteira está com confiança baixa ou muito baixa.",
     howWeCalculate: "Σ valor com confiança BAIXA/MUITO_BAIXA ÷ valor total × 100.",

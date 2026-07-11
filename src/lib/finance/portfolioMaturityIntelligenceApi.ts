@@ -306,6 +306,8 @@ export function buildPortfolioIntelligenceListPayload(args: {
       cards: [],
       groups: [],
       sellerKpis: [],
+      operationalGroups: [],
+      alertGroups: [],
       rows: [],
       pagination: {
         page: 1,
@@ -333,6 +335,8 @@ export function buildPortfolioIntelligenceListPayload(args: {
     message: null as string | null,
     cards: analytics.summaryCards,
     groups: analytics.statusGroups,
+    operationalGroups: analytics.operationalGroups,
+    alertGroups: analytics.alertGroups,
     sellerKpis: analytics.sellerKpis,
     rows: analytics.rows,
     pagination: analytics.pagination,

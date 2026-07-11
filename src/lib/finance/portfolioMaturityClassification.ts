@@ -591,6 +591,18 @@ export type PortfolioMaturityMetricKey =
   | "NF_CABECALHO_MAIOR_PEDIDO"
   | "QUANTIDADE_EXCEDENTE_DOCUMENTO"
   | "PRODUTO_FORA_DO_PEDIDO"
+  | "OP_PCT_TOTALMENTE_ATENDIDO"
+  | "OP_PCT_PARCIALMENTE_ATENDIDO"
+  | "OP_PCT_NAO_ATENDIDO"
+  | "OP_VALOR_TOTALMENTE_ATENDIDO"
+  | "OP_VALOR_PARCIALMENTE_ATENDIDO"
+  | "OP_VALOR_NAO_ATENDIDO"
+  | "PEDIDOS_COM_QTD_EXCEDENTE"
+  | "QTD_EXCEDENTE_TOTAL"
+  | "VALOR_ESTIMADO_EXCEDENTE"
+  | "PEDIDOS_COM_PRODUTO_FORA"
+  | "VALOR_DOCUMENTO_FORA_PEDIDO"
+  | "VALOR_CABECALHO_NAO_ATRIBUIDO"
   | "CONFIDENCE_SCORE"
   | "CONFIANCA_MEDIA_CARTEIRA"
   | "RISCO_SUPERESTIMACAO"
@@ -705,10 +717,10 @@ const METRIC_EXPLANATIONS: Record<string, PortfolioMetricExplanation> = {
   QUANTIDADE_EXCEDENTE_DOCUMENTO: {
     metricKey: "QUANTIDADE_EXCEDENTE_DOCUMENTO",
     oQueSignifica:
-      "Documento de saída/NF traz quantidade acima do saldo do pedido — excedente separado do atendimento.",
+      "Quantidade encontrada em documentos de saída acima do saldo do pedido referenciado.",
     comoCalculamos:
-      "Pedidos com tag de quantidade excedente. O valor do card é o valor do pedido (não o excedente).",
-    oQueEntra: "Pedidos com excedente de quantidade nos documentos vinculados.",
+      "Somamos apenas a parte que excede a quantidade pedida. O excesso não aumenta o valor do pedido nem o caixa.",
+    oQueEntra: "Pedidos com tag de quantidade excedente nos documentos vinculados.",
     oQueNaoEntra: "Não aumenta o valor oficial do pedido nem soma carteira extra.",
     comoInterpretar:
       "Alerta — pode coexistir com CR aberto. Não some carteira; revise o mapa de atendimento.",
@@ -716,13 +728,124 @@ const METRIC_EXPLANATIONS: Record<string, PortfolioMetricExplanation> = {
   PRODUTO_FORA_DO_PEDIDO: {
     metricKey: "PRODUTO_FORA_DO_PEDIDO",
     oQueSignifica:
-      "Há produto no documento que não pertence a este pedido — valor fora do pedido.",
+      "Item encontrado no documento de saída que não existe nos itens do pedido referenciado.",
     comoCalculamos:
-      "Pedidos com tag de produto fora. O valor do card é o valor do pedido (não o valor fora).",
+      "Pedidos com tag de produto fora. O valor do card referencia o pedido (não o valor fora).",
     oQueEntra: "Pedidos com itens de documento não atribuídos ao pedido.",
     oQueNaoEntra: "Não soma o valor fora como se fosse carteira deste pedido.",
     comoInterpretar:
-      "Alerta técnico — pode coexistir com outro status. Não some carteira.",
+      "Pode indicar que a NF/documento contém itens de outros pedidos ou vínculo incorreto. Alerta técnico — não some carteira.",
+  },
+  OP_PCT_TOTALMENTE_ATENDIDO: {
+    metricKey: "OP_PCT_TOTALMENTE_ATENDIDO",
+    oQueSignifica:
+      "Percentual de pedidos cujo atendimento item a item cobre 100% da quantidade pedida (com ou sem excedente).",
+    comoCalculamos:
+      "Qtd de pedidos totalmente atendidos ÷ total de pedidos no filtro × 100.",
+    oQueEntra: "Status operacional totalmente atendido (inclui com excedente).",
+    oQueNaoEntra: "Não substitui KPIs financeiros nem altera o valor da carteira.",
+    comoInterpretar: "Indicador operacional de cobertura — eixo separado do CR/baixa.",
+  },
+  OP_PCT_PARCIALMENTE_ATENDIDO: {
+    metricKey: "OP_PCT_PARCIALMENTE_ATENDIDO",
+    oQueSignifica: "Percentual de pedidos com atendimento parcial (ainda há saldo a atender).",
+    comoCalculamos:
+      "Qtd parcialmente atendidos ÷ total de pedidos no filtro × 100.",
+    oQueEntra: "Pedidos com quantidade atendida > 0 e saldo restante > 0.",
+    oQueNaoEntra: "Não altera carteira financeira.",
+    comoInterpretar: "Fila operacional de conclusão de faturamento/saída.",
+  },
+  OP_PCT_NAO_ATENDIDO: {
+    metricKey: "OP_PCT_NAO_ATENDIDO",
+    oQueSignifica:
+      "Percentual de pedidos sem atendimento itemizado (ou só vínculo de cabeçalho/documento sem itens).",
+    comoCalculamos: "Qtd não atendidos ÷ total de pedidos no filtro × 100.",
+    oQueEntra: "Não atendido, vínculo só cabeçalho ou documento sem itemização.",
+    oQueNaoEntra: "Não inventa atendimento nem muda status financeiro.",
+    comoInterpretar: "Carteira ainda sem evidência de saída item a item.",
+  },
+  OP_VALOR_TOTALMENTE_ATENDIDO: {
+    metricKey: "OP_VALOR_TOTALMENTE_ATENDIDO",
+    oQueSignifica:
+      "Soma do valor oficial dos pedidos totalmente atendidos no eixo operacional.",
+    comoCalculamos: "Σ orderValue dos pedidos com status operacional totalmente atendido.",
+    oQueEntra: "Valor oficial do pedido (uma vez).",
+    oQueNaoEntra:
+      "Excedente, produto fora e cabeçalho de NF. Não soma carteira adicional — é o mesmo valor já classificado no status financeiro.",
+    comoInterpretar: "Leitura operacional da mesma carteira — não duplicar com financeiro.",
+  },
+  OP_VALOR_PARCIALMENTE_ATENDIDO: {
+    metricKey: "OP_VALOR_PARCIALMENTE_ATENDIDO",
+    oQueSignifica: "Valor oficial dos pedidos parcialmente atendidos.",
+    comoCalculamos: "Σ orderValue dos pedidos com atendimento parcial.",
+    oQueEntra: "Valor oficial do pedido.",
+    oQueNaoEntra: "Não adiciona valor à carteira total.",
+    comoInterpretar: "Mesma base do pedido — eixo operacional paralelo.",
+  },
+  OP_VALOR_NAO_ATENDIDO: {
+    metricKey: "OP_VALOR_NAO_ATENDIDO",
+    oQueSignifica: "Valor oficial dos pedidos ainda sem atendimento itemizado.",
+    comoCalculamos: "Σ orderValue dos pedidos não atendidos / só cabeçalho / doc. sem itens.",
+    oQueEntra: "Valor oficial do pedido.",
+    oQueNaoEntra: "Não inventa faturamento nem soma carteira extra.",
+    comoInterpretar: "Operacional — não confundir com CR aberto ou recebido.",
+  },
+  PEDIDOS_COM_QTD_EXCEDENTE: {
+    metricKey: "PEDIDOS_COM_QTD_EXCEDENTE",
+    oQueSignifica:
+      "Quantidade de pedidos em que documentos de saída ultrapassam o saldo do pedido.",
+    comoCalculamos: "Contagem de pedidos com alerta de quantidade excedente.",
+    oQueEntra: "Pedidos com excesso detectado no mapa de atendimento.",
+    oQueNaoEntra: "O excesso não aumenta o valor do pedido nem o caixa.",
+    comoInterpretar: "Alerta técnico — revise vínculo; não some carteira.",
+  },
+  QTD_EXCEDENTE_TOTAL: {
+    metricKey: "QTD_EXCEDENTE_TOTAL",
+    oQueSignifica:
+      "Quantidade encontrada em documentos de saída acima do saldo do pedido referenciado.",
+    comoCalculamos:
+      "Somamos apenas a parte que excede a quantidade pedida. O excesso não aumenta o valor do pedido nem o caixa.",
+    oQueEntra: "Unidades excedentes nos documentos vinculados.",
+    oQueNaoEntra: "Quantidade pedida e quantidade já atribuída ao pedido.",
+    comoInterpretar: "Métrica de alerta em unidades — não é valor de carteira.",
+  },
+  VALOR_ESTIMADO_EXCEDENTE: {
+    metricKey: "VALOR_ESTIMADO_EXCEDENTE",
+    oQueSignifica:
+      "Estimativa do valor das quantidades excedentes (preço do documento ou preço do pedido).",
+    comoCalculamos:
+      "Σ valor dos itens excedentes. Se o valor do item não existir, usa qtd × preço unitário do pedido.",
+    oQueEntra: "Somente a fatia excedente.",
+    oQueNaoEntra: "Não entra na carteira total nem no valor oficial do pedido.",
+    comoInterpretar: "Alerta de risco — informação operacional, não caixa.",
+  },
+  PEDIDOS_COM_PRODUTO_FORA: {
+    metricKey: "PEDIDOS_COM_PRODUTO_FORA",
+    oQueSignifica:
+      "Pedidos cujo documento traz produto que não existe nos itens do pedido referenciado.",
+    comoCalculamos: "Contagem de pedidos com alerta de produto fora.",
+    oQueEntra: "Pedidos com itens de documento não pertencentes ao pedido.",
+    oQueNaoEntra: "Não aumenta o valor do pedido.",
+    comoInterpretar:
+      "Pode indicar NF/documento com itens de outros pedidos ou vínculo incorreto.",
+  },
+  VALOR_DOCUMENTO_FORA_PEDIDO: {
+    metricKey: "VALOR_DOCUMENTO_FORA_PEDIDO",
+    oQueSignifica: "Valor de itens de documento que não pertencem ao pedido referenciado.",
+    comoCalculamos: "Σ stockItemValue dos produtos fora do pedido.",
+    oQueEntra: "Itens fora do pedido nos documentos de saída.",
+    oQueNaoEntra: "Valor oficial do pedido e valor atribuído ao pedido.",
+    comoInterpretar: "Alerta — não some carteira; pode ser vínculo cruzado.",
+  },
+  VALOR_CABECALHO_NAO_ATRIBUIDO: {
+    metricKey: "VALOR_CABECALHO_NAO_ATRIBUIDO",
+    oQueSignifica:
+      "Parte do cabeçalho de NF/documento maior que o valor atribuído ao pedido.",
+    comoCalculamos:
+      "Σ max(0, cabeçalho − valor atribuído ao pedido). Cabeçalho nunca aumenta a carteira.",
+    oQueEntra: "Diferença de cabeçalho não atribuída.",
+    oQueNaoEntra: "Valor oficial do pedido e valor já atribuído item a item.",
+    comoInterpretar: "Alerta de leitura inflada — não tratar como dinheiro do pedido.",
   },
   CONFIDENCE_SCORE: {
     metricKey: "CONFIDENCE_SCORE",

@@ -62,6 +62,14 @@ function baseRow(
     forecastSource: "ORDER",
     factStatus: "ORDER_ONLY",
     productExternalIds: partial.productExternalIds ?? [],
+    financialStatus: partial.financialStatus ?? null,
+    operationalStatus: partial.operationalStatus ?? null,
+    fulfillmentPercent: partial.fulfillmentPercent ?? null,
+    excessQuantity: partial.excessQuantity ?? 0,
+    estimatedExcessValue: partial.estimatedExcessValue ?? 0,
+    valueOutsideOrder: partial.valueOutsideOrder ?? 0,
+    nfeHeaderNotAttributed: partial.nfeHeaderNotAttributed ?? 0,
+    fulfillmentAvailable: partial.fulfillmentAvailable ?? false,
   };
 }
 

@@ -355,7 +355,10 @@ export type PortfolioIntelligenceOrderRow = {
   operationalStatus?: string | null;
   fulfillmentPercent?: number | null;
   excessQuantity?: number | null;
+  estimatedExcessValue?: number | null;
   valueOutsideOrder?: number | null;
+  nfeHeaderNotAttributed?: number | null;
+  fulfillmentAvailable?: boolean;
 };
 
 export type PortfolioIntelligenceGroupDto = {
@@ -383,6 +386,9 @@ export type PortfolioIntelligenceSellerKpiDto = {
   receiptRatePct: number | null;
   stuckWithoutNfCrValue: number;
   blockedValue: number;
+  operationalFulfillmentPct?: number | null;
+  excessValue?: number;
+  ordersWithProductOutside?: number;
   lowConfidenceValuePct: number | null;
   averageConfidence: number;
   confidenceAvailable: boolean;

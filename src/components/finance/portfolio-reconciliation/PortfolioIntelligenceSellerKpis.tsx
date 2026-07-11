@@ -195,6 +195,21 @@ export function PortfolioIntelligenceSellerKpis({
                   className="text-right"
                 />
                 <HeaderCell
+                  label="% atend. op."
+                  explainKey="operationalFulfillmentPct"
+                  className="text-right"
+                />
+                <HeaderCell
+                  label="Valor excedente"
+                  explainKey="excessValue"
+                  className="text-right"
+                />
+                <HeaderCell
+                  label="Prod. fora"
+                  explainKey="ordersWithProductOutside"
+                  className="text-right"
+                />
+                <HeaderCell
                   label="% baixa conf."
                   explainKey="lowConfidenceValuePct"
                   className="text-right"
@@ -269,6 +284,15 @@ export function PortfolioIntelligenceSellerKpis({
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums font-medium">
                       {formatFinanceCurrency(row.blockedValue)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatPct(row.operationalFulfillmentPct)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatFinanceCurrency(row.excessValue ?? 0)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatFinanceInteger(row.ordersWithProductOutside ?? 0)}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {formatPct(row.lowConfidenceValuePct)}
