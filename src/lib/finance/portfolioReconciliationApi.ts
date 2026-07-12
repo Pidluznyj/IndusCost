@@ -20,7 +20,7 @@ import {
 } from "./portfolioReconciliationComparison.js";
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE =
-  "Nenhuma conciliação materializada encontrada. Rode o rebuild manual.";
+  "Nenhuma run materializada encontrada (OrderToCashAudit ou Conciliação). Execute o rebuild Pedido → Caixa no servidor.";
 
 export const PORTFOLIO_RECONCILIATION_DEFAULT_PAGE_SIZE = 50;
 export const PORTFOLIO_RECONCILIATION_MAX_PAGE_SIZE = 200;
@@ -445,6 +445,9 @@ export function resolveOrderValorPedido(args: {
 export function hasRestrictivePortfolioListFilters(
   filters: PortfolioReconciliationListFilters
 ): boolean {
+  // customerExternalId sozinho não bloqueia summaryJson: runs específicas de cliente
+  // (ex. Britânia) precisam alinhar cards ao summary quando ordersAnalyzed bate.
+  // Proteção contra run geral + filtro cliente: ordersAnalyzed ≠ orderRowCount em applyRunSummaryJsonToCards.
   return (
     filters.year != null ||
     filters.month != null ||
@@ -1006,6 +1009,8 @@ export function buildListPayload(args: {
   facts: readonly PortfolioReconciliationFactApiRow[];
   filters: PortfolioReconciliationListFilters;
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
+  /** Fonte materializada (compatibilidade O2C). */
+  dataSource?: "order_to_cash_audit" | "portfolio_reconciliation";
 }) {
   const filteredFacts = args.facts.filter((f) => factMatchesListFilters(f, args.filters));
   const allOrderRows = aggregateFactsToOrderRows(filteredFacts, {
@@ -1073,6 +1078,7 @@ export function buildListPayload(args: {
     },
     filters: args.filters,
     availableFilters,
+    dataSource: args.dataSource ?? "portfolio_reconciliation",
   };
 }
 
@@ -1100,6 +1106,7 @@ export function buildNoRunPayload() {
       years: [] as number[],
       months: [] as number[],
     },
+    dataSource: null as "order_to_cash_audit" | "portfolio_reconciliation" | null,
   };
 }
 

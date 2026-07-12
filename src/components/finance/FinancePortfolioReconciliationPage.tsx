@@ -127,7 +127,7 @@ export function FinancePortfolioReconciliationPage() {
       if (e instanceof DOMException && e.name === "AbortError") return;
       if (
         e instanceof HttpError &&
-        (e.status === 404 || /conciliação materializada|rebuild/i.test(e.message))
+        (e.status === 404 || /run materializada|conciliação materializada|rebuild|OrderToCashAudit/i.test(e.message))
       ) {
         setPayload({
           ok: false,
@@ -147,6 +147,7 @@ export function FinancePortfolioReconciliationPage() {
             years: [],
             months: [],
           },
+          dataSource: null,
         });
         setError(null);
       } else {
@@ -405,12 +406,22 @@ export function FinancePortfolioReconciliationPage() {
                 data-testid="portfolio-filter-run"
               >
                 <option value="">Último run com sucesso</option>
-                {runs.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {run.status} · {formatFinanceDateTime(run.finishedAt ?? run.createdAt)} ·{" "}
-                    {run.id.slice(0, 8)}
-                  </option>
-                ))}
+                {runs.map((run) => {
+                  const source =
+                    run.filters &&
+                    typeof run.filters === "object" &&
+                    !Array.isArray(run.filters) &&
+                    (run.filters as { source?: unknown }).source === "order_to_cash_audit"
+                      ? "O2C"
+                      : "Portfolio";
+                  return (
+                    <option key={run.id} value={run.id}>
+                      {source} · {run.status} ·{" "}
+                      {formatFinanceDateTime(run.finishedAt ?? run.createdAt)} ·{" "}
+                      {run.id.slice(0, 8)}
+                    </option>
+                  );
+                })}
               </select>
             </FilterField>
 
@@ -433,14 +444,22 @@ export function FinancePortfolioReconciliationPage() {
         </FinanceBiFilterPanel>
 
         {payload?.run ? (
-          <p
-            className="mb-3 text-xs text-muted-foreground"
-            data-testid="portfolio-reconciliation-run-meta"
-          >
-            Run {payload.run.id.slice(0, 8)}… · {payload.run.status} ·{" "}
-            {formatFinanceDateTime(payload.run.finishedAt ?? payload.run.createdAt)}
-            {payload.run.mode ? ` · modo ${payload.run.mode}` : ""}
-          </p>
+          <div className="mb-3 space-y-1" data-testid="portfolio-reconciliation-run-meta">
+            <p className="text-xs text-muted-foreground">
+              Run {payload.run.id.slice(0, 8)}… · {payload.run.status} · última run{" "}
+              {formatFinanceDateTime(payload.run.finishedAt ?? payload.run.createdAt)}
+              {payload.run.mode ? ` · modo ${payload.run.mode}` : ""}
+            </p>
+            {payload.dataSource === "order_to_cash_audit" ? (
+              <p
+                className="text-xs text-sky-800"
+                data-testid="portfolio-reconciliation-o2c-source"
+              >
+                Fonte: OrderToCashAudit (Pedido → Caixa). Pedido ≠ caixa; CR não é somado por
+                linha de alocação.
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         <div
@@ -519,7 +538,7 @@ export function FinancePortfolioReconciliationPage() {
 
         {activeView === "conciliation" && noRun ? (
           <FinanceModuleEmptyState
-            title="Sem conciliação materializada"
+            title="Sem run materializada"
             description={PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE}
             icon={<AlertTriangle className="h-5 w-5" />}
           />

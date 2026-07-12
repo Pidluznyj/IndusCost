@@ -23,12 +23,12 @@ Runs de referência (já populadas):
 
 | Pergunta | Resposta |
 |----------|----------|
-| Usa OrderToCashAudit hoje? | **Não** |
-| Fonte atual | `PortfolioReconciliationRun` / `PortfolioReconciliationFact` |
-| Deve migrar agora? | **Não no curto prazo** para não quebrar cards/comparison/businessAnswers |
-| Para refletir a base nova? | Precisa **camada de compatibilidade** (adapter Fact O2C → shape Portfolio) **ou** rebuild paralelo de Portfolio a partir das mesmas fontes oficiais — **não** basta “continuar só com Portfolio” se a verdade de negócio passou a ser O2C |
+| Usa OrderToCashAudit hoje? | **Sim (preferencial)** — mesma política da Inteligência |
+| Fonte atual | `OrderToCashAuditRun`/`Fact` → adapter → `buildListPayload` (cards/comparison/businessAnswers) |
+| Fallback | `PortfolioReconciliationRun`/`Fact` se não houver O2C SUCCESS (geral ou runId explícito Portfolio) |
+| Contrato UI/API | Mantido (`GET /api/finance/portfolio-reconciliation`) — sem redesign |
 
-**Recomendação definitiva:** manter o **contrato de UI/API** da Conciliação, mas planejar **fonte canônica = OrderToCashAudit** via adapter no service (fase 2). Até lá, Conciliação e O2C podem divergir numericamente.
+**Comportamento (etapa 3):** Opção A — compatibilidade. Adapter `orderToCashAuditToPortfolioFactsAdapter` (CR 1× por pedido). `summaryJson` O2C inclui `ordersAnalyzed` + `projectedOpenBalance` para cards sem filtro restritivo.
 
 ### 1.2 Inteligência da Carteira
 
@@ -56,9 +56,8 @@ Runs de referência (já populadas):
 
 ### 1) Conciliação: Portfolio ou compatibilidade O2C?
 
-**Compatibilidade com OrderToCashAudit** é o destino para refletir a base nova.  
-**Continuar só Portfolio** = não reflete runs `41c2470a…` / `a0bdc0b6…`.  
-**Curto prazo:** manter Portfolio. **Médio prazo:** adapter O2C → payload Conciliação.
+**Compatibilidade com OrderToCashAudit (Opção A)** — **feito (etapa 3)**.  
+Endpoint e UI da Conciliação inalterados; service prefere O2C + adapter; Portfolio permanece como fallback/rastreabilidade.
 
 ### 2) Inteligência: O2C direto ou motor antigo?
 
@@ -155,7 +154,7 @@ curl "http://localhost:PORT/api/finance/portfolio-reconciliation/order-to-cash-a
 
 | Aba | Fonte atual | Fonte recomendada (alvo) | Ajuste imediato |
 |-----|-------------|--------------------------|-----------------|
-| Conciliação | Portfolio Run/Fact | **OrderToCashAudit** via adapter (fase 2) | Nenhum visual agora |
+| Conciliação | **O2C via adapter (feito)**; fallback Portfolio | OrderToCashAudit | Banner fonte + runs O2C no seletor |
 | Inteligência | Portfolio Fact + motor maturidade **ou** O2C via adapter | **OrderToCashAudit via adapter (feito)** | Ativo: prefer O2C; fallback Portfolio |
 | Auditoria Pedido → Caixa | OrderToCashAudit | **OrderToCashAudit** | **Feito (etapa 1)** — política de run + `externalCustomerId` + summary seguro |
 
@@ -172,8 +171,8 @@ curl "http://localhost:PORT/api/finance/portfolio-reconciliation/order-to-cash-a
 
 ### Conciliação / Inteligência (P1–P2)
 
-5. Adapter `OrderToCashAuditFact` → shape consumido por `buildListPayload` / maturity analytics (por `salesOrderId`).
-6. Ou pipeline que atualize Portfolio a partir das mesmas evidências oficiais (manter duas bases sincronizadas).
+5. ~~Adapter `OrderToCashAuditFact` → shape consumido por `buildListPayload` / maturity analytics~~ — **feito** (etapas 3 e 4).
+6. Pipeline paralelo Portfolio (opcional) — só se precisar de rastreabilidade histórica sem O2C.
 
 ---
 
@@ -218,7 +217,7 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 | **0** | Diagnóstico + scripts + doc | Inventário + este arquivo |
 | **1** | Fix Auditoria API/UI params | **Feito** — `externalCustomerId`, política de run, cards seguros |
 | **2** | Smoke Britânia 2026 | Script validate + UI Pesquisa → ≥1 row |
-| **3** | Adapter Conciliação ← O2C | Service + testes; UI sem redesign |
+| **3** | Adapter Conciliação ← O2C | **Feito** — list/detail/runs/summary prefer O2C; fallback Portfolio |
 | **4** | Adapter Inteligência ← O2C | **Feito** — `orderToCashAuditToPortfolioFactsAdapter` + loader prefer O2C |
 | **5** | Deprecar dual-read | Docs + flag / sunset Portfolio na tela |
 
@@ -242,7 +241,7 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 
 | Aba | Ação |
 |-----|------|
-| **Conciliação** | Continua Portfolio **hoje**; alvo = O2C via **adapter** |
+| **Conciliação** | O2C via **adapter** (preferencial); Portfolio fallback |
 | **Inteligência** | Motor antigo + **fatos O2C** (adapter); fallback Portfolio |
 | **Auditoria** | O2C com política de run + `externalCustomerId`; sem filtros a API usa a run geral `41c2470a…` |
 

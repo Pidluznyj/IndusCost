@@ -1,6 +1,8 @@
 /**
  * Loaders Prisma read-only da Conciliação de Carteira.
- * Não recalcula alocação; só lê Run + Fact materializados.
+ * Preferência: OrderToCashAudit → adapter → contrato Portfolio.
+ * Fallback: PortfolioReconciliation legado (rastreabilidade).
+ * Não recalcula alocação; só lê facts materializados.
  */
 
 import { prisma } from "@/src/lib/prisma.js";
@@ -245,12 +247,58 @@ export async function loadPortfolioReconciliationFactsForRun(
   return rows.map(mapFact);
 }
 
+/**
+ * Listagem da aba Conciliação (read-only).
+ * Preferência: OrderToCashAudit → adapter → contrato Portfolio (cards/tabela).
+ * Fallback: PortfolioReconciliation legado (rastreabilidade).
+ */
 export async function loadPortfolioReconciliationList(query: Record<string, unknown>) {
   const filters = parsePortfolioReconciliationListFilters(query);
+  const o2c = await resolveOrderToCashAuditRunForIntelligence(filters.runId);
+
+  if (o2c) {
+    const o2cFacts = await loadOrderToCashAuditFactsForIntelligence(o2c.id, {
+      customerExternalId: filters.customerExternalId,
+      year: filters.year,
+    });
+    const adapted = adaptOrderToCashAuditFactsToPortfolioFacts(o2cFacts);
+    const orderIds = [
+      ...new Set(
+        adapted.map((f) => f.salesOrderId).filter((id): id is string => id != null)
+      ),
+    ];
+    const orderTotalBySalesOrderId = new Map<string, number>();
+    if (orderIds.length > 0) {
+      const orders = await prisma.salesOrder.findMany({
+        where: { id: { in: orderIds } },
+        select: { id: true, totalNetValue: true },
+      });
+      for (const order of orders) {
+        const n = decimalToNumber(order.totalNetValue);
+        if (n != null) orderTotalBySalesOrderId.set(order.id, n);
+      }
+    }
+    for (const fact of o2cFacts) {
+      if (!fact.salesOrderId || orderTotalBySalesOrderId.has(fact.salesOrderId)) continue;
+      const fromFact = fact.orderNetValue ?? fact.orderTotalValue ?? null;
+      if (fromFact != null) orderTotalBySalesOrderId.set(fact.salesOrderId, fromFact);
+    }
+
+    return buildListPayload({
+      run: mapOrderToCashRunToPortfolioMeta(o2c),
+      facts: adapted,
+      filters,
+      orderTotalBySalesOrderId,
+      dataSource: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+    });
+  }
+
   const run = await resolvePortfolioReconciliationRun(filters);
   if (!run) return buildNoRunPayload();
 
-  const facts = await loadPortfolioReconciliationFactsForRun(run.id);
+  const facts = await loadPortfolioReconciliationFactsForRun(run.id, {
+    customerExternalId: filters.customerExternalId,
+  });
   const orderIds = [
     ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),
   ];
@@ -271,6 +319,7 @@ export async function loadPortfolioReconciliationList(query: Record<string, unkn
     facts,
     filters,
     orderTotalBySalesOrderId,
+    dataSource: "portfolio_reconciliation",
   });
 }
 
@@ -279,6 +328,36 @@ export async function loadPortfolioReconciliationOrderDetail(
   query: Record<string, unknown>
 ) {
   const filters = parsePortfolioReconciliationListFilters(query);
+  const o2c = await resolveOrderToCashAuditRunForIntelligence(filters.runId);
+
+  if (o2c) {
+    const rows = await prisma.orderToCashAuditFact.findMany({
+      where: { runId: o2c.id, salesOrderId },
+      orderBy: [{ salesOrderItemId: "asc" }, { id: "asc" }],
+    });
+    const adapted = adaptOrderToCashAuditFactsToPortfolioFacts(
+      rows.map(mapO2cFactForAdapter)
+    );
+    if (adapted.length === 0) {
+      return {
+        ok: false as const,
+        message: "Pedido não encontrado na auditoria Pedido → Caixa deste run.",
+        detail: null,
+        run: serializeRunMeta(mapOrderToCashRunToPortfolioMeta(o2c)),
+      };
+    }
+    return {
+      ok: true as const,
+      message: null as string | null,
+      detail: buildOrderDetailFromFacts(
+        salesOrderId,
+        adapted,
+        mapOrderToCashRunToPortfolioMeta(o2c)
+      ),
+      dataSource: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+    };
+  }
+
   const run = await resolvePortfolioReconciliationRun(filters);
   if (!run) {
     return {
@@ -306,22 +385,94 @@ export async function loadPortfolioReconciliationOrderDetail(
     ok: true as const,
     message: null as string | null,
     detail: buildOrderDetailFromFacts(salesOrderId, facts.map(mapFact), run),
+    dataSource: "portfolio_reconciliation",
   };
 }
 
 export async function listPortfolioReconciliationRuns(limit = 50) {
   const safeLimit = Math.min(Math.max(1, limit), 100);
-  const runs = await prisma.portfolioReconciliationRun.findMany({
-    orderBy: [{ createdAt: "desc" }],
-    take: safeLimit,
-  });
+  const [o2cRuns, portfolioRuns] = await Promise.all([
+    prisma.orderToCashAuditRun.findMany({
+      where: { status: "SUCCESS" },
+      orderBy: [{ createdAt: "desc" }],
+      take: safeLimit,
+    }),
+    prisma.portfolioReconciliationRun.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      take: safeLimit,
+    }),
+  ]);
+
+  const merged = [
+    ...o2cRuns.map((run) => serializeRunMeta(mapOrderToCashRunToPortfolioMeta(run))),
+    ...portfolioRuns.map((run) => serializeRunMeta(mapRun(run))),
+  ]
+    .sort((a, b) => {
+      const ta = new Date(a.finishedAt ?? a.createdAt).getTime();
+      const tb = new Date(b.finishedAt ?? b.createdAt).getTime();
+      return tb - ta;
+    })
+    .slice(0, safeLimit);
+
   return {
     ok: true as const,
-    runs: runs.map((run) => serializeRunMeta(mapRun(run))),
+    runs: merged,
   };
 }
 
 export async function loadPortfolioReconciliationRunSummary(runId: string) {
+  const o2c = await prisma.orderToCashAuditRun.findUnique({ where: { id: runId } });
+  if (o2c?.status === "SUCCESS") {
+    const o2cFacts = await loadOrderToCashAuditFactsForIntelligence(o2c.id, {});
+    const adapted = adaptOrderToCashAuditFactsToPortfolioFacts(o2cFacts);
+    const orderIds = [
+      ...new Set(
+        adapted.map((f) => f.salesOrderId).filter((id): id is string => id != null)
+      ),
+    ];
+    const orderTotalBySalesOrderId = new Map<string, number>();
+    if (orderIds.length > 0) {
+      const orders = await prisma.salesOrder.findMany({
+        where: { id: { in: orderIds } },
+        select: { id: true, totalNetValue: true },
+      });
+      for (const order of orders) {
+        const n = decimalToNumber(order.totalNetValue);
+        if (n != null) orderTotalBySalesOrderId.set(order.id, n);
+      }
+    }
+    const mapped = mapOrderToCashRunToPortfolioMeta(o2c);
+    const list = buildListPayload({
+      run: mapped,
+      facts: adapted,
+      filters: {
+        runId,
+        customerExternalId: null,
+        year: null,
+        month: null,
+        orderCode: null,
+        status: null,
+        confidenceLevel: null,
+        forecastSource: null,
+        onlyIssues: false,
+        page: 1,
+        pageSize: 1,
+      },
+      orderTotalBySalesOrderId,
+      dataSource: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+    });
+    return {
+      ok: true as const,
+      message: null as string | null,
+      run: list.run,
+      summary: mapped.summaryJson ?? null,
+      cards: list.summary,
+      factCount: adapted.length,
+      orderCount: list.summary.totalPedidos,
+      dataSource: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+    };
+  }
+
   const run = await prisma.portfolioReconciliationRun.findUnique({
     where: { id: runId },
   });
@@ -382,6 +533,7 @@ export async function loadPortfolioReconciliationRunSummary(runId: string) {
       pageSize: 1,
     },
     orderTotalBySalesOrderId,
+    dataSource: "portfolio_reconciliation",
   });
 
   return {
@@ -392,6 +544,7 @@ export async function loadPortfolioReconciliationRunSummary(runId: string) {
     cards: list.summary,
     factCount: facts.length,
     orderCount: list.summary.totalPedidos,
+    dataSource: "portfolio_reconciliation",
   };
 }
 
@@ -688,6 +841,7 @@ function mapOrderToCashRunToPortfolioMeta(run: {
     },
     summaryJson: {
       source: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+      ordersAnalyzed: run.totalOrders,
       totalOrders: run.totalOrders,
       totalFacts: run.totalFacts,
       totalOrderValue: decimalToNumber(run.totalOrderValue),
@@ -695,6 +849,7 @@ function mapOrderToCashRunToPortfolioMeta(run: {
       totalReceivableValue: decimalToNumber(run.totalReceivableValue),
       totalReceivedValue: decimalToNumber(run.totalReceivedValue),
       totalOpenValue: decimalToNumber(run.totalOpenValue),
+      projectedOpenBalance: decimalToNumber(run.totalOpenValue),
       totalBlockedValue: decimalToNumber(run.totalBlockedValue),
     },
     errorMessage: null,

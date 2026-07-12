@@ -96,6 +96,8 @@ export type PortfolioReconciliationListPayload = {
   };
   filters: PortfolioReconciliationUiFilters | Record<string, unknown> | null;
   availableFilters: PortfolioReconciliationAvailableFilters;
+  /** order_to_cash_audit (preferencial) | portfolio_reconciliation (legado) */
+  dataSource?: "order_to_cash_audit" | "portfolio_reconciliation" | null;
 };
 
 export type PortfolioBusinessAnswerFilterHint = {
@@ -948,4 +950,4 @@ export const PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER =
   'Esta tela mostra a carteira sem duplicar valores. Quando um pedido já virou Contas a Receber, usamos o CR. Quando ainda não virou CR, usamos a NF/documento de saída. Quando ainda não foi faturado, usamos o pedido. "Títulos vencidos" são somente CR em aberto com vencimento passado — previsões antigas de pedido/NF aparecem como "Previsões para revisar", não como atraso do cliente.';
 
 export const PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE =
-  "Nenhuma conciliação materializada encontrada. Solicite a execução do rebuild manual no servidor.";
+  "Nenhuma run materializada encontrada. Execute o rebuild Pedido → Caixa (OrderToCashAudit) no servidor para popular esta tela.";

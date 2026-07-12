@@ -295,6 +295,45 @@ describe("portfolioReconciliationApi", () => {
     assert.equal(payload.message, PORTFOLIO_RECONCILIATION_NO_RUN_MESSAGE);
     assert.equal(payload.rows.length, 0);
     assert.equal(payload.run, null);
+    assert.equal(payload.dataSource, null);
+  });
+
+  it("buildListPayload propaga dataSource O2C e summaryJson seguro", () => {
+    const run = {
+      ...runMeta,
+      summaryJson: {
+        source: "order_to_cash_audit",
+        ordersAnalyzed: 1,
+        totalOrderValue: 1000,
+        totalAllocatedValue: 800,
+        totalReceivableValue: 700,
+        projectedOpenBalance: 200,
+      },
+    };
+    const payload = buildListPayload({
+      run,
+      facts: [
+        fact({
+          id: "f-o2c",
+          salesOrderId: "so-1",
+          orderCode: "PD 00001",
+          orderItemValue: 1000,
+          allocatedValueByOrderPrice: 800,
+          receivableTotalValue: 700,
+          receivedValue: 500,
+          openReceivableValue: 200,
+          status: "RECEIVABLE_CONFIRMED",
+          forecastSource: "RECEIVABLE",
+        }),
+      ],
+      filters: parsePortfolioReconciliationListFilters({}),
+      dataSource: "order_to_cash_audit",
+    });
+    assert.equal(payload.dataSource, "order_to_cash_audit");
+    assert.equal(payload.summary.totalValorPedidos, 1000);
+    assert.equal(payload.summary.totalAlocadoPorPrecoPedido, 800);
+    assert.equal(payload.summary.totalContasReceber, 700);
+    assert.equal(payload.summary.saldoCarteira, 200);
   });
 
   it("sanitizeTraceJson omite payloads brutos", () => {

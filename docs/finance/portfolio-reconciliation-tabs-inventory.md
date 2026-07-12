@@ -211,7 +211,7 @@ Informadas pelo usuário (fora do código):
 | `41c2470a-b685-4765-a954-77110fd8cf5c` | Geral · SUCCESS · APPLY · period 2025-06-01→2026-12-31 · customerFilter null | 1283 pedidos · 5860 facts · orderValue ~17,8 Mi |
 | `a0bdc0b6-b3d5-42ca-a548-283edbc31cfa` | Britânia · customerFilter 200 · year 2026 | 14 pedidos · 53 facts |
 
-**Implicação:** a aba Auditoria, ao pesquisar cliente 200 + ano 2026, tende a resolver o fato mais recente matching → tipicamente a run Britânia se for a última criada; a run geral só entra se tiver facts daquele cliente/ano e for a mais recente no critério atual. As abas Conciliação/Inteligência **ignoram** essas runs O2C.
+**Implicação:** a aba Auditoria resolve run específica (cliente+ano) → geral → sem run. Conciliação e Inteligência **preferem** OrderToCashAudit (run geral SUCCESS ou `runId` O2C) via adapter; Portfolio permanece como fallback.
 
 ---
 
@@ -221,14 +221,14 @@ Informadas pelo usuário (fora do código):
 
 | Aba | Base materializada |
 |-----|--------------------|
-| **Conciliação** | `PortfolioReconciliationRun` / `PortfolioReconciliationFact` |
-| **Inteligência da Carteira** | `PortfolioReconciliationRun` / `PortfolioReconciliationFact` (mesma família) |
+| **Conciliação** | Preferencial: `OrderToCashAudit*` via adapter → contrato Portfolio; fallback `PortfolioReconciliation*` |
+| **Inteligência da Carteira** | Preferencial: `OrderToCashAudit*` via adapter → motor maturidade; fallback `PortfolioReconciliation*` |
 | **Auditoria Pedido → Caixa** | `OrderToCashAuditRun` / `OrderToCashAuditFact` |
 
 ### O que precisa ser populado ou adaptado para as 3 refletirem a base nova
 
-1. **População:** manter rebuild `OrderToCashAudit` atualizado (runs gerais e/ou por cliente-ano). As abas 1 e 2 **não** leem essa base ainda — só a aba 3.
-2. **Para Conciliação e Inteligência refletirem a base nova:** seria necessário **adaptar** services/endpoints (ou criar adapters) para consumir `OrderToCashAuditFact` (ou sincronizar/rebuild paralelo em `PortfolioReconciliationFact`). Hoje são pipelines distintos.
+1. **População:** manter rebuild `OrderToCashAudit` atualizado (runs gerais e/ou por cliente-ano). As três abas leem essa base (Conciliação/Inteligência via adapter).
+2. **Conciliação e Inteligência:** adapters ativos; Portfolio legado só para fallback/rastreabilidade.
 3. **Aba Auditoria:** já aponta para a base nova; gaps de produto: seletor de run (geral vs Britânia), alinhar filtro global da página, opcionalmente eixo/período na listagem, e wire do endpoint `:factId` / `runs` se desejado.
 4. **Não confundir** com o Funil do Dashboard (`/api/sales/order-to-cash-funnel`), que também ainda usa **`PortfolioReconciliationFact`**, não `OrderToCashAuditFact`.
 
@@ -244,8 +244,10 @@ Informadas pelo usuário (fora do código):
 
 ```text
 Conciliação / Inteligência:
-  runId? → PortfolioReconciliationRun SUCCESS
-  senão → último PortfolioReconciliationRun SUCCESS (global)
+  runId O2C SUCCESS? → OrderToCashAudit + adapter
+  runId Portfolio? → PortfolioReconciliation (fallback)
+  senão → último OrderToCashAuditRun SUCCESS com customerFilter null
+  senão → último PortfolioReconciliationRun SUCCESS
 
 Auditoria Pedido → Caixa:
   runId? → OrderToCashAuditRun SUCCESS
