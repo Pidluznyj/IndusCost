@@ -6,12 +6,15 @@
 import { prisma } from "@/src/lib/prisma.js";
 import type { Prisma } from "@prisma/client";
 import {
+  ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED,
+  ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
   buildOrderToCashAuditFactDetailPayload,
   buildOrderToCashAuditFactWhere,
   buildOrderToCashAuditListPayload,
   buildOrderToCashAuditPrismaOrderBy,
+  decideOrderToCashAuditRunPolicy,
+  orderToCashAuditHasFactScopeFilters,
   parseOrderToCashAuditListFilters,
-  yearDateBounds,
   type OrderToCashAuditFactRecord,
   type OrderToCashAuditListFilters,
   type OrderToCashAuditRunMeta,
@@ -148,6 +151,27 @@ const FACT_SELECT = {
   salesOrderId: true,
 } as const;
 
+type RunRow = {
+  id: string;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  status: string;
+  mode: string;
+  year: number | null;
+  customerFilter: string | null;
+  periodFrom: Date | null;
+  periodTo: Date | null;
+  totalOrders: number;
+  totalFacts: number;
+  totalOrderValue: unknown;
+  totalAllocatedValue: unknown;
+  totalReceivableValue: unknown;
+  totalReceivedValue: unknown;
+  totalOpenValue: unknown;
+  totalBlockedValue: unknown;
+  createdAt: Date;
+};
+
 function mapFact(row: FactRow): OrderToCashAuditFactRecord {
   return {
     id: row.id,
@@ -208,68 +232,136 @@ function mapFact(row: FactRow): OrderToCashAuditFactRecord {
   };
 }
 
-function serializeRun(run: {
-  id: string;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-  status: string;
-  year: number | null;
-  totalFacts: number;
-  mode: string;
-}): OrderToCashAuditRunMeta {
+function serializeRun(run: RunRow): OrderToCashAuditRunMeta {
+  const isGeneralRun = run.customerFilter == null || String(run.customerFilter).trim() === "";
   return {
     runId: run.id,
     startedAt: run.startedAt?.toISOString() ?? null,
     finishedAt: run.finishedAt?.toISOString() ?? null,
     status: run.status,
-    year: run.year,
-    totalFacts: run.totalFacts,
     mode: run.mode,
+    year: run.year,
+    customerFilter: run.customerFilter,
+    periodFrom: run.periodFrom?.toISOString() ?? null,
+    periodTo: run.periodTo?.toISOString() ?? null,
+    totalOrders: run.totalOrders,
+    totalFacts: run.totalFacts,
+    totalOrderValue: decimalToNumber(run.totalOrderValue),
+    totalAllocatedValue: decimalToNumber(run.totalAllocatedValue),
+    totalReceivableValue: decimalToNumber(run.totalReceivableValue),
+    totalReceivedValue: decimalToNumber(run.totalReceivedValue),
+    totalOpenValue: decimalToNumber(run.totalOpenValue),
+    totalBlockedValue: decimalToNumber(run.totalBlockedValue),
+    createdAt: run.createdAt?.toISOString() ?? null,
+    isGeneralRun,
   };
 }
 
-async function resolveLatestSuccessRunId(
-  filters: OrderToCashAuditListFilters
-): Promise<{ runId: string; run: OrderToCashAuditRunMeta } | null> {
-  if (filters.runId) {
-    const run = await prisma.orderToCashAuditRun.findUnique({
-      where: { id: filters.runId },
-    });
-    if (!run || run.status !== "SUCCESS") return null;
-    return { runId: run.id, run: serializeRun(run) };
-  }
-
-  const yearBounds = yearDateBounds(filters.year);
-  const customerWhere: Prisma.OrderToCashAuditFactWhereInput =
-    filters.customerExternalId != null
-      ? { externalCustomerId: filters.customerExternalId }
-      : { customerId: filters.customerId! };
-
-  const latest = await prisma.orderToCashAuditFact.findFirst({
+/**
+ * Resolve customerId interno → externalCustomerId via SalesOrder.
+ * Nunca usa customerId como filtro de Fact.
+ */
+async function resolveExternalCustomerIdFromInternal(
+  customerId: string
+): Promise<number | null> {
+  const order = await prisma.salesOrder.findFirst({
     where: {
-      ...customerWhere,
-      run: { status: "SUCCESS" },
-      OR: [
-        { run: { year: filters.year } },
-        { orderIssueDate: { gte: yearBounds.gte, lte: yearBounds.lte } },
-      ],
+      customerId,
+      externalCustomerId: { not: null },
+    },
+    orderBy: [{ issueDate: "desc" }],
+    select: { externalCustomerId: true },
+  });
+  return order?.externalCustomerId ?? null;
+}
+
+async function findSpecificSuccessRunId(
+  customerExternalId: number,
+  year: number
+): Promise<string | null> {
+  const run = await prisma.orderToCashAuditRun.findFirst({
+    where: {
+      status: "SUCCESS",
+      year,
+      customerFilter: String(customerExternalId),
     },
     orderBy: [{ createdAt: "desc" }],
-    select: { runId: true },
+    select: { id: true },
+  });
+  return run?.id ?? null;
+}
+
+async function findLatestGeneralSuccessRunId(): Promise<string | null> {
+  const run = await prisma.orderToCashAuditRun.findFirst({
+    where: {
+      status: "SUCCESS",
+      customerFilter: null,
+    },
+    orderBy: [{ createdAt: "desc" }],
+    select: { id: true },
+  });
+  return run?.id ?? null;
+}
+
+async function resolveOrderToCashAuditRun(
+  filters: OrderToCashAuditListFilters
+): Promise<{ runId: string; run: OrderToCashAuditRunMeta; kind: string } | null> {
+  let specificRunId: string | null = null;
+  if (filters.customerExternalId != null && filters.year != null && !filters.runId) {
+    specificRunId = await findSpecificSuccessRunId(
+      filters.customerExternalId,
+      filters.year
+    );
+  }
+
+  const generalRunId = filters.runId
+    ? null
+    : await findLatestGeneralSuccessRunId();
+
+  const decision = decideOrderToCashAuditRunPolicy({
+    runId: filters.runId,
+    customerExternalId: filters.customerExternalId,
+    year: filters.year,
+    specificRunId,
+    generalRunId,
   });
 
-  if (!latest) return null;
+  if (!decision.runId) return null;
 
   const run = await prisma.orderToCashAuditRun.findUnique({
-    where: { id: latest.runId },
+    where: { id: decision.runId },
   });
-  if (!run) return null;
-  return { runId: run.id, run: serializeRun(run) };
+  if (!run || run.status !== "SUCCESS") return null;
+
+  return {
+    runId: run.id,
+    run: serializeRun(run as RunRow),
+    kind: decision.kind,
+  };
 }
 
 export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
-  const filters = parseOrderToCashAuditListFilters(query);
-  const resolved = await resolveLatestSuccessRunId(filters);
+  let filters = parseOrderToCashAuditListFilters(query);
+
+  // UUID interno → código Nomus (nunca filtra Fact por customerId)
+  if (filters.customerExternalId == null && filters.customerId) {
+    const resolved = await resolveExternalCustomerIdFromInternal(filters.customerId);
+    if (resolved == null && !filters.customerName) {
+      return buildOrderToCashAuditListPayload({
+        filters,
+        run: null,
+        pageRows: [],
+        summaryFacts: [],
+        totalRows: 0,
+        message: ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED,
+      });
+    }
+    if (resolved != null) {
+      filters = { ...filters, customerExternalId: resolved };
+    }
+  }
+
+  const resolved = await resolveOrderToCashAuditRun(filters);
 
   if (!resolved) {
     return buildOrderToCashAuditListPayload({
@@ -278,19 +370,23 @@ export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
       pageRows: [],
       summaryFacts: [],
       totalRows: 0,
-      message:
-        "Nenhum run SUCCESS de auditoria Pedido → Caixa encontrado para o cliente/ano selecionados.",
+      message: ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
     });
   }
 
-  const where = buildOrderToCashAuditFactWhere(
-    filters,
-    resolved.runId
-  ) as Prisma.OrderToCashAuditFactWhereInput;
+  const isGeneralRun = resolved.run.isGeneralRun;
+  const where = buildOrderToCashAuditFactWhere(filters, resolved.runId, {
+    isGeneralRun,
+    applyYearOnIssueDate: isGeneralRun,
+  }) as Prisma.OrderToCashAuditFactWhereInput;
+
   const orderBy = buildOrderToCashAuditPrismaOrderBy(
     filters.sortBy,
     filters.sortDirection
   ) as Prisma.OrderToCashAuditFactOrderByWithRelationInput[];
+
+  const hasScope = orderToCashAuditHasFactScopeFilters(filters);
+  const preferRunTotals = !hasScope;
 
   const [totalRows, pageRowsRaw, summaryRowsRaw] = await Promise.all([
     prisma.orderToCashAuditFact.count({ where }),
@@ -301,11 +397,13 @@ export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
     }),
-    prisma.orderToCashAuditFact.findMany({
-      where,
-      select: FACT_SELECT,
-      orderBy: [{ id: "asc" }],
-    }),
+    preferRunTotals
+      ? Promise.resolve([] as FactRow[])
+      : prisma.orderToCashAuditFact.findMany({
+          where,
+          select: FACT_SELECT,
+          orderBy: [{ id: "asc" }],
+        }),
   ]);
 
   return buildOrderToCashAuditListPayload({
@@ -314,6 +412,7 @@ export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
     pageRows: pageRowsRaw.map((row) => mapFact(row as FactRow)),
     summaryFacts: summaryRowsRaw.map((row) => mapFact(row as FactRow)),
     totalRows,
+    preferRunTotals,
   });
 }
 
@@ -325,7 +424,7 @@ export async function listOrderToCashAuditRuns(limit = 50) {
   });
   return {
     ok: true as const,
-    runs: runs.map(serializeRun),
+    runs: runs.map((run) => serializeRun(run as RunRow)),
   };
 }
 
@@ -348,6 +447,6 @@ export async function loadOrderToCashAuditFactById(factId: string) {
   });
   return buildOrderToCashAuditFactDetailPayload(
     mapFact(row as FactRow),
-    run ? serializeRun(run) : null
+    run ? serializeRun(run as RunRow) : null
   );
 }

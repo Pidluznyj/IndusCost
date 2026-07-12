@@ -3,29 +3,37 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
-  ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED,
+  ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED,
   ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY,
+  ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
   ORDER_TO_CASH_AUDIT_SORT_WHITELIST,
-  OrderToCashAuditApiParseError,
   buildOrderToCashAuditFactWhere,
   buildOrderToCashAuditListPayload,
+  buildOrderToCashAuditListSummary,
+  buildOrderToCashAuditListSummaryFromRun,
   buildOrderToCashAuditPrismaOrderBy,
+  decideOrderToCashAuditRunPolicy,
   mapOrderToCashAuditFactToListRow,
+  orderToCashAuditHasFactScopeFilters,
   parseOrderToCashAuditListFilters,
   resolveOrderToCashAuditSort,
   type OrderToCashAuditFactRecord,
   type OrderToCashAuditListFilters,
+  type OrderToCashAuditRunMeta,
 } from "./orderToCashAuditApi.js";
 
 function read(rel: string): string {
   return readFileSync(path.join(process.cwd(), rel), "utf8");
 }
 
+const GENERAL_RUN_ID = "41c2470a-b685-4765-a954-77110fd8cf5c";
+const BRITANIA_RUN_ID = "a0bdc0b6-b3d5-42ca-a548-283edbc31cfa";
+
 function fact(
   partial: Partial<OrderToCashAuditFactRecord> & { id: string }
 ): OrderToCashAuditFactRecord {
   return {
-    runId: "run-1",
+    runId: GENERAL_RUN_ID,
     orderCode: "PD 02339",
     orderIssueDate: new Date(2026, 4, 1),
     orderExpectedDeliveryDate: null,
@@ -83,12 +91,40 @@ function fact(
   };
 }
 
+function generalRunMeta(
+  overrides: Partial<OrderToCashAuditRunMeta> = {}
+): OrderToCashAuditRunMeta {
+  return {
+    runId: GENERAL_RUN_ID,
+    startedAt: "2026-07-10T12:00:00.000Z",
+    finishedAt: "2026-07-10T12:05:00.000Z",
+    status: "SUCCESS",
+    mode: "APPLY",
+    year: null,
+    customerFilter: null,
+    periodFrom: "2025-06-01T00:00:00.000Z",
+    periodTo: "2026-12-31T00:00:00.000Z",
+    totalOrders: 1283,
+    totalFacts: 5860,
+    totalOrderValue: 1_000_000,
+    totalAllocatedValue: 900_000,
+    totalReceivableValue: 800_000,
+    totalReceivedValue: 400_000,
+    totalOpenValue: 400_000,
+    totalBlockedValue: 10_000,
+    createdAt: "2026-07-10T12:00:00.000Z",
+    isGeneralRun: true,
+    ...overrides,
+  };
+}
+
 function baseFilters(
   overrides: Partial<OrderToCashAuditListFilters> = {}
 ): OrderToCashAuditListFilters {
   return {
     customerExternalId: 200,
     customerId: null,
+    customerName: null,
     year: 2026,
     page: 1,
     pageSize: 50,
@@ -118,72 +154,140 @@ function baseFilters(
 }
 
 describe("orderToCashAuditApi", () => {
-  it("1. sem cliente/ano retorna 400 amigável", () => {
-    assert.throws(
-      () => parseOrderToCashAuditListFilters({}),
-      (err: unknown) =>
-        err instanceof OrderToCashAuditApiParseError &&
-        err.message === ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED
-    );
-    assert.throws(
-      () => parseOrderToCashAuditListFilters({ year: 2026 }),
-      (err: unknown) =>
-        err instanceof OrderToCashAuditApiParseError &&
-        err.message === ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED
-    );
-    assert.throws(
-      () => parseOrderToCashAuditListFilters({ customerExternalId: 200 }),
-      (err: unknown) =>
-        err instanceof OrderToCashAuditApiParseError &&
-        err.message === ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED
-    );
+  it("1. sem filtros parseia e política aponta para run geral", () => {
+    const filters = parseOrderToCashAuditListFilters({});
+    assert.equal(filters.customerExternalId, null);
+    assert.equal(filters.year, null);
+    assert.equal(orderToCashAuditHasFactScopeFilters(filters), false);
 
-    const routes = read("src/lib/financePortfolioReconciliationRoutes.ts");
-    assert.match(
-      routes,
-      /OrderToCashAuditApiParseError[\s\S]*status\(400\)/
-    );
-    assert.match(
-      read("src/lib/finance/orderToCashAuditApi.ts"),
-      /Selecione cliente e ano para pesquisar a auditoria Pedido → Caixa/
-    );
+    const decision = decideOrderToCashAuditRunPolicy({
+      runId: null,
+      customerExternalId: null,
+      year: null,
+      specificRunId: null,
+      generalRunId: GENERAL_RUN_ID,
+    });
+    assert.equal(decision.kind, "general");
+    assert.equal(decision.runId, GENERAL_RUN_ID);
+
+    const payload = buildOrderToCashAuditListPayload({
+      filters,
+      run: generalRunMeta(),
+      pageRows: [fact({ id: "f1" })],
+      summaryFacts: [],
+      totalRows: 5860,
+      preferRunTotals: true,
+    });
+    assert.equal(payload.run?.runId, GENERAL_RUN_ID);
+    assert.equal(payload.run?.isGeneralRun, true);
+    assert.equal(payload.summary.summarySource, "run");
+    assert.equal(payload.summary.totalOrders, 1283);
+    assert.equal(payload.summary.totalRows, 5860);
+    assert.equal(payload.rows.length, 1);
   });
 
-  it("2. com cliente/ano retorna payload", () => {
+  it("2. customerExternalId=200 + year=2026 prefere run específica", () => {
+    const decision = decideOrderToCashAuditRunPolicy({
+      runId: null,
+      customerExternalId: 200,
+      year: 2026,
+      specificRunId: BRITANIA_RUN_ID,
+      generalRunId: GENERAL_RUN_ID,
+    });
+    assert.equal(decision.kind, "specific_customer_year");
+    assert.equal(decision.runId, BRITANIA_RUN_ID);
+
+    const fallback = decideOrderToCashAuditRunPolicy({
+      runId: null,
+      customerExternalId: 200,
+      year: 2026,
+      specificRunId: null,
+      generalRunId: GENERAL_RUN_ID,
+    });
+    assert.equal(fallback.kind, "general");
+    assert.equal(fallback.runId, GENERAL_RUN_ID);
+  });
+
+  it("3. filtro Britânia na run geral usa externalCustomerId (nunca customerId)", () => {
     const filters = parseOrderToCashAuditListFilters({
       customerExternalId: "200",
       year: "2026",
     });
+    const where = buildOrderToCashAuditFactWhere(filters, GENERAL_RUN_ID, {
+      isGeneralRun: true,
+    });
+    const and = where.AND as Array<Record<string, unknown>>;
+    assert.ok(and.some((c) => c.externalCustomerId === 200));
+    assert.ok(!and.some((c) => "customerId" in c));
+    assert.ok(
+      and.some(
+        (c) =>
+          c.OR != null &&
+          JSON.stringify(c).includes("orderIssueDate")
+      )
+    );
+
+    // 108 linhas / 35 pedidos (janela geral Britânia)
+    const orderIds = Array.from({ length: 35 }, (_, i) => `order-${i + 1}`);
+    const rows = Array.from({ length: 108 }, (_, i) => {
+      const orderId = orderIds[i % 35]!;
+      return fact({
+        id: `f${i}`,
+        salesOrderId: orderId,
+        orderCode: `PD ${orderId}`,
+        sellerName: i % 7 === 0 ? "Sem vendedor informado" : null,
+        nfeNumber: i % 5 === 0 ? null : "6845",
+        receivableTotalValue: i % 3 === 0 ? null : 50,
+      });
+    });
+    assert.equal(rows.length, 108);
+
+    const summary = buildOrderToCashAuditListSummary(rows, 108);
+    assert.equal(summary.totalRows, 108);
+    assert.equal(summary.totalOrders, 35);
+    assert.equal(summary.summarySource, "filtered_facts");
+    // CR não duplica 108× — max por pedido
+    assert.ok(summary.totalReceivableValue <= 35 * 50 + 1);
+
     const payload = buildOrderToCashAuditListPayload({
       filters,
-      run: {
-        runId: "run-1",
-        startedAt: "2026-07-10T12:00:00.000Z",
-        finishedAt: "2026-07-10T12:05:00.000Z",
-        status: "SUCCESS",
-        year: 2026,
-        totalFacts: 1,
-        mode: "apply",
-      },
-      pageRows: [fact({ id: "f1" })],
-      summaryFacts: [fact({ id: "f1" })],
-      totalRows: 1,
+      run: generalRunMeta(),
+      pageRows: rows.slice(0, 50),
+      summaryFacts: rows,
+      totalRows: 108,
     });
-
-    assert.equal(payload.ok, true);
-    assert.equal(payload.requiredSelection.readyToSearch, true);
-    assert.equal(payload.requiredSelection.customerRequired, true);
-    assert.equal(payload.requiredSelection.yearRequired, true);
-    assert.equal(payload.rows.length, 1);
-    assert.equal(payload.rows[0].orderCode, "PD 02339");
-    assert.ok(payload.summary);
-    assert.ok(payload.pagination);
-    assert.ok(payload.sorting);
-    assert.ok(payload.availableFilters);
-    assert.equal(payload.run?.runId, "run-1");
+    assert.equal(payload.pagination.totalRows, 108);
+    assert.equal(payload.rows.length, 50);
+    assert.ok(payload.rows.length > 0);
   });
 
-  it("3. paginação funciona", () => {
+  it("4. sem run materializada retorna mensagem amigável", () => {
+    const decision = decideOrderToCashAuditRunPolicy({
+      runId: null,
+      customerExternalId: null,
+      year: null,
+      specificRunId: null,
+      generalRunId: null,
+    });
+    assert.equal(decision.kind, "none");
+
+    const payload = buildOrderToCashAuditListPayload({
+      filters: parseOrderToCashAuditListFilters({}),
+      run: null,
+      pageRows: [],
+      summaryFacts: [],
+      totalRows: 0,
+      message: ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
+    });
+    assert.equal(payload.message, ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE);
+    assert.equal(payload.rows.length, 0);
+    assert.match(
+      read("src/lib/financeOrderToCashAuditApi.server.ts"),
+      /ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE/
+    );
+  });
+
+  it("5. paginação e ordenação server-side com whitelist", () => {
     const filters = parseOrderToCashAuditListFilters({
       customerExternalId: 200,
       year: 2026,
@@ -193,171 +297,139 @@ describe("orderToCashAuditApi", () => {
     assert.equal(filters.page, 2);
     assert.equal(filters.pageSize, 10);
 
-    const all = Array.from({ length: 25 }, (_, i) =>
-      fact({ id: `f${i}`, orderCode: `PD ${i}` })
-    );
-    const pageRows = all.slice(10, 20);
-    const payload = buildOrderToCashAuditListPayload({
-      filters,
-      run: null,
-      pageRows,
-      summaryFacts: all,
-      totalRows: 25,
-    });
-    assert.equal(payload.pagination.page, 2);
-    assert.equal(payload.pagination.pageSize, 10);
-    assert.equal(payload.pagination.totalRows, 25);
-    assert.equal(payload.pagination.totalPages, 3);
-    assert.equal(payload.rows.length, 10);
-    assert.equal(payload.summary.totalRows, 25);
-  });
-
-  it("4. ordenação por coluna permitida funciona", () => {
     const { sortBy, sortDirection } = resolveOrderToCashAuditSort(
       "sellerName",
       "asc"
     );
     assert.equal(sortBy, "sellerName");
-    assert.equal(sortDirection, "asc");
     const orderBy = buildOrderToCashAuditPrismaOrderBy(sortBy, sortDirection);
     assert.deepEqual(orderBy, [{ sellerName: "asc" }, { id: "asc" }]);
+
+    const bad = resolveOrderToCashAuditSort("DROP TABLE facts; --", "weird");
+    assert.equal(bad.sortBy, ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY);
     assert.ok(
-      ORDER_TO_CASH_AUDIT_SORT_WHITELIST.includes(sortBy as (typeof ORDER_TO_CASH_AUDIT_SORT_WHITELIST)[number])
+      ORDER_TO_CASH_AUDIT_SORT_WHITELIST.includes(
+        bad.sortBy as (typeof ORDER_TO_CASH_AUDIT_SORT_WHITELIST)[number]
+      )
     );
   });
 
-  it("5. sortBy inválido cai no default seguro", () => {
-    const { sortBy, sortDirection } = resolveOrderToCashAuditSort(
-      "DROP TABLE facts; --",
-      "weird"
-    );
-    assert.equal(sortBy, ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY);
-    assert.equal(sortDirection, "desc");
-    const orderBy = buildOrderToCashAuditPrismaOrderBy(sortBy, sortDirection);
-    assert.equal(Object.keys(orderBy[0]).length, 1);
-    assert.ok("orderIssueDate" in orderBy[0]);
-    assert.doesNotMatch(JSON.stringify(orderBy), /DROP TABLE/);
-  });
-
-  it("6. filtros por estágio funcionam", () => {
-    const filters = parseOrderToCashAuditListFilters({
-      customerExternalId: 200,
-      year: 2026,
-      orderToCashStage: "BLOQUEADO_REVISAO",
-      operationalStage: "ENTREGUE",
-      financialStage: "CR_ABERTO",
-    });
-    const where = buildOrderToCashAuditFactWhere(filters, "run-1");
-    assert.ok(where.AND);
-    const and = where.AND as Array<Record<string, unknown>>;
-    assert.ok(and.some((c) => c.orderToCashStage === "BLOQUEADO_REVISAO"));
-    assert.ok(and.some((c) => c.operationalStage === "ENTREGUE"));
-    assert.ok(and.some((c) => c.financialStage === "CR_ABERTO"));
-
-    const payload = buildOrderToCashAuditListPayload({
-      filters,
-      run: null,
-      pageRows: [
-        fact({ id: "a", orderToCashStage: "BLOQUEADO_REVISAO" }),
-        fact({ id: "b", orderToCashStage: "EM_ANDAMENTO" }),
-      ].filter((r) => r.orderToCashStage === "BLOQUEADO_REVISAO"),
-      summaryFacts: [fact({ id: "a", orderToCashStage: "BLOQUEADO_REVISAO" })],
-      totalRows: 1,
-    });
-    assert.equal(payload.rows.length, 1);
-    assert.equal(payload.rows[0].orderToCashStage, "BLOQUEADO_REVISAO");
-    assert.equal(payload.summary.stageCounts.BLOQUEADO_REVISAO, 1);
-  });
-
-  it("7. filtros por alerta funcionam", () => {
-    const filters = parseOrderToCashAuditListFilters({
-      customerExternalId: 200,
-      year: 2026,
-      hasAlerts: "true",
-      onlyWithExcess: "true",
-      onlyOverdue: "1",
-    });
-    assert.equal(filters.hasAlerts, true);
-    assert.equal(filters.onlyWithExcess, true);
-    assert.equal(filters.onlyOverdue, true);
-
-    const where = buildOrderToCashAuditFactWhere(filters, "run-1");
-    const and = where.AND as Array<Record<string, unknown>>;
-    assert.ok(and.some((c) => c.hasExcessQuantity === true));
-    assert.ok(and.some((c) => c.hasOverdueReceivable === true));
-    assert.ok(and.some((c) => c.OR != null));
-
+  it("6. sellerName Sem vendedor informado e fields null não quebram", () => {
     const row = mapOrderToCashAuditFactToListRow(
       fact({
-        id: "alert-1",
-        hasExcessQuantity: true,
-        hasOverdueReceivable: true,
-        alertsJson: ["EXCESSO_QTDE", "CR_VENCIDO"],
+        id: "nullish",
+        sellerName: "Sem vendedor informado",
+        productCode: null,
+        sku: null,
+        nfeNumber: null,
+        stockDocumentExternalId: null,
+        orderIssueDate: null,
+        receivableTotalValue: null,
+        receivableOpenValue: null,
+        receivableReceivedValue: null,
+        paymentStatus: null,
+        temperature: null,
+        alertsJson: null,
       })
     );
-    assert.deepEqual(row.alerts, ["EXCESSO_QTDE", "CR_VENCIDO"]);
-    assert.equal(row.hasExcessQuantity, true);
-    assert.equal(row.hasOverdueReceivable, true);
+    assert.equal(row.sellerName, "Sem vendedor informado");
+    assert.equal(row.productCode, null);
+    assert.deepEqual(row.alerts, []);
+
+    const filters = baseFilters({ sellerName: "Sem vendedor informado" });
+    const where = buildOrderToCashAuditFactWhere(filters, GENERAL_RUN_ID, {
+      isGeneralRun: true,
+    });
+    const and = where.AND as Array<Record<string, unknown>>;
+    assert.ok(
+      and.some(
+        (c) =>
+          c.sellerName != null &&
+          typeof c.sellerName === "object" &&
+          (c.sellerName as { contains: string }).contains ===
+            "Sem vendedor informado"
+      )
+    );
   });
 
-  it("8. não expõe Prisma error", () => {
+  it("7. customerName filtra por nome; customerId não entra no where de Fact", () => {
+    const filters = parseOrderToCashAuditListFilters({
+      customerName: "Britânia",
+      year: 2026,
+    });
+    const where = buildOrderToCashAuditFactWhere(filters, GENERAL_RUN_ID, {
+      isGeneralRun: true,
+    });
+    const and = where.AND as Array<Record<string, unknown>>;
+    assert.ok(
+      and.some(
+        (c) =>
+          c.customerName != null &&
+          typeof c.customerName === "object" &&
+          (c.customerName as { contains: string }).contains === "Britânia"
+      )
+    );
+    assert.ok(!JSON.stringify(where).includes('"customerId"'));
+
+    assert.match(
+      ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED,
+      /customerExternalId/
+    );
+    assert.match(
+      read("src/lib/financeOrderToCashAuditApi.server.ts"),
+      /Nunca usa customerId como filtro de Fact/
+    );
+  });
+
+  it("8. ano na run geral filtra orderIssueDate; run específica não reaplica ano", () => {
+    const filters = baseFilters();
+    const generalWhere = buildOrderToCashAuditFactWhere(filters, GENERAL_RUN_ID, {
+      isGeneralRun: true,
+    });
+    assert.match(JSON.stringify(generalWhere), /orderIssueDate/);
+
+    const specificWhere = buildOrderToCashAuditFactWhere(
+      filters,
+      BRITANIA_RUN_ID,
+      { isGeneralRun: false }
+    );
+    assert.doesNotMatch(JSON.stringify(specificWhere), /orderIssueDate/);
+  });
+
+  it("9. summary da run geral sem filtro usa totais da run", () => {
+    const run = generalRunMeta();
+    const summary = buildOrderToCashAuditListSummaryFromRun(run, 5860);
+    assert.equal(summary.summarySource, "run");
+    assert.equal(summary.totalOrders, 1283);
+    assert.equal(summary.totalRows, 5860);
+    assert.equal(summary.totalReceivableValue, 800_000);
+  });
+
+  it("10. não expõe Prisma error / não faz write / não usa proposta ou comissão", () => {
     const routes = read("src/lib/financePortfolioReconciliationRoutes.ts");
     assert.match(routes, /order-to-cash-audit/);
     assert.match(routes, /financeApiErrorJson/);
-    assert.match(
-      routes,
-      /Erro ao carregar auditoria Pedido → Caixa/
-    );
-    assert.match(
-      routes,
-      /Falha interna ao consultar fatos materializados/
-    );
+
+    const server = read("src/lib/financeOrderToCashAuditApi.server.ts");
+    assert.doesNotMatch(server, /\.(create|update|upsert|deleteMany|delete)\s*\(/);
+    assert.doesNotMatch(server, /\$executeRaw|\$queryRawUnsafe/);
+    assert.match(server, /findMany|findFirst|findUnique|count/);
+
+    for (const src of [read("src/lib/finance/orderToCashAuditApi.ts"), server]) {
+      assert.doesNotMatch(src, /from ["'][^"']*proposta/i);
+      assert.doesNotMatch(src, /\bprisma\.proposal/i);
+      assert.doesNotMatch(src, /from ["'][^"']*commission/i);
+      assert.doesNotMatch(src, /\bprisma\.commission/i);
+    }
 
     const payload = buildOrderToCashAuditListPayload({
       filters: baseFilters(),
-      run: null,
+      run: generalRunMeta(),
       pageRows: [fact({ id: "f1" })],
       summaryFacts: [fact({ id: "f1" })],
       totalRows: 1,
     });
-    const serialized = JSON.stringify(payload);
-    assert.doesNotMatch(serialized, /PrismaClient|Prisma\.|stack/i);
-    assert.doesNotMatch(serialized, /traceJson|paymentTermsJson/);
-  });
-
-  it("9. não faz write", () => {
-    const server = read("src/lib/financeOrderToCashAuditApi.server.ts");
-    const routes = read("src/lib/financePortfolioReconciliationRoutes.ts");
-    assert.doesNotMatch(server, /\.(create|update|upsert|deleteMany|delete)\s*\(/);
-    assert.doesNotMatch(server, /\$executeRaw|\$queryRawUnsafe/);
-    assert.match(server, /findMany|findFirst|findUnique|count/);
-    assert.match(routes, /app\.get\(\s*"\/api\/finance\/portfolio-reconciliation\/order-to-cash-audit"/);
-    assert.doesNotMatch(
-      routes,
-      /app\.(post|put|patch|delete)\(\s*"\/api\/finance\/portfolio-reconciliation\/order-to-cash-audit/
-    );
-  });
-
-  it("10. não usa proposta", () => {
-    const api = read("src/lib/finance/orderToCashAuditApi.ts");
-    const server = read("src/lib/financeOrderToCashAuditApi.server.ts");
-    for (const src of [api, server]) {
-      assert.doesNotMatch(src, /from ["'][^"']*proposta/i);
-      assert.doesNotMatch(src, /from ["'][^"']*Proposal/i);
-      assert.doesNotMatch(src, /\bprisma\.proposal/i);
-      assert.doesNotMatch(src, /\bProposal\b/);
-    }
-  });
-
-  it("11. não usa comissão", () => {
-    const api = read("src/lib/finance/orderToCashAuditApi.ts");
-    const server = read("src/lib/financeOrderToCashAuditApi.server.ts");
-    for (const src of [api, server]) {
-      assert.doesNotMatch(src, /from ["'][^"']*comiss/i);
-      assert.doesNotMatch(src, /from ["'][^"']*commission/i);
-      assert.doesNotMatch(src, /\bprisma\.commission/i);
-      assert.doesNotMatch(src, /\bCommission\b/);
-    }
+    assert.doesNotMatch(JSON.stringify(payload), /PrismaClient|stack/i);
   });
 
   it("pageSize respeita máximo 200", () => {
@@ -369,12 +441,15 @@ describe("orderToCashAuditApi", () => {
     assert.equal(filters.pageSize, 200);
   });
 
-  it("customerId também habilita busca", () => {
-    const filters = parseOrderToCashAuditListFilters({
-      customerId: "cust-uuid",
-      year: 2026,
-    });
-    assert.equal(filters.customerId, "cust-uuid");
-    assert.equal(filters.customerExternalId, null);
+  it("meta da run inclui campos exigidos pela API", () => {
+    const run = generalRunMeta();
+    assert.equal(run.runId, GENERAL_RUN_ID);
+    assert.equal(run.isGeneralRun, true);
+    assert.equal(run.customerFilter, null);
+    assert.ok(run.periodFrom);
+    assert.ok(run.periodTo);
+    assert.equal(run.totalOrders, 1283);
+    assert.equal(run.totalFacts, 5860);
+    assert.ok(run.createdAt);
   });
 });

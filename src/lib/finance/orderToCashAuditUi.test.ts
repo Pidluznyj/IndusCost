@@ -82,7 +82,7 @@ describe("orderToCashAuditUi", () => {
     );
   });
 
-  it("5. com cliente+ano, chama API", () => {
+  it("5. com cliente+ano, chama API (prefere customerExternalId)", () => {
     const tab = read(
       "src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx"
     );
@@ -97,6 +97,16 @@ describe("orderToCashAuditUi", () => {
       canSearchOrderToCashAudit({ customerExternalId: "200", year: "2026" }),
       true
     );
+    const qsExternal = buildOrderToCashAuditListQuery(
+      createDefaultOrderToCashAuditUiFilters({
+        customerId: "cust-1",
+        customerExternalId: "200",
+        year: "2026",
+      })
+    );
+    assert.match(qsExternal, /customerExternalId=200/);
+    assert.doesNotMatch(qsExternal, /customerId=/);
+
     const qs = buildOrderToCashAuditListQuery(
       createDefaultOrderToCashAuditUiFilters({
         customerId: "cust-1",
@@ -106,6 +116,11 @@ describe("orderToCashAuditUi", () => {
     assert.match(qs, /customerId=cust-1/);
     assert.match(qs, /year=2026/);
     assert.equal(ORDER_TO_CASH_AUDIT_API_PATH.includes("order-to-cash-audit"), true);
+
+    const filtersSrc = read(
+      "src/components/finance/portfolio-reconciliation/OrderToCashAuditFilters.tsx"
+    );
+    assert.match(filtersSrc, /resolveExternalCustomerIdFromSelection/);
   });
 
   it("6. tabela renderiza colunas principais", () => {

@@ -47,6 +47,8 @@ export const ORDER_TO_CASH_AUDIT_PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
 export type OrderToCashAuditUiFilters = {
   customerId: string;
   customerExternalId: string;
+  /** Nome para fallback na API quando não houver código Nomus. */
+  customerName: string;
   year: string;
   page: number;
   pageSize: number;
@@ -106,6 +108,7 @@ export function createDefaultOrderToCashAuditUiFilters(
   return {
     customerId: "",
     customerExternalId: "",
+    customerName: "",
     year: String(new Date().getFullYear()),
     page: 1,
     pageSize: ORDER_TO_CASH_AUDIT_DEFAULT_PAGE_SIZE,
@@ -137,12 +140,26 @@ export function createDefaultOrderToCashAuditUiFilters(
 export function canSearchOrderToCashAudit(filters: {
   customerId?: string;
   customerExternalId?: string;
+  customerName?: string;
   year?: string;
 }): boolean {
   const hasCustomer =
-    Boolean(filters.customerId?.trim()) || Boolean(filters.customerExternalId?.trim());
+    Boolean(filters.customerId?.trim()) ||
+    Boolean(filters.customerExternalId?.trim()) ||
+    Boolean(filters.customerName?.trim());
   const hasYear = Boolean(filters.year?.trim());
   return hasCustomer && hasYear;
+}
+
+/** Extrai código Nomus numérico de `code` do autocomplete, se houver. */
+export function resolveExternalCustomerIdFromSelection(selection: {
+  code?: string | null;
+} | null): string {
+  const raw = String(selection?.code ?? "").trim();
+  if (!raw) return "";
+  if (/^\d+$/.test(raw)) return raw;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length > 0 && /^\d+$/.test(digits) ? digits : "";
 }
 
 export function buildOrderToCashAuditListQuery(filters: OrderToCashAuditUiFilters): string {
@@ -151,6 +168,9 @@ export function buildOrderToCashAuditListQuery(filters: OrderToCashAuditUiFilter
     params.set("customerExternalId", filters.customerExternalId.trim());
   } else if (filters.customerId.trim()) {
     params.set("customerId", filters.customerId.trim());
+  }
+  if (filters.customerName.trim() && !filters.customerExternalId.trim()) {
+    params.set("customerName", filters.customerName.trim());
   }
   if (filters.year.trim()) params.set("year", filters.year.trim());
   params.set("page", String(Math.max(1, filters.page)));

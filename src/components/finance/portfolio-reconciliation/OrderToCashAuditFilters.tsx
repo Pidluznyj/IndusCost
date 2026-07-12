@@ -5,6 +5,7 @@ import {
 } from "@/src/lib/financeModuleUiStandards";
 import {
   ORDER_TO_CASH_AUDIT_SELECT_FILTER_MESSAGE,
+  resolveExternalCustomerIdFromSelection,
   yearOptionsForOrderToCashAudit,
   type OrderToCashAuditUiFilters,
 } from "@/src/lib/finance/orderToCashAuditClient";
@@ -71,12 +72,13 @@ export function OrderToCashAuditFilters({
                 onCustomerChange(sel);
                 patch({
                   customerId: sel?.id ?? "",
-                  customerExternalId: "",
+                  customerExternalId: resolveExternalCustomerIdFromSelection(sel),
+                  customerName: sel?.name?.trim() ?? "",
                 });
               }}
               onClear={() => {
                 onCustomerChange(null);
-                patch({ customerId: "", customerExternalId: "" });
+                patch({ customerId: "", customerExternalId: "", customerName: "" });
               }}
             />
           </div>

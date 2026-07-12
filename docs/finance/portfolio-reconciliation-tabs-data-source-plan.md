@@ -47,8 +47,8 @@ Runs de referência (já populadas):
 |----------|----------|
 | Endpoint certo? | **Sim** — `GET /api/finance/portfolio-reconciliation/order-to-cash-audit` |
 | Tabelas certas? | **Sim** — `OrderToCashAuditRun` + `OrderToCashAuditFact` |
-| Busca correta da run? | **Parcial** — ver §2 |
-| UI parâmetros? | **Gap** — manda `customerId` UUID, não `externalCustomerId=200` |
+| Busca correta da run? | **Sim** — política §2.4 (específica → geral → sem run) |
+| UI parâmetros? | Prefere `customerExternalId`; `customerId` só para resolução server-side → Nomus; `customerName` como fallback de busca |
 
 ---
 
@@ -67,64 +67,74 @@ Runs de referência (já populadas):
 
 ### 3) Auditoria está buscando OrderToCashAudit corretamente?
 
-**Sim o endpoint/tabelas.**  
-**Não a política de run/cliente** (detalhes abaixo).
+**Sim** — endpoint, tabelas e política de run/cliente alinhadas à materialização.
 
-### 4) Como a API escolhe a run?
+### 4) Como a API escolhe a run? (comportamento final)
 
-Código atual (`resolveLatestSuccessRunId`):
+Prioridade em `resolveOrderToCashAuditRun` / `decideOrderToCashAuditRunPolicy`:
 
-| Comportamento | Implementado? |
-|---------------|---------------|
-| Última run geral SUCCESS **sem** `customerFilter`? | **Não** (não há essa query) |
-| Preferir run por cliente/ano quando existir? | **Não** (não prioriza `customerFilter`/`year` da run) |
-| Fallback geral se não houver específica? | **Não** como hierarquia explícita |
-| O que faz de fato? | `OrderToCashAuditFact.findFirst` com cliente + `(run.year = year OR orderIssueDate no ano)` + `run.status = SUCCESS`, `orderBy createdAt desc` → pega o **fato mais recente**, depois usa o `runId` dele |
+| Ordem | Condição | Run usada |
+|-------|----------|-----------|
+| a) | `runId` explícito na query e status SUCCESS | essa run |
+| b) | `customerExternalId` + `year` e existe SUCCESS com `customerFilter = String(externalId)` e `year` | run específica (ex.: Britânia `a0bdc0b6…`) |
+| c) | senão | última SUCCESS com `customerFilter: null` (ex.: geral `41c2470a…`) |
+| d) | nenhuma | payload amigável `ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE` (sem throw) |
 
-### 5) UI envia `customerId` ou `externalCustomerId`?
+Filtros de Fact (nunca `customerId` interno):
 
-**`customerId` interno (UUID)** via `CustomerAutocompleteFilter` (`sel.id`).  
-Ao selecionar, a UI **zera** `customerExternalId` (`""`).
+- `externalCustomerId` quando presente
+- senão `customerName` contains (insensitive)
+- se só vier `customerId` UUID: server resolve → `externalCustomerId` via `SalesOrder`; se não resolver, mensagem pedindo `customerExternalId`
+- `year` + **run geral**: filtra `orderIssueDate` (ou `createdAt` se issue null)
+- `year` + **run específica**: não reaplica ano nas facts (run já escopada)
+- paginação server-side; sort whitelist; rows = `OrderToCashAuditFact`
+
+Meta da run no payload: `runId`, `isGeneralRun`, `customerFilter`, `year`, `periodFrom`, `periodTo`, `totalOrders`, `totalFacts`, `createdAt`, totais `*Value`, `status`, `mode`, timestamps.
+
+Summary:
+
+- Sem filtros de escopo → `summarySource: "run"` (totais da `OrderToCashAuditRun`)
+- Com filtro cliente/ano/avançados → `summarySource: "filtered_facts"` (pedido/`orderNet` 1×; CR = max por pedido — sem somar CR linha a linha)
+
+### 5) UI envia `customerId` ou `customerExternalId`?
+
+Prefere **`customerExternalId`** quando o autocomplete tiver `code` numérico.  
+Caso contrário envia `customerId` (UUID) para o server resolver, e/ou `customerName`.
 
 ### 6) “Cliente: Britânia” precisa virar `externalCustomerId=200`?
 
-**Sim, para alinhamento Nomus/runs** (`customerFilter: "200"` e `externalCustomerId` nos facts).  
-Hoje o autocomplete **não** envia 200. Se o UUID do cadastro bater com `fact.customerId`, funciona; se não, a aba fica vazia mesmo com run Britânia populada.
+**Sim.** Query canônica: `?customerExternalId=200&year=2026`.  
+Na run geral, filtro `externalCustomerId=200` (janela geral ≈ 108 linhas / 35 pedidos).
 
 ### 7) Filtro Ano 2026 usa o quê?
 
 | Etapa | Critério |
 |-------|----------|
-| Resolver run | `run.year === 2026` **OU** `orderIssueDate` ∈ 2026 |
-| Filtrar facts da listagem | **`orderIssueDate` ∈ 2026** (ou `createdAt` se issue null) — **não** filtra só por `run.year` |
-| Período `periodFrom`/`periodTo` da run | **Não** usado na listagem |
+| Resolver run | Preferência run específica `year=2026` + `customerFilter`; senão run geral |
+| Filtrar facts (run geral) | `orderIssueDate` ∈ 2026 (ou `createdAt` se issue null) |
+| Filtrar facts (run específica) | sem refiltro de ano |
+| `periodFrom`/`periodTo` | metadado da run (não filtro da listagem) |
 
 ### 8) Divergência status/mode?
 
 | Campo | Persistido no apply | Checagem API |
 |-------|---------------------|--------------|
-| `mode` | **`APPLY`** (uppercase) | API **não** filtra por mode |
+| `mode` | **`APPLY`** | API **não** filtra por mode |
 | `status` | **`SUCCESS`** | API exige `status === "SUCCESS"` |
-| CLI | `--mode apply` (lowercase) | só na CLI; grava `APPLY` |
-
-**Sem bug de case** se o apply concluiu com SUCCESS. `APPLY` vs `apply` na coluna `mode` não impede a listagem.
 
 ### 9) Por que a aba pode mostrar vazio?
 
-Ordem de probabilidade (código):
+1. Sem pesquisar (cliente+ano obrigatórios na UI).
+2. Sem run materializada SUCCESS.
+3. Filtros avançados demais (raro com Britânia 200).
+4. `customerId` sem `externalCustomerId` resolvível e sem `customerName`.
 
-1. **UI manda parâmetro errado / incompleto** — não pesquisou (sem applied); ou só usou filtro global da página (externalId) sem autocomplete na aba; ou `customerId` UUID ≠ `fact.customerId`.
-2. **API acha run mas filtra fact** — year por `orderIssueDate` exclui linhas; cliente UUID sem match.
-3. **API não acha run** — nenhum fato SUCCESS com aquele cliente+ano → mensagem “Nenhum run SUCCESS…”.
-4. **Endpoint errado** — improvável (path e registration corretos).
-5. **Retorno ok e componente não renderiza** — improvável se `rows.length > 0` (há branch explícita); empty state cobre 0 rows.
-
-Scripts: rodar no servidor com `.env`:
+Scripts:
 
 ```bash
 npx tsx tmp-audits/inspect-portfolio-reconciliation-tab-sources.ts
 npx tsx tmp-audits/check-order-to-cash-audit-api-query.ts --customerExternalId 200 --year 2026
-npx tsx tmp-audits/check-order-to-cash-audit-api-query.ts --customerId <uuid-britania> --year 2026
+curl "http://localhost:PORT/api/finance/portfolio-reconciliation/order-to-cash-audit?customerExternalId=200&year=2026&page=1&pageSize=50"
 ```
 
 ---
@@ -135,21 +145,18 @@ npx tsx tmp-audits/check-order-to-cash-audit-api-query.ts --customerId <uuid-bri
 |-----|-------------|--------------------------|-----------------|
 | Conciliação | Portfolio Run/Fact | **OrderToCashAudit** via adapter (fase 2) | Nenhum visual agora |
 | Inteligência | Portfolio Fact + motor maturidade | **Mesmo motor** + fatos O2C agregados por pedido (fase 2–3) | Nenhum visual agora |
-| Auditoria Pedido → Caixa | OrderToCashAudit | **OrderToCashAudit** (já) | Corrigir resolução run + `externalCustomerId` (próximo prompt) |
+| Auditoria Pedido → Caixa | OrderToCashAudit | **OrderToCashAudit** | **Feito (etapa 1)** — política de run + `externalCustomerId` + summary seguro |
 
 ---
 
-## 4. Ajustes necessários (próximos prompts — não neste)
+## 4. Ajustes — status
 
-### Auditoria (prioridade P0)
+### Auditoria (P0) — **concluído na etapa 1**
 
-1. Enviar **`externalCustomerId`** quando conhecido (resolver a partir do pedido/cliente Nomus; para Britânia = **200**).
-2. Política de run explícita:
-   1. run SUCCESS com `customerFilter` = cliente e `year` = ano (se existir);
-   2. senão run SUCCESS geral (`customerFilter` null) que contenha facts do cliente/ano;
-   3. senão fato mais recente (comportamento atual como último recurso).
-3. Opcional: seletor de run na UI (`41c2470a…` vs `a0bdc0b6…`).
-4. Cards: preferir totais da **Run** ou agregação **por pedido/CR** (não somar `receivable*` linha a linha).
+1. ~~Enviar `externalCustomerId`~~ — UI + resolução server de UUID.
+2. ~~Política de run~~ — específica → geral → mensagem sem run.
+3. Opcional: seletor de run na UI (ainda aberto).
+4. ~~Cards: totais da Run ou agregação por pedido~~ — `summarySource`.
 
 ### Conciliação / Inteligência (P1–P2)
 
@@ -162,11 +169,11 @@ npx tsx tmp-audits/check-order-to-cash-audit-api-query.ts --customerId <uuid-bri
 
 | Risco | Mitigação |
 |-------|-----------|
-| Somar CR em várias linhas do mesmo pedido | Cards: totais da Run **ou** `max/group by salesOrderId` / receivableId |
-| Somar pedido + NF + CR | Manter regra: um valor “oficial” por estágio (pedido **ou** evidência **ou** CR) |
+| Somar CR em várias linhas do mesmo pedido | Cards: totais da Run **ou** `max` por `salesOrderId` |
+| Somar pedido + NF + CR | Manter regra: um valor “oficial” por estágio |
 | Cabeçalho NF > pedido | Já no builder O2C; UI/cards não usam NF header como valor de carteira |
 | Duas bases (Portfolio vs O2C) divergentes | Tratar O2C como canônico; Portfolio legado até adapter |
-| Run geral + run Britânia sobrepostas | Política de run explícita; UI mostra `runId` |
+| Run geral + run Britânia sobrepostas | Política de run explícita; payload inclui `runId` / `isGeneralRun` |
 
 ---
 
@@ -174,13 +181,12 @@ npx tsx tmp-audits/check-order-to-cash-audit-api-query.ts --customerId <uuid-bri
 
 ```text
 Tabela / detalhe  → OrderToCashAuditFact (grão item × evidência)
-Cards / resumo    → OrderToCashAuditRun.*Value  OU
-                    agregação:
+Cards / resumo    → OrderToCashAuditRun.*Value  (summarySource=run)
+                    OU agregação filtrada (summarySource=filtered_facts):
                       - pedidos: distinct salesOrderId / orderCode
                       - valor pedido: 1× orderNetValue por pedido
-                      - alocado: soma allocatedValueByOrderPrice (linhas ORDER_ITEM_ALLOCATED)
-                      - CR / recebido / aberto: NÃO somar linha a linha;
-                        preferir totais da Run ou max/único por receivable/pedido
+                      - alocado: soma allocatedValueByOrderPrice
+                      - CR / recebido / aberto: max por pedido (não somar linha a linha)
 ```
 
 Cadeia oficial (não mudar):
@@ -197,8 +203,8 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 
 | Etapa | Escopo | Entrega |
 |-------|--------|---------|
-| **0** (este prompt) | Diagnóstico + scripts + doc | Este arquivo |
-| **1** | Fix Auditoria API/UI params | `externalCustomerId`, política de run, cards seguros |
+| **0** | Diagnóstico + scripts + doc | Inventário + este arquivo |
+| **1** | Fix Auditoria API/UI params | **Feito** — `externalCustomerId`, política de run, cards seguros |
 | **2** | Smoke Britânia 2026 | Script validate + UI Pesquisa → ≥1 row |
 | **3** | Adapter Conciliação ← O2C | Service + testes; UI sem redesign |
 | **4** | Adapter Inteligência ← O2C | Enrich por pedido + maturity |
@@ -206,20 +212,17 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 
 ---
 
-## 8. Arquivos a alterar no próximo prompt (etapa 1)
+## 8. Arquivos da etapa 1 (Auditoria API)
 
-| Arquivo | Mudança esperada |
-|---------|------------------|
-| `src/lib/financeOrderToCashAuditApi.server.ts` | Política de resolução de run (específica → geral → fallback) |
-| `src/lib/finance/orderToCashAuditApi.ts` | Where/agregação de summary segura (CR por pedido) se necessário |
-| `src/components/finance/portfolio-reconciliation/OrderToCashAuditFilters.tsx` | Preferir/enviar `externalCustomerId` |
-| `src/lib/finance/orderToCashAuditClient.ts` | Query com externalId; helpers de resolução cliente |
-| `src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx` | Exibir runId/meta; opcional seletor |
-| `src/components/finance/portfolio-reconciliation/OrderToCashAuditSummaryCards.tsx` | Consumir totais seguros |
-| `src/lib/finance/orderToCashAuditApi.test.ts` / `orderToCashAuditUi.test.ts` | Cobrir política de run + externalId |
-| (opcional) `CustomerAutocomplete` / search DTO | Expor código externo Nomus se disponível |
+| Arquivo | Mudança |
+|---------|---------|
+| `src/lib/financeOrderToCashAuditApi.server.ts` | Resolução específica → geral; resolve UUID→external; meta completa; summary |
+| `src/lib/finance/orderToCashAuditApi.ts` | Parse sem obrigar cliente/ano; where sem `customerId`; política pura; summary seguro |
+| `src/components/finance/portfolio-reconciliation/OrderToCashAuditFilters.tsx` | Envia `customerExternalId` / `customerName` |
+| `src/lib/finance/orderToCashAuditClient.ts` | Query + helper de código Nomus |
+| `src/lib/finance/orderToCashAuditApi.test.ts` / `orderToCashAuditUi.test.ts` | Cobertura da política e filtros |
 
-**Não alterar neste próximo passo (salvo se bloqueador):** Contas a Receber, Fluxo, Comissões, Presidencial, migrations.
+**Não alterar:** Contas a Receber, Fluxo, Comissões, Presidencial, migrations, syncs Nomus.
 
 ---
 
@@ -229,6 +232,11 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 |-----|------|
 | **Conciliação** | Continua Portfolio **hoje**; alvo = O2C via **adapter** |
 | **Inteligência** | Continua motor antigo **hoje**; alvo = fatos O2C agregados |
-| **Auditoria** | Já é O2C; **corrigir** escolha de run + **`externalCustomerId=200`** para Britânia |
+| **Auditoria** | O2C com política de run + `externalCustomerId`; sem filtros a API usa a run geral `41c2470a…` |
 
-Vazio na Auditoria, se ocorre com Britânia 2026, é **quase certamente** parâmetro de cliente (UUID vs 200) e/ou política de run — **não** endpoint errado nem mode `APPLY` vs `apply`.
+Smoke esperado:
+
+```text
+GET .../order-to-cash-audit?customerExternalId=200&year=2026&page=1&pageSize=50
+→ run específica Britânia se SUCCESS; senão geral + filtro 200/2026; rows > 0 quando facts existem
+```

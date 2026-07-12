@@ -7,6 +7,12 @@
 export const ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED =
   "Selecione cliente e ano para pesquisar a auditoria Pedido → Caixa.";
 
+export const ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED =
+  "Informe customerExternalId (código Nomus do cliente). O customerId interno não é usado para filtrar a auditoria.";
+
+export const ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE =
+  "Nenhuma run materializada de auditoria Pedido → Caixa encontrada. Execute o rebuild (apply) e tente novamente.";
+
 export const ORDER_TO_CASH_AUDIT_DEFAULT_PAGE_SIZE = 50;
 export const ORDER_TO_CASH_AUDIT_MAX_PAGE_SIZE = 200;
 export const ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY = "orderIssueDate";
@@ -60,9 +66,16 @@ export class OrderToCashAuditApiParseError extends Error {
 }
 
 export type OrderToCashAuditListFilters = {
+  /** Código Nomus — único identificador de cliente usado no filtro de Fact. */
   customerExternalId: number | null;
+  /**
+   * UUID interno opcional: NÃO filtra Fact.
+   * O server pode resolvê-lo para externalCustomerId via SalesOrder.
+   */
   customerId: string | null;
-  year: number;
+  /** Busca por nome do cliente no Fact (contains), se não houver externalId. */
+  customerName: string | null;
+  year: number | null;
   page: number;
   pageSize: number;
   sortBy: OrderToCashAuditSortBy;
@@ -100,9 +113,21 @@ export type OrderToCashAuditRunMeta = {
   startedAt: string | null;
   finishedAt: string | null;
   status: string;
-  year: number | null;
-  totalFacts: number;
   mode: string | null;
+  year: number | null;
+  customerFilter: string | null;
+  periodFrom: string | null;
+  periodTo: string | null;
+  totalOrders: number;
+  totalFacts: number;
+  totalOrderValue: number | null;
+  totalAllocatedValue: number | null;
+  totalReceivableValue: number | null;
+  totalReceivedValue: number | null;
+  totalOpenValue: number | null;
+  totalBlockedValue: number | null;
+  createdAt: string | null;
+  isGeneralRun: boolean;
 };
 
 export type OrderToCashAuditListRow = {
@@ -170,6 +195,8 @@ export type OrderToCashAuditListSummary = {
   alertCounts: Record<string, number>;
   stageCounts: Record<string, number>;
   paymentStatusCounts: Record<string, number>;
+  /** run = totais da OrderToCashAuditRun; filtered_facts = agregado seguro por pedido nas linhas filtradas */
+  summarySource: "run" | "filtered_facts";
 };
 
 export type OrderToCashAuditAvailableFilters = {
@@ -326,10 +353,12 @@ export function parseOrderToCashAuditListFilters(
     "customerExternalId"
   );
   const customerId = asString(query.customerId);
+  const customerName = asString(query.customerName);
   const year = asYear(query.year);
 
-  if ((customerExternalId == null && !customerId) || year == null) {
-    throw new OrderToCashAuditApiParseError(ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED);
+  // customerId sozinho não é filtro de Fact — exige externalId ou nome (ou nenhum = run geral).
+  if (customerId && customerExternalId == null && !customerName) {
+    // Permitido: server resolve UUID → externalCustomerId. Não rejeita no parse.
   }
 
   const { sortBy, sortDirection } = resolveOrderToCashAuditSort(
@@ -340,6 +369,7 @@ export function parseOrderToCashAuditListFilters(
   return {
     customerExternalId,
     customerId,
+    customerName,
     year,
     page: clampPage(query.page),
     pageSize: clampPageSize(query.pageSize),
@@ -374,16 +404,10 @@ export function parseOrderToCashAuditListFilters(
 export function inspectOrderToCashAuditRequiredSelection(
   query: Record<string, unknown>
 ): OrderToCashAuditRequiredSelection {
-  try {
-    asPositiveInt(query.customerExternalId, "customerExternalId");
-    asString(query.customerId);
-    asYear(query.year);
-  } catch {
-    /* ignore parse noise — só checamos presença */
-  }
   const hasCustomer =
     (query.customerExternalId != null && String(query.customerExternalId).trim() !== "") ||
-    (query.customerId != null && String(query.customerId).trim() !== "");
+    (query.customerId != null && String(query.customerId).trim() !== "") ||
+    (query.customerName != null && String(query.customerName).trim() !== "");
   const hasYear = query.year != null && String(query.year).trim() !== "";
   const ready = hasCustomer && hasYear;
   return {
@@ -403,18 +427,54 @@ export function yearDateBounds(year: number): { gte: Date; lte: Date } {
 
 type StringContains = { contains: string; mode: "insensitive" };
 
+export type OrderToCashAuditRunResolutionKind =
+  | "explicit"
+  | "specific_customer_year"
+  | "general"
+  | "none";
+
 /**
- * Where Prisma-compatível a partir dos filtros (sem SQL string livre).
- * Tipado de forma estrutural para o módulo puro não depender de @prisma/client.
+ * Política pura de escolha de run (testável sem Prisma).
+ * a) específica cliente+ano → b) geral customerFilter null → c) none
+ */
+export function decideOrderToCashAuditRunPolicy(input: {
+  runId: string | null;
+  customerExternalId: number | null;
+  year: number | null;
+  specificRunId: string | null;
+  generalRunId: string | null;
+}): { kind: OrderToCashAuditRunResolutionKind; runId: string | null } {
+  if (input.runId) return { kind: "explicit", runId: input.runId };
+  if (
+    input.customerExternalId != null &&
+    input.year != null &&
+    input.specificRunId
+  ) {
+    return { kind: "specific_customer_year", runId: input.specificRunId };
+  }
+  if (input.generalRunId) return { kind: "general", runId: input.generalRunId };
+  return { kind: "none", runId: null };
+}
+
+/**
+ * Where Prisma-compatível — nunca filtra por customerId interno.
  */
 export function buildOrderToCashAuditFactWhere(
   filters: OrderToCashAuditListFilters,
-  runId: string
+  runId: string,
+  options?: { applyYearOnIssueDate?: boolean; isGeneralRun?: boolean }
 ): Record<string, unknown> {
-  const yearBounds = yearDateBounds(filters.year);
-  const and: Array<Record<string, unknown>> = [
-    { runId },
-    {
+  const and: Array<Record<string, unknown>> = [{ runId }];
+
+  // Ano em orderIssueDate só na run geral (run específica já é escopo cliente/ano).
+  const applyYear =
+    filters.year != null &&
+    (options?.applyYearOnIssueDate === true ||
+      (options?.applyYearOnIssueDate !== false && options?.isGeneralRun === true));
+
+  if (applyYear && filters.year != null) {
+    const yearBounds = yearDateBounds(filters.year);
+    and.push({
       OR: [
         { orderIssueDate: { gte: yearBounds.gte, lte: yearBounds.lte } },
         {
@@ -424,14 +484,17 @@ export function buildOrderToCashAuditFactWhere(
           ],
         },
       ],
-    },
-  ];
+    });
+  }
 
   if (filters.customerExternalId != null) {
     and.push({ externalCustomerId: filters.customerExternalId });
-  } else if (filters.customerId) {
-    and.push({ customerId: filters.customerId });
+  } else if (filters.customerName) {
+    and.push({
+      customerName: { contains: filters.customerName, mode: "insensitive" },
+    });
   }
+  // Nunca: customerId no where de Fact.
 
   const contains = (value: string): StringContains => ({
     contains: value,
@@ -439,6 +502,7 @@ export function buildOrderToCashAuditFactWhere(
   });
 
   if (filters.orderCode) and.push({ orderCode: contains(filters.orderCode) });
+  // sellerName null/"Sem vendedor informado" — contains é seguro; não exige campo não-nulo
   if (filters.sellerName) and.push({ sellerName: contains(filters.sellerName) });
   if (filters.productCode) and.push({ productCode: contains(filters.productCode) });
   if (filters.sku) and.push({ sku: contains(filters.sku) });
@@ -491,6 +555,35 @@ export function buildOrderToCashAuditFactWhere(
   if (filters.onlyOverdue) and.push({ hasOverdueReceivable: true });
 
   return { AND: and };
+}
+
+/** Há filtro que estreita a run geral (cliente/ano/avançados). */
+export function orderToCashAuditHasFactScopeFilters(
+  filters: OrderToCashAuditListFilters
+): boolean {
+  return (
+    filters.customerExternalId != null ||
+    Boolean(filters.customerName) ||
+    filters.year != null ||
+    Boolean(filters.orderCode) ||
+    Boolean(filters.sellerName) ||
+    Boolean(filters.productCode) ||
+    Boolean(filters.sku) ||
+    Boolean(filters.nfeNumber) ||
+    filters.stockDocumentExternalId != null ||
+    Boolean(filters.orderToCashStage) ||
+    Boolean(filters.operationalStage) ||
+    Boolean(filters.financialStage) ||
+    Boolean(filters.paymentStatus) ||
+    Boolean(filters.temperature) ||
+    Boolean(filters.confidenceLabel) ||
+    filters.hasAlerts ||
+    filters.onlyWithExcess ||
+    filters.onlyWithProductOutsideOrder ||
+    filters.onlyWithoutDocument ||
+    filters.onlyWithoutReceivable ||
+    filters.onlyOverdue
+  );
 }
 
 function toIso(value: Date | string | null | undefined): string | null {
@@ -580,15 +673,36 @@ function bump(map: Record<string, number>, key: string | null | undefined): void
   map[k] = (map[k] ?? 0) + 1;
 }
 
+export function buildOrderToCashAuditListSummaryFromRun(
+  run: OrderToCashAuditRunMeta,
+  totalRows: number
+): OrderToCashAuditListSummary {
+  return {
+    totalRows,
+    totalOrders: run.totalOrders,
+    totalOrderValue: run.totalOrderValue ?? 0,
+    totalAllocatedValue: run.totalAllocatedValue ?? 0,
+    totalReceivableValue: run.totalReceivableValue ?? 0,
+    totalReceivedValue: run.totalReceivedValue ?? 0,
+    totalOpenValue: run.totalOpenValue ?? 0,
+    totalBlockedValue: run.totalBlockedValue ?? 0,
+    alertCounts: {},
+    stageCounts: {},
+    paymentStatusCounts: {},
+    summarySource: "run",
+  };
+}
+
+/**
+ * Resumo seguro a partir de facts filtrados: orderNet / CR agregados por pedido
+ * (não soma CR repetido linha a linha).
+ */
 export function buildOrderToCashAuditListSummary(
   facts: OrderToCashAuditFactRecord[],
   totalRows: number
 ): OrderToCashAuditListSummary {
   const orderNets = new Map<string, number>();
   let totalAllocatedValue = 0;
-  let totalReceivableValue = 0;
-  let totalReceivedValue = 0;
-  let totalOpenValue = 0;
   let totalBlockedValue = 0;
   const alertCounts: Record<string, number> = {};
   const stageCounts: Record<string, number> = {};
@@ -603,9 +717,6 @@ export function buildOrderToCashAuditListSummary(
       orderNets.set(orderKey, 0);
     }
     totalAllocatedValue += fact.allocatedValueByOrderPrice ?? 0;
-    totalReceivableValue += fact.receivableTotalValue ?? 0;
-    totalReceivedValue += fact.receivableReceivedValue ?? 0;
-    totalOpenValue += fact.receivableOpenValue ?? 0;
     bump(stageCounts, fact.orderToCashStage);
     bump(paymentStatusCounts, fact.paymentStatus);
     for (const alert of parseAlerts(fact.alertsJson)) bump(alertCounts, alert);
@@ -621,7 +732,6 @@ export function buildOrderToCashAuditListSummary(
   }
 
   // Receivables are order-level — avoid double-count when multiple item rows share same CR totals
-  // Prefer max per order for receivable aggregates
   const recvByOrder = new Map<string, { total: number; received: number; open: number }>();
   for (const fact of facts) {
     const orderKey = fact.salesOrderId ?? fact.orderCode ?? fact.id;
@@ -631,9 +741,9 @@ export function buildOrderToCashAuditListSummary(
     cur.open = Math.max(cur.open, fact.receivableOpenValue ?? 0);
     recvByOrder.set(orderKey, cur);
   }
-  totalReceivableValue = 0;
-  totalReceivedValue = 0;
-  totalOpenValue = 0;
+  let totalReceivableValue = 0;
+  let totalReceivedValue = 0;
+  let totalOpenValue = 0;
   for (const v of recvByOrder.values()) {
     totalReceivableValue += v.total;
     totalReceivedValue += v.received;
@@ -655,6 +765,7 @@ export function buildOrderToCashAuditListSummary(
     alertCounts,
     stageCounts,
     paymentStatusCounts,
+    summarySource: "filtered_facts",
   };
 }
 
@@ -728,6 +839,8 @@ export function buildOrderToCashAuditListPayload(input: {
   summaryFacts: OrderToCashAuditFactRecord[];
   totalRows: number;
   message?: string | null;
+  /** Quando true e há run, usa totais da run (sem somar CR linha a linha). */
+  preferRunTotals?: boolean;
 }) {
   const requiredSelection: OrderToCashAuditRequiredSelection = {
     customerRequired: true,
@@ -735,6 +848,11 @@ export function buildOrderToCashAuditListPayload(input: {
     readyToSearch: true,
     message: null,
   };
+
+  const useRunTotals = Boolean(input.preferRunTotals && input.run);
+  const summary = useRunTotals
+    ? buildOrderToCashAuditListSummaryFromRun(input.run!, input.totalRows)
+    : buildOrderToCashAuditListSummary(input.summaryFacts, input.totalRows);
 
   return {
     ok: true as const,
@@ -744,7 +862,7 @@ export function buildOrderToCashAuditListPayload(input: {
     },
     requiredSelection,
     run: input.run,
-    summary: buildOrderToCashAuditListSummary(input.summaryFacts, input.totalRows),
+    summary,
     rows: input.pageRows.map(mapOrderToCashAuditFactToListRow),
     pagination: {
       page: input.filters.page,
