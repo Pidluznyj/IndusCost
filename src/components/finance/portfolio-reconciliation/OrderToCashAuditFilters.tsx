@@ -62,26 +62,44 @@ export function OrderToCashAuditFilters({
   return (
     <div className="mb-4 space-y-3" data-testid="order-to-cash-audit-filters">
       <div className="rounded-xl border border-border bg-card p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2" data-testid="order-to-cash-audit-customer">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="sm:col-span-2 lg:col-span-2" data-testid="order-to-cash-audit-customer">
             <CustomerAutocompleteFilter
-              label="Cliente *"
+              label="Cliente"
               value={customerSelection}
-              placeholder="Buscar cliente por nome ou código…"
+              placeholder="Buscar por nome…"
+              allowFreeText
               onChange={(sel) => {
                 onCustomerChange(sel);
+                const external = resolveExternalCustomerIdFromSelection(sel);
                 patch({
                   customerId: sel?.id ?? "",
-                  customerExternalId: resolveExternalCustomerIdFromSelection(sel),
+                  customerExternalId: external || draft.customerExternalId,
                   customerName: sel?.name?.trim() ?? "",
                 });
               }}
               onClear={() => {
                 onCustomerChange(null);
-                patch({ customerId: "", customerExternalId: "", customerName: "" });
+                patch({ customerId: "", customerName: "" });
               }}
             />
           </div>
+
+          <Field label="Código Nomus">
+            <input
+              className={financeModuleFilterFieldClass()}
+              value={draft.customerExternalId}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                patch({
+                  customerExternalId: raw.replace(/[^\d]/g, ""),
+                });
+              }}
+              placeholder="Ex.: 200"
+              inputMode="numeric"
+              data-testid="order-to-cash-audit-external-id"
+            />
+          </Field>
 
           <Field label="Ano *">
             <select
@@ -99,7 +117,7 @@ export function OrderToCashAuditFilters({
             </select>
           </Field>
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-2">
             <button
               type="button"
               className={cn(
@@ -132,7 +150,12 @@ export function OrderToCashAuditFilters({
           >
             {ORDER_TO_CASH_AUDIT_SELECT_FILTER_MESSAGE}
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Sem cliente: usa a run geral. Com código Nomus (ex. 200 Britânia): filtra facts /
+            run específica quando existir.
+          </p>
+        )}
       </div>
 
       {searched ? (

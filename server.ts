@@ -11521,8 +11521,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             phone: true,
           },
         });
+        if (!customer) {
+          return res.json({ items: [] });
+        }
+        const link = await prisma.salesOrder.findFirst({
+          where: { customerId: customer.id, externalCustomerId: { not: null } },
+          orderBy: [{ issueDate: "desc" }],
+          select: { externalCustomerId: true },
+        });
         return res.json({
-          items: customer ? [serializeCustomerSearchItem(customer)] : [],
+          items: [
+            serializeCustomerSearchItem(customer, {
+              externalCustomerId: link?.externalCustomerId ?? null,
+            }),
+          ],
         });
       }
 
@@ -11549,7 +11561,35 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         },
       });
 
-      const items = rankCustomerSearchResults(rows.map(serializeCustomerSearchItem), q);
+      const customerIds = rows.map((r) => r.id);
+      const externalByCustomerId = new Map<string, number>();
+      if (customerIds.length > 0) {
+        const links = await prisma.salesOrder.findMany({
+          where: {
+            customerId: { in: customerIds },
+            externalCustomerId: { not: null },
+          },
+          orderBy: [{ issueDate: "desc" }],
+          select: { customerId: true, externalCustomerId: true },
+        });
+        for (const link of links) {
+          if (
+            link.externalCustomerId != null &&
+            !externalByCustomerId.has(link.customerId)
+          ) {
+            externalByCustomerId.set(link.customerId, link.externalCustomerId);
+          }
+        }
+      }
+
+      const items = rankCustomerSearchResults(
+        rows.map((row) =>
+          serializeCustomerSearchItem(row, {
+            externalCustomerId: externalByCustomerId.get(row.id) ?? null,
+          })
+        ),
+        q
+      );
       res.json({ items });
     } catch (error) {
       console.error("GET /api/customers/search", error);

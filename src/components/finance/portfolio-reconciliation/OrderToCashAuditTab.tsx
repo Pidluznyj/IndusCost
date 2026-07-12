@@ -9,7 +9,6 @@ import type { EntityAutocompleteSelection } from "@/src/components/common/Custom
 import type { OrderToCashAuditListRow } from "@/src/lib/finance/orderToCashAuditApi";
 import {
   ORDER_TO_CASH_AUDIT_API_PATH,
-  ORDER_TO_CASH_AUDIT_EMPTY_MESSAGE,
   ORDER_TO_CASH_AUDIT_ERROR_MESSAGE,
   ORDER_TO_CASH_AUDIT_HEAVY_WARNING,
   ORDER_TO_CASH_AUDIT_LOADING_MESSAGE,
@@ -19,19 +18,26 @@ import {
   buildOrderToCashAuditListQuery,
   canSearchOrderToCashAudit,
   createDefaultOrderToCashAuditUiFilters,
+  formatOrderToCashAuditRunScope,
   nextOrderToCashAuditSort,
+  orderToCashAuditEmptyDescription,
+  resolveOrderToCashAuditEmptyKind,
   type OrderToCashAuditListPayload,
   type OrderToCashAuditUiFilters,
 } from "@/src/lib/finance/orderToCashAuditClient";
 import { OrderToCashAuditFilters } from "./OrderToCashAuditFilters";
 import { OrderToCashAuditSummaryCards } from "./OrderToCashAuditSummaryCards";
 import { OrderToCashAuditTable } from "./OrderToCashAuditTable";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  formatFinanceDate,
+  formatFinanceDateTime,
+} from "@/src/lib/financeAccountsReceivableFormat";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
 /**
  * Aba Auditoria Pedido → Caixa.
- * Não carrega no mount — exige Cliente + Ano + Pesquisar.
+ * Não carrega no mount — exige Ano + Pesquisar (cliente opcional = run geral).
  */
 export function OrderToCashAuditTab() {
   const abortRef = useRef<AbortController | null>(null);
@@ -68,11 +74,15 @@ export function OrderToCashAuditTab() {
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setPayload(null);
-      if (e instanceof HttpError && e.status >= 500) {
-        setError(ORDER_TO_CASH_AUDIT_ERROR_MESSAGE);
-      } else if (e instanceof HttpError && e.status === 400) {
-        setError(e.message || ORDER_TO_CASH_AUDIT_ERROR_MESSAGE);
+      if (e instanceof HttpError) {
+        console.warn("[order-to-cash-audit]", e.status, e.message);
+        if (e.status === 400) {
+          setError(e.message || ORDER_TO_CASH_AUDIT_ERROR_MESSAGE);
+        } else {
+          setError(ORDER_TO_CASH_AUDIT_ERROR_MESSAGE);
+        }
       } else {
+        console.warn("[order-to-cash-audit]", e instanceof Error ? e.message : "unknown");
         setError(ORDER_TO_CASH_AUDIT_ERROR_MESSAGE);
       }
     } finally {
@@ -141,6 +151,9 @@ export function OrderToCashAuditTab() {
     setApplied(merged);
   };
 
+  const emptyKind = resolveOrderToCashAuditEmptyKind({ searched, error, payload });
+  const hasRows = Boolean(payload?.rows?.length);
+
   return (
     <div data-testid="order-to-cash-audit-tab">
       <header className="mb-4 space-y-3">
@@ -196,24 +209,63 @@ export function OrderToCashAuditTab() {
         </div>
       ) : null}
 
-      {searched && !loading && !error && payload && payload.rows.length === 0 ? (
+      {searched && !loading && !error && payload?.run ? (
+        <div
+          className={cn(financeBiCardClass, "mb-4 px-4 py-3")}
+          data-testid="order-to-cash-audit-run-meta"
+        >
+          <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <MetaItem label="Run" value={payload.run.runId} mono />
+            <MetaItem
+              label="Escopo"
+              value={formatOrderToCashAuditRunScope(payload.run)}
+            />
+            <MetaItem
+              label="Data/hora"
+              value={formatFinanceDateTime(
+                payload.run.finishedAt ?? payload.run.createdAt ?? payload.run.startedAt
+              )}
+            />
+            <MetaItem
+              label="Período"
+              value={
+                payload.run.periodFrom || payload.run.periodTo
+                  ? `${formatFinanceDate(payload.run.periodFrom)} → ${formatFinanceDate(payload.run.periodTo)}`
+                  : payload.run.year != null
+                    ? `Ano ${payload.run.year}`
+                    : "—"
+              }
+            />
+            <MetaItem
+              label="Pedidos / fatos (run)"
+              value={`${payload.run.totalOrders} / ${payload.run.totalFacts}`}
+            />
+            <MetaItem label="Status" value={payload.run.status} />
+            <MetaItem label="Modo" value={payload.run.mode ?? "—"} />
+            <MetaItem
+              label="Filtro cliente (run)"
+              value={payload.run.customerFilter ?? "null (geral)"}
+            />
+          </dl>
+        </div>
+      ) : null}
+
+      {searched && !loading && !error && emptyKind === "no_run" ? (
         <FinanceModuleEmptyState
-          title="Sem dados"
-          description={
-            payload.message?.trim() || ORDER_TO_CASH_AUDIT_EMPTY_MESSAGE
-          }
+          title="Sem run materializada"
+          description={orderToCashAuditEmptyDescription("no_run", payload?.message)}
         />
       ) : null}
 
-      {searched && !loading && payload && payload.rows.length > 0 ? (
+      {searched && !loading && !error && emptyKind === "filtered" ? (
+        <FinanceModuleEmptyState
+          title="Nenhuma linha para os filtros"
+          description={orderToCashAuditEmptyDescription("filtered", payload?.message)}
+        />
+      ) : null}
+
+      {searched && !loading && !error && hasRows && payload ? (
         <>
-          {payload.run ? (
-            <p className="mb-3 text-xs text-muted-foreground" data-testid="order-to-cash-audit-run-meta">
-              Run {payload.run.runId.slice(0, 8)}… · {payload.run.status} ·{" "}
-              {formatFinanceDateTime(payload.run.finishedAt ?? payload.run.startedAt)}
-              {payload.run.totalFacts != null ? ` · ${payload.run.totalFacts} fatos` : ""}
-            </p>
-          ) : null}
           <OrderToCashAuditSummaryCards summary={payload.summary} />
           <OrderToCashAuditTable
             rows={payload.rows}
@@ -253,6 +305,7 @@ export function OrderToCashAuditTab() {
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem label="ID do fato" value={selectedRow.id} />
             <DetailItem label="Run" value={selectedRow.runId} />
+            <DetailItem label="Tipo linha" value={selectedRow.lineType} />
             <DetailItem label="Cliente externo" value={selectedRow.externalCustomerId} />
             <DetailItem label="Responsável" value={selectedRow.responsibleArea} />
             <DetailItem label="Ação recomendada" value={selectedRow.recommendedAction} />
@@ -284,6 +337,32 @@ export function OrderToCashAuditTab() {
           </dl>
         </aside>
       ) : null}
+    </div>
+  );
+}
+
+function MetaItem({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#667085]">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "mt-0.5 break-all text-[13px] text-[#101828]",
+          mono && "font-mono text-[12px]"
+        )}
+      >
+        {value ?? "—"}
+      </dd>
     </div>
   );
 }

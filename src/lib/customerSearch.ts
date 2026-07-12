@@ -76,11 +76,16 @@ export function serializeCustomerSearchItem(
   customer: Pick<
     Customer,
     "id" | "companyName" | "tradeName" | "taxId" | "city" | "state" | "email" | "phone"
-  >
+  >,
+  options?: { externalCustomerId?: number | null }
 ): CustomerSearchItem {
+  const external =
+    options?.externalCustomerId != null && Number.isFinite(options.externalCustomerId)
+      ? Math.trunc(options.externalCustomerId)
+      : null;
   return {
     id: customer.id,
-    code: null,
+    code: external != null ? String(external) : null,
     name: formatCustomerPrimaryName(customer),
     tradeName: customer.tradeName?.trim() || null,
     taxId: customer.taxId?.trim() || null,
@@ -88,6 +93,18 @@ export function serializeCustomerSearchItem(
     state: customer.state?.trim() || null,
     source: "induscost",
   };
+}
+
+/** Aplica mapa customerId → externalCustomerId nos itens de busca (código Nomus em `code`). */
+export function applyExternalCustomerIdsToSearchItems(
+  items: CustomerSearchItem[],
+  externalByCustomerId: Map<string, number>
+): CustomerSearchItem[] {
+  return items.map((item) => {
+    const external = externalByCustomerId.get(item.id);
+    if (external == null) return item;
+    return { ...item, code: String(external) };
+  });
 }
 
 export function customerSearchItemToSelection(item: CustomerSearchItem): EntityAutocompleteSelection {
@@ -105,11 +122,11 @@ export function customerSearchItemToSelection(item: CustomerSearchItem): EntityA
 
 export function formatCustomerSearchSecondaryLine(item: CustomerSearchItem): string {
   const parts: string[] = [];
+  if (item.code) parts.push(`Cód. Nomus ${item.code}`);
   if (item.taxId) parts.push(item.taxId);
   if (item.city || item.state) {
     parts.push([item.city, item.state].filter(Boolean).join("/"));
   }
-  if (item.code) parts.push(`Cód. ${item.code}`);
   return parts.join(" · ") || "—";
 }
 

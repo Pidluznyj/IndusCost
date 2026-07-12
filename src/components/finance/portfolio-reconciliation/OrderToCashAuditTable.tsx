@@ -11,7 +11,6 @@ import type { OrderToCashAuditSortBy } from "@/src/lib/finance/orderToCashAuditA
 import {
   ORDER_TO_CASH_AUDIT_BADGE_CLASS,
   ORDER_TO_CASH_AUDIT_PAGE_SIZE_OPTIONS,
-  formatOrderToCashAuditQuantity,
   resolveOrderToCashAuditBadgeTone,
   type OrderToCashAuditUiFilters,
 } from "@/src/lib/finance/orderToCashAuditClient";
@@ -31,23 +30,13 @@ const COLUMNS: ColumnDef[] = [
   { id: "customerName", label: "Cliente", sortKey: "customerName" },
   { id: "sellerName", label: "Vendedor", sortKey: "sellerName" },
   { id: "productSku", label: "Produto/SKU", sortKey: "productCode" },
-  { id: "orderedQuantity", label: "Item pedido - qtd", sortKey: "orderedQuantity", align: "right" },
-  { id: "orderItemTotalValue", label: "Valor item pedido", sortKey: "orderItemTotalValue", align: "right" },
+  { id: "lineType", label: "Tipo linha" },
   { id: "stockDocumentExternalId", label: "Documento saída", sortKey: "stockDocumentExternalId" },
-  { id: "stockDocumentDate", label: "Data doc. saída", sortKey: "stockDocumentDate" },
-  { id: "stockDocumentItemQuantity", label: "Item doc. - qtd", align: "right" },
-  { id: "quantityUsedForOrder", label: "Qtd usada no pedido", sortKey: "quantityUsedForOrder", align: "right" },
-  { id: "excessQuantity", label: "Excedente", sortKey: "excessQuantity", align: "right" },
-  { id: "outsideOrderQuantity", label: "Produto fora pedido", sortKey: "outsideOrderQuantity", align: "right" },
   { id: "nfeNumber", label: "NF", sortKey: "nfeNumber" },
-  { id: "nfeIssueDate", label: "Data NF", sortKey: "nfeIssueDate" },
-  { id: "nfeHeaderValue", label: "Valor cabeçalho NF", sortKey: "nfeHeaderValue", align: "right" },
-  { id: "allocatedValueByOrderPrice", label: "Valor atribuído ao pedido", sortKey: "allocatedValueByOrderPrice", align: "right" },
+  { id: "allocatedValueByOrderPrice", label: "Valor atribuído", sortKey: "allocatedValueByOrderPrice", align: "right" },
   { id: "receivableTotalValue", label: "CR total", sortKey: "receivableTotalValue", align: "right" },
   { id: "receivableOpenValue", label: "CR aberto", sortKey: "receivableOpenValue", align: "right" },
   { id: "receivableReceivedValue", label: "Recebido", sortKey: "receivableReceivedValue", align: "right" },
-  { id: "paymentDueDate", label: "Vencimento", sortKey: "paymentDueDate" },
-  { id: "paymentSettlementDate", label: "Baixa", sortKey: "paymentSettlementDate" },
   { id: "paymentStatus", label: "Status pagamento", sortKey: "paymentStatus" },
   { id: "operationalStage", label: "Status operacional", sortKey: "operationalStage" },
   { id: "financialStage", label: "Status financeiro", sortKey: "financialStage" },
@@ -123,28 +112,12 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
           {[row.productCode, row.sku].filter(Boolean).join(" / ") || row.productName || "—"}
         </span>
       );
-    case "orderedQuantity":
-      return formatOrderToCashAuditQuantity(row.orderedQuantity);
-    case "orderItemTotalValue":
-      return money(row.orderItemTotalValue);
+    case "lineType":
+      return row.lineType ?? "—";
     case "stockDocumentExternalId":
       return row.stockDocumentExternalId ?? "—";
-    case "stockDocumentDate":
-      return formatFinanceDate(row.stockDocumentDate);
-    case "stockDocumentItemQuantity":
-      return formatOrderToCashAuditQuantity(row.stockDocumentItemQuantity);
-    case "quantityUsedForOrder":
-      return formatOrderToCashAuditQuantity(row.quantityUsedForOrder);
-    case "excessQuantity":
-      return formatOrderToCashAuditQuantity(row.excessQuantity);
-    case "outsideOrderQuantity":
-      return formatOrderToCashAuditQuantity(row.outsideOrderQuantity);
     case "nfeNumber":
       return row.nfeNumber ?? "—";
-    case "nfeIssueDate":
-      return formatFinanceDate(row.nfeIssueDate);
-    case "nfeHeaderValue":
-      return money(row.nfeHeaderValue);
     case "allocatedValueByOrderPrice":
       return money(row.allocatedValueByOrderPrice);
     case "receivableTotalValue":
@@ -153,10 +126,6 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       return money(row.receivableOpenValue);
     case "receivableReceivedValue":
       return money(row.receivableReceivedValue);
-    case "paymentDueDate":
-      return formatFinanceDate(row.paymentDueDate);
-    case "paymentSettlementDate":
-      return formatFinanceDate(row.paymentSettlementDate);
     case "paymentStatus":
       return <Badge value={row.paymentStatus} kind="payment" />;
     case "operationalStage":
@@ -231,7 +200,7 @@ export function OrderToCashAuditTable({
       data-testid="order-to-cash-audit-table"
     >
       <div className="overflow-x-auto">
-        <table className="min-w-[2800px] w-full border-collapse text-left text-xs">
+        <table className="min-w-[2200px] w-full border-collapse text-left text-xs">
           <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
             <tr>
               {COLUMNS.map((col) => {

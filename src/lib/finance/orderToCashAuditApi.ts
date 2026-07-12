@@ -143,6 +143,7 @@ export type OrderToCashAuditListRow = {
   productCode: string | null;
   sku: string | null;
   productName: string | null;
+  lineType: string | null;
   orderedQuantity: number | null;
   orderUnitPrice: number | null;
   orderItemTotalValue: number | null;
@@ -223,6 +224,7 @@ export type OrderToCashAuditFactRecord = {
   productCode: string | null;
   sku: string | null;
   productName: string | null;
+  lineType: string | null;
   orderedQuantity: number | null;
   orderUnitPrice: number | null;
   orderItemTotalValue: number | null;
@@ -627,6 +629,7 @@ export function mapOrderToCashAuditFactToListRow(
     productCode: fact.productCode,
     sku: fact.sku,
     productName: fact.productName,
+    lineType: fact.lineType ?? null,
     orderedQuantity: fact.orderedQuantity,
     orderUnitPrice: fact.orderUnitPrice,
     orderItemTotalValue: fact.orderItemTotalValue,

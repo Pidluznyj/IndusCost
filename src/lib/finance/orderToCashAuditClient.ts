@@ -7,6 +7,7 @@ import {
   ORDER_TO_CASH_AUDIT_DEFAULT_PAGE_SIZE,
   ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY,
   ORDER_TO_CASH_AUDIT_DEFAULT_SORT_DIRECTION,
+  ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
   ORDER_TO_CASH_AUDIT_SORT_WHITELIST,
   type OrderToCashAuditAvailableFilters,
   type OrderToCashAuditListRow,
@@ -22,19 +23,24 @@ export const ORDER_TO_CASH_AUDIT_TAB_SUBTITLE =
   "Veja, item a item, como o Pedido de Venda evoluiu para Documento de Saída, NF, Contas a Receber e pagamento.";
 
 export const ORDER_TO_CASH_AUDIT_HEAVY_WARNING =
-  "Esta visão é pesada e não carrega automaticamente. Selecione Cliente e Ano para pesquisar.";
+  "Esta visão é pesada e não carrega automaticamente. Informe o ano (e opcionalmente o cliente) e clique em Pesquisar.";
 
 export const ORDER_TO_CASH_AUDIT_SELECT_MESSAGE =
-  "Selecione Cliente e Ano para carregar a auditoria.";
+  "Informe o ano e clique em Pesquisar. Cliente é opcional: sem cliente, a API usa a run geral materializada.";
 
 export const ORDER_TO_CASH_AUDIT_SELECT_FILTER_MESSAGE =
-  "Selecione um cliente e um ano para pesquisar.";
+  "Informe o ano para pesquisar. Cliente (código Nomus ou nome) é opcional para a run geral.";
 
 export const ORDER_TO_CASH_AUDIT_LOADING_MESSAGE =
   "Carregando auditoria Pedido → Caixa...";
 
 export const ORDER_TO_CASH_AUDIT_EMPTY_MESSAGE =
-  "Nenhuma linha de auditoria encontrada para este cliente e ano. Verifique se a rotina de rebuild já foi executada.";
+  "Nenhuma linha de auditoria encontrada para os filtros informados.";
+
+export const ORDER_TO_CASH_AUDIT_EMPTY_NO_RUN_MESSAGE = ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE;
+
+export const ORDER_TO_CASH_AUDIT_EMPTY_FILTERED_MESSAGE =
+  "A run materializada existe, mas nenhum fato corresponde aos filtros atuais. Ajuste cliente, ano ou filtros avançados.";
 
 export const ORDER_TO_CASH_AUDIT_ERROR_MESSAGE =
   "Não foi possível carregar a auditoria agora.";
@@ -102,6 +108,8 @@ export type OrderToCashAuditListPayload = {
   availableFilters: OrderToCashAuditAvailableFilters;
 };
 
+export type OrderToCashAuditEmptyKind = "idle" | "no_run" | "filtered" | "error";
+
 export function createDefaultOrderToCashAuditUiFilters(
   overrides: Partial<OrderToCashAuditUiFilters> = {}
 ): OrderToCashAuditUiFilters {
@@ -137,18 +145,17 @@ export function createDefaultOrderToCashAuditUiFilters(
   };
 }
 
+/**
+ * Ano é obrigatório para Pesquisar.
+ * Cliente é opcional (run geral). Com cliente, preferir código Nomus ou nome.
+ */
 export function canSearchOrderToCashAudit(filters: {
   customerId?: string;
   customerExternalId?: string;
   customerName?: string;
   year?: string;
 }): boolean {
-  const hasCustomer =
-    Boolean(filters.customerId?.trim()) ||
-    Boolean(filters.customerExternalId?.trim()) ||
-    Boolean(filters.customerName?.trim());
-  const hasYear = Boolean(filters.year?.trim());
-  return hasCustomer && hasYear;
+  return Boolean(filters.year?.trim());
 }
 
 /** Extrai código Nomus numérico de `code` do autocomplete, se houver. */
@@ -162,15 +169,21 @@ export function resolveExternalCustomerIdFromSelection(selection: {
   return digits.length > 0 && /^\d+$/.test(digits) ? digits : "";
 }
 
+/**
+ * Query canônica:
+ * - customerExternalId (preferido)
+ * - senão customerName (texto)
+ * - senão customerId (UUID → resolve no server; nunca filtro direto de Fact)
+ * + year, page, pageSize, sort, filtros avançados
+ */
 export function buildOrderToCashAuditListQuery(filters: OrderToCashAuditUiFilters): string {
   const params = new URLSearchParams();
   if (filters.customerExternalId.trim()) {
     params.set("customerExternalId", filters.customerExternalId.trim());
+  } else if (filters.customerName.trim()) {
+    params.set("customerName", filters.customerName.trim());
   } else if (filters.customerId.trim()) {
     params.set("customerId", filters.customerId.trim());
-  }
-  if (filters.customerName.trim() && !filters.customerExternalId.trim()) {
-    params.set("customerName", filters.customerName.trim());
   }
   if (filters.year.trim()) params.set("year", filters.year.trim());
   params.set("page", String(Math.max(1, filters.page)));
@@ -211,6 +224,39 @@ export function buildOrderToCashAuditListQuery(filters: OrderToCashAuditUiFilter
   if (filters.onlyOverdue) params.set("onlyOverdue", "true");
   if (filters.runId.trim()) params.set("runId", filters.runId.trim());
   return params.toString();
+}
+
+export function resolveOrderToCashAuditEmptyKind(input: {
+  searched: boolean;
+  error: string | null;
+  payload: OrderToCashAuditListPayload | null;
+}): OrderToCashAuditEmptyKind {
+  if (input.error) return "error";
+  if (!input.searched) return "idle";
+  if (!input.payload) return "error";
+  if (input.payload.run == null) return "no_run";
+  if ((input.payload.rows?.length ?? 0) === 0) return "filtered";
+  return "idle";
+}
+
+export function orderToCashAuditEmptyDescription(
+  kind: OrderToCashAuditEmptyKind,
+  payloadMessage?: string | null
+): string {
+  if (kind === "no_run") {
+    return payloadMessage?.trim() || ORDER_TO_CASH_AUDIT_EMPTY_NO_RUN_MESSAGE;
+  }
+  if (kind === "filtered") {
+    return payloadMessage?.trim() || ORDER_TO_CASH_AUDIT_EMPTY_FILTERED_MESSAGE;
+  }
+  if (kind === "error") return ORDER_TO_CASH_AUDIT_ERROR_MESSAGE;
+  return ORDER_TO_CASH_AUDIT_SELECT_MESSAGE;
+}
+
+export function formatOrderToCashAuditRunScope(run: OrderToCashAuditRunMeta): string {
+  if (run.isGeneralRun) return "Run geral";
+  if (run.customerFilter) return `Run específica (cliente ${run.customerFilter})`;
+  return "Run específica";
 }
 
 /**

@@ -50,6 +50,7 @@ type FactRow = {
   productCode: string | null;
   sku: string | null;
   productName: string | null;
+  lineType: string | null;
   orderedQuantity: unknown;
   orderUnitPrice: unknown;
   orderItemTotalValue: unknown;
@@ -108,6 +109,7 @@ const FACT_SELECT = {
   productCode: true,
   sku: true,
   productName: true,
+  lineType: true,
   orderedQuantity: true,
   orderUnitPrice: true,
   orderItemTotalValue: true,
@@ -188,6 +190,7 @@ function mapFact(row: FactRow): OrderToCashAuditFactRecord {
     productCode: row.productCode,
     sku: row.sku,
     productName: row.productName,
+    lineType: row.lineType,
     orderedQuantity: decimalToNumber(row.orderedQuantity),
     orderUnitPrice: decimalToNumber(row.orderUnitPrice),
     orderItemTotalValue: decimalToNumber(row.orderItemTotalValue),

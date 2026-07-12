@@ -46,6 +46,7 @@ function fact(
     productCode: "P1",
     sku: "SKU-1",
     productName: "Produto 1",
+    lineType: "ORDER_ITEM_ALLOCATED",
     orderedQuantity: 10,
     orderUnitPrice: 5,
     orderItemTotalValue: 50,
