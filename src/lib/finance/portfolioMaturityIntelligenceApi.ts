@@ -18,6 +18,11 @@ import {
   buildPortfolioReceivableTitleRows,
 } from "./portfolioReconciliationOrderTrace.js";
 import {
+  applyOrderToCashStageStatusOverrides,
+  ORDER_TO_CASH_AUDIT_CHAIN_DISCLAIMER,
+  ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+} from "./orderToCashAuditToPortfolioFactsAdapter.js";
+import {
   buildMaturityOrderFromFacts,
   buildPortfolioMaturityAnalytics,
   type PortfolioMaturityAnalyticsFilters,
@@ -385,6 +390,8 @@ export function buildPortfolioIntelligenceListPayload(args: {
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
   /** SUCCESS mais recente — para avisar se a run não é a atual. */
   latestRunId?: string | null;
+  /** Fonte materializada: OrderToCashAudit (preferencial) ou Portfolio legado. */
+  dataSource?: "order_to_cash_audit" | "portfolio_reconciliation";
 }) {
   if (!args.run) {
     return {
@@ -410,14 +417,20 @@ export function buildPortfolioIntelligenceListPayload(args: {
       run: null,
       dataFreshness: null as PortfolioIntelligenceDataFreshness | null,
       o2cBusinessKpis: null,
+      dataSource: args.dataSource ?? null,
+      chainDisclaimer: ORDER_TO_CASH_AUDIT_CHAIN_DISCLAIMER,
     };
   }
 
+  const preferO2c = args.dataSource === ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE;
   const analytics = buildPortfolioMaturityAnalytics({
     facts: args.facts,
     filters: args.filters,
     enrichmentsBySalesOrderId: args.enrichmentsBySalesOrderId,
     orderTotalBySalesOrderId: args.orderTotalBySalesOrderId,
+    remapOrders: preferO2c
+      ? (rows) => applyOrderToCashStageStatusOverrides(rows, args.facts)
+      : undefined,
   });
 
   const dataFreshness = buildPortfolioIntelligenceDataFreshness({
@@ -426,6 +439,10 @@ export function buildPortfolioIntelligenceListPayload(args: {
     latestRunId: args.latestRunId ?? args.run.id,
     scope: "list",
   });
+
+  const sourceWarning = preferO2c
+    ? `Fonte: OrderToCashAudit (run ${args.run.id}). ${ORDER_TO_CASH_AUDIT_CHAIN_DISCLAIMER}`
+    : null;
 
   return {
     ok: true as const,
@@ -440,7 +457,11 @@ export function buildPortfolioIntelligenceListPayload(args: {
     pagination: analytics.pagination,
     filters: analytics.appliedFilters,
     metricExplanations: analytics.metricExplanations,
-    warnings: [...analytics.warnings, ...dataFreshness.warnings.filter((w) => !analytics.warnings.includes(w))],
+    warnings: [
+      ...analytics.warnings,
+      ...dataFreshness.warnings.filter((w) => !analytics.warnings.includes(w)),
+      ...(sourceWarning ? [sourceWarning] : []),
+    ],
     totals: analytics.totals,
     run: {
       id: args.run.id,
@@ -452,6 +473,8 @@ export function buildPortfolioIntelligenceListPayload(args: {
     },
     dataFreshness,
     o2cBusinessKpis: analytics.o2cBusinessKpis,
+    dataSource: args.dataSource ?? "portfolio_reconciliation",
+    chainDisclaimer: ORDER_TO_CASH_AUDIT_CHAIN_DISCLAIMER,
   };
 }
 

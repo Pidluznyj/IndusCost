@@ -505,8 +505,8 @@ export function FinancePortfolioReconciliationPage() {
         {activeView === "intelligence" ? (
           <div className="mb-6">
             <PortfolioIntelligenceSection
-              enabled={canView && !noRun}
-              runId={appliedFilters.runId || payload?.run?.id || ""}
+              enabled={canView}
+              runId=""
               customerExternalId={appliedFilters.customerExternalId}
               customers={available?.customers ?? []}
             />

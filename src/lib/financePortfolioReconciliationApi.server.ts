@@ -20,6 +20,13 @@ import {
   parsePortfolioIntelligenceFilters,
 } from "./finance/portfolioMaturityIntelligenceApi.js";
 import type { PortfolioOrderEnrichment } from "./finance/portfolioMaturityAnalytics.js";
+import {
+  adaptOrderToCashAuditFactsToPortfolioFacts,
+  buildEnrichmentsFromOrderToCashFacts,
+  ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+  type OrderToCashAuditFactAdapterInput,
+} from "./finance/orderToCashAuditToPortfolioFactsAdapter.js";
+import { yearDateBounds } from "./finance/orderToCashAuditApi.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -427,9 +434,59 @@ async function loadOrderEnrichments(orderIds: string[]) {
 
 /**
  * Listagem da Central de Inteligência (read-only).
+ * Preferência: OrderToCashAudit (run geral SUCCESS) → adapter → motor de maturidade.
+ * Fallback: PortfolioReconciliation legado.
  */
 export async function loadPortfolioIntelligenceList(query: Record<string, unknown>) {
   const filters = parsePortfolioIntelligenceFilters(query);
+  const o2c = await resolveOrderToCashAuditRunForIntelligence(filters.runId);
+
+  if (o2c) {
+    const o2cFacts = await loadOrderToCashAuditFactsForIntelligence(o2c.id, {
+      customerExternalId: filters.customerExternalId,
+      customerId: filters.customerId,
+      year: null,
+    });
+    const adapted = adaptOrderToCashAuditFactsToPortfolioFacts(o2cFacts);
+    const fromO2c = buildEnrichmentsFromOrderToCashFacts(o2cFacts);
+    const orderIds = [
+      ...new Set(
+        adapted.map((f) => f.salesOrderId).filter((id): id is string => id != null)
+      ),
+    ];
+    const { orderTotalBySalesOrderId, enrichmentsBySalesOrderId } =
+      await loadOrderEnrichments(orderIds);
+
+    for (const [id, enr] of fromO2c) {
+      const existing = enrichmentsBySalesOrderId.get(id);
+      enrichmentsBySalesOrderId.set(id, {
+        salesOrderId: id,
+        sellerName: existing?.sellerName ?? enr.sellerName,
+        sellerExternalId: existing?.sellerExternalId ?? enr.sellerExternalId,
+        sellerId: existing?.sellerId ?? enr.sellerId,
+        paymentTerms: existing?.paymentTerms ?? enr.paymentTerms,
+        paymentMethod: existing?.paymentMethod ?? enr.paymentMethod,
+        orderValue: existing?.orderValue ?? enr.orderValue,
+        companyId: existing?.companyId ?? enr.companyId,
+        updatedAt: existing?.updatedAt ?? enr.updatedAt,
+      });
+      if (enr.orderValue != null && !orderTotalBySalesOrderId.has(id)) {
+        orderTotalBySalesOrderId.set(id, enr.orderValue);
+      }
+    }
+
+    const latestO2cId = await findLatestGeneralOrderToCashAuditRunId();
+    return buildPortfolioIntelligenceListPayload({
+      run: mapOrderToCashRunToPortfolioMeta(o2c),
+      facts: adapted,
+      filters,
+      orderTotalBySalesOrderId,
+      enrichmentsBySalesOrderId,
+      latestRunId: latestO2cId,
+      dataSource: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+    });
+  }
+
   const run = await resolvePortfolioReconciliationRun({
     runId: filters.runId ?? null,
     customerExternalId: filters.customerExternalId ?? null,
@@ -448,6 +505,7 @@ export async function loadPortfolioIntelligenceList(query: Record<string, unknow
       run: null,
       facts: [],
       filters,
+      dataSource: "portfolio_reconciliation",
     });
   }
 
@@ -471,6 +529,7 @@ export async function loadPortfolioIntelligenceList(query: Record<string, unknow
     orderTotalBySalesOrderId,
     enrichmentsBySalesOrderId,
     latestRunId,
+    dataSource: "portfolio_reconciliation",
   });
 }
 
@@ -482,6 +541,45 @@ export async function loadPortfolioIntelligenceOrderDetail(
   query: Record<string, unknown>
 ) {
   const filters = parsePortfolioIntelligenceFilters(query);
+  const o2c = await resolveOrderToCashAuditRunForIntelligence(filters.runId);
+
+  if (o2c) {
+    const rows = await prisma.orderToCashAuditFact.findMany({
+      where: { runId: o2c.id, salesOrderId },
+      orderBy: [{ salesOrderItemId: "asc" }, { id: "asc" }],
+    });
+    const o2cFacts = rows.map(mapO2cFactForAdapter);
+    const facts = adaptOrderToCashAuditFactsToPortfolioFacts(o2cFacts);
+    const fromO2c = buildEnrichmentsFromOrderToCashFacts(o2cFacts);
+    const { orderTotalBySalesOrderId, enrichmentsBySalesOrderId } =
+      await loadOrderEnrichments(salesOrderId ? [salesOrderId] : []);
+    const o2cEnr = fromO2c.get(salesOrderId);
+    if (o2cEnr) {
+      const existing = enrichmentsBySalesOrderId.get(salesOrderId);
+      enrichmentsBySalesOrderId.set(salesOrderId, {
+        salesOrderId,
+        sellerName: existing?.sellerName ?? o2cEnr.sellerName,
+        sellerExternalId: existing?.sellerExternalId ?? o2cEnr.sellerExternalId,
+        sellerId: existing?.sellerId ?? o2cEnr.sellerId,
+        paymentTerms: existing?.paymentTerms ?? o2cEnr.paymentTerms,
+        paymentMethod: existing?.paymentMethod ?? o2cEnr.paymentMethod,
+        orderValue: existing?.orderValue ?? o2cEnr.orderValue,
+        companyId: existing?.companyId ?? o2cEnr.companyId,
+        updatedAt: existing?.updatedAt ?? o2cEnr.updatedAt,
+      });
+    }
+    const latestO2cId = await findLatestGeneralOrderToCashAuditRunId();
+    return buildPortfolioIntelligenceOrderDetailPayload({
+      salesOrderId,
+      run: mapOrderToCashRunToPortfolioMeta(o2c),
+      facts,
+      enrichment: enrichmentsBySalesOrderId.get(salesOrderId) ?? null,
+      orderTotalBySalesOrderId,
+      asOfDate: filters.asOfDate,
+      latestRunId: latestO2cId,
+    });
+  }
+
   const run = await resolvePortfolioReconciliationRun({
     runId: filters.runId ?? null,
     customerExternalId: filters.customerExternalId ?? null,
@@ -522,4 +620,263 @@ export async function loadPortfolioIntelligenceOrderDetail(
     asOfDate: filters.asOfDate,
     latestRunId,
   });
+}
+
+async function findLatestGeneralOrderToCashAuditRunId(): Promise<string | null> {
+  const run = await prisma.orderToCashAuditRun.findFirst({
+    where: { status: "SUCCESS", customerFilter: null },
+    orderBy: [{ createdAt: "desc" }],
+    select: { id: true },
+  });
+  return run?.id ?? null;
+}
+
+async function resolveOrderToCashAuditRunForIntelligence(runId: string | null) {
+  if (runId) {
+    const explicit = await prisma.orderToCashAuditRun.findUnique({
+      where: { id: runId },
+    });
+    if (explicit?.status === "SUCCESS") return explicit;
+    // runId de Portfolio legado → não força O2C; deixa fallback Portfolio
+    const isPortfolio = await prisma.portfolioReconciliationRun.findUnique({
+      where: { id: runId },
+      select: { id: true },
+    });
+    if (isPortfolio) return null;
+  }
+  return prisma.orderToCashAuditRun.findFirst({
+    where: { status: "SUCCESS", customerFilter: null },
+    orderBy: [{ createdAt: "desc" }],
+  });
+}
+
+function mapOrderToCashRunToPortfolioMeta(run: {
+  id: string;
+  status: string;
+  mode: string;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  periodFrom: Date | null;
+  periodTo: Date | null;
+  customerFilter: string | null;
+  totalOrders: number;
+  totalFacts: number;
+  totalOrderValue: unknown;
+  totalAllocatedValue: unknown;
+  totalReceivableValue: unknown;
+  totalReceivedValue: unknown;
+  totalOpenValue: unknown;
+  totalBlockedValue: unknown;
+  createdAt: Date;
+}): PortfolioReconciliationRunMeta {
+  const customerExternalId =
+    run.customerFilter != null && /^\d+$/.test(String(run.customerFilter).trim())
+      ? Number(run.customerFilter)
+      : null;
+  return {
+    id: run.id,
+    status: run.status,
+    mode: run.mode,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    fromDate: run.periodFrom,
+    toDate: run.periodTo,
+    customerExternalId,
+    filtersJson: {
+      source: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+      customerFilter: run.customerFilter,
+    },
+    summaryJson: {
+      source: ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
+      totalOrders: run.totalOrders,
+      totalFacts: run.totalFacts,
+      totalOrderValue: decimalToNumber(run.totalOrderValue),
+      totalAllocatedValue: decimalToNumber(run.totalAllocatedValue),
+      totalReceivableValue: decimalToNumber(run.totalReceivableValue),
+      totalReceivedValue: decimalToNumber(run.totalReceivedValue),
+      totalOpenValue: decimalToNumber(run.totalOpenValue),
+      totalBlockedValue: decimalToNumber(run.totalBlockedValue),
+    },
+    errorMessage: null,
+    createdAt: run.createdAt,
+    updatedAt: run.finishedAt ?? run.createdAt,
+  };
+}
+
+function mapO2cFactForAdapter(row: {
+  id: string;
+  runId: string;
+  salesOrderId: string | null;
+  externalSalesOrderId: number | null;
+  orderCode: string | null;
+  orderIssueDate: Date | null;
+  orderExpectedDeliveryDate: Date | null;
+  orderNetValue: unknown;
+  orderTotalValue: unknown;
+  customerId: string | null;
+  externalCustomerId: number | null;
+  customerName: string | null;
+  sellerName: string | null;
+  externalSellerId: string | null;
+  paymentConditionName: string | null;
+  salesOrderItemId: string | null;
+  externalSalesOrderItemId: number | null;
+  externalProductId: number | null;
+  productCode: string | null;
+  sku: string | null;
+  productName: string | null;
+  orderedQuantity: unknown;
+  orderUnitPrice: unknown;
+  orderItemTotalValue: unknown;
+  stockDocumentId: string | null;
+  stockDocumentExternalId: number | null;
+  stockDocumentItemId: string | null;
+  stockDocumentDate: Date | null;
+  stockDocumentItemQuantity: unknown;
+  stockDocumentItemUnitValue: unknown;
+  stockDocumentItemTotalValue: unknown;
+  quantityUsedForOrder: unknown;
+  allocatedValueByOrderPrice: unknown;
+  allocatedValueByDocumentPrice: unknown;
+  priceDifferenceValue: unknown;
+  nfeId: string | null;
+  nfeExternalId: number | null;
+  nfeNumber: string | null;
+  nfeSerie: string | null;
+  nfeKey: string | null;
+  nfeProcessedAt: Date | null;
+  nfeIssueDate: Date | null;
+  nfeHeaderValue: unknown;
+  receivableIdsJson: unknown;
+  receivableTotalValue: unknown;
+  receivableOpenValue: unknown;
+  receivableReceivedValue: unknown;
+  receivableDueDatesJson: unknown;
+  receivableSettlementDatesJson: unknown;
+  paymentDueDate: Date | null;
+  paymentSettlementDate: Date | null;
+  orderToCashStage: string | null;
+  confidenceLabel: string | null;
+  alertsJson: unknown;
+  hasDeliveryDelay: boolean;
+  hasMissingStockDocument: boolean;
+  hasPartialFulfillment: boolean;
+  hasExcessQuantity: boolean;
+  hasProductOutsideOrder: boolean;
+  hasNfeHeaderGreaterThanOrder: boolean;
+  hasPriceMismatch: boolean;
+  hasDocumentWithoutReceivable: boolean;
+  hasPaymentConditionMissing: boolean;
+  hasOverdueReceivable: boolean;
+}): OrderToCashAuditFactAdapterInput {
+  return {
+    id: row.id,
+    runId: row.runId,
+    salesOrderId: row.salesOrderId,
+    externalSalesOrderId: row.externalSalesOrderId,
+    orderCode: row.orderCode,
+    orderIssueDate: row.orderIssueDate,
+    orderExpectedDeliveryDate: row.orderExpectedDeliveryDate,
+    orderNetValue: decimalToNumber(row.orderNetValue),
+    orderTotalValue: decimalToNumber(row.orderTotalValue),
+    customerId: row.customerId,
+    externalCustomerId: row.externalCustomerId,
+    customerName: row.customerName,
+    sellerName: row.sellerName,
+    externalSellerId: row.externalSellerId,
+    paymentConditionName: row.paymentConditionName,
+    salesOrderItemId: row.salesOrderItemId,
+    externalSalesOrderItemId: row.externalSalesOrderItemId,
+    externalProductId: row.externalProductId,
+    productCode: row.productCode,
+    sku: row.sku,
+    productName: row.productName,
+    orderedQuantity: decimalToNumber(row.orderedQuantity),
+    orderUnitPrice: decimalToNumber(row.orderUnitPrice),
+    orderItemTotalValue: decimalToNumber(row.orderItemTotalValue),
+    stockDocumentId: row.stockDocumentId,
+    stockDocumentExternalId: row.stockDocumentExternalId,
+    stockDocumentItemId: row.stockDocumentItemId,
+    stockDocumentDate: row.stockDocumentDate,
+    stockDocumentItemQuantity: decimalToNumber(row.stockDocumentItemQuantity),
+    stockDocumentItemUnitValue: decimalToNumber(row.stockDocumentItemUnitValue),
+    stockDocumentItemTotalValue: decimalToNumber(row.stockDocumentItemTotalValue),
+    quantityUsedForOrder: decimalToNumber(row.quantityUsedForOrder),
+    allocatedValueByOrderPrice: decimalToNumber(row.allocatedValueByOrderPrice),
+    allocatedValueByDocumentPrice: decimalToNumber(row.allocatedValueByDocumentPrice),
+    priceDifferenceValue: decimalToNumber(row.priceDifferenceValue),
+    nfeId: row.nfeId,
+    nfeExternalId: row.nfeExternalId,
+    nfeNumber: row.nfeNumber,
+    nfeSerie: row.nfeSerie,
+    nfeKey: row.nfeKey,
+    nfeProcessedAt: row.nfeProcessedAt,
+    nfeIssueDate: row.nfeIssueDate,
+    nfeHeaderValue: decimalToNumber(row.nfeHeaderValue),
+    receivableIdsJson: row.receivableIdsJson,
+    receivableTotalValue: decimalToNumber(row.receivableTotalValue),
+    receivableOpenValue: decimalToNumber(row.receivableOpenValue),
+    receivableReceivedValue: decimalToNumber(row.receivableReceivedValue),
+    receivableDueDatesJson: row.receivableDueDatesJson,
+    receivableSettlementDatesJson: row.receivableSettlementDatesJson,
+    paymentDueDate: row.paymentDueDate,
+    paymentSettlementDate: row.paymentSettlementDate,
+    orderToCashStage: row.orderToCashStage,
+    confidenceLabel: row.confidenceLabel,
+    alertsJson: row.alertsJson,
+    hasDeliveryDelay: row.hasDeliveryDelay,
+    hasMissingStockDocument: row.hasMissingStockDocument,
+    hasPartialFulfillment: row.hasPartialFulfillment,
+    hasExcessQuantity: row.hasExcessQuantity,
+    hasProductOutsideOrder: row.hasProductOutsideOrder,
+    hasNfeHeaderGreaterThanOrder: row.hasNfeHeaderGreaterThanOrder,
+    hasPriceMismatch: row.hasPriceMismatch,
+    hasDocumentWithoutReceivable: row.hasDocumentWithoutReceivable,
+    hasPaymentConditionMissing: row.hasPaymentConditionMissing,
+    hasOverdueReceivable: row.hasOverdueReceivable,
+  };
+}
+
+async function loadOrderToCashAuditFactsForIntelligence(
+  runId: string,
+  options: {
+    customerExternalId?: number | null;
+    customerId?: string | null;
+    year?: number | null;
+  }
+): Promise<OrderToCashAuditFactAdapterInput[]> {
+  const and: Array<Record<string, unknown>> = [{ runId }];
+  if (options.customerExternalId != null) {
+    and.push({ externalCustomerId: options.customerExternalId });
+  } else if (options.customerId) {
+    // Nunca filtra Fact O2C por UUID; resolve via SalesOrder
+    const link = await prisma.salesOrder.findFirst({
+      where: { customerId: options.customerId, externalCustomerId: { not: null } },
+      orderBy: [{ issueDate: "desc" }],
+      select: { externalCustomerId: true },
+    });
+    if (link?.externalCustomerId != null) {
+      and.push({ externalCustomerId: link.externalCustomerId });
+    }
+  }
+  if (options.year != null) {
+    const bounds = yearDateBounds(options.year);
+    and.push({
+      OR: [
+        { orderIssueDate: { gte: bounds.gte, lte: bounds.lte } },
+        {
+          AND: [
+            { orderIssueDate: null },
+            { createdAt: { gte: bounds.gte, lte: bounds.lte } },
+          ],
+        },
+      ],
+    });
+  }
+
+  const rows = await prisma.orderToCashAuditFact.findMany({
+    where: { AND: and },
+    orderBy: [{ orderCode: "asc" }, { salesOrderItemId: "asc" }, { id: "asc" }],
+  });
+  return rows.map(mapO2cFactForAdapter);
 }

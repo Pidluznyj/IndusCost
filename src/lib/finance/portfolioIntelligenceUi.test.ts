@@ -429,7 +429,10 @@ describe("portfolio intelligence UI", () => {
     assert.match(section, /portfolio-intelligence-pd-warning/);
     assert.match(section, /Central de Auditoria da Carteira|INTELLIGENCE_SCREEN_TITLE/);
     assert.match(copy, /Central de Auditoria da Carteira/);
-    assert.match(copy, /Pedido de venda não é dinheiro confirmado/);
+    assert.match(copy, /Pedido de venda não é caixa confirmado/);
+    assert.match(copy, /CR confirma financeiro/);
+    assert.match(copy, /Baixa confirma caixa/);
+    assert.match(copy, /OrderToCashAudit/);
     assert.match(copy, /Entenda o caminho de cada pedido/);
     assert.match(
       copy,

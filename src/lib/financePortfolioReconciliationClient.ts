@@ -502,6 +502,9 @@ export type PortfolioIntelligenceListPayload = {
     customerExternalId?: number | null;
   } | null;
   dataFreshness?: PortfolioIntelligenceDataFreshnessDto | null;
+  /** order_to_cash_audit (preferencial) | portfolio_reconciliation (legado) */
+  dataSource?: "order_to_cash_audit" | "portfolio_reconciliation" | null;
+  chainDisclaimer?: string | null;
 };
 
 export type PortfolioIntelligenceDataFreshnessDto = {

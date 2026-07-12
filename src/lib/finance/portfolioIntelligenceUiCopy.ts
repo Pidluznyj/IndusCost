@@ -9,7 +9,10 @@ export const INTELLIGENCE_SCREEN_INTRO =
   "Entenda o caminho de cada pedido: previsão, entrega, NF, Contas a Receber e caixa.";
 
 export const INTELLIGENCE_SCREEN_WARNING =
-  "Pedido de venda não é dinheiro confirmado. Ele entra como previsão e ganha confiança conforme evolui para documento de saída, NF, CR e recebimento.";
+  "Pedido de venda não é caixa confirmado. CR confirma financeiro. Baixa confirma caixa.";
+
+export const INTELLIGENCE_O2C_SOURCE_BANNER =
+  "Fonte materializada: OrderToCashAudit (run geral). O motor de maturidade permanece; facts vêm da auditoria Pedido → Caixa.";
 
 export const INTELLIGENCE_ALERTS_NOTICE =
   "Alertas técnicos podem coexistir com outros status. Eles não são dinheiro adicional e não somam carteira.";
@@ -40,10 +43,10 @@ export const INTELLIGENCE_CARD_DISPLAY_TITLE: Record<string, string> = {
   CARTEIRA_TOTAL_ANALISADA: "Carteira total",
   RECEBIDO: "Recebido",
   CR_ABERTO: "CR aberto",
-  FATURADO_SEM_CR: "Faturado sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro provável",
-  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
+  FATURADO_SEM_CR: "NF sem CR",
+  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro saudável",
+  CARTEIRA_PRESENTE_ATENCAO: "Pedido próximo / atenção",
+  CARTEIRA_VENCIDA_BLOQUEADA: "Pedido atrasado / bloqueado p/ revisão",
   NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",
   DIVERGENCIA_TECNICA: "Divergência técnica",
   QUANTIDADE_EXCEDENTE_DOCUMENTO: "Quantidade excedente",
@@ -103,10 +106,10 @@ export const INTELLIGENCE_CARD_SUBTITLE: Record<string, string> = {
 export const INTELLIGENCE_ACCORDION_DISPLAY_TITLE: Record<string, string> = {
   RECEBIDO: "Recebido",
   CR_ABERTO: "CR aberto",
-  FATURADO_SEM_CR: "Faturado sem CR",
-  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro provável",
-  CARTEIRA_PRESENTE_ATENCAO: "Presente / atenção",
-  CARTEIRA_VENCIDA_BLOQUEADA: "Carteira vencida bloqueada",
+  FATURADO_SEM_CR: "NF sem CR",
+  CARTEIRA_FUTURA_PROVAVEL: "Pedido futuro saudável",
+  CARTEIRA_PRESENTE_ATENCAO: "Pedido próximo / atenção",
+  CARTEIRA_VENCIDA_BLOQUEADA: "Pedido atrasado / bloqueado p/ revisão",
   SEM_EVIDENCIA: "Sem evidência suficiente",
   DIVERGENCIA_TECNICA: "Divergência técnica",
   NF_CABECALHO_MAIOR_PEDIDO: "NF maior que pedido",

@@ -34,12 +34,12 @@ Runs de referência (já populadas):
 
 | Pergunta | Resposta |
 |----------|----------|
-| Usa OrderToCashAudit hoje? | **Não** |
-| Fonte atual | Mesmos `PortfolioReconciliationFact` + motor `portfolioMaturity*` / fulfillment map |
-| Deve usar O2C direto agora? | **Não diretamente** no motor atual (grão e campos diferem) |
-| Caminho certo | Manter motor de intelligence, trocar **input de fatos** para um adapter a partir de `OrderToCashAuditFact` (agrupado por `salesOrderId`) **ou** manter dual-run até o adapter existir |
+| Usa OrderToCashAudit hoje? | **Sim (preferencial)** — run geral SUCCESS + adapter |
+| Fonte atual | `OrderToCashAuditRun`/`Fact` → adapter → motor `portfolioMaturity*` / O2C board |
+| Fallback | `PortfolioReconciliationRun`/`Fact` se não houver O2C SUCCESS geral |
+| Caminho | Adapter `orderToCashAuditToPortfolioFactsAdapter.ts` (CR 1× por pedido; estágio O2C remapeia status) |
 
-**Recomendação definitiva:** Intelligence **continua com o motor antigo**, mas a **fonte materializada alvo** é OrderToCashAudit (via adapter por pedido). Não reescrever maturidade neste momento.
+**Comportamento final (etapa 4):** motor de maturidade **mantido**; facts vêm de OrderToCashAudit. Disclaimer UI: *Pedido de venda não é caixa confirmado. CR confirma financeiro. Baixa confirma caixa.*
 
 ### 1.3 Auditoria Pedido → Caixa
 
@@ -63,8 +63,20 @@ Runs de referência (já populadas):
 ### 2) Inteligência: O2C direto ou motor antigo?
 
 **Motor antigo** (maturidade/fulfillment/O2C board) **sim**.  
-**Fatos:** migrar para O2C via adapter (não “ligar Intelligence direto na tabela Fact item-a-item” sem agregação por pedido).
+**Fatos:** **OrderToCashAudit via adapter** (preferencial); Portfolio legado como fallback.
 
+Mapeamento de estágios O2C → cards de maturidade:
+
+| Estágio OrderToCash | Status Inteligência |
+|---------------------|---------------------|
+| RECEBIDO | RECEBIDO |
+| CR_ABERTO | CR_ABERTO |
+| NF_SEM_CR | FATURADO_SEM_CR (rótulo UI: NF sem CR) |
+| PEDIDO_FUTURO_SAUDAVEL | CARTEIRA_FUTURA_PROVAVEL |
+| PEDIDO_PROXIMO_ATENCAO | CARTEIRA_PRESENTE_ATENCAO |
+| PEDIDO_ATRASADO_SEM_DOCUMENTO / BLOQUEADO_REVISAO | CARTEIRA_VENCIDA_BLOQUEADA |
+
+Agregação segura: CR/recebido/aberto apenas no **primeiro fato** de cada `salesOrderId` no adapter.
 ### 3) Auditoria está buscando OrderToCashAudit corretamente?
 
 **Sim** — endpoint, tabelas e política de run/cliente alinhadas à materialização.
@@ -144,7 +156,7 @@ curl "http://localhost:PORT/api/finance/portfolio-reconciliation/order-to-cash-a
 | Aba | Fonte atual | Fonte recomendada (alvo) | Ajuste imediato |
 |-----|-------------|--------------------------|-----------------|
 | Conciliação | Portfolio Run/Fact | **OrderToCashAudit** via adapter (fase 2) | Nenhum visual agora |
-| Inteligência | Portfolio Fact + motor maturidade | **Mesmo motor** + fatos O2C agregados por pedido (fase 2–3) | Nenhum visual agora |
+| Inteligência | Portfolio Fact + motor maturidade **ou** O2C via adapter | **OrderToCashAudit via adapter (feito)** | Ativo: prefer O2C; fallback Portfolio |
 | Auditoria Pedido → Caixa | OrderToCashAudit | **OrderToCashAudit** | **Feito (etapa 1)** — política de run + `externalCustomerId` + summary seguro |
 
 ---
@@ -207,7 +219,7 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 | **1** | Fix Auditoria API/UI params | **Feito** — `externalCustomerId`, política de run, cards seguros |
 | **2** | Smoke Britânia 2026 | Script validate + UI Pesquisa → ≥1 row |
 | **3** | Adapter Conciliação ← O2C | Service + testes; UI sem redesign |
-| **4** | Adapter Inteligência ← O2C | Enrich por pedido + maturity |
+| **4** | Adapter Inteligência ← O2C | **Feito** — `orderToCashAuditToPortfolioFactsAdapter` + loader prefer O2C |
 | **5** | Deprecar dual-read | Docs + flag / sunset Portfolio na tela |
 
 ---
@@ -231,7 +243,7 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 | Aba | Ação |
 |-----|------|
 | **Conciliação** | Continua Portfolio **hoje**; alvo = O2C via **adapter** |
-| **Inteligência** | Continua motor antigo **hoje**; alvo = fatos O2C agregados |
+| **Inteligência** | Motor antigo + **fatos O2C** (adapter); fallback Portfolio |
 | **Auditoria** | O2C com política de run + `externalCustomerId`; sem filtros a API usa a run geral `41c2470a…` |
 
 Smoke esperado:

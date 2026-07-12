@@ -33,6 +33,7 @@ import {
   INTELLIGENCE_SCREEN_INTRO,
   INTELLIGENCE_SCREEN_TITLE,
   INTELLIGENCE_SCREEN_WARNING,
+  INTELLIGENCE_O2C_SOURCE_BANNER,
 } from "@/src/lib/finance/portfolioIntelligenceUiCopy";
 
 type Props = {
@@ -257,8 +258,17 @@ export function PortfolioIntelligenceSection({
           className="rounded-[12px] border border-[#FEDF89] bg-[#FFFAEB] p-4 text-[13px] font-medium leading-relaxed text-[#B54708]"
           data-testid="portfolio-intelligence-pd-warning"
         >
-          {INTELLIGENCE_SCREEN_WARNING}
+          {payload?.chainDisclaimer?.trim() || INTELLIGENCE_SCREEN_WARNING}
         </p>
+        {payload?.dataSource === "order_to_cash_audit" ? (
+          <p
+            className="rounded-[12px] border border-[#B2DDFF] bg-[#EFF8FF] px-4 py-3 text-[12px] leading-relaxed text-[#175CD3]"
+            data-testid="portfolio-intelligence-o2c-source"
+          >
+            {INTELLIGENCE_O2C_SOURCE_BANNER}
+            {payload.run?.id ? ` Run: ${payload.run.id}.` : ""}
+          </p>
+        ) : null}
       </header>
 
       {payload?.dataFreshness ? (

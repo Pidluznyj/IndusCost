@@ -1790,6 +1790,10 @@ export function buildPortfolioMaturityAnalytics(args: {
   filters?: PortfolioMaturityAnalyticsFilters | null;
   enrichmentsBySalesOrderId?: ReadonlyMap<string, PortfolioOrderEnrichment> | null;
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
+  /** Remapeia pedidos após agregação (ex.: preferir estágio OrderToCashAudit). */
+  remapOrders?: (
+    rows: PortfolioMaturityOrderRow[]
+  ) => PortfolioMaturityOrderRow[];
 }): PortfolioMaturityAnalyticsResult {
   const filters: PortfolioMaturityAnalyticsFilters = {
     page: 1,
@@ -1799,12 +1803,15 @@ export function buildPortfolioMaturityAnalytics(args: {
   const warnings: string[] = [];
   const asOf = toIsoDate(filters.asOfDate) ?? toIsoDate(filters.to) ?? startOfDayIso();
 
-  const allRows = aggregateFactsToMaturityOrders({
+  let allRows = aggregateFactsToMaturityOrders({
     facts: args.facts,
     enrichmentsBySalesOrderId: args.enrichmentsBySalesOrderId,
     orderTotalBySalesOrderId: args.orderTotalBySalesOrderId,
     asOfDate: asOf,
   });
+  if (args.remapOrders) {
+    allRows = args.remapOrders(allRows);
+  }
 
   const filtered = filterMaturityOrders(allRows, filters, warnings);
   const sorted = sortMaturityOrders(filtered, filters.sortBy, filters.sortDirection);
