@@ -221,6 +221,9 @@ Proposta ≠ fonte oficial. Comissão fora desta tela.
 | **4** | Adapter Inteligência ← O2C | **Feito** — `orderToCashAuditToPortfolioFactsAdapter` + loader prefer O2C |
 | **5** | Deprecar dual-read | Docs + flag / sunset Portfolio na tela |
 
+**Rebuild oficial (popular base das 3 abas):** `docs/finance/order-to-cash-audit-rebuild-official.md`  
+(`scripts/runOrderToCashAuditRebuild.sh` + `scripts/rebuildOrderToCashAudit.ts`)
+
 ---
 
 ## 8. Arquivos da etapa 1 (Auditoria API)

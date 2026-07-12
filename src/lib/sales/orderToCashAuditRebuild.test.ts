@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildOrderToCashRebuildPreviewSummary,
+  detectNomusLockFilesPresent,
+  exitCodeForOrderToCashApplyStatus,
+  formatOrderToCashExecutiveSummary,
   parseOrderToCashRebuildCli,
   resolvePeriodBounds,
   validateOrderToCashRebuildFilters,
@@ -19,6 +22,7 @@ describe("orderToCashAuditRebuild CLI", () => {
     assert.equal(opts.mode, "preview");
     assert.equal(opts.orderCode, "PD 02339");
     assert.equal(opts.dateAxis, "ORDER_ISSUE_DATE");
+    assert.equal(opts.failIfSyncActive, false);
   });
 
   it("parseia customerExternalId + year", () => {
@@ -37,8 +41,66 @@ describe("orderToCashAuditRebuild CLI", () => {
     assert.equal(period.to?.getFullYear(), 2026);
   });
 
+  it("parseia from/to e fail-if-sync-active", () => {
+    const opts = parseOrderToCashRebuildCli([
+      "--mode=apply",
+      "--from=2025-06-01",
+      "--to=2026-12-31",
+      "--fail-if-sync-active",
+    ]);
+    assert.equal(opts.fromDate?.toISOString().slice(0, 10), "2025-06-01");
+    assert.ok(opts.toDate);
+    assert.equal(opts.failIfSyncActive, true);
+  });
+
   it("rejeita mode inválido", () => {
     assert.throws(() => parseOrderToCashRebuildCli(["--mode=dry"]), /preview\|apply/);
+  });
+
+  it("detectNomusLockFilesPresent usa existsFn injetável", () => {
+    const hits = detectNomusLockFilesPresent(
+      ["/tmp/a.lock", "/tmp/b.lock"],
+      (p) => p.endsWith("a.lock")
+    );
+    assert.deepEqual(hits, ["/tmp/a.lock"]);
+  });
+
+  it("exitCodeForOrderToCashApplyStatus", () => {
+    assert.equal(exitCodeForOrderToCashApplyStatus("SUCCESS"), 0);
+    assert.equal(exitCodeForOrderToCashApplyStatus("PARTIAL"), 1);
+    assert.equal(exitCodeForOrderToCashApplyStatus("FAILED"), 1);
+  });
+
+  it("formatOrderToCashExecutiveSummary inclui totais e contagens", () => {
+    const summary = buildOrderToCashRebuildPreviewSummary({
+      ordersCount: 2,
+      orderItemsCount: 3,
+      rows: [
+        {
+          orderCode: "PD 1",
+          orderToCashStage: "RECEBIDO",
+          alertsJson: ["OK"],
+        } as OrderToCashAuditFactRow,
+      ],
+      builderSummary: {
+        totalOrderValue: 10,
+        totalAllocatedValueByOrderPrice: 8,
+        totalReceivableValue: 7,
+        totalReceivedValue: 5,
+        totalOpenValue: 2,
+      },
+      warnings: [],
+    });
+    const text = formatOrderToCashExecutiveSummary(summary, {
+      mode: "apply",
+      runId: "run-x",
+      status: "SUCCESS",
+    });
+    assert.match(text, /totalOrders: 2/);
+    assert.match(text, /totalFacts: 1/);
+    assert.match(text, /totalAllocatedValue: 8/);
+    assert.match(text, /orderToCashStageCounts/);
+    assert.match(text, /runId: run-x/);
   });
 
   it("summary agrega alertas e top risco", () => {
@@ -79,6 +141,6 @@ describe("orderToCashAuditRebuild CLI", () => {
     const warnings = validateOrderToCashRebuildFilters(
       parseOrderToCashRebuildCli(["--mode=preview"])
     );
-    assert.ok(warnings.length > 0);
+    assert.ok(warnings.length >= 1);
   });
 });

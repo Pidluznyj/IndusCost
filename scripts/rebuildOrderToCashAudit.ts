@@ -1,15 +1,21 @@
 /**
- * Rebuild da camada materializada OrderToCashAudit (Run + Fact).
+ * Rebuild oficial da camada materializada OrderToCashAudit (Run + Fact).
  *
  * Grava somente OrderToCashAuditRun / OrderToCashAuditFact.
  * Não altera SalesOrder, NF, CR, Fluxo, Comissões nem demais módulos oficiais.
- * Sem UI / sem endpoint / sem cron neste prompt.
+ * Não chama Nomus — usa somente a base local já sincronizada.
  *
  * Uso:
- *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode preview --orderCode "PD 02339"
- *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode apply --orderCode "PD 02339"
+ *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode preview --from 2025-06-01 --to 2026-12-31
+ *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode apply --from 2025-06-01 --to 2026-12-31
  *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode preview --customerExternalId 200 --year 2026
  *   npx tsx scripts/rebuildOrderToCashAudit.ts --mode apply --customerExternalId 200 --year 2026
+ *   npx tsx scripts/rebuildOrderToCashAudit.ts --help
+ *
+ * Runner com log oficial:
+ *   bash scripts/runOrderToCashAuditRebuild.sh apply 2025-06-01 2026-12-31
+ *
+ * Docs: docs/finance/order-to-cash-audit-rebuild-official.md
  */
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
@@ -27,9 +33,13 @@ import {
 } from "../src/lib/sales/orderToCashAuditBuilder.ts";
 import {
   buildOrderToCashRebuildPreviewSummary,
+  detectNomusLockFilesPresent,
+  exitCodeForOrderToCashApplyStatus,
   formatCounts,
+  formatOrderToCashExecutiveSummary,
   orderToCashFactRowToPrismaData,
   parseOrderToCashRebuildCli,
+  printOrderToCashRebuildHelp,
   resolvePeriodBounds,
   validateOrderToCashRebuildFilters,
   type OrderToCashDateAxis,
@@ -50,6 +60,61 @@ function decOrNull(value: Prisma.Decimal | number | null | undefined): number | 
   if (value == null) return null;
   const n = dec(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Avisa (e opcionalmente bloqueia) se parece haver sync Nomus ou outro rebuild O2C ativo.
+ * Não chama Nomus.
+ */
+async function assessActiveNomusSyncRisk(): Promise<{
+  warnings: string[];
+  shouldBlock: boolean;
+}> {
+  const warnings: string[] = [];
+  const lockHits = detectNomusLockFilesPresent();
+  for (const lockPath of lockHits) {
+    warnings.push(
+      `Arquivo de lock Nomus presente: ${lockPath} (possível sync em andamento).`
+    );
+  }
+
+  try {
+    const runningIntegrations = await prisma.integrationRun.findMany({
+      where: {
+        sourceSystem: "NOMUS",
+        status: { in: ["RUNNING", "IN_PROGRESS", "STARTED"] },
+        finishedAt: null,
+      },
+      orderBy: { startedAt: "desc" },
+      take: 10,
+      select: { id: true, target: true, status: true, command: true, startedAt: true },
+    });
+    for (const run of runningIntegrations) {
+      warnings.push(
+        `IntegrationRun Nomus ativa: id=${run.id} target=${run.target} status=${run.status} command=${run.command ?? "—"} startedAt=${run.startedAt?.toISOString() ?? "—"}`
+      );
+    }
+  } catch {
+    // Ambientes sem tabela / permissão — não bloqueia o rebuild local.
+  }
+
+  try {
+    const runningO2c = await prisma.orderToCashAuditRun.findMany({
+      where: { status: "RUNNING", finishedAt: null },
+      orderBy: { startedAt: "desc" },
+      take: 5,
+      select: { id: true, startedAt: true, createdBy: true },
+    });
+    for (const run of runningO2c) {
+      warnings.push(
+        `Outro OrderToCashAuditRun ainda RUNNING: id=${run.id} startedAt=${run.startedAt?.toISOString() ?? "—"} createdBy=${run.createdBy ?? "—"}`
+      );
+    }
+  } catch {
+    // ignore
+  }
+
+  return { warnings, shouldBlock: warnings.length > 0 };
 }
 
 async function resolveOrderIdsBySecondaryDateAxis(
@@ -172,7 +237,6 @@ function buildSalesOrderWhere(
         ...(period.to ? { lte: period.to } : {}),
       };
     } else {
-      // Default ORDER_ISSUE_DATE (e fallback)
       where.issueDate = {
         ...(period.from ? { gte: period.from } : {}),
         ...(period.to ? { lte: period.to } : {}),
@@ -389,7 +453,6 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
     settlementDate: row.settlementDate,
   }));
 
-  // Facts de conciliação (evidência auxiliar) — último run SUCCESS se houver
   let reconciliationFacts: OrderToCashAuditReconciliationFactInput[] = [];
   const orderIds = ordersRaw.map((o) => o.id);
   if (orderIds.length > 0) {
@@ -446,22 +509,11 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
 }
 
 function printPreview(summary: ReturnType<typeof buildOrderToCashRebuildPreviewSummary>): void {
-  console.log("\n=== OrderToCashAudit PREVIEW ===");
-  console.log(`totalOrders: ${summary.totalOrders}`);
-  console.log(`totalOrderItems: ${summary.totalOrderItems}`);
-  console.log(`totalFacts: ${summary.totalFacts}`);
-  console.log(`totalOrderValue: ${summary.totalOrderValue}`);
-  console.log(`totalAllocatedValue: ${summary.totalAllocatedValue}`);
-  console.log(`totalReceivableValue: ${summary.totalReceivableValue}`);
-  console.log(`totalReceivedValue: ${summary.totalReceivedValue}`);
-  console.log(`totalOpenValue: ${summary.totalOpenValue}`);
-  console.log(`totalBlockedValue: ${summary.totalBlockedValue}`);
+  console.log("\n" + formatOrderToCashExecutiveSummary(summary, { mode: "preview" }));
   console.log(formatCounts("statusCounts", summary.statusCounts));
   console.log(formatCounts("operationalStageCounts", summary.operationalStageCounts));
   console.log(formatCounts("financialStageCounts", summary.financialStageCounts));
   console.log(formatCounts("paymentStatusCounts", summary.paymentStatusCounts));
-  console.log(formatCounts("orderToCashStageCounts", summary.orderToCashStageCounts));
-  console.log(formatCounts("alertCounts", summary.alertCounts));
   console.log("\ntop 10 pedidos com risco:");
   for (const row of summary.topRiskOrders) {
     console.log(
@@ -566,7 +618,17 @@ async function persistApply(params: {
 }
 
 async function main(): Promise<void> {
-  const options = parseOrderToCashRebuildCli(process.argv.slice(2));
+  let options: OrderToCashRebuildCliOptions;
+  try {
+    options = parseOrderToCashRebuildCli(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof Error && error.message === "HELP") {
+      console.log(printOrderToCashRebuildHelp());
+      return;
+    }
+    throw error;
+  }
+
   const filterWarnings = validateOrderToCashRebuildFilters(options);
   const period = resolvePeriodBounds(options);
 
@@ -574,7 +636,28 @@ async function main(): Promise<void> {
   console.log(
     `${LOG} filters: orderCode=${options.orderCode ?? "—"} salesOrderId=${options.salesOrderId ?? "—"} customerExternalId=${options.customerExternalId ?? "—"} year=${options.year ?? "—"} from=${period.from?.toISOString() ?? "—"} to=${period.to?.toISOString() ?? "—"} limit=${options.limit ?? "—"}`
   );
+  console.log(`${LOG} fonte: base local (SalesOrder / NF / Stock / CR) — sem chamada Nomus`);
   for (const w of filterWarnings) console.warn(`${LOG} ${w}`);
+
+  if (options.mode === "apply") {
+    const syncRisk = await assessActiveNomusSyncRisk();
+    for (const w of syncRisk.warnings) {
+      console.warn(`${LOG} AVISO SYNC: ${w}`);
+    }
+    if (syncRisk.warnings.length === 0) {
+      console.log(`${LOG} nenhum sync Nomus ativo detectado (locks/IntegrationRun).`);
+    } else if (options.failIfSyncActive) {
+      console.error(
+        `${LOG} abortando apply: --fail-if-sync-active / ORDER_TO_CASH_AUDIT_FAIL_IF_SYNC_ACTIVE=1`
+      );
+      process.exitCode = 3;
+      return;
+    } else {
+      console.warn(
+        `${LOG} prosseguindo apply apesar do aviso (use --fail-if-sync-active para abortar).`
+      );
+    }
+  }
 
   const bundle = await loadBundle(options);
   console.log(
@@ -609,7 +692,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // apply
   const status = await persistApply({
     runId,
     options,
@@ -619,18 +701,35 @@ async function main(): Promise<void> {
     builderWarnings: built.warnings,
   });
 
-  console.log("\n=== OrderToCashAudit APPLY ===");
-  console.log(`runId: ${runId}`);
-  console.log(`totalOrders: ${summary.totalOrders}`);
-  console.log(`totalFacts: ${summary.totalFacts}`);
-  console.log(`total inserido: ${summary.totalFacts}`);
-  console.log(`status: ${status}`);
+  console.log(
+    "\n" +
+      formatOrderToCashExecutiveSummary(summary, {
+        mode: "apply",
+        runId,
+        status,
+      })
+  );
+  console.log(`total inserido: ${status === "FAILED" ? 0 : summary.totalFacts}`);
+  console.log(`${LOG} APPLY concluído — status=${status} runId=${runId}`);
+
+  process.exitCode = exitCodeForOrderToCashApplyStatus(status);
 }
 
 main()
   .catch((error) => {
-    console.error(`${LOG} FAILED`, error);
-    process.exitCode = 1;
+    if (
+      error instanceof Error &&
+      /--mode inválido|--year inválido|--dateAxis|--customerExternalId|--limit/.test(
+        error.message
+      )
+    ) {
+      console.error(`${LOG} CLI ERROR: ${error.message}`);
+      console.error(printOrderToCashRebuildHelp());
+      process.exitCode = 2;
+    } else {
+      console.error(`${LOG} FAILED`, error);
+      process.exitCode = 1;
+    }
   })
   .finally(async () => {
     await prisma.$disconnect();

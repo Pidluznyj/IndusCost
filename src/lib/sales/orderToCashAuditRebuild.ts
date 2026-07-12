@@ -1,8 +1,9 @@
 /**
  * Helpers puros do rebuild OrderToCashAudit (CLI, summary, mapeamento para Prisma create).
- * Sem I/O — o script scripts/rebuildOrderToCashAudit.ts carrega e persiste.
+ * Sem I/O de banco — o script scripts/rebuildOrderToCashAudit.ts carrega e persiste.
  */
 
+import { existsSync } from "node:fs";
 import type { OrderToCashAuditFactRow } from "./orderToCashAuditBuilder.js";
 
 export const ORDER_TO_CASH_DATE_AXES = [
@@ -28,7 +29,87 @@ export type OrderToCashRebuildCliOptions = {
   toDate: Date | null;
   dateAxis: OrderToCashDateAxis;
   limit: number | null;
+  /** Se true, apply aborta com exit ≠ 0 quando sync Nomus parece ativo. */
+  failIfSyncActive: boolean;
 };
+
+/** Locks usados pelos runners oficiais de sync Nomus (não chama Nomus — só inspeciona). */
+export const ORDER_TO_CASH_AUDIT_NOMUS_LOCK_PATHS = [
+  "/tmp/induscost-nomus-sync-global.lock",
+  "/tmp/induscost-nomus-nfes.lock",
+  "/tmp/induscost-nomus-accounts-receivable.lock",
+  "/tmp/induscost-nomus-accounts-payable.lock",
+] as const;
+
+export const ORDER_TO_CASH_AUDIT_DEFAULT_LOG_DIR =
+  "/var/log/induscost/order-to-cash-audit";
+
+export function hasCliFlag(argv: string[], name: string): boolean {
+  return argv.includes(`--${name}`) || argv.includes(`--${name}=true`);
+}
+
+/**
+ * Detecta presença de arquivos de lock Nomus (sinal fraco de sync em andamento).
+ * Não prova flock — apenas existência do path.
+ */
+export function detectNomusLockFilesPresent(
+  paths: readonly string[] = ORDER_TO_CASH_AUDIT_NOMUS_LOCK_PATHS,
+  existsFn: (path: string) => boolean = existsSync
+): string[] {
+  return paths.filter((p) => existsFn(p));
+}
+
+export function formatOrderToCashExecutiveSummary(
+  summary: OrderToCashRebuildPreviewSummary,
+  extras?: { runId?: string | null; status?: string | null; mode?: string | null }
+): string {
+  const lines = [
+    "=== OrderToCashAudit EXECUTIVE SUMMARY ===",
+    extras?.mode ? `mode: ${extras.mode}` : null,
+    extras?.runId ? `runId: ${extras.runId}` : null,
+    extras?.status ? `status: ${extras.status}` : null,
+    `totalOrders: ${summary.totalOrders}`,
+    `totalFacts: ${summary.totalFacts}`,
+    `totalOrderValue: ${summary.totalOrderValue}`,
+    `totalAllocatedValue: ${summary.totalAllocatedValue}`,
+    `totalReceivableValue: ${summary.totalReceivableValue}`,
+    `totalReceivedValue: ${summary.totalReceivedValue}`,
+    `totalOpenValue: ${summary.totalOpenValue}`,
+    `totalBlockedValue: ${summary.totalBlockedValue}`,
+    formatCounts("orderToCashStageCounts", summary.orderToCashStageCounts),
+    formatCounts("alertCounts", summary.alertCounts),
+  ].filter((line): line is string => line != null);
+  return lines.join("\n");
+}
+
+/** Exit code do apply: SUCCESS=0; PARTIAL/FAILED=1. */
+export function exitCodeForOrderToCashApplyStatus(
+  status: "SUCCESS" | "PARTIAL" | "FAILED"
+): number {
+  return status === "SUCCESS" ? 0 : 1;
+}
+
+export function printOrderToCashRebuildHelp(): string {
+  return [
+    "Usage: npx tsx scripts/rebuildOrderToCashAudit.ts --mode preview|apply [options]",
+    "",
+    "Options:",
+    "  --mode preview|apply",
+    "  --from YYYY-MM-DD          --to YYYY-MM-DD",
+    "  --year YYYY",
+    "  --customerExternalId N",
+    "  --orderCode \"PD 02339\"",
+    "  --salesOrderId UUID",
+    "  --dateAxis ORDER_ISSUE_DATE|EXPECTED_DELIVERY_DATE|…",
+    "  --limit N",
+    "  --fail-if-sync-active      Abort apply if Nomus lock/IntegrationRun looks active",
+    "  --help",
+    "",
+    "Does NOT call Nomus. Uses only local synchronized tables.",
+    "Official runner + logs: scripts/runOrderToCashAuditRebuild.sh",
+    "Docs: docs/finance/order-to-cash-audit-rebuild-official.md",
+  ].join("\n");
+}
 
 function parseArgValue(argv: string[], name: string): string | null {
   const eq = `--${name}=`;
@@ -55,6 +136,10 @@ function parseDateArg(value: string | null): Date | null {
 }
 
 export function parseOrderToCashRebuildCli(argv: string[]): OrderToCashRebuildCliOptions {
+  if (hasCliFlag(argv, "help") || hasCliFlag(argv, "h")) {
+    throw new Error("HELP");
+  }
+
   const modeRaw = (parseArgValue(argv, "mode") ?? "preview").trim().toLowerCase();
   if (modeRaw !== "preview" && modeRaw !== "apply") {
     throw new Error(`--mode inválido: ${modeRaw}. Use preview|apply.`);
@@ -86,6 +171,14 @@ export function parseOrderToCashRebuildCli(argv: string[]): OrderToCashRebuildCl
     throw new Error(`--limit inválido: ${limitRaw}`);
   }
 
+  const envFail =
+    String(process.env.ORDER_TO_CASH_AUDIT_FAIL_IF_SYNC_ACTIVE ?? "")
+      .trim()
+      .toLowerCase() === "1" ||
+    String(process.env.ORDER_TO_CASH_AUDIT_FAIL_IF_SYNC_ACTIVE ?? "")
+      .trim()
+      .toLowerCase() === "true";
+
   return {
     mode: modeRaw,
     orderCode: parseArgValue(argv, "orderCode")?.trim() || null,
@@ -96,6 +189,7 @@ export function parseOrderToCashRebuildCli(argv: string[]): OrderToCashRebuildCl
     toDate: parseDateArg(parseArgValue(argv, "to")),
     dateAxis: dateAxisRaw as OrderToCashDateAxis,
     limit,
+    failIfSyncActive: hasCliFlag(argv, "fail-if-sync-active") || envFail,
   };
 }
 

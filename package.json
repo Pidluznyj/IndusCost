@@ -202,7 +202,9 @@
     "sync:nomus:all:apply": "tsx scripts/nomusSyncOrchestrator.ts --apply",
     "seed:price-tables": "tsx scripts/seedPriceTables.ts",
     "rebuild:portfolio-reconciliation:preview": "tsx scripts/rebuildPortfolioReconciliationFacts.ts preview",
-    "rebuild:portfolio-reconciliation:apply": "tsx scripts/rebuildPortfolioReconciliationFacts.ts apply"
+    "rebuild:portfolio-reconciliation:apply": "tsx scripts/rebuildPortfolioReconciliationFacts.ts apply",
+    "rebuild:order-to-cash-audit:preview": "tsx scripts/rebuildOrderToCashAudit.ts --mode preview",
+    "rebuild:order-to-cash-audit:apply": "tsx scripts/rebuildOrderToCashAudit.ts --mode apply"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

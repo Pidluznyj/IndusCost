@@ -4,9 +4,14 @@
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Script** | `scripts/rebuildOrderToCashAudit.ts` |
+| **Runner oficial** | `scripts/runOrderToCashAuditRebuild.sh` |
+| **Procedimento operacional** | **`docs/finance/order-to-cash-audit-rebuild-official.md`** |
 | **Validação PD 02339** | `tmp-audits/validate-order-to-cash-audit-pd02339.ts` |
 | **Motor** | `src/lib/sales/orderToCashAuditBuilder.ts` |
 | **Tabelas** | `OrderToCashAuditRun`, `OrderToCashAuditFact` |
+
+> **Operação das 3 abas da Conciliação:** use o documento oficial em Finanças  
+> (`docs/finance/order-to-cash-audit-rebuild-official.md`) — sync Nomus → preview → apply, logs e validação Britânia/run geral.
 
 ---
 
