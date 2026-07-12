@@ -117,10 +117,14 @@ async function loadOrderMetas(orderIds: string[]): Promise<Map<string, OrderMeta
       companyIssuer: true,
       externalCompanyId: true,
       updatedAt: true,
-      Customer: { select: { name: true } },
+      Customer: { select: { companyName: true, tradeName: true } },
     },
   });
   for (const o of orders) {
+    const customerName =
+      o.Customer?.companyName?.trim() ||
+      o.Customer?.tradeName?.trim() ||
+      null;
     result.set(o.id, {
       id: o.id,
       orderCode: o.orderCode,
@@ -129,7 +133,7 @@ async function loadOrderMetas(orderIds: string[]): Promise<Map<string, OrderMeta
       expectedDeliveryDate: o.expectedDeliveryDate,
       totalNetValue: decimalToNumber(o.totalNetValue),
       customerId: o.customerId,
-      customerName: o.Customer?.name ?? null,
+      customerName,
       sellerName: o.nomusSellerName,
       sellerExternalId: o.externalSellerId,
       companyIssuer: o.companyIssuer,

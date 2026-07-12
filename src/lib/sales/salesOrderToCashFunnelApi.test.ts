@@ -287,6 +287,14 @@ describe("salesOrderToCashFunnelApi", () => {
     }
   });
 
+  it("9b. loadOrderMetas usa companyName/tradeName do Customer (não name)", () => {
+    const server = read("src/lib/sales/salesOrderToCashFunnelApi.server.ts");
+    assert.match(server, /Customer:\s*\{\s*select:\s*\{\s*companyName:\s*true,\s*tradeName:\s*true/);
+    assert.doesNotMatch(server, /Customer:\s*\{\s*select:\s*\{\s*name:\s*true/);
+    assert.doesNotMatch(server, /Customer\?\.name/);
+    assert.match(server, /Customer\?\.companyName/);
+  });
+
   it("10. não expõe Prisma", () => {
     const api = read("src/lib/sales/salesOrderToCashFunnelApi.ts");
     const routes = read("src/lib/salesOrderToCashFunnelRoutes.ts");
