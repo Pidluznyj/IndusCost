@@ -82,7 +82,7 @@ describe("module tab permissions", () => {
   it("SUPER_ADMIN vê tudo", () => {
     const api = createPermissionsApi(user({ role: "SUPER_ADMIN" }));
     assert.equal(api.listAllowedCrmTabs().length, 3);
-    assert.equal(api.listAllowedCommissionsLiveTabs().length, 3);
+    assert.equal(api.listAllowedCommissionsLiveTabs().length, COMMISSIONS_LIVE_UI_TABS.length);
     assert.equal(api.listAllowedPortfolioReconciliationTabs().length, 4);
   });
 });

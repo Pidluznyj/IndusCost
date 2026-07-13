@@ -70,7 +70,13 @@ import {
   parseReceiptClosingApplyBody,
   parseReceiptClosingPeriodBody,
   parseReceiptClosingReprocessBody,
+  parseCommissionReprocessBody,
 } from "@/src/lib/commissions/commissionApiValidation.js";
+import {
+  applyCommissionReprocess,
+  previewCommissionReprocess,
+  CommissionReprocessError,
+} from "@/src/lib/commissions/commissionReprocess.server.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import {
   exportCommissionVisualAuditCsv,
@@ -1383,6 +1389,52 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("POST /api/commissions/recalculate", error);
       return res.status(500).json({ error: "Erro ao recalcular comissões." });
+    }
+  });
+
+  app.post("/api/commissions/reprocess/preview", ...recalcGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionReprocessBody(req.body);
+      const payload = await previewCommissionReprocess(prisma, {
+        filters: body,
+        userId: user.id,
+        userRole: user.role,
+        permissions: user.permissions,
+      });
+      return res.status(200).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionReprocessError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/reprocess/preview", error);
+      return res.status(500).json({ error: "Erro ao gerar prévia de reprocessamento de comissões." });
+    }
+  });
+
+  app.post("/api/commissions/reprocess/apply", ...recalcGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const body = parseCommissionReprocessBody(req.body);
+      const payload = await applyCommissionReprocess(prisma, {
+        filters: body,
+        userId: user.id,
+        userRole: user.role,
+        permissions: user.permissions,
+        reason: body.reason ?? "",
+        runToken: body.runToken,
+      });
+      return res.status(200).json(payload);
+    } catch (error) {
+      if (error instanceof CommissionReprocessError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+      console.error("POST /api/commissions/reprocess/apply", error);
+      return res.status(500).json({ error: "Erro ao aplicar reprocessamento de comissões." });
     }
   });
 

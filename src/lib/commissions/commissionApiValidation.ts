@@ -827,3 +827,75 @@ export function parseReceiptClosingReprocessBody(body: unknown) {
     reason,
   };
 }
+
+export type CommissionReprocessBody = {
+  from: string | null;
+  to: string | null;
+  dateAxis: "issue" | "nfe" | "settlement";
+  customerExternalId: number | null;
+  sellerExternalId: number | null;
+  salesOrderCode: string | null;
+  productCode: string | null;
+  priceTableId: string | null;
+  statuses: Array<"forecast" | "confirmed" | "released" | "paid">;
+  includeConfirmedNotPaid: boolean;
+  includeReleasedNotPaid: boolean;
+  includePaid: boolean;
+  reason: string | null;
+  runToken: string | null;
+};
+
+function parseOptionalNumberField(value: unknown, field: string): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} inválido.`);
+  }
+  return n;
+}
+
+export function parseCommissionReprocessBody(body: unknown): CommissionReprocessBody {
+  if (!body || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo inválido.");
+  }
+  const raw = body as Record<string, unknown>;
+  const dateAxisRaw = String(raw.dateAxis ?? "issue");
+  const dateAxis: CommissionReprocessBody["dateAxis"] =
+    dateAxisRaw === "nfe" || dateAxisRaw === "settlement" ? dateAxisRaw : "issue";
+
+  const statusesRaw = Array.isArray(raw.statuses)
+    ? raw.statuses
+    : typeof raw.statuses === "string"
+      ? String(raw.statuses).split(",")
+      : ["forecast", "confirmed", "released", "paid"];
+  const allowed = new Set(["forecast", "confirmed", "released", "paid"]);
+  const statuses = statusesRaw
+    .map((s) => String(s).trim().toLowerCase())
+    .filter((s): s is CommissionReprocessBody["statuses"][number] => allowed.has(s));
+
+  return {
+    from: raw.from != null && String(raw.from).trim() ? String(raw.from).trim() : null,
+    to: raw.to != null && String(raw.to).trim() ? String(raw.to).trim() : null,
+    dateAxis,
+    customerExternalId: parseOptionalNumberField(raw.customerExternalId, "customerExternalId"),
+    sellerExternalId: parseOptionalNumberField(raw.sellerExternalId, "sellerExternalId"),
+    salesOrderCode:
+      raw.salesOrderCode != null && String(raw.salesOrderCode).trim()
+        ? String(raw.salesOrderCode).trim()
+        : null,
+    productCode:
+      raw.productCode != null && String(raw.productCode).trim()
+        ? String(raw.productCode).trim()
+        : null,
+    priceTableId:
+      raw.priceTableId != null && String(raw.priceTableId).trim()
+        ? String(raw.priceTableId).trim()
+        : null,
+    statuses: statuses.length > 0 ? statuses : ["forecast", "confirmed", "released", "paid"],
+    includeConfirmedNotPaid: Boolean(raw.includeConfirmedNotPaid ?? true),
+    includeReleasedNotPaid: Boolean(raw.includeReleasedNotPaid ?? false),
+    includePaid: Boolean(raw.includePaid ?? false),
+    reason: raw.reason != null ? String(raw.reason) : null,
+    runToken: raw.runToken != null && String(raw.runToken).trim() ? String(raw.runToken).trim() : null,
+  };
+}

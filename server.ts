@@ -193,6 +193,7 @@ import {
 import {
   isCustomerInCrmCommercialScope,
   requireCrmCommercialDataScope,
+  requireCrmCommercialGeneralScope,
   resolveCrmCommercialAccessScope,
 } from "./src/lib/crmCommercialAccessScope.js";
 import { buildCrmSellerCustomerPortfolioWhere, salesOrderMatchesCrmSellerScope } from "./src/lib/crmCustomerSellerScope.js";
@@ -12379,6 +12380,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL, "view"),
     async (req, res) => {
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Autenticação necessária.",
+        });
+      }
+      // Seller / usuário sem escopo global não acessa agregado Gestão Geral.
+      const scopeResult = requireCrmCommercialGeneralScope(authUser);
+      if (scopeResult.ok === false) {
+        return res.status(scopeResult.status).json(scopeResult.body);
+      }
+
       const dateFrom =
         typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : null;
       const dateTo =
@@ -12456,7 +12470,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   /** Busca paginada de clientes para o CRM + agregados de CommercialActivity (sem alterar /api/customers). */
-  app.get("/api/crm/customers", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (req, res) => {
+  app.get(
+    "/api/crm/customers",
+    requireAppAuth,
+    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES, "view"),
+    async (req, res) => {
     try {
       const authUser = await getCurrentAppUser(req);
       if (!authUser) {
@@ -12698,13 +12716,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (commercialScope.dataScope === "none") {
         return res.status(403).json({
           error: commercialScope.blockedReason ?? "FORBIDDEN",
-          message: commercialScope.blockedMessage ?? "Acesso negado.",
+          message:
+            commercialScope.blockedMessage ??
+            "Você não possui carteira comercial vinculada ou permissão para acessar esta visão.",
         });
       }
       if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
         return res.status(403).json({
           error: "FORBIDDEN",
-          message: "Este cliente não pertence à sua carteira comercial.",
+          message: "Este cliente não pertence à sua carteira comercial (responsável comercial).",
         });
       }
 
@@ -12746,13 +12766,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (commercialScope.dataScope === "none") {
         return res.status(403).json({
           error: commercialScope.blockedReason ?? "FORBIDDEN",
-          message: commercialScope.blockedMessage ?? "Acesso negado.",
+          message:
+            commercialScope.blockedMessage ??
+            "Você não possui carteira comercial vinculada ou permissão para acessar esta visão.",
         });
       }
       if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
         return res.status(403).json({
           error: "FORBIDDEN",
-          message: "Este cliente não pertence à sua carteira comercial.",
+          message: "Este cliente não pertence à sua carteira comercial (responsável comercial).",
         });
       }
 
@@ -12863,13 +12885,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       if (commercialScope.dataScope === "none") {
         return res.status(403).json({
           error: commercialScope.blockedReason ?? "FORBIDDEN",
-          message: commercialScope.blockedMessage ?? "Acesso negado.",
+          message:
+            commercialScope.blockedMessage ??
+            "Você não possui carteira comercial vinculada ou permissão para acessar esta visão.",
         });
       }
       if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
         return res.status(403).json({
           error: "FORBIDDEN",
-          message: "Este cliente não pertence à sua carteira comercial.",
+          message: "Este cliente não pertence à sua carteira comercial (responsável comercial).",
         });
       }
 

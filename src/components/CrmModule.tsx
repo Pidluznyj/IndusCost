@@ -2290,8 +2290,8 @@ export const CrmModule = () => {
           active={activeCrmManagementTab === "portfolio" && sellerNotLinked}
         >
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-            Seu usuário ainda não está vinculado a um vendedor Nomus. Solicite ajuste ao administrador
-            para acessar a carteira de clientes.
+            Você não possui carteira comercial vinculada ou permissão para acessar esta visão.
+            Solicite ao administrador o vínculo como responsável comercial do cliente.
           </div>
         </ProtectedTab>
           </>

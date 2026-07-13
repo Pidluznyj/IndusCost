@@ -13,6 +13,7 @@ export const COMMISSIONS_UI_SECTION_IDS = [
   "monthlyClosing",
   "customerExclusions",
   "reports",
+  "reprocess",
 ] as const;
 
 export type CommissionsUiSectionId = (typeof COMMISSIONS_UI_SECTION_IDS)[number];
@@ -77,6 +78,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   visualAudit: "/commissions/auditoria",
   customerExclusions: "/commissions/exclusoes-cliente",
   reports: "/commissions/relatorios",
+  reprocess: "/commissions/reprocessar",
 };
 
 export const COMMISSIONS_DEFAULT_SECTION: CommissionsSectionId = "monthlyClosing";
@@ -110,6 +112,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     description:
       "Consulta dos registros de comissão materializados pelo Fechamento (por ano, mês e vendedor)",
   },
+  {
+    id: "reprocess",
+    label: "Reprocessar",
+    path: COMMISSIONS_SECTION_PATHS.reprocess,
+    description:
+      "Recalcula comissões de pedidos afetados por regra/parametrização usando o motor oficial, com prévia e trilha de auditoria",
+  },
 ];
 
 export function getCommissionsSectionPath(sectionId: CommissionsSectionId): string {
@@ -142,6 +151,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (firstSegment === "previsao") return true;
   if (firstSegment === "exclusoes-cliente") return true;
   if (firstSegment === "relatorios") return true;
+  if (firstSegment === "reprocessar") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
   if (isCommissionsLegacySectionSegment(firstSegment)) return true;
   return false;
@@ -158,6 +168,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (next === "auditoria" || next === "previsao") return "monthlyClosing";
   if (next === "exclusoes-cliente") return "customerExclusions";
   if (next === "relatorios") return "reports";
+  if (next === "reprocessar") return "reprocess";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";
   return isCommissionsSectionId(next) ? next : null;
 }

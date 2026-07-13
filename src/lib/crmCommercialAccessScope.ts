@@ -1,6 +1,8 @@
 /**
  * Escopo de acesso do CRM Comercial — fonte única para backend e helpers de UI.
- * Base de carteira por vendedor: SalesOrder (não Proposal).
+ *
+ * Carteira = Responsável Comercial do Cliente (`CrmCustomerCommercialOwner`).
+ * Vendedor Nomus do pedido = auditoria/comissão (não define escopo de acesso).
  */
 import { Prisma } from "@prisma/client";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
@@ -10,6 +12,16 @@ import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql.js";
 import {
   manualCommercialOwnerMatchesSellerScope,
 } from "@/src/lib/crmCustomerCommercialOwner.js";
+
+export const CRM_NO_COMMERCIAL_ACCESS_MESSAGE =
+  "Você não possui carteira comercial vinculada ou permissão para acessar esta visão.";
+
+export const CRM_SELLER_NOT_LINKED_MESSAGE =
+  "Seu usuário não está vinculado a um responsável comercial da carteira. Solicite o vínculo ao administrador.";
+
+/** Fallback enquanto não houver hierarquia gestor → equipe. */
+export const COMMERCIAL_MANAGER_TEAM_HIERARCHY_TODO =
+  "TODO(commercial-hierarchy): restringir COMMERCIAL_MANAGER aos responsáveis da equipe. Fallback: unrestricted commercial.";
 
 export type CrmCommercialDataScope = "global" | "own" | "none";
 
@@ -24,9 +36,11 @@ export type CrmCommercialAccessScope = {
   /** Filtro consolidado por nome normalizado (prioridade sobre ID quando há nome no vínculo). */
   sellerIdentityKey: string | null;
   sellerLinked: boolean;
-  /** Quando own sem vínculo Nomus no usuário. */
+  /** Quando own sem vínculo comercial no usuário. */
   blockedReason: "SELLER_NOT_LINKED" | "FORBIDDEN" | null;
   blockedMessage: string | null;
+  /** True quando COMMERCIAL_MANAGER usa fallback sem hierarquia de equipe. */
+  commercialManagerUsesTeamFallback?: boolean;
 };
 
 export type CrmCommercialAccessScopeResult =
@@ -41,7 +55,7 @@ export function isCrmSellerUserLinked(user: {
 }
 
 /**
- * Filtro SQL/Prisma para vendedor.
+ * Filtro SQL/Prisma para responsável comercial (identidade do vínculo).
  * Prioridade: sellerIdentityKey explícito → nome normalizado → ID único (legado sem nome).
  */
 export function crmCommercialSellerMatchFilters(
@@ -80,9 +94,12 @@ export function resolveSellerIdentityKeyForAuth(auth: {
 }
 
 export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommercialAccessScope {
-  const canViewCommercialGeneral = hasPermission(auth, "crm.general.view");
-  const canViewAllSellers = hasPermission(auth, "crm.seller.all");
+  const canViewCommercialGeneralPerm = hasPermission(auth, "crm.general.view");
+  const canViewAllSellersPerm = hasPermission(auth, "crm.seller.all");
   const canViewOwnSellerData = hasPermission(auth, "crm.seller.own");
+
+  const roleUnrestricted = auth.role === "SUPER_ADMIN" || auth.role === "ADMIN";
+  const commercialManagerFallback = auth.role === "COMMERCIAL_MANAGER";
 
   const externalSellerId = auth.externalSellerId;
   const responsible = auth.sellerResponsibleName?.trim() || null;
@@ -91,20 +108,28 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   let dataScope: CrmCommercialDataScope = "none";
   let blockedReason: CrmCommercialAccessScope["blockedReason"] = null;
   let blockedMessage: string | null = null;
+  let commercialManagerUsesTeamFallback = false;
 
-  if (canViewAllSellers || canViewCommercialGeneral) {
+  if (roleUnrestricted || canViewAllSellersPerm || canViewCommercialGeneralPerm) {
     dataScope = "global";
+  } else if (commercialManagerFallback) {
+    // Fallback documentado: sem hierarquia formal, gestor vê todos os responsáveis.
+    dataScope = "global";
+    commercialManagerUsesTeamFallback = true;
   } else if (canViewOwnSellerData) {
     if (sellerLinked) {
       dataScope = "own";
     } else {
       blockedReason = "SELLER_NOT_LINKED";
-      blockedMessage = "Seu usuário não está vinculado a um vendedor Nomus.";
+      blockedMessage = CRM_SELLER_NOT_LINKED_MESSAGE;
     }
   } else {
     blockedReason = "FORBIDDEN";
-    blockedMessage = "Você não tem permissão para consultar dados comerciais por vendedor.";
+    blockedMessage = CRM_NO_COMMERCIAL_ACCESS_MESSAGE;
   }
+
+  const canViewCommercialGeneral = dataScope === "global";
+  const canViewAllSellers = dataScope === "global";
 
   const sellerLocked = dataScope === "own";
   const ownName = dataScope === "own" ? responsible : null;
@@ -118,7 +143,7 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   return {
     canViewCommercialGeneral,
     canViewAllSellers,
-    canViewOwnSellerData,
+    canViewOwnSellerData: dataScope === "own" || dataScope === "global",
     dataScope,
     sellerLocked,
     externalSellerId: match.externalSellerId,
@@ -127,6 +152,7 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
     sellerLinked,
     blockedReason,
     blockedMessage,
+    commercialManagerUsesTeamFallback,
   };
 }
 
@@ -141,7 +167,7 @@ export function requireCrmCommercialDataScope(
         status: 403,
         body: {
           error: "SELLER_NOT_LINKED",
-          message: scope.blockedMessage ?? "Seu usuário não está vinculado a um vendedor Nomus.",
+          message: scope.blockedMessage ?? CRM_SELLER_NOT_LINKED_MESSAGE,
         },
       };
     }
@@ -150,8 +176,29 @@ export function requireCrmCommercialDataScope(
       status: 403,
       body: {
         error: "FORBIDDEN",
-        message: scope.blockedMessage ?? "Permissão insuficiente para dados comerciais.",
+        message: scope.blockedMessage ?? CRM_NO_COMMERCIAL_ACCESS_MESSAGE,
         requiredPermissions: ["crm.seller.own", "crm.seller.all", "crm.general.view"],
+      },
+    };
+  }
+  return { ok: true, scope };
+}
+
+/** Gestão Geral: somente escopo global (admin/gestor). Seller → 403. */
+export function requireCrmCommercialGeneralScope(
+  auth: AppAuthContext
+): CrmCommercialAccessScopeResult {
+  const scope = resolveCrmCommercialAccessScope(auth);
+  if (scope.dataScope !== "global") {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: "FORBIDDEN",
+        message:
+          scope.dataScope === "own"
+            ? "Gestão Geral é restrita a administradores e gestores comerciais. Use Gestão por Responsável ou Carteira de Clientes."
+            : scope.blockedMessage ?? CRM_NO_COMMERCIAL_ACCESS_MESSAGE,
       },
     };
   }
@@ -167,8 +214,8 @@ export type SellerDashboardQueryScope = {
 
 /**
  * Escopo efetivo do seller-dashboard.
- * Vendedor (own): ignora query e força vínculo do usuário.
- * Com nome no vínculo, usa sellerIdentityKey para incluir todos os IDs Nomus com mesmo nome normalizado.
+ * SELLER (own): ignora query e força vínculo do usuário (responsável comercial).
+ * Admin/gestor: honra filtro de responsável solicitado.
  */
 export function resolveCrmSellerDashboardQueryScope(
   auth: AppAuthContext,
@@ -180,20 +227,19 @@ export function resolveCrmSellerDashboardQueryScope(
 ): CrmCommercialAccessScopeResult & { sellerScope?: SellerDashboardQueryScope } {
   const base = resolveCrmCommercialAccessScope(auth);
 
-  if (!hasPermission(auth, "crm.seller.all") && !hasPermission(auth, "crm.seller.own")) {
+  if (base.dataScope === "none") {
     return {
       ok: false,
       status: 403,
       body: {
-        error: "FORBIDDEN",
-        message:
-          "Permissão insuficiente: é necessário crm.seller.own ou crm.seller.all para consultar o dashboard por vendedor.",
+        error: base.blockedReason === "SELLER_NOT_LINKED" ? "SELLER_NOT_LINKED" : "FORBIDDEN",
+        message: base.blockedMessage ?? CRM_NO_COMMERCIAL_ACCESS_MESSAGE,
         requiredPermissions: ["crm.seller.own", "crm.seller.all"],
       },
     };
   }
 
-  if (hasPermission(auth, "crm.seller.all")) {
+  if (base.dataScope === "global") {
     const externalSellerId = parseExternalSellerId(queryExternalSellerId);
     const responsible = parseResponsible(queryResponsible);
     const sellerIdentityKey =
@@ -216,7 +262,7 @@ export function resolveCrmSellerDashboardQueryScope(
       status: 403,
       body: {
         error: "SELLER_NOT_LINKED",
-        message: base.blockedMessage ?? "Seu usuário não está vinculado a um vendedor Nomus.",
+        message: base.blockedMessage ?? CRM_SELLER_NOT_LINKED_MESSAGE,
       },
     };
   }
@@ -224,7 +270,7 @@ export function resolveCrmSellerDashboardQueryScope(
   const ownName = auth.sellerResponsibleName?.trim() || null;
   const ownIdentityKey = resolveSellerIdentityKeyForAuth(auth);
   const ownMatch = crmCommercialSellerMatchFilters(
-    base.externalSellerId,
+    auth.externalSellerId,
     ownName,
     ownIdentityKey
   );
@@ -239,7 +285,7 @@ export function resolveCrmSellerDashboardQueryScope(
   };
 }
 
-/** SQL: pedido pertence ao vendedor (alias da tabela SalesOrder). */
+/** SQL legado: match por vendedor Nomus do pedido (auditoria — não usar para escopo de carteira). */
 export function buildCrmSalesOrderSellerMatchSql(
   alias: string,
   externalSellerId: number | null,
@@ -253,7 +299,7 @@ export function buildCrmSalesOrderSellerMatchSql(
   });
 }
 
-/** Cliente na carteira do vendedor (pelo menos um SalesOrder válido). */
+/** @deprecated Preferir eixo CrmCustomerCommercialOwner. Mantido para scripts legados. */
 export function buildCrmSellerCustomerExistsSql(
   customerAlias: string,
   externalSellerId: number | null,
@@ -277,6 +323,10 @@ export function buildCrmSellerCustomerExistsSql(
   `;
 }
 
+/**
+ * Cliente na carteira CRM = responsável comercial ativo.
+ * Não inclui cliente só porque há pedido com vendedor Nomus do usuário.
+ */
 export async function isCustomerInCrmCommercialScope(
   customerId: string,
   scope: CrmCommercialAccessScope
@@ -287,33 +337,17 @@ export async function isCustomerInCrmCommercialScope(
   const manualRow = await prisma.crmCustomerCommercialOwner.findUnique({
     where: { customerId },
   });
-  if (manualRow?.isActive) {
-    const owner = {
+  if (!manualRow?.isActive) return false;
+
+  return manualCommercialOwnerMatchesSellerScope(
+    {
       sellerIdentityKey: manualRow.sellerIdentityKey,
       sellerExternalId: manualRow.sellerExternalId,
       sellerResponsibleName: manualRow.sellerResponsibleName,
       sellerAliasExternalIds: Array.isArray(manualRow.sellerAliasExternalIds)
         ? (manualRow.sellerAliasExternalIds as number[])
         : [],
-    };
-    if (manualCommercialOwnerMatchesSellerScope(owner, scope)) {
-      return true;
-    }
-  }
-
-  const rows = await prisma.$queryRaw<{ ok: number }[]>(
-    Prisma.sql`
-      SELECT 1::int AS ok
-      FROM "Customer" c
-      WHERE c."id" = ${customerId}::uuid
-        AND ${buildCrmSellerCustomerExistsSql(
-          "c",
-          scope.externalSellerId,
-          scope.responsible,
-          scope.sellerIdentityKey
-        )}
-      LIMIT 1
-    `
+    },
+    scope
   );
-  return (rows?.length ?? 0) > 0;
 }

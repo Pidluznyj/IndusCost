@@ -28,6 +28,7 @@ import {
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
+import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
 
 function CommissionsHomeRedirect() {
   return <Navigate to={getCommissionsDefaultPath()} replace />;
@@ -148,6 +149,7 @@ export function CommissionsModule() {
           element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}
         />
         <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
+        <Route path="reprocessar" element={guard("reprocess", <CommissionsReprocessPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
           <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
         ))}

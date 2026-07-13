@@ -2,6 +2,7 @@ import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import {
   COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS,
   COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS,
+  COMMISSIONS_RECALCULATE_PERMISSIONS,
   COMMISSIONS_VIEW_PERMISSIONS,
 } from "@/src/lib/commissionsPermissions.js";
 import type { CommissionsSectionId } from "@/src/lib/commissionsNavigation.js";
@@ -18,6 +19,7 @@ const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
   monthlyClosing: TabResourceKeys.COMISSOES_FECHAMENTO,
   customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
   reports: TabResourceKeys.COMISSOES_RELATORIOS,
+  reprocess: TabResourceKeys.COMISSOES_REPROCESSAR,
 };
 
 export function canAccessCommissionsModule(check: PermissionChecker): boolean {
@@ -50,6 +52,9 @@ export function canViewCommissionsSection(
   if (sectionId === "reports") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
+  if (sectionId === "reprocess") {
+    return check.hasAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]);
+  }
   return false;
 }
 
@@ -66,6 +71,6 @@ export function canManageReceiptClosing(check: PermissionChecker): boolean {
 
 export function listAllowedCommissionsLiveSectionIds(
   canViewResource: (key: string) => boolean
-): Array<"monthlyClosing" | "customerExclusions" | "reports"> {
+): Array<"monthlyClosing" | "customerExclusions" | "reports" | "reprocess"> {
   return COMMISSIONS_LIVE_UI_TABS.filter((t) => canViewResource(t.resourceKey)).map((t) => t.id);
 }

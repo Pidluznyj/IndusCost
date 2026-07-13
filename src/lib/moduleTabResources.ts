@@ -10,6 +10,7 @@ export const TabResourceKeys = {
   COMISSOES_FECHAMENTO: "comissoes.tab.fechamento_mes",
   COMISSOES_EXCECOES: "comissoes.tab.excecoes_cliente",
   COMISSOES_RELATORIOS: "comissoes.tab.relatorios",
+  COMISSOES_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_DASHBOARD: "comissoes.tab.dashboard",
   COMISSOES_PREVISTAS: "comissoes.tab.previstas",
   COMISSOES_CONFIRMADAS: "comissoes.tab.confirmadas",
@@ -53,7 +54,11 @@ export const CRM_UI_TABS: ReadonlyArray<{
   },
 ];
 
-export type CommissionsLiveTabId = "monthlyClosing" | "customerExclusions" | "reports";
+export type CommissionsLiveTabId =
+  | "monthlyClosing"
+  | "customerExclusions"
+  | "reports"
+  | "reprocess";
 
 export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
   id: CommissionsLiveTabId;
@@ -74,6 +79,11 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
     id: "reports",
     resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
     label: "Relatórios",
+  },
+  {
+    id: "reprocess",
+    resourceKey: TabResourceKeys.COMISSOES_REPROCESSAR,
+    label: "Reprocessar",
   },
 ];
 

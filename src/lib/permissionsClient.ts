@@ -50,6 +50,7 @@ export const ResourceKeys = {
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
   COMISSOES_TAB_EXCECOES_CLIENTE: "comissoes.tab.excecoes_cliente",
   COMISSOES_TAB_RELATORIOS: "comissoes.tab.relatorios",
+  COMISSOES_TAB_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_TAB_DASHBOARD: "comissoes.tab.dashboard",
   COMISSOES_TAB_PREVISTAS: "comissoes.tab.previstas",
   COMISSOES_TAB_CONFIRMADAS: "comissoes.tab.confirmadas",
@@ -251,6 +252,18 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     legacyAliasKeys: ["commissions.view", "commissions.dashboard.view", "commissions.audit.view"],
   },
   {
+    key: ResourceKeys.COMISSOES_TAB_REPROCESSAR,
+    label: "Reprocessar",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: [
+      "commissions.view",
+      "commissions.payments.manage",
+      "commissions.rules.manage",
+      "commissions.audit.view",
+    ],
+  },
+  {
     key: ResourceKeys.COMISSOES_TAB_DASHBOARD,
     label: "Dashboard",
     type: "TAB",
@@ -448,6 +461,7 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
     [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
     [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
     [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
     [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
     [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
@@ -484,6 +498,7 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
     [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
     [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
     [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
     [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
     [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
@@ -504,6 +519,7 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.COMISSOES]: V,
     [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
     [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
     [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
     [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
     [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
@@ -512,11 +528,11 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.DASHBOARD]: V,
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
-    [ResourceKeys.COMERCIAL_CRM]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
+    [ResourceKeys.COMERCIAL_CRM]: NONE,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: NONE,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: NONE,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: NONE,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: NONE,
   }),
 };
 
@@ -663,7 +679,7 @@ export type PermissionsApi = {
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
   listAllowedCrmTabs: () => Array<"general" | "seller" | "portfolio">;
   listAllowedCommissionsLiveTabs: () => Array<
-    "monthlyClosing" | "customerExclusions" | "reports"
+    "monthlyClosing" | "customerExclusions" | "reports" | "reprocess"
   >;
   listAllowedMaterialsSections: () => Array<"catalog" | "marketIntelligence">;
   canViewPortfolioModule: () => boolean;

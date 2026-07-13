@@ -114,6 +114,8 @@ describe("commissionsRoutes", () => {
       "/api/commissions/rules/:id/usage",
       "/api/commissions/rules/:id/duplicate",
       "/api/commissions/recalculate",
+      "/api/commissions/reprocess/preview",
+      "/api/commissions/reprocess/apply",
       "/api/commissions/audit",
       "/api/commissions/audit/rerun",
       "/api/commissions/settings",
