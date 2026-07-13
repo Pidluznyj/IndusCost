@@ -388,34 +388,35 @@ export function buildPortfolioOrderStatusListFromFacts(args: {
     return buildPortfolioOrderStatusNoRunPayload(filters);
   }
 
-  const built: BuildPortfolioOrderStatusResult = buildPortfolioOrderStatus({
+  // orderCode não está no service filters — aplica no universo base antes dos cards
+  const serviceFilters = toServiceFilters({
+    ...filters,
+    selectedCard: null,
+    selectedDrilldown: null,
+  });
+  const baseBuilt: BuildPortfolioOrderStatusResult = buildPortfolioOrderStatus({
     facts: args.facts,
     asOf: args.asOf,
-    filters: toServiceFilters(filters),
+    filters: serviceFilters,
     sort: {
       sortBy: filters.sortBy,
       sortDirection: filters.sortDirection,
     },
-    selectedCard: filters.selectedCard,
+    selectedCard: null,
   });
 
-  // orderCode não está no service filters — aplica aqui
-  let rows = applyOrderCodeFilter(built.rows, filters.orderCode);
+  let baseRows = applyOrderCodeFilter(baseBuilt.rows, filters.orderCode);
+  const primaryCards = buildPrimaryCards(baseRows);
+  const drilldownCards = buildDrilldownCards(baseRows, filters.selectedCard);
 
-  // Reaplica selectedCard/drilldown se orderCode estreitou o set
-  if (filters.orderCode) {
-    rows = applyOrderStatusFilters(rows, {
-      selectedCard: filters.selectedCard,
-      selectedDrilldown: filters.selectedDrilldown,
-    });
-    rows = sortOrderStatusRows(rows, {
-      sortBy: filters.sortBy,
-      sortDirection: filters.sortDirection,
-    });
-  }
-
-  const primaryCards = buildPrimaryCards(rows);
-  const drilldownCards = buildDrilldownCards(rows, filters.selectedCard);
+  let rows = applyOrderStatusFilters(baseRows, {
+    selectedCard: filters.selectedCard,
+    selectedDrilldown: filters.selectedDrilldown,
+  });
+  rows = sortOrderStatusRows(rows, {
+    sortBy: filters.sortBy,
+    sortDirection: filters.sortDirection,
+  });
   const summary = buildOrderStatusSummary(rows);
 
   const paged = paginatePortfolioOrderStatusRows(

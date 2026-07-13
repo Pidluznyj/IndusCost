@@ -572,8 +572,19 @@ describe("portfolioOrderStatusService", () => {
     });
     assert.ok(built.rows.every((r) => r.consolidatedOrderStatus.startsWith("PARCIAL_")));
     assert.equal(built.primaryCards.find((c) => c.id === "parciais")?.count, built.rows.length);
+    // Cards permanecem no universo base (não colapsam com selectedCard)
+    assert.equal(built.primaryCards.find((c) => c.id === "total")?.count, 3);
+    assert.ok(
+      (built.primaryCards.find((c) => c.id === "total")?.count ?? 0) >
+        built.rows.length
+    );
+    const parcialCard = built.primaryCards.find((c) => c.id === "parciais");
+    assert.ok(parcialCard);
+    assert.equal(typeof parcialCard!.totalOrderValue, "number");
+    assert.equal(parcialCard!.percentOfTotal, Math.round((1 / 3) * 1000) / 10);
+    assert.match(parcialCard!.hint, /item atendido/i);
 
-    const drills = buildDrilldownCards(built.rows, "parciais");
+    const drills = built.drilldownCards;
     assert.ok(drills.some((d) => d.id === "parcial_cr_aberto"));
 
     const sorted = sortOrderStatusRows(built.rows, {
@@ -595,6 +606,13 @@ describe("portfolioOrderStatusService", () => {
     const { primaryCards, summary } = buildPortfolioOrderStatus({ facts });
     assert.equal(summary.totalOrders, 1);
     assert.notEqual(summary.totalOrders, facts.length);
-    assert.equal(primaryCards.find((c) => c.id === "total")?.count, 1);
+    const total = primaryCards.find((c) => c.id === "total");
+    assert.equal(total?.count, 1);
+    assert.equal(total?.percentOfTotal, 100);
+    assert.ok((total?.totalOrderValue ?? 0) > 0);
+    assert.equal(
+      total?.hint,
+      "Total de pedidos distintos dentro do filtro."
+    );
   });
 });

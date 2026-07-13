@@ -108,9 +108,34 @@ export type PortfolioOrderStatusRow = {
 export type PortfolioOrderStatusPrimaryCard = {
   id: PortfolioOrderStatusPrimaryCardId;
   label: string;
+  /** Pedidos distintos (nunca facts). */
   count: number;
+  /** Soma de totalOrderValue dos pedidos do card. */
+  totalOrderValue: number;
+  /** Percentual de pedidos sobre o total do universo base. */
+  percentOfTotal: number;
   hint: string;
   tone: "neutral" | "green" | "blue" | "amber" | "gray" | "orange" | "red";
+};
+
+/** Tooltips oficiais dos cards principais (Status Pedidos). */
+export const PORTFOLIO_ORDER_STATUS_PRIMARY_CARD_HINTS: Record<
+  PortfolioOrderStatusPrimaryCardId,
+  string
+> = {
+  total: "Total de pedidos distintos dentro do filtro.",
+  completos: "Pedidos com atendimento operacional completo.",
+  parciais:
+    "Pedidos com pelo menos um item atendido e pelo menos um item pendente.",
+  sem_atendimento:
+    "Pedidos sem item casado com documento de saída/NF.",
+  com_divergencia:
+    "Pedidos com excesso, produto fora, documento parcial, divergência de preço ou outro alerta técnico.",
+  cr_aberto:
+    "Pedidos com título financeiro aberto. Valores são agregados uma vez por pedido/título.",
+  recebidos: "Pedidos com recebimento/baixa identificada.",
+  bloqueados:
+    "Pedidos antigos ou sem evidência suficiente para tratar como carteira confiável.",
 };
 
 export type PortfolioOrderStatusDrilldownCard = {
@@ -808,68 +833,65 @@ const RECEBIDOS = new Set<PortfolioOrderStatusConsolidated>([
 export function buildPrimaryCards(
   rows: readonly PortfolioOrderStatusRow[]
 ): PortfolioOrderStatusPrimaryCard[] {
-  const count = (pred: (r: PortfolioOrderStatusRow) => boolean) =>
-    rows.reduce((n, r) => n + (pred(r) ? 1 : 0), 0);
+  const totalOrders = rows.length;
+  const percentOfTotal = (count: number) =>
+    totalOrders === 0 ? 0 : Math.round((count / totalOrders) * 1000) / 10;
+
+  const aggregate = (pred: (r: PortfolioOrderStatusRow) => boolean) => {
+    let count = 0;
+    let totalOrderValue = 0;
+    for (const row of rows) {
+      if (!pred(row)) continue;
+      count += 1;
+      totalOrderValue += row.totalOrderValue;
+    }
+    return {
+      count,
+      totalOrderValue,
+      percentOfTotal: percentOfTotal(count),
+    };
+  };
+
+  const card = (
+    id: PortfolioOrderStatusPrimaryCardId,
+    label: string,
+    tone: PortfolioOrderStatusPrimaryCard["tone"],
+    pred: (r: PortfolioOrderStatusRow) => boolean
+  ): PortfolioOrderStatusPrimaryCard => ({
+    id,
+    label,
+    tone,
+    hint: PORTFOLIO_ORDER_STATUS_PRIMARY_CARD_HINTS[id],
+    ...aggregate(pred),
+  });
 
   return [
-    {
-      id: "total",
-      label: "Total de pedidos",
-      count: rows.length,
-      hint: "Pedidos distintos na agregação (não linhas de evidência).",
-      tone: "neutral",
-    },
-    {
-      id: "completos",
-      label: "Completos",
-      count: count((r) => COMPLETO.has(r.consolidatedOrderStatus)),
-      hint: "Pedidos sem item pendente relevante (COMPLETO_*).",
-      tone: "green",
-    },
-    {
-      id: "parciais",
-      label: "Parciais",
-      count: count((r) => PARCIAL.has(r.consolidatedOrderStatus)),
-      hint: "Há atendimento e também item/saldo pendente (PARCIAL_*).",
-      tone: "amber",
-    },
-    {
-      id: "sem_atendimento",
-      label: "Sem atendimento",
-      count: count((r) => SEM_ATEND.has(r.consolidatedOrderStatus)),
-      hint: "Nenhuma alocação de documento ao pedido.",
-      tone: "gray",
-    },
-    {
-      id: "com_divergencia",
-      label: "Com divergência",
-      count: count((r) => r.hasDivergences),
-      hint: "Alertas de excedente, fora do pedido, preço, NF cabeçalho ou doc sem CR.",
-      tone: "orange",
-    },
-    {
-      id: "cr_aberto",
-      label: "CR aberto",
-      count: count((r) => r.hasOpenCr),
-      hint: "receivableOpenValue > 0 agregado 1× por pedido.",
-      tone: "blue",
-    },
-    {
-      id: "recebidos",
-      label: "Recebidos",
-      count: count(
-        (r) => RECEBIDOS.has(r.consolidatedOrderStatus) || r.hasReceived
-      ),
-      hint: "Recebimento evidenciado (COMPLETO/PARCIAL_RECEBIDO ou CR baixado).",
-      tone: "green",
-    },
-    {
-      id: "bloqueados",
-      label: "Bloqueados",
-      count: count((r) => r.consolidatedOrderStatus === "BLOQUEADO_REVISAO"),
-      hint: "orderToCashStage BLOQUEADO_REVISAO ou pedido antigo sem evolução.",
-      tone: "red",
-    },
+    card("total", "Total de pedidos", "neutral", () => true),
+    card("completos", "Completos", "green", (r) =>
+      COMPLETO.has(r.consolidatedOrderStatus)
+    ),
+    card("parciais", "Parciais", "amber", (r) =>
+      PARCIAL.has(r.consolidatedOrderStatus)
+    ),
+    card("sem_atendimento", "Sem atendimento", "gray", (r) =>
+      SEM_ATEND.has(r.consolidatedOrderStatus)
+    ),
+    card("com_divergencia", "Com divergência", "orange", (r) =>
+      r.hasDivergences
+    ),
+    card("cr_aberto", "CR aberto", "blue", (r) => r.hasOpenCr),
+    card(
+      "recebidos",
+      "Recebidos",
+      "green",
+      (r) => RECEBIDOS.has(r.consolidatedOrderStatus) || r.hasReceived
+    ),
+    card(
+      "bloqueados",
+      "Bloqueados",
+      "red",
+      (r) => r.consolidatedOrderStatus === "BLOQUEADO_REVISAO"
+    ),
   ];
 }
 
@@ -1265,18 +1287,26 @@ export function buildPortfolioOrderStatus(
     asOf: input.asOf,
   });
 
-  const filters: PortfolioOrderStatusFilters = {
-    ...(input.filters ?? {}),
-    selectedCard: input.selectedCard ?? input.filters?.selectedCard ?? null,
-  };
+  const selectedCard =
+    input.selectedCard ?? input.filters?.selectedCard ?? null;
+  const selectedDrilldown = input.filters?.selectedDrilldown ?? null;
 
-  const filtered = applyOrderStatusFilters(allRows, filters);
+  // Cards/drilldowns no universo dos filtros de query — sem selectedCard.
+  // A seleção do card estreita só a tabela (e o summary da página).
+  const baseFilters: PortfolioOrderStatusFilters = {
+    ...(input.filters ?? {}),
+    selectedCard: null,
+    selectedDrilldown: null,
+  };
+  const baseRows = applyOrderStatusFilters(allRows, baseFilters);
+  const primaryCards = buildPrimaryCards(baseRows);
+  const drilldownCards = buildDrilldownCards(baseRows, selectedCard);
+
+  const filtered = applyOrderStatusFilters(baseRows, {
+    selectedCard,
+    selectedDrilldown,
+  });
   const rows = sortOrderStatusRows(filtered, input.sort ?? null);
-  const primaryCards = buildPrimaryCards(rows);
-  const drilldownCards = buildDrilldownCards(
-    rows,
-    filters.selectedCard ?? null
-  );
   const summary = buildOrderStatusSummary(rows);
 
   return { rows, primaryCards, drilldownCards, summary };

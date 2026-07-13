@@ -282,6 +282,20 @@ describe("portfolioOrderStatusApi", () => {
       runMeta: runMeta(),
     });
     assert.ok(withCard.drilldownCards.length > 0);
+    // Tabela estreita; cards permanecem no universo base
+    assert.ok(withCard.pagination.totalRows < withCard.primaryCards.find((c) => c.id === "total")!.count);
+    assert.equal(
+      withCard.primaryCards.find((c) => c.id === "total")?.count,
+      payload.primaryCards.find((c) => c.id === "total")?.count
+    );
+    assert.ok(
+      withCard.primaryCards.every(
+        (c) =>
+          typeof c.totalOrderValue === "number" &&
+          typeof c.percentOfTotal === "number" &&
+          c.hint.length > 0
+      )
+    );
   });
 
   it("3. retorna rows por pedido (não por fact)", () => {
