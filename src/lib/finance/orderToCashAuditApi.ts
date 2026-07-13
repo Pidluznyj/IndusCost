@@ -134,7 +134,8 @@ export type OrderToCashAuditLineBilledValueSource =
   | "STOCK_DOCUMENT_ITEM"
   | "NFE_ITEM"
   | "ALLOCATED_DOCUMENT_PRICE"
-  | "NOT_IDENTIFIED";
+  | "NOT_IDENTIFIED"
+  | "NOT_BILLED";
 
 export const ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL: Record<
   OrderToCashAuditLineBilledValueSource,
@@ -144,6 +145,7 @@ export const ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL: Record<
   NFE_ITEM: "Item NF",
   ALLOCATED_DOCUMENT_PRICE: "Alocação doc.",
   NOT_IDENTIFIED: "Não identificado",
+  NOT_BILLED: "Não faturado nesta NF",
 };
 
 export type OrderToCashAuditLineBilledValue = {
@@ -170,9 +172,16 @@ function productMoney(
 
 /**
  * Valor cobrado da linha (item), sem ratear CR total.
- * Preferência: item documento → item NF → alocação por preço do documento → não identificado.
+ * - ALLOCATED: quantityUsedForOrder × unitValue do documento
+ * - SURPLUS: excessQuantity × unitValue
+ * - EXTRA: outsideOrderQuantity × unitValue
+ * - PENDING: null / Não faturado nesta NF
  */
 export function resolveOrderToCashAuditLineBilledValue(input: {
+  lineType?: string | null;
+  quantityUsedForOrder?: number | null;
+  excessQuantity?: number | null;
+  outsideOrderQuantity?: number | null;
   stockDocumentItemTotalValue?: number | null;
   stockDocumentItemQuantity?: number | null;
   stockDocumentItemUnitValue?: number | null;
@@ -181,6 +190,58 @@ export function resolveOrderToCashAuditLineBilledValue(input: {
   nfeItemUnitValue?: number | null;
   allocatedValueByDocumentPrice?: number | null;
 }): OrderToCashAuditLineBilledValue {
+  const lineType = (input.lineType ?? "").trim().toUpperCase();
+  const unit = finiteMoney(input.stockDocumentItemUnitValue);
+
+  if (lineType === "ORDER_ITEM_PENDING") {
+    return {
+      lineBilledValue: null,
+      lineBilledValueSource: "NOT_BILLED",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.NOT_BILLED,
+    };
+  }
+
+  if (lineType === "ORDER_ITEM_ALLOCATED") {
+    const used = finiteMoney(input.quantityUsedForOrder);
+    if (used != null && unit != null) {
+      return {
+        lineBilledValue: used * unit,
+        lineBilledValueSource: "STOCK_DOCUMENT_ITEM",
+        lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.STOCK_DOCUMENT_ITEM,
+      };
+    }
+    const allocatedDoc = finiteMoney(input.allocatedValueByDocumentPrice);
+    if (allocatedDoc != null) {
+      return {
+        lineBilledValue: allocatedDoc,
+        lineBilledValueSource: "ALLOCATED_DOCUMENT_PRICE",
+        lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.ALLOCATED_DOCUMENT_PRICE,
+      };
+    }
+  }
+
+  if (lineType === "QUANTITY_SURPLUS") {
+    const excess = finiteMoney(input.excessQuantity);
+    if (excess != null && unit != null) {
+      return {
+        lineBilledValue: excess * unit,
+        lineBilledValueSource: "STOCK_DOCUMENT_ITEM",
+        lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.STOCK_DOCUMENT_ITEM,
+      };
+    }
+  }
+
+  if (lineType === "DOCUMENT_EXTRA_ITEM") {
+    const outside = finiteMoney(input.outsideOrderQuantity);
+    if (outside != null && unit != null) {
+      return {
+        lineBilledValue: outside * unit,
+        lineBilledValueSource: "STOCK_DOCUMENT_ITEM",
+        lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.STOCK_DOCUMENT_ITEM,
+      };
+    }
+  }
+
   const stockTotal = finiteMoney(input.stockDocumentItemTotalValue);
   if (stockTotal != null) {
     return {
@@ -267,6 +328,12 @@ export type OrderToCashAuditListRow = {
   lineBilledValue: number | null;
   lineBilledValueSource: OrderToCashAuditLineBilledValueSource;
   lineBilledValueLabel: string;
+  /** CR/NF do título (rastreabilidade) — não confundir com valor do item. */
+  titleReceivableTotalValue: number | null;
+  titleReceivableOpenValue: number | null;
+  titleNfeNumber: string | null;
+  titleNfeExternalId: number | null;
+  evidenceLevel: "ITEM" | "ORDER_TITLE";
   nfeNumber: string | null;
   nfeIssueDate: string | null;
   nfeHeaderValue: number | null;
@@ -736,6 +803,10 @@ export function mapOrderToCashAuditFactToListRow(
   fact: OrderToCashAuditFactRecord
 ): OrderToCashAuditListRow {
   const billed = resolveOrderToCashAuditLineBilledValue({
+    lineType: fact.lineType,
+    quantityUsedForOrder: fact.quantityUsedForOrder,
+    excessQuantity: fact.excessQuantity,
+    outsideOrderQuantity: fact.outsideOrderQuantity,
     stockDocumentItemTotalValue: fact.stockDocumentItemTotalValue,
     stockDocumentItemQuantity: fact.stockDocumentItemQuantity,
     stockDocumentItemUnitValue: fact.stockDocumentItemUnitValue,
@@ -744,6 +815,7 @@ export function mapOrderToCashAuditFactToListRow(
     nfeItemUnitValue: fact.nfeItemUnitValue,
     allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
   });
+  const isPending = (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
   return {
     id: fact.id,
     runId: fact.runId,
@@ -777,12 +849,17 @@ export function mapOrderToCashAuditFactToListRow(
     lineBilledValue: billed.lineBilledValue,
     lineBilledValueSource: billed.lineBilledValueSource,
     lineBilledValueLabel: billed.lineBilledValueLabel,
-    nfeNumber: fact.nfeNumber,
-    nfeIssueDate: toIso(fact.nfeIssueDate),
-    nfeHeaderValue: fact.nfeHeaderValue,
-    receivableTotalValue: fact.receivableTotalValue,
-    receivableOpenValue: fact.receivableOpenValue,
-    receivableReceivedValue: fact.receivableReceivedValue,
+    titleReceivableTotalValue: null,
+    titleReceivableOpenValue: null,
+    titleNfeNumber: null,
+    titleNfeExternalId: null,
+    evidenceLevel: isPending ? "ORDER_TITLE" : "ITEM",
+    nfeNumber: isPending ? null : fact.nfeNumber,
+    nfeIssueDate: isPending ? null : toIso(fact.nfeIssueDate),
+    nfeHeaderValue: isPending ? null : fact.nfeHeaderValue,
+    receivableTotalValue: isPending ? null : fact.receivableTotalValue,
+    receivableOpenValue: isPending ? null : fact.receivableOpenValue,
+    receivableReceivedValue: isPending ? null : fact.receivableReceivedValue,
     paymentDueDate: toIso(fact.paymentDueDate),
     paymentSettlementDate: toIso(fact.paymentSettlementDate),
     paymentStatus: fact.paymentStatus,
@@ -806,6 +883,71 @@ export function mapOrderToCashAuditFactToListRow(
     hasDocumentWithoutReceivable: Boolean(fact.hasDocumentWithoutReceivable),
     hasOverdueReceivable: Boolean(fact.hasOverdueReceivable),
   };
+}
+
+/**
+ * Propaga CR/NF do título (máximo entre linhas do mesmo pedido com evidência de item)
+ * para todas as linhas, inclusive PENDING.
+ */
+export function enrichOrderToCashAuditListRowsWithTitleEvidence(
+  rows: OrderToCashAuditListRow[]
+): OrderToCashAuditListRow[] {
+  const titleByOrder = new Map<
+    string,
+    {
+      receivableTotalValue: number | null;
+      receivableOpenValue: number | null;
+      nfeNumber: string | null;
+      nfeExternalId: number | null;
+    }
+  >();
+
+  for (const row of rows) {
+    const key = row.orderCode ?? row.id;
+    if (row.lineType === "ORDER_ITEM_PENDING") continue;
+    const cur = titleByOrder.get(key) ?? {
+      receivableTotalValue: null,
+      receivableOpenValue: null,
+      nfeNumber: null,
+      nfeExternalId: null,
+    };
+    if (row.receivableTotalValue != null) {
+      cur.receivableTotalValue = Math.max(
+        cur.receivableTotalValue ?? 0,
+        row.receivableTotalValue
+      );
+    }
+    if (row.receivableOpenValue != null) {
+      cur.receivableOpenValue = Math.max(
+        cur.receivableOpenValue ?? 0,
+        row.receivableOpenValue
+      );
+    }
+    if (!cur.nfeNumber && row.nfeNumber) cur.nfeNumber = row.nfeNumber;
+    titleByOrder.set(key, cur);
+  }
+
+  return rows.map((row) => {
+    const key = row.orderCode ?? row.id;
+    const title = titleByOrder.get(key);
+    const titleReceivableTotalValue =
+      title?.receivableTotalValue ??
+      (row.lineType === "ORDER_ITEM_PENDING" ? null : row.receivableTotalValue);
+    const titleReceivableOpenValue =
+      title?.receivableOpenValue ??
+      (row.lineType === "ORDER_ITEM_PENDING" ? null : row.receivableOpenValue);
+    const titleNfeNumber =
+      title?.nfeNumber ?? (row.lineType === "ORDER_ITEM_PENDING" ? null : row.nfeNumber);
+    return {
+      ...row,
+      titleReceivableTotalValue,
+      titleReceivableOpenValue,
+      titleNfeNumber,
+      titleNfeExternalId: title?.nfeExternalId ?? null,
+      evidenceLevel:
+        row.lineType === "ORDER_ITEM_PENDING" ? "ORDER_TITLE" : row.evidenceLevel,
+    };
+  });
 }
 
 function bump(map: Record<string, number>, key: string | null | undefined): void {
@@ -1003,7 +1145,9 @@ export function buildOrderToCashAuditListPayload(input: {
     requiredSelection,
     run: input.run,
     summary,
-    rows: input.pageRows.map(mapOrderToCashAuditFactToListRow),
+    rows: enrichOrderToCashAuditListRowsWithTitleEvidence(
+      input.pageRows.map(mapOrderToCashAuditFactToListRow)
+    ),
     pagination: {
       page: input.filters.page,
       pageSize: input.filters.pageSize,

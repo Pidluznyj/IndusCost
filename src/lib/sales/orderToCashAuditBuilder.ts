@@ -7,7 +7,6 @@
  */
 
 import {
-  allocateStockQuantityToOrderBalances,
   PORTFOLIO_PRICE_TOLERANCE,
   pricesMismatch,
 } from "../finance/portfolioReconciliationAllocationEngine.js";
@@ -802,8 +801,110 @@ export type StockAllocationResult = {
 };
 
 /**
- * Casa itens do pedido com itens de documento por externalProductId.
- * Nunca atende acima de 100% do saldo do item; excedente fica separado.
+ * Normaliza externalProductId para comparação estável (número truncado).
+ */
+export function normalizeOrderToCashExternalProductId(
+  value: unknown
+): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "object" && value !== null && "toNumber" in value) {
+    try {
+      const n = (value as { toNumber: () => number }).toNumber();
+      if (!Number.isFinite(n)) return null;
+      return Math.trunc(n);
+    } catch {
+      return null;
+    }
+  }
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function normalizeProductCodeKey(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const s = String(value).trim().toUpperCase().replace(/\s+/g, "");
+  return s.length > 0 ? s : null;
+}
+
+function sortBalancesForFifoAllocation(candidates: OrderItemBalance[]): OrderItemBalance[] {
+  return [...candidates].sort((a, b) => {
+    const da = toDate(a.item.expectedDeliveryDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const db = toDate(b.item.expectedDeliveryDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (da !== db) return da - db;
+    const sa = a.item.orderItemSequence ?? Number.MAX_SAFE_INTEGER;
+    const sb = b.item.orderItemSequence ?? Number.MAX_SAFE_INTEGER;
+    if (sa !== sb) return sa - sb;
+    return b.remainingQty - a.remainingQty;
+  });
+}
+
+/**
+ * Candidatos de saldo do pedido para um item de documento.
+ * Prioridade: externalProductId → productId → productCode/sku normalizados.
+ */
+export function findOrderBalancesForStockItem(
+  balances: OrderItemBalance[],
+  stockItem: OrderToCashAuditStockItemInput
+): OrderItemBalance[] {
+  const open = balances.filter((b) => b.remainingQty > ORDER_TO_CASH_PRICE_TOLERANCE);
+  const stockExt = normalizeOrderToCashExternalProductId(stockItem.externalProductId);
+  if (stockExt != null) {
+    const byExt = open.filter(
+      (b) => normalizeOrderToCashExternalProductId(b.item.externalProductId) === stockExt
+    );
+    if (byExt.length > 0) return sortBalancesForFifoAllocation(byExt);
+  }
+
+  const stockProductId =
+    "productId" in stockItem && typeof (stockItem as { productId?: unknown }).productId === "string"
+      ? String((stockItem as { productId?: string }).productId).trim()
+      : "";
+  if (stockProductId) {
+    const byProductId = open.filter(
+      (b) => (b.item.productId ?? "").trim() === stockProductId
+    );
+    if (byProductId.length > 0) return sortBalancesForFifoAllocation(byProductId);
+  }
+
+  const stockCode = normalizeProductCodeKey(stockItem.productCode);
+  if (stockCode) {
+    const byCode = open.filter((b) => {
+      const code = normalizeProductCodeKey(b.item.productCode ?? b.item.sku);
+      return code != null && code === stockCode;
+    });
+    if (byCode.length > 0) return sortBalancesForFifoAllocation(byCode);
+  }
+
+  return [];
+}
+
+function orderEverHadProduct(
+  orderItems: OrderToCashAuditOrderItemInput[],
+  stockItem: OrderToCashAuditStockItemInput
+): OrderToCashAuditOrderItemInput | null {
+  const stockExt = normalizeOrderToCashExternalProductId(stockItem.externalProductId);
+  if (stockExt != null) {
+    const hit = orderItems.find(
+      (i) => normalizeOrderToCashExternalProductId(i.externalProductId) === stockExt
+    );
+    if (hit) return hit;
+  }
+  const stockCode = normalizeProductCodeKey(stockItem.productCode);
+  if (stockCode) {
+    const hit = orderItems.find(
+      (i) => normalizeProductCodeKey(i.productCode ?? i.sku) === stockCode
+    );
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Casa itens do pedido com itens de documento.
+ * Matching: externalProductId → productId → productCode/sku.
+ * Com múltiplos saldos do mesmo produto: FIFO (entrega → sequence → saldo).
+ * DOCUMENT_EXTRA_ITEM só quando não há saldo compatível no pedido.
  */
 export function linkOrderItemsToStockDocumentItems(
   orderItems: OrderToCashAuditOrderItemInput[],
@@ -839,55 +940,21 @@ export function linkOrderItemsToStockDocumentItems(
     for (const stockItem of docItems) {
       const qty = toFinite(stockItem.quantity);
       if (qty <= 0) continue;
-      const productId = stockItem.externalProductId;
-      if (productId == null) {
-        extraItems.push({
-          stockItem,
-          document: doc,
-          outsideOrderQuantity: qty,
-        });
-        continue;
-      }
 
-      const engineBalances = balances.map((b) => ({
-        item: {
-          id: b.item.id,
-          externalProductId: b.item.externalProductId ?? null,
-          quantity: b.item.quantity,
-          unitPrice: b.item.unitPrice,
-        },
-        remainingQty: b.remainingQty,
-      }));
-
-      const result = allocateStockQuantityToOrderBalances(
-        engineBalances,
-        productId,
-        qty
-      );
-
-      if (!result.ok) {
-        if (result.reason === "NO_MATCH") {
-          // Sem saldo restante no pedido para este produto → excedente ou fora
-          const everInOrder = orderItems.some((i) => i.externalProductId === productId);
-          if (everInOrder) {
-            allocations.push({
-              item: orderItems.find((i) => i.externalProductId === productId)!,
-              stockItem,
-              document: doc,
-              quantityUsed: 0,
-              remainingBefore: 0,
-              remainingAfter: 0,
-              excessQuantity: qty,
-            });
-          } else {
-            extraItems.push({
-              stockItem,
-              document: doc,
-              outsideOrderQuantity: qty,
-            });
-          }
+      const candidates = findOrderBalancesForStockItem(balances, stockItem);
+      if (candidates.length === 0) {
+        const ever = orderEverHadProduct(orderItems, stockItem);
+        if (ever) {
+          allocations.push({
+            item: ever,
+            stockItem,
+            document: doc,
+            quantityUsed: 0,
+            remainingBefore: 0,
+            remainingAfter: 0,
+            excessQuantity: qty,
+          });
         } else {
-          // Ambíguo: não inventa rateio — marca como extra com warning path
           extraItems.push({
             stockItem,
             document: doc,
@@ -897,13 +964,17 @@ export function linkOrderItemsToStockDocumentItems(
         continue;
       }
 
-      for (const alloc of result.allocations) {
-        const balance = balances.find((b) => b.item.id === alloc.balance.item.id);
-        if (!balance) continue;
+      let remainingStock = qty;
+      let lastTouched: OrderItemBalance | null = null;
+      for (const balance of candidates) {
+        if (remainingStock <= ORDER_TO_CASH_PRICE_TOLERANCE) break;
         const remainingBefore = balance.remainingQty;
-        const used = Math.min(alloc.qty, remainingBefore);
-        const excess = Math.max(0, qty - used);
+        if (remainingBefore <= ORDER_TO_CASH_PRICE_TOLERANCE) continue;
+        const used = Math.min(remainingStock, remainingBefore);
+        if (used <= ORDER_TO_CASH_PRICE_TOLERANCE) continue;
         balance.remainingQty = round6(remainingBefore - used);
+        remainingStock = round6(remainingStock - used);
+        lastTouched = balance;
         allocations.push({
           item: balance.item,
           stockItem,
@@ -911,7 +982,20 @@ export function linkOrderItemsToStockDocumentItems(
           quantityUsed: used,
           remainingBefore,
           remainingAfter: balance.remainingQty,
-          excessQuantity: excess,
+          excessQuantity: 0,
+        });
+      }
+
+      if (remainingStock > ORDER_TO_CASH_PRICE_TOLERANCE) {
+        const anchor = lastTouched?.item ?? candidates[0]!.item;
+        allocations.push({
+          item: anchor,
+          stockItem,
+          document: doc,
+          quantityUsed: 0,
+          remainingBefore: lastTouched?.remainingQty ?? 0,
+          remainingAfter: lastTouched?.remainingQty ?? 0,
+          excessQuantity: remainingStock,
         });
       }
     }
@@ -1927,24 +2011,105 @@ export function buildOrderToCashAuditRows(
     }
 
     // Itens do pedido sem (ou com saldo residual) atendimento → ORDER_ITEM_PENDING
+    // Evidência de item: sem NF/CR/documento. Título financeiro fica só no DTO title*.
     for (const balance of allocation.balances) {
       if (balance.remainingQty <= ORDER_TO_CASH_PRICE_TOLERANCE) continue;
       const wasPartiallyAllocated = allocation.allocations.some(
         (a) => a.item.id === balance.item.id && a.quantityUsed > 0
       );
-      // Se parcialmente alocado, ainda gera pending pelo residual (grão item)
       const row = baseRow({
         auditKey: `${order.id}:${balance.item.id}:pending`,
         lineType: "ORDER_ITEM_PENDING",
       });
       applyOrderIdentity(row, order, seller, plan);
       applyItemIdentity(row, balance.item, orderExpected);
-      applyStages(row);
-      if (linkedNfes[0]) applyNfeToRow(row, linkedNfes[0].link.nfeExternalId);
+
+      // Estágios da LINHA pendente — não herdar CR/NF do título como se fossem do item.
+      row.runId = opts.runId;
+      row.commercialStage = commercialStage;
+      row.operationalStage = "NOT_FULFILLED";
+      row.fiscalStage = "NO_NFE";
+      row.financialStage = "NO_CR";
+      row.cashStage = plan.plannedReceivableValue != null && plan.plannedReceivableValue > 0
+        ? "CASH_EXPECTED"
+        : "NO_CASH";
+      row.orderToCashStage = classifyOrderToCashStage({
+        canceled: isCanceledStatus(order.status),
+        commercialStage,
+        operationalStage: "NOT_FULFILLED",
+        fiscalStage: "NO_NFE",
+        financialStage: "NO_CR",
+        cashStage: row.cashStage ?? "NO_CASH",
+        expectedDelivery: expectedForStage,
+        today: opts.today,
+        diasProximoEntrega: opts.diasProximoEntrega,
+        diasRecemVencido: opts.diasRecemVencido,
+        diasBloqueio: opts.diasBloqueio,
+        hasEvidence: false,
+      });
+      row.temperature = classifyTemperature(row.orderToCashStage ?? "SEM_EVIDENCIA");
+      row.confidenceScore = confidence.score;
+      row.confidenceLabel = confidence.label;
+      row.responsibleArea = action.responsibleArea;
+      row.recommendedAction = action.action;
+      Object.assign(row, alertBundle.flags);
+      row.hasMissingStockDocument = true;
+      row.hasPartialFulfillment = wasPartiallyAllocated;
+      row.hasFullFulfillment = false;
+      row.hasExcessQuantity = false;
+      row.hasProductOutsideOrder = false;
+      row.hasPriceMismatch = false;
+      row.hasDocumentWithoutReceivable = false;
+      row.hasOverdueReceivable = false;
+      row.alertsJson = [...alertBundle.alerts];
+      row.blockingReasonsJson = [...alertBundle.blocking];
+      row.paymentStatus = plan.hasPaymentCondition ? "PLANNED_ONLY" : "PLANNED_ONLY";
+      row.paymentScheduledDate = plan.plannedFirstDueDate;
+      row.paymentDueDate = plan.plannedFirstDueDate;
+      row.paymentExpectedValue = plan.plannedReceivableValue ?? orderValue;
+      row.paymentReceivedValue = null;
+      row.paymentOpenValue = null;
+      row.paymentSettlementDate = null;
+      row.paymentReceivedAt = null;
+      row.paymentDelayDays = null;
+
+      // Explicitamente sem evidência de item (NF/CR/doc).
+      row.stockDocumentId = null;
+      row.stockDocumentExternalId = null;
+      row.stockDocumentItemId = null;
+      row.stockDocumentItemQuantity = null;
+      row.stockDocumentItemUnitValue = null;
+      row.stockDocumentItemTotalValue = null;
+      row.nfeId = null;
+      row.nfeExternalId = null;
+      row.nfeNumber = null;
+      row.nfeSerie = null;
+      row.nfeKey = null;
+      row.nfeHeaderValue = null;
+      row.nfeIssueDate = null;
+      row.nfeProcessedAt = null;
+      row.nfeLinkedBy = null;
+      row.nfeItemsAvailable = false;
+      row.nfeItemsSource = null;
+      row.nfeItemQuantity = null;
+      row.nfeItemUnitValue = null;
+      row.nfeItemTotalValue = null;
+      row.nfeItemMatchedOrderItem = false;
+      row.receivableIdsJson = null;
+      row.receivableCount = null;
+      row.receivableTotalValue = null;
+      row.receivableOpenValue = null;
+      row.receivableReceivedValue = null;
+      row.receivableDueDatesJson = null;
+      row.receivableSettlementDatesJson = null;
+      row.receivableStatus = null;
+      row.receivableSource = null;
+
       row.quantityUsedForOrder = 0;
       row.quantityRemainingBeforeAllocation = balance.remainingQty;
       row.quantityRemainingAfterAllocation = balance.remainingQty;
       row.allocatedValueByOrderPrice = 0;
+      row.allocatedValueByDocumentPrice = 0;
       if (wasPartiallyAllocated) {
         row.hasPartialFulfillment = true;
       }

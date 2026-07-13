@@ -148,8 +148,6 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       return row.lineType ?? "—";
     case "stockDocumentExternalId":
       return row.stockDocumentExternalId ?? "—";
-    case "nfeNumber":
-      return row.nfeNumber ?? "—";
     case "orderItemTotalValue":
       return money(row.orderItemTotalValue);
     case "allocatedValueByOrderPrice":
@@ -157,7 +155,7 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
     case "lineBilledValue":
       return row.lineBilledValue == null ? (
         <span className="text-muted-foreground" title={row.lineBilledValueLabel}>
-          Não identificado
+          {row.lineBilledValueLabel || "Não identificado"}
         </span>
       ) : (
         money(row.lineBilledValue)
@@ -166,8 +164,9 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       return (
         <span
           className={cn(
-            "inline-flex max-w-[140px] truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold",
-            row.lineBilledValueSource === "NOT_IDENTIFIED"
+            "inline-flex max-w-[160px] truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+            row.lineBilledValueSource === "NOT_IDENTIFIED" ||
+              row.lineBilledValueSource === "NOT_BILLED"
               ? "border-amber-200 bg-amber-50 text-amber-900"
               : "border-sky-200 bg-sky-50 text-sky-900"
           )}
@@ -177,7 +176,23 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
         </span>
       );
     case "receivableTotalValue":
-      return money(row.receivableTotalValue);
+      return money(row.titleReceivableTotalValue ?? row.receivableTotalValue);
+    case "nfeNumber":
+      if (row.lineType === "ORDER_ITEM_PENDING") {
+        return (
+          <span
+            className="text-muted-foreground"
+            title={
+              row.titleNfeNumber
+                ? `NF do título (não do item): ${row.titleNfeNumber}`
+                : "Sem NF no item"
+            }
+          >
+            —
+          </span>
+        );
+      }
+      return row.nfeNumber ?? "—";
     case "receivableOpenValue":
       return money(row.receivableOpenValue);
     case "receivableReceivedValue":

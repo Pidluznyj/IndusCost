@@ -463,39 +463,36 @@ describe("orderToCashAuditApi", () => {
 
   it("lineBilledValue prioriza item do documento e não usa CR total", () => {
     const fromStock = resolveOrderToCashAuditLineBilledValue({
-      stockDocumentItemTotalValue: 1836.12,
-      nfeItemTotalValue: 9999,
+      lineType: "ORDER_ITEM_ALLOCATED",
+      quantityUsedForOrder: 10,
+      stockDocumentItemUnitValue: 3.35,
+      stockDocumentItemTotalValue: 99999,
       allocatedValueByDocumentPrice: 50,
     });
-    assert.equal(fromStock.lineBilledValue, 1836.12);
+    assert.equal(fromStock.lineBilledValue, 33.5);
     assert.equal(fromStock.lineBilledValueSource, "STOCK_DOCUMENT_ITEM");
 
-    const fromQty = resolveOrderToCashAuditLineBilledValue({
-      stockDocumentItemQuantity: 10,
-      stockDocumentItemUnitValue: 12.5,
-      nfeItemTotalValue: 1,
+    const surplus = resolveOrderToCashAuditLineBilledValue({
+      lineType: "QUANTITY_SURPLUS",
+      excessQuantity: 1800,
+      stockDocumentItemUnitValue: 2.89,
     });
-    assert.equal(fromQty.lineBilledValue, 125);
-    assert.equal(fromQty.lineBilledValueSource, "STOCK_DOCUMENT_ITEM");
+    assert.equal(surplus.lineBilledValue, 1800 * 2.89);
+    assert.equal(surplus.lineBilledValueSource, "STOCK_DOCUMENT_ITEM");
 
-    const fromNfe = resolveOrderToCashAuditLineBilledValue({
-      nfeItemQuantity: 2,
-      nfeItemUnitValue: 100,
-      allocatedValueByDocumentPrice: 40,
+    const extra = resolveOrderToCashAuditLineBilledValue({
+      lineType: "DOCUMENT_EXTRA_ITEM",
+      outsideOrderQuantity: 5,
+      stockDocumentItemUnitValue: 10,
     });
-    assert.equal(fromNfe.lineBilledValue, 200);
-    assert.equal(fromNfe.lineBilledValueSource, "NFE_ITEM");
+    assert.equal(extra.lineBilledValue, 50);
 
-    const fromAlloc = resolveOrderToCashAuditLineBilledValue({
-      allocatedValueByDocumentPrice: 77,
+    const pending = resolveOrderToCashAuditLineBilledValue({
+      lineType: "ORDER_ITEM_PENDING",
     });
-    assert.equal(fromAlloc.lineBilledValue, 77);
-    assert.equal(fromAlloc.lineBilledValueSource, "ALLOCATED_DOCUMENT_PRICE");
-
-    const pending = resolveOrderToCashAuditLineBilledValue({});
     assert.equal(pending.lineBilledValue, null);
-    assert.equal(pending.lineBilledValueSource, "NOT_IDENTIFIED");
-    assert.equal(pending.lineBilledValueLabel, "Não identificado");
+    assert.equal(pending.lineBilledValueSource, "NOT_BILLED");
+    assert.equal(pending.lineBilledValueLabel, "Não faturado nesta NF");
 
     const row = mapOrderToCashAuditFactToListRow(
       fact({
@@ -506,11 +503,13 @@ describe("orderToCashAuditApi", () => {
         stockDocumentItemTotalValue: null,
         allocatedValueByDocumentPrice: null,
         receivableTotalValue: 183_612,
+        nfeNumber: "7228",
       })
     );
     assert.equal(row.lineBilledValue, null);
-    assert.equal(row.lineBilledValueSource, "NOT_IDENTIFIED");
-    assert.equal(row.receivableTotalValue, 183_612);
-    assert.notEqual(row.lineBilledValue, row.receivableTotalValue);
+    assert.equal(row.lineBilledValueSource, "NOT_BILLED");
+    assert.equal(row.receivableTotalValue, null);
+    assert.equal(row.nfeNumber, null);
+    assert.equal(row.evidenceLevel, "ORDER_TITLE");
   });
 });

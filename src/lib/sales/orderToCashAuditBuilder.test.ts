@@ -526,4 +526,222 @@ describe("orderToCashAuditBuilder", () => {
     });
     assert.ok(alerts.alerts.includes("ENTREGA_PREVISTA_VENCIDA_SEM_DOCUMENTO"));
   });
+
+  it("PD 02534: matching por externalProductId + PENDING sem herdar NF/CR", () => {
+    const result = buildOrderToCashAuditRows({
+      orders: [
+        order({
+          id: "ord-pd02534",
+          orderCode: "PD 02534",
+          externalSalesOrderId: 2530,
+          totalNetValue: 200_000,
+          customerName: "Esmaltec S/A",
+          externalCustomerId: 233,
+        }),
+      ],
+      orderItems: [
+        item({
+          id: "oi-390",
+          salesOrderId: "ord-pd02534",
+          externalProductId: 390,
+          productCode: "612.02AA",
+          sku: "612.02AA",
+          quantity: 10_000,
+          unitPrice: 3.35,
+          totalNetValue: 33_500,
+          orderItemSequence: 1,
+        }),
+        item({
+          id: "oi-391",
+          salesOrderId: "ord-pd02534",
+          externalProductId: 391,
+          productCode: "612.03AA",
+          sku: "612.03AA",
+          quantity: 12_200,
+          unitPrice: 3.35,
+          totalNetValue: 40_870,
+          orderItemSequence: 2,
+        }),
+        item({
+          id: "oi-423",
+          salesOrderId: "ord-pd02534",
+          externalProductId: 423,
+          productCode: "619.24AA",
+          sku: "619.24AA",
+          quantity: 27_800,
+          unitPrice: 2.89,
+          totalNetValue: 80_342,
+          orderItemSequence: 3,
+        }),
+        item({
+          id: "oi-432",
+          salesOrderId: "ord-pd02534",
+          externalProductId: 432,
+          productCode: "619.21AA",
+          sku: "619.21AA",
+          quantity: 10_000,
+          unitPrice: 2.89,
+          totalNetValue: 28_900,
+          orderItemSequence: 4,
+        }),
+        item({
+          id: "oi-1004",
+          salesOrderId: "ord-pd02534",
+          externalProductId: 1004,
+          productCode: "309.86AA",
+          sku: "309.86AA",
+          quantity: 1_000,
+          unitPrice: 10,
+          totalNetValue: 10_000,
+          orderItemSequence: 5,
+        }),
+      ],
+      nfeLinks: [nfeLink({ salesOrderId: "ord-pd02534", nfeExternalId: 7420, nfeNumber: "7228" })],
+      nfes: [nfe({ id: "nfe-7228", externalId: 7420, numero: "7228", valorLiquido: 183_612 })],
+      stockDocuments: [
+        stockDoc({ id: "doc-8457", externalId: 8457, idNfe: 7420 }),
+      ],
+      stockDocumentItems: [
+        stockItem({
+          id: "si-390",
+          stockDocumentId: "doc-8457",
+          externalProductId: 390,
+          quantity: 10_000,
+          unitValue: 3.35,
+        }),
+        stockItem({
+          id: "si-391",
+          stockDocumentId: "doc-8457",
+          externalProductId: 391,
+          quantity: 12_200,
+          unitValue: 3.35,
+        }),
+        stockItem({
+          id: "si-423a",
+          stockDocumentId: "doc-8457",
+          externalProductId: 423,
+          quantity: 10_000,
+          unitValue: 2.89,
+        }),
+        stockItem({
+          id: "si-423b",
+          stockDocumentId: "doc-8457",
+          externalProductId: 423,
+          quantity: 1_800,
+          unitValue: 2.89,
+        }),
+        stockItem({
+          id: "si-423c",
+          stockDocumentId: "doc-8457",
+          externalProductId: 423,
+          quantity: 16_000,
+          unitValue: 2.89,
+        }),
+        stockItem({
+          id: "si-432",
+          stockDocumentId: "doc-8457",
+          externalProductId: 432,
+          quantity: 10_000,
+          unitValue: 2.89,
+        }),
+      ],
+      receivables: [
+        receivable({
+          externalId: 1,
+          sourceInvoiceId: 7420,
+          amountReceivable: 183_612,
+          amountReceived: 0,
+          balanceReceivable: 183_612,
+        }),
+      ],
+      options: { today: TODAY },
+    });
+
+    const byProduct = (code: string) =>
+      result.rows.filter((r) => r.productCode === code || r.sku === code);
+
+    const pending1004 = byProduct("309.86AA");
+    assert.equal(pending1004.length, 1);
+    assert.equal(pending1004[0]!.lineType, "ORDER_ITEM_PENDING");
+    assert.equal(pending1004[0]!.nfeNumber, null);
+    assert.equal(pending1004[0]!.nfeExternalId, null);
+    assert.equal(pending1004[0]!.receivableTotalValue, null);
+    assert.equal(pending1004[0]!.stockDocumentExternalId, null);
+    assert.equal(pending1004[0]!.operationalStage, "NOT_FULFILLED");
+
+    const alloc391 = byProduct("612.03AA").filter((r) => r.lineType === "ORDER_ITEM_ALLOCATED");
+    assert.equal(alloc391.length, 1);
+    assert.equal(alloc391[0]!.stockDocumentItemExternalProductId, 391);
+    assert.equal(alloc391[0]!.quantityUsedForOrder, 12_200);
+    assert.equal(alloc391[0]!.allocatedValueByDocumentPrice, 12_200 * 3.35);
+
+    const alloc390 = byProduct("612.02AA").filter((r) => r.lineType === "ORDER_ITEM_ALLOCATED");
+    assert.equal(alloc390.length, 1);
+    assert.equal(alloc390[0]!.quantityUsedForOrder, 10_000);
+    assert.equal(alloc390[0]!.allocatedValueByDocumentPrice, 10_000 * 3.35);
+
+    const alloc432 = byProduct("619.21AA").filter((r) => r.lineType === "ORDER_ITEM_ALLOCATED");
+    assert.equal(alloc432.length, 1);
+    assert.equal(alloc432[0]!.quantityUsedForOrder, 10_000);
+    assert.equal(alloc432[0]!.allocatedValueByDocumentPrice, 10_000 * 2.89);
+
+    const alloc423 = byProduct("619.24AA").filter((r) => r.lineType === "ORDER_ITEM_ALLOCATED");
+    assert.ok(alloc423.length >= 1);
+    const used423 = alloc423.reduce((s, r) => s + (r.quantityUsedForOrder ?? 0), 0);
+    assert.equal(used423, 27_800);
+
+    const extras = result.rows.filter((r) => r.lineType === "DOCUMENT_EXTRA_ITEM");
+    assert.equal(
+      extras.filter((r) => [390, 391, 432, 423].includes(r.stockDocumentItemExternalProductId ?? -1))
+        .length,
+      0,
+      "produtos do pedido não podem virar DOCUMENT_EXTRA_ITEM"
+    );
+
+    // Ambíguo (2 linhas mesmo externalProductId) deve FIFO, não EXTRA
+    const ambig = buildOrderToCashAuditRows({
+      orders: [order({ id: "ord-amb", orderCode: "PD AMB", totalNetValue: 2000 })],
+      orderItems: [
+        item({
+          id: "a1",
+          salesOrderId: "ord-amb",
+          externalProductId: 500,
+          quantity: 5,
+          unitPrice: 100,
+          orderItemSequence: 1,
+        }),
+        item({
+          id: "a2",
+          salesOrderId: "ord-amb",
+          externalProductId: 500,
+          quantity: 5,
+          unitPrice: 100,
+          orderItemSequence: 2,
+        }),
+      ],
+      nfeLinks: [nfeLink({ salesOrderId: "ord-amb", nfeExternalId: 9001, nfeNumber: "1" })],
+      nfes: [nfe({ id: "nfe-amb", externalId: 9001, numero: "1", valorLiquido: 800 })],
+      stockDocuments: [stockDoc({ id: "d1", externalId: 1, idNfe: 9001 })],
+      stockDocumentItems: [
+        stockItem({
+          id: "s1",
+          stockDocumentId: "d1",
+          externalProductId: 500,
+          quantity: 8,
+          unitValue: 100,
+        }),
+      ],
+      options: { today: TODAY },
+    });
+    assert.equal(
+      ambig.rows.filter((r) => r.lineType === "DOCUMENT_EXTRA_ITEM").length,
+      0
+    );
+    const allocatedAmbig = ambig.rows.filter((r) => r.lineType === "ORDER_ITEM_ALLOCATED");
+    assert.equal(allocatedAmbig.length, 2);
+    assert.equal(
+      allocatedAmbig.reduce((s, r) => s + (r.quantityUsedForOrder ?? 0), 0),
+      8
+    );
+  });
 });
