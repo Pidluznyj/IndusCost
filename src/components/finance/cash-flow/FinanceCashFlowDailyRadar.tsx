@@ -32,6 +32,7 @@ import {
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { FinanceCashFlowDailyRadarExportButtons } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadarExportButtons";
+import { FinanceCashFlowCostCentersSection } from "@/src/components/finance/cash-flow/FinanceCashFlowCostCentersSection";
 import "./finance-cash-flow-daily-radar-payables-grid.css";
 
 type PayableSortKey = "supplier" | "company" | "amount" | "status" | "operationalDate";
@@ -725,6 +726,20 @@ export function FinanceCashFlowDailyRadar() {
                       setPageSize(size);
                       setPage(1);
                     }}
+                  />
+                  <FinanceCashFlowCostCentersSection
+                    visible
+                    range={
+                      isCustomDetail
+                        ? DAILY_RADAR_CUSTOM_RANGE_KEY
+                        : (detail.rangeKey as DailyRadarRangeKey)
+                    }
+                    customStartDate={
+                      isCustomDetail ? appliedCustomStart : null
+                    }
+                    customEndDate={isCustomDetail ? appliedCustomEnd : null}
+                    day={detail.date ?? null}
+                    search={search}
                   />
                 </div>
               )}

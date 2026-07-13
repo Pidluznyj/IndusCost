@@ -29,10 +29,18 @@ import {
   buildFinanceCashFlowDailyRadar,
   createDailyRadarDashboardFilters,
   DAILY_RADAR_CUSTOM_RANGE_KEY,
+  DAILY_RADAR_EXPORT_PAGE_SIZE,
   parseDailyRadarQuery,
   filterDailyRadarPortfolioRows,
   validateDailyRadarCustomPeriod,
 } from "@/src/lib/financeCashFlowDailyRadar.js";
+import {
+  buildCashFlowCostCenterSummary,
+  extractPayableExternalId,
+  filterCashFlowCostCenterTitles,
+  type CashFlowCostCenterAllocationInput,
+  type CashFlowCostCenterMetaInput,
+} from "@/src/lib/financeCashFlowDailyRadarCostCenters.js";
 import {
   buildFinanceCashFlowDailyRadarExportPayload,
   FinanceCashFlowDailyRadarExportError,
@@ -269,6 +277,255 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         }
         console.error("GET /api/finance/cash-flow/annual-comparison", error);
         res.status(500).json({ error: "Erro ao carregar comparativo anual de fluxo de caixa." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/cash-flow/daily-radar/cost-centers",
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const rawQuery = parseDailyRadarQuery(req.query as Record<string, unknown>);
+        if (
+          rawQuery.customStartDate &&
+          rawQuery.customEndDate &&
+          rawQuery.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY
+        ) {
+          const validation = validateDailyRadarCustomPeriod(
+            rawQuery.customStartDate,
+            rawQuery.customEndDate
+          );
+          if (!validation.ok) {
+            return res.status(400).json({ error: validation.error });
+          }
+        }
+
+        // Sempre trazer todas as linhas em escopo — cards agregam, não paginam.
+        const scopedQuery = {
+          ...rawQuery,
+          page: 1,
+          pageSize: DAILY_RADAR_EXPORT_PAGE_SIZE,
+          exportAll: true,
+        } as typeof rawQuery;
+
+        const referenceDate = new Date();
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+          await loadDailyRadarPortfolioRows(referenceDate);
+        const portfolio = filterDailyRadarPortfolioRows(
+          arRows,
+          apRows,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff
+        );
+
+        const radar = buildFinanceCashFlowDailyRadar(
+          portfolio.arRows,
+          portfolio.apRows,
+          scopedQuery,
+          referenceDate
+        );
+        const detail = radar.selectedDetail;
+
+        // Sem detalhe = sem escopo (usuário ainda não clicou em faixa/dia/período).
+        if (!detail) {
+          return res.json({
+            ok: true,
+            items: [],
+            totalAmount: 0,
+            totalTitles: 0,
+            totalTitlesWithAllocation: 0,
+            unclassifiedAmount: 0,
+            unclassifiedTitles: 0,
+            scope: {
+              level: null,
+              rangeKey: rawQuery.rangeKey ?? null,
+              rangeLabel: null,
+              dateFrom: null,
+              dateTo: null,
+              day: null,
+              search: rawQuery.search?.trim() || null,
+            },
+          });
+        }
+
+        const payables = detail.payables.rows;
+        const externalIds = [
+          ...new Set(
+            payables
+              .map((row) => extractPayableExternalId(row.id))
+              .filter((n): n is number => n != null)
+          ),
+        ];
+
+        const [allocRows, costCenterRows] = await Promise.all([
+          externalIds.length > 0
+            ? prisma.accountsPayableCostCenterAllocation.findMany({
+                where: { accountsPayableId: { in: externalIds } },
+                select: {
+                  accountsPayableId: true,
+                  costCenterId: true,
+                  amount: true,
+                  percentage: true,
+                },
+              })
+            : Promise.resolve([]),
+          prisma.financialCostCenter.findMany({
+            select: { id: true, code: true, name: true, status: true },
+          }),
+        ]);
+
+        const allocations: CashFlowCostCenterAllocationInput[] = allocRows.map((r) => ({
+          accountsPayableExternalId: r.accountsPayableId,
+          costCenterId: r.costCenterId,
+          amount:
+            r.amount == null
+              ? null
+              : Number((r.amount as unknown as { toNumber: () => number }).toNumber()),
+          percentage: Number(
+            (r.percentage as unknown as { toNumber: () => number }).toNumber()
+          ),
+        }));
+        const costCenters: CashFlowCostCenterMetaInput[] = costCenterRows.map((cc) => ({
+          id: cc.id,
+          code: cc.code,
+          name: cc.name,
+          status: cc.status ?? null,
+        }));
+
+        const period = radar.customRange?.dateFrom
+          ? {
+              dateFrom: radar.customRange.dateFrom ?? null,
+              dateTo: radar.customRange.dateTo ?? null,
+            }
+          : { dateFrom: null, dateTo: null };
+
+        const level =
+          detail.level === "day"
+            ? "day"
+            : detail.rangeKey === DAILY_RADAR_CUSTOM_RANGE_KEY
+              ? "custom"
+              : detail.level === "range"
+                ? "range"
+                : null;
+
+        const summary = buildCashFlowCostCenterSummary({
+          payables,
+          allocations,
+          costCenters,
+          scope: {
+            level,
+            rangeKey: detail.rangeKey ?? null,
+            rangeLabel: detail.rangeLabel ?? null,
+            dateFrom: period.dateFrom,
+            dateTo: period.dateTo,
+            day: detail.date ?? null,
+            search: rawQuery.search?.trim() || null,
+          },
+        });
+
+        return res.json({ ok: true, ...summary });
+      } catch (error) {
+        console.error("GET /api/finance/cash-flow/daily-radar/cost-centers", error);
+        return res
+          .status(500)
+          .json({ error: "Não foi possível carregar os centros de custo do período." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/cash-flow/daily-radar/cost-centers/titles",
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const rawQuery = parseDailyRadarQuery(req.query as Record<string, unknown>);
+        const costCenterId = typeof req.query.costCenterId === "string"
+          ? req.query.costCenterId.trim()
+          : "";
+        if (!costCenterId) {
+          return res.status(400).json({ error: "costCenterId é obrigatório." });
+        }
+
+        const scopedQuery = {
+          ...rawQuery,
+          page: 1,
+          pageSize: DAILY_RADAR_EXPORT_PAGE_SIZE,
+          exportAll: true,
+        } as typeof rawQuery;
+
+        const referenceDate = new Date();
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+          await loadDailyRadarPortfolioRows(referenceDate);
+        const portfolio = filterDailyRadarPortfolioRows(
+          arRows,
+          apRows,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff
+        );
+        const radar = buildFinanceCashFlowDailyRadar(
+          portfolio.arRows,
+          portfolio.apRows,
+          scopedQuery,
+          referenceDate
+        );
+        const detail = radar.selectedDetail;
+        if (!detail) {
+          return res.json({ ok: true, titles: [], costCenterId });
+        }
+
+        const externalIds = [
+          ...new Set(
+            detail.payables.rows
+              .map((row) => extractPayableExternalId(row.id))
+              .filter((n): n is number => n != null)
+          ),
+        ];
+
+        const allocRows =
+          externalIds.length > 0
+            ? await prisma.accountsPayableCostCenterAllocation.findMany({
+                where: { accountsPayableId: { in: externalIds } },
+                select: {
+                  accountsPayableId: true,
+                  costCenterId: true,
+                  amount: true,
+                  percentage: true,
+                },
+              })
+            : [];
+
+        const allocations: CashFlowCostCenterAllocationInput[] = allocRows.map((r) => ({
+          accountsPayableExternalId: r.accountsPayableId,
+          costCenterId: r.costCenterId,
+          amount:
+            r.amount == null
+              ? null
+              : Number((r.amount as unknown as { toNumber: () => number }).toNumber()),
+          percentage: Number(
+            (r.percentage as unknown as { toNumber: () => number }).toNumber()
+          ),
+        }));
+
+        const titles = filterCashFlowCostCenterTitles({
+          payables: detail.payables.rows,
+          allocations,
+          costCenterId,
+        });
+
+        return res.json({ ok: true, costCenterId, titles });
+      } catch (error) {
+        console.error(
+          "GET /api/finance/cash-flow/daily-radar/cost-centers/titles",
+          error
+        );
+        return res
+          .status(500)
+          .json({ error: "Não foi possível carregar os títulos do centro de custo." });
       }
     }
   );
