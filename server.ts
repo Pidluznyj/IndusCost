@@ -12377,9 +12377,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     "/api/crm/management-dashboard",
     requireAppAuth,
     requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL, "view"),
-    async (_req, res) => {
+    async (req, res) => {
     try {
-      const payload = await buildCrmManagementDashboardResponse();
+      const dateFrom =
+        typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : null;
+      const dateTo =
+        typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : null;
+      const payload = await buildCrmManagementDashboardResponse({ dateFrom, dateTo });
       res.json(payload);
     } catch (error) {
       console.error("GET /api/crm/management-dashboard", error);

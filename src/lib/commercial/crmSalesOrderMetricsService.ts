@@ -74,6 +74,8 @@ export type CrmSalesOrderMetricsResult = {
   leadingProduct: CrmMetricsLeadingProduct | null;
   topCustomers: CrmMetricsTopRow[];
   topProducts: CrmMetricsTopRow[];
+  /** Ranking por Responsável Comercial do Cliente (eixo de carteira). */
+  topCommercialOwners: CrmMetricsTopRow[];
   ordersWithoutNomusSeller: number;
   customersWithoutCommercialResponsible: number;
   ordersWithResponsibleDifferentFromOrderSeller: number;
@@ -387,6 +389,28 @@ function buildTopCustomers(orders: readonly CrmMetricsOrderInput[]): CrmMetricsT
     .slice(0, 10);
 }
 
+function buildTopCommercialOwners(orders: readonly CrmMetricsOrderInput[]): CrmMetricsTopRow[] {
+  const byOwner = new Map<string, { orders: number; value: number }>();
+  for (const order of orders) {
+    if (isCancelledSalesOrderStatus(order.status) || order.status === "ERROR") continue;
+    const owner = resolveActiveCommercialOwner(order);
+    const key = owner.bucketLabel;
+    const cur = byOwner.get(key) ?? { orders: 0, value: 0 };
+    cur.orders += 1;
+    cur.value += toFiniteNumber(order.totalNetValue);
+    byOwner.set(key, cur);
+  }
+  return [...byOwner.entries()]
+    .map(([key, v]) => ({
+      key,
+      label: key,
+      orders: v.orders,
+      value: roundMoney(v.value),
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+}
+
 /**
  * Calcula métricas CRM a partir de pedidos já carregados.
  * Reutiliza `resolveOfficialScopedOrderMetrics` (motor oficial Pedidos).
@@ -483,6 +507,7 @@ export function buildCrmSalesOrderMetrics(args: {
 
   const { leading, topProducts } = buildLeadingProduct(metricsUniverse);
   const topCustomers = buildTopCustomers(metricsUniverse);
+  const topCommercialOwners = buildTopCommercialOwners(metricsUniverse);
 
   return {
     totalOrders: official.filteredOrders,
@@ -497,6 +522,7 @@ export function buildCrmSalesOrderMetrics(args: {
     leadingProduct: leading,
     topCustomers,
     topProducts,
+    topCommercialOwners,
     ordersWithoutNomusSeller,
     customersWithoutCommercialResponsible: customersWithoutOwner.size,
     ordersWithResponsibleDifferentFromOrderSeller,

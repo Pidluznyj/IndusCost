@@ -1,8 +1,19 @@
-/** Tipos do GET /api/crm/management-dashboard (Fase 1I-B). */
+/** Tipos do GET /api/crm/management-dashboard (Fase 1I-B + motor oficial SalesOrder). */
 
 export type ManagementBreakdownItem = {
   key: string;
   count: number;
+};
+
+export type ManagementDashboardSourceInfo = {
+  pedidosFonte: "SalesOrder";
+  itensFonte: "SalesOrderItem";
+  eixoCarteira: "Responsável Comercial do Cliente";
+  vendedorComissionavel: "Vendedor do Pedido/Nomus, somente auditoria";
+  propostasUsadas: false;
+  metricsSource?: string;
+  rulesEngineVersion?: string;
+  period?: { dateFrom: string | null; dateTo: string | null };
 };
 
 export type ManagementDashboardSummary = {
@@ -23,6 +34,18 @@ export type ManagementDashboardSummary = {
   openOrdersValue: number;
   ordersWithoutFollowUpCount: number;
   customersAtHighRisk: number;
+  /** KPIs oficiais de pedido (SalesOrder / motor Pedidos). */
+  ordersIssued?: number;
+  ordersValue?: number;
+  invoicedOrdersCount?: number;
+  invoicedOrdersValue?: number;
+  canceledOrdersCount?: number;
+  averageTicket?: number;
+  customersWithOrders?: number;
+  customersWithoutOrderInPeriod?: number;
+  ordersWithoutNomusSeller?: number;
+  customersWithoutCommercialResponsible?: number;
+  ordersWithResponsibleDifferentFromOrderSeller?: number;
 };
 
 export type ManagementRiskCustomer = {
@@ -87,6 +110,20 @@ export type ManagementTopCustomer = {
   daysSinceLastContact: number | null;
 };
 
+export type ManagementTopCommercialOwner = {
+  key: string;
+  label: string;
+  orders: number;
+  value: number;
+};
+
+export type ManagementTopProduct = {
+  key: string;
+  label: string;
+  orders: number;
+  value: number;
+};
+
 export type ManagementDashboardResponse = {
   generatedAt: string;
   summary: ManagementDashboardSummary;
@@ -96,10 +133,15 @@ export type ManagementDashboardResponse = {
   upcomingFollowUps: ManagementFollowUp[];
   ordersWithoutFollowUp: ManagementOrderWithoutFollowUp[];
   topCustomersLast12Months: ManagementTopCustomer[];
+  /** Top clientes no período (motor oficial). */
+  topCustomers?: ManagementTopCommercialOwner[];
+  topProducts?: ManagementTopProduct[];
+  topCommercialOwners?: ManagementTopCommercialOwner[];
   activityBreakdown: {
     periodDays: number;
     byChannel: ManagementBreakdownItem[];
     byReason: ManagementBreakdownItem[];
     byResponsible: ManagementBreakdownItem[];
   };
+  sourceInfo?: ManagementDashboardSourceInfo;
 };

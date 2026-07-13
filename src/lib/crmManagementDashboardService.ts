@@ -1,5 +1,7 @@
 /**
  * Serviço do GET /api/crm/management-dashboard — base principal: SalesOrder.
+ * KPIs de pedido: crmSalesOrderMetricsService (motor oficial Pedidos).
+ * Follow-up / risco / atividades: CommercialActivity + Customer (sem propostas).
  */
 
 import { Prisma } from "@prisma/client";
@@ -18,6 +20,15 @@ import {
   crmOpenPortfolioOrderSql,
   crmOrderWithoutFollowUpNotExistsSql,
 } from "@/src/lib/crmOrderPortfolioSql";
+import {
+  loadCrmSalesOrderMetrics,
+} from "@/src/lib/commercial/crmSalesOrderMetricsService.js";
+import {
+  buildManagementDashboardSourceInfo,
+  mergeOfficialOrderMetricsIntoManagementSummary,
+  resolveManagementDashboardPeriod,
+  type CrmManagementDashboardRequest,
+} from "@/src/lib/crmManagementDashboardOfficialOrders.js";
 
 const LIST_LIMIT = 10;
 
@@ -25,7 +36,18 @@ function bigintCount(rows: { c: bigint }[] | undefined): number {
   return Number(rows?.[0]?.c ?? 0n);
 }
 
-export async function buildCrmManagementDashboardResponse(now = new Date()) {
+export type { CrmManagementDashboardRequest };
+export {
+  buildManagementDashboardSourceInfo,
+  mergeOfficialOrderMetricsIntoManagementSummary,
+  resolveManagementDashboardPeriod,
+};
+
+export async function buildCrmManagementDashboardResponse(
+  input: CrmManagementDashboardRequest = {},
+  now = new Date()
+) {
+  const period = resolveManagementDashboardPeriod(input, now);
   const nowMs = now.getTime();
   const since7 = new Date(now);
   since7.setUTCDate(since7.getUTCDate() - 7);
@@ -75,6 +97,7 @@ export async function buildCrmManagementDashboardResponse(now = new Date()) {
     breakdownChannelRows,
     breakdownReasonRows,
     breakdownResponsibleRows,
+    orderMetrics,
   ] = await Promise.all([
     prisma.$queryRaw<{ c: bigint }[]>(Prisma.sql`SELECT COUNT(*)::bigint AS c FROM "Customer"`),
     prisma.$queryRaw<{ c: bigint }[]>(
@@ -587,6 +610,11 @@ export async function buildCrmManagementDashboardResponse(now = new Date()) {
         GROUP BY 1 ORDER BY count DESC LIMIT 20
       `
     ),
+    loadCrmSalesOrderMetrics(
+      prisma,
+      { from: period.dateFrom, to: period.dateTo },
+      { referenceDate: now }
+    ),
   ]);
 
   const openOrdersAgg = openOrdersRow?.[0];
@@ -724,10 +752,10 @@ export async function buildCrmManagementDashboardResponse(now = new Date()) {
   const openOrdersCount = Number(openOrdersAgg?.cnt ?? 0n);
   const openOrdersValue = mgmtToNumber(openOrdersAgg?.val);
 
-  return {
-    generatedAt: now.toISOString(),
-    summary: {
-      totalCustomers: bigintCount(totalCustomersRow),
+  const totalCustomers = bigintCount(totalCustomersRow);
+  const summary = mergeOfficialOrderMetricsIntoManagementSummary({
+    base: {
+      totalCustomers,
       customersWithContactLast30Days: bigintCount(withContact30Row),
       customersWithoutContactLast30Days: bigintCount(withoutContact30Row),
       customersWithoutContactLast60Days: bigintCount(withoutContact60Row),
@@ -745,17 +773,32 @@ export async function buildCrmManagementDashboardResponse(now = new Date()) {
       ordersWithoutFollowUpCount: bigintCount(ordersNoFollowUpRow),
       customersAtHighRisk: bigintCount(customersHighRiskRow),
     },
+    metrics: orderMetrics,
+    totalCustomers,
+  });
+
+  return {
+    generatedAt: now.toISOString(),
+    summary,
     riskCustomers,
     opportunityCustomers,
     overdueFollowUps,
     upcomingFollowUps,
     ordersWithoutFollowUp,
     topCustomersLast12Months,
+    topCustomers: orderMetrics.topCustomers,
+    topProducts: orderMetrics.topProducts,
+    topCommercialOwners: orderMetrics.topCommercialOwners,
     activityBreakdown: {
       periodDays: 30,
       byChannel: mapBreakdown(breakdownChannelRows),
       byReason: mapBreakdown(breakdownReasonRows),
       byResponsible: mapBreakdown(breakdownResponsibleRows),
     },
+    sourceInfo: buildManagementDashboardSourceInfo({
+      dateFrom: period.dateFrom,
+      dateTo: period.dateTo,
+      metrics: orderMetrics,
+    }),
   };
 }

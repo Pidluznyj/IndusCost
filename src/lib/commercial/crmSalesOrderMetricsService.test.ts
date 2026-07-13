@@ -191,6 +191,8 @@ describe("crmSalesOrderMetricsService", () => {
     assert.equal(metrics.leadingProduct!.productId, "p-motor");
     assert.equal(metrics.leadingProduct!.productName, "Motor 3CV");
     assert.equal(metrics.leadingProduct!.revenue, 6000);
+    assert.ok(metrics.topCommercialOwners.length >= 1);
+    assert.equal(metrics.topCommercialOwners[0]!.label, "GISLENE LIMA");
   });
 
   it("7) cancelados seguem regra oficial (status CANCELLED)", () => {

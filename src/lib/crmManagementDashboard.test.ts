@@ -136,6 +136,7 @@ describe("crmManagementDashboard", () => {
     );
     assert.match(service, /"SalesOrder"/);
     assert.equal(service.includes('"Proposal"'), false);
+    assert.match(service, /loadCrmSalesOrderMetrics/);
     assert.match(service, /openOrdersCount/);
     assert.match(service, /ordersWithoutFollowUp/);
   });
@@ -146,6 +147,8 @@ describe("crmManagementDashboard", () => {
     assert.ok(start >= 0, "rota management-dashboard deve existir");
     const block = server.slice(start, start + 2500);
     assert.match(block, /buildCrmManagementDashboardResponse/);
+    assert.match(block, /dateFrom/);
+    assert.match(block, /dateTo/);
     assert.equal(block.includes("openProposalsCount"), false);
     assert.equal(block.includes('"Proposal"'), false);
   });
