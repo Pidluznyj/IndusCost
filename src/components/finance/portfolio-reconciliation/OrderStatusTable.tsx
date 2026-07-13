@@ -50,6 +50,7 @@ function SortTh({
   sortDirection,
   onSort,
   align = "left",
+  title,
 }: {
   label: string;
   column?: string;
@@ -57,6 +58,7 @@ function SortTh({
   sortDirection: "asc" | "desc";
   onSort: (column: string) => void;
   align?: "left" | "right";
+  title?: string;
 }) {
   const active = Boolean(column && sortBy === column);
   return (
@@ -66,6 +68,7 @@ function SortTh({
         align === "right" ? "text-right" : "text-left"
       )}
       scope="col"
+      title={title}
       aria-sort={
         active
           ? sortDirection === "asc"
@@ -229,8 +232,24 @@ export function OrderStatusTable({
                 sortDirection={sortDirection}
                 onSort={onSort}
                 align="right"
+                title="Calculado sobre os itens ativos do pedido. Itens cancelados não entram como pendência."
               />
-              <SortTh label="Saldo pendente" sortBy={sortBy} sortDirection={sortDirection} onSort={onSort} align="right" />
+              <SortTh
+                label="Saldo pendente"
+                sortBy={sortBy}
+                sortDirection={sortDirection}
+                onSort={onSort}
+                align="right"
+                title="Saldo de itens ativos ainda não atendidos. Itens cancelados são exibidos separadamente."
+              />
+              <SortTh
+                label="Valor cancelado"
+                sortBy={sortBy}
+                sortDirection={sortDirection}
+                onSort={onSort}
+                align="right"
+                title="Valor dos itens cancelados no pedido de venda."
+              />
               <SortTh
                 label="CR aberto"
                 column="receivableOpenValue"
@@ -321,11 +340,25 @@ export function OrderStatusTable({
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]">
                     {formatFinanceCurrency(row.allocatedOrderValue)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]">
+                  <td
+                    className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]"
+                    title="Calculado sobre os itens ativos do pedido. Itens cancelados não entram como pendência."
+                  >
                     {formatFinancePercent(row.fulfillmentPercent)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]">
+                  <td
+                    className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]"
+                    title="Saldo de itens ativos ainda não atendidos. Itens cancelados são exibidos separadamente."
+                  >
                     {formatFinanceCurrency(row.pendingOrderValue)}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]"
+                    title="Valor dos itens cancelados no pedido de venda."
+                  >
+                    {row.canceledOrderValue > 0.009
+                      ? formatFinanceCurrency(row.canceledOrderValue)
+                      : "—"}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]">
                     {formatFinanceCurrency(row.receivableOpenValue)}

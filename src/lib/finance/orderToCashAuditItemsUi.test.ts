@@ -79,6 +79,9 @@ function baseRow(
     hasPriceMismatch: false,
     hasDocumentWithoutReceivable: false,
     hasOverdueReceivable: false,
+    orderItemStatus: null,
+    itemFulfillmentStatus: null,
+    canceledOrderValue: null,
     ...overrides,
   };
 }

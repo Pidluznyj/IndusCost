@@ -4,6 +4,8 @@
  * Sem Prisma e sem write; consulta apenas fatos materializados.
  */
 
+import { normalizeOrderItemFulfillmentStatus } from "./orderItemFulfillmentStatus.js";
+
 export const ORDER_TO_CASH_AUDIT_CUSTOMER_YEAR_REQUIRED =
   "Selecione cliente e ano para pesquisar a auditoria Pedido → Caixa.";
 
@@ -362,6 +364,12 @@ export type OrderToCashAuditListRow = {
   hasPriceMismatch: boolean;
   hasDocumentWithoutReceivable: boolean;
   hasOverdueReceivable: boolean;
+  /** Status do item no pedido (ex.: CANCELADO). */
+  orderItemStatus: string | null;
+  /** Status operacional normalizado do item. */
+  itemFulfillmentStatus: string | null;
+  /** Valor cancelado do item (quando CANCELADO). */
+  canceledOrderValue: number | null;
 };
 
 export type OrderToCashAuditListSummary = {
@@ -451,6 +459,8 @@ export type OrderToCashAuditFactRecord = {
   hasDocumentWithoutReceivable: boolean;
   hasOverdueReceivable: boolean;
   salesOrderId: string | null;
+  salesOrderItemId?: string | null;
+  orderItemStatus?: string | null;
   blockingReasonsJson: unknown;
 };
 
@@ -816,6 +826,13 @@ export function mapOrderToCashAuditFactToListRow(
     allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
   });
   const isPending = (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
+  const orderItemStatus = fact.orderItemStatus ?? null;
+  const itemFulfillmentStatus = normalizeOrderItemFulfillmentStatus(orderItemStatus);
+  const isCanceled = itemFulfillmentStatus === "CANCELADO";
+  const canceledOrderValue =
+    isCanceled && fact.orderItemTotalValue != null
+      ? Math.max(0, fact.orderItemTotalValue)
+      : null;
   return {
     id: fact.id,
     runId: fact.runId,
@@ -833,44 +850,52 @@ export function mapOrderToCashAuditFactToListRow(
     orderedQuantity: fact.orderedQuantity,
     orderUnitPrice: fact.orderUnitPrice,
     orderItemTotalValue: fact.orderItemTotalValue,
-    stockDocumentExternalId: isPending ? null : fact.stockDocumentExternalId,
-    stockDocumentDate: isPending ? null : toIso(fact.stockDocumentDate),
-    stockDocumentItemQuantity: isPending ? null : fact.stockDocumentItemQuantity,
-    quantityUsedForOrder: fact.quantityUsedForOrder,
+    stockDocumentExternalId: isPending || isCanceled ? null : fact.stockDocumentExternalId,
+    stockDocumentDate: isPending || isCanceled ? null : toIso(fact.stockDocumentDate),
+    stockDocumentItemQuantity:
+      isPending || isCanceled ? null : fact.stockDocumentItemQuantity,
+    quantityUsedForOrder: isCanceled ? 0 : fact.quantityUsedForOrder,
     excessQuantity: fact.excessQuantity,
     outsideOrderQuantity: fact.outsideOrderQuantity,
-    allocatedValueByOrderPrice: fact.allocatedValueByOrderPrice,
-    allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
+    allocatedValueByOrderPrice: isCanceled ? 0 : fact.allocatedValueByOrderPrice,
+    allocatedValueByDocumentPrice: isCanceled
+      ? 0
+      : fact.allocatedValueByDocumentPrice,
     stockDocumentItemUnitValue: fact.stockDocumentItemUnitValue,
     stockDocumentItemTotalValue: fact.stockDocumentItemTotalValue,
     nfeItemQuantity: fact.nfeItemQuantity,
     nfeItemUnitValue: fact.nfeItemUnitValue,
     nfeItemTotalValue: fact.nfeItemTotalValue,
-    lineBilledValue: billed.lineBilledValue,
-    lineBilledValueSource: billed.lineBilledValueSource,
-    lineBilledValueLabel: billed.lineBilledValueLabel,
+    lineBilledValue: isCanceled ? null : billed.lineBilledValue,
+    lineBilledValueSource: isCanceled ? "NOT_BILLED" : billed.lineBilledValueSource,
+    lineBilledValueLabel: isCanceled
+      ? "Item cancelado"
+      : billed.lineBilledValueLabel,
     titleReceivableTotalValue: null,
     titleReceivableOpenValue: null,
     titleNfeNumber: null,
     titleNfeExternalId: null,
-    evidenceLevel: isPending ? "ORDER_TITLE" : "ITEM",
-    nfeNumber: isPending ? null : fact.nfeNumber,
-    nfeIssueDate: isPending ? null : toIso(fact.nfeIssueDate),
-    nfeHeaderValue: isPending ? null : fact.nfeHeaderValue,
-    receivableTotalValue: isPending ? null : fact.receivableTotalValue,
-    receivableOpenValue: isPending ? null : fact.receivableOpenValue,
-    receivableReceivedValue: isPending ? null : fact.receivableReceivedValue,
+    evidenceLevel: isPending || isCanceled ? "ORDER_TITLE" : "ITEM",
+    nfeNumber: isPending || isCanceled ? null : fact.nfeNumber,
+    nfeIssueDate: isPending || isCanceled ? null : toIso(fact.nfeIssueDate),
+    nfeHeaderValue: isPending || isCanceled ? null : fact.nfeHeaderValue,
+    receivableTotalValue: isPending || isCanceled ? null : fact.receivableTotalValue,
+    receivableOpenValue: isPending || isCanceled ? null : fact.receivableOpenValue,
+    receivableReceivedValue:
+      isPending || isCanceled ? null : fact.receivableReceivedValue,
     paymentDueDate: toIso(fact.paymentDueDate),
     paymentSettlementDate: toIso(fact.paymentSettlementDate),
     paymentStatus: fact.paymentStatus,
-    operationalStage: fact.operationalStage,
+    operationalStage: isCanceled ? "CANCELADO" : fact.operationalStage,
     financialStage: fact.financialStage,
     orderToCashStage: fact.orderToCashStage,
     temperature: fact.temperature,
     confidenceScore: fact.confidenceScore,
     confidenceLabel: fact.confidenceLabel,
     responsibleArea: fact.responsibleArea,
-    recommendedAction: fact.recommendedAction,
+    recommendedAction: isCanceled
+      ? "Item cancelado no pedido de venda"
+      : fact.recommendedAction,
     alerts: parseAlerts(fact.alertsJson),
     hasDeliveryDelay: Boolean(fact.hasDeliveryDelay),
     hasMissingStockDocument: Boolean(fact.hasMissingStockDocument),
@@ -882,6 +907,9 @@ export function mapOrderToCashAuditFactToListRow(
     hasPriceMismatch: Boolean(fact.hasPriceMismatch),
     hasDocumentWithoutReceivable: Boolean(fact.hasDocumentWithoutReceivable),
     hasOverdueReceivable: Boolean(fact.hasOverdueReceivable),
+    orderItemStatus,
+    itemFulfillmentStatus,
+    canceledOrderValue,
   };
 }
 

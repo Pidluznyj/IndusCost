@@ -31,6 +31,7 @@ import {
   type OrderToCashAuditStockDocumentInput,
   type OrderToCashAuditStockItemInput,
 } from "../src/lib/sales/orderToCashAuditBuilder.ts";
+import { resolveSalesOrderItemNomusStatus } from "../src/lib/salesOrderNomusRaw.ts";
 import {
   buildOrderToCashRebuildPreviewSummary,
   detectNomusLockFilesPresent,
@@ -311,23 +312,50 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
   }));
 
   const orderItems: OrderToCashAuditOrderItemInput[] = ordersRaw.flatMap((order) =>
-    order.items.map((item, index) => ({
-      id: item.id,
-      salesOrderId: order.id,
-      externalSalesOrderItemId: null,
-      orderItemSequence: index + 1,
-      externalProductId: item.externalProductId,
-      productId: item.productId,
-      productCode: item.skuSnapshot,
-      sku: item.skuSnapshot,
-      productName: item.productNameSnapshot,
-      productDescription: item.productNameSnapshot,
-      quantity: dec(item.quantity),
-      unitPrice: dec(item.negotiatedPrice),
-      totalNetValue: dec(item.totalNetValue),
-      expectedDeliveryDate: null,
-      itemStatus: null,
-    }))
+    order.items.map((item, index) => {
+      const nomusStatus = resolveSalesOrderItemNomusStatus(
+        order.nomusRawResponse,
+        {
+          externalProductId: item.externalProductId,
+          skuSnapshot: item.skuSnapshot,
+          productNameSnapshot: item.productNameSnapshot,
+        },
+        { itemIndex: index, totalDbItems: order.items.length }
+      );
+      let itemStatus: string | null = null;
+      if (nomusStatus === "cancelled") itemStatus = "CANCELADO";
+      else if (nomusStatus === "fully_fulfilled") itemStatus = "ATENDIDO";
+      else if (
+        nomusStatus === "partially_fulfilled" ||
+        nomusStatus === "fulfilled_with_cut"
+      ) {
+        itemStatus = "PARCIAL";
+      } else if (
+        nomusStatus === "awaiting_release" ||
+        nomusStatus === "released"
+      ) {
+        itemStatus = "PENDENTE";
+      } else if (nomusStatus !== "unknown") {
+        itemStatus = nomusStatus.toUpperCase();
+      }
+      return {
+        id: item.id,
+        salesOrderId: order.id,
+        externalSalesOrderItemId: null,
+        orderItemSequence: index + 1,
+        externalProductId: item.externalProductId,
+        productId: item.productId,
+        productCode: item.skuSnapshot,
+        sku: item.skuSnapshot,
+        productName: item.productNameSnapshot,
+        productDescription: item.productNameSnapshot,
+        quantity: dec(item.quantity),
+        unitPrice: dec(item.negotiatedPrice),
+        totalNetValue: dec(item.totalNetValue),
+        expectedDeliveryDate: null,
+        itemStatus,
+      };
+    })
   );
 
   const nfeLinks: OrderToCashAuditNfeLinkInput[] = ordersRaw.flatMap((order) =>

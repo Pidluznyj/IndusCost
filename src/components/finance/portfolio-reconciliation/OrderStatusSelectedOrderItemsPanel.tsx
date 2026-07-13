@@ -200,7 +200,7 @@ export function OrderStatusSelectedOrderItemsPanel({
       </div>
 
       <div
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7"
         data-testid="order-status-order-items-summary"
       >
         <SummaryTile label="Pedido" value={orderStatusDash(order.orderCode)} />
@@ -217,10 +217,21 @@ export function OrderStatusSelectedOrderItemsPanel({
         <SummaryTile
           label="% atendido"
           value={formatFinancePercent(order.fulfillmentPercent)}
+          title="Calculado sobre os itens ativos do pedido. Itens cancelados não entram como pendência."
         />
         <SummaryTile
           label="Saldo pendente"
           value={formatFinanceCurrency(order.pendingOrderValue)}
+          title="Saldo de itens ativos ainda não atendidos. Itens cancelados são exibidos separadamente."
+        />
+        <SummaryTile
+          label="Valor cancelado"
+          value={
+            order.canceledOrderValue > 0.009
+              ? formatFinanceCurrency(order.canceledOrderValue)
+              : "—"
+          }
+          title="Valor dos itens cancelados no pedido de venda."
         />
       </div>
 
@@ -228,7 +239,10 @@ export function OrderStatusSelectedOrderItemsPanel({
         {formatOrderStatusOperationalLabel(order.operationalStatus)} ·{" "}
         {formatOrderStatusFinancialLabel(order.financialStatus)}
         {` · ${order.allocatedItemCount} item(ns) atendido(s)`}
-        {` · ${order.pendingItemCount} pendente(s)`}
+        {` · ${order.pendingItemCount} pendente(s) ativo(s)`}
+        {order.canceledItemsCount > 0
+          ? ` · ${order.canceledItemsCount} cancelado(s)`
+          : ""}
       </p>
 
       {loading ? (
@@ -279,13 +293,18 @@ function SummaryTile({
   label,
   value,
   badgeClass,
+  title,
 }: {
   label: string;
   value: string;
   badgeClass?: string;
+  title?: string;
 }) {
   return (
-    <div className="rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
+    <div
+      className="rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2"
+      title={title}
+    >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[#667085]">
         {label}
       </p>

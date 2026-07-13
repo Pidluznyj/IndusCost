@@ -19,6 +19,7 @@ import {
   type OrderToCashAuditListFilters,
   type OrderToCashAuditRunMeta,
 } from "./finance/orderToCashAuditApi.js";
+import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -163,6 +164,8 @@ const FACT_SELECT = {
   hasDocumentWithoutReceivable: true,
   hasOverdueReceivable: true,
   salesOrderId: true,
+  salesOrderItemId: true,
+  orderItemStatus: true,
 } as const;
 
 type RunRow = {
@@ -250,6 +253,14 @@ function mapFact(row: FactRow): OrderToCashAuditFactRecord {
     hasDocumentWithoutReceivable: row.hasDocumentWithoutReceivable,
     hasOverdueReceivable: row.hasOverdueReceivable,
     salesOrderId: row.salesOrderId,
+    salesOrderItemId:
+      typeof (row as { salesOrderItemId?: unknown }).salesOrderItemId === "string"
+        ? ((row as { salesOrderItemId: string }).salesOrderItemId)
+        : null,
+    orderItemStatus:
+      typeof (row as { orderItemStatus?: unknown }).orderItemStatus === "string"
+        ? ((row as { orderItemStatus: string }).orderItemStatus)
+        : null,
   };
 }
 
@@ -427,11 +438,20 @@ export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
         }),
   ]);
 
+  const pageMapped = pageRowsRaw.map((row) => mapFact(row as FactRow));
+  const summaryMapped = summaryRowsRaw.map((row) => mapFact(row as FactRow));
+  const [pageRows, summaryFacts] = await Promise.all([
+    enrichFactsWithOrderItemStatus(pageMapped),
+    preferRunTotals
+      ? Promise.resolve([] as OrderToCashAuditFactRecord[])
+      : enrichFactsWithOrderItemStatus(summaryMapped),
+  ]);
+
   return buildOrderToCashAuditListPayload({
     filters,
     run: resolved.run,
-    pageRows: pageRowsRaw.map((row) => mapFact(row as FactRow)),
-    summaryFacts: summaryRowsRaw.map((row) => mapFact(row as FactRow)),
+    pageRows,
+    summaryFacts,
     totalRows,
     preferRunTotals,
   });

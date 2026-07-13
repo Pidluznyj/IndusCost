@@ -14,6 +14,7 @@ import {
   resolveOrderToCashAuditLineBilledValue,
   type OrderToCashAuditFactRecord,
 } from "./orderToCashAuditApi.js";
+import { isCanceledOrderItemFact } from "./orderItemFulfillmentStatus.js";
 
 /** Fact de entrada — FactRecord + campos opcionais ainda não no select padrão. */
 export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
@@ -21,6 +22,8 @@ export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
   lineBilledValue?: number | null;
   salesOrderItemId?: string | null;
   externalSalesOrderItemId?: number | null;
+  /** Status do item no pedido (ex.: CANCELADO). */
+  orderItemStatus?: string | null;
   fiscalStage?: string | null;
   commercialStage?: string | null;
   cashStage?: string | null;
@@ -31,9 +34,12 @@ export type PortfolioOrderStatusConsolidated =
   | "COMPLETO_RECEBIDO"
   | "COMPLETO_CR_ABERTO"
   | "COMPLETO_SEM_CR"
+  | "COMPLETO_COM_CANCELAMENTO"
+  | "RECEBIDO_COM_CANCELAMENTO"
   | "PARCIAL_RECEBIDO"
   | "PARCIAL_CR_ABERTO"
   | "PARCIAL_SEM_CR"
+  | "PARCIAL_COM_CANCELAMENTO"
   | "SEM_ATENDIMENTO_FUTURO"
   | "SEM_ATENDIMENTO_ATRASADO"
   | "NF_SEM_CR"
@@ -61,7 +67,8 @@ export type PortfolioOrderStatusPrimaryCardId =
   | "com_divergencia"
   | "cr_aberto"
   | "recebidos"
-  | "bloqueados";
+  | "bloqueados"
+  | "com_cancelamento";
 
 export type PortfolioOrderStatusRow = {
   orderKey: string;
@@ -74,11 +81,25 @@ export type PortfolioOrderStatusRow = {
   commercialResponsibleName: string | null;
   orderSellerName: string | null;
 
+  /** Valor original do pedido (orderNet / soma itens). */
   totalOrderValue: number;
+  /** Alias de totalOrderValue — valor pedido original. */
+  originalOrderValue: number;
+  /** Soma dos itens não cancelados. */
+  activeOrderValue: number;
+  /** Soma dos itens cancelados. */
+  canceledOrderValue: number;
   allocatedOrderValue: number;
   lineBilledValue: number;
+  /**
+   * Saldo pendente ativo (itens não cancelados ainda sem atendimento).
+   * Alias histórico: pendingOrderValue.
+   */
   pendingOrderValue: number;
+  pendingActiveOrderValue: number;
+  /** % sobre itens ativos (cancelados não entram). */
   fulfillmentPercent: number;
+  fulfillmentPercentActive: number;
 
   receivableTotalValue: number;
   receivableOpenValue: number;
@@ -95,9 +116,15 @@ export type PortfolioOrderStatusRow = {
   recommendedAction: string | null;
 
   factCount: number;
+  /** Itens pendentes ativos (exclui cancelados). */
   pendingItemCount: number;
+  pendingActiveItemsCount: number;
   allocatedItemCount: number;
+  fulfilledItemsCount: number;
+  canceledItemsCount: number;
+  /** true só com pendência ativa real (não cancelada). */
   hasPendingItems: boolean;
+  hasCanceledItems: boolean;
   hasAllocation: boolean;
   hasOpenCr: boolean;
   hasReceived: boolean;
@@ -133,9 +160,10 @@ export const PORTFOLIO_ORDER_STATUS_PRIMARY_CARD_HINTS: Record<
   string
 > = {
   total: "Total de pedidos distintos dentro do filtro.",
-  completos: "Pedidos com atendimento operacional completo.",
+  completos:
+    "Pedidos com atendimento operacional completo dos itens ativos (inclui completo com cancelamento).",
   parciais:
-    "Pedidos com pelo menos um item atendido e pelo menos um item pendente.",
+    "Pedidos com pelo menos um item ativo atendido e pelo menos um item ativo ainda pendente. Itens cancelados não geram parcial.",
   sem_atendimento:
     "Pedidos sem item casado com documento de saída/NF.",
   com_divergencia:
@@ -145,6 +173,8 @@ export const PORTFOLIO_ORDER_STATUS_PRIMARY_CARD_HINTS: Record<
   recebidos: "Pedidos com recebimento/baixa identificada.",
   bloqueados:
     "Pedidos antigos ou sem evidência suficiente para tratar como carteira confiável.",
+  com_cancelamento:
+    "Pedidos com pelo menos um item cancelado no pedido de venda.",
 };
 
 export type PortfolioOrderStatusDrilldownCard = {
@@ -161,6 +191,7 @@ export type PortfolioOrderStatusSummary = {
   totalAllocatedValue: number;
   totalLineBilledValue: number;
   totalPendingValue: number;
+  totalCanceledValue: number;
   totalReceivableValue: number;
   totalReceivedValue: number;
   totalOpenValue: number;
@@ -168,6 +199,8 @@ export type PortfolioOrderStatusSummary = {
   withDivergences: number;
   withOpenCr: number;
   withReceived: number;
+  withCanceledItems: number;
+  canceledItemsCount: number;
   summarySource: "aggregated_orders";
   crAggregation: "max_per_order_excluding_pending_lines";
   lineBilledRule: "item_evidence_only";
@@ -240,9 +273,12 @@ const EMPTY_STATUS_COUNTS = (): Record<PortfolioOrderStatusConsolidated, number>
   COMPLETO_RECEBIDO: 0,
   COMPLETO_CR_ABERTO: 0,
   COMPLETO_SEM_CR: 0,
+  COMPLETO_COM_CANCELAMENTO: 0,
+  RECEBIDO_COM_CANCELAMENTO: 0,
   PARCIAL_RECEBIDO: 0,
   PARCIAL_CR_ABERTO: 0,
   PARCIAL_SEM_CR: 0,
+  PARCIAL_COM_CANCELAMENTO: 0,
   SEM_ATENDIMENTO_FUTURO: 0,
   SEM_ATENDIMENTO_ATRASADO: 0,
   NF_SEM_CR: 0,
@@ -307,6 +343,15 @@ function itemKeyOf(fact: PortfolioOrderStatusFact): string {
 
 function isPendingLine(fact: PortfolioOrderStatusFact): boolean {
   return (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
+}
+
+/** Pendência ativa: linha PENDING que não é item cancelado. */
+export function isActivePendingLine(fact: PortfolioOrderStatusFact): boolean {
+  return isPendingLine(fact) && !isCanceledOrderItemFact(fact);
+}
+
+export function isCanceledPendingLine(fact: PortfolioOrderStatusFact): boolean {
+  return isPendingLine(fact) && isCanceledOrderItemFact(fact);
 }
 
 function isAllocatedLine(fact: PortfolioOrderStatusFact): boolean {
@@ -411,7 +456,9 @@ function pickDominantStage(
 }
 
 function isCanceledOrder(facts: readonly PortfolioOrderStatusFact[]): boolean {
+  // Cancelamento total do pedido (não confundir com item cancelado isolado).
   for (const fact of facts) {
+    if (isCanceledOrderItemFact(fact) && isPendingLine(fact)) continue;
     const stages = [
       fact.orderToCashStage,
       fact.commercialStage,
@@ -422,7 +469,14 @@ function isCanceledOrder(facts: readonly PortfolioOrderStatusFact[]): boolean {
     const alerts = parseOrderStatusAlerts(fact.alertsJson);
     if (alerts.some((a) => a.toUpperCase().includes("CANCEL"))) return true;
   }
-  return false;
+  const orderItems = facts.filter(
+    (f) => isPendingLine(f) || isAllocatedLine(f)
+  );
+  if (orderItems.length === 0) return false;
+  const canceledOnly = orderItems.every(
+    (f) => isCanceledOrderItemFact(f) || isCanceledPendingLine(f)
+  );
+  return canceledOnly && !orderItems.some(isAllocatedLine);
 }
 
 function isBlockedOrder(
@@ -481,6 +535,7 @@ function financialBranch(input: {
 
 /**
  * Classifica um pedido a partir das suas facts.
+ * Item cancelado não gera parcial nem pendência ativa.
  */
 export function classifyOrderStatus(
   orderFacts: readonly PortfolioOrderStatusFact[],
@@ -491,6 +546,7 @@ export function classifyOrderStatus(
   fiscalStatus: string;
   financialStatus: string;
   hasPendingItems: boolean;
+  hasCanceledItems: boolean;
   hasAllocation: boolean;
   hasOpenCr: boolean;
   hasReceived: boolean;
@@ -498,9 +554,9 @@ export function classifyOrderStatus(
   alerts: string[];
 } {
   const alerts = collectAlerts(orderFacts);
-  const hasPendingItems = orderFacts.some(isPendingLine);
+  const hasPendingActiveItems = orderFacts.some(isActivePendingLine);
+  const hasCanceledItems = orderFacts.some(isCanceledOrderItemFact);
   const hasAllocation = orderFacts.some(isAllocatedLine);
-  const hasPartialFlag = orderFacts.some((f) => f.hasPartialFulfillment);
 
   let receivableOpen = 0;
   let receivableReceived = 0;
@@ -526,7 +582,7 @@ export function classifyOrderStatus(
     pickDominantStage(orderFacts, "operationalStage") ??
     (!hasAllocation
       ? "NOT_FULFILLED"
-      : hasPendingItems || hasPartialFlag
+      : hasPendingActiveItems
         ? "PARTIALLY_FULFILLED"
         : "FULLY_FULFILLED");
 
@@ -552,9 +608,10 @@ export function classifyOrderStatus(
   } else if (
     isNfSemCrOrder(orderFacts, alerts, receivableTotal) &&
     hasAllocation &&
-    !hasPendingItems
+    !hasPendingActiveItems
   ) {
-    consolidatedOrderStatus = "NF_SEM_CR";
+    consolidatedOrderStatus =
+      hasCanceledItems ? "COMPLETO_COM_CANCELAMENTO" : "NF_SEM_CR";
   } else if (!hasAllocation) {
     const asOf = toDate(options?.asOf) ?? new Date();
     const delivery = orderFacts
@@ -565,12 +622,26 @@ export function classifyOrderStatus(
     } else {
       consolidatedOrderStatus = "SEM_ATENDIMENTO_FUTURO";
     }
-  } else if (hasPendingItems || hasPartialFlag) {
-    if (finBranch === "RECEBIDO") consolidatedOrderStatus = "PARCIAL_RECEBIDO";
-    else if (finBranch === "CR_ABERTO") consolidatedOrderStatus = "PARCIAL_CR_ABERTO";
-    else consolidatedOrderStatus = "PARCIAL_SEM_CR";
+  } else if (hasPendingActiveItems) {
+    // Parcial só com item ativo pendente real
+    if (hasCanceledItems) {
+      consolidatedOrderStatus = "PARCIAL_COM_CANCELAMENTO";
+    } else if (finBranch === "RECEBIDO") {
+      consolidatedOrderStatus = "PARCIAL_RECEBIDO";
+    } else if (finBranch === "CR_ABERTO") {
+      consolidatedOrderStatus = "PARCIAL_CR_ABERTO";
+    } else {
+      consolidatedOrderStatus = "PARCIAL_SEM_CR";
+    }
+  } else if (hasCanceledItems) {
+    // Ativos 100% atendidos + itens cancelados
+    if (finBranch === "RECEBIDO") {
+      consolidatedOrderStatus = "RECEBIDO_COM_CANCELAMENTO";
+    } else {
+      consolidatedOrderStatus = "COMPLETO_COM_CANCELAMENTO";
+    }
   } else {
-    // Completo (sem pendência relevante)
+    // Completo (sem pendência ativa)
     if (finBranch === "RECEBIDO") consolidatedOrderStatus = "COMPLETO_RECEBIDO";
     else if (finBranch === "CR_ABERTO") consolidatedOrderStatus = "COMPLETO_CR_ABERTO";
     else if (isNfSemCrOrder(orderFacts, alerts, receivableTotal)) {
@@ -585,7 +656,8 @@ export function classifyOrderStatus(
     operationalStatus,
     fiscalStatus,
     financialStatus,
-    hasPendingItems,
+    hasPendingItems: hasPendingActiveItems,
+    hasCanceledItems,
     hasAllocation,
     hasOpenCr,
     hasReceived,
@@ -634,9 +706,12 @@ export function aggregateOrderFactsToRow(
   let hasPaymentConditionMissing = false;
 
   const itemOrderValues = new Map<string, number>();
+  const canceledItemValues = new Map<string, number>();
+  const activeItemValues = new Map<string, number>();
   let allocatedOrderValue = 0;
   let lineBilledValue = 0;
-  let pendingItemCount = 0;
+  let pendingActiveItemsCount = 0;
+  let canceledItemsCount = 0;
   let allocatedItemCount = 0;
   let receivableTotal = 0;
   let receivableOpen = 0;
@@ -644,6 +719,9 @@ export function aggregateOrderFactsToRow(
   let nfeHeaderMax = 0;
   const nfeNumbers = new Set<string>();
   const productTokens = new Set<string>();
+  const seenCanceledItems = new Set<string>();
+  const seenPendingActiveItems = new Set<string>();
+  const seenFulfilledItems = new Set<string>();
 
   for (const fact of orderFacts) {
     if (!salesOrderId && fact.salesOrderId) salesOrderId = fact.salesOrderId;
@@ -682,14 +760,38 @@ export function aggregateOrderFactsToRow(
     if (fact.hasPaymentConditionMissing) hasPaymentConditionMissing = true;
 
     const itemKey = itemKeyOf(fact);
-    if (fact.orderItemTotalValue != null && Number.isFinite(fact.orderItemTotalValue)) {
+    const itemValue =
+      fact.orderItemTotalValue != null && Number.isFinite(fact.orderItemTotalValue)
+        ? Math.max(0, fact.orderItemTotalValue)
+        : null;
+
+    if (itemValue != null) {
       if (!itemOrderValues.has(itemKey)) {
-        itemOrderValues.set(itemKey, Math.max(0, fact.orderItemTotalValue));
+        itemOrderValues.set(itemKey, itemValue);
       }
     }
 
-    if (isPendingLine(fact)) {
-      pendingItemCount += 1;
+    if (isCanceledOrderItemFact(fact)) {
+      if (!seenCanceledItems.has(itemKey)) {
+        seenCanceledItems.add(itemKey);
+        canceledItemsCount += 1;
+        if (itemValue != null && !canceledItemValues.has(itemKey)) {
+          canceledItemValues.set(itemKey, itemValue);
+        }
+      }
+    } else if (itemValue != null && !activeItemValues.has(itemKey)) {
+      activeItemValues.set(itemKey, itemValue);
+    }
+
+    if (isActivePendingLine(fact)) {
+      if (!seenPendingActiveItems.has(itemKey)) {
+        seenPendingActiveItems.add(itemKey);
+        pendingActiveItemsCount += 1;
+      }
+      continue;
+    }
+
+    if (isCanceledPendingLine(fact)) {
       continue;
     }
 
@@ -701,8 +803,14 @@ export function aggregateOrderFactsToRow(
     if (fact.nfeNumber?.trim()) nfeNumbers.add(fact.nfeNumber.trim());
 
     if (isAllocatedLine(fact)) {
-      allocatedItemCount += 1;
+      if (!seenFulfilledItems.has(itemKey)) {
+        seenFulfilledItems.add(itemKey);
+        allocatedItemCount += 1;
+      }
       allocatedOrderValue += Math.max(0, fact.allocatedValueByOrderPrice ?? 0);
+      if (itemValue != null && !activeItemValues.has(itemKey)) {
+        activeItemValues.set(itemKey, itemValue);
+      }
     }
 
     lineBilledValue += resolveFactLineBilledValue(fact);
@@ -711,32 +819,52 @@ export function aggregateOrderFactsToRow(
   let itemValuesSum = 0;
   for (const v of itemOrderValues.values()) itemValuesSum += v;
 
+  let canceledOrderValue = 0;
+  for (const v of canceledItemValues.values()) canceledOrderValue += v;
+  canceledOrderValue = round6(canceledOrderValue);
+
+  let activeFromItems = 0;
+  for (const v of activeItemValues.values()) activeFromItems += v;
+
   /**
    * Estratégia segura do valor do pedido:
    * - Preferir orderNetValue (1× no Fact)
    * - Senão soma dedupe por item
    * - Nunca usar soma de nfeHeaderValue / CR
    */
-  const totalOrderValue = round6(
+  const originalOrderValue = round6(
     orderNetValue != null && orderNetValue > 0 ? orderNetValue : itemValuesSum
   );
+  const totalOrderValue = originalOrderValue;
 
-  // Atendido respeita teto do pedido (não deixa excedente inflar carteira)
+  /**
+   * Valor ativo = original − cancelados.
+   * Fallback: soma dos itens ativos quando não há orderNet confiável.
+   */
+  const activeOrderValue = round6(
+    orderNetValue != null && orderNetValue > 0
+      ? Math.max(0, originalOrderValue - canceledOrderValue)
+      : activeFromItems > MONEY_EPS
+        ? activeFromItems
+        : Math.max(0, originalOrderValue - canceledOrderValue)
+  );
+
+  // Atendido respeita teto dos itens ativos (não deixa excedente inflar carteira)
   const allocatedCapped = round6(
-    totalOrderValue > 0
-      ? Math.min(allocatedOrderValue, totalOrderValue)
+    activeOrderValue > 0
+      ? Math.min(allocatedOrderValue, activeOrderValue)
       : allocatedOrderValue
   );
 
-  // Saldo pendente = valor pedido − atendido (nunca negativo).
-  const pendingOrderValue = round6(
-    Math.max(0, totalOrderValue - allocatedCapped)
+  // Saldo pendente ativo = valor ativo − atendido (nunca negativo).
+  const pendingActiveOrderValue = round6(
+    Math.max(0, activeOrderValue - allocatedCapped)
   );
 
   const billed = round6(lineBilledValue);
-  const fulfillmentPercent =
-    totalOrderValue > MONEY_EPS
-      ? round2(Math.min(100, (allocatedCapped / totalOrderValue) * 100))
+  const fulfillmentPercentActive =
+    activeOrderValue > MONEY_EPS
+      ? round2(Math.min(100, (allocatedCapped / activeOrderValue) * 100))
       : allocatedCapped > MONEY_EPS
         ? 100
         : 0;
@@ -754,6 +882,9 @@ export function aggregateOrderFactsToRow(
   ) {
     alerts.push("SEM_RESPONSAVEL_COMERCIAL");
   }
+  if (classified.hasCanceledItems && !alerts.includes("PEDIDO_COM_ITENS_CANCELADOS")) {
+    alerts.push("PEDIDO_COM_ITENS_CANCELADOS");
+  }
   alerts.sort();
 
   return {
@@ -767,10 +898,15 @@ export function aggregateOrderFactsToRow(
     commercialResponsibleName,
     orderSellerName,
     totalOrderValue,
+    originalOrderValue,
+    activeOrderValue,
+    canceledOrderValue,
     allocatedOrderValue: allocatedCapped,
     lineBilledValue: billed,
-    pendingOrderValue,
-    fulfillmentPercent,
+    pendingOrderValue: pendingActiveOrderValue,
+    pendingActiveOrderValue,
+    fulfillmentPercent: fulfillmentPercentActive,
+    fulfillmentPercentActive,
     receivableTotalValue: round6(receivableTotal),
     receivableOpenValue: round6(receivableOpen),
     receivableReceivedValue: round6(receivableReceived),
@@ -783,9 +919,13 @@ export function aggregateOrderFactsToRow(
     alerts,
     recommendedAction,
     factCount: orderFacts.length,
-    pendingItemCount,
+    pendingItemCount: pendingActiveItemsCount,
+    pendingActiveItemsCount,
     allocatedItemCount,
+    fulfilledItemsCount: allocatedItemCount,
+    canceledItemsCount,
     hasPendingItems: classified.hasPendingItems,
+    hasCanceledItems: classified.hasCanceledItems,
     hasAllocation: classified.hasAllocation,
     hasOpenCr: classified.hasOpenCr,
     hasReceived: classified.hasReceived,
@@ -833,25 +973,33 @@ export function buildOrderStatusSummary(
   let totalAllocatedValue = 0;
   let totalLineBilledValue = 0;
   let totalPendingValue = 0;
+  let totalCanceledValue = 0;
   let totalReceivableValue = 0;
   let totalReceivedValue = 0;
   let totalOpenValue = 0;
   let withDivergences = 0;
   let withOpenCr = 0;
   let withReceived = 0;
+  let withCanceledItems = 0;
+  let canceledItemsCount = 0;
 
   for (const row of rows) {
     statusCounts[row.consolidatedOrderStatus] += 1;
     totalOrderValue += row.totalOrderValue;
     totalAllocatedValue += row.allocatedOrderValue;
     totalLineBilledValue += row.lineBilledValue;
-    totalPendingValue += row.pendingOrderValue;
+    totalPendingValue += row.pendingActiveOrderValue;
+    totalCanceledValue += row.canceledOrderValue;
     totalReceivableValue += row.receivableTotalValue;
     totalReceivedValue += row.receivableReceivedValue;
     totalOpenValue += row.receivableOpenValue;
     if (row.hasDivergences) withDivergences += 1;
     if (row.hasOpenCr) withOpenCr += 1;
     if (row.hasReceived) withReceived += 1;
+    if (row.hasCanceledItems) {
+      withCanceledItems += 1;
+      canceledItemsCount += row.canceledItemsCount;
+    }
   }
 
   return {
@@ -860,6 +1008,7 @@ export function buildOrderStatusSummary(
     totalAllocatedValue: round6(totalAllocatedValue),
     totalLineBilledValue: round6(totalLineBilledValue),
     totalPendingValue: round6(totalPendingValue),
+    totalCanceledValue: round6(totalCanceledValue),
     totalReceivableValue: round6(totalReceivableValue),
     totalReceivedValue: round6(totalReceivedValue),
     totalOpenValue: round6(totalOpenValue),
@@ -867,6 +1016,8 @@ export function buildOrderStatusSummary(
     withDivergences,
     withOpenCr,
     withReceived,
+    withCanceledItems,
+    canceledItemsCount,
     summarySource: "aggregated_orders",
     crAggregation: "max_per_order_excluding_pending_lines",
     lineBilledRule: "item_evidence_only",
@@ -877,11 +1028,14 @@ const COMPLETO = new Set<PortfolioOrderStatusConsolidated>([
   "COMPLETO_RECEBIDO",
   "COMPLETO_CR_ABERTO",
   "COMPLETO_SEM_CR",
+  "COMPLETO_COM_CANCELAMENTO",
+  "RECEBIDO_COM_CANCELAMENTO",
 ]);
 const PARCIAL = new Set<PortfolioOrderStatusConsolidated>([
   "PARCIAL_RECEBIDO",
   "PARCIAL_CR_ABERTO",
   "PARCIAL_SEM_CR",
+  "PARCIAL_COM_CANCELAMENTO",
 ]);
 const SEM_ATEND = new Set<PortfolioOrderStatusConsolidated>([
   "SEM_ATENDIMENTO_FUTURO",
@@ -890,6 +1044,7 @@ const SEM_ATEND = new Set<PortfolioOrderStatusConsolidated>([
 const RECEBIDOS = new Set<PortfolioOrderStatusConsolidated>([
   "COMPLETO_RECEBIDO",
   "PARCIAL_RECEBIDO",
+  "RECEBIDO_COM_CANCELAMENTO",
 ]);
 
 export function buildPrimaryCards(
@@ -949,6 +1104,12 @@ export function buildPrimaryCards(
       (r) => RECEBIDOS.has(r.consolidatedOrderStatus) || r.hasReceived
     ),
     card(
+      "com_cancelamento",
+      "Com cancelamento",
+      "gray",
+      (r) => r.hasCanceledItems
+    ),
+    card(
       "bloqueados",
       "Bloqueados",
       "red",
@@ -985,6 +1146,24 @@ export function buildDrilldownCards(
   if (!card) {
     return [
       dd("com_item_pendente", "Com item pendente", (r) => r.hasPendingItems),
+      dd(
+        "com_cancelamento",
+        "Com cancelamento",
+        (r) => r.hasCanceledItems,
+        "Pedidos com pelo menos um item cancelado."
+      ),
+      dd(
+        "itens_cancelados",
+        "Itens cancelados",
+        (r) => r.canceledItemsCount > 0,
+        "Pedidos que possuem itens cancelados no pedido de venda."
+      ),
+      dd(
+        "valor_cancelado",
+        "Com valor cancelado",
+        (r) => r.canceledOrderValue > MONEY_EPS,
+        "Pedidos com valor de itens cancelados > 0."
+      ),
       dd("com_produto_fora", "Com produto fora", (r) =>
         r.alerts.includes("PRODUTO_FORA_DO_PEDIDO")
       ),
@@ -1026,6 +1205,13 @@ export function buildDrilldownCards(
           (r) => r.consolidatedOrderStatus === "COMPLETO_SEM_CR"
         ),
         dd(
+          "completo_com_cancelamento",
+          "Completos com cancelamento",
+          (r) =>
+            r.consolidatedOrderStatus === "COMPLETO_COM_CANCELAMENTO" ||
+            r.consolidatedOrderStatus === "RECEBIDO_COM_CANCELAMENTO"
+        ),
+        dd(
           "completo_divergencia_preco",
           "Completos com divergência de preço",
           (r) => r.alerts.includes("DIVERGENCIA_PRECO")
@@ -1045,6 +1231,11 @@ export function buildDrilldownCards(
           "parcial_item_pendente",
           "Parcial com item pendente",
           (r) => r.hasPendingItems
+        ),
+        dd(
+          "parcial_com_cancelamento",
+          "Parcial com cancelamento",
+          (r) => r.consolidatedOrderStatus === "PARCIAL_COM_CANCELAMENTO"
         ),
         dd("parcial_excesso", "Parcial com excesso", (r) =>
           r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
@@ -1223,6 +1414,34 @@ export function buildDrilldownCards(
             (r.hasDivergences && r.hasMissingStockDocument)
         ),
       ];
+    case "com_cancelamento":
+      return [
+        dd(
+          "recebido_com_cancelamento",
+          "Recebido com cancelamento",
+          (r) => r.consolidatedOrderStatus === "RECEBIDO_COM_CANCELAMENTO"
+        ),
+        dd(
+          "completo_com_cancelamento",
+          "Completo com cancelamento",
+          (r) => r.consolidatedOrderStatus === "COMPLETO_COM_CANCELAMENTO"
+        ),
+        dd(
+          "parcial_com_cancelamento",
+          "Parcial com cancelamento",
+          (r) => r.consolidatedOrderStatus === "PARCIAL_COM_CANCELAMENTO"
+        ),
+        dd(
+          "itens_cancelados",
+          "Com itens cancelados",
+          (r) => r.canceledItemsCount > 0
+        ),
+        dd(
+          "valor_cancelado",
+          "Com valor cancelado",
+          (r) => r.canceledOrderValue > MONEY_EPS
+        ),
+      ];
     default:
       return [];
   }
@@ -1280,6 +1499,8 @@ function matchesSelectedCard(
       return row.hasOpenCr;
     case "recebidos":
       return RECEBIDOS.has(row.consolidatedOrderStatus) || row.hasReceived;
+    case "com_cancelamento":
+      return row.hasCanceledItems;
     case "bloqueados":
       return row.consolidatedOrderStatus === "BLOQUEADO_REVISAO";
     default:
@@ -1295,6 +1516,28 @@ function matchesSelectedDrilldown(
     case "com_item_pendente":
     case "parcial_item_pendente":
       return row.hasPendingItems;
+    case "com_cancelamento":
+    case "itens_cancelados":
+    case "completo_com_cancelamento":
+    case "parcial_com_cancelamento":
+    case "recebido_com_cancelamento":
+    case "valor_cancelado":
+      if (drilldown === "recebido_com_cancelamento") {
+        return row.consolidatedOrderStatus === "RECEBIDO_COM_CANCELAMENTO";
+      }
+      if (drilldown === "completo_com_cancelamento") {
+        return (
+          row.consolidatedOrderStatus === "COMPLETO_COM_CANCELAMENTO" ||
+          row.consolidatedOrderStatus === "RECEBIDO_COM_CANCELAMENTO"
+        );
+      }
+      if (drilldown === "parcial_com_cancelamento") {
+        return row.consolidatedOrderStatus === "PARCIAL_COM_CANCELAMENTO";
+      }
+      if (drilldown === "valor_cancelado") {
+        return row.canceledOrderValue > MONEY_EPS;
+      }
+      return row.hasCanceledItems;
     case "com_produto_fora":
     case "parcial_produto_fora":
     case "produto_fora_pedido":
@@ -1413,7 +1656,7 @@ function matchesSelectedDrilldown(
       if (drilldown === "fora_pedido")
         return row.alerts.includes("PRODUTO_FORA_DO_PEDIDO");
       if (drilldown === "preco") return row.alerts.includes("DIVERGENCIA_PRECO");
-      return row.consolidatedOrderStatus === "CANCELADO";
+      return row.consolidatedOrderStatus === "CANCELADO" || row.hasCanceledItems;
     default:
       return true;
   }

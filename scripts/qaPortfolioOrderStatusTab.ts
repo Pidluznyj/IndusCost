@@ -134,6 +134,38 @@ function staticContracts(): void {
 
   const service = read("src/lib/finance/portfolioOrderStatusService.ts");
   if (
+    service.includes("RECEBIDO_COM_CANCELAMENTO") &&
+    service.includes("canceledOrderValue") &&
+    service.includes("pendingActiveOrderValue") &&
+    service.includes("com_cancelamento")
+  ) {
+    ok(
+      "static",
+      "service:canceled-items",
+      "service trata itens cancelados (status + valores + card)"
+    );
+  } else {
+    fail(
+      "static",
+      "service:canceled-items",
+      "service sem campos/status de cancelamento"
+    );
+  }
+
+  const docs = read("docs/finance/portfolio-order-status-tab.md");
+  if (docs.includes("Tratamento de itens cancelados")) {
+    ok("static", "docs:canceled-section", "doc com seção de itens cancelados");
+  } else {
+    fail("static", "docs:canceled-section", "seção ausente na doc");
+  }
+
+  if (exists("src/lib/finance/orderItemFulfillmentStatus.ts")) {
+    ok("static", "service:item-status-normalizer", "normalizador de status de item");
+  } else {
+    fail("static", "service:item-status-normalizer", "normalizador ausente");
+  }
+
+  if (
     service.includes("buildPrimaryCards") &&
     /rows\.length|pred\(r\)/.test(service) &&
     service.includes("Pedidos distintos")
@@ -522,7 +554,6 @@ async function liveLoaders(): Promise<void> {
       orderCode: "02207",
       page: "1",
       pageSize: "20",
-      selectedCard: "parciais",
     });
     const rows02207 = (pd02207.rows ?? []).filter((r) =>
       (r.orderCode ?? "").includes("02207")
@@ -530,17 +561,76 @@ async function liveLoaders(): Promise<void> {
     if (rows02207.length >= 1) {
       const row = rows02207[0]!;
       const isPartial = String(row.consolidatedOrderStatus).startsWith("PARCIAL_");
-      if (isPartial || row.hasPendingItems) {
+      const withCancel =
+        row.consolidatedOrderStatus === "RECEBIDO_COM_CANCELAMENTO" ||
+        row.consolidatedOrderStatus === "COMPLETO_COM_CANCELAMENTO" ||
+        row.hasCanceledItems === true;
+      if (!isPartial && withCancel && row.pendingActiveOrderValue <= 0.009) {
         ok(
           "live",
-          "live:pd02207-partial",
-          `status=${row.consolidatedOrderStatus} pendingItems=${row.pendingItemCount}`
+          "live:pd02207-com-cancelamento",
+          `status=${row.consolidatedOrderStatus} canceled=${row.canceledItemsCount} pendingActive=${row.pendingActiveOrderValue} pct=${row.fulfillmentPercentActive}`
         );
       } else {
         fail(
           "live",
-          "live:pd02207-partial",
-          `status=${row.consolidatedOrderStatus} (esperado parcial)`
+          "live:pd02207-com-cancelamento",
+          `status=${row.consolidatedOrderStatus} isPartial=${isPartial} hasCanceled=${row.hasCanceledItems} pendingActive=${row.pendingActiveOrderValue}`
+        );
+      }
+
+      const parciaisCard = (pd02207.primaryCards ?? []).find(
+        (c) => c.id === "parciais"
+      );
+      const cancelCard = (pd02207.primaryCards ?? []).find(
+        (c) => c.id === "com_cancelamento"
+      );
+      // Reconsulta no card Parciais: PD 02207 não deve aparecer
+      const pd02207Parciais = await loadPortfolioOrderStatusList({
+        year: String(YEAR),
+        orderCode: "02207",
+        page: "1",
+        pageSize: "20",
+        selectedCard: "parciais",
+      });
+      const inParciais = (pd02207Parciais.rows ?? []).some((r) =>
+        (r.orderCode ?? "").includes("02207")
+      );
+      if (!inParciais) {
+        ok(
+          "live",
+          "live:pd02207-not-in-parciais",
+          `parciaisCardHint ok; cancelCard.count=${cancelCard?.count ?? "?"}`
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02207-not-in-parciais",
+          `PD 02207 ainda no card Parciais (count=${parciaisCard?.count})`
+        );
+      }
+
+      const cancelDrill = await loadPortfolioOrderStatusList({
+        year: String(YEAR),
+        orderCode: "02207",
+        page: "1",
+        pageSize: "20",
+        selectedCard: "com_cancelamento",
+      });
+      const inCancel = (cancelDrill.rows ?? []).some((r) =>
+        (r.orderCode ?? "").includes("02207")
+      );
+      if (inCancel) {
+        ok(
+          "live",
+          "live:pd02207-in-com-cancelamento",
+          `status=${row.consolidatedOrderStatus}`
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02207-in-com-cancelamento",
+          "PD 02207 ausente no card Com cancelamento"
         );
       }
 
@@ -552,29 +642,42 @@ async function liveLoaders(): Promise<void> {
         pageSize: "200",
       });
       const itemRows = items02207.rows ?? [];
-      const hasAttendedOrPending = itemRows.some((r) => {
+      const canceledItems = itemRows.filter(
+        (r) =>
+          (r.itemFulfillmentStatus ?? "").toUpperCase() === "CANCELADO" ||
+          (r.orderItemStatus ?? "").toUpperCase().includes("CANCEL") ||
+          (r.operationalStage ?? "").toUpperCase().includes("CANCEL")
+      );
+      const pendingActive = itemRows.filter((r) => {
         const lt = (r.lineType ?? "").toUpperCase();
-        return (
-          lt === "ORDER_ITEM_PENDING" ||
-          lt === "ORDER_ITEM_ALLOCATED" ||
-          (r.quantityUsedForOrder ?? 0) > 0
-        );
+        if (lt !== "ORDER_ITEM_PENDING") return false;
+        const st = (r.itemFulfillmentStatus ?? r.orderItemStatus ?? "").toUpperCase();
+        return !st.includes("CANCEL");
       });
-      if (items02207.ok !== false && itemRows.length >= 1 && hasAttendedOrPending) {
+      if (
+        items02207.ok !== false &&
+        itemRows.length >= 1 &&
+        canceledItems.length >= 1 &&
+        pendingActive.length === 0
+      ) {
         ok(
           "live",
-          "live:pd02207-items",
-          `items=${itemRows.length} attendedOrPending=true`
+          "live:pd02207-items-canceled",
+          `items=${itemRows.length} canceled=${canceledItems.length} pendingActive=${pendingActive.length}`
         );
       } else {
         fail(
           "live",
-          "live:pd02207-items",
-          `items=${itemRows.length} ok=${items02207.ok}`
+          "live:pd02207-items-canceled",
+          `items=${itemRows.length} canceled=${canceledItems.length} pendingActive=${pendingActive.length} ok=${items02207.ok}`
         );
       }
     } else {
-      fail("live", "live:pd02207-partial", "PD 02207 não retornou na lista");
+      fail(
+        "live",
+        "live:pd02207-com-cancelamento",
+        "PD 02207 não retornou na lista"
+      );
     }
 
     const items02534 = await loadOrderToCashAuditList({

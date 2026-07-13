@@ -59,9 +59,21 @@ export const ORDER_STATUS_CONSOLIDATED_OPTIONS: ReadonlyArray<{
   { value: "COMPLETO_RECEBIDO", label: "Completo recebido" },
   { value: "COMPLETO_CR_ABERTO", label: "Completo CR aberto" },
   { value: "COMPLETO_SEM_CR", label: "Completo sem CR" },
+  {
+    value: "COMPLETO_COM_CANCELAMENTO",
+    label: "Completo com itens cancelados",
+  },
+  {
+    value: "RECEBIDO_COM_CANCELAMENTO",
+    label: "Recebido com itens cancelados",
+  },
   { value: "PARCIAL_RECEBIDO", label: "Parcial recebido" },
   { value: "PARCIAL_CR_ABERTO", label: "Parcial CR aberto" },
   { value: "PARCIAL_SEM_CR", label: "Parcial sem CR" },
+  {
+    value: "PARCIAL_COM_CANCELAMENTO",
+    label: "Parcial com itens cancelados",
+  },
   { value: "SEM_ATENDIMENTO_FUTURO", label: "Sem atendimento (futuro)" },
   { value: "SEM_ATENDIMENTO_ATRASADO", label: "Sem atendimento (atrasado)" },
   { value: "NF_SEM_CR", label: "NF sem CR" },
@@ -156,6 +168,7 @@ export function formatOrderStatusAlertLabel(alert: string): string {
     SEM_RESPONSAVEL_COMERCIAL: "Sem responsável",
     ENTREGA_VENCIDA: "Entrega vencida",
     SEM_DOCUMENTO_SAIDA: "Sem doc. saída",
+    PEDIDO_COM_ITENS_CANCELADOS: "Com cancelamento",
   };
   return map[alert] ?? alert;
 }
@@ -168,6 +181,7 @@ export const ORDER_STATUS_ALERT_OPTIONS = [
   "SEM_VENDEDOR_NOMUS",
   "SEM_RESPONSAVEL_COMERCIAL",
   "SEM_CONDICAO_PAGAMENTO",
+  "PEDIDO_COM_ITENS_CANCELADOS",
 ] as const;
 
 export const ORDER_STATUS_STATUS_LABEL: Record<
@@ -185,6 +199,7 @@ export const ORDER_STATUS_PRIMARY_CARD_LABEL: Record<string, string> = {
   com_divergencia: "Com divergência",
   cr_aberto: "CR aberto",
   recebidos: "Recebidos",
+  com_cancelamento: "Com cancelamento",
   bloqueados: "Bloqueados",
 };
 

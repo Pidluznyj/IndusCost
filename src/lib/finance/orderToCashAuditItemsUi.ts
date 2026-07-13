@@ -10,6 +10,7 @@ export type OrderToCashAuditItemChipId =
   | ""
   | "attended"
   | "pending"
+  | "canceled"
   | "excess"
   | "outside"
   | "cr_open"
@@ -29,6 +30,11 @@ export const ORDER_TO_CASH_AUDIT_ITEM_CHIPS: ReadonlyArray<{
     id: "pending",
     label: "Itens pendentes",
     tone: "border-[#FEDF89] bg-[#FFFAEB] text-[#B54708]",
+  },
+  {
+    id: "canceled",
+    label: "Itens cancelados",
+    tone: "border-[#D0D5DD] bg-[#F2F4F7] text-[#475467]",
   },
   {
     id: "excess",
@@ -58,11 +64,24 @@ export function orderToCashAuditLineType(row: OrderToCashAuditListRow): string {
   return (row.lineType ?? "").trim().toUpperCase();
 }
 
+export function isOrderToCashAuditCanceledLine(row: OrderToCashAuditListRow): boolean {
+  if (row.itemFulfillmentStatus === "CANCELADO") return true;
+  const status = (row.orderItemStatus ?? "").trim().toUpperCase();
+  return (
+    status === "CANCELADO" ||
+    status === "CANCELLED" ||
+    status === "CANCELED" ||
+    status === "CANCELLED"
+  );
+}
+
 export function isOrderToCashAuditPendingLine(row: OrderToCashAuditListRow): boolean {
+  if (isOrderToCashAuditCanceledLine(row)) return false;
   return orderToCashAuditLineType(row) === "ORDER_ITEM_PENDING";
 }
 
 export function isOrderToCashAuditAttendedLine(row: OrderToCashAuditListRow): boolean {
+  if (isOrderToCashAuditCanceledLine(row)) return false;
   const lt = orderToCashAuditLineType(row);
   if (lt === "ORDER_ITEM_PENDING") return false;
   if (lt === "ORDER_ITEM_ALLOCATED") return true;
@@ -105,6 +124,8 @@ export function matchesOrderToCashAuditItemChip(
       return isOrderToCashAuditAttendedLine(row);
     case "pending":
       return isOrderToCashAuditPendingLine(row);
+    case "canceled":
+      return isOrderToCashAuditCanceledLine(row);
     case "excess":
       return isOrderToCashAuditExcessLine(row);
     case "outside":
@@ -124,6 +145,7 @@ export function countOrderToCashAuditItemChips(
   const counts = {
     attended: 0,
     pending: 0,
+    canceled: 0,
     excess: 0,
     outside: 0,
     cr_open: 0,
@@ -132,6 +154,7 @@ export function countOrderToCashAuditItemChips(
   for (const row of rows) {
     if (isOrderToCashAuditAttendedLine(row)) counts.attended += 1;
     if (isOrderToCashAuditPendingLine(row)) counts.pending += 1;
+    if (isOrderToCashAuditCanceledLine(row)) counts.canceled += 1;
     if (isOrderToCashAuditExcessLine(row)) counts.excess += 1;
     if (isOrderToCashAuditOutsideLine(row)) counts.outside += 1;
     if (isOrderToCashAuditCrOpenLine(row)) counts.cr_open += 1;
@@ -161,6 +184,7 @@ export const ORDER_TO_CASH_AUDIT_COMPACT_HIDDEN_COLUMNS = [
 ] as const;
 
 export function pendingQuantityOfAuditRow(row: OrderToCashAuditListRow): number | null {
+  if (isOrderToCashAuditCanceledLine(row)) return 0;
   const ordered = row.orderedQuantity;
   if (ordered == null) {
     if (isOrderToCashAuditPendingLine(row)) return null;

@@ -21,6 +21,7 @@ import {
   type PortfolioOrderStatusRunMeta,
 } from "./finance/portfolioOrderStatusApi.js";
 import type { PortfolioOrderStatusFact } from "./finance/portfolioOrderStatusService.js";
+import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -101,6 +102,8 @@ const FACT_SELECT = {
   hasOverdueReceivable: true,
   hasPaymentConditionMissing: true,
   salesOrderId: true,
+  salesOrderItemId: true,
+  orderItemStatus: true,
   fiscalStage: true,
   commercialStage: true,
 } as const;
@@ -232,6 +235,10 @@ function mapFact(row: FactRow): PortfolioOrderStatusFact {
     hasDocumentWithoutReceivable: row.hasDocumentWithoutReceivable,
     hasOverdueReceivable: row.hasOverdueReceivable,
     salesOrderId: row.salesOrderId,
+    salesOrderItemId:
+      typeof row.salesOrderItemId === "string" ? row.salesOrderItemId : null,
+    orderItemStatus:
+      typeof row.orderItemStatus === "string" ? row.orderItemStatus : null,
   };
   return {
     ...base,
@@ -431,7 +438,10 @@ export async function loadPortfolioOrderStatusList(
     select: FACT_SELECT,
   });
 
-  const facts = rawFacts.map((r) => mapFact(r as FactRow));
+  const mapped = rawFacts.map((r) => mapFact(r as FactRow));
+  const facts = (await enrichFactsWithOrderItemStatus(
+    mapped
+  )) as PortfolioOrderStatusFact[];
 
   return buildPortfolioOrderStatusListFromFacts({
     facts,

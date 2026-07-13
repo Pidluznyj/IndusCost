@@ -8,7 +8,7 @@
 | **Script** | `scripts/qaPortfolioOrderStatusTab.ts` (`npm run qa:portfolio-order-status`) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/order-status` |
 | **Status geral** | **LIBERADO COM RESSALVA** |
-| **Resumo** | total=11 pass=11 fail=0 skip=1 |
+| **Resumo** | total=14 pass=14 fail=0 skip=1 |
 
 ---
 
@@ -22,6 +22,9 @@
 | `ui:tab-registered` | PASS | aba Status Pedidos na página + PORTFOLIO_RECONCILIATION_UI_TABS |
 | `bundle:no-prisma-frontend` | PASS | Status Pedidos UI/client sem Prisma/server |
 | `table:one-row-per-order` | PASS | tabela keyed por orderKey (pedido) |
+| `service:canceled-items` | PASS | service trata itens cancelados (status + valores + card) |
+| `docs:canceled-section` | PASS | doc com seção de itens cancelados |
+| `service:item-status-normalizer` | PASS | normalizador de status de item |
 | `cards:distinct-orders` | PASS | cards contam pedidos (não facts) |
 | `server:loader` | PASS | loader Prisma order-status existe |
 | `drilldown:shared-items-grid` | PASS | OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria |

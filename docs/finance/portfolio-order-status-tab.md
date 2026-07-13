@@ -49,6 +49,24 @@ Regras de exibição (herdadas da Auditoria):
 
 Componente compartilhado: `OrderToCashAuditItemsGrid.tsx` (Auditoria + Status Pedidos).
 
+## Tratamento de itens cancelados
+
+Item cancelado no Nomus (status Cancelado / quantidade cancelada ≥ pedida) **aparece** no detalhe item a item, com status visual **Cancelado**.
+
+Regras:
+
+1. **Aparece no detalhe** — chip “Itens cancelados”; observação “Item cancelado no pedido de venda”.
+2. **Não conta como pendente** — `pendingActiveItemsCount` / card Parciais ignoram cancelados.
+3. **Não compõe saldo pendente ativo** — `pendingActiveOrderValue` só de itens ativos.
+4. **Não reduz o % atendido dos itens ativos** — `fulfillmentPercentActive = alocado / activeOrderValue`.
+5. **Compõe** `canceledOrderValue`, `canceledItemsCount`, card/drilldown **Com cancelamento**.
+6. **Status do pedido**: se todos os itens ativos foram atendidos e há cancelados → `RECEBIDO_COM_CANCELAMENTO` ou `COMPLETO_COM_CANCELAMENTO` (não parcial).
+7. **Parcial só** quando existe item ativo com saldo pendente real (`PARCIAL_*` / `PARCIAL_COM_CANCELAMENTO`).
+
+Caso **PD 02207**: 2 itens atendidos + 2 cancelados → 100% dos ativos, saldo ativo R$ 0, status recebido/completo com cancelamento — **não** cai no card Parciais.
+
+Fonte do status: `OrderToCashAuditFact.orderItemStatus` (rebuild) e enriquecimento em runtime via `SalesOrder.nomusRawResponse` (`enrichFactsWithOrderItemStatus`).
+
 ## Componentes
 
 - `OrderStatusTab.tsx`

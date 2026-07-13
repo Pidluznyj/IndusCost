@@ -162,6 +162,12 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       if (row.lineType === "ORDER_ITEM_PENDING") return "—";
       return row.quantityUsedForOrder == null ? "—" : String(row.quantityUsedForOrder);
     case "pendingQuantity": {
+      if (
+        row.itemFulfillmentStatus === "CANCELADO" ||
+        (row.orderItemStatus ?? "").toUpperCase().includes("CANCEL")
+      ) {
+        return "0";
+      }
       const pending = pendingQuantityOfAuditRow(row);
       return pending == null ? "—" : String(pending);
     }
@@ -226,6 +232,12 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
     case "paymentStatus":
       return <Badge value={row.paymentStatus} kind="payment" />;
     case "operationalStage":
+      if (
+        row.itemFulfillmentStatus === "CANCELADO" ||
+        (row.orderItemStatus ?? "").toUpperCase().includes("CANCEL")
+      ) {
+        return <Badge value="Cancelado" kind="stage" />;
+      }
       return <Badge value={row.operationalStage} kind="stage" />;
     case "financialStage":
       return <Badge value={row.financialStage} kind="stage" />;

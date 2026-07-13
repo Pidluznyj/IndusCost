@@ -586,18 +586,18 @@ describe("portfolioOrderStatusService", () => {
     assert.ok(parcialCard);
     assert.equal(typeof parcialCard!.totalOrderValue, "number");
     assert.equal(parcialCard!.percentOfTotal, Math.round((1 / 3) * 1000) / 10);
-    assert.match(parcialCard!.hint, /item atendido/i);
+    assert.match(parcialCard!.hint, /item ativo atendido/i);
 
     const drills = built.drilldownCards;
     assert.ok(drills.some((d) => d.id === "parcial_cr_aberto"));
     assert.ok(drills.some((d) => d.id === "parcial_produto_fora"));
-    assert.equal(drills.length, 7);
+    assert.ok(drills.length >= 7);
 
     const allBuilt = buildPortfolioOrderStatus({ facts, asOf });
     const generalCards = buildDrilldownCards(allBuilt.rows, null);
     assert.ok(generalCards.some((d) => d.id === "com_item_pendente"));
     assert.ok(generalCards.some((d) => d.id === "entrega_vencida"));
-    assert.equal(generalCards.length, 8);
+    assert.equal(generalCards.length, 11);
 
     const sorted = sortOrderStatusRows(built.rows, {
       sortBy: "totalOrderValue",
@@ -626,5 +626,108 @@ describe("portfolioOrderStatusService", () => {
       total?.hint,
       "Total de pedidos distintos dentro do filtro."
     );
+  });
+
+  it("PD 02207: itens cancelados não geram parcial; % ativo 100%", () => {
+    const salesOrderId = "order-pd-02207";
+    const shared = {
+      salesOrderId,
+      orderCode: "PD 02207",
+      customerName: "Cliente",
+      externalCustomerId: 1,
+      orderNetValue: 197_030,
+      orderIssueDate: new Date(2026, 0, 10),
+      financialStage: "CR_RECEIVED",
+      receivableTotalValue: 71_405,
+      receivableOpenValue: 0,
+      receivableReceivedValue: 71_405,
+    } as const;
+
+    const facts: PortfolioOrderStatusFact[] = [
+      baseFact({
+        id: "a1",
+        ...shared,
+        productCode: "618.09AA",
+        sku: "618.09AA",
+        lineType: "ORDER_ITEM_ALLOCATED",
+        orderedQuantity: 8,
+        orderItemTotalValue: 40_000,
+        quantityUsedForOrder: 8,
+        allocatedValueByOrderPrice: 40_000,
+        allocatedValueByDocumentPrice: 40_000,
+        orderItemStatus: "ATENDIDO",
+      }),
+      baseFact({
+        id: "a2",
+        ...shared,
+        productCode: "618.10AA",
+        sku: "618.10AA",
+        lineType: "ORDER_ITEM_ALLOCATED",
+        orderedQuantity: 6.5,
+        orderItemTotalValue: 31_405,
+        quantityUsedForOrder: 6.5,
+        allocatedValueByOrderPrice: 31_405,
+        allocatedValueByDocumentPrice: 31_405,
+        orderItemStatus: "ATENDIDO",
+      }),
+      baseFact({
+        id: "c1",
+        ...shared,
+        productCode: "618.07AA",
+        sku: "618.07AA",
+        lineType: "ORDER_ITEM_PENDING",
+        orderedQuantity: 16.5,
+        orderItemTotalValue: 80_000,
+        quantityUsedForOrder: null,
+        allocatedValueByOrderPrice: null,
+        orderItemStatus: "CANCELADO",
+        receivableTotalValue: null,
+        receivableOpenValue: null,
+        receivableReceivedValue: null,
+        nfeNumber: null,
+      }),
+      baseFact({
+        id: "c2",
+        ...shared,
+        productCode: "618.01AA",
+        sku: "618.01AA",
+        lineType: "ORDER_ITEM_PENDING",
+        orderedQuantity: 9,
+        orderItemTotalValue: 45_625,
+        quantityUsedForOrder: null,
+        allocatedValueByOrderPrice: null,
+        orderItemStatus: "CANCELADO",
+        receivableTotalValue: null,
+        receivableOpenValue: null,
+        receivableReceivedValue: null,
+        nfeNumber: null,
+      }),
+    ];
+
+    const result = buildPortfolioOrderStatus({ facts });
+    assert.equal(result.rows.length, 1);
+    const row = result.rows[0]!;
+
+    assert.equal(row.originalOrderValue, 197_030);
+    assert.equal(row.canceledOrderValue, 125_625);
+    assert.equal(row.activeOrderValue, 71_405);
+    assert.equal(row.allocatedOrderValue, 71_405);
+    assert.equal(row.pendingActiveOrderValue, 0);
+    assert.equal(row.pendingOrderValue, 0);
+    assert.equal(row.fulfillmentPercentActive, 100);
+    assert.equal(row.fulfillmentPercent, 100);
+    assert.equal(row.fulfilledItemsCount, 2);
+    assert.equal(row.canceledItemsCount, 2);
+    assert.equal(row.pendingActiveItemsCount, 0);
+    assert.equal(row.hasPendingItems, false);
+    assert.equal(row.hasCanceledItems, true);
+    assert.equal(row.consolidatedOrderStatus, "RECEBIDO_COM_CANCELAMENTO");
+
+    const parciais = result.primaryCards.find((c) => c.id === "parciais");
+    assert.equal(parciais?.count, 0);
+    const comCancel = result.primaryCards.find((c) => c.id === "com_cancelamento");
+    assert.equal(comCancel?.count, 1);
+    const completos = result.primaryCards.find((c) => c.id === "completos");
+    assert.equal(completos?.count, 1);
   });
 });

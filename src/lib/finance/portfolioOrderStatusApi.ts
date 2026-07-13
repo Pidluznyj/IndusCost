@@ -147,9 +147,12 @@ const CONSOLIDATED_STATUSES: PortfolioOrderStatusConsolidated[] = [
   "COMPLETO_RECEBIDO",
   "COMPLETO_CR_ABERTO",
   "COMPLETO_SEM_CR",
+  "COMPLETO_COM_CANCELAMENTO",
+  "RECEBIDO_COM_CANCELAMENTO",
   "PARCIAL_RECEBIDO",
   "PARCIAL_CR_ABERTO",
   "PARCIAL_SEM_CR",
+  "PARCIAL_COM_CANCELAMENTO",
   "SEM_ATENDIMENTO_FUTURO",
   "SEM_ATENDIMENTO_ATRASADO",
   "NF_SEM_CR",
@@ -165,6 +168,7 @@ const PRIMARY_CARDS: PortfolioOrderStatusPrimaryCardId[] = [
   "com_divergencia",
   "cr_aberto",
   "recebidos",
+  "com_cancelamento",
   "bloqueados",
 ];
 

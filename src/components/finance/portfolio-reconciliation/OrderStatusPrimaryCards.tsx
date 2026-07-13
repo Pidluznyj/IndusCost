@@ -4,6 +4,7 @@ import {
   Ban,
   CheckCircle2,
   CircleDashed,
+  CircleSlash,
   Layers,
   PackageX,
   Wallet,
@@ -38,6 +39,7 @@ const CARD_ICON: Record<
   com_divergencia: AlertTriangle,
   cr_aberto: Wallet,
   recebidos: CheckCircle2,
+  com_cancelamento: CircleSlash,
   bloqueados: Ban,
 };
 
@@ -87,6 +89,12 @@ const CARD_TONE: Record<
     value: "text-[#067647]",
     iconWrap: "bg-white/90",
     icon: "text-[#067647]",
+  },
+  com_cancelamento: {
+    shell: "border-[#D0D5DD] bg-[#F2F4F7]",
+    value: "text-[#344054]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#667085]",
   },
   bloqueados: {
     shell: "border-[#FECDCA] bg-[#FEF3F2]",
