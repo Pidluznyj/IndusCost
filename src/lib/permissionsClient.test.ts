@@ -37,8 +37,8 @@ describe("permissionsClient UI", () => {
     assert.deepEqual(api.listAllowedPortfolioReconciliationTabs(), [
       "conciliation",
       "intelligence",
-      "order-to-cash-audit",
       "order-status-pedidos",
+      "order-to-cash-audit",
     ]);
     assert.equal(
       api.getAllowedTabs(ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA).length,

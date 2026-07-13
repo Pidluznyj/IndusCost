@@ -44,7 +44,7 @@ import { PortfolioReconciliationSummaryCardsView } from "@/src/components/financ
 import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
 import { PortfolioIntelligenceSection } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
-import { OrderStatusPedidosTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusPedidosTab";
+import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
 import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
 import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
@@ -544,7 +544,7 @@ export function FinancePortfolioReconciliationPage() {
           deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
         >
           <div className="mb-6 min-w-0 max-w-full">
-            <OrderStatusPedidosTab />
+            <OrderStatusTab />
           </div>
         </ProtectedTab>
 

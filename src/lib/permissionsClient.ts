@@ -96,14 +96,14 @@ export const PORTFOLIO_RECONCILIATION_UI_TABS: ReadonlyArray<{
     label: "Inteligência da Carteira",
   },
   {
-    id: "order-to-cash-audit",
-    resourceKey: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
-    label: "Auditoria Pedido → Caixa",
-  },
-  {
     id: "order-status-pedidos",
     resourceKey: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
     label: "Status Pedidos",
+  },
+  {
+    id: "order-to-cash-audit",
+    resourceKey: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
+    label: "Auditoria Pedido → Caixa",
   },
 ] as const;
 
