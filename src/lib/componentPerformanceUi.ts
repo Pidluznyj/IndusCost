@@ -8,7 +8,7 @@ export const OPERATIONS_PERFORMANCE_FROZEN_COST_NOTICE =
   "Isso não altera custos publicados. A mudança será usada em novos DRAFTs de custo.";
 
 export const OPERATIONS_PERFORMANCE_PAGE_DESCRIPTION =
-  "Atualize ciclo e cavidades dos componentes. Alterações impactam apenas novas gerações de DRAFT de custo; custos publicados permanecem congelados.";
+  "Atualize ciclo, cavidades, setup e eficiência dos componentes. Alterações impactam apenas novas gerações de DRAFT de custo; custos publicados permanecem congelados.";
 
 export type ComponentPerformanceFilterId =
   | "all"
@@ -52,6 +52,8 @@ export function validatePerformanceEditForm(input: {
   responsiblePersonName: string;
   cycleTimeSeconds: string;
   cavities: string;
+  setupTimeMin: string;
+  efficiencyExpected: string;
 }): string | null {
   if (!input.responsiblePersonName.trim() || input.responsiblePersonName.trim().length < 2) {
     return "Informe o responsável pela alteração operacional.";
@@ -63,6 +65,20 @@ export function validatePerformanceEditForm(input: {
   const cav = Number(input.cavities);
   if (!Number.isFinite(cav) || cav < 1 || !Number.isInteger(cav)) {
     return "Informe cavidades válidas (inteiro maior ou igual a 1).";
+  }
+  if (!input.setupTimeMin.trim()) {
+    return "Informe o setup em minutos (obrigatório, maior ou igual a zero).";
+  }
+  const setup = Number(input.setupTimeMin);
+  if (!Number.isFinite(setup) || setup < 0) {
+    return "Informe o setup em minutos (obrigatório, maior ou igual a zero).";
+  }
+  if (!input.efficiencyExpected.trim()) {
+    return "Informe a eficiência (%) entre 0 (exclusive) e 100.";
+  }
+  const eff = Number(input.efficiencyExpected);
+  if (!Number.isFinite(eff) || eff <= 0 || eff > 100) {
+    return "Informe a eficiência (%) entre 0 (exclusive) e 100.";
   }
   return null;
 }

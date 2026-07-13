@@ -178,6 +178,8 @@ export function OperationsPerformanceModule() {
   const handleSave = async (payload: {
     cycleTimeSeconds: number;
     cavities: number;
+    setupTimeMin: number;
+    efficiencyExpected: number;
     responsiblePersonName: string;
     note: string | null;
   }) => {

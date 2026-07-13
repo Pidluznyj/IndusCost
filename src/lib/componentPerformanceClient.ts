@@ -154,6 +154,8 @@ export async function fetchComponentPerformanceHistory(
 export type PatchComponentPerformancePayload = {
   cycleTimeSeconds?: number;
   cavities?: number;
+  setupTimeMin?: number;
+  efficiencyExpected?: number;
   responsiblePersonName: string;
   note?: string | null;
 };

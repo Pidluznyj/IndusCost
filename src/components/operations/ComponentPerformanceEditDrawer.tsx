@@ -18,6 +18,8 @@ type Props = {
   onSave: (payload: {
     cycleTimeSeconds: number;
     cavities: number;
+    setupTimeMin: number;
+    efficiencyExpected: number;
     responsiblePersonName: string;
     note: string | null;
   }) => void;
@@ -34,6 +36,8 @@ export function ComponentPerformanceEditDrawer({
 }: Props) {
   const [cycleTimeSeconds, setCycleTimeSeconds] = useState("");
   const [cavities, setCavities] = useState("");
+  const [setupTimeMin, setSetupTimeMin] = useState("");
+  const [efficiencyExpected, setEfficiencyExpected] = useState("");
   const [responsiblePersonName, setResponsiblePersonName] = useState("");
   const [note, setNote] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -44,6 +48,15 @@ export function ComponentPerformanceEditDrawer({
       item.process.cycleTimeSeconds != null ? String(item.process.cycleTimeSeconds) : ""
     );
     setCavities(item.process.cavities != null ? String(item.process.cavities) : "");
+    // Setup ausente no cadastro bloqueava o save — default 0 para completar o processo padrão.
+    setSetupTimeMin(
+      item.process.setupTimeMin != null ? String(item.process.setupTimeMin) : "0"
+    );
+    setEfficiencyExpected(
+      item.process.efficiencyExpected != null
+        ? String(item.process.efficiencyExpected)
+        : "100"
+    );
     setResponsiblePersonName("");
     setNote("");
     setValidationError(null);
@@ -57,6 +70,8 @@ export function ComponentPerformanceEditDrawer({
       responsiblePersonName,
       cycleTimeSeconds,
       cavities,
+      setupTimeMin,
+      efficiencyExpected,
     });
     if (message) {
       setValidationError(message);
@@ -66,6 +81,8 @@ export function ComponentPerformanceEditDrawer({
     onSave({
       cycleTimeSeconds: Number(cycleTimeSeconds),
       cavities: Number(cavities),
+      setupTimeMin: Number(setupTimeMin),
+      efficiencyExpected: Number(efficiencyExpected),
       responsiblePersonName: responsiblePersonName.trim(),
       note: note.trim() || null,
     });
@@ -133,6 +150,18 @@ export function ComponentPerformanceEditDrawer({
                 <label className="text-xs font-bold uppercase text-muted-foreground">Cavidades atuais</label>
                 <p className="mt-1 text-sm font-medium tabular-nums">{item.process.cavities ?? "—"}</p>
               </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-muted-foreground">Setup atual (min)</label>
+                <p className="mt-1 text-sm font-medium tabular-nums">
+                  {item.process.setupTimeMin ?? "—"}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-muted-foreground">Eficiência atual (%)</label>
+                <p className="mt-1 text-sm font-medium tabular-nums">
+                  {item.process.efficiencyExpected ?? "—"}
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -164,6 +193,39 @@ export function ComponentPerformanceEditDrawer({
                   value={cavities}
                   onChange={(e) => setCavities(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="perf-setup" className="text-xs font-bold uppercase text-muted-foreground">
+                  Novo setup (min) *
+                </label>
+                <input
+                  id="perf-setup"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  disabled={!canEdit || saving}
+                  value={setupTimeMin}
+                  onChange={(e) => setSetupTimeMin(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  data-testid="performance-edit-setup"
+                />
+              </div>
+              <div>
+                <label htmlFor="perf-eff" className="text-xs font-bold uppercase text-muted-foreground">
+                  Nova eficiência (%) *
+                </label>
+                <input
+                  id="perf-eff"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  disabled={!canEdit || saving}
+                  value={efficiencyExpected}
+                  onChange={(e) => setEfficiencyExpected(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  data-testid="performance-edit-efficiency"
                 />
               </div>
             </div>
@@ -201,7 +263,7 @@ export function ComponentPerformanceEditDrawer({
             <ComponentInjectionCalculationBreakdown
               cycleTimeSeconds={cycleTimeSeconds}
               cavities={cavities}
-              efficiencyExpectedPercent={item.process.efficiencyExpected ?? 100}
+              efficiencyExpectedPercent={efficiencyExpected || item.process.efficiencyExpected || 100}
               disabled={!canEdit}
             />
 

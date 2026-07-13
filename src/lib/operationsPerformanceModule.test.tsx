@@ -18,6 +18,8 @@ describe("componentPerformanceUi", () => {
       responsiblePersonName: "",
       cycleTimeSeconds: "40",
       cavities: "4",
+      setupTimeMin: "0",
+      efficiencyExpected: "100",
     });
     assert.match(message ?? "", /responsável/i);
   });
@@ -28,9 +30,22 @@ describe("componentPerformanceUi", () => {
         responsiblePersonName: "João da Produção",
         cycleTimeSeconds: "40",
         cavities: "4",
+        setupTimeMin: "0",
+        efficiencyExpected: "100",
       }),
       null
     );
+  });
+
+  it("validatePerformanceEditForm exige setup >= 0", () => {
+    const message = validatePerformanceEditForm({
+      responsiblePersonName: "João da Produção",
+      cycleTimeSeconds: "40",
+      cavities: "4",
+      setupTimeMin: "",
+      efficiencyExpected: "100",
+    });
+    assert.match(message ?? "", /setup/i);
   });
 
   it("estimateTheoreticalPiecesPerHour calcula produtividade", () => {
@@ -83,6 +98,8 @@ describe("ComponentPerformanceEditDrawer", () => {
     assert.match(html, /performance-frozen-cost-notice/);
     assert.match(html, new RegExp(OPERATIONS_PERFORMANCE_FROZEN_COST_NOTICE.replace(/\./g, "\\.")));
     assert.match(html, /Responsável pela alteração/);
+    assert.match(html, /Novo setup \(min\)/);
+    assert.match(html, /Nova eficiência \(%\)/);
   });
 
   it("bloqueia edição quando canEdit=false", () => {
