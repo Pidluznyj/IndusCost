@@ -431,8 +431,8 @@ export function ProjectPricingSection({
                 <th className="px-3 py-2">Regra fiscal</th>
                 <th className="px-3 py-2">Impostos %</th>
                 <th className="px-3 py-2">Margem %</th>
-                <th className="px-3 py-2">Preço produto</th>
-                <th className="px-3 py-2">Preço final</th>
+                <th className="px-3 py-2">Preço s/ amortização</th>
+                <th className="px-3 py-2">Preço c/ amortização</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -490,11 +490,11 @@ export function ProjectPricingSection({
                       )}
                     </td>
                     <td className="px-3 py-2 font-medium">
-                      {formatMoney(item.calculatedProductPrice ?? item.suggestedPriceWithoutAmortization, 4)}
+                      {formatMoney(item.suggestedPriceWithoutAmortization, 4)}
                     </td>
                     <td className="px-3 py-2">
                       <PriceWithAmortCell
-                        withoutAmort={item.calculatedProductPrice ?? item.suggestedPriceWithoutAmortization}
+                        withoutAmort={item.suggestedPriceWithoutAmortization}
                         withAmort={item.suggestedPriceWithAmortization}
                       />
                     </td>

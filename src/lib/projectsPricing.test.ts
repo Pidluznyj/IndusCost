@@ -438,7 +438,7 @@ describe("projectsPricing — integração", () => {
       "utf8"
     );
     assert.match(section, /Preço s\/ amortização/);
-    assert.match(section, /Preço final c\/ amortização|Preço final/);
+    assert.match(section, /Preço c\/ amortização/);
     assert.match(section, /suggestedPriceWithoutAmortization/);
     assert.match(section, /suggestedPriceWithAmortization/);
     assert.match(section, /Cenário sem amortização/);
