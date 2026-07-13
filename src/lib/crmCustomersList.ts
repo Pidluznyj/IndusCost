@@ -1,13 +1,10 @@
 /**
- * Listagem de clientes CRM — escopo por vendedor, filtros e enriquecimento com SalesOrder.
+ * Listagem de clientes CRM — escopo por Responsável Comercial + enriquecimento SalesOrder.
+ * Vendedor Nomus do pedido: auditoria apenas. Sem propostas como histórico de compra.
  */
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql.js";
-import {
-  buildCrmSellerCustomerPortfolioWhere,
-  buildCrmSellerSalesOrderWhere,
-} from "@/src/lib/crmCustomerSellerScope.js";
 import { crmCommercialSellerMatchFilters } from "@/src/lib/crmCommercialAccessScope.js";
 import {
   buildManualCommercialOwnerPortfolioWhere,
@@ -16,10 +13,18 @@ import {
 import type { ResolvedCustomerCommercialOwner } from "@/src/lib/crmCustomerCommercialOwnerTypes.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import { resolveSalesOrderHasInvoicing } from "@/src/lib/crmCommercialOrderRules.js";
+import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
+import {
+  buildCrmCustomersListSourceInfo,
+  resolveCrmCustomersListPeriod,
+  resolveCrmPortfolioStatus,
+} from "@/src/lib/crmCustomersListOfficialOrders.js";
 import {
   CRM_CUSTOMER_LIST_FILTERS,
   type CrmCustomerListFilter,
   type CrmCustomerListItem,
+  type CrmCustomerListLeadingProduct,
+  type CrmCustomersListResponse,
 } from "@/src/lib/crmCustomersListTypes.js";
 
 export { CRM_CUSTOMER_LIST_FILTERS };
@@ -67,17 +72,17 @@ export function parseCrmCustomerListSellerQuery(
 }
 
 /**
- * @deprecated Usa `salesOrders.some` com Prisma `equals`/`insensitive`, que NÃO normaliza
- * espaços múltiplos/acentos. Mantido apenas para compatibilidade. A seleção real da carteira
- * passa por {@link resolveCrmCustomerListScopeWhere}, que pré-seleciona os clientes via SQL
- * normalizado (mesma regra consolidada do dashboard por vendedor).
+ * @deprecated Preferir {@link resolveCrmCustomerListScopeWhere}.
+ * Escopo de carteira = somente Responsável Comercial (não vendedor Nomus do pedido).
  */
 export function buildCrmCustomerListScopeWhere(
   commercialScope: CrmCommercialAccessScope,
   sellerQuery: CrmCustomerListSellerQuery
 ): Prisma.CustomerWhereInput | undefined {
   if (commercialScope.dataScope === "own") {
-    return buildCrmSellerCustomerPortfolioWhere(commercialScope);
+    const manualWhere = buildManualCommercialOwnerPortfolioWhere(commercialScope);
+    if (manualWhere) return { CrmCustomerCommercialOwner: { is: manualWhere } };
+    return { id: { in: [] } };
   }
   if (commercialScope.dataScope !== "global") return undefined;
 
@@ -91,29 +96,13 @@ export function buildCrmCustomerListScopeWhere(
     sellerQuery.sellerIdentityKey
   );
 
-  const orderMatch: Prisma.CustomerWhereInput = {
-    salesOrders: {
-      some: buildCrmSellerSalesOrderWhere(
-        match.externalSellerId,
-        match.responsible,
-        match.sellerIdentityKey
-      ),
-    },
-  };
-
   const manualWhere = buildManualCommercialOwnerPortfolioWhere({
     externalSellerId: match.externalSellerId,
     responsible: match.responsible,
     sellerIdentityKey: match.sellerIdentityKey,
   });
-  const manualMatch: Prisma.CustomerWhereInput | undefined = manualWhere
-    ? { CrmCustomerCommercialOwner: { is: manualWhere } }
-    : undefined;
-
-  if (manualMatch) {
-    return { OR: [orderMatch, manualMatch] };
-  }
-  return orderMatch;
+  if (manualWhere) return { CrmCustomerCommercialOwner: { is: manualWhere } };
+  return { id: { in: [] } };
 }
 
 /** Filtro consolidado de vendedor (mesma forma usada por `buildCrmSellerFilterSql`). */
@@ -198,9 +187,8 @@ export async function fetchCrmManualOwnerCustomerIds(
 }
 
 /**
- * Escopo efetivo da carteira (assíncrono). Pré-seleciona os IDs de cliente por vendedor via SQL
- * normalizado (pedidos) + vínculo manual, unindo ambos. Quando há filtro de vendedor ativo e
- * nenhum cliente casa, retorna `{ id: { in: [] } }` (carteira vazia correta, sem vazar todos).
+ * Escopo efetivo da carteira: somente clientes com Responsável Comercial ativo
+ * que casa com o filtro (eixo oficial). Não inclui clientes só por vendedor Nomus do pedido.
  */
 export async function resolveCrmCustomerListScopeWhere(
   prismaClient: PrismaClient,
@@ -211,12 +199,8 @@ export async function resolveCrmCustomerListScopeWhere(
   if (decision === "all") return undefined;
   if (decision === "none") return { id: { in: [] } };
 
-  const [orderIds, manualIds] = await Promise.all([
-    fetchCrmSellerScopeCustomerIds(prismaClient, decision),
-    fetchCrmManualOwnerCustomerIds(prismaClient, decision),
-  ]);
-  const union = Array.from(new Set<string>([...orderIds, ...manualIds]));
-  return { id: { in: union } };
+  const manualIds = await fetchCrmManualOwnerCustomerIds(prismaClient, decision);
+  return { id: { in: manualIds } };
 }
 
 const nomusNfesElementsSql = (alias: string) => Prisma.sql`
@@ -391,49 +375,223 @@ export function aggregateCustomerActivities(
 }
 
 export type SalesOrderEnrichment = {
-  primarySellerResponsible: string | null;
-  primaryExternalSellerId: number | null;
   hasPurchaseHistory: boolean;
   hasOpenPortfolio: boolean;
+  lastOrderAt: Date | null;
+  lastOrderCode: string | null;
+  daysSinceLastOrder: number | null;
+  ordersCount: number;
+  historicalPurchaseValue: number;
+  periodPurchaseValue: number;
+  periodOrdersCount: number;
+  hasOrderWithoutNomusSeller: boolean;
+  lastOrderNomusSellerName: string | null;
+  lastOrderExternalSellerId: number | null;
+  /** Nomus sellers seen on any valid order (for divergence vs commercial owner). */
+  orderSellerIdentityKeys: string[];
+  orderSellerExternalIds: number[];
+  leadingProduct: CrmCustomerListLeadingProduct | null;
 };
 
+function toMoney(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "object" && value !== null && "toNumber" in value) {
+    const n = (value as { toNumber: () => number }).toNumber();
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function orderNomusName(order: {
+  nomusSellerName?: string | null;
+  responsible?: string | null;
+}): string | null {
+  return order.nomusSellerName?.trim() || order.responsible?.trim() || null;
+}
+
+/**
+ * Agrega histórico oficial de compra a partir de SalesOrder (sem filtrar por vendedor Nomus).
+ * Não inventa compra: sem pedidos válidos → hasPurchaseHistory=false e valores 0.
+ */
 export function enrichCustomersFromSalesOrders(
   orders: {
     customerId: string;
+    orderCode?: string | null;
     responsible: string | null;
+    nomusSellerName?: string | null;
     externalSellerId: number | null;
     status: string;
     issueDate: Date;
+    totalNetValue?: unknown;
     nomusRawResponse: unknown;
-  }[]
+  }[],
+  args: {
+    now?: Date;
+    periodFrom?: Date | null;
+    periodTo?: Date | null;
+  } = {}
 ): Map<string, SalesOrderEnrichment> {
+  const now = args.now ?? new Date();
+  const nowMs = now.getTime();
+  const periodFromMs = args.periodFrom?.getTime() ?? null;
+  const periodToMs = args.periodTo?.getTime() ?? null;
   const byCustomer = new Map<string, SalesOrderEnrichment>();
   const sorted = [...orders].sort((a, b) => b.issueDate.getTime() - a.issueDate.getTime());
 
   for (const order of sorted) {
     const valid = !["CANCELLED", "ERROR"].includes(String(order.status));
     const current = byCustomer.get(order.customerId) ?? {
-      primarySellerResponsible: null,
-      primaryExternalSellerId: null,
       hasPurchaseHistory: false,
       hasOpenPortfolio: false,
+      lastOrderAt: null,
+      lastOrderCode: null,
+      daysSinceLastOrder: null,
+      ordersCount: 0,
+      historicalPurchaseValue: 0,
+      periodPurchaseValue: 0,
+      periodOrdersCount: 0,
+      hasOrderWithoutNomusSeller: false,
+      lastOrderNomusSellerName: null,
+      lastOrderExternalSellerId: null,
+      orderSellerIdentityKeys: [],
+      orderSellerExternalIds: [],
+      leadingProduct: null,
     };
 
-    if (!current.primarySellerResponsible && order.responsible?.trim()) {
-      current.primarySellerResponsible = order.responsible.trim();
-      current.primaryExternalSellerId = order.externalSellerId;
+    if (!valid) {
+      byCustomer.set(order.customerId, current);
+      continue;
     }
 
-    if (valid) {
-      current.hasPurchaseHistory = true;
-      if (!resolveSalesOrderHasInvoicing({ status: order.status, nomusRawResponse: order.nomusRawResponse })) {
-        current.hasOpenPortfolio = true;
+    current.hasPurchaseHistory = true;
+    current.ordersCount += 1;
+    const value = toMoney(order.totalNetValue);
+    current.historicalPurchaseValue += value;
+
+    const issueMs = order.issueDate.getTime();
+    const inPeriod =
+      (periodFromMs == null || issueMs >= periodFromMs) &&
+      (periodToMs == null || issueMs <= periodToMs);
+    if (inPeriod) {
+      current.periodPurchaseValue += value;
+      current.periodOrdersCount += 1;
+    }
+
+    if (!current.lastOrderAt) {
+      current.lastOrderAt = order.issueDate;
+      current.lastOrderCode = order.orderCode?.trim() || null;
+      current.daysSinceLastOrder = Number.isFinite(issueMs)
+        ? Math.max(0, Math.floor((nowMs - issueMs) / 86400000))
+        : null;
+      current.lastOrderNomusSellerName = orderNomusName(order);
+      current.lastOrderExternalSellerId = order.externalSellerId;
+    }
+
+    if (
+      !resolveSalesOrderHasInvoicing({
+        status: order.status,
+        nomusRawResponse: order.nomusRawResponse,
+      })
+    ) {
+      current.hasOpenPortfolio = true;
+    }
+
+    const nomusInformed = isNomusSellerInformed({
+      externalSellerId: order.externalSellerId,
+      nomusSellerName: order.nomusSellerName ?? null,
+    });
+    if (!nomusInformed) {
+      current.hasOrderWithoutNomusSeller = true;
+    } else {
+      const name = orderNomusName(order);
+      if (name) {
+        const key = normalizeSellerIdentityName(name);
+        if (!current.orderSellerIdentityKeys.includes(key)) {
+          current.orderSellerIdentityKeys.push(key);
+        }
+      }
+      if (
+        order.externalSellerId != null &&
+        !current.orderSellerExternalIds.includes(order.externalSellerId)
+      ) {
+        current.orderSellerExternalIds.push(order.externalSellerId);
       }
     }
 
     byCustomer.set(order.customerId, current);
   }
   return byCustomer;
+}
+
+export function enrichLeadingProductsFromOrderItems(
+  items: {
+    customerId: string;
+    productId: string | null;
+    productName: string | null;
+    sku: string | null;
+    revenue: unknown;
+    quantity: unknown;
+  }[]
+): Map<string, CrmCustomerListLeadingProduct> {
+  const byCustomerProduct = new Map<
+    string,
+    Map<string, CrmCustomerListLeadingProduct>
+  >();
+  for (const item of items) {
+    const productKey =
+      item.productId?.trim() || item.sku?.trim() || item.productName?.trim() || "unknown";
+    const custMap =
+      byCustomerProduct.get(item.customerId) ??
+      new Map<string, CrmCustomerListLeadingProduct>();
+    const cur = custMap.get(productKey) ?? {
+      productId: item.productId,
+      productName: item.productName,
+      sku: item.sku,
+      revenue: 0,
+      quantity: 0,
+    };
+    cur.revenue += toMoney(item.revenue);
+    cur.quantity += toMoney(item.quantity);
+    if (!cur.productName && item.productName) cur.productName = item.productName;
+    if (!cur.sku && item.sku) cur.sku = item.sku;
+    if (!cur.productId && item.productId) cur.productId = item.productId;
+    custMap.set(productKey, cur);
+    byCustomerProduct.set(item.customerId, custMap);
+  }
+
+  const leading = new Map<string, CrmCustomerListLeadingProduct>();
+  for (const [customerId, products] of byCustomerProduct) {
+    const top = [...products.values()].sort((a, b) => b.revenue - a.revenue)[0];
+    if (top) leading.set(customerId, top);
+  }
+  return leading;
+}
+
+function ownerDiffersFromOrderSellers(
+  owner: ResolvedCustomerCommercialOwner | undefined,
+  enrichment: SalesOrderEnrichment | undefined
+): boolean {
+  if (!owner || !enrichment?.hasPurchaseHistory) return false;
+  const ownerKey = owner.sellerIdentityKey
+    ? normalizeSellerIdentityName(owner.sellerIdentityKey)
+    : owner.sellerCanonicalName
+      ? normalizeSellerIdentityName(owner.sellerCanonicalName)
+      : null;
+  const ownerId = owner.sellerExternalId ?? null;
+
+  if (enrichment.hasOrderWithoutNomusSeller && enrichment.ordersCount > 0) {
+    // pedido sem Nomus não conta como divergência de identidade; há campo separado
+  }
+
+  if (ownerId != null && enrichment.orderSellerExternalIds.length > 0) {
+    if (enrichment.orderSellerExternalIds.some((id) => id !== ownerId)) return true;
+  }
+  if (ownerKey && enrichment.orderSellerIdentityKeys.length > 0) {
+    if (enrichment.orderSellerIdentityKeys.some((k) => k !== ownerKey)) return true;
+  }
+  return false;
 }
 
 export function mapCustomerRowsToListItems(
@@ -446,6 +604,10 @@ export function mapCustomerRowsToListItems(
     const agg = activityAgg.get(c.id);
     const ord = orderEnrichment.get(c.id);
     const manual = manualOwners?.get(c.id);
+    const ownerName = manual?.sellerCanonicalName?.trim() || null;
+    const ownerId = manual?.sellerExternalId ?? null;
+    const hasPurchaseHistory = ord?.hasPurchaseHistory ?? false;
+    const hasOpenPortfolio = ord?.hasOpenPortfolio ?? false;
     return {
       id: c.id,
       displayName: c.companyName,
@@ -459,13 +621,27 @@ export function mapCustomerRowsToListItems(
       lastContactAt: agg?.lastContactAt ? agg.lastContactAt.toISOString() : null,
       nextFollowUpAt: agg?.nextFollowUpAt ? agg.nextFollowUpAt.toISOString() : null,
       contactCount: agg?.contactCount ?? 0,
-      primarySellerResponsible:
-        manual?.sellerCanonicalName ?? ord?.primarySellerResponsible ?? null,
-      primaryExternalSellerId:
-        manual?.sellerExternalId ?? ord?.primaryExternalSellerId ?? null,
-      hasPurchaseHistory: ord?.hasPurchaseHistory ?? false,
-      hasOpenPortfolio: ord?.hasOpenPortfolio ?? false,
+      primarySellerResponsible: ownerName,
+      primaryExternalSellerId: ownerId,
+      commercialOwnerName: ownerName,
+      commercialOwnerExternalId: ownerId,
+      hasCommercialOwner: Boolean(manual),
+      hasPurchaseHistory,
+      hasOpenPortfolio,
       hasOverdueFollowUp: agg?.hasOverdueFollowUp ?? false,
+      portfolioStatus: resolveCrmPortfolioStatus({ hasPurchaseHistory, hasOpenPortfolio }),
+      lastOrderAt: ord?.lastOrderAt ? ord.lastOrderAt.toISOString() : null,
+      lastOrderCode: ord?.lastOrderCode ?? null,
+      daysSinceLastOrder: ord?.daysSinceLastOrder ?? null,
+      ordersCount: ord?.ordersCount ?? 0,
+      historicalPurchaseValue: ord?.historicalPurchaseValue ?? 0,
+      periodPurchaseValue: ord?.periodPurchaseValue ?? 0,
+      periodOrdersCount: ord?.periodOrdersCount ?? 0,
+      leadingProduct: ord?.leadingProduct ?? null,
+      lastOrderNomusSellerName: ord?.lastOrderNomusSellerName ?? null,
+      lastOrderExternalSellerId: ord?.lastOrderExternalSellerId ?? null,
+      hasOrderWithoutNomusSeller: ord?.hasOrderWithoutNomusSeller ?? false,
+      hasOwnerSellerDivergence: ownerDiffersFromOrderSellers(manual, ord),
     };
   });
 }
@@ -548,15 +724,52 @@ export type FetchCrmCustomersListInput = {
   limit: number;
   offset: number;
   sellerQuery: CrmCustomerListSellerQuery;
+  dateFrom?: string | null;
+  dateTo?: string | null;
 };
+
+function emptyListResponse(args: {
+  limit: number;
+  offset: number;
+  commercialScope: CrmCommercialAccessScope;
+  sellerQuery: CrmCustomerListSellerQuery;
+  period: { dateFrom: string; dateTo: string };
+}): CrmCustomersListResponse {
+  return {
+    customers: [],
+    pagination: { limit: args.limit, offset: args.offset, returned: 0, hasMore: false },
+    scope: {
+      dataScope: args.commercialScope.dataScope,
+      sellerFilterActive:
+        args.commercialScope.dataScope === "global" &&
+        (args.sellerQuery.sellerIdentityKey !== null ||
+          args.sellerQuery.externalSellerId !== null),
+      portfolioAxis: "RESPONSAVEL_COMERCIAL_CLIENTE",
+    },
+    period: args.period,
+    totals: {
+      customersWithoutCommercialOwner: 0,
+      customersWithoutPurchase: 0,
+      customersWithOrderWithoutNomusSeller: 0,
+      customersWithOwnerSellerDivergence: 0,
+    },
+    sourceInfo: buildCrmCustomersListSourceInfo(args.period),
+  };
+}
 
 export async function fetchCrmCustomersList(
   prisma: PrismaClient,
   commercialScope: CrmCommercialAccessScope,
   input: FetchCrmCustomersListInput,
   now = new Date()
-) {
+): Promise<CrmCustomersListResponse> {
   const { search, filter, limit, offset, sellerQuery } = input;
+  const period = resolveCrmCustomersListPeriod(
+    { dateFrom: input.dateFrom, dateTo: input.dateTo },
+    now
+  );
+  const periodFrom = new Date(`${period.dateFrom}T00:00:00`);
+  const periodTo = new Date(`${period.dateTo}T23:59:59.999`);
 
   let searchWhere: Prisma.CustomerWhereInput | undefined;
   if (search.length > 0) {
@@ -586,16 +799,7 @@ export async function fetchCrmCustomersList(
   if (filter === "withOpenPortfolio") {
     const openIds = await fetchOpenPortfolioCustomerIds(prisma);
     if (openIds.length === 0) {
-      return {
-        customers: [] as CrmCustomerListItem[],
-        pagination: { limit, offset, returned: 0, hasMore: false },
-        scope: {
-          dataScope: commercialScope.dataScope,
-          sellerFilterActive:
-            commercialScope.dataScope === "global" &&
-            (sellerQuery.sellerIdentityKey !== null || sellerQuery.externalSellerId !== null),
-        },
-      };
+      return emptyListResponse({ limit, offset, commercialScope, sellerQuery, period });
     }
     where = buildCrmCustomerListAndWhere([where, { id: { in: openIds } }]);
   }
@@ -641,43 +845,93 @@ export async function fetchCrmCustomersList(
       activityAgg.set(k, v);
     }
 
-    const sellerMatchSql = buildSellerFilterSqlForOrders(sellerQuery, commercialScope);
+    // Histórico oficial: todos os pedidos do cliente (sem filtrar por vendedor Nomus).
     const orders = await prisma.$queryRaw<
       {
         customer_id: string;
+        order_code: string | null;
         responsible: string | null;
+        nomus_seller_name: string | null;
         external_seller_id: number | null;
         status: string;
         issue_date: Date;
+        total_net_value: unknown;
         nomus_raw_response: unknown;
       }[]
     >(
       Prisma.sql`
         SELECT
           so."customerId" AS customer_id,
+          so."orderCode" AS order_code,
           so."responsible" AS responsible,
+          so."nomusSellerName" AS nomus_seller_name,
           so."externalSellerId" AS external_seller_id,
           so.status::text AS status,
           so."issueDate" AS issue_date,
+          so."totalNetValue" AS total_net_value,
           so."nomusRawResponse" AS nomus_raw_response
         FROM "SalesOrder" so
         WHERE so."customerId" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
           AND so.status::text NOT IN ('CANCELLED', 'ERROR')
-          AND ${sellerMatchSql}
         ORDER BY so."issueDate" DESC
       `
     );
 
     const mappedOrders = orders.map((o) => ({
       customerId: o.customer_id,
+      orderCode: o.order_code,
       responsible: o.responsible,
+      nomusSellerName: o.nomus_seller_name,
       externalSellerId: o.external_seller_id,
       status: o.status,
       issueDate: o.issue_date,
+      totalNetValue: o.total_net_value,
       nomusRawResponse: o.nomus_raw_response,
     }));
-    for (const [k, v] of enrichCustomersFromSalesOrders(mappedOrders)) {
+    for (const [k, v] of enrichCustomersFromSalesOrders(mappedOrders, {
+      now,
+      periodFrom,
+      periodTo,
+    })) {
       orderEnrichment.set(k, v);
+    }
+
+    const itemRows = await prisma.$queryRaw<
+      {
+        customer_id: string;
+        product_id: string | null;
+        product_name: string | null;
+        sku: string | null;
+        revenue: unknown;
+        quantity: unknown;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        so."customerId" AS customer_id,
+        soi."productId" AS product_id,
+        soi."productNameSnapshot" AS product_name,
+        soi."skuSnapshot" AS sku,
+        soi."totalNetValue" AS revenue,
+        soi.quantity AS quantity
+      FROM "SalesOrderItem" soi
+      INNER JOIN "SalesOrder" so ON so.id = soi."salesOrderId"
+      WHERE so."customerId" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+        AND so.status::text NOT IN ('CANCELLED', 'ERROR')
+    `);
+
+    const leadingByCustomer = enrichLeadingProductsFromOrderItems(
+      itemRows.map((r) => ({
+        customerId: r.customer_id,
+        productId: r.product_id,
+        productName: r.product_name,
+        sku: r.sku,
+        revenue: r.revenue,
+        quantity: r.quantity,
+      }))
+    );
+    for (const [customerId, leading] of leadingByCustomer) {
+      const cur = orderEnrichment.get(customerId);
+      if (cur) cur.leadingProduct = leading;
     }
   }
 
@@ -699,6 +953,17 @@ export async function fetchCrmCustomersList(
       sellerFilterActive:
         commercialScope.dataScope === "global" &&
         (sellerQuery.sellerIdentityKey !== null || sellerQuery.externalSellerId !== null),
+      portfolioAxis: "RESPONSAVEL_COMERCIAL_CLIENTE",
     },
+    period,
+    totals: {
+      customersWithoutCommercialOwner: customers.filter((c) => !c.hasCommercialOwner).length,
+      customersWithoutPurchase: customers.filter((c) => !c.hasPurchaseHistory).length,
+      customersWithOrderWithoutNomusSeller: customers.filter((c) => c.hasOrderWithoutNomusSeller)
+        .length,
+      customersWithOwnerSellerDivergence: customers.filter((c) => c.hasOwnerSellerDivergence)
+        .length,
+    },
+    sourceInfo: buildCrmCustomersListSourceInfo(period),
   };
 }

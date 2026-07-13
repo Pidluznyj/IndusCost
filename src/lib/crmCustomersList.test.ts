@@ -13,6 +13,7 @@ import {
   enrichCustomersFromSalesOrders,
   fetchCrmManualOwnerCustomerIds,
   fetchCrmSellerScopeCustomerIds,
+  mapCustomerRowsToListItems,
   parseCrmCustomerListFilter,
   parseCrmCustomerListSellerQuery,
   resolveCrmCustomerListScopeWhere,
@@ -20,6 +21,10 @@ import {
   type CrmSellerScopeFilter,
 } from "@/src/lib/crmCustomersList.js";
 import { CRM_CUSTOMER_LIST_FILTERS } from "@/src/lib/crmCustomersListTypes.js";
+import {
+  buildCrmCustomersListSourceInfo,
+  resolveCrmPortfolioStatus,
+} from "@/src/lib/crmCustomersListOfficialOrders.js";
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
   buildActivePortfolioFilterChips,
@@ -35,6 +40,47 @@ function findOr(
 }
 
 const NOW = new Date("2026-06-17T12:00:00.000Z");
+
+function listItemFixture(
+  overrides: Partial<import("@/src/lib/crmCustomersListTypes.js").CrmCustomerListItem> = {}
+): import("@/src/lib/crmCustomersListTypes.js").CrmCustomerListItem {
+  return {
+    id: "1",
+    displayName: "A",
+    tradeName: null,
+    taxId: "1",
+    email: null,
+    phone: null,
+    city: null,
+    state: null,
+    address: null,
+    lastContactAt: null,
+    nextFollowUpAt: null,
+    contactCount: 0,
+    primarySellerResponsible: null,
+    primaryExternalSellerId: null,
+    commercialOwnerName: null,
+    commercialOwnerExternalId: null,
+    hasCommercialOwner: false,
+    hasPurchaseHistory: true,
+    hasOpenPortfolio: true,
+    hasOverdueFollowUp: false,
+    portfolioStatus: "CARTEIRA_ABERTA",
+    lastOrderAt: null,
+    lastOrderCode: null,
+    daysSinceLastOrder: null,
+    ordersCount: 0,
+    historicalPurchaseValue: 0,
+    periodPurchaseValue: 0,
+    periodOrdersCount: 0,
+    leadingProduct: null,
+    lastOrderNomusSellerName: null,
+    lastOrderExternalSellerId: null,
+    hasOrderWithoutNomusSeller: false,
+    hasOwnerSellerDivergence: false,
+    ...overrides,
+  };
+}
 
 function ownScope(): CrmCommercialAccessScope {
   return {
@@ -69,14 +115,14 @@ function globalScope(): CrmCommercialAccessScope {
 }
 
 describe("crmCustomersList scope", () => {
-  it("vendedor (own) aplica filtro de carteira do vendedor", () => {
+  it("vendedor (own) aplica filtro só por responsável comercial", () => {
     const where = buildCrmCustomerListScopeWhere(ownScope(), {
       externalSellerId: null,
       sellerIdentityKey: null,
     });
     assert.ok(where);
-    assert.ok(where!.OR);
-    assert.equal(Array.isArray(where!.OR), true);
+    assert.ok(where!.CrmCustomerCommercialOwner);
+    assert.equal(where!.OR, undefined);
   });
 
   it("gestor sem filtro de vendedor não restringe por vendedor", () => {
@@ -87,13 +133,15 @@ describe("crmCustomersList scope", () => {
     assert.equal(where, undefined);
   });
 
-  it("gestor com filtro de vendedor restringe por SalesOrder ou responsável manual", () => {
+  it("gestor com filtro de responsável restringe só por CrmCustomerCommercialOwner", () => {
     const where = buildCrmCustomerListScopeWhere(globalScope(), {
       externalSellerId: 99,
       sellerIdentityKey: null,
     });
     assert.ok(where);
-    assert.ok(where!.OR);
+    assert.ok(where!.CrmCustomerCommercialOwner);
+    assert.equal(where!.OR, undefined);
+    assert.equal(where!.salesOrders, undefined);
   });
 
   it("parseCrmCustomerListSellerQuery normaliza sellerIdentityKey", () => {
@@ -210,10 +258,13 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
     assert.deepEqual(captured.where, { isActive: true, sellerIdentityKey: "gislene lima" });
   });
 
-  it("resolver une pedidos + manual e deduplica", async () => {
+  it("resolver usa só responsável comercial (não une vendedor Nomus do pedido)", async () => {
+    let queryRawCalled = false;
     const fakePrisma = {
-      $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> =>
-        [{ id: "a" }, { id: "b" }] as unknown as T,
+      $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> => {
+        queryRawCalled = true;
+        return [{ id: "a" }, { id: "b" }] as unknown as T;
+      },
       crmCustomerCommercialOwner: {
         findMany: async () => [{ customerId: "b" }, { customerId: "c" }],
       },
@@ -223,7 +274,8 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
       externalSellerId: null,
       sellerIdentityKey: "gislene lima",
     });
-    assert.deepEqual(where, { id: { in: ["a", "b", "c"] } });
+    assert.deepEqual(where, { id: { in: ["b", "c"] } });
+    assert.equal(queryRawCalled, false);
   });
 
   it("resolver: global sem filtro não restringe (undefined)", async () => {
@@ -250,11 +302,12 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
     assert.deepEqual(where, { id: { in: [] } });
   });
 
-  it("own e global usam o MESMO caminho de resolução de escopo", async () => {
-    const calls: CrmSellerScopeFilter[] = [];
+  it("own e global usam o MESMO caminho de resolução de escopo (só owners)", async () => {
     const fakePrisma = {
       $queryRaw: async <T>(_q: Prisma.Sql): Promise<T> => [{ id: "x" }] as unknown as T,
-      crmCustomerCommercialOwner: { findMany: async () => [] },
+      crmCustomerCommercialOwner: {
+        findMany: async () => [{ customerId: "owner-1" }],
+      },
     } as unknown as Parameters<typeof resolveCrmCustomerListScopeWhere>[0];
 
     const ownWhere = await resolveCrmCustomerListScopeWhere(fakePrisma, ownScope(), {
@@ -265,9 +318,8 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
       externalSellerId: null,
       sellerIdentityKey: "gislene lima",
     });
-    void calls;
-    assert.deepEqual(ownWhere, { id: { in: ["x"] } });
-    assert.deepEqual(globalWhere, { id: { in: ["x"] } });
+    assert.deepEqual(ownWhere, { id: { in: ["owner-1"] } });
+    assert.deepEqual(globalWhere, { id: { in: ["owner-1"] } });
   });
 });
 
@@ -320,6 +372,95 @@ describe("crmCustomersList enrichment", () => {
     assert.equal(agg!.hasOverdueFollowUp, true);
   });
 
+  it("cliente com pedidos aparece com histórico correto (SalesOrder)", () => {
+    const map = enrichCustomersFromSalesOrders(
+      [
+        {
+          customerId: "c1",
+          orderCode: "PV-1",
+          responsible: null,
+          nomusSellerName: "OUTRO",
+          externalSellerId: 99,
+          status: "SENT_TO_NOMUS",
+          issueDate: new Date("2026-07-01T12:00:00.000Z"),
+          totalNetValue: 5000,
+          nomusRawResponse: { nfes: [] },
+        },
+        {
+          customerId: "c1",
+          orderCode: "PV-0",
+          responsible: null,
+          nomusSellerName: "OUTRO",
+          externalSellerId: 99,
+          status: "SENT_TO_NOMUS",
+          issueDate: new Date("2026-06-20T12:00:00.000Z"),
+          totalNetValue: 2000,
+          nomusRawResponse: { nfes: [{ dataProcessamento: "01/07/2026" }] },
+        },
+      ],
+      {
+        now: new Date("2026-07-11T12:00:00.000Z"),
+        periodFrom: new Date("2026-06-12T00:00:00"),
+        periodTo: new Date("2026-07-11T23:59:59.999"),
+      }
+    );
+    const row = map.get("c1");
+    assert.ok(row);
+    assert.equal(row!.hasPurchaseHistory, true);
+    assert.equal(row!.hasOpenPortfolio, true);
+    assert.equal(row!.ordersCount, 2);
+    assert.equal(row!.historicalPurchaseValue, 7000);
+    assert.equal(row!.periodPurchaseValue, 7000);
+    assert.equal(row!.lastOrderCode, "PV-1");
+    assert.equal(row!.lastOrderNomusSellerName, "OUTRO");
+  });
+
+  it("cliente sem pedidos aparece sem inventar compra", () => {
+    const map = enrichCustomersFromSalesOrders([]);
+    assert.equal(map.size, 0);
+  });
+
+  it("pedido cancelado não cria histórico de compra", () => {
+    const map = enrichCustomersFromSalesOrders([
+      {
+        customerId: "c1",
+        orderCode: "X",
+        responsible: null,
+        nomusSellerName: null,
+        externalSellerId: null,
+        status: "CANCELLED",
+        issueDate: new Date("2026-07-01"),
+        totalNetValue: 9999,
+        nomusRawResponse: {},
+      },
+    ]);
+    const row = map.get("c1");
+    assert.ok(row);
+    assert.equal(row!.hasPurchaseHistory, false);
+    assert.equal(row!.ordersCount, 0);
+    assert.equal(row!.historicalPurchaseValue, 0);
+  });
+
+  it("vendedor do pedido não vira responsável no enrichment", () => {
+    const map = enrichCustomersFromSalesOrders([
+      {
+        customerId: "c1",
+        responsible: "VENDEDOR PEDIDO",
+        nomusSellerName: "VENDEDOR PEDIDO",
+        externalSellerId: 10,
+        status: "SENT_TO_NOMUS",
+        issueDate: new Date("2026-06-01"),
+        totalNetValue: 100,
+        nomusRawResponse: { nfes: [] },
+      },
+    ]);
+    const row = map.get("c1");
+    assert.ok(row);
+    assert.equal(row!.hasPurchaseHistory, true);
+    assert.equal((row as { primarySellerResponsible?: string }).primarySellerResponsible, undefined);
+    assert.equal(row!.lastOrderNomusSellerName, "VENDEDOR PEDIDO");
+  });
+
   it("enrichCustomersFromSalesOrders marca carteira aberta sem NF processada", () => {
     const map = enrichCustomersFromSalesOrders([
       {
@@ -335,32 +476,13 @@ describe("crmCustomersList enrichment", () => {
     assert.ok(row);
     assert.equal(row!.hasOpenPortfolio, true);
     assert.equal(row!.hasPurchaseHistory, true);
-    assert.equal(row!.primarySellerResponsible, "Vendedor A");
   });
 });
 
 describe("crmCustomersList UI integration", () => {
   it("estado vazio resume carteira listada", () => {
     const summary = computePortfolioEmptySummary([
-      {
-        id: "1",
-        displayName: "A",
-        tradeName: null,
-        taxId: "1",
-        email: null,
-        phone: null,
-        city: null,
-        state: null,
-        address: null,
-        lastContactAt: null,
-        nextFollowUpAt: null,
-        contactCount: 0,
-        primarySellerResponsible: null,
-        primaryExternalSellerId: null,
-        hasPurchaseHistory: true,
-        hasOpenPortfolio: true,
-        hasOverdueFollowUp: false,
-      },
+      listItemFixture({ hasPurchaseHistory: true, hasOpenPortfolio: true }),
     ]);
     assert.equal(summary.totalListed, 1);
     assert.equal(summary.withOpenPortfolio, 1);
@@ -443,18 +565,18 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
     });
   });
 
-  it("3. filtro por vendedor retorna somente clientes daquele vendedor", async () => {
+  it("3. filtro por responsável comercial retorna somente clientes daquele responsável", async () => {
     const where = await resolveCrmCustomerListScopeWhere(
-      scopePrisma(gisleneIds),
+      scopePrisma([], gisleneIds),
       globalScope(),
       { externalSellerId: null, sellerIdentityKey: "gislene lima" }
     );
     assert.deepEqual(where, { id: { in: gisleneIds } });
   });
 
-  it("4. busca textual é combinada por AND com o escopo do vendedor", async () => {
+  it("4. busca textual é combinada por AND com o escopo do responsável", async () => {
     const scopeWhere = await resolveCrmCustomerListScopeWhere(
-      scopePrisma(gisleneIds),
+      scopePrisma([], gisleneIds),
       globalScope(),
       { externalSellerId: null, sellerIdentityKey: "gislene lima" }
     );
@@ -490,13 +612,17 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
   it("8. Gislene com sellerIdentityKey normalizado retorna clientes (espaços/caixa)", async () => {
     const parsed = parseCrmCustomerListSellerQuery("464", "  GISLENE   LIMA  ");
     assert.equal(parsed.sellerIdentityKey, "gislene lima");
-    const where = await resolveCrmCustomerListScopeWhere(scopePrisma(gisleneIds), globalScope(), parsed);
+    const where = await resolveCrmCustomerListScopeWhere(
+      scopePrisma([], gisleneIds),
+      globalScope(),
+      parsed
+    );
     assert.deepEqual(where, { id: { in: gisleneIds } });
   });
 
   it("9. Gislene + busca textual restringe à carteira dela", async () => {
     const scopeWhere = await resolveCrmCustomerListScopeWhere(
-      scopePrisma(gisleneIds),
+      scopePrisma([], gisleneIds),
       globalScope(),
       { externalSellerId: 464, sellerIdentityKey: "gislene lima" }
     );
@@ -513,7 +639,7 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
   it("10. vendedor passando outro sellerId continua restrito à própria carteira", async () => {
     // No backend o sellerQuery é ignorado para escopo 'own' (rota nem repassa o filtro).
     const where = await resolveCrmCustomerListScopeWhere(
-      scopePrisma(gisleneIds),
+      scopePrisma([], gisleneIds),
       ownScope(),
       { externalSellerId: 999, sellerIdentityKey: "rodrigo" }
     );
@@ -550,5 +676,118 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
     assert.match(portfolio, /Limpar filtros/);
     assert.match(portfolio, /Nenhum cliente encontrado para este vendedor com os filtros aplicados\./);
     assert.match(portfolio, /buildActivePortfolioFilterChips/);
+  });
+});
+
+describe("crmCustomersList — responsável vs pedido + sourceInfo", () => {
+  it("cliente sem responsável aparece agrupado (hasCommercialOwner=false)", () => {
+    const items = mapCustomerRowsToListItems(
+      [
+        {
+          id: "c1",
+          companyName: "Sem dono",
+          tradeName: null,
+          taxId: "1",
+          email: null,
+          phone: null,
+          city: null,
+          state: null,
+          address: null,
+        },
+      ],
+      new Map(),
+      enrichCustomersFromSalesOrders([
+        {
+          customerId: "c1",
+          status: "SENT_TO_NOMUS",
+          issueDate: new Date("2026-07-01"),
+          totalNetValue: 1000,
+          responsible: "NOMUS X",
+          nomusSellerName: "NOMUS X",
+          externalSellerId: 1,
+          nomusRawResponse: {},
+        },
+      ]),
+      new Map()
+    );
+    assert.equal(items[0]!.hasCommercialOwner, false);
+    assert.equal(items[0]!.primarySellerResponsible, null);
+    assert.equal(items[0]!.hasPurchaseHistory, true);
+    assert.equal(items[0]!.lastOrderNomusSellerName, "NOMUS X");
+  });
+
+  it("vendedor do pedido não substitui responsável comercial", () => {
+    const owners = new Map([
+      [
+        "c1",
+        {
+          source: "MANUAL" as const,
+          sellerCanonicalName: "GISLENE LIMA",
+          sellerResponsibleName: "GISLENE LIMA",
+          sellerExternalId: 464,
+          sellerIdentityKey: "gislene lima",
+          sellerAliasExternalIds: [464],
+          confidence: "HIGH" as const,
+          updatedAt: new Date().toISOString(),
+          updatedByName: null,
+        },
+      ],
+    ]);
+    const items = mapCustomerRowsToListItems(
+      [
+        {
+          id: "c1",
+          companyName: "Cliente",
+          tradeName: null,
+          taxId: "1",
+          email: null,
+          phone: null,
+          city: null,
+          state: null,
+          address: null,
+        },
+      ],
+      new Map(),
+      enrichCustomersFromSalesOrders([
+        {
+          customerId: "c1",
+          status: "SENT_TO_NOMUS",
+          issueDate: new Date("2026-07-01"),
+          totalNetValue: 1000,
+          responsible: "OUTRO VENDEDOR",
+          nomusSellerName: "OUTRO VENDEDOR",
+          externalSellerId: 999,
+          nomusRawResponse: {},
+        },
+      ]),
+      owners
+    );
+    assert.equal(items[0]!.primarySellerResponsible, "GISLENE LIMA");
+    assert.equal(items[0]!.commercialOwnerName, "GISLENE LIMA");
+    assert.equal(items[0]!.lastOrderNomusSellerName, "OUTRO VENDEDOR");
+    assert.equal(items[0]!.hasOwnerSellerDivergence, true);
+  });
+
+  it("sourceInfo declara SalesOrder e propostasUsadas false", () => {
+    const info = buildCrmCustomersListSourceInfo({
+      dateFrom: "2026-06-01",
+      dateTo: "2026-06-30",
+    });
+    assert.equal(info.eixo, "RESPONSAVEL_COMERCIAL_CLIENTE");
+    assert.equal(info.pedidosFonte, "SalesOrder");
+    assert.equal(info.itensFonte, "SalesOrderItem");
+    assert.equal(info.propostasUsadas, false);
+    assert.equal(info.comissionamentoAfetado, false);
+    assert.equal(resolveCrmPortfolioStatus({ hasPurchaseHistory: false, hasOpenPortfolio: false }), "SEM_COMPRA");
+  });
+
+  it("serviço da carteira não consulta Proposal", () => {
+    const service = readFileSync(join(process.cwd(), "src/lib/crmCustomersList.ts"), "utf8");
+    assert.match(service, /SalesOrder/);
+    assert.match(service, /SalesOrderItem/);
+    assert.match(service, /CrmCustomerCommercialOwner/);
+    assert.match(service, /sourceInfo/);
+    assert.equal(service.includes('"Proposal"'), false);
+    assert.equal(/\bprisma\.proposal\b/i.test(service), false);
   });
 });

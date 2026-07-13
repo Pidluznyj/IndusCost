@@ -12499,6 +12499,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         limit,
         offset,
         sellerQuery,
+        dateFrom: typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : null,
+        dateTo: typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : null,
       });
       res.json(payload);
     } catch (error) {

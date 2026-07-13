@@ -223,7 +223,7 @@ describe("crmCustomerCommercialOwner", () => {
     assert.equal(manualWhere!.sellerIdentityKey, "gislene lima");
   });
 
-  it("gestor filtrando por vendedor inclui clientes com responsável manual", () => {
+  it("gestor filtrando por responsável comercial usa só CrmCustomerCommercialOwner", () => {
     const global: CrmCommercialAccessScope = {
       dataScope: "global",
       externalSellerId: null,
@@ -241,7 +241,9 @@ describe("crmCustomerCommercialOwner", () => {
       externalSellerId: null,
       sellerIdentityKey: "gislene lima",
     });
-    assert.ok(where?.OR);
+    assert.ok(where?.CrmCustomerCommercialOwner);
+    assert.equal(where?.OR, undefined);
+    assert.equal(where?.salesOrders, undefined);
   });
 
   it("manual owner match por identidade consolidada", () => {
