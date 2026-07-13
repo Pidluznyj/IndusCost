@@ -114,6 +114,22 @@ export function isCanceledOrderItemFact(fact: {
   return isCanceledOrderItemStatus(fact.orderItemStatus);
 }
 
+/** Fact com item atendido com corte (encerra saldo cortado; sem pendência/forecast). */
+export function isCutOrderItemFact(fact: {
+  lineType?: string | null;
+  orderItemStatus?: string | null;
+  nomusIsCut?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
+}): boolean {
+  const lineType = (fact.lineType ?? "").trim().toUpperCase();
+  if (lineType === "ORDER_ITEM_CUT") return true;
+  if (fact.nomusIsCut === true) return true;
+  const norm = (fact.nomusItemStatusNormalized ?? "").trim().toUpperCase();
+  if (norm === "FULFILLED_WITH_CUT") return true;
+  const status = (fact.orderItemStatus ?? "").trim().toUpperCase();
+  return status === "ATENDIDO_COM_CORTE" || status === "FULFILLED_WITH_CUT";
+}
+
 export function orderItemFulfillmentStatusLabel(
   status: OrderItemFulfillmentStatus
 ): string {

@@ -1045,6 +1045,11 @@ model SalesOrderItem {
   nomusIsCanceled     Boolean       @default(false)
   /// item local que sumiu do payload atual do Nomus
   nomusIsStale        Boolean       @default(false)
+  /// item atendido com corte (saldo cortado encerrado, não pendente)
+  nomusIsCut          Boolean       @default(false)
+  /// HIGH | MEDIUM | LOW | AMBIGUOUS | NONE
+  nomusMatchConfidence String?
+  nomusMatchReason    String?
   nomusLastSeenAt     DateTime?
   nomusRawItem        Json?
   createdAt           DateTime      @default(now())
@@ -1060,6 +1065,8 @@ model SalesOrderItem {
   @@index([nomusItemExternalId])
   @@index([nomusIsCanceled])
   @@index([nomusIsStale])
+  @@index([nomusIsCut])
+  @@index([nomusMatchConfidence])
 }
 
 /// Tabela de preço comercial (catálogo; margem padrão para futuras publicações).

@@ -88,6 +88,7 @@ type EligibleSalesOrderLine = {
   nomusQuantityFulfilled: number | null;
   nomusQuantityPending: number | null;
   nomusIsCanceled: boolean;
+  nomusIsCut: boolean;
 };
 
 type EligibleSalesOrderPlan = {
@@ -872,6 +873,7 @@ function analyzeOrder(
       nomusQuantityFulfilled: parsedStatus.quantityFulfilled,
       nomusQuantityPending: parsedStatus.quantityPending,
       nomusIsCanceled: parsedStatus.isCanceled,
+      nomusIsCut: parsedStatus.isCut,
     };
     const lineR = new Set<BlockReason>();
     const idProduto = toInt(item.idProduto);
@@ -1193,7 +1195,10 @@ function mapItemWriteRowToCreateData(row: NomusSyncItemWriteRow): Prisma.SalesOr
     nomusQuantityFulfilled: row.nomusQuantityFulfilled ?? null,
     nomusQuantityPending: row.nomusQuantityPending ?? null,
     nomusIsCanceled: row.nomusIsCanceled ?? false,
+    nomusIsCut: row.nomusIsCut ?? false,
     nomusIsStale: row.nomusIsStale ?? false,
+    nomusMatchConfidence: row.nomusMatchConfidence ?? null,
+    nomusMatchReason: row.nomusMatchReason ?? null,
     nomusLastSeenAt: row.nomusLastSeenAt ?? null,
     nomusRawItem:
       row.nomusRawItem != null
@@ -1332,6 +1337,7 @@ async function runApply(
         nomusQuantityFulfilled: line.nomusQuantityFulfilled,
         nomusQuantityPending: line.nomusQuantityPending,
         nomusIsCanceled: line.nomusIsCanceled,
+        nomusIsCut: line.nomusIsCut,
         nomusRawItem: line.item,
       }));
 
@@ -1378,6 +1384,8 @@ async function runApply(
             nomusItemStatusNormalized: true,
             nomusIsCanceled: true,
             nomusIsStale: true,
+            nomusIsCut: true,
+            nomusMatchConfidence: true,
           },
         });
 

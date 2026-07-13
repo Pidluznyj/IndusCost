@@ -55,16 +55,33 @@ function main() {
     "isSalesOrderItemActiveForReceivableForecast",
     "isSalesOrderItemActiveForCommission",
     "isSalesOrderItemActiveForMargin",
+    "isFulfilledWithCutSalesOrderItem",
+    "resolveNomusRawItemMatchesForOrder",
+    "resolveNomusRawItemForSalesOrderItem",
     "IGNORED_CANCELED_ITEM",
     "IGNORED_STALE_ITEM",
+    "IGNORED_CUT_ITEM",
+    "FULFILLED_WITH_CUT",
+    "RELEASED",
   ]) {
     if (normalizer.includes(fn)) ok(`norm:${fn}`, fn);
     else fail(`norm:${fn}`, `${fn} ausente`);
   }
 
+  for (const field of [
+    "nomusIsCut",
+    "nomusMatchConfidence",
+    "nomusMatchReason",
+  ]) {
+    if (schema.includes(field)) ok(`schema:${field}`, field);
+    else fail(`schema:${field}`, `${field} ausente no schema`);
+  }
+
   const builder = read("src/lib/sales/orderToCashAuditBuilder.ts");
   if (builder.includes("ORDER_ITEM_CANCELED")) ok("o2c:lineType", "ORDER_ITEM_CANCELED");
   else fail("o2c:lineType", "ORDER_ITEM_CANCELED ausente");
+  if (builder.includes("ORDER_ITEM_CUT")) ok("o2c:lineTypeCut", "ORDER_ITEM_CUT");
+  else fail("o2c:lineTypeCut", "ORDER_ITEM_CUT ausente");
   if (builder.includes("isInactiveOrderToCashOrderItem")) {
     ok("o2c:inactive", "filtro inativo no builder");
   } else fail("o2c:inactive", "filtro inativo ausente");

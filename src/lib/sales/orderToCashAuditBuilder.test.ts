@@ -189,6 +189,56 @@ describe("orderToCashAuditBuilder", () => {
     );
   });
 
+  it("1c. PD 02534 — SKU repetido: só a linha cancelada vira ORDER_ITEM_CANCELED", () => {
+    const result = buildOrderToCashAuditRows({
+      orders: [
+        order({
+          orderCode: "PD 02534",
+          totalNetValue: 41_340,
+        }),
+      ],
+      orderItems: [
+        item({ id: "L80", externalProductId: 309, quantity: 2000, unitPrice: 1.59, totalNetValue: 3180, itemStatus: "CANCELADO", nomusIsCanceled: true }),
+        item({ id: "L90", externalProductId: 309, quantity: 4000, unitPrice: 1.59, totalNetValue: 6360, itemStatus: "LIBERADO", nomusIsCanceled: false }),
+        item({ id: "L100", externalProductId: 309, quantity: 8000, unitPrice: 1.59, totalNetValue: 12720, itemStatus: "LIBERADO", nomusIsCanceled: false }),
+        item({ id: "L110", externalProductId: 309, quantity: 4000, unitPrice: 1.59, totalNetValue: 6360, itemStatus: "LIBERADO", nomusIsCanceled: false }),
+        item({ id: "L120", externalProductId: 309, quantity: 8000, unitPrice: 1.59, totalNetValue: 12720, itemStatus: "LIBERADO", nomusIsCanceled: false }),
+      ],
+      options: { today: TODAY },
+    });
+    const canceled = result.rows.filter((r) => r.lineType === "ORDER_ITEM_CANCELED");
+    const pending = result.rows.filter((r) => r.lineType === "ORDER_ITEM_PENDING");
+    assert.equal(canceled.length, 1, "só a linha 00080 deve ser cancelada");
+    assert.equal(canceled[0]!.orderItemTotalValue, 3180);
+    assert.equal(pending.length, 4, "as 4 linhas liberadas continuam pendentes ativas");
+    const canceledSum = canceled.reduce((s, r) => s + (r.orderItemTotalValue ?? 0), 0);
+    assert.equal(canceledSum, 3180, "NUNCA somar R$ 41.340,00 (SKU inteiro)");
+    assert.equal(result.summary.totalCanceledValue, 3180);
+  });
+
+  it("1d. Atendido com corte gera ORDER_ITEM_CUT e não pendência", () => {
+    const result = buildOrderToCashAuditRows({
+      orders: [
+        order({
+          orderCode: "PD 02540",
+          totalNetValue: 20_000,
+        }),
+      ],
+      orderItems: [
+        item({ id: "a", externalProductId: 111, quantity: 1000, unitPrice: 10, totalNetValue: 10_000, itemStatus: "LIBERADO", nomusIsCanceled: false }),
+        item({ id: "b", externalProductId: 112, quantity: 1000, unitPrice: 10, totalNetValue: 10_000, itemStatus: "ATENDIDO_COM_CORTE", nomusIsCut: true }),
+      ],
+      options: { today: TODAY },
+    });
+    const cut = result.rows.filter((r) => r.lineType === "ORDER_ITEM_CUT");
+    const pending = result.rows.filter((r) => r.lineType === "ORDER_ITEM_PENDING");
+    assert.equal(cut.length, 1);
+    assert.equal(pending.length, 1);
+    assert.equal(result.summary.cutLines, 1);
+    assert.equal(result.summary.totalCutValue, 10_000);
+    assert.ok(cut[0]!.plannedReceivableValue == null);
+  });
+
   it("2. pedido futuro saudável", () => {
     const result = buildOrderToCashAuditRows({
       orders: [

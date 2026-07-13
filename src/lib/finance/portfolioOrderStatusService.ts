@@ -26,7 +26,9 @@ export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
   orderItemStatus?: string | null;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
+  nomusIsCut?: boolean | null;
   nomusItemStatusNormalized?: string | null;
+  nomusMatchConfidence?: string | null;
   fiscalStage?: string | null;
   commercialStage?: string | null;
   cashStage?: string | null;
@@ -92,6 +94,8 @@ export type PortfolioOrderStatusRow = {
   activeOrderValue: number;
   /** Soma dos itens cancelados. */
   canceledOrderValue: number;
+  /** Soma dos itens atendidos com corte (saldo cortado encerrado). */
+  cutOrderValue: number;
   allocatedOrderValue: number;
   lineBilledValue: number;
   /**
@@ -125,6 +129,7 @@ export type PortfolioOrderStatusRow = {
   allocatedItemCount: number;
   fulfilledItemsCount: number;
   canceledItemsCount: number;
+  cutItemsCount: number;
   /** true só com pendência ativa real (não cancelada). */
   hasPendingItems: boolean;
   hasCanceledItems: boolean;
@@ -195,6 +200,7 @@ export type PortfolioOrderStatusSummary = {
   totalLineBilledValue: number;
   totalPendingValue: number;
   totalCanceledValue: number;
+  totalCutValue: number;
   totalReceivableValue: number;
   totalReceivedValue: number;
   totalOpenValue: number;
@@ -203,7 +209,9 @@ export type PortfolioOrderStatusSummary = {
   withOpenCr: number;
   withReceived: number;
   withCanceledItems: number;
+  withCutItems: number;
   canceledItemsCount: number;
+  cutItemsCount: number;
   summarySource: "aggregated_orders";
   crAggregation: "max_per_order_excluding_pending_lines";
   lineBilledRule: "item_evidence_only";
@@ -363,10 +371,20 @@ function isAllocatedLine(fact: PortfolioOrderStatusFact): boolean {
   const type = (fact.lineType ?? "").toUpperCase();
   if (type === "ORDER_ITEM_PENDING") return false;
   if (type === "ORDER_ITEM_CANCELED") return false;
+  if (type === "ORDER_ITEM_CUT") return false;
   if (type === "DOCUMENT_EXTRA_ITEM") return false;
   const qty = fact.quantityUsedForOrder ?? 0;
   const alloc = fact.allocatedValueByOrderPrice ?? 0;
   return qty > MONEY_EPS || alloc > MONEY_EPS || type === "ORDER_ITEM_ALLOCATED";
+}
+
+/** Linha de corte encerra saldo cortado (contabiliza no valor cortado). */
+export function isCutLine(fact: PortfolioOrderStatusFact): boolean {
+  const type = (fact.lineType ?? "").toUpperCase();
+  if (type === "ORDER_ITEM_CUT") return true;
+  if (fact.nomusIsCut === true) return true;
+  const norm = (fact.nomusItemStatusNormalized ?? "").trim().toUpperCase();
+  return norm === "FULFILLED_WITH_CUT";
 }
 
 /**
@@ -713,11 +731,13 @@ export function aggregateOrderFactsToRow(
 
   const itemOrderValues = new Map<string, number>();
   const canceledItemValues = new Map<string, number>();
+  const cutItemValues = new Map<string, number>();
   const activeItemValues = new Map<string, number>();
   let allocatedOrderValue = 0;
   let lineBilledValue = 0;
   let pendingActiveItemsCount = 0;
   let canceledItemsCount = 0;
+  let cutItemsCount = 0;
   let allocatedItemCount = 0;
   let receivableTotal = 0;
   let receivableOpen = 0;
@@ -726,6 +746,7 @@ export function aggregateOrderFactsToRow(
   const nfeNumbers = new Set<string>();
   const productTokens = new Set<string>();
   const seenCanceledItems = new Set<string>();
+  const seenCutItems = new Set<string>();
   const seenPendingActiveItems = new Set<string>();
   const seenFulfilledItems = new Set<string>();
 
@@ -777,12 +798,22 @@ export function aggregateOrderFactsToRow(
       }
     }
 
+    const cutFact = isCutLine(fact);
+
     if (isCanceledOrderItemFact(fact)) {
       if (!seenCanceledItems.has(itemKey)) {
         seenCanceledItems.add(itemKey);
         canceledItemsCount += 1;
         if (itemValue != null && !canceledItemValues.has(itemKey)) {
           canceledItemValues.set(itemKey, itemValue);
+        }
+      }
+    } else if (cutFact) {
+      if (!seenCutItems.has(itemKey)) {
+        seenCutItems.add(itemKey);
+        cutItemsCount += 1;
+        if (itemValue != null && !cutItemValues.has(itemKey)) {
+          cutItemValues.set(itemKey, itemValue);
         }
       }
     } else if (itemValue != null && !activeItemValues.has(itemKey)) {
@@ -798,6 +829,11 @@ export function aggregateOrderFactsToRow(
     }
 
     if (isCanceledPendingLine(fact)) {
+      continue;
+    }
+
+    // Linhas de corte também encerram saldo — não entram como pendência/alocação.
+    if (cutFact) {
       continue;
     }
 
@@ -829,6 +865,10 @@ export function aggregateOrderFactsToRow(
   for (const v of canceledItemValues.values()) canceledOrderValue += v;
   canceledOrderValue = round6(canceledOrderValue);
 
+  let cutValue = 0;
+  for (const v of cutItemValues.values()) cutValue += v;
+  cutValue = round6(cutValue);
+
   let activeFromItems = 0;
   for (const v of activeItemValues.values()) activeFromItems += v;
 
@@ -844,15 +884,15 @@ export function aggregateOrderFactsToRow(
   const totalOrderValue = originalOrderValue;
 
   /**
-   * Valor ativo = original − cancelados.
+   * Valor ativo = original − cancelados − cortados.
    * Fallback: soma dos itens ativos quando não há orderNet confiável.
    */
   const activeOrderValue = round6(
     orderNetValue != null && orderNetValue > 0
-      ? Math.max(0, originalOrderValue - canceledOrderValue)
+      ? Math.max(0, originalOrderValue - canceledOrderValue - cutValue)
       : activeFromItems > MONEY_EPS
         ? activeFromItems
-        : Math.max(0, originalOrderValue - canceledOrderValue)
+        : Math.max(0, originalOrderValue - canceledOrderValue - cutValue)
   );
 
   // Atendido respeita teto dos itens ativos (não deixa excedente inflar carteira)
@@ -907,6 +947,7 @@ export function aggregateOrderFactsToRow(
     originalOrderValue,
     activeOrderValue,
     canceledOrderValue,
+    cutOrderValue: cutValue,
     allocatedOrderValue: allocatedCapped,
     lineBilledValue: billed,
     pendingOrderValue: pendingActiveOrderValue,
@@ -930,6 +971,7 @@ export function aggregateOrderFactsToRow(
     allocatedItemCount,
     fulfilledItemsCount: allocatedItemCount,
     canceledItemsCount,
+    cutItemsCount,
     hasPendingItems: classified.hasPendingItems,
     hasCanceledItems: classified.hasCanceledItems,
     hasAllocation: classified.hasAllocation,
@@ -980,6 +1022,7 @@ export function buildOrderStatusSummary(
   let totalLineBilledValue = 0;
   let totalPendingValue = 0;
   let totalCanceledValue = 0;
+  let totalCutValue = 0;
   let totalReceivableValue = 0;
   let totalReceivedValue = 0;
   let totalOpenValue = 0;
@@ -987,7 +1030,9 @@ export function buildOrderStatusSummary(
   let withOpenCr = 0;
   let withReceived = 0;
   let withCanceledItems = 0;
+  let withCutItems = 0;
   let canceledItemsCount = 0;
+  let cutItemsCount = 0;
 
   for (const row of rows) {
     statusCounts[row.consolidatedOrderStatus] += 1;
@@ -996,6 +1041,7 @@ export function buildOrderStatusSummary(
     totalLineBilledValue += row.lineBilledValue;
     totalPendingValue += row.pendingActiveOrderValue;
     totalCanceledValue += row.canceledOrderValue;
+    totalCutValue += row.cutOrderValue ?? 0;
     totalReceivableValue += row.receivableTotalValue;
     totalReceivedValue += row.receivableReceivedValue;
     totalOpenValue += row.receivableOpenValue;
@@ -1006,6 +1052,10 @@ export function buildOrderStatusSummary(
       withCanceledItems += 1;
       canceledItemsCount += row.canceledItemsCount;
     }
+    if ((row.cutItemsCount ?? 0) > 0) {
+      withCutItems += 1;
+      cutItemsCount += row.cutItemsCount ?? 0;
+    }
   }
 
   return {
@@ -1015,6 +1065,7 @@ export function buildOrderStatusSummary(
     totalLineBilledValue: round6(totalLineBilledValue),
     totalPendingValue: round6(totalPendingValue),
     totalCanceledValue: round6(totalCanceledValue),
+    totalCutValue: round6(totalCutValue),
     totalReceivableValue: round6(totalReceivableValue),
     totalReceivedValue: round6(totalReceivedValue),
     totalOpenValue: round6(totalOpenValue),
@@ -1023,6 +1074,8 @@ export function buildOrderStatusSummary(
     withOpenCr,
     withReceived,
     withCanceledItems,
+    withCutItems,
+    cutItemsCount,
     canceledItemsCount,
     summarySource: "aggregated_orders",
     crAggregation: "max_per_order_excluding_pending_lines",

@@ -67,7 +67,17 @@ Regras:
 
 Caso **PD 02207**: 2 itens atendidos + 2 cancelados → 100% dos ativos, saldo ativo R$ 0, status recebido/completo com cancelamento — **não** cai no card Parciais.
 
-Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. Ver também `docs/sales/sales-order-item-nomus-status-sync.md` e `docs/sales/sales-order-item-status-impact-audit.md`.
+Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusIsCut` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. **Casamento é sempre por LINHA do item**, nunca por SKU. Ver também `docs/sales/sales-order-item-status-rules.md`, `docs/sales/sales-order-item-nomus-status-sync.md` e `docs/sales/sales-order-item-status-impact-audit.md`.
+
+### Atendido com corte
+
+Item com status `FULFILLED_WITH_CUT` encerra o saldo cortado — separado de cancelado direto:
+
+- não conta como pendente
+- não entra em forecast/recebível planejado
+- não gera comissão nem `NO_MARGIN`
+- `cutOrderValue` acumulado ao lado de `canceledOrderValue`
+- `activeOrderValue = originalOrderValue − canceledOrderValue − cutOrderValue`
 
 ## Componentes
 

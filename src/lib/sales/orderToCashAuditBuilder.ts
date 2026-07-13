@@ -12,6 +12,8 @@ import {
 } from "../finance/portfolioReconciliationAllocationEngine.js";
 import { extractSalesOrderForecastInstallments } from "../salesOrderListPaymentSchedule.js";
 import {
+  isFulfilledWithCutSalesOrderItem,
+  isInactiveSalesOrderItemNomusFlags,
   isSalesOrderItemActiveForReceivableForecast,
 } from "./nomusSalesOrderItemStatus.js";
 
@@ -25,6 +27,7 @@ export const ORDER_TO_CASH_LINE_TYPES = [
   "ORDER_ITEM_PENDING",
   "ORDER_ITEM_ALLOCATED",
   "ORDER_ITEM_CANCELED",
+  "ORDER_ITEM_CUT",
   "DOCUMENT_EXTRA_ITEM",
   "QUANTITY_SURPLUS",
 ] as const;
@@ -92,8 +95,14 @@ export type OrderToCashAuditOrderItemInput = {
   nomusIsCanceled?: boolean | null;
   /** Persistido em SalesOrderItem.nomusIsStale */
   nomusIsStale?: boolean | null;
+  /** Atendido com corte — saldo cortado é encerrado. */
+  nomusIsCut?: boolean | null;
   nomusItemStatusNormalized?: string | null;
   nomusItemStatusRaw?: string | null;
+  /** HIGH | MEDIUM | LOW | AMBIGUOUS | NONE (auditoria). */
+  nomusMatchConfidence?: string | null;
+  nomusQuantityFulfilled?: number | null;
+  nomusQuantityPending?: number | null;
 };
 
 export type OrderToCashAuditNfeLinkInput = {
@@ -368,10 +377,13 @@ export type OrderToCashAuditBuilderSummary = {
   rowsGenerated: number;
   pendingLines: number;
   canceledLines: number;
+  cutLines: number;
   allocatedLines: number;
   extraItemLines: number;
   surplusLines: number;
   totalOrderValue: number;
+  totalCanceledValue: number;
+  totalCutValue: number;
   totalAllocatedValueByOrderPrice: number;
   totalReceivableValue: number;
   totalReceivedValue: number;
@@ -429,17 +441,39 @@ function toIsoDate(value: Date | null | undefined): string | null {
   return value.toISOString().slice(0, 10);
 }
 
-/** Item cancelado/stale/zerado — não aloca, não gera PENDING, não entra em forecast. */
+/** Item cancelado/stale/zerado/cortado — não aloca, não gera PENDING, não entra em forecast. */
 export function isInactiveOrderToCashOrderItem(
   item: OrderToCashAuditOrderItemInput
 ): boolean {
   return !isSalesOrderItemActiveForReceivableForecast({
     nomusIsCanceled: item.nomusIsCanceled,
     nomusIsStale: item.nomusIsStale,
+    nomusIsCut: item.nomusIsCut,
     nomusItemStatusNormalized: item.nomusItemStatusNormalized,
     itemStatus: item.itemStatus,
     quantity: item.quantity,
     totalNetValue: item.totalNetValue ?? null,
+  });
+}
+
+export function isCanceledOrderToCashOrderItem(
+  item: OrderToCashAuditOrderItemInput
+): boolean {
+  return isInactiveSalesOrderItemNomusFlags({
+    nomusIsCanceled: item.nomusIsCanceled,
+    nomusIsStale: item.nomusIsStale,
+    nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+    itemStatus: item.itemStatus,
+  });
+}
+
+export function isCutOrderToCashOrderItem(
+  item: OrderToCashAuditOrderItemInput
+): boolean {
+  return isFulfilledWithCutSalesOrderItem({
+    nomusIsCut: item.nomusIsCut,
+    nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+    itemStatus: item.itemStatus,
   });
 }
 
@@ -1582,10 +1616,13 @@ export function buildOrderToCashAuditRows(
 
   let pendingLines = 0;
   let canceledLines = 0;
+  let cutLines = 0;
   let allocatedLines = 0;
   let extraItemLines = 0;
   let surplusLines = 0;
   let totalOrderValue = 0;
+  let totalCanceledValue = 0;
+  let totalCutValue = 0;
   let totalAllocatedValueByOrderPrice = 0;
   let totalReceivableValue = 0;
   let totalReceivedValue = 0;
@@ -1602,9 +1639,15 @@ export function buildOrderToCashAuditRows(
     }
 
     const activeItems = orderItems.filter((i) => !isInactiveOrderToCashOrderItem(i));
-    const canceledItems = orderItems.filter((i) => isInactiveOrderToCashOrderItem(i));
+    const canceledItems = orderItems.filter(
+      (i) => !isCutOrderToCashOrderItem(i) && isCanceledOrderToCashOrderItem(i)
+    );
+    const cutItems = orderItems.filter((i) => isCutOrderToCashOrderItem(i));
     const canceledOrderValue = round6(
       canceledItems.reduce((s, i) => s + itemTotalValue(i), 0)
+    );
+    const cutOrderValue = round6(
+      cutItems.reduce((s, i) => s + itemTotalValue(i), 0)
     );
     const activeFromItems = round6(
       activeItems.reduce((s, i) => s + itemTotalValue(i), 0)
@@ -1612,9 +1655,11 @@ export function buildOrderToCashAuditRows(
     const headerNet = toFinite(order.totalNetValue);
     const activeOrderValue = round6(
       headerNet > 0
-        ? Math.max(0, headerNet - canceledOrderValue)
+        ? Math.max(0, headerNet - canceledOrderValue - cutOrderValue)
         : activeFromItems
     );
+    totalCanceledValue += canceledOrderValue;
+    totalCutValue += cutOrderValue;
 
     const seller = resolveOrderSeller(order);
     const plan = buildOrderPaymentPlan(order, {
@@ -2266,6 +2311,74 @@ export function buildOrderToCashAuditRows(
       canceledLines += 1;
     }
 
+    // Itens atendidos com corte: encerram saldo cortado — não pendente/forecast.
+    for (const cut of cutItems) {
+      const row = baseRow({
+        auditKey: `${order.id}:${cut.id}:cut`,
+        lineType: "ORDER_ITEM_CUT",
+      });
+      applyOrderIdentity(row, order, seller, plan);
+      applyItemIdentity(row, cut, orderExpected);
+      row.orderItemStatus = "ATENDIDO_COM_CORTE";
+      row.runId = opts.runId;
+      row.commercialStage = commercialStage;
+      row.operationalStage = "FULLY_FULFILLED";
+      row.fiscalStage = "NO_NFE";
+      row.financialStage = "NO_CR";
+      row.cashStage = "NO_CASH";
+      row.orderToCashStage = classifyOrderToCashStage({
+        canceled: false,
+        commercialStage,
+        operationalStage: "FULLY_FULFILLED",
+        fiscalStage: "NO_NFE",
+        financialStage: "NO_CR",
+        cashStage: "NO_CASH",
+        expectedDelivery: expectedForStage,
+        today: opts.today,
+        diasProximoEntrega: opts.diasProximoEntrega,
+        diasRecemVencido: opts.diasRecemVencido,
+        diasBloqueio: opts.diasBloqueio,
+        hasEvidence: false,
+      });
+      row.temperature = classifyTemperature(row.orderToCashStage ?? "SEM_EVIDENCIA");
+      row.confidenceScore = confidence.score;
+      row.confidenceLabel = confidence.label;
+      row.responsibleArea = action.responsibleArea;
+      row.recommendedAction =
+        "Item atendido com corte no Pedido de Venda/Nomus — saldo cortado encerra pendência.";
+      Object.assign(row, emptyAlertFlags());
+      row.hasFullFulfillment = true;
+      row.hasDeliveryDelay = false;
+      row.alertsJson = ["ITEM_ATENDIDO_COM_CORTE"];
+      row.blockingReasonsJson = [];
+      row.paymentStatus = "PLANNED_ONLY";
+      row.plannedReceivableValue = null;
+      row.stockDocumentId = null;
+      row.stockDocumentExternalId = null;
+      row.stockDocumentItemId = null;
+      row.stockDocumentItemQuantity = null;
+      row.stockDocumentItemUnitValue = null;
+      row.stockDocumentItemTotalValue = null;
+      row.nfeId = null;
+      row.nfeExternalId = null;
+      row.nfeNumber = null;
+      row.nfeSerie = null;
+      row.nfeKey = null;
+      row.nfeHeaderValue = null;
+      row.receivableIdsJson = null;
+      row.receivableCount = null;
+      row.receivableTotalValue = null;
+      row.receivableOpenValue = null;
+      row.receivableReceivedValue = null;
+      row.quantityUsedForOrder = 0;
+      row.quantityRemainingBeforeAllocation = 0;
+      row.quantityRemainingAfterAllocation = 0;
+      row.allocatedValueByOrderPrice = 0;
+      row.allocatedValueByDocumentPrice = 0;
+      rows.push(row);
+      cutLines += 1;
+    }
+
     // Guardrail de valor: se soma atribuída > valor ativo, warning (não inventa corte por linha já capped)
     if (
       activeOrderValue > 0 &&
@@ -2293,10 +2406,13 @@ export function buildOrderToCashAuditRows(
       rowsGenerated: rows.length,
       pendingLines,
       canceledLines,
+      cutLines,
       allocatedLines,
       extraItemLines,
       surplusLines,
       totalOrderValue: round6(totalOrderValue),
+      totalCanceledValue: round6(totalCanceledValue),
+      totalCutValue: round6(totalCutValue),
       totalAllocatedValueByOrderPrice: summaryAllocated,
       totalReceivableValue: round6(totalReceivableValue),
       totalReceivedValue: round6(totalReceivedValue),

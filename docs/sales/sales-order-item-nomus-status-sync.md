@@ -32,10 +32,28 @@ Evidência PD 02207:
 
 | Código Nomus | Significado | Normalizado |
 |--------------|-------------|-------------|
+| 1 | Aguardando liberação | `PENDING` |
+| 2 | Liberado | `RELEASED` |
+| 3 | Atendido parcialmente | `PARTIAL` |
 | 4 | Atendido totalmente | `FULFILLED` |
+| 5 | Atendido com corte | `FULFILLED_WITH_CUT` |
 | 6 | Cancelado | `CANCELED` |
 
-Códigos 1–3 e 5 também têm mapeamento inicial (`PENDING` / `PARTIAL`). Desconhecido → `UNKNOWN` (status bruto preservado).
+Textos PT aceitos: `Atendido totalmente`, `Atendido com corte`, `Liberado`, `Cancelado`, `Aguardando liberação`. Desconhecido → `UNKNOWN` (status bruto preservado; **nunca** presumir cancelado).
+
+## Status por LINHA, não por SKU
+
+Múltiplas linhas do mesmo produto podem ter status diferentes (evidência PD 02534). O casamento local × raw usa:
+
+1. `nomusItemExternalId` (`itensPedido[].id`) — HIGH
+2. `[nomus-line:N]` em `notes` — HIGH
+3. `nomusItemSequence` (`itensPedido[].item`) — HIGH
+4. Produto único no pedido — HIGH
+5. `quantidade + valorUnitario` únicos — HIGH
+6. Pareamento posicional (mesma cardinalidade) — LOW
+7. Caso contrário → `AMBIGUOUS` (não aplica cancelamento por SKU).
+
+Fallback por SKU só quando o produto aparece **uma única vez** no pedido.
 
 ## Sync
 

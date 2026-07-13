@@ -11,16 +11,44 @@
 
 | Código | Significado | Normalizado |
 |--------|-------------|-------------|
+| 1 | Aguardando liberação | `PENDING` |
+| 2 | Liberado | `RELEASED` |
+| 3 | Atendido parcialmente | `PARTIAL` |
 | 4 | Atendido totalmente | `FULFILLED` |
+| 5 | Atendido com corte | `FULFILLED_WITH_CUT` |
 | 6 | Cancelado | `CANCELED` |
-| 1–3, 5 | Pendente / parcial (mapa inicial) | `PENDING` / `PARTIAL` |
-| outro | Desconhecido | `UNKNOWN` (bruto preservado) |
+| outro | Desconhecido | `UNKNOWN` (bruto preservado, **não** presumir cancelado) |
+
+Também aceita texto PT: `Atendido totalmente`, `Atendido com corte`, `Liberado`, `Cancelado`, `Aguardando liberação`.
+
+## Status por LINHA do item, não por produto
+
+O mesmo SKU pode aparecer várias vezes no pedido com status diferentes (ex.: PD 02534 tem 5 linhas de `309.86AA` — apenas a linha 00080 está cancelada).
+
+**Regras de casamento local × raw (por linha):**
+
+1. `nomusItemExternalId` (`itensPedido[].id`) — HIGH.
+2. Tag `[nomus-line:N]` em `notes` — HIGH.
+3. `nomusItemSequence` (`itensPedido[].item`) — HIGH.
+4. Produto único no pedido (uma linha local, um rawItem) — HIGH.
+5. Múltiplas linhas do mesmo produto: casamento por `quantidade + valorUnitario` únicos — HIGH.
+6. Fallback posicional 1:1 quando cardinalidade bate — LOW.
+7. Caso contrário → `AMBIGUOUS` — **não** aplicar cancelamento automático; preserva `UNKNOWN`.
+
+Fallback por `externalProductId`/SKU só é permitido quando o produto aparece **uma única vez** no pedido.
+
+**Nunca:**
+- somar como cancelado todas as linhas de um SKU porque uma delas está cancelada;
+- aplicar status por `idProduto` quando há repetição;
+- transformar linhas ativas em canceladas por herança do produto.
 
 ## Flags persistidas
 
-- `nomusIsCanceled` — cancelado no Nomus
+- `nomusIsCanceled` — cancelado no Nomus (linha)
+- `nomusIsCut` — atendido com corte (saldo cortado encerrado)
 - `nomusIsStale` — linha local sumiu do payload atual (não apagar; não tratar como ativo)
 - `nomusItemStatusRaw` / `nomusItemStatusNormalized`
+- `nomusMatchConfidence` / `nomusMatchReason` — auditoria do casamento por linha
 - `nomusRawItem` / `nomusLastSeenAt`
 
 ## Gates de “ativo”
@@ -81,3 +109,30 @@
 | original / cancelado / ativo | 197030 / 125625 / 71405 |
 | atendido / pendente ativo / % | 71405 / 0 / 100 |
 | status | `RECEBIDO_COM_CANCELAMENTO` (não Parcial) |
+
+## Caso âncora — PD 02534 (SKU repetido)
+
+5 linhas do `309.86AA` — apenas a linha 00080 está cancelada no Nomus:
+
+| Item | Qtd | Valor | Status Nomus | Regra |
+|------|-----|-------|--------------|-------|
+| 00080 | 2.000 | R$ 3.180 | Cancelado (6) | `CANCELED` — linha específica |
+| 00090 | 4.000 | R$ 6.360 | Liberado (2) | `RELEASED` (ativo) |
+| 00100 | 8.000 | R$ 12.720 | Liberado (2) | `RELEASED` (ativo) |
+| 00110 | 4.000 | R$ 6.360 | Liberado (2) | `RELEASED` (ativo) |
+| 00120 | 8.000 | R$ 12.720 | Liberado (2) | `RELEASED` (ativo) |
+
+Esperado:
+
+- `canceledOrderValue` = **R$ 3.180,00** (só a linha 00080)
+- `activeOrderValue` = **R$ 38.160,00**
+- **NUNCA** cancelar R$ 41.340,00 (soma todo o SKU 309.86AA)
+- pedido pode continuar `PARCIAL_COM_CANCELAMENTO` se houver saldo ativo pendente real
+- itens 00090/00100/00110/00120 aparecem como ativos/liberados no detalhe
+
+## Impacto do "Atendido com corte"
+
+- saldo cortado (`quantityCut`) é encerrado — não conta como pendente
+- não gera forecast/recebível planejado sobre o cortado
+- não gera comissão nem `NO_MARGIN` sobre o cortado
+- fica visível em auditoria com `FULFILLED_WITH_CUT` / `ORDER_ITEM_CUT`

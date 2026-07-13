@@ -5,18 +5,16 @@
  */
 
 import { prisma } from "@/src/lib/prisma.js";
-import {
-  extractNomusRawItems,
-  isSalesOrderItemCancelledByRawQuantity,
-  matchRawItemToDbItem,
-  resolveSalesOrderItemNomusStatus,
-} from "@/src/lib/salesOrderNomusRaw.js";
+import { extractNomusRawItems } from "@/src/lib/salesOrderNomusRaw.js";
 import {
   isCanceledOrderItemStatus,
   normalizeOrderItemFulfillmentStatus,
 } from "./orderItemFulfillmentStatus.js";
 import {
+  isFulfilledWithCutSalesOrderItem,
   isInactiveSalesOrderItemNomusFlags,
+  parseNomusSalesOrderItemStatus,
+  resolveNomusRawItemMatchesForOrder,
   toOrderItemFulfillmentStorageStatus,
   type NomusSalesOrderItemStatusNormalized,
 } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
@@ -31,7 +29,9 @@ export type OrderItemStatusEnrichableFact = {
   lineType?: string | null;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
+  nomusIsCut?: boolean | null;
   nomusItemStatusNormalized?: string | null;
+  nomusMatchConfidence?: string | null;
 };
 
 function nomusStatusToStored(status: string): string {
@@ -96,10 +96,18 @@ export async function enrichFactsWithOrderItemStatus<
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,
+          quantity: true,
+          negotiatedPrice: true,
+          notes: true,
+          nomusItemExternalId: true,
+          nomusItemSequence: true,
           nomusItemStatusRaw: true,
           nomusItemStatusNormalized: true,
           nomusIsCanceled: true,
           nomusIsStale: true,
+          nomusIsCut: true,
+          nomusMatchConfidence: true,
+          nomusRawItem: true,
         },
         orderBy: { id: "asc" },
       },
@@ -107,14 +115,31 @@ export async function enrichFactsWithOrderItemStatus<
   });
 
   const byOrderId = new Map(
-    orders.map((o) => [
-      o.id,
-      {
-        raw: o.nomusRawResponse,
-        items: o.items,
-        itemById: new Map(o.items.map((it) => [it.id, it])),
-      },
-    ])
+    orders.map((o) => {
+      const rawItems = extractNomusRawItems(o.nomusRawResponse);
+      const localForMatch = o.items.map((it) => ({
+        id: it.id,
+        externalProductId: it.externalProductId,
+        skuSnapshot: it.skuSnapshot,
+        productNameSnapshot: it.productNameSnapshot,
+        quantity: it.quantity != null ? Number(it.quantity) : null,
+        negotiatedPrice:
+          it.negotiatedPrice != null ? Number(it.negotiatedPrice) : null,
+        notes: it.notes,
+        nomusItemExternalId: it.nomusItemExternalId ?? null,
+        nomusItemSequence: it.nomusItemSequence ?? null,
+      }));
+      const matches = resolveNomusRawItemMatchesForOrder(localForMatch, rawItems);
+      return [
+        o.id,
+        {
+          raw: o.nomusRawResponse,
+          items: o.items,
+          itemById: new Map(o.items.map((it) => [it.id, it])),
+          matches,
+        },
+      ] as const;
+    })
   );
 
   return facts.map((fact) => {
@@ -136,16 +161,21 @@ export async function enrichFactsWithOrderItemStatus<
 
     if (dbItem) {
       const inactive = isInactiveSalesOrderItemNomusFlags(dbItem);
+      const cut = isFulfilledWithCutSalesOrderItem(dbItem);
       const fromCol = fromNormalizedColumn(dbItem.nomusItemStatusNormalized);
-      if (inactive || fromCol) {
+      if (inactive || cut || fromCol) {
         return {
           ...fact,
           orderItemStatus: inactive
             ? "CANCELADO"
-            : fromCol ?? fact.orderItemStatus ?? null,
+            : cut
+              ? "ATENDIDO_COM_CORTE"
+              : fromCol ?? fact.orderItemStatus ?? null,
           nomusIsCanceled: dbItem.nomusIsCanceled === true || inactive,
           nomusIsStale: dbItem.nomusIsStale === true,
+          nomusIsCut: dbItem.nomusIsCut === true || cut,
           nomusItemStatusNormalized: dbItem.nomusItemStatusNormalized,
+          nomusMatchConfidence: dbItem.nomusMatchConfidence ?? null,
         };
       }
     }
@@ -161,67 +191,53 @@ export async function enrichFactsWithOrderItemStatus<
       return { ...fact };
     }
 
-    if (!order?.raw) return { ...fact };
+    if (!order?.raw || !dbItem) return { ...fact };
 
-    const matchDb = dbItem ?? {
-      externalProductId: null as number | null,
-      skuSnapshot: fact.sku ?? fact.productCode,
-      productNameSnapshot: fact.productName,
+    // Fallback: usa o resolver POR LINHA — nunca aplica status via primeiro rawItem
+    // com mesmo idProduto/SKU.
+    const match = order.matches.get(dbItem.id);
+    if (!match || !match.rawItem) {
+      // AMBIGUOUS/NONE → não marcar cancelado por SKU.
+      return {
+        ...fact,
+        nomusMatchConfidence: match?.matchConfidence ?? "NONE",
+      };
+    }
+    const parsed = parseNomusSalesOrderItemStatus(match.rawItem.raw);
+    if (parsed.isCanceled) {
+      return {
+        ...fact,
+        orderItemStatus: "CANCELADO",
+        nomusIsCanceled: true,
+        nomusItemStatusNormalized: "CANCELED",
+        nomusMatchConfidence: match.matchConfidence,
+      };
+    }
+    if (parsed.isCut) {
+      return {
+        ...fact,
+        orderItemStatus: "ATENDIDO_COM_CORTE",
+        nomusIsCut: true,
+        nomusItemStatusNormalized: "FULFILLED_WITH_CUT",
+        nomusMatchConfidence: match.matchConfidence,
+      };
+    }
+    const stored = toOrderItemFulfillmentStorageStatus(parsed.statusNormalized);
+    if (stored && stored !== "DESCONHECIDO") {
+      return {
+        ...fact,
+        orderItemStatus: stored,
+        nomusItemStatusNormalized: parsed.statusNormalized,
+        nomusMatchConfidence: match.matchConfidence,
+      };
+    }
+
+    return {
+      ...fact,
+      nomusMatchConfidence: match.matchConfidence,
     };
-    const itemIndex = dbItem
-      ? order.items.findIndex((it) => it.id === dbItem.id)
-      : undefined;
-    const nomus = resolveSalesOrderItemNomusStatus(
-      order.raw,
-      {
-        externalProductId: matchDb.externalProductId,
-        skuSnapshot: matchDb.skuSnapshot,
-        productNameSnapshot: matchDb.productNameSnapshot,
-      },
-      {
-        itemIndex: itemIndex != null && itemIndex >= 0 ? itemIndex : undefined,
-        totalDbItems: order.items.length,
-      }
-    );
-
-    if (nomus === "cancelled") {
-      return {
-        ...fact,
-        orderItemStatus: "CANCELADO",
-        nomusIsCanceled: true,
-        nomusItemStatusNormalized: "CANCELED",
-      };
-    }
-
-    const rawItems = extractNomusRawItems(order.raw);
-    const matched = matchRawItemToDbItem(
-      rawItems,
-      {
-        externalProductId: matchDb.externalProductId,
-        skuSnapshot: matchDb.skuSnapshot,
-        productNameSnapshot: matchDb.productNameSnapshot,
-      },
-      {
-        itemIndex: itemIndex != null && itemIndex >= 0 ? itemIndex : undefined,
-        totalDbItems: order.items.length,
-      }
-    );
-    if (matched && isSalesOrderItemCancelledByRawQuantity(matched.raw)) {
-      return {
-        ...fact,
-        orderItemStatus: "CANCELADO",
-        nomusIsCanceled: true,
-        nomusItemStatusNormalized: "CANCELED",
-      };
-    }
-
-    if (nomus !== "unknown") {
-      return {
-        ...fact,
-        orderItemStatus: nomusStatusToStored(nomus),
-      };
-    }
-
-    return { ...fact };
   });
 }
+
+/** Uso legado — remove referência ao `nomusStatusToStored` para evitar drift. */
+void nomusStatusToStored;

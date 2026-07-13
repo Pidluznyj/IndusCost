@@ -12,9 +12,13 @@ import {
 import type { CommissionOrderSourceBundle, CommissionPeriodInput } from "./commission-types.js";
 import {
   COMMISSION_IGNORED_CANCELED_ITEM,
+  COMMISSION_IGNORED_CUT_ITEM,
   COMMISSION_IGNORED_STALE_ITEM,
   resolveCommissionIgnoreReasonForSalesOrderItem,
 } from "../sales/nomusSalesOrderItemStatus.js";
+void COMMISSION_IGNORED_CANCELED_ITEM;
+void COMMISSION_IGNORED_CUT_ITEM;
+void COMMISSION_IGNORED_STALE_ITEM;
 
 const EXIT_MOVEMENT_TYPES = [
   "MANUAL_EXIT",
@@ -53,6 +57,7 @@ const SALES_ORDER_SOURCE_SELECT = {
       notes: true,
       nomusIsCanceled: true,
       nomusIsStale: true,
+      nomusIsCut: true,
       nomusItemStatusNormalized: true,
     },
   },
@@ -97,6 +102,7 @@ type SalesOrderSourceRow = {
     notes: string | null;
     nomusIsCanceled?: boolean | null;
     nomusIsStale?: boolean | null;
+    nomusIsCut?: boolean | null;
     nomusItemStatusNormalized?: string | null;
   }>;
   nfeLinks: Array<{
@@ -262,13 +268,14 @@ async function buildCommissionOrderSourceBundlesFromOrders(
     const rawByProduct = rawItemsByProductId.get(order.id);
     const ignoredItems: Array<{
       salesOrderItemId: string;
-      reason: typeof COMMISSION_IGNORED_CANCELED_ITEM | typeof COMMISSION_IGNORED_STALE_ITEM;
+      reason: string;
     }> = [];
     const items = order.items
       .filter((item) => {
         const reason = resolveCommissionIgnoreReasonForSalesOrderItem({
           nomusIsCanceled: item.nomusIsCanceled,
           nomusIsStale: item.nomusIsStale,
+          nomusIsCut: item.nomusIsCut,
           nomusItemStatusNormalized: item.nomusItemStatusNormalized,
           quantity: decimalToNumber(item.quantity),
           totalNetValue: decimalToNumber(item.totalNetValue),

@@ -825,13 +825,16 @@ export function mapOrderToCashAuditFactToListRow(
     nfeItemUnitValue: fact.nfeItemUnitValue,
     allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
   });
-  const isPending = (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
-  const isCanceledLine =
-    (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_CANCELED";
+  const lineTypeUpper = (fact.lineType ?? "").toUpperCase();
+  const isPending = lineTypeUpper === "ORDER_ITEM_PENDING";
+  const isCanceledLine = lineTypeUpper === "ORDER_ITEM_CANCELED";
+  const isCutLine = lineTypeUpper === "ORDER_ITEM_CUT";
   const orderItemStatus = fact.orderItemStatus ?? null;
   const itemFulfillmentStatus = normalizeOrderItemFulfillmentStatus(orderItemStatus);
   const isCanceled =
     isCanceledLine || itemFulfillmentStatus === "CANCELADO";
+  const isCut = isCutLine;
+  void isCut;
   const canceledOrderValue =
     isCanceled && fact.orderItemTotalValue != null
       ? Math.max(0, fact.orderItemTotalValue)

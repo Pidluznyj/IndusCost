@@ -1,12 +1,19 @@
 /**
  * Backfill pontual de status Nomus em SalesOrderItem a partir de nomusRawResponse.
  * Não chama Nomus; só materializa campos locais. Usado por diagnóstico / pós-migration.
+ *
+ * IMPORTANTE: status do item é aplicado POR LINHA, não por SKU/produto. Múltiplas
+ * linhas do mesmo produto no pedido são resolvidas via
+ * `resolveNomusRawItemMatchesForOrder` (id → sequência → qty+preço → posicional).
  */
 
 import type { PrismaClient } from "@prisma/client";
 import { extractNomusLineExternalId } from "@/src/lib/salesOrderNomusSync.server.js";
-import { extractNomusRawItems, matchRawItemToDbItem } from "@/src/lib/salesOrderNomusRaw.js";
-import { parseNomusSalesOrderItemStatus } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
+import { extractNomusRawItems } from "@/src/lib/salesOrderNomusRaw.js";
+import {
+  parseNomusSalesOrderItemStatus,
+  resolveNomusRawItemMatchesForOrder,
+} from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
 
 export async function backfillSalesOrderItemNomusStatusForOrder(
   prisma: PrismaClient,
@@ -24,6 +31,11 @@ export async function backfillSalesOrderItemNomusStatusForOrder(
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,
+          quantity: true,
+          negotiatedPrice: true,
+          notes: true,
+          nomusItemExternalId: true,
+          nomusItemSequence: true,
         },
         orderBy: { id: "asc" },
       },
@@ -33,48 +45,67 @@ export async function backfillSalesOrderItemNomusStatusForOrder(
 
   const rawItems = extractNomusRawItems(order.nomusRawResponse);
   const seenAt = options?.seenAt ?? new Date();
-  const seenIds = new Set<string>();
   let updated = 0;
 
-  for (let i = 0; i < order.items.length; i++) {
-    const item = order.items[i]!;
-    const matched = matchRawItemToDbItem(
-      rawItems,
-      {
-        externalProductId: item.externalProductId,
-        skuSnapshot: item.skuSnapshot,
-        productNameSnapshot: item.productNameSnapshot,
-      },
-      { itemIndex: i, totalDbItems: order.items.length }
-    );
-    if (!matched) continue;
-    const parsed = parseNomusSalesOrderItemStatus(matched.raw);
-    const externalId = extractNomusLineExternalId(matched.raw);
+  const localForMatch = order.items.map((it) => ({
+    id: it.id,
+    externalProductId: it.externalProductId,
+    skuSnapshot: it.skuSnapshot,
+    productNameSnapshot: it.productNameSnapshot,
+    quantity: it.quantity != null ? Number(it.quantity) : null,
+    negotiatedPrice:
+      it.negotiatedPrice != null ? Number(it.negotiatedPrice) : null,
+    notes: it.notes,
+    nomusItemExternalId: it.nomusItemExternalId ?? null,
+    nomusItemSequence: it.nomusItemSequence ?? null,
+  }));
+
+  const matches = resolveNomusRawItemMatchesForOrder(localForMatch, rawItems);
+
+  for (const item of order.items) {
+    const match = matches.get(item.id)!;
+    if (!match.rawItem) {
+      // AMBIGUOUS / NONE: preservar como UNKNOWN, marcar stale se rawItems existe.
+      const isStale = rawItems.length > 0 && match.matchConfidence !== "NONE";
+      await prisma.salesOrderItem.update({
+        where: { id: item.id },
+        data: {
+          nomusItemStatusRaw: null,
+          nomusItemStatusNormalized: "UNKNOWN",
+          nomusQuantityFulfilled: null,
+          nomusQuantityPending: null,
+          nomusIsCanceled: false,
+          nomusIsCut: false,
+          nomusIsStale: isStale,
+          nomusMatchConfidence: match.matchConfidence,
+          nomusMatchReason: match.matchReason,
+          nomusLastSeenAt: seenAt,
+        },
+      });
+      updated += 1;
+      continue;
+    }
+    const parsed = parseNomusSalesOrderItemStatus(match.rawItem.raw);
+    const externalId = extractNomusLineExternalId(match.rawItem.raw);
+    const sequence =
+      match.rawItem.item != null ? String(match.rawItem.item) : null;
     await prisma.salesOrderItem.update({
       where: { id: item.id },
       data: {
-        nomusItemExternalId: externalId,
-        nomusItemSequence:
-          matched.item != null ? String(matched.item) : String(i + 1),
+        nomusItemExternalId: externalId ?? item.nomusItemExternalId ?? null,
+        nomusItemSequence: sequence ?? item.nomusItemSequence ?? null,
         nomusItemStatusRaw: parsed.statusRaw,
         nomusItemStatusNormalized: parsed.statusNormalized,
         nomusQuantityFulfilled: parsed.quantityFulfilled,
         nomusQuantityPending: parsed.quantityPending,
         nomusIsCanceled: parsed.isCanceled,
+        nomusIsCut: parsed.isCut,
         nomusIsStale: false,
+        nomusMatchConfidence: match.matchConfidence,
+        nomusMatchReason: match.matchReason,
         nomusLastSeenAt: seenAt,
-        nomusRawItem: matched.raw as object,
+        nomusRawItem: match.rawItem.raw as object,
       },
-    });
-    seenIds.add(item.id);
-    updated += 1;
-  }
-
-  for (const item of order.items) {
-    if (seenIds.has(item.id)) continue;
-    await prisma.salesOrderItem.update({
-      where: { id: item.id },
-      data: { nomusIsStale: true },
     });
     updated += 1;
   }

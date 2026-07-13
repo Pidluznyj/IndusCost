@@ -45,6 +45,16 @@ Estágios da linha pendente:
 - fiscal: `NO_NFE`
 - financeiro: `NO_CR`
 
+## ORDER_ITEM_CUT
+
+Item **atendido com corte** (`FULFILLED_WITH_CUT`) — saldo cortado encerrado:
+
+- não gera `ORDER_ITEM_PENDING` sobre o cortado
+- `plannedReceivableValue = null`
+- não exige NF/documento sobre o corte
+- alerta `ITEM_ATENDIDO_COM_CORTE`
+- operacional: `FULLY_FULFILLED`; sem forecast
+
 ## ORDER_ITEM_CANCELED
 
 Item cancelado/stale no Pedido de Venda/Nomus:

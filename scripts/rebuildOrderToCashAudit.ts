@@ -31,7 +31,11 @@ import {
   type OrderToCashAuditStockDocumentInput,
   type OrderToCashAuditStockItemInput,
 } from "../src/lib/sales/orderToCashAuditBuilder.ts";
-import { resolveSalesOrderItemNomusStatus } from "../src/lib/salesOrderNomusRaw.ts";
+import { extractNomusRawItems } from "../src/lib/salesOrderNomusRaw.ts";
+import {
+  parseNomusSalesOrderItemStatus,
+  resolveNomusRawItemMatchesForOrder,
+} from "../src/lib/sales/nomusSalesOrderItemStatus.ts";
 import {
   buildOrderToCashRebuildPreviewSummary,
   detectNomusLockFilesPresent,
@@ -311,46 +315,65 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
     updatedAt: order.updatedAt,
   }));
 
-  const orderItems: OrderToCashAuditOrderItemInput[] = ordersRaw.flatMap((order) =>
-    order.items.map((item, index) => {
-      const fromDb =
+  const orderItems: OrderToCashAuditOrderItemInput[] = ordersRaw.flatMap((order) => {
+    const rawItems = extractNomusRawItems(order.nomusRawResponse);
+    const localForMatch = order.items.map((it) => ({
+      id: it.id,
+      externalProductId: it.externalProductId,
+      skuSnapshot: it.skuSnapshot,
+      productNameSnapshot: it.productNameSnapshot,
+      quantity: it.quantity != null ? Number(it.quantity) : null,
+      negotiatedPrice:
+        it.negotiatedPrice != null ? Number(it.negotiatedPrice) : null,
+      notes: it.notes,
+      nomusItemExternalId: it.nomusItemExternalId ?? null,
+      nomusItemSequence: it.nomusItemSequence ?? null,
+    }));
+    const matches = resolveNomusRawItemMatchesForOrder(localForMatch, rawItems);
+
+    return order.items.map((item, index) => {
+      const dbCanceled =
         item.nomusIsCanceled === true ||
         item.nomusIsStale === true ||
-        (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED"
-          ? "CANCELADO"
+        (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED";
+      const dbCut =
+        item.nomusIsCut === true ||
+        (item.nomusItemStatusNormalized ?? "").toUpperCase() === "FULFILLED_WITH_CUT";
+      const fromDb = dbCanceled
+        ? "CANCELADO"
+        : dbCut
+          ? "ATENDIDO_COM_CORTE"
           : item.nomusItemStatusNormalized === "FULFILLED"
             ? "ATENDIDO"
             : item.nomusItemStatusNormalized === "PARTIAL"
               ? "PARCIAL"
-              : item.nomusItemStatusNormalized === "PENDING"
-                ? "PENDENTE"
-                : null;
-      const nomusStatus = resolveSalesOrderItemNomusStatus(
-        order.nomusRawResponse,
-        {
-          externalProductId: item.externalProductId,
-          skuSnapshot: item.skuSnapshot,
-          productNameSnapshot: item.productNameSnapshot,
-        },
-        { itemIndex: index, totalDbItems: order.items.length }
-      );
+              : item.nomusItemStatusNormalized === "RELEASED"
+                ? "LIBERADO"
+                : item.nomusItemStatusNormalized === "PENDING"
+                  ? "PENDENTE"
+                  : null;
+
       let itemStatus: string | null = fromDb;
+      let nomusIsCanceled = item.nomusIsCanceled === true;
+      let nomusIsCut = item.nomusIsCut === true;
+
+      // Fallback: usar match POR LINHA quando DB não tem status persistido.
       if (!itemStatus) {
-        if (nomusStatus === "cancelled") itemStatus = "CANCELADO";
-        else if (nomusStatus === "fully_fulfilled") itemStatus = "ATENDIDO";
-        else if (
-          nomusStatus === "partially_fulfilled" ||
-          nomusStatus === "fulfilled_with_cut"
-        ) {
-          itemStatus = "PARCIAL";
-        } else if (
-          nomusStatus === "awaiting_release" ||
-          nomusStatus === "released"
-        ) {
-          itemStatus = "PENDENTE";
-        } else if (nomusStatus !== "unknown") {
-          itemStatus = nomusStatus.toUpperCase();
+        const match = matches.get(item.id);
+        if (match?.rawItem) {
+          const parsed = parseNomusSalesOrderItemStatus(match.rawItem.raw);
+          if (parsed.isCanceled) {
+            itemStatus = "CANCELADO";
+            nomusIsCanceled = true;
+          } else if (parsed.isCut) {
+            itemStatus = "ATENDIDO_COM_CORTE";
+            nomusIsCut = true;
+          } else if (parsed.statusNormalized === "FULFILLED") itemStatus = "ATENDIDO";
+          else if (parsed.statusNormalized === "PARTIAL") itemStatus = "PARCIAL";
+          else if (parsed.statusNormalized === "RELEASED") itemStatus = "LIBERADO";
+          else if (parsed.statusNormalized === "PENDING") itemStatus = "PENDENTE";
         }
+        void index;
       }
       return {
         id: item.id,
@@ -368,13 +391,16 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
         totalNetValue: dec(item.totalNetValue),
         expectedDeliveryDate: null,
         itemStatus,
-        nomusIsCanceled: item.nomusIsCanceled === true,
+        nomusIsCanceled,
         nomusIsStale: item.nomusIsStale === true,
+        nomusIsCut,
         nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
         nomusItemStatusRaw: item.nomusItemStatusRaw ?? null,
+        nomusMatchConfidence:
+          item.nomusMatchConfidence ?? matches.get(item.id)?.matchConfidence ?? null,
       };
-    })
-  );
+    });
+  });
 
   const nfeLinks: OrderToCashAuditNfeLinkInput[] = ordersRaw.flatMap((order) =>
     order.nfeLinks.map((link) => ({

@@ -54,6 +54,7 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   unitCost: true,
   nomusIsCanceled: true,
   nomusIsStale: true,
+  nomusIsCut: true,
   nomusItemStatusNormalized: true,
   nomusItemStatusRaw: true,
 } as const;
@@ -81,6 +82,7 @@ export type SalesOrderItemForMargin = {
   unitCost?: unknown | null;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
+  nomusIsCut?: boolean | null;
   nomusItemStatusNormalized?: string | null;
   nomusItemStatusRaw?: string | null;
 };
@@ -129,7 +131,11 @@ function mapItemToResolverInput(
     item.nomusIsStale === true ||
     (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED" ||
     (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELADO";
-  const isCanceled = persistedCanceled || nomusStatus === "cancelled";
+  const persistedCut =
+    item.nomusIsCut === true ||
+    (item.nomusItemStatusNormalized ?? "").toUpperCase() === "FULFILLED_WITH_CUT";
+  // Item cortado é encerrado — não gera margem ativa nem NO_MARGIN.
+  const isCanceled = persistedCanceled || persistedCut || nomusStatus === "cancelled";
 
   return {
     salesOrderItemId: item.id,

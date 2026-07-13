@@ -64,6 +64,8 @@ export type NomusSyncExistingItem = {
   nomusItemStatusNormalized?: string | null;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
+  nomusIsCut?: boolean | null;
+  nomusMatchConfidence?: string | null;
 };
 
 export type NomusSyncPlannedLine = {
@@ -85,6 +87,9 @@ export type NomusSyncPlannedLine = {
   nomusQuantityFulfilled?: number | null;
   nomusQuantityPending?: number | null;
   nomusIsCanceled?: boolean;
+  nomusIsCut?: boolean;
+  nomusMatchConfidence?: string | null;
+  nomusMatchReason?: string | null;
   nomusRawItem?: Record<string, unknown> | null;
 };
 
@@ -120,7 +125,10 @@ export type NomusSyncItemWriteRow = {
   nomusQuantityFulfilled?: string | null;
   nomusQuantityPending?: string | null;
   nomusIsCanceled?: boolean;
+  nomusIsCut?: boolean;
   nomusIsStale?: boolean;
+  nomusMatchConfidence?: string | null;
+  nomusMatchReason?: string | null;
   nomusLastSeenAt?: Date | null;
   nomusRawItem?: Record<string, unknown> | null;
 };
@@ -375,6 +383,23 @@ export function buildNomusSyncItemWritePlan(input: {
 
     const economics = commercialLineEconomics();
     const isCanceled = line.nomusIsCanceled === true;
+    const isCut = line.nomusIsCut === true;
+    // Confidência do match: HIGH quando temos id/sequência do item; caso contrário
+    // MEDIUM (product-sequence do sync não usa mais SKU-only para status).
+    const matchConfidence =
+      line.nomusMatchConfidence ??
+      (line.externalLineId != null && line.externalLineId > 0
+        ? "HIGH"
+        : line.itemSequence
+          ? "MEDIUM"
+          : "LOW");
+    const matchReason =
+      line.nomusMatchReason ??
+      (line.externalLineId != null && line.externalLineId > 0
+        ? `nomus-line id ${line.externalLineId}`
+        : line.itemSequence
+          ? `nomus item sequence ${line.itemSequence}`
+          : "sync sem id/sequência — pareado por ordem no payload");
 
     const row: NomusSyncItemWriteRow = {
       id: matched?.id,
@@ -406,7 +431,10 @@ export function buildNomusSyncItemWritePlan(input: {
           ? decimalString(line.nomusQuantityPending)
           : null,
       nomusIsCanceled: isCanceled,
+      nomusIsCut: isCut,
       nomusIsStale: false,
+      nomusMatchConfidence: matchConfidence,
+      nomusMatchReason: matchReason,
       nomusLastSeenAt: seenAt,
       nomusRawItem: line.nomusRawItem ?? null,
     };
@@ -445,7 +473,10 @@ export function buildNomusSyncItemWritePlan(input: {
         nomusQuantityFulfilled: null,
         nomusQuantityPending: null,
         nomusIsCanceled: item.nomusIsCanceled === true,
+        nomusIsCut: item.nomusIsCut === true,
         nomusIsStale: true,
+        nomusMatchConfidence: "NONE",
+        nomusMatchReason: "item sumiu do payload atual (stale)",
         nomusLastSeenAt: null,
         nomusRawItem: null,
       });
