@@ -1032,6 +1032,21 @@ model SalesOrderItem {
   marginValue         Decimal       @db.Decimal(20, 6)
   marginPerc          Decimal       @db.Decimal(10, 6)
   notes               String?
+  /// id do item no payload Nomus (itensPedido[].id / idItemPedido), quando existir
+  nomusItemExternalId Int?
+  /// sequência/posição no payload (item / índice)
+  nomusItemSequence   String?
+  /// status bruto Nomus (ex.: "4", "6", "Cancelado")
+  nomusItemStatusRaw  String?
+  /// status normalizado: FULFILLED | CANCELED | PARTIAL | PENDING | UNKNOWN
+  nomusItemStatusNormalized String?
+  nomusQuantityFulfilled Decimal?   @db.Decimal(20, 6)
+  nomusQuantityPending   Decimal?   @db.Decimal(20, 6)
+  nomusIsCanceled     Boolean       @default(false)
+  /// item local que sumiu do payload atual do Nomus
+  nomusIsStale        Boolean       @default(false)
+  nomusLastSeenAt     DateTime?
+  nomusRawItem        Json?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @default(now()) @updatedAt
   Product             Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1042,6 +1057,9 @@ model SalesOrderItem {
   @@index([salesOrderId])
   @@index([proposalItemId])
   @@index([productId])
+  @@index([nomusItemExternalId])
+  @@index([nomusIsCanceled])
+  @@index([nomusIsStale])
 }
 
 /// Tabela de preço comercial (catálogo; margem padrão para futuras publicações).

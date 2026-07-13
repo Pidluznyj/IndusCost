@@ -4,8 +4,8 @@
  * Uso:
  *   npx tsx tmp-audits/inspect-order-status-pd02207.ts
  *
- * Com DATABASE_URL: lê SalesOrderItem + nomusRaw + facts O2C e consolida.
- * Sem DATABASE_URL: imprime classificação esperada com fixture local.
+ * Com DATABASE_URL: backfill pontual do status Nomus em SalesOrderItem + consolida.
+ * Sem DATABASE_URL: fixture local.
  */
 import "dotenv/config";
 import {
@@ -15,10 +15,10 @@ import {
 import { isCanceledOrderItemFact } from "../src/lib/finance/orderItemFulfillmentStatus.js";
 import {
   extractNomusRawItems,
-  isSalesOrderItemCancelledByRawQuantity,
   matchRawItemToDbItem,
   resolveSalesOrderItemNomusStatus,
 } from "../src/lib/salesOrderNomusRaw.js";
+import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrderItemStatus.js";
 
 const ORDER_CODE = "PD 02207";
 
@@ -97,6 +97,8 @@ function fixtureFacts(): PortfolioOrderStatusFact[] {
       allocatedValueByOrderPrice: 40_000,
       allocatedValueByDocumentPrice: 40_000,
       orderItemStatus: "ATENDIDO",
+      nomusItemStatusNormalized: "FULFILLED",
+      nomusIsCanceled: false,
     },
     {
       ...shared,
@@ -112,6 +114,8 @@ function fixtureFacts(): PortfolioOrderStatusFact[] {
       allocatedValueByOrderPrice: 31_405,
       allocatedValueByDocumentPrice: 31_405,
       orderItemStatus: "ATENDIDO",
+      nomusItemStatusNormalized: "FULFILLED",
+      nomusIsCanceled: false,
     },
     {
       ...shared,
@@ -127,6 +131,8 @@ function fixtureFacts(): PortfolioOrderStatusFact[] {
       allocatedValueByOrderPrice: null,
       allocatedValueByDocumentPrice: null,
       orderItemStatus: "CANCELADO",
+      nomusItemStatusNormalized: "CANCELED",
+      nomusIsCanceled: true,
       receivableTotalValue: null,
       receivableOpenValue: null,
       receivableReceivedValue: null,
@@ -145,6 +151,8 @@ function fixtureFacts(): PortfolioOrderStatusFact[] {
       allocatedValueByOrderPrice: null,
       allocatedValueByDocumentPrice: null,
       orderItemStatus: "CANCELADO",
+      nomusItemStatusNormalized: "CANCELED",
+      nomusIsCanceled: true,
       receivableTotalValue: null,
       receivableOpenValue: null,
       receivableReceivedValue: null,
@@ -176,11 +184,15 @@ function printClassification(row: ReturnType<typeof aggregateOrderFactsToRow>): 
 }
 
 async function runLive(): Promise<boolean> {
-  if (!process.env.DATABASE_URL) return false;
+  if (!process.env.DATABASE_URL?.trim()) return false;
 
+  try {
   const { prisma } = await import("../src/lib/prisma.js");
   const { enrichFactsWithOrderItemStatus } = await import(
     "../src/lib/finance/orderToCashFactItemStatusEnrichment.server.js"
+  );
+  const { backfillSalesOrderItemNomusStatusForOrder } = await import(
+    "../src/lib/sales/backfillSalesOrderItemNomusStatus.server.js"
   );
 
   const order = await prisma.salesOrder.findFirst({
@@ -199,6 +211,10 @@ async function runLive(): Promise<boolean> {
           quantity: true,
           totalNetValue: true,
           negotiatedPrice: true,
+          nomusItemStatusRaw: true,
+          nomusItemStatusNormalized: true,
+          nomusIsCanceled: true,
+          nomusIsStale: true,
         },
         orderBy: { id: "asc" },
       },
@@ -210,19 +226,18 @@ async function runLive(): Promise<boolean> {
     return true;
   }
 
+  const backfill = await backfillSalesOrderItemNomusStatusForOrder(prisma, order.id);
+  console.log(`\nBackfill status Nomus: ${backfill.updated} item(ns) atualizado(s).`);
+
+  const refreshed = await prisma.salesOrderItem.findMany({
+    where: { salesOrderId: order.id },
+    orderBy: { id: "asc" },
+  });
+
   console.log(`\n=== SalesOrderItem — ${order.orderCode} (${order.id}) ===`);
   const rawItems = extractNomusRawItems(order.nomusRawResponse);
-  for (let i = 0; i < order.items.length; i++) {
-    const item = order.items[i]!;
-    const nomus = resolveSalesOrderItemNomusStatus(
-      order.nomusRawResponse,
-      {
-        externalProductId: item.externalProductId,
-        skuSnapshot: item.skuSnapshot,
-        productNameSnapshot: item.productNameSnapshot,
-      },
-      { itemIndex: i, totalDbItems: order.items.length }
-    );
+  for (let i = 0; i < refreshed.length; i++) {
+    const item = refreshed[i]!;
     const matched = matchRawItemToDbItem(
       rawItems,
       {
@@ -230,24 +245,29 @@ async function runLive(): Promise<boolean> {
         skuSnapshot: item.skuSnapshot,
         productNameSnapshot: item.productNameSnapshot,
       },
-      { itemIndex: i, totalDbItems: order.items.length }
+      { itemIndex: i, totalDbItems: refreshed.length }
     );
-    const canceledQty = matched
-      ? isSalesOrderItemCancelledByRawQuantity(matched.raw)
-      : false;
-    const isCanceled = nomus === "cancelled" || canceledQty;
-    const value = Number(item.totalNetValue ?? 0);
+    const parsed = parseNomusSalesOrderItemStatus(matched?.raw ?? null);
+    const nomus = resolveSalesOrderItemNomusStatus(
+      order.nomusRawResponse,
+      {
+        externalProductId: item.externalProductId,
+        skuSnapshot: item.skuSnapshot,
+        productNameSnapshot: item.productNameSnapshot,
+      },
+      { itemIndex: i, totalDbItems: refreshed.length }
+    );
     console.log({
       sku: item.skuSnapshot,
-      nomusStatus: nomus,
+      statusBruto: item.nomusItemStatusRaw ?? parsed.statusRaw,
+      statusNormalizado:
+        item.nomusItemStatusNormalized ?? parsed.statusNormalized,
+      nomusLifecycle: nomus,
+      nomusIsCanceled: item.nomusIsCanceled,
+      nomusIsStale: item.nomusIsStale,
       quantidadePedida: Number(item.quantity),
       quantidadeAtendida: matched?.quantidadeAtendida ?? null,
-      quantidadeCancelada: matched?.quantidadeCancelada ?? null,
-      valorItem: value,
-      considerado: isCanceled ? "CANCELADO" : "ATIVO",
-      valorAtivo: isCanceled ? 0 : value,
-      valorCancelado: isCanceled ? value : 0,
-      valorPendenteAtivo: isCanceled ? 0 : null,
+      valorItem: Number(item.totalNetValue ?? 0),
     });
   }
 
@@ -258,7 +278,7 @@ async function runLive(): Promise<boolean> {
   });
 
   if (factsRaw.length === 0) {
-    console.log("\nNenhuma fact O2C para o pedido — usando fixture local.");
+    console.log("\nNenhuma fact O2C — fixture local:");
     printClassification(aggregateOrderFactsToRow(fixtureFacts()));
     return true;
   }
@@ -365,6 +385,7 @@ async function runLive(): Promise<boolean> {
       productCode: f.productCode,
       lineType: f.lineType,
       orderItemStatus: f.orderItemStatus,
+      nomusIsCanceled: f.nomusIsCanceled,
       canceled: isCanceledOrderItemFact(f),
       orderItemTotalValue: f.orderItemTotalValue,
       allocatedValueByOrderPrice: f.allocatedValueByOrderPrice,
@@ -373,6 +394,13 @@ async function runLive(): Promise<boolean> {
 
   printClassification(aggregateOrderFactsToRow(enriched));
   return true;
+  } catch (err) {
+    console.warn(
+      "DB indisponível — fallback fixture:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
 }
 
 async function main(): Promise<void> {
@@ -386,6 +414,7 @@ async function main(): Promise<void> {
         productCode: f.productCode,
         lineType: f.lineType,
         orderItemStatus: f.orderItemStatus,
+        nomusIsCanceled: f.nomusIsCanceled,
         canceled: isCanceledOrderItemFact(f),
         valor: f.orderItemTotalValue,
       });

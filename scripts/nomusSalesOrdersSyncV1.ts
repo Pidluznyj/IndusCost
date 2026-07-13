@@ -18,6 +18,7 @@ import {
   type NomusSyncItemWriteRow,
   type NomusSyncUpdatePreview,
 } from "../src/lib/salesOrderNomusSync.server.ts";
+import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrderItemStatus.ts";
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
@@ -81,6 +82,12 @@ type EligibleSalesOrderLine = {
   negotiatedPrice: number;
   totalNetValue: number;
   notes: string | null;
+  itemSequence: string | null;
+  nomusItemStatusRaw: string | null;
+  nomusItemStatusNormalized: string | null;
+  nomusQuantityFulfilled: number | null;
+  nomusQuantityPending: number | null;
+  nomusIsCanceled: boolean;
 };
 
 type EligibleSalesOrderPlan = {
@@ -850,8 +857,22 @@ function analyzeOrder(
 
   const lineReasons: BlockReason[][] = [];
   const resolvedLines: EligibleSalesOrderLine[] = [];
+  let itemSequenceIndex = 0;
 
   for (const item of itemsRaw) {
+    itemSequenceIndex += 1;
+    const parsedStatus = parseNomusSalesOrderItemStatus(item);
+    const statusFields = {
+      itemSequence:
+        asString(item.item) ??
+        asString(item.sequencia) ??
+        String(itemSequenceIndex),
+      nomusItemStatusRaw: parsedStatus.statusRaw,
+      nomusItemStatusNormalized: parsedStatus.statusNormalized,
+      nomusQuantityFulfilled: parsedStatus.quantityFulfilled,
+      nomusQuantityPending: parsedStatus.quantityPending,
+      nomusIsCanceled: parsedStatus.isCanceled,
+    };
     const lineR = new Set<BlockReason>();
     const idProduto = toInt(item.idProduto);
 
@@ -923,6 +944,7 @@ function analyzeOrder(
         negotiatedPrice: moneyNumber(item.valorUnitario),
         totalNetValue: calculateItemNetValue(item),
         notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
+        ...statusFields,
       });
       lineReasons.push([]);
       continue;
@@ -960,6 +982,7 @@ function analyzeOrder(
         negotiatedPrice: moneyNumber(item.valorUnitario),
         totalNetValue: calculateItemNetValue(item),
         notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
+        ...statusFields,
       });
       lineReasons.push([]);
       continue;
@@ -980,6 +1003,7 @@ function analyzeOrder(
         negotiatedPrice: moneyNumber(item.valorUnitario),
         totalNetValue: calculateItemNetValue(item),
         notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
+        ...statusFields,
       });
       lineReasons.push([]);
       continue;
@@ -1162,6 +1186,19 @@ function mapItemWriteRowToCreateData(row: NomusSyncItemWriteRow): Prisma.SalesOr
     marginValue: row.marginValue,
     marginPerc: row.marginPerc,
     notes: row.notes,
+    nomusItemExternalId: row.nomusItemExternalId ?? null,
+    nomusItemSequence: row.nomusItemSequence ?? null,
+    nomusItemStatusRaw: row.nomusItemStatusRaw ?? null,
+    nomusItemStatusNormalized: row.nomusItemStatusNormalized ?? null,
+    nomusQuantityFulfilled: row.nomusQuantityFulfilled ?? null,
+    nomusQuantityPending: row.nomusQuantityPending ?? null,
+    nomusIsCanceled: row.nomusIsCanceled ?? false,
+    nomusIsStale: row.nomusIsStale ?? false,
+    nomusLastSeenAt: row.nomusLastSeenAt ?? null,
+    nomusRawItem:
+      row.nomusRawItem != null
+        ? (row.nomusRawItem as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
   };
 }
 
@@ -1289,6 +1326,13 @@ async function runApply(
         negotiatedPrice: line.negotiatedPrice,
         totalNetValue: line.totalNetValue,
         notes: line.notes,
+        itemSequence: line.itemSequence,
+        nomusItemStatusRaw: line.nomusItemStatusRaw,
+        nomusItemStatusNormalized: line.nomusItemStatusNormalized,
+        nomusQuantityFulfilled: line.nomusQuantityFulfilled,
+        nomusQuantityPending: line.nomusQuantityPending,
+        nomusIsCanceled: line.nomusIsCanceled,
+        nomusRawItem: line.item,
       }));
 
       let salesOrderId: string;
@@ -1330,6 +1374,10 @@ async function runApply(
             negotiatedPrice: true,
             totalNetValue: true,
             notes: true,
+            nomusItemExternalId: true,
+            nomusItemStatusNormalized: true,
+            nomusIsCanceled: true,
+            nomusIsStale: true,
           },
         });
 

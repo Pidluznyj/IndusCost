@@ -894,7 +894,7 @@ export function mapOrderToCashAuditFactToListRow(
     confidenceLabel: fact.confidenceLabel,
     responsibleArea: fact.responsibleArea,
     recommendedAction: isCanceled
-      ? "Item cancelado no pedido de venda"
+      ? "Item cancelado no Pedido de Venda/Nomus"
       : fact.recommendedAction,
     alerts: parseAlerts(fact.alertsJson),
     hasDeliveryDelay: Boolean(fact.hasDeliveryDelay),

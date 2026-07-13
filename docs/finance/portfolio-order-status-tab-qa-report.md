@@ -8,7 +8,7 @@
 | **Script** | `scripts/qaPortfolioOrderStatusTab.ts` (`npm run qa:portfolio-order-status`) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/order-status` |
 | **Status geral** | **LIBERADO COM RESSALVA** |
-| **Resumo** | total=14 pass=14 fail=0 skip=1 |
+| **Resumo** | total=16 pass=16 fail=0 skip=1 |
 
 ---
 
@@ -25,6 +25,8 @@
 | `service:canceled-items` | PASS | service trata itens cancelados (status + valores + card) |
 | `docs:canceled-section` | PASS | doc com seção de itens cancelados |
 | `service:item-status-normalizer` | PASS | normalizador de status de item |
+| `docs:item-nomus-status-sync` | PASS | doc sync status item Nomus |
+| `schema:sales-order-item-nomus-status` | PASS | SalesOrderItem com campos Nomus |
 | `cards:distinct-orders` | PASS | cards contam pedidos (não facts) |
 | `server:loader` | PASS | loader Prisma order-status existe |
 | `drilldown:shared-items-grid` | PASS | OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria |

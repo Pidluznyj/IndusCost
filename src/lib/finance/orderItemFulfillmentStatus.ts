@@ -92,7 +92,16 @@ export function isCanceledOrderItemStatus(raw: unknown): boolean {
 export function isCanceledOrderItemFact(fact: {
   orderItemStatus?: string | null;
   itemFulfillmentStatus?: OrderItemFulfillmentStatus | string | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
 }): boolean {
+  if (fact.nomusIsCanceled === true) return true;
+  if (fact.nomusIsStale === true) return true;
+  const norm = (fact.nomusItemStatusNormalized ?? "").trim().toUpperCase();
+  if (norm === "CANCELED" || norm === "CANCELLED" || norm === "CANCELADO") {
+    return true;
+  }
   if (fact.itemFulfillmentStatus != null) {
     return (
       normalizeOrderItemFulfillmentStatus(fact.itemFulfillmentStatus) ===

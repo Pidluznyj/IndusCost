@@ -52,6 +52,10 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   negotiatedPrice: true,
   totalNetValue: true,
   unitCost: true,
+  nomusIsCanceled: true,
+  nomusIsStale: true,
+  nomusItemStatusNormalized: true,
+  nomusItemStatusRaw: true,
 } as const;
 
 /** Select mínimo para margem agregada da listagem (todos os pedidos filtrados). */
@@ -75,6 +79,10 @@ export type SalesOrderItemForMargin = {
   negotiatedPrice?: unknown;
   totalNetValue?: unknown;
   unitCost?: unknown | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
+  nomusItemStatusRaw?: string | null;
 };
 
 export type SalesOrderForMargin = {
@@ -116,6 +124,13 @@ function mapItemToResolverInput(
     matchOptions
   );
 
+  const persistedCanceled =
+    item.nomusIsCanceled === true ||
+    item.nomusIsStale === true ||
+    (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED" ||
+    (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELADO";
+  const isCanceled = persistedCanceled || nomusStatus === "cancelled";
+
   return {
     salesOrderItemId: item.id,
     productId: item.productId,
@@ -126,8 +141,10 @@ function mapItemToResolverInput(
     negotiatedPrice: item.negotiatedPrice,
     totalNetValue: item.totalNetValue,
     unitCost: item.unitCost,
-    itemStatus: nomusStatus === "cancelled" ? "CANCELADO" : matched?.status ?? null,
-    isCanceled: nomusStatus === "cancelled",
+    itemStatus: isCanceled
+      ? "CANCELADO"
+      : item.nomusItemStatusNormalized ?? matched?.status ?? null,
+    isCanceled,
     nomusRawItem: matched?.raw ?? null,
     referenceDate: order.issueDate ?? null,
   };

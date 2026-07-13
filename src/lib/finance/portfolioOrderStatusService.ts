@@ -24,6 +24,9 @@ export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
   externalSalesOrderItemId?: number | null;
   /** Status do item no pedido (ex.: CANCELADO). */
   orderItemStatus?: string | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
   fiscalStage?: string | null;
   commercialStage?: string | null;
   cashStage?: string | null;

@@ -46,6 +46,9 @@ const SALES_ORDER_SOURCE_SELECT = {
       negotiatedPrice: true,
       totalNetValue: true,
       notes: true,
+      nomusIsCanceled: true,
+      nomusIsStale: true,
+      nomusItemStatusNormalized: true,
     },
   },
   nfeLinks: {
@@ -87,6 +90,9 @@ type SalesOrderSourceRow = {
     negotiatedPrice: import("@prisma/client").Prisma.Decimal;
     totalNetValue: import("@prisma/client").Prisma.Decimal;
     notes: string | null;
+    nomusIsCanceled?: boolean | null;
+    nomusIsStale?: boolean | null;
+    nomusItemStatusNormalized?: string | null;
   }>;
   nfeLinks: Array<{
     nfeExternalId: number;
@@ -206,19 +212,28 @@ async function buildCommissionOrderSourceBundlesFromOrders(
   }
 
   const rawItemsByOrderId = new Map<string, Map<number, Record<string, unknown>>>();
+  const rawItemsByProductId = new Map<string, Map<number, Record<string, unknown>[]>>();
   for (const order of orders) {
     const raw = order.nomusRawResponse;
     if (!raw || typeof raw !== "object") continue;
     const itens = (raw as Record<string, unknown>).itensPedido;
     if (!Array.isArray(itens)) continue;
     const map = new Map<number, Record<string, unknown>>();
+    const byProduct = new Map<number, Record<string, unknown>[]>();
     for (const item of itens) {
       if (!item || typeof item !== "object") continue;
       const row = item as Record<string, unknown>;
       const lineId = Number(row.id ?? row.idItemPedido ?? row.idItem);
       if (Number.isFinite(lineId)) map.set(lineId, row);
+      const prodId = Number(row.idProduto);
+      if (Number.isFinite(prodId)) {
+        const list = byProduct.get(prodId) ?? [];
+        list.push(row);
+        byProduct.set(prodId, list);
+      }
     }
     rawItemsByOrderId.set(order.id, map);
+    rawItemsByProductId.set(order.id, byProduct);
   }
 
   return orders.map((order) => {
@@ -239,14 +254,40 @@ async function buildCommissionOrderSourceBundlesFromOrders(
     });
 
     const rawLineMap = rawItemsByOrderId.get(order.id);
-    const items = order.items.map((item) => {
-      let nomusRawLine: Record<string, unknown> | null = null;
-      if (item.notes) {
-        const m = item.notes.match(/\[nomus-line:(\d+)\]/);
-        if (m && rawLineMap) nomusRawLine = rawLineMap.get(Number.parseInt(m[1], 10)) ?? null;
-      }
-      return mapSalesOrderItemToSource({ ...item, nomusRawLine });
-    });
+    const rawByProduct = rawItemsByProductId.get(order.id);
+    const items = order.items
+      .filter((item) => {
+        if (item.nomusIsCanceled === true) return false;
+        if (item.nomusIsStale === true) return false;
+        const norm = (item.nomusItemStatusNormalized ?? "").toUpperCase();
+        if (norm === "CANCELED" || norm === "CANCELADO" || norm === "CANCELLED") {
+          return false;
+        }
+        return true;
+      })
+      .map((item) => {
+        let nomusRawLine: Record<string, unknown> | null = null;
+        if (item.notes) {
+          const m = item.notes.match(/\[nomus-line:(\d+)\]/);
+          if (m && rawLineMap) {
+            nomusRawLine = rawLineMap.get(Number.parseInt(m[1], 10)) ?? null;
+          }
+        }
+        if (
+          !nomusRawLine &&
+          item.externalProductId != null &&
+          rawByProduct
+        ) {
+          const list = rawByProduct.get(item.externalProductId) ?? [];
+          nomusRawLine = list[0] ?? null;
+        }
+        if (nomusRawLine) {
+          const st = nomusRawLine.status;
+          if (st === 6 || st === "6") return null;
+        }
+        return mapSalesOrderItemToSource({ ...item, nomusRawLine });
+      })
+      .filter((row): row is NonNullable<typeof row> => row != null);
 
     const orderReceivables = new Map<number, ReturnType<typeof mapReceivableSource>[]>();
     for (const nfe of linkedNfes) {

@@ -313,6 +313,17 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
 
   const orderItems: OrderToCashAuditOrderItemInput[] = ordersRaw.flatMap((order) =>
     order.items.map((item, index) => {
+      const fromDb =
+        item.nomusIsCanceled === true ||
+        (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED"
+          ? "CANCELADO"
+          : item.nomusItemStatusNormalized === "FULFILLED"
+            ? "ATENDIDO"
+            : item.nomusItemStatusNormalized === "PARTIAL"
+              ? "PARCIAL"
+              : item.nomusItemStatusNormalized === "PENDING"
+                ? "PENDENTE"
+                : null;
       const nomusStatus = resolveSalesOrderItemNomusStatus(
         order.nomusRawResponse,
         {
@@ -322,26 +333,28 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
         },
         { itemIndex: index, totalDbItems: order.items.length }
       );
-      let itemStatus: string | null = null;
-      if (nomusStatus === "cancelled") itemStatus = "CANCELADO";
-      else if (nomusStatus === "fully_fulfilled") itemStatus = "ATENDIDO";
-      else if (
-        nomusStatus === "partially_fulfilled" ||
-        nomusStatus === "fulfilled_with_cut"
-      ) {
-        itemStatus = "PARCIAL";
-      } else if (
-        nomusStatus === "awaiting_release" ||
-        nomusStatus === "released"
-      ) {
-        itemStatus = "PENDENTE";
-      } else if (nomusStatus !== "unknown") {
-        itemStatus = nomusStatus.toUpperCase();
+      let itemStatus: string | null = fromDb;
+      if (!itemStatus) {
+        if (nomusStatus === "cancelled") itemStatus = "CANCELADO";
+        else if (nomusStatus === "fully_fulfilled") itemStatus = "ATENDIDO";
+        else if (
+          nomusStatus === "partially_fulfilled" ||
+          nomusStatus === "fulfilled_with_cut"
+        ) {
+          itemStatus = "PARCIAL";
+        } else if (
+          nomusStatus === "awaiting_release" ||
+          nomusStatus === "released"
+        ) {
+          itemStatus = "PENDENTE";
+        } else if (nomusStatus !== "unknown") {
+          itemStatus = nomusStatus.toUpperCase();
+        }
       }
       return {
         id: item.id,
         salesOrderId: order.id,
-        externalSalesOrderItemId: null,
+        externalSalesOrderItemId: item.nomusItemExternalId ?? null,
         orderItemSequence: index + 1,
         externalProductId: item.externalProductId,
         productId: item.productId,

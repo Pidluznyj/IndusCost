@@ -159,10 +159,27 @@ function staticContracts(): void {
     fail("static", "docs:canceled-section", "seção ausente na doc");
   }
 
-  if (exists("src/lib/finance/orderItemFulfillmentStatus.ts")) {
+  if (exists("src/lib/sales/nomusSalesOrderItemStatus.ts")) {
     ok("static", "service:item-status-normalizer", "normalizador de status de item");
   } else {
     fail("static", "service:item-status-normalizer", "normalizador ausente");
+  }
+
+  if (exists("docs/sales/sales-order-item-nomus-status-sync.md")) {
+    ok("static", "docs:item-nomus-status-sync", "doc sync status item Nomus");
+  } else {
+    fail("static", "docs:item-nomus-status-sync", "doc sync ausente");
+  }
+
+  const schema = read("prisma/schema.prisma");
+  if (
+    schema.includes("nomusIsCanceled") &&
+    schema.includes("nomusItemStatusNormalized") &&
+    schema.includes("nomusIsStale")
+  ) {
+    ok("static", "schema:sales-order-item-nomus-status", "SalesOrderItem com campos Nomus");
+  } else {
+    fail("static", "schema:sales-order-item-nomus-status", "campos Nomus ausentes no schema");
   }
 
   if (

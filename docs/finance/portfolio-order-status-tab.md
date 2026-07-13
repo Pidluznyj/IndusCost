@@ -65,7 +65,7 @@ Regras:
 
 Caso **PD 02207**: 2 itens atendidos + 2 cancelados → 100% dos ativos, saldo ativo R$ 0, status recebido/completo com cancelamento — **não** cai no card Parciais.
 
-Fonte do status: `OrderToCashAuditFact.orderItemStatus` (rebuild) e enriquecimento em runtime via `SalesOrder.nomusRawResponse` (`enrichFactsWithOrderItemStatus`).
+Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. Ver `docs/sales/sales-order-item-nomus-status-sync.md`.
 
 ## Componentes
 

@@ -60,6 +60,10 @@ export type NomusSyncExistingItem = {
   negotiatedPrice: unknown;
   totalNetValue: unknown;
   notes: string | null;
+  nomusItemExternalId?: number | null;
+  nomusItemStatusNormalized?: string | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
 };
 
 export type NomusSyncPlannedLine = {
@@ -74,6 +78,14 @@ export type NomusSyncPlannedLine = {
   negotiatedPrice: number;
   totalNetValue: number;
   notes: string | null;
+  /** índice 1-based no payload itensPedido */
+  itemSequence?: string | null;
+  nomusItemStatusRaw?: string | null;
+  nomusItemStatusNormalized?: string | null;
+  nomusQuantityFulfilled?: number | null;
+  nomusQuantityPending?: number | null;
+  nomusIsCanceled?: boolean;
+  nomusRawItem?: Record<string, unknown> | null;
 };
 
 export type NomusSyncLineMatchInput = {
@@ -101,6 +113,16 @@ export type NomusSyncItemWriteRow = {
   marginPerc: string;
   notes: string | null;
   stale?: boolean;
+  nomusItemExternalId?: number | null;
+  nomusItemSequence?: string | null;
+  nomusItemStatusRaw?: string | null;
+  nomusItemStatusNormalized?: string | null;
+  nomusQuantityFulfilled?: string | null;
+  nomusQuantityPending?: string | null;
+  nomusIsCanceled?: boolean;
+  nomusIsStale?: boolean;
+  nomusLastSeenAt?: Date | null;
+  nomusRawItem?: Record<string, unknown> | null;
 };
 
 export type NomusSyncUpdatePreview = {
@@ -298,7 +320,10 @@ function buildExistingItemPool(items: NomusSyncExistingItem[]): Map<string, Nomu
   const pool = new Map<string, NomusSyncExistingItem[]>();
   for (const item of items) {
     if (item.externalProductId == null) continue;
-    const lineId = parseNomusLineIdFromNotes(item.notes);
+    const lineId =
+      item.nomusItemExternalId != null && item.nomusItemExternalId > 0
+        ? item.nomusItemExternalId
+        : parseNomusLineIdFromNotes(item.notes);
     const key = buildNomusSyncLineReconcileKey({
       externalLineId: lineId,
       productId: item.productId,
@@ -314,6 +339,8 @@ export function buildNomusSyncItemWritePlan(input: {
   salesOrderId: string;
   plannedLines: NomusSyncPlannedLine[];
   existingItems: NomusSyncExistingItem[];
+  /** Timestamp da sincronização (default: agora). */
+  seenAt?: Date | null;
 }): {
   upserts: NomusSyncItemWriteRow[];
   creates: NomusSyncItemWriteRow[];
@@ -322,6 +349,7 @@ export function buildNomusSyncItemWritePlan(input: {
   const pool = buildExistingItemPool(input.existingItems);
   const upserts: NomusSyncItemWriteRow[] = [];
   const creates: NomusSyncItemWriteRow[] = [];
+  const seenAt = input.seenAt ?? new Date();
 
   for (const line of input.plannedLines) {
     const reconcileKey = buildNomusSyncLineReconcileKey(line);
@@ -346,6 +374,7 @@ export function buildNomusSyncItemWritePlan(input: {
     }
 
     const economics = commercialLineEconomics();
+    const isCanceled = line.nomusIsCanceled === true;
 
     const row: NomusSyncItemWriteRow = {
       id: matched?.id,
@@ -364,6 +393,22 @@ export function buildNomusSyncItemWritePlan(input: {
       marginValue: decimalString(economics.marginValue),
       marginPerc: decimalString(economics.marginPerc),
       notes: formatNomusSyncLineNotes(line.externalLineId, line.notes),
+      nomusItemExternalId: line.externalLineId,
+      nomusItemSequence: line.itemSequence ?? null,
+      nomusItemStatusRaw: line.nomusItemStatusRaw ?? null,
+      nomusItemStatusNormalized: line.nomusItemStatusNormalized ?? null,
+      nomusQuantityFulfilled:
+        line.nomusQuantityFulfilled != null
+          ? decimalString(line.nomusQuantityFulfilled)
+          : null,
+      nomusQuantityPending:
+        line.nomusQuantityPending != null
+          ? decimalString(line.nomusQuantityPending)
+          : null,
+      nomusIsCanceled: isCanceled,
+      nomusIsStale: false,
+      nomusLastSeenAt: seenAt,
+      nomusRawItem: line.nomusRawItem ?? null,
     };
 
     if (matched) upserts.push(row);
@@ -393,6 +438,16 @@ export function buildNomusSyncItemWritePlan(input: {
         marginPerc: decimalString(0),
         notes: appendStaleNote(item.notes),
         stale: true,
+        nomusItemExternalId: item.nomusItemExternalId ?? parseNomusLineIdFromNotes(item.notes),
+        nomusItemSequence: null,
+        nomusItemStatusRaw: item.nomusItemStatusNormalized ?? null,
+        nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
+        nomusQuantityFulfilled: null,
+        nomusQuantityPending: null,
+        nomusIsCanceled: item.nomusIsCanceled === true,
+        nomusIsStale: true,
+        nomusLastSeenAt: null,
+        nomusRawItem: null,
       });
     }
   }

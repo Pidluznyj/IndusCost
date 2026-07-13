@@ -1,7 +1,7 @@
 /**
- * Enriquece facts O2C com orderItemStatus a partir do Nomus raw do pedido.
- * Read-only Prisma. Usado por Status Pedidos e Auditoria Pedido → Caixa
- * para runs antigos onde orderItemStatus ainda está null.
+ * Enriquece facts O2C com orderItemStatus a partir de SalesOrderItem (persistido)
+ * e fallback em SalesOrder.nomusRawResponse.
+ * Read-only Prisma. Usado por Status Pedidos e Auditoria Pedido → Caixa.
  */
 
 import { prisma } from "@/src/lib/prisma.js";
@@ -11,7 +11,15 @@ import {
   matchRawItemToDbItem,
   resolveSalesOrderItemNomusStatus,
 } from "@/src/lib/salesOrderNomusRaw.js";
-import { isCanceledOrderItemStatus } from "./orderItemFulfillmentStatus.js";
+import {
+  isCanceledOrderItemStatus,
+  normalizeOrderItemFulfillmentStatus,
+} from "./orderItemFulfillmentStatus.js";
+import {
+  isInactiveSalesOrderItemNomusFlags,
+  toOrderItemFulfillmentStorageStatus,
+  type NomusSalesOrderItemStatusNormalized,
+} from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
 
 export type OrderItemStatusEnrichableFact = {
   salesOrderId?: string | null;
@@ -21,6 +29,9 @@ export type OrderItemStatusEnrichableFact = {
   productName?: string | null;
   orderItemStatus?: string | null;
   lineType?: string | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
 };
 
 function nomusStatusToStored(status: string): string {
@@ -36,8 +47,29 @@ function nomusStatusToStored(status: string): string {
   return status.toUpperCase();
 }
 
+function fromNormalizedColumn(
+  normalized: string | null | undefined
+): string | null {
+  if (!normalized?.trim()) return null;
+  const upper = normalized.trim().toUpperCase();
+  if (
+    upper === "FULFILLED" ||
+    upper === "CANCELED" ||
+    upper === "PARTIAL" ||
+    upper === "PENDING" ||
+    upper === "UNKNOWN"
+  ) {
+    return toOrderItemFulfillmentStorageStatus(
+      upper as NomusSalesOrderItemStatusNormalized
+    );
+  }
+  return normalizeOrderItemFulfillmentStatus(normalized) === "DESCONHECIDO"
+    ? null
+    : normalizeOrderItemFulfillmentStatus(normalized);
+}
+
 /**
- * Resolve status cancelado/ativo do item via nomusRawResponse + itens do pedido.
+ * Resolve status cancelado/ativo do item via SalesOrderItem + nomusRawResponse.
  */
 export async function enrichFactsWithOrderItemStatus<
   T extends OrderItemStatusEnrichableFact,
@@ -64,6 +96,10 @@ export async function enrichFactsWithOrderItemStatus<
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,
+          nomusItemStatusRaw: true,
+          nomusItemStatusNormalized: true,
+          nomusIsCanceled: true,
+          nomusIsStale: true,
         },
         orderBy: { id: "asc" },
       },
@@ -82,23 +118,14 @@ export async function enrichFactsWithOrderItemStatus<
   );
 
   return facts.map((fact) => {
-    if (isCanceledOrderItemStatus(fact.orderItemStatus)) {
-      return { ...fact, orderItemStatus: "CANCELADO" };
-    }
-    if (fact.orderItemStatus?.trim()) {
-      return { ...fact };
-    }
-
     const orderId = fact.salesOrderId?.trim();
-    if (!orderId) return { ...fact };
-    const order = byOrderId.get(orderId);
-    if (!order?.raw) return { ...fact };
+    const order = orderId ? byOrderId.get(orderId) : undefined;
 
     const dbItem =
-      (fact.salesOrderItemId
+      (fact.salesOrderItemId && order
         ? order.itemById.get(fact.salesOrderItemId)
         : null) ??
-      order.items.find((it) => {
+      order?.items.find((it) => {
         const sku = (it.skuSnapshot ?? "").trim().toUpperCase();
         const code = (fact.productCode ?? fact.sku ?? "").trim().toUpperCase();
         if (sku && code && sku === code) return true;
@@ -107,65 +134,92 @@ export async function enrichFactsWithOrderItemStatus<
         return Boolean(name && pname && name === pname);
       });
 
-    if (!dbItem) {
-      // Fallback: raw items by product code
-      const rawItems = extractNomusRawItems(order.raw);
-      const matched = matchRawItemToDbItem(rawItems, {
-        skuSnapshot: fact.sku ?? fact.productCode,
-        productNameSnapshot: fact.productName,
-      });
-      if (matched && isSalesOrderItemCancelledByRawQuantity(matched.raw)) {
-        return { ...fact, orderItemStatus: "CANCELADO" };
+    if (dbItem) {
+      const inactive = isInactiveSalesOrderItemNomusFlags(dbItem);
+      const fromCol = fromNormalizedColumn(dbItem.nomusItemStatusNormalized);
+      if (inactive || fromCol) {
+        return {
+          ...fact,
+          orderItemStatus: inactive
+            ? "CANCELADO"
+            : fromCol ?? fact.orderItemStatus ?? null,
+          nomusIsCanceled: dbItem.nomusIsCanceled === true || inactive,
+          nomusIsStale: dbItem.nomusIsStale === true,
+          nomusItemStatusNormalized: dbItem.nomusItemStatusNormalized,
+        };
       }
-      if (matched?.status) {
-        const nomus = resolveSalesOrderItemNomusStatus(order.raw, {
-          skuSnapshot: fact.sku ?? fact.productCode,
-          productNameSnapshot: fact.productName,
-        });
-        if (nomus === "cancelled") {
-          return { ...fact, orderItemStatus: "CANCELADO" };
-        }
-      }
+    }
+
+    if (isCanceledOrderItemStatus(fact.orderItemStatus)) {
+      return {
+        ...fact,
+        orderItemStatus: "CANCELADO",
+        nomusIsCanceled: true,
+      };
+    }
+    if (fact.orderItemStatus?.trim()) {
       return { ...fact };
     }
 
-    const itemIndex = order.items.findIndex((it) => it.id === dbItem.id);
+    if (!order?.raw) return { ...fact };
+
+    const matchDb = dbItem ?? {
+      externalProductId: null as number | null,
+      skuSnapshot: fact.sku ?? fact.productCode,
+      productNameSnapshot: fact.productName,
+    };
+    const itemIndex = dbItem
+      ? order.items.findIndex((it) => it.id === dbItem.id)
+      : undefined;
     const nomus = resolveSalesOrderItemNomusStatus(
       order.raw,
       {
-        externalProductId: dbItem.externalProductId,
-        skuSnapshot: dbItem.skuSnapshot,
-        productNameSnapshot: dbItem.productNameSnapshot,
+        externalProductId: matchDb.externalProductId,
+        skuSnapshot: matchDb.skuSnapshot,
+        productNameSnapshot: matchDb.productNameSnapshot,
       },
       {
-        itemIndex: itemIndex >= 0 ? itemIndex : undefined,
+        itemIndex: itemIndex != null && itemIndex >= 0 ? itemIndex : undefined,
         totalDbItems: order.items.length,
       }
     );
 
     if (nomus === "cancelled") {
-      return { ...fact, orderItemStatus: "CANCELADO" };
+      return {
+        ...fact,
+        orderItemStatus: "CANCELADO",
+        nomusIsCanceled: true,
+        nomusItemStatusNormalized: "CANCELED",
+      };
     }
 
     const rawItems = extractNomusRawItems(order.raw);
     const matched = matchRawItemToDbItem(
       rawItems,
       {
-        externalProductId: dbItem.externalProductId,
-        skuSnapshot: dbItem.skuSnapshot,
-        productNameSnapshot: dbItem.productNameSnapshot,
+        externalProductId: matchDb.externalProductId,
+        skuSnapshot: matchDb.skuSnapshot,
+        productNameSnapshot: matchDb.productNameSnapshot,
       },
       {
-        itemIndex: itemIndex >= 0 ? itemIndex : undefined,
+        itemIndex: itemIndex != null && itemIndex >= 0 ? itemIndex : undefined,
         totalDbItems: order.items.length,
       }
     );
     if (matched && isSalesOrderItemCancelledByRawQuantity(matched.raw)) {
-      return { ...fact, orderItemStatus: "CANCELADO" };
+      return {
+        ...fact,
+        orderItemStatus: "CANCELADO",
+        nomusIsCanceled: true,
+        nomusItemStatusNormalized: "CANCELED",
+      };
     }
 
     if (nomus !== "unknown") {
-      return { ...fact, orderItemStatus: nomusStatusToStored(nomus) };
+      return {
+        ...fact,
+        orderItemStatus: nomusStatusToStored(nomus),
+      };
     }
 
     return { ...fact };
