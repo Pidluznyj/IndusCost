@@ -2,15 +2,18 @@
  * Seed idempotente do catálogo relacional de permissões.
  *
  * Uso:
+ *   npm run permissions:seed
+ *   npm run permissions:seed -- --dry-run
+ *   npm run permissions:seed -- --sync-role-defaults
+ *   npm run permissions:seed -- --catalog-only
  *   npx tsx scripts/seedPermissionResources.ts
- *   npx tsx scripts/seedPermissionResources.ts --sync-role-defaults
- *   npx tsx scripts/seedPermissionResources.ts --dry-run
  *
  * - Upsert PermissionResource (sistema).
  * - Garante RolePermission (SUPER_ADMIN sempre full; demais: create-only por padrão).
  * - Nunca apaga RolePermission / UserPermissionOverride / AppUser.permissions.
  * - Não cria usuário; apenas alerta se não houver SUPER_ADMIN ativo.
  * - Não roda migrate.
+ * - --catalog-only: valida o catálogo em código e lista o plano, sem tocar no banco.
  */
 import "dotenv/config";
 import { PrismaClient, type AppUserRole } from "@prisma/client";
@@ -19,12 +22,52 @@ import {
   shouldUpdateExistingRolePermission,
   sortPermissionResourcesForInsert,
   validatePermissionResourceCatalog,
+  listPermissionResourceKeys,
 } from "../src/lib/permissionResourceSeedData.ts";
+import { validatePermissionsCatalogSetup } from "../src/lib/security/permissionsSetupValidation.ts";
 
-const prisma = new PrismaClient();
+let prisma: PrismaClient | null = null;
+
+function db(): PrismaClient {
+  if (!prisma) prisma = new PrismaClient();
+  return prisma;
+}
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(name);
+}
+
+function runCatalogOnly(): void {
+  const report = validatePermissionsCatalogSetup();
+  const issues = validatePermissionResourceCatalog();
+  console.log(
+    `seedPermissionResources --catalog-only resources=${listPermissionResourceKeys().length} ok=${report.ok}`
+  );
+  for (const c of report.checks.filter((x) => x.severity !== "ok")) {
+    console.log(`[${c.severity}] ${c.code}: ${c.message}`);
+  }
+  if (issues.length > 0 || !report.ok) {
+    throw new Error(
+      `Catálogo inválido: ${(issues.length ? issues : report.checks.filter((c) => c.severity === "error"))
+        .map((i) => ("code" in i ? `${i.code}:${i.message}` : String(i)))
+        .join("; ")}`
+    );
+  }
+  const sorted = sortPermissionResourcesForInsert();
+  console.log(`[plan] PermissionResource upserts: ${sorted.length}`);
+  console.log(`[plan] RolePermission seeds: ${buildRolePermissionSeeds().length}`);
+  console.log(
+    JSON.stringify(
+      {
+        catalogOnly: true,
+        ok: true,
+        resourceKeys: sorted.map((r) => r.key),
+        note: "Nenhuma escrita no banco. Remova --catalog-only e configure DATABASE_URL para aplicar.",
+      },
+      null,
+      2
+    )
+  );
 }
 
 async function seedResources(dryRun: boolean): Promise<{ created: number; updated: number }> {
@@ -36,7 +79,7 @@ async function seedResources(dryRun: boolean): Promise<{ created: number; update
   let created = 0;
   let updated = 0;
   for (const row of sortPermissionResourcesForInsert()) {
-    const existing = await prisma.permissionResource.findUnique({ where: { key: row.key } });
+    const existing = await db().permissionResource.findUnique({ where: { key: row.key } });
     const data = {
       label: row.label,
       description: row.description,
@@ -49,7 +92,7 @@ async function seedResources(dryRun: boolean): Promise<{ created: number; update
     };
     if (!existing) {
       if (!dryRun) {
-        await prisma.permissionResource.create({
+        await db().permissionResource.create({
           data: { key: row.key, ...data },
         });
       }
@@ -57,7 +100,7 @@ async function seedResources(dryRun: boolean): Promise<{ created: number; update
       console.log(`[resource] CREATE ${row.key}`);
     } else {
       if (!dryRun) {
-        await prisma.permissionResource.update({
+        await db().permissionResource.update({
           where: { key: row.key },
           data,
         });
@@ -78,7 +121,7 @@ async function seedRolePermissions(
   let skipped = 0;
 
   for (const row of buildRolePermissionSeeds()) {
-    const existing = await prisma.rolePermission.findUnique({
+    const existing = await db().rolePermission.findUnique({
       where: {
         role_resourceKey: { role: row.role, resourceKey: row.resourceKey },
       },
@@ -91,7 +134,7 @@ async function seedRolePermissions(
 
     if (!existing) {
       if (!dryRun) {
-        await prisma.rolePermission.create({
+        await db().rolePermission.create({
           data: {
             role: row.role,
             resourceKey: row.resourceKey,
@@ -115,7 +158,7 @@ async function seedRolePermissions(
     }
 
     if (!dryRun) {
-      await prisma.rolePermission.update({
+      await db().rolePermission.update({
         where: { id: existing.id },
         data: flags,
       });
@@ -132,8 +175,8 @@ async function assertSuperAdminPresence(): Promise<{
   totalUsers: number;
 }> {
   const [activeSuperAdmins, totalUsers] = await Promise.all([
-    prisma.appUser.count({ where: { role: "SUPER_ADMIN", isActive: true } }),
-    prisma.appUser.count(),
+    db().appUser.count({ where: { role: "SUPER_ADMIN", isActive: true } }),
+    db().appUser.count(),
   ]);
 
   if (activeSuperAdmins === 0) {
@@ -154,7 +197,7 @@ async function assertSuperAdminPresence(): Promise<{
 
 async function writeSeedAuditLog(dryRun: boolean, summary: Record<string, unknown>): Promise<void> {
   if (dryRun) return;
-  await prisma.permissionAuditLog.create({
+  await db().permissionAuditLog.create({
     data: {
       action: "SEED_PERMISSION_RESOURCES",
       resourceKey: null,
@@ -167,6 +210,18 @@ async function writeSeedAuditLog(dryRun: boolean, summary: Record<string, unknow
 async function main(): Promise<void> {
   const dryRun = hasFlag("--dry-run");
   const syncRoleDefaults = hasFlag("--sync-role-defaults");
+  const catalogOnly = hasFlag("--catalog-only");
+
+  if (catalogOnly) {
+    runCatalogOnly();
+    return;
+  }
+
+  if (!process.env.DATABASE_URL?.trim()) {
+    throw new Error(
+      "DATABASE_URL ausente. Use `npm run permissions:seed -- --catalog-only` para validar sem banco, ou configure .env."
+    );
+  }
 
   console.log(
     `seedPermissionResources dryRun=${dryRun} syncRoleDefaults=${syncRoleDefaults}`
@@ -195,5 +250,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    if (prisma) await prisma.$disconnect();
   });
