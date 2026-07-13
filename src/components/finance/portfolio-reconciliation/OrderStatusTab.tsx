@@ -36,6 +36,7 @@ import { OrderStatusPrimaryCards } from "./OrderStatusPrimaryCards";
 import { OrderStatusDrilldownCards } from "./OrderStatusDrilldownCards";
 import { OrderStatusTable } from "./OrderStatusTable";
 import { OrderStatusDrawer } from "./OrderStatusDrawer";
+import { OrderStatusSelectedOrderItemsPanel } from "./OrderStatusSelectedOrderItemsPanel";
 
 /**
  * Aba Status Pedidos — consome GET …/order-status.
@@ -54,6 +55,7 @@ export function OrderStatusTab() {
   const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] =
     useState<PortfolioOrderStatusRow | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const searched = applied != null;
   const canApply = canSearchOrderStatus(draft);
 
@@ -93,6 +95,7 @@ export function OrderStatusTab() {
   const handleApply = () => {
     if (!canSearchOrderStatus(draft)) return;
     setSelectedOrder(null);
+    setSummaryOpen(false);
     setApplied({ ...draft, page: 1 });
   };
 
@@ -106,6 +109,7 @@ export function OrderStatusTab() {
     setError(null);
     setLoading(false);
     setSelectedOrder(null);
+    setSummaryOpen(false);
   };
 
   const patchApplied = (partial: Partial<OrderStatusUiFilters>) => {
@@ -122,6 +126,7 @@ export function OrderStatusTab() {
         if (field === "customer") setCustomerSelection(null);
         setDraft(next);
         setSelectedOrder(null);
+        setSummaryOpen(false);
         return { ...next, page: 1 };
       });
     },
@@ -228,13 +233,15 @@ export function OrderStatusTab() {
           <OrderStatusPrimaryCards
             cards={payload.primaryCards}
             selectedCard={applied?.selectedCard ?? ""}
-            onSelect={(cardId) =>
+            onSelect={(cardId) => {
+              setSelectedOrder(null);
+              setSummaryOpen(false);
               patchApplied({
                 selectedCard: cardId,
                 selectedDrilldown: "",
                 page: 1,
-              })
-            }
+              });
+            }}
           />
 
           <OrderStatusDrilldownCards
@@ -246,9 +253,11 @@ export function OrderStatusTab() {
               selectedDrilldown: applied?.selectedDrilldown ?? "",
               drilldownCards: payload.drilldownCards,
             })}
-            onSelect={(drilldownId) =>
-              patchApplied({ selectedDrilldown: drilldownId, page: 1 })
-            }
+            onSelect={(drilldownId) => {
+              setSelectedOrder(null);
+              setSummaryOpen(false);
+              patchApplied({ selectedDrilldown: drilldownId, page: 1 });
+            }}
           />
 
           {filteredEmpty || payload.rows.length === 0 ? (
@@ -276,14 +285,30 @@ export function OrderStatusTab() {
               onPageSizeChange={(pageSize) =>
                 patchApplied({ pageSize, page: 1 })
               }
-              onRowClick={setSelectedOrder}
+              onRowClick={(row) => {
+                setSelectedOrder((current) =>
+                  current?.orderKey === row.orderKey ? null : row
+                );
+                setSummaryOpen(false);
+              }}
             />
           )}
 
-          <OrderStatusDrawer
-            open={selectedOrder != null}
+          <OrderStatusSelectedOrderItemsPanel
             order={selectedOrder}
-            onClose={() => setSelectedOrder(null)}
+            year={applied?.year ?? ""}
+            runId={payload.runMeta?.runId ?? null}
+            onClear={() => {
+              setSelectedOrder(null);
+              setSummaryOpen(false);
+            }}
+            onOpenSummary={() => setSummaryOpen(true)}
+          />
+
+          <OrderStatusDrawer
+            open={summaryOpen && selectedOrder != null}
+            order={selectedOrder}
+            onClose={() => setSummaryOpen(false)}
           />
         </>
       ) : null}

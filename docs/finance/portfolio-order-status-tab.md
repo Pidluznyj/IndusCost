@@ -17,7 +17,8 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 
 - Cards contam **pedidos distintos**
 - Tabela: **uma linha por pedido**
-- Drawer: resumo do pedido (item a item fica na Auditoria Pedido → Caixa)
+- Painel abaixo: **itens/evidências** do pedido selecionado (mesma origem da Auditoria)
+- Drawer opcional: resumo executivo do pedido
 
 ## UI (padrão executivo)
 
@@ -27,7 +28,26 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 | Cards principais | Título uppercase, valor grande (qtd), valor/R$ secundário, `%`, ícone no canto, tooltip `?`, estado ativo com anel + chip |
 | Drilldowns | Segunda linha menor, scroll horizontal, contexto claro |
 | Tabela | Cabeçalho sticky, sort com seta, monetário à direita, badges pequenas, `—` para vazio, scroll horizontal |
-| Drawer | Largura `max-w-xl`, resumo + mini-cards, mapa de atendimento, abas Resumo / Valores / Alertas com severidade |
+| **Itens do pedido** | Painel abaixo da tabela; chips atendido/pendente/excedente/fora/CR/recebido; grid compartilhado |
+| Drawer | Largura `max-w-xl`, resumo + mini-cards, mapa de atendimento, abas Resumo / Valores / Alertas |
+
+## Drilldown item a item do pedido
+
+1. Usuário filtra (ex.: card **Parciais**) e vê pedidos na tabela.
+2. Clique em uma linha (ex.: **PD 02207**) seleciona o pedido.
+3. Abaixo da tabela abre **Itens do pedido selecionado**.
+4. O painel chama `GET /api/finance/portfolio-reconciliation/order-to-cash-audit?orderCode=…&year=…&runId=…` (mesma API da Auditoria).
+5. Chips filtram o grid no cliente (sem recalcular).
+6. Botão **Resumo do pedido** abre o drawer lateral.
+
+Regras de exibição (herdadas da Auditoria):
+
+- `ORDER_ITEM_PENDING`: documento/NF/valor cobrado = `—` (não parece faturado).
+- `DOCUMENT_EXTRA_ITEM`: produto/documento fora do pedido.
+- CR total título: coluna com label claro; **não** é valor do item.
+- Caso **PD 02534 / 309.86AA**: permanece PENDING sem NF 7228 no item.
+
+Componente compartilhado: `OrderToCashAuditItemsGrid.tsx` (Auditoria + Status Pedidos).
 
 ## Componentes
 
@@ -35,7 +55,9 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 - `OrderStatusFilters.tsx` / `OrderStatusActiveFilterBar.tsx`
 - `OrderStatusPrimaryCards.tsx` / `OrderStatusDrilldownCards.tsx`
 - `OrderStatusTable.tsx` / `OrderStatusDrawer.tsx`
-- Helpers visuais: `orderStatusUi.tsx`
+- `OrderStatusSelectedOrderItemsPanel.tsx`
+- `OrderToCashAuditItemsGrid.tsx` / `OrderToCashAuditTable.tsx`
+- Helpers: `orderStatusUi.tsx`, `orderToCashAuditItemsUi.ts`
 - Client: `src/lib/finance/portfolioOrderStatusClient.ts`
 - Service: `src/lib/finance/portfolioOrderStatusService.ts`
 
@@ -48,5 +70,6 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 
 - Visual limpo para diretoria
 - Clique em card/drilldown filtra a tabela sem recalcular no frontend
+- Clique no pedido abre itens sem sair da aba
 - Mensagens em português claro (sem JSON / `undefined` / `null` / `NaN`)
 - Sem regressão nas abas Conciliação, Inteligência e Auditoria

@@ -27,7 +27,7 @@ import {
 } from "@/src/lib/finance/orderToCashAuditClient";
 import { OrderToCashAuditFilters } from "./OrderToCashAuditFilters";
 import { OrderToCashAuditSummaryCards } from "./OrderToCashAuditSummaryCards";
-import { OrderToCashAuditTable } from "./OrderToCashAuditTable";
+import { OrderToCashAuditItemsGrid } from "./OrderToCashAuditItemsGrid";
 import {
   formatFinanceDate,
   formatFinanceDateTime,
@@ -267,7 +267,8 @@ export function OrderToCashAuditTab() {
       {searched && !loading && !error && hasRows && payload ? (
         <>
           <OrderToCashAuditSummaryCards summary={payload.summary} />
-          <OrderToCashAuditTable
+          <OrderToCashAuditItemsGrid
+            mode="full"
             rows={payload.rows}
             filters={applied!}
             totalRows={payload.pagination.totalRows}

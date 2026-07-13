@@ -8,7 +8,7 @@
 | **Script** | `scripts/qaPortfolioOrderStatusTab.ts` (`npm run qa:portfolio-order-status`) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/order-status` |
 | **Status geral** | **LIBERADO COM RESSALVA** |
-| **Resumo** | total=9 pass=9 fail=0 skip=1 |
+| **Resumo** | total=11 pass=11 fail=0 skip=1 |
 
 ---
 
@@ -24,6 +24,8 @@
 | `table:one-row-per-order` | PASS | tabela keyed por orderKey (pedido) |
 | `cards:distinct-orders` | PASS | cards contam pedidos (não facts) |
 | `server:loader` | PASS | loader Prisma order-status existe |
+| `drilldown:shared-items-grid` | PASS | OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria |
+| `drilldown:reuses-audit-api` | PASS | painel carrega itens via API Auditoria Pedido → Caixa |
 
 ---
 

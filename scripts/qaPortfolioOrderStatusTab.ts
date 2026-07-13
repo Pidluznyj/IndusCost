@@ -98,6 +98,8 @@ function staticContracts(): void {
     "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx",
     "src/components/finance/portfolio-reconciliation/OrderStatusTable.tsx",
     "src/components/finance/portfolio-reconciliation/OrderStatusPrimaryCards.tsx",
+    "src/components/finance/portfolio-reconciliation/OrderStatusSelectedOrderItemsPanel.tsx",
+    "src/components/finance/portfolio-reconciliation/OrderToCashAuditItemsGrid.tsx",
     "src/lib/finance/portfolioOrderStatusClient.ts",
   ];
   let prismaLeak = false;
@@ -151,6 +153,59 @@ function staticContracts(): void {
   } else {
     fail("static", "server:loader", "loader ausente");
   }
+
+  const itemsGrid = exists(
+    "src/components/finance/portfolio-reconciliation/OrderToCashAuditItemsGrid.tsx"
+  );
+  const statusPanel = exists(
+    "src/components/finance/portfolio-reconciliation/OrderStatusSelectedOrderItemsPanel.tsx"
+  );
+  const statusTab = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx"
+  );
+  const auditTab = read(
+    "src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx"
+  );
+  if (
+    itemsGrid &&
+    statusPanel &&
+    statusTab.includes("OrderStatusSelectedOrderItemsPanel") &&
+    auditTab.includes("OrderToCashAuditItemsGrid")
+  ) {
+    ok(
+      "static",
+      "drilldown:shared-items-grid",
+      "OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria"
+    );
+  } else {
+    fail(
+      "static",
+      "drilldown:shared-items-grid",
+      "grid compartilhado / painel de itens ausente"
+    );
+  }
+
+  const panelSrc = statusPanel
+    ? read(
+        "src/components/finance/portfolio-reconciliation/OrderStatusSelectedOrderItemsPanel.tsx"
+      )
+    : "";
+  if (
+    panelSrc.includes("ORDER_TO_CASH_AUDIT_API_PATH") &&
+    panelSrc.includes("Itens do pedido selecionado")
+  ) {
+    ok(
+      "static",
+      "drilldown:reuses-audit-api",
+      "painel carrega itens via API Auditoria Pedido → Caixa"
+    );
+  } else {
+    fail(
+      "static",
+      "drilldown:reuses-audit-api",
+      "painel não reutiliza endpoint da Auditoria"
+    );
+  }
 }
 
 async function liveLoaders(): Promise<void> {
@@ -164,6 +219,9 @@ async function liveLoaders(): Promise<void> {
   const { PrismaClient } = await import("@prisma/client");
   const { loadPortfolioOrderStatusList } = await import(
     "../src/lib/financePortfolioOrderStatusApi.server.ts"
+  );
+  const { loadOrderToCashAuditList } = await import(
+    "../src/lib/financeOrderToCashAuditApi.server.ts"
   );
   const { resolveFactLineBilledValue } = await import(
     "../src/lib/finance/portfolioOrderStatusService.ts"
@@ -457,6 +515,126 @@ async function liveLoaders(): Promise<void> {
       };
     } else {
       fail("live", "live:pd02339", "pedido não retornou");
+    }
+
+    const pd02207 = await loadPortfolioOrderStatusList({
+      year: String(YEAR),
+      orderCode: "02207",
+      page: "1",
+      pageSize: "20",
+      selectedCard: "parciais",
+    });
+    const rows02207 = (pd02207.rows ?? []).filter((r) =>
+      (r.orderCode ?? "").includes("02207")
+    );
+    if (rows02207.length >= 1) {
+      const row = rows02207[0]!;
+      const isPartial = String(row.consolidatedOrderStatus).startsWith("PARCIAL_");
+      if (isPartial || row.hasPendingItems) {
+        ok(
+          "live",
+          "live:pd02207-partial",
+          `status=${row.consolidatedOrderStatus} pendingItems=${row.pendingItemCount}`
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02207-partial",
+          `status=${row.consolidatedOrderStatus} (esperado parcial)`
+        );
+      }
+
+      const items02207 = await loadOrderToCashAuditList({
+        year: String(YEAR),
+        orderCode: row.orderCode ?? "PD 02207",
+        runId: pd02207.runMeta?.runId ?? "",
+        page: "1",
+        pageSize: "200",
+      });
+      const itemRows = items02207.rows ?? [];
+      const hasAttendedOrPending = itemRows.some((r) => {
+        const lt = (r.lineType ?? "").toUpperCase();
+        return (
+          lt === "ORDER_ITEM_PENDING" ||
+          lt === "ORDER_ITEM_ALLOCATED" ||
+          (r.quantityUsedForOrder ?? 0) > 0
+        );
+      });
+      if (items02207.ok !== false && itemRows.length >= 1 && hasAttendedOrPending) {
+        ok(
+          "live",
+          "live:pd02207-items",
+          `items=${itemRows.length} attendedOrPending=true`
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02207-items",
+          `items=${itemRows.length} ok=${items02207.ok}`
+        );
+      }
+    } else {
+      fail("live", "live:pd02207-partial", "PD 02207 não retornou na lista");
+    }
+
+    const items02534 = await loadOrderToCashAuditList({
+      year: String(YEAR),
+      orderCode: "02534",
+      runId: pd02534.runMeta?.runId ?? base.runMeta?.runId ?? "",
+      page: "1",
+      pageSize: "200",
+    });
+    const pending309 = (items02534.rows ?? []).filter(
+      (r) =>
+        (r.productCode ?? "").includes("309.86AA") ||
+        (r.sku ?? "").includes("309.86AA")
+    );
+    if (pending309.length >= 1) {
+      const bad = pending309.find(
+        (r) =>
+          (r.lineType ?? "").toUpperCase() !== "ORDER_ITEM_PENDING" ||
+          r.nfeNumber != null ||
+          r.stockDocumentExternalId != null ||
+          (r.lineBilledValue != null && r.lineBilledValue > 0)
+      );
+      if (!bad) {
+        ok(
+          "live",
+          "live:pd02534-items-pending",
+          `309.86AA lines=${pending309.length} PENDING sem NF/doc/cobrado`
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02534-items-pending",
+          `309.86AA lineType=${bad.lineType} nfe=${bad.nfeNumber} doc=${bad.stockDocumentExternalId} billed=${bad.lineBilledValue}`
+        );
+      }
+      const crAsItem = pending309.some(
+        (r) =>
+          r.receivableTotalValue != null &&
+          r.receivableTotalValue > 0 &&
+          (r.lineBilledValue ?? 0) === r.receivableTotalValue
+      );
+      if (!crAsItem) {
+        ok(
+          "live",
+          "live:pd02534-items-no-cr-as-item",
+          "CR título não usado como valor cobrado do item PENDING"
+        );
+      } else {
+        fail(
+          "live",
+          "live:pd02534-items-no-cr-as-item",
+          "CR título aparece como valor de item"
+        );
+      }
+    } else {
+      fail(
+        "live",
+        "live:pd02534-items-pending",
+        "309.86AA não encontrado nos itens do PD 02534"
+      );
     }
 
     const britania = await loadPortfolioOrderStatusList({

@@ -14,6 +14,7 @@ import {
   resolveOrderToCashAuditBadgeTone,
   type OrderToCashAuditUiFilters,
 } from "@/src/lib/finance/orderToCashAuditClient";
+import { pendingQuantityOfAuditRow } from "@/src/lib/finance/orderToCashAuditItemsUi";
 
 type ColumnDef = {
   id: string;
@@ -32,6 +33,9 @@ const COLUMNS: ColumnDef[] = [
   { id: "sellerName", label: "Vendedor", sortKey: "sellerName" },
   { id: "productSku", label: "Produto/SKU", sortKey: "productCode" },
   { id: "lineType", label: "Tipo linha" },
+  { id: "orderedQuantity", label: "Qtd pedida", align: "right" },
+  { id: "quantityUsedForOrder", label: "Qtd atendida", align: "right" },
+  { id: "pendingQuantity", label: "Qtd pendente", align: "right" },
   { id: "stockDocumentExternalId", label: "Documento saída", sortKey: "stockDocumentExternalId" },
   { id: "nfeNumber", label: "NF", sortKey: "nfeNumber" },
   {
@@ -90,6 +94,12 @@ type Props = {
   onPageSizeChange: (pageSize: number) => void;
   onRowClick: (row: OrderToCashAuditListRow) => void;
   selectedId: string | null;
+  /** Oculta colunas por id (ex.: drilldown por pedido). */
+  hideColumnIds?: readonly string[];
+  /** Esconde paginação (quando o painel já pagina/filtra no cliente). */
+  hidePagination?: boolean;
+  /** data-testid da seção (default: order-to-cash-audit-table). */
+  testId?: string;
 };
 
 function Badge({
@@ -146,7 +156,23 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       );
     case "lineType":
       return row.lineType ?? "—";
+    case "orderedQuantity":
+      return row.orderedQuantity == null ? "—" : String(row.orderedQuantity);
+    case "quantityUsedForOrder":
+      if (row.lineType === "ORDER_ITEM_PENDING") return "—";
+      return row.quantityUsedForOrder == null ? "—" : String(row.quantityUsedForOrder);
+    case "pendingQuantity": {
+      const pending = pendingQuantityOfAuditRow(row);
+      return pending == null ? "—" : String(pending);
+    }
     case "stockDocumentExternalId":
+      if (row.lineType === "ORDER_ITEM_PENDING") {
+        return (
+          <span className="text-muted-foreground" title="Item pendente — sem documento de saída do item">
+            —
+          </span>
+        );
+      }
       return row.stockDocumentExternalId ?? "—";
     case "orderItemTotalValue":
       return money(row.orderItemTotalValue);
@@ -268,7 +294,12 @@ export function OrderToCashAuditTable({
   onPageSizeChange,
   onRowClick,
   selectedId,
+  hideColumnIds,
+  hidePagination,
+  testId = "order-to-cash-audit-table",
 }: Props) {
+  const hidden = new Set(hideColumnIds ?? []);
+  const visibleColumns = COLUMNS.filter((c) => !hidden.has(c.id));
   const from = totalRows === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
   const to = Math.min(filters.page * filters.pageSize, totalRows);
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -344,7 +375,7 @@ export function OrderToCashAuditTable({
   return (
     <section
       className={cn(financeBiCardClass, "min-w-0 max-w-full overflow-hidden")}
-      data-testid="order-to-cash-audit-table"
+      data-testid={testId}
     >
       <div
         className="sticky top-0 z-40 flex items-center gap-2 border-b border-[#B2DDFF] bg-[#EFF8FF] px-2 py-2"
@@ -406,7 +437,7 @@ export function OrderToCashAuditTable({
         >
           <thead className="sticky top-0 z-20 bg-muted/95 text-[10px] uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
-              {COLUMNS.map((col) => {
+              {visibleColumns.map((col) => {
                 const sortable = Boolean(col.sortKey);
                 const active = col.sortKey != null && filters.sortBy === col.sortKey;
                 return (
@@ -467,7 +498,7 @@ export function OrderToCashAuditTable({
                 onClick={() => onRowClick(row)}
                 data-testid={`order-to-cash-audit-row-${row.id}`}
               >
-                {COLUMNS.map((col) => (
+                {visibleColumns.map((col) => (
                   <td
                     key={col.id}
                     className={cn(
@@ -486,6 +517,7 @@ export function OrderToCashAuditTable({
         </table>
       </div>
 
+      {!hidePagination ? (
       <div
         className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground"
         data-testid="order-to-cash-audit-pagination"
@@ -532,6 +564,7 @@ export function OrderToCashAuditTable({
           </button>
         </div>
       </div>
+      ) : null}
     </section>
   );
 }
