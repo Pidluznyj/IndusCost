@@ -2,13 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconciliationApi.js";
-import {
-  FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS,
-  FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS,
-  FINANCE_PORTFOLIO_RECONCILIATION_MODULE_API_PERMISSIONS,
-  FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_API_PERMISSIONS,
-  FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS,
-} from "./financePortfolioReconciliationPermissions.js";
+import { PermissionResourceKeys } from "./security/permissionsCatalog.js";
 import {
   listPortfolioReconciliationRuns,
   loadPortfolioIntelligenceList,
@@ -27,10 +21,9 @@ import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityI
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  /** Motor relacional: requirePermission(resourceKey, action) */
+  requirePermission: (resourceKey: string, action?: "view" | "execute" | "manage" | "admin") => RequestHandler;
 };
-
-export { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS };
 
 export function registerFinancePortfolioReconciliationRoutes(
   app: express.Express,
@@ -38,25 +31,28 @@ export function registerFinancePortfolioReconciliationRoutes(
 ) {
   const moduleGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_PORTFOLIO_RECONCILIATION_MODULE_API_PERMISSIONS]),
+    auth.requirePermission(PermissionResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA, "view"),
   ];
   const conciliationGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([
-      ...FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS,
-    ]),
+    auth.requirePermission(
+      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO,
+      "view"
+    ),
   ];
   const intelligenceGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([
-      ...FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS,
-    ]),
+    auth.requirePermission(
+      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA,
+      "view"
+    ),
   ];
   const orderToCashAuditGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([
-      ...FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_API_PERMISSIONS,
-    ]),
+    auth.requirePermission(
+      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
+      "view"
+    ),
   ];
 
   app.get("/api/finance/portfolio-reconciliation", ...conciliationGuard, async (req, res) => {

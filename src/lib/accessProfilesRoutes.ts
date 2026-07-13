@@ -1,11 +1,9 @@
 import type express from "express";
+import type { RequestHandler } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
-import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   AccessProfileError,
-  canManageAccessProfiles,
-  canViewAccessProfiles,
   createAccessProfile,
   deleteAccessProfile,
   duplicateAccessProfile,
@@ -15,49 +13,15 @@ import {
   setAccessProfileStatus,
   updateAccessProfile,
 } from "@/src/lib/accessProfilesService.js";
+import { PermissionResourceKeys } from "@/src/lib/security/permissionsCatalog.js";
 
 type RouteDeps = {
   requireAppAuth: express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+  requirePermission: (
+    resourceKey: string,
+    action?: "view" | "execute" | "manage" | "admin"
+  ) => RequestHandler;
 };
-
-function requireAccessProfileView(
-  getCurrentAppUser: RouteDeps["getCurrentAppUser"]
-): express.RequestHandler {
-  return async (req, res, next) => {
-    const auth = await getCurrentAppUser(req);
-    if (!auth) {
-      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
-    }
-    if (!canViewAccessProfiles(auth)) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Sem permissão para visualizar perfis de acesso.",
-      });
-    }
-    req.appAuth = auth;
-    return next();
-  };
-}
-
-function requireAccessProfileManage(
-  getCurrentAppUser: RouteDeps["getCurrentAppUser"]
-): express.RequestHandler {
-  return async (req, res, next) => {
-    const auth = await getCurrentAppUser(req);
-    if (!auth) {
-      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
-    }
-    if (!canManageAccessProfiles(auth)) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Sem permissão para gerenciar perfis de acesso.",
-      });
-    }
-    req.appAuth = auth;
-    return next();
-  };
-}
 
 function handleAccessProfileError(res: express.Response, error: unknown) {
   if (error instanceof AccessProfileError) {
@@ -82,8 +46,12 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
 }
 
 export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDeps): void {
-  const viewGuard = requireAccessProfileView(deps.getCurrentAppUser);
-  const manageGuard = requireAccessProfileManage(deps.getCurrentAppUser);
+  const viewGuard = deps.requirePermission(PermissionResourceKeys.ADMIN_PERMISSOES, "view");
+  /** Equivale a admin.permissoes:admin — ação crítica de ACL. */
+  const manageGuard = deps.requirePermission(
+    PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
+    "admin"
+  );
 
   app.get("/api/access-profiles", deps.requireAppAuth, viewGuard, async (req, res) => {
     try {

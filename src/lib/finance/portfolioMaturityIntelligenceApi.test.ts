@@ -103,10 +103,8 @@ describe("portfolioMaturityIntelligenceApi", () => {
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\/:salesOrderId/
     );
     assert.match(routes, /requireAppAuth/);
-    assert.match(
-      routes,
-      /FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS/
-    );
+    assert.match(routes, /requirePermission/);
+    assert.match(routes, /FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA/);
     assert.match(routes, /intelligenceGuard/);
     assert.equal(
       canViewFinancePortfolioReconciliation({

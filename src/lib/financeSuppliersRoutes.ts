@@ -24,10 +24,15 @@ import {
   updateFinancialSupplierProfileDefault,
 } from "@/src/lib/financeSupplierProfile.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import { PermissionResourceKeys } from "@/src/lib/security/permissionsCatalog.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requirePermission?: (
+    resourceKey: string,
+    action?: "view" | "execute" | "manage" | "admin"
+  ) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -74,7 +79,7 @@ function handleSupplierProfileError(res: express.Response, error: unknown) {
 }
 
 export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireAnyPermission, requirePermission, getCurrentAppUser } = auth;
   const previewGuard = [
     requireAppAuth,
     requireAnyPermission([...FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS]),
@@ -86,6 +91,14 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
   const ensureFromApGuard = [
     requireAppAuth,
     requireAnyPermission([...FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS]),
+  ] as const;
+  /** Rebuild apply: legado finance.suppliers.manage + execute em Contas a Pagar (fonte AP). */
+  const rebuildApplyGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_SUPPLIERS_APPLY_PERMISSIONS]),
+    ...(requirePermission
+      ? [requirePermission(PermissionResourceKeys.FINANCEIRO_CONTAS_PAGAR, "execute")]
+      : []),
   ] as const;
 
   app.get("/api/finance/suppliers/search", ...previewGuard, async (req, res) => {
@@ -173,7 +186,7 @@ export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/finance/suppliers/rebuild-from-ap-apply", ...applyGuard, async (req, res) => {
+  app.post("/api/finance/suppliers/rebuild-from-ap-apply", ...rebuildApplyGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });

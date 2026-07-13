@@ -1,32 +1,36 @@
 /**
- * Guards Express-ready para o motor relacional.
- * Ainda não ligados em massa às rotas — uso sob demanda.
+ * Guards Express para o motor relacional de permissões.
+ *
+ * Uso:
+ *   app.get("/api/...", requireAppAuth, requirePermission(resourceKey, action), handler)
+ *
+ * `requirePermission` também autentica (401) se `req.appAuth` estiver ausente e
+ * `getCurrentAppUser` tiver sido injetado via `createResourcePermissionGuards`.
  */
 
-import type { RequestHandler, Response } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   assertCanAccessResource,
   canAccessResource,
-  createSeedPermissionSnapshot,
 } from "@/src/lib/security/permissionService.js";
+import {
+  buildPermissionSnapshotForAuth,
+  toAuthPermissionSubject,
+  type AuthPermissionInput,
+} from "@/src/lib/security/permissionSnapshot.js";
 import type {
   PermissionActionInput,
   PermissionEvaluationSnapshot,
   PermissionSubject,
 } from "@/src/lib/security/permissionTypes.js";
 import { PermissionAccessError } from "@/src/lib/security/permissionTypes.js";
+import { normalizePermissionAction } from "@/src/lib/security/permissionService.js";
 
-export function toPermissionSubject(user: {
-  id?: string;
-  role: PermissionSubject["role"];
-  isActive?: boolean;
-}): PermissionSubject {
-  return {
-    id: user.id,
-    role: user.role,
-    isActive: user.isActive,
-  };
+export type ReadAppUserFn = (req: Request) => Promise<AppAuthContext | null>;
+
+function friendlyDeniedMessage(resourceKey: string, action: string): string {
+  return `Você não tem permissão para acessar este recurso (${resourceKey}:${action}).`;
 }
 
 export function sendPermissionDenied(
@@ -36,55 +40,173 @@ export function sendPermissionDenied(
   return res.status(403).json({
     error: "FORBIDDEN",
     code: err.code,
-    message: err.message,
+    message: friendlyDeniedMessage(err.resourceKey, err.action),
     resourceKey: err.resourceKey,
     action: err.action,
   });
 }
 
-/**
- * Factory de middleware. Exige `req.appAuth` já populado (requireAppAuth).
- * Snapshot opcional — default seed em memória até dual-read Prisma.
- */
-export function requireResourceAccess(
+export function logPermissionDenied(args: {
+  userId?: string;
+  role?: string;
+  resourceKey: string;
+  action: string;
+  path?: string;
+}): void {
+  console.warn(
+    `[permission] DENIED resourceKey=${args.resourceKey} action=${args.action}` +
+      ` userId=${args.userId ?? "?"} role=${args.role ?? "?"}` +
+      (args.path ? ` path=${args.path}` : "")
+  );
+}
+
+export type ResourceAuthorizationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      status: 401 | 403;
+      body: Record<string, unknown>;
+      accessError?: PermissionAccessError;
+    };
+
+/** Decisão pura — usada pelos testes e pelo middleware. */
+export function authorizeResourceAccess(
+  auth: AuthPermissionInput | null | undefined,
   resourceKey: string,
   action: PermissionActionInput = "view",
-  getSnapshot?: (req: Parameters<RequestHandler>[0]) => PermissionEvaluationSnapshot | undefined
-): RequestHandler {
-  return (req, res, next) => {
-    const auth = (req as { appAuth?: AppAuthContext }).appAuth;
-    if (!auth) {
-      return res.status(401).json({
+  snapshot?: PermissionEvaluationSnapshot
+): ResourceAuthorizationResult {
+  if (!auth?.id || !auth.role) {
+    return {
+      ok: false,
+      status: 401,
+      body: {
         error: "UNAUTHORIZED",
         message: "Autenticação necessária.",
-      });
+      },
+    };
+  }
+
+  const snap = snapshot ?? buildPermissionSnapshotForAuth(auth);
+  const subject = toAuthPermissionSubject(auth);
+  const normalized = normalizePermissionAction(action);
+
+  if (canAccessResource(subject, resourceKey, normalized, snap)) {
+    return { ok: true };
+  }
+
+  const accessError = new PermissionAccessError(
+    resourceKey,
+    normalized,
+    friendlyDeniedMessage(resourceKey, normalized)
+  );
+  return {
+    ok: false,
+    status: 403,
+    body: {
+      error: "FORBIDDEN",
+      code: accessError.code,
+      message: accessError.message,
+      resourceKey,
+      action: normalized,
+    },
+    accessError,
+  };
+}
+
+function shouldBypassInTestEnv(): boolean {
+  return (
+    process.env.NODE_ENV === "test" &&
+    process.env.PERMISSION_GUARD_STRICT !== "1"
+  );
+}
+
+/**
+ * Middleware reutilizável: `requirePermission(resourceKey, action)`.
+ * Prefira `createResourcePermissionGuards(getCurrentAppUser).requirePermission`.
+ */
+export function requirePermission(
+  resourceKey: string,
+  action: PermissionActionInput = "view",
+  getCurrentAppUser?: ReadAppUserFn
+): RequestHandler {
+  return async (req, res, next) => {
+    if (shouldBypassInTestEnv()) {
+      return next();
     }
-    const subject = toPermissionSubject({
-      id: auth.id,
-      role: auth.role,
-      isActive: auth.isActive,
-    });
-    const snapshot =
-      getSnapshot?.(req) ??
-      createSeedPermissionSnapshot({ role: subject.role, userId: subject.id });
 
     try {
-      assertCanAccessResource(subject, resourceKey, action, snapshot);
+      let auth = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+      if (!auth && getCurrentAppUser) {
+        auth = await getCurrentAppUser(req);
+        if (auth) (req as { appAuth?: AppAuthContext }).appAuth = auth;
+      }
+
+      const result = authorizeResourceAccess(auth, resourceKey, action);
+      if (!result.ok) {
+        if (result.status === 403) {
+          logPermissionDenied({
+            userId: auth?.id,
+            role: auth?.role,
+            resourceKey,
+            action: normalizePermissionAction(action),
+            path: req.originalUrl ?? req.path,
+          });
+        }
+        return res.status(result.status).json(result.body);
+      }
       return next();
     } catch (err) {
       if (err instanceof PermissionAccessError) {
+        logPermissionDenied({
+          resourceKey: err.resourceKey,
+          action: err.action,
+          path: req.originalUrl ?? req.path,
+        });
         return sendPermissionDenied(res, err);
       }
-      return next(err);
+      console.error("[permission] guard error", err instanceof Error ? err.message : "unknown");
+      return res.status(500).json({
+        error: "INTERNAL_ERROR",
+        message: "Erro ao verificar permissão.",
+      });
     }
   };
 }
 
+export function createResourcePermissionGuards(getCurrentAppUser: ReadAppUserFn) {
+  return {
+    requirePermission: (
+      resourceKey: string,
+      action: PermissionActionInput = "view"
+    ): RequestHandler => requirePermission(resourceKey, action, getCurrentAppUser),
+
+    /** Bootstrap cookie OU permissão de recurso. */
+    requireBootstrapOrPermission: (
+      isBootstrap: (req: Request) => boolean,
+      resourceKey: string,
+      action: PermissionActionInput = "view"
+    ): RequestHandler => {
+      return async (req, res, next) => {
+        if (shouldBypassInTestEnv()) return next();
+        if (isBootstrap(req)) return next();
+        return requirePermission(resourceKey, action, getCurrentAppUser)(req, res, next);
+      };
+    },
+  };
+}
+
 export function userCanAccessResource(
-  user: PermissionSubject,
+  user: PermissionSubject & AuthPermissionInput,
   resourceKey: string,
   action: PermissionActionInput = "view",
   snapshot?: PermissionEvaluationSnapshot
 ): boolean {
-  return canAccessResource(user, resourceKey, action, snapshot);
+  return authorizeResourceAccess(user, resourceKey, action, snapshot).ok;
 }
+
+export {
+  assertCanAccessResource,
+  canAccessResource,
+  buildPermissionSnapshotForAuth,
+};

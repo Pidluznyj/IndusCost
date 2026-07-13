@@ -283,6 +283,8 @@ import {
 } from "./src/lib/fleetPublicReservationRoutes.js";
 import { registerFleetPublicVehicleChecklistRoutes } from "./src/lib/fleetPublicVehicleChecklistRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
+import { createResourcePermissionGuards } from "./src/lib/security/permissionGuards.js";
+import { PermissionResourceKeys } from "./src/lib/security/permissionsCatalog.js";
 import {
   AccessProfileError,
   applyAccessProfileToUserFields,
@@ -1642,6 +1644,19 @@ async function startServer() {
     getCurrentAppUser,
   } = createAuthGuards(readAppSession);
 
+  const {
+    requirePermission: requireResourcePermission,
+    requireBootstrapOrPermission,
+  } = createResourcePermissionGuards(getCurrentAppUser);
+
+  const isBootstrapAdminRequest = (req: express.Request): boolean => {
+    if (!(bootstrapAdminConfig.enabled && isBootstrapReady)) return false;
+    const bootstrap = readBootstrapSession(req);
+    return Boolean(
+      bootstrap && safeEqualString(bootstrap.username, bootstrapAdminConfig.username)
+    );
+  };
+
   /** Bootstrap admin OU permissões de app (settings / RBAC). */
   function requireBootstrapOrAnyPermission(permissions: string[]): express.RequestHandler {
     return async (req, res, next) => {
@@ -1656,25 +1671,33 @@ async function startServer() {
   }
 
   const requireUserAdminOrBootstrap: express.RequestHandler = async (req, res, next) => {
-    if (bootstrapAdminConfig.enabled && isBootstrapReady) {
-      const bootstrap = readBootstrapSession(req);
-      if (bootstrap && safeEqualString(bootstrap.username, bootstrapAdminConfig.username)) {
-        return next();
-      }
+    if (isBootstrapAdminRequest(req)) {
+      return next();
     }
-    const auth = await readAppSession(req);
-    if (!auth) {
-      return res.status(401).json({
-        error: "UNAUTHORIZED",
-        message: "Autenticação necessária.",
-      });
-    }
-    if (!hasPermission(auth, "users.manage")) {
-      return sendAuthForbidden(res, ["users.manage"]);
-    }
-    req.appAuth = auth;
-    return next();
+    return requireResourcePermission(PermissionResourceKeys.ADMIN_USUARIOS, "manage")(
+      req,
+      res,
+      next
+    );
   };
+
+  const requireUsersViewOrBootstrap = requireBootstrapOrPermission(
+    isBootstrapAdminRequest,
+    PermissionResourceKeys.ADMIN_USUARIOS,
+    "view"
+  );
+
+  const requireUsersManageOrBootstrap = requireBootstrapOrPermission(
+    isBootstrapAdminRequest,
+    PermissionResourceKeys.ADMIN_USUARIOS,
+    "admin"
+  );
+
+  const requirePermissionsAdminOrBootstrap = requireBootstrapOrPermission(
+    isBootstrapAdminRequest,
+    PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
+    "admin"
+  );
 
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -1773,11 +1796,11 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/permissions/catalog", requireUserAdminOrBootstrap, (_req, res) => {
+  app.get("/api/admin/permissions/catalog", requirePermissionsAdminOrBootstrap, (_req, res) => {
     res.json({ permissions: PERMISSION_CATALOG });
   });
 
-  app.get("/api/admin/seller-options", requireUserAdminOrBootstrap, async (_req, res) => {
+  app.get("/api/admin/seller-options", requireUsersViewOrBootstrap, async (_req, res) => {
     try {
       const sellers = await fetchAdminSellerOptionsFromDb();
       return res.json({ sellers });
@@ -1787,7 +1810,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/users", requireUserAdminOrBootstrap, async (_req, res) => {
+  app.get("/api/admin/users", requireUsersViewOrBootstrap, async (_req, res) => {
     try {
       const users = await prisma.appUser.findMany({
         orderBy: [{ name: "asc" }, { email: "asc" }],
@@ -1804,7 +1827,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users", requireUserAdminOrBootstrap, async (req, res) => {
+  app.post("/api/admin/users", requireUsersManageOrBootstrap, async (req, res) => {
     try {
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
       const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
@@ -1882,7 +1905,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/admin/users/:id", requireUserAdminOrBootstrap, async (req, res) => {
+  app.patch("/api/admin/users/:id", requireUsersManageOrBootstrap, async (req, res) => {
     try {
       const id = String(req.params.id ?? "").trim();
       if (!id) {
@@ -2062,7 +2085,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users/:id/reset-password", requireUserAdminOrBootstrap, async (req, res) => {
+  app.post("/api/admin/users/:id/reset-password", requireUsersManageOrBootstrap, async (req, res) => {
     try {
       const id = String(req.params.id ?? "").trim();
       const password = typeof req.body?.password === "string" ? req.body.password : "";
@@ -2158,7 +2181,7 @@ async function startServer() {
 
   registerAccessProfilesRoutes(app, {
     requireAppAuth,
-    getCurrentAppUser,
+    requirePermission: requireResourcePermission,
   });
 
   // --- API: Test DB Connection ---
@@ -14018,6 +14041,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   registerFinanceSuppliersRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+    requirePermission: requireResourcePermission,
     getCurrentAppUser,
   });
 
@@ -14084,7 +14108,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerFinancePortfolioReconciliationRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requirePermission: requireResourcePermission,
   });
 
   registerFinanceExecutiveReportRoutes(app, {
