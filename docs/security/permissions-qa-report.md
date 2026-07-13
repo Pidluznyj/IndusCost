@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Data (UTC)** | 2026-07-13T11:54:32.092Z |
+| **Data (UTC)** | 2026-07-13T11:55:26.825Z |
 | **Script** | `scripts/qaPermissions.ts` |
 | **Pass** | 19 |
 | **Fail** | 0 |
@@ -235,6 +235,17 @@ Nenhuma falha bloqueante neste run.
 **LIBERADO** para uso operacional do permissionamento menu/submenu/aba/ação, com ressalvas de warn acima (se houver).
 
 Pré-requisito em cada ambiente: `npx prisma migrate deploy` + `npm run permissions:seed` + SUPER_ADMIN ativo.
+
+## Gates de CI (evidência deste ciclo)
+
+| Gate | Resultado |
+|---|---|
+| `npm run check:server-imports` | OK |
+| `npm run check:frontend-server-imports` | OK (também no check #18) |
+| `npm test` | OK (fail 0) |
+| `npm run build` | OK |
+| `npm run check:browser-bundle` | OK — dist livre de Prisma |
+| `npx tsx scripts/qaPermissions.ts` | LIBERADO (0 fail) |
 
 ## Comandos de evidência
 

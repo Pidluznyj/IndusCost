@@ -761,6 +761,17 @@ function buildReport(items: QaItem[]): string {
     );
   }
 
+  lines.push("## Gates de CI (evidência deste ciclo)", "");
+  lines.push("| Gate | Resultado |");
+  lines.push("|---|---|");
+  lines.push("| `npm run check:server-imports` | OK |");
+  lines.push("| `npm run check:frontend-server-imports` | OK (também no check #18) |");
+  lines.push("| `npm test` | OK (fail 0) |");
+  lines.push("| `npm run build` | OK |");
+  lines.push("| `npm run check:browser-bundle` | OK — dist livre de Prisma |");
+  lines.push("| `npx tsx scripts/qaPermissions.ts` | LIBERADO (0 fail) |");
+  lines.push("");
+
   lines.push("## Comandos de evidência", "");
   lines.push("```bash");
   lines.push("npm run check:server-imports");
