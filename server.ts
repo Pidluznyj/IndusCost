@@ -283,7 +283,18 @@ import {
 } from "./src/lib/fleetPublicReservationRoutes.js";
 import { registerFleetPublicVehicleChecklistRoutes } from "./src/lib/fleetPublicVehicleChecklistRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
-import { createResourcePermissionGuards } from "./src/lib/security/permissionGuards.js";
+import {
+  buildEffectiveFlagsMap,
+  materializeLegacyPermissionsFromFlags,
+} from "./src/lib/security/permissionRolePresets.js";
+import {
+  listAdminUsersWithPermissionMeta,
+  registerUserPermissionAdminRoutes,
+} from "./src/lib/security/userPermissionAdminRoutes.js";
+import {
+  authorizeResourceAccess,
+  createResourcePermissionGuards,
+} from "./src/lib/security/permissionGuards.js";
 import { PermissionResourceKeys } from "./src/lib/security/permissionsCatalog.js";
 import {
   AccessProfileError,
@@ -1699,6 +1710,43 @@ async function startServer() {
     "admin"
   );
 
+  /** admin.usuarios:admin OU admin.permissoes.action.manage:admin (+ bootstrap). */
+  const requireUsersOrPermissionsAdmin: express.RequestHandler = async (req, res, next) => {
+    if (isBootstrapAdminRequest(req)) return next();
+    try {
+      let auth = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+      if (!auth) {
+        auth = await getCurrentAppUser(req);
+        if (auth) (req as { appAuth?: AppAuthContext }).appAuth = auth;
+      }
+      const usersOk = authorizeResourceAccess(
+        auth,
+        PermissionResourceKeys.ADMIN_USUARIOS,
+        "admin"
+      );
+      if (usersOk.ok) return next();
+      const aclOk = authorizeResourceAccess(
+        auth,
+        PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
+        "admin"
+      );
+      if (aclOk.ok) return next();
+      if (!auth) {
+        return res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Autenticação necessária.",
+        });
+      }
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Sem permissão para gerenciar usuários/permissões.",
+      });
+    } catch (error) {
+      console.error("requireUsersOrPermissionsAdmin", error);
+      return res.status(500).json({ error: "Erro de autorização." });
+    }
+  };
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
@@ -1812,18 +1860,27 @@ async function startServer() {
 
   app.get("/api/admin/users", requireUsersViewOrBootstrap, async (_req, res) => {
     try {
-      const users = await prisma.appUser.findMany({
-        orderBy: [{ name: "asc" }, { email: "asc" }],
-        include: { accessProfile: { select: { name: true } } },
-      });
-      return res.json({
-        users: users.map((u) =>
-          toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null })
-        ),
-      });
+      const users = await listAdminUsersWithPermissionMeta();
+      return res.json({ users });
     } catch (error) {
       console.error("GET /api/admin/users", error);
-      return res.status(500).json({ error: "Erro ao listar usuários." });
+      // Fallback sem _count (ex.: migrate ainda não aplicada).
+      try {
+        const users = await prisma.appUser.findMany({
+          orderBy: [{ name: "asc" }, { email: "asc" }],
+          include: { accessProfile: { select: { name: true } } },
+        });
+        return res.json({
+          users: users.map((u) => ({
+            ...toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null }),
+            hasCustomPermissions: false,
+            overrideCount: 0,
+          })),
+        });
+      } catch (fallbackError) {
+        console.error("GET /api/admin/users fallback", fallbackError);
+        return res.status(500).json({ error: "Erro ao listar usuários." });
+      }
     }
   });
 
@@ -1873,6 +1930,12 @@ async function startServer() {
         const applied = applyAccessProfileToUserFields(profile);
         if (applied.role) role = applied.role;
         if (req.body?.permissions === undefined) permissions = applied.permissions;
+      }
+
+      if (permissions.length === 0 && role !== "SUPER_ADMIN") {
+        permissions = filterKnownPermissions(
+          materializeLegacyPermissionsFromFlags(buildEffectiveFlagsMap(role, []))
+        );
       }
 
       const passwordHash = await hashPassword(password);
@@ -2182,6 +2245,13 @@ async function startServer() {
   registerAccessProfilesRoutes(app, {
     requireAppAuth,
     requirePermission: requireResourcePermission,
+  });
+
+  registerUserPermissionAdminRoutes(app, {
+    requireAppAuth,
+    requirePermission: requireResourcePermission,
+    requireUsersOrPermissionsAdmin,
+    requireUsersView: requireUsersViewOrBootstrap,
   });
 
   // --- API: Test DB Connection ---

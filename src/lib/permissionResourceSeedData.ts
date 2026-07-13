@@ -392,6 +392,26 @@ export function buildRolePermissionSeeds(
   return out;
 }
 
+const FULL_FLAGS: RolePermissionFlags = ALL;
+const EMPTY_FLAGS: RolePermissionFlags = NONE;
+
+/** Flags oficiais do preset da role para um resourceKey (fonte única: ROLE_MATRIX). */
+export function getOfficialRolePermissionFlags(
+  role: AppUserRole,
+  resourceKey: string
+): RolePermissionFlags {
+  if (role === "SUPER_ADMIN") return { ...FULL_FLAGS };
+  return { ...(ROLE_MATRIX[role][resourceKey] ?? EMPTY_FLAGS) };
+}
+
+export const OFFICIAL_APP_USER_ROLES: readonly AppUserRole[] = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "COMMERCIAL_MANAGER",
+  "SELLER",
+  "VIEWER",
+] as const;
+
 export type CatalogIntegrityIssue = { code: string; message: string };
 
 export function validatePermissionResourceCatalog(

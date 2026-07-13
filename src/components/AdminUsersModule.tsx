@@ -3,12 +3,10 @@ import {
   AlertCircle,
   KeyRound,
   Loader2,
-  Pencil,
   Plus,
   RefreshCw,
+  Search,
   Shield,
-  UserCheck,
-  UserX,
   X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -18,52 +16,57 @@ import {
   APP_PASSWORD_MIN_LENGTH,
   APP_USER_ROLE_OPTIONS,
   type AppUserRole,
-  type AuthUser,
-  type PermissionCatalogEntry,
   formatRoleLabel,
-  summarizePermissions,
 } from "@/src/lib/appAuthClient";
-import { PermissionEditor } from "@/src/components/admin/PermissionEditor";
 import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
-import type { AccessProfileRecord } from "@/src/lib/accessProfilesClient";
+import { countActiveSuperAdmins } from "@/src/lib/adminUsersPagination";
+import { RolePermissionMatrixPanel } from "@/src/components/admin/RolePermissionMatrixPanel";
+import { UserPermissionTree } from "@/src/components/admin/UserPermissionTree";
 import {
-  applyProfilePermissionsRaw,
-  permissionsMatchProfile,
-} from "@/src/lib/accessProfilesUtils";
+  applyUserPermissionPreset,
+  clearUserPermissionOverrides,
+  fetchAdminUsersList,
+  fetchPermissionPresets,
+  fetchUserPermissionAudit,
+  fetchUserPermissions,
+  reloadPermissionCatalog,
+  restoreUserRoleDefault,
+  saveUserPermissionOverrides,
+  type AdminUserListItem,
+  type PermissionAuditEntry,
+  type RoleMatrixRowDto,
+  type UserPermissionsPayload,
+} from "@/src/lib/userPermissionsAdminClient";
 import {
-  ADMIN_USERS_PAGE_SIZE,
-  buildAdminUsersPagination,
-  canGoToNextAdminUsersPage,
-  canGoToPreviousAdminUsersPage,
-  countActiveSuperAdmins,
-  formatAdminUsersDisplayRange,
-  paginateAdminUsers,
-  shouldShowAdminUsersPaginationControls,
-} from "@/src/lib/adminUsersPagination";
+  collectTreeKeys,
+  draftFromPayloadTree,
+  filterAdminUsersList,
+  filterTreeBySearch,
+  isPermissionDraftDirty,
+  overridesPayloadFromDraft,
+  setModuleFlags,
+  type DraftOverrideMap,
+} from "@/src/lib/userPermissionsAdminUi";
 
-type UserFormState = {
+type CreateForm = {
   name: string;
   email: string;
   role: AppUserRole;
-  accessProfileId: string;
   isActive: boolean;
+  password: string;
   externalSellerId: string;
   sellerResponsibleName: string;
-  permissions: string[];
-  password: string;
 };
 
-const EMPTY_FORM: UserFormState = {
+const EMPTY_CREATE: CreateForm = {
   name: "",
   email: "",
   role: "VIEWER",
-  accessProfileId: "",
   isActive: true,
+  password: "",
   externalSellerId: "",
   sellerResponsibleName: "",
-  permissions: [],
-  password: "",
 };
 
 function formatDateTimePt(iso: string | null | undefined): string {
@@ -72,53 +75,45 @@ function formatDateTimePt(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
-function formatLinkedSeller(user: AuthUser): string {
-  if (user.externalSellerId != null) {
-    const name = user.sellerResponsibleName?.trim();
-    return name ? `${name} · ID ${user.externalSellerId}` : `ID ${user.externalSellerId}`;
-  }
-  if (user.sellerResponsibleName?.trim()) {
-    return `${user.sellerResponsibleName.trim()} · sem ID`;
-  }
-  return "—";
-}
-
-function hasSellerLink(form: UserFormState): boolean {
-  return Boolean(form.externalSellerId.trim() || form.sellerResponsibleName.trim());
-}
-
-/** Somente vendedores (role SELLER) precisam de vínculo Nomus obrigatório. */
-function requiresCommercialSellerLink(form: UserFormState): boolean {
-  return form.role === "SELLER";
-}
-
 export const AdminUsersModule: React.FC = () => {
   const { hasPermission, authUser } = useAuth();
   const canManage = hasPermission("users.manage");
   const currentUserId = authUser?.id ?? null;
 
-  const [users, setUsers] = useState<AuthUser[]>([]);
-  const [accessProfiles, setAccessProfiles] = useState<AccessProfileRecord[]>([]);
-  const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
+  const [users, setUsers] = useState<AdminUserListItem[]>([]);
   const [sellerOptions, setSellerOptions] = useState<AdminSellerOption[]>([]);
-  const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [workbenchTab, setWorkbenchTab] = useState<"users" | "matrix">("users");
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<AppUserRole | "ALL">("ALL");
+  const [activeFilter, setActiveFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [customOnly, setCustomOnly] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [detail, setDetail] = useState<UserPermissionsPayload | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [innerTab, setInnerTab] = useState<"permissions" | "summary" | "audit">("permissions");
+  const [draft, setDraft] = useState<DraftOverrideMap>({});
+  const [treeSearch, setTreeSearch] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
+  const [matrix, setMatrix] = useState<RoleMatrixRowDto[]>([]);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
 
-  const loadData = useCallback(async () => {
+  const loadUsers = useCallback(async () => {
     if (!canManage) {
       setLoading(false);
       return;
@@ -126,258 +121,261 @@ export const AdminUsersModule: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      setSellerOptionsLoading(true);
-      const [usersRes, catalogRes, sellersRes, profilesRes] = await Promise.all([
-        fetchJsonOk<{ users: AuthUser[] }>("/api/admin/users"),
-        fetchJsonOk<{ permissions: PermissionCatalogEntry[] }>("/api/admin/permissions/catalog"),
-        fetchJsonOk<{ sellers: AdminSellerOption[] }>("/api/admin/seller-options"),
-        fetchJsonOk<{ profiles: AccessProfileRecord[] }>("/api/access-profiles?activeOnly=1"),
+      const [list, sellers] = await Promise.all([
+        fetchAdminUsersList(),
+        fetchJsonOk<{ sellers: AdminSellerOption[] }>("/api/admin/seller-options").catch(() => ({
+          sellers: [] as AdminSellerOption[],
+        })),
       ]);
-      setUsers(Array.isArray(usersRes.users) ? usersRes.users : []);
-      setCatalog(Array.isArray(catalogRes.permissions) ? catalogRes.permissions : []);
-      setAccessProfiles(Array.isArray(profilesRes.profiles) ? profilesRes.profiles : []);
-      setSellerOptions(Array.isArray(sellersRes.sellers) ? sellersRes.sellers : []);
+      setUsers(list);
+      setSellerOptions(Array.isArray(sellers.sellers) ? sellers.sellers : []);
+      if (selectedId && !list.some((u) => u.id === selectedId)) {
+        setSelectedId(null);
+        setDetail(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar usuários.");
     } finally {
       setLoading(false);
-      setSellerOptionsLoading(false);
     }
-  }, [canManage]);
+  }, [canManage, selectedId]);
+
+  const loadMatrix = useCallback(async () => {
+    setMatrixLoading(true);
+    try {
+      const res = await fetchPermissionPresets();
+      setMatrix(Array.isArray(res.matrix) ? res.matrix : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao carregar matriz de perfis.");
+    } finally {
+      setMatrixLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  const pagination = useMemo(
-    () => buildAdminUsersPagination(users.length, page, ADMIN_USERS_PAGE_SIZE),
-    [users.length, page]
-  );
-
-  const paginatedUsers = useMemo(
-    () => paginateAdminUsers(users, pagination),
-    [users, pagination]
-  );
+    void loadUsers();
+  }, [loadUsers]);
 
   useEffect(() => {
-    if (page !== pagination.page) {
-      setPage(pagination.page);
+    if (workbenchTab === "matrix" && matrix.length === 0) {
+      void loadMatrix();
     }
-  }, [page, pagination.page]);
+  }, [workbenchTab, matrix.length, loadMatrix]);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setFormError(null);
-    setEditorOpen(true);
-  };
+  const loadDetail = useCallback(async (userId: string) => {
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const payload = await fetchUserPermissions(userId);
+      setDetail(payload);
+      setDraft(draftFromPayloadTree(payload.tree));
+      setExpanded(new Set(collectTreeKeys(payload.tree)));
+      setInnerTab("permissions");
+    } catch (e) {
+      setDetail(null);
+      setDetailError(e instanceof Error ? e.message : "Falha ao carregar permissões.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
-  const openEdit = (user: AuthUser) => {
-    setEditingId(user.id);
-    setForm({
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      accessProfileId: user.accessProfileId ?? "",
-      isActive: user.isActive,
-      externalSellerId: user.externalSellerId != null ? String(user.externalSellerId) : "",
-      sellerResponsibleName: user.sellerResponsibleName ?? "",
-      permissions: [...user.permissions],
-      password: "",
-    });
-    setFormError(null);
-    setEditorOpen(true);
-  };
+  useEffect(() => {
+    if (selectedId) void loadDetail(selectedId);
+  }, [selectedId, loadDetail]);
 
-  const selectedAccessProfile = useMemo(
-    () => accessProfiles.find((p) => p.id === form.accessProfileId) ?? null,
-    [accessProfiles, form.accessProfileId]
+  useEffect(() => {
+    if (innerTab !== "audit" || !selectedId) return;
+    void fetchUserPermissionAudit(selectedId)
+      .then(setAudit)
+      .catch(() => setAudit([]));
+  }, [innerTab, selectedId]);
+
+  const filteredUsers = useMemo(
+    () =>
+      filterAdminUsersList(users, {
+        search,
+        role: roleFilter,
+        active: activeFilter,
+        customOnly,
+      }),
+    [users, search, roleFilter, activeFilter, customOnly]
   );
 
-  const permissionsCustomized = useMemo(() => {
-    if (!selectedAccessProfile || selectedAccessProfile.roleBase === "SUPER_ADMIN") return false;
-    return !permissionsMatchProfile(form.permissions, selectedAccessProfile.permissions);
-  }, [form.permissions, selectedAccessProfile]);
+  const activeSuperAdminCount = useMemo(() => countActiveSuperAdmins(users), [users]);
+  const pending = useMemo(() => {
+    if (!detail) return false;
+    return isPermissionDraftDirty(draft, detail.roleDefaults, detail.overrides);
+  }, [detail, draft]);
 
-  const applyAccessProfileSelection = (profileId: string) => {
-    const profile = accessProfiles.find((p) => p.id === profileId);
-    if (!profile) {
-      setForm((f) => ({ ...f, accessProfileId: profileId }));
+  const filteredTree = useMemo(() => {
+    if (!detail) return [];
+    return filterTreeBySearch(detail.tree, treeSearch);
+  }, [detail, treeSearch]);
+
+  const confirmClearIfNeeded = (hasCustom: boolean, message: string): boolean => {
+    if (!hasCustom) return true;
+    return window.confirm(message);
+  };
+
+  const handleSaveOverrides = async () => {
+    if (!detail || !selectedId) return;
+    setSaving(true);
+    setDetailError(null);
+    try {
+      const overrides = overridesPayloadFromDraft(draft, detail.roleDefaults);
+      const payload = await saveUserPermissionOverrides(selectedId, overrides);
+      setDetail(payload);
+      setDraft(draftFromPayloadTree(payload.tree));
+      await loadUsers();
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "Falha ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestoreDefault = async () => {
+    if (!detail || !selectedId) return;
+    if (
+      !confirmClearIfNeeded(
+        detail.hasCustomPermissions,
+        "Restaurar o padrão da role remove as permissões customizadas. Continuar?"
+      )
+    ) {
       return;
     }
-    const permissions =
-      profile.roleBase === "SUPER_ADMIN"
-        ? []
-        : applyProfilePermissionsRaw(profile.permissions);
-    setForm((f) => ({
-      ...f,
-      accessProfileId: profileId,
-      role: profile.roleBase ?? f.role,
-      permissions,
-    }));
+    setSaving(true);
+    try {
+      const payload = await restoreUserRoleDefault(selectedId, true);
+      setDetail(payload);
+      setDraft(draftFromPayloadTree(payload.tree));
+      await loadUsers();
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "Falha ao restaurar padrão.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const validateForm = (isCreate: boolean): string | null => {
-    if (!form.name.trim()) return "Informe o nome.";
-    if (!form.email.trim() || !form.email.includes("@")) return "Informe um e-mail válido.";
-    if (isCreate) {
-      if (form.password.length < APP_PASSWORD_MIN_LENGTH) {
-        return `A senha provisória deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`;
-      }
+  const handleClearCustom = async () => {
+    if (!detail || !selectedId) return;
+    if (
+      !confirmClearIfNeeded(
+        true,
+        "Limpar todas as customizações e voltar ao preset da role?"
+      )
+    ) {
+      return;
     }
-    if (form.externalSellerId.trim()) {
-      const n = Number.parseInt(form.externalSellerId.trim(), 10);
-      if (!Number.isFinite(n) || n < 0) return "ID do vendedor Nomus inválido.";
+    setSaving(true);
+    try {
+      const payload = await clearUserPermissionOverrides(selectedId, true);
+      setDetail(payload);
+      setDraft(draftFromPayloadTree(payload.tree));
+      await loadUsers();
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "Falha ao limpar customizações.");
+    } finally {
+      setSaving(false);
     }
-    if (requiresCommercialSellerLink(form) && !hasSellerLink(form)) {
-      return "Perfil vendedor precisa estar vinculado a um vendedor Nomus.";
-    }
-    return null;
   };
 
-  const sellerLinkWarning = useMemo(() => {
-    if (hasSellerLink(form) || !requiresCommercialSellerLink(form)) return null;
-    return "Perfil vendedor precisa estar vinculado a um vendedor Nomus para Minha Gestão Comercial.";
-  }, [form]);
-
-  // Quantos Super Administradores ativos existem na lista carregada — usado para
-  // alertar antes que o admin tente inativar/rebaixar o único Super Admin.
-  const activeSuperAdminCount = useMemo(() => countActiveSuperAdmins(users), [users]);
-
-  const isEditingSelf = editingId !== null && editingId === currentUserId;
-  const editingExistingUser = users.find((u) => u.id === editingId) ?? null;
-  const isEditingTheLastSuperAdmin =
-    editingExistingUser?.role === "SUPER_ADMIN" &&
-    editingExistingUser.isActive &&
-    activeSuperAdminCount === 1;
-
-  /**
-   * Avisos de auto-bloqueio exibidos no editor:
-   * - O backend já bloqueia (409). Aqui antecipamos o feedback para o
-   *   admin não chegar a clicar "Salvar".
-   */
-  const selfBlockWarnings = useMemo<string[]>(() => {
-    if (!isEditingSelf || !editingExistingUser) return [];
-    const out: string[] = [];
-    if (!form.isActive) {
-      out.push("Você está prestes a inativar a si mesmo. O backend bloqueia essa operação.");
+  const handleRoleChange = async (role: AppUserRole) => {
+    if (!detail || !selectedId || role === detail.user.role) return;
+    if (detail.warnings.isLastSuperAdmin && role !== "SUPER_ADMIN") {
+      setDetailError("Não é possível rebaixar o único Super Administrador ativo.");
+      return;
     }
     if (
-      editingExistingUser.role === "SUPER_ADMIN" &&
-      form.role !== "SUPER_ADMIN"
+      !confirmClearIfNeeded(
+        detail.hasCustomPermissions,
+        "Trocar o perfil aplica o preset da nova role e remove customizações. Continuar?"
+      )
     ) {
-      out.push(
-        "Você está prestes a rebaixar o próprio perfil de Super Administrador. O backend bloqueia essa operação."
-      );
-    }
-    const willKeepUsersManage =
-      form.role === "SUPER_ADMIN" || form.permissions.includes("users.manage");
-    const currentlyHasUsersManage =
-      editingExistingUser.role === "SUPER_ADMIN" ||
-      editingExistingUser.permissions.includes("users.manage");
-    if (currentlyHasUsersManage && !willKeepUsersManage) {
-      out.push(
-        "Você está prestes a remover a própria permissão Usuários e Permissões. O backend bloqueia essa operação para não te deixar sem acesso."
-      );
-    }
-    return out;
-  }, [isEditingSelf, editingExistingUser, form]);
-
-  const lastSuperAdminWarning = useMemo<string | null>(() => {
-    if (!isEditingTheLastSuperAdmin) return null;
-    if (!form.isActive)
-      return "Este é o único Super Administrador ativo. Cadastre outro Super Admin antes de inativar.";
-    if (form.role !== "SUPER_ADMIN")
-      return "Este é o único Super Administrador ativo. Cadastre outro Super Admin antes de mudar o perfil.";
-    return null;
-  }, [isEditingTheLastSuperAdmin, form.isActive, form.role]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const isCreate = !editingId;
-    const validation = validateForm(isCreate);
-    if (validation) {
-      setFormError(validation);
       return;
     }
-
-    setSaving(true);
-    setFormError(null);
-    try {
-      const externalSellerId = form.externalSellerId.trim()
-        ? Number.parseInt(form.externalSellerId.trim(), 10)
-        : null;
-
-      if (isCreate) {
-        await fetchJsonOk("/api/admin/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: form.name.trim(),
-            email: form.email.trim(),
-            password: form.password,
-            role: form.role,
-            permissions: form.permissions,
-            accessProfileId: form.accessProfileId || null,
-            isActive: form.isActive,
-            externalSellerId,
-            sellerResponsibleName: form.sellerResponsibleName.trim() || null,
-          }),
-        });
-      } else {
-        await fetchJsonOk(`/api/admin/users/${editingId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: form.name.trim(),
-            email: form.email.trim(),
-            role: form.role,
-            permissions: form.permissions,
-            accessProfileId: form.accessProfileId || null,
-            isActive: form.isActive,
-            externalSellerId,
-            sellerResponsibleName: form.sellerResponsibleName.trim() || null,
-          }),
-        });
-      }
-      setEditorOpen(false);
-      await loadData();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Falha ao salvar usuário.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleActive = async (user: AuthUser) => {
     setSaving(true);
     try {
-      await fetchJsonOk(`/api/admin/users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !user.isActive }),
+      const payload = await applyUserPermissionPreset(selectedId, {
+        role,
+        confirmClearOverrides: true,
       });
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao atualizar status.");
+      setDetail(payload);
+      setDraft(draftFromPayloadTree(payload.tree));
+      await loadUsers();
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "Falha ao alterar perfil.");
     } finally {
       setSaving(false);
     }
   };
 
-  const openResetPassword = (userId: string) => {
-    setResetUserId(userId);
-    setResetPassword("");
-    setResetConfirm("");
-    setResetError(null);
-    setResetOpen(true);
+  const handleReloadCatalog = async () => {
+    setSaving(true);
+    try {
+      await reloadPermissionCatalog();
+      await loadMatrix();
+      if (selectedId) await loadDetail(selectedId);
+      await loadUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao recarregar permissões.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createForm.name.trim() || !createForm.email.includes("@")) {
+      setCreateError("Informe nome e e-mail válidos.");
+      return;
+    }
+    if (createForm.password.length < APP_PASSWORD_MIN_LENGTH) {
+      setCreateError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
+      return;
+    }
+    if (
+      createForm.role === "SELLER" &&
+      !createForm.externalSellerId.trim() &&
+      !createForm.sellerResponsibleName.trim()
+    ) {
+      setCreateError("Vendedor precisa de vínculo Nomus.");
+      return;
+    }
+    setSaving(true);
+    setCreateError(null);
+    try {
+      await fetchJsonOk("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createForm.name.trim(),
+          email: createForm.email.trim(),
+          password: createForm.password,
+          role: createForm.role,
+          permissions: [],
+          isActive: createForm.isActive,
+          externalSellerId: createForm.externalSellerId.trim()
+            ? Number.parseInt(createForm.externalSellerId.trim(), 10)
+            : null,
+          sellerResponsibleName: createForm.sellerResponsibleName.trim() || null,
+        }),
+      });
+      setCreateOpen(false);
+      setCreateForm(EMPTY_CREATE);
+      await loadUsers();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Falha ao criar usuário.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetUserId) return;
+    if (!selectedId) return;
     if (resetPassword.length < APP_PASSWORD_MIN_LENGTH) {
-      setResetError(`A senha deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
+      setResetError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
       return;
     }
     if (resetPassword !== resetConfirm) {
@@ -387,13 +385,12 @@ export const AdminUsersModule: React.FC = () => {
     setSaving(true);
     setResetError(null);
     try {
-      await fetchJsonOk(`/api/admin/users/${resetUserId}/reset-password`, {
+      await fetchJsonOk(`/api/admin/users/${selectedId}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: resetPassword }),
       });
       setResetOpen(false);
-      await loadData();
     } catch (err) {
       setResetError(err instanceof Error ? err.message : "Falha ao redefinir senha.");
     } finally {
@@ -410,31 +407,34 @@ export const AdminUsersModule: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5" data-testid="admin-users-permissions-workbench">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-lg font-bold flex items-center gap-2">
+          <h3 className="text-lg font-bold flex items-center gap-2 text-foreground">
             <Shield className="h-5 w-5 text-primary" />
             Usuários e Permissões
           </h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Cadastre usuários, defina perfis e libere telas por permissão. Permissões efetivas = permissões
-            marcadas manualmente. SUPER_ADMIN sempre possui acesso total.
+            Controle o acesso por menu, submenu, abas e ações do sistema.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void loadData()}
-            disabled={loading}
+            onClick={() => void handleReloadCatalog()}
+            disabled={saving || loading}
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            Atualizar
+            <RefreshCw className={cn("h-3.5 w-3.5", (saving || loading) && "animate-spin")} />
+            Recarregar permissões
           </button>
           <button
             type="button"
-            onClick={openCreate}
+            onClick={() => {
+              setCreateForm(EMPTY_CREATE);
+              setCreateError(null);
+              setCreateOpen(true);
+            }}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -443,385 +443,526 @@ export const AdminUsersModule: React.FC = () => {
         </div>
       </div>
 
+      <div className="flex gap-1 rounded-xl border border-border bg-muted/30 p-1 w-fit">
+        <button
+          type="button"
+          onClick={() => setWorkbenchTab("users")}
+          className={cn(
+            "rounded-lg px-3 py-1.5 text-xs font-semibold",
+            workbenchTab === "users" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+          )}
+        >
+          Usuários
+        </button>
+        <button
+          type="button"
+          onClick={() => setWorkbenchTab("matrix")}
+          className={cn(
+            "rounded-lg px-3 py-1.5 text-xs font-semibold",
+            workbenchTab === "matrix" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+          )}
+        >
+          Resumo por perfil
+        </button>
+      </div>
+
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando usuários…
-        </div>
+      {workbenchTab === "matrix" ? (
+        <RolePermissionMatrixPanel matrix={matrix} loading={matrixLoading} />
       ) : (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-semibold">Nome</th>
-                  <th className="px-4 py-3 font-semibold">E-mail</th>
-                  <th className="px-4 py-3 font-semibold">Role</th>
-                  <th className="px-4 py-3 font-semibold">Perfil de acesso</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Vendedor</th>
-                  <th className="px-4 py-3 font-semibold">Último login</th>
-                  <th className="px-4 py-3 font-semibold">Permissões efetivas</th>
-                  <th className="px-4 py-3 font-semibold text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-border/60 hover:bg-accent/20">
-                    <td className="px-4 py-3 font-medium">
-                      <span className="inline-flex items-center gap-1.5">
-                        {user.name}
-                        {user.id === currentUserId ? (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-blue-900"
-                            title="Este é o usuário com o qual você está logado."
-                          >
-                            Você
-                          </span>
-                        ) : null}
-                        {user.role === "SUPER_ADMIN" &&
-                        user.isActive &&
-                        activeSuperAdminCount === 1 ? (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-amber-900"
-                            title="Este é o único Super Administrador ativo do sistema. Não pode ser inativado ou rebaixado."
-                          >
-                            Único Super
-                          </span>
-                        ) : null}
+        <div className="grid gap-4 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
+          <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col min-h-[28rem]">
+            <div className="border-b border-border p-3 space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar usuário…"
+                  className="w-full rounded-lg border border-border bg-background pl-8 pr-3 py-2 text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as AppUserRole | "ALL")}
+                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
+                >
+                  <option value="ALL">Todas as roles</option>
+                  {APP_USER_ROLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={activeFilter}
+                  onChange={(e) =>
+                    setActiveFilter(e.target.value as "ALL" | "ACTIVE" | "INACTIVE")
+                  }
+                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
+                >
+                  <option value="ALL">Ativos e inativos</option>
+                  <option value="ACTIVE">Somente ativos</option>
+                  <option value="INACTIVE">Somente inativos</option>
+                </select>
+              </div>
+              <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={customOnly}
+                  onChange={(e) => setCustomOnly(e.target.checked)}
+                />
+                Com permissão customizada
+              </label>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
+                </div>
+              ) : filteredUsers.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {filteredUsers.map((user) => {
+                    const selected = user.id === selectedId;
+                    return (
+                      <li key={user.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(user.id)}
+                          className={cn(
+                            "w-full text-left px-3 py-3 transition-colors hover:bg-accent/40",
+                            selected && "bg-primary/5 border-l-2 border-l-primary"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate">{user.name}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {user.email}
+                              </p>
+                            </div>
+                            <span
+                              className={cn(
+                                "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                                user.isActive
+                                  ? "bg-emerald-50 text-emerald-800"
+                                  : "bg-slate-100 text-slate-600"
+                              )}
+                            >
+                              {user.isActive ? "Ativo" : "Inativo"}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <span className="rounded-full border border-border px-1.5 py-0 text-[9px] font-semibold text-muted-foreground">
+                              {formatRoleLabel(user.role)}
+                            </span>
+                            {user.hasCustomPermissions ? (
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] font-semibold text-amber-900">
+                                Permissões customizadas
+                              </span>
+                            ) : null}
+                            {user.id === currentUserId ? (
+                              <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-semibold text-blue-900">
+                                Você
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card min-h-[28rem] flex flex-col">
+            {!selectedId ? (
+              <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
+                Selecione um usuário para gerenciar permissões.
+              </div>
+            ) : detailLoading && !detail ? (
+              <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando permissões…
+              </div>
+            ) : detail ? (
+              <>
+                <div className="border-b border-border p-4 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-base font-bold">{detail.user.name}</h4>
+                      <p className="text-xs text-muted-foreground">{detail.user.email}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Último acesso: {formatDateTimePt(detail.user.lastLoginAt)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetPassword("");
+                        setResetConfirm("");
+                        setResetError(null);
+                        setResetOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      Redefinir senha
+                    </button>
+                  </div>
+
+                  {detail.warnings.editingSuperAdmin ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 flex gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        Você está editando um SUPER_ADMIN. O acesso é total; a árvore fica somente
+                        leitura.
+                        {detail.warnings.isLastSuperAdmin
+                          ? " Este é o único Super Administrador ativo."
+                          : null}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
-                    <td className="px-4 py-3">{formatRoleLabel(user.role)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {user.accessProfileName ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted-foreground">
+                      Perfil / preset
+                    </label>
+                    <select
+                      value={detail.user.role}
+                      disabled={saving || detail.warnings.isLastSuperAdmin}
+                      onChange={(e) => void handleRoleChange(e.target.value as AppUserRole)}
+                      className="w-full max-w-md rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      {APP_USER_ROLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex gap-1 rounded-lg border border-border bg-muted/20 p-0.5 w-fit">
+                    {(
+                      [
+                        ["permissions", "Permissões"],
+                        ["summary", "Resumo"],
+                        ["audit", "Auditoria"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setInnerTab(id)}
                         className={cn(
-                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
-                          user.isActive
-                            ? "bg-green-100 text-green-800"
-                            : "bg-slate-100 text-slate-600"
+                          "rounded-md px-2.5 py-1 text-[11px] font-semibold",
+                          innerTab === id
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground"
                         )}
                       >
-                        {user.isActive ? "Ativo" : "Inativo"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
-                      {formatLinkedSeller(user)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDateTimePt(user.lastLoginAt)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
-                      {summarizePermissions(user.effectivePermissions)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end flex-wrap gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(user)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openResetPassword(user.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent"
-                        >
-                          <KeyRound className="h-3 w-3" />
-                          Senha
-                        </button>
-                        {(() => {
-                          const isSelf = user.id === currentUserId;
-                          const isLastSuper =
-                            user.role === "SUPER_ADMIN" &&
-                            user.isActive &&
-                            activeSuperAdminCount === 1;
-                          const blockedReason = isSelf
-                            ? "Você não pode inativar a si mesmo. Peça a outro administrador."
-                            : isLastSuper && user.isActive
-                              ? "Único Super Administrador ativo — cadastre outro antes de inativar."
-                              : null;
-                          const isBlocked = Boolean(blockedReason);
-                          return (
-                            <button
-                              type="button"
-                              disabled={saving || isBlocked}
-                              onClick={() => void toggleActive(user)}
-                              title={blockedReason ?? undefined}
-                              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {user.isActive ? (
-                                <UserX className="h-3 w-3" />
-                              ) : (
-                                <UserCheck className="h-3 w-3" />
-                              )}
-                              {user.isActive ? "Inativar" : "Ativar"}
-                            </button>
-                          );
-                        })()}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {users.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum usuário cadastrado.</p>
-            ) : null}
-          </div>
-          {users.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground">
-              <span>{formatAdminUsersDisplayRange(pagination)}</span>
-              {shouldShowAdminUsersPaginationControls(pagination.totalPages) ? (
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
-                    disabled={loading || !canGoToPreviousAdminUsersPage(pagination.page)}
-                    onClick={() => setPage(1)}
-                  >
-                    Primeira
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
-                    disabled={loading || !canGoToPreviousAdminUsersPage(pagination.page)}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Anterior
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
-                    disabled={
-                      loading || !canGoToNextAdminUsersPage(pagination.page, pagination.totalPages)
-                    }
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Próxima
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
-                    disabled={
-                      loading || !canGoToNextAdminUsersPage(pagination.page, pagination.totalPages)
-                    }
-                    onClick={() => setPage(pagination.totalPages)}
-                  >
-                    Última
-                  </button>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      )}
 
-      {editorOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-card/95 backdrop-blur px-5 py-4">
-              <div>
-                <h4 className="text-lg font-bold">{editingId ? "Editar usuário" : "Novo usuário"}</h4>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {form.role === "SELLER"
-                    ? "Vincule o vendedor real observado em pedidos para Minha Gestão Comercial."
-                    : form.role === "COMMERCIAL_MANAGER"
-                      ? "Gestores comerciais podem ver todos os vendedores no CRM (crm.seller.all)."
-                      : form.role === "SUPER_ADMIN"
-                        ? "Super administrador possui todas as permissões automaticamente."
-                        : "Vínculo comercial é opcional. Obrigatório apenas para perfil Vendedor."}
-                </p>
-              </div>
-              <button type="button" onClick={() => setEditorOpen(false)} className="p-2 rounded-full hover:bg-accent">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <form onSubmit={handleSave} className="p-5 space-y-4">
-              {formError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                  {formError}
-                </div>
-              ) : null}
-              {isEditingSelf ? (
-                <div
-                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
-                  role="status"
-                >
-                  <strong className="font-bold">Você está editando seu próprio usuário.</strong>{" "}
-                  Mudanças de perfil, status ativo ou a permissão "Usuários e Permissões" podem
-                  bloquear seu próprio acesso — o sistema bloqueia essas operações por segurança.
-                </div>
-              ) : null}
-              {lastSuperAdminWarning ? (
-                <div
-                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start gap-1.5"
-                  role="alert"
-                >
-                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  <span>{lastSuperAdminWarning}</span>
-                </div>
-              ) : null}
-              {selfBlockWarnings.length > 0 ? (
-                <ul
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 space-y-1"
-                  role="alert"
-                >
-                  {selfBlockWarnings.map((w, idx) => (
-                    <li key={idx} className="flex items-start gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>{w}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Nome</label>
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">E-mail</label>
-                  <input
-                    required
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
-                </div>
-                {!editingId ? (
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-xs font-semibold text-muted-foreground">Senha provisória</label>
-                    <input
-                      required
-                      type="password"
-                      minLength={APP_PASSWORD_MIN_LENGTH}
-                      value={form.password}
-                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                    />
+                {detailError ? (
+                  <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    {detailError}
                   </div>
                 ) : null}
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Perfil de acesso</label>
-                  <select
-                    value={form.accessProfileId}
-                    onChange={(e) => applyAccessProfileSelection(e.target.value)}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  >
-                    <option value="">Selecione um perfil (opcional)</option>
-                    {accessProfiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                        {profile.isSystem ? " · sistema" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedAccessProfile?.description ? (
-                    <p className="text-[10px] text-muted-foreground">{selectedAccessProfile.description}</p>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {innerTab === "permissions" ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        <div className="relative flex-1 min-w-[160px]">
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                          <input
+                            value={treeSearch}
+                            onChange={(e) => setTreeSearch(e.target.value)}
+                            placeholder="Buscar na árvore…"
+                            className="w-full rounded-lg border border-border pl-8 pr-3 py-2 text-xs"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                          onClick={() => setExpanded(new Set(collectTreeKeys(detail.tree)))}
+                        >
+                          Expandir tudo
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                          onClick={() => setExpanded(new Set())}
+                        >
+                          Recolher tudo
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detail.treeReadOnly}
+                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          onClick={() => {
+                            const root = detail.tree[0];
+                            if (!root) return;
+                            setDraft(
+                              setModuleFlags(draft, detail.tree, root.key, {
+                                canView: true,
+                                canExecute: true,
+                                canManage: true,
+                              })
+                            );
+                          }}
+                        >
+                          Marcar tudo do 1º módulo
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detail.treeReadOnly}
+                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          onClick={() => void handleClearCustom()}
+                        >
+                          Limpar customizações
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detail.treeReadOnly}
+                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          onClick={() => void handleRestoreDefault()}
+                        >
+                          Restaurar padrão da role
+                        </button>
+                      </div>
+                      <UserPermissionTree
+                        tree={filteredTree}
+                        draft={draft}
+                        expanded={expanded}
+                        readOnly={detail.treeReadOnly}
+                        onToggleExpand={(key) => {
+                          setExpanded((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
+                            return next;
+                          });
+                        }}
+                        onDraftChange={(key, flags) =>
+                          setDraft((d) => ({ ...d, [key]: flags }))
+                        }
+                      />
+                    </>
                   ) : null}
-                  {permissionsCustomized ? (
-                    <p className="text-[10px] text-amber-800 font-semibold">
-                      Permissões personalizadas (diferentes do perfil selecionado).
-                    </p>
+
+                  {innerTab === "summary" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <SummaryCard title="Menus liberados" items={detail.summary.menusAllowed} />
+                      <SummaryCard
+                        title="Submenus liberados"
+                        items={detail.summary.submenusAllowed}
+                      />
+                      <SummaryCard title="Abas bloqueadas" items={detail.summary.tabsBlocked} />
+                      <SummaryCard
+                        title="Ações críticas liberadas"
+                        items={detail.summary.criticalActionsAllowed}
+                      />
+                      <div className="sm:col-span-2 rounded-xl border border-border bg-muted/20 p-3">
+                        <h5 className="text-xs font-bold">Diferenças vs padrão da role</h5>
+                        {detail.diffVsRole.length === 0 ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Sem customizações — alinhado ao preset.
+                          </p>
+                        ) : (
+                          <ul className="mt-2 space-y-1.5">
+                            {detail.diffVsRole.map((d) => (
+                              <li key={d.resourceKey} className="text-xs">
+                                <span className="font-semibold">{d.label}</span>
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  · role V{d.roleFlags.canView ? "1" : "0"}E
+                                  {d.roleFlags.canExecute ? "1" : "0"}G
+                                  {d.roleFlags.canManage ? "1" : "0"} → efetivo V
+                                  {d.effectiveFlags.canView ? "1" : "0"}E
+                                  {d.effectiveFlags.canExecute ? "1" : "0"}G
+                                  {d.effectiveFlags.canManage ? "1" : "0"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
                   ) : null}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Perfil (role)</label>
-                  <select
-                    value={form.role}
-                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as AppUserRole }))}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  >
-                    {APP_USER_ROLE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-muted-foreground">
-                    {APP_USER_ROLE_OPTIONS.find((o) => o.value === form.role)?.hint}
-                  </p>
-                </div>
-                <div className="space-y-1 flex items-end">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.isActive}
-                      onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                    />
-                    Usuário ativo
-                  </label>
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <SellerNomusPicker
-                    sellers={sellerOptions}
-                    loading={sellerOptionsLoading}
-                    value={{
-                      externalSellerId: form.externalSellerId,
-                      sellerResponsibleName: form.sellerResponsibleName,
-                    }}
-                    onChange={({ externalSellerId, sellerResponsibleName }) =>
-                      setForm((f) => ({ ...f, externalSellerId, sellerResponsibleName }))
-                    }
-                  />
-                  {sellerLinkWarning ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 mt-2">
-                      {sellerLinkWarning}
+
+                  {innerTab === "audit" ? (
+                    <div className="space-y-2">
+                      {audit.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Sem histórico de alterações de permissão.
+                        </p>
+                      ) : (
+                        audit.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                          >
+                            <div className="flex flex-wrap justify-between gap-2">
+                              <span className="font-semibold">{entry.action}</span>
+                              <span className="text-muted-foreground">
+                                {formatDateTimePt(entry.createdAt)}
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground mt-0.5">
+                              Por: {entry.actor?.name ?? "—"} ({entry.actor?.email ?? "—"})
+                            </p>
+                          </div>
+                        ))
+                      )}
                     </div>
                   ) : null}
                 </div>
-              </div>
 
-              {form.role !== "SUPER_ADMIN" ? (
-                <PermissionEditor
-                  selected={form.permissions}
-                  onChange={(permissions) => setForm((f) => ({ ...f, permissions }))}
-                  quickProfiles={accessProfiles.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                    description: p.description,
-                    permissions: p.permissions,
-                  }))}
+                {innerTab === "permissions" && !detail.treeReadOnly ? (
+                  <div className="border-t border-border p-3 flex flex-wrap items-center justify-between gap-2 bg-muted/20">
+                    <span className="text-[11px] text-muted-foreground">
+                      {pending ? (
+                        <span className="font-semibold text-amber-800">Alterações pendentes</span>
+                      ) : (
+                        "Sem alterações pendentes"
+                      )}
+                      {activeSuperAdminCount > 0 ? (
+                        <span className="ml-2">· {activeSuperAdminCount} Super Admin ativos</span>
+                      ) : null}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!pending || saving}
+                        onClick={() => {
+                          if (!detail) return;
+                          setDraft(draftFromPayloadTree(detail.tree));
+                        }}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void handleRestoreDefault()}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                      >
+                        Restaurar padrão da role
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!pending || saving}
+                        onClick={() => void handleSaveOverrides()}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                      >
+                        {saving ? "Salvando…" : "Salvar alterações"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="p-6 text-sm text-red-700">{detailError ?? "Falha ao carregar."}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {createOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card w-full max-w-lg rounded-2xl border border-border shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h4 className="font-bold">Novo usuário</h4>
+              <button type="button" onClick={() => setCreateOpen(false)} className="p-1.5 rounded-full hover:bg-accent">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleCreate} className="p-4 space-y-3">
+              {createError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                  {createError}
+                </div>
+              ) : null}
+              <input
+                required
+                placeholder="Nome"
+                value={createForm.name}
+                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <input
+                required
+                type="email"
+                placeholder="E-mail"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <input
+                required
+                type="password"
+                placeholder="Senha provisória"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <select
+                value={createForm.role}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, role: e.target.value as AppUserRole }))
+                }
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              >
+                {APP_USER_ROLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {createForm.role === "SELLER" ? (
+                <SellerNomusPicker
+                  sellers={sellerOptions}
+                  value={{
+                    externalSellerId: createForm.externalSellerId,
+                    sellerResponsibleName: createForm.sellerResponsibleName,
+                  }}
+                  onChange={(next) =>
+                    setCreateForm((f) => ({
+                      ...f,
+                      externalSellerId: next.externalSellerId,
+                      sellerResponsibleName: next.sellerResponsibleName,
+                    }))
+                  }
                 />
-              ) : (
-                <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
-                  SUPER_ADMIN possui acesso total automático. Não é necessário marcar permissões manualmente.
-                </p>
-              )}
-
+              ) : null}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditorOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent"
+                  onClick={() => setCreateOpen(false)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
                 >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Salvar
+                  Criar
                 </button>
               </div>
             </form>
@@ -831,48 +972,44 @@ export const AdminUsersModule: React.FC = () => {
 
       {resetOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-md rounded-2xl border border-border shadow-2xl p-5 space-y-4">
-            <div className="flex items-start justify-between">
-              <h4 className="text-lg font-bold">Redefinir senha</h4>
-              <button type="button" onClick={() => setResetOpen(false)} className="p-2 rounded-full hover:bg-accent">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xl p-4 space-y-3">
+            <h4 className="font-bold">Redefinir senha</h4>
             {resetError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
                 {resetError}
               </div>
             ) : null}
             <form onSubmit={handleResetPassword} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">Nova senha</label>
-                <input
-                  required
-                  type="password"
-                  minLength={APP_PASSWORD_MIN_LENGTH}
-                  value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
-                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                />
+              <input
+                type="password"
+                placeholder="Nova senha"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                placeholder="Confirmar senha"
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResetOpen(false)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                >
+                  Salvar senha
+                </button>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">Confirmar senha</label>
-                <input
-                  required
-                  type="password"
-                  value={resetConfirm}
-                  onChange={(e) => setResetConfirm(e.target.value)}
-                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Confirmar
-              </button>
             </form>
           </div>
         </div>
@@ -880,3 +1017,22 @@ export const AdminUsersModule: React.FC = () => {
     </div>
   );
 };
+
+function SummaryCard({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 p-3">
+      <h5 className="text-xs font-bold">{title}</h5>
+      {items.length === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">Nenhum</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {items.map((item) => (
+            <li key={item} className="text-xs text-foreground">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
