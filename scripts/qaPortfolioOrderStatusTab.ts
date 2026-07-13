@@ -215,6 +215,55 @@ function staticContracts(): void {
     fail("static", "server:loader", "loader ausente");
   }
 
+  const orderStatusTab = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx"
+  );
+  if (orderStatusTab.includes("OrderFullAuditDialog")) {
+    ok(
+      "static",
+      "audit:full-dialog",
+      "OrderStatusTab abre modal OrderFullAuditDialog no clique da linha"
+    );
+  } else {
+    fail(
+      "static",
+      "audit:full-dialog",
+      "OrderStatusTab não abre OrderFullAuditDialog"
+    );
+  }
+  if (orderStatusTab.includes("OrderStatusSelectedOrderItemsPanel")) {
+    fail(
+      "static",
+      "audit:panel-removed",
+      "Painel drilldown antigo ainda referenciado"
+    );
+  } else {
+    ok(
+      "static",
+      "audit:panel-removed",
+      "Painel drilldown embutido substituído pelo modal"
+    );
+  }
+  if (
+    exists("src/lib/finance/orderFullAuditService.ts") &&
+    exists("src/lib/finance/orderFullAuditClient.ts") &&
+    exists(
+      "src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx"
+    )
+  ) {
+    ok(
+      "static",
+      "audit:module",
+      "service + client + dialog do OrderFullAudit existem"
+    );
+  } else {
+    fail(
+      "static",
+      "audit:module",
+      "arquivo(s) do OrderFullAudit ausente(s)"
+    );
+  }
+
   // Responsável Comercial da carteira (CRM) — nunca setor / responsibleArea.
   const serviceSrc = read("src/lib/finance/portfolioOrderStatusService.ts");
   const loaderSrc = exists("src/lib/financePortfolioOrderStatusApi.server.ts")
@@ -361,53 +410,52 @@ function staticContracts(): void {
   const itemsGrid = exists(
     "src/components/finance/portfolio-reconciliation/OrderToCashAuditItemsGrid.tsx"
   );
-  const statusPanel = exists(
-    "src/components/finance/portfolio-reconciliation/OrderStatusSelectedOrderItemsPanel.tsx"
-  );
-  const statusTab = read(
-    "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx"
+  const dialog = exists(
+    "src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx"
   );
   const auditTab = read(
     "src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx"
   );
+  const dialogSrc = dialog
+    ? read(
+        "src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx"
+      )
+    : "";
   if (
     itemsGrid &&
-    statusPanel &&
-    statusTab.includes("OrderStatusSelectedOrderItemsPanel") &&
+    dialog &&
+    dialogSrc.includes("OrderToCashAuditItemsGrid") &&
     auditTab.includes("OrderToCashAuditItemsGrid")
   ) {
     ok(
       "static",
       "drilldown:shared-items-grid",
-      "OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria"
+      "OrderToCashAuditItemsGrid usado no modal Auditoria + aba Auditoria Pedido → Caixa"
     );
   } else {
     fail(
       "static",
       "drilldown:shared-items-grid",
-      "grid compartilhado / painel de itens ausente"
+      "grid compartilhado / modal Auditoria ausente"
     );
   }
 
-  const panelSrc = statusPanel
-    ? read(
-        "src/components/finance/portfolio-reconciliation/OrderStatusSelectedOrderItemsPanel.tsx"
-      )
-    : "";
-  if (
-    panelSrc.includes("ORDER_TO_CASH_AUDIT_API_PATH") &&
-    panelSrc.includes("Itens do pedido selecionado")
-  ) {
+  // O modal Auditoria completa carrega tudo por um único endpoint dedicado; a aba
+  // Itens reutiliza `OrderToCashAuditItemsGrid` como evidência item × NF × doc × CR.
+  const dialogUsesEndpoint =
+    dialogSrc.includes("buildOrderFullAuditUrl") ||
+    dialogSrc.includes("/audit-full");
+  if (dialogUsesEndpoint && dialogSrc.includes("OrderToCashAuditItemsGrid")) {
     ok(
       "static",
       "drilldown:reuses-audit-api",
-      "painel carrega itens via API Auditoria Pedido → Caixa"
+      "modal Auditoria carrega dados do endpoint dedicado + reusa OrderToCashAuditItemsGrid"
     );
   } else {
     fail(
       "static",
       "drilldown:reuses-audit-api",
-      "painel não reutiliza endpoint da Auditoria"
+      "modal Auditoria não usa endpoint audit-full e/ou não reutiliza grid item×evidência"
     );
   }
 }

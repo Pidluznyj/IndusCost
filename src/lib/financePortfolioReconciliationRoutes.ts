@@ -24,6 +24,7 @@ import {
   loadPortfolioOrderStatusList,
   PortfolioOrderStatusApiParseError,
 } from "./financePortfolioOrderStatusApi.server.js";
+import { loadOrderFullAudit } from "./finance/orderFullAuditService.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
@@ -458,6 +459,41 @@ export function registerFinancePortfolioReconciliationRoutes(
             financeApiErrorJson(
               "Erro ao carregar detalhe do Status Pedidos.",
               new Error("Falha interna ao consultar evidências do pedido.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full",
+    ...orderStatusPedidosGuard,
+    async (req, res) => {
+      try {
+        const salesOrderId = String(req.params.salesOrderId ?? "").trim();
+        const runId = typeof req.query.runId === "string"
+          ? req.query.runId.trim() || null
+          : null;
+        const payload = await loadOrderFullAudit({ salesOrderId, runId });
+        if ("ok" in payload && payload.ok) {
+          res.json(payload);
+          return;
+        }
+        res.status(payload.status).json({
+          error: payload.error,
+          message: payload.error,
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Não foi possível carregar a auditoria do pedido.",
+              new Error("Falha interna ao consultar auditoria completa do pedido.")
             )
           );
       }

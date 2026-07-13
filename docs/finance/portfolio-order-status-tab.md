@@ -31,24 +31,28 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 | **Itens do pedido** | Painel abaixo da tabela; chips atendido/pendente/excedente/fora/CR/recebido; grid compartilhado |
 | Drawer | Largura `max-w-xl`, resumo + mini-cards, mapa de atendimento, abas Resumo / Valores / Alertas |
 
-## Drilldown item a item do pedido
+## Auditoria completa do pedido (modal)
 
 1. Usuário filtra (ex.: card **Parciais**) e vê pedidos na tabela.
-2. Clique em uma linha (ex.: **PD 02207**) seleciona o pedido.
-3. Abaixo da tabela abre **Itens do pedido selecionado**.
-4. O painel chama `GET /api/finance/portfolio-reconciliation/order-to-cash-audit?orderCode=…&year=…&runId=…` (mesma API da Auditoria).
-5. Chips filtram o grid no cliente (sem recalcular).
-6. Botão **Resumo do pedido** abre o drawer lateral.
+2. Clique em uma linha (ex.: **PD 02207**) abre o modal **Auditoria completa — PD 02207**.
+3. O modal chama `GET /api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full`.
+4. 7 abas: Resumo · Itens · Financeiro · Documentos · NF-e · Entrega/Frete · Alertas.
+5. Fechar (Esc / clique fora / botão) volta à mesma posição/filtro da tabela.
 
-Regras de exibição (herdadas da Auditoria):
+O painel embutido antigo **Itens do pedido selecionado** foi removido — abaixo da tabela existe apenas um hint textual que aponta para o modal.
+
+Detalhes das abas e regras oficiais em [`order-full-audit-dialog.md`](./order-full-audit-dialog.md).
+
+### Regras de exibição por linha (herdadas da Auditoria Pedido → Caixa)
 
 - `ORDER_ITEM_PENDING`: documento/NF/valor cobrado = `—` (não parece faturado).
 - `ORDER_ITEM_CANCELED`: item cancelado/stale no PV — sem forecast/alerta de entrega; chip “Itens cancelados”.
+- `ORDER_ITEM_CUT`: item atendido com corte — saldo cortado encerra pendência.
 - `DOCUMENT_EXTRA_ITEM`: produto/documento fora do pedido.
 - CR total título: coluna com label claro; **não** é valor do item.
-- Caso **PD 02534 / 309.86AA**: permanece PENDING sem NF 7228 no item.
+- Caso **PD 02534 / 309.86AA**: cinco linhas do mesmo SKU, cada uma com status próprio (por linha, não por SKU).
 
-Componente compartilhado: `OrderToCashAuditItemsGrid.tsx` (Auditoria + Status Pedidos).
+Componente compartilhado: `OrderToCashAuditItemsGrid.tsx` (Auditoria + aba Itens do modal).
 
 ## Tratamento de itens cancelados
 

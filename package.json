@@ -208,6 +208,7 @@
     "qa:portfolio-order-status": "tsx scripts/qaPortfolioOrderStatusTab.ts",
     "qa:sales-order-item-status": "tsx scripts/qaSalesOrderItemStatusRules.ts",
     "qa:cash-flow-cost-centers": "tsx scripts/qaCashFlowCostCenterDrilldown.ts",
+    "qa:order-full-audit": "tsx scripts/qaOrderFullAuditDialog.ts",
     "rebuild:portfolio-reconciliation:preview": "tsx scripts/rebuildPortfolioReconciliationFacts.ts preview",
     "rebuild:portfolio-reconciliation:apply": "tsx scripts/rebuildPortfolioReconciliationFacts.ts apply",
     "rebuild:order-to-cash-audit:preview": "tsx scripts/rebuildOrderToCashAudit.ts --mode preview",

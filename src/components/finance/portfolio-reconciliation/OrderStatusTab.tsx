@@ -36,7 +36,7 @@ import { OrderStatusPrimaryCards } from "./OrderStatusPrimaryCards";
 import { OrderStatusDrilldownCards } from "./OrderStatusDrilldownCards";
 import { OrderStatusTable } from "./OrderStatusTable";
 import { OrderStatusDrawer } from "./OrderStatusDrawer";
-import { OrderStatusSelectedOrderItemsPanel } from "./OrderStatusSelectedOrderItemsPanel";
+import { OrderFullAuditDialog } from "./OrderFullAuditDialog";
 
 /**
  * Aba Status Pedidos — consome GET …/order-status.
@@ -56,6 +56,9 @@ export function OrderStatusTab() {
   const [selectedOrder, setSelectedOrder] =
     useState<PortfolioOrderStatusRow | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [auditOrder, setAuditOrder] = useState<PortfolioOrderStatusRow | null>(
+    null
+  );
   const searched = applied != null;
   const canApply = canSearchOrderStatus(draft);
 
@@ -286,23 +289,30 @@ export function OrderStatusTab() {
                 patchApplied({ pageSize, page: 1 })
               }
               onRowClick={(row) => {
-                setSelectedOrder((current) =>
-                  current?.orderKey === row.orderKey ? null : row
-                );
+                setSelectedOrder(row);
                 setSummaryOpen(false);
+                setAuditOrder(row);
               }}
             />
           )}
 
-          <OrderStatusSelectedOrderItemsPanel
-            order={selectedOrder}
-            year={applied?.year ?? ""}
-            runId={payload.runMeta?.runId ?? null}
-            onClear={() => {
-              setSelectedOrder(null);
-              setSummaryOpen(false);
+          <div
+            className="rounded-[14px] border border-dashed border-[#D0D5DD] bg-white px-4 py-5 text-center text-xs text-[#667085]"
+            data-testid="order-status-audit-hint"
+          >
+            Selecione um pedido na tabela acima para abrir a{" "}
+            <strong>Auditoria completa do pedido</strong> — itens, documentos, NF-e,
+            títulos de CR, baixas, entrega e alertas em um único lugar.
+          </div>
+
+          <OrderFullAuditDialog
+            open={auditOrder != null}
+            onOpenChange={(open) => {
+              if (!open) setAuditOrder(null);
             }}
-            onOpenSummary={() => setSummaryOpen(true)}
+            salesOrderId={auditOrder?.salesOrderId ?? null}
+            orderCode={auditOrder?.orderCode ?? null}
+            runId={payload.runMeta?.runId ?? null}
           />
 
           <OrderStatusDrawer
