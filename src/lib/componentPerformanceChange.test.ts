@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyProcessCompletionDefaults,
   ComponentPerformanceValidationError,
   diffProcessSnapshots,
   mergeProcessSnapshot,
@@ -86,5 +87,19 @@ describe("componentPerformanceChange — parse e diff", () => {
       (error: unknown) =>
         error instanceof ComponentPerformanceValidationError && error.code === "INVALID_CYCLE"
     );
+  });
+
+  it("applyProcessCompletionDefaults preenche setup/eficiência ausentes", () => {
+    const incomplete = snapshotFromProduct({
+      cycleTimeSeconds: 59,
+      cavities: 16,
+      setupTimeMin: null,
+      efficiencyExpected: 80,
+    });
+    assert.throws(() => validateMergedProcessSnapshot(incomplete));
+    const completed = applyProcessCompletionDefaults(incomplete);
+    assert.equal(completed.setupTimeMin, 0);
+    assert.equal(completed.efficiencyExpected, 80);
+    validateMergedProcessSnapshot(completed);
   });
 });

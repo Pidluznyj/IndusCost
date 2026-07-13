@@ -206,6 +206,27 @@ export function mergeProcessSnapshot(
   };
 }
 
+/**
+ * Completa setup/eficiência ausentes com defaults operacionais seguros
+ * quando o processo já tem ciclo/cavidades (ou qualquer campo preenchido).
+ * Evita bloquear o save por campo obrigatório que o cliente antigo não enviava.
+ */
+export function applyProcessCompletionDefaults(
+  snapshot: ComponentPerformanceProcessSnapshot
+): ComponentPerformanceProcessSnapshot {
+  const hasAny =
+    snapshot.cycleTimeSeconds != null ||
+    snapshot.cavities != null ||
+    snapshot.setupTimeMin != null ||
+    snapshot.efficiencyExpected != null;
+  if (!hasAny) return snapshot;
+  return {
+    ...snapshot,
+    setupTimeMin: snapshot.setupTimeMin ?? 0,
+    efficiencyExpected: snapshot.efficiencyExpected ?? 100,
+  };
+}
+
 export function diffProcessSnapshots(
   before: ComponentPerformanceProcessSnapshot,
   after: ComponentPerformanceProcessSnapshot

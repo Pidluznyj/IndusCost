@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Save, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { ComponentPerformanceListItem } from "@/src/lib/componentPerformanceClient";
@@ -25,6 +25,11 @@ type Props = {
   }) => void;
 };
 
+function fieldNeedsAttention(message: string | null | undefined, token: string): boolean {
+  if (!message) return false;
+  return message.toLowerCase().includes(token.toLowerCase());
+}
+
 export function ComponentPerformanceEditDrawer({
   open,
   item,
@@ -41,6 +46,12 @@ export function ComponentPerformanceEditDrawer({
   const [responsiblePersonName, setResponsiblePersonName] = useState("");
   const [note, setNote] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const setupInputRef = useRef<HTMLInputElement>(null);
+  const formScrollRef = useRef<HTMLDivElement>(null);
+
+  const setupMissingOnItem = item?.process.setupTimeMin == null;
+  const efficiencyMissingOnItem = item?.process.efficiencyExpected == null;
+  const displayError = validationError || error;
 
   useEffect(() => {
     if (!open || !item) return;
@@ -62,6 +73,15 @@ export function ComponentPerformanceEditDrawer({
     setValidationError(null);
   }, [open, item]);
 
+  useEffect(() => {
+    if (!open || !displayError) return;
+    if (!fieldNeedsAttention(displayError, "setup")) return;
+    const node = setupInputRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.focus({ preventScroll: true });
+  }, [open, displayError]);
+
   if (!open || !item) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -75,6 +95,12 @@ export function ComponentPerformanceEditDrawer({
     });
     if (message) {
       setValidationError(message);
+      if (fieldNeedsAttention(message, "setup")) {
+        setupInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setupInputRef.current?.focus({ preventScroll: true });
+      } else {
+        formScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      }
       return;
     }
     setValidationError(null);
@@ -115,13 +141,30 @@ export function ComponentPerformanceEditDrawer({
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div ref={formScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             <div
               className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
               data-testid="performance-frozen-cost-notice"
             >
               {OPERATIONS_PERFORMANCE_FROZEN_COST_NOTICE}
             </div>
+
+            {setupMissingOnItem || efficiencyMissingOnItem ? (
+              <div
+                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-950 flex gap-2"
+                data-testid="performance-incomplete-process-notice"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  Processo padrão incompleto no cadastro
+                  {setupMissingOnItem ? ": setup (minutos) ausente" : ""}
+                  {setupMissingOnItem && efficiencyMissingOnItem ? " e " : ""}
+                  {efficiencyMissingOnItem ? `${setupMissingOnItem ? "" : ": "}eficiência ausente` : ""}
+                  . Informe os valores abaixo (use <strong>0</strong> no setup se não houver tempo de
+                  setup).
+                </span>
+              </div>
+            ) : null}
 
             {item.routingStepCount > 0 ? (
               <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900 flex gap-2">
@@ -139,94 +182,117 @@ export function ComponentPerformanceEditDrawer({
               </div>
             ) : null}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold uppercase text-muted-foreground">Ciclo atual (s)</label>
-                <p className="mt-1 text-sm font-medium tabular-nums">
-                  {item.process.cycleTimeSeconds ?? "—"}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase text-muted-foreground">Cavidades atuais</label>
-                <p className="mt-1 text-sm font-medium tabular-nums">{item.process.cavities ?? "—"}</p>
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase text-muted-foreground">Setup atual (min)</label>
-                <p className="mt-1 text-sm font-medium tabular-nums">
-                  {item.process.setupTimeMin ?? "—"}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase text-muted-foreground">Eficiência atual (%)</label>
-                <p className="mt-1 text-sm font-medium tabular-nums">
-                  {item.process.efficiencyExpected ?? "—"}
-                </p>
+            <div>
+              <p className="text-xs font-bold uppercase text-muted-foreground mb-2">Valores atuais</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Ciclo (s)</label>
+                  <p className="mt-1 text-sm font-medium tabular-nums">
+                    {item.process.cycleTimeSeconds ?? "—"}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Cavidades</label>
+                  <p className="mt-1 text-sm font-medium tabular-nums">{item.process.cavities ?? "—"}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Setup (min)</label>
+                  <p className="mt-1 text-sm font-medium tabular-nums">
+                    {item.process.setupTimeMin ?? "—"}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Eficiência (%)</label>
+                  <p className="mt-1 text-sm font-medium tabular-nums">
+                    {item.process.efficiencyExpected ?? "—"}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="perf-cycle" className="text-xs font-bold uppercase text-muted-foreground">
-                  Novo ciclo (s)
-                </label>
-                <input
-                  id="perf-cycle"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  disabled={!canEdit || saving}
-                  value={cycleTimeSeconds}
-                  onChange={(e) => setCycleTimeSeconds(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label htmlFor="perf-cav" className="text-xs font-bold uppercase text-muted-foreground">
-                  Novas cavidades
-                </label>
-                <input
-                  id="perf-cav"
-                  type="number"
-                  min="1"
-                  step="1"
-                  disabled={!canEdit || saving}
-                  value={cavities}
-                  onChange={(e) => setCavities(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label htmlFor="perf-setup" className="text-xs font-bold uppercase text-muted-foreground">
-                  Novo setup (min) *
-                </label>
-                <input
-                  id="perf-setup"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  disabled={!canEdit || saving}
-                  value={setupTimeMin}
-                  onChange={(e) => setSetupTimeMin(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  data-testid="performance-edit-setup"
-                />
-              </div>
-              <div>
-                <label htmlFor="perf-eff" className="text-xs font-bold uppercase text-muted-foreground">
-                  Nova eficiência (%) *
-                </label>
-                <input
-                  id="perf-eff"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  disabled={!canEdit || saving}
-                  value={efficiencyExpected}
-                  onChange={(e) => setEfficiencyExpected(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  data-testid="performance-edit-efficiency"
-                />
+            <div>
+              <p className="text-xs font-bold uppercase text-muted-foreground mb-2">
+                Novos valores *
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="perf-cycle" className="text-xs font-bold uppercase text-muted-foreground">
+                    Ciclo (s)
+                  </label>
+                  <input
+                    id="perf-cycle"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    disabled={!canEdit || saving}
+                    value={cycleTimeSeconds}
+                    onChange={(e) => setCycleTimeSeconds(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="perf-cav" className="text-xs font-bold uppercase text-muted-foreground">
+                    Cavidades
+                  </label>
+                  <input
+                    id="perf-cav"
+                    type="number"
+                    min="1"
+                    step="1"
+                    disabled={!canEdit || saving}
+                    value={cavities}
+                    onChange={(e) => setCavities(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="perf-setup" className="text-xs font-bold uppercase text-muted-foreground">
+                    Setup (min) *
+                  </label>
+                  <input
+                    ref={setupInputRef}
+                    id="perf-setup"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    disabled={!canEdit || saving}
+                    value={setupTimeMin}
+                    onChange={(e) => setSetupTimeMin(e.target.value)}
+                    className={cn(
+                      "mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm",
+                      setupMissingOnItem || fieldNeedsAttention(displayError, "setup")
+                        ? "border-rose-400 ring-1 ring-rose-200"
+                        : "border-border"
+                    )}
+                    data-testid="performance-edit-setup"
+                    aria-invalid={setupMissingOnItem || fieldNeedsAttention(displayError, "setup")}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Obrigatório. Use 0 se não houver setup.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="perf-eff" className="text-xs font-bold uppercase text-muted-foreground">
+                    Eficiência (%) *
+                  </label>
+                  <input
+                    id="perf-eff"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    disabled={!canEdit || saving}
+                    value={efficiencyExpected}
+                    onChange={(e) => setEfficiencyExpected(e.target.value)}
+                    className={cn(
+                      "mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm",
+                      efficiencyMissingOnItem || fieldNeedsAttention(displayError, "efici")
+                        ? "border-rose-400 ring-1 ring-rose-200"
+                        : "border-border"
+                    )}
+                    data-testid="performance-edit-efficiency"
+                  />
+                </div>
               </div>
             </div>
 
@@ -260,42 +326,54 @@ export function ComponentPerformanceEditDrawer({
               />
             </div>
 
-            <ComponentInjectionCalculationBreakdown
-              cycleTimeSeconds={cycleTimeSeconds}
-              cavities={cavities}
-              efficiencyExpectedPercent={efficiencyExpected || item.process.efficiencyExpected || 100}
-              disabled={!canEdit}
-            />
-
-            {validationError ? (
-              <p className="text-sm text-destructive" data-testid="performance-edit-validation">
-                {validationError}
-              </p>
-            ) : null}
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <details className="rounded-xl border border-border bg-card overflow-hidden" open={false}>
+              <summary className="cursor-pointer select-none bg-muted px-4 py-3 text-sm font-bold list-none flex items-center justify-between">
+                <span>Cálculo da injeção (informativo)</span>
+                <span className="text-xs font-medium text-muted-foreground">Exibir / ocultar</span>
+              </summary>
+              <div className="px-2 pb-2">
+                <ComponentInjectionCalculationBreakdown
+                  cycleTimeSeconds={cycleTimeSeconds}
+                  cavities={cavities}
+                  efficiencyExpectedPercent={efficiencyExpected || item.process.efficiencyExpected || 100}
+                  disabled={!canEdit}
+                />
+              </div>
+            </details>
           </div>
 
-          <div className="border-t border-border p-4 flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent"
-            >
-              Cancelar
-            </button>
-            {canEdit ? (
-              <button
-                type="submit"
-                disabled={saving}
-                className={cn(
-                  "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
-                  "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                )}
+          <div className="border-t border-border p-4 space-y-3">
+            {displayError ? (
+              <p
+                className="text-sm text-destructive"
+                data-testid="performance-edit-validation"
+                role="alert"
               >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Salvar alteração
-              </button>
+                {displayError}
+              </p>
             ) : null}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent"
+              >
+                Cancelar
+              </button>
+              {canEdit ? (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={cn(
+                    "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
+                    "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  )}
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Salvar alteração
+                </button>
+              ) : null}
+            </div>
           </div>
         </form>
       </div>

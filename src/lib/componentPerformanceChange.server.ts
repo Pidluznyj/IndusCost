@@ -5,6 +5,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AppAuthContext } from "./appAuth.js";
 import {
+  applyProcessCompletionDefaults,
   COMPONENT_PERFORMANCE_CHANGE_SOURCE,
   ComponentPerformanceValidationError,
   diffProcessSnapshots,
@@ -356,7 +357,7 @@ export async function patchComponentPerformanceProduct(
   }
 
   const before = snapshotFromProduct(current);
-  const after = mergeProcessSnapshot(before, patch);
+  const after = applyProcessCompletionDefaults(mergeProcessSnapshot(before, patch));
   validateMergedProcessSnapshot(after);
 
   const changedFields = diffProcessSnapshots(before, after);

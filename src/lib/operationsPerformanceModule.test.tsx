@@ -98,8 +98,30 @@ describe("ComponentPerformanceEditDrawer", () => {
     assert.match(html, /performance-frozen-cost-notice/);
     assert.match(html, new RegExp(OPERATIONS_PERFORMANCE_FROZEN_COST_NOTICE.replace(/\./g, "\\.")));
     assert.match(html, /Responsável pela alteração/);
-    assert.match(html, /Novo setup \(min\)/);
-    assert.match(html, /Nova eficiência \(%\)/);
+    assert.match(html, /Setup \(min\) \*/);
+    assert.match(html, /Eficiência \(%\) \*/);
+    assert.match(html, /performance-edit-setup/);
+  });
+
+  it("destaca processo incompleto quando setup está ausente", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ComponentPerformanceEditDrawer, {
+        open: true,
+        item: {
+          ...item,
+          process: { ...item.process, setupTimeMin: null },
+          missingProcess: true,
+        },
+        canEdit: true,
+        saving: false,
+        error: null,
+        onClose: () => {},
+        onSave: () => {},
+      })
+    );
+    assert.match(html, /performance-incomplete-process-notice/);
+    assert.match(html, /setup \(minutos\) ausente/i);
+    assert.match(html, /performance-edit-setup/);
   });
 
   it("bloqueia edição quando canEdit=false", () => {
