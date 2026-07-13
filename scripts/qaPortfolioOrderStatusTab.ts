@@ -215,6 +215,97 @@ function staticContracts(): void {
     fail("static", "server:loader", "loader ausente");
   }
 
+  // Responsável Comercial da carteira (CRM) — nunca setor / responsibleArea.
+  const serviceSrc = read("src/lib/finance/portfolioOrderStatusService.ts");
+  const loaderSrc = exists("src/lib/financePortfolioOrderStatusApi.server.ts")
+    ? read("src/lib/financePortfolioOrderStatusApi.server.ts")
+    : "";
+  const tableSrc = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusTable.tsx"
+  );
+  const drawerSrc = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusDrawer.tsx"
+  );
+  const uiHelpersSrc = read(
+    "src/components/finance/portfolio-reconciliation/orderStatusUi.tsx"
+  );
+
+  // 1) Service não pode usar responsibleArea como fonte do commercialResponsibleName
+  //    (bug antigo — mostrava FATURAMENTO / FINANCEIRO).
+  if (
+    !/commercialResponsibleName\s*=\s*fact\.responsibleArea/.test(serviceSrc) &&
+    /fact\.commercialResponsibleName/.test(serviceSrc)
+  ) {
+    ok(
+      "static",
+      "service:commercial-responsible-source",
+      "service usa fact.commercialResponsibleName (CRM), não responsibleArea (setor)"
+    );
+  } else {
+    fail(
+      "static",
+      "service:commercial-responsible-source",
+      "service ainda usa responsibleArea como responsável comercial"
+    );
+  }
+
+  // 2) Loader injeta CrmCustomerCommercialOwner nos facts antes da agregação.
+  if (
+    loaderSrc.includes("loadManualCommercialOwnersForCustomers") &&
+    /commercialResponsibleName\s*:/.test(loaderSrc)
+  ) {
+    ok(
+      "static",
+      "loader:crm-owner-injection",
+      "loader injeta CrmCustomerCommercialOwner por customerId"
+    );
+  } else {
+    fail(
+      "static",
+      "loader:crm-owner-injection",
+      "loader não injeta responsável comercial via CRM"
+    );
+  }
+
+  // 3) Row expõe campo operacional separado.
+  if (serviceSrc.includes("operationalResponsibleArea")) {
+    ok(
+      "static",
+      "row:operational-responsible-separate",
+      "row separa Responsável Comercial (CRM) do setor operacional (Nomus)"
+    );
+  } else {
+    fail(
+      "static",
+      "row:operational-responsible-separate",
+      "row não expõe operationalResponsibleArea"
+    );
+  }
+
+  // 4) UI usa labels específicos "Sem responsável comercial" / "Sem vendedor informado".
+  if (
+    uiHelpersSrc.includes("orderStatusCommercialResponsibleLabel") &&
+    uiHelpersSrc.includes("orderStatusOrderSellerLabel") &&
+    uiHelpersSrc.includes("Sem responsável comercial") &&
+    uiHelpersSrc.includes("Sem vendedor informado") &&
+    tableSrc.includes("orderStatusCommercialResponsibleLabel") &&
+    tableSrc.includes("orderStatusOrderSellerLabel") &&
+    drawerSrc.includes("orderStatusCommercialResponsibleLabel") &&
+    drawerSrc.includes("orderStatusOrderSellerLabel")
+  ) {
+    ok(
+      "static",
+      "ui:responsible-vs-seller-labels",
+      "tabela e drawer usam labels dedicados sem confundir responsável comercial × vendedor"
+    );
+  } else {
+    fail(
+      "static",
+      "ui:responsible-vs-seller-labels",
+      "UI ainda pode confundir Responsável Comercial com Vendedor Pedido"
+    );
+  }
+
   const itemsGrid = exists(
     "src/components/finance/portfolio-reconciliation/OrderToCashAuditItemsGrid.tsx"
   );

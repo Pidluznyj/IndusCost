@@ -1,5 +1,8 @@
 import React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
+  useTableHorizontalScrollSync,
+} from "./useTableHorizontalScrollSync";
 import {
   formatFinanceCurrency,
   formatFinanceDate,
@@ -20,7 +23,9 @@ import {
   ORDER_STATUS_BADGE_CLASS,
   ORDER_STATUS_TEMP_BADGE_CLASS,
   orderStatusAlertSeverity,
+  orderStatusCommercialResponsibleLabel,
   orderStatusDash,
+  orderStatusOrderSellerLabel,
 } from "./orderStatusUi";
 
 type Props = {
@@ -152,6 +157,8 @@ function TextCell({
   );
 }
 
+const TABLE_MIN_WIDTH = 1680;
+
 export function OrderStatusTable({
   rows,
   page,
@@ -169,6 +176,15 @@ export function OrderStatusTable({
   const from = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, totalRows);
 
+  const {
+    topScrollRef,
+    mainScrollRef,
+    tableRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+  } = useTableHorizontalScrollSync({ minWidth: TABLE_MIN_WIDTH, deps: [rows] });
+
   return (
     <section
       className="overflow-hidden rounded-[14px] border border-[#E5E7EB] bg-white shadow-sm"
@@ -181,8 +197,30 @@ export function OrderStatusTable({
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[1680px] w-full border-collapse text-left text-sm">
+      <div
+        ref={topScrollRef}
+        className={TABLE_HORIZONTAL_TOP_SCROLL_CLASS}
+        onScroll={handleTopScroll}
+        data-testid="order-status-scroll-top"
+        aria-label="Rolagem horizontal da tabela (topo)"
+        role="scrollbar"
+        aria-orientation="horizontal"
+        aria-controls="order-status-scroll-main"
+      >
+        <div style={{ width: scrollContentWidth, height: 12 }} aria-hidden />
+      </div>
+
+      <div
+        id="order-status-scroll-main"
+        ref={mainScrollRef}
+        className="min-w-0 max-w-full overflow-x-auto"
+        onScroll={handleMainScroll}
+        data-testid="order-status-scroll-main"
+      >
+        <table
+          ref={tableRef}
+          className="min-w-[1680px] w-full border-collapse text-left text-sm"
+        >
           <thead className="sticky top-0 z-20 bg-[#F9FAFB]/95 text-[11px] uppercase tracking-wide text-[#667085] shadow-[0_1px_0_0_#E5E7EB]">
             <tr>
               <SortTh
@@ -328,11 +366,31 @@ export function OrderStatusTable({
                   <TextCell title={orderStatusDash(row.customerName)}>
                     {orderStatusDash(row.customerName)}
                   </TextCell>
-                  <TextCell title={orderStatusDash(row.commercialResponsibleName)}>
-                    {orderStatusDash(row.commercialResponsibleName)}
+                  <TextCell
+                    title={
+                      orderStatusCommercialResponsibleLabel(row.commercialResponsibleName) +
+                      " · Fonte: CRM (carteira do cliente)"
+                    }
+                    className={
+                      row.commercialResponsibleName?.trim()
+                        ? undefined
+                        : "italic text-[#98A2B3]"
+                    }
+                  >
+                    {orderStatusCommercialResponsibleLabel(row.commercialResponsibleName)}
                   </TextCell>
-                  <TextCell title={orderStatusDash(row.orderSellerName)}>
-                    {orderStatusDash(row.orderSellerName)}
+                  <TextCell
+                    title={
+                      orderStatusOrderSellerLabel(row.orderSellerName) +
+                      " · Fonte: Pedido de Venda / Nomus"
+                    }
+                    className={
+                      row.orderSellerName?.trim()
+                        ? undefined
+                        : "italic text-[#98A2B3]"
+                    }
+                  >
+                    {orderStatusOrderSellerLabel(row.orderSellerName)}
                   </TextCell>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#101828]">
                     {formatFinanceCurrency(row.totalOrderValue)}

@@ -29,6 +29,13 @@ export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
   nomusIsCut?: boolean | null;
   nomusItemStatusNormalized?: string | null;
   nomusMatchConfidence?: string | null;
+  /**
+   * Nome oficial do Responsável Comercial do CLIENTE (CRM/carteira). Vem do
+   * `CrmCustomerCommercialOwner` (manual) via loader — nunca do setor/área
+   * operacional do pedido (`responsibleArea`).
+   */
+  commercialResponsibleName?: string | null;
+  commercialResponsibleId?: string | null;
   fiscalStage?: string | null;
   commercialStage?: string | null;
   cashStage?: string | null;
@@ -83,8 +90,23 @@ export type PortfolioOrderStatusRow = {
   orderExpectedDeliveryDate: string | null;
   customerName: string | null;
   externalCustomerId: number | null;
+  /**
+   * Pessoa responsável pela carteira/cliente no CRM Comercial.
+   * Fonte oficial: `CrmCustomerCommercialOwner` (manual). Nunca é setor
+   * (`responsibleArea` = FINANCEIRO / FATURAMENTO / ...).
+   */
   commercialResponsibleName: string | null;
+  /**
+   * Vendedor do PEDIDO (Nomus / `SalesOrder.externalSellerId` +
+   * `nomusSellerName`). Fonte oficial para comissão.
+   */
   orderSellerName: string | null;
+  /**
+   * Setor / responsável operacional do pedido (`responsibleArea` do fact,
+   * ex.: `COMERCIAL`, `FINANCEIRO`, `FATURAMENTO`, `EXPEDIÇÃO`). Nunca
+   * exibir como Responsável Comercial.
+   */
+  operationalResponsibleArea: string | null;
 
   /** Valor original do pedido (orderNet / soma itens). */
   totalOrderValue: number;
@@ -720,6 +742,7 @@ export function aggregateOrderFactsToRow(
   let externalCustomerId: number | null = null;
   let orderSellerName: string | null = null;
   let commercialResponsibleName: string | null = null;
+  let operationalResponsibleArea: string | null = null;
   let orderNetValue: number | null = null;
   let temperature: string | null = null;
   let confidenceScore: number | null = null;
@@ -762,8 +785,14 @@ export function aggregateOrderFactsToRow(
       externalCustomerId = fact.externalCustomerId;
     }
     if (!orderSellerName && fact.sellerName) orderSellerName = fact.sellerName;
-    if (!commercialResponsibleName && fact.responsibleArea?.trim()) {
-      commercialResponsibleName = fact.responsibleArea.trim();
+    // Responsável Comercial vem do CRM (carteira do cliente) — nunca do setor
+    // (`responsibleArea` = FINANCEIRO / FATURAMENTO / …). O loader Prisma injeta
+    // `fact.commercialResponsibleName` a partir de `CrmCustomerCommercialOwner`.
+    if (!commercialResponsibleName && fact.commercialResponsibleName?.trim()) {
+      commercialResponsibleName = fact.commercialResponsibleName.trim();
+    }
+    if (!operationalResponsibleArea && fact.responsibleArea?.trim()) {
+      operationalResponsibleArea = fact.responsibleArea.trim();
     }
     if (fact.productCode?.trim()) {
       productTokens.add(fact.productCode.trim().toLowerCase());
@@ -943,6 +972,7 @@ export function aggregateOrderFactsToRow(
     externalCustomerId,
     commercialResponsibleName,
     orderSellerName,
+    operationalResponsibleArea,
     totalOrderValue,
     originalOrderValue,
     activeOrderValue,

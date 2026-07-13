@@ -136,6 +136,30 @@ export function OrderStatusSelectedOrderItemsPanel({
     [payload?.rows, itemFilters.sortBy, itemFilters.sortDirection]
   );
 
+  /**
+   * Total cobrado nas linhas = soma de `lineBilledValue` (evidência de item apenas —
+   * quantidade atendida × preço unitário do documento de saída/NF). Nunca soma CR total
+   * do título nem NF cabeçalho.
+   */
+  const totalLineBilled = useMemo(() => {
+    return rows.reduce((sum, r) => {
+      const v = r.lineBilledValue;
+      return typeof v === "number" && Number.isFinite(v) ? sum + Math.max(0, v) : sum;
+    }, 0);
+  }, [rows]);
+
+  const billedItemsCount = useMemo(
+    () =>
+      rows.reduce(
+        (n, r) =>
+          typeof r.lineBilledValue === "number" && r.lineBilledValue > 0.009
+            ? n + 1
+            : n,
+        0
+      ),
+    [rows]
+  );
+
   if (!order) {
     return (
       <section
@@ -200,7 +224,7 @@ export function OrderStatusSelectedOrderItemsPanel({
       </div>
 
       <div
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-9"
         data-testid="order-status-order-items-summary"
       >
         <SummaryTile label="Pedido" value={orderStatusDash(order.orderCode)} />
@@ -225,14 +249,42 @@ export function OrderStatusSelectedOrderItemsPanel({
           title="Saldo de itens ativos ainda não atendidos. Itens cancelados são exibidos separadamente."
         />
         <SummaryTile
-          label="Valor cancelado"
+          label="Valor cobrado"
           value={
-            order.canceledOrderValue > 0.009
-              ? formatFinanceCurrency(order.canceledOrderValue)
+            totalLineBilled > 0.009 ? formatFinanceCurrency(totalLineBilled) : "—"
+          }
+          hint={
+            billedItemsCount > 0
+              ? `${billedItemsCount} linha${billedItemsCount === 1 ? "" : "s"} com evidência de NF/documento`
+              : undefined
+          }
+          title="Soma de Valor cobrado linha — quantidade atendida × preço unitário do documento de saída/NF em cada linha. Nunca soma CR total nem cabeçalho de NF."
+        />
+        <SummaryTile
+          label="CR aberto"
+          value={
+            order.receivableOpenValue > 0.009
+              ? formatFinanceCurrency(order.receivableOpenValue)
               : "—"
           }
-          title="Valor dos itens cancelados no pedido de venda."
+          title="Contas a Receber ainda em aberto (título do pedido)."
         />
+        <SummaryTile
+          label="Recebido"
+          value={
+            order.receivableReceivedValue > 0.009
+              ? formatFinanceCurrency(order.receivableReceivedValue)
+              : "—"
+          }
+          title="Valor já baixado no Contas a Receber."
+        />
+        {order.canceledOrderValue > 0.009 ? (
+          <SummaryTile
+            label="Valor cancelado"
+            value={formatFinanceCurrency(order.canceledOrderValue)}
+            title="Valor dos itens cancelados no pedido de venda."
+          />
+        ) : null}
       </div>
 
       <p className="text-[11px] text-[#667085]">
@@ -294,11 +346,13 @@ function SummaryTile({
   value,
   badgeClass,
   title,
+  hint,
 }: {
   label: string;
   value: string;
   badgeClass?: string;
   title?: string;
+  hint?: string;
 }) {
   return (
     <div
@@ -326,6 +380,11 @@ function SummaryTile({
           {value}
         </p>
       )}
+      {hint ? (
+        <p className="mt-0.5 truncate text-[10px] text-[#667085]" title={hint}>
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

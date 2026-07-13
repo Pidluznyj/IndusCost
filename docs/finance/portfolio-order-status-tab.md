@@ -69,6 +69,24 @@ Caso **PD 02207**: 2 itens atendidos + 2 cancelados → 100% dos ativos, saldo a
 
 Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusIsCut` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. **Casamento é sempre por LINHA do item**, nunca por SKU. Ver também `docs/sales/sales-order-item-status-rules.md`, `docs/sales/sales-order-item-nomus-status-sync.md` e `docs/sales/sales-order-item-status-impact-audit.md`.
 
+### Responsável Comercial × Vendedor Pedido × Responsável Operacional
+
+Três conceitos distintos — não podem se confundir na UI:
+
+| Campo | Origem oficial | Uso |
+|-------|----------------|-----|
+| **Responsável Comercial** | `CrmCustomerCommercialOwner` (carteira do cliente no CRM) — via `loadManualCommercialOwnersForCustomers` | Gestão comercial, filtros de carteira. Nunca gera comissão sozinho. |
+| **Vendedor Pedido** | `SalesOrder.externalSellerId` + `SalesOrder.nomusSellerName` (Nomus) — refletido em `fact.sellerName` | Fonte oficial da **comissão** do pedido. |
+| **Setor / Responsável operacional** | `fact.responsibleArea` (montado no builder da Auditoria Pedido → Caixa: `COMERCIAL`, `FINANCEIRO`, `FATURAMENTO`, `EXPEDIÇÃO`) — espelha `SalesOrder.responsible` | Só para roteamento operacional / ação recomendada. **Nunca** aparece como Responsável Comercial. |
+
+Ordem de resolução no service (aggregator):
+
+1. `commercialResponsibleName` só é preenchido a partir de `fact.commercialResponsibleName` (injetado pelo loader Prisma via CRM).
+2. `orderSellerName` vem de `fact.sellerName` (Nomus).
+3. `operationalResponsibleArea` vem de `fact.responsibleArea` (setor).
+
+Se o cliente não tem responsável comercial cadastrado no CRM, a UI exibe **"Sem responsável comercial"** (helper `orderStatusCommercialResponsibleLabel`). Se o pedido Nomus não tem vendedor, a coluna **"Vendedor Pedido"** mostra **"Sem vendedor informado"** (helper `orderStatusOrderSellerLabel`). Nunca reaproveitar um campo para tapar o buraco do outro.
+
 ### Atendido com corte
 
 Item com status `FULFILLED_WITH_CUT` encerra o saldo cortado — separado de cancelado direto:

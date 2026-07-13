@@ -22,6 +22,7 @@ import {
 } from "./finance/portfolioOrderStatusApi.js";
 import type { PortfolioOrderStatusFact } from "./finance/portfolioOrderStatusService.js";
 import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
+import { loadManualCommercialOwnersForCustomers } from "./crmCustomerCommercialOwner.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -439,9 +440,28 @@ export async function loadPortfolioOrderStatusList(
   });
 
   const mapped = rawFacts.map((r) => mapFact(r as FactRow));
-  const facts = (await enrichFactsWithOrderItemStatus(
+  const enriched = (await enrichFactsWithOrderItemStatus(
     mapped
   )) as PortfolioOrderStatusFact[];
+
+  // Responsável Comercial = pessoa da carteira no CRM (nunca setor / responsibleArea).
+  const customerIds = [
+    ...new Set(
+      enriched
+        .map((f) => f.customerId?.trim())
+        .filter((v): v is string => Boolean(v))
+    ),
+  ];
+  const commercialOwners = await loadManualCommercialOwnersForCustomers(customerIds);
+  const facts: PortfolioOrderStatusFact[] = enriched.map((fact) => {
+    const owner = fact.customerId ? commercialOwners.get(fact.customerId) : null;
+    if (!owner) return fact;
+    return {
+      ...fact,
+      commercialResponsibleName: owner.sellerCanonicalName ?? owner.sellerResponsibleName,
+      commercialResponsibleId: owner.sellerIdentityKey,
+    };
+  });
 
   return buildPortfolioOrderStatusListFromFacts({
     facts,

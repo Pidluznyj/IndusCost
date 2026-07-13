@@ -1,5 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import React from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import {
+  TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
+  useTableHorizontalScrollSync,
+} from "./useTableHorizontalScrollSync";
 import {
   formatFinanceCurrency,
   formatFinanceDate,
@@ -15,6 +19,19 @@ import {
   type OrderToCashAuditUiFilters,
 } from "@/src/lib/finance/orderToCashAuditClient";
 import { pendingQuantityOfAuditRow } from "@/src/lib/finance/orderToCashAuditItemsUi";
+import {
+  formatOrderToCashConfidence,
+  formatOrderToCashEvidenceLevel,
+  formatOrderToCashFinancialStage,
+  formatOrderToCashLineBilledSource,
+  formatOrderToCashLineType,
+  formatOrderToCashOperationalStage,
+  formatOrderToCashPaymentStatus,
+  formatOrderToCashStage,
+  formatOrderToCashTemperature,
+  formatOrderItemStatus,
+  withRawTooltip,
+} from "@/src/lib/finance/orderToCashAuditLabels";
 
 type ColumnDef = {
   id: string;
@@ -102,24 +119,62 @@ type Props = {
   testId?: string;
 };
 
+type BadgeKind =
+  | "payment"
+  | "stage"
+  | "operationalStage"
+  | "financialStage"
+  | "orderToCashStage"
+  | "temperature"
+  | "confidence"
+  | "alert";
+
+function badgeLabel(value: string, kind: BadgeKind): string {
+  switch (kind) {
+    case "payment":
+      return formatOrderToCashPaymentStatus(value);
+    case "operationalStage":
+      return formatOrderToCashOperationalStage(value);
+    case "financialStage":
+      return formatOrderToCashFinancialStage(value);
+    case "orderToCashStage":
+      return formatOrderToCashStage(value);
+    case "temperature":
+      return formatOrderToCashTemperature(value);
+    case "confidence":
+      return formatOrderToCashConfidence(value);
+    // "stage" genérico e "alert" mantêm o valor bruto (alertas já são traduzidos
+    // no chamador; "stage" genérico é fallback quando o kind exato é desconhecido).
+    default:
+      return value;
+  }
+}
+
 function Badge({
   value,
   kind,
 }: {
   value: string | null | undefined;
-  kind: "payment" | "stage" | "temperature" | "confidence" | "alert";
+  kind: BadgeKind;
 }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  const tone = resolveOrderToCashAuditBadgeTone({ kind, value });
+  const tone = resolveOrderToCashAuditBadgeTone({
+    kind: kind === "operationalStage" || kind === "financialStage" || kind === "orderToCashStage"
+      ? "stage"
+      : kind,
+    value,
+  });
+  const display = badgeLabel(value, kind);
+  const { title } = withRawTooltip(display, value);
   return (
     <span
       className={cn(
         "inline-flex max-w-[160px] truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold",
         ORDER_TO_CASH_AUDIT_BADGE_CLASS[tone]
       )}
-      title={value}
+      title={title}
     >
-      {value}
+      {display}
     </span>
   );
 }
@@ -154,8 +209,17 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
           {[row.productCode, row.sku].filter(Boolean).join(" / ") || row.productName || "—"}
         </span>
       );
-    case "lineType":
-      return row.lineType ?? "—";
+    case "lineType": {
+      const raw = row.lineType ?? null;
+      if (!raw) return "—";
+      const label = formatOrderToCashLineType(raw);
+      const { title } = withRawTooltip(label, raw);
+      return (
+        <span className="block max-w-[180px] truncate" title={title}>
+          {label}
+        </span>
+      );
+    }
     case "orderedQuantity":
       return row.orderedQuantity == null ? "—" : String(row.orderedQuantity);
     case "quantityUsedForOrder":
@@ -192,7 +256,12 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       ) : (
         money(row.lineBilledValue)
       );
-    case "lineBilledValueLabel":
+    case "lineBilledValueLabel": {
+      const sourceLabel = formatOrderToCashLineBilledSource(row.lineBilledValueSource);
+      // Preferir o label vindo do backend quando existir; senão usa a tabela PT-BR
+      // e mantém o valor bruto no tooltip.
+      const display = row.lineBilledValueLabel?.trim() || sourceLabel;
+      const { title } = withRawTooltip(display, row.lineBilledValueSource ?? undefined);
       return (
         <span
           className={cn(
@@ -202,11 +271,12 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
               ? "border-amber-200 bg-amber-50 text-amber-900"
               : "border-sky-200 bg-sky-50 text-sky-900"
           )}
-          title={row.lineBilledValueLabel}
+          title={title}
         >
-          {row.lineBilledValueLabel}
+          {display}
         </span>
       );
+    }
     case "receivableTotalValue":
       return money(row.titleReceivableTotalValue ?? row.receivableTotalValue);
     case "nfeNumber":
@@ -236,13 +306,13 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
         row.itemFulfillmentStatus === "CANCELADO" ||
         (row.orderItemStatus ?? "").toUpperCase().includes("CANCEL")
       ) {
-        return <Badge value="Cancelado" kind="stage" />;
+        return <Badge value="CANCELADO" kind="operationalStage" />;
       }
-      return <Badge value={row.operationalStage} kind="stage" />;
+      return <Badge value={row.operationalStage} kind="operationalStage" />;
     case "financialStage":
-      return <Badge value={row.financialStage} kind="stage" />;
+      return <Badge value={row.financialStage} kind="financialStage" />;
     case "orderToCashStage":
-      return <Badge value={row.orderToCashStage} kind="stage" />;
+      return <Badge value={row.orderToCashStage} kind="orderToCashStage" />;
     case "temperature":
       return <Badge value={row.temperature} kind="temperature" />;
     case "confidenceLabel":
@@ -289,12 +359,7 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
   }
 }
 
-const TOP_SCROLL_RAIL_CLASS =
-  "min-w-0 flex-1 overflow-x-scroll overflow-y-hidden overscroll-x-contain " +
-  "[scrollbar-width:auto] [scrollbar-color:#667085_#E4E7EC] " +
-  "[&::-webkit-scrollbar]:h-3.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[#E4E7EC] " +
-  "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#667085] " +
-  "[&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[#E4E7EC]";
+const AUDIT_TABLE_MIN_WIDTH = 2800;
 
 export function OrderToCashAuditTable({
   rows,
@@ -314,75 +379,18 @@ export function OrderToCashAuditTable({
   const visibleColumns = COLUMNS.filter((c) => !hidden.has(c.id));
   const from = totalRows === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
   const to = Math.min(filters.page * filters.pageSize, totalRows);
-  const topScrollRef = useRef<HTMLDivElement>(null);
-  const mainScrollRef = useRef<HTMLDivElement>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
-  const syncingRef = useRef(false);
-  const [scrollContentWidth, setScrollContentWidth] = useState(2800);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [maxScrollLeft, setMaxScrollLeft] = useState(0);
 
-  const syncHorizontalScroll = useCallback((source: "top" | "main") => {
-    if (syncingRef.current) return;
-    const top = topScrollRef.current;
-    const main = mainScrollRef.current;
-    if (!top || !main) return;
-    syncingRef.current = true;
-    if (source === "top") {
-      main.scrollLeft = top.scrollLeft;
-    } else {
-      top.scrollLeft = main.scrollLeft;
-    }
-    setScrollLeft(main.scrollLeft);
-    requestAnimationFrame(() => {
-      syncingRef.current = false;
-    });
-  }, []);
-
-  const setHorizontalScroll = useCallback((nextLeft: number) => {
-    const main = mainScrollRef.current;
-    const top = topScrollRef.current;
-    if (!main) return;
-    const clamped = Math.max(0, Math.min(nextLeft, main.scrollWidth - main.clientWidth));
-    main.scrollLeft = clamped;
-    if (top) top.scrollLeft = clamped;
-    setScrollLeft(clamped);
-  }, []);
-
-  const nudgeHorizontal = useCallback(
-    (delta: number) => {
-      setHorizontalScroll((mainScrollRef.current?.scrollLeft ?? 0) + delta);
-    },
-    [setHorizontalScroll]
-  );
-
-  useEffect(() => {
-    const main = mainScrollRef.current;
-    const table = tableRef.current;
-    if (!main || !table) return;
-
-    const updateScrollMetrics = () => {
-      const width = Math.max(table.scrollWidth, main.scrollWidth, 2800);
-      setScrollContentWidth(width);
-      setMaxScrollLeft(Math.max(0, main.scrollWidth - main.clientWidth));
-      setScrollLeft(main.scrollLeft);
-      const top = topScrollRef.current;
-      if (top) top.scrollLeft = main.scrollLeft;
-    };
-
-    updateScrollMetrics();
-    const raf = requestAnimationFrame(updateScrollMetrics);
-    const ro =
-      typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateScrollMetrics) : null;
-    ro?.observe(table);
-    ro?.observe(main);
-    window.addEventListener("resize", updateScrollMetrics);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro?.disconnect();
-      window.removeEventListener("resize", updateScrollMetrics);
-    };
-  }, [rows]);
+  const {
+    topScrollRef,
+    mainScrollRef,
+    tableRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+  } = useTableHorizontalScrollSync({
+    minWidth: AUDIT_TABLE_MIN_WIDTH,
+    deps: [rows],
+  });
 
   return (
     <section
@@ -390,57 +398,22 @@ export function OrderToCashAuditTable({
       data-testid={testId}
     >
       <div
-        className="sticky top-0 z-40 flex items-center gap-2 border-b border-[#B2DDFF] bg-[#EFF8FF] px-2 py-2"
-        data-testid="order-to-cash-audit-scroll-top-bar"
+        ref={topScrollRef}
+        className={TABLE_HORIZONTAL_TOP_SCROLL_CLASS}
+        onScroll={handleTopScroll}
+        data-testid="order-to-cash-audit-scroll-top"
+        aria-label="Rolagem horizontal da tabela (topo)"
+        role="scrollbar"
+        aria-orientation="horizontal"
+        aria-controls="order-to-cash-audit-scroll-main"
       >
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#175CD3]">
-          Rolagem →
-        </span>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#B2DDFF] bg-white text-[#175CD3] hover:bg-[#F0F9FF]"
-          onClick={() => nudgeHorizontal(-280)}
-          aria-label="Rolar tabela para a esquerda"
-          data-testid="order-to-cash-audit-scroll-left"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <input
-          type="range"
-          className="h-2 min-w-0 flex-1 cursor-pointer accent-[#175CD3]"
-          min={0}
-          max={Math.max(maxScrollLeft, 1)}
-          step={1}
-          value={Math.min(scrollLeft, Math.max(maxScrollLeft, 1))}
-          onChange={(e) => setHorizontalScroll(Number(e.target.value))}
-          aria-label="Posição horizontal da tabela"
-          data-testid="order-to-cash-audit-scroll-range"
-          title="Arraste para ver mais colunas"
-        />
-        <div
-          ref={topScrollRef}
-          className={cn(TOP_SCROLL_RAIL_CLASS, "max-w-[28%]")}
-          onScroll={() => syncHorizontalScroll("top")}
-          data-testid="order-to-cash-audit-scroll-top"
-          aria-label="Rolagem horizontal da tabela (topo)"
-          title="Arraste para ver mais colunas"
-        >
-          <div style={{ width: scrollContentWidth, height: 14 }} aria-hidden />
-        </div>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#B2DDFF] bg-white text-[#175CD3] hover:bg-[#F0F9FF]"
-          onClick={() => nudgeHorizontal(280)}
-          aria-label="Rolar tabela para a direita"
-          data-testid="order-to-cash-audit-scroll-right"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        <div style={{ width: scrollContentWidth, height: 12 }} aria-hidden />
       </div>
       <div
+        id="order-to-cash-audit-scroll-main"
         ref={mainScrollRef}
         className="max-h-[min(70vh,720px)] min-w-0 max-w-full overflow-auto"
-        onScroll={() => syncHorizontalScroll("main")}
+        onScroll={handleMainScroll}
         data-testid="order-to-cash-audit-scroll-main"
       >
         <table

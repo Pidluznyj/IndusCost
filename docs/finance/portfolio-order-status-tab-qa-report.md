@@ -8,7 +8,7 @@
 | **Script** | `scripts/qaPortfolioOrderStatusTab.ts` (`npm run qa:portfolio-order-status`) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/order-status` |
 | **Status geral** | **LIBERADO COM RESSALVA** |
-| **Resumo** | total=18 pass=18 fail=0 skip=1 |
+| **Resumo** | total=22 pass=22 fail=0 skip=1 |
 
 ---
 
@@ -31,6 +31,10 @@
 | `schema:sales-order-item-nomus-status` | PASS | SalesOrderItem com campos Nomus |
 | `cards:distinct-orders` | PASS | cards contam pedidos (não facts) |
 | `server:loader` | PASS | loader Prisma order-status existe |
+| `service:commercial-responsible-source` | PASS | service usa fact.commercialResponsibleName (CRM), não responsibleArea (setor) |
+| `loader:crm-owner-injection` | PASS | loader injeta CrmCustomerCommercialOwner por customerId |
+| `row:operational-responsible-separate` | PASS | row separa Responsável Comercial (CRM) do setor operacional (Nomus) |
+| `ui:responsible-vs-seller-labels` | PASS | tabela e drawer usam labels dedicados sem confundir responsável comercial × vendedor |
 | `drilldown:shared-items-grid` | PASS | OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria |
 | `drilldown:reuses-audit-api` | PASS | painel carrega itens via API Auditoria Pedido → Caixa |
 

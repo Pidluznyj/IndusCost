@@ -80,6 +80,28 @@ export function orderStatusDash(value: string | null | undefined): string {
   return s ? s : "—";
 }
 
+/**
+ * Rótulo de "Responsável Comercial" — pessoa responsável pela carteira do
+ * cliente no CRM Comercial. Nunca setor / responsibleArea.
+ */
+export function orderStatusCommercialResponsibleLabel(
+  value: string | null | undefined
+): string {
+  const s = value?.trim();
+  return s ? s : "Sem responsável comercial";
+}
+
+/**
+ * Rótulo de "Vendedor do Pedido" — vendedor do Pedido de Venda no Nomus.
+ * Fonte oficial de comissão.
+ */
+export function orderStatusOrderSellerLabel(
+  value: string | null | undefined
+): string {
+  const s = value?.trim();
+  return s ? s : "Sem vendedor informado";
+}
+
 /** Tooltip discreto com texto curto (não JSON / sem termos técnicos). */
 export function OrderStatusHintTooltip({
   hint,

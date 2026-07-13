@@ -173,18 +173,20 @@ describe("orderToCashAuditUi", () => {
     assert.match(table, /Valor atribuído ao pedido respeitando o limite/);
   });
 
-  it("6b. tabela tem rolagem horizontal no topo e área limitada", () => {
+  it("6b. tabela tem barra de rolagem horizontal única no topo e área limitada", () => {
     const table = read(
       "src/components/finance/portfolio-reconciliation/OrderToCashAuditTable.tsx"
     );
     assert.match(table, /order-to-cash-audit-scroll-top/);
-    assert.match(table, /order-to-cash-audit-scroll-top-bar/);
-    assert.match(table, /order-to-cash-audit-scroll-left/);
-    assert.match(table, /order-to-cash-audit-scroll-right/);
-    assert.match(table, /order-to-cash-audit-scroll-range/);
     assert.match(table, /order-to-cash-audit-scroll-main/);
     assert.match(table, /max-h-\[min\(70vh,720px\)\]/);
-    assert.match(table, /syncHorizontalScroll/);
+    assert.match(table, /useTableHorizontalScrollSync/);
+    assert.match(table, /TABLE_HORIZONTAL_TOP_SCROLL_CLASS/);
+    // Padrão único adotado — sem slider, sem setas de nudge.
+    assert.doesNotMatch(table, /order-to-cash-audit-scroll-range/);
+    assert.doesNotMatch(table, /order-to-cash-audit-scroll-left/);
+    assert.doesNotMatch(table, /order-to-cash-audit-scroll-right/);
+    assert.doesNotMatch(table, /nudgeHorizontal/);
   });
 
   it("7–9. sort server-side", () => {

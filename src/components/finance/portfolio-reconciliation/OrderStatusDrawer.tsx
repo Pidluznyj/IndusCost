@@ -23,7 +23,9 @@ import {
   ORDER_STATUS_BADGE_CLASS,
   ORDER_STATUS_TEMP_BADGE_CLASS,
   orderStatusAlertSeverity,
+  orderStatusCommercialResponsibleLabel,
   orderStatusDash,
+  orderStatusOrderSellerLabel,
 } from "./orderStatusUi";
 
 type Props = {
@@ -65,9 +67,17 @@ function MiniValue({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  title,
+}: {
+  label: string;
+  children: React.ReactNode;
+  title?: string;
+}) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5" title={title}>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[#667085]">
         {label}
       </p>
@@ -284,12 +294,26 @@ export function OrderStatusDrawer({ open, order, onClose }: Props) {
                 <Field label="Entrega estimada">
                   {formatDate(order.orderExpectedDeliveryDate)}
                 </Field>
-                <Field label="Responsável comercial">
-                  {orderStatusDash(order.commercialResponsibleName)}
+                <Field
+                  label="Responsável comercial"
+                  title="Pessoa responsável pela carteira do cliente no CRM Comercial (não é setor)."
+                >
+                  {orderStatusCommercialResponsibleLabel(order.commercialResponsibleName)}
                 </Field>
-                <Field label="Vendedor do pedido">
-                  {orderStatusDash(order.orderSellerName)}
+                <Field
+                  label="Vendedor do pedido"
+                  title="Vendedor do Pedido de Venda no Nomus. Fonte oficial de comissão."
+                >
+                  {orderStatusOrderSellerLabel(order.orderSellerName)}
                 </Field>
+                {order.operationalResponsibleArea?.trim() ? (
+                  <Field
+                    label="Setor / responsável operacional"
+                    title="Setor operacional do pedido no Nomus (COMERCIAL / FINANCEIRO / FATURAMENTO / EXPEDIÇÃO). Nunca é Responsável Comercial."
+                  >
+                    {order.operationalResponsibleArea}
+                  </Field>
+                ) : null}
               </div>
 
               <Field label="Ação recomendada">

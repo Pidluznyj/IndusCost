@@ -65,6 +65,18 @@ Quando vazio: exibir **"Pedido sem vendedor informado no Nomus."** (ver §10).
 
 ---
 
+### 3.1 Uso na aba Financeiro → Status Pedidos
+
+A mesma regra vale para a aba **Financeiro → Conciliação de Carteira → Status Pedidos**:
+
+- Coluna **RESPONSÁVEL COMERCIAL** ⇒ `CrmCustomerCommercialOwner` do cliente do pedido, resolvido no loader (`loadManualCommercialOwnersForCustomers`). Vazio ⇒ "Sem responsável comercial".
+- Coluna **VENDEDOR PEDIDO** ⇒ `SalesOrder.externalSellerId` + `SalesOrder.nomusSellerName`. Vazio ⇒ "Sem vendedor informado".
+- Setor operacional (`SalesOrder.responsible` refletido em `fact.responsibleArea` = `COMERCIAL` / `FINANCEIRO` / `FATURAMENTO` / `EXPEDIÇÃO`) só pode aparecer em coluna própria (**"Setor / responsável operacional"** no drawer). Nunca substitui os campos acima.
+
+O bug histórico "PD 02339 aparece como FATURAMENTO", "PD 02207 aparece como FINANCEIRO" era exatamente isso: o setor operacional vazando no lugar do Responsável Comercial. Correção travada por `qaPortfolioOrderStatusTab` (regras `service:commercial-responsible-source` + `loader:crm-owner-injection` + `row:operational-responsible-separate` + `ui:responsible-vs-seller-labels`).
+
+---
+
 ## 4. O que é Vendedor Comissionável
 
 **Vendedor Comissionável** é a mesma identidade operacional do **Vendedor do Pedido (Nomus)** usada pelo módulo de **Comissões**.
