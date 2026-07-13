@@ -4,7 +4,6 @@ import {
   Ban,
   CheckCircle2,
   CircleDashed,
-  HelpCircle,
   Layers,
   PackageX,
   Wallet,
@@ -19,6 +18,7 @@ import type {
   PortfolioOrderStatusPrimaryCardId,
 } from "@/src/lib/finance/portfolioOrderStatusService";
 import { cn } from "@/src/lib/utils";
+import { OrderStatusHintTooltip } from "./orderStatusUi";
 
 type Props = {
   cards: PortfolioOrderStatusPrimaryCard[];
@@ -41,69 +41,60 @@ const CARD_ICON: Record<
   bloqueados: Ban,
 };
 
-/** Fundo/borda/texto suaves por card (padrão executivo). */
+/** Fundo/borda/texto suaves por card (padrão executivo Inteligência). */
 const CARD_TONE: Record<
   PortfolioOrderStatusPrimaryCardId,
-  { shell: string; value: string; icon: string }
+  { shell: string; value: string; iconWrap: string; icon: string }
 > = {
   total: {
-    shell: "border-slate-200 bg-slate-50/80",
-    value: "text-slate-800",
-    icon: "text-sky-600/80",
+    shell: "border-[#D0D5DD] bg-[#F9FAFB]",
+    value: "text-[#101828]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#475467]",
   },
   completos: {
-    shell: "border-emerald-200 bg-emerald-50/70",
-    value: "text-emerald-800",
-    icon: "text-emerald-600/80",
+    shell: "border-[#ABEFC6] bg-[#ECFDF3]",
+    value: "text-[#067647]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#067647]",
   },
   parciais: {
-    shell: "border-amber-200 bg-amber-50/70",
-    value: "text-amber-900",
-    icon: "text-amber-600/80",
+    shell: "border-[#FEDF89] bg-[#FFFAEB]",
+    value: "text-[#B54708]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#B54708]",
   },
   sem_atendimento: {
-    shell: "border-slate-200 bg-slate-50",
-    value: "text-slate-700",
-    icon: "text-slate-500",
+    shell: "border-[#D0D5DD] bg-[#F2F4F7]",
+    value: "text-[#344054]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#667085]",
   },
   com_divergencia: {
-    shell: "border-orange-200 bg-orange-50/70",
-    value: "text-orange-900",
-    icon: "text-orange-600/80",
+    shell: "border-[#FDBA74] bg-[#FFF6ED]",
+    value: "text-[#C2410C]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#C2410C]",
   },
   cr_aberto: {
-    shell: "border-sky-200 bg-sky-50/70",
-    value: "text-sky-800",
-    icon: "text-sky-600/80",
+    shell: "border-[#B2DDFF] bg-[#EFF8FF]",
+    value: "text-[#175CD3]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#175CD3]",
   },
   recebidos: {
-    shell: "border-emerald-200 bg-emerald-50/80",
-    value: "text-emerald-800",
-    icon: "text-emerald-600/80",
+    shell: "border-[#ABEFC6] bg-[#ECFDF3]",
+    value: "text-[#067647]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#067647]",
   },
   bloqueados: {
-    shell: "border-rose-200 bg-rose-50/70",
-    value: "text-rose-800",
-    icon: "text-rose-600/80",
+    shell: "border-[#FECDCA] bg-[#FEF3F2]",
+    value: "text-[#B42318]",
+    iconWrap: "bg-white/90",
+    icon: "text-[#B42318]",
   },
 };
-
-function CardTooltip({ hint }: { hint: string }) {
-  return (
-    <button
-      type="button"
-      title={hint}
-      aria-label={hint}
-      className="inline-flex shrink-0 cursor-help border-0 bg-transparent p-0 text-[#9CA3AF] hover:text-[#667085] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/35 rounded-sm"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-    >
-      <HelpCircle className="h-3.5 w-3.5" aria-hidden />
-    </button>
-  );
-}
 
 export function OrderStatusPrimaryCards({
   cards,
@@ -114,13 +105,13 @@ export function OrderStatusPrimaryCards({
   if (loading) {
     return (
       <div
-        className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-[repeat(auto-fill,minmax(168px,1fr))]"
         data-testid="order-status-primary-cards-loading"
       >
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
-            className="h-[118px] animate-pulse rounded-[14px] border border-[#E5E7EB] bg-[#F3F4F6]"
+            className="h-[128px] animate-pulse rounded-[14px] border border-[#EAECF0] bg-[#F9FAFB]"
           />
         ))}
       </div>
@@ -129,42 +120,52 @@ export function OrderStatusPrimaryCards({
 
   return (
     <div
-      className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8"
       data-testid="order-status-primary-cards"
     >
       {cards.map((card) => {
         const selected = selectedCard === card.id;
         const tone = CARD_TONE[card.id];
         const Icon = CARD_ICON[card.id];
+        const pressedLabel = selected
+          ? `${card.label}: filtro ativo, clique para limpar`
+          : `Filtrar por ${card.label}`;
         return (
           <button
             key={card.id}
             type="button"
             aria-pressed={selected}
-            title={card.hint}
+            aria-label={pressedLabel}
             onClick={() => onSelect(selected ? "" : card.id)}
             className={cn(
-              "rounded-[14px] border px-3 py-3 text-left shadow-sm transition-all",
+              "relative flex min-h-[124px] flex-col rounded-[14px] border px-3.5 py-3.5 text-left shadow-sm outline-none transition-all",
               tone.shell,
               selected
-                ? "ring-2 ring-[#2563EB]/45 shadow-md"
-                : "hover:brightness-[0.99]"
+                ? "ring-2 ring-sky-400/50 shadow-md"
+                : "hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-300/70"
             )}
             data-testid={`order-status-card-${card.id}`}
           >
-            <div className="flex items-start justify-between gap-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", tone.icon)} />
-                <p className="truncate text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
-                  {card.label}
-                </p>
-              </div>
-              <CardTooltip hint={card.hint} />
+            <div
+              className={cn(
+                "absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg",
+                tone.iconWrap
+              )}
+              aria-hidden
+            >
+              <Icon className={cn("h-3.5 w-3.5", tone.icon)} />
+            </div>
+
+            <div className="flex items-start gap-1.5 pr-9">
+              <p className="min-w-0 flex-1 text-[11px] font-semibold uppercase leading-snug tracking-wide text-[#475467]">
+                {card.label}
+              </p>
+              <OrderStatusHintTooltip title={card.label} hint={card.hint} />
             </div>
 
             <p
               className={cn(
-                "mt-2 text-2xl font-extrabold tabular-nums leading-none",
+                "mt-2.5 text-[24px] font-bold tabular-nums leading-none tracking-tight sm:text-[28px]",
                 tone.value
               )}
               data-testid={`order-status-card-${card.id}-count`}
@@ -173,18 +174,24 @@ export function OrderStatusPrimaryCards({
             </p>
 
             <p
-              className="mt-1.5 text-xs font-semibold tabular-nums text-[#344054]"
+              className="mt-2 text-[13px] font-semibold tabular-nums text-[#344054]"
               data-testid={`order-status-card-${card.id}-value`}
             >
               {formatFinanceCurrencyCompact(card.totalOrderValue)}
             </p>
 
             <p
-              className="mt-0.5 text-[11px] tabular-nums text-[#6B7280]"
+              className="mt-0.5 text-[11px] tabular-nums text-[#667085]"
               data-testid={`order-status-card-${card.id}-percent`}
             >
               {formatFinancePercent(card.percentOfTotal)} do total
             </p>
+
+            {selected ? (
+              <span className="mt-2 inline-flex w-fit rounded-full border border-sky-200 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                Filtro ativo
+              </span>
+            ) : null}
           </button>
         );
       })}

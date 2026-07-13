@@ -142,21 +142,26 @@ export function OrderStatusTab() {
   const filteredEmpty = payload?.state === "FILTERED_EMPTY";
 
   return (
-    <div className="space-y-4" data-testid="order-status-tab">
-      <div className="rounded-[14px] border border-[#E5E7EB] bg-white px-4 py-3 shadow-sm">
+    <div className="space-y-5" data-testid="order-status-tab">
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-[#111827]">
+          <div className="min-w-0 max-w-3xl">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#667085]">
+              Conciliação de Carteira
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-[#101828]">
               {ORDER_STATUS_TAB_TITLE}
             </h2>
-            <p className="mt-1 text-sm text-[#6B7280]">{ORDER_STATUS_TAB_SUBTITLE}</p>
+            <p className="mt-1.5 text-sm leading-relaxed text-[#667085]">
+              {ORDER_STATUS_TAB_SUBTITLE}
+            </p>
           </div>
           <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-2.5 py-1 text-[11px] font-semibold text-[#667085]">
             {ORDER_STATUS_GRAIN_BADGE}
           </span>
         </div>
         <div
-          className="mt-3 rounded-[12px] border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950"
+          className="mt-4 rounded-[12px] border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-xs leading-relaxed text-sky-950"
           data-testid="order-status-info-banner"
         >
           {ORDER_STATUS_INFO_BANNER}
@@ -204,7 +209,7 @@ export function OrderStatusTab() {
 
       {searched && !loading && noRun ? (
         <FinanceModuleEmptyState
-          title="Sem run materializada"
+          title="Auditoria indisponível"
           description={ORDER_STATUS_EMPTY_NO_RUN_MESSAGE}
         />
       ) : null}
@@ -212,16 +217,11 @@ export function OrderStatusTab() {
       {searched && !loading && !error && payload && !noRun ? (
         <>
           {payload.runMeta ? (
-            <p className="text-xs text-[#6B7280]">
-              Fonte: OrderToCashAudit
+            <p className="text-xs text-[#667085]">
+              Fonte: Auditoria Pedido → Caixa
               {payload.runMeta.createdAt
-                ? ` · run ${formatFinanceDateTime(payload.runMeta.createdAt)}`
+                ? ` · atualizado em ${formatFinanceDateTime(payload.runMeta.createdAt)}`
                 : null}
-              {payload.sourceInfo?.warning ? (
-                <span className="ml-1 text-[#9CA3AF]">
-                  · {payload.sourceInfo.grain}
-                </span>
-              ) : null}
             </p>
           ) : null}
 

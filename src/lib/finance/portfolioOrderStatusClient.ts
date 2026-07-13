@@ -24,26 +24,26 @@ import {
 export const ORDER_STATUS_TAB_TITLE = "Status Pedidos";
 
 export const ORDER_STATUS_TAB_SUBTITLE =
-  "Visão consolidada por pedido de venda, baseada na auditoria Pedido → Caixa.";
+  "Visão consolidada por pedido de venda — atendimento, CR e alertas em um só lugar.";
 
-export const ORDER_STATUS_GRAIN_BADGE = "Grão: Pedido de Venda";
+export const ORDER_STATUS_GRAIN_BADGE = "Uma linha por pedido";
 
 export const ORDER_STATUS_INFO_BANNER =
-  "Os cards contam pedidos distintos. A auditoria detalhada continua item a item.";
+  "Cada card conta pedidos distintos. Para o detalhe item a item, use a aba Auditoria Pedido → Caixa.";
 
 export const ORDER_STATUS_SELECT_MESSAGE =
-  "Informe o ano e clique em Aplicar. Cliente é opcional: sem cliente, a API usa a run geral materializada.";
+  "Informe o ano e clique em Aplicar. Cliente é opcional.";
 
 export const ORDER_STATUS_LOADING_MESSAGE = "Carregando status dos pedidos…";
 
 export const ORDER_STATUS_EMPTY_NO_RUN_MESSAGE =
-  "Nenhuma auditoria Pedido → Caixa materializada.";
+  "Ainda não há auditoria Pedido → Caixa disponível para esta consulta.";
 
 export const ORDER_STATUS_EMPTY_FILTERED_MESSAGE =
   "Nenhum pedido encontrado com esses filtros.";
 
 export const ORDER_STATUS_ERROR_MESSAGE =
-  "Não foi possível carregar Status Pedidos.";
+  "Não foi possível carregar Status Pedidos. Tente novamente.";
 
 export const ORDER_STATUS_PERMISSION_MESSAGE =
   "Você não tem permissão para acessar esta aba.";

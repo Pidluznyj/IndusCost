@@ -13,7 +13,7 @@ export function OrderStatusActiveFilterBar({ chips, onClearAll }: Props) {
 
   return (
     <div
-      className="mb-4 flex flex-wrap items-center gap-2"
+      className="flex flex-wrap items-center gap-2"
       data-testid="order-status-active-filters"
     >
       <div className="min-w-0 flex-1 overflow-x-auto">

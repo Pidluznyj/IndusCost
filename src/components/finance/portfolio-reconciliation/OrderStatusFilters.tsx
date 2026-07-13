@@ -92,8 +92,8 @@ export function OrderStatusFilters({
     Boolean(draft.from || draft.to);
 
   return (
-    <div className="mb-4 space-y-3" data-testid="order-status-filters">
-      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-4 shadow-sm">
+    <div data-testid="order-status-filters">
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
             Período
@@ -316,17 +316,19 @@ export function OrderStatusFilters({
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            className="inline-flex h-9 items-center rounded-lg bg-[#2563EB] px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex h-9 items-center rounded-lg bg-[#2563EB] px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
             disabled={!canApply}
             onClick={onApply}
+            aria-label="Aplicar filtros"
             data-testid="order-status-apply"
           >
             Aplicar
           </button>
           <button
             type="button"
-            className="inline-flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F9FAFB]"
+            className="inline-flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F9FAFB] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
             onClick={onClear}
+            aria-label="Limpar todos os filtros"
             data-testid="order-status-clear"
           >
             Limpar tudo
