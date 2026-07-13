@@ -25,6 +25,12 @@ import type {
   PermissionFlags,
   UserPermissionOverrideGrant,
 } from "@/src/lib/security/permissionTypes.js";
+import {
+  buildOverrideSaveAuditPlans,
+  buildPresetApplyAuditPlans,
+  overridesUnchanged,
+  type PermissionAuditEntryPlan,
+} from "@/src/lib/security/permissionAudit.js";
 
 export class UserPermissionAdminError extends Error {
   readonly code: string;
@@ -250,32 +256,47 @@ async function loadOverrides(
   }
 }
 
-async function writeAudit(
+async function writeAuditPlans(
   prisma: PrismaLike,
-  entry: {
+  args: {
     actorUserId: string | null;
     targetUserId: string;
-    targetRole: AppUserRole;
-    resourceKey?: string | null;
-    action: string;
-    beforeJson?: unknown;
-    afterJson?: unknown;
+    plans: readonly PermissionAuditEntryPlan[];
   }
 ): Promise<void> {
+  if (args.plans.length === 0) return;
   try {
-    await prisma.permissionAuditLog.create({
-      data: {
-        actorUserId: entry.actorUserId,
-        targetUserId: entry.targetUserId,
-        targetRole: entry.targetRole,
-        resourceKey: entry.resourceKey ?? null,
-        action: entry.action,
-        beforeJson: entry.beforeJson as object | undefined,
-        afterJson: entry.afterJson as object | undefined,
-      },
+    await prisma.permissionAuditLog.createMany({
+      data: args.plans.map((plan) => ({
+        actorUserId: args.actorUserId,
+        targetUserId: args.targetUserId,
+        targetRole: plan.targetRole as AppUserRole,
+        resourceKey: plan.resourceKey,
+        action: plan.action,
+        beforeJson: (plan.beforeJson ?? undefined) as object | undefined,
+        afterJson: (plan.afterJson ?? undefined) as object | undefined,
+      })),
     });
   } catch (error) {
-    console.warn("[permission-audit] falha ao gravar auditoria", error);
+    // Fallback: cria um a um se createMany falhar (ex.: driver/JSON).
+    console.warn("[permission-audit] createMany falhou; tentando create", error);
+    for (const plan of args.plans) {
+      try {
+        await prisma.permissionAuditLog.create({
+          data: {
+            actorUserId: args.actorUserId,
+            targetUserId: args.targetUserId,
+            targetRole: plan.targetRole as AppUserRole,
+            resourceKey: plan.resourceKey,
+            action: plan.action,
+            beforeJson: (plan.beforeJson ?? undefined) as object | undefined,
+            afterJson: (plan.afterJson ?? undefined) as object | undefined,
+          },
+        });
+      } catch (inner) {
+        console.warn("[permission-audit] falha ao gravar auditoria", inner);
+      }
+    }
   }
 }
 
@@ -333,6 +354,7 @@ export async function saveUserPermissionOverrides(
     actorUserId: string | null;
     overrides: readonly OverrideInput[];
     isEditingSelf: boolean;
+    reason?: string | null;
   }
 ) {
   const user = await prisma.appUser.findUnique({ where: { id: args.userId } });
@@ -348,6 +370,13 @@ export async function saveUserPermissionOverrides(
     ...o,
     userId: args.userId,
   }));
+  const beforeOverrides = await loadOverrides(prisma, args.userId);
+
+  // Sem mudança real → não grava DB nem auditoria (evita ruído).
+  if (overridesUnchanged(beforeOverrides, normalized)) {
+    return getUserPermissionsAdmin(prisma, args.userId);
+  }
+
   const effective = buildEffectiveFlagsMap(user.role, normalized);
   const legacyPermissions = filterKnownPermissions(
     materializeLegacyPermissionsFromFlags(effective)
@@ -361,7 +390,10 @@ export async function saveUserPermissionOverrides(
     nextLegacyPermissions: legacyPermissions,
   });
 
-  const beforeOverrides = await loadOverrides(prisma, args.userId);
+  const reason =
+    args.reason?.trim() ||
+    normalized.map((o) => o.reason?.trim()).find((r) => r) ||
+    null;
 
   await prisma.$transaction(async (tx) => {
     await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
@@ -383,13 +415,16 @@ export async function saveUserPermissionOverrides(
     });
   });
 
-  await writeAudit(prisma, {
+  const plans = buildOverrideSaveAuditPlans({
+    targetRole: user.role,
+    before: beforeOverrides,
+    after: normalized,
+    reason,
+  });
+  await writeAuditPlans(prisma, {
     actorUserId: args.actorUserId,
     targetUserId: args.userId,
-    targetRole: user.role,
-    action: "SAVE_OVERRIDES",
-    beforeJson: { overrides: beforeOverrides, permissions: user.permissions },
-    afterJson: { overrides: normalized, permissions: legacyPermissions },
+    plans,
   });
 
   return getUserPermissionsAdmin(prisma, args.userId);
@@ -402,6 +437,7 @@ export async function clearUserPermissionOverrides(
     actorUserId: string | null;
     confirm: boolean;
     isEditingSelf: boolean;
+    reason?: string | null;
   }
 ) {
   if (!args.confirm) {
@@ -415,6 +451,8 @@ export async function clearUserPermissionOverrides(
     actorUserId: args.actorUserId,
     confirmClearOverrides: true,
     isEditingSelf: args.isEditingSelf,
+    auditKind: "restore",
+    reason: args.reason,
   });
 }
 
@@ -426,6 +464,8 @@ export async function applyRolePresetToUser(
     role?: AppUserRole;
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
+    auditKind?: "preset" | "restore" | "role_change";
+    reason?: string | null;
   }
 ) {
   const user = await prisma.appUser.findUnique({ where: { id: args.userId } });
@@ -469,6 +509,9 @@ export async function applyRolePresetToUser(
   }
 
   const legacyPermissions = filterKnownPermissions(plan.legacyPermissions);
+  const auditKind =
+    args.auditKind ??
+    (nextRole !== user.role ? "role_change" : "preset");
 
   await prisma.$transaction(async (tx) => {
     await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
@@ -481,21 +524,19 @@ export async function applyRolePresetToUser(
     });
   });
 
-  await writeAudit(prisma, {
+  const plans = buildPresetApplyAuditPlans({
+    beforeRole: user.role,
+    afterRole: nextRole,
+    beforeOverrides,
+    beforePermissions: user.permissions,
+    afterPermissions: legacyPermissions,
+    kind: auditKind === "role_change" ? "preset" : auditKind,
+    reason: args.reason,
+  });
+  await writeAuditPlans(prisma, {
     actorUserId: args.actorUserId,
     targetUserId: args.userId,
-    targetRole: nextRole,
-    action: "APPLY_ROLE_PRESET",
-    beforeJson: {
-      role: user.role,
-      overrides: beforeOverrides,
-      permissions: user.permissions,
-    },
-    afterJson: {
-      role: nextRole,
-      overrides: [],
-      permissions: legacyPermissions,
-    },
+    plans,
   });
 
   return getUserPermissionsAdmin(prisma, args.userId);
@@ -509,6 +550,7 @@ export async function updateUserRoleAdmin(
     role: AppUserRole;
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
+    reason?: string | null;
   }
 ) {
   return applyRolePresetToUser(prisma, {
@@ -517,6 +559,8 @@ export async function updateUserRoleAdmin(
     role: args.role,
     confirmClearOverrides: args.confirmClearOverrides,
     isEditingSelf: args.isEditingSelf,
+    auditKind: "role_change",
+    reason: args.reason,
   });
 }
 

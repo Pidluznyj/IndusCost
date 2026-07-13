@@ -48,6 +48,14 @@ import {
   setModuleFlags,
   type DraftOverrideMap,
 } from "@/src/lib/userPermissionsAdminUi";
+import {
+  canViewFullPermissionAudit,
+  permissionAuditActionLabel,
+  summarizePermissionAuditChange,
+} from "@/src/lib/security/permissionAudit";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { ResourceKeys } from "@/src/lib/permissionsClient";
+import { HttpError } from "@/src/lib/http";
 
 type CreateForm = {
   name: string;
@@ -77,7 +85,12 @@ function formatDateTimePt(iso: string | null | undefined): string {
 
 export const AdminUsersModule: React.FC = () => {
   const { hasPermission, authUser } = useAuth();
+  const permissionsApi = usePermissions();
   const canManage = hasPermission("users.manage");
+  const canViewPermissionAudit = canViewFullPermissionAudit(
+    permissionsApi.canManage(ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE) ||
+      authUser?.role === "SUPER_ADMIN"
+  );
   const currentUserId = authUser?.id ?? null;
 
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
@@ -101,6 +114,7 @@ export const AdminUsersModule: React.FC = () => {
   const [treeSearch, setTreeSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [matrix, setMatrix] = useState<RoleMatrixRowDto[]>([]);
   const [matrixLoading, setMatrixLoading] = useState(false);
 
@@ -185,10 +199,26 @@ export const AdminUsersModule: React.FC = () => {
 
   useEffect(() => {
     if (innerTab !== "audit" || !selectedId) return;
+    if (!canViewPermissionAudit) {
+      setAudit([]);
+      setAuditError("Sem permissão para visualizar a auditoria de permissões.");
+      return;
+    }
+    setAuditError(null);
     void fetchUserPermissionAudit(selectedId)
-      .then(setAudit)
-      .catch(() => setAudit([]));
-  }, [innerTab, selectedId]);
+      .then((entries) => {
+        setAudit(entries);
+        setAuditError(null);
+      })
+      .catch((err: unknown) => {
+        setAudit([]);
+        if (err instanceof HttpError && err.status === 403) {
+          setAuditError("Sem permissão para visualizar a auditoria de permissões.");
+          return;
+        }
+        setAuditError(err instanceof Error ? err.message : "Falha ao carregar auditoria.");
+      });
+  }, [innerTab, selectedId, canViewPermissionAudit]);
 
   const filteredUsers = useMemo(
     () =>
@@ -655,7 +685,9 @@ export const AdminUsersModule: React.FC = () => {
                       [
                         ["permissions", "Permissões"],
                         ["summary", "Resumo"],
-                        ["audit", "Auditoria"],
+                        ...(canViewPermissionAudit
+                          ? ([["audit", "Auditoria"]] as const)
+                          : []),
                       ] as const
                     ).map(([id, label]) => (
                       <button
@@ -805,28 +837,54 @@ export const AdminUsersModule: React.FC = () => {
 
                   {innerTab === "audit" ? (
                     <div className="space-y-2">
-                      {audit.length === 0 ? (
+                      {auditError ? (
+                        <p className="text-sm text-amber-800">{auditError}</p>
+                      ) : null}
+                      {!auditError && audit.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                           Sem histórico de alterações de permissão.
                         </p>
-                      ) : (
-                        audit.map((entry) => (
+                      ) : null}
+                      {audit.map((entry) => {
+                        const summary = summarizePermissionAuditChange(
+                          entry.beforeJson,
+                          entry.afterJson
+                        );
+                        return (
                           <div
                             key={entry.id}
                             className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
                           >
                             <div className="flex flex-wrap justify-between gap-2">
-                              <span className="font-semibold">{entry.action}</span>
+                              <span className="font-semibold">
+                                {permissionAuditActionLabel(entry.action)}
+                              </span>
                               <span className="text-muted-foreground">
                                 {formatDateTimePt(entry.createdAt)}
                               </span>
                             </div>
                             <p className="text-muted-foreground mt-0.5">
-                              Por: {entry.actor?.name ?? "—"} ({entry.actor?.email ?? "—"})
+                              Ator: {entry.actor?.name ?? "—"}
+                              {entry.actor?.email ? ` (${entry.actor.email})` : ""}
                             </p>
+                            <p className="mt-0.5">
+                              <span className="text-muted-foreground">Recurso: </span>
+                              {entry.resourceKey ?? "—"}
+                            </p>
+                            <p className="mt-0.5">
+                              <span className="text-muted-foreground">Antes: </span>
+                              {summary.before}
+                              <span className="text-muted-foreground"> → Depois: </span>
+                              {summary.after}
+                            </p>
+                            {summary.reason ? (
+                              <p className="mt-0.5 text-muted-foreground">
+                                Motivo: {summary.reason}
+                              </p>
+                            ) : null}
                           </div>
-                        ))
-                      )}
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>

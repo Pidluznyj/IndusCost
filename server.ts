@@ -2251,6 +2251,7 @@ async function startServer() {
     requireAppAuth,
     requirePermission: requireResourcePermission,
     requireUsersOrPermissionsAdmin,
+    requirePermissionsAdmin: requirePermissionsAdminOrBootstrap,
     requireUsersView: requireUsersViewOrBootstrap,
   });
 

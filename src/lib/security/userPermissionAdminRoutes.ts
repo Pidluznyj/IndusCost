@@ -29,6 +29,8 @@ type RouteDeps = {
   ) => RequestHandler;
   /** Bootstrap admin OU permissão de usuários/ACL. */
   requireUsersOrPermissionsAdmin: express.RequestHandler;
+  /** Somente admin.permissoes:admin (+ bootstrap) — auditoria completa. */
+  requirePermissionsAdmin: express.RequestHandler;
   requireUsersView: express.RequestHandler;
 };
 
@@ -131,11 +133,14 @@ export function registerUserPermissionAdminRoutes(
         const overrides = Array.isArray(req.body?.overrides)
           ? (req.body.overrides as OverrideInput[])
           : [];
+        const reason =
+          typeof req.body?.reason === "string" ? req.body.reason : undefined;
         const payload = await saveUserPermissionOverrides(prisma, {
           userId: id,
           actorUserId: actorId(req),
           overrides,
           isEditingSelf: isEditingSelf(req, id),
+          reason,
         });
         return res.json(payload);
       } catch (error) {
@@ -181,6 +186,7 @@ export function registerUserPermissionAdminRoutes(
         role,
         confirmClearOverrides: req.body?.confirmClearOverrides === true,
         isEditingSelf: isEditingSelf(req, id),
+        reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
       });
       return res.json(payload);
     } catch (error) {
@@ -205,6 +211,8 @@ export function registerUserPermissionAdminRoutes(
           role: role ?? undefined,
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),
+          auditKind: "preset",
+          reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
         });
         return res.json(payload);
       } catch (error) {
@@ -225,6 +233,8 @@ export function registerUserPermissionAdminRoutes(
           actorUserId: actorId(req),
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),
+          auditKind: "restore",
+          reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
         });
         return res.json(payload);
       } catch (error) {
@@ -236,7 +246,7 @@ export function registerUserPermissionAdminRoutes(
   app.get(
     "/api/admin/users/:id/permission-audit",
     deps.requireAppAuth,
-    adminGuard,
+    deps.requirePermissionsAdmin,
     async (req, res) => {
       try {
         const id = String(req.params.id ?? "").trim();
