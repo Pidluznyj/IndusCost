@@ -47,6 +47,23 @@ function parseRole(value: unknown): AppUserRole | null {
   return APP_ROLES.has(value as AppUserRole) ? (value as AppUserRole) : null;
 }
 
+function isMissingPermissionTableError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /P2021|P2022|does not exist|relation .* does not exist/i.test(msg) &&
+    /permissionResource|userPermissionOverride|rolePermission|permissionAuditLog/i.test(msg)
+  );
+}
+
+function isPermissionFkError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /P2003/.test(msg) ||
+    /Foreign key constraint/i.test(msg) ||
+    (/foreign key/i.test(msg) && /resourceKey|PermissionResource/i.test(msg))
+  );
+}
+
 function handleError(res: express.Response, error: unknown, label: string) {
   if (error instanceof UserPermissionAdminError) {
     const status =
@@ -57,7 +74,9 @@ function handleError(res: express.Response, error: unknown, label: string) {
             error.code === "LAST_SUPER_ADMIN" ||
             error.code === "CANNOT_DEMOTE_SELF" ||
             error.code === "CANNOT_REMOVE_OWN_USERS_MANAGE" ||
-            error.code === "SUPER_ADMIN_READONLY"
+            error.code === "SUPER_ADMIN_READONLY" ||
+            error.code === "PERMISSION_SCHEMA_MISSING" ||
+            error.code === "PERMISSION_CATALOG_MISSING"
           ? 409
           : 400;
     return res.status(status).json({
@@ -65,6 +84,22 @@ function handleError(res: express.Response, error: unknown, label: string) {
       code: error.code,
       message: error.message,
       ...(error.details ?? {}),
+    });
+  }
+  // Rede de segurança: Prisma cru (FK/schema) → 409 com orientação operacional.
+  if (isMissingPermissionTableError(error)) {
+    return res.status(409).json({
+      error: "PERMISSION_SCHEMA_MISSING",
+      code: "PERMISSION_SCHEMA_MISSING",
+      message:
+        "Tabelas de permissões ainda não existem. Rode as migrations e depois npm run permissions:seed.",
+    });
+  }
+  if (isPermissionFkError(error)) {
+    return res.status(409).json({
+      error: "PERMISSION_CATALOG_MISSING",
+      code: "PERMISSION_CATALOG_MISSING",
+      message: "Catálogo de permissões não está populado. Rode npm run permissions:seed.",
     });
   }
   console.error(label, error);
@@ -266,23 +301,44 @@ export function registerUserPermissionAdminRoutes(
 
 /** Enriquece listagem GET /api/admin/users com hasCustomPermissions. */
 export async function listAdminUsersWithPermissionMeta() {
-  const users = await prisma.appUser.findMany({
-    orderBy: [{ name: "asc" }, { email: "asc" }],
-    include: {
-      accessProfile: { select: { name: true } },
-      _count: { select: { permissionOverrides: true } },
-    },
-  });
+  try {
+    const users = await prisma.appUser.findMany({
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      include: {
+        accessProfile: { select: { name: true } },
+        _count: { select: { permissionOverrides: true } },
+      },
+    });
 
-  return users.map((u) => {
-    const overrideCount = u._count?.permissionOverrides ?? 0;
-    const safe = toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null });
-    return {
-      ...safe,
-      hasCustomPermissions: overrideCount > 0,
-      overrideCount,
-    };
-  });
+    return users.map((u) => {
+      const overrideCount = u._count?.permissionOverrides ?? 0;
+      const safe = toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null });
+      return {
+        ...safe,
+        hasCustomPermissions: overrideCount > 0,
+        overrideCount,
+      };
+    });
+  } catch (error) {
+    // Tabela de overrides pode não existir ainda — cai para listagem sem meta.
+    if (!isMissingPermissionTableError(error)) {
+      console.warn("[permission-admin] listagem com meta falhou; fallback simples", error);
+    }
+    const users = await prisma.appUser.findMany({
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      include: {
+        accessProfile: { select: { name: true } },
+      },
+    });
+    return users.map((u) => {
+      const safe = toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null });
+      return {
+        ...safe,
+        hasCustomPermissions: false,
+        overrideCount: 0,
+      };
+    });
+  }
 }
 
 export { PermissionResourceKeys };

@@ -6,6 +6,7 @@ import type { AppUserRole, PrismaClient } from "@prisma/client";
 import {
   getOfficialRolePermissionFlags,
   PERMISSION_RESOURCE_SEEDS,
+  sortPermissionResourcesForInsert,
   validatePermissionResourceCatalog,
 } from "@/src/lib/permissionResourceSeedData.js";
 import { filterKnownPermissions } from "@/src/lib/appAuth.js";
@@ -256,6 +257,80 @@ async function loadOverrides(
   }
 }
 
+function isMissingPermissionTableError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /permissionResource|userPermissionOverride|rolePermission|permissionAuditLog/i.test(msg) &&
+    (/does not exist/i.test(msg) ||
+      /P2021/.test(msg) ||
+      /relation .* does not exist/i.test(msg))
+  );
+}
+
+function isPermissionFkError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /P2003/.test(msg) ||
+    /Foreign key constraint/i.test(msg) ||
+    (/foreign key/i.test(msg) && /resourceKey|PermissionResource/i.test(msg))
+  );
+}
+
+function mapPermissionWriteError(error: unknown): never {
+  if (isMissingPermissionTableError(error)) {
+    throw new UserPermissionAdminError(
+      "PERMISSION_SCHEMA_MISSING",
+      "Tabelas de permissões ainda não existem. Rode as migrations e depois npm run permissions:seed."
+    );
+  }
+  if (isPermissionFkError(error)) {
+    throw new UserPermissionAdminError(
+      "PERMISSION_CATALOG_MISSING",
+      "Catálogo de permissões não está populado. Rode npm run permissions:seed."
+    );
+  }
+  throw error;
+}
+
+/**
+ * Garante que os PermissionResource do seed existam (necessário pela FK dos overrides).
+ * Idempotente; não altera RolePermission nem AppUser.permissions.
+ */
+export async function ensurePermissionCatalogResources(
+  prisma: PrismaLike
+): Promise<void> {
+  try {
+    for (const row of sortPermissionResourcesForInsert()) {
+      await prisma.permissionResource.upsert({
+        where: { key: row.key },
+        create: {
+          key: row.key,
+          label: row.label,
+          description: row.description,
+          type: row.type,
+          parentKey: row.parentKey,
+          module: row.module,
+          sortOrder: row.sortOrder,
+          isSystem: true,
+          isActive: true,
+        },
+        update: {
+          label: row.label,
+          description: row.description,
+          type: row.type,
+          parentKey: row.parentKey,
+          module: row.module,
+          sortOrder: row.sortOrder,
+          isSystem: true,
+          isActive: true,
+        },
+      });
+    }
+  } catch (error) {
+    mapPermissionWriteError(error);
+  }
+}
+
 async function writeAuditPlans(
   prisma: PrismaLike,
   args: {
@@ -395,25 +470,32 @@ export async function saveUserPermissionOverrides(
     normalized.map((o) => o.reason?.trim()).find((r) => r) ||
     null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
-    for (const ov of normalized) {
-      await tx.userPermissionOverride.create({
-        data: {
-          userId: args.userId,
-          resourceKey: ov.resourceKey,
-          canView: ov.canView,
-          canExecute: ov.canExecute,
-          canManage: ov.canManage,
-          reason: ov.reason ?? null,
-        },
+  // FK UserPermissionOverride.resourceKey → PermissionResource.key
+  await ensurePermissionCatalogResources(prisma);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
+      for (const ov of normalized) {
+        await tx.userPermissionOverride.create({
+          data: {
+            userId: args.userId,
+            resourceKey: ov.resourceKey,
+            canView: ov.canView,
+            canExecute: ov.canExecute,
+            canManage: ov.canManage,
+            reason: ov.reason ?? null,
+          },
+        });
+      }
+      await tx.appUser.update({
+        where: { id: args.userId },
+        data: { permissions: legacyPermissions },
       });
-    }
-    await tx.appUser.update({
-      where: { id: args.userId },
-      data: { permissions: legacyPermissions },
     });
-  });
+  } catch (error) {
+    mapPermissionWriteError(error);
+  }
 
   const plans = buildOverrideSaveAuditPlans({
     targetRole: user.role,
@@ -513,16 +595,23 @@ export async function applyRolePresetToUser(
     args.auditKind ??
     (nextRole !== user.role ? "role_change" : "preset");
 
-  await prisma.$transaction(async (tx) => {
-    await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
-    await tx.appUser.update({
-      where: { id: args.userId },
-      data: {
-        role: nextRole,
-        permissions: legacyPermissions,
-      },
+  // Garante catálogo (FK de auditoria/consistência). Erros de schema viram mensagem clara.
+  await ensurePermissionCatalogResources(prisma);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
+      await tx.appUser.update({
+        where: { id: args.userId },
+        data: {
+          role: nextRole,
+          permissions: legacyPermissions,
+        },
+      });
     });
-  });
+  } catch (error) {
+    mapPermissionWriteError(error);
+  }
 
   const plans = buildPresetApplyAuditPlans({
     beforeRole: user.role,
@@ -599,16 +688,18 @@ export async function listUserPermissionAudit(
 
 export async function reloadPermissionCatalogStatus(prisma: PrismaLike) {
   const issues = validatePermissionResourceCatalog();
+  // Garante catálogo no DB (FK dos overrides); idempotente.
+  await ensurePermissionCatalogResources(prisma);
   let dbResourceCount = 0;
   let dbRolePermissionCount = 0;
   try {
     dbResourceCount = await prisma.permissionResource.count();
     dbRolePermissionCount = await prisma.rolePermission.count();
   } catch {
-    // ignore
+    // ignore — ensure já mapeou schema ausente
   }
   return {
-    ok: issues.length === 0,
+    ok: issues.length === 0 && dbResourceCount > 0,
     issues,
     seedResourceCount: PERMISSION_RESOURCE_SEEDS.length,
     dbResourceCount,

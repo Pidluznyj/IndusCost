@@ -4,6 +4,7 @@ import {
   saveUserPermissionOverrides,
   applyRolePresetToUser,
   clearUserPermissionOverrides,
+  UserPermissionAdminError,
 } from "./userPermissionAdminService.ts";
 import { PermissionAuditActions } from "./permissionAudit.ts";
 import type { AppUserRole } from "@prisma/client";
@@ -49,6 +50,23 @@ function makePrismaMock(args: {
         if (_args.data.role) user.role = _args.data.role;
         if (_args.data.permissions) user.permissions = _args.data.permissions;
         return user;
+      },
+    },
+    permissionResource: {
+      async upsert() {
+        return {};
+      },
+      async findUnique() {
+        return null;
+      },
+      async create() {
+        return {};
+      },
+      async update() {
+        return {};
+      },
+      async count() {
+        return 0;
       },
     },
     userPermissionOverride: {
@@ -207,5 +225,43 @@ describe("userPermissionAdminService — auditoria", () => {
       overrides: [{ resourceKey: "comercial.crm", canView: true }],
     });
     assert.equal(audits.length, 0);
+  });
+
+  it("FK de catálogo ausente vira PERMISSION_CATALOG_MISSING", async () => {
+    const { prisma } = makePrismaMock({ overrides: [] });
+    // Força falha no create de override (simula FK para PermissionResource).
+    (prisma as { $transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown> }).$transaction =
+      async (fn) => {
+        const tx = {
+          userPermissionOverride: {
+            async deleteMany() {
+              return { count: 0 };
+            },
+            async create() {
+              const err = new Error(
+                "Foreign key constraint failed on the field: `resourceKey` (P2003)"
+              );
+              throw err;
+            },
+          },
+          appUser: {
+            async update() {
+              return {};
+            },
+          },
+        };
+        return fn(tx);
+      };
+    await assert.rejects(
+      () =>
+        saveUserPermissionOverrides(prisma, {
+          userId: "user-1",
+          actorUserId: "actor-1",
+          isEditingSelf: false,
+          overrides: [{ resourceKey: "comercial.crm", canView: true }],
+        }),
+      (err: unknown) =>
+        err instanceof UserPermissionAdminError && err.code === "PERMISSION_CATALOG_MISSING"
+    );
   });
 });
