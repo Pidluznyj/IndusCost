@@ -315,6 +315,7 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
     order.items.map((item, index) => {
       const fromDb =
         item.nomusIsCanceled === true ||
+        item.nomusIsStale === true ||
         (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED"
           ? "CANCELADO"
           : item.nomusItemStatusNormalized === "FULFILLED"
@@ -367,6 +368,10 @@ async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{
         totalNetValue: dec(item.totalNetValue),
         expectedDeliveryDate: null,
         itemStatus,
+        nomusIsCanceled: item.nomusIsCanceled === true,
+        nomusIsStale: item.nomusIsStale === true,
+        nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
+        nomusItemStatusRaw: item.nomusItemStatusRaw ?? null,
       };
     })
   );

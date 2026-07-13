@@ -165,6 +165,18 @@ function staticContracts(): void {
     fail("static", "service:item-status-normalizer", "normalizador ausente");
   }
 
+  if (exists("docs/sales/sales-order-item-status-rules.md")) {
+    ok("static", "docs:item-status-rules", "regras oficiais de status de item");
+  } else {
+    fail("static", "docs:item-status-rules", "docs/sales/sales-order-item-status-rules.md ausente");
+  }
+
+  if (exists("docs/sales/sales-order-item-status-impact-audit.md")) {
+    ok("static", "docs:item-status-impact-audit", "inventário de impacto");
+  } else {
+    fail("static", "docs:item-status-impact-audit", "impact-audit ausente");
+  }
+
   if (exists("docs/sales/sales-order-item-nomus-status-sync.md")) {
     ok("static", "docs:item-nomus-status-sync", "doc sync status item Nomus");
   } else {

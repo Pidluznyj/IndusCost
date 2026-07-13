@@ -537,6 +537,8 @@ export async function loadSoldProductsLineContexts(
 
   const items = await prisma.salesOrderItem.findMany({
     where: {
+      nomusIsCanceled: false,
+      nomusIsStale: false,
       ...(itemFilters.length > 0 ? { AND: itemFilters } : {}),
       SalesOrder: {
         ...where,

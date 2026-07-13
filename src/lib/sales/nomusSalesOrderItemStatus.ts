@@ -219,9 +219,86 @@ export function isInactiveSalesOrderItemNomusFlags(flags: {
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
   nomusItemStatusNormalized?: string | null;
+  itemStatus?: string | null;
+  isCanceled?: boolean | null;
+  isStale?: boolean | null;
 }): boolean {
-  if (flags.nomusIsCanceled === true) return true;
-  if (flags.nomusIsStale === true) return true;
+  if (flags.nomusIsCanceled === true || flags.isCanceled === true) return true;
+  if (flags.nomusIsStale === true || flags.isStale === true) return true;
   const norm = (flags.nomusItemStatusNormalized ?? "").trim().toUpperCase();
-  return norm === "CANCELED" || norm === "CANCELLED" || norm === "CANCELADO";
+  if (norm === "CANCELED" || norm === "CANCELLED" || norm === "CANCELADO") {
+    return true;
+  }
+  const itemStatus = (flags.itemStatus ?? "").trim().toUpperCase();
+  return (
+    itemStatus === "CANCELED" ||
+    itemStatus === "CANCELLED" ||
+    itemStatus === "CANCELADO"
+  );
+}
+
+/** Alias do contrato oficial — status bruto Nomus cancelado. */
+export function isNomusSalesOrderItemCanceled(rawStatus: unknown): boolean {
+  return isNomusSalesOrderItemCanceledStatus(rawStatus);
+}
+
+export type SalesOrderItemActivityFlags = {
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
+  itemStatus?: string | null;
+  isCanceled?: boolean | null;
+  isStale?: boolean | null;
+  quantity?: number | null;
+  totalNetValue?: number | null;
+};
+
+function isZeroedItem(item: SalesOrderItemActivityFlags): boolean {
+  const qty = item.quantity;
+  const net = item.totalNetValue;
+  if (qty != null && Number.isFinite(qty) && qty <= 0) return true;
+  if (net != null && Number.isFinite(net) && Math.abs(net) < 1e-9) return true;
+  return false;
+}
+
+/** Gate canônico: CANCELED / STALE / zerado → não é valor comercial ativo. */
+export function isSalesOrderItemActiveForCommercialValue(
+  item: SalesOrderItemActivityFlags
+): boolean {
+  if (isInactiveSalesOrderItemNomusFlags(item)) return false;
+  if (isZeroedItem(item)) return false;
+  return true;
+}
+
+export function isSalesOrderItemActiveForReceivableForecast(
+  item: SalesOrderItemActivityFlags
+): boolean {
+  return isSalesOrderItemActiveForCommercialValue(item);
+}
+
+export function isSalesOrderItemActiveForCommission(
+  item: SalesOrderItemActivityFlags
+): boolean {
+  return isSalesOrderItemActiveForCommercialValue(item);
+}
+
+export function isSalesOrderItemActiveForMargin(
+  item: SalesOrderItemActivityFlags
+): boolean {
+  return isSalesOrderItemActiveForCommercialValue(item);
+}
+
+export const COMMISSION_IGNORED_CANCELED_ITEM = "IGNORED_CANCELED_ITEM";
+export const COMMISSION_IGNORED_STALE_ITEM = "IGNORED_STALE_ITEM";
+
+export function resolveCommissionIgnoreReasonForSalesOrderItem(
+  item: SalesOrderItemActivityFlags
+): typeof COMMISSION_IGNORED_CANCELED_ITEM | typeof COMMISSION_IGNORED_STALE_ITEM | null {
+  if (item.nomusIsStale === true || item.isStale === true) {
+    return COMMISSION_IGNORED_STALE_ITEM;
+  }
+  if (isInactiveSalesOrderItemNomusFlags(item) || isZeroedItem(item)) {
+    return COMMISSION_IGNORED_CANCELED_ITEM;
+  }
+  return null;
 }

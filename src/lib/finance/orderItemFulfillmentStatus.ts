@@ -90,12 +90,15 @@ export function isCanceledOrderItemStatus(raw: unknown): boolean {
 
 /** Fact/linha com status de item cancelado (não conta como pendência ativa). */
 export function isCanceledOrderItemFact(fact: {
+  lineType?: string | null;
   orderItemStatus?: string | null;
   itemFulfillmentStatus?: OrderItemFulfillmentStatus | string | null;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
   nomusItemStatusNormalized?: string | null;
 }): boolean {
+  const lineType = (fact.lineType ?? "").trim().toUpperCase();
+  if (lineType === "ORDER_ITEM_CANCELED") return true;
   if (fact.nomusIsCanceled === true) return true;
   if (fact.nomusIsStale === true) return true;
   const norm = (fact.nomusItemStatusNormalized ?? "").trim().toUpperCase();

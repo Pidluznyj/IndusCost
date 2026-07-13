@@ -986,10 +986,15 @@ export const SALES_ORDER_RULES_PRISMA_SELECT = {
   items: {
     select: {
       id: true,
+      productId: true,
       externalProductId: true,
       skuSnapshot: true,
       productNameSnapshot: true,
       quantity: true,
+      totalNetValue: true,
+      nomusIsCanceled: true,
+      nomusIsStale: true,
+      nomusItemStatusNormalized: true,
     },
   },
 } as const;

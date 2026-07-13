@@ -76,6 +76,8 @@ export type PortfolioCashForecastOrderInput = {
   salesOrderId?: string | null;
   orderCode: string;
   orderValue: number;
+  /** Valor ativo (sem cancelados/stale). Preferido em fontes ORDER_*. */
+  activeOrderValue?: number | null;
   asOfDate?: string | null;
   orderIssueDate?: string | null;
   expectedDeliveryDate?: string | null;
@@ -412,20 +414,24 @@ function pickForecastValue(
   sourceType: PortfolioCashForecastSourceType
 ): number {
   const orderValue = round2(toNumber(input.orderValue));
+  const activeOrderValue =
+    input.activeOrderValue != null && Number.isFinite(input.activeOrderValue)
+      ? round2(Math.max(0, Number(input.activeOrderValue)))
+      : orderValue;
   const received = round2(toNumber(input.receivedValue));
   const open = round2(toNumber(input.openReceivableValue));
   const receivable = round2(toNumber(input.receivableTotalValue));
 
   switch (sourceType) {
     case "RECEIVED":
-      return received > 0 ? received : orderValue;
+      return received > 0 ? received : activeOrderValue;
     case "RECEIVABLE":
-      return open > 0 ? open : receivable > 0 ? receivable : orderValue;
+      return open > 0 ? open : receivable > 0 ? receivable : activeOrderValue;
     case "DOCUMENT_OR_NFE":
     case "ORDER_FUTURE":
     case "ORDER_ATTENTION":
     case "ORDER_BLOCKED":
-      return orderValue;
+      return activeOrderValue;
   }
 }
 

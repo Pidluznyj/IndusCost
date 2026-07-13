@@ -65,13 +65,13 @@ export function orderToCashAuditLineType(row: OrderToCashAuditListRow): string {
 }
 
 export function isOrderToCashAuditCanceledLine(row: OrderToCashAuditListRow): boolean {
+  if (orderToCashAuditLineType(row) === "ORDER_ITEM_CANCELED") return true;
   if (row.itemFulfillmentStatus === "CANCELADO") return true;
   const status = (row.orderItemStatus ?? "").trim().toUpperCase();
   return (
     status === "CANCELADO" ||
     status === "CANCELLED" ||
-    status === "CANCELED" ||
-    status === "CANCELLED"
+    status === "CANCELED"
   );
 }
 

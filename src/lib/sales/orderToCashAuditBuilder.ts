@@ -11,6 +11,9 @@ import {
   pricesMismatch,
 } from "../finance/portfolioReconciliationAllocationEngine.js";
 import { extractSalesOrderForecastInstallments } from "../salesOrderListPaymentSchedule.js";
+import {
+  isSalesOrderItemActiveForReceivableForecast,
+} from "./nomusSalesOrderItemStatus.js";
 
 // ---------------------------------------------------------------------------
 // Constants / line types
@@ -21,6 +24,7 @@ export const ORDER_TO_CASH_PRICE_TOLERANCE = PORTFOLIO_PRICE_TOLERANCE;
 export const ORDER_TO_CASH_LINE_TYPES = [
   "ORDER_ITEM_PENDING",
   "ORDER_ITEM_ALLOCATED",
+  "ORDER_ITEM_CANCELED",
   "DOCUMENT_EXTRA_ITEM",
   "QUANTITY_SURPLUS",
 ] as const;
@@ -84,6 +88,12 @@ export type OrderToCashAuditOrderItemInput = {
   totalNetValue?: number | null;
   expectedDeliveryDate?: Date | string | null;
   itemStatus?: string | null;
+  /** Persistido em SalesOrderItem.nomusIsCanceled */
+  nomusIsCanceled?: boolean | null;
+  /** Persistido em SalesOrderItem.nomusIsStale */
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
+  nomusItemStatusRaw?: string | null;
 };
 
 export type OrderToCashAuditNfeLinkInput = {
@@ -357,6 +367,7 @@ export type OrderToCashAuditBuilderSummary = {
   orderItemsProcessed: number;
   rowsGenerated: number;
   pendingLines: number;
+  canceledLines: number;
   allocatedLines: number;
   extraItemLines: number;
   surplusLines: number;
@@ -416,6 +427,20 @@ function toFinite(value: number | null | undefined, fallback = 0): number {
 function toIsoDate(value: Date | null | undefined): string | null {
   if (!value || Number.isNaN(value.getTime())) return null;
   return value.toISOString().slice(0, 10);
+}
+
+/** Item cancelado/stale/zerado — não aloca, não gera PENDING, não entra em forecast. */
+export function isInactiveOrderToCashOrderItem(
+  item: OrderToCashAuditOrderItemInput
+): boolean {
+  return !isSalesOrderItemActiveForReceivableForecast({
+    nomusIsCanceled: item.nomusIsCanceled,
+    nomusIsStale: item.nomusIsStale,
+    nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+    itemStatus: item.itemStatus,
+    quantity: item.quantity,
+    totalNetValue: item.totalNetValue ?? null,
+  });
 }
 
 function isCanceledStatus(status: string | null | undefined): boolean {
@@ -671,12 +696,17 @@ export type OrderPaymentPlan = {
 };
 
 export function buildOrderPaymentPlan(
-  order: OrderToCashAuditOrderInput
+  order: OrderToCashAuditOrderInput,
+  options?: { plannedBaseValue?: number | null }
 ): OrderPaymentPlan {
   const terms = order.paymentTerms?.trim() || null;
   const method = order.paymentMethod?.trim() || null;
   const issueDate = toDate(order.issueDate) ?? startOfDay(new Date());
-  const total = toFinite(order.totalNetValue);
+  const headerTotal = toFinite(order.totalNetValue);
+  const total =
+    options?.plannedBaseValue != null && Number.isFinite(options.plannedBaseValue)
+      ? Math.max(0, options.plannedBaseValue)
+      : headerTotal;
   const installments = extractSalesOrderForecastInstallments(
     order.nomusRawResponse,
     total,
@@ -1551,6 +1581,7 @@ export function buildOrderToCashAuditRows(
   }
 
   let pendingLines = 0;
+  let canceledLines = 0;
   let allocatedLines = 0;
   let extraItemLines = 0;
   let surplusLines = 0;
@@ -1570,8 +1601,25 @@ export function buildOrderToCashAuditRows(
       continue;
     }
 
+    const activeItems = orderItems.filter((i) => !isInactiveOrderToCashOrderItem(i));
+    const canceledItems = orderItems.filter((i) => isInactiveOrderToCashOrderItem(i));
+    const canceledOrderValue = round6(
+      canceledItems.reduce((s, i) => s + itemTotalValue(i), 0)
+    );
+    const activeFromItems = round6(
+      activeItems.reduce((s, i) => s + itemTotalValue(i), 0)
+    );
+    const headerNet = toFinite(order.totalNetValue);
+    const activeOrderValue = round6(
+      headerNet > 0
+        ? Math.max(0, headerNet - canceledOrderValue)
+        : activeFromItems
+    );
+
     const seller = resolveOrderSeller(order);
-    const plan = buildOrderPaymentPlan(order);
+    const plan = buildOrderPaymentPlan(order, {
+      plannedBaseValue: activeOrderValue > 0 ? activeOrderValue : headerNet,
+    });
     const orderExpected = toDate(order.expectedDeliveryDate);
     const issueDate = toDate(order.issueDate);
     const daysSinceIssue =
@@ -1585,9 +1633,10 @@ export function buildOrderToCashAuditRows(
       }
     }
     // Documentos sem NF link mas presentes no input com items do pedido — não força vínculo inventado
+    // Alocação só sobre itens ativos (cancelado/stale não “roubam” saldo do SKU).
 
     const allocation = linkOrderItemsToStockDocumentItems(
-      orderItems,
+      activeItems,
       orderDocs,
       stockDocumentItems
     );
@@ -1627,14 +1676,17 @@ export function buildOrderToCashAuditRows(
       (s, a) => s + money(a.quantityUsed, a.item.unitPrice),
       0
     );
-    // Cap: valor atribuído nunca passa do pedido
-    const cappedAttributed = Math.min(attributedAllocated, orderValue || attributedAllocated);
+    // Cap: valor atribuído nunca passa do valor ativo do pedido
+    const cappedAttributed = Math.min(
+      attributedAllocated,
+      activeOrderValue || attributedAllocated
+    );
     const hasNfeHeaderGreater =
       headerSum > 0 &&
-      orderValue > 0 &&
-      headerSum > orderValue + ORDER_TO_CASH_PRICE_TOLERANCE;
+      activeOrderValue > 0 &&
+      headerSum > activeOrderValue + ORDER_TO_CASH_PRICE_TOLERANCE;
 
-    const orderedQty = orderItems.reduce((s, i) => s + toFinite(i.quantity), 0);
+    const orderedQty = activeItems.reduce((s, i) => s + toFinite(i.quantity), 0);
     const fulfilledQty = allocation.allocations.reduce((s, a) => s + a.quantityUsed, 0);
     const hasExcess =
       allocation.allocations.some((a) => a.excessQuantity > 0) ||
@@ -2117,16 +2169,114 @@ export function buildOrderToCashAuditRows(
       pendingLines += 1;
     }
 
-    // Guardrail de valor: se soma atribuída > pedido, warning (não inventa corte por linha já capped)
+    // Itens cancelados/stale: evidência em detalhe, sem PENDING / forecast / alerta de entrega.
+    for (const canceled of canceledItems) {
+      const row = baseRow({
+        auditKey: `${order.id}:${canceled.id}:canceled`,
+        lineType: "ORDER_ITEM_CANCELED",
+      });
+      applyOrderIdentity(row, order, seller, plan);
+      applyItemIdentity(row, canceled, orderExpected);
+      row.orderItemStatus =
+        canceled.itemStatus?.trim() ||
+        (canceled.nomusIsStale ? "CANCELADO" : "CANCELADO");
+      row.runId = opts.runId;
+      row.commercialStage = commercialStage;
+      row.operationalStage = "CANCELADO";
+      row.fiscalStage = "NO_NFE";
+      row.financialStage = "NO_CR";
+      row.cashStage = "NO_CASH";
+      row.orderToCashStage = classifyOrderToCashStage({
+        canceled: true,
+        commercialStage,
+        operationalStage: "CANCELADO",
+        fiscalStage: "NO_NFE",
+        financialStage: "NO_CR",
+        cashStage: "NO_CASH",
+        expectedDelivery: expectedForStage,
+        today: opts.today,
+        diasProximoEntrega: opts.diasProximoEntrega,
+        diasRecemVencido: opts.diasRecemVencido,
+        diasBloqueio: opts.diasBloqueio,
+        hasEvidence: false,
+      });
+      row.temperature = classifyTemperature(row.orderToCashStage ?? "SEM_EVIDENCIA");
+      row.confidenceScore = confidence.score;
+      row.confidenceLabel = confidence.label;
+      row.responsibleArea = action.responsibleArea;
+      row.recommendedAction = "Item cancelado no Pedido de Venda/Nomus — ignorar saldo e forecast.";
+      Object.assign(row, emptyAlertFlags());
+      row.hasMissingStockDocument = false;
+      row.hasPartialFulfillment = false;
+      row.hasFullFulfillment = false;
+      row.hasExcessQuantity = false;
+      row.hasProductOutsideOrder = false;
+      row.hasPriceMismatch = false;
+      row.hasDocumentWithoutReceivable = false;
+      row.hasOverdueReceivable = false;
+      row.hasDeliveryDelay = false;
+      row.alertsJson = ["ITEM_CANCELADO_PEDIDO_VENDA"];
+      row.blockingReasonsJson = [];
+      row.paymentStatus = "CANCELED";
+      row.paymentScheduledDate = null;
+      row.paymentDueDate = null;
+      row.paymentExpectedValue = null;
+      row.paymentReceivedValue = null;
+      row.paymentOpenValue = null;
+      row.paymentSettlementDate = null;
+      row.paymentReceivedAt = null;
+      row.paymentDelayDays = null;
+      row.plannedReceivableValue = null;
+      row.stockDocumentId = null;
+      row.stockDocumentExternalId = null;
+      row.stockDocumentItemId = null;
+      row.stockDocumentItemQuantity = null;
+      row.stockDocumentItemUnitValue = null;
+      row.stockDocumentItemTotalValue = null;
+      row.nfeId = null;
+      row.nfeExternalId = null;
+      row.nfeNumber = null;
+      row.nfeSerie = null;
+      row.nfeKey = null;
+      row.nfeHeaderValue = null;
+      row.nfeIssueDate = null;
+      row.nfeProcessedAt = null;
+      row.nfeLinkedBy = null;
+      row.nfeItemsAvailable = false;
+      row.nfeItemsSource = null;
+      row.nfeItemQuantity = null;
+      row.nfeItemUnitValue = null;
+      row.nfeItemTotalValue = null;
+      row.nfeItemMatchedOrderItem = false;
+      row.receivableIdsJson = null;
+      row.receivableCount = null;
+      row.receivableTotalValue = null;
+      row.receivableOpenValue = null;
+      row.receivableReceivedValue = null;
+      row.receivableDueDatesJson = null;
+      row.receivableSettlementDatesJson = null;
+      row.receivableStatus = null;
+      row.receivableSource = null;
+      row.quantityUsedForOrder = 0;
+      row.quantityRemainingBeforeAllocation = 0;
+      row.quantityRemainingAfterAllocation = 0;
+      row.allocatedValueByOrderPrice = 0;
+      row.allocatedValueByDocumentPrice = 0;
+      rows.push(row);
+      canceledLines += 1;
+    }
+
+    // Guardrail de valor: se soma atribuída > valor ativo, warning (não inventa corte por linha já capped)
     if (
-      orderValue > 0 &&
-      cappedAttributed > orderValue + ORDER_TO_CASH_PRICE_TOLERANCE
+      activeOrderValue > 0 &&
+      cappedAttributed > activeOrderValue + ORDER_TO_CASH_PRICE_TOLERANCE
     ) {
       warnings.push(
-        `Pedido ${order.orderCode}: valor atribuído por preço do pedido excede totalNetValue — revisar alocação.`
+        `Pedido ${order.orderCode}: valor atribuído por preço do pedido excede valor ativo — revisar alocação.`
       );
     }
     void hasExcess;
+    void orderValue;
   }
 
   // Clamp totalAllocated no sumário ao total de pedidos (alertas não duplicam valor)
@@ -2142,6 +2292,7 @@ export function buildOrderToCashAuditRows(
       orderItemsProcessed,
       rowsGenerated: rows.length,
       pendingLines,
+      canceledLines,
       allocatedLines,
       extraItemLines,
       surplusLines,

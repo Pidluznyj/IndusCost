@@ -379,7 +379,8 @@ export function assembleOrderSourceBundle(input: {
     items: input.items,
     forecastInstallments: extractForecastInstallmentsFromNomusRaw(
       input.nomusRawResponse,
-      input.totalNetValue,
+      input.items.reduce((s, i) => s + (i.itemNetAmount || 0), 0) ||
+        input.totalNetValue,
       input.issueDate
     ),
     linkedNfes: input.linkedNfes,

@@ -45,6 +45,23 @@ Estágios da linha pendente:
 - fiscal: `NO_NFE`
 - financeiro: `NO_CR`
 
+## ORDER_ITEM_CANCELED
+
+Item cancelado/stale no Pedido de Venda/Nomus:
+
+- **não** gera `ORDER_ITEM_PENDING`
+- **não** exige NF/documento/CR
+- **não** gera previsão de recebível (`plannedReceivableValue = null`)
+- **não** gera alerta `ENTREGA_PREVISTA_VENCIDA_SEM_DOCUMENTO`
+- aparece no detalhe com `orderItemStatus = CANCELADO` e alerta `ITEM_CANCELADO_PEDIDO_VENDA`
+- operacional: `CANCELADO`; cash: `NO_CASH`
+
+Itens cancelados são excluídos da alocação (não competem por saldo de SKU com linhas ativas).
+
+Parcelas planejadas do pedido usam **valor ativo** (original − cancelados), não o header bruto quando há cancelamentos.
+
+**Ressalva:** se já existir NF/CR real ligado ao pedido, Contas a Receber oficial **não** é apagado. A linha cancelada apenas deixa de exigir documento e de inflar saldo pendente.
+
 ## Valor cobrado da linha (`lineBilledValue`)
 
 | `lineType` | Cálculo | Source |
@@ -53,6 +70,7 @@ Estágios da linha pendente:
 | `QUANTITY_SURPLUS` | `excessQuantity × unitValue` | `STOCK_DOCUMENT_ITEM` |
 | `DOCUMENT_EXTRA_ITEM` | `outsideOrderQuantity × unitValue` | `STOCK_DOCUMENT_ITEM` |
 | `ORDER_ITEM_PENDING` | `null` | `NOT_BILLED` (“Não faturado nesta NF”) |
+| `ORDER_ITEM_CANCELED` | `null` | `NOT_BILLED` |
 
 **Nunca** usar CR total do título para calcular valor de item.
 

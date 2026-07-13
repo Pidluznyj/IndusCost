@@ -43,6 +43,7 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 Regras de exibição (herdadas da Auditoria):
 
 - `ORDER_ITEM_PENDING`: documento/NF/valor cobrado = `—` (não parece faturado).
+- `ORDER_ITEM_CANCELED`: item cancelado/stale no PV — sem forecast/alerta de entrega; chip “Itens cancelados”.
 - `DOCUMENT_EXTRA_ITEM`: produto/documento fora do pedido.
 - CR total título: coluna com label claro; **não** é valor do item.
 - Caso **PD 02534 / 309.86AA**: permanece PENDING sem NF 7228 no item.
@@ -55,17 +56,18 @@ Item cancelado no Nomus (status Cancelado / quantidade cancelada ≥ pedida) **a
 
 Regras:
 
-1. **Aparece no detalhe** — chip “Itens cancelados”; observação “Item cancelado no pedido de venda”.
+1. **Aparece no detalhe** — chip “Itens cancelados”; observação “Item cancelado no Pedido de Venda/Nomus”.
 2. **Não conta como pendente** — `pendingActiveItemsCount` / card Parciais ignoram cancelados.
 3. **Não compõe saldo pendente ativo** — `pendingActiveOrderValue` só de itens ativos.
 4. **Não reduz o % atendido dos itens ativos** — `fulfillmentPercentActive = alocado / activeOrderValue`.
 5. **Compõe** `canceledOrderValue`, `canceledItemsCount`, card/drilldown **Com cancelamento**.
 6. **Status do pedido**: se todos os itens ativos foram atendidos e há cancelados → `RECEBIDO_COM_CANCELAMENTO` ou `COMPLETO_COM_CANCELAMENTO` (não parcial).
 7. **Parcial só** quando existe item ativo com saldo pendente real (`PARCIAL_*` / `PARCIAL_COM_CANCELAMENTO`).
+8. **Forecast / comissão / margem**: cancelado/stale fora do valor ativo (ver `docs/sales/sales-order-item-status-rules.md`).
 
 Caso **PD 02207**: 2 itens atendidos + 2 cancelados → 100% dos ativos, saldo ativo R$ 0, status recebido/completo com cancelamento — **não** cai no card Parciais.
 
-Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. Ver `docs/sales/sales-order-item-nomus-status-sync.md`.
+Fonte do status: `SalesOrderItem.nomusIsCanceled` / `nomusItemStatusNormalized` (persistidos no sync Nomus) e fallback `SalesOrder.nomusRawResponse` via `enrichFactsWithOrderItemStatus`. Ver também `docs/sales/sales-order-item-nomus-status-sync.md` e `docs/sales/sales-order-item-status-impact-audit.md`.
 
 ## Componentes
 

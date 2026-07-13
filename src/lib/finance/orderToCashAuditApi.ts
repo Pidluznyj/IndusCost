@@ -195,7 +195,7 @@ export function resolveOrderToCashAuditLineBilledValue(input: {
   const lineType = (input.lineType ?? "").trim().toUpperCase();
   const unit = finiteMoney(input.stockDocumentItemUnitValue);
 
-  if (lineType === "ORDER_ITEM_PENDING") {
+  if (lineType === "ORDER_ITEM_PENDING" || lineType === "ORDER_ITEM_CANCELED") {
     return {
       lineBilledValue: null,
       lineBilledValueSource: "NOT_BILLED",
@@ -826,9 +826,12 @@ export function mapOrderToCashAuditFactToListRow(
     allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
   });
   const isPending = (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
+  const isCanceledLine =
+    (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_CANCELED";
   const orderItemStatus = fact.orderItemStatus ?? null;
   const itemFulfillmentStatus = normalizeOrderItemFulfillmentStatus(orderItemStatus);
-  const isCanceled = itemFulfillmentStatus === "CANCELADO";
+  const isCanceled =
+    isCanceledLine || itemFulfillmentStatus === "CANCELADO";
   const canceledOrderValue =
     isCanceled && fact.orderItemTotalValue != null
       ? Math.max(0, fact.orderItemTotalValue)

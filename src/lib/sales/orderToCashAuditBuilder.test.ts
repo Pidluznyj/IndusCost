@@ -129,6 +129,66 @@ describe("orderToCashAuditBuilder", () => {
     assert.equal(result.summary.pendingLines, 1);
   });
 
+  it("1b. item cancelado gera ORDER_ITEM_CANCELED e não PENDING/forecast", () => {
+    const result = buildOrderToCashAuditRows({
+      orders: [
+        order({
+          orderCode: "PD 02207",
+          totalNetValue: 197_030,
+        }),
+      ],
+      orderItems: [
+        item({
+          id: "i1",
+          externalProductId: 538,
+          quantity: 8000,
+          unitPrice: 4.92,
+          totalNetValue: 39_360,
+          itemStatus: "ATENDIDO",
+          nomusIsCanceled: false,
+        }),
+        item({
+          id: "i2",
+          externalProductId: 453,
+          quantity: 6500,
+          unitPrice: 4.93,
+          totalNetValue: 32_045,
+          itemStatus: "ATENDIDO",
+          nomusIsCanceled: false,
+        }),
+        item({
+          id: "i3",
+          externalProductId: 537,
+          quantity: 16500,
+          unitPrice: 4.93,
+          totalNetValue: 81_345,
+          itemStatus: "CANCELADO",
+          nomusIsCanceled: true,
+        }),
+        item({
+          id: "i4",
+          externalProductId: 452,
+          quantity: 9000,
+          unitPrice: 4.92,
+          totalNetValue: 44_280,
+          itemStatus: "CANCELADO",
+          nomusIsCanceled: true,
+        }),
+      ],
+      options: { today: TODAY },
+    });
+    const pending = result.rows.filter((r) => r.lineType === "ORDER_ITEM_PENDING");
+    const canceled = result.rows.filter((r) => r.lineType === "ORDER_ITEM_CANCELED");
+    assert.equal(canceled.length, 2);
+    assert.equal(pending.length, 2);
+    assert.equal(result.summary.canceledLines, 2);
+    assert.ok(canceled.every((r) => r.plannedReceivableValue == null));
+    assert.ok(canceled.every((r) => !r.alertsJson.includes("ENTREGA_PREVISTA_VENCIDA_SEM_DOCUMENTO")));
+    assert.ok(
+      pending.every((r) => (r.plannedReceivableValue ?? 0) <= 71_405 + 0.01)
+    );
+  });
+
   it("2. pedido futuro saudável", () => {
     const result = buildOrderToCashAuditRows({
       orders: [

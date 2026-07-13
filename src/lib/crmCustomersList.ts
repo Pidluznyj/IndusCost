@@ -917,6 +917,8 @@ export async function fetchCrmCustomersList(
       INNER JOIN "SalesOrder" so ON so.id = soi."salesOrderId"
       WHERE so."customerId" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
         AND so.status::text NOT IN ('CANCELLED', 'ERROR')
+        AND soi."nomusIsCanceled" = false
+        AND soi."nomusIsStale" = false
     `);
 
     const leadingByCustomer = enrichLeadingProductsFromOrderItems(

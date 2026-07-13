@@ -10,6 +10,11 @@ import {
   mapSalesOrderItemToSource,
 } from "./commission-source-resolver.js";
 import type { CommissionOrderSourceBundle, CommissionPeriodInput } from "./commission-types.js";
+import {
+  COMMISSION_IGNORED_CANCELED_ITEM,
+  COMMISSION_IGNORED_STALE_ITEM,
+  resolveCommissionIgnoreReasonForSalesOrderItem,
+} from "../sales/nomusSalesOrderItemStatus.js";
 
 const EXIT_MOVEMENT_TYPES = [
   "MANUAL_EXIT",
@@ -255,12 +260,21 @@ async function buildCommissionOrderSourceBundlesFromOrders(
 
     const rawLineMap = rawItemsByOrderId.get(order.id);
     const rawByProduct = rawItemsByProductId.get(order.id);
+    const ignoredItems: Array<{
+      salesOrderItemId: string;
+      reason: typeof COMMISSION_IGNORED_CANCELED_ITEM | typeof COMMISSION_IGNORED_STALE_ITEM;
+    }> = [];
     const items = order.items
       .filter((item) => {
-        if (item.nomusIsCanceled === true) return false;
-        if (item.nomusIsStale === true) return false;
-        const norm = (item.nomusItemStatusNormalized ?? "").toUpperCase();
-        if (norm === "CANCELED" || norm === "CANCELADO" || norm === "CANCELLED") {
+        const reason = resolveCommissionIgnoreReasonForSalesOrderItem({
+          nomusIsCanceled: item.nomusIsCanceled,
+          nomusIsStale: item.nomusIsStale,
+          nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+          quantity: decimalToNumber(item.quantity),
+          totalNetValue: decimalToNumber(item.totalNetValue),
+        });
+        if (reason) {
+          ignoredItems.push({ salesOrderItemId: item.id, reason });
           return false;
         }
         return true;
@@ -283,17 +297,28 @@ async function buildCommissionOrderSourceBundlesFromOrders(
         }
         if (nomusRawLine) {
           const st = nomusRawLine.status;
-          if (st === 6 || st === "6") return null;
+          if (st === 6 || st === "6") {
+            ignoredItems.push({
+              salesOrderItemId: item.id,
+              reason: COMMISSION_IGNORED_CANCELED_ITEM,
+            });
+            return null;
+          }
         }
         return mapSalesOrderItemToSource({ ...item, nomusRawLine });
       })
       .filter((row): row is NonNullable<typeof row> => row != null);
+
+    // Auditoria: itens ignorados (cancelado/stale) não entram no cálculo nem em NO_MARGIN.
+    void ignoredItems;
 
     const orderReceivables = new Map<number, ReturnType<typeof mapReceivableSource>[]>();
     for (const nfe of linkedNfes) {
       const list = arByNfeId.get(nfe.nfeExternalId);
       if (list) orderReceivables.set(nfe.nfeExternalId, list);
     }
+
+    const activeNet = items.reduce((s, i) => s + (i.itemNetAmount || 0), 0);
 
     return assembleOrderSourceBundle({
       localOrderId: order.id,
@@ -308,7 +333,7 @@ async function buildCommissionOrderSourceBundlesFromOrders(
       customerName: order.Customer.tradeName ?? order.Customer.companyName,
       externalSellerId: order.externalSellerId,
       nomusSellerName: order.nomusSellerName,
-      totalNetValue: decimalToNumber(order.totalNetValue),
+      totalNetValue: activeNet > 0 ? activeNet : decimalToNumber(order.totalNetValue),
       nomusRawResponse: order.nomusRawResponse,
       items,
       linkedNfes,

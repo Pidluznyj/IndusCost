@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isInactiveSalesOrderItemNomusFlags,
+  isNomusSalesOrderItemCanceled,
+  isSalesOrderItemActiveForCommercialValue,
+  isSalesOrderItemActiveForCommission,
+  isSalesOrderItemActiveForMargin,
+  isSalesOrderItemActiveForReceivableForecast,
   normalizeNomusSalesOrderItemStatus,
   parseNomusSalesOrderItemStatus,
+  resolveCommissionIgnoreReasonForSalesOrderItem,
   toOrderItemFulfillmentStorageStatus,
 } from "./nomusSalesOrderItemStatus.js";
 
@@ -61,5 +67,45 @@ describe("nomusSalesOrderItemStatus", () => {
       }),
       false
     );
+  });
+
+  it("gates de ativo comercial / forecast / comissão / margem", () => {
+    assert.equal(
+      isSalesOrderItemActiveForCommercialValue({ nomusIsCanceled: true }),
+      false
+    );
+    assert.equal(
+      isSalesOrderItemActiveForReceivableForecast({ nomusIsStale: true }),
+      false
+    );
+    assert.equal(
+      isSalesOrderItemActiveForCommission({
+        nomusItemStatusNormalized: "CANCELED",
+      }),
+      false
+    );
+    assert.equal(
+      isSalesOrderItemActiveForMargin({ quantity: 0, totalNetValue: 100 }),
+      false
+    );
+    assert.equal(
+      isSalesOrderItemActiveForCommercialValue({
+        nomusIsCanceled: false,
+        nomusIsStale: false,
+        quantity: 8,
+        totalNetValue: 100,
+      }),
+      true
+    );
+    assert.equal(
+      resolveCommissionIgnoreReasonForSalesOrderItem({ nomusIsStale: true }),
+      "IGNORED_STALE_ITEM"
+    );
+    assert.equal(
+      resolveCommissionIgnoreReasonForSalesOrderItem({ nomusIsCanceled: true }),
+      "IGNORED_CANCELED_ITEM"
+    );
+    assert.equal(isNomusSalesOrderItemCanceled(6), true);
+    assert.equal(isNomusSalesOrderItemCanceled(4), false);
   });
 });

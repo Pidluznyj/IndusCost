@@ -23,6 +23,7 @@ import {
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
+import { isSalesOrderItemActiveForCommercialValue } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
 
 export const CRM_SALES_ORDER_METRICS_SOURCE = "crm-sales-order-metrics-via-official-so-rules" as const;
 
@@ -97,6 +98,9 @@ export type CrmMetricsOrderItemInput = {
   productNameSnapshot?: string | null;
   quantity?: unknown;
   totalNetValue?: unknown;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
+  nomusItemStatusNormalized?: string | null;
 };
 
 export type CrmMetricsCommercialOwnerInput = {
@@ -313,6 +317,21 @@ function buildLeadingProduct(
   for (const order of orders) {
     if (isCancelledSalesOrderStatus(order.status) || order.status === "ERROR") continue;
     for (const item of order.items ?? []) {
+      if (
+        !isSalesOrderItemActiveForCommercialValue({
+          nomusIsCanceled: item.nomusIsCanceled,
+          nomusIsStale: item.nomusIsStale,
+          nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+          quantity:
+            item.quantity == null ? null : Number(item.quantity as number),
+          totalNetValue:
+            item.totalNetValue == null
+              ? null
+              : Number(item.totalNetValue as number),
+        })
+      ) {
+        continue;
+      }
       const productId = item.productId?.trim() || null;
       const name = item.productNameSnapshot?.trim() || null;
       const sku = item.skuSnapshot?.trim() || null;
@@ -649,6 +668,9 @@ export async function loadCrmSalesOrderMetrics(
       productNameSnapshot: item.productNameSnapshot,
       quantity: item.quantity,
       totalNetValue: item.totalNetValue,
+      nomusIsCanceled: item.nomusIsCanceled ?? false,
+      nomusIsStale: item.nomusIsStale ?? false,
+      nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
     })),
   }));
 

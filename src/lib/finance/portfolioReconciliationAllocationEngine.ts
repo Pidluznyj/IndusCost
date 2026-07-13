@@ -36,6 +36,9 @@ export type SnapshotOrderItem = {
   quantity: number;
   unitPrice: number;
   totalNetValue?: number | null;
+  itemStatus?: string | null;
+  nomusIsCanceled?: boolean | null;
+  nomusIsStale?: boolean | null;
 };
 
 export type SnapshotOrder = {
@@ -193,13 +196,23 @@ export function pricesMismatch(orderUnit: number, stockUnit: number): boolean {
 }
 
 function positiveOrderItems(items: SnapshotOrderItem[]): SnapshotOrderItem[] {
-  return items.filter(
-    (item) =>
+  return items.filter((item) => {
+    if (item.nomusIsCanceled === true || item.nomusIsStale === true) return false;
+    const status = (item.itemStatus ?? "").trim().toUpperCase();
+    if (
+      status === "CANCELADO" ||
+      status === "CANCELED" ||
+      status === "CANCELLED"
+    ) {
+      return false;
+    }
+    return (
       item.externalProductId != null &&
       Number.isFinite(item.quantity) &&
       item.quantity > 0 &&
       Number.isFinite(item.unitPrice)
-  );
+    );
+  });
 }
 
 function filterOrders(

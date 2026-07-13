@@ -354,12 +354,15 @@ export function isActivePendingLine(fact: PortfolioOrderStatusFact): boolean {
 }
 
 export function isCanceledPendingLine(fact: PortfolioOrderStatusFact): boolean {
+  const type = (fact.lineType ?? "").toUpperCase();
+  if (type === "ORDER_ITEM_CANCELED") return true;
   return isPendingLine(fact) && isCanceledOrderItemFact(fact);
 }
 
 function isAllocatedLine(fact: PortfolioOrderStatusFact): boolean {
   const type = (fact.lineType ?? "").toUpperCase();
   if (type === "ORDER_ITEM_PENDING") return false;
+  if (type === "ORDER_ITEM_CANCELED") return false;
   if (type === "DOCUMENT_EXTRA_ITEM") return false;
   const qty = fact.quantityUsedForOrder ?? 0;
   const alloc = fact.allocatedValueByOrderPrice ?? 0;
