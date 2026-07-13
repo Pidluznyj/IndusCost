@@ -194,5 +194,34 @@ export function yearOptionsForOrderStatus(): number[] {
   return [y, y - 1, y - 2, y - 3, y - 4];
 }
 
+const PRIMARY_CARD_CONTEXT_LABEL: Record<string, string> = {
+  total: "Total",
+  completos: "Completos",
+  parciais: "Parciais",
+  sem_atendimento: "Sem atendimento",
+  com_divergencia: "Com divergência",
+  cr_aberto: "CR aberto",
+  recebidos: "Recebidos",
+  bloqueados: "Bloqueados",
+};
+
+/** Barra de contexto: "Parciais > Produto fora do pedido". */
+export function formatOrderStatusFilterContext(args: {
+  selectedCard: string;
+  selectedDrilldown: string;
+  drilldownCards: ReadonlyArray<{ id: string; label: string }>;
+}): string | null {
+  const cardLabel = args.selectedCard
+    ? PRIMARY_CARD_CONTEXT_LABEL[args.selectedCard] ?? args.selectedCard
+    : null;
+  const drill = args.drilldownCards.find((c) => c.id === args.selectedDrilldown);
+  const drillLabel = drill?.label ?? (args.selectedDrilldown || null);
+
+  if (cardLabel && drillLabel) return `${cardLabel} > ${drillLabel}`;
+  if (cardLabel) return cardLabel;
+  if (drillLabel) return drillLabel;
+  return null;
+}
+
 export type { PortfolioOrderStatusListPayload, PortfolioOrderStatusPrimaryCardId };
 export { PORTFOLIO_ORDER_STATUS_NO_RUN_MESSAGE };

@@ -586,6 +586,14 @@ describe("portfolioOrderStatusService", () => {
 
     const drills = built.drilldownCards;
     assert.ok(drills.some((d) => d.id === "parcial_cr_aberto"));
+    assert.ok(drills.some((d) => d.id === "parcial_produto_fora"));
+    assert.equal(drills.length, 7);
+
+    const allBuilt = buildPortfolioOrderStatus({ facts, asOf });
+    const generalCards = buildDrilldownCards(allBuilt.rows, null);
+    assert.ok(generalCards.some((d) => d.id === "com_item_pendente"));
+    assert.ok(generalCards.some((d) => d.id === "entrega_vencida"));
+    assert.equal(generalCards.length, 8);
 
     const sorted = sortOrderStatusRows(built.rows, {
       sortBy: "totalOrderValue",

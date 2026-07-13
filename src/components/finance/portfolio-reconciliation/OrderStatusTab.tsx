@@ -20,6 +20,7 @@ import {
   buildOrderStatusListQuery,
   canSearchOrderStatus,
   createDefaultOrderStatusUiFilters,
+  formatOrderStatusFilterContext,
   nextOrderStatusSort,
   type OrderStatusUiFilters,
   type PortfolioOrderStatusListPayload,
@@ -200,7 +201,13 @@ export function OrderStatusTab() {
 
           <OrderStatusDrilldownCards
             cards={payload.drilldownCards}
+            selectedCard={applied?.selectedCard ?? ""}
             selectedDrilldown={applied?.selectedDrilldown ?? ""}
+            contextLabel={formatOrderStatusFilterContext({
+              selectedCard: applied?.selectedCard ?? "",
+              selectedDrilldown: applied?.selectedDrilldown ?? "",
+              drilldownCards: payload.drilldownCards,
+            })}
             onSelect={(drilldownId) =>
               patchApplied({ selectedDrilldown: drilldownId, page: 1 })
             }

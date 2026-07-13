@@ -99,6 +99,7 @@ const FACT_SELECT = {
   hasPriceMismatch: true,
   hasDocumentWithoutReceivable: true,
   hasOverdueReceivable: true,
+  hasPaymentConditionMissing: true,
   salesOrderId: true,
   fiscalStage: true,
   commercialStage: true,
@@ -146,6 +147,7 @@ type FactRow = Record<string, unknown> & {
   hasPriceMismatch: boolean;
   hasDocumentWithoutReceivable: boolean;
   hasOverdueReceivable: boolean;
+  hasPaymentConditionMissing: boolean;
   salesOrderId: string | null;
   fiscalStage: string | null;
   commercialStage: string | null;
@@ -235,6 +237,7 @@ function mapFact(row: FactRow): PortfolioOrderStatusFact {
     ...base,
     fiscalStage: row.fiscalStage,
     commercialStage: row.commercialStage,
+    hasPaymentConditionMissing: row.hasPaymentConditionMissing,
   };
 }
 

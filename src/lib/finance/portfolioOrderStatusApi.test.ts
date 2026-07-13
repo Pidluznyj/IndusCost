@@ -282,6 +282,17 @@ describe("portfolioOrderStatusApi", () => {
       runMeta: runMeta(),
     });
     assert.ok(withCard.drilldownCards.length > 0);
+    assert.ok(
+      withCard.drilldownCards.some((d) => d.id === "parcial_item_pendente")
+    );
+    const generalPayload = buildPortfolioOrderStatusListFromFacts({
+      facts: fixtureUniverse(),
+      filters: filters({ year: 2026 }),
+      runMeta: runMeta(),
+    });
+    assert.ok(
+      generalPayload.drilldownCards.some((d) => d.id === "com_item_pendente")
+    );
     // Tabela estreita; cards permanecem no universo base
     assert.ok(withCard.pagination.totalRows < withCard.primaryCards.find((c) => c.id === "total")!.count);
     assert.equal(

@@ -24,6 +24,7 @@ export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
   fiscalStage?: string | null;
   commercialStage?: string | null;
   cashStage?: string | null;
+  hasPaymentConditionMissing?: boolean | null;
 };
 
 export type PortfolioOrderStatusConsolidated =
@@ -101,6 +102,12 @@ export type PortfolioOrderStatusRow = {
   hasOpenCr: boolean;
   hasReceived: boolean;
   hasDivergences: boolean;
+  hasOverdueReceivable: boolean;
+  hasDeliveryDelay: boolean;
+  hasMissingStockDocument: boolean;
+  hasPaymentConditionMissing: boolean;
+  hasMissingSeller: boolean;
+  hasMissingCommercialResponsible: boolean;
   nfeNumbers: string[];
   nfeHeaderMaxValue: number;
 };
@@ -348,9 +355,25 @@ function collectAlerts(facts: readonly PortfolioOrderStatusFact[]): string[] {
     if (fact.hasPriceMismatch) set.add("DIVERGENCIA_PRECO");
     if (fact.hasPartialFulfillment) set.add("DOCUMENTO_PARCIAL");
     if (fact.hasDocumentWithoutReceivable) set.add("DOCUMENTO_SEM_CR");
+    if (fact.hasOverdueReceivable) set.add("CR_VENCIDO");
+    if (fact.hasDeliveryDelay) set.add("ENTREGA_VENCIDA");
+    if (fact.hasMissingStockDocument) set.add("SEM_DOCUMENTO_SAIDA");
+    if (fact.hasPaymentConditionMissing) set.add("SEM_CONDICAO_PAGAMENTO");
     for (const b of parseOrderStatusAlerts(fact.blockingReasonsJson)) set.add(b);
   }
   return [...set].sort();
+}
+
+function isMissingSellerName(name: string | null | undefined): boolean {
+  const s = (name ?? "").trim();
+  if (!s) return true;
+  const lower = s.toLowerCase();
+  return (
+    lower === "sem vendedor informado" ||
+    lower === "sem vendedor" ||
+    lower === "não informado" ||
+    lower === "nao informado"
+  );
 }
 
 function hasDivergenceAlerts(alerts: readonly string[]): boolean {
@@ -595,10 +618,15 @@ export function aggregateOrderFactsToRow(
   let customerName: string | null = null;
   let externalCustomerId: number | null = null;
   let orderSellerName: string | null = null;
+  let commercialResponsibleName: string | null = null;
   let orderNetValue: number | null = null;
   let temperature: string | null = null;
   let confidenceScore: number | null = null;
   let recommendedAction: string | null = null;
+  let hasOverdueReceivable = false;
+  let hasDeliveryDelay = false;
+  let hasMissingStockDocument = false;
+  let hasPaymentConditionMissing = false;
 
   const itemOrderValues = new Map<string, number>();
   const pendingItemValues = new Map<string, number>();
@@ -624,6 +652,9 @@ export function aggregateOrderFactsToRow(
       externalCustomerId = fact.externalCustomerId;
     }
     if (!orderSellerName && fact.sellerName) orderSellerName = fact.sellerName;
+    if (!commercialResponsibleName && fact.responsibleArea?.trim()) {
+      commercialResponsibleName = fact.responsibleArea.trim();
+    }
     if (orderNetValue == null && fact.orderNetValue != null && Number.isFinite(fact.orderNetValue)) {
       orderNetValue = fact.orderNetValue;
     }
@@ -634,6 +665,10 @@ export function aggregateOrderFactsToRow(
     if (!recommendedAction && fact.recommendedAction) {
       recommendedAction = fact.recommendedAction;
     }
+    if (fact.hasOverdueReceivable) hasOverdueReceivable = true;
+    if (fact.hasDeliveryDelay) hasDeliveryDelay = true;
+    if (fact.hasMissingStockDocument) hasMissingStockDocument = true;
+    if (fact.hasPaymentConditionMissing) hasPaymentConditionMissing = true;
 
     const itemKey = itemKeyOf(fact);
     if (fact.orderItemTotalValue != null && Number.isFinite(fact.orderItemTotalValue)) {
@@ -700,6 +735,19 @@ export function aggregateOrderFactsToRow(
         : 0;
 
   const classified = classifyOrderStatus(orderFacts, options);
+  const hasMissingSeller = isMissingSellerName(orderSellerName);
+  const hasMissingCommercialResponsible = !(commercialResponsibleName ?? "").trim();
+  const alerts = [...classified.alerts];
+  if (hasMissingSeller && !alerts.includes("SEM_VENDEDOR_NOMUS")) {
+    alerts.push("SEM_VENDEDOR_NOMUS");
+  }
+  if (
+    hasMissingCommercialResponsible &&
+    !alerts.includes("SEM_RESPONSAVEL_COMERCIAL")
+  ) {
+    alerts.push("SEM_RESPONSAVEL_COMERCIAL");
+  }
+  alerts.sort();
 
   return {
     orderKey,
@@ -709,7 +757,7 @@ export function aggregateOrderFactsToRow(
     orderExpectedDeliveryDate: toIso(orderExpectedDeliveryDate),
     customerName,
     externalCustomerId,
-    commercialResponsibleName: null,
+    commercialResponsibleName,
     orderSellerName,
     totalOrderValue,
     allocatedOrderValue: allocatedCapped,
@@ -725,7 +773,7 @@ export function aggregateOrderFactsToRow(
     consolidatedOrderStatus: classified.consolidatedOrderStatus,
     temperature,
     confidenceScore,
-    alerts: classified.alerts,
+    alerts,
     recommendedAction,
     factCount: orderFacts.length,
     pendingItemCount,
@@ -735,6 +783,12 @@ export function aggregateOrderFactsToRow(
     hasOpenCr: classified.hasOpenCr,
     hasReceived: classified.hasReceived,
     hasDivergences: classified.hasDivergences,
+    hasOverdueReceivable,
+    hasDeliveryDelay,
+    hasMissingStockDocument,
+    hasPaymentConditionMissing,
+    hasMissingSeller,
+    hasMissingCommercialResponsible,
     nfeNumbers: [...nfeNumbers].sort(),
     nfeHeaderMaxValue: round6(nfeHeaderMax),
   };
@@ -899,162 +953,304 @@ export function buildDrilldownCards(
   rows: readonly PortfolioOrderStatusRow[],
   selectedCard: PortfolioOrderStatusPrimaryCardId | null | undefined
 ): PortfolioOrderStatusDrilldownCard[] {
-  if (!selectedCard) return [];
+  const card =
+    selectedCard && selectedCard !== "total" ? selectedCard : null;
+  const scoped = card
+    ? rows.filter((r) => matchesSelectedCard(r, card))
+    : rows;
+  const parent = card;
+  const count = (pred: (r: PortfolioOrderStatusRow) => boolean) =>
+    scoped.reduce((n, r) => n + (pred(r) ? 1 : 0), 0);
+  const dd = (
+    id: string,
+    label: string,
+    pred: (r: PortfolioOrderStatusRow) => boolean,
+    hint?: string
+  ): PortfolioOrderStatusDrilldownCard => ({
+    id,
+    parentCardId: parent,
+    label,
+    count: count(pred),
+    hint: hint ?? label,
+  });
 
-  const countStatus = (status: PortfolioOrderStatusConsolidated) =>
-    rows.filter((r) => r.consolidatedOrderStatus === status).length;
-  const countAlert = (alert: string) =>
-    rows.filter((r) => r.alerts.includes(alert)).length;
+  if (!card) {
+    return [
+      dd("com_item_pendente", "Com item pendente", (r) => r.hasPendingItems),
+      dd("com_produto_fora", "Com produto fora", (r) =>
+        r.alerts.includes("PRODUTO_FORA_DO_PEDIDO")
+      ),
+      dd("com_excedente", "Com excedente", (r) =>
+        r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
+      ),
+      dd(
+        "nf_sem_cr",
+        "NF sem CR",
+        (r) => r.consolidatedOrderStatus === "NF_SEM_CR"
+      ),
+      dd("cr_vencido", "CR vencido", (r) => isCrOverdue(r)),
+      dd("sem_vendedor_nomus", "Sem vendedor Nomus", (r) => r.hasMissingSeller),
+      dd(
+        "sem_responsavel_comercial",
+        "Sem responsável comercial",
+        (r) => r.hasMissingCommercialResponsible
+      ),
+      dd("entrega_vencida", "Entrega vencida", (r) => isDeliveryOverdue(r)),
+    ];
+  }
 
-  switch (selectedCard) {
+  switch (card) {
     case "completos":
       return [
-        {
-          id: "completo_recebido",
-          parentCardId: "completos",
-          label: "Completo recebido",
-          count: countStatus("COMPLETO_RECEBIDO"),
-          hint: "COMPLETO_RECEBIDO",
-        },
-        {
-          id: "completo_cr_aberto",
-          parentCardId: "completos",
-          label: "Completo CR aberto",
-          count: countStatus("COMPLETO_CR_ABERTO"),
-          hint: "COMPLETO_CR_ABERTO",
-        },
-        {
-          id: "completo_sem_cr",
-          parentCardId: "completos",
-          label: "Completo sem CR",
-          count: countStatus("COMPLETO_SEM_CR"),
-          hint: "COMPLETO_SEM_CR",
-        },
+        dd(
+          "completo_recebido",
+          "Completos e recebidos",
+          (r) => r.consolidatedOrderStatus === "COMPLETO_RECEBIDO"
+        ),
+        dd(
+          "completo_cr_aberto",
+          "Completos com CR aberto",
+          (r) => r.consolidatedOrderStatus === "COMPLETO_CR_ABERTO"
+        ),
+        dd(
+          "completo_sem_cr",
+          "Completos sem CR",
+          (r) => r.consolidatedOrderStatus === "COMPLETO_SEM_CR"
+        ),
+        dd(
+          "completo_divergencia_preco",
+          "Completos com divergência de preço",
+          (r) => r.alerts.includes("DIVERGENCIA_PRECO")
+        ),
+        dd("completo_excesso", "Completos com excesso", (r) =>
+          r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
+        ),
+        dd(
+          "completo_sem_alerta",
+          "Completos sem alerta",
+          (r) => !r.hasDivergences && !isDeliveryOverdue(r) && !isCrOverdue(r)
+        ),
       ];
     case "parciais":
       return [
-        {
-          id: "parcial_recebido",
-          parentCardId: "parciais",
-          label: "Parcial recebido",
-          count: countStatus("PARCIAL_RECEBIDO"),
-          hint: "PARCIAL_RECEBIDO",
-        },
-        {
-          id: "parcial_cr_aberto",
-          parentCardId: "parciais",
-          label: "Parcial CR aberto",
-          count: countStatus("PARCIAL_CR_ABERTO"),
-          hint: "PARCIAL_CR_ABERTO",
-        },
-        {
-          id: "parcial_sem_cr",
-          parentCardId: "parciais",
-          label: "Parcial sem CR",
-          count: countStatus("PARCIAL_SEM_CR"),
-          hint: "PARCIAL_SEM_CR",
-        },
+        dd(
+          "parcial_item_pendente",
+          "Parcial com item pendente",
+          (r) => r.hasPendingItems
+        ),
+        dd("parcial_excesso", "Parcial com excesso", (r) =>
+          r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
+        ),
+        dd("parcial_produto_fora", "Parcial com produto fora", (r) =>
+          r.alerts.includes("PRODUTO_FORA_DO_PEDIDO")
+        ),
+        dd(
+          "parcial_cr_aberto",
+          "Parcial com CR aberto",
+          (r) => r.consolidatedOrderStatus === "PARCIAL_CR_ABERTO" || r.hasOpenCr
+        ),
+        dd(
+          "parcial_recebido",
+          "Parcial já recebido",
+          (r) =>
+            r.consolidatedOrderStatus === "PARCIAL_RECEBIDO" ||
+            (r.hasReceived && !r.hasOpenCr)
+        ),
+        dd(
+          "parcial_sem_cr",
+          "Parcial sem CR",
+          (r) =>
+            r.consolidatedOrderStatus === "PARCIAL_SEM_CR" ||
+            r.receivableTotalValue <= MONEY_EPS
+        ),
+        dd("parcial_entrega_vencida", "Parcial com entrega vencida", (r) =>
+          isDeliveryOverdue(r)
+        ),
       ];
     case "sem_atendimento":
       return [
-        {
-          id: "sem_futuro",
-          parentCardId: "sem_atendimento",
-          label: "Futuro",
-          count: countStatus("SEM_ATENDIMENTO_FUTURO"),
-          hint: "SEM_ATENDIMENTO_FUTURO",
-        },
-        {
-          id: "sem_atrasado",
-          parentCardId: "sem_atendimento",
-          label: "Atrasado",
-          count: countStatus("SEM_ATENDIMENTO_ATRASADO"),
-          hint: "SEM_ATENDIMENTO_ATRASADO",
-        },
+        dd(
+          "sem_documento_saida",
+          "Sem documento de saída",
+          (r) => r.hasMissingStockDocument || !r.hasAllocation
+        ),
+        dd("sem_nf", "Sem NF", (r) => r.nfeNumbers.length === 0),
+        dd(
+          "sem_cr",
+          "Sem CR",
+          (r) => r.receivableTotalValue <= MONEY_EPS
+        ),
+        dd(
+          "entrega_futura",
+          "Entrega futura",
+          (r) => r.consolidatedOrderStatus === "SEM_ATENDIMENTO_FUTURO"
+        ),
+        dd(
+          "entrega_vencida_sem_atendimento",
+          "Entrega vencida",
+          (r) =>
+            r.consolidatedOrderStatus === "SEM_ATENDIMENTO_ATRASADO" ||
+            isDeliveryOverdue(r)
+        ),
+        dd(
+          "cliente_sem_responsavel",
+          "Cliente sem responsável",
+          (r) => r.hasMissingCommercialResponsible
+        ),
+        dd(
+          "pedido_sem_vendedor_nomus",
+          "Pedido sem vendedor Nomus",
+          (r) => r.hasMissingSeller
+        ),
       ];
     case "com_divergencia":
       return [
-        {
-          id: "excesso",
-          parentCardId: "com_divergencia",
-          label: "Excedente",
-          count: countAlert("DOCUMENTO_COM_EXCEDENTE"),
-          hint: "DOCUMENTO_COM_EXCEDENTE",
-        },
-        {
-          id: "fora_pedido",
-          parentCardId: "com_divergencia",
-          label: "Produto fora do pedido",
-          count: countAlert("PRODUTO_FORA_DO_PEDIDO"),
-          hint: "PRODUTO_FORA_DO_PEDIDO",
-        },
-        {
-          id: "preco",
-          parentCardId: "com_divergencia",
-          label: "Divergência de preço",
-          count: countAlert("DIVERGENCIA_PRECO"),
-          hint: "DIVERGENCIA_PRECO",
-        },
+        dd(
+          "documento_excedente",
+          "Documento com excedente",
+          (r) => r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
+        ),
+        dd(
+          "produto_fora_pedido",
+          "Produto fora do pedido",
+          (r) => r.alerts.includes("PRODUTO_FORA_DO_PEDIDO")
+        ),
+        dd("nf_maior_pedido", "NF maior que pedido", (r) =>
+          r.alerts.includes("NF_CABECALHO_MAIOR_PEDIDO")
+        ),
+        dd("divergencia_preco", "Divergência de preço", (r) =>
+          r.alerts.includes("DIVERGENCIA_PRECO")
+        ),
+        dd("documento_sem_cr", "Documento sem CR", (r) =>
+          r.alerts.includes("DOCUMENTO_SEM_CR")
+        ),
+        dd("cr_vencido", "CR vencido", (r) => isCrOverdue(r)),
+        dd(
+          "condicao_pagamento_ausente",
+          "Condição de pagamento ausente",
+          (r) =>
+            r.hasPaymentConditionMissing ||
+            r.alerts.includes("SEM_CONDICAO_PAGAMENTO")
+        ),
       ];
     case "cr_aberto":
       return [
-        {
-          id: "cr_vencido",
-          parentCardId: "cr_aberto",
-          label: "CR vencido",
-          count: rows.filter(
-            (r) => r.hasOpenCr && r.alerts.includes("CR_VENCIDO")
-          ).length,
-          hint: "CR aberto com alerta CR_VENCIDO",
-        },
-      ];
-    case "bloqueados":
-      return [
-        {
-          id: "bloqueado_revisao",
-          parentCardId: "bloqueados",
-          label: "Bloqueado revisão",
-          count: countStatus("BLOQUEADO_REVISAO"),
-          hint: "BLOQUEADO_REVISAO",
-        },
-      ];
-    case "total":
-      return [
-        {
-          id: "nf_sem_cr",
-          parentCardId: "total",
-          label: "NF sem CR",
-          count: countStatus("NF_SEM_CR"),
-          hint: "NF_SEM_CR",
-        },
-        {
-          id: "cancelados",
-          parentCardId: "total",
-          label: "Cancelados",
-          count: countStatus("CANCELADO"),
-          hint: "CANCELADO",
-        },
+        dd("cr_aberto_a_vencer", "CR aberto a vencer", (r) => isCrAVencer(r)),
+        dd("cr_vencido", "CR vencido", (r) => isCrOverdue(r)),
+        dd("cr_parcialmente_recebido", "CR parcialmente recebido", (r) =>
+          isCrPartiallyReceived(r)
+        ),
+        dd("cr_aberto_pedido_completo", "CR aberto com pedido completo", (r) =>
+          COMPLETO.has(r.consolidatedOrderStatus)
+        ),
+        dd("cr_aberto_pedido_parcial", "CR aberto com pedido parcial", (r) =>
+          PARCIAL.has(r.consolidatedOrderStatus)
+        ),
+        dd(
+          "cr_aberto_sem_documento_seguro",
+          "CR aberto sem documento seguro",
+          (r) => isCrWithoutSafeDocument(r)
+        ),
       ];
     case "recebidos":
       return [
-        {
-          id: "completo_recebido",
-          parentCardId: "recebidos",
-          label: "Completo recebido",
-          count: countStatus("COMPLETO_RECEBIDO"),
-          hint: "COMPLETO_RECEBIDO",
-        },
-        {
-          id: "parcial_recebido",
-          parentCardId: "recebidos",
-          label: "Parcial recebido",
-          count: countStatus("PARCIAL_RECEBIDO"),
-          hint: "PARCIAL_RECEBIDO",
-        },
+        dd(
+          "recebido_sem_alerta",
+          "Recebido sem alerta",
+          (r) => !r.hasDivergences && !isDeliveryOverdue(r) && !isCrOverdue(r)
+        ),
+        dd(
+          "recebido_divergencia_operacional",
+          "Recebido com divergência operacional",
+          (r) => r.hasDivergences
+        ),
+        dd("recebido_pedido_parcial", "Recebido com pedido parcial", (r) =>
+          PARCIAL.has(r.consolidatedOrderStatus)
+        ),
+        dd("recebido_excesso", "Recebido com excesso", (r) =>
+          r.alerts.includes("DOCUMENTO_COM_EXCEDENTE")
+        ),
+        dd("recebido_produto_fora", "Recebido com produto fora", (r) =>
+          r.alerts.includes("PRODUTO_FORA_DO_PEDIDO")
+        ),
+        dd("recebido_com_atraso", "Recebido com atraso", (r) =>
+          isDeliveryOverdue(r)
+        ),
+      ];
+    case "bloqueados":
+      return [
+        dd(
+          "pedido_antigo_sem_evolucao",
+          "Pedido antigo sem evolução",
+          (r) => r.alerts.includes("PEDIDO_ANTIGO_SEM_EVOLUCAO")
+        ),
+        dd(
+          "entrega_vencida_sem_documento",
+          "Entrega vencida sem documento",
+          (r) =>
+            isDeliveryOverdue(r) &&
+            (r.hasMissingStockDocument || !r.hasAllocation)
+        ),
+        dd("pedido_sem_nf", "Pedido sem NF", (r) => r.nfeNumbers.length === 0),
+        dd(
+          "pedido_sem_cr",
+          "Pedido sem CR",
+          (r) => r.receivableTotalValue <= MONEY_EPS
+        ),
+        dd(
+          "pedido_sem_responsavel",
+          "Pedido sem responsável comercial",
+          (r) => r.hasMissingCommercialResponsible
+        ),
+        dd(
+          "pedido_sem_vendedor",
+          "Pedido sem vendedor Nomus",
+          (r) => r.hasMissingSeller
+        ),
+        dd(
+          "pedido_vinculo_inconsistente",
+          "Pedido com vínculo inconsistente",
+          (r) =>
+            r.alerts.includes("CR_SEM_RATEIO_SEGURO") ||
+            (r.hasDivergences && r.hasMissingStockDocument)
+        ),
       ];
     default:
       return [];
   }
+}
+
+function isCrOverdue(row: PortfolioOrderStatusRow): boolean {
+  return (
+    row.hasOpenCr &&
+    (row.hasOverdueReceivable || row.alerts.includes("CR_VENCIDO"))
+  );
+}
+
+function isCrAVencer(row: PortfolioOrderStatusRow): boolean {
+  return row.hasOpenCr && !isCrOverdue(row);
+}
+
+function isCrPartiallyReceived(row: PortfolioOrderStatusRow): boolean {
+  return (
+    row.hasOpenCr &&
+    row.receivableReceivedValue > MONEY_EPS &&
+    row.receivableOpenValue > MONEY_EPS
+  );
+}
+
+function isCrWithoutSafeDocument(row: PortfolioOrderStatusRow): boolean {
+  return (
+    row.hasOpenCr &&
+    (!row.hasAllocation ||
+      row.hasMissingStockDocument ||
+      row.alerts.includes("CR_SEM_RATEIO_SEGURO") ||
+      row.alerts.includes("DOCUMENTO_SEM_CR"))
+  );
+}
+
+function isDeliveryOverdue(row: PortfolioOrderStatusRow): boolean {
+  return row.hasDeliveryDelay || row.alerts.includes("ENTREGA_VENCIDA");
 }
 
 function matchesSelectedCard(
@@ -1088,35 +1284,127 @@ function matchesSelectedDrilldown(
   drilldown: string
 ): boolean {
   switch (drilldown) {
+    case "com_item_pendente":
+    case "parcial_item_pendente":
+      return row.hasPendingItems;
+    case "com_produto_fora":
+    case "parcial_produto_fora":
+    case "produto_fora_pedido":
+    case "recebido_produto_fora":
+      return row.alerts.includes("PRODUTO_FORA_DO_PEDIDO");
+    case "com_excedente":
+    case "parcial_excesso":
+    case "completo_excesso":
+    case "documento_excedente":
+    case "recebido_excesso":
+      return row.alerts.includes("DOCUMENTO_COM_EXCEDENTE");
+    case "nf_sem_cr":
+      return row.consolidatedOrderStatus === "NF_SEM_CR";
+    case "cr_vencido":
+      return isCrOverdue(row);
+    case "sem_vendedor_nomus":
+    case "pedido_sem_vendedor_nomus":
+    case "pedido_sem_vendedor":
+      return row.hasMissingSeller;
+    case "sem_responsavel_comercial":
+    case "cliente_sem_responsavel":
+    case "pedido_sem_responsavel":
+      return row.hasMissingCommercialResponsible;
+    case "entrega_vencida":
+    case "parcial_entrega_vencida":
+    case "recebido_com_atraso":
+      return isDeliveryOverdue(row);
+    case "entrega_vencida_sem_atendimento":
+      return (
+        row.consolidatedOrderStatus === "SEM_ATENDIMENTO_ATRASADO" ||
+        isDeliveryOverdue(row)
+      );
     case "completo_recebido":
       return row.consolidatedOrderStatus === "COMPLETO_RECEBIDO";
     case "completo_cr_aberto":
       return row.consolidatedOrderStatus === "COMPLETO_CR_ABERTO";
     case "completo_sem_cr":
       return row.consolidatedOrderStatus === "COMPLETO_SEM_CR";
-    case "parcial_recebido":
-      return row.consolidatedOrderStatus === "PARCIAL_RECEBIDO";
+    case "completo_divergencia_preco":
+    case "divergencia_preco":
+      return row.alerts.includes("DIVERGENCIA_PRECO");
+    case "completo_sem_alerta":
+    case "recebido_sem_alerta":
+      return !row.hasDivergences && !isDeliveryOverdue(row) && !isCrOverdue(row);
     case "parcial_cr_aberto":
-      return row.consolidatedOrderStatus === "PARCIAL_CR_ABERTO";
+      return row.consolidatedOrderStatus === "PARCIAL_CR_ABERTO" || row.hasOpenCr;
+    case "parcial_recebido":
+      return (
+        row.consolidatedOrderStatus === "PARCIAL_RECEBIDO" ||
+        (row.hasReceived && !row.hasOpenCr)
+      );
     case "parcial_sem_cr":
-      return row.consolidatedOrderStatus === "PARCIAL_SEM_CR";
+      return (
+        row.consolidatedOrderStatus === "PARCIAL_SEM_CR" ||
+        row.receivableTotalValue <= MONEY_EPS
+      );
+    case "sem_documento_saida":
+      return row.hasMissingStockDocument || !row.hasAllocation;
+    case "sem_nf":
+    case "pedido_sem_nf":
+      return row.nfeNumbers.length === 0;
+    case "sem_cr":
+    case "pedido_sem_cr":
+      return row.receivableTotalValue <= MONEY_EPS;
+    case "entrega_futura":
     case "sem_futuro":
       return row.consolidatedOrderStatus === "SEM_ATENDIMENTO_FUTURO";
     case "sem_atrasado":
       return row.consolidatedOrderStatus === "SEM_ATENDIMENTO_ATRASADO";
-    case "excesso":
-      return row.alerts.includes("DOCUMENTO_COM_EXCEDENTE");
-    case "fora_pedido":
-      return row.alerts.includes("PRODUTO_FORA_DO_PEDIDO");
-    case "preco":
-      return row.alerts.includes("DIVERGENCIA_PRECO");
-    case "cr_vencido":
-      return row.hasOpenCr && row.alerts.includes("CR_VENCIDO");
+    case "nf_maior_pedido":
+      return row.alerts.includes("NF_CABECALHO_MAIOR_PEDIDO");
+    case "documento_sem_cr":
+      return row.alerts.includes("DOCUMENTO_SEM_CR");
+    case "condicao_pagamento_ausente":
+      return (
+        row.hasPaymentConditionMissing ||
+        row.alerts.includes("SEM_CONDICAO_PAGAMENTO")
+      );
+    case "cr_aberto_a_vencer":
+      return isCrAVencer(row);
+    case "cr_parcialmente_recebido":
+      return isCrPartiallyReceived(row);
+    case "cr_aberto_pedido_completo":
+      return COMPLETO.has(row.consolidatedOrderStatus);
+    case "cr_aberto_pedido_parcial":
+      return PARCIAL.has(row.consolidatedOrderStatus);
+    case "cr_aberto_sem_documento_seguro":
+      return isCrWithoutSafeDocument(row);
+    case "recebido_divergencia_operacional":
+      return row.hasDivergences;
+    case "recebido_pedido_parcial":
+      return PARCIAL.has(row.consolidatedOrderStatus);
+    case "pedido_antigo_sem_evolucao":
     case "bloqueado_revisao":
-      return row.consolidatedOrderStatus === "BLOQUEADO_REVISAO";
-    case "nf_sem_cr":
-      return row.consolidatedOrderStatus === "NF_SEM_CR";
+      return (
+        row.consolidatedOrderStatus === "BLOQUEADO_REVISAO" ||
+        row.alerts.includes("PEDIDO_ANTIGO_SEM_EVOLUCAO")
+      );
+    case "entrega_vencida_sem_documento":
+      return (
+        isDeliveryOverdue(row) &&
+        (row.hasMissingStockDocument || !row.hasAllocation)
+      );
+    case "pedido_vinculo_inconsistente":
+      return (
+        row.alerts.includes("CR_SEM_RATEIO_SEGURO") ||
+        (row.hasDivergences && row.hasMissingStockDocument)
+      );
+    case "excesso":
+    case "fora_pedido":
+    case "preco":
     case "cancelados":
+      // aliases legados
+      if (drilldown === "excesso")
+        return row.alerts.includes("DOCUMENTO_COM_EXCEDENTE");
+      if (drilldown === "fora_pedido")
+        return row.alerts.includes("PRODUTO_FORA_DO_PEDIDO");
+      if (drilldown === "preco") return row.alerts.includes("DIVERGENCIA_PRECO");
       return row.consolidatedOrderStatus === "CANCELADO";
     default:
       return true;
