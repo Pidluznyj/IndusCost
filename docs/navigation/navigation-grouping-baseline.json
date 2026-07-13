@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-10T15:40:46.739Z",
+  "generatedAt": "2026-07-13T09:59:48.611Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -324,6 +324,26 @@
     },
     {
       "order": 25,
+      "itemId": "portfolio-reconciliation",
+      "label": "Conciliação de Carteira",
+      "path": "/finance/portfolio-reconciliation",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "finance.portfolioReconciliation.view",
+        "finance.portfolioReconciliation.conciliation.view",
+        "finance.portfolioReconciliation.intelligence.view",
+        "finance.portfolioReconciliation.orderToCashAudit.view",
+        "finance.view",
+        "finance.accountsReceivable.view",
+        "finance.accountsPayable.view",
+        "reports.view",
+        "settings.nomus.view"
+      ]
+    },
+    {
+      "order": 26,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -336,7 +356,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -374,6 +394,7 @@
     "reports": true,
     "finance": true,
     "suppliers": true,
+    "portfolio-reconciliation": true,
     "guide": true,
     "settings": true
   },
@@ -484,6 +505,17 @@
       "finance.suppliers.view",
       "finance.cost_centers.view",
       "finance.view"
+    ],
+    "portfolio-reconciliation": [
+      "finance.portfolioReconciliation.view",
+      "finance.portfolioReconciliation.conciliation.view",
+      "finance.portfolioReconciliation.intelligence.view",
+      "finance.portfolioReconciliation.orderToCashAudit.view",
+      "finance.view",
+      "finance.accountsReceivable.view",
+      "finance.accountsPayable.view",
+      "reports.view",
+      "settings.nomus.view"
     ],
     "guide": [
       "guide.view",

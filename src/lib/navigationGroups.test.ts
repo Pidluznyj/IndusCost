@@ -45,6 +45,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   commissions: "comercial",
   finance: "financeiro",
   suppliers: "financeiro",
+  "portfolio-reconciliation": "financeiro",
   opex: "financeiro",
   taxes: "financeiro",
   reports: "financeiro",
@@ -76,7 +77,11 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
 
   it("todos os paths usam getModulePath (suppliers → /finance/suppliers)", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
-      const expected = moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
+      let expected = `/${moduleId}`;
+      if (moduleId === "suppliers") expected = "/finance/suppliers";
+      if (moduleId === "portfolio-reconciliation") {
+        expected = "/finance/portfolio-reconciliation";
+      }
       assert.equal(getModulePath(moduleId), expected);
     }
     for (const item of flattenGroupedNavigationItems()) {
@@ -130,7 +135,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     assert.deepEqual(counts, {
       engenharia: 5,
       comercial: 6,
-      financeiro: 4,
+      financeiro: 6,
       operacoes: 6,
       administracao: 3,
     });

@@ -2,7 +2,13 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconciliationApi.js";
-import { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS } from "./financePortfolioReconciliationPermissions.js";
+import {
+  FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS,
+  FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS,
+  FINANCE_PORTFOLIO_RECONCILIATION_MODULE_API_PERMISSIONS,
+  FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_API_PERMISSIONS,
+  FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS,
+} from "./financePortfolioReconciliationPermissions.js";
 import {
   listPortfolioReconciliationRuns,
   loadPortfolioIntelligenceList,
@@ -30,12 +36,30 @@ export function registerFinancePortfolioReconciliationRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const guard = [
+  const moduleGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS]),
+    auth.requireAnyPermission([...FINANCE_PORTFOLIO_RECONCILIATION_MODULE_API_PERMISSIONS]),
+  ];
+  const conciliationGuard = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([
+      ...FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS,
+    ]),
+  ];
+  const intelligenceGuard = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([
+      ...FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS,
+    ]),
+  ];
+  const orderToCashAuditGuard = [
+    auth.requireAppAuth,
+    auth.requireAnyPermission([
+      ...FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_API_PERMISSIONS,
+    ]),
   ];
 
-  app.get("/api/finance/portfolio-reconciliation", ...guard, async (req, res) => {
+  app.get("/api/finance/portfolio-reconciliation", ...conciliationGuard, async (req, res) => {
     try {
       const payload = await loadPortfolioReconciliationList(
         req.query as Record<string, unknown>
@@ -60,7 +84,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/orders/:salesOrderId",
-    ...guard,
+    ...conciliationGuard,
     async (req, res) => {
       try {
         const salesOrderId = String(req.params.salesOrderId ?? "").trim();
@@ -101,7 +125,7 @@ export function registerFinancePortfolioReconciliationRoutes(
     }
   );
 
-  app.get("/api/finance/portfolio-reconciliation/runs", ...guard, async (_req, res) => {
+  app.get("/api/finance/portfolio-reconciliation/runs", ...moduleGuard, async (_req, res) => {
     try {
       const payload = await listPortfolioReconciliationRuns();
       res.json(payload);
@@ -120,7 +144,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/intelligence",
-    ...guard,
+    ...intelligenceGuard,
     async (req, res) => {
       try {
         const payload = await loadPortfolioIntelligenceList(
@@ -150,7 +174,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/intelligence/orders/:salesOrderId",
-    ...guard,
+    ...intelligenceGuard,
     async (req, res) => {
       try {
         const salesOrderId = String(req.params.salesOrderId ?? "").trim();
@@ -196,7 +220,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/runs/:runId/summary",
-    ...guard,
+    ...conciliationGuard,
     async (req, res) => {
       try {
         const runId = String(req.params.runId ?? "").trim();
@@ -232,7 +256,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/order-to-cash-audit",
-    ...guard,
+    ...orderToCashAuditGuard,
     async (req, res) => {
       try {
         const payload = await loadOrderToCashAuditList(
@@ -262,7 +286,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/order-to-cash-audit/runs",
-    ...guard,
+    ...orderToCashAuditGuard,
     async (_req, res) => {
       try {
         const payload = await listOrderToCashAuditRuns();
@@ -286,7 +310,7 @@ export function registerFinancePortfolioReconciliationRoutes(
 
   app.get(
     "/api/finance/portfolio-reconciliation/order-to-cash-audit/:factId",
-    ...guard,
+    ...orderToCashAuditGuard,
     async (req, res) => {
       try {
         const factId = String(req.params.factId ?? "").trim();

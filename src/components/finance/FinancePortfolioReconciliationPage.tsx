@@ -10,7 +10,15 @@ import {
   financeModuleFilterFieldClass,
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
-import { canViewFinancePortfolioReconciliation } from "@/src/lib/financePortfolioReconciliationPermissions";
+import {
+  canViewFinancePortfolioReconciliation,
+  canViewPortfolioConciliationTab,
+  canViewPortfolioIntelligenceTab,
+  canViewPortfolioOrderToCashAuditTab,
+  listVisiblePortfolioReconciliationTabs,
+  resolveDefaultPortfolioReconciliationTab,
+  type PortfolioReconciliationTabId,
+} from "@/src/lib/financePortfolioReconciliationPermissions";
 import {
   buildPortfolioReconciliationListQuery,
   createDefaultPortfolioReconciliationUiFilters,
@@ -58,6 +66,15 @@ const MONTH_OPTIONS = [
 export function FinancePortfolioReconciliationPage() {
   const auth = useAuth();
   const canView = canViewFinancePortfolioReconciliation(auth);
+  const canViewConciliation = canViewPortfolioConciliationTab(auth);
+  const canViewIntelligence = canViewPortfolioIntelligenceTab(auth);
+  const canViewOrderToCashAudit = canViewPortfolioOrderToCashAuditTab(auth);
+  const visibleTabs = useMemo(
+    () => listVisiblePortfolioReconciliationTabs(auth),
+    // Recalcula quando o usuário efetivo muda (SUPER_ADMIN / permissões).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auth.authUser?.id, auth.authUser?.effectivePermissions?.join("|"), auth.authUser?.role]
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   const [draftFilters, setDraftFilters] = useState(createDefaultPortfolioReconciliationUiFilters);
@@ -68,9 +85,16 @@ export function FinancePortfolioReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<
-    "conciliation" | "intelligence" | "order-to-cash-audit"
-  >("conciliation");
+  const [activeView, setActiveView] = useState<PortfolioReconciliationTabId>(
+    () => resolveDefaultPortfolioReconciliationTab(auth) ?? "conciliation"
+  );
+
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.includes(activeView)) {
+      setActiveView(visibleTabs[0]!);
+    }
+  }, [activeView, visibleTabs]);
 
   const queryString = useMemo(
     () => buildPortfolioReconciliationListQuery(appliedFilters),
@@ -106,9 +130,9 @@ export function FinancePortfolioReconciliationPage() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!canView) {
+    if (!canView || !canViewConciliation) {
       setLoading(false);
-      setPayload(null);
+      if (!canViewConciliation) setPayload(null);
       return;
     }
     abortRef.current?.abort();
@@ -159,7 +183,7 @@ export function FinancePortfolioReconciliationPage() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [canView, loadRuns, queryString]);
+  }, [canView, canViewConciliation, loadRuns, queryString]);
 
   useEffect(() => {
     void load();
@@ -468,60 +492,66 @@ export function FinancePortfolioReconciliationPage() {
           aria-label="Visões da conciliação"
           data-testid="portfolio-reconciliation-view-tabs"
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === "conciliation"}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-              activeView === "conciliation"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            onClick={() => setActiveView("conciliation")}
-            data-testid="portfolio-tab-conciliation"
-          >
-            Conciliação
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === "intelligence"}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-              activeView === "intelligence"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            onClick={() => setActiveView("intelligence")}
-            data-testid="portfolio-tab-intelligence"
-          >
-            Inteligência da Carteira
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === "order-to-cash-audit"}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-              activeView === "order-to-cash-audit"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            onClick={() => setActiveView("order-to-cash-audit")}
-            data-testid="portfolio-tab-order-to-cash-audit"
-          >
-            Auditoria Pedido → Caixa
-          </button>
+          {canViewConciliation ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "conciliation"}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                activeView === "conciliation"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setActiveView("conciliation")}
+              data-testid="portfolio-tab-conciliation"
+            >
+              Conciliação
+            </button>
+          ) : null}
+          {canViewIntelligence ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "intelligence"}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                activeView === "intelligence"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setActiveView("intelligence")}
+              data-testid="portfolio-tab-intelligence"
+            >
+              Inteligência da Carteira
+            </button>
+          ) : null}
+          {canViewOrderToCashAudit ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "order-to-cash-audit"}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                activeView === "order-to-cash-audit"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setActiveView("order-to-cash-audit")}
+              data-testid="portfolio-tab-order-to-cash-audit"
+            >
+              Auditoria Pedido → Caixa
+            </button>
+          ) : null}
         </div>
 
-        {activeView === "order-to-cash-audit" ? (
+        {activeView === "order-to-cash-audit" && canViewOrderToCashAudit ? (
           <div className="mb-6">
             <OrderToCashAuditTab />
           </div>
         ) : null}
 
-        {activeView === "intelligence" ? (
+        {activeView === "intelligence" && canViewIntelligence ? (
           <div className="mb-6">
             <PortfolioIntelligenceSection
               enabled={canView}
@@ -532,11 +562,11 @@ export function FinancePortfolioReconciliationPage() {
           </div>
         ) : null}
 
-        {activeView === "conciliation" && loading && !payload ? (
+        {activeView === "conciliation" && canViewConciliation && loading && !payload ? (
           <FinanceModuleLoadingBlock label="Carregando conciliação de carteira…" />
         ) : null}
 
-        {activeView === "conciliation" && noRun ? (
+        {activeView === "conciliation" && canViewConciliation && noRun ? (
           <FinanceModuleEmptyState
             title="Sem run materializada"
             description={PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE}
@@ -544,7 +574,10 @@ export function FinancePortfolioReconciliationPage() {
           />
         ) : null}
 
-        {activeView === "conciliation" && !noRun && payload?.businessAnswers ? (
+        {activeView === "conciliation" &&
+        canViewConciliation &&
+        !noRun &&
+        payload?.businessAnswers ? (
           <div className="mb-4 space-y-3">
             <div
               className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
@@ -563,6 +596,7 @@ export function FinancePortfolioReconciliationPage() {
         ) : null}
 
         {activeView === "conciliation" &&
+        canViewConciliation &&
         !loading &&
         !noRun &&
         !error &&
@@ -574,7 +608,11 @@ export function FinancePortfolioReconciliationPage() {
           />
         ) : null}
 
-        {activeView === "conciliation" && !noRun && hasRows && payload ? (
+        {activeView === "conciliation" &&
+        canViewConciliation &&
+        !noRun &&
+        hasRows &&
+        payload ? (
           <>
             {hasAlerts ? (
               <div

@@ -12,15 +12,15 @@ import {
   type NavigationGroupingBaseline,
 } from "./navigationGroupingAudit.js";
 import { SIDEBAR_MODULE_ORDER } from "./modulePermissions.js";
-import { MODULE_MENU_PERMISSION_KEYS } from "./navigationGroups.js";
+import { getModulePath, MODULE_MENU_PERMISSION_KEYS } from "./navigationGroups.js";
 
 describe("navigationGroupingAudit — snapshot", () => {
-  it("baseline versionado contém 23 itens com path /{moduleId}", () => {
+  it("baseline versionado contém todos os módulos com path canônico", () => {
     const baseline = loadNavigationGroupingBaseline(NAVIGATION_GROUPING_BASELINE_PATH);
     assert.equal(baseline.version, 1);
     assert.equal(baseline.items.length, SIDEBAR_MODULE_ORDER.length);
     for (const item of baseline.items) {
-      assert.equal(item.path, `/${item.itemId}`);
+      assert.equal(item.path, getModulePath(item.itemId));
       assert.ok(item.label.length > 0);
       assert.ok(item.requiredPermissions.length > 0);
     }

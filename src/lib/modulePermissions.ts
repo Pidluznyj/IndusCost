@@ -158,6 +158,10 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       );
     case "portfolio-reconciliation":
       return (
+        check.hasPermission("finance.portfolioReconciliation.view") ||
+        check.hasPermission("finance.portfolioReconciliation.conciliation.view") ||
+        check.hasPermission("finance.portfolioReconciliation.intelligence.view") ||
+        check.hasPermission("finance.portfolioReconciliation.orderToCashAudit.view") ||
         check.hasPermission("finance.view") ||
         check.hasPermission("finance.accountsReceivable.view") ||
         check.hasPermission("finance.accountsPayable.view") ||

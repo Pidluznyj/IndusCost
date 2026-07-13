@@ -15,7 +15,6 @@ import { buildPortfolioReconciliationFacts } from "./portfolioReconciliationAllo
 import { portfolioFactDraftToApiRow } from "./portfolioReconciliationOrderTrace.js";
 import { canViewFinancePortfolioReconciliation } from "../financePortfolioReconciliationPermissions.js";
 import { FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS } from "../financePortfolioReconciliationPermissions.js";
-
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
@@ -106,8 +105,9 @@ describe("portfolioMaturityIntelligenceApi", () => {
     assert.match(routes, /requireAppAuth/);
     assert.match(
       routes,
-      /requireAnyPermission\(\[\.\.\.FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS\]\)/
+      /FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_API_PERMISSIONS/
     );
+    assert.match(routes, /intelligenceGuard/);
     assert.equal(
       canViewFinancePortfolioReconciliation({
         hasPermission: () => false,
@@ -123,6 +123,11 @@ describe("portfolioMaturityIntelligenceApi", () => {
       true
     );
     assert.ok(FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS.includes("finance.view"));
+    assert.ok(
+      FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS.includes(
+        "finance.portfolioReconciliation.view"
+      )
+    );
   });
 
   it("aceita filtro por cliente", () => {

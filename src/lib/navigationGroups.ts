@@ -121,6 +121,10 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "finance.view",
   ],
   "portfolio-reconciliation": [
+    "finance.portfolioReconciliation.view",
+    "finance.portfolioReconciliation.conciliation.view",
+    "finance.portfolioReconciliation.intelligence.view",
+    "finance.portfolioReconciliation.orderToCashAudit.view",
     "finance.view",
     "finance.accountsReceivable.view",
     "finance.accountsPayable.view",
