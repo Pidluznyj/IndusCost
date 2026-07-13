@@ -132,8 +132,8 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
               {headingTitle}
             </h3>
             <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-              Seu usuário ainda não está vinculado a um responsável comercial. Solicite ajuste ao
-              administrador.
+              Você não possui carteira comercial vinculada ou permissão para acessar esta visão.
+              Solicite o vínculo como responsável comercial ao administrador.
             </p>
           </div>
         </div>

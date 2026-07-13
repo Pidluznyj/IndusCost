@@ -183,6 +183,16 @@ export function applyCommercialCustomerScope(
   };
 }
 
+function defaultParseExternalSellerId(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number.parseInt(String(raw).trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function defaultParseResponsible(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
 export function resolveRequestedResponsibleFilter(
   user: AppAuthContext,
   requested: {
@@ -190,13 +200,8 @@ export function resolveRequestedResponsibleFilter(
     responsible?: unknown;
     sellerIdentityKey?: unknown;
   },
-  parseExternalSellerId: (raw: unknown) => number | null = (raw) => {
-    if (raw === undefined || raw === null || raw === "") return null;
-    const n = Number.parseInt(String(raw).trim(), 10);
-    return Number.isFinite(n) ? n : null;
-  },
-  parseResponsible: (raw: unknown) =>
-    typeof raw === "string" && raw.trim() ? raw.trim() : null
+  parseExternalSellerId: (raw: unknown) => number | null = defaultParseExternalSellerId,
+  parseResponsible: (raw: unknown) => string | null = defaultParseResponsible
 ) {
   return resolveCrmSellerDashboardQueryScope(
     user,

@@ -117,11 +117,12 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(result.sellerScope.responsible, null);
   });
 
-  it("vendedor sem vínculo Nomus recebe SELLER_NOT_LINKED", () => {
+  it("vendedor sem vínculo comercial recebe SELLER_NOT_LINKED", () => {
     const auth = mockAuth({ permissions: ["crm.seller.own"] });
     const scope = resolveCrmCommercialAccessScope(auth);
     assert.equal(scope.dataScope, "none");
     assert.equal(scope.blockedReason, "SELLER_NOT_LINKED");
+    assert.match(scope.blockedMessage ?? "", /responsável comercial/);
 
     const dash = resolveCrmSellerDashboardQueryScope(
       auth,
@@ -203,18 +204,19 @@ describe("crmCommercialAccessScope", () => {
     const src = readFileSync(join(process.cwd(), "src/components/CrmModule.tsx"), "utf8");
     assert.match(src, /if \(canCrmGeneral\) \{[\s\S]*loadManagementDashboard/);
     assert.match(src, /activeCrmManagementTab === "portfolio"/);
-    assert.match(src, /getDefaultCrmManagementTab\(auth\) \?\? "seller"/);
+    assert.match(src, /getDefaultCrmManagementTab\(/);
     assert.doesNotMatch(src, /Indicadores da carteira/);
   });
 
-  it("seller-dashboard exige crm.seller.own ou crm.seller.all no server", () => {
+  it("seller-dashboard exige resource tab + escopo comercial no server", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     assert.match(
       server,
-      /app\.get\("\/api\/crm\/seller-dashboard"[\s\S]*?requireAnyPermission\(\["crm\.seller\.own", "crm\.seller\.all"\]\)/
+      /\/api\/crm\/seller-dashboard[\s\S]*?COMERCIAL_CRM_TAB_GESTAO_VENDEDOR/
     );
     assert.match(server, /requireCrmCommercialDataScope/);
-    assert.match(server, /buildCrmSellerCustomerPortfolioWhere/);
+    assert.match(server, /requireCrmCommercialGeneralScope/);
+    assert.match(server, /resolveSellerDashboardScope/);
   });
 
   it("CrmSellerDashboardSection só mostra combo com showSellerFilter", () => {
@@ -223,7 +225,8 @@ describe("crmCommercialAccessScope", () => {
       "utf8"
     );
     assert.match(section, /showSellerFilter/);
-    assert.match(section, /Todos os vendedores \(visão geral\)/);
+    assert.match(section, /Todos os responsáveis \(visão geral\)/);
     assert.match(section, /ownScopeOnly/);
+    assert.match(section, /Responsável comercial da carteira/);
   });
 });
