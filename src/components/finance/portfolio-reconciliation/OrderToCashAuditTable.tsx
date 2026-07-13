@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   formatFinanceCurrency,
@@ -180,6 +180,13 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
   }
 }
 
+const TOP_SCROLL_RAIL_CLASS =
+  "min-w-0 flex-1 overflow-x-scroll overflow-y-hidden overscroll-x-contain " +
+  "[scrollbar-width:auto] [scrollbar-color:#667085_#E4E7EC] " +
+  "[&::-webkit-scrollbar]:h-3.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[#E4E7EC] " +
+  "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#667085] " +
+  "[&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[#E4E7EC]";
+
 export function OrderToCashAuditTable({
   rows,
   filters,
@@ -193,15 +200,140 @@ export function OrderToCashAuditTable({
 }: Props) {
   const from = totalRows === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
   const to = Math.min(filters.page * filters.pageSize, totalRows);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const syncingRef = useRef(false);
+  const [scrollContentWidth, setScrollContentWidth] = useState(2200);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [maxScrollLeft, setMaxScrollLeft] = useState(0);
+
+  const syncHorizontalScroll = useCallback((source: "top" | "main") => {
+    if (syncingRef.current) return;
+    const top = topScrollRef.current;
+    const main = mainScrollRef.current;
+    if (!top || !main) return;
+    syncingRef.current = true;
+    if (source === "top") {
+      main.scrollLeft = top.scrollLeft;
+    } else {
+      top.scrollLeft = main.scrollLeft;
+    }
+    setScrollLeft(main.scrollLeft);
+    requestAnimationFrame(() => {
+      syncingRef.current = false;
+    });
+  }, []);
+
+  const setHorizontalScroll = useCallback((nextLeft: number) => {
+    const main = mainScrollRef.current;
+    const top = topScrollRef.current;
+    if (!main) return;
+    const clamped = Math.max(0, Math.min(nextLeft, main.scrollWidth - main.clientWidth));
+    main.scrollLeft = clamped;
+    if (top) top.scrollLeft = clamped;
+    setScrollLeft(clamped);
+  }, []);
+
+  const nudgeHorizontal = useCallback(
+    (delta: number) => {
+      setHorizontalScroll((mainScrollRef.current?.scrollLeft ?? 0) + delta);
+    },
+    [setHorizontalScroll]
+  );
+
+  useEffect(() => {
+    const main = mainScrollRef.current;
+    const table = tableRef.current;
+    if (!main || !table) return;
+
+    const updateScrollMetrics = () => {
+      const width = Math.max(table.scrollWidth, main.scrollWidth, 2200);
+      setScrollContentWidth(width);
+      setMaxScrollLeft(Math.max(0, main.scrollWidth - main.clientWidth));
+      setScrollLeft(main.scrollLeft);
+      const top = topScrollRef.current;
+      if (top) top.scrollLeft = main.scrollLeft;
+    };
+
+    updateScrollMetrics();
+    const raf = requestAnimationFrame(updateScrollMetrics);
+    const ro =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateScrollMetrics) : null;
+    ro?.observe(table);
+    ro?.observe(main);
+    window.addEventListener("resize", updateScrollMetrics);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+      window.removeEventListener("resize", updateScrollMetrics);
+    };
+  }, [rows]);
 
   return (
     <section
-      className={cn(financeBiCardClass, "overflow-hidden")}
+      className={cn(financeBiCardClass, "min-w-0 max-w-full overflow-hidden")}
       data-testid="order-to-cash-audit-table"
     >
-      <div className="overflow-x-auto">
-        <table className="min-w-[2200px] w-full border-collapse text-left text-xs">
-          <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div
+        className="sticky top-0 z-40 flex items-center gap-2 border-b border-[#B2DDFF] bg-[#EFF8FF] px-2 py-2"
+        data-testid="order-to-cash-audit-scroll-top-bar"
+      >
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#175CD3]">
+          Rolagem →
+        </span>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#B2DDFF] bg-white text-[#175CD3] hover:bg-[#F0F9FF]"
+          onClick={() => nudgeHorizontal(-280)}
+          aria-label="Rolar tabela para a esquerda"
+          data-testid="order-to-cash-audit-scroll-left"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <input
+          type="range"
+          className="h-2 min-w-0 flex-1 cursor-pointer accent-[#175CD3]"
+          min={0}
+          max={Math.max(maxScrollLeft, 1)}
+          step={1}
+          value={Math.min(scrollLeft, Math.max(maxScrollLeft, 1))}
+          onChange={(e) => setHorizontalScroll(Number(e.target.value))}
+          aria-label="Posição horizontal da tabela"
+          data-testid="order-to-cash-audit-scroll-range"
+          title="Arraste para ver mais colunas"
+        />
+        <div
+          ref={topScrollRef}
+          className={cn(TOP_SCROLL_RAIL_CLASS, "max-w-[28%]")}
+          onScroll={() => syncHorizontalScroll("top")}
+          data-testid="order-to-cash-audit-scroll-top"
+          aria-label="Rolagem horizontal da tabela (topo)"
+          title="Arraste para ver mais colunas"
+        >
+          <div style={{ width: scrollContentWidth, height: 14 }} aria-hidden />
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#B2DDFF] bg-white text-[#175CD3] hover:bg-[#F0F9FF]"
+          onClick={() => nudgeHorizontal(280)}
+          aria-label="Rolar tabela para a direita"
+          data-testid="order-to-cash-audit-scroll-right"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div
+        ref={mainScrollRef}
+        className="max-h-[min(70vh,720px)] min-w-0 max-w-full overflow-auto"
+        onScroll={() => syncHorizontalScroll("main")}
+        data-testid="order-to-cash-audit-scroll-main"
+      >
+        <table
+          ref={tableRef}
+          className="min-w-[2200px] w-full border-collapse text-left text-xs"
+        >
+          <thead className="sticky top-0 z-20 bg-muted/95 text-[10px] uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
               {COLUMNS.map((col) => {
                 const sortable = Boolean(col.sortKey);
@@ -213,7 +345,7 @@ export function OrderToCashAuditTable({
                       "whitespace-nowrap px-2.5 py-2 font-semibold",
                       col.align === "right" ? "text-right" : "text-left",
                       sortable && "cursor-pointer select-none hover:text-foreground",
-                      col.sticky && "sticky left-0 z-10 bg-muted/95"
+                      col.sticky && "sticky left-0 z-30 bg-muted/95"
                     )}
                     onClick={sortable ? () => onSort(col.sortKey!) : undefined}
                     title={sortable ? "Clique para ordenar" : undefined}
@@ -264,7 +396,8 @@ export function OrderToCashAuditTable({
                     className={cn(
                       "px-2.5 py-2 tabular-nums",
                       col.align === "right" ? "text-right" : "text-left",
-                      col.sticky && "sticky left-0 z-[1] bg-card"
+                      col.sticky && "sticky left-0 z-[1] bg-card",
+                      col.sticky && selectedId === row.id && "bg-sky-50/70"
                     )}
                   >
                     {cellContent(row, col.id)}

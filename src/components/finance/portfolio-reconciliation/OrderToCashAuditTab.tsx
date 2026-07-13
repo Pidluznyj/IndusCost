@@ -155,7 +155,7 @@ export function OrderToCashAuditTab() {
   const hasRows = Boolean(payload?.rows?.length);
 
   return (
-    <div data-testid="order-to-cash-audit-tab">
+    <div className="min-w-0 max-w-full" data-testid="order-to-cash-audit-tab">
       <header className="mb-4 space-y-3">
         <div>
           <h2

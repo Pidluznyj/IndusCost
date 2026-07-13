@@ -172,6 +172,7 @@ describe("orderToCashAuditUi", () => {
     assert.match(table, /order-to-cash-audit-scroll-top-bar/);
     assert.match(table, /order-to-cash-audit-scroll-left/);
     assert.match(table, /order-to-cash-audit-scroll-right/);
+    assert.match(table, /order-to-cash-audit-scroll-range/);
     assert.match(table, /order-to-cash-audit-scroll-main/);
     assert.match(table, /max-h-\[min\(70vh,720px\)\]/);
     assert.match(table, /syncHorizontalScroll/);
