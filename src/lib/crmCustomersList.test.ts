@@ -184,6 +184,7 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
     // normalização SQL (mesma do dashboard): REGEXP_REPLACE de espaços + translate de acentos
     assert.match(text, /REGEXP_REPLACE/);
     assert.match(text, /translate/);
+    assert.match(text, /nomusSellerName/);
     assert.match(text, /NOT IN \('CANCELLED', 'ERROR'\)/);
     // a chave comparada é a forma normalizada com 1 espaço
     assert.ok(captured.sql!.values.includes("gislene lima"));

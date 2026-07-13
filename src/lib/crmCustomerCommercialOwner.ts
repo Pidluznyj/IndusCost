@@ -72,16 +72,24 @@ export async function inferCommercialOwnerFromNomusOrders(
   >(Prisma.sql`
     SELECT
       so."externalSellerId" AS external_seller_id,
-      NULLIF(TRIM(so."responsible"), '') AS responsible,
+      NULLIF(
+        TRIM(COALESCE(NULLIF(TRIM(so."nomusSellerName"), ''), NULLIF(TRIM(so."responsible"), ''))),
+        ''
+      ) AS responsible,
       COUNT(*)::int AS orders_count
     FROM "SalesOrder" so
     WHERE so."customerId" = ${customerId}::uuid
       AND so.status::text NOT IN ('CANCELLED', 'ERROR')
       AND (
         so."externalSellerId" IS NOT NULL
+        OR (so."nomusSellerName" IS NOT NULL AND TRIM(so."nomusSellerName") <> '')
         OR (so."responsible" IS NOT NULL AND TRIM(so."responsible") <> '')
       )
-    GROUP BY so."externalSellerId", NULLIF(TRIM(so."responsible"), '')
+    GROUP BY so."externalSellerId",
+      NULLIF(
+        TRIM(COALESCE(NULLIF(TRIM(so."nomusSellerName"), ''), NULLIF(TRIM(so."responsible"), ''))),
+        ''
+      )
     ORDER BY orders_count DESC, external_seller_id ASC NULLS LAST
     LIMIT 1
   `);

@@ -84,14 +84,16 @@ describe("crmSellerDashboard", () => {
     assert.equal(service.includes('"Proposal"'), false);
     assert.match(service, /openOrdersCount/);
     assert.match(service, /topProduct/);
+    assert.match(service, /buildCrmSellerPortfolioOrderScopeSql/);
+    assert.match(service, /fetchCrmManualOwnerCustomerIds/);
+    assert.match(service, /nomusSellerName|buildCrmOrderSellerNameSql/);
   });
 
   it("endpoint seller-dashboard delega ao serviço de pedidos", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    const block = server.slice(
-      server.indexOf('app.get("/api/crm/seller-dashboard"'),
-      server.indexOf('app.get("/api/crm/customers", requireAppAuth')
-    );
+    const start = server.indexOf("/api/crm/seller-dashboard");
+    assert.ok(start >= 0, "rota seller-dashboard deve existir");
+    const block = server.slice(start, start + 2500);
     assert.match(block, /buildCrmSellerDashboardResponse/);
     assert.equal(block.includes("openProposalsCount"), false);
     assert.equal(block.includes('"Proposal"'), false);

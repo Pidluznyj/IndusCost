@@ -23,7 +23,11 @@ import {
   OFFICIAL_SO_RULES_SOURCE,
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
-import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql";
+import {
+  buildCrmOrderSellerNameSql,
+  buildCrmSellerPortfolioOrderScopeSql,
+} from "@/src/lib/crmSellerMatchSql";
+import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
 
 const LIST_LIMIT = 20;
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -117,19 +121,24 @@ export async function buildCrmSellerDashboardResponse(
     )
   `;
 
-  const buildSellerMatchSql = () =>
-    buildCrmSellerFilterSql("so", {
+  const buildSellerMatchSql = async () => {
+    const sellerFilter = {
       externalSellerId: filterExternalSellerId,
       responsible: filterResponsible,
       sellerIdentityKey: filterSellerIdentityKey,
-    });
+    };
+    const manualOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
+    return buildCrmSellerPortfolioOrderScopeSql("so", sellerFilter, manualOwnerCustomerIds);
+  };
+
+  const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
 
   const sellerKeyExprSql = Prisma.sql`
     CASE
       WHEN so."externalSellerId" IS NOT NULL
       THEN 'id:' || so."externalSellerId"::text
-      WHEN NULLIF(TRIM(so."responsible"), '') IS NOT NULL
-      THEN 'r:' || LOWER(TRIM(so."responsible"))
+      WHEN NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
+      THEN 'r:' || LOWER(TRIM(${orderSellerNameSql}))
       ELSE NULL
     END
   `;
@@ -184,7 +193,7 @@ export async function buildCrmSellerDashboardResponse(
   const soValidMetricsSql = Prisma.sql`so.status::text NOT IN ('CANCELLED', 'ERROR')`;
   const soValidOrdersScopeSql = Prisma.sql`${soOrdersScopeSql} AND ${soValidMetricsSql}`;
   const soOpenPortfolioScopeSql = Prisma.sql`${soValidOrdersScopeSql} AND NOT ${orderIsInvoicedSql("so")}`;
-  const soSellerMatch = buildSellerMatchSql();
+  const soSellerMatch = await buildSellerMatchSql();
 
   const [
     sellerOptionsRows,
@@ -201,8 +210,8 @@ export async function buildCrmSellerDashboardResponse(
       Prisma.sql`
         SELECT
           MAX(so."externalSellerId") AS external_seller_id,
-          MAX(so."responsible") FILTER (
-            WHERE so."responsible" IS NOT NULL AND TRIM(so."responsible") <> ''
+          MAX(${orderSellerNameSql}) FILTER (
+            WHERE NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
           ) AS responsible,
           COUNT(*)::int AS orders_count
         FROM "SalesOrder" so
@@ -253,8 +262,8 @@ export async function buildCrmSellerDashboardResponse(
       Prisma.sql`
         SELECT
           MAX(so."externalSellerId") AS external_seller_id,
-          MAX(so."responsible") FILTER (
-            WHERE so."responsible" IS NOT NULL AND TRIM(so."responsible") <> ''
+          MAX(${orderSellerNameSql}) FILTER (
+            WHERE NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
           ) AS responsible,
           COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql})::int AS orders_count,
           COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql}), 0) AS orders_value,
@@ -290,7 +299,7 @@ export async function buildCrmSellerDashboardResponse(
           so."externalSalesOrderId" AS external_sales_order_id,
           so."customerId" AS customer_id,
           ${customerNameSql} AS customer_name,
-          so."responsible" AS responsible,
+          ${orderSellerNameSql} AS responsible,
           so."externalSellerId" AS external_seller_id,
           so."issueDate" AS issue_date,
           so."expectedDeliveryDate" AS expected_delivery_date,
@@ -329,7 +338,7 @@ export async function buildCrmSellerDashboardResponse(
           so."externalSalesOrderId" AS external_sales_order_id,
           so."customerId" AS customer_id,
           ${customerNameSql} AS customer_name,
-          so."responsible" AS responsible,
+          ${orderSellerNameSql} AS responsible,
           so."externalSellerId" AS external_seller_id,
           so."issueDate" AS issue_date,
           so."expectedDeliveryDate" AS expected_delivery_date,
@@ -410,7 +419,7 @@ export async function buildCrmSellerDashboardResponse(
           so."externalSalesOrderId" AS external_sales_order_id,
           so."customerId" AS customer_id,
           ${customerNameSql} AS customer_name,
-          so."responsible" AS responsible,
+          ${orderSellerNameSql} AS responsible,
           so."externalSellerId" AS external_seller_id,
           so."issueDate" AS issue_date,
           so."totalNetValue" AS total_net_value,
@@ -455,7 +464,8 @@ export async function buildCrmSellerDashboardResponse(
       allYears: true,
       startDate: periodDateFromStart,
       endDate: periodDateToEnd,
-      responsible: filterResponsible ?? undefined,
+      // Eixo CRM = carteira/responsável comercial já aplicado em soSellerMatch.
+      // Não refiltrar pelo vendedor do pedido (comissionável).
     },
     linkedNfeContextMap: linkedMap,
   });

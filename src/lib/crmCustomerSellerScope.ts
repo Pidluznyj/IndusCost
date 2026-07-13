@@ -15,9 +15,20 @@ export function buildCrmSellerSalesOrderWhere(
   };
 
   if (sellerIdentityKey?.trim()) {
+    const key = sellerIdentityKey.trim();
+    if (key.startsWith("__ID_ONLY__:")) {
+      const id = Number.parseInt(key.slice("__ID_ONLY__:".length), 10);
+      if (Number.isFinite(id)) {
+        return { ...statusFilter, externalSellerId: id };
+      }
+    }
+    // Vendedor do pedido = Nomus oficial, com fallback legado (responsible).
     return {
       ...statusFilter,
-      responsible: { equals: sellerIdentityKey.trim(), mode: "insensitive" },
+      OR: [
+        { nomusSellerName: { equals: key, mode: "insensitive" } },
+        { responsible: { equals: key, mode: "insensitive" } },
+      ],
     };
   }
   if (externalSellerId !== null) {
@@ -26,7 +37,10 @@ export function buildCrmSellerSalesOrderWhere(
   if (responsible) {
     return {
       ...statusFilter,
-      responsible: { equals: responsible.trim(), mode: "insensitive" },
+      OR: [
+        { nomusSellerName: { equals: responsible.trim(), mode: "insensitive" } },
+        { responsible: { equals: responsible.trim(), mode: "insensitive" } },
+      ],
     };
   }
   return statusFilter;
@@ -59,20 +73,29 @@ export function buildCrmSellerCustomerPortfolioWhere(
 }
 
 export function salesOrderMatchesCrmSellerScope(
-  order: { externalSellerId: number | null; responsible: string | null },
+  order: {
+    externalSellerId: number | null;
+    responsible: string | null;
+    nomusSellerName?: string | null;
+  },
   scope: CrmCommercialAccessScope
 ): boolean {
   if (scope.dataScope !== "own") return true;
+  const orderName = normalizeSellerIdentityName(
+    (order.nomusSellerName ?? order.responsible ?? "").trim()
+  );
   if (scope.sellerIdentityKey) {
-    const rowKey = normalizeSellerIdentityName(order.responsible ?? "");
-    return rowKey === scope.sellerIdentityKey;
+    if (scope.sellerIdentityKey.startsWith("__ID_ONLY__:")) {
+      const id = Number.parseInt(scope.sellerIdentityKey.slice("__ID_ONLY__:".length), 10);
+      return Number.isFinite(id) && order.externalSellerId === id;
+    }
+    return orderName === scope.sellerIdentityKey;
   }
   if (scope.externalSellerId !== null) {
     return order.externalSellerId === scope.externalSellerId;
   }
   if (scope.responsible) {
-    const rowName = (order.responsible ?? "").trim().toLowerCase();
-    return rowName === scope.responsible.trim().toLowerCase();
+    return orderName === normalizeSellerIdentityName(scope.responsible);
   }
   return false;
 }

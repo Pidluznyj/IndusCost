@@ -146,7 +146,7 @@ export function buildSellerKpiCards(
   return [
     {
       label: "Pedidos emitidos",
-      description: "Pedidos válidos no período (data de emissão)",
+      description: "Pedidos da carteira (responsável comercial) no período",
       value: formatNumberPt(summary?.ordersCount),
       icon: ShoppingCart,
       cardClass: "border-slate-200/80 bg-gradient-to-br from-slate-50 to-card",
@@ -154,7 +154,7 @@ export function buildSellerKpiCards(
     },
     {
       label: "Valor de pedidos",
-      description: "Soma do valor líquido (issueDate)",
+      description: "Soma líquida dos pedidos da carteira (issueDate)",
       value: formatIntelCurrency(summary?.ordersValue),
       icon: Receipt,
       cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/50 to-card",
@@ -162,7 +162,7 @@ export function buildSellerKpiCards(
     },
     {
       label: "Carteira aberta",
-      description: "Pedidos válidos sem NF processada",
+      description: "Pedidos da carteira sem NF processada",
       value: formatNumberPt(summary?.openOrdersCount),
       icon: Wallet,
       cardClass: "border-violet-200/80 bg-gradient-to-br from-violet-50/50 to-card",
