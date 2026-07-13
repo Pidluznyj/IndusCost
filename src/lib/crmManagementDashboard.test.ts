@@ -142,10 +142,9 @@ describe("crmManagementDashboard", () => {
 
   it("endpoint management-dashboard delega ao serviço de pedidos", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    const block = server.slice(
-      server.indexOf('app.get("/api/crm/management-dashboard"'),
-      server.indexOf('app.get("/api/crm/seller-dashboard"')
-    );
+    const start = server.indexOf("/api/crm/management-dashboard");
+    assert.ok(start >= 0, "rota management-dashboard deve existir");
+    const block = server.slice(start, start + 2500);
     assert.match(block, /buildCrmManagementDashboardResponse/);
     assert.equal(block.includes("openProposalsCount"), false);
     assert.equal(block.includes('"Proposal"'), false);
