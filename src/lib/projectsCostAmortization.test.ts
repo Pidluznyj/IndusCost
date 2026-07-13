@@ -160,6 +160,28 @@ describe("projectsCostAmortization — cálculos puros", () => {
     assert.equal(itemB.finalUnitCost, 10.164);
   });
 
+  it("modo COST: amortização entra no custo final", () => {
+    const row = calculateAmortizationAllocation(80, 100, 1000, 1.29, "COST");
+    assert.equal(row.unitAmortizedCost, 0.08);
+    assert.equal(row.costComponentUnit, 0.08);
+    assert.equal(row.priceAddOnUnit, 0);
+    assert.equal(row.finalUnitCost, 1.37);
+  });
+
+  it("modo FINAL_PRICE: amortização vai para priceAddOn e custo final = base", () => {
+    const row = calculateAmortizationAllocation(80, 100, 1000, 1.29, "FINAL_PRICE");
+    assert.equal(row.unitAmortizedCost, 0.08);
+    assert.equal(row.costComponentUnit, 0);
+    assert.equal(row.priceAddOnUnit, 0.08);
+    assert.equal(row.finalUnitCost, 1.29);
+  });
+
+  it("default sem modo explícito permanece COST", () => {
+    const row = calculateAmortizationAllocation(80, 100, 1000, 1.29);
+    assert.equal(row.applicationMode, "COST");
+    assert.equal(row.finalUnitCost, 1.37);
+  });
+
   it("custo final unitário = base + amortização", () => {
     const row = calculateAmortizationAllocation(10_000, 100, 5_000, 2.5);
     assert.equal(row.finalUnitCost, 4.5);

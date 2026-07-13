@@ -1,6 +1,7 @@
 import type {
   ProjectCostAmortizationAllocation,
   ProjectCostAmortization as PrismaAmortization,
+  ProjectAmortizationApplicationMode as PrismaApplicationMode,
   ProjectCostAmortizationSourceType as PrismaSourceType,
   ProjectCostAmortizationStatus as PrismaStatus,
   ProjectCostAmortizationTargetType as PrismaTargetType,
@@ -11,8 +12,11 @@ import {
   buildProjectAmortizationTargets,
   buildProjectCostAmortizationSummary,
   computeAmortizationConfig,
+  isProjectAmortizationApplicationMode,
+  parseProjectAmortizationApplicationMode,
   resolveAmortizationDistributionStatus,
   validateAmortizationSourceRef,
+  type ProjectAmortizationApplicationMode,
   type ProjectCostAmortizationAllocationInput,
   type ProjectCostAmortizationConfigInput,
   type ProjectCostAmortizationRow,
@@ -40,24 +44,43 @@ export type UpsertProjectCostAmortizationPayload = {
     targetSnapshotRootProductId?: string | null;
     allocationPercent: number;
     amortizationQuantity: number;
+    amortizationApplicationMode?: ProjectAmortizationApplicationMode;
+    applicationMode?: ProjectAmortizationApplicationMode;
   }>;
 };
 
 export function serializeCostAmortizationRow(
   row: PrismaAmortization & { allocations: ProjectCostAmortizationAllocation[] }
 ): ProjectCostAmortizationRow {
-  const allocations = row.allocations.map((a) => ({
-    targetItemId: a.targetItemId,
-    targetItemType: a.targetItemType as ProjectCostAmortizationTargetType,
-    targetSnapshotRootProductId: a.targetSnapshotRootProductId,
-    targetDescriptionSnapshot: a.targetDescriptionSnapshot,
-    targetBaseUnitCostSnapshot: dec(a.targetBaseUnitCostSnapshot),
-    allocationPercent: dec(a.allocationPercent),
-    amortizationQuantity: dec(a.amortizationQuantity),
-    allocatedAmount: dec(a.allocatedAmount),
-    unitAmortizedCost: dec(a.unitAmortizedCost),
-    finalUnitCost: dec(a.finalUnitCostSnapshot),
-  }));
+  const allocations = row.allocations.map((a) => {
+    const applicationMode = parseProjectAmortizationApplicationMode(
+      (a as { applicationMode?: string }).applicationMode
+    );
+    const unitAmortizedCost = dec(a.unitAmortizedCost);
+    const costComponentUnit = dec(
+      (a as { costComponentUnit?: unknown }).costComponentUnit ??
+        (applicationMode === "COST" ? unitAmortizedCost : 0)
+    );
+    const priceAddOnUnit = dec(
+      (a as { priceAddOnUnit?: unknown }).priceAddOnUnit ??
+        (applicationMode === "FINAL_PRICE" ? unitAmortizedCost : 0)
+    );
+    return {
+      targetItemId: a.targetItemId,
+      targetItemType: a.targetItemType as ProjectCostAmortizationTargetType,
+      targetSnapshotRootProductId: a.targetSnapshotRootProductId,
+      targetDescriptionSnapshot: a.targetDescriptionSnapshot,
+      targetBaseUnitCostSnapshot: dec(a.targetBaseUnitCostSnapshot),
+      allocationPercent: dec(a.allocationPercent),
+      amortizationQuantity: dec(a.amortizationQuantity),
+      applicationMode,
+      allocatedAmount: dec(a.allocatedAmount),
+      unitAmortizedCost,
+      costComponentUnit,
+      priceAddOnUnit,
+      finalUnitCost: dec(a.finalUnitCostSnapshot),
+    };
+  });
   const distributionPercentTotal = allocations.reduce((acc, a) => acc + a.allocationPercent, 0);
   const allocatedAmountTotal = allocations.reduce((acc, a) => acc + a.allocatedAmount, 0);
   const passThroughAmount = dec(row.passThroughAmount);
@@ -129,6 +152,13 @@ export function validateUpsertAmortizationPayload(
         error: `Quantidade de amortização inválida para "${target.displayName}".`,
       };
     }
+    const modeRaw = row.amortizationApplicationMode ?? row.applicationMode ?? "COST";
+    if (!isProjectAmortizationApplicationMode(modeRaw)) {
+      return {
+        ok: false,
+        error: `Modo de aplicação inválido para "${target.displayName}". Use COST ou FINAL_PRICE.`,
+      };
+    }
     allocations.push({
       targetItemId: row.targetItemId,
       targetItemType: row.targetItemType,
@@ -137,6 +167,7 @@ export function validateUpsertAmortizationPayload(
       targetBaseUnitCostSnapshot: target.baseUnitCost,
       allocationPercent: row.allocationPercent,
       amortizationQuantity: row.amortizationQuantity,
+      applicationMode: modeRaw,
     });
   }
 
@@ -227,6 +258,9 @@ export async function upsertProjectCostAmortization(
           allocatedAmount: a.allocatedAmount,
           amortizationQuantity: a.amortizationQuantity,
           unitAmortizedCost: a.unitAmortizedCost,
+          applicationMode: a.applicationMode as PrismaApplicationMode,
+          costComponentUnit: a.costComponentUnit,
+          priceAddOnUnit: a.priceAddOnUnit,
           finalUnitCostSnapshot: a.finalUnitCost,
         })),
       });

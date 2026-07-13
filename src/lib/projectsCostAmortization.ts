@@ -22,6 +22,27 @@ export type ProjectCostAmortizationStatus =
   | "DISTRIBUTED"
   | "NO_ELIGIBLE_ITEMS";
 
+/** Where amortization applies commercially for a given allocation row. */
+export type ProjectAmortizationApplicationMode = "COST" | "FINAL_PRICE";
+
+export const PROJECT_AMORTIZATION_APPLICATION_MODES: ProjectAmortizationApplicationMode[] = [
+  "COST",
+  "FINAL_PRICE",
+];
+
+export function isProjectAmortizationApplicationMode(
+  value: unknown
+): value is ProjectAmortizationApplicationMode {
+  return value === "COST" || value === "FINAL_PRICE";
+}
+
+export function parseProjectAmortizationApplicationMode(
+  value: unknown,
+  fallback: ProjectAmortizationApplicationMode = "COST"
+): ProjectAmortizationApplicationMode {
+  return isProjectAmortizationApplicationMode(value) ? value : fallback;
+}
+
 export type ProjectAmortizationTarget = {
   targetItemId: string;
   targetItemType: ProjectCostAmortizationTargetType;
@@ -41,11 +62,20 @@ export type ProjectCostAmortizationAllocationInput = {
   targetBaseUnitCostSnapshot: number;
   allocationPercent: number;
   amortizationQuantity: number;
+  /** Default COST preserves legacy behavior (amortization in item cost). */
+  applicationMode?: ProjectAmortizationApplicationMode;
 };
 
 export type ProjectCostAmortizationAllocationComputed = ProjectCostAmortizationAllocationInput & {
+  applicationMode: ProjectAmortizationApplicationMode;
   allocatedAmount: number;
+  /** Calculated amortization per unit (always allocatedAmount / qty). */
   unitAmortizedCost: number;
+  /** Portion that enters item unit cost. */
+  costComponentUnit: number;
+  /** Portion added after product price formation (no product margin). */
+  priceAddOnUnit: number;
+  /** Final unit cost = base + costComponentUnit (never includes FINAL_PRICE add-on). */
   finalUnitCost: number;
 };
 
@@ -83,9 +113,16 @@ export type ProjectItemAmortizationRollup = {
   targetItemId: string;
   displayName: string;
   baseUnitCost: number;
+  /** Sum of calculated amortization units (audit). */
   unitAmortizedCost: number;
+  /** Sum that enters item cost. */
+  costComponentUnit: number;
+  /** Sum that enters final price as pass-through. */
+  priceAddOnUnit: number;
   finalUnitCost: number;
   totalAllocated: number;
+  /** Predominant mode; MIXED when both COST and FINAL_PRICE apply to the item. */
+  applicationMode: ProjectAmortizationApplicationMode | "MIXED";
   sourceLabels: string[];
 };
 
@@ -96,6 +133,10 @@ export type ProjectCostAmortizationSummary = {
   totalPassThroughAmount: number;
   totalAbsorbedAmount: number;
   totalAmortizationAllocated: number;
+  /** Allocated amount applied via COST mode. */
+  totalAllocatedToCost: number;
+  /** Allocated amount applied via FINAL_PRICE mode. */
+  totalAllocatedToFinalPrice: number;
   finalItemsUnitCostWithAmortization: number;
   itemRollups: ProjectItemAmortizationRollup[];
   amortizations: ProjectCostAmortizationComputed[];
@@ -180,13 +221,18 @@ export function calculateAmortizationAllocation(
   passThroughAmount: number,
   allocationPercent: number,
   amortizationQuantity: number,
-  baseUnitCost: number
+  baseUnitCost: number,
+  applicationMode: ProjectAmortizationApplicationMode = "COST"
 ): {
   allocatedAmount: number;
   unitAmortizedCost: number;
+  costComponentUnit: number;
+  priceAddOnUnit: number;
   finalUnitCost: number;
+  applicationMode: ProjectAmortizationApplicationMode;
   quantityError?: "ZERO" | "MISSING";
 } {
+  const mode = parseProjectAmortizationApplicationMode(applicationMode);
   const pct = clampPercent(allocationPercent);
   const allocatedAmount = roundProjectMoney((passThroughAmount * pct) / 100);
   const qty = amortizationQuantity;
@@ -194,13 +240,32 @@ export function calculateAmortizationAllocation(
     return {
       allocatedAmount,
       unitAmortizedCost: 0,
+      costComponentUnit: 0,
+      priceAddOnUnit: 0,
       finalUnitCost: roundProjectMoney(baseUnitCost),
+      applicationMode: mode,
       quantityError: pct > 0 ? "ZERO" : undefined,
     };
   }
   const unitAmortizedCost = roundProjectUnitCost(allocatedAmount / qty);
-  const finalUnitCost = roundProjectUnitCost(baseUnitCost + unitAmortizedCost);
-  return { allocatedAmount, unitAmortizedCost, finalUnitCost };
+  if (mode === "FINAL_PRICE") {
+    return {
+      allocatedAmount,
+      unitAmortizedCost,
+      costComponentUnit: 0,
+      priceAddOnUnit: unitAmortizedCost,
+      finalUnitCost: roundProjectUnitCost(baseUnitCost),
+      applicationMode: mode,
+    };
+  }
+  return {
+    allocatedAmount,
+    unitAmortizedCost,
+    costComponentUnit: unitAmortizedCost,
+    priceAddOnUnit: 0,
+    finalUnitCost: roundProjectUnitCost(baseUnitCost + unitAmortizedCost),
+    applicationMode: mode,
+  };
 }
 
 export function resolveAmortizationDistributionStatus(
@@ -319,16 +384,21 @@ export function computeAmortizationConfig(
 
   const allocations: ProjectCostAmortizationAllocationComputed[] = input.allocations.map(
     (row) => {
+      const applicationMode = parseProjectAmortizationApplicationMode(row.applicationMode);
       const computed = calculateAmortizationAllocation(
         passThroughAmount,
         row.allocationPercent,
         row.amortizationQuantity,
-        row.targetBaseUnitCostSnapshot
+        row.targetBaseUnitCostSnapshot,
+        applicationMode
       );
       return {
         ...row,
+        applicationMode,
         allocatedAmount: computed.allocatedAmount,
         unitAmortizedCost: computed.unitAmortizedCost,
+        costComponentUnit: computed.costComponentUnit,
+        priceAddOnUnit: computed.priceAddOnUnit,
         finalUnitCost: computed.finalUnitCost,
       };
     }
@@ -389,6 +459,7 @@ export function buildDefaultAmortizationDraft(
       targetBaseUnitCostSnapshot: target.baseUnitCost,
       allocationPercent: pct,
       amortizationQuantity: target.suggestedQuantity,
+      applicationMode: "COST" as const,
     };
   });
 
@@ -450,16 +521,23 @@ export function buildProjectCostAmortizationSummary(
     };
   });
 
-  const itemRollupMap = new Map<string, ProjectItemAmortizationRollup>();
+  const itemRollupMap = new Map<
+    string,
+    ProjectItemAmortizationRollup & { modes: Set<ProjectAmortizationApplicationMode> }
+  >();
   for (const target of targets) {
     itemRollupMap.set(target.targetItemId, {
       targetItemId: target.targetItemId,
       displayName: target.displayName,
       baseUnitCost: target.baseUnitCost,
       unitAmortizedCost: 0,
+      costComponentUnit: 0,
+      priceAddOnUnit: 0,
       finalUnitCost: target.baseUnitCost,
       totalAllocated: 0,
+      applicationMode: "COST",
       sourceLabels: [],
+      modes: new Set(),
     });
   }
 
@@ -468,12 +546,32 @@ export function buildProjectCostAmortizationSummary(
     for (const row of amort.allocations) {
       const rollup = itemRollupMap.get(row.targetItemId);
       if (!rollup) continue;
-      rollup.unitAmortizedCost = roundProjectUnitCost(rollup.unitAmortizedCost + row.unitAmortizedCost);
-      rollup.finalUnitCost = roundProjectUnitCost(rollup.baseUnitCost + rollup.unitAmortizedCost);
+      const mode = parseProjectAmortizationApplicationMode(row.applicationMode);
+      rollup.modes.add(mode);
+      rollup.unitAmortizedCost = roundProjectUnitCost(
+        rollup.unitAmortizedCost + row.unitAmortizedCost
+      );
+      rollup.costComponentUnit = roundProjectUnitCost(
+        rollup.costComponentUnit + (row.costComponentUnit ?? (mode === "COST" ? row.unitAmortizedCost : 0))
+      );
+      rollup.priceAddOnUnit = roundProjectUnitCost(
+        rollup.priceAddOnUnit + (row.priceAddOnUnit ?? (mode === "FINAL_PRICE" ? row.unitAmortizedCost : 0))
+      );
+      rollup.finalUnitCost = roundProjectUnitCost(rollup.baseUnitCost + rollup.costComponentUnit);
       rollup.totalAllocated = roundProjectMoney(rollup.totalAllocated + row.allocatedAmount);
       if (!rollup.sourceLabels.includes(label)) rollup.sourceLabels.push(label);
     }
   }
+
+  const itemRollups: ProjectItemAmortizationRollup[] = Array.from(itemRollupMap.values()).map(
+    ({ modes, ...row }) => {
+      let applicationMode: ProjectItemAmortizationRollup["applicationMode"] = "COST";
+      if (modes.size === 0) applicationMode = "COST";
+      else if (modes.size === 1) applicationMode = [...modes][0]!;
+      else applicationMode = "MIXED";
+      return { ...row, applicationMode };
+    }
+  );
 
   const baseItemsUnitCost = roundProjectMoney(
     targets.reduce((acc, t) => acc + t.baseUnitCost, 0)
@@ -493,8 +591,19 @@ export function buildProjectCostAmortizationSummary(
   const totalAmortizationAllocated = roundProjectMoney(
     amortizations.reduce((acc, a) => acc + a.allocatedAmountTotal, 0)
   );
+  let totalAllocatedToCost = 0;
+  let totalAllocatedToFinalPrice = 0;
+  for (const amort of amortizations) {
+    for (const row of amort.allocations) {
+      const mode = parseProjectAmortizationApplicationMode(row.applicationMode);
+      if (mode === "FINAL_PRICE") totalAllocatedToFinalPrice += row.allocatedAmount;
+      else totalAllocatedToCost += row.allocatedAmount;
+    }
+  }
+  totalAllocatedToCost = roundProjectMoney(totalAllocatedToCost);
+  totalAllocatedToFinalPrice = roundProjectMoney(totalAllocatedToFinalPrice);
   const finalItemsUnitCostWithAmortization = roundProjectMoney(
-    Array.from(itemRollupMap.values()).reduce((acc, row) => acc + row.finalUnitCost, 0)
+    itemRollups.reduce((acc, row) => acc + row.finalUnitCost, 0)
   );
 
   const alerts: string[] = [];
@@ -517,8 +626,10 @@ export function buildProjectCostAmortizationSummary(
     totalPassThroughAmount,
     totalAbsorbedAmount,
     totalAmortizationAllocated,
+    totalAllocatedToCost,
+    totalAllocatedToFinalPrice,
     finalItemsUnitCostWithAmortization,
-    itemRollups: Array.from(itemRollupMap.values()),
+    itemRollups,
     amortizations,
     alerts,
   };
@@ -549,6 +660,8 @@ export function amortizationMetricsAreFinite(summary: ProjectCostAmortizationSum
     summary.totalPassThroughAmount,
     summary.totalAbsorbedAmount,
     summary.totalAmortizationAllocated,
+    summary.totalAllocatedToCost,
+    summary.totalAllocatedToFinalPrice,
     summary.finalItemsUnitCostWithAmortization,
   ];
   if (!nums.every((n) => Number.isFinite(n))) return false;
@@ -562,10 +675,31 @@ export function amortizationMetricsAreFinite(summary: ProjectCostAmortizationSum
       if (!Number.isFinite(v)) return false;
     }
     for (const row of amort.allocations) {
-      for (const v of [row.allocatedAmount, row.unitAmortizedCost, row.finalUnitCost]) {
+      for (const v of [
+        row.allocatedAmount,
+        row.unitAmortizedCost,
+        row.costComponentUnit ?? 0,
+        row.priceAddOnUnit ?? 0,
+        row.finalUnitCost,
+      ]) {
         if (!Number.isFinite(v)) return false;
       }
     }
   }
   return true;
+}
+
+export function amortizationApplicationModeLabel(
+  mode: ProjectAmortizationApplicationMode | "MIXED"
+): string {
+  switch (mode) {
+    case "COST":
+      return "Custo do item";
+    case "FINAL_PRICE":
+      return "Preço final";
+    case "MIXED":
+      return "Misto";
+    default:
+      return mode;
+  }
 }

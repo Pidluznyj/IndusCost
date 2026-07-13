@@ -7,10 +7,12 @@ import { ProjectPricingSection } from "@/src/components/projects/ProjectPricingS
 import { buildProjectStructureSnapshotGroups } from "@/src/lib/projectsStructureSnapshotGroups";
 import { computeProjectGuidedCosts } from "@/src/lib/projectsGuidedFlow";
 import {
+  amortizationApplicationModeLabel,
   amortizationStatusLabel,
   buildProjectAmortizationTargets,
   buildProjectCostAmortizationSummary,
   listAmortizableCostSources,
+  type ProjectAmortizationApplicationMode,
   type ProjectCostAmortizationRow,
   type ProjectCostAmortizationSourceType,
 } from "@/src/lib/projectsCostAmortization";
@@ -49,6 +51,8 @@ type AmortizationModalState = {
     targetSnapshotRootProductId?: string | null;
     allocationPercent: number;
     amortizationQuantity: number;
+    applicationMode?: ProjectAmortizationApplicationMode;
+    amortizationApplicationMode?: ProjectAmortizationApplicationMode;
   }>;
 };
 
@@ -122,6 +126,8 @@ export function ProjectGuidedCostsTab({
           targetSnapshotRootProductId: a.targetSnapshotRootProductId,
           allocationPercent: a.allocationPercent,
           amortizationQuantity: a.amortizationQuantity,
+          applicationMode: a.applicationMode ?? "COST",
+          amortizationApplicationMode: a.applicationMode ?? "COST",
         })) ?? [],
     });
   };
@@ -267,7 +273,9 @@ export function ProjectGuidedCostsTab({
         )}
       </div>
 
-      {summary.itemRollups.some((r) => r.unitAmortizedCost > 0) ? (
+      {summary.itemRollups.some(
+        (r) => r.unitAmortizedCost > 0 || r.totalAllocated > 0 || r.priceAddOnUnit > 0
+      ) ? (
         <div>
           <h5 className="mb-3 font-medium">Distribuição por item</h5>
           <div className="overflow-hidden rounded-xl border border-border">
@@ -276,22 +284,36 @@ export function ProjectGuidedCostsTab({
                 <tr>
                   <th className="px-3 py-2">Item</th>
                   <th className="px-3 py-2">Custo base unitário</th>
-                  <th className="px-3 py-2">Amortização unitária</th>
+                  <th className="px-3 py-2">Amortização no custo</th>
+                  <th className="px-3 py-2">Repasse no preço</th>
                   <th className="px-3 py-2">Custo final unitário</th>
                   <th className="px-3 py-2">Total alocado</th>
+                  <th className="px-3 py-2">Modo</th>
                   <th className="px-3 py-2">Fontes</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.itemRollups
-                  .filter((r) => r.unitAmortizedCost > 0 || r.totalAllocated > 0)
+                  .filter(
+                    (r) =>
+                      r.unitAmortizedCost > 0 ||
+                      r.totalAllocated > 0 ||
+                      r.costComponentUnit > 0 ||
+                      r.priceAddOnUnit > 0
+                  )
                   .map((row) => (
                     <tr key={row.targetItemId} className="border-b border-border/60">
                       <td className="px-3 py-2">{row.displayName}</td>
                       <td className="px-3 py-2">{formatMoney(row.baseUnitCost)}</td>
-                      <td className="px-3 py-2">{formatMoney(row.unitAmortizedCost)}</td>
+                      <td className="px-3 py-2">
+                        {formatMoney(row.costComponentUnit ?? row.unitAmortizedCost)}
+                      </td>
+                      <td className="px-3 py-2">{formatMoney(row.priceAddOnUnit ?? 0)}</td>
                       <td className="px-3 py-2">{formatMoney(row.finalUnitCost)}</td>
                       <td className="px-3 py-2">{formatMoney(row.totalAllocated)}</td>
+                      <td className="px-3 py-2">
+                        {amortizationApplicationModeLabel(row.applicationMode ?? "COST")}
+                      </td>
                       <td className="px-3 py-2">{row.sourceLabels.join(", ") || "—"}</td>
                     </tr>
                   ))}

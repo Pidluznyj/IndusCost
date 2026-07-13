@@ -196,8 +196,11 @@ export type ProjectCostAmortizationAllocationRow = {
   targetBaseUnitCostSnapshot: number;
   allocationPercent: number;
   amortizationQuantity: number;
+  applicationMode?: "COST" | "FINAL_PRICE";
   allocatedAmount: number;
   unitAmortizedCost: number;
+  costComponentUnit?: number;
+  priceAddOnUnit?: number;
   finalUnitCost: number;
 };
 
@@ -226,14 +229,19 @@ export type ProjectCostAmortizationSummaryView = {
   totalPassThroughAmount: number;
   totalAbsorbedAmount: number;
   totalAmortizationAllocated: number;
+  totalAllocatedToCost?: number;
+  totalAllocatedToFinalPrice?: number;
   finalItemsUnitCostWithAmortization: number;
   itemRollups: Array<{
     targetItemId: string;
     displayName: string;
     baseUnitCost: number;
     unitAmortizedCost: number;
+    costComponentUnit?: number;
+    priceAddOnUnit?: number;
     finalUnitCost: number;
     totalAllocated: number;
+    applicationMode?: "COST" | "FINAL_PRICE" | "MIXED";
     sourceLabels: string[];
   }>;
   amortizations: Array<{
@@ -300,6 +308,7 @@ export type ProjectPricingItemView = {
   displayName: string;
   costBaseUnit: number;
   amortizationUnitCost: number;
+  amortizationPriceAddOnUnit?: number;
   finalUnitCost: number;
   fiscalRuleId: string | null;
   fiscalRuleName: string | null;
@@ -308,10 +317,13 @@ export type ProjectPricingItemView = {
   suggestedPrice: number | null;
   suggestedPriceWithoutAmortization: number | null;
   suggestedPriceWithAmortization: number | null;
+  calculatedProductPrice?: number | null;
   taxAmountWithoutAmortization: number | null;
   marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
   marginAmount: number | null;
+  projectRecoveryValue?: number | null;
+  commissionableBaseWithoutProjectRecovery?: number | null;
   status: string;
   statusLabel: string;
   errorMessage: string | null;

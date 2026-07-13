@@ -3588,6 +3588,14 @@ enum ProjectCostAmortizationStatus {
   NO_ELIGIBLE_ITEMS
 }
 
+/// Where per-item amortization enters commercial economics:
+/// COST — adds to unit cost (margin may apply on amortized cost).
+/// FINAL_PRICE — pass-through add-on after product price (no product margin on recovery).
+enum ProjectAmortizationApplicationMode {
+  COST
+  FINAL_PRICE
+}
+
 model Project {
   id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   number                Int           @unique @default(autoincrement())
@@ -3879,21 +3887,29 @@ model ProjectCostAmortization {
 }
 
 model ProjectCostAmortizationAllocation {
-  id                          String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  amortizationId              String                            @db.Uuid
-  projectId                   String                            @db.Uuid
+  id                          String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  amortizationId              String                             @db.Uuid
+  projectId                   String                             @db.Uuid
   targetItemType              ProjectCostAmortizationTargetType
   targetItemId                String
-  targetSnapshotRootProductId String?                           @db.Uuid
+  targetSnapshotRootProductId String?                            @db.Uuid
   targetDescriptionSnapshot   String
-  targetBaseUnitCostSnapshot  Decimal                           @default(0) @db.Decimal(20, 6)
-  allocationPercent           Decimal                           @default(0) @db.Decimal(10, 6)
-  allocatedAmount             Decimal                           @default(0) @db.Decimal(20, 6)
-  amortizationQuantity        Decimal                           @default(1) @db.Decimal(20, 6)
-  unitAmortizedCost           Decimal                           @default(0) @db.Decimal(20, 6)
-  finalUnitCostSnapshot       Decimal                           @default(0) @db.Decimal(20, 6)
-  createdAt                   DateTime                          @default(now()) @db.Timestamptz(6)
-  updatedAt                   DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+  targetBaseUnitCostSnapshot  Decimal                            @default(0) @db.Decimal(20, 6)
+  allocationPercent           Decimal                            @default(0) @db.Decimal(10, 6)
+  allocatedAmount             Decimal                            @default(0) @db.Decimal(20, 6)
+  amortizationQuantity        Decimal                            @default(1) @db.Decimal(20, 6)
+  /// Calculated amortization per unit (allocatedAmount / qty). Always stored for audit.
+  unitAmortizedCost           Decimal                            @default(0) @db.Decimal(20, 6)
+  /// COST (default) or FINAL_PRICE — where the unit amortization applies commercially.
+  applicationMode             ProjectAmortizationApplicationMode @default(COST)
+  /// Portion that enters item unit cost (equals unitAmortizedCost for COST; 0 for FINAL_PRICE).
+  costComponentUnit           Decimal                            @default(0) @db.Decimal(20, 6)
+  /// Portion added after product price formation (0 for COST; equals unitAmortizedCost for FINAL_PRICE).
+  priceAddOnUnit              Decimal                            @default(0) @db.Decimal(20, 6)
+  /// Final unit cost for costing/pricing base (base + costComponentUnit). Never includes FINAL_PRICE add-on.
+  finalUnitCostSnapshot       Decimal                            @default(0) @db.Decimal(20, 6)
+  createdAt                   DateTime                           @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                           @default(now()) @updatedAt @db.Timestamptz(6)
 
   amortization ProjectCostAmortization @relation(fields: [amortizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

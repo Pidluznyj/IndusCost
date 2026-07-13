@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 import {
+  amortizationApplicationModeLabel,
   amortizationStatusLabel,
   calculateAmortizationAllocation,
   calculatePassThroughAmounts,
   computeAmortizationConfig,
+  type ProjectAmortizationApplicationMode,
   type ProjectAmortizationTarget,
   type ProjectCostAmortizationSourceType,
 } from "@/src/lib/projectsCostAmortization";
@@ -21,6 +23,7 @@ export type AmortizationModalSubmitPayload = {
     targetSnapshotRootProductId?: string | null;
     allocationPercent: number;
     amortizationQuantity: number;
+    amortizationApplicationMode: ProjectAmortizationApplicationMode;
   }>;
 };
 
@@ -32,6 +35,7 @@ type AllocationDraft = {
   baseUnitCost: number;
   allocationPercent: string;
   amortizationQuantity: string;
+  applicationMode: ProjectAmortizationApplicationMode;
 };
 
 type Props = {
@@ -47,6 +51,8 @@ type Props = {
     targetSnapshotRootProductId?: string | null;
     allocationPercent: number;
     amortizationQuantity: number;
+    applicationMode?: ProjectAmortizationApplicationMode;
+    amortizationApplicationMode?: ProjectAmortizationApplicationMode;
   }>;
   targets: ProjectAmortizationTarget[];
   saving?: boolean;
@@ -87,12 +93,12 @@ export function ProjectCostAmortizationModal({
   useEffect(() => {
     if (!open) return;
     setPassThroughPercent(String(initialPassThroughPercent));
-    const byTarget = new Map(
-      (initialAllocations ?? []).map((a) => [a.targetItemId, a])
-    );
+    const byTarget = new Map((initialAllocations ?? []).map((a) => [a.targetItemId, a]));
     setRows(
       targets.map((target) => {
         const saved = byTarget.get(target.targetItemId);
+        const mode =
+          saved?.amortizationApplicationMode ?? saved?.applicationMode ?? ("COST" as const);
         return {
           targetItemId: target.targetItemId,
           targetItemType: target.targetItemType,
@@ -103,6 +109,7 @@ export function ProjectCostAmortizationModal({
           amortizationQuantity: saved
             ? String(saved.amortizationQuantity)
             : String(target.suggestedQuantity),
+          applicationMode: mode,
         };
       })
     );
@@ -123,6 +130,7 @@ export function ProjectCostAmortizationModal({
       targetBaseUnitCostSnapshot: row.baseUnitCost,
       allocationPercent: parseProjectsNumberInput(row.allocationPercent) ?? 0,
       amortizationQuantity: parseProjectsNumberInput(row.amortizationQuantity) ?? 0,
+      applicationMode: row.applicationMode,
     }));
     return computeAmortizationConfig(
       {
@@ -136,6 +144,21 @@ export function ProjectCostAmortizationModal({
       targets
     );
   }, [rows, passThroughPct, sourceType, sourceId, description, totalCost, targets]);
+
+  const allocatedToCost = useMemo(
+    () =>
+      computed.allocations
+        .filter((a) => a.applicationMode === "COST")
+        .reduce((acc, a) => acc + a.allocatedAmount, 0),
+    [computed.allocations]
+  );
+  const allocatedToFinalPrice = useMemo(
+    () =>
+      computed.allocations
+        .filter((a) => a.applicationMode === "FINAL_PRICE")
+        .reduce((acc, a) => acc + a.allocatedAmount, 0),
+    [computed.allocations]
+  );
 
   const distributionTotal = computed.distributionPercentTotal;
   const canSave =
@@ -158,6 +181,7 @@ export function ProjectCostAmortizationModal({
         targetSnapshotRootProductId: row.targetSnapshotRootProductId,
         allocationPercent: parseProjectsNumberInput(row.allocationPercent) ?? 0,
         amortizationQuantity: parseProjectsNumberInput(row.amortizationQuantity) ?? 0,
+        amortizationApplicationMode: row.applicationMode,
       }))
       .filter((row) => row.allocationPercent > 0);
 
@@ -181,9 +205,11 @@ export function ProjectCostAmortizationModal({
           <div className="text-sm text-muted-foreground">
             <span className="mr-4">Soma distribuída: {formatPercent(distributionTotal)}</span>
             <span className="mr-4">
-              Saldo pendente: {formatPercent(computed.distributionBalancePercent)}
+              Valor distribuído no custo: {formatMoney(allocatedToCost)}
             </span>
-            <span className="mr-4">Valor distribuído: {formatMoney(computed.allocatedAmountTotal)}</span>
+            <span className="mr-4">
+              Valor distribuído no preço final: {formatMoney(allocatedToFinalPrice)}
+            </span>
             <span>Valor não distribuído: {formatMoney(computed.unallocatedAmount)}</span>
           </div>
           <div className="flex gap-2">
@@ -209,7 +235,7 @@ export function ProjectCostAmortizationModal({
         </div>
       }
     >
-      <div className="min-w-[1000px] space-y-6">
+      <div className="min-w-[1100px] space-y-6">
         <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
           <p>
             <span className="text-muted-foreground">Custo total:</span>{" "}
@@ -227,7 +253,7 @@ export function ProjectCostAmortizationModal({
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <label className="block text-sm">
             <span className="text-muted-foreground">Percentual repassado ao cliente (%)</span>
             <input
@@ -240,12 +266,19 @@ export function ProjectCostAmortizationModal({
             />
           </label>
           <div className="text-sm">
-            <p className="text-muted-foreground">Valor repassado ao cliente</p>
-            <p className="mt-1 text-lg font-semibold">{formatMoney(passThroughAmount)}</p>
+            <p className="text-muted-foreground">Valor repassado via custo</p>
+            <p className="mt-1 text-lg font-semibold">{formatMoney(allocatedToCost)}</p>
+          </div>
+          <div className="text-sm">
+            <p className="text-muted-foreground">Valor repassado via preço final</p>
+            <p className="mt-1 text-lg font-semibold">{formatMoney(allocatedToFinalPrice)}</p>
           </div>
           <div className="text-sm">
             <p className="text-muted-foreground">Valor absorvido internamente</p>
             <p className="mt-1 text-lg font-semibold">{formatMoney(absorbedAmount)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Total a distribuir: {formatMoney(passThroughAmount)}
+            </p>
           </div>
         </div>
 
@@ -263,7 +296,11 @@ export function ProjectCostAmortizationModal({
                   <th className="px-3 py-2">% da amortização</th>
                   <th className="px-3 py-2">Valor alocado</th>
                   <th className="px-3 py-2">Qtd. base amortização</th>
-                  <th className="px-3 py-2">Custo unit. amortizado</th>
+                  <th className="px-3 py-2" title="Onde a amortização entra na economia comercial">
+                    Aplicar amortização em
+                  </th>
+                  <th className="px-3 py-2">Amortização unitária</th>
+                  <th className="px-3 py-2">No custo / No preço</th>
                   <th className="px-3 py-2">Custo final unitário</th>
                   <th className="px-3 py-2">Status</th>
                 </tr>
@@ -276,7 +313,8 @@ export function ProjectCostAmortizationModal({
                     passThroughAmount,
                     pct,
                     qty,
-                    row.baseUnitCost
+                    row.baseUnitCost,
+                    row.applicationMode
                   );
                   const rowStatus =
                     pct > 0 && qty <= 0
@@ -284,6 +322,10 @@ export function ProjectCostAmortizationModal({
                       : pct > 0
                         ? "OK"
                         : "—";
+                  const unitLabel =
+                    row.applicationMode === "FINAL_PRICE"
+                      ? "Repasse unitário no preço"
+                      : "Custo unit. amortizado";
                   return (
                     <tr key={row.targetItemId} className="border-b border-border/60">
                       <td className="px-3 py-2">{row.displayName}</td>
@@ -313,8 +355,46 @@ export function ProjectCostAmortizationModal({
                           className="w-24 rounded border border-border bg-background px-2 py-1"
                         />
                       </td>
-                      <td className="px-3 py-2">{formatMoney(alloc.unitAmortizedCost)}</td>
-                      <td className="px-3 py-2">{formatMoney(alloc.finalUnitCost)}</td>
+                      <td className="px-3 py-2">
+                        <select
+                          disabled={readOnly}
+                          value={row.applicationMode}
+                          title={
+                            row.applicationMode === "FINAL_PRICE"
+                              ? "A amortização é somada ao preço final como repasse de investimento, sem compor a margem do produto."
+                              : "A amortização compõe o custo e pode receber margem na formação de preço."
+                          }
+                          onChange={(e) =>
+                            updateRow(row.targetItemId, {
+                              applicationMode: e.target.value as ProjectAmortizationApplicationMode,
+                            })
+                          }
+                          className="min-w-[9.5rem] rounded border border-border bg-background px-2 py-1"
+                        >
+                          <option value="COST">Custo do item</option>
+                          <option value="FINAL_PRICE">Preço final</option>
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="block text-[11px] text-muted-foreground">{unitLabel}</span>
+                        {formatMoney(alloc.unitAmortizedCost)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="block">
+                          Custo: {formatMoney(alloc.costComponentUnit)}
+                        </span>
+                        <span className="block text-muted-foreground">
+                          Preço: {formatMoney(alloc.priceAddOnUnit)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatMoney(alloc.finalUnitCost)}
+                        {row.applicationMode === "FINAL_PRICE" && alloc.priceAddOnUnit > 0 ? (
+                          <span className="mt-1 block text-[11px] text-muted-foreground">
+                            Preço + {formatMoney(alloc.priceAddOnUnit)}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2">{rowStatus}</td>
                     </tr>
                   );
@@ -327,6 +407,12 @@ export function ProjectCostAmortizationModal({
         {distributionTotal > 100.0001 ? (
           <p className="text-sm text-destructive">Distribuição excede 100% — ajuste antes de salvar.</p>
         ) : null}
+
+        <p className="text-xs text-muted-foreground">
+          {amortizationApplicationModeLabel("COST")}: amortização compõe o custo e pode receber
+          margem. {amortizationApplicationModeLabel("FINAL_PRICE")}: amortização é repasse no preço
+          final, sem compor margem do produto.
+        </p>
       </div>
     </ProjectModalShell>
   );

@@ -28,20 +28,30 @@ export type ProjectPricingItemView = {
   targetItemType: ProjectCostAmortizationTargetType;
   displayName: string;
   costBaseUnit: number;
+  /** Amortization that enters product cost (margin base). */
   amortizationUnitCost: number;
+  /** Pass-through recovery added after product price (no product margin). */
+  amortizationPriceAddOnUnit: number;
   finalUnitCost: number;
   fiscalRuleId: string | null;
   fiscalRuleName: string | null;
   taxPercent: number;
   targetMarginPercent: number;
-  /** Preço com amortização (= suggestedPriceWithAmortization). */
+  /** Preço comercial final (= product price + price add-on). */
   suggestedPrice: number | null;
   suggestedPriceWithoutAmortization: number | null;
   suggestedPriceWithAmortization: number | null;
+  /** Product price before FINAL_PRICE recovery add-on. */
+  calculatedProductPrice: number | null;
   taxAmountWithoutAmortization: number | null;
   marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
+  /** Product operating margin (excludes project recovery add-on). */
   marginAmount: number | null;
+  /** Same as amortizationPriceAddOnUnit when calculated — investment recovery. */
+  projectRecoveryValue: number | null;
+  /** Commissionable base hint: product price without project recovery. */
+  commissionableBaseWithoutProjectRecovery: number | null;
   status: ProjectPricingItemStatus;
   statusLabel: string;
   errorMessage: string | null;
@@ -78,6 +88,9 @@ export type SavedProjectPricingItem = {
   taxAmount: number | null;
   marginAmount: number | null;
   status: ProjectPricingItemStatus;
+  amortizationPriceAddOnUnit?: number;
+  projectRecoveryValue?: number | null;
+  commissionableBaseWithoutProjectRecovery?: number | null;
 };
 
 const STATUS_LABEL: Record<ProjectPricingItemStatus, string> = {
@@ -121,28 +134,35 @@ function resolveCostSummary(
   return buildProjectCostAmortizationSummary(detail, amortizations);
 }
 
-/** Mesma origem da tabela de Custos do Projeto (base + amortização = custo final). */
+/** Mesma origem da tabela de Custos do Projeto (base + amortização no custo = custo final). */
 export function resolveProjectPricingItemCosts(
   target: { targetItemId: string; baseUnitCost: number },
   rollup?: {
     baseUnitCost: number;
     unitAmortizedCost: number;
+    costComponentUnit?: number;
+    priceAddOnUnit?: number;
     finalUnitCost: number;
   }
 ): {
   costBaseUnit: number;
   amortizationUnitCost: number;
+  amortizationPriceAddOnUnit: number;
   finalUnitCost: number;
   pricingCost: number;
 } {
   const costBaseUnit = roundPricingMoney(rollup?.baseUnitCost ?? target.baseUnitCost);
-  const amortizationUnitCost = roundPricingMoney(rollup?.unitAmortizedCost ?? 0);
+  const costComponentUnit = roundPricingMoney(
+    rollup?.costComponentUnit ?? rollup?.unitAmortizedCost ?? 0
+  );
+  const amortizationPriceAddOnUnit = roundPricingMoney(rollup?.priceAddOnUnit ?? 0);
   const finalUnitCost = roundPricingMoney(
-    rollup != null ? rollup.finalUnitCost : costBaseUnit + amortizationUnitCost
+    rollup != null ? rollup.finalUnitCost : costBaseUnit + costComponentUnit
   );
   return {
     costBaseUnit,
-    amortizationUnitCost,
+    amortizationUnitCost: costComponentUnit,
+    amortizationPriceAddOnUnit,
     finalUnitCost,
     pricingCost: finalUnitCost,
   };
@@ -153,10 +173,13 @@ function emptyPricingAmounts() {
     suggestedPrice: null,
     suggestedPriceWithoutAmortization: null,
     suggestedPriceWithAmortization: null,
+    calculatedProductPrice: null,
     taxAmountWithoutAmortization: null,
     marginAmountWithoutAmortization: null,
     taxAmount: null,
     marginAmount: null,
+    projectRecoveryValue: null,
+    commissionableBaseWithoutProjectRecovery: null,
   };
 }
 
@@ -167,6 +190,7 @@ function buildPricingItemBase(
     displayName: string;
     baseUnitCost: number;
     unitAmortizedCost: number;
+    amortizationPriceAddOnUnit?: number;
     finalUnitCost: number;
   },
   options: {
@@ -175,17 +199,10 @@ function buildPricingItemBase(
     taxPercent: number;
     targetMarginPercent: number;
   }
-): Omit<ProjectPricingItemView, "status" | "statusLabel" | "errorMessage"> & {
-  suggestedPrice: number | null;
-  suggestedPriceWithoutAmortization: number | null;
-  suggestedPriceWithAmortization: number | null;
-  taxAmountWithoutAmortization: number | null;
-  marginAmountWithoutAmortization: number | null;
-  taxAmount: number | null;
-  marginAmount: number | null;
-} {
+): Omit<ProjectPricingItemView, "status" | "statusLabel" | "errorMessage"> {
   const costBaseUnit = roundPricingMoney(target.baseUnitCost);
   const amortizationUnitCost = roundPricingMoney(target.unitAmortizedCost);
+  const amortizationPriceAddOnUnit = roundPricingMoney(target.amortizationPriceAddOnUnit ?? 0);
   const finalUnitCost = roundPricingMoney(target.finalUnitCost);
   return {
     targetItemId: target.targetItemId,
@@ -193,6 +210,7 @@ function buildPricingItemBase(
     displayName: target.displayName,
     costBaseUnit,
     amortizationUnitCost,
+    amortizationPriceAddOnUnit,
     finalUnitCost,
     fiscalRuleId: options.fiscalRuleId,
     fiscalRuleName: options.fiscalRuleName,
@@ -209,6 +227,7 @@ export function computeProjectPricingItem(
     displayName: string;
     baseUnitCost: number;
     unitAmortizedCost: number;
+    amortizationPriceAddOnUnit?: number;
     finalUnitCost: number;
   },
   options: {
@@ -219,10 +238,14 @@ export function computeProjectPricingItem(
   }
 ): ProjectPricingItemView {
   const margin = options.targetMarginPercent;
-  const base = buildPricingItemBase(target, {
-    ...options,
-    targetMarginPercent: margin ?? 0,
-  });
+  const priceAddOn = roundPricingMoney(target.amortizationPriceAddOnUnit ?? 0);
+  const base = buildPricingItemBase(
+    { ...target, amortizationPriceAddOnUnit: priceAddOn },
+    {
+      ...options,
+      targetMarginPercent: margin ?? 0,
+    }
+  );
 
   if (base.finalUnitCost <= 0) {
     return {
@@ -263,18 +286,22 @@ export function computeProjectPricingItem(
       ? calculateSalePriceFromCost({ cost: base.costBaseUnit, ...pricingInput })
       : ({ ok: false, error: "Custo base inválido." } as const);
 
-  const withAmortization = calculateSalePriceFromCost({
+  /**
+   * Product price uses costing base only (finalUnitCost = base + COST-mode amort).
+   * FINAL_PRICE add-on is applied after margin — never as margin base.
+   */
+  const productFromCost = calculateSalePriceFromCost({
     cost: base.finalUnitCost,
     ...pricingInput,
   });
 
-  if (withAmortization.ok === false) {
+  if (productFromCost.ok === false) {
     return {
       ...base,
       targetMarginPercent: margin,
       status: "ERROR",
       statusLabel: STATUS_LABEL.ERROR,
-      errorMessage: withAmortization.error,
+      errorMessage: productFromCost.error,
     };
   }
 
@@ -291,14 +318,20 @@ export function computeProjectPricingItem(
           marginAmountWithoutAmortization: null,
         };
 
+  const calculatedProductPrice = productFromCost.suggestedPrice;
+  const finalPriceWithAmortization = roundPricingMoney(calculatedProductPrice + priceAddOn);
+
   return {
     ...base,
     targetMarginPercent: margin,
     ...withoutValues,
-    suggestedPriceWithAmortization: withAmortization.suggestedPrice,
-    suggestedPrice: withAmortization.suggestedPrice,
-    taxAmount: withAmortization.taxAmount,
-    marginAmount: withAmortization.marginAmount,
+    calculatedProductPrice,
+    suggestedPriceWithAmortization: finalPriceWithAmortization,
+    suggestedPrice: finalPriceWithAmortization,
+    taxAmount: productFromCost.taxAmount,
+    marginAmount: productFromCost.marginAmount,
+    projectRecoveryValue: priceAddOn,
+    commissionableBaseWithoutProjectRecovery: calculatedProductPrice,
     status: "CALCULATED",
     statusLabel: STATUS_LABEL.CALCULATED,
     errorMessage: withoutAmortization.ok === false ? withoutAmortization.error : null,
@@ -362,6 +395,8 @@ export function computeLiveProjectPricingView(
       {
         baseUnitCost: item.costBaseUnit,
         unitAmortizedCost: item.amortizationUnitCost,
+        costComponentUnit: item.amortizationUnitCost,
+        priceAddOnUnit: item.amortizationPriceAddOnUnit,
         finalUnitCost: item.finalUnitCost,
       }
     );
@@ -373,6 +408,7 @@ export function computeLiveProjectPricingView(
         displayName: item.displayName,
         baseUnitCost: costs.costBaseUnit,
         unitAmortizedCost: costs.amortizationUnitCost,
+        amortizationPriceAddOnUnit: costs.amortizationPriceAddOnUnit,
         finalUnitCost: costs.pricingCost,
       },
       {
@@ -438,6 +474,7 @@ export function buildProjectPricingView(input: {
         displayName: target.displayName,
         baseUnitCost: costs.costBaseUnit,
         unitAmortizedCost: costs.amortizationUnitCost,
+        amortizationPriceAddOnUnit: costs.amortizationPriceAddOnUnit,
         finalUnitCost: costs.pricingCost,
       },
       {

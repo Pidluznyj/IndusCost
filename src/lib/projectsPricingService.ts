@@ -146,6 +146,7 @@ export async function upsertProjectPricing(
         displayName: item.displayName,
         baseUnitCost: item.costBaseUnit,
         unitAmortizedCost: item.amortizationUnitCost,
+        amortizationPriceAddOnUnit: item.amortizationPriceAddOnUnit,
         finalUnitCost: item.finalUnitCost,
       },
       {

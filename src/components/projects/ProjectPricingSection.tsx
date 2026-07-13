@@ -119,8 +119,12 @@ function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
               <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Amortização unit.</dt>
+              <dt className="text-muted-foreground">Amortização no custo</dt>
               <dd className="font-medium">{formatMoney(item.amortizationUnitCost)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Repasse no preço</dt>
+              <dd className="font-medium">{formatMoney(item.amortizationPriceAddOnUnit)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Custo final unit.</dt>
@@ -131,11 +135,19 @@ function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
               <dd className="font-medium">{formatMoney(item.taxAmount)}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Margem ({formatPercent(item.targetMarginPercent)})</dt>
+              <dt className="text-muted-foreground">Margem do produto</dt>
               <dd className="font-medium">{formatMoney(item.marginAmount)}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Preço c/ amortização</dt>
+              <dt className="text-muted-foreground">Recuperação de projeto</dt>
+              <dd className="font-medium">{formatMoney(item.projectRecoveryValue)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Preço produto</dt>
+              <dd className="font-medium">{formatMoney(item.calculatedProductPrice)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Preço final c/ amortização</dt>
               <dd className="font-semibold text-primary">{formatMoney(item.suggestedPriceWithAmortization)}</dd>
             </div>
           </dl>
@@ -413,13 +425,14 @@ export function ProjectPricingSection({
               <tr>
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Custo base unit.</th>
-                <th className="px-3 py-2">Amortização unit.</th>
+                <th className="px-3 py-2">Amort. no custo</th>
+                <th className="px-3 py-2">Repasse no preço</th>
                 <th className="px-3 py-2">Custo final unit.</th>
                 <th className="px-3 py-2">Regra fiscal</th>
                 <th className="px-3 py-2">Impostos %</th>
                 <th className="px-3 py-2">Margem %</th>
-                <th className="px-3 py-2">Preço s/ amortização</th>
-                <th className="px-3 py-2">Preço c/ amortização</th>
+                <th className="px-3 py-2">Preço produto</th>
+                <th className="px-3 py-2">Preço final</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -431,6 +444,7 @@ export function ProjectPricingSection({
                     <td className="px-3 py-2">{item.displayName}</td>
                     <td className="px-3 py-2">{formatMoney(item.costBaseUnit)}</td>
                     <td className="px-3 py-2">{formatMoney(item.amortizationUnitCost)}</td>
+                    <td className="px-3 py-2">{formatMoney(item.amortizationPriceAddOnUnit)}</td>
                     <td className="px-3 py-2">{formatMoney(item.finalUnitCost)}</td>
                     <td className="px-3 py-2">
                       {canManage ? (
@@ -475,10 +489,12 @@ export function ProjectPricingSection({
                         formatPercent(item.targetMarginPercent)
                       )}
                     </td>
-                    <td className="px-3 py-2 font-medium">{formatMoney(item.suggestedPriceWithoutAmortization, 4)}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {formatMoney(item.calculatedProductPrice ?? item.suggestedPriceWithoutAmortization, 4)}
+                    </td>
                     <td className="px-3 py-2">
                       <PriceWithAmortCell
-                        withoutAmort={item.suggestedPriceWithoutAmortization}
+                        withoutAmort={item.calculatedProductPrice ?? item.suggestedPriceWithoutAmortization}
                         withAmort={item.suggestedPriceWithAmortization}
                       />
                     </td>
