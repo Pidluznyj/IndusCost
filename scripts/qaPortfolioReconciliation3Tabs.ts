@@ -1,9 +1,11 @@
 /**
- * QA final — 3 abas Conciliação de Carteira × OrderToCashAudit.
+ * QA final — Conciliação de Carteira (4 abas) × OrderToCashAudit.
+ * Abas: Conciliação · Inteligência · Status Pedidos · Auditoria Pedido → Caixa.
  * Read-only. Não grava. Não chama Nomus.
  *
  * Uso:
  *   npx tsx scripts/qaPortfolioReconciliation3Tabs.ts
+ *   npm run qa:portfolio-order-status   (detalhe Status Pedidos)
  *
  * Com DATABASE_URL: exercita loaders reais (run geral + Britânia + empty).
  * Sem DATABASE_URL: contratos estáticos + checklist.
@@ -62,6 +64,10 @@ function staticContracts(): void {
       routes.includes("/api/finance/portfolio-reconciliation/intelligence"),
     ],
     [
+      "/api/finance/portfolio-reconciliation/order-status",
+      routes.includes("/api/finance/portfolio-reconciliation/order-status"),
+    ],
+    [
       "/api/finance/portfolio-reconciliation/order-to-cash-audit",
       routes.includes("/api/finance/portfolio-reconciliation/order-to-cash-audit"),
     ],
@@ -70,6 +76,47 @@ function staticContracts(): void {
   for (const [path, present] of endpoints) {
     if (present) ok(`endpoint:${path}`, "rota registrada");
     else fail(`endpoint:${path}`, "rota ausente");
+  }
+
+  const perms = read("src/lib/permissionsClient.ts");
+  const tabOrderOk =
+    page.includes("OrderStatusTab") &&
+    page.includes("OrderToCashAuditTab") &&
+    page.includes("PortfolioIntelligenceSection") &&
+    /label:\s*"Conciliação"/.test(perms) &&
+    /label:\s*"Inteligência da Carteira"/.test(perms) &&
+    /label:\s*"Status Pedidos"/.test(perms) &&
+    /label:\s*"Auditoria Pedido → Caixa"/.test(perms);
+  if (tabOrderOk) {
+    ok("ui:four-tabs", "página + PORTFOLIO_RECONCILIATION_UI_TABS com 4 abas");
+  } else {
+    fail("ui:four-tabs", "wiring das 4 abas incompleto");
+  }
+
+  const orderStatusTable = existsSync(
+    join(process.cwd(), "src/components/finance/portfolio-reconciliation/OrderStatusTable.tsx")
+  )
+    ? read("src/components/finance/portfolio-reconciliation/OrderStatusTable.tsx")
+    : "";
+  const auditTable = existsSync(
+    join(process.cwd(), "src/components/finance/portfolio-reconciliation/OrderToCashAuditTable.tsx")
+  )
+    ? read("src/components/finance/portfolio-reconciliation/OrderToCashAuditTable.tsx")
+    : "";
+  if (
+    /row\.orderKey/.test(orderStatusTable) &&
+    /Uma linha por Pedido de Venda/.test(orderStatusTable)
+  ) {
+    ok("grain:status-pedidos", "Status Pedidos = 1 linha por pedido");
+  } else {
+    fail("grain:status-pedidos", "tabela Status Pedidos não evidencia grão pedido");
+  }
+  if (/factId|row\.id/.test(auditTable) || /evidence|item/i.test(auditTable)) {
+    ok("grain:auditoria", "Auditoria permanece item/evidência");
+  } else if (auditTab.includes("OrderToCashAuditTable") || auditTab.includes("fact")) {
+    ok("grain:auditoria", "Auditoria tab wired (item a item)");
+  } else {
+    fail("grain:auditoria", "Auditoria sem evidência de grão item");
   }
 
   if (server.includes("adaptOrderToCashAuditFactsToPortfolioFacts")) {
@@ -118,8 +165,10 @@ function staticContracts(): void {
   const frontendFiles = [
     "src/components/finance/FinancePortfolioReconciliationPage.tsx",
     "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx",
+    "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx",
     "src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx",
     "src/lib/financePortfolioReconciliationClient.ts",
+    "src/lib/finance/portfolioOrderStatusClient.ts",
     "src/lib/finance/orderToCashAuditClient.ts",
   ];
   let prismaLeak = false;
