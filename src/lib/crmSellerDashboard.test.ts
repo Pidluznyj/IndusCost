@@ -8,9 +8,46 @@ import {
   sellerDashToNumber,
 } from "@/src/lib/crmSellerDashboard";
 import { isOpenPortfolioSalesOrder } from "@/src/lib/crmCommercialOrderRules";
+import {
+  buildSellerDashboardSourceInfo,
+  mergeOfficialMetricsIntoSellerSummary,
+} from "@/src/lib/crmSellerDashboardOfficialOrders";
+import {
+  buildCrmSalesOrderMetrics,
+  type CrmMetricsOrderInput,
+} from "@/src/lib/commercial/crmSalesOrderMetricsService";
 
 const fmtNum = (v: number | null | undefined) => String(v ?? 0);
 const fmtCur = (v: unknown) => String(v ?? 0);
+
+function order(
+  partial: Partial<CrmMetricsOrderInput> & Pick<CrmMetricsOrderInput, "id" | "orderCode">
+): CrmMetricsOrderInput {
+  return {
+    status: "SENT_TO_NOMUS",
+    issueDate: new Date("2026-07-01T12:00:00"),
+    totalNetValue: 1000,
+    totalItems: 1,
+    customerId: "cust-1",
+    nomusSellerName: null,
+    externalSellerId: null,
+    responsible: null,
+    nomusRawResponse: {},
+    items: [],
+    Customer: {
+      companyName: "Cliente Alpha",
+      tradeName: "Alpha",
+      CrmCustomerCommercialOwner: {
+        sellerCanonicalName: "GISLENE LIMA",
+        sellerResponsibleName: "GISLENE LIMA",
+        sellerIdentityKey: "gislene lima",
+        sellerExternalId: 464,
+        isActive: true,
+      },
+    },
+    ...partial,
+  };
+}
 
 describe("crmSellerDashboard", () => {
   it("ticket médio usa pedidos válidos", () => {
@@ -74,19 +111,19 @@ describe("crmSellerDashboard", () => {
     assert.ok(traceCard?.description?.includes("rastreabilidade"));
   });
 
-  it("serviço por vendedor consulta SalesOrder e SalesOrderItem", () => {
+  it("serviço por vendedor usa responsável comercial + SalesOrder (não Proposal/comissão)", () => {
     const service = readFileSync(
       join(process.cwd(), "src/lib/crmSellerDashboardService.ts"),
       "utf8"
     );
-    assert.match(service, /"SalesOrder"/);
-    assert.match(service, /"SalesOrderItem"/);
+    assert.match(service, /buildCrmCommercialOwnerOnlyOrderScopeSql/);
+    assert.match(service, /buildCrmSalesOrderMetrics/);
+    assert.match(service, /CrmCustomerCommercialOwner/);
+    assert.match(service, /sourceInfo/);
+    assert.match(service, /RESPONSAVEL_COMERCIAL_CLIENTE|buildSellerDashboardSourceInfo/);
     assert.equal(service.includes('"Proposal"'), false);
-    assert.match(service, /openOrdersCount/);
-    assert.match(service, /topProduct/);
-    assert.match(service, /buildCrmSellerPortfolioOrderScopeSql/);
-    assert.match(service, /fetchCrmManualOwnerCustomerIds/);
-    assert.match(service, /nomusSellerName|buildCrmOrderSellerNameSql/);
+    assert.equal(/commission/i.test(service), false);
+    assert.equal(service.includes("buildCrmSellerPortfolioOrderScopeSql"), false);
   });
 
   it("endpoint seller-dashboard delega ao serviço de pedidos", () => {
@@ -97,6 +134,121 @@ describe("crmSellerDashboard", () => {
     assert.match(block, /buildCrmSellerDashboardResponse/);
     assert.equal(block.includes("openProposalsCount"), false);
     assert.equal(block.includes('"Proposal"'), false);
+  });
+
+  it("sourceInfo declara eixo responsável comercial e comissão não afetada", () => {
+    const info = buildSellerDashboardSourceInfo({
+      period: { dateFrom: "2026-06-13", dateTo: "2026-07-12" },
+    });
+    assert.equal(info.eixo, "RESPONSAVEL_COMERCIAL_CLIENTE");
+    assert.equal(info.pedidosFonte, "SalesOrder");
+    assert.equal(info.itensFonte, "SalesOrderItem");
+    assert.equal(info.vendedorPedidoFonte, "Nomus/SalesOrder seller field");
+    assert.equal(info.comissionamentoAfetado, false);
+  });
+
+  it("responsável com clientes/pedidos retorna indicadores > 0", () => {
+    const metrics = buildCrmSalesOrderMetrics({
+      orders: [
+        order({
+          id: "o1",
+          orderCode: "1",
+          totalNetValue: 5000,
+          nomusSellerName: "OUTRO VENDEDOR",
+          externalSellerId: 999,
+        }),
+        order({
+          id: "o2",
+          orderCode: "2",
+          totalNetValue: 3000,
+          nomusSellerName: null,
+          externalSellerId: null,
+        }),
+      ],
+      filters: { responsibleCommercialName: "GISLENE LIMA" },
+    });
+    const summary = mergeOfficialMetricsIntoSellerSummary({ metrics });
+    assert.equal(summary.totalOrders, 2);
+    assert.equal(summary.totalOrderValue, 8000);
+    assert.ok((summary.totalOrders ?? 0) > 0);
+    assert.equal(summary.ordersWithoutNomusSeller, 1);
+    assert.equal(summary.ordersWithDifferentNomusSeller, 1);
+  });
+
+  it("responsável sem clientes/pedidos = empty state (zeros)", () => {
+    const metrics = buildCrmSalesOrderMetrics({
+      orders: [
+        order({
+          id: "o1",
+          orderCode: "1",
+          Customer: {
+            companyName: "Beta",
+            CrmCustomerCommercialOwner: {
+              sellerCanonicalName: "JOSEANE",
+              sellerIdentityKey: "joseane",
+              isActive: true,
+            },
+          },
+        }),
+      ],
+      filters: { responsibleCommercialName: "GISLENE LIMA" },
+    });
+    const summary = mergeOfficialMetricsIntoSellerSummary({ metrics });
+    assert.equal(summary.totalOrders, 0);
+    assert.equal(summary.totalOrderValue, 0);
+    assert.equal(summary.customersWithOrders, 0);
+  });
+
+  it("cliente sem responsável não entra em responsável específico", () => {
+    const metrics = buildCrmSalesOrderMetrics({
+      orders: [
+        order({
+          id: "o1",
+          orderCode: "1",
+          totalNetValue: 9000,
+          Customer: {
+            companyName: "Sem dono",
+            CrmCustomerCommercialOwner: null,
+          },
+        }),
+      ],
+      filters: { responsibleCommercialName: "GISLENE LIMA" },
+    });
+    assert.equal(metrics.totalOrders, 0);
+  });
+
+  it("pedido sem vendedor Nomus entra quando cliente tem responsável", () => {
+    const metrics = buildCrmSalesOrderMetrics({
+      orders: [
+        order({
+          id: "o1",
+          orderCode: "1",
+          totalNetValue: 1500,
+          nomusSellerName: null,
+          externalSellerId: null,
+        }),
+      ],
+      filters: { responsibleCommercialName: "GISLENE LIMA" },
+    });
+    assert.equal(metrics.totalOrders, 1);
+    assert.equal(metrics.ordersWithoutNomusSeller, 1);
+  });
+
+  it("pedido com vendedor Nomus diferente entra e conta divergência", () => {
+    const metrics = buildCrmSalesOrderMetrics({
+      orders: [
+        order({
+          id: "o1",
+          orderCode: "1",
+          totalNetValue: 2200,
+          nomusSellerName: "OUTRO",
+          externalSellerId: 111,
+        }),
+      ],
+      filters: { responsibleCommercialName: "GISLENE LIMA" },
+    });
+    assert.equal(metrics.totalOrders, 1);
+    assert.equal(metrics.ordersWithResponsibleDifferentFromOrderSeller, 1);
   });
 
   it("vendedor com pedidos aparece com valor > 0 no summary tipado", () => {

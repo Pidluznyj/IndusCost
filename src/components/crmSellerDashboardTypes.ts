@@ -1,4 +1,6 @@
-/** Tipos do GET /api/crm/seller-dashboard (Fase 3 — base: SalesOrder). */
+/** Tipos do GET /api/crm/seller-dashboard (aba Gestão por Vendedor).
+ * Eixo oficial: Responsável Comercial do Cliente — não vendedor Nomus/comissionável.
+ */
 
 export type SellerDashboardFilters = {
   externalSellerId: number | null;
@@ -6,6 +8,17 @@ export type SellerDashboardFilters = {
   sellerIdentityKey?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
+};
+
+export type SellerDashboardSourceInfo = {
+  eixo: "RESPONSAVEL_COMERCIAL_CLIENTE";
+  pedidosFonte: "SalesOrder";
+  itensFonte: "SalesOrderItem";
+  vendedorPedidoFonte: "Nomus/SalesOrder seller field";
+  comissionamentoAfetado: false;
+  metricsSource?: string;
+  rulesEngineVersion?: string;
+  period?: { dateFrom: string | null; dateTo: string | null };
 };
 
 export type SellerOption = {
@@ -30,6 +43,13 @@ export type SellerDashboardTopProduct = {
   quantity: number;
 };
 
+export type SellerDashboardTopRow = {
+  key: string;
+  label: string;
+  orders: number;
+  value: number;
+};
+
 export type SellerDashboardSummary = {
   ordersCount: number;
   ordersValue: number;
@@ -43,6 +63,19 @@ export type SellerDashboardSummary = {
   topProduct: SellerDashboardTopProduct | null;
   /** Qualidade de rastreabilidade — não é KPI principal de performance. */
   ordersWithoutLinkedProposalCount: number;
+  metricsSource?: string;
+  /** Aliases oficiais (mesmo valor dos campos legados acima). */
+  totalOrders?: number;
+  totalOrderValue?: number;
+  openPortfolioOrders?: number;
+  openPortfolioValue?: number;
+  invoicedOrders?: number;
+  invoicedValue?: number;
+  canceledOrders?: number;
+  averageTicket?: number;
+  customersWithOrders?: number;
+  ordersWithoutNomusSeller?: number;
+  ordersWithDifferentNomusSeller?: number;
 };
 
 export type SellerDashboardBySeller = {
@@ -78,15 +111,55 @@ export type SellerDashboardOrder = {
   invoiceKey?: string | null;
   invoiceStatus?: string | null;
   isInvoiced?: boolean;
+  /** Auditoria: vendedor Nomus do pedido (não define carteira). */
+  nomusSellerName?: string | null;
+  commercialOwnerName?: string | null;
+  ownerDiffersFromNomusSeller?: boolean;
+};
+
+export type SellerDashboardFollowUpCandidate = {
+  salesOrderId: string;
+  orderCode: string;
+  customerId: string;
+  customerName: string;
+  issueDate: string | null;
+  totalNetValue: number;
+  daysWithoutFollowUp: number;
 };
 
 export type SellerDashboardResponse = {
   generatedAt: string;
   filters: SellerDashboardFilters;
+  /** Responsável comercial selecionado (eixo de carteira). */
+  selectedCommercialOwner: {
+    label: string | null;
+    sellerIdentityKey: string | null;
+    externalSellerId: number | null;
+    customerCount: number;
+  };
+  period: { dateFrom: string | null; dateTo: string | null };
   sellerOptions: SellerOption[];
   summary: SellerDashboardSummary;
+  /** Aliases top-level pedidos (mesmos do summary). */
+  totalOrders: number;
+  totalOrderValue: number;
+  openPortfolioOrderCount: number;
+  openPortfolioValue: number;
+  invoicedOrderCount: number;
+  invoicedValue: number;
+  canceledOrders: number;
+  averageTicket: number;
+  customersWithOrders: number;
+  leadingProduct: SellerDashboardTopProduct | null;
+  topCustomers: SellerDashboardTopRow[];
+  recentOrders: SellerDashboardOrder[];
+  followUpCandidates: SellerDashboardFollowUpCandidate[];
+  ordersWithoutNomusSeller: number;
+  ordersWithDifferentNomusSeller: number;
   bySeller: SellerDashboardBySeller[];
   openPortfolioOrders: SellerDashboardOrder[];
   invoicedOrders: SellerDashboardOrder[];
   ordersWithoutLinkedProposal: SellerDashboardOrder[];
+  sourceInfo: SellerDashboardSourceInfo;
+  emptyStateReason: "NO_CUSTOMERS_FOR_COMMERCIAL_OWNER" | null;
 };

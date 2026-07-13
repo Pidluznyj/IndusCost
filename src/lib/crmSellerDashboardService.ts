@@ -1,14 +1,14 @@
 /**
- * Serviço do GET /api/crm/seller-dashboard — base principal: SalesOrder.
+ * Serviço do GET /api/crm/seller-dashboard (aba "Gestão por Vendedor").
+ *
+ * Eixo oficial de carteira: Responsável Comercial do Cliente (CrmCustomerCommercialOwner).
+ * Vendedor Nomus do pedido: auditoria/divergência apenas — não define carteira nem comissão nesta visão.
+ * Fonte de pedidos: SalesOrder / SalesOrderItem (sem Proposal).
  */
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
-import {
-  computeSellerTicketAverage,
-  sellerDashIso,
-  sellerDashToNumber,
-} from "@/src/lib/crmSellerDashboard";
+import { sellerDashIso, sellerDashToNumber } from "@/src/lib/crmSellerDashboard";
 import {
   buildRawSellerKeyFromRow,
   consolidateSellerRowFragments,
@@ -17,17 +17,24 @@ import {
   normalizeSellerIdentityName,
 } from "@/src/lib/crmSellerIdentityConsolidation";
 import {
-  mapPrismaOrderToSalesOrderRulesInput,
-  resolveOfficialScopedOrderMetrics,
-  SALES_ORDER_RULES_PRISMA_SELECT,
-  OFFICIAL_SO_RULES_SOURCE,
-} from "@/src/lib/salesOrderRulesAdapter.js";
+  buildCrmSalesOrderMetrics,
+  CRM_SALES_ORDER_METRICS_PRISMA_SELECT,
+  type CrmMetricsOrderInput,
+} from "@/src/lib/commercial/crmSalesOrderMetricsService.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 import {
+  buildCrmCommercialOwnerOnlyOrderScopeSql,
   buildCrmOrderSellerNameSql,
-  buildCrmSellerPortfolioOrderScopeSql,
+  hasCrmSellerMatchFilter,
 } from "@/src/lib/crmSellerMatchSql";
 import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
+import { crmOrderWithoutFollowUpNotExistsSql } from "@/src/lib/crmOrderPortfolioSql";
+import {
+  buildSellerDashboardSourceInfo,
+  mergeOfficialMetricsIntoSellerSummary,
+  resolveSelectedCommercialOwnerLabel,
+} from "@/src/lib/crmSellerDashboardOfficialOrders.js";
+import type { SellerDashboardResponse } from "@/src/components/crmSellerDashboardTypes";
 
 const LIST_LIMIT = 20;
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -39,7 +46,6 @@ export type SellerDashboardRequest = {
   sellerIdentityKey: string | null;
   dateFrom: string | null;
   dateTo: string | null;
-  /** Escopo own: usuário vinculado (para filtrar opções consolidadas). */
   linkedUser?: {
     externalSellerId: number | null;
     sellerResponsibleName: string | null;
@@ -71,10 +77,113 @@ function parseYmdDate(raw: unknown): YmdParse {
   return s;
 }
 
+function mapRowToMetricsOrder(row: any): CrmMetricsOrderInput {
+  return {
+    id: row.id,
+    orderCode: row.orderCode,
+    status: row.status,
+    customerId: row.customerId,
+    issueDate: row.issueDate,
+    expectedDeliveryDate: row.expectedDeliveryDate,
+    totalNetValue: row.totalNetValue,
+    totalGrossValue: row.totalGrossValue,
+    totalItems: row.totalItems,
+    responsible: row.responsible,
+    nomusSellerName: row.nomusSellerName,
+    externalSellerId: row.externalSellerId,
+    nomusRawResponse: row.nomusRawResponse,
+    companyIssuer: row.companyIssuer,
+    externalSalesOrderId: row.externalSalesOrderId,
+    externalCustomerId: row.externalCustomerId,
+    Customer: row.Customer
+      ? {
+          id: row.Customer.id,
+          companyName: row.Customer.companyName,
+          tradeName: row.Customer.tradeName,
+          taxId: row.Customer.taxId,
+          externalCustomerId: row.Customer.externalCustomerId,
+          CrmCustomerCommercialOwner: row.Customer.CrmCustomerCommercialOwner,
+        }
+      : null,
+    items: (row.items ?? []).map((item: any) => ({
+      productId: item.productId,
+      skuSnapshot: item.skuSnapshot,
+      productNameSnapshot: item.productNameSnapshot,
+      quantity: item.quantity,
+      totalNetValue: item.totalNetValue,
+    })),
+  };
+}
+
+function emptyMetricsPayload(args: {
+  now: Date;
+  filterExternalSellerId: number | null;
+  filterResponsible: string | null;
+  filterSellerIdentityKey: string | null;
+  filterDateFrom: string | null;
+  filterDateTo: string | null;
+  sellerOptions: SellerDashboardResponse["sellerOptions"];
+  customerCount: number;
+  emptyStateReason: SellerDashboardResponse["emptyStateReason"];
+}): SellerDashboardResponse {
+  const summary = mergeOfficialMetricsIntoSellerSummary({
+    metrics: buildCrmSalesOrderMetrics({ orders: [] }),
+    ordersWithoutLinkedProposalCount: 0,
+  });
+  const sourceInfo = buildSellerDashboardSourceInfo({
+    metricsSource: summary.metricsSource,
+    period: { dateFrom: args.filterDateFrom, dateTo: args.filterDateTo },
+  });
+  return {
+    generatedAt: args.now.toISOString(),
+    filters: {
+      externalSellerId: args.filterExternalSellerId,
+      responsible: args.filterResponsible,
+      sellerIdentityKey: args.filterSellerIdentityKey,
+      dateFrom: args.filterDateFrom,
+      dateTo: args.filterDateTo,
+    },
+    selectedCommercialOwner: {
+      label: resolveSelectedCommercialOwnerLabel({
+        responsible: args.filterResponsible,
+        sellerIdentityKey: args.filterSellerIdentityKey,
+        externalSellerId: args.filterExternalSellerId,
+      }),
+      sellerIdentityKey: args.filterSellerIdentityKey,
+      externalSellerId: args.filterExternalSellerId,
+      customerCount: args.customerCount,
+    },
+    period: { dateFrom: args.filterDateFrom, dateTo: args.filterDateTo },
+    sellerOptions: args.sellerOptions,
+    summary,
+    totalOrders: 0,
+    totalOrderValue: 0,
+    openPortfolioOrderCount: 0,
+    openPortfolioValue: 0,
+    invoicedOrderCount: 0,
+    invoicedValue: 0,
+    canceledOrders: 0,
+    averageTicket: 0,
+    customersWithOrders: 0,
+    leadingProduct: null,
+    topCustomers: [],
+    recentOrders: [],
+    followUpCandidates: [],
+    ordersWithoutNomusSeller: 0,
+    ordersWithDifferentNomusSeller: 0,
+    bySeller: [],
+    openPortfolioOrders: [],
+    invoicedOrders: [],
+    ordersWithoutLinkedProposal: [],
+    sourceInfo,
+    emptyStateReason: args.emptyStateReason,
+  };
+}
+
 export async function buildCrmSellerDashboardResponse(
   input: SellerDashboardRequest,
   now = new Date()
-) {
+): Promise<SellerDashboardResponse> {
   const filterDateFrom = parseYmdDate(input.dateFrom);
   if (filterDateFrom === "INVALID") {
     throw new SellerDashboardBadRequest(
@@ -103,6 +212,24 @@ export async function buildCrmSellerDashboardResponse(
   const periodDateFromStart = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`) : null;
   const periodDateToEnd = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`) : null;
 
+  const sellerFilter = {
+    externalSellerId: filterExternalSellerId,
+    responsible: filterResponsible,
+    sellerIdentityKey: filterSellerIdentityKey,
+  };
+  const hasOwnerFilter = hasCrmSellerMatchFilter(sellerFilter);
+  const commercialOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
+  const soOwnerScope = buildCrmCommercialOwnerOnlyOrderScopeSql(
+    "so",
+    sellerFilter,
+    commercialOwnerCustomerIds
+  );
+
+  const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
+  const customerNameSql = Prisma.sql`
+    COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName")
+  `;
+
   const nomusNfesElementsSql = (alias: string) => Prisma.sql`
     jsonb_array_elements(
       CASE
@@ -119,32 +246,6 @@ export async function buildCrmSellerDashboardResponse(
       FROM ${nomusNfesElementsSql(alias)}
       WHERE NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') IS NOT NULL
     )
-  `;
-
-  const buildSellerMatchSql = async () => {
-    const sellerFilter = {
-      externalSellerId: filterExternalSellerId,
-      responsible: filterResponsible,
-      sellerIdentityKey: filterSellerIdentityKey,
-    };
-    const manualOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
-    return buildCrmSellerPortfolioOrderScopeSql("so", sellerFilter, manualOwnerCustomerIds);
-  };
-
-  const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
-
-  const sellerKeyExprSql = Prisma.sql`
-    CASE
-      WHEN so."externalSellerId" IS NOT NULL
-      THEN 'id:' || so."externalSellerId"::text
-      WHEN NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
-      THEN 'r:' || LOWER(TRIM(${orderSellerNameSql}))
-      ELSE NULL
-    END
-  `;
-
-  const customerNameSql = Prisma.sql`
-    COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName")
   `;
 
   const nfeProcessamentoDateSql = Prisma.sql`
@@ -193,91 +294,89 @@ export async function buildCrmSellerDashboardResponse(
   const soValidMetricsSql = Prisma.sql`so.status::text NOT IN ('CANCELLED', 'ERROR')`;
   const soValidOrdersScopeSql = Prisma.sql`${soOrdersScopeSql} AND ${soValidMetricsSql}`;
   const soOpenPortfolioScopeSql = Prisma.sql`${soValidOrdersScopeSql} AND NOT ${orderIsInvoicedSql("so")}`;
-  const soSellerMatch = await buildSellerMatchSql();
+  const orderNoFollowUpSql = crmOrderWithoutFollowUpNotExistsSql("so");
+
+  // Opções do seletor = responsáveis comerciais (não vendedores Nomus do pedido).
+  const commercialOwnerOptionRows = await prisma.$queryRaw<
+    {
+      external_seller_id: number | null;
+      responsible: string | null;
+      seller_identity_key: string | null;
+      customers_count: number;
+      orders_count: number;
+    }[]
+  >(Prisma.sql`
+    SELECT
+      MAX(own."sellerExternalId") AS external_seller_id,
+      MAX(COALESCE(NULLIF(TRIM(own."sellerCanonicalName"), ''), NULLIF(TRIM(own."sellerResponsibleName"), ''))) AS responsible,
+      own."sellerIdentityKey" AS seller_identity_key,
+      COUNT(DISTINCT own."customerId")::int AS customers_count,
+      COUNT(so.id) FILTER (WHERE ${soValidOrdersScopeSql})::int AS orders_count
+    FROM "CrmCustomerCommercialOwner" own
+    LEFT JOIN "SalesOrder" so
+      ON so."customerId" = own."customerId"
+      AND ${soOrdersScopeSql}
+    WHERE own."isActive" = true
+      AND NULLIF(TRIM(COALESCE(own."sellerIdentityKey", '')), '') IS NOT NULL
+    GROUP BY own."sellerIdentityKey"
+    ORDER BY orders_count DESC, responsible ASC NULLS LAST
+  `);
+
+  const consolidatedOptions = consolidateSellerRowFragments(
+    commercialOwnerOptionRows.map((row) => ({
+      external_seller_id: row.external_seller_id,
+      responsible: row.responsible,
+      orders_count: row.orders_count,
+    }))
+  );
+  const scopedConsolidated =
+    sellerScopeMode === "own" && input.linkedUser
+      ? consolidatedOptions.filter((opt) =>
+          consolidatedIdentityMatchesUser(opt, input.linkedUser!)
+        )
+      : consolidatedOptions;
+  const sellerOptions = scopedConsolidated.map(consolidatedOptionToSellerOption);
+
+  if (hasOwnerFilter && commercialOwnerCustomerIds.length === 0) {
+    return emptyMetricsPayload({
+      now,
+      filterExternalSellerId,
+      filterResponsible,
+      filterSellerIdentityKey,
+      filterDateFrom,
+      filterDateTo,
+      sellerOptions,
+      customerCount: 0,
+      emptyStateReason: "NO_CUSTOMERS_FOR_COMMERCIAL_OWNER",
+    });
+  }
+
+  const orderWhere: Record<string, unknown> = {};
+  if (hasOwnerFilter) {
+    orderWhere.customerId = { in: commercialOwnerCustomerIds };
+  }
+  if (periodDateFromStart || periodDateToEnd) {
+    orderWhere.issueDate = {
+      ...(periodDateFromStart ? { gte: periodDateFromStart } : {}),
+      ...(periodDateToEnd ? { lte: periodDateToEnd } : {}),
+    };
+  }
 
   const [
-    sellerOptionsRows,
-    summaryRow,
-    bySellerRows,
+    metricsRows,
     openPortfolioRows,
     invoicedRows,
-    topProductRows,
+    recentOrderRows,
+    followUpRows,
     ordersNoProposalRows,
+    proposalLinkCountRow,
   ] = await Promise.all([
-    prisma.$queryRaw<
-      { external_seller_id: number | null; responsible: string | null; orders_count: number }[]
-    >(
-      Prisma.sql`
-        SELECT
-          MAX(so."externalSellerId") AS external_seller_id,
-          MAX(${orderSellerNameSql}) FILTER (
-            WHERE NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
-          ) AS responsible,
-          COUNT(*)::int AS orders_count
-        FROM "SalesOrder" so
-        WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}
-        GROUP BY ${sellerKeyExprSql}
-        HAVING ${sellerKeyExprSql} IS NOT NULL
-        ORDER BY orders_count DESC, responsible ASC NULLS LAST
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        orders_count: number;
-        orders_value: unknown;
-        invoiced_orders_count: number;
-        invoiced_orders_value: unknown;
-        open_orders_count: number;
-        open_orders_value: unknown;
-        cancelled_orders_count: number;
-        unique_customers_count: number;
-        orders_without_linked_proposal_count: number;
-      }[]
-    >(
-      Prisma.sql`
-        SELECT
-          (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}) AS orders_count,
-          (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}) AS orders_value,
-          (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql}) AS invoiced_orders_count,
-          (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql}) AS invoiced_orders_value,
-          (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOpenPortfolioScopeSql}) AS open_orders_count,
-          (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOpenPortfolioScopeSql}) AS open_orders_value,
-          (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql} AND so.status::text = 'CANCELLED') AS cancelled_orders_count,
-          (SELECT COUNT(DISTINCT so."customerId")::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}) AS unique_customers_count,
-          (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql} AND so."proposalId" IS NULL) AS orders_without_linked_proposal_count
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        external_seller_id: number | null;
-        responsible: string | null;
-        orders_count: number;
-        orders_value: unknown;
-        invoiced_orders_count: number;
-        invoiced_orders_value: unknown;
-        open_orders_count: number;
-        open_orders_value: unknown;
-      }[]
-    >(
-      Prisma.sql`
-        SELECT
-          MAX(so."externalSellerId") AS external_seller_id,
-          MAX(${orderSellerNameSql}) FILTER (
-            WHERE NULLIF(TRIM(COALESCE(${orderSellerNameSql}, '')), '') IS NOT NULL
-          ) AS responsible,
-          COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql})::int AS orders_count,
-          COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql}), 0) AS orders_value,
-          COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql})::int AS invoiced_orders_count,
-          COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql}), 0) AS invoiced_orders_value,
-          COUNT(*) FILTER (WHERE ${soOpenPortfolioScopeSql})::int AS open_orders_count,
-          COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOpenPortfolioScopeSql}), 0) AS open_orders_value
-        FROM "SalesOrder" so
-        WHERE ${soSellerMatch}
-        GROUP BY ${sellerKeyExprSql}
-        HAVING ${sellerKeyExprSql} IS NOT NULL
-        ORDER BY orders_count DESC
-      `
-    ),
+    prisma.salesOrder.findMany({
+      where: orderWhere as never,
+      select: CRM_SALES_ORDER_METRICS_PRISMA_SELECT as never,
+      orderBy: { issueDate: "desc" },
+      take: 20000,
+    }),
     prisma.$queryRaw<
       {
         sales_order_id: string;
@@ -286,32 +385,36 @@ export async function buildCrmSellerDashboardResponse(
         customer_id: string;
         customer_name: string;
         responsible: string | null;
+        nomus_seller_name: string | null;
+        commercial_owner_name: string | null;
         external_seller_id: number | null;
         issue_date: Date;
         expected_delivery_date: Date | null;
         total_net_value: unknown;
       }[]
-    >(
-      Prisma.sql`
-        SELECT
-          so.id AS sales_order_id,
-          so."orderCode" AS order_code,
-          so."externalSalesOrderId" AS external_sales_order_id,
-          so."customerId" AS customer_id,
-          ${customerNameSql} AS customer_name,
-          ${orderSellerNameSql} AS responsible,
-          so."externalSellerId" AS external_seller_id,
-          so."issueDate" AS issue_date,
-          so."expectedDeliveryDate" AS expected_delivery_date,
-          so."totalNetValue" AS total_net_value
-        FROM "SalesOrder" so
-        INNER JOIN "Customer" c ON c.id = so."customerId"
-        WHERE ${soSellerMatch}
-          AND ${soOpenPortfolioScopeSql}
-        ORDER BY so."issueDate" DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
+    >(Prisma.sql`
+      SELECT
+        so.id AS sales_order_id,
+        so."orderCode" AS order_code,
+        so."externalSalesOrderId" AS external_sales_order_id,
+        so."customerId" AS customer_id,
+        ${customerNameSql} AS customer_name,
+        ${orderSellerNameSql} AS responsible,
+        NULLIF(TRIM(COALESCE(so."nomusSellerName", '')), '') AS nomus_seller_name,
+        COALESCE(NULLIF(TRIM(own."sellerCanonicalName"), ''), NULLIF(TRIM(own."sellerResponsibleName"), '')) AS commercial_owner_name,
+        so."externalSellerId" AS external_seller_id,
+        so."issueDate" AS issue_date,
+        so."expectedDeliveryDate" AS expected_delivery_date,
+        so."totalNetValue" AS total_net_value
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      LEFT JOIN "CrmCustomerCommercialOwner" own
+        ON own."customerId" = so."customerId" AND own."isActive" = true
+      WHERE ${soOwnerScope}
+        AND ${soOpenPortfolioScopeSql}
+      ORDER BY so."issueDate" DESC
+      LIMIT ${LIST_LIMIT}
+    `),
     prisma.$queryRaw<
       {
         sales_order_id: string;
@@ -320,6 +423,8 @@ export async function buildCrmSellerDashboardResponse(
         customer_id: string;
         customer_name: string;
         responsible: string | null;
+        nomus_seller_name: string | null;
+        commercial_owner_name: string | null;
         external_seller_id: number | null;
         issue_date: Date;
         expected_delivery_date: Date | null;
@@ -330,74 +435,118 @@ export async function buildCrmSellerDashboardResponse(
         invoice_key: string | null;
         invoice_status: string | null;
       }[]
-    >(
-      Prisma.sql`
+    >(Prisma.sql`
+      SELECT
+        so.id AS sales_order_id,
+        so."orderCode" AS order_code,
+        so."externalSalesOrderId" AS external_sales_order_id,
+        so."customerId" AS customer_id,
+        ${customerNameSql} AS customer_name,
+        ${orderSellerNameSql} AS responsible,
+        NULLIF(TRIM(COALESCE(so."nomusSellerName", '')), '') AS nomus_seller_name,
+        COALESCE(NULLIF(TRIM(own."sellerCanonicalName"), ''), NULLIF(TRIM(own."sellerResponsibleName"), '')) AS commercial_owner_name,
+        so."externalSellerId" AS external_seller_id,
+        so."issueDate" AS issue_date,
+        so."expectedDeliveryDate" AS expected_delivery_date,
+        so."totalNetValue" AS total_net_value,
+        inv.invoice_processed_at_text,
+        inv.invoice_number,
+        inv.invoice_series,
+        inv.invoice_key,
+        inv.invoice_status
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      LEFT JOIN "CrmCustomerCommercialOwner" own
+        ON own."customerId" = so."customerId" AND own."isActive" = true
+      LEFT JOIN LATERAL (
         SELECT
-          so.id AS sales_order_id,
-          so."orderCode" AS order_code,
-          so."externalSalesOrderId" AS external_sales_order_id,
-          so."customerId" AS customer_id,
-          ${customerNameSql} AS customer_name,
-          ${orderSellerNameSql} AS responsible,
-          so."externalSellerId" AS external_seller_id,
-          so."issueDate" AS issue_date,
-          so."expectedDeliveryDate" AS expected_delivery_date,
-          so."totalNetValue" AS total_net_value,
-          inv.invoice_processed_at_text,
-          inv.invoice_number,
-          inv.invoice_series,
-          inv.invoice_key,
-          inv.invoice_status
-        FROM "SalesOrder" so
-        INNER JOIN "Customer" c ON c.id = so."customerId"
-        LEFT JOIN LATERAL (
-          SELECT
-            NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') AS invoice_processed_at_text,
-            NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'numero', '')), '') AS invoice_number,
-            NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'serie', '')), '') AS invoice_series,
-            NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'chave', '')), '') AS invoice_key,
-            NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'status', '')), '') AS invoice_status,
-            CASE
-              WHEN NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
-              THEN to_date(TRIM(nfe->>'dataProcessamento'), 'DD/MM/YYYY')
-              ELSE NULL
-            END AS invoice_sort_date
-          FROM ${nomusNfesElementsSql("so")}
-          WHERE ${nfeProcessamentoInPeriodSql()}
-          ORDER BY invoice_sort_date DESC NULLS LAST, nfe->>'dataProcessamento' DESC
-          LIMIT 1
-        ) inv ON TRUE
-        WHERE ${soSellerMatch}
-          AND ${soInvoicedMetricSql}
-        ORDER BY inv.invoice_sort_date DESC NULLS LAST, so."issueDate" DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
+          NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') AS invoice_processed_at_text,
+          NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'numero', '')), '') AS invoice_number,
+          NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'serie', '')), '') AS invoice_series,
+          NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'chave', '')), '') AS invoice_key,
+          NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'status', '')), '') AS invoice_status,
+          CASE
+            WHEN NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+            THEN to_date(TRIM(nfe->>'dataProcessamento'), 'DD/MM/YYYY')
+            ELSE NULL
+          END AS invoice_sort_date
+        FROM ${nomusNfesElementsSql("so")}
+        WHERE ${nfeProcessamentoInPeriodSql()}
+        ORDER BY invoice_sort_date DESC NULLS LAST, nfe->>'dataProcessamento' DESC
+        LIMIT 1
+      ) inv ON TRUE
+      WHERE ${soOwnerScope}
+        AND ${soInvoicedMetricSql}
+      ORDER BY inv.invoice_sort_date DESC NULLS LAST, so."issueDate" DESC
+      LIMIT ${LIST_LIMIT}
+    `),
     prisma.$queryRaw<
       {
-        product_id: string;
-        product_name: string;
-        sku_snapshot: string;
-        revenue: unknown;
-        quantity: unknown;
+        sales_order_id: string;
+        order_code: string;
+        external_sales_order_id: number | null;
+        customer_id: string;
+        customer_name: string;
+        responsible: string | null;
+        nomus_seller_name: string | null;
+        commercial_owner_name: string | null;
+        external_seller_id: number | null;
+        issue_date: Date;
+        expected_delivery_date: Date | null;
+        total_net_value: unknown;
+        is_invoiced: boolean;
       }[]
-    >(
-      Prisma.sql`
-        SELECT
-          soi."productId" AS product_id,
-          MAX(soi."productNameSnapshot") AS product_name,
-          MAX(soi."skuSnapshot") AS sku_snapshot,
-          COALESCE(SUM(soi."totalNetValue"), 0) AS revenue,
-          COALESCE(SUM(soi.quantity), 0) AS quantity
-        FROM "SalesOrderItem" soi
-        INNER JOIN "SalesOrder" so ON so.id = soi."salesOrderId"
-        WHERE ${soSellerMatch}
-          AND ${soValidOrdersScopeSql}
-        GROUP BY soi."productId"
-        ORDER BY revenue DESC
-        LIMIT 1
-      `
-    ),
+    >(Prisma.sql`
+      SELECT
+        so.id AS sales_order_id,
+        so."orderCode" AS order_code,
+        so."externalSalesOrderId" AS external_sales_order_id,
+        so."customerId" AS customer_id,
+        ${customerNameSql} AS customer_name,
+        ${orderSellerNameSql} AS responsible,
+        NULLIF(TRIM(COALESCE(so."nomusSellerName", '')), '') AS nomus_seller_name,
+        COALESCE(NULLIF(TRIM(own."sellerCanonicalName"), ''), NULLIF(TRIM(own."sellerResponsibleName"), '')) AS commercial_owner_name,
+        so."externalSellerId" AS external_seller_id,
+        so."issueDate" AS issue_date,
+        so."expectedDeliveryDate" AS expected_delivery_date,
+        so."totalNetValue" AS total_net_value,
+        ${orderIsInvoicedSql("so")} AS is_invoiced
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      LEFT JOIN "CrmCustomerCommercialOwner" own
+        ON own."customerId" = so."customerId" AND own."isActive" = true
+      WHERE ${soOwnerScope}
+        AND ${soIssueDateInPeriodSql()}
+      ORDER BY so."issueDate" DESC
+      LIMIT ${LIST_LIMIT}
+    `),
+    prisma.$queryRaw<
+      {
+        sales_order_id: string;
+        order_code: string;
+        customer_id: string;
+        customer_name: string;
+        issue_date: Date;
+        total_net_value: unknown;
+        updated_at: Date;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        so.id AS sales_order_id,
+        so."orderCode" AS order_code,
+        so."customerId" AS customer_id,
+        ${customerNameSql} AS customer_name,
+        so."issueDate" AS issue_date,
+        so."totalNetValue" AS total_net_value,
+        so."updatedAt" AS updated_at
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      WHERE ${soOwnerScope}
+        AND ${soOpenPortfolioScopeSql}
+        AND ${orderNoFollowUpSql}
+      ORDER BY so."updatedAt" ASC
+      LIMIT ${LIST_LIMIT}
+    `),
     prisma.$queryRaw<
       {
         sales_order_id: string;
@@ -411,85 +560,67 @@ export async function buildCrmSellerDashboardResponse(
         total_net_value: unknown;
         is_invoiced: boolean;
       }[]
-    >(
-      Prisma.sql`
-        SELECT
-          so.id AS sales_order_id,
-          so."orderCode" AS order_code,
-          so."externalSalesOrderId" AS external_sales_order_id,
-          so."customerId" AS customer_id,
-          ${customerNameSql} AS customer_name,
-          ${orderSellerNameSql} AS responsible,
-          so."externalSellerId" AS external_seller_id,
-          so."issueDate" AS issue_date,
-          so."totalNetValue" AS total_net_value,
-          ${orderIsInvoicedSql("so")} AS is_invoiced
-        FROM "SalesOrder" so
-        INNER JOIN "Customer" c ON c.id = so."customerId"
-        WHERE ${soSellerMatch}
-          AND ${soIssueDateInPeriodSql()}
-          AND so."proposalId" IS NULL
-        ORDER BY so."issueDate" DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
+    >(Prisma.sql`
+      SELECT
+        so.id AS sales_order_id,
+        so."orderCode" AS order_code,
+        so."externalSalesOrderId" AS external_sales_order_id,
+        so."customerId" AS customer_id,
+        ${customerNameSql} AS customer_name,
+        ${orderSellerNameSql} AS responsible,
+        so."externalSellerId" AS external_seller_id,
+        so."issueDate" AS issue_date,
+        so."totalNetValue" AS total_net_value,
+        ${orderIsInvoicedSql("so")} AS is_invoiced
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      WHERE ${soOwnerScope}
+        AND ${soIssueDateInPeriodSql()}
+        AND so."proposalId" IS NULL
+      ORDER BY so."issueDate" DESC
+      LIMIT ${LIST_LIMIT}
+    `),
+    prisma.$queryRaw<{ c: number }[]>(Prisma.sql`
+      SELECT COUNT(*)::int AS c
+      FROM "SalesOrder" so
+      WHERE ${soOwnerScope}
+        AND ${soValidOrdersScopeSql}
+        AND so."proposalId" IS NULL
+    `),
   ]);
 
-  const sellerOrderIds = await prisma.$queryRaw<{ id: string }[]>(
-    Prisma.sql`SELECT so.id FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soValidOrdersScopeSql}`
-  );
-  const sellerIdSet = new Set(sellerOrderIds.map((row) => row.id));
-  const rulesOrdersRaw =
-    sellerIdSet.size > 0
-      ? await prisma.salesOrder.findMany({
-          where: { id: { in: [...sellerIdSet] } },
-          select: SALES_ORDER_RULES_PRISMA_SELECT,
-        })
-      : [];
-  const rulesOrders = rulesOrdersRaw.map(mapPrismaOrderToSalesOrderRulesInput);
+  const orders = (metricsRows as any[]).map(mapRowToMetricsOrder);
   const linkedMap = await loadSalesOrderLinkedNfeContextMap(
-    rulesOrdersRaw.map((order) => ({
+    orders.map((order) => ({
       id: order.id,
       totalNetValue: order.totalNetValue,
       issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
+      expectedDeliveryDate: order.expectedDeliveryDate ?? null,
+      nomusRawResponse: order.nomusRawResponse ?? null,
     })),
     now
   );
-  const officialSummary = resolveOfficialScopedOrderMetrics({
-    orders: rulesOrders,
-    referenceDate: now,
-    managementFilters: {
-      allYears: true,
-      startDate: periodDateFromStart,
-      endDate: periodDateToEnd,
-      // Eixo CRM = carteira/responsável comercial já aplicado em soSellerMatch.
-      // Não refiltrar pelo vendedor do pedido (comissionável).
+
+  const metrics = buildCrmSalesOrderMetrics({
+    orders,
+    filters: {
+      from: filterDateFrom,
+      to: filterDateTo,
+      // Reforço do eixo carteira (já filtrado por customerId na query quando há filtro).
+      responsibleCommercialId: hasOwnerFilter ? filterExternalSellerId : null,
+      responsibleCommercialName: hasOwnerFilter
+        ? filterResponsible || filterSellerIdentityKey
+        : null,
+      includeCancelled: true,
     },
+    referenceDate: now,
     linkedNfeContextMap: linkedMap,
   });
 
-  const summary = summaryRow[0];
-  const ordersCount = officialSummary.filteredOrders;
-  const ordersValue = officialSummary.soldAmount;
-  const topProduct = topProductRows[0];
-
-  const consolidatedOptions = consolidateSellerRowFragments(sellerOptionsRows);
-  const scopedConsolidated =
-    sellerScopeMode === "own" && input.linkedUser
-      ? consolidatedOptions.filter((opt) =>
-          consolidatedIdentityMatchesUser(opt, input.linkedUser!)
-        )
-      : consolidatedOptions;
-
-  const consolidatedBySeller = consolidateSellerRowFragments(
-    bySellerRows.map((row) => ({
-      external_seller_id: row.external_seller_id,
-      responsible: row.responsible,
-      orders_count: row.orders_count,
-    }))
-  );
+  const summary = mergeOfficialMetricsIntoSellerSummary({
+    metrics,
+    ordersWithoutLinkedProposalCount: proposalLinkCountRow?.[0]?.c ?? 0,
+  });
 
   const mapDeliveryDays = (expected: Date | null) => {
     if (!expected) {
@@ -506,6 +637,111 @@ export async function buildCrmSellerDashboardResponse(
     };
   };
 
+  const ownerKey = filterSellerIdentityKey
+    ? normalizeSellerIdentityName(filterSellerIdentityKey)
+    : filterResponsible
+      ? normalizeSellerIdentityName(filterResponsible)
+      : null;
+
+  const mapOrderRow = (row: {
+    sales_order_id: string;
+    order_code: string;
+    external_sales_order_id?: number | null;
+    customer_id: string;
+    customer_name: string;
+    responsible: string | null;
+    nomus_seller_name?: string | null;
+    commercial_owner_name?: string | null;
+    external_seller_id: number | null;
+    issue_date: Date;
+    expected_delivery_date?: Date | null;
+    total_net_value: unknown;
+    is_invoiced?: boolean;
+    invoice_processed_at_text?: string | null;
+    invoice_number?: string | null;
+    invoice_series?: string | null;
+    invoice_key?: string | null;
+    invoice_status?: string | null;
+  }) => {
+    const delivery = mapDeliveryDays(row.expected_delivery_date ?? null);
+    const nomusName = row.nomus_seller_name ?? row.responsible ?? null;
+    const ownerName = row.commercial_owner_name ?? null;
+    const nomusKey = nomusName ? normalizeSellerIdentityName(nomusName) : null;
+    const differs =
+      Boolean(ownerKey && nomusKey && ownerKey !== nomusKey) ||
+      Boolean(
+        filterExternalSellerId != null &&
+          row.external_seller_id != null &&
+          filterExternalSellerId !== row.external_seller_id
+      );
+    return {
+      salesOrderId: row.sales_order_id,
+      orderCode: row.order_code,
+      externalSalesOrderId: row.external_sales_order_id ?? null,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      responsible: row.responsible ?? null,
+      externalSellerId: row.external_seller_id,
+      issueDate: sellerDashIso(row.issue_date),
+      expectedDeliveryDate: sellerDashIso(row.expected_delivery_date ?? null),
+      totalNetValue: sellerDashToNumber(row.total_net_value),
+      daysUntilExpectedDelivery: delivery.daysUntilExpectedDelivery,
+      daysOverdue: delivery.daysOverdue,
+      invoiceProcessedAtText: row.invoice_processed_at_text,
+      invoiceNumber: row.invoice_number,
+      invoiceSeries: row.invoice_series,
+      invoiceKey: row.invoice_key,
+      invoiceStatus: row.invoice_status,
+      isInvoiced: row.is_invoiced,
+      nomusSellerName: nomusName,
+      commercialOwnerName: ownerName,
+      ownerDiffersFromNomusSeller: differs,
+    };
+  };
+
+  // bySeller = auditoria do vendedor Nomus DENTRO da carteira do responsável (não redefine carteira).
+  const byNomusSellerRows = await prisma.$queryRaw<
+    {
+      external_seller_id: number | null;
+      responsible: string | null;
+      orders_count: number;
+      orders_value: unknown;
+      invoiced_orders_count: number;
+      invoiced_orders_value: unknown;
+      open_orders_count: number;
+      open_orders_value: unknown;
+    }[]
+  >(Prisma.sql`
+    SELECT
+      so."externalSellerId" AS external_seller_id,
+      ${orderSellerNameSql} AS responsible,
+      COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql})::int AS orders_count,
+      COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql}), 0) AS orders_value,
+      COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql})::int AS invoiced_orders_count,
+      COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql}), 0) AS invoiced_orders_value,
+      COUNT(*) FILTER (WHERE ${soOpenPortfolioScopeSql})::int AS open_orders_count,
+      COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOpenPortfolioScopeSql}), 0) AS open_orders_value
+    FROM "SalesOrder" so
+    WHERE ${soOwnerScope}
+    GROUP BY so."externalSellerId", ${orderSellerNameSql}
+    ORDER BY orders_count DESC
+    LIMIT 50
+  `);
+
+  const consolidatedBySeller = consolidateSellerRowFragments(
+    byNomusSellerRows.map((row) => ({
+      external_seller_id: row.external_seller_id,
+      responsible: row.responsible,
+      orders_count: row.orders_count,
+    }))
+  );
+
+  const sourceInfo = buildSellerDashboardSourceInfo({
+    metricsSource: metrics.debug.metricsSource,
+    rulesEngineVersion: metrics.debug.rulesEngineVersion,
+    period: { dateFrom: filterDateFrom, dateTo: filterDateTo },
+  });
+
   return {
     generatedAt: now.toISOString(),
     filters: {
@@ -515,33 +751,47 @@ export async function buildCrmSellerDashboardResponse(
       dateFrom: filterDateFrom,
       dateTo: filterDateTo,
     },
-    sellerOptions: scopedConsolidated.map(consolidatedOptionToSellerOption),
-    summary: {
-      ordersCount,
-      ordersValue,
-      invoicedOrdersCount: officialSummary.invoicedPortfolioCount,
-      invoicedOrdersValue: officialSummary.invoicedPortfolioAmount,
-      openOrdersCount: officialSummary.openPortfolioCount,
-      openOrdersValue: officialSummary.openPortfolioAmount,
-      cancelledOrdersCount: summary?.cancelled_orders_count ?? 0,
-      uniqueCustomersCount:
-        summary?.unique_customers_count ??
-        new Set(rulesOrders.map((o) => o.customerId).filter(Boolean)).size,
-      ticketAverage: officialSummary.averageTicket,
-      metricsSource: OFFICIAL_SO_RULES_SOURCE,
-      topProduct: topProduct
-        ? {
-            productId: topProduct.product_id,
-            productName: topProduct.product_name,
-            sku: topProduct.sku_snapshot,
-            revenue: sellerDashToNumber(topProduct.revenue),
-            quantity: sellerDashToNumber(topProduct.quantity),
-          }
-        : null,
-      ordersWithoutLinkedProposalCount: summary?.orders_without_linked_proposal_count ?? 0,
+    selectedCommercialOwner: {
+      label: resolveSelectedCommercialOwnerLabel({
+        responsible: filterResponsible,
+        sellerIdentityKey: filterSellerIdentityKey,
+        externalSellerId: filterExternalSellerId,
+      }),
+      sellerIdentityKey: filterSellerIdentityKey,
+      externalSellerId: filterExternalSellerId,
+      customerCount: commercialOwnerCustomerIds.length,
     },
+    period: { dateFrom: filterDateFrom, dateTo: filterDateTo },
+    sellerOptions,
+    summary,
+    totalOrders: metrics.totalOrders,
+    totalOrderValue: metrics.totalOrderValue,
+    openPortfolioOrderCount: metrics.openPortfolioOrders,
+    openPortfolioValue: metrics.openPortfolioValue,
+    invoicedOrderCount: metrics.invoicedOrders,
+    invoicedValue: metrics.invoicedValue,
+    canceledOrders: metrics.canceledOrders,
+    averageTicket: metrics.averageTicket,
+    customersWithOrders: metrics.customersWithOrders,
+    leadingProduct: summary.topProduct,
+    topCustomers: metrics.topCustomers,
+    recentOrders: recentOrderRows.map(mapOrderRow),
+    followUpCandidates: followUpRows.map((row) => ({
+      salesOrderId: row.sales_order_id,
+      orderCode: row.order_code,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      issueDate: sellerDashIso(row.issue_date),
+      totalNetValue: sellerDashToNumber(row.total_net_value),
+      daysWithoutFollowUp: Math.max(
+        0,
+        Math.floor((nowMs - row.updated_at.getTime()) / 86400000)
+      ),
+    })),
+    ordersWithoutNomusSeller: metrics.ordersWithoutNomusSeller,
+    ordersWithDifferentNomusSeller: metrics.ordersWithResponsibleDifferentFromOrderSeller,
     bySeller: consolidatedBySeller.map((opt) => {
-      const rows = bySellerRows.filter((row) =>
+      const rows = byNomusSellerRows.filter((row) =>
         opt.sourceSellerKeys.includes(
           buildRawSellerKeyFromRow(row.external_seller_id, row.responsible)
         )
@@ -563,40 +813,8 @@ export async function buildCrmSellerDashboardResponse(
         openOrdersValue: rows.reduce((sum, r) => sum + sellerDashToNumber(r.open_orders_value), 0),
       };
     }),
-    openPortfolioOrders: openPortfolioRows.map((row) => {
-      const delivery = mapDeliveryDays(row.expected_delivery_date);
-      return {
-        salesOrderId: row.sales_order_id,
-        orderCode: row.order_code,
-        externalSalesOrderId: row.external_sales_order_id,
-        customerId: row.customer_id,
-        customerName: row.customer_name,
-        responsible: row.responsible ?? null,
-        externalSellerId: row.external_seller_id,
-        issueDate: sellerDashIso(row.issue_date),
-        expectedDeliveryDate: sellerDashIso(row.expected_delivery_date),
-        totalNetValue: sellerDashToNumber(row.total_net_value),
-        daysUntilExpectedDelivery: delivery.daysUntilExpectedDelivery,
-        daysOverdue: delivery.daysOverdue,
-      };
-    }),
-    invoicedOrders: invoicedRows.map((row) => ({
-      salesOrderId: row.sales_order_id,
-      orderCode: row.order_code,
-      externalSalesOrderId: row.external_sales_order_id,
-      customerId: row.customer_id,
-      customerName: row.customer_name,
-      responsible: row.responsible ?? null,
-      externalSellerId: row.external_seller_id,
-      issueDate: sellerDashIso(row.issue_date),
-      expectedDeliveryDate: sellerDashIso(row.expected_delivery_date),
-      totalNetValue: sellerDashToNumber(row.total_net_value),
-      invoiceProcessedAtText: row.invoice_processed_at_text,
-      invoiceNumber: row.invoice_number,
-      invoiceSeries: row.invoice_series,
-      invoiceKey: row.invoice_key,
-      invoiceStatus: row.invoice_status,
-    })),
+    openPortfolioOrders: openPortfolioRows.map(mapOrderRow),
+    invoicedOrders: invoicedRows.map(mapOrderRow),
     ordersWithoutLinkedProposal: ordersNoProposalRows.map((row) => ({
       salesOrderId: row.sales_order_id,
       orderCode: row.order_code,
@@ -609,5 +827,7 @@ export async function buildCrmSellerDashboardResponse(
       totalNetValue: sellerDashToNumber(row.total_net_value),
       isInvoiced: Boolean(row.is_invoiced),
     })),
+    sourceInfo,
+    emptyStateReason: null,
   };
 }

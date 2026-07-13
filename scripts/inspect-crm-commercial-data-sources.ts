@@ -15,6 +15,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { normalizeSellerIdentityName } from "../src/lib/crmSellerIdentityConsolidation.ts";
 import {
+  buildCrmCommercialOwnerOnlyOrderScopeSql,
   buildCrmOrderSellerNameSql,
   buildCrmSellerFilterSql,
   buildCrmSellerPortfolioOrderScopeSql,
@@ -79,22 +80,23 @@ function money(n: unknown): number {
 
 function codePathWhySellerTabZeros(name: string) {
   return {
-    filterUsesOrderSeller: true,
+    filterUsesOrderSeller: false,
     filterUsesCommercialOwner: true,
     detail:
-      "Escopo atual do seller-dashboard = (customerId IN owners manuais) OR (match COALESCE(nomusSellerName,responsible)/externalSellerId). KPIs oficiais via resolveOfficialScopedOrderMetrics.",
+      "Escopo oficial do seller-dashboard = somente customerId IN (CrmCustomerCommercialOwner ativo do responsável). KPIs via buildCrmSalesOrderMetrics / motor Pedidos. Vendedor Nomus do pedido NÃO define carteira (só auditoria/divergência).",
     nameNormalization: `sellerIdentityKey = normalize("${name}") → "${normalizeSellerIdentityName(name)}"`,
     commonZeroCauses: [
-      "SalesOrder.responsible legado NULL após sync Nomus (antes do COALESCE com nomusSellerName causava zero)",
-      "Nenhum CrmCustomerCommercialOwner ativo para a identidade",
-      "Nenhum pedido no período com nomusSellerName/externalSellerId casando a identidade",
-      "Período dateFrom/dateTo em issueDate sem pedidos",
-      "Escopo own sem vínculo AppUser.sellerResponsibleName/externalSellerId",
+      "Nenhum CrmCustomerCommercialOwner ativo para a identidade (clientes sem responsável comercial atribuído)",
+      "Há clientes sob o responsável, mas nenhum SalesOrder.issueDate no período",
+      "Filtro ainda apontava só para vendedor Nomus do pedido (bug legado — corrigido: eixo = responsável comercial)",
+      "SalesOrder.responsible legado NULL após sync Nomus (só afetava o filtro antigo por vendedor do pedido)",
+      "Escopo own sem vínculo AppUser.sellerResponsibleName/externalSellerId alinhado ao responsável comercial",
       "Propostas NÃO alimentam o endpoint (não é causa de zero por Proposal)",
     ],
     frontendDoesNotClearNumbers: "CrmModule seta summary da API; zeros vêm do backend se ordersCount=0",
     permissionsCanBlock: "crm.seller.own sem vínculo → UI bloqueia; crm.seller.all permite filtro",
     apiUsesProposals: false,
+    commissionAffected: false,
   };
 }
 
@@ -108,8 +110,8 @@ async function main() {
     generatedAt: new Date().toISOString(),
     config: { ...cfg, sellerIdentityKey: identityKey },
     concepts: {
-      crmAxis: "Responsável Comercial do Cliente (CrmCustomerCommercialOwner) + escopo híbrido atual",
-      salesOrdersAxis: "Vendedor Nomus do pedido (externalSellerId + nomusSellerName)",
+      crmAxis: "Responsável Comercial do Cliente (CrmCustomerCommercialOwner) — eixo único da aba Gestão por Vendedor",
+      salesOrdersAxis: "Vendedor Nomus do pedido (externalSellerId + nomusSellerName) — auditoria/comissão",
       commissionsAxis: "Vendedor Nomus do pedido — nunca responsável comercial",
       proposalIsOfficialOrderSource: false,
     },
@@ -138,7 +140,8 @@ async function main() {
     const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
     const orderSellerMatch = buildCrmSellerFilterSql("so", sellerFilter);
     const manualOwnerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
-    const portfolioScope = buildCrmSellerPortfolioOrderScopeSql("so", sellerFilter, manualOwnerIds);
+    const hybridLegacyScope = buildCrmSellerPortfolioOrderScopeSql("so", sellerFilter, manualOwnerIds);
+    const ownerOnlyScope = buildCrmCommercialOwnerOnlyOrderScopeSql("so", sellerFilter, manualOwnerIds);
     const invoicedSql = crmOrderIsInvoicedSql("so");
 
     const periodSql = Prisma.sql`so."issueDate" >= ${periodFrom} AND so."issueDate" <= ${periodTo}`;
@@ -336,11 +339,16 @@ async function main() {
       WHERE ${periodSql} AND ${orderSellerMatch}
     `);
 
-    // Seller-dashboard escopo híbrido atual (portfolio OR order seller)
+    // Seller-dashboard escopo oficial = só responsável comercial
     const [sellerDashScope] = await prisma.$queryRaw<{ orders: number; value: unknown }[]>(Prisma.sql`
       SELECT COUNT(*)::int AS orders, COALESCE(SUM(so."totalNetValue"), 0) AS value
       FROM "SalesOrder" so
-      WHERE ${periodSql} AND ${validSql} AND ${portfolioScope}
+      WHERE ${periodSql} AND ${validSql} AND ${ownerOnlyScope}
+    `);
+    const [sellerDashHybridLegacy] = await prisma.$queryRaw<{ orders: number; value: unknown }[]>(Prisma.sql`
+      SELECT COUNT(*)::int AS orders, COALESCE(SUM(so."totalNetValue"), 0) AS value
+      FROM "SalesOrder" so
+      WHERE ${periodSql} AND ${validSql} AND ${hybridLegacyScope}
     `);
 
     // Carteira: clientes no union (owner manual ∪ customers with order seller match)
@@ -495,18 +503,21 @@ async function main() {
         manualOwnerCustomers: ownerCustomerIds.length,
         ordersByCommercialOwnerInPeriod: crmByOwner.ordersInPeriod,
         ordersByNomusSellerInPeriod: byOrderSeller?.orders ?? 0,
-        ordersByHybridSellerDashboardScope: sellerDashScope?.orders ?? 0,
+        ordersByOfficialSellerDashboardOwnerScope: sellerDashScope?.orders ?? 0,
+        ordersByLegacyHybridScope: sellerDashHybridLegacy?.orders ?? 0,
         hitsOnLegacyResponsibleField: legacyResponsibleHits[0]?.n ?? 0,
         hitsOnNomusSellerNameField: nomusNameHits[0]?.n ?? 0,
         similarSellerNameSamples: similarSellers,
         likelyZeroReason:
           (sellerDashScope?.orders ?? 0) === 0
-            ? ownerCustomerIds.length === 0 && (byOrderSeller?.orders ?? 0) === 0
-              ? "Sem owners manuais e sem pedidos Nomus no período para a identidade — zero esperado no backend."
-              : (byOrderSeller?.orders ?? 0) === 0 && (legacyResponsibleHits[0]?.n ?? 0) > 0
-                ? "Há hits em responsible legado mas COALESCE/nomus pode divergir — verificar amostra."
-                : "Escopo híbrido zerado; ver hits de nome e owners."
-            : "Backend NÃO está zerado para o escopo híbrido neste período — se UI mostra 0, investigar período/frontend/permissão ou deploy antigo.",
+            ? ownerCustomerIds.length === 0
+              ? "Sem CrmCustomerCommercialOwner ativo para a identidade — aba Gestão por Vendedor zera (eixo = responsável comercial)."
+              : crmByOwner.ordersInPeriod === 0
+                ? "Há clientes sob o responsável, mas nenhum SalesOrder no período (issueDate) — zero por período, não por vendedor Nomus."
+                : "Owner scope zerado apesar de crmByOwner>0 — checar SQL/ids."
+            : ownerCustomerIds.length > 0 && (byOrderSeller?.orders ?? 0) === 0
+              ? "Há pedidos na carteira do responsável, mas quase/nenhum com vendedor Nomus=identidade — antes o filtro Nomus-only zerava; agora a API usa owner-only."
+              : "Backend NÃO está zerado no escopo oficial (responsável comercial) neste período — se UI mostra 0, investigar período/frontend/permissão ou deploy antigo.",
       },
     };
 
@@ -544,10 +555,12 @@ async function main() {
         D_difference: {
           ownerOrdersMinusNomusSellerOrders:
             crmByOwner.ordersInPeriod - (byOrderSeller?.orders ?? 0),
-          hybridSellerDashboardOrders: sellerDashScope?.orders ?? 0,
-          hybridSellerDashboardValue: money(sellerDashScope?.value),
+          officialSellerDashboardOwnerOrders: sellerDashScope?.orders ?? 0,
+          officialSellerDashboardOwnerValue: money(sellerDashScope?.value),
+          legacyHybridOrders: sellerDashHybridLegacy?.orders ?? 0,
+          legacyHybridValue: money(sellerDashHybridLegacy?.value),
           note:
-            "Owner = todos os pedidos dos clientes com responsável comercial manual. Nomus seller = pedidos cujo vendedor do pedido casa. Híbrido = escopo atual do seller-dashboard.",
+            "Owner = pedidos dos clientes com responsável comercial. Nomus seller = vendedor do pedido. Oficial seller-dashboard = owner-only. Híbrido legado = owner OR Nomus (não usado mais na API).",
         },
         E_examples: {
           ownerButNotNomusSeller: ownerOnlyOrders.map((r) => ({
@@ -584,9 +597,15 @@ async function main() {
             orders: mgmtGeneralOpen?.orders ?? 0,
             value: money(mgmtGeneralOpen?.value),
           },
-          crmGestaoPorVendedorHybridScope: {
+          crmGestaoPorVendedorOwnerScope: {
             orders: sellerDashScope?.orders ?? 0,
             value: money(sellerDashScope?.value),
+            note: "Escopo oficial: somente clientes do responsável comercial.",
+          },
+          crmGestaoPorVendedorLegacyHybrid: {
+            orders: sellerDashHybridLegacy?.orders ?? 0,
+            value: money(sellerDashHybridLegacy?.value),
+            note: "Legado (owner OR Nomus) — não usado pela API após correção.",
           },
           crmCarteiraUnionCustomers: {
             customers: portfolioCustomerIds.length,

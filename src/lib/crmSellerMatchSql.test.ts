@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import {
+  buildCrmCommercialOwnerOnlyOrderScopeSql,
   buildCrmOrderSellerNameSql,
   buildCrmSellerFilterSql,
   buildCrmSellerPortfolioOrderScopeSql,
@@ -60,6 +61,27 @@ describe("crmSellerMatchSql — vendedor do pedido vs carteira", () => {
     assert.match(text, /customerId/);
     assert.match(text, /nomusSellerName/);
     assert.match(text, / OR /i);
+  });
+
+  it("escopo oficial Gestão por Vendedor usa só responsável comercial (sem OR Nomus)", () => {
+    const withOwners = sqlText(
+      buildCrmCommercialOwnerOnlyOrderScopeSql(
+        "so",
+        { externalSellerId: null, responsible: null, sellerIdentityKey: "gislene lima" },
+        ["11111111-1111-1111-1111-111111111111"]
+      )
+    );
+    const withoutOwners = sqlText(
+      buildCrmCommercialOwnerOnlyOrderScopeSql(
+        "so",
+        { externalSellerId: null, responsible: null, sellerIdentityKey: "gislene lima" },
+        []
+      )
+    );
+    assert.match(withOwners, /customerId/);
+    assert.equal(/nomusSellerName/.test(withOwners), false);
+    assert.equal(/ OR /i.test(withOwners), false);
+    assert.match(withoutOwners, /FALSE|false/i);
   });
 
   it("sem clientes de responsável comercial, escopo cai só no match do pedido", () => {

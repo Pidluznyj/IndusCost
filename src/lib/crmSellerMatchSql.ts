@@ -96,11 +96,11 @@ export function buildCustomerIdsInSql(alias: string, customerIds: readonly strin
 }
 
 /**
- * Escopo de pedidos do CRM por vendedor/carteira:
+ * Escopo de pedidos do CRM por vendedor/carteira (legado híbrido):
  * - pedidos cujo vendedor Nomus casa com o filtro, OU
  * - qualquer pedido de cliente com responsável comercial manual atribuído a esse vendedor.
  *
- * Assim a carteira CRM não zera quando o pedido tem outro vendedor comissionável.
+ * Preferir `buildCrmCommercialOwnerOnlyOrderScopeSql` na aba Gestão por Vendedor.
  */
 export function buildCrmSellerPortfolioOrderScopeSql(
   alias: string,
@@ -116,4 +116,23 @@ export function buildCrmSellerPortfolioOrderScopeSql(
   }
   const ownedCustomers = buildCustomerIdsInSql(alias, manualOwnerCustomerIds);
   return Prisma.sql`(${ownedCustomers} OR ${sellerMatch})`;
+}
+
+/**
+ * Escopo oficial da aba Gestão por Vendedor / carteira CRM:
+ * somente pedidos de clientes cujo Responsável Comercial casa com o filtro.
+ * Não usa vendedor Nomus do pedido (comissionável) como eixo.
+ */
+export function buildCrmCommercialOwnerOnlyOrderScopeSql(
+  alias: string,
+  filter: CrmSellerMatchFilter,
+  commercialOwnerCustomerIds: readonly string[]
+): Prisma.Sql {
+  if (!hasCrmSellerMatchFilter(filter)) {
+    return Prisma.sql`TRUE`;
+  }
+  if (commercialOwnerCustomerIds.length === 0) {
+    return Prisma.sql`FALSE`;
+  }
+  return buildCustomerIdsInSql(alias, commercialOwnerCustomerIds);
 }
