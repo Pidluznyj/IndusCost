@@ -204,6 +204,7 @@
     "permissions:seed": "tsx scripts/seedPermissionResources.ts",
     "permissions:validate": "tsx scripts/validatePermissionsSetup.ts --catalog-only",
     "permissions:audit": "tsx scripts/validatePermissionsSetup.ts --audit",
+    "permissions:qa": "tsx scripts/qaPermissions.ts",
     "rebuild:portfolio-reconciliation:preview": "tsx scripts/rebuildPortfolioReconciliationFacts.ts preview",
     "rebuild:portfolio-reconciliation:apply": "tsx scripts/rebuildPortfolioReconciliationFacts.ts apply",
     "rebuild:order-to-cash-audit:preview": "tsx scripts/rebuildOrderToCashAudit.ts --mode preview",
