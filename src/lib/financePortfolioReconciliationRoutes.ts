@@ -16,7 +16,12 @@ import {
   loadOrderToCashAuditFactById,
   loadOrderToCashAuditList,
 } from "./financeOrderToCashAuditApi.server.js";
+import {
+  loadOrderStatusPedidosList,
+  loadOrderStatusPedidosOrderDetail,
+} from "./financeOrderStatusPedidosApi.server.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
+import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
 
 type AuthGuards = {
@@ -51,6 +56,13 @@ export function registerFinancePortfolioReconciliationRoutes(
     auth.requireAppAuth,
     auth.requirePermission(
       PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
+      "view"
+    ),
+  ];
+  const orderStatusPedidosGuard = [
+    auth.requireAppAuth,
+    auth.requirePermission(
+      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
       "view"
     ),
   ];
@@ -334,6 +346,81 @@ export function registerFinancePortfolioReconciliationRoutes(
             financeApiErrorJson(
               "Erro ao carregar fato da auditoria Pedido → Caixa.",
               new Error("Falha interna ao consultar fato materializado.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-status-pedidos",
+    ...orderStatusPedidosGuard,
+    async (req, res) => {
+      try {
+        const payload = await loadOrderStatusPedidosList(
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof OrderStatusPedidosApiParseError ||
+          error instanceof OrderToCashAuditApiParseError
+        ) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-status-pedidos",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar Status Pedidos.",
+              new Error("Falha interna ao agregar pedidos materializados.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-status-pedidos/orders/:orderKey",
+    ...orderStatusPedidosGuard,
+    async (req, res) => {
+      try {
+        const orderKey = String(req.params.orderKey ?? "").trim();
+        if (!orderKey) {
+          res.status(400).json({
+            error: "orderKey obrigatório.",
+            message: "orderKey obrigatório.",
+          });
+          return;
+        }
+        const payload = await loadOrderStatusPedidosOrderDetail(
+          orderKey,
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof OrderStatusPedidosApiParseError ||
+          error instanceof OrderToCashAuditApiParseError
+        ) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-status-pedidos/orders/:orderKey",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar detalhe do Status Pedidos.",
+              new Error("Falha interna ao consultar evidências do pedido.")
             )
           );
       }

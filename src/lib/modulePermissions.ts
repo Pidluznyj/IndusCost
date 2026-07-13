@@ -162,6 +162,7 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("finance.portfolioReconciliation.conciliation.view") ||
         check.hasPermission("finance.portfolioReconciliation.intelligence.view") ||
         check.hasPermission("finance.portfolioReconciliation.orderToCashAudit.view") ||
+        check.hasPermission("finance.portfolioReconciliation.orderStatusPedidos.view") ||
         check.hasPermission("finance.view") ||
         check.hasPermission("finance.accountsReceivable.view") ||
         check.hasPermission("finance.accountsPayable.view") ||

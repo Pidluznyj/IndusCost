@@ -23,6 +23,8 @@ export const PermissionResourceKeys = {
     "financeiro.conciliacao_carteira.tab.inteligencia",
   FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA:
     "financeiro.conciliacao_carteira.tab.auditoria_pedido_caixa",
+  FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS:
+    "financeiro.conciliacao_carteira.tab.status_pedidos",
   FINANCEIRO_CONTAS_RECEBER: "financeiro.contas_receber",
   FINANCEIRO_CONTAS_PAGAR: "financeiro.contas_pagar",
   FINANCEIRO_FLUXO_CAIXA: "financeiro.fluxo_caixa",
@@ -68,6 +70,7 @@ export const PORTFOLIO_RECONCILIATION_TAB_KEYS = [
   PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO,
   PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA,
   PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
+  PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
 ] as const;
 
 function seedToNode(seed: PermissionResourceSeed): PermissionResourceNode {

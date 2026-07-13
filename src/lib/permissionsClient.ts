@@ -37,6 +37,8 @@ export const ResourceKeys = {
     "financeiro.conciliacao_carteira.tab.inteligencia",
   FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA:
     "financeiro.conciliacao_carteira.tab.auditoria_pedido_caixa",
+  FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS:
+    "financeiro.conciliacao_carteira.tab.status_pedidos",
   COMERCIAL: "comercial",
   COMERCIAL_PEDIDOS_VENDA: "comercial.pedidos_venda",
   COMERCIAL_CRM: "comercial.crm",
@@ -75,7 +77,8 @@ export const ResourceKeys = {
 export type PortfolioReconciliationUiTabId =
   | "conciliation"
   | "intelligence"
-  | "order-to-cash-audit";
+  | "order-to-cash-audit"
+  | "order-status-pedidos";
 
 export const PORTFOLIO_RECONCILIATION_UI_TABS: ReadonlyArray<{
   id: PortfolioReconciliationUiTabId;
@@ -96,6 +99,11 @@ export const PORTFOLIO_RECONCILIATION_UI_TABS: ReadonlyArray<{
     id: "order-to-cash-audit",
     resourceKey: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
     label: "Auditoria Pedido → Caixa",
+  },
+  {
+    id: "order-status-pedidos",
+    resourceKey: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
+    label: "Status Pedidos",
   },
 ] as const;
 
@@ -148,6 +156,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
     legacyAliasKeys: ["finance.portfolioReconciliation.orderToCashAudit.view"],
+  },
+  {
+    key: ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
+    label: "Aba Status Pedidos",
+    type: "TAB",
+    parentKey: ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
+    legacyAliasKeys: ["finance.portfolioReconciliation.orderStatusPedidos.view"],
   },
   {
     key: ResourceKeys.COMERCIAL,
@@ -421,6 +436,7 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: V,
+    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS]: V,
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
     [ResourceKeys.COMERCIAL_CRM]: V,

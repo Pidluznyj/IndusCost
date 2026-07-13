@@ -32,16 +32,17 @@ function user(partial: {
 }
 
 describe("permissionsClient UI", () => {
-  it("usuário com 3 abas (ADMIN) vê 3", () => {
+  it("usuário com 4 abas (ADMIN) vê 4", () => {
     const api = createPermissionsApi(user({ role: "ADMIN", permissions: [] }));
     assert.deepEqual(api.listAllowedPortfolioReconciliationTabs(), [
       "conciliation",
       "intelligence",
       "order-to-cash-audit",
+      "order-status-pedidos",
     ]);
     assert.equal(
       api.getAllowedTabs(ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA).length,
-      3
+      4
     );
   });
 

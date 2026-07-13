@@ -231,6 +231,10 @@ describe("permissionGuards API protection", () => {
       routes,
       /FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA/
     );
+    assert.match(
+      routes,
+      /FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS/
+    );
     assert.doesNotMatch(routes, /requireAnyPermission/);
   });
 });

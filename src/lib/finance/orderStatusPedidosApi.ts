@@ -6,7 +6,6 @@
 
 import {
   mapOrderToCashAuditFactToListRow,
-  resolveOrderToCashAuditLineBilledValue,
   type OrderToCashAuditFactRecord,
   type OrderToCashAuditListFilters,
   type OrderToCashAuditListRow,
@@ -181,37 +180,13 @@ function isPendingLine(fact: OrderToCashAuditFactRecord): boolean {
   return (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING";
 }
 
-function hasDivergenceFlags(fact: OrderToCashAuditFactRecord): boolean {
-  return (
-    fact.hasExcessQuantity ||
-    fact.hasProductOutsideOrder ||
-    fact.hasPriceMismatch ||
-    fact.hasNfeHeaderGreaterThanOrder ||
-    fact.hasDocumentWithoutReceivable ||
-    fact.hasReceivableWithoutSafeLink === true
-  );
-}
-
-/** Narrow optional flag present on some fact shapes. */
-declare module "./orderToCashAuditApi.js" {
-  // no-op — keep optional access below
-}
-
-function factHasReceivableWithoutSafeLink(fact: OrderToCashAuditFactRecord): boolean {
-  const f = fact as OrderToCashAuditFactRecord & {
-    hasReceivableWithoutSafeLink?: boolean;
-  };
-  return f.hasReceivableWithoutSafeLink === true;
-}
-
 function factHasDivergence(fact: OrderToCashAuditFactRecord): boolean {
   return (
     fact.hasExcessQuantity ||
     fact.hasProductOutsideOrder ||
     fact.hasPriceMismatch ||
     fact.hasNfeHeaderGreaterThanOrder ||
-    fact.hasDocumentWithoutReceivable ||
-    factHasReceivableWithoutSafeLink(fact)
+    fact.hasDocumentWithoutReceivable
   );
 }
 
@@ -670,31 +645,3 @@ export function buildOrderStatusPedidosDetailPayload(args: {
     message: args.message ?? null,
   };
 }
-
-/** Garante que valor cobrado de item nunca vem de CR/NF cabeçalho. */
-export function assertLineBilledNotFromTitleCr(fact: {
-  lineType?: string | null;
-  quantityUsedForOrder?: number | null;
-  excessQuantity?: number | null;
-  outsideOrderQuantity?: number | null;
-  stockDocumentItemUnitValue?: number | null;
-  stockDocumentItemTotalValue?: number | null;
-  stockDocumentItemQuantity?: number | null;
-  allocatedValueByDocumentPrice?: number | null;
-  receivableTotalValue?: number | null;
-  nfeHeaderValue?: number | null;
-}): { lineBilledValue: number | null; usesTitleCr: false } {
-  const billed = resolveOrderToCashAuditLineBilledValue(fact);
-  if (
-    billed.lineBilledValue != null &&
-    fact.receivableTotalValue != null &&
-    Math.abs(billed.lineBilledValue - fact.receivableTotalValue) < 0.001 &&
-    (fact.lineType ?? "").toUpperCase() === "ORDER_ITEM_PENDING"
-  ) {
-    throw new Error("PENDING não pode usar CR total como valor de item");
-  }
-  return { lineBilledValue: billed.lineBilledValue, usesTitleCr: false };
-}
-
-// silence unused helper kept for clarity in divergence detection
-void hasDivergenceFlags;

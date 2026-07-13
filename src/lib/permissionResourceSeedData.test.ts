@@ -19,6 +19,7 @@ describe("permissionResourceSeedData", () => {
       "financeiro.conciliacao_carteira.tab.conciliacao",
       "financeiro.conciliacao_carteira.tab.inteligencia",
       "financeiro.conciliacao_carteira.tab.auditoria_pedido_caixa",
+      "financeiro.conciliacao_carteira.tab.status_pedidos",
       "financeiro.contas_receber",
       "financeiro.contas_pagar",
       "financeiro.fluxo_caixa",

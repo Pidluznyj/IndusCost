@@ -83,6 +83,6 @@ describe("module tab permissions", () => {
     const api = createPermissionsApi(user({ role: "SUPER_ADMIN" }));
     assert.equal(api.listAllowedCrmTabs().length, 3);
     assert.equal(api.listAllowedCommissionsLiveTabs().length, 3);
-    assert.equal(api.listAllowedPortfolioReconciliationTabs().length, 3);
+    assert.equal(api.listAllowedPortfolioReconciliationTabs().length, 4);
   });
 });

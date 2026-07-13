@@ -44,6 +44,7 @@ import { PortfolioReconciliationSummaryCardsView } from "@/src/components/financ
 import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
 import { PortfolioIntelligenceSection } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
+import { OrderStatusPedidosTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusPedidosTab";
 import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
 import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
@@ -526,7 +527,9 @@ export function FinancePortfolioReconciliationPage() {
                     ? "portfolio-tab-conciliation"
                     : tab.id === "intelligence"
                       ? "portfolio-tab-intelligence"
-                      : "portfolio-tab-order-to-cash-audit"
+                      : tab.id === "order-status-pedidos"
+                        ? "portfolio-tab-order-status-pedidos"
+                        : "portfolio-tab-order-to-cash-audit"
                 }
               >
                 {tab.label}
@@ -534,6 +537,16 @@ export function FinancePortfolioReconciliationPage() {
             </PermissionGate>
           ))}
         </div>
+
+        <ProtectedTab
+          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS}
+          active={activeView === "order-status-pedidos"}
+          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
+        >
+          <div className="mb-6 min-w-0 max-w-full">
+            <OrderStatusPedidosTab />
+          </div>
+        </ProtectedTab>
 
         <ProtectedTab
           resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA}

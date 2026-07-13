@@ -288,7 +288,7 @@ describe("permissionService motor relacional", () => {
     );
   });
 
-  it("getAllowedTabs devolve as 3 abas de Conciliação para ADMIN", () => {
+  it("getAllowedTabs devolve as 4 abas de Conciliação para ADMIN", () => {
     const subject = { id: "adm", role: "ADMIN" as const };
     const snap = createSeedPermissionSnapshot({ role: "ADMIN", userId: "adm" });
     const tabs = getAllowedTabs(

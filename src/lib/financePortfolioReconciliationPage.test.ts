@@ -115,6 +115,8 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /portfolio-tab-intelligence/);
     assert.match(page, /PORTFOLIO_RECONCILIATION_UI_TABS/);
     assert.match(page, /portfolio-tab-order-to-cash-audit/);
+    assert.match(page, /portfolio-tab-order-status-pedidos/);
+    assert.match(page, /OrderStatusPedidosTab/);
     assert.match(page, /OrderToCashAuditTab/);
     const clientPerms = read("src/lib/permissionsClient.ts");
     assert.match(clientPerms, /Inteligência da Carteira/);

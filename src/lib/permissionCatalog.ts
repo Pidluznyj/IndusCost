@@ -256,6 +256,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "finance.portfolioReconciliation.view",
     requires: ["finance.view", "finance.portfolioReconciliation.view"],
   }),
+  perm({
+    key: "finance.portfolioReconciliation.orderStatusPedidos.view",
+    label: "Conciliação de Carteira — aba Status Pedidos",
+    group: FIN,
+    module: "portfolio-reconciliation",
+    description:
+      "Visualizar a aba Status Pedidos (consolidado por Pedido de Venda sobre OrderToCashAudit).",
+    type: "tab",
+    parentKey: "finance.portfolioReconciliation.view",
+    requires: ["finance.view", "finance.portfolioReconciliation.view"],
+  }),
 
   // —— CRM ——
   perm({ key: "crm.view", label: "CRM Comercial", group: CRM, module: "crm-commercial", description: "Acessar o módulo CRM Comercial.", type: "menu" }),
