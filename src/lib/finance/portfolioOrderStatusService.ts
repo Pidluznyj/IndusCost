@@ -108,6 +108,8 @@ export type PortfolioOrderStatusRow = {
   hasPaymentConditionMissing: boolean;
   hasMissingSeller: boolean;
   hasMissingCommercialResponsible: boolean;
+  /** Tokens de produto/SKU do pedido (para filtro, sem expor facts). */
+  productTokens: string[];
   nfeNumbers: string[];
   nfeHeaderMaxValue: number;
 };
@@ -175,6 +177,8 @@ export type PortfolioOrderStatusFilters = {
   customerExternalId?: number | null;
   customerName?: string | null;
   sellerName?: string | null;
+  responsibleName?: string | null;
+  productOrSku?: string | null;
   consolidatedStatus?: PortfolioOrderStatusConsolidated | null;
   operationalStatus?: string | null;
   financialStatus?: string | null;
@@ -184,6 +188,7 @@ export type PortfolioOrderStatusFilters = {
   selectedDrilldown?: string | null;
   onlyWithDivergences?: boolean;
   onlyWithOpenCr?: boolean;
+  onlyWithPendingBalance?: boolean;
   year?: number | null;
   from?: string | Date | null;
   to?: string | Date | null;
@@ -638,6 +643,7 @@ export function aggregateOrderFactsToRow(
   let receivableReceived = 0;
   let nfeHeaderMax = 0;
   const nfeNumbers = new Set<string>();
+  const productTokens = new Set<string>();
 
   for (const fact of orderFacts) {
     if (!salesOrderId && fact.salesOrderId) salesOrderId = fact.salesOrderId;
@@ -653,6 +659,12 @@ export function aggregateOrderFactsToRow(
     if (!orderSellerName && fact.sellerName) orderSellerName = fact.sellerName;
     if (!commercialResponsibleName && fact.responsibleArea?.trim()) {
       commercialResponsibleName = fact.responsibleArea.trim();
+    }
+    if (fact.productCode?.trim()) {
+      productTokens.add(fact.productCode.trim().toLowerCase());
+    }
+    if (fact.sku?.trim()) {
+      productTokens.add(fact.sku.trim().toLowerCase());
     }
     if (orderNetValue == null && fact.orderNetValue != null && Number.isFinite(fact.orderNetValue)) {
       orderNetValue = fact.orderNetValue;
@@ -784,6 +796,7 @@ export function aggregateOrderFactsToRow(
     hasPaymentConditionMissing,
     hasMissingSeller,
     hasMissingCommercialResponsible,
+    productTokens: [...productTokens].sort(),
     nfeNumbers: [...nfeNumbers].sort(),
     nfeHeaderMaxValue: round6(nfeHeaderMax),
   };
@@ -1427,6 +1440,17 @@ export function applyOrderStatusFilters(
       const seller = (row.orderSellerName ?? "").toLowerCase();
       if (!seller.includes(filters.sellerName.trim().toLowerCase())) return false;
     }
+    if (filters.responsibleName?.trim()) {
+      const resp = (row.commercialResponsibleName ?? "").toLowerCase();
+      if (!resp.includes(filters.responsibleName.trim().toLowerCase())) return false;
+    }
+    if (filters.productOrSku?.trim()) {
+      const needle = filters.productOrSku.trim().toLowerCase();
+      const hit = row.productTokens.some(
+        (t) => t.includes(needle) || needle.includes(t)
+      );
+      if (!hit) return false;
+    }
     if (
       filters.consolidatedStatus &&
       row.consolidatedOrderStatus !== filters.consolidatedStatus
@@ -1445,17 +1469,27 @@ export function applyOrderStatusFilters(
     ) {
       return false;
     }
-    if (
-      filters.temperature?.trim() &&
-      (row.temperature ?? "") !== filters.temperature.trim()
-    ) {
-      return false;
+    if (filters.temperature?.trim()) {
+      const wanted = filters.temperature.trim().toUpperCase();
+      const rowTemp = (row.temperature ?? "").trim().toUpperCase();
+      const normalizedRow =
+        rowTemp === "AMARELO" || rowTemp === "AMBAR" || rowTemp === "ÂMBAR"
+          ? "MORNO"
+          : rowTemp === "VERDE" || rowTemp === "GREEN"
+            ? "FRIO"
+            : rowTemp === "VERMELHO" || rowTemp === "RED"
+              ? "QUENTE"
+              : rowTemp;
+      if (normalizedRow !== wanted && rowTemp !== wanted) return false;
     }
     if (filters.alert?.trim() && !row.alerts.includes(filters.alert.trim())) {
       return false;
     }
     if (filters.onlyWithDivergences && !row.hasDivergences) return false;
     if (filters.onlyWithOpenCr && !row.hasOpenCr) return false;
+    if (filters.onlyWithPendingBalance && row.pendingOrderValue <= MONEY_EPS) {
+      return false;
+    }
 
     if (filters.year != null && row.orderIssueDate) {
       const y = new Date(row.orderIssueDate).getFullYear();

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import {
   FinanceModuleEmptyState,
@@ -17,25 +17,29 @@ import {
   ORDER_STATUS_SELECT_MESSAGE,
   ORDER_STATUS_TAB_SUBTITLE,
   ORDER_STATUS_TAB_TITLE,
+  buildOrderStatusFilterChips,
   buildOrderStatusListQuery,
   canSearchOrderStatus,
+  clearOrderStatusChipField,
   createDefaultOrderStatusUiFilters,
   formatOrderStatusFilterContext,
   nextOrderStatusSort,
+  type OrderStatusChipField,
   type OrderStatusUiFilters,
   type PortfolioOrderStatusListPayload,
 } from "@/src/lib/finance/portfolioOrderStatusClient";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import type { PortfolioOrderStatusRow } from "@/src/lib/finance/portfolioOrderStatusService";
 import { OrderStatusFilters } from "./OrderStatusFilters";
+import { OrderStatusActiveFilterBar } from "./OrderStatusActiveFilterBar";
 import { OrderStatusPrimaryCards } from "./OrderStatusPrimaryCards";
 import { OrderStatusDrilldownCards } from "./OrderStatusDrilldownCards";
 import { OrderStatusTable } from "./OrderStatusTable";
 import { OrderStatusDrawer } from "./OrderStatusDrawer";
-import type { PortfolioOrderStatusRow } from "@/src/lib/finance/portfolioOrderStatusService";
 
 /**
- * Aba Status Pedidos — layout base.
- * Consome GET …/order-status; não recalcula consolidação no frontend.
+ * Aba Status Pedidos — consome GET …/order-status.
+ * Pesquisa sob demanda (Aplicar); não recalcula consolidação no frontend.
  */
 export function OrderStatusTab() {
   const abortRef = useRef<AbortController | null>(null);
@@ -88,6 +92,7 @@ export function OrderStatusTab() {
 
   const handleApply = () => {
     if (!canSearchOrderStatus(draft)) return;
+    setSelectedOrder(null);
     setApplied({ ...draft, page: 1 });
   };
 
@@ -108,6 +113,30 @@ export function OrderStatusTab() {
     setApplied({ ...applied, ...partial });
     setDraft((prev) => ({ ...prev, ...partial }));
   };
+
+  const handleRemoveChip = useCallback(
+    (field: OrderStatusChipField) => {
+      setApplied((current) => {
+        if (!current) return current;
+        const next = clearOrderStatusChipField(current, field);
+        if (field === "customer") setCustomerSelection(null);
+        setDraft(next);
+        setSelectedOrder(null);
+        return { ...next, page: 1 };
+      });
+    },
+    []
+  );
+
+  const activeChips = useMemo(() => {
+    if (!applied) return [];
+    const drillLabel =
+      payload?.drilldownCards.find((c) => c.id === applied.selectedDrilldown)
+        ?.label ?? null;
+    return buildOrderStatusFilterChips(applied, handleRemoveChip, {
+      drilldownLabel: drillLabel,
+    });
+  }, [applied, payload?.drilldownCards, handleRemoveChip]);
 
   const noRun = payload?.state === "NO_RUN";
   const filteredEmpty = payload?.state === "FILTERED_EMPTY";
@@ -143,6 +172,10 @@ export function OrderStatusTab() {
         onClear={handleClear}
         canApply={canApply}
       />
+
+      {searched ? (
+        <OrderStatusActiveFilterBar chips={activeChips} onClearAll={handleClear} />
+      ) : null}
 
       {!searched && !loading ? (
         <FinanceModuleEmptyState

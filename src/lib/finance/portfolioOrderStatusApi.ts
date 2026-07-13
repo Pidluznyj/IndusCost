@@ -82,9 +82,9 @@ export type PortfolioOrderStatusApiFilters = {
   from: string | null;
   to: string | null;
   sellerName: string | null;
-  /** Reservado — Fact não tem pessoa; aceito e ignorado com segurança. */
   responsibleName: string | null;
   orderCode: string | null;
+  productOrSku: string | null;
   consolidatedStatus: PortfolioOrderStatusConsolidated | null;
   operationalStatus: string | null;
   financialStatus: string | null;
@@ -92,6 +92,9 @@ export type PortfolioOrderStatusApiFilters = {
   alert: string | null;
   selectedCard: PortfolioOrderStatusPrimaryCardId | null;
   selectedDrilldown: string | null;
+  onlyWithOpenCr: boolean;
+  onlyWithDivergences: boolean;
+  onlyWithPendingBalance: boolean;
   page: number;
   pageSize: number;
   sortBy: PortfolioOrderStatusApiSortBy;
@@ -189,6 +192,15 @@ function asYear(value: unknown): number | null {
   return n;
 }
 
+function asBool(value: unknown): boolean {
+  if (value === true || value === 1 || value === "1") return true;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return v === "true" || v === "yes" || v === "on";
+  }
+  return false;
+}
+
 function clampPageSize(value: unknown): number {
   if (value == null || value === "") return PORTFOLIO_ORDER_STATUS_DEFAULT_PAGE_SIZE;
   const n = typeof value === "number" ? value : Number(String(value));
@@ -271,6 +283,7 @@ export function parsePortfolioOrderStatusFilters(
     sellerName: asString(query.sellerName),
     responsibleName: asString(query.responsibleName),
     orderCode: asString(query.orderCode),
+    productOrSku: asString(query.productOrSku),
     consolidatedStatus,
     operationalStatus: asString(query.operationalStatus),
     financialStatus: asString(query.financialStatus),
@@ -278,6 +291,9 @@ export function parsePortfolioOrderStatusFilters(
     alert: asString(query.alert),
     selectedCard,
     selectedDrilldown: asString(query.selectedDrilldown),
+    onlyWithOpenCr: asBool(query.onlyWithOpenCr),
+    onlyWithDivergences: asBool(query.onlyWithDivergences),
+    onlyWithPendingBalance: asBool(query.onlyWithPendingBalance),
     page: clampPage(query.page),
     pageSize: clampPageSize(query.pageSize),
     sortBy,
@@ -293,6 +309,8 @@ export function toServiceFilters(
     customerExternalId: filters.customerExternalId,
     customerName: filters.customerName,
     sellerName: filters.sellerName,
+    responsibleName: filters.responsibleName,
+    productOrSku: filters.productOrSku,
     consolidatedStatus: filters.consolidatedStatus,
     operationalStatus: filters.operationalStatus,
     financialStatus: filters.financialStatus,
@@ -300,6 +318,9 @@ export function toServiceFilters(
     alert: filters.alert,
     selectedCard: filters.selectedCard,
     selectedDrilldown: filters.selectedDrilldown,
+    onlyWithOpenCr: filters.onlyWithOpenCr,
+    onlyWithDivergences: filters.onlyWithDivergences,
+    onlyWithPendingBalance: filters.onlyWithPendingBalance,
     year: filters.year,
     from: filters.from,
     to: filters.to,
