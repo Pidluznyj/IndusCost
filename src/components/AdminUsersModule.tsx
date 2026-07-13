@@ -43,6 +43,8 @@ import {
   draftFromPayloadTree,
   filterAdminUsersList,
   filterTreeBySearch,
+  flattenPermissionTreeLabels,
+  formatPermissionFlagsHuman,
   isPermissionDraftDirty,
   overridesPayloadFromDraft,
   setModuleFlags,
@@ -242,6 +244,11 @@ export const AdminUsersModule: React.FC = () => {
     return filterTreeBySearch(detail.tree, treeSearch);
   }, [detail, treeSearch]);
 
+  const treeLabels = useMemo(
+    () => (detail ? flattenPermissionTreeLabels(detail.tree) : new Map<string, string>()),
+    [detail]
+  );
+
   const confirmClearIfNeeded = (hasCustom: boolean, message: string): boolean => {
     if (!hasCustom) return true;
     return window.confirm(message);
@@ -269,7 +276,7 @@ export const AdminUsersModule: React.FC = () => {
     if (
       !confirmClearIfNeeded(
         detail.hasCustomPermissions,
-        "Restaurar o padrão da role remove as permissões customizadas. Continuar?"
+        "Restaurar o padrão do perfil remove as permissões personalizadas. Continuar?"
       )
     ) {
       return;
@@ -281,7 +288,7 @@ export const AdminUsersModule: React.FC = () => {
       setDraft(draftFromPayloadTree(payload.tree));
       await loadUsers();
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : "Falha ao restaurar padrão.");
+      setDetailError(e instanceof Error ? e.message : "Não foi possível restaurar o padrão.");
     } finally {
       setSaving(false);
     }
@@ -292,7 +299,7 @@ export const AdminUsersModule: React.FC = () => {
     if (
       !confirmClearIfNeeded(
         true,
-        "Limpar todas as customizações e voltar ao preset da role?"
+        "Limpar todas as personalizações e voltar ao padrão do perfil?"
       )
     ) {
       return;
@@ -304,7 +311,7 @@ export const AdminUsersModule: React.FC = () => {
       setDraft(draftFromPayloadTree(payload.tree));
       await loadUsers();
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : "Falha ao limpar customizações.");
+      setDetailError(e instanceof Error ? e.message : "Não foi possível limpar as personalizações.");
     } finally {
       setSaving(false);
     }
@@ -313,13 +320,13 @@ export const AdminUsersModule: React.FC = () => {
   const handleRoleChange = async (role: AppUserRole) => {
     if (!detail || !selectedId || role === detail.user.role) return;
     if (detail.warnings.isLastSuperAdmin && role !== "SUPER_ADMIN") {
-      setDetailError("Não é possível rebaixar o único Super Administrador ativo.");
+      setDetailError("Não é possível alterar o perfil do único Super Administrador ativo.");
       return;
     }
     if (
       !confirmClearIfNeeded(
         detail.hasCustomPermissions,
-        "Trocar o perfil aplica o preset da nova role e remove customizações. Continuar?"
+        "Trocar o perfil aplica o padrão do novo perfil e remove personalizações. Continuar?"
       )
     ) {
       return;
@@ -430,8 +437,14 @@ export const AdminUsersModule: React.FC = () => {
 
   if (!canManage) {
     return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-        Você não tem permissão para gerenciar usuários.
+      <div
+        className="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-6 text-sm text-amber-950"
+        data-testid="admin-users-no-permission"
+      >
+        <p className="font-semibold">Sem permissão</p>
+        <p className="mt-1 text-amber-900/90">
+          Você não tem acesso para gerenciar usuários e permissões. Peça a um administrador.
+        </p>
       </div>
     );
   }
@@ -456,7 +469,7 @@ export const AdminUsersModule: React.FC = () => {
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", (saving || loading) && "animate-spin")} />
-            Recarregar permissões
+            Atualizar acessos
           </button>
           <button
             type="button"
@@ -523,7 +536,7 @@ export const AdminUsersModule: React.FC = () => {
                   onChange={(e) => setRoleFilter(e.target.value as AppUserRole | "ALL")}
                   className="rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
                 >
-                  <option value="ALL">Todas as roles</option>
+                  <option value="ALL">Todos os perfis</option>
                   {APP_USER_ROLE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
@@ -548,16 +561,21 @@ export const AdminUsersModule: React.FC = () => {
                   checked={customOnly}
                   onChange={(e) => setCustomOnly(e.target.checked)}
                 />
-                Com permissão customizada
+                Com acesso personalizado
               </label>
             </div>
             <div className="flex-1 overflow-y-auto">
               {loading ? (
-                <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
+                <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando usuários…
                 </div>
               ) : filteredUsers.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
+                <div className="p-6 text-center space-y-1">
+                  <p className="text-sm font-medium text-foreground">Nenhum usuário encontrado</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ajuste a busca ou os filtros, ou crie um novo usuário.
+                  </p>
+                </div>
               ) : (
                 <ul className="divide-y divide-border/60">
                   {filteredUsers.map((user) => {
@@ -596,7 +614,7 @@ export const AdminUsersModule: React.FC = () => {
                             </span>
                             {user.hasCustomPermissions ? (
                               <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] font-semibold text-amber-900">
-                                Permissões customizadas
+                                Personalizado
                               </span>
                             ) : null}
                             {user.id === currentUserId ? (
@@ -616,12 +634,16 @@ export const AdminUsersModule: React.FC = () => {
 
           <div className="rounded-xl border border-border bg-card min-h-[28rem] flex flex-col">
             {!selectedId ? (
-              <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-                Selecione um usuário para gerenciar permissões.
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <Shield className="h-8 w-8 text-muted-foreground/50" aria-hidden />
+                <p className="text-sm font-medium text-foreground">Nenhum usuário selecionado</p>
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  Escolha um usuário à esquerda para ver e ajustar o acesso a menus, abas e ações.
+                </p>
               </div>
             ) : detailLoading && !detail ? (
               <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Carregando permissões…
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando acessos…
               </div>
             ) : detail ? (
               <>
@@ -650,13 +672,13 @@ export const AdminUsersModule: React.FC = () => {
                   </div>
 
                   {detail.warnings.editingSuperAdmin ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 flex gap-2">
+                    <div className="rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 flex gap-2">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                       <span>
-                        Você está editando um SUPER_ADMIN. O acesso é total; a árvore fica somente
+                        Este usuário é Super Administrador: o acesso é total e a árvore fica somente
                         leitura.
                         {detail.warnings.isLastSuperAdmin
-                          ? " Este é o único Super Administrador ativo."
+                          ? " Ele é o único Super Administrador ativo — o perfil não pode ser alterado."
                           : null}
                       </span>
                     </div>
@@ -664,11 +686,16 @@ export const AdminUsersModule: React.FC = () => {
 
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-muted-foreground">
-                      Perfil / preset
+                      Perfil de acesso
                     </label>
                     <select
                       value={detail.user.role}
                       disabled={saving || detail.warnings.isLastSuperAdmin}
+                      title={
+                        detail.warnings.isLastSuperAdmin
+                          ? "Não é possível alterar o único Super Administrador ativo"
+                          : undefined
+                      }
                       onChange={(e) => void handleRoleChange(e.target.value as AppUserRole)}
                       className="w-full max-w-md rounded-lg border border-border bg-background px-3 py-2 text-sm"
                     >
@@ -717,25 +744,25 @@ export const AdminUsersModule: React.FC = () => {
                   {innerTab === "permissions" ? (
                     <>
                       <div className="flex flex-wrap gap-2">
-                        <div className="relative flex-1 min-w-[160px]">
+                        <div className="relative flex-1 min-w-[160px] basis-full sm:basis-auto">
                           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                           <input
                             value={treeSearch}
                             onChange={(e) => setTreeSearch(e.target.value)}
-                            placeholder="Buscar na árvore…"
-                            className="w-full rounded-lg border border-border pl-8 pr-3 py-2 text-xs"
+                            placeholder="Buscar menu, aba ou ação…"
+                            className="w-full rounded-lg border border-border bg-background pl-8 pr-3 py-2 text-xs"
                           />
                         </div>
                         <button
                           type="button"
-                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
                           onClick={() => setExpanded(new Set(collectTreeKeys(detail.tree)))}
                         >
                           Expandir tudo
                         </button>
                         <button
                           type="button"
-                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
                           onClick={() => setExpanded(new Set())}
                         >
                           Recolher tudo
@@ -743,7 +770,8 @@ export const AdminUsersModule: React.FC = () => {
                         <button
                           type="button"
                           disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          title="Marca Ver, Executar e Gerenciar no primeiro menu da lista e nos itens abaixo"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                           onClick={() => {
                             const root = detail.tree[0];
                             if (!root) return;
@@ -756,23 +784,23 @@ export const AdminUsersModule: React.FC = () => {
                             );
                           }}
                         >
-                          Marcar tudo do 1º módulo
+                          Liberar 1º menu
                         </button>
                         <button
                           type="button"
                           disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                           onClick={() => void handleClearCustom()}
                         >
-                          Limpar customizações
+                          Limpar personalizações
                         </button>
                         <button
                           type="button"
                           disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                           onClick={() => void handleRestoreDefault()}
                         >
-                          Restaurar padrão da role
+                          Restaurar padrão do perfil
                         </button>
                       </div>
                       <UserPermissionTree
@@ -780,6 +808,11 @@ export const AdminUsersModule: React.FC = () => {
                         draft={draft}
                         expanded={expanded}
                         readOnly={detail.treeReadOnly}
+                        emptyMessage={
+                          treeSearch.trim()
+                            ? "Nenhuma área corresponde à busca."
+                            : "Nenhuma área de acesso disponível."
+                        }
                         onToggleExpand={(key) => {
                           setExpanded((prev) => {
                             const next = new Set(prev);
@@ -804,29 +837,29 @@ export const AdminUsersModule: React.FC = () => {
                       />
                       <SummaryCard title="Abas bloqueadas" items={detail.summary.tabsBlocked} />
                       <SummaryCard
-                        title="Ações críticas liberadas"
+                        title="Ações sensíveis liberadas"
                         items={detail.summary.criticalActionsAllowed}
                       />
                       <div className="sm:col-span-2 rounded-xl border border-border bg-muted/20 p-3">
-                        <h5 className="text-xs font-bold">Diferenças vs padrão da role</h5>
+                        <h5 className="text-xs font-bold">Diferenças em relação ao padrão do perfil</h5>
                         {detail.diffVsRole.length === 0 ? (
                           <p className="mt-2 text-xs text-muted-foreground">
-                            Sem customizações — alinhado ao preset.
+                            Sem personalizações — alinhado ao padrão do perfil.
                           </p>
                         ) : (
-                          <ul className="mt-2 space-y-1.5">
+                          <ul className="mt-2 space-y-2">
                             {detail.diffVsRole.map((d) => (
-                              <li key={d.resourceKey} className="text-xs">
+                              <li
+                                key={d.resourceKey}
+                                className="rounded-lg border border-border/60 bg-background px-2.5 py-2 text-xs"
+                              >
                                 <span className="font-semibold">{d.label}</span>
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  · role V{d.roleFlags.canView ? "1" : "0"}E
-                                  {d.roleFlags.canExecute ? "1" : "0"}G
-                                  {d.roleFlags.canManage ? "1" : "0"} → efetivo V
-                                  {d.effectiveFlags.canView ? "1" : "0"}E
-                                  {d.effectiveFlags.canExecute ? "1" : "0"}G
-                                  {d.effectiveFlags.canManage ? "1" : "0"}
-                                </span>
+                                <p className="mt-1 text-muted-foreground">
+                                  Padrão: {formatPermissionFlagsHuman(d.roleFlags)}
+                                </p>
+                                <p className="text-foreground">
+                                  Atual: {formatPermissionFlagsHuman(d.effectiveFlags)}
+                                </p>
                               </li>
                             ))}
                           </ul>
@@ -838,22 +871,29 @@ export const AdminUsersModule: React.FC = () => {
                   {innerTab === "audit" ? (
                     <div className="space-y-2">
                       {auditError ? (
-                        <p className="text-sm text-amber-800">{auditError}</p>
+                        <div className="rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-sm text-amber-950">
+                          {auditError}
+                        </div>
                       ) : null}
                       {!auditError && audit.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          Sem histórico de alterações de permissão.
-                        </p>
+                        <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center">
+                          <p className="text-sm text-muted-foreground">
+                            Ainda não há histórico de alterações de acesso para este usuário.
+                          </p>
+                        </div>
                       ) : null}
                       {audit.map((entry) => {
                         const summary = summarizePermissionAuditChange(
                           entry.beforeJson,
                           entry.afterJson
                         );
+                        const areaLabel = entry.resourceKey
+                          ? treeLabels.get(entry.resourceKey) ?? entry.resourceKey
+                          : "Perfil / acesso geral";
                         return (
                           <div
                             key={entry.id}
-                            className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                            className="rounded-lg border border-border bg-background px-3 py-2.5 text-xs"
                           >
                             <div className="flex flex-wrap justify-between gap-2">
                               <span className="font-semibold">
@@ -863,13 +903,13 @@ export const AdminUsersModule: React.FC = () => {
                                 {formatDateTimePt(entry.createdAt)}
                               </span>
                             </div>
-                            <p className="text-muted-foreground mt-0.5">
-                              Ator: {entry.actor?.name ?? "—"}
+                            <p className="text-muted-foreground mt-1">
+                              Alterado por: {entry.actor?.name ?? "—"}
                               {entry.actor?.email ? ` (${entry.actor.email})` : ""}
                             </p>
                             <p className="mt-0.5">
-                              <span className="text-muted-foreground">Recurso: </span>
-                              {entry.resourceKey ?? "—"}
+                              <span className="text-muted-foreground">Área: </span>
+                              {areaLabel}
                             </p>
                             <p className="mt-0.5">
                               <span className="text-muted-foreground">Antes: </span>
@@ -890,17 +930,22 @@ export const AdminUsersModule: React.FC = () => {
                 </div>
 
                 {innerTab === "permissions" && !detail.treeReadOnly ? (
-                  <div className="border-t border-border p-3 flex flex-wrap items-center justify-between gap-2 bg-muted/20">
-                    <span className="text-[11px] text-muted-foreground">
+                  <div className="border-t border-border p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between bg-muted/20">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
                       {pending ? (
-                        <span className="font-semibold text-amber-800">Alterações pendentes</span>
+                        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-950">
+                          Alterações pendentes
+                        </span>
                       ) : (
-                        "Sem alterações pendentes"
+                        <span className="text-muted-foreground">Sem alterações pendentes</span>
                       )}
                       {activeSuperAdminCount > 0 ? (
-                        <span className="ml-2">· {activeSuperAdminCount} Super Admin ativos</span>
+                        <span className="text-muted-foreground">
+                          · {activeSuperAdminCount} Super Admin ativo
+                          {activeSuperAdminCount === 1 ? "" : "s"}
+                        </span>
                       ) : null}
-                    </span>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -919,7 +964,7 @@ export const AdminUsersModule: React.FC = () => {
                         onClick={() => void handleRestoreDefault()}
                         className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
                       >
-                        Restaurar padrão da role
+                        Restaurar padrão do perfil
                       </button>
                       <button
                         type="button"
@@ -934,7 +979,18 @@ export const AdminUsersModule: React.FC = () => {
                 ) : null}
               </>
             ) : (
-              <div className="p-6 text-sm text-red-700">{detailError ?? "Falha ao carregar."}</div>
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <p className="text-sm font-medium text-red-800">
+                  {detailError ?? "Não foi possível carregar este usuário."}
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-primary underline-offset-2 hover:underline"
+                  onClick={() => selectedId && void loadDetail(selectedId)}
+                >
+                  Tentar novamente
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1078,14 +1134,14 @@ export const AdminUsersModule: React.FC = () => {
 
 function SummaryCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/20 p-3">
+    <div className="rounded-xl border border-border bg-muted/20 p-3 h-full">
       <h5 className="text-xs font-bold">{title}</h5>
       {items.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">Nenhum</p>
+        <p className="mt-2 text-xs text-muted-foreground">Nenhum item nesta lista.</p>
       ) : (
         <ul className="mt-2 space-y-1">
           {items.map((item) => (
-            <li key={item} className="text-xs text-foreground">
+            <li key={item} className="text-xs text-foreground leading-snug">
               {item}
             </li>
           ))}

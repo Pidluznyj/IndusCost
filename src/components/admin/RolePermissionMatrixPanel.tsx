@@ -105,8 +105,16 @@ export function RolePermissionMatrixPanel({
                     style={{ paddingLeft: row.depth * 14 }}
                   >
                     {row.label}
-                    <span className="ml-1.5 text-[9px] font-normal uppercase text-muted-foreground">
-                      {row.type}
+                    <span className="ml-1.5 text-[9px] font-normal text-muted-foreground">
+                      {row.type === "MENU"
+                        ? "Menu"
+                        : row.type === "SUBMENU"
+                          ? "Submenu"
+                          : row.type === "TAB"
+                            ? "Aba"
+                            : row.type === "ACTION"
+                              ? "Ação"
+                              : row.type}
                     </span>
                   </span>
                 </td>

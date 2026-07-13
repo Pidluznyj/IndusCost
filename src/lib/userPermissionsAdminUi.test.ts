@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   draftFromPayloadTree,
   filterAdminUsersList,
+  formatPermissionFlagsHuman,
   isPermissionDraftDirty,
   overridesPayloadFromDraft,
+  permissionResourceTypeLabel,
   setModuleFlags,
 } from "./userPermissionsAdminUi.ts";
 import type { EditableTreeNodeDto } from "./userPermissionsAdminClient.ts";
@@ -142,5 +144,13 @@ describe("userPermissionsAdminUi", () => {
     });
     assert.equal(next.financeiro?.canView, true);
     assert.equal(next["financeiro.conciliacao_carteira"]?.canExecute, true);
+  });
+
+  it("rótulos amigáveis de tipo e flags", () => {
+    assert.equal(permissionResourceTypeLabel("TAB"), "Aba");
+    assert.equal(
+      formatPermissionFlagsHuman({ canView: true, canExecute: false, canManage: true }),
+      "Ver · Gerenciar"
+    );
   });
 });

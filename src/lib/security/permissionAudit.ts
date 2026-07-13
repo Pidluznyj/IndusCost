@@ -280,25 +280,25 @@ export function buildPresetApplyAuditPlans(args: {
 export function permissionAuditActionLabel(action: string): string {
   switch (action) {
     case PermissionAuditActions.ROLE_CHANGED:
-      return "Role alterada";
+      return "Perfil alterado";
     case PermissionAuditActions.PERMISSION_GRANTED:
       return "Permissão liberada";
     case PermissionAuditActions.PERMISSION_BLOCKED:
       return "Permissão bloqueada";
     case PermissionAuditActions.OVERRIDE_CREATED:
-      return "Override criado";
+      return "Personalização criada";
     case PermissionAuditActions.OVERRIDE_REMOVED:
-      return "Override removido";
+      return "Personalização removida";
     case PermissionAuditActions.OVERRIDE_UPDATED:
-      return "Override atualizado";
+      return "Personalização atualizada";
     case PermissionAuditActions.PRESET_APPLIED:
-      return "Preset aplicado";
+      return "Padrão do perfil aplicado";
     case PermissionAuditActions.PERMISSIONS_RESTORED_TO_DEFAULT:
-      return "Permissões restauradas ao padrão";
+      return "Acessos restaurados ao padrão";
     case "SAVE_OVERRIDES":
-      return "Overrides salvos";
+      return "Personalizações salvas";
     case "APPLY_ROLE_PRESET":
-      return "Preset da role aplicado";
+      return "Padrão do perfil aplicado";
     default:
       return action;
   }
@@ -334,16 +334,16 @@ export function summarizePermissionAuditChange(
 
   if (before?.role != null || after?.role != null) {
     return {
-      before: before?.role != null ? `Role ${String(before.role)}` : "—",
-      after: after?.role != null ? `Role ${String(after.role)}` : "—",
+      before: before?.role != null ? `Perfil ${String(before.role)}` : "—",
+      after: after?.role != null ? `Perfil ${String(after.role)}` : "—",
       reason,
     };
   }
 
   if (before?.overrideCount != null || after?.overrideCount != null) {
     return {
-      before: `Overrides: ${String(before?.overrideCount ?? "—")}`,
-      after: `Overrides: ${String(after?.overrideCount ?? "—")}`,
+      before: `Personalizações: ${String(before?.overrideCount ?? "—")}`,
+      after: `Personalizações: ${String(after?.overrideCount ?? "—")}`,
       reason,
     };
   }

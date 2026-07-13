@@ -175,6 +175,51 @@ export function matrixStatusLabel(status: MatrixCellStatus): string {
   return "Parcial";
 }
 
+/** Rótulos amigáveis para o tipo hierárquico (evitar MENU/TAB crus na UI). */
+export function permissionResourceTypeLabel(
+  type: "MENU" | "SUBMENU" | "TAB" | "ACTION" | string
+): string {
+  switch (type) {
+    case "MENU":
+      return "Menu";
+    case "SUBMENU":
+      return "Submenu";
+    case "TAB":
+      return "Aba";
+    case "ACTION":
+      return "Ação";
+    default:
+      return type;
+  }
+}
+
+/** Resumo legível de flags Ver/Executar/Gerenciar. */
+export function formatPermissionFlagsHuman(flags: {
+  canView: boolean;
+  canExecute: boolean;
+  canManage: boolean;
+}): string {
+  const parts: string[] = [];
+  parts.push(flags.canView ? "Ver" : "Sem ver");
+  if (flags.canExecute) parts.push("Executar");
+  if (flags.canManage) parts.push("Gerenciar");
+  return parts.join(" · ");
+}
+
+export function flattenPermissionTreeLabels(
+  tree: readonly EditableTreeNodeDto[]
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const walk = (nodes: readonly EditableTreeNodeDto[]) => {
+    for (const n of nodes) {
+      map.set(n.key, n.label);
+      walk(n.children);
+    }
+  };
+  walk(tree);
+  return map;
+}
+
 export function wouldRemoveOwnUsersManage(args: {
   isEditingSelf: boolean;
   existingRole: AppUserRole;

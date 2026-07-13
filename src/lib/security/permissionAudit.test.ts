@@ -139,7 +139,7 @@ describe("permissionAudit — UI / ACL", () => {
   it("labels e resumo antes/depois", () => {
     assert.equal(
       permissionAuditActionLabel(PermissionAuditActions.OVERRIDE_CREATED),
-      "Override criado"
+      "Personalização criada"
     );
     const s = summarizePermissionAuditChange(
       { canView: false, canExecute: false, canManage: false },
