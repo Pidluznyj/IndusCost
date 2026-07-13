@@ -3,6 +3,11 @@
  * Segurança real fica no backend; aqui só experiência visual a partir de /api/auth/me.
  */
 
+import {
+  COMMISSIONS_LIVE_UI_TABS,
+  CRM_UI_TABS,
+  MATERIALS_UI_SECTIONS,
+} from "@/src/lib/moduleTabResources.js";
 import type { AppUserRole, AuthUser } from "@/src/lib/appAuthClient.js";
 
 export type PermissionAction = "view" | "execute" | "manage";
@@ -35,9 +40,31 @@ export const ResourceKeys = {
   COMERCIAL: "comercial",
   COMERCIAL_PEDIDOS_VENDA: "comercial.pedidos_venda",
   COMERCIAL_CRM: "comercial.crm",
+  COMERCIAL_CRM_TAB_GESTAO_GERAL: "comercial.crm.tab.gestao_geral",
+  COMERCIAL_CRM_TAB_GESTAO_VENDEDOR: "comercial.crm.tab.gestao_vendedor",
+  COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES: "comercial.crm.tab.carteira_clientes",
+  COMERCIAL_CRM_TAB_CLIENTE_360: "comercial.crm.tab.cliente_360",
   COMISSOES: "comissoes",
+  COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
+  COMISSOES_TAB_EXCECOES_CLIENTE: "comissoes.tab.excecoes_cliente",
+  COMISSOES_TAB_RELATORIOS: "comissoes.tab.relatorios",
+  COMISSOES_TAB_DASHBOARD: "comissoes.tab.dashboard",
+  COMISSOES_TAB_PREVISTAS: "comissoes.tab.previstas",
+  COMISSOES_TAB_CONFIRMADAS: "comissoes.tab.confirmadas",
+  COMISSOES_TAB_LIBERACAO: "comissoes.tab.liberacao",
+  COMISSOES_TAB_PAGAMENTOS: "comissoes.tab.pagamentos",
+  COMISSOES_TAB_PESSOAS: "comissoes.tab.pessoas",
+  COMISSOES_TAB_REGRAS: "comissoes.tab.regras",
+  COMISSOES_TAB_AUDITORIA: "comissoes.tab.auditoria",
+  COMISSOES_TAB_CONFIGURACOES: "comissoes.tab.configuracoes",
   SUPRIMENTOS: "suprimentos",
+  SUPRIMENTOS_TAB_CATALOGO: "suprimentos.tab.catalogo",
   SUPRIMENTOS_INTELIGENCIA_MERCADO: "suprimentos.inteligencia_mercado",
+  SUPRIMENTOS_MI_TAB_HOME: "suprimentos.inteligencia_mercado.tab.home",
+  SUPRIMENTOS_MI_TAB_MATERIA_PRIMA_360: "suprimentos.inteligencia_mercado.tab.materia_prima_360",
+  SUPRIMENTOS_MI_TAB_FORNECEDORES: "suprimentos.inteligencia_mercado.tab.fornecedores",
+  SUPRIMENTOS_MI_TAB_ALERTAS: "suprimentos.inteligencia_mercado.tab.alertas",
+  SUPRIMENTOS_MI_TAB_CONFIGURACOES: "suprimentos.inteligencia_mercado.tab.configuracoes",
   ADMIN: "admin",
   ADMIN_USUARIOS: "admin.usuarios",
   ADMIN_PERMISSOES: "admin.permissoes",
@@ -144,11 +171,132 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     legacyAliasKeys: ["crm.view", "crm.general.view", "crm.seller.view"],
   },
   {
+    key: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL,
+    label: "Gestão Geral",
+    type: "TAB",
+    parentKey: ResourceKeys.COMERCIAL_CRM,
+    legacyAliasKeys: ["crm.general.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR,
+    label: "Gestão por Vendedor",
+    type: "TAB",
+    parentKey: ResourceKeys.COMERCIAL_CRM,
+    legacyAliasKeys: ["crm.seller.own", "crm.seller.all", "crm.seller.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES,
+    label: "Carteira de Clientes",
+    type: "TAB",
+    parentKey: ResourceKeys.COMERCIAL_CRM,
+    legacyAliasKeys: ["crm.general.view", "crm.seller.own", "crm.seller.all", "crm.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360,
+    label: "Cliente 360",
+    type: "TAB",
+    parentKey: ResourceKeys.COMERCIAL_CRM,
+    legacyAliasKeys: [
+      "crm.customer_cockpit.view",
+      "customers.commercial360.view",
+      "customers.view",
+    ],
+  },
+  {
     key: ResourceKeys.COMISSOES,
     label: "Comissões",
     type: "MENU",
     parentKey: null,
     legacyAliasKeys: ["commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES,
+    label: "Fechamento do mês",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: [
+      "commissions.view",
+      "commissions.dashboard.view",
+      "commissions.payments.view",
+      "commissions.release.view",
+    ],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE,
+    label: "Exceções por cliente",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.rules.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_RELATORIOS,
+    label: "Relatórios",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.view", "commissions.dashboard.view", "commissions.audit.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_DASHBOARD,
+    label: "Dashboard",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.dashboard.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_PREVISTAS,
+    label: "Previstas",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.forecast.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_CONFIRMADAS,
+    label: "Confirmadas",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.confirmed.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_LIBERACAO,
+    label: "Liberação por Recebimento",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.release.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_PAGAMENTOS,
+    label: "Pagamentos",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.payments.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_PESSOAS,
+    label: "Pessoas Comissionadas",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.people.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_REGRAS,
+    label: "Regras",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.rules.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_AUDITORIA,
+    label: "Auditoria",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.audit.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_CONFIGURACOES,
+    label: "Configurações",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.settings.view", "commissions.view"],
   },
   {
     key: ResourceKeys.SUPRIMENTOS,
@@ -158,11 +306,59 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     legacyAliasKeys: ["materials.view", "costs.view"],
   },
   {
+    key: ResourceKeys.SUPRIMENTOS_TAB_CATALOGO,
+    label: "Matérias-primas",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS,
+    legacyAliasKeys: ["materials.view", "costs.view"],
+  },
+  {
     key: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
     label: "Inteligência de Mercado",
     type: "SUBMENU",
     parentKey: ResourceKeys.SUPRIMENTOS,
     legacyAliasKeys: [
+      "materials.view",
+      "materials.market_quote.approve",
+      "materials.market_quote.manual_exchange",
+    ],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_MI_TAB_HOME,
+    label: "Home Inteligência",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    legacyAliasKeys: ["materials.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_MI_TAB_MATERIA_PRIMA_360,
+    label: "Matéria-prima 360",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    legacyAliasKeys: ["materials.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_MI_TAB_FORNECEDORES,
+    label: "Fornecedores / cotações",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    legacyAliasKeys: ["materials.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_MI_TAB_ALERTAS,
+    label: "Alertas",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    legacyAliasKeys: ["materials.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_MI_TAB_CONFIGURACOES,
+    label: "Configurações",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    legacyAliasKeys: [
+      "materials.edit",
+      "materials.view",
       "materials.market_quote.approve",
       "materials.market_quote.manual_exchange",
     ],
@@ -228,9 +424,31 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
     [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
     [ResourceKeys.COMISSOES]: V,
+    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
+    [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
+    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
+    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
+    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
+    [ResourceKeys.COMISSOES_TAB_LIBERACAO]: V,
+    [ResourceKeys.COMISSOES_TAB_PAGAMENTOS]: V,
+    [ResourceKeys.COMISSOES_TAB_PESSOAS]: V,
+    [ResourceKeys.COMISSOES_TAB_REGRAS]: V,
+    [ResourceKeys.COMISSOES_TAB_AUDITORIA]: V,
+    [ResourceKeys.COMISSOES_TAB_CONFIGURACOES]: V,
     [ResourceKeys.SUPRIMENTOS]: V,
+    [ResourceKeys.SUPRIMENTOS_TAB_CATALOGO]: V,
     [ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO]: V,
+    [ResourceKeys.SUPRIMENTOS_MI_TAB_HOME]: V,
+    [ResourceKeys.SUPRIMENTOS_MI_TAB_MATERIA_PRIMA_360]: V,
+    [ResourceKeys.SUPRIMENTOS_MI_TAB_FORNECEDORES]: V,
+    [ResourceKeys.SUPRIMENTOS_MI_TAB_ALERTAS]: V,
+    [ResourceKeys.SUPRIMENTOS_MI_TAB_CONFIGURACOES]: VE,
     [ResourceKeys.ADMIN]: V,
     [ResourceKeys.ADMIN_USUARIOS]: VM,
     [ResourceKeys.ADMIN_PERMISSOES]: V,
@@ -242,20 +460,47 @@ const ROLE_MATRIX: Record<
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
     [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
     [ResourceKeys.COMISSOES]: V,
+    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
+    [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
+    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
+    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
+    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
+    [ResourceKeys.COMISSOES_TAB_LIBERACAO]: V,
+    [ResourceKeys.COMISSOES_TAB_PAGAMENTOS]: V,
+    [ResourceKeys.COMISSOES_TAB_PESSOAS]: V,
+    [ResourceKeys.COMISSOES_TAB_REGRAS]: V,
+    [ResourceKeys.COMISSOES_TAB_AUDITORIA]: V,
   }),
   SELLER: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
     [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
     [ResourceKeys.COMISSOES]: V,
+    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
+    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
+    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
+    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
+    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
   }),
   VIEWER: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
     [ResourceKeys.COMERCIAL]: V,
     [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
     [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
+    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
   }),
 };
 
@@ -400,6 +645,11 @@ export type PermissionsApi = {
   canManage: (resourceKey: string) => boolean;
   getAllowedTabs: (parentResourceKey: string) => FrontendPermissionResource[];
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
+  listAllowedCrmTabs: () => Array<"general" | "seller" | "portfolio">;
+  listAllowedCommissionsLiveTabs: () => Array<
+    "monthlyClosing" | "customerExclusions" | "reports"
+  >;
+  listAllowedMaterialsSections: () => Array<"catalog" | "marketIntelligence">;
   canViewPortfolioModule: () => boolean;
 };
 
@@ -425,6 +675,15 @@ export function createPermissionsApi(user: AuthUser | null | undefined): Permiss
       return PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) => canView(t.resourceKey)).map(
         (t) => t.id
       );
+    },
+    listAllowedCrmTabs() {
+      return CRM_UI_TABS.filter((t) => canView(t.resourceKey)).map((t) => t.id);
+    },
+    listAllowedCommissionsLiveTabs() {
+      return COMMISSIONS_LIVE_UI_TABS.filter((t) => canView(t.resourceKey)).map((t) => t.id);
+    },
+    listAllowedMaterialsSections() {
+      return MATERIALS_UI_SECTIONS.filter((t) => canView(t.resourceKey)).map((t) => t.id);
     },
     canViewPortfolioModule() {
       return (

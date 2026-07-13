@@ -2935,7 +2935,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.get(
     "/api/materials/market-intelligence/monitored",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
     async (req, res) => {
       try {
         const q = typeof req.query.q === "string" ? req.query.q : "";
@@ -2986,7 +2986,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.get(
     "/api/materials/market-intelligence/reports",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
     async (req, res) => {
       try {
         const payload = await buildMaterialMarketIntelligenceReportForApi(
@@ -3012,7 +3012,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.get(
     "/api/materials/market-intelligence/opportunities",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
     async (req, res) => {
       try {
         const volume = parseMaterialMarketSavingsVolume(
@@ -3061,7 +3061,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.get(
     "/api/materials/market-intelligence/alerts",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_ALERTAS, "view"),
     async (req, res) => {
       try {
         const statusFilter = parseMaterialMarketAlertStatusFilter(req.query.status);
@@ -12372,7 +12372,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   /** CRM Fase 2 — dashboard gerencial comercial (base principal: SalesOrder). */
-  app.get("/api/crm/management-dashboard", requireAppAuth, requirePermission("crm.general.view"), async (_req, res) => {
+  app.get(
+    "/api/crm/management-dashboard",
+    requireAppAuth,
+    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL, "view"),
+    async (_req, res) => {
     try {
       const payload = await buildCrmManagementDashboardResponse();
       res.json(payload);
@@ -12383,7 +12387,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   /** CRM Fase 3 — gestão comercial por vendedor (base principal: SalesOrder). */
-  app.get("/api/crm/seller-dashboard", requireAppAuth, requireAnyPermission(["crm.seller.own", "crm.seller.all"]), async (req, res) => {
+  app.get(
+    "/api/crm/seller-dashboard",
+    requireAppAuth,
+    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR, "view"),
+    async (req, res) => {
     const parseExternalSellerIdQuery = (raw: unknown): number | null => {
       if (raw === undefined || raw === null || raw === "") return null;
       const n = Number.parseInt(String(raw).trim(), 10);
@@ -14222,6 +14230,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   registerCommissionsRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+    requirePermission: requireResourcePermission,
     getCurrentAppUser,
   });
 

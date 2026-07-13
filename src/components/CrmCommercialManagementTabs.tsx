@@ -1,54 +1,45 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { isCrmOwnSellerOnly } from "@/src/lib/modulePermissions";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
-  canAccessCrmGeneral,
-  canAccessCrmPortfolio,
-  canAccessCrmSeller,
-  isCrmOwnSellerOnly,
-} from "@/src/lib/modulePermissions";
+  CRM_UI_TABS,
+  type CrmUiTabId,
+} from "@/src/lib/moduleTabResources";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 
-export type CrmManagementTabId = "general" | "seller" | "portfolio";
+export type CrmManagementTabId = CrmUiTabId;
 
 export type CrmCommercialManagementTabsProps = {
   activeTab: CrmManagementTabId;
   onTabChange: (tab: CrmManagementTabId) => void;
 };
 
-const ALL_TABS: {
-  id: CrmManagementTabId;
-  label: string;
-  ownLabel?: string;
-}[] = [
-  { id: "general", label: "Gestão Geral" },
-  { id: "seller", label: "Gestão por Vendedor", ownLabel: "Meu Dashboard" },
-  { id: "portfolio", label: "Carteira de Clientes" },
-];
-
-function isTabVisible(
-  tabId: CrmManagementTabId,
-  auth: ReturnType<typeof useAuth>
-): boolean {
-  if (tabId === "general") return canAccessCrmGeneral(auth);
-  if (tabId === "seller") return canAccessCrmSeller(auth);
-  return canAccessCrmPortfolio(auth);
-}
-
 export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsProps> = ({
   activeTab,
   onTabChange,
 }) => {
   const auth = useAuth();
+  const { canView, listAllowedCrmTabs } = usePermissions();
   const ownSellerTab = isCrmOwnSellerOnly(auth);
-  const tabs = ALL_TABS.filter((tab) => isTabVisible(tab.id, auth));
+  const allowedIds = new Set(listAllowedCrmTabs());
+  const tabs = CRM_UI_TABS.filter((tab) => allowedIds.has(tab.id) && canView(tab.resourceKey));
 
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground border-b border-border pb-3" role="status">
+        {PERMISSION_EMPTY_TABS_MESSAGE}
+      </p>
+    );
+  }
 
   return (
     <div
       className="flex flex-wrap gap-2 border-b border-border pb-3"
       role="tablist"
       aria-label="Visões de gestão comercial"
+      data-testid="crm-management-tabs"
     >
       {tabs.map((tab) => {
         const active = activeTab === tab.id;
@@ -77,12 +68,33 @@ export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsPr
 };
 
 export function getDefaultCrmManagementTab(auth: {
+  canView?: (resourceKey: string) => boolean;
   hasPermission: (p: string) => boolean;
   hasAnyPermission: (ps: string[]) => boolean;
 }): CrmManagementTabId | null {
-  if (canAccessCrmSeller(auth) && !canAccessCrmGeneral(auth)) return "seller";
-  if (canAccessCrmGeneral(auth)) return "general";
-  if (canAccessCrmSeller(auth)) return "seller";
-  if (canAccessCrmPortfolio(auth)) return "portfolio";
-  return null;
+  const canView =
+    auth.canView ??
+    ((key: string) => {
+      const tab = CRM_UI_TABS.find((t) => t.resourceKey === key);
+      if (!tab) return false;
+      // fallback legado se API de permissões ainda não injetada
+      if (tab.id === "general") return auth.hasPermission("crm.general.view");
+      if (tab.id === "seller") {
+        return (
+          auth.hasPermission("crm.seller.all") || auth.hasPermission("crm.seller.own")
+        );
+      }
+      return (
+        auth.hasPermission("crm.general.view") ||
+        auth.hasPermission("crm.seller.all") ||
+        auth.hasPermission("crm.seller.own")
+      );
+    });
+
+  const allowed = CRM_UI_TABS.filter((t) => canView(t.resourceKey));
+  if (allowed.length === 0) return null;
+  const sellerOnly =
+    allowed.some((t) => t.id === "seller") && !allowed.some((t) => t.id === "general");
+  if (sellerOnly) return "seller";
+  return allowed[0]!.id;
 }

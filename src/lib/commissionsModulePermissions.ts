@@ -9,18 +9,38 @@ import {
   COMMISSIONS_SECTIONS,
   isCommissionsHiddenSection,
 } from "@/src/lib/commissionsNavigation.js";
+import {
+  COMMISSIONS_LIVE_UI_TABS,
+  TabResourceKeys,
+} from "@/src/lib/moduleTabResources.js";
+
+const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
+  monthlyClosing: TabResourceKeys.COMISSOES_FECHAMENTO,
+  customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
+  reports: TabResourceKeys.COMISSOES_RELATORIOS,
+};
 
 export function canAccessCommissionsModule(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
 }
 
+/**
+ * Visibilidade de seção: OR legado + mapeamento para resourceKey (quando checker
+ * expõe canViewResource — senão só legado).
+ */
 export function canViewCommissionsSection(
   sectionId: CommissionsSectionId,
-  check: PermissionChecker
+  check: PermissionChecker & { canViewResource?: (key: string) => boolean }
 ): boolean {
   if (isCommissionsHiddenSection(sectionId)) {
     return false;
   }
+
+  const resourceKey = LIVE_SECTION_RESOURCE[sectionId];
+  if (resourceKey && typeof check.canViewResource === "function") {
+    if (check.canViewResource(resourceKey)) return true;
+  }
+
   if (sectionId === "monthlyClosing") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
@@ -33,11 +53,19 @@ export function canViewCommissionsSection(
   return false;
 }
 
-export function resolveFirstAccessibleCommissionsPath(check: PermissionChecker): string | null {
+export function resolveFirstAccessibleCommissionsPath(
+  check: PermissionChecker & { canViewResource?: (key: string) => boolean }
+): string | null {
   const section = COMMISSIONS_SECTIONS.find((s) => canViewCommissionsSection(s.id, check));
   return section?.path ?? null;
 }
 
 export function canManageReceiptClosing(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS]);
+}
+
+export function listAllowedCommissionsLiveSectionIds(
+  canViewResource: (key: string) => boolean
+): Array<"monthlyClosing" | "customerExclusions" | "reports"> {
+  return COMMISSIONS_LIVE_UI_TABS.filter((t) => canViewResource(t.resourceKey)).map((t) => t.id);
 }

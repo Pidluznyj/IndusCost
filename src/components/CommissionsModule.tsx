@@ -9,10 +9,12 @@ import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   canViewCommissionsSection,
   resolveFirstAccessibleCommissionsPath,
 } from "@/src/lib/commissionsModulePermissions";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import {
   COMMISSIONS_LEGACY_PATH_REDIRECTS,
   COMMISSIONS_SECTIONS,
@@ -47,13 +49,15 @@ function CommissionsSectionGuard({
   sectionId,
   children,
   fallbackPath,
+  canViewResource,
 }: {
   sectionId: CommissionsSectionId;
   children: React.ReactNode;
   fallbackPath: string;
+  canViewResource: (key: string) => boolean;
 }) {
   const auth = useAuth();
-  if (!canViewCommissionsSection(sectionId, auth)) {
+  if (!canViewCommissionsSection(sectionId, { ...auth, canViewResource })) {
     return <Navigate to={fallbackPath} replace />;
   }
   return <>{children}</>;
@@ -61,14 +65,16 @@ function CommissionsSectionGuard({
 
 export function CommissionsModule() {
   const auth = useAuth();
+  const permissions = usePermissions();
   const location = useLocation();
+  const check = { ...auth, canViewResource: permissions.canView };
 
   const visibleSections = COMMISSIONS_SECTIONS.filter((section) =>
-    canViewCommissionsSection(section.id, auth)
+    canViewCommissionsSection(section.id, check)
   );
 
   const defaultPath =
-    resolveFirstAccessibleCommissionsPath(auth) ??
+    resolveFirstAccessibleCommissionsPath(check) ??
     visibleSections[0]?.path ??
     getCommissionsDefaultPath();
 
@@ -80,7 +86,7 @@ export function CommissionsModule() {
   const currentSection = parseCommissionsSectionFromPath(location.pathname);
   if (
     currentSection &&
-    !canViewCommissionsSection(currentSection, auth) &&
+    !canViewCommissionsSection(currentSection, check) &&
     location.pathname !== defaultPath
   ) {
     return <Navigate to={defaultPath} replace />;
@@ -89,13 +95,17 @@ export function CommissionsModule() {
   if (visibleSections.length === 0) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        Você não tem permissão para acessar o módulo Comissões.
+        {PERMISSION_EMPTY_TABS_MESSAGE}
       </div>
     );
   }
 
   const guard = (sectionId: CommissionsSectionId, page: React.ReactNode) => (
-    <CommissionsSectionGuard sectionId={sectionId} fallbackPath={defaultPath}>
+    <CommissionsSectionGuard
+      sectionId={sectionId}
+      fallbackPath={defaultPath}
+      canViewResource={permissions.canView}
+    >
       {page}
     </CommissionsSectionGuard>
   );

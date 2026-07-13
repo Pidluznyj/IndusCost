@@ -178,6 +178,10 @@ import { prisma } from "@/src/lib/prisma.js";
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requirePermission?: (
+    resourceKey: string,
+    action?: "view" | "execute" | "manage" | "admin"
+  ) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -227,97 +231,107 @@ async function resolveScopeOrRespond(
 }
 
 export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireAnyPermission, requirePermission, getCurrentAppUser } = auth;
+
+  const resourceOrAny = (resourceKey: string, legacy: readonly string[]) =>
+    [
+      requireAppAuth,
+      requirePermission
+        ? requirePermission(resourceKey, "view")
+        : requireAnyPermission([...legacy]),
+    ] as const;
 
   const viewAnyGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]),
   ] as const;
 
-  const dashboardGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS]),
-  ] as const;
+  const dashboardGuard = resourceOrAny(
+    "comissoes.tab.dashboard",
+    COMMISSIONS_DASHBOARD_VIEW_PERMISSIONS
+  );
 
-  const forecastGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_FORECAST_VIEW_PERMISSIONS]),
-  ] as const;
+  const forecastGuard = resourceOrAny(
+    "comissoes.tab.previstas",
+    COMMISSIONS_FORECAST_VIEW_PERMISSIONS
+  );
 
-  const confirmedGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS]),
-  ] as const;
+  const confirmedGuard = resourceOrAny(
+    "comissoes.tab.confirmadas",
+    COMMISSIONS_CONFIRMED_VIEW_PERMISSIONS
+  );
 
-  const apuracaoGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_APURACAO_VIEW_PERMISSIONS]),
-  ] as const;
+  const apuracaoGuard = resourceOrAny(
+    "comissoes.tab.confirmadas",
+    COMMISSIONS_APURACAO_VIEW_PERMISSIONS
+  );
 
-  const releaseGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_RELEASE_VIEW_PERMISSIONS]),
-  ] as const;
+  const releaseGuard = resourceOrAny(
+    "comissoes.tab.liberacao",
+    COMMISSIONS_RELEASE_VIEW_PERMISSIONS
+  );
 
-  const paymentsViewGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS]),
-  ] as const;
+  const paymentsViewGuard = resourceOrAny(
+    "comissoes.tab.pagamentos",
+    COMMISSIONS_PAYMENTS_VIEW_PERMISSIONS
+  );
 
   const paymentsManageGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS]),
   ] as const;
 
-  const peopleViewGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_PEOPLE_VIEW_PERMISSIONS]),
-  ] as const;
+  const peopleViewGuard = resourceOrAny(
+    "comissoes.tab.pessoas",
+    COMMISSIONS_PEOPLE_VIEW_PERMISSIONS
+  );
 
   const peopleManageGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_PEOPLE_MANAGE_PERMISSIONS]),
   ] as const;
 
-  const rulesViewGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_RULES_VIEW_PERMISSIONS]),
-  ] as const;
+  const rulesViewGuard = resourceOrAny("comissoes.tab.regras", COMMISSIONS_RULES_VIEW_PERMISSIONS);
 
   const rulesManageGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_RULES_MANAGE_PERMISSIONS]),
   ] as const;
 
-  const auditGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_AUDIT_VIEW_PERMISSIONS]),
-  ] as const;
+  const auditGuard = resourceOrAny("comissoes.tab.auditoria", COMMISSIONS_AUDIT_VIEW_PERMISSIONS);
 
-  const settingsViewGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_SETTINGS_VIEW_PERMISSIONS]),
-  ] as const;
+  const settingsViewGuard = resourceOrAny(
+    "comissoes.tab.configuracoes",
+    COMMISSIONS_SETTINGS_VIEW_PERMISSIONS
+  );
 
   const settingsManageGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_SETTINGS_MANAGE_PERMISSIONS]),
   ] as const;
 
-  const exceptionsViewGuard = [
-    requireAppAuth,
-    requireAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]),
-  ] as const;
+  const exceptionsViewGuard = resourceOrAny(
+    "comissoes.tab.excecoes_cliente",
+    COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS
+  );
 
   const exceptionsManageGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_EXCEPTIONS_MANAGE_PERMISSIONS]),
   ] as const;
 
-  const recalcGuard = [
+  const fechamentoGuard = resourceOrAny(
+    "comissoes.tab.fechamento_mes",
+    COMMISSIONS_VIEW_PERMISSIONS
+  );
+
+  const reportsGuard = resourceOrAny("comissoes.tab.relatorios", COMMISSIONS_VIEW_PERMISSIONS);
+
+  const recalculateGuard = [
     requireAppAuth,
     requireAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]),
   ] as const;
+  const recalcGuard = recalculateGuard;
 
   app.get("/api/commissions/dashboard", ...dashboardGuard, async (req, res) => {
     try {
@@ -451,7 +465,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/reports", ...viewAnyGuard, async (req, res) => {
+  app.get("/api/commissions/reports", ...reportsGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -468,7 +482,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/reports/export.xlsx", ...viewAnyGuard, async (req, res) => {
+  app.get("/api/commissions/reports/export.xlsx", ...reportsGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -490,7 +504,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/receipt-closing/preview", ...viewAnyGuard, async (req, res) => {
+  app.get("/api/commissions/receipt-closing/preview", ...fechamentoGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -545,7 +559,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/receipt-closing/:year/:month", ...viewAnyGuard, async (req, res) => {
+  app.get("/api/commissions/receipt-closing/:year/:month", ...fechamentoGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -572,7 +586,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.get(
     "/api/commissions/receipt-closing/:year/:month/export.csv",
-    ...viewAnyGuard,
+    ...fechamentoGuard,
     async (req, res) => {
       try {
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
@@ -605,7 +619,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.get(
     "/api/commissions/receipt-closing/:year/:month/export-detail.xlsx",
-    ...viewAnyGuard,
+    ...fechamentoGuard,
     async (req, res) => {
       try {
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);

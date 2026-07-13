@@ -287,7 +287,7 @@ describe("MI route smoke — server.ts inline registration", () => {
 
   it("home / monitored", () => {
     assertRouteBlock("/api/materials/market-intelligence/monitored", [
-      /requirePermission\("materials\.view"\)/,
+      /require(Permission|ResourcePermission)\([^)]*(materials\.view|SUPRIMENTOS_MI_TAB_HOME)/,
     ]);
   });
 
@@ -300,6 +300,12 @@ describe("MI route smoke — server.ts inline registration", () => {
   it("quotes GET", () => {
     assertRouteBlock("/api/materials/market-intelligence/:materialId/quotes", [
       /requirePermission\("materials\.view"\)/,
+    ]);
+  });
+
+  it("alerts list", () => {
+    assertRouteBlock("/api/materials/market-intelligence/alerts", [
+      /require(Permission|ResourcePermission)\([^)]*(materials\.view|SUPRIMENTOS_MI_TAB_ALERTAS)/,
     ]);
   });
 

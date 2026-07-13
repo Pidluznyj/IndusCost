@@ -93,6 +93,12 @@ import {
   type CrmManagementTabId,
 } from "@/src/components/CrmCommercialManagementTabs";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { TabResourceKeys } from "@/src/lib/moduleTabResources";
+import { ProtectedTab } from "@/src/components/security/ProtectedTab";
+import {
+  PERMISSION_EMPTY_TABS_MESSAGE,
+} from "@/src/lib/permissionsClient";
 import {
   canAccessCrmAny,
   canAccessCrmGeneral,
@@ -1420,23 +1426,41 @@ export const CrmModule = () => {
   const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
 
   const auth = useAuth();
-  const canCrmGeneral = canAccessCrmGeneral(auth);
-  const canCrmSeller = canAccessCrmSeller(auth);
-  const canCrmPortfolio = canAccessCrmPortfolio(auth);
-  const canCrmAny = canAccessCrmAny(auth);
+  const permissions = usePermissions();
+  const canCrmGeneral =
+    permissions.canView(TabResourceKeys.CRM_GESTAO_GERAL) || canAccessCrmGeneral(auth);
+  const canCrmSeller =
+    permissions.canView(TabResourceKeys.CRM_GESTAO_VENDEDOR) || canAccessCrmSeller(auth);
+  const canCrmPortfolio =
+    permissions.canView(TabResourceKeys.CRM_CARTEIRA) || canAccessCrmPortfolio(auth);
+  const canCrmCliente360 =
+    permissions.canView(TabResourceKeys.CRM_CLIENTE_360) ||
+    auth.hasAnyPermission([
+      "crm.customer_cockpit.view",
+      "customers.commercial360.view",
+      "customers.view",
+    ]);
+  const canCrmAny = canAccessCrmAny(auth) || canCrmGeneral || canCrmSeller || canCrmPortfolio;
   const canFilterAllSellers = canFilterAllCrmSellers(auth);
   const isOwnSellerOnly = isCrmOwnSellerOnly(auth);
   const sellerNotLinked =
     isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
   const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(
-    () => getDefaultCrmManagementTab(auth) ?? "seller"
+    () =>
+      getDefaultCrmManagementTab({
+        ...auth,
+        canView: permissions.canView,
+      }) ?? "seller"
   );
 
   useEffect(() => {
-    const def = getDefaultCrmManagementTab(auth);
+    const def = getDefaultCrmManagementTab({
+      ...auth,
+      canView: permissions.canView,
+    });
     if (def) setActiveCrmManagementTab(def);
-  }, [auth.authUser?.id, canCrmGeneral, canCrmSeller]);
+  }, [auth.authUser?.id, canCrmGeneral, canCrmSeller, permissions.canView]);
 
   const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
@@ -2157,7 +2181,16 @@ export const CrmModule = () => {
           onTabChange={setActiveCrmManagementTab}
         />
 
-        {activeCrmManagementTab === "general" && canCrmGeneral ? (
+        {!canCrmGeneral && !canCrmSeller && !canCrmPortfolio ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            {PERMISSION_EMPTY_TABS_MESSAGE}
+          </p>
+        ) : null}
+
+        <ProtectedTab
+          resourceKey={TabResourceKeys.CRM_GESTAO_GERAL}
+          active={activeCrmManagementTab === "general"}
+        >
           <CrmManagementDashboardSection
             data={managementDashboard}
             loading={managementDashboardLoading}
@@ -2180,7 +2213,12 @@ export const CrmModule = () => {
               />
             ) : null}
           </CrmManagementDashboardSection>
-        ) : activeCrmManagementTab === "seller" && canCrmSeller ? (
+        </ProtectedTab>
+
+        <ProtectedTab
+          resourceKey={TabResourceKeys.CRM_GESTAO_VENDEDOR}
+          active={activeCrmManagementTab === "seller"}
+        >
           <CrmSellerDashboardSection
             data={sellerDashboard}
             loading={sellerDashboardLoading}
@@ -2216,12 +2254,17 @@ export const CrmModule = () => {
               />
             ) : null}
           </CrmSellerDashboardSection>
-        ) : activeCrmManagementTab === "portfolio" && canCrmPortfolio && sellerNotLinked ? (
+        </ProtectedTab>
+
+        <ProtectedTab
+          resourceKey={TabResourceKeys.CRM_CARTEIRA}
+          active={activeCrmManagementTab === "portfolio" && sellerNotLinked}
+        >
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
             Seu usuário ainda não está vinculado a um vendedor Nomus. Solicite ajuste ao administrador
             para acessar a carteira de clientes.
           </div>
-        ) : null}
+        </ProtectedTab>
           </>
         )}
       </section>
