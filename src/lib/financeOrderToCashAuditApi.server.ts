@@ -58,13 +58,19 @@ type FactRow = {
   stockDocumentExternalId: number | null;
   stockDocumentDate: Date | null;
   stockDocumentItemQuantity: unknown;
+  stockDocumentItemUnitValue: unknown;
+  stockDocumentItemTotalValue: unknown;
   quantityUsedForOrder: unknown;
   excessQuantity: unknown;
   outsideOrderQuantity: unknown;
   allocatedValueByOrderPrice: unknown;
+  allocatedValueByDocumentPrice: unknown;
   nfeNumber: string | null;
   nfeIssueDate: Date | null;
   nfeHeaderValue: unknown;
+  nfeItemQuantity: unknown;
+  nfeItemUnitValue: unknown;
+  nfeItemTotalValue: unknown;
   receivableTotalValue: unknown;
   receivableOpenValue: unknown;
   receivableReceivedValue: unknown;
@@ -117,13 +123,19 @@ const FACT_SELECT = {
   stockDocumentExternalId: true,
   stockDocumentDate: true,
   stockDocumentItemQuantity: true,
+  stockDocumentItemUnitValue: true,
+  stockDocumentItemTotalValue: true,
   quantityUsedForOrder: true,
   excessQuantity: true,
   outsideOrderQuantity: true,
   allocatedValueByOrderPrice: true,
+  allocatedValueByDocumentPrice: true,
   nfeNumber: true,
   nfeIssueDate: true,
   nfeHeaderValue: true,
+  nfeItemQuantity: true,
+  nfeItemUnitValue: true,
+  nfeItemTotalValue: true,
   receivableTotalValue: true,
   receivableOpenValue: true,
   receivableReceivedValue: true,
@@ -198,13 +210,19 @@ function mapFact(row: FactRow): OrderToCashAuditFactRecord {
     stockDocumentExternalId: row.stockDocumentExternalId,
     stockDocumentDate: row.stockDocumentDate,
     stockDocumentItemQuantity: decimalToNumber(row.stockDocumentItemQuantity),
+    stockDocumentItemUnitValue: decimalToNumber(row.stockDocumentItemUnitValue),
+    stockDocumentItemTotalValue: decimalToNumber(row.stockDocumentItemTotalValue),
     quantityUsedForOrder: decimalToNumber(row.quantityUsedForOrder),
     excessQuantity: decimalToNumber(row.excessQuantity),
     outsideOrderQuantity: decimalToNumber(row.outsideOrderQuantity),
     allocatedValueByOrderPrice: decimalToNumber(row.allocatedValueByOrderPrice),
+    allocatedValueByDocumentPrice: decimalToNumber(row.allocatedValueByDocumentPrice),
     nfeNumber: row.nfeNumber,
     nfeIssueDate: row.nfeIssueDate,
     nfeHeaderValue: decimalToNumber(row.nfeHeaderValue),
+    nfeItemQuantity: decimalToNumber(row.nfeItemQuantity),
+    nfeItemUnitValue: decimalToNumber(row.nfeItemUnitValue),
+    nfeItemTotalValue: decimalToNumber(row.nfeItemTotalValue),
     receivableTotalValue: decimalToNumber(row.receivableTotalValue),
     receivableOpenValue: decimalToNumber(row.receivableOpenValue),
     receivableReceivedValue: decimalToNumber(row.receivableReceivedValue),

@@ -146,8 +146,11 @@ describe("orderToCashAuditUi", () => {
       "Tipo linha",
       "Documento saída",
       "NF",
-      "Valor atribuído",
-      "CR total",
+      "Valor item pedido",
+      "Valor atribuído ao pedido",
+      "Valor cobrado linha",
+      "Fonte valor cobrado",
+      "CR total título",
       "CR aberto",
       "Recebido",
       "Status pagamento",
@@ -162,6 +165,12 @@ describe("orderToCashAuditUi", () => {
     ]) {
       assert.match(table, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+    assert.match(
+      table,
+      /Valor total do título financeiro\. Pode se repetir em várias linhas/
+    );
+    assert.match(table, /Valor do item no documento de saída ou NF/);
+    assert.match(table, /Valor atribuído ao pedido respeitando o limite/);
   });
 
   it("6b. tabela tem rolagem horizontal no topo e área limitada", () => {

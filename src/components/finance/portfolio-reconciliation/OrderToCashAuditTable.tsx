@@ -21,6 +21,7 @@ type ColumnDef = {
   sortKey?: OrderToCashAuditSortBy;
   align?: "left" | "right";
   sticky?: boolean;
+  tooltip?: string;
 };
 
 const COLUMNS: ColumnDef[] = [
@@ -33,8 +34,39 @@ const COLUMNS: ColumnDef[] = [
   { id: "lineType", label: "Tipo linha" },
   { id: "stockDocumentExternalId", label: "Documento saída", sortKey: "stockDocumentExternalId" },
   { id: "nfeNumber", label: "NF", sortKey: "nfeNumber" },
-  { id: "allocatedValueByOrderPrice", label: "Valor atribuído", sortKey: "allocatedValueByOrderPrice", align: "right" },
-  { id: "receivableTotalValue", label: "CR total", sortKey: "receivableTotalValue", align: "right" },
+  {
+    id: "orderItemTotalValue",
+    label: "Valor item pedido",
+    sortKey: "orderItemTotalValue",
+    align: "right",
+  },
+  {
+    id: "allocatedValueByOrderPrice",
+    label: "Valor atribuído ao pedido",
+    sortKey: "allocatedValueByOrderPrice",
+    align: "right",
+    tooltip:
+      "Valor atribuído ao pedido respeitando o limite do item vendido. Não deixa cabeçalho de NF ou excedente inflar o pedido.",
+  },
+  {
+    id: "lineBilledValue",
+    label: "Valor cobrado linha",
+    align: "right",
+    tooltip:
+      "Valor do item no documento de saída ou NF. Este é o valor usado para responder quanto foi cobrado daquele produto.",
+  },
+  {
+    id: "lineBilledValueLabel",
+    label: "Fonte valor cobrado",
+  },
+  {
+    id: "receivableTotalValue",
+    label: "CR total título",
+    sortKey: "receivableTotalValue",
+    align: "right",
+    tooltip:
+      "Valor total do título financeiro. Pode se repetir em várias linhas e não representa o valor individual do produto.",
+  },
   { id: "receivableOpenValue", label: "CR aberto", sortKey: "receivableOpenValue", align: "right" },
   { id: "receivableReceivedValue", label: "Recebido", sortKey: "receivableReceivedValue", align: "right" },
   { id: "paymentStatus", label: "Status pagamento", sortKey: "paymentStatus" },
@@ -118,8 +150,32 @@ function cellContent(row: OrderToCashAuditListRow, columnId: string): React.Reac
       return row.stockDocumentExternalId ?? "—";
     case "nfeNumber":
       return row.nfeNumber ?? "—";
+    case "orderItemTotalValue":
+      return money(row.orderItemTotalValue);
     case "allocatedValueByOrderPrice":
       return money(row.allocatedValueByOrderPrice);
+    case "lineBilledValue":
+      return row.lineBilledValue == null ? (
+        <span className="text-muted-foreground" title={row.lineBilledValueLabel}>
+          Não identificado
+        </span>
+      ) : (
+        money(row.lineBilledValue)
+      );
+    case "lineBilledValueLabel":
+      return (
+        <span
+          className={cn(
+            "inline-flex max-w-[140px] truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+            row.lineBilledValueSource === "NOT_IDENTIFIED"
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-sky-200 bg-sky-50 text-sky-900"
+          )}
+          title={row.lineBilledValueLabel}
+        >
+          {row.lineBilledValueLabel}
+        </span>
+      );
     case "receivableTotalValue":
       return money(row.receivableTotalValue);
     case "receivableOpenValue":
@@ -204,7 +260,7 @@ export function OrderToCashAuditTable({
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const syncingRef = useRef(false);
-  const [scrollContentWidth, setScrollContentWidth] = useState(2200);
+  const [scrollContentWidth, setScrollContentWidth] = useState(2800);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [maxScrollLeft, setMaxScrollLeft] = useState(0);
 
@@ -248,7 +304,7 @@ export function OrderToCashAuditTable({
     if (!main || !table) return;
 
     const updateScrollMetrics = () => {
-      const width = Math.max(table.scrollWidth, main.scrollWidth, 2200);
+      const width = Math.max(table.scrollWidth, main.scrollWidth, 2800);
       setScrollContentWidth(width);
       setMaxScrollLeft(Math.max(0, main.scrollWidth - main.clientWidth));
       setScrollLeft(main.scrollLeft);
@@ -331,7 +387,7 @@ export function OrderToCashAuditTable({
       >
         <table
           ref={tableRef}
-          className="min-w-[2200px] w-full border-collapse text-left text-xs"
+          className="min-w-[2800px] w-full border-collapse text-left text-xs"
         >
           <thead className="sticky top-0 z-20 bg-muted/95 text-[10px] uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
@@ -348,7 +404,13 @@ export function OrderToCashAuditTable({
                       col.sticky && "sticky left-0 z-30 bg-muted/95"
                     )}
                     onClick={sortable ? () => onSort(col.sortKey!) : undefined}
-                    title={sortable ? "Clique para ordenar" : undefined}
+                    title={
+                      col.tooltip
+                        ? col.tooltip
+                        : sortable
+                          ? "Clique para ordenar"
+                          : undefined
+                    }
                     aria-sort={
                       active
                         ? filters.sortDirection === "asc"

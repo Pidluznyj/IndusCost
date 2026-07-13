@@ -130,6 +130,110 @@ export type OrderToCashAuditRunMeta = {
   isGeneralRun: boolean;
 };
 
+export type OrderToCashAuditLineBilledValueSource =
+  | "STOCK_DOCUMENT_ITEM"
+  | "NFE_ITEM"
+  | "ALLOCATED_DOCUMENT_PRICE"
+  | "NOT_IDENTIFIED";
+
+export const ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL: Record<
+  OrderToCashAuditLineBilledValueSource,
+  string
+> = {
+  STOCK_DOCUMENT_ITEM: "Item documento",
+  NFE_ITEM: "Item NF",
+  ALLOCATED_DOCUMENT_PRICE: "Alocação doc.",
+  NOT_IDENTIFIED: "Não identificado",
+};
+
+export type OrderToCashAuditLineBilledValue = {
+  lineBilledValue: number | null;
+  lineBilledValueSource: OrderToCashAuditLineBilledValueSource;
+  lineBilledValueLabel: string;
+};
+
+function finiteMoney(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value)) return null;
+  return value;
+}
+
+function productMoney(
+  quantity: number | null | undefined,
+  unit: number | null | undefined
+): number | null {
+  const q = finiteMoney(quantity);
+  const u = finiteMoney(unit);
+  if (q == null || u == null) return null;
+  return q * u;
+}
+
+/**
+ * Valor cobrado da linha (item), sem ratear CR total.
+ * Preferência: item documento → item NF → alocação por preço do documento → não identificado.
+ */
+export function resolveOrderToCashAuditLineBilledValue(input: {
+  stockDocumentItemTotalValue?: number | null;
+  stockDocumentItemQuantity?: number | null;
+  stockDocumentItemUnitValue?: number | null;
+  nfeItemTotalValue?: number | null;
+  nfeItemQuantity?: number | null;
+  nfeItemUnitValue?: number | null;
+  allocatedValueByDocumentPrice?: number | null;
+}): OrderToCashAuditLineBilledValue {
+  const stockTotal = finiteMoney(input.stockDocumentItemTotalValue);
+  if (stockTotal != null) {
+    return {
+      lineBilledValue: stockTotal,
+      lineBilledValueSource: "STOCK_DOCUMENT_ITEM",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.STOCK_DOCUMENT_ITEM,
+    };
+  }
+  const stockProduct = productMoney(
+    input.stockDocumentItemQuantity,
+    input.stockDocumentItemUnitValue
+  );
+  if (stockProduct != null) {
+    return {
+      lineBilledValue: stockProduct,
+      lineBilledValueSource: "STOCK_DOCUMENT_ITEM",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.STOCK_DOCUMENT_ITEM,
+    };
+  }
+
+  const nfeTotal = finiteMoney(input.nfeItemTotalValue);
+  if (nfeTotal != null) {
+    return {
+      lineBilledValue: nfeTotal,
+      lineBilledValueSource: "NFE_ITEM",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.NFE_ITEM,
+    };
+  }
+  const nfeProduct = productMoney(input.nfeItemQuantity, input.nfeItemUnitValue);
+  if (nfeProduct != null) {
+    return {
+      lineBilledValue: nfeProduct,
+      lineBilledValueSource: "NFE_ITEM",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.NFE_ITEM,
+    };
+  }
+
+  const allocatedDoc = finiteMoney(input.allocatedValueByDocumentPrice);
+  if (allocatedDoc != null) {
+    return {
+      lineBilledValue: allocatedDoc,
+      lineBilledValueSource: "ALLOCATED_DOCUMENT_PRICE",
+      lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.ALLOCATED_DOCUMENT_PRICE,
+    };
+  }
+
+  return {
+    lineBilledValue: null,
+    lineBilledValueSource: "NOT_IDENTIFIED",
+    lineBilledValueLabel: ORDER_TO_CASH_AUDIT_LINE_BILLED_VALUE_LABEL.NOT_IDENTIFIED,
+  };
+}
+
 export type OrderToCashAuditListRow = {
   id: string;
   runId: string;
@@ -154,6 +258,15 @@ export type OrderToCashAuditListRow = {
   excessQuantity: number | null;
   outsideOrderQuantity: number | null;
   allocatedValueByOrderPrice: number | null;
+  allocatedValueByDocumentPrice: number | null;
+  stockDocumentItemUnitValue: number | null;
+  stockDocumentItemTotalValue: number | null;
+  nfeItemQuantity: number | null;
+  nfeItemUnitValue: number | null;
+  nfeItemTotalValue: number | null;
+  lineBilledValue: number | null;
+  lineBilledValueSource: OrderToCashAuditLineBilledValueSource;
+  lineBilledValueLabel: string;
   nfeNumber: string | null;
   nfeIssueDate: string | null;
   nfeHeaderValue: number | null;
@@ -236,6 +349,12 @@ export type OrderToCashAuditFactRecord = {
   excessQuantity: number | null;
   outsideOrderQuantity: number | null;
   allocatedValueByOrderPrice: number | null;
+  allocatedValueByDocumentPrice: number | null;
+  stockDocumentItemUnitValue: number | null;
+  stockDocumentItemTotalValue: number | null;
+  nfeItemQuantity: number | null;
+  nfeItemUnitValue: number | null;
+  nfeItemTotalValue: number | null;
   nfeNumber: string | null;
   nfeIssueDate: Date | string | null;
   nfeHeaderValue: number | null;
@@ -616,6 +735,15 @@ function parseAlerts(value: unknown): string[] {
 export function mapOrderToCashAuditFactToListRow(
   fact: OrderToCashAuditFactRecord
 ): OrderToCashAuditListRow {
+  const billed = resolveOrderToCashAuditLineBilledValue({
+    stockDocumentItemTotalValue: fact.stockDocumentItemTotalValue,
+    stockDocumentItemQuantity: fact.stockDocumentItemQuantity,
+    stockDocumentItemUnitValue: fact.stockDocumentItemUnitValue,
+    nfeItemTotalValue: fact.nfeItemTotalValue,
+    nfeItemQuantity: fact.nfeItemQuantity,
+    nfeItemUnitValue: fact.nfeItemUnitValue,
+    allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
+  });
   return {
     id: fact.id,
     runId: fact.runId,
@@ -640,6 +768,15 @@ export function mapOrderToCashAuditFactToListRow(
     excessQuantity: fact.excessQuantity,
     outsideOrderQuantity: fact.outsideOrderQuantity,
     allocatedValueByOrderPrice: fact.allocatedValueByOrderPrice,
+    allocatedValueByDocumentPrice: fact.allocatedValueByDocumentPrice,
+    stockDocumentItemUnitValue: fact.stockDocumentItemUnitValue,
+    stockDocumentItemTotalValue: fact.stockDocumentItemTotalValue,
+    nfeItemQuantity: fact.nfeItemQuantity,
+    nfeItemUnitValue: fact.nfeItemUnitValue,
+    nfeItemTotalValue: fact.nfeItemTotalValue,
+    lineBilledValue: billed.lineBilledValue,
+    lineBilledValueSource: billed.lineBilledValueSource,
+    lineBilledValueLabel: billed.lineBilledValueLabel,
     nfeNumber: fact.nfeNumber,
     nfeIssueDate: toIso(fact.nfeIssueDate),
     nfeHeaderValue: fact.nfeHeaderValue,

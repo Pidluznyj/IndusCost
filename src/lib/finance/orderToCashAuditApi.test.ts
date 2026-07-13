@@ -16,6 +16,7 @@ import {
   mapOrderToCashAuditFactToListRow,
   orderToCashAuditHasFactScopeFilters,
   parseOrderToCashAuditListFilters,
+  resolveOrderToCashAuditLineBilledValue,
   resolveOrderToCashAuditSort,
   type OrderToCashAuditFactRecord,
   type OrderToCashAuditListFilters,
@@ -58,6 +59,12 @@ function fact(
     excessQuantity: 0,
     outsideOrderQuantity: 0,
     allocatedValueByOrderPrice: 50,
+    allocatedValueByDocumentPrice: null,
+    stockDocumentItemUnitValue: 5,
+    stockDocumentItemTotalValue: 50,
+    nfeItemQuantity: null,
+    nfeItemUnitValue: null,
+    nfeItemTotalValue: null,
     nfeNumber: "6845",
     nfeIssueDate: new Date(2026, 4, 11),
     nfeHeaderValue: 50,
@@ -452,5 +459,58 @@ describe("orderToCashAuditApi", () => {
     assert.equal(run.totalOrders, 1283);
     assert.equal(run.totalFacts, 5860);
     assert.ok(run.createdAt);
+  });
+
+  it("lineBilledValue prioriza item do documento e não usa CR total", () => {
+    const fromStock = resolveOrderToCashAuditLineBilledValue({
+      stockDocumentItemTotalValue: 1836.12,
+      nfeItemTotalValue: 9999,
+      allocatedValueByDocumentPrice: 50,
+    });
+    assert.equal(fromStock.lineBilledValue, 1836.12);
+    assert.equal(fromStock.lineBilledValueSource, "STOCK_DOCUMENT_ITEM");
+
+    const fromQty = resolveOrderToCashAuditLineBilledValue({
+      stockDocumentItemQuantity: 10,
+      stockDocumentItemUnitValue: 12.5,
+      nfeItemTotalValue: 1,
+    });
+    assert.equal(fromQty.lineBilledValue, 125);
+    assert.equal(fromQty.lineBilledValueSource, "STOCK_DOCUMENT_ITEM");
+
+    const fromNfe = resolveOrderToCashAuditLineBilledValue({
+      nfeItemQuantity: 2,
+      nfeItemUnitValue: 100,
+      allocatedValueByDocumentPrice: 40,
+    });
+    assert.equal(fromNfe.lineBilledValue, 200);
+    assert.equal(fromNfe.lineBilledValueSource, "NFE_ITEM");
+
+    const fromAlloc = resolveOrderToCashAuditLineBilledValue({
+      allocatedValueByDocumentPrice: 77,
+    });
+    assert.equal(fromAlloc.lineBilledValue, 77);
+    assert.equal(fromAlloc.lineBilledValueSource, "ALLOCATED_DOCUMENT_PRICE");
+
+    const pending = resolveOrderToCashAuditLineBilledValue({});
+    assert.equal(pending.lineBilledValue, null);
+    assert.equal(pending.lineBilledValueSource, "NOT_IDENTIFIED");
+    assert.equal(pending.lineBilledValueLabel, "Não identificado");
+
+    const row = mapOrderToCashAuditFactToListRow(
+      fact({
+        id: "pending-1",
+        lineType: "ORDER_ITEM_PENDING",
+        stockDocumentItemQuantity: null,
+        stockDocumentItemUnitValue: null,
+        stockDocumentItemTotalValue: null,
+        allocatedValueByDocumentPrice: null,
+        receivableTotalValue: 183_612,
+      })
+    );
+    assert.equal(row.lineBilledValue, null);
+    assert.equal(row.lineBilledValueSource, "NOT_IDENTIFIED");
+    assert.equal(row.receivableTotalValue, 183_612);
+    assert.notEqual(row.lineBilledValue, row.receivableTotalValue);
   });
 });
