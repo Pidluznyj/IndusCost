@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles.js";
@@ -44,12 +45,24 @@ export function FinanceArTitlesTab({
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<"dueDate" | "balanceReceivable" | "externalId">("dueDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [urlParams] = useSearchParams();
+  const initialSearchFromUrl = urlParams.get("search")?.trim() ?? "";
+  const [search, setSearch] = useState(initialSearchFromUrl);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearchFromUrl);
   const [localFilter, setLocalFilter] = useState<FinanceArTitlesLocalFilter>("all");
   const [data, setData] = useState<FinanceArTitlesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Sincroniza a busca com `?search=` — permite deep-linking a partir da
+  // Auditoria 360º (aba Financeiro → botão "Abrir no Contas a Receber").
+  useEffect(() => {
+    const urlSearch = urlParams.get("search")?.trim() ?? "";
+    if (urlSearch && urlSearch !== search) {
+      setSearch(urlSearch);
+      setDebouncedSearch(urlSearch);
+    }
+  }, [urlParams]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 400);

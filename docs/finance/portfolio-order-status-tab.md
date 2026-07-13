@@ -31,17 +31,30 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 | **Itens do pedido** | Painel abaixo da tabela; chips atendido/pendente/excedente/fora/CR/recebido; grid compartilhado |
 | Drawer | Largura `max-w-xl`, resumo + mini-cards, mapa de atendimento, abas Resumo / Valores / Alertas |
 
-## Auditoria completa do pedido (modal)
+## Auditoria 360º do Pedido (modal)
 
 1. Usuário filtra (ex.: card **Parciais**) e vê pedidos na tabela.
-2. Clique em uma linha (ex.: **PD 02207**) abre o modal **Auditoria completa — PD 02207**.
+2. Clique em uma linha (ex.: **PD 02207**) — com cursor pointer e tooltip
+   **"Abrir auditoria 360º do pedido"** — abre o modal
+   **Auditoria 360º — PD 02207**.
 3. O modal chama `GET /api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full`.
-4. 7 abas: Resumo · Itens · Financeiro · Documentos · NF-e · Entrega/Frete · Alertas.
+4. **12 abas oficiais**: Resumo Executivo · Proposta / Origem Comercial ·
+   Pedido de Venda · Itens do Pedido · Documentos de Saída · NF-e ·
+   Financeiro (Títulos e Baixas) · Entrega / Produção / Frete · Margem,
+   Preço e Custo · Comissões · Divergências e Alertas · Auditoria Técnica /
+   Evidências.
 5. Fechar (Esc / clique fora / botão) volta à mesma posição/filtro da tabela.
 
-O painel embutido antigo **Itens do pedido selecionado** foi removido — abaixo da tabela existe apenas um hint textual que aponta para o modal.
+O painel embutido antigo **Itens do pedido selecionado** foi removido — abaixo
+da tabela existe apenas um hint textual que aponta para o modal:
 
-Detalhes das abas e regras oficiais em [`order-full-audit-dialog.md`](./order-full-audit-dialog.md).
+> Selecione um pedido para abrir a **Auditoria 360º do Pedido** — proposta,
+> pedido, itens, documentos, NF-e, financeiro, margem, comissões e
+> divergências em um único lugar.
+
+Detalhes das abas, regras oficiais, códigos de divergência e cenários PD 02339 /
+PD 02534 / PD 02207 em [`order-full-audit-dialog.md`](./order-full-audit-dialog.md).
+Checklist de QA em [`order-full-audit-dialog-qa.md`](./order-full-audit-dialog-qa.md).
 
 ### Regras de exibição por linha (herdadas da Auditoria Pedido → Caixa)
 

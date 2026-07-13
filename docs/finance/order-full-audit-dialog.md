@@ -1,68 +1,387 @@
-# Auditoria Completa do Pedido — modal
+# Auditoria 360º do Pedido — modal executivo
 
-| | |
+| Campo | Valor |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Rota UI** | Financeiro → Conciliação de Carteira → Status Pedidos |
-| **Trigger** | Clique numa linha da tabela de pedidos |
+| **Trigger** | Clique numa linha da tabela de pedidos (`tr[role=button]`) |
 | **Componente** | `src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx` |
 | **Service** | `src/lib/finance/orderFullAuditService.ts` |
+| **Client contract** | `src/lib/finance/orderFullAuditClient.ts` (sem Prisma) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full` |
+| **QA script** | `scripts/qaOrderFullAuditDialog.ts` |
+| **Checklist QA** | `docs/finance/order-full-audit-dialog-qa.md` |
 
-## O que mudou
+## 1. Objetivo
 
-Antes o clique num pedido do grid Status Pedidos abria um bloco embutido “Itens do pedido selecionado” logo abaixo da tabela. Como a auditoria por pedido cresceu (itens, cancelados, cortados, documentos, NF-e, CR, baixas, entrega, frete, alertas), o bloco tornou a tela poluída.
+A **Auditoria 360º do Pedido** é o modal executivo aberto ao clicar em qualquer
+pedido na aba **Financeiro → Conciliação de Carteira → Status Pedidos**.
+Ela consolida em **uma única janela** tudo o que existe sobre o pedido no
+IndusCost: origem comercial (proposta), cabeçalho do pedido, itens, documentos
+de saída, NF-e, títulos de Contas a Receber, baixas, entrega, produção e
+frete, margem/preço/custo, comissão, divergências e evidência técnica.
 
-Agora o clique abre um **modal grande** com 7 abas contendo toda a auditoria do pedido. A tabela principal permanece com uma linha por pedido; abaixo dela fica só um hint discreto:
+Substitui o drilldown inline "Itens do pedido selecionado" que ficava abaixo
+da tabela. Agora, abaixo do grid, aparece apenas um hint:
 
-> "Selecione um pedido na tabela acima para abrir a Auditoria completa do pedido — itens, documentos, NF-e, títulos de CR, baixas, entrega e alertas em um único lugar."
+> Selecione um pedido para abrir a **Auditoria 360º do Pedido** — proposta,
+> pedido, itens, documentos, NF-e, financeiro, margem, comissões e
+> divergências em um único lugar.
 
-Os filtros do Status Pedidos (cards / drilldown / paginação) **não** são afetados ao fechar o modal.
+Os filtros / ordenação / paginação da tela principal **não** são afetados ao
+abrir/fechar o modal.
 
-## Abas
+## 2. Abas (12 oficiais)
 
-1. **Resumo** — 20 KPIs executivos (pedido, cliente, empresa, datas, responsável comercial, vendedor Nomus, valor original / cancelado / cortado / ativo / atendido, %, saldo pendente ativo, CR total/aberto/recebido, temperatura, estágios) + timeline `Pedido → Doc. saída → NF-e → CR → Baixa`.
-2. **Itens** — grid próprio (linha do `SalesOrderItem` com status Nomus + qtd atendida/pendente + match confidence) e reuso do `OrderToCashAuditItemsGrid` como evidência item × NF × doc × CR.
-3. **Financeiro / Títulos e baixas** — títulos de Contas a Receber vinculados à NF do pedido, deduplicados por `externalId`. Cards Total / Aberto / Recebido / Vencidos / Próx. vencimento / Maior título. Ações: **Copiar referência** e **Abrir no Contas a Receber** (`/finance/accounts-receivable?search=<ref>`).
-4. **Documentos de saída** — `NomusStockDocument` agregados via `OrderToCashAuditFact` (qtd doc, qtd usada, excedente, valor total, valor alocado, alerta Excedente / Fora do pedido).
-5. **NF-e** — `SalesOrderNfeLink` + `NomusNfe` deduplicados. Cabeçalho oficial + alerta `NF > pedido` e `NF sem CR`.
-6. **Entrega / Frete** — Entrega estimada, último documento, última NF, última baixa, condição de frete / pagamento / forma, setor operacional.
-7. **Alertas** — lista de alertas com severidade (`critical`, `warning`, `info`), origem, ação recomendada e impacto financeiro estimado.
+Ordem de exibição na barra de tabs (`ORDER_FULL_AUDIT_TABS`):
 
-## Origem dos dados
+| # | ID | Título |
+|---|----|--------|
+| 1 | `summary` | Resumo Executivo |
+| 2 | `proposal` | Proposta / Origem Comercial |
+| 3 | `salesOrder` | Pedido de Venda |
+| 4 | `items` | Itens do Pedido |
+| 5 | `documents` | Documentos de Saída |
+| 6 | `nfes` | NF-e |
+| 7 | `financial` | Financeiro (Títulos e Baixas) |
+| 8 | `delivery` | Entrega / Produção / Frete |
+| 9 | `marginPricing` | Margem, Preço e Custo |
+| 10 | `commissions` | Comissões |
+| 11 | `divergences` | Divergências e Alertas |
+| 12 | `technicalAudit` | Auditoria Técnica / Evidências |
 
-| Dado | Fonte |
-|------|-------|
-| Cabeçalho / itens do pedido | `SalesOrder` + `SalesOrderItem` (incluindo flags `nomusIsCanceled / nomusIsCut / nomusIsStale / nomusMatchConfidence`) |
-| Evidência item × doc × NF × CR | `OrderToCashAuditFact` (última run que contém o pedido, ou `runId` fornecido) |
-| NFe cabeçalho | `NomusNfe` + `SalesOrderNfeLink` (deduplicação por `externalId`) |
-| Documento de saída | `NomusStockDocument` |
-| Título CR + baixa | `NomusAccountsReceivable` (via `sourceInvoiceId` da NF vinculada) |
-| Responsável comercial | Não é preenchido aqui — a coluna do Status Pedidos usa `CrmCustomerCommercialOwner` |
+### 2.1 Resumo Executivo
 
-## Regras oficiais respeitadas
+- **24 KPIs** organizados em 4 seções (Identificação e status / Valores do
+  pedido / Documentos, NF-e e financeiro / Comparativos).
+- **Timeline** de 7 pontos: `Proposta → Pedido emitido → Documento de saída →
+  NF-e → CR gerado → Vencimento → Baixa`. Cada ponto mostra data, valor
+  atribuído e alerta contextual.
+- **Top alertas** — até 8 divergências ranqueadas por severidade (`critical`
+  → `high` → `medium` → `warning` → `info`) e categoria.
 
-- **CR real** do Nomus **prevalece** e é deduplicado por `externalId`. Nunca soma o mesmo CR duas vezes.
-- **NF cabeçalho** não infla carteira sem alerta: quando `NF > valor ativo`, aparece alerta `NF_MAIOR_QUE_PEDIDO` (aba Alertas + badge na NF).
-- **Item cancelado / stale** aparece na aba Itens com status próprio e alerta; nunca vira pendência.
-- **Item cortado** (`FULFILLED_WITH_CUT`) encerra o saldo cortado; não entra em forecast/comissão.
-- **Status por LINHA do pedido** — respeitado o `SalesOrderItem.id`; SKU repetido não contamina.
-- **Contas a Receber oficial** não é apagado nem alterado. Modal é somente leitura.
-- **Fluxo de Caixa / Comissões / Relatório Presidencial / sync Nomus** não são tocados.
+### 2.2 Proposta / Origem Comercial
 
-## Estados
+- **Empty state** quando `SalesOrder.proposalId == null`: “Este pedido não
+  possui proposta vinculada no IndusCost.”
+- **Disclaimer read-only oficial**: “Proposta é origem comercial e auditável.
+  Não substitui o Pedido de Venda como fonte oficial de faturamento,
+  financeiro ou comissão.”
+- **Tabela de itens** (16 colunas) com casamento linha a linha via
+  `SalesOrderItem.proposalItemId` + Δ preço/qtd/total contra o pedido.
+- **7 divergências oficiais**: `PROPOSAL_NOT_FOUND`,
+  `PROPOSAL_ORDER_VALUE_MISMATCH`, `PROPOSAL_ITEM_NOT_CONVERTED`,
+  `ORDER_ITEM_WITHOUT_PROPOSAL_ITEM`, `PROPOSAL_PRICE_MISMATCH`,
+  `PROPOSAL_PAYMENT_TERM_MISMATCH`, `PROPOSAL_FREIGHT_MISMATCH`.
 
-| Estado | Texto |
-|--------|-------|
-| Loading | "Carregando auditoria completa do pedido..." |
+### 2.3 Pedido de Venda
+
+- **8 top cards** (Valor pedido, Itens totais/ativos/cancelados/com corte/
+  atendidos/pendentes ativos, % atendimento).
+- **5 seções**: Identificação, Comercial, Operacional, Financeiro do pedido,
+  Observações.
+- **Separação oficial**: Responsável Comercial (CRM) × Vendedor Pedido
+  (Nomus) × Setor / Responsável operacional. NUNCA mistura.
+- **8 divergências oficiais**: `SELLER_NOT_INFORMED`,
+  `COMMERCIAL_RESPONSIBLE_MISSING`, `PAYMENT_TERM_MISSING`,
+  `DELIVERY_DATE_OVERDUE`, `ORDER_STATUS_UNKNOWN`, `ORDER_WITHOUT_ITEMS`,
+  `ORDER_HEADER_ITEMS_TOTAL_MISMATCH`,
+  `OPERATIONAL_RESPONSIBLE_USED_AS_COMMERCIAL_RESPONSIBLE`.
+
+### 2.4 Itens do Pedido
+
+- **12 chips** oficiais (Todos, Atendidos, Pendentes ativos, Cancelados, Com
+  corte, Parcialmente atendidos, Com excedente, Produto fora do pedido, Com
+  CR aberto, Recebidos, Sem documento, Divergência de preço).
+- **Tabela de 31 colunas** com evidência por linha (`SalesOrderItem.id`).
+- Painel **"Evidência item × documento × NF × CR"** reutiliza o
+  `OrderToCashAuditItemsGrid` oficial.
+- **8 divergências oficiais**: `ORDER_ITEM_CANCELED`, `ORDER_ITEM_CUT`,
+  `ORDER_ITEM_STALE`, `ORDER_ITEM_STATUS_UNKNOWN`,
+  `REPEATED_SKU_WITH_DIFFERENT_STATUS`, `ITEM_STATUS_MATCH_AMBIGUOUS`,
+  `ORDER_ITEM_ACTIVE_PENDING`, `ORDER_ITEM_OVER_FULFILLED`.
+
+### 2.5 Documentos de Saída
+
+- **8 top cards** (Total documentos, Valor total, Alocado, Valor
+  excedente, Qtd excedente, Produtos fora, Sem NF, Divergência de preço).
+- **Tabela de documentos** (14 colunas) + **tabela de itens do documento**
+  (19 colunas, com Δ preço unitária/%/impacto).
+- **8 divergências oficiais**: `DOCUMENT_WITH_EXCESS`, `DOCUMENT_EXTRA_ITEM`,
+  `DOCUMENT_WITHOUT_ORDER_ITEM`, `DOCUMENT_WITHOUT_NFE`,
+  `DOCUMENT_PRICE_MISMATCH`, `DOCUMENT_QUANTITY_MISMATCH`,
+  `DOCUMENT_ALLOCATED_TO_CANCELED_ITEM`,
+  `DOCUMENT_ALLOCATED_BY_HEADER_ONLY`.
+
+### 2.6 NF-e
+
+- **7 top cards** (Total NF-e, Valor total, Atribuído ao pedido, Cabeçalho
+  excedente, Sem CR, > pedido, Item fora).
+- **Valor total ≠ valor atribuído ao pedido** — colunas separadas.
+- **7 divergências oficiais**: `NFE_HEADER_GREATER_THAN_ORDER`,
+  `NFE_VALUE_GREATER_THAN_ACTIVE_ORDER`, `NFE_WITHOUT_DOCUMENT`,
+  `NFE_WITHOUT_CR`, `NFE_EXTRA_ITEM`, `NFE_PRICE_MISMATCH`,
+  `NFE_ALLOCATED_BY_HEADER_ONLY`.
+
+### 2.7 Financeiro (Títulos e Baixas)
+
+- **9 top cards** (Total em títulos, Total aberto, Vencido, Recebido, Parcial
+  recebido, Qtd títulos, Próximo vencimento, Maior título, Dias em atraso max).
+- **Tabela de títulos** (23 colunas) + **tabela de baixas** (11 colunas com
+  juros/desconto/multa/histórico/usuário).
+- **Botão Copiar referência + Abrir no Contas a Receber** — deep-link para
+  `/finance/accounts-receivable?search=<ref>` (o
+  `FinanceAccountsReceivableTitlesTab` lê `?search=` via `useSearchParams`).
+- **10 divergências oficiais**: `RECEIVABLE_OPEN`, `RECEIVABLE_OVERDUE`,
+  `RECEIVABLE_GREATER_THAN_ACTIVE_ORDER`,
+  `RECEIVABLE_LESS_THAN_DOCUMENTED_VALUE`,
+  `RECEIVABLE_DUPLICATED_BY_ITEM_FACTS`, `RECEIVABLE_WITHOUT_NFE`,
+  `RECEIVABLE_WITHOUT_DUE_DATE`, `PAYMENT_TERM_MISSING`,
+  `RECEIPT_GREATER_THAN_RECEIVABLE`,
+  `PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE`.
+
+### 2.8 Entrega / Produção / Frete
+
+- **4 seções**: Entrega consolidada, Produção e atendimento, Frete e
+  transporte, Situação por item.
+- Lead time prometido / real / atraso; previsão futura de entrega; status
+  operacional consolidado.
+- Frete: modalidade, transportadora, responsável, endereço, observações.
+- **7 divergências oficiais**: `DELIVERY_OVERDUE_WITHOUT_DOCUMENT`,
+  `ACTIVE_ITEM_OVERDUE_WITHOUT_NFE`,
+  `PRODUCTION_QUANTITY_LESS_THAN_INVOICED`, `READY_BALANCE_NOT_INVOICED`,
+  `CANCELED_ITEM_MARKED_AS_OVERDUE`, `CUT_ITEM_MARKED_AS_PENDING`,
+  `FREIGHT_CONDITION_MISMATCH`.
+
+### 2.9 Margem, Preço e Custo
+
+- **11 top cards** (Receita ativa, Custo, Margem R$/%, Cancelado, Cortado,
+  Sem margem, NO_MARGIN, Ignorados, Δ pedido × tabela, Δ pedido × documento,
+  Fonte).
+- **Tabela de 20 colunas** — 5 preços comparados (pedido / tabela oficial /
+  documento / NF-e / custo) + Δ absoluta e percentual entre eles.
+- Reutiliza o motor oficial `calculateSalesOrderMarginsForOrders` do
+  `salesOrderMarginService.server.ts`.
+- **10 divergências oficiais**: `NO_MARGIN`, `PRICE_TABLE_NOT_FOUND`,
+  `COST_NOT_FOUND`, `ORDER_PRICE_BELOW_TABLE`,
+  `ORDER_PRICE_DIFFERS_FROM_DOCUMENT`, `DOCUMENT_PRICE_DIFFERS_FROM_NFE`,
+  `NEGATIVE_MARGIN`, `CANCELED_ITEM_GENERATING_NO_MARGIN`,
+  `STALE_ITEM_GENERATING_MARGIN`, `PRICE_TABLE_NOT_FOUND_FOR_ORDER_DATE`.
+
+### 2.10 Comissões
+
+- **Read-only**. Disclaimer oficial exibido no topo:
+  *“Read-only. Esta aba mostra apenas o snapshot oficial da comissão.
+  Comissão paga nunca é alterada aqui. Vendedor comissionável vem do Pedido
+  de Venda/Nomus.”*
+- **8 top cards** (Prevista, Confirmada, Liberada, Paga, Bloqueada, Base,
+  Ignorada, Vendedor comissionável).
+- Reutiliza `CommissionOrderSnapshot` + `CommissionOrderItemSnapshot` +
+  `CommissionReceivableSchedule` + `CommissionReceiptLedgerLine` +
+  `CommissionCustomerException` — sem recompute local.
+- **8 divergências oficiais**: `SELLER_NOT_INFORMED`,
+  `COMMISSION_WITHOUT_SELLER`, `CANCELED_ITEM_GENERATING_COMMISSION`,
+  `COMMISSION_RELEASED_WITHOUT_RECEIPT`, `COMMISSION_PAID_WITH_DIVERGENCE`,
+  `CUSTOMER_COMMISSION_EXCEPTION`,
+  `COMMISSION_BASE_GREATER_THAN_RECEIVED_VALUE`,
+  `RESPONSIBLE_COMMERCIAL_USED_AS_COMMISSION_SELLER`.
+
+### 2.11 Divergências e Alertas
+
+- **Central de auditoria**. Consolida os alertas de todas as outras 11 abas.
+- **8 top cards**: Críticas, Altas, Médias, Info, Impacto financeiro, Itens
+  afetados, Títulos afetados, Documentos afetados.
+- **9 filtros** (Todas, Críticas, Financeiras, Documentos, NF-e,
+  Preço/margem, Comissão, Entrega, Cadastro).
+- **Tabela de 12 colunas** — cada divergência tem código, categoria,
+  descrição, entidade afetada, referência, impacto R$/qtd, data, status,
+  ação recomendada e **atalho para a aba oficial** (`linkedTab`).
+- **Deduplicação canônica**: chave `code + entityType + reference +
+  valueImpact` — nunca a mesma divergência aparece duas vezes.
+- **5 níveis de severidade**: `critical / high / medium / warning / info`.
+- **13 categorias** oficiais: Comercial, Pedido, Item, Documento saída, NF-e,
+  Financeiro/CR, Recebimento/Baixa, Entrega, Frete, Margem/Preço, Comissão,
+  Integração/Nomus, Cadastro.
+
+### 2.12 Auditoria Técnica / Evidências
+
+- **5 seções**: Fontes usadas, IDs técnicos, Regras aplicadas, Raw
+  controlado, Histórico.
+- **14 fontes oficiais** listadas com counts + status: `SalesOrder`,
+  `SalesOrderItem`, `Proposal`, `ProposalItem`, `NomusStockDocument`,
+  `NomusStockDocumentItem`, `NomusNfe`, `NomusAccountsReceivable`,
+  `Receipts/Baixas`, `OrderToCashAuditFact`, `PortfolioReconciliationFact`,
+  `CommissionOrderSnapshot`, `CommissionReceiptLedgerLine`,
+  `PriceTable / PriceTableItem`, `Customer / CrmCustomerCommercialOwner`.
+- **10 regras aplicadas** documentadas em código (documentação viva).
+- **6 accordions raw** — `<details>` HTML nativo, **fechados por padrão**.
+- **Raw controlado**: `includeRaw=false` → `rawPayloads` **não vai** no JSON
+  serializado; a UI mostra "Raw técnico oculto. Use includeRaw=true ou
+  permissão técnica para visualizar." (permissão oficial:
+  `audit.raw.read`).
+- **Histórico**: última sync SalesOrder/NF-e/documento/CR, rebuild OrderToCash,
+  conciliação de carteira, rebuild de comissão, usuário/processo/commit.
+
+## 3. Origem oficial dos dados
+
+| Bloco do payload | Fonte oficial | Regra |
+|---|---|---|
+| `summary` | `SalesOrder` + `SalesOrderItem` + `NomusAccountsReceivable` dedup | agregação read-only |
+| `salesOrder` | `SalesOrder` + `nomusRawResponse` (best-effort) | cabeçalho oficial |
+| `proposal` | `Proposal` + `ProposalItem` + `SalesOrderItem.proposalItemId` | só se `SalesOrder.proposalId != null` |
+| `items` | `SalesOrderItem` (com flags Nomus) | grão linha, nunca por SKU |
+| `stockDocuments` / `stockDocumentItems` | `NomusStockDocument` + itens do rawJson | dedup por `stockDocumentExternalId` |
+| `nfes` / `nfeItems` | `NomusNfe` + `SalesOrderNfeLink` + itens do rawPayload | dedup por `nfeExternalId` |
+| `receivables` / `receipts` | `NomusAccountsReceivable` via `sourceInvoiceId` | dedup por `receivableExternalId` |
+| `marginPricing` | `calculateSalesOrderMarginsForOrders` (motor oficial) | recompute a partir de itens ativos |
+| `commissions` | `CommissionOrderSnapshot.ACTIVE` + itens + schedules + ledger | **read-only**; nunca recomputado |
+| `technicalAudit` | run atual + agregações `syncedAt` + rawPayloads (opt-in) | `includeRaw=true` obrigatório |
+| Responsável comercial | `CrmCustomerCommercialOwner` | nunca é setor operacional |
+
+## 4. Regras oficiais do payload
+
+### 4.1 Status por LINHA do pedido (nunca por SKU)
+
+Cada `SalesOrderItem.id` mantém status próprio. SKU repetido em múltiplas
+linhas **não** herda cancelamento/atendimento entre linhas. Verificado por:
+
+- `REPEATED_SKU_WITH_DIFFERENT_STATUS` (info) quando um SKU aparece com
+  status distintos entre linhas.
+- Casamento fact→SOI prioritário via `OrderToCashAuditFact.salesOrderItemId`;
+  fallback por produto externo **só** quando o SKU é único no pedido.
+
+**Cenário canônico:** PD 02534 — SKU `309.86AA` em múltiplas linhas. Se
+apenas a linha 00080 está cancelada, as demais (00090/00100/00110/00120)
+**não** herdam o cancelamento.
+
+### 4.2 Item cancelado / cortado / stale
+
+| Flag | Origem | Efeito |
+|---|---|---|
+| `nomusIsCanceled` | status Nomus `6` normalizado para `CANCELED` | ignorado em pendente, margem, comissão, forecast |
+| `nomusIsCut` | `FULFILLED_WITH_CUT` | saldo cortado NÃO gera pendência infinita; parte atendida entra em margem/comissão |
+| `nomusIsStale` | item local que sumiu do último payload Nomus | mantido só para histórico; nunca ativo |
+
+Invariantes verificados em runtime:
+
+- `CANCELED_ITEM_MARKED_AS_OVERDUE` (crítico)
+- `CANCELED_ITEM_GENERATING_NO_MARGIN` (crítico)
+- `CANCELED_ITEM_GENERATING_COMMISSION` (crítico)
+- `STALE_ITEM_GENERATING_MARGIN` (média)
+- `CUT_ITEM_MARKED_AS_PENDING` (média)
+
+**Cenário canônico:** PD 02207 — 2 itens `status=6` (cancelados) + 2 itens
+`status=4` (atendidos). O pedido aparece como **"completo/recebido com
+cancelamento"**, nunca parcial; `pendingActiveOrderValue = 0` quando ativos
+100% atendidos.
+
+### 4.3 Comparação preço pedido × documento × NF
+
+Casamento por **linha do pedido** (via `linkedSalesOrderItemId`), nunca por
+SKU. Três Δs oficiais:
+
+1. **Δ pedido × tabela** — `orderUnitPrice - officialTableUnitPrice` (obtido
+   via `SalesOrderMarginCommercialReference`).
+2. **Δ pedido × documento** — `documentUnitPrice - orderUnitPrice` (via
+   `stockDocumentItems.linkedSalesOrderItemId`).
+3. **Δ documento × NF** — `nfeUnitPrice - documentUnitPrice` (via
+   `nfeItems.linkedSalesOrderItemId`).
+
+Impactos financeiros: `Δ × activeQuantity`.
+Divergências: `ORDER_PRICE_BELOW_TABLE`, `ORDER_PRICE_DIFFERS_FROM_DOCUMENT`,
+`DOCUMENT_PRICE_DIFFERS_FROM_NFE`, `PROPOSAL_PRICE_MISMATCH`.
+
+### 4.4 NF × pedido
+
+- **Cabeçalho NF nunca infla a carteira**. `NomusNfe.valorTotal` e
+  `NomusNfe.allocatedValueToOrder` são grandezas separadas.
+- Quando `valorTotal > activeOrderValue`, dispara
+  `NFE_HEADER_GREATER_THAN_ORDER` e/ou `NFE_VALUE_GREATER_THAN_ACTIVE_ORDER`
+  (alta) — a NF continua aparecendo, apenas com alerta.
+- NF sem CR → `NFE_WITHOUT_CR` (média).
+- NF sem documento de saída → `NFE_WITHOUT_DOCUMENT` (média).
+- Item de NF fora do pedido → `NFE_EXTRA_ITEM` (alta).
+
+### 4.5 CR real × forecast
+
+- **CR real prevalece**. `NomusAccountsReceivable` é a única fonte de
+  receita realizada.
+- A Auditoria 360º **não** gera forecast de CR local.
+- CRs deduplicados por `receivableExternalId` — mesmo CR referenciado por
+  múltiplos facts item×NF dispara `RECEIVABLE_DUPLICATED_BY_ITEM_FACTS`
+  (info, confirmatório) mas aparece **uma única vez** na tabela.
+- CR oficial nunca é alterado pela auditoria (service read-only).
+- Baixas em `CommissionReceiptLedgerLine` são lidas mas nunca gravadas.
+
+### 4.6 Comissão
+
+- **Fonte oficial única**: `CommissionOrderSnapshot.ACTIVE`. Nada é
+  recomputado localmente.
+- **Vendedor comissionável = `SalesOrder.nomusSellerName`** (via seller
+  resolver → `CommissionPerson.canonicalName`). **NUNCA** é o
+  `CrmCustomerCommercialOwner` (Responsável Comercial).
+- **Comissão paga nunca é alterada.** Quando `paidCommissionAmount >
+  releasedCommissionAmount`, dispara `COMMISSION_PAID_WITH_DIVERGENCE`
+  (crítico) — investigar duplicidade sem tocar no valor.
+- **Item cancelado/cut/stale não gera comissão.** Se o snapshot antigo tiver
+  comissão sobre cancelado, `CANCELED_ITEM_GENERATING_COMMISSION` (crítico).
+- **Exceções de cliente** — `CommissionCustomerException` ativa dispara
+  `CUSTOMER_COMMISSION_EXCEPTION` (info).
+
+### 4.7 Proposta como origem comercial (nunca fonte financeira)
+
+- **Proposta é auditável, não é fonte oficial** de faturamento, financeiro
+  ou comissão.
+- A aba Proposta traz disclaimer visível no topo.
+- `buildSummary` continua usando `NomusAccountsReceivable` deduplicado para
+  todos os valores oficiais (verificado por
+  `qa:proposal:no-financial-impact`).
+- Comparativos Proposta × Pedido geram divergências (`PROPOSAL_*`) para
+  auditoria — nunca alteram totais financeiros.
+
+## 5. Estados de UI
+
+| Estado | Texto oficial |
+|---|---|
+| Loading | "Carregando auditoria 360º do pedido..." |
 | Erro | "Não foi possível carregar a auditoria do pedido." |
-| Sem dados por aba | Empty state textual centralizado por aba |
+| Sem dados | "Pedido não encontrado." |
+| Sem proposta | "Este pedido não possui proposta vinculada no IndusCost." |
+| Raw restrito | "Raw técnico oculto. Use includeRaw=true ou permissão técnica para visualizar." |
 
-## Permissões
+## 6. Permissões
 
-`FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS` (mesma guarda do grid).
+- Rota audit-full protegida por `auth.requireAppAuth` +
+  `auth.requirePermission("FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS")`
+  (mesma guarda do grid Status Pedidos).
+- Raw payloads técnicos: `?includeRaw=true` opt-in — `rawStatus.included`
+  sempre exposto para transparência; `rawStatus.requiredPermission =
+  "audit.raw.read"` reservado para futuro guard por permissão.
 
-## QA / diagnóstico
+## 7. Scripts e diagnóstico
 
-- `npm run qa:order-full-audit` — QA estático da rota, service, client, dialog e integração da aba.
-- `npx tsx tmp-audits/inspect-order-full-audit-pd02339.ts [--order="PD 02339"]` — imprime resumo + itens + CRs + docs + NFs + alertas para o pedido informado. Requer `DATABASE_URL` real.
+```bash
+# QA estático + dinâmico best-effort
+npx tsx scripts/qaOrderFullAuditDialog.ts
+
+# Inspects individuais (requerem DATABASE_URL real)
+npx tsx tmp-audits/inspect-order-full-audit-pd02339.ts
+npx tsx tmp-audits/inspect-order-full-audit-pd02534.ts
+npx tsx tmp-audits/inspect-order-full-audit-pd02207.ts
+
+# Inventário do contrato (estrutura + backend)
+npx tsx scripts/qaOrderFullAuditInventory.ts
+```
+
+## 8. Documentos relacionados
+
+- `docs/finance/order-full-audit-dialog-qa.md` — checklist oficial de QA com
+  todos os casos por aba e por PD.
+- `docs/finance/order-full-audit-inventory.md` — inventário técnico das
+  fontes e do contrato.
+- `docs/finance/portfolio-order-status-tab.md` — aba Status Pedidos que
+  hospeda o modal.
+- `docs/finance/order-to-cash-audit-item-evidence-rules.md` — regras de
+  evidência item × doc × NF × CR (fonte do bloco Itens).
+- `docs/sales/sales-order-item-status-rules.md` — status por linha
+  (cancelado/cut/stale) e impacto financeiro/comissão.

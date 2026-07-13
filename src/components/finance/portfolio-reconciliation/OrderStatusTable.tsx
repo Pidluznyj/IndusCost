@@ -337,7 +337,8 @@ export function OrderStatusTable({
                   key={row.orderKey}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Abrir resumo do pedido ${orderStatusDash(row.orderCode)}`}
+                  aria-label={`Abrir auditoria 360º do pedido ${orderStatusDash(row.orderCode)}`}
+                  title="Abrir auditoria 360º do pedido"
                   onClick={() => onRowClick(row)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {

@@ -300,9 +300,10 @@ export function OrderStatusTab() {
             className="rounded-[14px] border border-dashed border-[#D0D5DD] bg-white px-4 py-5 text-center text-xs text-[#667085]"
             data-testid="order-status-audit-hint"
           >
-            Selecione um pedido na tabela acima para abrir a{" "}
-            <strong>Auditoria completa do pedido</strong> — itens, documentos, NF-e,
-            títulos de CR, baixas, entrega e alertas em um único lugar.
+            Selecione um pedido para abrir a{" "}
+            <strong>Auditoria 360º do Pedido</strong> — proposta, pedido, itens,
+            documentos, NF-e, financeiro, margem, comissões e divergências em um
+            único lugar.
           </div>
 
           <OrderFullAuditDialog

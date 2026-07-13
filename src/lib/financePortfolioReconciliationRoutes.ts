@@ -474,7 +474,16 @@ export function registerFinancePortfolioReconciliationRoutes(
         const runId = typeof req.query.runId === "string"
           ? req.query.runId.trim() || null
           : null;
-        const payload = await loadOrderFullAudit({ salesOrderId, runId });
+        const orderCode = typeof req.query.orderCode === "string"
+          ? req.query.orderCode.trim() || null
+          : null;
+        const includeRaw = req.query.includeRaw === "true" || req.query.includeRaw === "1";
+        const payload = await loadOrderFullAudit({
+          salesOrderId,
+          runId,
+          orderCode,
+          includeRaw,
+        });
         if ("ok" in payload && payload.ok) {
           res.json(payload);
           return;
