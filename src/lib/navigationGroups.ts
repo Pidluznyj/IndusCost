@@ -10,6 +10,10 @@ import {
   SIDEBAR_MODULE_ORDER,
   type AppModuleId,
 } from "@/src/lib/modulePermissions.js";
+import {
+  resolveSidebarGroupResourceKey,
+  resolveSidebarModuleResourceKey,
+} from "@/src/lib/sidebarMenuResources.js";
 
 /** Chave de ícone (nome do componente lucide-react) para uso futuro na sidebar agrupada. */
 export type NavigationIconKey =
@@ -39,6 +43,8 @@ export type NavigationGroup = {
   itemIds: readonly AppModuleId[];
   /** Grupo renderizado como item direto (sem accordion), ex.: Dashboard no topo. */
   isDirect?: boolean;
+  /** resourceKey do catálogo (MENU pai). Visibilidade efetiva = filhos filtrados. */
+  resourceKey?: string | null;
 };
 
 /** Referência mínima ao item de menu existente (sem ícones React — camada de dados). */
@@ -54,6 +60,8 @@ export type NavigationGroupedItem = {
   label: string;
   path: string;
   requiredPermissions: readonly string[];
+  /** resourceKey do catálogo; null = fallback canAccessModule. */
+  resourceKey: string | null;
   originalItem: SidebarNavigationItemSource;
 };
 
@@ -232,6 +240,7 @@ export function buildNavigationGroupedItem(moduleId: AppModuleId): NavigationGro
     label: originalItem.label,
     path: originalItem.path,
     requiredPermissions: getModuleMenuPermissionKeys(moduleId),
+    resourceKey: resolveSidebarModuleResourceKey(moduleId),
     originalItem,
   };
 }
@@ -256,6 +265,7 @@ export function buildGroupedNavigationStructure(): GroupedNavigationStructure {
     .sort((a, b) => a.order - b.order)
     .map((group) => ({
       ...group,
+      resourceKey: resolveSidebarGroupResourceKey(group.id),
       items: group.itemIds
         .map((itemId) => allItems.find((item) => item.itemId === itemId))
         .filter((item): item is NavigationGroupedItem => item != null),

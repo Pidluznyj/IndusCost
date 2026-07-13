@@ -1,6 +1,7 @@
 /**
  * Camada de sidebar: ícones, filtro por permissão e helpers de expansão de grupos.
  * Paths e permissões continuam definidos em modulePermissions + navigationGroups.
+ * resourceKey (catálogo relacional) tem prioridade quando `canViewResource` é informado.
  */
 
 import {
@@ -24,6 +25,7 @@ export type SidebarMenuItemDef = {
   id: AppModuleId;
   label: string;
   path: string;
+  resourceKey?: string | null;
 };
 
 export type SidebarAccessibleNavigation = {
@@ -34,26 +36,51 @@ export type SidebarAccessibleNavigation = {
   flatAccessibleItems: SidebarMenuItemDef[];
 };
 
+export type SidebarResourceViewer = (resourceKey: string) => boolean;
+
+export type SidebarAccessOptions = {
+  /**
+   * Quando informado, itens com `resourceKey` usam o catálogo relacional.
+   * Itens sem resourceKey continuam em `canAccessModule`.
+   */
+  canViewResource?: SidebarResourceViewer;
+};
+
 function toMenuItemDef(item: NavigationGroupedItem): SidebarMenuItemDef {
   return {
     id: item.itemId,
     label: item.label,
     path: item.path,
+    resourceKey: item.resourceKey,
   };
+}
+
+function isSidebarItemVisible(
+  item: NavigationGroupedItem,
+  check: PermissionChecker,
+  canViewResource?: SidebarResourceViewer
+): boolean {
+  if (item.resourceKey && canViewResource) {
+    return canViewResource(item.resourceKey);
+  }
+  return canAccessModule(item.itemId, check);
 }
 
 function filterItems(
   items: NavigationGroupedItem[],
-  check: PermissionChecker
+  check: PermissionChecker,
+  canViewResource?: SidebarResourceViewer
 ): NavigationGroupedItem[] {
-  return items.filter((item) => canAccessModule(item.itemId, check));
+  return items.filter((item) => isSidebarItemVisible(item, check, canViewResource));
 }
 
 function filterGroup(
   group: NavigationGroupWithItems,
-  check: PermissionChecker
+  check: PermissionChecker,
+  canViewResource?: SidebarResourceViewer
 ): NavigationGroupWithItems | null {
-  const items = filterItems(group.items, check);
+  const items = filterItems(group.items, check, canViewResource);
+  // Pai só aparece se houver ao menos um submenu/item visível (regra 2).
   if (items.length === 0) return null;
   return {
     ...group,
@@ -62,22 +89,31 @@ function filterGroup(
   };
 }
 
-/** Estrutura agrupada visível na sidebar respeitando canAccessModule (sem recalcular regras). */
+/** Estrutura agrupada visível na sidebar respeitando resourceKey + canAccessModule. */
 export function buildAccessibleSidebarNavigation(
   check: PermissionChecker,
-  structure: GroupedNavigationStructure = buildGroupedNavigationStructure()
+  structure: GroupedNavigationStructure = buildGroupedNavigationStructure(),
+  options?: SidebarAccessOptions
 ): SidebarAccessibleNavigation {
-  const directItems = filterItems(structure.directItems, check);
+  const canViewResource = options?.canViewResource;
+  const directItems = filterItems(structure.directItems, check, canViewResource);
   const groups = structure.groups
-    .map((group) => filterGroup(group, check))
+    .map((group) => filterGroup(group, check, canViewResource))
     .filter((group): group is NavigationGroupWithItems => group != null);
   const fallbackGroup = structure.fallbackGroup
-    ? filterGroup(structure.fallbackGroup, check)
+    ? filterGroup(structure.fallbackGroup, check, canViewResource)
     : null;
 
-  const flatAccessibleItems = SIDEBAR_MODULE_ORDER.filter((moduleId) =>
-    canAccessModule(moduleId, check)
-  ).map((moduleId) => {
+  const flatAccessibleItems = SIDEBAR_MODULE_ORDER.filter((moduleId) => {
+    const fromStructure =
+      structure.directItems.find((item) => item.itemId === moduleId) ??
+      structure.groups.flatMap((g) => g.items).find((item) => item.itemId === moduleId) ??
+      structure.fallbackGroup?.items.find((item) => item.itemId === moduleId);
+    if (fromStructure) {
+      return isSidebarItemVisible(fromStructure, check, canViewResource);
+    }
+    return canAccessModule(moduleId, check);
+  }).map((moduleId) => {
     const fromStructure =
       structure.directItems.find((item) => item.itemId === moduleId) ??
       structure.groups.flatMap((g) => g.items).find((item) => item.itemId === moduleId) ??
@@ -87,6 +123,7 @@ export function buildAccessibleSidebarNavigation(
       id: moduleId,
       label: moduleId,
       path: getModulePath(moduleId),
+      resourceKey: null,
     };
   });
 

@@ -32,10 +32,17 @@ export const ResourceKeys = {
     "financeiro.conciliacao_carteira.tab.inteligencia",
   FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA:
     "financeiro.conciliacao_carteira.tab.auditoria_pedido_caixa",
+  COMERCIAL: "comercial",
+  COMERCIAL_PEDIDOS_VENDA: "comercial.pedidos_venda",
+  COMERCIAL_CRM: "comercial.crm",
+  COMISSOES: "comissoes",
+  SUPRIMENTOS: "suprimentos",
+  SUPRIMENTOS_INTELIGENCIA_MERCADO: "suprimentos.inteligencia_mercado",
   ADMIN: "admin",
   ADMIN_USUARIOS: "admin.usuarios",
   ADMIN_PERMISSOES: "admin.permissoes",
   ADMIN_PERMISSOES_ACTION_MANAGE: "admin.permissoes.action.manage",
+  CONFIGURACOES: "configuracoes",
 } as const;
 
 export type PortfolioReconciliationUiTabId =
@@ -116,11 +123,56 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     legacyAliasKeys: ["finance.portfolioReconciliation.orderToCashAudit.view"],
   },
   {
+    key: ResourceKeys.COMERCIAL,
+    label: "Comercial",
+    type: "MENU",
+    parentKey: null,
+    legacyAliasKeys: ["crm.view", "sales_orders.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_PEDIDOS_VENDA,
+    label: "Pedidos de Venda",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
+    legacyAliasKeys: ["sales_orders.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_CRM,
+    label: "CRM",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
+    legacyAliasKeys: ["crm.view", "crm.general.view", "crm.seller.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES,
+    label: "Comissões",
+    type: "MENU",
+    parentKey: null,
+    legacyAliasKeys: ["commissions.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS,
+    label: "Suprimentos",
+    type: "MENU",
+    parentKey: null,
+    legacyAliasKeys: ["materials.view", "costs.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO,
+    label: "Inteligência de Mercado",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.SUPRIMENTOS,
+    legacyAliasKeys: [
+      "materials.market_quote.approve",
+      "materials.market_quote.manual_exchange",
+    ],
+  },
+  {
     key: ResourceKeys.ADMIN,
     label: "Administração",
     type: "MENU",
     parentKey: null,
-    legacyAliasKeys: ["settings.view"],
+    legacyAliasKeys: ["users.manage", "accessProfiles.view"],
   },
   {
     key: ResourceKeys.ADMIN_USUARIOS,
@@ -143,60 +195,68 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     parentKey: ResourceKeys.ADMIN_PERMISSOES,
     legacyAliasKeys: ["accessProfiles.manage"],
   },
+  {
+    key: ResourceKeys.CONFIGURACOES,
+    label: "Configurações",
+    type: "MENU",
+    parentKey: null,
+    legacyAliasKeys: ["settings.view", "users.manage"],
+  },
 ] as const;
+
+function fillRoleMatrix(
+  grants: Partial<Record<string, PermissionFlags>>
+): Record<string, PermissionFlags> {
+  const out: Record<string, PermissionFlags> = {};
+  for (const r of FRONTEND_PERMISSION_RESOURCES) {
+    out[r.key] = grants[r.key] ?? NONE;
+  }
+  return out;
+}
 
 const ROLE_MATRIX: Record<
   Exclude<AppUserRole, "SUPER_ADMIN">,
   Record<string, PermissionFlags>
 > = {
-  ADMIN: {
+  ADMIN: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
     [ResourceKeys.FINANCEIRO]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: V,
     [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: V,
+    [ResourceKeys.COMERCIAL]: V,
+    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
+    [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMISSOES]: V,
+    [ResourceKeys.SUPRIMENTOS]: V,
+    [ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO]: V,
     [ResourceKeys.ADMIN]: V,
     [ResourceKeys.ADMIN_USUARIOS]: VM,
     [ResourceKeys.ADMIN_PERMISSOES]: V,
     [ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE]: NONE,
-  },
-  COMMERCIAL_MANAGER: {
+    [ResourceKeys.CONFIGURACOES]: V,
+  }),
+  COMMERCIAL_MANAGER: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.FINANCEIRO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: NONE,
-    [ResourceKeys.ADMIN]: NONE,
-    [ResourceKeys.ADMIN_USUARIOS]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE]: NONE,
-  },
-  SELLER: {
+    [ResourceKeys.COMERCIAL]: V,
+    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
+    [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMISSOES]: V,
+  }),
+  SELLER: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.FINANCEIRO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: NONE,
-    [ResourceKeys.ADMIN]: NONE,
-    [ResourceKeys.ADMIN_USUARIOS]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE]: NONE,
-  },
-  VIEWER: {
+    [ResourceKeys.COMERCIAL]: V,
+    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
+    [ResourceKeys.COMERCIAL_CRM]: V,
+    [ResourceKeys.COMISSOES]: V,
+  }),
+  VIEWER: fillRoleMatrix({
     [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.FINANCEIRO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: NONE,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: NONE,
-    [ResourceKeys.ADMIN]: NONE,
-    [ResourceKeys.ADMIN_USUARIOS]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES]: NONE,
-    [ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE]: NONE,
-  },
+    [ResourceKeys.COMERCIAL]: V,
+    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
+    [ResourceKeys.COMERCIAL_CRM]: V,
+  }),
 };
 
 const byKey = new Map(FRONTEND_PERMISSION_RESOURCES.map((r) => [r.key, r]));
@@ -281,7 +341,8 @@ function resolveFlagsWithLegacyAncestors(
 export function canAccessResourceClient(
   user: AuthUser | null | undefined,
   resourceKey: string,
-  action: PermissionAction = "view"
+  action: PermissionAction = "view",
+  options?: { elevateFromDescendants?: boolean }
 ): boolean {
   if (!user || user.isActive === false) return false;
   if (user.role === "SUPER_ADMIN") return true;
@@ -289,41 +350,48 @@ export function canAccessResourceClient(
   if (!byKey.has(resourceKey)) return false;
 
   const effective = user.effectivePermissions ?? user.permissions ?? [];
+  const elevateFromDescendants = options?.elevateFromDescendants !== false;
 
-  // Elevação de ancestrais: se este recurso (ou um descendente concedido)…
-  // Para o próprio recurso, se concedido via alias, garantir pais com view via
-  // checagem: pais têm view se role/alias OU se algum descendente direto foi
-  // concedido e estamos no caminho — aplicamos: ao checar filho com alias,
-  // pais são tratados como view=true virtualmente.
   const grantedByAlias = (key: string): boolean => {
     const res = byKey.get(key);
     if (!res) return false;
     return res.legacyAliasKeys.some((a) => effective.includes(a));
   };
 
-  const hasView = (key: string): boolean => {
-    const raw = resolveRawFlags(user, key);
-    if (raw.canView) return true;
+  const hasViewOnKey = (key: string, allowDescendantElevation: boolean): boolean => {
+    if (resolveRawFlags(user, key).canView) return true;
     if (grantedByAlias(key)) return true;
-    // Pai elevado se algum descendente no catálogo foi concedido por alias
-    // e este key é ancestral desse descendente.
-    for (const res of FRONTEND_PERMISSION_RESOURCES) {
-      if (!grantedByAlias(res.key)) continue;
-      if (ancestorKeys(res.key).includes(key)) return true;
-    }
-    return false;
+    if (!allowDescendantElevation) return false;
+    return FRONTEND_PERMISSION_RESOURCES.some(
+      (res) =>
+        grantedByAlias(res.key) && ancestorKeys(res.key).includes(key)
+    );
   };
 
+  // Hierarquia: ancestrais precisam de view (com elevação a partir do alvo).
   for (const ancestor of ancestorKeys(resourceKey)) {
-    if (!hasView(ancestor)) return false;
+    if (!hasViewOnKey(ancestor, true)) return false;
   }
 
-  const flags = resolveFlagsWithLegacyAncestors(user, resourceKey);
-  const viewOk = hasView(resourceKey);
+  const viewOk = hasViewOnKey(resourceKey, elevateFromDescendants);
   if (action === "view") return viewOk;
   if (!viewOk) return false;
+  const flags = resolveFlagsWithLegacyAncestors(user, resourceKey);
   if (action === "execute") return flags.canExecute;
   return flags.canManage;
+}
+
+/** Viewer de sidebar: MENU não herda visibilidade só de filhos; SUBMENU/TAB sim. */
+export function createSidebarCanViewResource(
+  user: AuthUser | null | undefined
+): (resourceKey: string) => boolean {
+  return (resourceKey: string) => {
+    const meta = byKey.get(resourceKey);
+    const elevateFromDescendants = meta?.type !== "MENU";
+    return canAccessResourceClient(user, resourceKey, "view", {
+      elevateFromDescendants,
+    });
+  };
 }
 
 export type PermissionsApi = {

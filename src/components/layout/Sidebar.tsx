@@ -39,6 +39,8 @@ import {
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { createSidebarCanViewResource } from "@/src/lib/permissionsClient";
 import { useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { resolveSidebarAsideWidth } from "@/src/lib/sidebarLayout";
@@ -406,6 +408,7 @@ export const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const auth = useAuth();
+  const permissions = usePermissions();
   const { authUser, logout } = auth;
   const {
     desktopCollapsed,
@@ -423,9 +426,19 @@ export const Sidebar = () => {
     if (isMobile) closeMobileSidebar();
   }, [location.pathname, isMobile, closeMobileSidebar]);
 
+  const permissionKey = [
+    permissions.authUser?.id ?? "",
+    permissions.authUser?.role ?? "",
+    (permissions.authUser?.effectivePermissions ?? []).join("|"),
+  ].join("::");
+
   const navigation = React.useMemo(
-    () => buildAccessibleSidebarNavigation(auth),
-    [auth]
+    () =>
+      buildAccessibleSidebarNavigation(auth, undefined, {
+        canViewResource: createSidebarCanViewResource(permissions.authUser),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auth.hasPermission, auth.hasAnyPermission, permissionKey]
   );
 
   const [expandedGroups, setExpandedGroups] = React.useState<Set<NavigationGroupId>>(() =>
