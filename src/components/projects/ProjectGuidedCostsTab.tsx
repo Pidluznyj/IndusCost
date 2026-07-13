@@ -12,6 +12,7 @@ import {
   buildProjectAmortizationTargets,
   buildProjectCostAmortizationSummary,
   listAmortizableCostSources,
+  parseProjectAmortizationApplicationMode,
   type ProjectAmortizationApplicationMode,
   type ProjectCostAmortizationRow,
   type ProjectCostAmortizationSourceType,
@@ -111,6 +112,9 @@ export function ProjectGuidedCostsTab({
     const savedRow = detail.costAmortizations?.find(
       (a) => a.sourceType === sourceType && a.sourceId === sourceId
     );
+    const allocationSource = savedRow?.allocations?.length
+      ? savedRow.allocations
+      : saved?.allocations ?? [];
     setModalError(null);
     setModal({
       sourceType,
@@ -119,16 +123,22 @@ export function ProjectGuidedCostsTab({
       description: source.description,
       totalCost: source.totalCost,
       passThroughPercent: saved?.passThroughPercent ?? savedRow?.passThroughPercent ?? 100,
-      allocations:
-        savedRow?.allocations.map((a) => ({
+      allocations: allocationSource.map((a) => {
+        const mode = parseProjectAmortizationApplicationMode(
+          (a as { applicationMode?: string; amortizationApplicationMode?: string })
+            .applicationMode ??
+            (a as { amortizationApplicationMode?: string }).amortizationApplicationMode
+        );
+        return {
           targetItemId: a.targetItemId,
           targetItemType: a.targetItemType,
           targetSnapshotRootProductId: a.targetSnapshotRootProductId,
           allocationPercent: a.allocationPercent,
           amortizationQuantity: a.amortizationQuantity,
-          applicationMode: a.applicationMode ?? "COST",
-          amortizationApplicationMode: a.applicationMode ?? "COST",
-        })) ?? [],
+          applicationMode: mode,
+          amortizationApplicationMode: mode,
+        };
+      }),
     });
   };
 

@@ -199,17 +199,13 @@ export function ProjectCostAmortizationModal({
     <ProjectModalShell
       onClose={onClose}
       title={`Configurar amortização — ${description}`}
-      size="xl"
+      size="full"
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-muted-foreground">
-            <span className="mr-4">Soma distribuída: {formatPercent(distributionTotal)}</span>
-            <span className="mr-4">
-              Valor distribuído no custo: {formatMoney(allocatedToCost)}
-            </span>
-            <span className="mr-4">
-              Valor distribuído no preço final: {formatMoney(allocatedToFinalPrice)}
-            </span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span>Soma distribuída: {formatPercent(distributionTotal)}</span>
+            <span>Valor distribuído no custo: {formatMoney(allocatedToCost)}</span>
+            <span>Valor distribuído no preço final: {formatMoney(allocatedToFinalPrice)}</span>
             <span>Valor não distribuído: {formatMoney(computed.unallocatedAmount)}</span>
           </div>
           <div className="flex gap-2">
@@ -235,7 +231,7 @@ export function ProjectCostAmortizationModal({
         </div>
       }
     >
-      <div className="min-w-[1100px] space-y-6">
+      <div className="space-y-6">
         <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
           <p>
             <span className="text-muted-foreground">Custo total:</span>{" "}
@@ -287,22 +283,21 @@ export function ProjectCostAmortizationModal({
             Este projeto não possui itens elegíveis para receber amortização.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[1480px] border-collapse text-sm">
               <thead className="border-b bg-muted/40 text-left">
                 <tr>
-                  <th className="px-3 py-2">Item do projeto</th>
-                  <th className="px-3 py-2">Custo base unitário</th>
-                  <th className="px-3 py-2">% da amortização</th>
-                  <th className="px-3 py-2">Valor alocado</th>
-                  <th className="px-3 py-2">Qtd. base amortização</th>
-                  <th className="px-3 py-2" title="Onde a amortização entra na economia comercial">
-                    Aplicar amortização em
-                  </th>
-                  <th className="px-3 py-2">Amortização unitária</th>
-                  <th className="px-3 py-2">No custo / No preço</th>
-                  <th className="px-3 py-2">Custo final unitário</th>
-                  <th className="px-3 py-2">Status</th>
+                  <th className="whitespace-nowrap px-3 py-2">Item do projeto</th>
+                  <th className="whitespace-nowrap px-3 py-2">Custo base unit.</th>
+                  <th className="whitespace-nowrap px-3 py-2">% amort.</th>
+                  <th className="whitespace-nowrap px-3 py-2">Valor alocado</th>
+                  <th className="whitespace-nowrap px-3 py-2">Qtd. base</th>
+                  <th className="whitespace-nowrap px-3 py-2">Aplicar em</th>
+                  <th className="whitespace-nowrap px-3 py-2">Amort. unitária</th>
+                  <th className="whitespace-nowrap px-3 py-2">No custo</th>
+                  <th className="whitespace-nowrap px-3 py-2">No preço</th>
+                  <th className="whitespace-nowrap px-3 py-2">Custo final unit.</th>
+                  <th className="whitespace-nowrap px-3 py-2">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -318,19 +313,15 @@ export function ProjectCostAmortizationModal({
                   );
                   const rowStatus =
                     pct > 0 && qty <= 0
-                      ? "Quantidade pendente"
+                      ? "Qtd. pendente"
                       : pct > 0
                         ? "OK"
                         : "—";
-                  const unitLabel =
-                    row.applicationMode === "FINAL_PRICE"
-                      ? "Repasse unitário no preço"
-                      : "Custo unit. amortizado";
                   return (
                     <tr key={row.targetItemId} className="border-b border-border/60">
-                      <td className="px-3 py-2">{row.displayName}</td>
-                      <td className="px-3 py-2">{formatMoney(row.baseUnitCost)}</td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">{row.displayName}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{formatMoney(row.baseUnitCost)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -339,11 +330,11 @@ export function ProjectCostAmortizationModal({
                           onChange={(e) =>
                             updateRow(row.targetItemId, { allocationPercent: e.target.value })
                           }
-                          className="w-20 rounded border border-border bg-background px-2 py-1"
+                          className="w-16 rounded border border-border bg-background px-2 py-1"
                         />
                       </td>
-                      <td className="px-3 py-2">{formatMoney(alloc.allocatedAmount)}</td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2">{formatMoney(alloc.allocatedAmount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -355,7 +346,7 @@ export function ProjectCostAmortizationModal({
                           className="w-24 rounded border border-border bg-background px-2 py-1"
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2">
                         <select
                           disabled={readOnly}
                           value={row.applicationMode}
@@ -369,33 +360,24 @@ export function ProjectCostAmortizationModal({
                               applicationMode: e.target.value as ProjectAmortizationApplicationMode,
                             })
                           }
-                          className="min-w-[9.5rem] rounded border border-border bg-background px-2 py-1"
+                          className="rounded border border-border bg-background px-2 py-1"
                         >
                           <option value="COST">Custo do item</option>
                           <option value="FINAL_PRICE">Preço final</option>
                         </select>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className="block text-[11px] text-muted-foreground">{unitLabel}</span>
-                        {formatMoney(alloc.unitAmortizedCost)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className="block">
-                          Custo: {formatMoney(alloc.costComponentUnit)}
-                        </span>
-                        <span className="block text-muted-foreground">
-                          Preço: {formatMoney(alloc.priceAddOnUnit)}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2">{formatMoney(alloc.unitAmortizedCost)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{formatMoney(alloc.costComponentUnit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{formatMoney(alloc.priceAddOnUnit)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
                         {formatMoney(alloc.finalUnitCost)}
                         {row.applicationMode === "FINAL_PRICE" && alloc.priceAddOnUnit > 0 ? (
-                          <span className="mt-1 block text-[11px] text-muted-foreground">
-                            Preço + {formatMoney(alloc.priceAddOnUnit)}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (+ {formatMoney(alloc.priceAddOnUnit)} no preço)
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2">{rowStatus}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{rowStatus}</td>
                     </tr>
                   );
                 })}

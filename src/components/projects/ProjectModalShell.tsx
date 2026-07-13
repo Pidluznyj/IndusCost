@@ -2,7 +2,7 @@ import React from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
-export type ProjectModalShellSize = "default" | "wide" | "xl";
+export type ProjectModalShellSize = "default" | "wide" | "xl" | "full";
 
 function resolveModalSize(wide?: boolean, size?: ProjectModalShellSize): ProjectModalShellSize {
   if (size) return size;
@@ -29,16 +29,21 @@ export function ProjectModalShell({
   testId?: string;
 }) {
   const size = resolveModalSize(wide, sizeProp);
-  const isXl = size === "xl";
+  const isXl = size === "xl" || size === "full";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4">
       <div
         data-testid={testId}
         className={cn(
           "w-full rounded-xl border border-border bg-card shadow-xl",
           isXl
-            ? "flex max-h-[min(90vh,calc(100vh-32px))] w-[min(90vw,calc(100vw-32px))] max-w-[1280px] min-w-0 flex-col"
+            ? cn(
+                "flex max-h-[min(94vh,calc(100vh-24px))] min-w-0 flex-col",
+                size === "full"
+                  ? "w-[min(98vw,calc(100vw-16px))] max-w-[1680px]"
+                  : "w-[min(90vw,calc(100vw-32px))] max-w-[1280px]"
+              )
             : "max-h-[90vh] overflow-y-auto p-6",
           !isXl && size === "default" && "max-w-lg",
           !isXl && size === "wide" && "max-w-2xl"

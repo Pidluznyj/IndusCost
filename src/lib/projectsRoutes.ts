@@ -1332,6 +1332,21 @@ export function registerProjectsRoutes(
               : null,
           allocationPercent: optNum(row.allocationPercent) ?? 0,
           amortizationQuantity: optNum(row.amortizationQuantity) ?? 0,
+          amortizationApplicationMode:
+            row.amortizationApplicationMode === "FINAL_PRICE" ||
+            row.applicationMode === "FINAL_PRICE"
+              ? "FINAL_PRICE"
+              : row.amortizationApplicationMode === "COST" || row.applicationMode === "COST"
+                ? "COST"
+                : undefined,
+          applicationMode:
+            row.applicationMode === "FINAL_PRICE" ||
+            row.amortizationApplicationMode === "FINAL_PRICE"
+              ? "FINAL_PRICE"
+              : row.applicationMode === "COST" ||
+                  row.amortizationApplicationMode === "COST"
+                ? "COST"
+                : undefined,
         })),
       };
 
