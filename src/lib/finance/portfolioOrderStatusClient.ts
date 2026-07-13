@@ -46,7 +46,7 @@ export const ORDER_STATUS_ERROR_MESSAGE =
 
 export const ORDER_STATUS_API_PATH = PORTFOLIO_ORDER_STATUS_API_PATH;
 
-export const ORDER_STATUS_PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
+export const ORDER_STATUS_PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 export const ORDER_STATUS_CONSOLIDATED_OPTIONS: ReadonlyArray<{
   value: PortfolioOrderStatusConsolidated;
@@ -73,9 +73,61 @@ export const ORDER_STATUS_FINANCIAL_OPTIONS = [
 
 export const ORDER_STATUS_TEMPERATURE_OPTIONS = [
   { value: "QUENTE", label: "Quente" },
-  { value: "AMARELO", label: "Âmbar" },
+  { value: "MORNO", label: "Morno" },
+  { value: "FRIO", label: "Frio" },
   { value: "CONGELADO", label: "Congelado" },
 ] as const;
+
+export const ORDER_STATUS_OPERATIONAL_LABEL: Record<string, string> = {
+  FULLY_FULFILLED: "Atendido",
+  PARTIALLY_FULFILLED: "Parcial",
+  NOT_FULFILLED: "Sem atendimento",
+};
+
+export const ORDER_STATUS_FINANCIAL_LABEL: Record<string, string> = {
+  CR_OPEN: "CR aberto",
+  CR_RECEIVED: "Recebido",
+  NO_CR: "Sem CR",
+};
+
+export function formatOrderStatusOperationalLabel(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  return ORDER_STATUS_OPERATIONAL_LABEL[value] ?? value;
+}
+
+export function formatOrderStatusFinancialLabel(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  return ORDER_STATUS_FINANCIAL_LABEL[value] ?? value;
+}
+
+export function formatOrderStatusTemperatureLabel(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  const v = value.trim().toUpperCase();
+  if (v === "AMARELO" || v === "ÂMBAR" || v === "AMBAR") return "MORNO";
+  if (v === "VERDE" || v === "GREEN") return "FRIO";
+  if (v === "VERMELHO" || v === "RED") return "QUENTE";
+  return v;
+}
+
+export function formatOrderStatusAlertLabel(alert: string): string {
+  const map: Record<string, string> = {
+    DOCUMENTO_COM_EXCEDENTE: "Excedente",
+    PRODUTO_FORA_DO_PEDIDO: "Fora do pedido",
+    NF_CABECALHO_MAIOR_PEDIDO: "NF > pedido",
+    DIVERGENCIA_PRECO: "Preço",
+    DOCUMENTO_PARCIAL: "Doc. parcial",
+    DOCUMENTO_SEM_CR: "Doc. sem CR",
+    CR_SEM_RATEIO_SEGURO: "CR sem rateio",
+    CR_VENCIDO: "CR vencido",
+    PEDIDO_ANTIGO_SEM_EVOLUCAO: "Antigo s/ evolução",
+    SEM_CONDICAO_PAGAMENTO: "Sem cond. pagto",
+    SEM_VENDEDOR_NOMUS: "Sem vendedor",
+    SEM_RESPONSAVEL_COMERCIAL: "Sem responsável",
+    ENTREGA_VENCIDA: "Entrega vencida",
+    SEM_DOCUMENTO_SAIDA: "Sem doc. saída",
+  };
+  return map[alert] ?? alert;
+}
 
 export const ORDER_STATUS_ALERT_OPTIONS = [
   ...PORTFOLIO_ORDER_STATUS_DIVERGENCE_ALERTS,

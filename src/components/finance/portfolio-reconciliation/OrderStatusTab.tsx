@@ -30,6 +30,8 @@ import { OrderStatusFilters } from "./OrderStatusFilters";
 import { OrderStatusPrimaryCards } from "./OrderStatusPrimaryCards";
 import { OrderStatusDrilldownCards } from "./OrderStatusDrilldownCards";
 import { OrderStatusTable } from "./OrderStatusTable";
+import { OrderStatusDrawer } from "./OrderStatusDrawer";
+import type { PortfolioOrderStatusRow } from "@/src/lib/finance/portfolioOrderStatusService";
 
 /**
  * Aba Status Pedidos — layout base.
@@ -46,6 +48,8 @@ export function OrderStatusTab() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] =
+    useState<PortfolioOrderStatusRow | null>(null);
   const searched = applied != null;
   const canApply = canSearchOrderStatus(draft);
 
@@ -96,6 +100,7 @@ export function OrderStatusTab() {
     setPayload(null);
     setError(null);
     setLoading(false);
+    setSelectedOrder(null);
   };
 
   const patchApplied = (partial: Partial<OrderStatusUiFilters>) => {
@@ -229,13 +234,24 @@ export function OrderStatusTab() {
               totalPages={payload.pagination.totalPages}
               sortBy={applied?.sortBy ?? "orderIssueDate"}
               sortDirection={applied?.sortDirection ?? "desc"}
+              selectedOrderKey={selectedOrder?.orderKey ?? null}
               onSort={(column) => {
                 if (!applied) return;
                 setApplied(nextOrderStatusSort(applied, column));
               }}
               onPageChange={(page) => patchApplied({ page })}
+              onPageSizeChange={(pageSize) =>
+                patchApplied({ pageSize, page: 1 })
+              }
+              onRowClick={setSelectedOrder}
             />
           )}
+
+          <OrderStatusDrawer
+            open={selectedOrder != null}
+            order={selectedOrder}
+            onClose={() => setSelectedOrder(null)}
+          />
         </>
       ) : null}
     </div>

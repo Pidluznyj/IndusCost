@@ -277,6 +277,10 @@ describe("portfolioOrderStatusService", () => {
     assert.ok(row.lineBilledValue < TITLE_CR_02534);
     assert.ok(row.lineBilledValue > 0);
     assert.ok(row.pendingOrderValue > 0);
+    assert.equal(
+      row.pendingOrderValue,
+      Math.max(0, row.totalOrderValue - row.allocatedOrderValue)
+    );
 
     const cards = result.primaryCards;
     assert.equal(cards.find((c) => c.id === "total")?.count, 1);

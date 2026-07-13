@@ -629,7 +629,6 @@ export function aggregateOrderFactsToRow(
   let hasPaymentConditionMissing = false;
 
   const itemOrderValues = new Map<string, number>();
-  const pendingItemValues = new Map<string, number>();
   let allocatedOrderValue = 0;
   let lineBilledValue = 0;
   let pendingItemCount = 0;
@@ -679,11 +678,6 @@ export function aggregateOrderFactsToRow(
 
     if (isPendingLine(fact)) {
       pendingItemCount += 1;
-      if (fact.orderItemTotalValue != null && Number.isFinite(fact.orderItemTotalValue)) {
-        if (!pendingItemValues.has(itemKey)) {
-          pendingItemValues.set(itemKey, Math.max(0, fact.orderItemTotalValue));
-        }
-      }
       continue;
     }
 
@@ -722,9 +716,10 @@ export function aggregateOrderFactsToRow(
       : allocatedOrderValue
   );
 
-  let pendingOrderValue = 0;
-  for (const v of pendingItemValues.values()) pendingOrderValue += v;
-  pendingOrderValue = round6(pendingOrderValue);
+  // Saldo pendente = valor pedido − atendido (nunca negativo).
+  const pendingOrderValue = round6(
+    Math.max(0, totalOrderValue - allocatedCapped)
+  );
 
   const billed = round6(lineBilledValue);
   const fulfillmentPercent =
