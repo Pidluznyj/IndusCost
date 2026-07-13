@@ -668,14 +668,23 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
     assert.deepEqual(chips, []);
   });
 
-  it("seção da carteira expõe limpar filtros e estado vazio do vendedor", () => {
+  it("seção da carteira expõe limpar filtros e estado vazio do responsável", () => {
     const portfolio = readFileSync(
       join(process.cwd(), "src/components/crm/CrmCustomerPortfolioSection.tsx"),
       "utf8"
     );
+    const concepts = readFileSync(
+      join(process.cwd(), "src/components/crm/crmCommercialUiConcepts.ts"),
+      "utf8"
+    );
     assert.match(portfolio, /Limpar filtros/);
-    assert.match(portfolio, /Nenhum cliente encontrado para este vendedor com os filtros aplicados\./);
     assert.match(portfolio, /buildActivePortfolioFilterChips/);
+    assert.match(portfolio, /Responsável comercial da carteira/);
+    assert.match(portfolio, /crmPortfolioListEmptyCopy/);
+    assert.match(
+      concepts,
+      /Nenhum cliente encontrado para este responsável com os filtros aplicados\./
+    );
   });
 });
 

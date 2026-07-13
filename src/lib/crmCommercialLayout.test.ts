@@ -64,10 +64,11 @@ describe("crmCommercialLayout", () => {
     assert.equal(isCrmOwnSellerOnly(auth), true);
     assert.equal(getDefaultCrmManagementTab(auth), "seller");
     const tabs = readFileSync(
-      join(process.cwd(), "src/components/CrmCommercialManagementTabs.tsx"),
+      join(process.cwd(), "src/lib/moduleTabResources.ts"),
       "utf8"
     );
     assert.match(tabs, /ownLabel: "Meu Dashboard"/);
+    assert.match(tabs, /label: "Gestão por Responsável"/);
   });
 
   it("carteira de clientes é aba principal acessível", () => {
@@ -118,13 +119,15 @@ describe("crmCommercialLayout", () => {
     assert.equal(seller.includes("CrmModule"), false);
   });
 
-  it("seller dashboard tem CTA para carteira", () => {
+  it("seller dashboard tem CTA para carteira e rótulo por responsável", () => {
     const section = readFileSync(
       join(process.cwd(), "src/components/CrmSellerDashboardSection.tsx"),
       "utf8"
     );
     assert.match(section, /onOpenPortfolio/);
     assert.match(section, /Carteira de clientes/);
+    assert.match(section, /Gestão por Responsável/);
+    assert.match(section, /Responsável comercial da carteira/);
     assert.doesNotMatch(section, /CrmSellerSubTabs/);
   });
 });

@@ -201,7 +201,7 @@ export const PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
   },
   {
     key: "comercial.crm.tab.gestao_vendedor",
-    label: "Gestão por Vendedor",
+    label: "Gestão por Responsável",
     description: "Dashboard do vendedor (próprio ou todos).",
     type: "TAB",
     parentKey: "comercial.crm",

@@ -282,7 +282,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
   perm({
     key: "crm.seller.view",
-    label: "CRM — Gestão por Vendedor",
+    label: "CRM — Gestão por Responsável",
     group: CRM,
     module: "crm-commercial",
     description: "Aba de gestão por vendedor.",

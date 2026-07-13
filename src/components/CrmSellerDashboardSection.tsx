@@ -14,6 +14,15 @@ import {
   formatSellerOptionDetail,
   formatSellerOptionLabel,
 } from "@/src/components/crmSellerDashboardUi";
+import {
+  CRM_SELLER_TAB_SUBTITLE,
+  CRM_UI_TOOLTIPS,
+  resolveCrmSellerEmptyKind,
+} from "@/src/components/crm/crmCommercialUiConcepts";
+import {
+  CrmCommercialAuditStrip,
+  CrmCommercialSourceInfoNote,
+} from "@/src/components/crm/CrmCommercialSourceInfoNote";
 
 export type CrmSellerDashboardSectionProps = {
   data: SellerDashboardResponse | null;
@@ -36,6 +45,7 @@ export type CrmSellerDashboardSectionProps = {
   onReload: () => void;
   onOpenPortfolio?: () => void;
   formatDateTimePt: (iso: string | null | undefined) => string;
+  formatNumberPt?: (v: number | null | undefined) => string;
   sellerDisplayName?: string | null;
   children: React.ReactNode;
 };
@@ -61,16 +71,54 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   onReload,
   onOpenPortfolio,
   formatDateTimePt,
+  formatNumberPt,
   sellerDisplayName,
   children,
 }) => {
   const isCustomPeriod = periodPreset === "custom";
-  const headingTitle = ownScopeOnly ? "Minha Gestão Comercial" : "Gestão por Vendedor";
+  const headingTitle = ownScopeOnly ? "Minha Gestão Comercial" : "Gestão por Responsável";
   const dashboardSubtitle = sellerDisplayName
-    ? `Dashboard de: ${sellerDisplayName}`
+    ? `Carteira de: ${sellerDisplayName}`
     : ownScopeOnly
       ? "Meu dashboard"
-      : "Visão consolidada do vendedor";
+      : "Visão consolidada por responsável comercial";
+
+  const fmt = formatNumberPt ?? ((v: number | null | undefined) => String(v ?? 0));
+  const emptyKind = resolveCrmSellerEmptyKind({
+    sellerNotLinked,
+    loading,
+    error,
+    hasData: Boolean(data),
+    emptyStateReason: data?.emptyStateReason ?? null,
+    totalOrders: data?.totalOrders ?? data?.summary?.ordersCount ?? null,
+    customerCount: data?.selectedCommercialOwner?.customerCount ?? null,
+  });
+
+  const auditMetrics =
+    data && emptyKind === "ready"
+      ? [
+          {
+            key: "no-nomus",
+            label: "Pedidos sem vendedor no Nomus",
+            value: fmt(data.ordersWithoutNomusSeller ?? data.summary.ordersWithoutNomusSeller),
+            hint: CRM_UI_TOOLTIPS.orderSeller,
+          },
+          {
+            key: "divergence",
+            label: "Pedidos com responsável ≠ vendedor do pedido",
+            value: fmt(
+              data.ordersWithDifferentNomusSeller ?? data.summary.ordersWithDifferentNomusSeller
+            ),
+            hint: "O pedido permanece na carteira do responsável comercial; o vendedor Nomus é só auditoria/comissão.",
+          },
+          {
+            key: "customers",
+            label: "Clientes na carteira do responsável",
+            value: fmt(data.selectedCommercialOwner?.customerCount ?? data.customersWithOrders),
+            hint: CRM_UI_TOOLTIPS.commercialOwner,
+          },
+        ]
+      : [];
 
   if (sellerNotLinked) {
     return (
@@ -84,7 +132,7 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
               {headingTitle}
             </h3>
             <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-              Seu usuário ainda não está vinculado a um vendedor Nomus. Solicite ajuste ao
+              Seu usuário ainda não está vinculado a um responsável comercial. Solicite ajuste ao
               administrador.
             </p>
           </div>
@@ -106,7 +154,7 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                 {headingTitle}
               </h3>
               <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-                Resumo do desempenho comercial, pedidos, carteira e follow-ups do vendedor.
+                {CRM_SELLER_TAB_SUBTITLE}
               </p>
               <p className="text-sm font-medium text-foreground mt-1">{dashboardSubtitle}</p>
               {ownScopeOnly ? (
@@ -157,8 +205,9 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                 <label
                   htmlFor="crm-seller-filter"
                   className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  title={CRM_UI_TOOLTIPS.commercialOwner}
                 >
-                  Vendedor / Responsável
+                  Responsável comercial da carteira
                 </label>
                 <select
                   id="crm-seller-filter"
@@ -166,8 +215,9 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                   onChange={(e) => onSellerChange(e.target.value)}
                   disabled={loading || sellerOptions.length === 0}
                   className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  title={CRM_UI_TOOLTIPS.commercialOwner}
                 >
-                  <option value={SELLER_KEY_ALL}>Todos os vendedores (visão geral)</option>
+                  <option value={SELLER_KEY_ALL}>Todos os responsáveis (visão geral)</option>
                   {sellerOptions.map((opt) => {
                     const key = buildSellerOptionKey(opt);
                     const detail = formatSellerOptionDetail(opt);
@@ -264,18 +314,14 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
           data?.filters?.dateTo ? (
             <p className="text-[10px] text-muted-foreground">
               Filtros ativos:
-              {data?.filters?.sellerIdentityKey
-                ? ` ${data.filters.sellerIdentityKey}`
-                : data?.filters?.externalSellerId !== null &&
-                    data?.filters?.externalSellerId !== undefined
-                  ? ` vendedor ID ${data.filters.externalSellerId}`
-                  : ""}
-              {data?.filters?.responsible && !data?.filters?.sellerIdentityKey
-                ? data?.filters?.externalSellerId !== null &&
-                  data?.filters?.externalSellerId !== undefined
-                  ? ` · ${data.filters.responsible}`
-                  : ` ${data.filters.responsible}`
-                : ""}
+              {data?.selectedCommercialOwner?.label
+                ? ` ${data.selectedCommercialOwner.label}`
+                : data?.filters?.sellerIdentityKey
+                  ? ` ${data.filters.sellerIdentityKey}`
+                  : data?.filters?.externalSellerId !== null &&
+                      data?.filters?.externalSellerId !== undefined
+                    ? ` ID ${data.filters.externalSellerId}`
+                    : ""}
               {data?.filters?.dateFrom || data?.filters?.dateTo
                 ? ` · período ${data.filters.dateFrom ?? "…"} a ${data.filters.dateTo ?? "…"}`
                 : ""}
@@ -283,16 +329,13 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
           ) : null}
         </div>
 
-        <p className="text-[11px] text-muted-foreground leading-relaxed rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 max-w-3xl">
-          Pedidos são filtrados pela data de emissão. Faturamento é filtrado pela data de
-          processamento da NFe.
-        </p>
+        <CrmCommercialSourceInfoNote sourceInfo={data?.sourceInfo} />
       </div>
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando gestão por vendedor…
+          Carregando gestão por responsável…
         </div>
       ) : error ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 space-y-3">
@@ -306,10 +349,55 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             Tentar novamente
           </button>
         </div>
+      ) : data && emptyKind === "no_customers_for_owner" ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 space-y-2">
+          <p className="text-sm font-semibold text-foreground">
+            Nenhum cliente sob esta responsabilidade
+          </p>
+          <p className="text-sm text-muted-foreground max-w-2xl">
+            Não há clientes com este responsável comercial atribuído. Os indicadores zerados
+            refletem ausência de carteira — não um erro de cálculo.
+          </p>
+          <CrmCommercialSourceInfoNote sourceInfo={data.sourceInfo} showOfficialNote={false} />
+        </div>
+      ) : data && emptyKind === "no_orders_in_period" ? (
+        <div className="space-y-6">
+          <div className="rounded-xl border border-sky-200/80 bg-sky-50/60 px-4 py-3 text-sm text-sky-950">
+            Há{" "}
+            <span className="font-semibold">
+              {fmt(data.selectedCommercialOwner?.customerCount)}
+            </span>{" "}
+            cliente(s) na carteira deste responsável, mas nenhum pedido na fonte oficial no período
+            selecionado.
+          </div>
+          <ExecutiveSummarySection
+            title="Resumo do responsável"
+            eyebrow="Indicadores do período e escopo selecionado"
+            testId="crm-seller-kpi-summary"
+          >
+            <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+              {kpiCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <FinanceExecutiveTotalizerCard
+                    key={card.label}
+                    label={card.label}
+                    value={card.value}
+                    helperText={card.description}
+                    tone="neutral"
+                    icon={Icon}
+                  />
+                );
+              })}
+            </SummaryKpiGrid>
+          </ExecutiveSummarySection>
+          <CrmCommercialAuditStrip metrics={auditMetrics} />
+          {children}
+        </div>
       ) : data ? (
         <div className="space-y-8">
           <ExecutiveSummarySection
-            title="Resumo do vendedor"
+            title="Resumo do responsável"
             eyebrow="Indicadores do período e escopo selecionado"
             testId="crm-seller-kpi-summary"
           >
@@ -339,6 +427,7 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
               })}
             </SummaryKpiGrid>
           </ExecutiveSummarySection>
+          <CrmCommercialAuditStrip metrics={auditMetrics} />
           {children}
         </div>
       ) : null}

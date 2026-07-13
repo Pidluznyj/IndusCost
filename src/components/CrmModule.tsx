@@ -1376,6 +1376,11 @@ export const CrmModule = () => {
   const [customers, setCustomers] = useState<CrmCustomerListItem[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState<string | null>(null);
+  const [customersListMeta, setCustomersListMeta] = useState<{
+    sourceInfo: CrmCustomersListResponse["sourceInfo"] | null;
+    totals: CrmCustomersListResponse["totals"] | null;
+    period: CrmCustomersListResponse["period"] | null;
+  }>({ sourceInfo: null, totals: null, period: null });
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [crmCustomerFilter, setCrmCustomerFilter] = useState<CrmCustomerListFilter>("all");
@@ -1678,6 +1683,11 @@ export const CrmModule = () => {
         );
         const list = Array.isArray(data?.customers) ? data.customers : [];
         setCustomers(list);
+        setCustomersListMeta({
+          sourceInfo: data?.sourceInfo ?? null,
+          totals: data?.totals ?? null,
+          period: data?.period ?? null,
+        });
         setListHasMore(Boolean(data?.pagination?.hasMore));
         setSelectedId((prev) => {
           if (!prev) return null;
@@ -1685,6 +1695,7 @@ export const CrmModule = () => {
         });
       } catch (e) {
         setCustomers([]);
+        setCustomersListMeta({ sourceInfo: null, totals: null, period: null });
         setListHasMore(false);
         const raw = e instanceof Error ? e.message : "Não foi possível carregar a lista de clientes.";
         setCustomersError(clampMessage(raw));
@@ -2214,6 +2225,7 @@ export const CrmModule = () => {
             kpiCards={managementKpiCards}
             onReload={() => void loadManagementDashboard()}
             formatDateTimePt={formatDateTimePt}
+            formatNumberPt={formatNumberPt}
           >
             {managementDashboard ? (
               <CrmManagementLists
@@ -2256,6 +2268,7 @@ export const CrmModule = () => {
             onReload={reloadSellerDashboard}
             onOpenPortfolio={canCrmPortfolio ? () => setActiveCrmManagementTab("portfolio") : undefined}
             formatDateTimePt={formatDateTimePt}
+            formatNumberPt={formatNumberPt}
             sellerDisplayName={sellerDisplayName}
           >
             {sellerDashboard ? (
@@ -2305,6 +2318,10 @@ export const CrmModule = () => {
           customersLoading={customersLoading}
           customersError={customersError}
           listHasMore={listHasMore}
+          sourceInfo={customersListMeta.sourceInfo}
+          totals={customersListMeta.totals}
+          period={customersListMeta.period}
+          formatNumberPt={formatNumberPt}
           selectedId={selectedId}
           onSelectCustomer={setSelectedId}
           selectedCustomer={selectedCustomer}

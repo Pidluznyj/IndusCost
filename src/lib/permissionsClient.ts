@@ -194,7 +194,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   },
   {
     key: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR,
-    label: "Gestão por Vendedor",
+    label: "Gestão por Responsável",
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_CRM,
     legacyAliasKeys: ["crm.seller.own", "crm.seller.all", "crm.seller.view"],

@@ -43,7 +43,7 @@ export const CRM_UI_TABS: ReadonlyArray<{
   {
     id: "seller",
     resourceKey: TabResourceKeys.CRM_GESTAO_VENDEDOR,
-    label: "Gestão por Vendedor",
+    label: "Gestão por Responsável",
     ownLabel: "Meu Dashboard",
   },
   {

@@ -18,6 +18,27 @@ export type CustomerListStatusTag = {
 
 export function buildCustomerListStatusTags(customer: CrmCustomerListItem): CustomerListStatusTag[] {
   const tags: CustomerListStatusTag[] = [];
+  if (!customer.hasCommercialOwner) {
+    tags.push({
+      key: "no-owner",
+      label: "Sem responsável",
+      className: "border-amber-200 bg-amber-50 text-amber-900",
+    });
+  }
+  if (customer.hasOwnerSellerDivergence) {
+    tags.push({
+      key: "owner-divergence",
+      label: "Divergência Nomus",
+      className: "border-orange-200 bg-orange-50 text-orange-900",
+    });
+  }
+  if (customer.hasOrderWithoutNomusSeller) {
+    tags.push({
+      key: "no-nomus",
+      label: "Pedido s/ Nomus",
+      className: "border-slate-200 bg-slate-50 text-slate-800",
+    });
+  }
   if (customer.hasOverdueFollowUp) {
     tags.push({
       key: "overdue",
@@ -72,7 +93,7 @@ export function buildActivePortfolioFilterChips(input: {
 }): ActivePortfolioFilterChip[] {
   const chips: ActivePortfolioFilterChip[] = [];
   if (input.sellerLabel && input.sellerLabel.trim()) {
-    chips.push({ key: "seller", label: `Vendedor: ${input.sellerLabel.trim()}` });
+    chips.push({ key: "seller", label: `Responsável: ${input.sellerLabel.trim()}` });
   }
   const term = input.searchTerm.trim();
   if (term) {

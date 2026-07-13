@@ -1,8 +1,12 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
 import { ManagementListPanel } from "@/src/components/CrmManagementDashboardSection";
-import type { SellerDashboardResponse } from "@/src/components/crmSellerDashboardTypes";
+import type {
+  SellerDashboardOrder,
+  SellerDashboardResponse,
+} from "@/src/components/crmSellerDashboardTypes";
 import { truncateMiddle } from "@/src/components/crmSellerDashboardUi";
+import { CRM_UI_TOOLTIPS } from "@/src/components/crm/crmCommercialUiConcepts";
 
 export type CrmSellerDashboardListsProps = {
   data: SellerDashboardResponse;
@@ -17,6 +21,30 @@ export type CrmSellerDashboardListsProps = {
 const listButtonClass =
   "w-full text-left rounded-lg border border-border/70 bg-background/80 px-3 py-2.5 hover:border-primary/40 hover:bg-accent/30 transition-colors";
 
+function OrderAuditFooter({ row }: { row: SellerDashboardOrder }) {
+  const owner = row.commercialOwnerName?.trim() || row.responsible?.trim() || null;
+  const nomus = row.nomusSellerName?.trim() || null;
+  return (
+    <div className="mt-0.5 space-y-0.5">
+      {owner ? (
+        <p className="text-[10px] text-muted-foreground" title={CRM_UI_TOOLTIPS.commercialOwner}>
+          Responsável: {owner}
+        </p>
+      ) : null}
+      {nomus ? (
+        <p className="text-[10px] text-muted-foreground" title={CRM_UI_TOOLTIPS.orderSeller}>
+          Vendedor do pedido: {nomus}
+          {row.ownerDiffersFromNomusSeller ? " · divergente" : ""}
+        </p>
+      ) : (
+        <p className="text-[10px] text-muted-foreground" title={CRM_UI_TOOLTIPS.orderSeller}>
+          Sem vendedor Nomus no pedido
+        </p>
+      )}
+    </div>
+  );
+}
+
 export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = ({
   data,
   onSelectCustomer,
@@ -27,7 +55,7 @@ export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = (
   <div className="grid gap-4 lg:grid-cols-2">
     <ManagementListPanel
       title="Carteira aberta"
-      description="Pedidos válidos sem NF processada."
+      description="Pedidos válidos sem NF processada (carteira do responsável comercial)."
       emptyMessage="Nenhum pedido em carteira no escopo."
       isEmpty={data.openPortfolioOrders.length === 0}
     >
@@ -72,8 +100,8 @@ export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = (
                         ? `${row.daysUntilExpectedDelivery} dia(s) até a entrega`
                         : `${Math.abs(row.daysUntilExpectedDelivery)} dia(s) além do prazo`
                       : "—"}
-                  {row.responsible ? ` · ${row.responsible}` : ""}
                 </p>
+                <OrderAuditFooter row={row} />
               </button>
             </li>
           );
@@ -117,9 +145,7 @@ export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = (
                   Chave: {truncateMiddle(row.invoiceKey, 22)}
                 </p>
               ) : null}
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {displayLine(row.responsible)}
-              </p>
+              <OrderAuditFooter row={row} />
             </button>
           </li>
         ))}
@@ -153,9 +179,7 @@ export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = (
                 {formatDateShortPt(row.issueDate)} · {formatIntelCurrency(row.totalNetValue)} ·{" "}
                 {row.isInvoiced ? "Faturado" : "Em carteira"}
               </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {displayLine(row.responsible)}
-              </p>
+              <OrderAuditFooter row={row} />
             </button>
           </li>
         ))}
