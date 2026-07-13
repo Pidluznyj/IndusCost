@@ -1848,6 +1848,9 @@ model AppUser {
   updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
   accessProfile         AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
   sessions              AppSession[]
+  permissionOverrides   UserPermissionOverride[]
+  permissionAuditsAsActor  PermissionAuditLog[] @relation("PermissionAuditActor")
+  permissionAuditsAsTarget PermissionAuditLog[] @relation("PermissionAuditTarget")
 
   @@index([role])
   @@index([isActive])
@@ -1867,6 +1870,96 @@ model AppSession {
   @@index([userId])
   @@index([expiresAt])
   @@index([revokedAt])
+}
+
+/// Tipo hierárquico do catálogo relacional de permissões (MENU → SUBMENU → TAB → ACTION).
+/// Complementa o catálogo em código (`PERMISSION_CATALOG`); não substitui AppUser.permissions[] ainda.
+enum PermissionResourceType {
+  MENU
+  SUBMENU
+  TAB
+  ACTION
+}
+
+model PermissionResource {
+  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String                 @unique
+  label       String
+  description String?
+  type        PermissionResourceType
+  parentKey   String?
+  module      String
+  sortOrder   Int                    @default(0)
+  isSystem    Boolean                @default(true)
+  isActive    Boolean                @default(true)
+  createdAt   DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime               @updatedAt @db.Timestamptz(6)
+  parent      PermissionResource?    @relation("PermissionResourceHierarchy", fields: [parentKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
+  children    PermissionResource[]   @relation("PermissionResourceHierarchy")
+  rolePermissions RolePermission[]
+  userOverrides   UserPermissionOverride[]
+
+  @@index([type])
+  @@index([module])
+  @@index([parentKey])
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model RolePermission {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role        AppUserRole
+  resourceKey String
+  canView     Boolean            @default(false)
+  canExecute  Boolean            @default(false)
+  canManage   Boolean            @default(false)
+  createdAt   DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @db.Timestamptz(6)
+  resource    PermissionResource @relation(fields: [resourceKey], references: [key], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([role, resourceKey])
+  @@index([role])
+  @@index([resourceKey])
+}
+
+model UserPermissionOverride {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String             @db.Uuid
+  resourceKey String
+  canView     Boolean?
+  canExecute  Boolean?
+  canManage   Boolean?
+  reason      String?
+  createdAt   DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @db.Timestamptz(6)
+  user        AppUser            @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  resource    PermissionResource @relation(fields: [resourceKey], references: [key], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, resourceKey])
+  @@index([userId])
+  @@index([resourceKey])
+}
+
+/// Auditoria de mudanças de ACL (não existe AppUserChangeLog genérico; domain AuditLogs não cobrem permissões).
+model PermissionAuditLog {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId  String?      @db.Uuid
+  targetUserId String?      @db.Uuid
+  targetRole   AppUserRole?
+  resourceKey  String?
+  action       String
+  beforeJson   Json?
+  afterJson    Json?
+  createdAt    DateTime     @default(now()) @db.Timestamptz(6)
+  actorUser    AppUser?     @relation("PermissionAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  targetUser   AppUser?     @relation("PermissionAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([actorUserId])
+  @@index([targetUserId])
+  @@index([targetRole])
+  @@index([resourceKey])
+  @@index([action])
+  @@index([createdAt])
 }
 
 /// Catálogo administrativo de produtos do ERP Nomus (inclui matérias-primas bloqueadas do sync Product).

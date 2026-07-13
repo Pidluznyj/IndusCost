@@ -17,7 +17,7 @@
 3. **Hierarquia obrigatória na resolução efetiva:** filho sem pai = inválido (exceto regra explícita documentada).
 4. **Segurança na API;** UI só esconde.
 5. **SUPER_ADMIN** = bypass seguro do catálogo inteiro (já existe).
-6. **Não migrar schema agora.** Tabelas `RolePermission` / `UserPermissionOverride` ficam como alvo documentado (rascunho), não como migration deste prompt.
+6. **Fase C iniciada no schema:** migration `20260723120000_permission_resource_rbac` + seed — ver `docs/security/permissions-migration-and-seed.md`. Runtime ainda **não** lê as novas tabelas.
 
 ---
 
