@@ -1,4 +1,5 @@
 import React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
   useTableHorizontalScrollSync,

@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
   useTableHorizontalScrollSync,

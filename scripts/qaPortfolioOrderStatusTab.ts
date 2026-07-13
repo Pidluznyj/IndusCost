@@ -282,6 +282,58 @@ function staticContracts(): void {
     );
   }
 
+  // 3b) Ícones lucide-react usados no JSX precisam estar importados.
+  const KNOWN_LUCIDE_ICONS = [
+    "ChevronLeft",
+    "ChevronRight",
+    "ChevronDown",
+    "ChevronUp",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowUpDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "Loader",
+    "Loader2",
+    "X",
+    "Eye",
+    "Search",
+    "Filter",
+    "Layers",
+    "Info",
+    "Plus",
+    "Minus",
+    "RefreshCw",
+    "Trash",
+    "Pencil",
+  ];
+  for (const [id, src, path] of [
+    ["ui:table-lucide-imports", tableSrc, "OrderStatusTable.tsx"],
+  ] as const) {
+    const usedIcons = new Set<string>();
+    for (const icon of KNOWN_LUCIDE_ICONS) {
+      const jsx = new RegExp(`<${icon}[\\s/>]`);
+      if (jsx.test(src)) usedIcons.add(icon);
+    }
+    const importedNames = new Set<string>();
+    for (const im of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']lucide-react["']/g)) {
+      for (const raw of im[1]!.split(",")) {
+        const name = raw.trim().split(/\s+as\s+/)[0]!.trim();
+        if (name) importedNames.add(name);
+      }
+    }
+    const missing = [...usedIcons].filter((n) => !importedNames.has(n));
+    if (missing.length === 0) {
+      ok("static", id, `${path} — ícones lucide-react (${[...usedIcons].join(", ") || "nenhum"}) importados`);
+    } else {
+      fail(
+        "static",
+        id,
+        `${path} — ícones em uso sem import: ${missing.join(", ")}`
+      );
+    }
+  }
+
   // 4) UI usa labels específicos "Sem responsável comercial" / "Sem vendedor informado".
   if (
     uiHelpersSrc.includes("orderStatusCommercialResponsibleLabel") &&
