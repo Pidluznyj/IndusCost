@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, RefreshCw, Scale } from "lucide-react";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
@@ -11,14 +11,15 @@ import {
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
 import {
-  canViewFinancePortfolioReconciliation,
-  canViewPortfolioConciliationTab,
-  canViewPortfolioIntelligenceTab,
-  canViewPortfolioOrderToCashAuditTab,
-  listVisiblePortfolioReconciliationTabs,
-  resolveDefaultPortfolioReconciliationTab,
-  type PortfolioReconciliationTabId,
-} from "@/src/lib/financePortfolioReconciliationPermissions";
+  PERMISSION_DENIED_TAB_MESSAGE,
+  PERMISSION_EMPTY_TABS_MESSAGE,
+  PORTFOLIO_RECONCILIATION_UI_TABS,
+  ResourceKeys,
+  type PortfolioReconciliationUiTabId,
+} from "@/src/lib/permissionsClient";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { PermissionGate } from "@/src/components/security/PermissionGate";
+import { ProtectedTab } from "@/src/components/security/ProtectedTab";
 import {
   buildPortfolioReconciliationListQuery,
   createDefaultPortfolioReconciliationUiFilters,
@@ -64,16 +65,20 @@ const MONTH_OPTIONS = [
  * Não altera Fluxo de Caixa, Contas a Receber, Faturamento nem Comissões.
  */
 export function FinancePortfolioReconciliationPage() {
-  const auth = useAuth();
-  const canView = canViewFinancePortfolioReconciliation(auth);
-  const canViewConciliation = canViewPortfolioConciliationTab(auth);
-  const canViewIntelligence = canViewPortfolioIntelligenceTab(auth);
-  const canViewOrderToCashAudit = canViewPortfolioOrderToCashAuditTab(auth);
+  const permissions = usePermissions();
+  const canView = permissions.canViewPortfolioModule();
+  const canViewConciliation = permissions.canView(
+    ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO
+  );
   const visibleTabs = useMemo(
-    () => listVisiblePortfolioReconciliationTabs(auth),
-    // Recalcula quando o usuário efetivo muda (SUPER_ADMIN / permissões).
+    () => permissions.listAllowedPortfolioReconciliationTabs(),
+    // Recalcula quando o usuário efetivo muda (reload/refetch de /api/auth/me).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [auth.authUser?.id, auth.authUser?.effectivePermissions?.join("|"), auth.authUser?.role]
+    [
+      permissions.authUser?.id,
+      permissions.authUser?.role,
+      permissions.authUser?.effectivePermissions?.join("|"),
+    ]
   );
   const abortRef = useRef<AbortController | null>(null);
 
@@ -85,8 +90,8 @@ export function FinancePortfolioReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<PortfolioReconciliationTabId>(
-    () => resolveDefaultPortfolioReconciliationTab(auth) ?? "conciliation"
+  const [activeView, setActiveView] = useState<PortfolioReconciliationUiTabId>(
+    () => visibleTabs[0] ?? "conciliation"
   );
 
   useEffect(() => {
@@ -212,9 +217,20 @@ export function FinancePortfolioReconciliationPage() {
 
   if (!canView) {
     return (
-      <FinanceModuleEmptyState
+      <PermissionDenied
         title="Sem permissão para Conciliação de Carteira"
-        description="Solicite acesso financeiro (visão) para consultar esta auditoria paralela."
+        message="Solicite acesso ao módulo ou às abas desta auditoria paralela."
+        testId="portfolio-reconciliation-no-module-permission"
+      />
+    );
+  }
+
+  if (visibleTabs.length === 0) {
+    return (
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="portfolio-reconciliation-empty-permission"
       />
     );
   }
@@ -492,66 +508,48 @@ export function FinancePortfolioReconciliationPage() {
           aria-label="Visões da conciliação"
           data-testid="portfolio-reconciliation-view-tabs"
         >
-          {canViewConciliation ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeView === "conciliation"}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                activeView === "conciliation"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setActiveView("conciliation")}
-              data-testid="portfolio-tab-conciliation"
-            >
-              Conciliação
-            </button>
-          ) : null}
-          {canViewIntelligence ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeView === "intelligence"}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                activeView === "intelligence"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setActiveView("intelligence")}
-              data-testid="portfolio-tab-intelligence"
-            >
-              Inteligência da Carteira
-            </button>
-          ) : null}
-          {canViewOrderToCashAudit ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeView === "order-to-cash-audit"}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                activeView === "order-to-cash-audit"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setActiveView("order-to-cash-audit")}
-              data-testid="portfolio-tab-order-to-cash-audit"
-            >
-              Auditoria Pedido → Caixa
-            </button>
-          ) : null}
+          {PORTFOLIO_RECONCILIATION_UI_TABS.map((tab) => (
+            <PermissionGate key={tab.id} resourceKey={tab.resourceKey} mode="hide">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === tab.id}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                  activeView === tab.id
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setActiveView(tab.id)}
+                data-testid={
+                  tab.id === "conciliation"
+                    ? "portfolio-tab-conciliation"
+                    : tab.id === "intelligence"
+                      ? "portfolio-tab-intelligence"
+                      : "portfolio-tab-order-to-cash-audit"
+                }
+              >
+                {tab.label}
+              </button>
+            </PermissionGate>
+          ))}
         </div>
 
-        {activeView === "order-to-cash-audit" && canViewOrderToCashAudit ? (
-          <div className="mb-6">
+        <ProtectedTab
+          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA}
+          active={activeView === "order-to-cash-audit"}
+          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
+        >
+          <div className="mb-6 min-w-0 max-w-full">
             <OrderToCashAuditTab />
           </div>
-        ) : null}
+        </ProtectedTab>
 
-        {activeView === "intelligence" && canViewIntelligence ? (
+        <ProtectedTab
+          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA}
+          active={activeView === "intelligence"}
+          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
+        >
           <div className="mb-6">
             <PortfolioIntelligenceSection
               enabled={canView}
@@ -560,8 +558,14 @@ export function FinancePortfolioReconciliationPage() {
               customers={available?.customers ?? []}
             />
           </div>
-        ) : null}
+        </ProtectedTab>
 
+        <ProtectedTab
+          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO}
+          active={activeView === "conciliation"}
+          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
+        >
+          <>
         {activeView === "conciliation" && canViewConciliation && loading && !payload ? (
           <FinanceModuleLoadingBlock label="Carregando conciliação de carteira…" />
         ) : null}
@@ -640,6 +644,8 @@ export function FinancePortfolioReconciliationPage() {
             />
           </>
         ) : null}
+          </>
+        </ProtectedTab>
 
         <PortfolioReconciliationOrderDrawer
           open={Boolean(detailOrderId)}

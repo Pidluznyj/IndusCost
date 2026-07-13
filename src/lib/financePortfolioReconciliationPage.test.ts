@@ -113,14 +113,19 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /comparison/);
     assert.match(page, /PortfolioIntelligenceSection/);
     assert.match(page, /portfolio-tab-intelligence/);
-    assert.match(page, /Inteligência da Carteira/);
+    assert.match(page, /PORTFOLIO_RECONCILIATION_UI_TABS/);
     assert.match(page, /portfolio-tab-order-to-cash-audit/);
-    assert.match(page, /Auditoria Pedido → Caixa/);
     assert.match(page, /OrderToCashAuditTab/);
+    const clientPerms = read("src/lib/permissionsClient.ts");
+    assert.match(clientPerms, /Inteligência da Carteira/);
+    assert.match(clientPerms, /Auditoria Pedido → Caixa/);
     assert.match(client, new RegExp(PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(page, /\/api\/finance\/portfolio-reconciliation/);
     assert.match(page, /\/api\/finance\/portfolio-reconciliation\/runs/);
-    assert.match(page, /canViewFinancePortfolioReconciliation/);
+    assert.match(page, /usePermissions/);
+    assert.match(page, /PermissionGate/);
+    assert.match(page, /ProtectedTab/);
+    assert.match(page, /portfolio-reconciliation-empty-permission|PERMISSION_EMPTY_TABS_MESSAGE/);
     assert.match(page, /PortfolioReconciliationOrderDrawer/);
   });
 

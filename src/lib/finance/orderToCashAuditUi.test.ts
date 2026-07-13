@@ -36,8 +36,10 @@ const UI_FILES = [
 describe("orderToCashAuditUi", () => {
   it("1. terceira aba existe com nome Auditoria Pedido → Caixa", () => {
     const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
+    const perms = read("src/lib/permissionsClient.ts");
     assert.match(page, /portfolio-tab-order-to-cash-audit/);
-    assert.match(page, /Auditoria Pedido → Caixa/);
+    assert.match(page, /PORTFOLIO_RECONCILIATION_UI_TABS|OrderToCashAuditTab/);
+    assert.match(perms, /Auditoria Pedido → Caixa/);
     assert.match(page, /OrderToCashAuditTab/);
     assert.equal(ORDER_TO_CASH_AUDIT_TAB_TITLE, "Auditoria Pedido → Caixa");
   });
@@ -160,6 +162,19 @@ describe("orderToCashAuditUi", () => {
     ]) {
       assert.match(table, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+  });
+
+  it("6b. tabela tem rolagem horizontal no topo e área limitada", () => {
+    const table = read(
+      "src/components/finance/portfolio-reconciliation/OrderToCashAuditTable.tsx"
+    );
+    assert.match(table, /order-to-cash-audit-scroll-top/);
+    assert.match(table, /order-to-cash-audit-scroll-top-bar/);
+    assert.match(table, /order-to-cash-audit-scroll-left/);
+    assert.match(table, /order-to-cash-audit-scroll-right/);
+    assert.match(table, /order-to-cash-audit-scroll-main/);
+    assert.match(table, /max-h-\[min\(70vh,720px\)\]/);
+    assert.match(table, /syncHorizontalScroll/);
   });
 
   it("7–9. sort server-side", () => {
