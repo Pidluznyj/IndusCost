@@ -8,7 +8,7 @@
 | **Script** | `scripts/qaPortfolioOrderStatusTab.ts` (`npm run qa:portfolio-order-status`) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/order-status` |
 | **Status geral** | **LIBERADO COM RESSALVA** |
-| **Resumo** | total=22 pass=22 fail=0 skip=1 |
+| **Resumo** | total=23 pass=23 fail=0 skip=1 |
 
 ---
 
@@ -34,6 +34,7 @@
 | `service:commercial-responsible-source` | PASS | service usa fact.commercialResponsibleName (CRM), não responsibleArea (setor) |
 | `loader:crm-owner-injection` | PASS | loader injeta CrmCustomerCommercialOwner por customerId |
 | `row:operational-responsible-separate` | PASS | row separa Responsável Comercial (CRM) do setor operacional (Nomus) |
+| `ui:table-lucide-imports` | PASS | OrderStatusTable.tsx — ícones lucide-react (ChevronLeft, ChevronRight) importados |
 | `ui:responsible-vs-seller-labels` | PASS | tabela e drawer usam labels dedicados sem confundir responsável comercial × vendedor |
 | `drilldown:shared-items-grid` | PASS | OrderToCashAuditItemsGrid usado em Status Pedidos + Auditoria |
 | `drilldown:reuses-audit-api` | PASS | painel carrega itens via API Auditoria Pedido → Caixa |
