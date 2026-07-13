@@ -20,6 +20,10 @@ import {
   loadOrderStatusPedidosList,
   loadOrderStatusPedidosOrderDetail,
 } from "./financeOrderStatusPedidosApi.server.js";
+import {
+  loadPortfolioOrderStatusList,
+  PortfolioOrderStatusApiParseError,
+} from "./financePortfolioOrderStatusApi.server.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
@@ -346,6 +350,39 @@ export function registerFinancePortfolioReconciliationRoutes(
             financeApiErrorJson(
               "Erro ao carregar fato da auditoria Pedido → Caixa.",
               new Error("Falha interna ao consultar fato materializado.")
+            )
+          );
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/portfolio-reconciliation/order-status",
+    ...orderStatusPedidosGuard,
+    async (req, res) => {
+      try {
+        const payload = await loadPortfolioOrderStatusList(
+          req.query as Record<string, unknown>
+        );
+        res.json(payload);
+      } catch (error) {
+        if (
+          error instanceof PortfolioOrderStatusApiParseError ||
+          error instanceof OrderToCashAuditApiParseError
+        ) {
+          res.status(400).json({ error: error.message, message: error.message });
+          return;
+        }
+        console.error(
+          "GET /api/finance/portfolio-reconciliation/order-status",
+          error
+        );
+        res
+          .status(500)
+          .json(
+            financeApiErrorJson(
+              "Erro ao carregar Status Pedidos.",
+              new Error("Falha interna ao agregar pedidos materializados.")
             )
           );
       }
