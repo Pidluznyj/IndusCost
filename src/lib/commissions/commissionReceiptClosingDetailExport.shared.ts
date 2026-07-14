@@ -12,6 +12,9 @@ import {
 } from "./commissionReceiptClosingApi.shared.js";
 
 export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE =
+  "COMERCIAL: RELATÓRIO DE COMISSÕES";
+
+export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE_PREVIEW =
   "Fechamento por recebimento — detalhamento da prévia";
 
 const DETAIL_COLUMNS = [
@@ -134,11 +137,19 @@ function buildPorVendedorRows(payload: ReceiptClosingPagePayload) {
 }
 
 function buildResumoRows(payload: ReceiptClosingPagePayload) {
-  const { year, month, cards, materializationSummary } = payload;
+  const { year, month, cards, materializationSummary, closing, mode } = payload;
+  const title =
+    mode === "CLOSED"
+      ? RECEIPT_CLOSING_DETAIL_EXPORT_TITLE
+      : RECEIPT_CLOSING_DETAIL_EXPORT_TITLE_PREVIEW;
   return [
-    { Campo: "Relatório", Valor: RECEIPT_CLOSING_DETAIL_EXPORT_TITLE },
+    { Campo: "Relatório", Valor: title },
+    { Campo: "Status", Valor: mode === "CLOSED" ? "FECHADO" : mode },
     { Campo: "Ano", Valor: year },
     { Campo: "Mês", Valor: month },
+    { Campo: "Fechado em", Valor: closing?.closedAt ? formatDateBr(closing.closedAt) : "" },
+    { Campo: "Fechado por", Valor: closing?.closedBy ?? "" },
+    { Campo: "Observação", Valor: closing?.notes ?? "" },
     {
       Campo: "Total de títulos recebidos",
       Valor: materializationSummary.totalReceivablesCount,
@@ -152,7 +163,7 @@ function buildResumoRows(payload: ReceiptClosingPagePayload) {
     },
     {
       Campo: "Recebido empresas do grupo (auditoria)",
-      Valor: formatCurrencyBr(materializationSummary.groupCompanyExcludedReceivedAmount),
+      Valor: formatCurrencyBr(cards.receivedGroupCompanyExcludedAmount),
     },
     { Campo: "Vendedor não resolvido", Valor: materializationSummary.sellerUnresolvedCount },
     { Campo: "Total recebido no mês", Valor: formatCurrencyBr(cards.totalReceivedAmount) },
@@ -162,6 +173,10 @@ function buildResumoRows(payload: ReceiptClosingPagePayload) {
     { Campo: "Comissão bruta", Valor: formatCurrencyBr(cards.grossCommissionAmount) },
     { Campo: "Comissão excluída", Valor: formatCurrencyBr(cards.excludedCommissionAmount) },
     { Campo: "Comissão final a pagar", Valor: formatCurrencyBr(cards.finalCommissionAmount) },
+    {
+      Campo: "Divergências críticas aceitas",
+      Valor: closing?.notes?.includes("CRITICAL_DIVERGENCE_ACCEPTED") ? "Sim" : "Não",
+    },
   ];
 }
 
@@ -227,7 +242,7 @@ export function buildReceiptClosingDetailExportWorkbook(
   const headerRowIndex = 1;
   const lastRow = detailObjects.length + headerRowIndex;
   applyDetailSheetFormatting(detailSheet, headerRowIndex, lastRow);
-  XLSX.utils.book_append_sheet(wb, detailSheet, "Detalhamento");
+  XLSX.utils.book_append_sheet(wb, detailSheet, "Analítico");
 
   const porVendedorObjects = buildPorVendedorRows(payload);
   const porVendedorSheet = XLSX.utils.json_to_sheet(porVendedorObjects, {

@@ -3,19 +3,16 @@ import { describe, it } from "node:test";
 import * as XLSX from "xlsx";
 import type { CommissionReceiptPreviewLine } from "./commissionReceiptEngine.js";
 import {
-  buildReceiptClosingPageFromPreview,
-  sumUniqueReceivedFromLines,
-} from "./commissionReceiptClosingApi.js";
-import {
   buildReceiptClosingBySeller,
   buildReceiptClosingExportCsv,
   buildReceiptClosingPageFromPreview,
+  sumUniqueReceivedFromLines,
 } from "./commissionReceiptClosingApi.js";
 import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "./commissionReceiptClosingApi.shared.js";
 import {
   buildReceiptClosingDetailExportFilename,
   buildReceiptClosingDetailExportWorkbook,
-  RECEIPT_CLOSING_DETAIL_EXPORT_TITLE,
+  RECEIPT_CLOSING_DETAIL_EXPORT_TITLE_PREVIEW,
 } from "./commissionReceiptClosingDetailExport.js";
 
 function previewLine(
@@ -79,7 +76,7 @@ function parseCurrencyBr(value: unknown): number {
 }
 
 describe("commissionReceiptClosingDetailExport", () => {
-  it("workbook contém abas Resumo e Detalhamento com colunas obrigatórias", () => {
+  it("workbook contém abas Resumo e Analítico com colunas obrigatórias", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
@@ -103,11 +100,15 @@ describe("commissionReceiptClosingDetailExport", () => {
 
     const wb = buildReceiptClosingDetailExportWorkbook(page);
     assert.ok(wb.SheetNames.includes("Resumo"));
-    assert.ok(wb.SheetNames.includes("Detalhamento"));
+    assert.ok(wb.SheetNames.includes("Analítico"));
     assert.ok(wb.SheetNames.includes("Por vendedor"));
 
     const resumo = XLSX.utils.sheet_to_json<{ Campo: string; Valor: unknown }>(wb.Sheets["Resumo"]!);
-    assert.ok(resumo.some((row) => row.Campo === "Relatório" && row.Valor === RECEIPT_CLOSING_DETAIL_EXPORT_TITLE));
+    assert.ok(
+      resumo.some(
+        (row) => row.Campo === "Relatório" && row.Valor === RECEIPT_CLOSING_DETAIL_EXPORT_TITLE_PREVIEW
+      )
+    );
     assert.ok(resumo.some((row) => row.Campo === "Ano" && row.Valor === 2026));
     assert.ok(resumo.some((row) => row.Campo === "Mês" && row.Valor === 6));
     assert.ok(
@@ -118,7 +119,7 @@ describe("commissionReceiptClosingDetailExport", () => {
       )
     );
 
-    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Analítico"]!);
     assert.equal(detail.length, 1);
     assert.equal(detail[0]?.CR, "CR-100");
     assert.equal(detail[0]?.["ID interno do título"], "line-1");
@@ -170,7 +171,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     assert.equal(sumUniqueReceivedFromLines(page.lines), page.cards.totalReceivedAmount);
 
     const wb = buildReceiptClosingDetailExportWorkbook(page);
-    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Analítico"]!);
     assert.equal(detail.length, 3);
 
     const sumFromSheet = detail.reduce(
@@ -230,7 +231,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     });
 
     const wb = buildReceiptClosingDetailExportWorkbook(page);
-    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Analítico"]!);
     assert.equal(detail[0]?.Status, "NO_SCHEDULE");
     assert.equal(detail[0]?.["Vendedor Raw"], "512");
     assert.equal(detail[0]?.["Vendedor Canônico"], "RODRIGO SILVA");
@@ -326,7 +327,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     });
 
     const wb = buildReceiptClosingDetailExportWorkbook(page);
-    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Detalhamento"]!);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Analítico"]!);
     assert.equal(detail[0]?.["Vendedor Canônico"], "Sem vendedor no pedido Nomus");
     assert.equal(detail[0]?.["Vendedor resolvido?"], "Não");
 

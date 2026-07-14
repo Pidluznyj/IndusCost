@@ -15,6 +15,7 @@ import {
   formatReceiptClosingReprocessNote,
   mapLedgerRowToSnapshot,
   mapPreviewLineToLedgerCreateData,
+  sanitizeLedgerLineRuleRefs,
   ReceiptClosingDuplicateError,
   ReceiptClosingValidationError,
   RECEIPT_CLOSING_SOURCE,
@@ -41,8 +42,51 @@ type DbClient = Pick<
   PrismaClient,
   | "commissionMonthlyClosing"
   | "commissionReceiptLedgerLine"
+  | "commissionRule"
+  | "commissionCustomerExclusionRule"
   | "$transaction"
 >;
+
+async function loadValidLedgerRuleIdSets(
+  db: Pick<PrismaClient, "commissionRule" | "commissionCustomerExclusionRule">,
+  lines: Prisma.CommissionReceiptLedgerLineCreateManyInput[]
+): Promise<{
+  validRuleIds: Set<string>;
+  validExclusionRuleIds: Set<string>;
+}> {
+  const ruleIds = [
+    ...new Set(
+      lines
+        .map((l) => l.ruleId)
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    ),
+  ];
+  const exclusionIds = [
+    ...new Set(
+      lines
+        .map((l) => l.customerExclusionRuleId)
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    ),
+  ];
+  const [rules, exclusions] = await Promise.all([
+    ruleIds.length > 0
+      ? db.commissionRule.findMany({
+          where: { id: { in: ruleIds } },
+          select: { id: true },
+        })
+      : Promise.resolve([] as { id: string }[]),
+    exclusionIds.length > 0
+      ? db.commissionCustomerExclusionRule.findMany({
+          where: { id: { in: exclusionIds } },
+          select: { id: true },
+        })
+      : Promise.resolve([] as { id: string }[]),
+  ]);
+  return {
+    validRuleIds: new Set(rules.map((r) => r.id)),
+    validExclusionRuleIds: new Set(exclusions.map((r) => r.id)),
+  };
+}
 
 function mapClosingRowToSnapshot(row: {
   id: string;
@@ -139,7 +183,13 @@ export async function getMonthlyPayableFromClosedReceiptLedger(
 }
 
 async function createClosingWithLines(
-  tx: Pick<PrismaClient, "commissionMonthlyClosing" | "commissionReceiptLedgerLine">,
+  tx: Pick<
+    PrismaClient,
+    | "commissionMonthlyClosing"
+    | "commissionReceiptLedgerLine"
+    | "commissionRule"
+    | "commissionCustomerExclusionRule"
+  >,
   input: {
     preview: Awaited<ReturnType<typeof loadCommissionReceiptPreview>>;
     userId: string;
@@ -169,11 +219,28 @@ async function createClosingWithLines(
   });
 
   if (input.preview.lines.length > 0) {
-    await tx.commissionReceiptLedgerLine.createMany({
-      data: input.preview.lines.map((line) =>
-        mapPreviewLineToLedgerCreateData(line, closing.id)
-      ),
+    const rawRows = input.preview.lines.map((line) =>
+      mapPreviewLineToLedgerCreateData(line, closing.id)
+    );
+    const { validRuleIds, validExclusionRuleIds } = await loadValidLedgerRuleIdSets(
+      tx,
+      rawRows
+    );
+    const sanitized = rawRows.map((row) => {
+      const result = sanitizeLedgerLineRuleRefs(row, validRuleIds, validExclusionRuleIds);
+      if (result.alerts.length > 0) {
+        console.warn(
+          "[commissionReceiptClosing] regra histórica sem CommissionRule ativa",
+          {
+            ledgerLineKey: result.data.ledgerLineKey,
+            alerts: result.alerts,
+            ruleIdClass: result.ruleIdClass,
+          }
+        );
+      }
+      return result.data;
     });
+    await tx.commissionReceiptLedgerLine.createMany({ data: sanitized });
   }
 
   return {

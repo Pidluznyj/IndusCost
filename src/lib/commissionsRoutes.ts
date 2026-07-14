@@ -662,6 +662,54 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   );
 
+  /** Alias oficial do XLSX do fechamento (ledger quando CLOSED). */
+  app.get(
+    "/api/commissions/receipt-closing/:year/:month/report.xlsx",
+    ...fechamentoGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const { year, month } = parseReceiptClosingPeriodParams(req.params);
+        const { buffer, filename } = await exportReceiptClosingDetailXlsx({ year, month });
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(buffer);
+      } catch (error) {
+        console.error("GET /api/commissions/receipt-closing/:year/:month/report.xlsx", error);
+        return res.status(500).json({ error: "Erro ao exportar relatório de comissões." });
+      }
+    }
+  );
+
+  /** Payload JSON do relatório fechado para impressão/PDF (window.print). */
+  app.get(
+    "/api/commissions/receipt-closing/:year/:month/report",
+    ...fechamentoGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const { year, month } = parseReceiptClosingPeriodParams(req.params);
+        const payload = await getReceiptClosingPage(year, month);
+        if (payload.mode !== "CLOSED") {
+          return res.status(404).json({
+            error: "Fechamento oficial não encontrado para o período.",
+            code: "CLOSING_NOT_FOUND",
+          });
+        }
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(payload);
+      } catch (error) {
+        console.error("GET /api/commissions/receipt-closing/:year/:month/report", error);
+        return res.status(500).json({ error: "Erro ao carregar relatório fechado de comissões." });
+      }
+    }
+  );
+
   app.post(
     "/api/commissions/receipt-closing/reprocess-preview",
     ...paymentsManageGuard,

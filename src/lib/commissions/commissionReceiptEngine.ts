@@ -832,10 +832,12 @@ function buildCustomerExcludedReceiptLine(input: {
     expectedCommissionAmount: 0,
     releasedCommissionAmount: 0,
     grossCommissionAmount: 0,
+    // Regra de exclusão NÃO é CommissionRule — só customerExclusionRuleId.
+    // Gravar exclusion.id em ruleId viola CommissionReceiptLedgerLine_ruleId_fkey.
     exclusionRuleId: input.exclusion.rule.id,
     exclusionReason: input.exclusion.reason,
-    ruleId: input.exclusion.rule.id,
-    ruleName: input.exclusion.rule.customerNameSnapshot,
+    ruleId: null,
+    ruleName: null,
   };
 }
 

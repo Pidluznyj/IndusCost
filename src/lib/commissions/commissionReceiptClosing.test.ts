@@ -8,12 +8,14 @@ import {
   buildReceiptClosingPreviewPayload,
   buildReceiptClosingReprocessPreview,
   mapPreviewLineToLedgerCreateData,
+  sanitizeLedgerLineRuleRefs,
   assessReceiptClosingApplyReadiness,
   validateReceiptClosingPreviewForApply,
   ReceiptClosingDuplicateError,
   ReceiptClosingValidationError,
   RECEIPT_CLOSING_CONFIRM_APPLY,
   RECEIPT_CLOSING_CONFIRM_REPROCESS,
+  COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE,
   validateReceiptClosingCancelReason,
   validateReceiptClosingConfirmPhrase,
 } from "./commissionReceiptClosing.js";
@@ -215,6 +217,14 @@ function createMockDb() {
         }
         return { count: data.length };
       },
+    },
+    commissionRule: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        (where.id?.in ?? []).map((id) => ({ id })),
+    },
+    commissionCustomerExclusionRule: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        (where.id?.in ?? []).map((id) => ({ id })),
     },
     $transaction: async <T>(fn: (tx: typeof db) => Promise<T>) => {
       const snapshotClosings = new Map(closings);
@@ -441,6 +451,32 @@ describe("commissionReceiptClosing", () => {
     );
     assert.equal(summary.payableCommissionTotal, 10);
     assert.equal(summary.warnings[0], "Fonte: fechamento persistido (ledger por recebimento).");
+  });
+
+  it("sanitizeLedgerLineRuleRefs nullifica ruleId inexistente e preserva snapshot", () => {
+    const raw = mapPreviewLineToLedgerCreateData(
+      previewLine({
+        ledgerLineKey: "k-exclusion-as-rule",
+        ruleId: "exclusion-uuid-not-a-rule",
+        ruleName: "Cliente excluído",
+        exclusionRuleId: "exclusion-uuid-not-a-rule",
+        status: "CUSTOMER_EXCLUDED",
+      }),
+      "closing-1"
+    );
+    const result = sanitizeLedgerLineRuleRefs(
+      raw,
+      new Set(), // nenhuma CommissionRule
+      new Set(["exclusion-uuid-not-a-rule"])
+    );
+    assert.equal(result.data.ruleId, null);
+    assert.equal(result.data.customerExclusionRuleId, "exclusion-uuid-not-a-rule");
+    assert.equal(result.ruleIdClass, "MISSING_RULE_ID");
+    assert.ok(result.alerts.includes(COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE));
+    assert.equal(
+      (result.data.ruleSnapshotJson as { ruleId?: string }).ruleId,
+      "exclusion-uuid-not-a-rule"
+    );
   });
 
   it("apply grava fechamento e linhas", async () => {

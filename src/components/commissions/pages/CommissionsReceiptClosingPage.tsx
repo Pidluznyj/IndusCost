@@ -1,6 +1,8 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { Download, Loader2, Lock, RefreshCw, ShieldCheck, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, Loader2, Lock, Printer, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { CommissionClosingReportPrintDocument } from "@/src/components/commissions/CommissionClosingReportPrintDocument";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import {
@@ -50,6 +52,16 @@ import {
 } from "@/src/lib/commissions/commissionReceiptSeller";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
+
+function runCommissionClosingPrint() {
+  document.body.classList.add("sales-orders-print-route");
+  window.setTimeout(() => {
+    window.print();
+    window.setTimeout(() => {
+      document.body.classList.remove("sales-orders-print-route");
+    }, 300);
+  }, 120);
+}
 
 function currentYearMonth(): { year: string; month: string } {
   const now = new Date();
@@ -295,6 +307,13 @@ export function CommissionsReceiptClosingPage() {
   const [reprocessing, setReprocessing] = useState(false);
   const [sellerFilterKey, setSellerFilterKey] = useState<string | null>(null);
   const [showGroupCompanyAudit, setShowGroupCompanyAudit] = useState(false);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
 
   function clearSellerFilter() {
     setSellerFilterKey(null);
@@ -736,6 +755,17 @@ export function CommissionsReceiptClosingPage() {
             Fechar comissão
           </button>
         ) : null}
+        {isClosed && data ? (
+          <button
+            type="button"
+            className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+            onClick={() => runCommissionClosingPrint()}
+            data-testid="commissions-receipt-closing-print-pdf"
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            Imprimir / PDF
+          </button>
+        ) : null}
         {canManage && isClosed ? (
           <button
             type="button"
@@ -1052,6 +1082,10 @@ export function CommissionsReceiptClosingPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {isClosed && data ? (
+        <CommissionClosingReportPrintDocument payload={data} branding={branding} />
       ) : null}
     </div>
   );

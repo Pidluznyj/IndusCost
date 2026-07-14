@@ -12,6 +12,10 @@ import {
   buildReceiptClosingDetailExportFilename,
 } from "./commissionReceiptClosingDetailExport.js";
 import {
+  appendReceiptClosingNote,
+  formatCriticalDivergenceAcceptanceNote,
+} from "./commissionReceiptClosing.js";
+import {
   applyCommissionReceiptClosing,
   findClosedReceiptClosing,
   loadReceiptClosingLedgerLines,
@@ -132,7 +136,29 @@ export async function applyReceiptClosingFromApi(input: {
         "Divergência crítica detectada — confirme explicitamente antes de fechar."
     );
   }
-  return applyCommissionReceiptClosing(prisma, input);
+
+  let notes = input.notes ?? null;
+  if (preview.requiresCriticalConfirmation && input.acknowledgeCriticalDivergence) {
+    const divergentTitleCount =
+      preview.reconciliation?.divergentReceivableCount ??
+      preview.materializationSummary?.receivablesWithoutScheduleCount ??
+      0;
+    notes = appendReceiptClosingNote(
+      notes,
+      formatCriticalDivergenceAcceptanceNote({
+        acceptedBy: input.userId,
+        divergentTitleCount,
+        acceptanceNote: input.notes,
+      })
+    );
+  }
+
+  return applyCommissionReceiptClosing(prisma, {
+    year: input.year,
+    month: input.month,
+    userId: input.userId,
+    notes,
+  });
 }
 
 export async function reprocessReceiptClosingPreviewFromApi(filters: ReceiptClosingFilters) {

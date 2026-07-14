@@ -35,6 +35,109 @@ export const RECEIPT_CLOSING_SOURCE: CommissionMonthlyClosingSource = "RECEIPT_B
 export const RECEIPT_CLOSING_CONFIRM_APPLY = "FECHAR COMISSAO";
 export const RECEIPT_CLOSING_CONFIRM_REPROCESS = "REPROCESSAR COMISSAO";
 
+/** Alerta técnico: ruleId da prévia não existe mais em CommissionRule. */
+export const COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE =
+  "COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE" as const;
+
+export type LedgerRuleFkClass =
+  | "VALID_RULE_ID"
+  | "MISSING_RULE_ID"
+  | "NULL_RULE_ID"
+  | "STALE_RULE_ID"
+  | "RAW_RULE_CODE_WITHOUT_ID";
+
+export type SanitizeLedgerRuleRefsResult = {
+  data: Prisma.CommissionReceiptLedgerLineCreateManyInput;
+  alerts: string[];
+  ruleIdClass: LedgerRuleFkClass;
+  exclusionRuleIdCleared: boolean;
+};
+
+/**
+ * Garante que ruleId / customerExclusionRuleId só vão para o createMany
+ * se existirem nas tabelas oficiais. Preserva snapshot textual.
+ */
+export function sanitizeLedgerLineRuleRefs(
+  data: Prisma.CommissionReceiptLedgerLineCreateManyInput,
+  validRuleIds: ReadonlySet<string>,
+  validExclusionRuleIds: ReadonlySet<string>
+): SanitizeLedgerRuleRefsResult {
+  const alerts: string[] = [];
+  let ruleId = data.ruleId ?? null;
+  let exclusionRuleId = data.customerExclusionRuleId ?? null;
+  let ruleIdClass: LedgerRuleFkClass = "NULL_RULE_ID";
+  let exclusionRuleIdCleared = false;
+
+  if (ruleId != null && ruleId.trim()) {
+    if (validRuleIds.has(ruleId)) {
+      ruleIdClass = "VALID_RULE_ID";
+    } else {
+      ruleIdClass = "MISSING_RULE_ID";
+      alerts.push(COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE);
+      const prevSnapshot =
+        data.ruleSnapshotJson != null && typeof data.ruleSnapshotJson === "object"
+          ? (data.ruleSnapshotJson as Record<string, unknown>)
+          : {};
+      data = {
+        ...data,
+        ruleSnapshotJson: {
+          ...prevSnapshot,
+          ruleId,
+          ruleName: data.ruleNameSnapshot ?? prevSnapshot.ruleName ?? null,
+          alert: COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE,
+          capturedAt: new Date().toISOString(),
+        },
+      };
+      ruleId = null;
+    }
+  } else {
+    ruleId = null;
+  }
+
+  if (exclusionRuleId != null && exclusionRuleId.trim()) {
+    if (!validExclusionRuleIds.has(exclusionRuleId)) {
+      exclusionRuleIdCleared = true;
+      exclusionRuleId = null;
+    }
+  } else {
+    exclusionRuleId = null;
+  }
+
+  return {
+    data: {
+      ...data,
+      ruleId,
+      customerExclusionRuleId: exclusionRuleId,
+    },
+    alerts,
+    ruleIdClass,
+    exclusionRuleIdCleared,
+  };
+}
+
+export function formatCriticalDivergenceAcceptanceNote(input: {
+  acceptedBy: string;
+  acceptedAt?: Date | string | null;
+  divergentTitleCount: number;
+  acceptanceNote?: string | null;
+}): string {
+  const at =
+    input.acceptedAt instanceof Date
+      ? input.acceptedAt.toISOString()
+      : input.acceptedAt?.trim() || new Date().toISOString();
+  const note = (input.acceptanceNote ?? "").trim();
+  return [
+    "[CRITICAL_DIVERGENCE_ACCEPTED]",
+    `criticalDivergenceAccepted=true`,
+    `acceptedBy=${input.acceptedBy}`,
+    `acceptedAt=${at}`,
+    `divergentTitleCount=${input.divergentTitleCount}`,
+    note ? `acceptanceNote=${note}` : null,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
 export type ReceiptClosingSnapshot = {
   closingId: string;
   year: number;
@@ -327,14 +430,17 @@ export function mapPreviewLineToLedgerCreateData(
           commissionReceivableScheduleId: line.commissionReceivableScheduleId,
           ratePercent: line.ratePercent,
           source: line.source,
+          exclusionRuleId: line.exclusionRuleId,
           capturedAt: new Date().toISOString(),
         }
-      : line.ruleId != null
+      : line.ruleId != null || line.exclusionRuleId != null
       ? {
           ruleId: line.ruleId,
           ruleName: line.ruleName,
           ratePercent: line.ratePercent,
           source: line.source,
+          exclusionRuleId: line.exclusionRuleId,
+          exclusionReason: line.exclusionReason,
           capturedAt: new Date().toISOString(),
         }
       : line.ratePercent > 0
