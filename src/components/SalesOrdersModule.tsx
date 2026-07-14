@@ -44,6 +44,39 @@ import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSell
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
+/**
+ * Classes canônicas da barra de filtros de Pedidos de Venda (2026-07).
+ * Mantidas juntas para facilitar consistência visual — todos os controles
+ * têm a mesma altura, padding e comportamento de foco.
+ */
+const SALES_FILTER_CONTROL_CLASS =
+  "h-9 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted-foreground";
+
+/**
+ * Botão de ação discreto (ghost) da barra de filtros. Sem borda no idle;
+ * hover revela borda e superfície. Ícone pequeno (`h-3.5 w-3.5`). Preservado
+ * o `data-testid` de cada botão para os testes existentes.
+ */
+const SALES_FILTER_ACTION_BUTTON_CLASS =
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+function FilterLabel({
+  htmlFor,
+  children,
+}: {
+  htmlFor?: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+    >
+      {children}
+    </label>
+  );
+}
+
 type SalesOrderRow = SalesOrderListRowSnapshot;
 
 type SalesOrderDetail = SalesOrderRow & {
@@ -376,12 +409,24 @@ function SalesOrderList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Ano</label>
+      {/*
+        Barra de filtros + ações — padrão executivo (2026-07).
+        - Grid uniforme 12 colunas: todos os campos alinham em duas linhas com
+          altura e proporção consistentes.
+        - Ações separadas por divisor sutil; botões discretos (ghost) para não
+          competir visualmente com os KPIs e a tabela.
+      */}
+      <div
+        className="space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
+        data-testid="sales-orders-filter-bar"
+      >
+        <div className="grid grid-cols-12 gap-2">
+          {/* Linha 1: período + status + busca */}
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-year">Ano</FilterLabel>
             <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              id="sales-orders-filter-year"
+              className={SALES_FILTER_CONTROL_CLASS}
               value={year}
               onChange={(e) => setYear(e.target.value)}
               aria-label="Filtrar por ano de emissão"
@@ -394,10 +439,11 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Mês</label>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-month">Mês</FilterLabel>
             <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              id="sales-orders-filter-month"
+              className={SALES_FILTER_CONTROL_CLASS}
               value={month}
               onChange={(e) => setMonth(e.target.value)}
               aria-label="Filtrar por mês de emissão"
@@ -410,24 +456,11 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
-          <div className="sm:col-span-2">
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">
-              Busca inteligente
-            </label>
-            <input
-              type="search"
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-              placeholder="Buscar por pedido, NF, cliente, vendedor ou documento..."
-              value={searchDraft}
-              onChange={(e) => setSearchDraft(e.target.value)}
-              aria-label="Busca inteligente de pedidos"
-              data-testid="sales-orders-smart-search"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Status</label>
+          <div className="col-span-12 sm:col-span-6 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-status">Status</FilterLabel>
             <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              id="sales-orders-filter-status"
+              className={SALES_FILTER_CONTROL_CLASS}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
@@ -439,7 +472,22 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="col-span-12 lg:col-span-6">
+            <FilterLabel htmlFor="sales-orders-smart-search">Busca inteligente</FilterLabel>
+            <input
+              id="sales-orders-smart-search"
+              type="search"
+              className={SALES_FILTER_CONTROL_CLASS}
+              placeholder="Buscar por pedido, NF, cliente, vendedor ou documento..."
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              aria-label="Busca inteligente de pedidos"
+              data-testid="sales-orders-smart-search"
+            />
+          </div>
+
+          {/* Linha 2: cliente + vendedor + datas */}
+          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
             <CustomerAutocompleteFilter
               label="Cliente"
               value={customerSelection}
@@ -454,10 +502,11 @@ function SalesOrderList() {
               }}
             />
           </div>
-          <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Vendedor</label>
+          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
+            <FilterLabel htmlFor="sales-orders-seller-filter">Vendedor</FilterLabel>
             <select
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              id="sales-orders-seller-filter"
+              className={SALES_FILTER_CONTROL_CLASS}
               value={sellerKey}
               onChange={(e) => setSellerKey(e.target.value)}
               disabled={sellerOptionsLoading}
@@ -473,107 +522,115 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-bold uppercase text-muted-foreground">Emissão de</label>
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-border bg-card px-2 py-2 text-sm outline-none"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-bold uppercase text-muted-foreground">até</label>
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-border bg-card px-2 py-2 text-sm outline-none"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+          <div className="col-span-6 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-start-date">Emissão de</FilterLabel>
+            <input
+              id="sales-orders-filter-start-date"
+              type="date"
+              className={SALES_FILTER_CONTROL_CLASS}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="col-span-6 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-end-date">até</FilterLabel>
+            <input
+              id="sales-orders-filter-end-date"
+              type="date"
+              className={SALES_FILTER_CONTROL_CLASS}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sales-orders-no-print">
-        <button
-          type="button"
-          data-testid="sales-orders-export-report-xlsx"
-          disabled={exportingReportXlsx}
-          onClick={() => void handleExportReportXlsx()}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          title="Exportar Excel branded (padrão Contas a Receber > Títulos)"
-        >
-          {exportingReportXlsx ? (
-            <>
-              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
-              Exportando…
-            </>
-          ) : (
-            <>
-              <Download className="inline h-4 w-4 mr-1" />
-              Exportar Excel
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          data-testid="sales-orders-export-report-pdf"
-          disabled={exportingReportPdf}
-          onClick={() => void handleExportReportPdf()}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          title="Exportar PDF branded (padrão Contas a Receber > Títulos)"
-        >
-          {exportingReportPdf ? (
-            <>
-              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
-              Gerando…
-            </>
-          ) : (
-            <>
-              <Printer className="inline h-4 w-4 mr-1" />
-              Exportar PDF
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          data-testid="sales-orders-export-internal-margin"
-          disabled={exportingInternal}
-          onClick={() => void handleExportInternal()}
-          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium hover:bg-primary/10 disabled:opacity-50"
-        >
-          {exportingInternal ? (
-            <>
-              <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
-              Exportando…
-            </>
-          ) : (
-            <>
-              <Download className="inline h-4 w-4 mr-1" />
-              Excel interno (margem)
-            </>
-          )}
-        </button>
+
+        {/* Barra de ações — separada por divisor, alinhada à direita, botões
+            discretos (ghost). Ordem: Limpar → separador → Excel → PDF → Excel
+            interno. O botão "Excel interno (margem)" perdeu o realce azul; o
+            peso visual agora é o mesmo dos outros exports. */}
+        <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/70 pt-2 sales-orders-no-print">
+          <button
+            type="button"
+            onClick={() => {
+              setStatus("");
+              setCustomerId("");
+              setCustomerSelection(null);
+              setSellerKey("");
+              setStartDate("");
+              setEndDate("");
+              setYear("");
+              setMonth("");
+              setSearchDraft("");
+              setSearch("");
+              setCurrentPage(1);
+            }}
+            className={SALES_FILTER_ACTION_BUTTON_CLASS}
+            data-testid="sales-orders-clear-filters"
+          >
+            Limpar filtros
+          </button>
+          <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+          <button
+            type="button"
+            data-testid="sales-orders-export-report-xlsx"
+            disabled={exportingReportXlsx}
+            onClick={() => void handleExportReportXlsx()}
+            className={SALES_FILTER_ACTION_BUTTON_CLASS}
+            title="Exportar Excel branded (padrão Contas a Receber > Títulos)"
+          >
+            {exportingReportXlsx ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span>Exportando…</span>
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Excel</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            data-testid="sales-orders-export-report-pdf"
+            disabled={exportingReportPdf}
+            onClick={() => void handleExportReportPdf()}
+            className={SALES_FILTER_ACTION_BUTTON_CLASS}
+            title="Exportar PDF branded (padrão Contas a Receber > Títulos)"
+          >
+            {exportingReportPdf ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span>Gerando…</span>
+              </>
+            ) : (
+              <>
+                <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>PDF</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            data-testid="sales-orders-export-internal-margin"
+            disabled={exportingInternal}
+            onClick={() => void handleExportInternal()}
+            className={SALES_FILTER_ACTION_BUTTON_CLASS}
+            title="Exportar Excel interno com margem por pedido"
+          >
+            {exportingInternal ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span>Exportando…</span>
+              </>
+            ) : (
+              <>
+                <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Excel interno (margem)</span>
+              </>
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setStatus("");
-            setCustomerId("");
-            setCustomerSelection(null);
-            setSellerKey("");
-            setStartDate("");
-            setEndDate("");
-            setYear("");
-            setMonth("");
-            setSearchDraft("");
-            setSearch("");
-            setCurrentPage(1);
-          }}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          Limpar filtros
-        </button>
       </div>
 
       <p className="text-xs text-muted-foreground">

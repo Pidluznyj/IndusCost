@@ -194,10 +194,34 @@ function checkPrintComponents() {
 // ---------------------------------------------------------------------------
 function checkFrontendModule() {
   const mod = read("src/components/SalesOrdersModule.tsx");
-  if (mod.includes("Exportar PDF") && mod.includes("Exportar Excel")) {
-    ok("ui:buttons", 'botões "Exportar PDF" e "Exportar Excel" presentes');
+  // A partir de 2026-07 os botões de exportar são discretos (labels curtos:
+  // "Excel", "PDF", "Excel interno (margem)"). Validamos via `data-testid`
+  // que é o contrato estável usado por testes de integração.
+  const hasXlsxButton = mod.includes(
+    'data-testid="sales-orders-export-report-xlsx"'
+  );
+  const hasPdfButton = mod.includes(
+    'data-testid="sales-orders-export-report-pdf"'
+  );
+  const hasInternalButton = mod.includes(
+    'data-testid="sales-orders-export-internal-margin"'
+  );
+  const hasClearButton = mod.includes('data-testid="sales-orders-clear-filters"');
+  if (hasXlsxButton && hasPdfButton && hasInternalButton) {
+    ok(
+      "ui:buttons",
+      "botões de exportar (XLSX, PDF, Excel interno) presentes com data-testid canônico"
+    );
   } else {
-    fail("ui:buttons", "labels dos botões não seguem o padrão AR");
+    fail(
+      "ui:buttons",
+      `botões de exportar incompletos (xlsx=${hasXlsxButton} pdf=${hasPdfButton} internal=${hasInternalButton})`
+    );
+  }
+  if (hasClearButton) {
+    ok("ui:clear-filters", "botão Limpar filtros com data-testid canônico");
+  } else {
+    fail("ui:clear-filters", "botão Limpar filtros sem data-testid canônico");
   }
   if (mod.includes("sales-orders-print-route")) {
     ok("ui:print-route", "classe sales-orders-print-route aplicada no body");
