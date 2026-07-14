@@ -10,6 +10,17 @@ Alinhar `CommissionReceivableSchedule` ao `CommissionOrderSnapshot` oficial **se
 - Alerta `COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT`
 - Schedule ACTIVE zerado e snapshot com `totalFinalCommissionAmount > 0`
 - Após republicar tabela de preço / ajustar regra (casos reais `NO_MARGIN`)
+- Relatório ainda “Sem margem/tabela” com snapshot oficial com comissão (ex.: PD 02523) — a tela já corrige a **exibição**; reprocessar fechamento remove o stale do ledger CLOSED
+
+Diagnóstico:
+
+```bash
+npx tsx tmp-audits/inspect-commission-report-vs-audit-pd02523.ts
+npx tsx tmp-audits/inspect-commission-report-snapshot-divergences.ts
+npx tsx scripts/qaCommissionReportUsesOfficialSnapshot.ts
+```
+
+Ver: [commission-report-vs-order-audit-source-map.md](./commission-report-vs-order-audit-source-map.md).
 
 ## Fluxo seguro
 

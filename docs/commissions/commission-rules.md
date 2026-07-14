@@ -14,6 +14,8 @@ Não criar cálculo paralelo de margem na UI.
 
 Somente se **não** houver comissão prevista no snapshot oficial e os itens ACTIVE tiverem falta real de tabela/margem (`NO_COMMERCIAL_PRICE_TABLE`, `INVALID_COMMERCIAL_PRICE_RANGE`), sem schedule/CR com prevista.
 
+**Relatórios (Comercial > Comissões):** se o ledger CLOSED/prévia estiver stale com `NO_MARGIN`/`ZERO_AMOUNT` mas existir `CommissionOrderSnapshot` ACTIVE com comissão > 0 (ex.: PD 02523), a listagem **reexibe** o valor oficial via `enrichReportLinesWithOfficialSnapshots` / `COMMISSION_SOURCE_MISMATCH` — sem alterar pagamento nem reescrever o ledger.
+
 ## Quando usar `COMMISSION_SOURCE_MISMATCH`
 
 - Schedule ACTIVE com `scheduledCommissionAmount = 0`

@@ -28,6 +28,12 @@ import {
   COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
   resolveUniqueSalesOrderFromNfeLinkCandidates,
 } from "./commissionSalesOrderNfeLinkResolution.js";
+import {
+  reconcileReportLineWithOfficialSnapshot,
+  reportLineMisclassifiedAgainstSnapshot,
+  type OfficialCommissionSnapshotRef,
+} from "./commissionReportOfficialReconcile.js";
+import { decimalToNumber } from "./commission-money.js";
 import * as XLSX from "xlsx";
 
 function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -465,6 +471,155 @@ async function loadReportSource(input: {
   return { lines, monthsIncluded };
 }
 
+/**
+ * Ledger CLOSED pode estar stale (zerado/NO_MARGIN) após rematerialização do snapshot.
+ * Exibição do relatório re-alinha ao CommissionOrderSnapshot / schedule ACTIVE —
+ * sem alterar linhas persistidas nem comissão paga.
+ */
+export async function enrichReportLinesWithOfficialSnapshots(
+  lines: CommissionReportSourceLine[]
+): Promise<CommissionReportSourceLine[]> {
+  if (lines.length === 0) return lines;
+
+  const orderIds = [
+    ...new Set(
+      lines
+        .map((line) => line.localOrderId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    ),
+  ];
+  const orderCodes = [
+    ...new Set(
+      lines
+        .filter((line) => !line.localOrderId && Boolean(line.orderCode?.trim()))
+        .map((line) => line.orderCode!.trim())
+    ),
+  ];
+
+  const [byIdRows, byCodeOrders] = await Promise.all([
+    orderIds.length > 0
+      ? prisma.commissionOrderSnapshot.findMany({
+          where: { salesOrderId: { in: orderIds }, status: "ACTIVE" },
+          select: {
+            salesOrderId: true,
+            totalFinalCommissionAmount: true,
+            totalSoldAmount: true,
+            canonicalSellerId: true,
+            canonicalSellerName: true,
+            rawSellerId: true,
+            rawSellerName: true,
+            salesOrder: { select: { orderCode: true } },
+            items: { select: { status: true } },
+            receivableSchedules: {
+              where: { status: "ACTIVE" },
+              select: { scheduledCommissionAmount: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    orderCodes.length > 0
+      ? prisma.salesOrder.findMany({
+          where: { orderCode: { in: orderCodes } },
+          select: { id: true, orderCode: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const missingIds = byCodeOrders
+    .map((o) => o.id)
+    .filter((id) => !byIdRows.some((r) => r.salesOrderId === id));
+
+  const byCodeSnapshots =
+    missingIds.length > 0
+      ? await prisma.commissionOrderSnapshot.findMany({
+          where: { salesOrderId: { in: missingIds }, status: "ACTIVE" },
+          select: {
+            salesOrderId: true,
+            totalFinalCommissionAmount: true,
+            totalSoldAmount: true,
+            canonicalSellerId: true,
+            canonicalSellerName: true,
+            rawSellerId: true,
+            rawSellerName: true,
+            salesOrder: { select: { orderCode: true } },
+            items: { select: { status: true } },
+            receivableSchedules: {
+              where: { status: "ACTIVE" },
+              select: { scheduledCommissionAmount: true },
+            },
+          },
+        })
+      : [];
+
+  const snapByOrderId = new Map<string, OfficialCommissionSnapshotRef>();
+  const snapByOrderCode = new Map<string, OfficialCommissionSnapshotRef>();
+
+  for (const row of [...byIdRows, ...byCodeSnapshots]) {
+    const scheduledCommissionSum = row.receivableSchedules.reduce(
+      (sum, s) => sum + decimalToNumber(s.scheduledCommissionAmount),
+      0
+    );
+    const ref: OfficialCommissionSnapshotRef = {
+      salesOrderId: row.salesOrderId,
+      orderCode: row.salesOrder.orderCode,
+      totalFinalCommissionAmount: decimalToNumber(row.totalFinalCommissionAmount),
+      totalSoldAmount: decimalToNumber(row.totalSoldAmount),
+      canonicalSellerId: row.canonicalSellerId,
+      canonicalSellerName: row.canonicalSellerName,
+      rawSellerId: row.rawSellerId,
+      rawSellerName: row.rawSellerName,
+      scheduledCommissionSum,
+      itemStatuses: row.items.map((i) => i.status),
+    };
+    snapByOrderId.set(ref.salesOrderId, ref);
+    if (ref.orderCode) snapByOrderCode.set(ref.orderCode, ref);
+  }
+  for (const order of byCodeOrders) {
+    const snap = snapByOrderId.get(order.id);
+    if (snap) snapByOrderCode.set(order.orderCode, snap);
+  }
+
+  return lines.map((line) => {
+    const snap =
+      (line.localOrderId ? snapByOrderId.get(line.localOrderId) : undefined) ??
+      (line.orderCode ? snapByOrderCode.get(line.orderCode.trim()) : undefined);
+    if (!snap) return line;
+    if (
+      !reportLineMisclassifiedAgainstSnapshot(
+        {
+          status: line.status,
+          expectedCommissionAmount: line.expectedCommissionAmount,
+          releasedCommissionAmount: line.releasedCommissionAmount,
+        },
+        snap
+      )
+    ) {
+      return line;
+    }
+    const reconciled = reconcileReportLineWithOfficialSnapshot(
+      {
+        status: line.status,
+        statusReason: line.statusReason,
+        expectedCommissionAmount: line.expectedCommissionAmount,
+        releasedCommissionAmount: line.releasedCommissionAmount,
+        grossCommissionAmount: line.grossCommissionAmount,
+        commissionableBaseAmount: line.commissionableBaseAmount,
+        canonicalSellerId: line.canonicalSellerId,
+        canonicalSellerName: line.canonicalSellerName,
+        rawSellerId: line.rawSellerId,
+        rawSellerName: line.rawSellerName,
+        source: line.source,
+        scheduledCommissionAmount: line.scheduledCommissionAmount,
+      },
+      snap
+    );
+    return {
+      ...line,
+      ...reconciled,
+    };
+  });
+}
+
 export async function getCommissionReportsPage(
   query: CommissionReportsQuery,
   scope: CommissionAccessScope
@@ -473,7 +628,8 @@ export async function getCommissionReportsPage(
   if (loaded.lines.length === 0) {
     return buildEmptyCommissionReportsPayload(query);
   }
-  const lines = await attachLocalOrderIdsToReportLines(loaded.lines);
+  const withOrders = await attachLocalOrderIdsToReportLines(loaded.lines);
+  const lines = await enrichReportLinesWithOfficialSnapshots(withOrders);
   return assembleCommissionReportsPayload(lines, query, loaded.monthsIncluded);
 }
 
@@ -482,7 +638,8 @@ export async function exportCommissionReportsXlsx(
   scope: CommissionAccessScope
 ): Promise<{ buffer: Buffer; filename: string }> {
   const loaded = await loadReportSource({ query, scope });
-  const lines = await attachLocalOrderIdsToReportLines(loaded.lines);
+  const withOrders = await attachLocalOrderIdsToReportLines(loaded.lines);
+  const lines = await enrichReportLinesWithOfficialSnapshots(withOrders);
   const payload = assembleCommissionReportsPayload(
     lines,
     { ...query, page: 1, pageSize: Math.max(lines.length, 1) },

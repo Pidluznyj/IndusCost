@@ -11,6 +11,10 @@ import {
   resolveReceiptClosingSellerGroupKey,
   type ReceiptClosingApiLine,
 } from "./commissionReceiptClosingApi.shared.js";
+import {
+  COMMISSION_SOURCE_MISMATCH_STATUS,
+  lineFinalCommissionForDiagnosis,
+} from "./commissionReportOfficialReconcile.js";
 
 export const COMMISSION_REPORTS_UNRESOLVED_SELLER_KEY = "unresolved" as const;
 export const COMMISSION_REPORTS_NO_SELLER_KEY = "no-seller" as const;
@@ -210,22 +214,40 @@ function round2(n: number): number {
 
 function lineGross(line: ReceiptClosingApiLine): number {
   if (line.grossCommissionAmount > 0) return round2(line.grossCommissionAmount);
-  if (line.status === "COMMISSIONABLE") return round2(line.releasedCommissionAmount);
-  if (line.status === "COMMISSION_SOURCE_MISMATCH") {
+  if (line.status === "COMMISSIONABLE") {
+    const released = round2(line.releasedCommissionAmount);
+    return released > 0 ? released : round2(line.expectedCommissionAmount);
+  }
+  if (line.status === COMMISSION_SOURCE_MISMATCH_STATUS) {
+    return round2(line.expectedCommissionAmount);
+  }
+  // Proteção: legado NO_MARGIN com expected já reconciliado.
+  if (
+    (line.status === "NO_MARGIN" || line.status === "ZERO_AMOUNT") &&
+    line.expectedCommissionAmount > 0.009
+  ) {
     return round2(line.expectedCommissionAmount);
   }
   return 0;
 }
 
 function lineFinalCommission(line: ReceiptClosingApiLine): number {
-  if (line.status === "COMMISSIONABLE") return round2(line.releasedCommissionAmount);
-  // Divergência schedule×snapshot: exibe prevista do snapshot (não libera pagamento).
-  if (line.status === "COMMISSION_SOURCE_MISMATCH") {
-    return round2(
-      line.expectedCommissionAmount > 0
-        ? line.expectedCommissionAmount
-        : line.grossCommissionAmount
-    );
+  const diagnosed = lineFinalCommissionForDiagnosis({
+    status: line.status,
+    expectedCommissionAmount: line.expectedCommissionAmount,
+    releasedCommissionAmount: line.releasedCommissionAmount,
+    grossCommissionAmount: line.grossCommissionAmount,
+  });
+  if (diagnosed > 0) return diagnosed;
+  // COMMISSIONABLE com release 0 ainda pode ter expected (prévia).
+  if (line.status === "COMMISSIONABLE" && line.expectedCommissionAmount > 0.009) {
+    return round2(line.expectedCommissionAmount);
+  }
+  if (
+    (line.status === "NO_MARGIN" || line.status === "ZERO_AMOUNT") &&
+    line.expectedCommissionAmount > 0.009
+  ) {
+    return round2(line.expectedCommissionAmount);
   }
   return 0;
 }
@@ -266,9 +288,11 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
   const excluded = isCustomerExcluded || isGroupCompany ? gross : 0;
   const final = lineFinalCommission(line);
   const divergesFromOrderSnapshot =
-    line.status === "COMMISSION_SOURCE_MISMATCH" ||
+    line.status === COMMISSION_SOURCE_MISMATCH_STATUS ||
     line.source === "ORDER_SNAPSHOT" ||
-    (line.statusReason ?? "").includes("COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT");
+    line.source === "RECEIVABLE_SCHEDULE" ||
+    (line.statusReason ?? "").includes("COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT") ||
+    (line.statusReason ?? "").includes("snapshot do pedido diverge");
 
   return {
     lineKey: line.lineKey,
