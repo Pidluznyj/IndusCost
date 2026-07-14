@@ -20,6 +20,15 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
 - Painel abaixo: **itens/evidências** do pedido selecionado (mesma origem da Auditoria)
 - Drawer opcional: resumo executivo do pedido
 
+## NF cancelada × faturamento
+
+- Status de faturamento usa **somente NF válida** (`isValidForBilling`).
+- Chip **NF cancelada** quando há `NFE_CANCELED_LINKED_TO_ORDER` / `NFE_CANCELLED`.
+- Chip **CR recebido c/ NF cancelada** quando há
+  `RECEIVED_CR_LINKED_TO_CANCELED_NFE` (ou CR recebido + NF cancelada).
+- Pedido só com NF cancelada → sem faturamento válido (não “Faturado”).
+- Ver `docs/finance/nfe-status-rules.md`.
+
 ## UI (padrão executivo)
 
 | Bloco | Comportamento |

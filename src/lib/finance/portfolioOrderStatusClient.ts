@@ -169,6 +169,11 @@ export function formatOrderStatusAlertLabel(alert: string): string {
     ENTREGA_VENCIDA: "Entrega vencida",
     SEM_DOCUMENTO_SAIDA: "Sem doc. saída",
     PEDIDO_COM_ITENS_CANCELADOS: "Com cancelamento",
+    NFE_CANCELED_LINKED_TO_ORDER: "NF cancelada",
+    CANCELED_NFE_WITH_RECEIVABLE: "CR com NF cancelada",
+    RECEIVED_CR_LINKED_TO_CANCELED_NFE: "CR recebido c/ NF cancelada",
+    DOCUMENT_LINKED_TO_CANCELED_NFE: "Doc. c/ NF cancelada",
+    CANCELED_NFE_INCLUDED_IN_BILLING_VALUE: "NF cancel. no faturamento",
   };
   return map[alert] ?? alert;
 }

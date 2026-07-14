@@ -179,6 +179,11 @@ export type PortfolioOrderStatusRow = {
   canceledInvoiceCount: number;
   hasValidInvoice: boolean;
   hasCanceledInvoice: boolean;
+  /**
+   * CR recebido/parcial vinculado a NF cancelada (alerta fiscal × financeiro).
+   * Não altera status financeiro oficial do CR.
+   */
+  hasReceivedCrLinkedToCanceledNfe: boolean;
   /** Status fiscal consolidado (ex.: NFE_AUTHORIZED, NFE_CANCELLED). */
   billingStatus: string;
   /**
@@ -1005,6 +1010,24 @@ export function aggregateOrderFactsToRow(
   if (hasCanceledInvoice && !alerts.includes("NFE_CANCELED_LINKED_TO_ORDER")) {
     alerts.push("NFE_CANCELED_LINKED_TO_ORDER");
   }
+  const hasReceivedCrLinkedToCanceledNfe =
+    alerts.includes("RECEIVED_CR_LINKED_TO_CANCELED_NFE") ||
+    (hasCanceledInvoice &&
+      classified.hasReceived &&
+      alerts.includes("CANCELED_NFE_WITH_RECEIVABLE"));
+  if (
+    hasReceivedCrLinkedToCanceledNfe &&
+    !alerts.includes("RECEIVED_CR_LINKED_TO_CANCELED_NFE")
+  ) {
+    alerts.push("RECEIVED_CR_LINKED_TO_CANCELED_NFE");
+  }
+  if (
+    hasCanceledInvoice &&
+    (classified.hasReceived || classified.hasOpenCr) &&
+    !alerts.includes("CANCELED_NFE_WITH_RECEIVABLE")
+  ) {
+    alerts.push("CANCELED_NFE_WITH_RECEIVABLE");
+  }
   alerts.sort();
 
   return {
@@ -1067,6 +1090,7 @@ export function aggregateOrderFactsToRow(
     canceledInvoiceCount,
     hasValidInvoice,
     hasCanceledInvoice,
+    hasReceivedCrLinkedToCanceledNfe,
     billingStatus: classified.fiscalStatus,
     searchMatchedBy: null,
     searchMatchedText: null,

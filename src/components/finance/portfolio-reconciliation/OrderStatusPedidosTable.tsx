@@ -255,6 +255,15 @@ export function OrderStatusPedidosTable({
                         NF cancelada
                       </span>
                     ) : null}
+                    {row.hasReceivedCrLinkedToCanceledNfe ? (
+                      <span
+                        className="rounded border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-950"
+                        title="CR recebido vinculado a NF cancelada — revisar inconsistência fiscal/financeira"
+                        data-testid={`order-status-received-cr-canceled-nfe-chip-${row.orderKey}`}
+                      >
+                        CR recebido c/ NF cancelada
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">

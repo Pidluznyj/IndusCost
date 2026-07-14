@@ -7,6 +7,17 @@
 - Constantes: `NOMUS_NFE_STATUS_AUTHORIZED = 4`, `NOMUS_NFE_STATUS_CANCELLED = 7` em `src/lib/nomusNfeClassification.ts`
 - Evidências auxiliares: `xmlCancelamento`, `justificativaCancelamento`, `rawPayload`
 
+## Separação crítica: fiscal ≠ financeiro
+
+| Domínio | Fonte | Exemplo |
+|---------|--------|---------|
+| **Status fiscal (NF-e)** | `NomusNfe.status` | Autorizada / Cancelada |
+| **Status financeiro (CR)** | Contas a Receber oficial | Aberto / Recebido |
+
+- Status do CR **nunca** define se a NF é válida.
+- Status da NF **nunca** apaga ou esconde um CR oficial recebido.
+- CR recebido + NF cancelada = inconsistência: exibir ambos + **alerta forte**.
+
 ## Helper canônico
 
 `src/lib/finance/nfeStatus.ts`
@@ -30,16 +41,26 @@ A Auditoria 360º e o Status Pedidos **consomem** esse helper. Não inventam reg
 ## Regras de negócio
 
 1. NF cancelada **aparece** na auditoria (abas NF-e, Divergências, Auditoria Técnica).
-2. NF cancelada **não** compõe `nfeValidValue` / `nfeAllocatedValue`.
+2. NF cancelada **não** compõe `nfeValidValue` / `nfeAllocatedValue` / atribuição válida (`allocatedValueToOrder = 0`).
 3. NF cancelada **não** transforma pedido em Faturado se for a única NF.
 4. Pedido com NF válida + cancelada usa a válida para status/faturamento e alerta a cancelada.
 5. CR real vinculado à NF cancelada **não é apagado**; gera `CANCELED_NFE_WITH_RECEIVABLE`.
-6. Documento de saída vinculado à NF cancelada gera `DOCUMENT_LINKED_TO_CANCELED_NFE`.
+6. CR **recebido** vinculado à NF cancelada gera também `RECEIVED_CR_LINKED_TO_CANCELED_NFE`.
+7. Documento de saída vinculado à NF cancelada gera `DOCUMENT_LINKED_TO_CANCELED_NFE`.
 
 ## Alertas
 
-- `NFE_CANCELED_LINKED_TO_ORDER`
-- `CANCELED_NFE_INCLUDED_IN_BILLING_VALUE` (catálogo / regressão)
-- `CANCELED_NFE_WITH_RECEIVABLE`
-- `DOCUMENT_LINKED_TO_CANCELED_NFE`
-- `NFE_STATUS_UNKNOWN`
+| Código | Severidade | Uso |
+|--------|------------|-----|
+| `NFE_CANCELED_LINKED_TO_ORDER` | média/alta | NF cancelada no pedido |
+| `CANCELED_NFE_INCLUDED_IN_BILLING_VALUE` | crítica | alocação bruta detectada antes de zerar |
+| `CANCELED_NFE_WITH_RECEIVABLE` | alta/crítica | qualquer CR na NF cancelada |
+| `RECEIVED_CR_LINKED_TO_CANCELED_NFE` | alta/crítica | CR recebido na NF cancelada |
+| `DOCUMENT_LINKED_TO_CANCELED_NFE` | média/alta | documento × NF cancelada |
+| `NFE_STATUS_UNKNOWN` | média | status não normalizado |
+
+## Caso PD 02586
+
+- NF 7135 cancelada → auditoria, atribuição válida R$ 0,00
+- NF 7142 válida → compõe faturamento válido
+- CR 7135 pode permanecer **Recebido** no financeiro, com badge/alerta **NF cancelada**

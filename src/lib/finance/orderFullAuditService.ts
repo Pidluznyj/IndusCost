@@ -159,6 +159,15 @@ export type OrderFullAuditReceivable = {
   /** Dias em atraso (negativo = faltam dias; positivo = já venceu). */
   daysOverdue: number | null;
   linkedNfeExternalIds: number[];
+  /** Status financeiro oficial do CR (não confundir com status fiscal da NF). */
+  receivableIsReceived: boolean;
+  /** Número da NF vinculada (quando conhecido). */
+  linkedNfeNumber: string | null;
+  /** Status fiscal normalizado da NF vinculada (label humano). */
+  linkedNfeStatusLabel: string | null;
+  /** NF vinculada cancelada (status fiscal). */
+  linkedNfeIsCanceled: boolean;
+  hasCanceledNfeLink: boolean;
   origin: "NFE" | "SOURCE_INVOICE" | "INFERRED" | "UNKNOWN";
   linkOrigin:
     | "ITEM_EVIDENCE"
@@ -191,8 +200,13 @@ export type OrderFullAuditNfe = {
   tipoOperacao: number | null;
   valorLiquido: number | null;
   valorTotal: number | null;
-  /** Valor efetivamente alocado ao pedido (evidência item × NF via fact). */
+  /**
+   * Valor atribuído válido ao pedido.
+   * NF cancelada: sempre 0 (histórico permanece em `valorTotal` / `nfeCanceledValue`).
+   */
   allocatedValueToOrder: number;
+  /** Alocação bruta antes de zerar canceladas (auditoria / regressão). */
+  allocatedValueToOrderRaw: number;
   /** Valor dos itens da NF que pertencem ao pedido (linkedSalesOrderItemId != null). */
   insideOrderItemsValue: number;
   /** Valor dos itens da NF que NÃO pertencem ao pedido (fora do pedido). */
@@ -1451,6 +1465,7 @@ export async function loadOrderFullAudit(
         valorLiquido: null,
         valorTotal: null,
         allocatedValueToOrder: 0,
+        allocatedValueToOrderRaw: 0,
         insideOrderItemsValue: 0,
         outsideOrderItemsValue: 0,
         headerGreaterThanOrder: false,
@@ -1539,6 +1554,7 @@ export async function loadOrderFullAudit(
         valorLiquido: fact.nfeHeaderValue ?? null,
         valorTotal: fact.nfeHeaderValue ?? null,
         allocatedValueToOrder: 0,
+        allocatedValueToOrderRaw: 0,
         insideOrderItemsValue: 0,
         outsideOrderItemsValue: 0,
         headerGreaterThanOrder: false,
@@ -1790,6 +1806,19 @@ export async function loadOrderFullAudit(
         (r.sourceInvoiceId != null ? String(r.sourceInvoiceId) : "") ||
         String(r.externalId);
 
+      const linkedNfe =
+        r.sourceInvoiceId != null ? nfeMap.get(r.sourceInvoiceId) : undefined;
+      const linkedNfeIsCanceled = linkedNfe?.isCanceled === true;
+      const status: OrderFullAuditReceivable["status"] = isReceived
+        ? "RECEIVED"
+        : isPartial
+          ? "PARTIALLY_RECEIVED"
+          : isOverdue
+            ? "OVERDUE"
+            : balance > MONEY_TOLERANCE
+              ? "OPEN"
+              : "UNKNOWN";
+
       const alertsForLine: string[] = [];
       if (!isReceived && balance > MONEY_TOLERANCE) {
         alertsForLine.push("RECEIVABLE_OPEN");
@@ -1807,6 +1836,13 @@ export async function loadOrderFullAudit(
         Math.abs(amountReceivable - amountReceived - balance) > MONEY_TOLERANCE
       ) {
         alertsForLine.push("PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE");
+      }
+      // Status financeiro ≠ status fiscal: CR oficial permanece; alerta se NF cancelada.
+      if (linkedNfeIsCanceled) {
+        alertsForLine.push("CANCELED_NFE_WITH_RECEIVABLE");
+        if (status === "RECEIVED" || status === "PARTIALLY_RECEIVED") {
+          alertsForLine.push("RECEIVED_CR_LINKED_TO_CANCELED_NFE");
+        }
       }
 
       receivables.push({
@@ -1838,18 +1874,16 @@ export async function loadOrderFullAudit(
         paymentMethodName: r.paymentMethodName ?? null,
         bankAccountName: r.bankAccountName ?? null,
         comments: r.comments ?? null,
-        status: isReceived
-          ? "RECEIVED"
-          : isPartial
-            ? "PARTIALLY_RECEIVED"
-            : isOverdue
-              ? "OVERDUE"
-              : balance > MONEY_TOLERANCE
-                ? "OPEN"
-                : "UNKNOWN",
+        status,
+        receivableIsReceived: status === "RECEIVED",
         daysOverdue,
         linkedNfeExternalIds:
           r.sourceInvoiceId != null ? [r.sourceInvoiceId] : [],
+        linkedNfeNumber:
+          linkedNfe?.numero ?? r.sourceInvoiceNumber ?? null,
+        linkedNfeStatusLabel: linkedNfe?.statusLabel ?? null,
+        linkedNfeIsCanceled,
+        hasCanceledNfeLink: linkedNfeIsCanceled,
         origin: r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
         linkOrigin:
           r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
@@ -2483,6 +2517,9 @@ export async function loadOrderFullAudit(
       }
     }
 
+    // Preserva alocação bruta; NF cancelada não compõe atribuição válida.
+    nfe.allocatedValueToOrderRaw = round2(nfe.allocatedValueToOrder);
+
     if (nfe.isCanceled) {
       if (!nfe.alerts.includes("NFE_CANCELED_LINKED_TO_ORDER")) {
         nfe.alerts.push("NFE_CANCELED_LINKED_TO_ORDER");
@@ -2496,6 +2533,13 @@ export async function loadOrderFullAudit(
       ) {
         nfe.alerts.push("DOCUMENT_LINKED_TO_CANCELED_NFE");
       }
+      if (
+        nfe.allocatedValueToOrderRaw > MONEY_TOLERANCE &&
+        !nfe.alerts.includes("CANCELED_NFE_INCLUDED_IN_BILLING_VALUE")
+      ) {
+        nfe.alerts.push("CANCELED_NFE_INCLUDED_IN_BILLING_VALUE");
+      }
+      nfe.allocatedValueToOrder = 0;
       // Cancelada: não gera ruído de "sem doc/CR" — permanece só como evidência.
     } else {
       if (nfe.statusNormalized === "UNKNOWN") {
@@ -5321,10 +5365,21 @@ function buildAlerts(input: {
           code: "CANCELED_NFE_WITH_RECEIVABLE",
           severity: "critical",
           title: "CR vinculado a NF-e cancelada",
-          description: `Existe título de Contas a Receber vinculado à NF cancelada ${nfe.numero ?? nfe.nfeExternalId}. Revisar financeiro.`,
+          description: `Existe título de Contas a Receber vinculado a uma NF-e cancelada (NF ${nfe.numero ?? nfe.nfeExternalId}).`,
           origin: "NomusAccountsReceivable × NomusNfe",
           action: "Não apagar o CR oficial; reconciliar cancelamento fiscal × financeira.",
           financialImpact: nfe.valorTotal,
+        });
+      }
+      if (nfe.alerts.includes("CANCELED_NFE_INCLUDED_IN_BILLING_VALUE")) {
+        push({
+          code: "CANCELED_NFE_INCLUDED_IN_BILLING_VALUE",
+          severity: "critical",
+          title: "NF cancelada estava no valor faturado",
+          description: `NF-e cancelada ${nfe.numero ?? nfe.nfeExternalId} tinha alocação bruta ${formatMoneyShort(nfe.allocatedValueToOrderRaw)} e foi excluída do faturamento válido.`,
+          origin: "NomusNfe.status × alocação",
+          action: "Usar apenas NF válida no faturamento; manter cancelada só como evidência.",
+          financialImpact: nfe.allocatedValueToOrderRaw,
         });
       }
       if (nfe.linkedStockDocumentExternalIds.length > 0) {
@@ -5574,6 +5629,28 @@ function buildAlerts(input: {
   }
 
   for (const receivable of input.receivables) {
+    if (receivable.alerts.includes("RECEIVED_CR_LINKED_TO_CANCELED_NFE")) {
+      push({
+        code: "RECEIVED_CR_LINKED_TO_CANCELED_NFE",
+        severity: "critical",
+        title: "CR recebido vinculado a NF cancelada",
+        description: `CR ${receivable.searchReference} está ${receivable.status === "RECEIVED" ? "recebido" : "parcialmente recebido"} e vinculado à NF cancelada ${receivable.linkedNfeNumber ?? receivable.sourceInvoiceNumber ?? "—"}. Revisar se houve substituição, estorno ou reemissão.`,
+        origin: "NomusAccountsReceivable × NomusNfe",
+        action:
+          "Manter status financeiro oficial; investigar inconsistência fiscal/financeira antes de tratar como recebimento normal.",
+        financialImpact: round2(receivable.amountReceived ?? 0),
+      });
+    } else if (receivable.alerts.includes("CANCELED_NFE_WITH_RECEIVABLE")) {
+      push({
+        code: "CANCELED_NFE_WITH_RECEIVABLE",
+        severity: "critical",
+        title: "CR vinculado a NF-e cancelada",
+        description: `Existe título de Contas a Receber (${receivable.searchReference}) vinculado a uma NF-e cancelada (${receivable.linkedNfeNumber ?? "—"}).`,
+        origin: "NomusAccountsReceivable × NomusNfe",
+        action: "Não apagar o CR oficial; reconciliar cancelamento fiscal × financeira.",
+        financialImpact: round2(receivable.amountReceivable ?? 0),
+      });
+    }
     if (receivable.alerts.includes("RECEIVABLE_WITHOUT_NFE")) {
       push({
         code: "RECEIVABLE_WITHOUT_NFE",
@@ -6748,6 +6825,11 @@ function getAlertMetadata(code: string): AlertMetadata | null {
     },
     CANCELED_NFE_WITH_RECEIVABLE: {
       category: "NFE",
+      severity: "critical",
+      linkedTab: "financial",
+    },
+    RECEIVED_CR_LINKED_TO_CANCELED_NFE: {
+      category: "RECEIVABLE",
       severity: "critical",
       linkedTab: "financial",
     },

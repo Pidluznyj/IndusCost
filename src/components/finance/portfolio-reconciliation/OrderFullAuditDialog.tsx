@@ -1516,6 +1516,8 @@ const RECEIVABLE_ALERT_CODES = new Set([
   "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
   "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
   "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
+  "CANCELED_NFE_WITH_RECEIVABLE",
+  "RECEIVED_CR_LINKED_TO_CANCELED_NFE",
 ]);
 
 /**
@@ -1750,8 +1752,17 @@ function FinancialTab({
       >
         <SectionHeader
           title="Títulos reais de Contas a Receber"
-          subtitle="CR real prevalece — origem oficial (NomusAccountsReceivable). Não altera valores oficiais."
+          subtitle="Status financeiro (CR) ≠ status fiscal (NF). CR oficial recebido permanece; alerta se a NF vinculada estiver cancelada."
         />
+        {receivables.some((r) => r.hasCanceledNfeLink) ? (
+          <p
+            className="mb-2 rounded-[10px] border border-rose-200 bg-rose-50/80 px-3 py-2 text-[11px] text-rose-900"
+            data-testid="order-full-audit-financial-canceled-nfe-banner"
+          >
+            Há CR vinculado a NF cancelada. O recebimento financeiro é exibido, mas não deve
+            ser tratado como faturamento fiscal normal sem revisão.
+          </p>
+        ) : null}
         {receivables.length === 0 ? (
           <div
             className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280] space-y-1"
@@ -1787,7 +1798,9 @@ function FinancialTab({
                   <th className="py-1.5 pr-2 font-semibold text-right">Recebido</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Baixado</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Saldo</th>
-                  <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status financeiro</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status NF vinculada</th>
+                  <th className="py-1.5 pr-2 font-semibold">Alertas</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Dias vencidos</th>
                   <th className="py-1.5 pr-2 font-semibold">Condição pgto</th>
                   <th className="py-1.5 pr-2 font-semibold">Forma pgto</th>
@@ -1806,13 +1819,17 @@ function FinancialTab({
                   const zeroValue =
                     (r.amountReceivable ?? 0) < 0.005 &&
                     (r.balanceReceivable ?? 0) < 0.005;
+                  const canceledNfeLink = Boolean(r.hasCanceledNfeLink || r.linkedNfeIsCanceled);
                   return (
                     <tr
                       key={r.receivableExternalId}
                       className={cn(
                         "border-b border-[#F3F4F6]",
-                        r.status === "OVERDUE" && "bg-red-50/40",
-                        r.status === "PARTIALLY_RECEIVED" && "bg-sky-50/40",
+                        canceledNfeLink && "bg-rose-50/50",
+                        !canceledNfeLink && r.status === "OVERDUE" && "bg-red-50/40",
+                        !canceledNfeLink &&
+                          r.status === "PARTIALLY_RECEIVED" &&
+                          "bg-sky-50/40",
                         r.alerts.includes("RECEIPT_GREATER_THAN_RECEIVABLE") &&
                           "bg-red-50/60"
                       )}
@@ -1875,7 +1892,63 @@ function FinancialTab({
                         {formatFinanceCurrency(r.balanceReceivable ?? 0)}
                       </td>
                       <td className="py-1.5 pr-2">
-                        <ReceivableStatusBadge status={r.status} />
+                        <div className="flex flex-wrap items-center gap-1">
+                          <ReceivableStatusBadge status={r.status} />
+                          {canceledNfeLink ? (
+                            <span
+                              className="inline-flex rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-800"
+                              data-testid={`order-full-audit-financial-nfe-canceled-badge-${r.receivableExternalId}`}
+                              title="Status fiscal da NF vinculada — independente do status financeiro do CR"
+                            >
+                              NF cancelada
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {canceledNfeLink ? (
+                          <span className="inline-flex rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-800">
+                            {r.linkedNfeStatusLabel || "Cancelada"}
+                          </span>
+                        ) : r.linkedNfeStatusLabel ? (
+                          <span className="inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800">
+                            {r.linkedNfeStatusLabel}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[#6B7280]">—</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <div className="flex max-w-[220px] flex-wrap gap-1">
+                          {canceledNfeLink &&
+                          (r.receivableIsReceived ||
+                            r.status === "RECEIVED" ||
+                            r.status === "PARTIALLY_RECEIVED") ? (
+                            <span
+                              className="rounded border border-rose-300 bg-rose-100 px-1 py-0.5 text-[9px] font-semibold text-rose-900"
+                              title="CR recebido vinculado a NF cancelada"
+                              data-testid={`order-full-audit-financial-received-canceled-alert-${r.receivableExternalId}`}
+                            >
+                              CR recebido c/ NF cancelada
+                            </span>
+                          ) : canceledNfeLink ? (
+                            <span className="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[9px] font-semibold text-rose-800">
+                              CR c/ NF cancelada
+                            </span>
+                          ) : r.alerts.length === 0 ? (
+                            <span className="text-[10px] text-[#6B7280]">—</span>
+                          ) : (
+                            r.alerts.slice(0, 2).map((code) => (
+                              <span
+                                key={code}
+                                className="rounded border border-[#D0D5DD] bg-white px-1 py-0.5 text-[9px] font-semibold text-[#4B5563]"
+                                title={code}
+                              >
+                                {code.replace(/_/g, " ")}
+                              </span>
+                            ))
+                          )}
+                        </div>
                       </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">
                         {r.daysOverdue != null && r.daysOverdue > 0
@@ -3005,8 +3078,13 @@ function NfesTab({
                   <th className="py-1.5 pr-2 font-semibold">Cancelada?</th>
                   <th className="py-1.5 pr-2 font-semibold">Data canc.</th>
                   <th className="py-1.5 pr-2 font-semibold">Motivo canc.</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Valor total</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Atrib. pedido</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Valor NF</th>
+                  <th
+                    className="py-1.5 pr-2 font-semibold text-right"
+                    title="Somente NF válida. Cancelada = R$ 0,00 no faturamento válido."
+                  >
+                    Atrib. válido
+                  </th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Itens dentro</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Itens fora</th>
                   <th className="py-1.5 pr-2 font-semibold">Doc. saída</th>
@@ -3100,10 +3178,22 @@ function NfesTab({
                       <td
                         className={cn(
                           "py-1.5 pr-2 text-right tabular-nums",
-                          canceled && "line-through opacity-70"
+                          canceled && "text-rose-800 font-semibold"
                         )}
+                        title={
+                          canceled
+                            ? "NF cancelada exibida apenas para auditoria. Não compõe faturamento válido."
+                            : undefined
+                        }
                       >
-                        {formatFinanceCurrency(n.allocatedValueToOrder)}
+                        {formatFinanceCurrency(
+                          canceled ? 0 : n.allocatedValueToOrder
+                        )}
+                        {canceled ? (
+                          <span className="mt-0.5 block text-[9px] font-normal text-rose-700">
+                            só auditoria
+                          </span>
+                        ) : null}
                       </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">
                         {formatFinanceCurrency(n.insideOrderItemsValue)}
@@ -5429,6 +5519,8 @@ const COMMISSION_ALERT_CODES = new Set([
   "CUSTOMER_COMMISSION_EXCEPTION",
   "COMMISSION_BASE_GREATER_THAN_RECEIVED_VALUE",
   "RESPONSIBLE_COMMERCIAL_USED_AS_COMMISSION_SELLER",
+  "RECEIVED_CR_LINKED_TO_CANCELED_NFE",
+  "CANCELED_NFE_WITH_RECEIVABLE",
 ]);
 
 function CommissionsTab({
@@ -5445,6 +5537,11 @@ function CommissionsTab({
     commissions.canonicalSellerName?.trim() ||
       commissions.rawSellerName?.trim()
   );
+  const hasCanceledNfeCrRisk = alerts.some(
+    (a) =>
+      a.code === "RECEIVED_CR_LINKED_TO_CANCELED_NFE" ||
+      a.code === "CANCELED_NFE_WITH_RECEIVABLE"
+  );
 
   return (
     <div className="space-y-4" data-testid="order-full-audit-commissions-tab">
@@ -5457,6 +5554,15 @@ function CommissionsTab({
         comissão (fonte: <code>CommissionOrderSnapshot</code>). Comissão paga
         nunca é alterada aqui. Vendedor comissionável vem do Pedido de Venda/Nomus.
       </div>
+      {hasCanceledNfeCrRisk ? (
+        <div
+          className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-900"
+          data-testid="order-full-audit-commissions-canceled-nfe-review"
+        >
+          Há CR vinculado a NF cancelada neste pedido. Não tratar automaticamente
+          como comissão normal sem auditoria. Comissão paga não foi alterada.
+        </div>
+      ) : null}
 
       {/* Top cards */}
       <section

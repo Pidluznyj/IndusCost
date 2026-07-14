@@ -1343,6 +1343,7 @@ export function detectOrderToCashAlerts(input: {
   diasBloqueio: number;
   hasCanceledNfe?: boolean;
   hasCanceledNfeWithReceivable?: boolean;
+  hasReceivedCrLinkedToCanceledNfe?: boolean;
 }): { alerts: string[]; flags: ReturnType<typeof emptyAlertFlags>; blocking: string[] } {
   const alerts: string[] = [];
   const flags = emptyAlertFlags();
@@ -1381,6 +1382,9 @@ export function detectOrderToCashAlerts(input: {
   }
   if (input.hasCanceledNfeWithReceivable) {
     alerts.push("CANCELED_NFE_WITH_RECEIVABLE");
+  }
+  if (input.hasReceivedCrLinkedToCanceledNfe) {
+    alerts.push("RECEIVED_CR_LINKED_TO_CANCELED_NFE");
   }
   if (input.hasPriceMismatch) {
     alerts.push("DIVERGENCIA_PRECO");
@@ -1798,6 +1802,14 @@ export function buildOrderToCashAuditRows(
       (r) =>
         r.sourceInvoiceId != null && canceledNfeIds.has(r.sourceInvoiceId)
     );
+    const hasReceivedCrLinkedToCanceledNfe = allOrderReceivables.some((r) => {
+      if (r.sourceInvoiceId == null || !canceledNfeIds.has(r.sourceInvoiceId)) {
+        return false;
+      }
+      const received = Number(r.amountReceived ?? 0);
+      const balance = Number(r.balanceReceivable ?? 0);
+      return received > 0.009 && balance <= 0.009;
+    });
     const paymentStatus = classifyPaymentStatus({
       hasPaymentCondition: !plan.hasPaymentConditionMissing,
       hasDocOrNfe,
@@ -1868,6 +1880,7 @@ export function buildOrderToCashAuditRows(
       diasBloqueio: opts.diasBloqueio,
       hasCanceledNfe,
       hasCanceledNfeWithReceivable,
+      hasReceivedCrLinkedToCanceledNfe,
     });
     const action = buildRecommendedAction({
       orderToCashStage,

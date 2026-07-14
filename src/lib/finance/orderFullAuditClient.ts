@@ -72,8 +72,14 @@ export type OrderFullAuditReceivable = {
     | "OVERDUE"
     | "OPEN"
     | "UNKNOWN";
+  /** Status financeiro oficial: CR totalmente recebido. */
+  receivableIsReceived: boolean;
   daysOverdue: number | null;
   linkedNfeExternalIds: number[];
+  linkedNfeNumber: string | null;
+  linkedNfeStatusLabel: string | null;
+  linkedNfeIsCanceled: boolean;
+  hasCanceledNfeLink: boolean;
   origin: "NFE" | "SOURCE_INVOICE" | "INFERRED" | "UNKNOWN";
   linkOrigin:
     | "ITEM_EVIDENCE"
@@ -108,7 +114,10 @@ export type OrderFullAuditNfe = {
   tipoOperacao: number | null;
   valorLiquido: number | null;
   valorTotal: number | null;
+  /** Atribuição válida ao pedido (0 se NF cancelada). */
   allocatedValueToOrder: number;
+  /** Alocação bruta antes de zerar canceladas. */
+  allocatedValueToOrderRaw: number;
   insideOrderItemsValue: number;
   outsideOrderItemsValue: number;
   headerGreaterThanOrder: boolean;
