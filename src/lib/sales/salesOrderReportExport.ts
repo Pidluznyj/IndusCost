@@ -33,10 +33,13 @@ function nfeDocumentText(row: SalesOrderReportRow): string {
 }
 
 function mapReportRowToDetail(row: SalesOrderReportRow): Record<string, string | number> {
+  // Ordem canônica das colunas do XLSX (2026-07). A coluna "Empresa"
+  // (`row.companyName`) foi removida — só era populada a partir do
+  // `nomusRawResponse` e aparecia vazia na maioria dos pedidos. O emissor
+  // institucional continua no cabeçalho do relatório e no PDF.
   return {
     Cliente: row.customerName,
     "CNPJ/CPF": row.customerCnpj ?? "",
-    Empresa: row.companyName ?? "",
     Pedido: row.orderCode,
     "ID Nomus pedido": row.externalSalesOrderCode ?? "",
     "Data emissão": formatDateBr(row.issueDate),
@@ -69,10 +72,9 @@ function mapReportRowToDetail(row: SalesOrderReportRow): Record<string, string |
 
 function applyReportSheetFormatting(ws: XLSX.WorkSheet, rowCount: number, colCount: number) {
   const widths = [
-    28, // Cliente
+    30, // Cliente (recebeu +2 dos 18 liberados pela remoção de "Empresa")
     18, // CNPJ/CPF
-    18, // Empresa
-    12, // Pedido
+    14, // Pedido   (recebeu +2 dos 18 liberados)
     14, // ID Nomus pedido
     12, // Data emissão
     14, // Entrega prevista

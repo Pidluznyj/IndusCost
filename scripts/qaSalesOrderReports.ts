@@ -162,10 +162,10 @@ function checkPrintComponents() {
   }
   // 2026-07: coluna "Status" foi substituída por "Faturamento" (regra oficial
   // baseada em NF vinculada). "Status pedido" (Enviado ao Nomus etc.) segue
-  // apenas no XLSX como coluna de auditoria interna.
+  // apenas no XLSX como coluna de auditoria interna. A coluna "Empresa" foi
+  // REMOVIDA da tabela analítica — o dado institucional continua no header.
   for (const col of [
     "Cliente",
-    "Empresa",
     "Pedido",
     "Emissão",
     "Entrega",
@@ -179,6 +179,30 @@ function checkPrintComponents() {
   ]) {
     if (doc.includes(`>${col}<`)) ok(`doc:col:${col}`, "coluna do PDF presente");
     else fail(`doc:col:${col}`, `coluna ${col} ausente na tabela do PDF`);
+  }
+  // Guard negativo: a coluna "Empresa" NUNCA pode reaparecer no cabeçalho.
+  if (doc.includes(">Empresa<")) {
+    fail(
+      "doc:col:no-empresa",
+      "cabeçalho '>Empresa<' voltou à tabela analítica do PDF — regressão."
+    );
+  } else {
+    ok(
+      "doc:col:no-empresa",
+      "cabeçalho '>Empresa<' ausente (correto — 2026-07)."
+    );
+  }
+  // O `colSpan` do total mudou: 6 colunas de identificação + 5 numéricas.
+  if (/colSpan=\{6\}/.test(doc)) {
+    ok(
+      "doc:total-colspan",
+      "linha de total usa colSpan={6} (Cliente..Faturamento, sem Empresa)."
+    );
+  } else {
+    fail(
+      "doc:total-colspan",
+      "linha de total sem colSpan={6} — possivelmente ainda com Empresa."
+    );
   }
   if (doc.includes("sales-orders-print-total-row")) {
     ok("doc:total-row", "linha de total presente");
@@ -341,9 +365,18 @@ function checkBackendService() {
 // ---------------------------------------------------------------------------
 function checkXlsxExport() {
   const xlsx = read("src/lib/sales/salesOrderReportExport.ts");
+  // 2026-07: coluna "Empresa" removida do detail sheet — o dado institucional
+  // permanece apenas no cabeçalho institucional do relatório.
+  if (/^\s*Empresa\s*:/m.test(xlsx)) {
+    fail(
+      "xlsx:no-empresa",
+      "detail sheet ainda emite a coluna 'Empresa' — regressão."
+    );
+  } else {
+    ok("xlsx:no-empresa", "detail sheet não emite 'Empresa' (correto — 2026-07).");
+  }
   for (const col of [
     "Cliente",
-    "Empresa",
     "Pedido",
     "ID Nomus pedido",
     "Data emissão",

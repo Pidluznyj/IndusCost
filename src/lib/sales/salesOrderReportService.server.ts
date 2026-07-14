@@ -202,7 +202,18 @@ export async function loadSalesOrderReportPayload(
     let activeItemsCount = 0;
     let canceledItemsCount = 0;
     let cutItemsCount = 0;
-    let originalValue = decimalToNumber(order.totalNetValue) ?? 0;
+    /**
+     * `originalValue` começa com o `totalNetValue` OFICIAL do pedido (fonte
+     * da verdade: coluna `SalesOrder.totalNetValue` gravada pelo Nomus sync).
+     * Nunca é sobrescrito por um valor calculado das linhas do
+     * `nomusRawResponse` que divirja em ordens de magnitude — isso era o
+     * bug do totalizador aparecer menor: quando `unitPrice` das linhas vinha
+     * zerado ou em escala diferente, a soma `qtyOrdered × unitPrice` ficava
+     * bem abaixo do total oficial e o totalizador do PDF/XLSX herdava esse
+     * valor menor.
+     */
+    const officialOrderNetValue = decimalToNumber(order.totalNetValue) ?? 0;
+    let originalValue = officialOrderNetValue;
     let canceledValue = 0;
     let cutValue = 0;
 
@@ -227,7 +238,34 @@ export async function loadSalesOrderReportPayload(
           activeItemsCount += 1;
         }
       }
-      if (originalFromItems > 0) originalValue = originalFromItems;
+      // Sanity check de escala (2026-07). Só usamos a soma das linhas como
+      // `originalValue` quando ela está próxima do total oficial do pedido.
+      // Se `unitPrice` das linhas vier zerado, incompleto ou em escala
+      // diferente, `originalFromItems` cai bem abaixo do `totalNetValue` e
+      // o motor descarta esse valor mantendo o total oficial. Faixa aceita:
+      // 90%–200% do valor oficial (respeita frete/imposto/desconto). Se o
+      // pedido oficial for zero, preserva o comportamento antigo.
+      if (originalFromItems > 0) {
+        if (officialOrderNetValue <= 0) {
+          originalValue = originalFromItems;
+        } else {
+          const ratio = originalFromItems / officialOrderNetValue;
+          if (ratio >= 0.9 && ratio <= 2) {
+            originalValue = originalFromItems;
+          }
+          // Se ratio fora da faixa → preserva `officialOrderNetValue` (já é
+          // o default). E também descarta canceledValue/cutValue calculados
+          // nas linhas quando estavam em escala corrompida, evitando
+          // inflar/deflacionar activeValue.
+          else {
+            canceledValue = 0;
+            cutValue = 0;
+            if (order.status === "CANCELLED") {
+              canceledValue = officialOrderNetValue;
+            }
+          }
+        }
+      }
     } else if (order.status === "CANCELLED") {
       canceledItemsCount = itemsCount;
       canceledValue = originalValue;

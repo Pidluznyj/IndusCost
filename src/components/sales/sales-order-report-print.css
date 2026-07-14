@@ -364,16 +364,25 @@
     font-size: 7.5px;
   }
 
+  /*
+   * Larguras da tabela analítica (2026-07). A coluna "Empresa" (antes 8%)
+   * foi removida — os 8% liberados foram redistribuídos entre Cliente
+   * (+5%, ganha protagonismo) e Pedido (+3%, aumenta legibilidade).
+   * `.col-company` permanece definido para retrocompatibilidade com
+   * fixtures/snapshots antigos, mas não é mais renderizado pela UI.
+   */
   #sales-orders-print-root .col-client {
-    width: 14%;
+    width: 19%;
   }
 
   #sales-orders-print-root .col-company {
-    width: 8%;
+    /* Deprecado — regra mantida por retrocompatibilidade. */
+    width: 0;
+    display: none;
   }
 
   #sales-orders-print-root .col-order {
-    width: 9%;
+    width: 12%;
   }
 
   #sales-orders-print-root .col-seller {

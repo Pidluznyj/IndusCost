@@ -159,6 +159,16 @@ export function SalesOrderReportPrintDocument({
               : ""}
             )
           </h2>
+          {/*
+            Ordem canônica das colunas da tabela analítica (2026-07):
+              Cliente · Pedido · Emissão · Entrega · Vendedor · Faturamento
+              · Itens · Valor pedido · Valor ativo · Faturado · Saldo
+
+            A coluna "Empresa" foi removida — companyName só era preenchido
+            a partir do nomusRawResponse e aparecia como "—" na maioria dos
+            pedidos. O emissor institucional continua visível no cabeçalho
+            (PrintHeader), portanto a informação não sumiu do relatório.
+          */}
           {rows.length === 0 ? (
             <p className="sales-orders-print-empty">
               Nenhum pedido encontrado para os filtros selecionados.
@@ -168,7 +178,6 @@ export function SalesOrderReportPrintDocument({
               <thead>
                 <tr>
                   <th className="col-client">Cliente</th>
-                  <th className="col-company">Empresa</th>
                   <th className="col-order">Pedido</th>
                   <th className="col-date">Emissão</th>
                   <th className="col-date">Entrega</th>
@@ -185,7 +194,6 @@ export function SalesOrderReportPrintDocument({
                 {rows.map((row) => (
                   <tr key={row.orderId}>
                     <td className="col-client">{displayFinanceText(row.customerName)}</td>
-                    <td className="col-company">{displayFinanceText(row.companyName)}</td>
                     <td className="col-order">
                       <span className="sales-orders-print-order-code">{row.orderCode}</span>
                       {row.externalSalesOrderCode ? (
@@ -232,7 +240,9 @@ export function SalesOrderReportPrintDocument({
               </tbody>
               <tfoot>
                 <tr className="sales-orders-print-total-row">
-                  <td colSpan={7}>Total</td>
+                  {/* colSpan = 6 colunas de identificação (Cliente, Pedido, Emissão,
+                      Entrega, Vendedor, Faturamento) antes das 5 colunas numéricas. */}
+                  <td colSpan={6}>Total</td>
                   <td className="col-num">
                     {formatFinanceInteger(summary.totalItemsCount)}
                   </td>
