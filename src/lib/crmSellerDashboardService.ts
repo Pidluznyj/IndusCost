@@ -64,10 +64,12 @@ type OrderSellerOptionRow = {
 export async function enrichOrderSellerOptionRowsWithNames(
   rows: OrderSellerOptionRow[]
 ): Promise<OrderSellerOptionRow[]> {
-  let nameById = buildSellerNameByExternalIdMap(rows);
+  // "Vendedor ID N" no banco (owner legado) não conta como nome — força lookup.
+  const workingRows = applySellerNamesToRows(rows, new Map());
+  let nameById = buildSellerNameByExternalIdMap(workingRows);
   const missingIds = [
     ...new Set(
-      rows
+      workingRows
         .map((r) => r.external_seller_id)
         .filter(
           (id): id is number =>
@@ -76,7 +78,7 @@ export async function enrichOrderSellerOptionRowsWithNames(
     ),
   ];
   if (missingIds.length === 0) {
-    return applySellerNamesToRows(rows, nameById);
+    return applySellerNamesToRows(workingRows, nameById);
   }
 
   const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
@@ -152,7 +154,7 @@ export async function enrichOrderSellerOptionRowsWithNames(
     }
   }
 
-  return applySellerNamesToRows(rows, nameById);
+  return applySellerNamesToRows(workingRows, nameById);
 }
 
 export type SellerDashboardRequest = {

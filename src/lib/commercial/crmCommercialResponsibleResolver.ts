@@ -20,7 +20,11 @@ import type { PrismaClient } from "@prisma/client";
 import { loadManualCommercialOwnersForCustomers } from "@/src/lib/crmCustomerCommercialOwner.js";
 import type { ResolvedCustomerCommercialOwner } from "@/src/lib/crmCustomerCommercialOwnerTypes.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
-import { isSellerIdOnlyLabel } from "@/src/lib/commercial/orderSellerIdentityResolver.js";
+import {
+  ORDER_SELLER_UNMAPPED_LABEL,
+  cleanExecutiveCommercialName,
+  isSellerIdOnlyLabel,
+} from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 
 /**
  * Rótulos administrativos/setores que NUNCA podem aparecer como Responsável
@@ -72,19 +76,31 @@ function resolvedOwnerToInjection(
   if (!owner) return null;
   if (owner.source === "NONE") return null;
 
-  const canonical = owner.sellerCanonicalName?.trim() ?? null;
-  const responsible = owner.sellerResponsibleName?.trim() ?? null;
+  const canonical =
+    cleanExecutiveCommercialName(owner.sellerCanonicalName) ||
+    (owner.sellerCanonicalName?.trim() === ORDER_SELLER_UNMAPPED_LABEL
+      ? ORDER_SELLER_UNMAPPED_LABEL
+      : null);
+  const responsible = cleanExecutiveCommercialName(owner.sellerResponsibleName);
 
-  // Guard: nunca retornar FINANCEIRO/FATURAMENTO como responsável comercial.
+  // Guard: nunca retornar FINANCEIRO/FATURAMENTO / "Vendedor ID N".
   if (
-    isForbiddenCommercialResponsibleName(canonical) ||
-    isForbiddenCommercialResponsibleName(responsible)
+    (canonical &&
+      canonical !== ORDER_SELLER_UNMAPPED_LABEL &&
+      isForbiddenCommercialResponsibleName(canonical)) ||
+    (responsible && isForbiddenCommercialResponsibleName(responsible))
   ) {
     return null;
   }
 
+  const displayName =
+    canonical ||
+    responsible ||
+    (owner.sellerExternalId != null ? ORDER_SELLER_UNMAPPED_LABEL : null);
+  if (!displayName) return null;
+
   return {
-    sellerCanonicalName: canonical,
+    sellerCanonicalName: displayName,
     sellerResponsibleName: responsible,
     sellerIdentityKey: owner.sellerIdentityKey,
     sellerExternalId: owner.sellerExternalId,

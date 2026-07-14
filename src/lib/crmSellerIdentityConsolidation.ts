@@ -5,6 +5,10 @@
 import { Prisma } from "@prisma/client";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import { formatSellerDisplayName } from "@/src/lib/adminSellerOptions.js";
+import {
+  cleanExecutiveCommercialName,
+  isSellerIdOnlyLabel,
+} from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 
@@ -54,7 +58,7 @@ export function buildRawSellerKeyFromRow(
 function pickDisplayResponsible(fragments: SellerRowFragment[]): string | null {
   let best: string | null = null;
   for (const f of fragments) {
-    const r = (f.responsible ?? "").trim();
+    const r = cleanExecutiveCommercialName(f.responsible);
     if (!r) continue;
     if (!best || r.length > best.length) best = r;
   }
@@ -68,7 +72,7 @@ export function buildSellerNameByExternalIdMap(
   const map = new Map<number, string>();
   for (const row of rows) {
     const id = row.external_seller_id;
-    const name = (row.responsible ?? "").trim().replace(/\s+/g, " ");
+    const name = cleanExecutiveCommercialName(row.responsible);
     if (id == null || !Number.isFinite(id) || !name) continue;
     const prev = map.get(id);
     if (!prev || name.length > prev.length) map.set(id, name);
@@ -77,7 +81,7 @@ export function buildSellerNameByExternalIdMap(
 }
 
 /**
- * Preenche `responsible` vazio com nome já conhecido para o mesmo ID Nomus.
+ * Preenche `responsible` vazio (ou "Vendedor ID N") com nome já conhecido para o mesmo ID Nomus.
  * Evita opções "Vendedor ID 464" quando o mesmo ID já aparece com nome em outra linha.
  */
 export function applySellerNamesToRows<
@@ -87,13 +91,25 @@ export function applySellerNamesToRows<
     orders_count: number;
   },
 >(rows: T[], nameById: Map<number, string>): T[] {
-  if (nameById.size === 0) return rows;
   return rows.map((row) => {
-    if ((row.responsible ?? "").trim()) return row;
-    if (row.external_seller_id == null) return row;
-    const resolved = nameById.get(row.external_seller_id)?.trim();
-    if (!resolved) return row;
-    return { ...row, responsible: resolved };
+    const current = cleanExecutiveCommercialName(row.responsible);
+    if (current) {
+      return current === (row.responsible ?? "").trim().replace(/\s+/g, " ")
+        ? row
+        : { ...row, responsible: current };
+    }
+    // Limpa label técnico mesmo sem mapa, para o enrich/consolidação tratarem como ID-only.
+    const cleared =
+      row.responsible != null && isSellerIdOnlyLabel(row.responsible)
+        ? { ...row, responsible: null as string | null }
+        : row;
+    if (nameById.size === 0) return cleared;
+    if (cleared.external_seller_id == null) return cleared;
+    const resolved = cleanExecutiveCommercialName(
+      nameById.get(cleared.external_seller_id) ?? null
+    );
+    if (!resolved) return cleared;
+    return { ...cleared, responsible: resolved };
   });
 }
 
@@ -116,7 +132,7 @@ export function mergeCommissionSellerNamesIntoMap(
   const map = new Map(nameById);
 
   const putName = (id: number | null | undefined, rawName: string | null | undefined) => {
-    const name = (rawName ?? "").trim().replace(/\s+/g, " ");
+    const name = cleanExecutiveCommercialName(rawName);
     if (id == null || !Number.isFinite(id) || id <= 0 || !name) return;
     const prev = map.get(id);
     if (!prev || name.length > prev.length) map.set(id, name);
@@ -215,7 +231,7 @@ export function expandSellerFilterWithConsolidatedIds<
 }
 
 function groupingKeyForFragment(fragment: SellerRowFragment): string {
-  const responsible = (fragment.responsible ?? "").trim();
+  const responsible = cleanExecutiveCommercialName(fragment.responsible);
   if (responsible) {
     return normalizeSellerIdentityName(responsible);
   }

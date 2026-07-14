@@ -53,7 +53,8 @@ describe("crmCommercialLayout", () => {
       join(process.cwd(), "src/components/CrmCommercialManagementTabs.tsx"),
       "utf8"
     );
-    assert.match(tabs, /id: "general", label: "Gestão Geral"/);
+    assert.match(tabs, /id:\s*["']general["']/);
+    assert.match(tabs, /Gestão Geral/);
     assert.match(tabs, /canAccessCrmGeneral/);
   });
 
@@ -102,7 +103,7 @@ describe("crmCommercialLayout", () => {
     assert.match(crm, /CrmCustomerPortfolioSection/);
     assert.match(crm, /CockpitTabs/);
     assert.match(portfolio, /CRM_PORTFOLIO_FILTER_CHIPS/);
-    assert.match(portfolio, /xl:grid-cols-\[minmax\(320px,400px\)_minmax\(0,1fr\)\]/);
+    assert.match(portfolio, /xl:grid-cols-\[minmax\(320px,420px\)_minmax\(0,1fr\)\]/);
     assert.match(cockpit, /Resumo comercial/);
     assert.match(cockpit, /Agenda comercial/);
   });
@@ -127,7 +128,7 @@ describe("crmCommercialLayout", () => {
     assert.match(section, /onOpenPortfolio/);
     assert.match(section, /Carteira de clientes/);
     assert.match(section, /Gestão por Responsável/);
-    assert.match(section, /Responsável comercial da carteira/);
+    assert.match(section, /Responsável da carteira/);
     assert.doesNotMatch(section, /CrmSellerSubTabs/);
   });
 });

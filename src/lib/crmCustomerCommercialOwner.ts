@@ -17,6 +17,11 @@ import {
   buildAdminSellerOptionKey,
   type AdminSellerOption,
 } from "@/src/lib/adminSellerOptionsTypes.js";
+import {
+  ORDER_SELLER_UNMAPPED_LABEL,
+  cleanExecutiveCommercialName,
+  resolveCommercialOwnerDisplay,
+} from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import type {
@@ -51,10 +56,22 @@ export function manualOwnerRowToResolved(
   row: CrmCustomerCommercialOwner
 ): ResolvedCustomerCommercialOwner {
   const aliasIds = parseSellerAliasExternalIds(row.sellerAliasExternalIds);
+  const display = resolveCommercialOwnerDisplay({
+    rawId: row.sellerExternalId,
+    rawName: row.sellerResponsibleName,
+    canonicalName: row.sellerCanonicalName,
+    source: row.assignmentSource ?? "CRM",
+  });
+  const executiveName =
+    cleanExecutiveCommercialName(display.canonicalName) ||
+    cleanExecutiveCommercialName(display.rawName) ||
+    (display.displayName === ORDER_SELLER_UNMAPPED_LABEL
+      ? ORDER_SELLER_UNMAPPED_LABEL
+      : cleanExecutiveCommercialName(display.displayName));
   return {
     source: "MANUAL",
-    sellerCanonicalName: row.sellerCanonicalName,
-    sellerResponsibleName: row.sellerResponsibleName,
+    sellerCanonicalName: executiveName,
+    sellerResponsibleName: cleanExecutiveCommercialName(row.sellerResponsibleName),
     sellerExternalId: row.sellerExternalId,
     sellerIdentityKey: row.sellerIdentityKey,
     sellerAliasExternalIds: aliasIds.length > 0 ? aliasIds : row.sellerExternalId != null ? [row.sellerExternalId] : [],
@@ -97,10 +114,10 @@ export async function inferCommercialOwnerFromNomusOrders(
   const top = rows[0];
   if (!top) return null;
 
-  const responsible = top.responsible?.trim() || null;
+  const responsible = cleanExecutiveCommercialName(top.responsible);
   const canonicalName =
     responsible ||
-    (top.external_seller_id != null ? `Vendedor ID ${top.external_seller_id}` : null);
+    (top.external_seller_id != null ? ORDER_SELLER_UNMAPPED_LABEL : null);
   if (!canonicalName) return null;
 
   const sellerIdentityKey = responsible
@@ -144,14 +161,20 @@ export function resolveCustomerCommercialOwner(
 }
 
 export function formatCommercialOwnerLabel(owner: ResolvedCustomerCommercialOwner | null): string {
-  if (!owner?.sellerCanonicalName) return "Sem responsável";
+  const display = resolveCommercialOwnerDisplay({
+    rawId: owner?.sellerExternalId,
+    rawName: owner?.sellerResponsibleName,
+    canonicalName: owner?.sellerCanonicalName,
+    source: owner?.source,
+  });
+  if (display.source === "NONE") return "Sem responsável";
   const ids =
-    owner.sellerAliasExternalIds.length > 0
+    owner && owner.sellerAliasExternalIds.length > 0
       ? ` (IDs Nomus ${owner.sellerAliasExternalIds.join(", ")})`
-      : owner.sellerExternalId != null
+      : owner?.sellerExternalId != null
         ? ` (ID Nomus ${owner.sellerExternalId})`
         : "";
-  return `${owner.sellerCanonicalName}${ids}`;
+  return `${display.displayName}${ids}`;
 }
 
 export function manualCommercialOwnerMatchesSellerScope(
@@ -470,6 +493,55 @@ export async function patchCustomerCommercialOwner(
   return { ok: true, payload: payload! };
 }
 
+/**
+ * Resolve nomes canônicos para owners legados salvos como "Vendedor ID N"
+ * (mesma cadeia do filtro Vendedor do Pedido).
+ */
+async function enrichResolvedCommercialOwnerNames(
+  owners: Map<string, ResolvedCustomerCommercialOwner>
+): Promise<void> {
+  const needLookup: { customerId: string; externalId: number }[] = [];
+  for (const [customerId, owner] of owners) {
+    const name = cleanExecutiveCommercialName(owner.sellerCanonicalName);
+    const hasRealName = Boolean(name) && name !== ORDER_SELLER_UNMAPPED_LABEL;
+    if (hasRealName) continue;
+    if (owner.sellerExternalId == null || owner.sellerExternalId <= 0) continue;
+    needLookup.push({ customerId, externalId: owner.sellerExternalId });
+  }
+  if (needLookup.length === 0) return;
+
+  const { enrichOrderSellerOptionRowsWithNames } = await import(
+    "@/src/lib/crmSellerDashboardService.js"
+  );
+  const enriched = await enrichOrderSellerOptionRowsWithNames(
+    needLookup.map((row) => ({
+      external_seller_id: row.externalId,
+      responsible: null,
+      orders_count: 1,
+    }))
+  );
+  const nameById = new Map<number, string>();
+  for (const row of enriched) {
+    const name = cleanExecutiveCommercialName(row.responsible);
+    if (row.external_seller_id != null && name && name !== ORDER_SELLER_UNMAPPED_LABEL) {
+      nameById.set(row.external_seller_id, name);
+    }
+  }
+
+  for (const { customerId, externalId } of needLookup) {
+    const resolved = nameById.get(externalId);
+    if (!resolved) continue;
+    const prev = owners.get(customerId);
+    if (!prev) continue;
+    owners.set(customerId, {
+      ...prev,
+      sellerCanonicalName: resolved,
+      sellerResponsibleName: prev.sellerResponsibleName ?? resolved,
+      sellerIdentityKey: normalizeSellerIdentityName(resolved),
+    });
+  }
+}
+
 export async function loadManualCommercialOwnersForCustomers(
   customerIds: string[]
 ): Promise<Map<string, ResolvedCustomerCommercialOwner>> {
@@ -481,5 +553,6 @@ export async function loadManualCommercialOwnersForCustomers(
   for (const row of rows) {
     map.set(row.customerId, manualOwnerRowToResolved(row));
   }
+  await enrichResolvedCommercialOwnerNames(map);
   return map;
 }

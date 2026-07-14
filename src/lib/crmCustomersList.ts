@@ -11,6 +11,7 @@ import {
   loadManualCommercialOwnersForCustomers,
 } from "@/src/lib/crmCustomerCommercialOwner.js";
 import type { ResolvedCustomerCommercialOwner } from "@/src/lib/crmCustomerCommercialOwnerTypes.js";
+import { resolveCommercialOwnerDisplay } from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import { resolveSalesOrderHasInvoicing } from "@/src/lib/crmCommercialOrderRules.js";
 import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
@@ -637,7 +638,18 @@ export function mapCustomerRowsToListItems(
     const agg = activityAgg.get(c.id);
     const ord = orderEnrichment.get(c.id);
     const manual = manualOwners?.get(c.id);
-    const ownerName = manual?.sellerCanonicalName?.trim() || null;
+    const ownerDisplay = manual
+      ? resolveCommercialOwnerDisplay({
+          rawId: manual.sellerExternalId,
+          rawName: manual.sellerResponsibleName,
+          canonicalName: manual.sellerCanonicalName,
+          source: manual.source,
+        })
+      : null;
+    const ownerName =
+      ownerDisplay && ownerDisplay.source !== "NONE"
+        ? ownerDisplay.displayName
+        : null;
     const ownerId = manual?.sellerExternalId ?? null;
     const hasPurchaseHistory = ord?.hasPurchaseHistory ?? false;
     const hasOpenPortfolio = ord?.hasOpenPortfolio ?? false;

@@ -19,10 +19,11 @@ export function normalizeSellerNameForGrouping(value: string): string {
 }
 
 export function formatSellerDisplayName(responsible: string | null, externalSellerId: number | null): string {
-  if (responsible?.trim()) {
-    return responsible.trim().replace(/\s+/g, " ");
-  }
+  const name = (responsible ?? "").trim().replace(/\s+/g, " ");
   // ID cru nunca é label executivo — o ID vai em campo técnico / sublabel.
+  if (name && !/^vendedor\s+id\s*[:\s]?\s*\d+$/i.test(name)) {
+    return name;
+  }
   if (externalSellerId != null) {
     return "Vendedor não mapeado";
   }

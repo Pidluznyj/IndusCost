@@ -49,6 +49,35 @@ describe("crmSellerIdentityConsolidation", () => {
     assert.deepEqual(gislene.externalSellerIds, [464]);
   });
 
+  it("label legado 'Vendedor ID N' é limpo e herda nome canônico do mesmo ID", () => {
+    const options = consolidateSellerRowFragments([
+      { external_seller_id: 1399, responsible: "Vendedor ID 1399", orders_count: 4 },
+      {
+        external_seller_id: 1399,
+        responsible: "Rodrigo Da Silva Ramos",
+        orders_count: 6,
+      },
+      { external_seller_id: 464, responsible: "Vendedor ID 464", orders_count: 2 },
+      { external_seller_id: 464, responsible: "GISLENE LIMA", orders_count: 8 },
+    ]);
+    const labels = options.map((o) => o.displayName);
+    assert.deepEqual(labels.sort(), ["GISLENE LIMA", "Rodrigo Da Silva Ramos"].sort());
+    assert.equal(
+      labels.some((n) => /^Vendedor ID\s+\d+$/i.test(n)),
+      false
+    );
+  });
+
+  it("ID sem nome e sem irmão vira 'Vendedor não mapeado'", () => {
+    const options = consolidateSellerRowFragments([
+      { external_seller_id: 1189, responsible: "Vendedor ID 1189", orders_count: 3 },
+      { external_seller_id: 1189, responsible: null, orders_count: 1 },
+    ]);
+    assert.equal(options.length, 1);
+    assert.equal(options[0]!.displayName, "Vendedor não mapeado");
+    assert.deepEqual(options[0]!.externalSellerIds, [1189]);
+  });
+
   it("mesmo nome com três IDs Nomus (GISLENE) vira uma opção única", () => {
     const options = consolidateSellerRowFragments([
       { external_seller_id: 464, responsible: "GISLENE LIMA", orders_count: 100 },

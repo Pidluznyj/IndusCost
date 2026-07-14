@@ -28,6 +28,10 @@ import {
   resolveCommercialResponsibleMap,
   type CommercialResponsibleMap,
 } from "@/src/lib/commercial/crmCommercialResponsibleResolver.js";
+import {
+  ORDER_SELLER_UNMAPPED_LABEL,
+  resolveCommercialOwnerDisplay,
+} from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 
 export const CRM_SALES_ORDER_METRICS_SOURCE = "crm-sales-order-metrics-via-official-so-rules" as const;
 
@@ -184,13 +188,21 @@ function resolveActiveCommercialOwner(
 } {
   const owner = order.Customer?.CrmCustomerCommercialOwner;
   if (owner && owner.isActive !== false) {
+    const display = resolveCommercialOwnerDisplay({
+      rawId: owner.sellerExternalId,
+      rawName: owner.sellerResponsibleName,
+      canonicalName: owner.sellerCanonicalName,
+      source: "CRM",
+    });
     const name =
-      owner.sellerCanonicalName?.trim() ||
-      owner.sellerResponsibleName?.trim() ||
-      null;
+      display.source === "NONE" ? null : display.displayName;
     const identityKey =
       owner.sellerIdentityKey?.trim() ||
-      (name ? normalizeSellerIdentityName(name) : null);
+      (name && name !== ORDER_SELLER_UNMAPPED_LABEL
+        ? normalizeSellerIdentityName(name)
+        : owner.sellerExternalId != null
+          ? `__ID_ONLY__:${owner.sellerExternalId}`
+          : null);
     return {
       name,
       identityKey,

@@ -11,6 +11,25 @@ Ver também: [crm-order-seller-canonical-grouping.md](./crm-order-seller-canonic
 
 Autoatribuição de carteira **não** persiste label `Vendedor ID N` — exige nome real.
 
+## Exibição de nomes comerciais no CRM
+
+O CRM Comercial fala a mesma língua em todas as abas (Gestão Geral, Gestão por
+Responsável, Carteira de Clientes):
+
+| Regra | Detalhe |
+|-------|---------|
+| Label executivo | Sempre nome canônico/resolvido (`displayName`) |
+| Nunca como label principal | `Vendedor ID 464`, `rawSellerId`, ID puro Nomus |
+| ID Nomus | Somente tooltip técnico, auditoria, campo “ID externo”, logs |
+| Resolver compartilhado | `commercialPersonIdentityResolver` + `enrichOrderSellerOptionRowsWithNames` |
+| Aliases | `CommissionPerson` / `CommissionPersonAlias` (mesma fonte das Comissões) |
+
+- **Responsável da Carteira** e **Vendedor do Pedido** continuam conceitos
+  separados (carteira vs pedido), mas ambos usam a mesma resolução de nome.
+- Owners legados salvos como `Vendedor ID N` são resolvidos em leitura
+  (SalesOrder + catálogo de comissionamento); se não houver alias →
+  `Vendedor não mapeado` (ID só em auditoria).
+
 ## Autoatribuição
 
 Quando sincronizar/importar Pedido de Venda:

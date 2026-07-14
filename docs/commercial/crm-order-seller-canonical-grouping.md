@@ -22,10 +22,24 @@
 
 Nunca usar `Vendedor ID 1399` como nome principal.
 
+## Exibição de nomes comerciais no CRM
+
+Aplicável a **Vendedor do Pedido** e **Responsável da Carteira**:
+
+1. CRM nunca exibe ID Nomus como label principal.
+2. Ambos os filtros usam `enrichOrderSellerOptionRowsWithNames` +
+   `consolidateSellerRowFragments` (e `commercialPersonIdentityResolver` para
+   DTOs/listas).
+3. Labels legados `Vendedor ID N` são tratados como nome vazio e resolvidos
+   pelo mesmo caminho (SalesOrder → CommissionPerson/Alias).
+4. IDs agrupados no mesmo canônico viram **uma** opção de filtro.
+5. Responsável da Carteira e Vendedor do Pedido permanecem eixos separados.
+
 ## CRM Gestão por Responsável
 
-Filtro **Vendedor do pedido** consolida IDs com o mesmo nome normalizado e
-enriquece ID-only via Comissionamento (`mergeCommissionSellerNamesIntoMap`).
+Filtro **Vendedor do pedido** e filtro **Responsável da carteira** consolidam
+IDs com o mesmo nome normalizado e enriquecem ID-only via Comissionamento
+(`mergeCommissionSellerNamesIntoMap`).
 
 ## Auditoria 360º
 
