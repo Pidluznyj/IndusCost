@@ -288,6 +288,10 @@ export default function App() {
         element={<ProposalInternalManagementPrintView />}
       />
       <Route path="/sales-orders/:id/print" element={<SalesOrderPrintView />} />
+      <Route
+        path="/finance/suppliers/:supplierId/service-terminations/:id/print"
+        element={<SupplierServiceTerminationPrintView />}
+      />
       <Route path="/public/fleet/reservation/:token" element={<FleetPublicReservationPage />} />
       <Route
         path="/public/fleet/vehicle-checklist/:vehicleToken"

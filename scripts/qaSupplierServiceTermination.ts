@@ -110,17 +110,22 @@ section("6. Permissões nas rotas (403 sem permissão)");
 section("7. PDF/XLSX com identificação, cálculo, comissão e total");
 {
   const serverSrc = read("src/lib/suppliers/supplierServiceTermination.server.ts");
-  assert.match(serverSrc, /buildServiceTerminationPdfLines/);
-  assert.match(serverSrc, /Encerramento de Prestação de Serviço/);
-  assert.match(serverSrc, /Descanso remunerado proporcional/);
-  assert.match(serverSrc, /Comissões \(oficial \/ lançamento manual\)/);
-  assert.match(serverSrc, /Dias adicionais trabalhados/);
-  assert.match(serverSrc, /Multa por encerramento sem aviso/);
-  assert.match(serverSrc, /TOTAL FINAL A PAGAR/);
-  assert.match(serverSrc, /gerencial\/contratual/);
+  assert.match(serverSrc, /buildServiceTerminationPdfDocumentLines/);
+  assert.match(serverSrc, /buildFormattedLandscapePdf/);
+  assert.match(serverSrc, /buildServiceTerminationPrintModel/);
+  assert.match(serverSrc, /TOTAL A PAGAR|Totalizacao|Totaliza/);
+  assert.match(serverSrc, /gerencial\/contratual|gerencial\/contratual/i);
   assert.match(serverSrc, /exportSupplierServiceTerminationXlsx/);
-  assert.match(serverSrc, /buildMinimalPdfDocument/);
-  ok("PDF e XLSX preparados no service");
+  const printDoc = read(
+    "src/components/finance/cost-centers/SupplierServiceTerminationPrintDocument.tsx"
+  );
+  assert.match(printDoc, /PrintHeader/);
+  assert.match(printDoc, /PrintDocumentShell/);
+  const printModel = read("src/lib/suppliers/supplierServiceTerminationPrint.ts");
+  assert.match(printModel, /TOTAL A PAGAR/);
+  const app = read("src/App.tsx");
+  assert.match(app, /service-terminations\/:id\/print/);
+  ok("PDF profissional (layout pedido) + XLSX");
 }
 
 section("8. Frontend não importa Prisma");

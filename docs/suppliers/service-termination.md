@@ -107,10 +107,14 @@ Chaves canônicas e aliases:
 
 ## Relatório final
 
-- **PDF** — `GET /api/suppliers/:supplierId/service-terminations/:id/pdf`
+Layout profissional no padrão do **Pedido de Venda** (`PrintHeader` + seções + tabelas):
+
+- **Imprimir / Salvar PDF** — rota  
+  `/finance/suppliers/:supplierId/service-terminations/:id/print`
+- **Baixar PDF** (arquivo formatado) — `GET /api/suppliers/:supplierId/service-terminations/:id/pdf`
 - **XLSX** — `GET /api/suppliers/:supplierId/service-terminations/:id/xlsx`
 
-Seções: identificação, base de cálculo, proporcional, comissões vinculadas, ajustes, totalização.
+Seções: identificação, base de cálculo, proporcional/dias a mais, comissões, multa/ajustes, totalização.
 
 Rodapé: documento IndusCost; cálculo gerencial/contratual de encerramento de prestação de serviço.
 

@@ -27,6 +27,7 @@ import {
   calculateServiceTermination,
   formatProportionalRestDaysLabel,
 } from "@/src/lib/suppliers/supplierServiceTerminationCalc";
+import { buildServiceTerminationPrintPath } from "@/src/lib/suppliers/supplierServiceTerminationPrint";
 import type {
   ServiceTerminationCalcModeDto,
   ServiceTerminationCommissionLinkDto,
@@ -448,6 +449,18 @@ export function SupplierServiceTerminationDialog({
     } finally {
       setSaving(false);
     }
+  };
+
+  const openPrintReport = () => {
+    if (!savedId || !canExport) {
+      setError("Salve a prévia antes de gerar o relatório PDF.");
+      return;
+    }
+    window.open(
+      buildServiceTerminationPrintPath(supplierId, savedId),
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   const download = async (kind: "pdf" | "xlsx") => {
@@ -1181,10 +1194,19 @@ export function SupplierServiceTerminationDialog({
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm"
-                onClick={() => void download("pdf")}
+                onClick={openPrintReport}
+                data-testid="service-termination-open-print"
               >
                 <FileDown className="h-4 w-4" />
-                Gerar PDF
+                Imprimir / Salvar PDF
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm"
+                onClick={() => void download("pdf")}
+                title="Baixar PDF formatado (arquivo)"
+              >
+                Baixar PDF
               </button>
               <button
                 type="button"

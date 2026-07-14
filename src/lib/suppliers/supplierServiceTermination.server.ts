@@ -4,12 +4,21 @@
 import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/src/lib/prisma.js";
-import { buildMinimalPdfDocument } from "@/src/lib/minimalPdfWriter.js";
+import {
+  buildFormattedLandscapePdf,
+  formatPdfMoneyBr,
+  formatPdfNumberBr,
+  type PdfLine,
+} from "@/src/lib/proposalInternalManagementPdfLayout.js";
 import {
   calculateServiceTermination,
   formatProportionalRestDaysLabel,
   type ServiceTerminationCalculationMode,
 } from "./supplierServiceTerminationCalc.js";
+import {
+  SERVICE_TERMINATION_PRINT_FOOTER_NOTE,
+  buildServiceTerminationPrintModel,
+} from "./supplierServiceTerminationPrint.js";
 import type { CommissionAccessScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { getCommissionReportsPage } from "@/src/lib/commissions/commissionReports.server.js";
 import type {
@@ -633,64 +642,131 @@ export async function searchCommissionReportsForSupplierTermination(input: {
   };
 }
 
-export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): string[] {
-  const money = (n: number) =>
-    n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return [
-    `Fornecedor: ${dto.supplierName}`,
-    `Prestador: ${dto.personName}`,
-    `Documento: ${dto.personDocument ?? "—"}`,
-    `Função/serviço: ${dto.serviceRole ?? "—"}`,
-    `Período: ${dto.contractStartDate} a ${dto.contractEndDate}`,
-    `Status: ${dto.status}`,
-    "",
-    "— Base de cálculo —",
-    `Valor mensal: ${money(dto.monthlyServiceAmount)}`,
-    `Horas/mês: ${dto.monthlyHours}`,
-    `Valor hora: ${money(dto.hourlyServiceAmount)}`,
-    `Valor dia: ${money(dto.dailyServiceAmount)}`,
-    `Descanso anual contratado: ${dto.restDaysPerYear} dias`,
-    `Modo: ${dto.calculationMode === "WORKED_DAYS" ? "Por dias corridos" : "Por meses trabalhados"}`,
-    "",
-    "— Descanso remunerado proporcional —",
-    `Meses trabalhados: ${dto.workedMonths}`,
-    `Dias trabalhados: ${dto.workedDays}`,
-    `Dias proporcionais: ${formatProportionalRestDaysLabel(dto.proportionalRestDays)}`,
-    `Valor descanso proporcional: ${money(dto.proportionalRestAmount)}`,
-    "",
-    "— Dias adicionais trabalhados —",
-    `Dias a mais: ${dto.extraWorkedDays}`,
-    `Valor dias a mais: ${money(dto.extraWorkedAmount)}`,
-    "",
-    "— Multa por encerramento sem aviso de 30 dias —",
-    `Valor multa: ${money(dto.noticePenaltyAmount)}`,
-    "",
-    "— Comissões (oficial / lançamento manual) —",
-    ...(dto.commissionLinks.length
-      ? dto.commissionLinks.map(
-          (l) =>
-            `${l.orderCode ? `Pedido ${l.orderCode} · ` : ""}${l.periodLabel ?? "—"} · ${l.commissionPersonName ?? "—"} · ${money(l.commissionAmount)} · ${l.source ?? "—"}`
-        )
-      : ["Nenhuma comissão vinculada/lançada."]),
-    `Total comissão: ${money(dto.commissionReportTotal)}`,
-    "",
-    "— Ajustes —",
-    `Outros créditos: ${money(dto.otherCredits)}`,
-    `Outros descontos: ${money(dto.otherDiscounts)}`,
-    `Obs. ajuste: ${dto.adjustmentNotes ?? "—"}`,
-    "",
-    "— Totalização —",
-    `Total descanso proporcional: ${money(dto.proportionalRestAmount)}`,
-    `Total dias a mais: ${money(dto.extraWorkedAmount)}`,
-    `Total multa sem aviso: ${money(dto.noticePenaltyAmount)}`,
-    `Total comissão: ${money(dto.commissionReportTotal)}`,
-    `Total ajustes: ${money(dto.otherAdjustments)}`,
-    `TOTAL FINAL A PAGAR: ${money(dto.totalTerminationAmount)}`,
-    "",
-    "Documento gerado pelo IndusCost.",
-    "Cálculo gerencial/contratual de encerramento de prestação de serviço.",
-    `Notas: ${dto.notes ?? "—"}`,
+/** Linhas formatadas do PDF executivo (mesmo conteúdo do relatório de impressão). */
+export function buildServiceTerminationPdfDocumentLines(
+  dto: ServiceTerminationDto
+): PdfLine[] {
+  const model = buildServiceTerminationPrintModel(dto);
+  const lines: PdfLine[] = [
+    { type: "title", text: "Encerramento de Prestacao de Servico" },
+    { type: "subtitle", text: "Verbas de encerramento — calculo gerencial/contratual" },
+    {
+      type: "banner",
+      text: `Fornecedor: ${model.supplierName}  |  Prestador: ${model.personName}  |  Status: ${model.statusLabel}`,
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "1. Identificacao" },
+    { type: "kv", label: "Fornecedor", value: model.supplierName },
+    { type: "kv", label: "Prestador", value: model.personName },
+    { type: "kv", label: "Documento", value: model.personDocument },
+    { type: "kv", label: "Funcao/servico", value: model.serviceRole },
+    { type: "kv", label: "Periodo do contrato", value: model.periodLabel },
+    { type: "spacer" },
+    { type: "subtitle", text: "2. Base de calculo" },
+    {
+      type: "table",
+      headers: ["Campo", "Valor"],
+      colWidths: [420, 350],
+      rows: [
+        ["Valor mensal", formatPdfMoneyBr(model.monthlyServiceAmount)],
+        ["Horas por mes", formatPdfNumberBr(model.monthlyHours, 2)],
+        ["Valor hora", formatPdfMoneyBr(model.hourlyServiceAmount)],
+        ["Valor dia", formatPdfMoneyBr(model.dailyServiceAmount)],
+        ["Descanso anual contratado", `${formatPdfNumberBr(model.restDaysPerYear, 0)} dias`],
+        ["Modo de calculo", model.calcModeLabel],
+      ],
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "3. Calculo proporcional e dias a mais" },
+    {
+      type: "table",
+      headers: ["Campo", "Valor"],
+      colWidths: [420, 350],
+      rows: [
+        ["Meses trabalhados", formatPdfNumberBr(model.workedMonths, 2)],
+        ["Dias trabalhados", formatPdfNumberBr(model.workedDays, 0)],
+        ["Dias proporcionais de descanso", `${model.proportionalRestDaysLabel} dias`],
+        ["Valor descanso proporcional", formatPdfMoneyBr(model.proportionalRestAmount)],
+        ["Dias a mais", formatPdfNumberBr(model.extraWorkedDays, 0)],
+        ["Valor dias a mais", formatPdfMoneyBr(model.extraWorkedAmount)],
+      ],
+    },
+    { type: "spacer" },
+    { type: "subtitle", text: "4. Comissoes (oficial / lancamento manual)" },
   ];
+
+  if (model.commissionRows.length === 0) {
+    lines.push({ type: "text", text: "Nenhuma comissao vinculada ou lancada." });
+  } else {
+    lines.push({
+      type: "table",
+      headers: ["Pedido", "Referencia", "Pessoa", "Fonte", "Comissao"],
+      colWidths: [110, 220, 180, 120, 140],
+      rows: model.commissionRows.map((r) => [
+        r.orderCode,
+        r.description,
+        r.personName,
+        r.source,
+        formatPdfMoneyBr(r.amount),
+      ]),
+    });
+  }
+  lines.push({
+    type: "kv",
+    label: "Total comissoes",
+    value: formatPdfMoneyBr(model.commissionReportTotal),
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "5. Multa e ajustes" });
+  lines.push({
+    type: "table",
+    headers: ["Campo", "Valor"],
+    colWidths: [420, 350],
+    rows: [
+      ["Multa sem aviso de 30 dias", formatPdfMoneyBr(model.noticePenaltyAmount)],
+      ["Outros creditos", formatPdfMoneyBr(model.otherCredits)],
+      ["Outros descontos", formatPdfMoneyBr(model.otherDiscounts)],
+      ["Obs. do ajuste", model.adjustmentNotes ?? "—"],
+    ],
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "6. Totalizacao" });
+  lines.push({
+    type: "table",
+    headers: ["Verba", "Valor"],
+    colWidths: [420, 350],
+    rows: model.totalizationRows.map((r) => [r.label, formatPdfMoneyBr(r.value)]),
+  });
+  lines.push({ type: "spacer" });
+  if (model.notes) {
+    lines.push({ type: "subtitle", text: "Observacoes" });
+    lines.push({ type: "text", text: model.notes });
+    lines.push({ type: "spacer" });
+  }
+  lines.push({ type: "banner", text: SERVICE_TERMINATION_PRINT_FOOTER_NOTE });
+  lines.push({
+    type: "text",
+    text: "Documento gerado pelo IndusCost. Layout executivo alinhado ao padrao do Pedido de Venda.",
+  });
+  return lines;
+}
+
+/** Compat: texto plano para QA / auditoria do conteúdo. */
+export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): string[] {
+  return buildServiceTerminationPdfDocumentLines(dto).flatMap((line) => {
+    if (line.type === "title" || line.type === "subtitle" || line.type === "banner") {
+      return [line.text];
+    }
+    if (line.type === "text") return [line.text];
+    if (line.type === "kv") return [`${line.label}: ${line.value}`];
+    if (line.type === "table") {
+      return [
+        line.headers.join(" | "),
+        ...line.rows.map((r) => r.join(" | ")),
+      ];
+    }
+    return [];
+  });
 }
 
 export async function exportSupplierServiceTerminationPdf(input: {
@@ -700,9 +776,9 @@ export async function exportSupplierServiceTerminationPdf(input: {
   userName?: string | null;
 }): Promise<{ buffer: Buffer; filename: string }> {
   const dto = await getSupplierServiceTermination(input.supplierId, input.id);
-  const buffer = buildMinimalPdfDocument({
-    title: "Encerramento de Prestação de Serviço",
-    lines: buildServiceTerminationPdfLines(dto),
+  const buffer = buildFormattedLandscapePdf({
+    title: "Encerramento de Prestacao de Servico",
+    lines: buildServiceTerminationPdfDocumentLines(dto),
   });
   await writeTerminationAudit({
     entityId: input.id,
