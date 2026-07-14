@@ -45,6 +45,20 @@ Backend consolida; frontend só exibe. Sem Prisma no browser.
    Evidências.
 5. Fechar (Esc / clique fora / botão) volta à mesma posição/filtro da tabela.
 
+**Regra oficial**: clicar no pedido é equivalente a abrir cada módulo
+oficial e filtrar por esse pedido. A **aba Financeiro do modal** equivale a
+"Contas a Receber oficial filtrado pelo pedido" — mostra CR real
+(`NomusAccountsReceivable`) + Recebíveis planejados
+(`buildSalesOrderPlannedReceivables` — mesmo motor que o Fluxo de Caixa
+materializa a linha "Pedido PD XXXXX - Parcela N"), com dedup automático
+(CR real prevalece).
+
+Mapa completo aba × motor oficial em
+`docs/finance/order-full-audit-official-engines-map.md`.
+Façade pública para outros consumidores:
+`src/lib/finance/orderReceivablesResolver.ts` ·
+`resolveReceivablesForSalesOrder(...)`.
+
 O painel embutido antigo **Itens do pedido selecionado** foi removido — abaixo
 da tabela existe apenas um hint textual que aponta para o modal:
 

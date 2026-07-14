@@ -6,10 +6,12 @@
 | **Rota UI** | Financeiro → Conciliação de Carteira → Status Pedidos |
 | **Trigger** | Clique numa linha da tabela de pedidos (`tr[role=button]`) |
 | **Componente** | `src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx` |
-| **Service** | `src/lib/finance/orderFullAuditService.ts` |
+| **Service (orquestrador)** | `src/lib/finance/orderFullAuditService.ts` |
+| **Façade oficial recebíveis** | `src/lib/finance/orderReceivablesResolver.ts` |
 | **Client contract** | `src/lib/finance/orderFullAuditClient.ts` (sem Prisma) |
 | **Endpoint** | `GET /api/finance/portfolio-reconciliation/orders/:salesOrderId/audit-full` |
-| **QA script** | `scripts/qaOrderFullAuditDialog.ts` |
+| **Mapa de motores oficiais** | `docs/finance/order-full-audit-official-engines-map.md` |
+| **QA script** | `scripts/qaOrderFullAuditDialog.ts`, `scripts/qaOrderFullAuditOfficialEngines.ts` |
 | **Checklist QA** | `docs/finance/order-full-audit-dialog-qa.md` |
 
 ## 1. Objetivo
@@ -20,6 +22,26 @@ Ela consolida em **uma única janela** tudo o que existe sobre o pedido no
 IndusCost: origem comercial (proposta), cabeçalho do pedido, itens, documentos
 de saída, NF-e, títulos de Contas a Receber, baixas, entrega, produção e
 frete, margem/preço/custo, comissão, divergências e evidência técnica.
+
+### 1.1 Princípio: orquestradora, não motor paralelo
+
+A Auditoria 360º é **central de leitura e cruzamento**. Ela **não é dona da
+regra**. Cada aba consome o **motor oficial** correspondente (mapeamento
+completo em `docs/finance/order-full-audit-official-engines-map.md`).
+
+Regras derivadas:
+
+- **Aba Financeiro** equivale a "Contas a Receber oficial filtrado por este
+  pedido" — retorna CR real (`NomusAccountsReceivable`) + Recebíveis
+  planejados (`buildSalesOrderPlannedReceivables`) com dedup automático.
+  Consumidores externos usam
+  `orderReceivablesResolver.resolveReceivablesForSalesOrder`.
+- **Aba Margem** usa `calculateSalesOrderMarginsForOrders` do motor oficial.
+- **Aba Comissões** é read-only sobre o motor oficial (não recalcula).
+- **Proposta** é apenas origem comercial/auditável — **não** é fonte
+  financeira, fiscal ou de comissão.
+- **CR real prevalece sobre planejado.** Planejado só aparece quando não há
+  CR real cobrindo a parcela.
 
 Substitui o drilldown inline "Itens do pedido selecionado" que ficava abaixo
 da tabela. Agora, abaixo do grid, aparece apenas um hint:

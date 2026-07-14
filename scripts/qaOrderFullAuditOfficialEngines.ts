@@ -1,0 +1,408 @@
+/**
+ * QA estático + fixture — invariantes de consumo dos motores oficiais
+ * pela Auditoria 360º do Pedido.
+ *
+ * Uso: npx tsx scripts/qaOrderFullAuditOfficialEngines.ts
+ *
+ * Complementa `scripts/qaOrderFullAuditDialog.ts` (que já cobre estrutura
+ * de UI + checks dinâmicos por PD): aqui garantimos que cada aba consome
+ * os motores oficiais mapeados em
+ * `docs/finance/order-full-audit-official-engines-map.md` e que a façade
+ * pública `resolveReceivablesForSalesOrder` está no lugar.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const root = process.cwd();
+let failed = 0;
+
+function read(rel: string): string {
+  return readFileSync(join(root, rel), "utf8");
+}
+
+function exists(rel: string): boolean {
+  return existsSync(join(root, rel));
+}
+
+function ok(id: string, msg: string) {
+  console.log(`OK   ${id} — ${msg}`);
+}
+
+function fail(id: string, msg: string) {
+  failed += 1;
+  console.error(`FAIL ${id} — ${msg}`);
+}
+
+// ---------------------------------------------------------------------------
+// 1) Arquivos obrigatórios
+// ---------------------------------------------------------------------------
+function checkFilesPresent() {
+  for (const rel of [
+    "src/lib/finance/orderFullAuditService.ts",
+    "src/lib/finance/orderFullAuditClient.ts",
+    "src/lib/finance/salesOrderPlannedReceivables.ts",
+    "src/lib/finance/orderReceivablesResolver.ts",
+    "src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx",
+    "docs/finance/order-full-audit-official-engines-map.md",
+    "docs/finance/order-full-audit-dialog.md",
+    "docs/finance/portfolio-order-status-tab.md",
+    "tmp-audits/inspect-order-full-audit-official-engines.ts",
+    "tmp-audits/inspect-order-full-audit-pd02740.ts",
+    "tmp-audits/inspect-order-full-audit-pd02339.ts",
+    "tmp-audits/inspect-order-full-audit-pd02534.ts",
+    "tmp-audits/inspect-order-full-audit-pd02207.ts",
+  ]) {
+    if (exists(rel)) ok(`files:${rel}`, "presente");
+    else fail(`files:${rel}`, "ausente");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 2) Façade oficial de recebíveis exporta o contrato esperado
+// ---------------------------------------------------------------------------
+function checkOrderReceivablesResolver() {
+  const src = read("src/lib/finance/orderReceivablesResolver.ts");
+
+  const requiredExports = [
+    "resolveReceivablesForSalesOrder",
+    "isOrderInPlannedOnlyState",
+    "computeConsolidatedFinancialSummary",
+    "OrderReceivablesResolverPayload",
+    "OrderReceivablesResolverError",
+    "ResolveReceivablesInput",
+  ];
+  for (const name of requiredExports) {
+    if (src.includes(name)) ok(`resolver:export:${name}`, "presente");
+    else fail(`resolver:export:${name}`, `export ${name} ausente`);
+  }
+
+  // Deve reutilizar getOrderFullAudit (não recriar Prisma).
+  if (src.includes('from "./orderFullAuditService.js"') && src.includes("getOrderFullAudit")) {
+    ok("resolver:reuses-audit", "façade delega para getOrderFullAudit");
+  } else {
+    fail("resolver:reuses-audit", "façade não delega ao audit oficial");
+  }
+
+  // Não pode importar Prisma diretamente.
+  if (/@prisma\/client/.test(src) || /from ["']\.\/prisma/.test(src)) {
+    fail("resolver:no-prisma", "façade importa Prisma diretamente");
+  } else {
+    ok("resolver:no-prisma", "façade não importa Prisma");
+  }
+
+  // Deve documentar/apontar as fontes oficiais.
+  for (const source of [
+    "NomusAccountsReceivable",
+    "buildSalesOrderPlannedReceivables",
+    "resolveSalesOrderListPaymentSummary",
+  ]) {
+    if (src.includes(source)) ok(`resolver:source:${source}`, "documenta fonte oficial");
+    else fail(`resolver:source:${source}`, `fonte ${source} não mencionada`);
+  }
+
+  // Dedup: precisa filtrar planned replaced.
+  if (src.includes("replacedByRealCr")) {
+    ok("resolver:planned-dedup", "façade oculta planejado replacedByRealCr");
+  } else {
+    fail("resolver:planned-dedup", "façade não trata replacedByRealCr");
+  }
+
+  // Filtragem de divergências por linkedTab.
+  if (src.includes('linkedTab === "financial"')) {
+    ok("resolver:financial-divergences", "façade filtra divergências financeiras");
+  } else {
+    fail("resolver:financial-divergences", "façade não filtra alerts financeiros");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3) orderFullAuditService integra os motores oficiais esperados
+// ---------------------------------------------------------------------------
+function checkOfficialEnginesInService() {
+  const svc = read("src/lib/finance/orderFullAuditService.ts");
+  const requiredImports: Array<[string, string]> = [
+    ["nomusSalesOrderItemStatus.js", "helpers oficiais de status de item Nomus"],
+    ["orderToCashFactItemStatusEnrichment.server.js", "enrichFactsWithOrderItemStatus"],
+    ["crmCustomerCommercialOwner.js", "CRM responsável comercial oficial"],
+    ["salesOrderMarginService.server.js", "motor oficial de margem"],
+    ["salesOrderListPaymentSchedule.js", "cronograma oficial de pagamento"],
+    ["salesOrderPlannedReceivables.js", "forecast oficial de recebíveis planejados"],
+  ];
+  for (const [pathFragment, humanLabel] of requiredImports) {
+    if (svc.includes(pathFragment)) {
+      ok(`svc:import:${pathFragment}`, humanLabel);
+    } else {
+      fail(`svc:import:${pathFragment}`, `${humanLabel} não é importado`);
+    }
+  }
+
+  // Não pode duplicar buildSalesOrderPlannedReceivables (só chamar).
+  const definesLocalPlanned =
+    /function\s+buildSalesOrderPlannedReceivables/.test(svc) ||
+    /const\s+buildSalesOrderPlannedReceivables\s*=/.test(svc);
+  if (definesLocalPlanned) {
+    fail(
+      "svc:no-local-planned",
+      "orderFullAuditService redeclara buildSalesOrderPlannedReceivables"
+    );
+  } else {
+    ok(
+      "svc:no-local-planned",
+      "orderFullAuditService só consome buildSalesOrderPlannedReceivables (motor oficial)"
+    );
+  }
+
+  // Deve invocar buildSalesOrderPlannedReceivables para preencher plannedReceivables.
+  if (/buildSalesOrderPlannedReceivables\s*\(/.test(svc)) {
+    ok("svc:call:planned-forecast", "invoca motor oficial de forecast");
+  } else {
+    fail("svc:call:planned-forecast", "não invoca buildSalesOrderPlannedReceivables");
+  }
+
+  // Deve invocar calculateSalesOrderMarginsForOrders para a aba Margem.
+  if (/calculateSalesOrderMarginsForOrders\s*\(/.test(svc)) {
+    ok("svc:call:margin-official", "invoca motor oficial de margem");
+  } else {
+    fail("svc:call:margin-official", "não invoca calculateSalesOrderMarginsForOrders");
+  }
+
+  // Deve invocar loadManualCommercialOwnersForCustomers (CRM oficial).
+  if (/loadManualCommercialOwnersForCustomers\s*\(/.test(svc)) {
+    ok("svc:call:crm-owner", "invoca CRM responsável comercial oficial");
+  } else {
+    fail("svc:call:crm-owner", "não invoca loadManualCommercialOwnersForCustomers");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4) Contrato client (Auditoria 360º) expõe plannedReceivables + total
+// ---------------------------------------------------------------------------
+function checkClientContract() {
+  const client = read("src/lib/finance/orderFullAuditClient.ts");
+  for (const type of [
+    "OrderFullAuditPlannedReceivable",
+    "OrderFullAuditPlannedReceivablesTotal",
+    "OrderFullAuditReceivable",
+    "OrderFullAuditReceipt",
+    "OrderFullAuditAlert",
+  ]) {
+    if (client.includes(type)) ok(`client:type:${type}`, "presente");
+    else fail(`client:type:${type}`, `tipo ${type} ausente`);
+  }
+
+  if (client.includes("plannedReceivables:") && client.includes("plannedReceivablesTotal:")) {
+    ok("client:payload:planned-fields", "payload expõe plannedReceivables + plannedReceivablesTotal");
+  } else {
+    fail("client:payload:planned-fields", "payload não expõe plannedReceivables");
+  }
+
+  if (/@prisma\/client/.test(client)) {
+    fail("client:no-prisma", "orderFullAuditClient importa Prisma");
+  } else {
+    ok("client:no-prisma", "contrato client sem Prisma");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5) UI Financeiro renderiza CR real + planejado + dedup
+// ---------------------------------------------------------------------------
+function checkFinancialTabUI() {
+  const dlg = read("src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx");
+  for (const marker of [
+    "order-full-audit-financial-section-planned",
+    "order-full-audit-financial-planned-table",
+    "Recebíveis planejados pelo pedido",
+    "Planejado pelo pedido",
+    "CR real",
+    "Total financeiro",
+    'type="PLANNED"',
+    'type="REAL_CR"',
+  ]) {
+    if (dlg.includes(marker)) ok(`ui:financial:${marker}`, "presente");
+    else fail(`ui:financial:${marker}`, `marca ${marker} ausente na aba Financeiro`);
+  }
+
+  // Aba Financeiro precisa consumir o payload.plannedReceivables.
+  if (/plannedReceivables=\{payload\.plannedReceivables\}/.test(dlg)) {
+    ok("ui:financial:planned-wired", "FinancialTab consome payload.plannedReceivables");
+  } else {
+    fail("ui:financial:planned-wired", "FinancialTab não conecta plannedReceivables");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6) Códigos de divergência oficiais para financeiro (PLANNED_*)
+// ---------------------------------------------------------------------------
+function checkPlannedAlertCodes() {
+  const svc = read("src/lib/finance/orderFullAuditService.ts");
+  const dlg = read("src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx");
+  for (const code of [
+    "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
+    "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
+    "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
+  ]) {
+    if (svc.includes(code)) ok(`alert:svc:${code}`, "emitido no service");
+    else fail(`alert:svc:${code}`, `código ${code} não é emitido`);
+
+    if (dlg.includes(code)) ok(`alert:dlg:${code}`, "listado na UI");
+    else fail(`alert:dlg:${code}`, `código ${code} não está na UI`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 7) Regra: Responsável Comercial nunca aceita "FATURAMENTO"/"FINANCEIRO"
+// ---------------------------------------------------------------------------
+function checkCommercialResponsibleGuard() {
+  const audit = read("src/lib/finance/orderFullAuditService.ts");
+
+  // Existe a lista defensiva OPERATIONAL_SECTOR_KEYWORDS que reconhece rótulos
+  // operacionais indevidos ("FATURAMENTO", "FINANCEIRO", etc.). Isso está OK.
+  const guardExists =
+    /OPERATIONAL_SECTOR_KEYWORDS\s*=\s*\[[^\]]*"FATURAMENTO"[^\]]*"FINANCEIRO"/s.test(audit) &&
+    audit.includes("isOperationalSectorName");
+  if (guardExists) {
+    ok(
+      "crm:operational-sector-guard",
+      "isOperationalSectorName filtra FATURAMENTO/FINANCEIRO/EXPEDICAO como responsável comercial"
+    );
+  } else {
+    fail(
+      "crm:operational-sector-guard",
+      "guarda OPERATIONAL_SECTOR_KEYWORDS/isOperationalSectorName ausente"
+    );
+  }
+
+  // Emissão do alerta oficial quando `SalesOrder.responsible` for setor.
+  if (audit.includes("OPERATIONAL_RESPONSIBLE_USED_AS_COMMERCIAL_RESPONSIBLE")) {
+    ok(
+      "crm:operational-alert",
+      "emite alerta OPERATIONAL_RESPONSIBLE_USED_AS_COMMERCIAL_RESPONSIBLE"
+    );
+  } else {
+    fail(
+      "crm:operational-alert",
+      "sem alerta OPERATIONAL_RESPONSIBLE_USED_AS_COMMERCIAL_RESPONSIBLE"
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 8) Frontend não importa Prisma (checagem do dialog + resolver)
+// ---------------------------------------------------------------------------
+function checkFrontendNoPrisma() {
+  const dlg = read("src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx");
+  if (/@prisma\/client/.test(dlg)) {
+    fail("frontend:no-prisma", "OrderFullAuditDialog importa Prisma");
+  } else {
+    ok("frontend:no-prisma", "OrderFullAuditDialog sem import Prisma");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9) Runtime fixture — façade compõe corretamente sem I/O real
+// ---------------------------------------------------------------------------
+async function checkRuntimeFixture() {
+  const { computeConsolidatedFinancialSummary, isOrderInPlannedOnlyState } = await import(
+    "../src/lib/finance/orderReceivablesResolver.js"
+  );
+
+  // Consolidated summary com dados de fixture.
+  const summary = computeConsolidatedFinancialSummary({
+    totals: {
+      totalAmount: 100_000,
+      openAmount: 50_000,
+      receivedAmount: 50_000,
+      overdueCount: 0,
+      nextDueDate: null,
+      maxAmount: 100_000,
+      totalCount: 1,
+    },
+    plannedTotals: {
+      totalCount: 2,
+      totalExpected: 75_000,
+      openExpected: 75_000,
+      overdueExpected: 0,
+      overdueCount: 0,
+      dueTodayExpected: 0,
+      dueTodayCount: 0,
+      upcomingCount: 2,
+      nextDueDate: "2026-11-01",
+      replacedCount: 0,
+      replacedAmount: 0,
+      netPlannedOpen: 75_000,
+    },
+  });
+
+  if (summary.totalFinancialValue === 175_000) ok("runtime:consolidated:total", "R$ 175.000");
+  else fail("runtime:consolidated:total", `esperado 175000, veio ${summary.totalFinancialValue}`);
+  if (summary.totalFinancialOpen === 125_000) ok("runtime:consolidated:open", "R$ 125.000");
+  else fail("runtime:consolidated:open", `esperado 125000, veio ${summary.totalFinancialOpen}`);
+  if (summary.realCrTotal === 100_000 && summary.plannedTotal === 75_000) {
+    ok("runtime:consolidated:split", "separa CR real de planejado");
+  } else {
+    fail("runtime:consolidated:split", "não separa CR real de planejado");
+  }
+
+  // isOrderInPlannedOnlyState — PD 02740-like
+  const plannedOnly = isOrderInPlannedOnlyState({
+    realReceivables: [],
+    plannedReceivables: [
+      {
+        key: "PD:1:2026-10-20:175600.00",
+        orderCode: "PD 02740",
+        salesOrderId: "fx",
+        installmentNumber: 1,
+        totalInstallments: 1,
+        reference: "Pedido PD 02740 - Parcela 1 de 1",
+        dueDate: "2026-10-20",
+        expectedAmount: 175_600,
+        openAmount: 175_600,
+        statusLabel: "A vencer",
+        paymentConditionLabel: "30 dias",
+        paymentMethodLabel: "Boleto",
+        origin: "Pedido de Venda / Condição de pagamento",
+        note: "",
+        replacedByRealCr: false,
+        replacedByReceivableExternalId: null,
+      },
+    ],
+  });
+  if (plannedOnly) ok("runtime:planned-only:pd02740", "cenário planejado-sem-CR detectado");
+  else fail("runtime:planned-only:pd02740", "falha ao detectar planejado-sem-CR");
+
+  // Cenário real+planned (não é planned-only)
+  const mixed = isOrderInPlannedOnlyState({
+    realReceivables: [{ receivableExternalId: 1 } as never],
+    plannedReceivables: [
+      { replacedByRealCr: false } as never,
+    ],
+  });
+  if (!mixed) ok("runtime:planned-only:mixed", "não confunde com CR real presente");
+  else fail("runtime:planned-only:mixed", "reportou planejado-only com CR real presente");
+}
+
+async function main() {
+  console.log("=== qaOrderFullAuditOfficialEngines (static + fixture) ===\n");
+  checkFilesPresent();
+  checkOrderReceivablesResolver();
+  checkOfficialEnginesInService();
+  checkClientContract();
+  checkFinancialTabUI();
+  checkPlannedAlertCodes();
+  checkCommercialResponsibleGuard();
+  checkFrontendNoPrisma();
+  await checkRuntimeFixture();
+
+  console.log("");
+  if (failed === 0) {
+    console.log("✔ Todos os invariantes de motores oficiais passaram.");
+  } else {
+    console.error(`✗ ${failed} check(s) falharam.`);
+    process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
