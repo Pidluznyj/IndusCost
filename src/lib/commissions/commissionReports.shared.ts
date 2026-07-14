@@ -106,6 +106,8 @@ export type CommissionReportRecord = {
   sellerGroupKey: string;
   sellerId: string | null;
   sellerName: string;
+  customerId: string | null;
+  customerExternalId: number | null;
   customerName: string | null;
   orderCode: string | null;
   /** UUID do SalesOrder local, quando resolvido de forma única e confiável. */
@@ -256,9 +258,17 @@ export function resolveCommissionReportSellerLabel(line: {
   status: string;
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
+  rawSellerId?: number | null;
   rawSellerName: string | null;
   sellerResolutionStatus?: string | null;
 }): string {
+  if (line.status === "CUSTOMER_EXCLUDED") {
+    return (
+      line.canonicalSellerName?.trim() ||
+      line.rawSellerName?.trim() ||
+      RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL
+    );
+  }
   const key = resolveReceiptClosingSellerGroupKey(line);
   if (key === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY) {
     return RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL;
@@ -304,6 +314,8 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     sellerGroupKey,
     sellerId: line.canonicalSellerId,
     sellerName: resolveCommissionReportSellerLabel(line),
+    customerId: line.customerId,
+    customerExternalId: line.customerExternalId,
     customerName: line.customerName,
     orderCode: line.orderCode,
     localOrderId: line.localOrderId,
@@ -406,12 +418,16 @@ export function buildCommissionReportSellerRows(
 
   for (const record of records) {
     if (record.isGroupCompany) continue;
+    const isUnassignedBucket =
+      record.sellerGroupKey === RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY;
     const row =
       map.get(record.sellerGroupKey) ??
       ({
         sellerGroupKey: record.sellerGroupKey,
-        sellerId: record.sellerId,
-        sellerName: record.sellerName,
+        sellerId: isUnassignedBucket ? null : record.sellerId,
+        sellerName: isUnassignedBucket
+          ? RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL
+          : record.sellerName,
         recordCount: 0,
         receivedAmount: 0,
         commissionableBase: 0,
@@ -502,8 +518,21 @@ export function buildCommissionReportSummary(
   let excludedCustomerCount = 0;
   let groupCompanyExcludedCount = 0;
   let unresolvedSellerCount = 0;
+  const excludedCustomerKeys = new Set<string>();
   for (const record of records) {
-    if (record.isCustomerExcluded) excludedCustomerCount += 1;
+    if (record.isCustomerExcluded) {
+      const key =
+        (record.customerId ? `id:${record.customerId}` : null) ||
+        (record.customerExternalId != null ? `ext:${record.customerExternalId}` : null) ||
+        (record.customerName?.trim()
+          ? `name:${record.customerName.trim().toLowerCase()}`
+          : null) ||
+        record.lineKey;
+      if (!excludedCustomerKeys.has(key)) {
+        excludedCustomerKeys.add(key);
+        excludedCustomerCount += 1;
+      }
+    }
     if (record.isGroupCompany) groupCompanyExcludedCount += 1;
     if (record.isSellerUnresolved || record.isNoSeller) unresolvedSellerCount += 1;
   }
@@ -657,6 +686,7 @@ export function buildCommissionReportsExportWorkbook(input: {
   records: CommissionReportRecord[];
   year: number;
   months: CommissionReportsMonthsFilter;
+  summary?: CommissionReportSummary;
 }): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
@@ -699,10 +729,12 @@ export function buildCommissionReportsExportWorkbook(input: {
       "Valor recebido",
       "Base comissionável",
       "Comissão %",
-      "Comissão R$",
+      "Comissão bruta R$",
+      "Comissão excluída R$",
+      "Comissão final R$",
       "Status período",
       "Status linha",
-      "Cliente excluído",
+      "Cliente excluído (regra)",
       "Empresa do grupo",
       "Sem vendedor",
       "Motivo",
@@ -719,6 +751,8 @@ export function buildCommissionReportsExportWorkbook(input: {
       r.receivedAmount,
       r.commissionableBaseAmount,
       r.ratePercent,
+      r.grossCommissionAmount,
+      r.excludedCommissionAmount,
       r.finalCommissionAmount,
       r.periodStatus,
       r.lineStatus,
@@ -730,15 +764,23 @@ export function buildCommissionReportsExportWorkbook(input: {
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), "Registros detalhados");
 
+  const summary = input.summary;
   const meta = XLSX.utils.aoa_to_sheet([
     ["Relatório de comissões"],
     ["Ano", input.year],
     ["Meses", formatCommissionReportMonthsLabel(input.months)],
     ["Gerado em", new Date().toISOString()],
-    ["Observação", "Valores oficiais do ledger de Fechamento (settlementDate). Exclusões identificadas."],
-    ["Comissão total formatada (amostra)", formatCurrencyBr(
-      input.sellers.reduce((acc, s) => acc + s.finalCommission, 0)
-    )],
+    [
+      "Observação",
+      "Valores oficiais do ledger/prévia de Fechamento (settlementDate). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
+    ],
+    ["Clientes excluídos (únicos)", summary?.excludedCustomerCount ?? ""],
+    ["Comissão excluída por regra", summary?.excludedCommission ?? ""],
+    ["Empresas do grupo", summary?.groupCompanyExcludedCount ?? ""],
+    [
+      "Comissão total formatada (amostra)",
+      formatCurrencyBr(input.sellers.reduce((acc, s) => acc + s.finalCommission, 0)),
+    ],
   ]);
   XLSX.utils.book_append_sheet(wb, meta, "Filtros");
 

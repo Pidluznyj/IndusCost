@@ -357,6 +357,11 @@ describe("commissionReports.shared", () => {
     // CUSTOMER_EXCLUDED agrupa em bucket unassigned, mas ainda filtra pelo sellerId canônico.
     assert.equal(bySeller.summary.sellerCount, 2);
     assert.equal(bySeller.sellers[0]?.sellerName, "Rodrigo");
+    assert.ok(
+      bySeller.sellers.some((s) => s.sellerName === "Sem vendedor / Excluído")
+    );
+    assert.equal(bySeller.summary.excludedCustomerCount, 1);
+    assert.ok(bySeller.summary.excludedCommission > 0);
     assert.equal(
       bySeller.summary.totalCommission,
       roundSellerSum(bySeller.sellers, "finalCommission")
@@ -520,8 +525,16 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(server, /loadPreviewMonthSourceLines/);
     assert.match(server, /months\.filter\(\(m\) => !closedMonths\.has\(m\)\)/);
     assert.match(server, /month:\s*\{\s*in:\s*input\.months\s*\}/);
+    assert.match(server, /applyActiveCustomerExclusionsToReportLines/);
+    assert.match(server, /loadActiveCustomerExclusionRuleSnapshots/);
   });
 
+  it("informa clientes não comissionáveis no resumo e no alerta", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    assert.match(page, /commissions-reports-exclusion-alert/);
+    assert.match(page, /Clientes não comissionáveis/);
+    assert.match(page, /Exceções por cliente/);
+  });
   it("comissão zerada exibe alerta suave com motivo (tooltip)", () => {
     const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
     assert.match(page, /CommissionAmountCell/);

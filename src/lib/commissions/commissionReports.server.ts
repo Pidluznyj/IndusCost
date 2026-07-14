@@ -24,6 +24,8 @@ import {
   type CommissionReportsPayload,
   type CommissionReportsQuery,
 } from "./commissionReports.shared.js";
+import { applyActiveCustomerExclusionsToReportLines } from "./commissionReportsCustomerExclusion.js";
+import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
 import {
   COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
   resolveUniqueSalesOrderFromNfeLinkCandidates,
@@ -76,7 +78,7 @@ function mapLedgerPrismaRowToApiLine(row: {
   const received = Number(row.receivedAmount);
   const released = Number(row.releasedCommissionAmount);
   const expected = Number(row.expectedCommissionAmount);
-  const isExcluded = row.status === "CUSTOMER_EXCLUDED" || row.status === "GROUP_COMPANY_EXCLUDED";
+  const isGroupCompany = row.status === "GROUP_COMPANY_EXCLUDED";
   return {
     lineKey: row.ledgerLineKey,
     nomusReceivableId: row.nomusReceivableId,
@@ -99,8 +101,9 @@ function mapLedgerPrismaRowToApiLine(row: {
     productName: row.productNameSnapshot,
     rawSellerId: row.rawSellerId,
     rawSellerName: row.rawSellerName,
-    canonicalSellerId: isExcluded ? null : row.canonicalSellerId,
-    canonicalSellerName: isExcluded ? null : row.canonicalSellerName,
+    // CUSTOMER_EXCLUDED mantém vendedor atribuível (filtro Relatórios); grupo zera.
+    canonicalSellerId: isGroupCompany ? null : row.canonicalSellerId,
+    canonicalSellerName: isGroupCompany ? null : row.canonicalSellerName,
     sellerResolutionStatus: row.sellerResolutionStatus,
     receivedAmount: received,
     uniqueReceivedAmount: received,
@@ -629,7 +632,9 @@ export async function getCommissionReportsPage(
     return buildEmptyCommissionReportsPayload(query);
   }
   const withOrders = await attachLocalOrderIdsToReportLines(loaded.lines);
-  const lines = await enrichReportLinesWithOfficialSnapshots(withOrders);
+  const enriched = await enrichReportLinesWithOfficialSnapshots(withOrders);
+  const exclusionRules = await loadActiveCustomerExclusionRuleSnapshots();
+  const lines = applyActiveCustomerExclusionsToReportLines(enriched, exclusionRules);
   return assembleCommissionReportsPayload(lines, query, loaded.monthsIncluded);
 }
 
@@ -639,7 +644,9 @@ export async function exportCommissionReportsXlsx(
 ): Promise<{ buffer: Buffer; filename: string }> {
   const loaded = await loadReportSource({ query, scope });
   const withOrders = await attachLocalOrderIdsToReportLines(loaded.lines);
-  const lines = await enrichReportLinesWithOfficialSnapshots(withOrders);
+  const enriched = await enrichReportLinesWithOfficialSnapshots(withOrders);
+  const exclusionRules = await loadActiveCustomerExclusionRuleSnapshots();
+  const lines = applyActiveCustomerExclusionsToReportLines(enriched, exclusionRules);
   const payload = assembleCommissionReportsPayload(
     lines,
     { ...query, page: 1, pageSize: Math.max(lines.length, 1) },
@@ -655,6 +662,7 @@ export async function exportCommissionReportsXlsx(
     records,
     year: query.year,
     months,
+    summary: payload.summary,
   });
   return {
     buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer,

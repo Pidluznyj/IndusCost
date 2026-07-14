@@ -29,6 +29,7 @@ import {
   SystemTotalizerCard,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
 } from "@/src/components/ui/SystemTotalizerCard";
+import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { cn } from "@/src/lib/utils";
 import type {
   CommissionReportRecord,
@@ -378,10 +379,19 @@ export function CommissionsReportsPage() {
     <div className="space-y-5" data-testid="commissions-reports-page">
       <CommissionsSectionIntro
         title="Relatórios de comissão"
-        description="Consulta dos registros materializados pelo Fechamento do mês (data de recebimento/baixa). Não recalcula comissão no navegador."
+        description="Consulta dos registros do Fechamento (data de recebimento). Aplica as regras de Exceções por cliente (não comissionáveis), zerando a comissão e destacando os casos no resumo e no detalhe."
         testId="commissions-reports-intro"
       />
 
+      {summary &&
+      (summary.excludedCustomerCount > 0 || summary.excludedCommission > 0) ? (
+        <ExecutiveAlert
+          variant="warning"
+          title="Clientes não comissionáveis aplicados"
+          description={`${summary.excludedCustomerCount} cliente(s) excluído(s) por regra · comissão excluída ${formatFinanceCurrency(summary.excludedCommission)}. Esses valores não entram na comissão final a pagar.`}
+          testId="commissions-reports-exclusion-alert"
+        />
+      ) : null}
       <div
         className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
         data-testid="commissions-reports-filters"
@@ -548,6 +558,7 @@ export function CommissionsReportsPage() {
             label="Clientes excluídos"
             amount={summary.excludedCustomerCount}
             amountFormat="number"
+            helperText="Únicos · regra Exceções por cliente"
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -566,6 +577,7 @@ export function CommissionsReportsPage() {
             label="Comissão excluída"
             amount={summary.excludedCommission}
             amountFormat="currency"
+            helperText="Zerada por cliente não comissionável"
           />
         </CommissionsKpiSection>
       ) : null}

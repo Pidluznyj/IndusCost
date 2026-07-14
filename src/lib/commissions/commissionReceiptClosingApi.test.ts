@@ -299,7 +299,8 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(unassigned?.excludedCommission, 15);
     assert.equal(unassigned?.receivedAmount, 1000);
     assert.equal(unassigned?.exceptionCount, 0);
-    assert.equal(payload.lines[0]?.canonicalSellerName, null);
+    // Cliente excluído mantém vendedor atribuível para auditoria/filtro; agrupamento é unassigned.
+    assert.equal(payload.lines[0]?.canonicalSellerName, "GISLENE LIMA");
     assert.equal(payload.lines[0]?.rawSellerName, "GISLENE");
   });
 
@@ -595,19 +596,31 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(body.reason, "correção de regra");
   });
 
-  it("mapPreviewLineToApiLine zera vendedor canônico em linhas excluídas", () => {
-    const api = mapPreviewLineToApiLine(
+  it("mapPreviewLineToApiLine zera vendedor canônico só em empresa do grupo", () => {
+    const group = mapPreviewLineToApiLine(
       previewLine({
-        ledgerLineKey: "ex",
+        ledgerLineKey: "ex-group",
         status: "GROUP_COMPANY_EXCLUDED",
         canonicalSellerId: "seller-1",
         canonicalSellerName: "GISLENE LIMA",
         rawSellerName: "GISLENE",
       })
     );
-    assert.equal(api.canonicalSellerId, null);
-    assert.equal(api.canonicalSellerName, null);
-    assert.equal(api.rawSellerName, "GISLENE");
+    assert.equal(group.canonicalSellerId, null);
+    assert.equal(group.canonicalSellerName, null);
+    assert.equal(group.rawSellerName, "GISLENE");
+
+    const excluded = mapPreviewLineToApiLine(
+      previewLine({
+        ledgerLineKey: "ex-customer",
+        status: "CUSTOMER_EXCLUDED",
+        canonicalSellerId: "seller-1",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerName: "GISLENE",
+      })
+    );
+    assert.equal(excluded.canonicalSellerId, "seller-1");
+    assert.equal(excluded.canonicalSellerName, "GISLENE LIMA");
   });
 
   it("buildReceiptClosingBySeller deduplica recebido por título", () => {

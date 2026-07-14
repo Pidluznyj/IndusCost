@@ -25,7 +25,6 @@ import type {
 import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
   isReceiptClosingGroupCompanyLine,
-  isReceiptClosingSellerExcludedFromCommission,
   partitionReceiptClosingLinesByGroupCompany,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
   resolveReceiptClosingSellerGroupKey,
@@ -38,15 +37,18 @@ import {
   type ReceiptClosingReconciliationSummary,
 } from "./commissionReceiptClosingApi.shared.js";
 
+/**
+ * Empresa do grupo: zera vendedor canônico (não entra no resumo por vendedor comissionável).
+ * Cliente excluído por regra: **mantém** o vendedor atribuível — a comissão continua
+ * agrupada em "Sem vendedor / Excluído" via `resolveReceiptClosingSellerGroupKey`,
+ * mas Relatórios / detalhe podem filtrar e informar a carteira.
+ */
 function clearCanonicalSellerForExcludedApiLine(line: {
   status: string;
   canonicalSellerId: string | null;
   canonicalSellerName: string | null;
 }): { canonicalSellerId: string | null; canonicalSellerName: string | null } {
-  if (
-    isReceiptClosingSellerExcludedFromCommission(line.status) ||
-    isReceiptClosingGroupCompanyLine(line)
-  ) {
+  if (isReceiptClosingGroupCompanyLine(line)) {
     return { canonicalSellerId: null, canonicalSellerName: null };
   }
   return {
