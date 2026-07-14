@@ -144,6 +144,8 @@ function mapRowToDto(
     contractStartDate: Date;
     contractEndDate: Date;
     monthlyServiceAmount: Prisma.Decimal;
+    averageWorkedDaysPerMonth?: Prisma.Decimal | null;
+    hoursPerDay?: Prisma.Decimal | null;
     monthlyHours: Prisma.Decimal;
     hourlyServiceAmount: Prisma.Decimal;
     dailyServiceAmount: Prisma.Decimal;
@@ -196,6 +198,8 @@ function mapRowToDto(
     contractStartDate: toYmd(row.contractStartDate),
     contractEndDate: toYmd(row.contractEndDate),
     monthlyServiceAmount: dec(row.monthlyServiceAmount),
+    averageWorkedDaysPerMonth: dec(row.averageWorkedDaysPerMonth) || 30,
+    hoursPerDay: dec(row.hoursPerDay) || 8,
     monthlyHours: dec(row.monthlyHours),
     hourlyServiceAmount: dec(row.hourlyServiceAmount),
     dailyServiceAmount: dec(row.dailyServiceAmount),
@@ -253,6 +257,8 @@ function buildCalcFromInput(input: ServiceTerminationPreviewInput) {
 
   return calculateServiceTermination({
     monthlyServiceAmount: input.monthlyServiceAmount,
+    averageWorkedDaysPerMonth: input.averageWorkedDaysPerMonth,
+    hoursPerDay: input.hoursPerDay,
     monthlyHours: input.monthlyHours,
     restDaysPerYear: input.restDaysPerYear,
     calculationMode: mode,
@@ -361,7 +367,9 @@ export async function createSupplierServiceTermination(input: {
       contractStartDate: parseYmd(input.body.contractStartDate),
       contractEndDate: parseYmd(input.body.contractEndDate),
       monthlyServiceAmount: input.body.monthlyServiceAmount,
-      monthlyHours: input.body.monthlyHours,
+      averageWorkedDaysPerMonth: calc.averageWorkedDaysPerMonth,
+      hoursPerDay: calc.hoursPerDay,
+      monthlyHours: calc.monthlyHours,
       hourlyServiceAmount: calc.hourlyServiceAmount,
       dailyServiceAmount: calc.dailyServiceAmount,
       restDaysPerYear: calc.restDaysPerYear,
@@ -443,7 +451,9 @@ export async function updateSupplierServiceTermination(input: {
         contractStartDate: parseYmd(input.body.contractStartDate),
         contractEndDate: parseYmd(input.body.contractEndDate),
         monthlyServiceAmount: input.body.monthlyServiceAmount,
-        monthlyHours: input.body.monthlyHours,
+        averageWorkedDaysPerMonth: calc.averageWorkedDaysPerMonth,
+        hoursPerDay: calc.hoursPerDay,
+        monthlyHours: calc.monthlyHours,
         hourlyServiceAmount: calc.hourlyServiceAmount,
         dailyServiceAmount: calc.dailyServiceAmount,
         restDaysPerYear: calc.restDaysPerYear,
@@ -669,6 +679,8 @@ export function buildServiceTerminationPdfDocumentLines(
       colWidths: [420, 350],
       rows: [
         ["Valor mensal", formatPdfMoneyBr(model.monthlyServiceAmount)],
+        ["Dias medios trabalhados/mes", formatPdfNumberBr(model.averageWorkedDaysPerMonth, 2)],
+        ["Horas por dia", formatPdfNumberBr(model.hoursPerDay, 2)],
         ["Horas por mes", formatPdfNumberBr(model.monthlyHours, 2)],
         ["Valor hora", formatPdfMoneyBr(model.hourlyServiceAmount)],
         ["Valor dia", formatPdfMoneyBr(model.dailyServiceAmount)],
@@ -807,6 +819,8 @@ export async function exportSupplierServiceTerminationXlsx(input: {
     ["Período início", dto.contractStartDate],
     ["Período fim", dto.contractEndDate],
     ["Valor mensal", dto.monthlyServiceAmount],
+    ["Dias médios trabalhados/mês", dto.averageWorkedDaysPerMonth],
+    ["Horas por dia", dto.hoursPerDay],
     ["Horas/mês", dto.monthlyHours],
     ["Valor hora", dto.hourlyServiceAmount],
     ["Valor dia", dto.dailyServiceAmount],

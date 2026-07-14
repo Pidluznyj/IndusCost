@@ -82,4 +82,20 @@ describe("supplierServiceTerminationCalc", () => {
     assert.equal(r.noticePenaltyAmount, 6000);
     assert.equal(r.totalTerminationAmount, 1333.33 + 1400 + 6000 + 100);
   });
+
+  it("dias médios e horas/dia definem valor dia e hora", () => {
+    const r = calculateServiceTermination({
+      monthlyServiceAmount: 4000,
+      averageWorkedDaysPerMonth: 22,
+      hoursPerDay: 8,
+      // sem monthlyHours → 22 * 8 = 176
+      calculationMode: "WORKED_MONTHS",
+      workedMonths: 0,
+    });
+    assert.equal(r.averageWorkedDaysPerMonth, 22);
+    assert.equal(r.hoursPerDay, 8);
+    assert.equal(r.monthlyHours, 176);
+    assert.equal(r.dailyServiceAmount, 181.82); // 4000/22
+    assert.equal(r.hourlyServiceAmount, 22.73); // 4000/176
+  });
 });

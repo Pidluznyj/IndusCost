@@ -91,7 +91,10 @@ function parseBody(raw: unknown): ServiceTerminationPreviewInput {
     contractStartDate: String(b.contractStartDate ?? ""),
     contractEndDate: String(b.contractEndDate ?? ""),
     monthlyServiceAmount: Number(b.monthlyServiceAmount),
-    monthlyHours: Number(b.monthlyHours),
+    averageWorkedDaysPerMonth:
+      b.averageWorkedDaysPerMonth != null ? Number(b.averageWorkedDaysPerMonth) : 30,
+    hoursPerDay: b.hoursPerDay != null ? Number(b.hoursPerDay) : 8,
+    monthlyHours: b.monthlyHours != null ? Number(b.monthlyHours) : null,
     restDaysPerYear: b.restDaysPerYear != null ? Number(b.restDaysPerYear) : 20,
     calculationMode:
       b.calculationMode === "WORKED_DAYS" ? "WORKED_DAYS" : "WORKED_MONTHS",

@@ -25,6 +25,7 @@ import { cn } from "@/src/lib/utils";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 import {
   calculateServiceTermination,
+  deriveMonthlyHoursFromDayFactors,
   formatProportionalRestDaysLabel,
 } from "@/src/lib/suppliers/supplierServiceTerminationCalc";
 import { buildServiceTerminationPrintPath } from "@/src/lib/suppliers/supplierServiceTerminationPrint";
@@ -84,7 +85,10 @@ export function SupplierServiceTerminationDialog({
   const [contractStartDate, setContractStartDate] = useState("");
   const [contractEndDate, setContractEndDate] = useState("");
   const [monthlyServiceAmount, setMonthlyServiceAmount] = useState("6000");
-  const [monthlyHours, setMonthlyHours] = useState("160");
+  const [averageWorkedDaysPerMonth, setAverageWorkedDaysPerMonth] = useState("30");
+  const [hoursPerDay, setHoursPerDay] = useState("8");
+  const [monthlyHours, setMonthlyHours] = useState("240");
+  const [monthlyHoursManual, setMonthlyHoursManual] = useState(false);
   const [restDaysPerYear, setRestDaysPerYear] = useState("20");
   const [calculationMode, setCalculationMode] =
     useState<ServiceTerminationCalcModeDto>("WORKED_MONTHS");
@@ -165,10 +169,21 @@ export function SupplierServiceTerminationDialog({
     return [...officialLinks, ...manualMapped];
   }, [officialLinks, manualCommissionLines, personName, supplierName]);
 
+  const syncMonthlyHoursFromFactors = (daysStr: string, hoursStr: string) => {
+    const derived = deriveMonthlyHoursFromDayFactors(
+      Number(daysStr) || 0,
+      Number(hoursStr) || 0
+    );
+    setMonthlyHours(String(derived));
+    setMonthlyHoursManual(false);
+  };
+
   const calc = useMemo(() => {
     return calculateServiceTermination({
       monthlyServiceAmount: Number(monthlyServiceAmount) || 0,
-      monthlyHours: Number(monthlyHours) || 0,
+      averageWorkedDaysPerMonth: Number(averageWorkedDaysPerMonth) || 30,
+      hoursPerDay: Number(hoursPerDay) || 8,
+      monthlyHours: monthlyHours.trim() ? Number(monthlyHours) : null,
       restDaysPerYear: Number(restDaysPerYear) || 20,
       calculationMode,
       workedMonths: workedMonths.trim() ? Number(workedMonths) : null,
@@ -185,6 +200,8 @@ export function SupplierServiceTerminationDialog({
     });
   }, [
     monthlyServiceAmount,
+    averageWorkedDaysPerMonth,
+    hoursPerDay,
     monthlyHours,
     restDaysPerYear,
     calculationMode,
@@ -225,7 +242,9 @@ export function SupplierServiceTerminationDialog({
     contractStartDate,
     contractEndDate,
     monthlyServiceAmount: Number(monthlyServiceAmount) || 0,
-    monthlyHours: Number(monthlyHours) || 0,
+    averageWorkedDaysPerMonth: Number(averageWorkedDaysPerMonth) || 30,
+    hoursPerDay: Number(hoursPerDay) || 8,
+    monthlyHours: monthlyHours.trim() ? Number(monthlyHours) : null,
     restDaysPerYear: Number(restDaysPerYear) || 20,
     calculationMode,
     workedMonths: workedMonths.trim() ? Number(workedMonths) : null,
@@ -621,6 +640,10 @@ export function SupplierServiceTerminationDialog({
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               2. Dados financeiros
             </h3>
+            <p className="text-xs text-muted-foreground">
+              Valor dia = mensal ÷ dias médios/mês · Valor hora = mensal ÷ horas/mês (horas/mês =
+              dias médios × horas/dia, ou informe manualmente).
+            </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-muted-foreground">Valor mensal</span>
@@ -634,13 +657,64 @@ export function SupplierServiceTerminationDialog({
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-xs font-semibold text-muted-foreground">Horas por mês</span>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Dias médios trabalhados/mês
+                </span>
                 <input
                   type="number"
+                  min={0}
+                  step="0.01"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={averageWorkedDaysPerMonth}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setAverageWorkedDaysPerMonth(next);
+                    if (!monthlyHoursManual) {
+                      syncMonthlyHoursFromFactors(next, hoursPerDay);
+                    }
+                  }}
+                  disabled={status === "FINALIZED"}
+                  data-testid="sst-avg-days-month"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Horas por dia
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={hoursPerDay}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setHoursPerDay(next);
+                    if (!monthlyHoursManual) {
+                      syncMonthlyHoursFromFactors(averageWorkedDaysPerMonth, next);
+                    }
+                  }}
+                  disabled={status === "FINALIZED"}
+                  data-testid="sst-hours-per-day"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Horas por mês
+                  {!monthlyHoursManual ? " (auto)" : " (manual)"}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={monthlyHours}
-                  onChange={(e) => setMonthlyHours(e.target.value)}
+                  onChange={(e) => {
+                    setMonthlyHoursManual(true);
+                    setMonthlyHours(e.target.value);
+                  }}
                   disabled={status === "FINALIZED"}
+                  data-testid="sst-monthly-hours"
                 />
               </label>
               <label className="space-y-1">
@@ -695,14 +769,27 @@ export function SupplierServiceTerminationDialog({
                   disabled={status === "FINALIZED"}
                 />
               </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  className="w-full rounded-lg border px-3 py-2 text-xs font-semibold"
+                  disabled={status === "FINALIZED"}
+                  onClick={() =>
+                    syncMonthlyHoursFromFactors(averageWorkedDaysPerMonth, hoursPerDay)
+                  }
+                >
+                  Recalcular horas/mês
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <Stat label="Valor hora" value={money(calc.hourlyServiceAmount)} />
-              <Stat label="Valor dia" value={money(calc.dailyServiceAmount)} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat
-                label="Meses (calc.)"
-                value={String(calc.workedMonths)}
+                label="Dias médios/mês"
+                value={String(calc.averageWorkedDaysPerMonth)}
               />
+              <Stat label="Horas/dia" value={String(calc.hoursPerDay)} />
+              <Stat label="Valor hora" value={money(calc.hourlyServiceAmount)} emphasize />
+              <Stat label="Valor dia" value={money(calc.dailyServiceAmount)} emphasize />
             </div>
           </section>
 

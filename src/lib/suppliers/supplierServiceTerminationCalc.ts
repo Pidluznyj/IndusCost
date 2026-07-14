@@ -4,14 +4,27 @@
  */
 
 export const DEFAULT_REST_DAYS_PER_YEAR = 20;
-export const DAYS_PER_MONTH_FOR_DAILY_RATE = 30;
+/** Dias médios trabalhados/mês (padrão contratual para valor-dia). */
+export const DEFAULT_AVERAGE_WORKED_DAYS_PER_MONTH = 30;
+export const DEFAULT_HOURS_PER_DAY = 8;
 export const DAYS_PER_YEAR_FOR_PRO_RATA = 365;
+
+/** @deprecated use DEFAULT_AVERAGE_WORKED_DAYS_PER_MONTH */
+export const DAYS_PER_MONTH_FOR_DAILY_RATE = DEFAULT_AVERAGE_WORKED_DAYS_PER_MONTH;
 
 export type ServiceTerminationCalculationMode = "WORKED_MONTHS" | "WORKED_DAYS";
 
 export type ServiceTerminationCalcInput = {
   monthlyServiceAmount: number;
-  monthlyHours: number;
+  /**
+   * Horas/mês. Se omitido ou 0, deriva de
+   * averageWorkedDaysPerMonth × hoursPerDay.
+   */
+  monthlyHours?: number | null;
+  /** Dias médios trabalhados por mês (base do valor-dia). */
+  averageWorkedDaysPerMonth?: number | null;
+  /** Horas por dia (base do valor-hora quando faltam horas/mês). */
+  hoursPerDay?: number | null;
   restDaysPerYear?: number;
   calculationMode: ServiceTerminationCalculationMode;
   /** Informado ou derivado das datas. */
@@ -30,6 +43,9 @@ export type ServiceTerminationCalcInput = {
 
 export type ServiceTerminationCalcResult = {
   restDaysPerYear: number;
+  averageWorkedDaysPerMonth: number;
+  hoursPerDay: number;
+  monthlyHours: number;
   calculationMode: ServiceTerminationCalculationMode;
   workedMonths: number;
   workedDays: number;
@@ -74,6 +90,16 @@ function parseDate(value: string | Date | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Horas/mês = dias médios × horas/dia. */
+export function deriveMonthlyHoursFromDayFactors(
+  averageWorkedDaysPerMonth: number,
+  hoursPerDay: number
+): number {
+  const days = Math.max(0, asFinite(averageWorkedDaysPerMonth));
+  const hours = Math.max(0, asFinite(hoursPerDay));
+  return round4(days * hours);
+}
+
 /** Meses civis completos entre início e fim (inclusive do mês final se >= 1 dia). */
 export function countWorkedMonthsBetween(
   start: string | Date | null | undefined,
@@ -104,7 +130,22 @@ export function calculateServiceTermination(
   input: ServiceTerminationCalcInput
 ): ServiceTerminationCalcResult {
   const monthlyServiceAmount = Math.max(0, asFinite(input.monthlyServiceAmount));
-  const monthlyHours = Math.max(0, asFinite(input.monthlyHours));
+  const averageWorkedDaysPerMonth = Math.max(
+    0,
+    asFinite(input.averageWorkedDaysPerMonth, DEFAULT_AVERAGE_WORKED_DAYS_PER_MONTH)
+  );
+  const hoursPerDay = Math.max(0, asFinite(input.hoursPerDay, DEFAULT_HOURS_PER_DAY));
+
+  const derivedMonthlyHours = deriveMonthlyHoursFromDayFactors(
+    averageWorkedDaysPerMonth,
+    hoursPerDay
+  );
+  const monthlyHoursInput = asFinite(input.monthlyHours, NaN);
+  const monthlyHours =
+    Number.isFinite(monthlyHoursInput) && monthlyHoursInput > 0
+      ? monthlyHoursInput
+      : derivedMonthlyHours;
+
   const restDaysPerYear = Math.max(
     0,
     asFinite(input.restDaysPerYear, DEFAULT_REST_DAYS_PER_YEAR)
@@ -135,9 +176,16 @@ export function calculateServiceTermination(
       : (restDaysPerYear / 12) * workedMonths;
   const proportionalRestDays = round4(rawProportionalRestDays);
 
-  const dailyServiceAmount = round2(monthlyServiceAmount / DAYS_PER_MONTH_FOR_DAILY_RATE);
+  const dailyServiceAmount =
+    averageWorkedDaysPerMonth > 0
+      ? round2(monthlyServiceAmount / averageWorkedDaysPerMonth)
+      : 0;
   const hourlyServiceAmount =
-    monthlyHours > 0 ? round2(monthlyServiceAmount / monthlyHours) : 0;
+    monthlyHours > 0
+      ? round2(monthlyServiceAmount / monthlyHours)
+      : hoursPerDay > 0 && dailyServiceAmount > 0
+        ? round2(dailyServiceAmount / hoursPerDay)
+        : 0;
   // Usa dias crus para bater 6,666… → R$ 1.333,33 (não 6,6667 arredondado * 200).
   const proportionalRestAmount = round2(dailyServiceAmount * rawProportionalRestDays);
 
@@ -159,6 +207,9 @@ export function calculateServiceTermination(
 
   return {
     restDaysPerYear,
+    averageWorkedDaysPerMonth: round4(averageWorkedDaysPerMonth),
+    hoursPerDay: round4(hoursPerDay),
+    monthlyHours: round4(monthlyHours),
     calculationMode: mode,
     workedMonths: round4(workedMonths),
     workedDays: Math.round(workedDays),

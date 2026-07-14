@@ -67,6 +67,8 @@ export type ServiceTerminationPrintModel = {
   statusLabel: string;
   calcModeLabel: string;
   monthlyServiceAmount: number;
+  averageWorkedDaysPerMonth: number;
+  hoursPerDay: number;
   monthlyHours: number;
   hourlyServiceAmount: number;
   dailyServiceAmount: number;
@@ -129,6 +131,8 @@ export function buildServiceTerminationPrintModel(
     statusLabel: formatServiceTerminationStatusLabel(dto.status),
     calcModeLabel: formatServiceTerminationCalcModeLabel(dto.calculationMode),
     monthlyServiceAmount: dto.monthlyServiceAmount,
+    averageWorkedDaysPerMonth: dto.averageWorkedDaysPerMonth,
+    hoursPerDay: dto.hoursPerDay,
     monthlyHours: dto.monthlyHours,
     hourlyServiceAmount: dto.hourlyServiceAmount,
     dailyServiceAmount: dto.dailyServiceAmount,

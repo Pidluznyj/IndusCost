@@ -40,13 +40,18 @@ Com mensal **R$ 6.000,00**:
 proportionalRestDays = restDaysPerYear * workedDays / 365
 ```
 
-### Valor hora (informativo)
+### Valor dia e valor hora (fatores editáveis)
 
 ```
+averageWorkedDaysPerMonth = (informado; padrão 30)
+hoursPerDay = (informado; padrão 8)
+monthlyHours = averageWorkedDaysPerMonth × hoursPerDay   (ou informado manualmente)
+
+dailyServiceAmount = monthlyServiceAmount / averageWorkedDaysPerMonth
 hourlyServiceAmount = monthlyServiceAmount / monthlyHours
 ```
 
-Aparece na tela e no relatório; **não** entra sozinho no total.
+Todos os fatores podem ser informados na seção Dados financeiros.
 
 ## Dias a mais trabalhados
 

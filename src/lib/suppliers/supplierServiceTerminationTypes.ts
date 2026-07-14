@@ -28,6 +28,8 @@ export type ServiceTerminationDto = {
   contractStartDate: string;
   contractEndDate: string;
   monthlyServiceAmount: number;
+  averageWorkedDaysPerMonth: number;
+  hoursPerDay: number;
   monthlyHours: number;
   hourlyServiceAmount: number;
   dailyServiceAmount: number;
@@ -64,7 +66,9 @@ export type ServiceTerminationPreviewInput = {
   contractStartDate: string;
   contractEndDate: string;
   monthlyServiceAmount: number;
-  monthlyHours: number;
+  averageWorkedDaysPerMonth?: number | null;
+  hoursPerDay?: number | null;
+  monthlyHours?: number | null;
   restDaysPerYear?: number;
   calculationMode?: ServiceTerminationCalcModeDto;
   workedMonths?: number | null;

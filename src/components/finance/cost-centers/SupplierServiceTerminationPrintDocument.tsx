@@ -88,6 +88,16 @@ export function SupplierServiceTerminationPrintDocument({
                 <td className="py-1 text-right font-mono">{money(model.monthlyServiceAmount)}</td>
               </tr>
               <tr className="border-b border-slate-100">
+                <th className="py-1 text-left font-semibold text-slate-600">
+                  Dias médios trabalhados/mês
+                </th>
+                <td className="py-1 text-right font-mono">{model.averageWorkedDaysPerMonth}</td>
+              </tr>
+              <tr className="border-b border-slate-100">
+                <th className="py-1 text-left font-semibold text-slate-600">Horas por dia</th>
+                <td className="py-1 text-right font-mono">{model.hoursPerDay}</td>
+              </tr>
+              <tr className="border-b border-slate-100">
                 <th className="py-1 text-left font-semibold text-slate-600">Horas por mês</th>
                 <td className="py-1 text-right font-mono">{model.monthlyHours}</td>
               </tr>
