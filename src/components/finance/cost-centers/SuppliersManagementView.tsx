@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, FileText, ListOrdered, Plus, RefreshCw, Settings2 } from "lucide-react";
+import { Calculator, Eye, FileText, ListOrdered, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -54,6 +54,7 @@ import { getFinanceSectionPath } from "@/src/lib/financeNavigation";
 import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-centers/FinanceSupplierCadastroDrawer";
 import { FinanceSupplierPaymentDrilldownSection } from "@/src/components/finance/cost-centers/FinanceSupplierPaymentDrilldownSection";
 import { FinanceSupplierTitlesModal } from "@/src/components/finance/cost-centers/FinanceSupplierTitlesModal";
+import { SupplierServiceTerminationDialog } from "@/src/components/finance/cost-centers/SupplierServiceTerminationDialog";
 
 export type SuppliersManagementContext = "finance-menu" | "cost-center-tab";
 
@@ -65,6 +66,10 @@ type Props = {
   canManageSuppliers: boolean;
   canDeleteSupplier: boolean;
   canReclassifyTitles: boolean;
+  canViewServiceTermination?: boolean;
+  canCreateServiceTermination?: boolean;
+  canFinalizeServiceTermination?: boolean;
+  canExportServiceTermination?: boolean;
   onNavigateTab: (tab: FinanceCostCentersTabId) => void;
   onSuppliersChanged?: () => void;
 };
@@ -82,6 +87,10 @@ export function SuppliersManagementView({
   canManageSuppliers,
   canDeleteSupplier,
   canReclassifyTitles,
+  canViewServiceTermination = false,
+  canCreateServiceTermination = false,
+  canFinalizeServiceTermination = false,
+  canExportServiceTermination = false,
   onNavigateTab,
   onSuppliersChanged,
 }: Props) {
@@ -96,6 +105,10 @@ export function SuppliersManagementView({
   const [supplierTitlesSupplier, setSupplierTitlesSupplier] = useState<SupplierGridRow | null>(null);
   const [cadastroSupplierId, setCadastroSupplierId] = useState<string | null>(null);
   const [cadastroMode, setCadastroMode] = useState<"create" | "edit">("edit");
+  const [terminationTarget, setTerminationTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [creatingCadastroFor, setCreatingCadastroFor] = useState<string | null>(null);
 
   const search = readFinanceGridUrlString(searchParams, "sup_q");
@@ -547,18 +560,36 @@ export function SuppliersManagementView({
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-2">
                     {row.supplierId ? (
-                      <button
-                        type="button"
-                        data-testid="finance-suppliers-open-cadastro-button"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                        onClick={() => {
-                          setCadastroMode("edit");
-                          setCadastroSupplierId(row.supplierId!);
-                        }}
-                      >
-                        <FileText className="h-3 w-3" />
-                        {row.status === "INACTIVE" ? "Ver cadastro" : "Editar"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          data-testid="finance-suppliers-open-cadastro-button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                          onClick={() => {
+                            setCadastroMode("edit");
+                            setCadastroSupplierId(row.supplierId!);
+                          }}
+                        >
+                          <FileText className="h-3 w-3" />
+                          {row.status === "INACTIVE" ? "Ver cadastro" : "Editar"}
+                        </button>
+                        {canViewServiceTermination ? (
+                          <button
+                            type="button"
+                            data-testid="finance-suppliers-service-termination-button"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                            onClick={() =>
+                              setTerminationTarget({
+                                id: row.supplierId!,
+                                name: row.name,
+                              })
+                            }
+                          >
+                            <Calculator className="h-3 w-3" />
+                            Encerramento de prestação
+                          </button>
+                        ) : null}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -651,7 +682,23 @@ export function SuppliersManagementView({
         canManage={canManageSuppliers}
         canDelete={canDeleteSupplier}
         showFinancialSummary={showFinancialContext}
+        canViewServiceTermination={canViewServiceTermination}
+        canCreateServiceTermination={canCreateServiceTermination}
+        canFinalizeServiceTermination={canFinalizeServiceTermination}
+        canExportServiceTermination={canExportServiceTermination}
       />
+
+      {terminationTarget ? (
+        <SupplierServiceTerminationDialog
+          open
+          supplierId={terminationTarget.id}
+          supplierName={terminationTarget.name}
+          onClose={() => setTerminationTarget(null)}
+          canCreate={canCreateServiceTermination}
+          canFinalize={canFinalizeServiceTermination}
+          canExport={canExportServiceTermination}
+        />
+      ) : null}
 
       {showOperationalActions ? (
         <>

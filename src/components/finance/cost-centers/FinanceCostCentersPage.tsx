@@ -28,6 +28,10 @@ import {
   canViewFinanceSuppliers,
   canManageFinanceSuppliers,
   canDeleteFinanceSupplier,
+  canViewSupplierServiceTermination,
+  canCreateSupplierServiceTermination,
+  canFinalizeSupplierServiceTermination,
+  canExportSupplierServiceTermination,
 } from "@/src/lib/financeCostCentersPermissions";
 import {
   buildFinanceModuleEyebrow,
@@ -362,6 +366,10 @@ export function FinanceCostCentersPage() {
           canManageSuppliers={canManageSuppliers}
           canDeleteSupplier={canDeleteSupplier}
           canReclassifyTitles={canReclassifyTitles}
+          canViewServiceTermination={canViewSupplierServiceTermination(auth)}
+          canCreateServiceTermination={canCreateSupplierServiceTermination(auth)}
+          canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(auth)}
+          canExportServiceTermination={canExportSupplierServiceTermination(auth)}
           onNavigateTab={setActiveTab}
           onSuppliersChanged={() => void load()}
         />

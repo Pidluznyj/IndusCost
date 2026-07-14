@@ -20,6 +20,7 @@ import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
+import { SupplierServiceTerminationDialog } from "@/src/components/finance/cost-centers/SupplierServiceTerminationDialog";
 
 export type FinanceSupplierCadastroMode = "create" | "edit";
 
@@ -35,6 +36,10 @@ type Props = {
   canDelete: boolean;
   /** Resumo AP, regras e aliases com contagem de títulos — só no contexto Centro de Custos. */
   showFinancialSummary?: boolean;
+  canViewServiceTermination?: boolean;
+  canCreateServiceTermination?: boolean;
+  canFinalizeServiceTermination?: boolean;
+  canExportServiceTermination?: boolean;
 };
 
 type CnpjPanelPayload = FinanceSupplierIntelligencePayload | FinanceSupplierCnpjLookupPayload;
@@ -63,8 +68,13 @@ export function FinanceSupplierCadastroDrawer({
   canManage,
   canDelete,
   showFinancialSummary = true,
+  canViewServiceTermination = false,
+  canCreateServiceTermination = false,
+  canFinalizeServiceTermination = false,
+  canExportServiceTermination = false,
 }: Props) {
   const portalContainer = usePortalContainer();
+  const [terminationOpen, setTerminationOpen] = useState(false);
   const [profile, setProfile] = useState<FinancialSupplierProfileDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -504,6 +514,26 @@ export function FinanceSupplierCadastroDrawer({
                 ) : null}
               </section>
 
+              {!isCreate && supplierId && canViewServiceTermination ? (
+                <section className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Encerramento de prestação
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Cálculo gerencial/contratual do encerramento de prestação de serviço (descansos
+                    proporcionais + comissão vinculada). Não é rescisão CLT.
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="finance-supplier-service-termination-button"
+                    className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+                    onClick={() => setTerminationOpen(true)}
+                  >
+                    Encerramento de prestação
+                  </button>
+                </section>
+              ) : null}
+
               {!isCreate && profile && showFinancialSummary ? (
                 <section
                   className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
@@ -707,6 +737,17 @@ export function FinanceSupplierCadastroDrawer({
           </div>
         ) : null}
       </div>
+      {supplierId && terminationOpen ? (
+        <SupplierServiceTerminationDialog
+          open={terminationOpen}
+          supplierId={supplierId}
+          supplierName={displayName || profile?.displayName || "Fornecedor"}
+          onClose={() => setTerminationOpen(false)}
+          canCreate={canCreateServiceTermination}
+          canFinalize={canFinalizeServiceTermination}
+          canExport={canExportServiceTermination}
+        />
+      ) : null}
     </div>,
     portalContainer
   );

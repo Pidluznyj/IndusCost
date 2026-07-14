@@ -1,0 +1,762 @@
+/**
+ * Encerramento de Prestação de Serviço — persistência, preview, comissão (read-only) e export.
+ */
+import { Prisma } from "@prisma/client";
+import * as XLSX from "xlsx";
+import { prisma } from "@/src/lib/prisma.js";
+import { buildMinimalPdfDocument } from "@/src/lib/minimalPdfWriter.js";
+import { normalizeSearchString } from "@/src/lib/utils.js";
+import {
+  calculateServiceTermination,
+  formatProportionalRestDaysLabel,
+  type ServiceTerminationCalculationMode,
+} from "./supplierServiceTerminationCalc.js";
+import {
+  SERVICE_TERMINATION_AUDIT_ACTIONS,
+  SERVICE_TERMINATION_AUDIT_ENTITY,
+  type ServiceTerminationCommissionLinkDto,
+  type ServiceTerminationCommissionSearchHit,
+  type ServiceTerminationDto,
+  type ServiceTerminationPreviewInput,
+} from "./supplierServiceTerminationTypes.js";
+
+export class SupplierServiceTerminationError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public httpStatus = 400
+  ) {
+    super(message);
+    this.name = "SupplierServiceTerminationError";
+  }
+}
+
+function dec(n: Prisma.Decimal | number | null | undefined): number {
+  if (n == null) return 0;
+  if (typeof n === "number") return Number.isFinite(n) ? n : 0;
+  try {
+    return n.toNumber();
+  } catch {
+    return Number(String(n)) || 0;
+  }
+}
+
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function parseYmd(value: string): Date {
+  const t = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+    throw new SupplierServiceTerminationError(
+      "Data inválida. Use YYYY-MM-DD.",
+      "INVALID_DATE"
+    );
+  }
+  const d = new Date(`${t}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) {
+    throw new SupplierServiceTerminationError("Data inválida.", "INVALID_DATE");
+  }
+  return d;
+}
+
+async function writeTerminationAudit(input: {
+  entityId: string;
+  action: string;
+  beforeJson?: unknown;
+  afterJson?: unknown;
+  userId?: string | null;
+  userName?: string | null;
+}) {
+  await prisma.financialCostCenterAuditLog.create({
+    data: {
+      entityType: SERVICE_TERMINATION_AUDIT_ENTITY,
+      entityId: input.entityId,
+      action: input.action,
+      beforeJson: (input.beforeJson ?? undefined) as object | undefined,
+      afterJson: (input.afterJson ?? undefined) as object | undefined,
+      userId: input.userId ?? null,
+      userName: input.userName ?? null,
+    },
+  });
+}
+
+function commissionsHrefForSearch(name: string, year: number): string {
+  const q = new URLSearchParams({
+    year: String(year),
+    months: "all",
+    search: name,
+  });
+  return `/commissions/reports?${q.toString()}`;
+}
+
+function mapRowToDto(
+  row: {
+    id: string;
+    supplierId: string;
+    personName: string;
+    personDocument: string | null;
+    serviceRole: string | null;
+    contractStartDate: Date;
+    contractEndDate: Date;
+    monthlyServiceAmount: Prisma.Decimal;
+    monthlyHours: Prisma.Decimal;
+    hourlyServiceAmount: Prisma.Decimal;
+    dailyServiceAmount: Prisma.Decimal;
+    restDaysPerYear: Prisma.Decimal;
+    calculationMode: string;
+    workedMonths: Prisma.Decimal;
+    workedDays: number;
+    proportionalRestDays: Prisma.Decimal;
+    proportionalRestAmount: Prisma.Decimal;
+    commissionReportId: string | null;
+    commissionReportTotal: Prisma.Decimal;
+    otherCredits: Prisma.Decimal;
+    otherDiscounts: Prisma.Decimal;
+    totalTerminationAmount: Prisma.Decimal;
+    status: string;
+    notes: string | null;
+    adjustmentNotes: string | null;
+    createdByName: string | null;
+    finalizedByName: string | null;
+    finalizedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    supplier?: { displayName: string } | null;
+    commissionLinks?: Array<{
+      id: string;
+      commissionReportKey: string;
+      commissionPersonId: string | null;
+      commissionPersonName: string | null;
+      periodLabel: string | null;
+      commissionAmount: Prisma.Decimal;
+      source: string | null;
+      statusLabel: string | null;
+    }>;
+  }
+): ServiceTerminationDto {
+  const otherCredits = dec(row.otherCredits);
+  const otherDiscounts = dec(row.otherDiscounts);
+  const year = row.contractEndDate.getUTCFullYear();
+  return {
+    id: row.id,
+    supplierId: row.supplierId,
+    supplierName: row.supplier?.displayName ?? "",
+    personName: row.personName,
+    personDocument: row.personDocument,
+    serviceRole: row.serviceRole,
+    contractStartDate: toYmd(row.contractStartDate),
+    contractEndDate: toYmd(row.contractEndDate),
+    monthlyServiceAmount: dec(row.monthlyServiceAmount),
+    monthlyHours: dec(row.monthlyHours),
+    hourlyServiceAmount: dec(row.hourlyServiceAmount),
+    dailyServiceAmount: dec(row.dailyServiceAmount),
+    restDaysPerYear: dec(row.restDaysPerYear),
+    calculationMode: row.calculationMode as ServiceTerminationDto["calculationMode"],
+    workedMonths: dec(row.workedMonths),
+    workedDays: row.workedDays,
+    proportionalRestDays: dec(row.proportionalRestDays),
+    proportionalRestAmount: dec(row.proportionalRestAmount),
+    commissionReportId: row.commissionReportId,
+    commissionReportTotal: dec(row.commissionReportTotal),
+    otherCredits,
+    otherDiscounts,
+    otherAdjustments: Math.round((otherCredits - otherDiscounts) * 100) / 100,
+    totalTerminationAmount: dec(row.totalTerminationAmount),
+    status: row.status as ServiceTerminationDto["status"],
+    notes: row.notes,
+    adjustmentNotes: row.adjustmentNotes,
+    createdByName: row.createdByName,
+    finalizedByName: row.finalizedByName,
+    finalizedAt: row.finalizedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    commissionLinks: (row.commissionLinks ?? []).map((l) => ({
+      id: l.id,
+      commissionReportKey: l.commissionReportKey,
+      commissionPersonId: l.commissionPersonId,
+      commissionPersonName: l.commissionPersonName,
+      periodLabel: l.periodLabel,
+      commissionAmount: dec(l.commissionAmount),
+      source: l.source,
+      statusLabel: l.statusLabel,
+      commissionsHref: commissionsHrefForSearch(
+        l.commissionPersonName ?? row.personName,
+        year
+      ),
+    })),
+  };
+}
+
+function buildCalcFromInput(input: ServiceTerminationPreviewInput) {
+  const mode = (input.calculationMode ?? "WORKED_MONTHS") as ServiceTerminationCalculationMode;
+  const links = input.commissionLinks ?? [];
+  const commissionFromLinks = links.reduce((s, l) => s + (Number(l.commissionAmount) || 0), 0);
+  const commissionReportTotal =
+    input.commissionReportTotal != null && Number.isFinite(Number(input.commissionReportTotal))
+      ? Number(input.commissionReportTotal)
+      : commissionFromLinks;
+
+  return calculateServiceTermination({
+    monthlyServiceAmount: input.monthlyServiceAmount,
+    monthlyHours: input.monthlyHours,
+    restDaysPerYear: input.restDaysPerYear,
+    calculationMode: mode,
+    workedMonths: input.workedMonths,
+    workedDays: input.workedDays,
+    contractStartDate: input.contractStartDate,
+    contractEndDate: input.contractEndDate,
+    commissionReportTotal,
+    otherCredits: input.otherCredits,
+    otherDiscounts: input.otherDiscounts,
+  });
+}
+
+export function previewSupplierServiceTermination(
+  input: ServiceTerminationPreviewInput
+): {
+  calc: ReturnType<typeof calculateServiceTermination>;
+  proportionalRestDaysLabel: string;
+} {
+  if (!input.personName?.trim()) {
+    throw new SupplierServiceTerminationError("Informe o nome do prestador.", "PERSON_REQUIRED");
+  }
+  parseYmd(input.contractStartDate);
+  parseYmd(input.contractEndDate);
+  const calc = buildCalcFromInput(input);
+  return {
+    calc,
+    proportionalRestDaysLabel: formatProportionalRestDaysLabel(calc.proportionalRestDays),
+  };
+}
+
+export async function listSupplierServiceTerminations(
+  supplierId: string
+): Promise<ServiceTerminationDto[]> {
+  const rows = await prisma.supplierServiceTermination.findMany({
+    where: { supplierId },
+    include: {
+      supplier: { select: { displayName: true } },
+      commissionLinks: { orderBy: { createdAt: "asc" } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  return rows.map(mapRowToDto);
+}
+
+export async function getSupplierServiceTermination(
+  supplierId: string,
+  id: string
+): Promise<ServiceTerminationDto> {
+  const row = await prisma.supplierServiceTermination.findFirst({
+    where: { id, supplierId },
+    include: {
+      supplier: { select: { displayName: true } },
+      commissionLinks: { orderBy: { createdAt: "asc" } },
+    },
+  });
+  if (!row) {
+    throw new SupplierServiceTerminationError("Encerramento não encontrado.", "NOT_FOUND", 404);
+  }
+  return mapRowToDto(row);
+}
+
+async function assertSupplierExists(supplierId: string): Promise<{ displayName: string }> {
+  const s = await prisma.financialSupplier.findUnique({
+    where: { id: supplierId },
+    select: { id: true, displayName: true },
+  });
+  if (!s) {
+    throw new SupplierServiceTerminationError("Fornecedor não encontrado.", "SUPPLIER_NOT_FOUND", 404);
+  }
+  return s;
+}
+
+export async function createSupplierServiceTermination(input: {
+  supplierId: string;
+  body: ServiceTerminationPreviewInput;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
+  const supplier = await assertSupplierExists(input.supplierId);
+  const { calc } = previewSupplierServiceTermination(input.body);
+  const links = input.body.commissionLinks ?? [];
+
+  const created = await prisma.supplierServiceTermination.create({
+    data: {
+      supplierId: input.supplierId,
+      personName: input.body.personName.trim(),
+      personDocument: input.body.personDocument?.trim() || null,
+      serviceRole: input.body.serviceRole?.trim() || null,
+      contractStartDate: parseYmd(input.body.contractStartDate),
+      contractEndDate: parseYmd(input.body.contractEndDate),
+      monthlyServiceAmount: input.body.monthlyServiceAmount,
+      monthlyHours: input.body.monthlyHours,
+      hourlyServiceAmount: calc.hourlyServiceAmount,
+      dailyServiceAmount: calc.dailyServiceAmount,
+      restDaysPerYear: calc.restDaysPerYear,
+      calculationMode: calc.calculationMode,
+      workedMonths: calc.workedMonths,
+      workedDays: calc.workedDays,
+      proportionalRestDays: calc.proportionalRestDays,
+      proportionalRestAmount: calc.proportionalRestAmount,
+      commissionReportId: links[0]?.commissionReportKey ?? null,
+      commissionReportTotal: calc.commissionReportTotal,
+      otherCredits: calc.otherCredits,
+      otherDiscounts: calc.otherDiscounts,
+      totalTerminationAmount: calc.totalTerminationAmount,
+      status: "DRAFT",
+      notes: input.body.notes?.trim() || null,
+      adjustmentNotes: input.body.adjustmentNotes?.trim() || null,
+      createdById: input.userId ?? null,
+      createdByName: input.userName ?? null,
+      commissionLinks: {
+        create: links.map((l) => ({
+          commissionReportKey: l.commissionReportKey,
+          commissionPersonId: l.commissionPersonId,
+          commissionPersonName: l.commissionPersonName,
+          periodLabel: l.periodLabel,
+          commissionAmount: l.commissionAmount,
+          source: l.source,
+          statusLabel: l.statusLabel,
+        })),
+      },
+    },
+    include: {
+      supplier: { select: { displayName: true } },
+      commissionLinks: true,
+    },
+  });
+
+  const dto = await getSupplierServiceTermination(input.supplierId, created.id);
+  await writeTerminationAudit({
+    entityId: created.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.CREATE,
+    afterJson: { ...dto, supplierName: supplier.displayName },
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return dto;
+}
+
+export async function updateSupplierServiceTermination(input: {
+  supplierId: string;
+  id: string;
+  body: ServiceTerminationPreviewInput;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
+  const before = await getSupplierServiceTermination(input.supplierId, input.id);
+  if (before.status === "FINALIZED") {
+    throw new SupplierServiceTerminationError(
+      "Encerramento finalizado não pode ser alterado.",
+      "FINALIZED_LOCKED",
+      409
+    );
+  }
+  if (before.status === "CANCELED") {
+    throw new SupplierServiceTerminationError(
+      "Encerramento cancelado não pode ser alterado.",
+      "CANCELED",
+      409
+    );
+  }
+
+  const { calc } = previewSupplierServiceTermination(input.body);
+  const links = input.body.commissionLinks ?? [];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.supplierServiceTerminationCommissionLink.deleteMany({
+      where: { terminationId: input.id },
+    });
+    await tx.supplierServiceTermination.update({
+      where: { id: input.id },
+      data: {
+        personName: input.body.personName.trim(),
+        personDocument: input.body.personDocument?.trim() || null,
+        serviceRole: input.body.serviceRole?.trim() || null,
+        contractStartDate: parseYmd(input.body.contractStartDate),
+        contractEndDate: parseYmd(input.body.contractEndDate),
+        monthlyServiceAmount: input.body.monthlyServiceAmount,
+        monthlyHours: input.body.monthlyHours,
+        hourlyServiceAmount: calc.hourlyServiceAmount,
+        dailyServiceAmount: calc.dailyServiceAmount,
+        restDaysPerYear: calc.restDaysPerYear,
+        calculationMode: calc.calculationMode,
+        workedMonths: calc.workedMonths,
+        workedDays: calc.workedDays,
+        proportionalRestDays: calc.proportionalRestDays,
+        proportionalRestAmount: calc.proportionalRestAmount,
+        commissionReportId: links[0]?.commissionReportKey ?? null,
+        commissionReportTotal: calc.commissionReportTotal,
+        otherCredits: calc.otherCredits,
+        otherDiscounts: calc.otherDiscounts,
+        totalTerminationAmount: calc.totalTerminationAmount,
+        notes: input.body.notes?.trim() || null,
+        adjustmentNotes: input.body.adjustmentNotes?.trim() || null,
+        commissionLinks: {
+          create: links.map((l) => ({
+            commissionReportKey: l.commissionReportKey,
+            commissionPersonId: l.commissionPersonId,
+            commissionPersonName: l.commissionPersonName,
+            periodLabel: l.periodLabel,
+            commissionAmount: l.commissionAmount,
+            source: l.source,
+            statusLabel: l.statusLabel,
+          })),
+        },
+      },
+    });
+  });
+
+  const after = await getSupplierServiceTermination(input.supplierId, input.id);
+  await writeTerminationAudit({
+    entityId: input.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.UPDATE,
+    beforeJson: before,
+    afterJson: after,
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return after;
+}
+
+export async function finalizeSupplierServiceTermination(input: {
+  supplierId: string;
+  id: string;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
+  const before = await getSupplierServiceTermination(input.supplierId, input.id);
+  if (before.status === "FINALIZED") return before;
+  if (before.status === "CANCELED") {
+    throw new SupplierServiceTerminationError(
+      "Não é possível finalizar um encerramento cancelado.",
+      "CANCELED",
+      409
+    );
+  }
+  await prisma.supplierServiceTermination.update({
+    where: { id: input.id },
+    data: {
+      status: "FINALIZED",
+      finalizedAt: new Date(),
+      finalizedById: input.userId ?? null,
+      finalizedByName: input.userName ?? null,
+    },
+  });
+  const after = await getSupplierServiceTermination(input.supplierId, input.id);
+  await writeTerminationAudit({
+    entityId: input.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.FINALIZE,
+    beforeJson: before,
+    afterJson: after,
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return after;
+}
+
+export async function cancelSupplierServiceTermination(input: {
+  supplierId: string;
+  id: string;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
+  const before = await getSupplierServiceTermination(input.supplierId, input.id);
+  if (before.status === "FINALIZED") {
+    throw new SupplierServiceTerminationError(
+      "Encerramento finalizado não pode ser cancelado por esta API.",
+      "FINALIZED_LOCKED",
+      409
+    );
+  }
+  await prisma.supplierServiceTermination.update({
+    where: { id: input.id },
+    data: { status: "CANCELED" },
+  });
+  const after = await getSupplierServiceTermination(input.supplierId, input.id);
+  await writeTerminationAudit({
+    entityId: input.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.CANCEL,
+    beforeJson: before,
+    afterJson: after,
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return after;
+}
+
+/**
+ * Busca relatório oficial de comissão por nome (read-only).
+ * Não recalcula comissão — agrega linhas do ledger / pessoas canônicas.
+ */
+export async function searchCommissionReportsForSupplierTermination(input: {
+  searchName: string;
+  supplierId?: string | null;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+}): Promise<ServiceTerminationCommissionSearchHit[]> {
+  const term = input.searchName.trim();
+  if (term.length < 2) {
+    throw new SupplierServiceTerminationError(
+      "Informe ao menos 2 caracteres para buscar.",
+      "SEARCH_TOO_SHORT"
+    );
+  }
+  const normalized = normalizeSearchString(term);
+
+  const persons = await prisma.commissionPerson.findMany({
+    where: {
+      type: "SELLER",
+      OR: [
+        { name: { contains: term, mode: "insensitive" } },
+        {
+          aliases: {
+            some: {
+              status: "ACTIVE",
+              OR: [
+                { rawSellerName: { contains: term, mode: "insensitive" } },
+                { normalizedSellerName: { contains: normalized } },
+              ],
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true, name: true },
+    take: 20,
+  });
+
+  const personIds = persons.map((p) => p.id);
+  const year = new Date().getFullYear();
+  const yearFrom = input.periodFrom ? Number(input.periodFrom.slice(0, 4)) : year - 1;
+  const yearTo = input.periodTo ? Number(input.periodTo.slice(0, 4)) : year;
+
+  const lines =
+    personIds.length > 0
+      ? await prisma.commissionReceiptLedgerLine.findMany({
+          where: {
+            canonicalSellerId: { in: personIds },
+            year: { gte: Math.min(yearFrom, yearTo), lte: Math.max(yearFrom, yearTo) },
+          },
+          select: {
+            id: true,
+            year: true,
+            month: true,
+            canonicalSellerId: true,
+            canonicalSellerName: true,
+            expectedCommissionAmount: true,
+            releasedCommissionAmount: true,
+            status: true,
+            source: true,
+          },
+          take: 400,
+          orderBy: [{ year: "desc" }, { month: "desc" }],
+        })
+      : [];
+
+  // Fallback: buscar por nome nas linhas quando pessoa não está no catálogo.
+  const linesByName =
+    lines.length === 0
+      ? await prisma.commissionReceiptLedgerLine.findMany({
+          where: {
+            OR: [
+              { canonicalSellerName: { contains: term, mode: "insensitive" } },
+              { rawSellerName: { contains: term, mode: "insensitive" } },
+            ],
+            year: { gte: Math.min(yearFrom, yearTo), lte: Math.max(yearFrom, yearTo) },
+          },
+          select: {
+            id: true,
+            year: true,
+            month: true,
+            canonicalSellerId: true,
+            canonicalSellerName: true,
+            expectedCommissionAmount: true,
+            releasedCommissionAmount: true,
+            status: true,
+            source: true,
+          },
+          take: 200,
+          orderBy: [{ year: "desc" }, { month: "desc" }],
+        })
+      : [];
+
+  const allLines = lines.length > 0 ? lines : linesByName;
+  type Agg = {
+    key: string;
+    personId: string | null;
+    personName: string;
+    year: number;
+    month: number;
+    amount: number;
+    status: string;
+    source: string;
+  };
+  const map = new Map<string, Agg>();
+  for (const line of allLines) {
+    const personName =
+      line.canonicalSellerName?.trim() ||
+      persons.find((p) => p.id === line.canonicalSellerId)?.name ||
+      term;
+    const key = `${line.canonicalSellerId ?? personName}:${line.year}-${line.month}`;
+    const amount = Math.max(
+      dec(line.releasedCommissionAmount),
+      dec(line.expectedCommissionAmount)
+    );
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, {
+        key,
+        personId: line.canonicalSellerId,
+        personName,
+        year: line.year,
+        month: line.month,
+        amount,
+        status: String(line.status),
+        source: String(line.source ?? "COMMISSION_LEDGER"),
+      });
+    } else {
+      prev.amount += amount;
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => b.year - a.year || b.month - a.month || b.amount - a.amount)
+    .slice(0, 40)
+    .map((g) => ({
+      reportKey: g.key,
+      commissionPersonId: g.personId,
+      commissionPersonName: g.personName,
+      periodLabel: `${String(g.month).padStart(2, "0")}/${g.year}`,
+      commissionAmount: Math.round(g.amount * 100) / 100,
+      statusLabel: g.status,
+      source: g.source,
+      commissionsHref: commissionsHrefForSearch(g.personName, g.year),
+    }));
+}
+
+export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): string[] {
+  const money = (n: number) =>
+    n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return [
+    `Fornecedor: ${dto.supplierName}`,
+    `Prestador: ${dto.personName}`,
+    `Documento: ${dto.personDocument ?? "—"}`,
+    `Função/serviço: ${dto.serviceRole ?? "—"}`,
+    `Período: ${dto.contractStartDate} a ${dto.contractEndDate}`,
+    `Status: ${dto.status}`,
+    "",
+    "— Base de cálculo —",
+    `Valor mensal: ${money(dto.monthlyServiceAmount)}`,
+    `Horas/mês: ${dto.monthlyHours}`,
+    `Valor hora: ${money(dto.hourlyServiceAmount)}`,
+    `Valor dia: ${money(dto.dailyServiceAmount)}`,
+    `Descanso anual contratado: ${dto.restDaysPerYear} dias`,
+    `Modo: ${dto.calculationMode === "WORKED_DAYS" ? "Por dias corridos" : "Por meses trabalhados"}`,
+    "",
+    "— Descanso remunerado proporcional —",
+    `Meses trabalhados: ${dto.workedMonths}`,
+    `Dias trabalhados: ${dto.workedDays}`,
+    `Dias proporcionais: ${formatProportionalRestDaysLabel(dto.proportionalRestDays)}`,
+    `Valor descanso proporcional: ${money(dto.proportionalRestAmount)}`,
+    "",
+    "— Comissões vinculadas (fonte oficial; não recalculadas) —",
+    ...(dto.commissionLinks.length
+      ? dto.commissionLinks.map(
+          (l) =>
+            `${l.periodLabel ?? "—"} · ${l.commissionPersonName ?? "—"} · ${money(l.commissionAmount)} · ${l.source ?? "—"}`
+        )
+      : ["Nenhum relatório vinculado."]),
+    `Total comissão vinculada: ${money(dto.commissionReportTotal)}`,
+    "",
+    "— Ajustes —",
+    `Outros créditos: ${money(dto.otherCredits)}`,
+    `Outros descontos: ${money(dto.otherDiscounts)}`,
+    `Obs. ajuste: ${dto.adjustmentNotes ?? "—"}`,
+    "",
+    "— Totalização —",
+    `Total descanso proporcional: ${money(dto.proportionalRestAmount)}`,
+    `Total comissão: ${money(dto.commissionReportTotal)}`,
+    `Total ajustes: ${money(dto.otherAdjustments)}`,
+    `TOTAL FINAL A PAGAR: ${money(dto.totalTerminationAmount)}`,
+    "",
+    "Documento gerado pelo IndusCost.",
+    "Cálculo gerencial/contratual de encerramento de prestação de serviço.",
+    `Notas: ${dto.notes ?? "—"}`,
+  ];
+}
+
+export async function exportSupplierServiceTerminationPdf(input: {
+  supplierId: string;
+  id: string;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<{ buffer: Buffer; filename: string }> {
+  const dto = await getSupplierServiceTermination(input.supplierId, input.id);
+  const buffer = buildMinimalPdfDocument({
+    title: "Encerramento de Prestação de Serviço",
+    lines: buildServiceTerminationPdfLines(dto),
+  });
+  await writeTerminationAudit({
+    entityId: input.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.EXPORT_PDF,
+    afterJson: { total: dto.totalTerminationAmount },
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return {
+    buffer,
+    filename: `encerramento-prestacao-${dto.personName.replace(/\s+/g, "-").slice(0, 40)}.pdf`,
+  };
+}
+
+export async function exportSupplierServiceTerminationXlsx(input: {
+  supplierId: string;
+  id: string;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<{ buffer: Buffer; filename: string }> {
+  const dto = await getSupplierServiceTermination(input.supplierId, input.id);
+  const rows = [
+    ["Campo", "Valor"],
+    ["Fornecedor", dto.supplierName],
+    ["Prestador", dto.personName],
+    ["Período início", dto.contractStartDate],
+    ["Período fim", dto.contractEndDate],
+    ["Valor mensal", dto.monthlyServiceAmount],
+    ["Horas/mês", dto.monthlyHours],
+    ["Valor hora", dto.hourlyServiceAmount],
+    ["Valor dia", dto.dailyServiceAmount],
+    ["Descanso anual (dias)", dto.restDaysPerYear],
+    ["Modo", dto.calculationMode],
+    ["Meses trabalhados", dto.workedMonths],
+    ["Dias trabalhados", dto.workedDays],
+    ["Dias proporcionais", dto.proportionalRestDays],
+    ["Valor descanso proporcional", dto.proportionalRestAmount],
+    ["Total comissão vinculada", dto.commissionReportTotal],
+    ["Outros créditos", dto.otherCredits],
+    ["Outros descontos", dto.otherDiscounts],
+    ["Total final a pagar", dto.totalTerminationAmount],
+    ["Status", dto.status],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Encerramento");
+  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  await writeTerminationAudit({
+    entityId: input.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.EXPORT_XLSX,
+    afterJson: { total: dto.totalTerminationAmount },
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return {
+    buffer,
+    filename: `encerramento-prestacao-${dto.personName.replace(/\s+/g, "-").slice(0, 40)}.xlsx`,
+  };
+}
+
+export type { ServiceTerminationCommissionLinkDto };

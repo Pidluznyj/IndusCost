@@ -9,10 +9,14 @@ import {
   createDefaultFinanceCostCentersUiFilters,
 } from "@/src/lib/financeCostCentersPageTypes";
 import {
+  canCreateSupplierServiceTermination,
   canDeleteFinanceSupplier,
+  canExportSupplierServiceTermination,
+  canFinalizeSupplierServiceTermination,
   canManageFinanceApAllocations,
   canManageFinanceSuppliers,
   canViewFinanceSuppliers,
+  canViewSupplierServiceTermination,
 } from "@/src/lib/financeCostCentersPermissions";
 import {
   FINANCE_HEADER_ACTION_REFRESH,
@@ -131,6 +135,10 @@ export function FinanceSuppliersPage() {
         canManageSuppliers={canManageSuppliers}
         canDeleteSupplier={canDeleteSupplier}
         canReclassifyTitles={canReclassifyTitles}
+        canViewServiceTermination={canViewSupplierServiceTermination(auth)}
+        canCreateServiceTermination={canCreateSupplierServiceTermination(auth)}
+        canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(auth)}
+        canExportServiceTermination={canExportSupplierServiceTermination(auth)}
         onNavigateTab={(tab) => {
           navigate(`${getFinanceSectionPath("cost-centers")}?tab=${tab}`);
         }}

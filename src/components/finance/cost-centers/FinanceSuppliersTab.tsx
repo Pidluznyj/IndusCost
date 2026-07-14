@@ -11,6 +11,10 @@ type Props = {
   canManageSuppliers: boolean;
   canDeleteSupplier: boolean;
   canReclassifyTitles: boolean;
+  canViewServiceTermination?: boolean;
+  canCreateServiceTermination?: boolean;
+  canFinalizeServiceTermination?: boolean;
+  canExportServiceTermination?: boolean;
   onNavigateTab: (tab: FinanceCostCentersTabId) => void;
   onSuppliersChanged?: () => void;
 };

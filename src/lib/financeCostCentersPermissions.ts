@@ -41,6 +41,48 @@ export function canManageFinanceSuppliers(auth: FinanceCostCentersPermissionChec
   return auth.hasPermission("finance.suppliers.manage");
 }
 
+export function canViewSupplierServiceTermination(
+  auth: FinanceCostCentersPermissionCheck
+): boolean {
+  return (
+    auth.hasPermission("finance.suppliers.service_termination.view") ||
+    auth.hasPermission("suppliers.serviceTermination.view") ||
+    canManageFinanceSuppliers(auth) ||
+    canViewFinanceSuppliers(auth)
+  );
+}
+
+export function canCreateSupplierServiceTermination(
+  auth: FinanceCostCentersPermissionCheck
+): boolean {
+  return (
+    auth.hasPermission("finance.suppliers.service_termination.create") ||
+    auth.hasPermission("suppliers.serviceTermination.create") ||
+    canManageFinanceSuppliers(auth)
+  );
+}
+
+export function canFinalizeSupplierServiceTermination(
+  auth: FinanceCostCentersPermissionCheck
+): boolean {
+  return (
+    auth.hasPermission("finance.suppliers.service_termination.finalize") ||
+    auth.hasPermission("suppliers.serviceTermination.finalize") ||
+    canManageFinanceSuppliers(auth)
+  );
+}
+
+export function canExportSupplierServiceTermination(
+  auth: FinanceCostCentersPermissionCheck
+): boolean {
+  return (
+    auth.hasPermission("finance.suppliers.service_termination.export") ||
+    auth.hasPermission("suppliers.serviceTermination.export") ||
+    canManageFinanceSuppliers(auth) ||
+    canViewSupplierServiceTermination(auth)
+  );
+}
+
 export function canDeleteFinanceSupplier(auth: FinanceCostCentersPermissionCheck): boolean {
   if (auth.isSuperAdmin?.()) return true;
   return auth.role === "SUPER_ADMIN";
