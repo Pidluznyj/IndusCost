@@ -10,7 +10,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
 import { sellerDashIso, sellerDashToNumber } from "@/src/lib/crmSellerDashboard";
 import {
+  applySellerNamesToRows,
   buildRawSellerKeyFromRow,
+  buildSellerNameByExternalIdMap,
   consolidateSellerRowFragments,
   consolidatedIdentityMatchesUser,
   consolidatedOptionToSellerOption,
@@ -42,6 +44,62 @@ import type { SellerDashboardResponse } from "@/src/components/crmSellerDashboar
 
 const LIST_LIMIT = 20;
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+type OrderSellerOptionRow = {
+  external_seller_id: number | null;
+  responsible: string | null;
+  orders_count: number;
+};
+
+/**
+ * Para linhas só com ID Nomus, resolve o nome via:
+ * 1) outras linhas do próprio resultado;
+ * 2) qualquer SalesOrder (global) com o mesmo ID e nome preenchido.
+ */
+export async function enrichOrderSellerOptionRowsWithNames(
+  rows: OrderSellerOptionRow[]
+): Promise<OrderSellerOptionRow[]> {
+  const nameById = buildSellerNameByExternalIdMap(rows);
+  const missingIds = [
+    ...new Set(
+      rows
+        .map((r) => r.external_seller_id)
+        .filter(
+          (id): id is number =>
+            id != null && Number.isFinite(id) && id > 0 && !nameById.has(id)
+        )
+    ),
+  ];
+  if (missingIds.length === 0) {
+    return applySellerNamesToRows(rows, nameById);
+  }
+
+  const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
+  try {
+    const found = await prisma.$queryRaw<
+      { external_seller_id: number; responsible: string | null }[]
+    >(Prisma.sql`
+      SELECT
+        so."externalSellerId" AS external_seller_id,
+        MAX(${orderSellerNameSql}) AS responsible
+      FROM "SalesOrder" so
+      WHERE so."externalSellerId" IN (${Prisma.join(missingIds)})
+        AND (${orderSellerNameSql}) IS NOT NULL
+      GROUP BY so."externalSellerId"
+    `);
+    for (const row of found) {
+      const name = (row.responsible ?? "").trim().replace(/\s+/g, " ");
+      if (name) nameById.set(row.external_seller_id, name);
+    }
+  } catch (error) {
+    console.warn(
+      "[crmSellerDashboard] falha ao resolver nomes de vendedor via SalesOrder.",
+      error
+    );
+  }
+
+  return applySellerNamesToRows(rows, nameById);
+}
 
 export type SellerDashboardRequest = {
   scopeMode: "all" | "own";
@@ -400,6 +458,8 @@ export async function buildCrmSellerDashboardResponse(
   const sellerOptions = scopedConsolidated.map(consolidatedOptionToSellerOption);
 
   // Opções do filtro Vendedor do pedido = vendedores Nomus em SalesOrder (não owners).
+  // Agrega por ID com o melhor nome disponível; pedidos sem ID entram pelo nome.
+  // Evita linhas "Vendedor ID X" quando o mesmo ID já tem nome em outros pedidos.
   const orderSellerOptionRows = await prisma.$queryRaw<
     {
       external_seller_id: number | null;
@@ -407,28 +467,43 @@ export async function buildCrmSellerDashboardResponse(
       orders_count: number;
     }[]
   >(Prisma.sql`
-    SELECT
-      so."externalSellerId" AS external_seller_id,
-      ${orderSellerNameSql} AS responsible,
-      COUNT(*)::int AS orders_count
-    FROM "SalesOrder" so
-    WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
-      AND (
-        so."externalSellerId" IS NOT NULL
-        OR (so."nomusSellerName" IS NOT NULL AND TRIM(so."nomusSellerName") <> '')
-        OR (so."responsible" IS NOT NULL AND TRIM(so."responsible") <> '')
+    SELECT * FROM (
+      (
+        SELECT
+          so."externalSellerId" AS external_seller_id,
+          MAX(${orderSellerNameSql}) AS responsible,
+          COUNT(*)::int AS orders_count
+        FROM "SalesOrder" so
+        WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
+          AND so."externalSellerId" IS NOT NULL
+          AND (${soOwnerScope})
+        GROUP BY so."externalSellerId"
       )
-      AND (${soOwnerScope})
-    GROUP BY so."externalSellerId", ${orderSellerNameSql}
+      UNION ALL
+      (
+        SELECT
+          NULL::int AS external_seller_id,
+          ${orderSellerNameSql} AS responsible,
+          COUNT(*)::int AS orders_count
+        FROM "SalesOrder" so
+        WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
+          AND so."externalSellerId" IS NULL
+          AND (${orderSellerNameSql}) IS NOT NULL
+          AND (${soOwnerScope})
+        GROUP BY ${orderSellerNameSql}
+      )
+    ) order_sellers
     ORDER BY orders_count DESC, responsible ASC NULLS LAST
     LIMIT 200
   `);
   const orderSellerOptions = consolidateSellerRowFragments(
-    orderSellerOptionRows.map((row) => ({
-      external_seller_id: row.external_seller_id,
-      responsible: row.responsible,
-      orders_count: row.orders_count,
-    }))
+    await enrichOrderSellerOptionRowsWithNames(
+      orderSellerOptionRows.map((row) => ({
+        external_seller_id: row.external_seller_id,
+        responsible: row.responsible,
+        orders_count: row.orders_count,
+      }))
+    )
   ).map(consolidatedOptionToSellerOption);
 
   // Escopo `own` nunca pode cair em where aberto: sem filtro / IDs vazios

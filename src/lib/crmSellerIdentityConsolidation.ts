@@ -61,6 +61,42 @@ function pickDisplayResponsible(fragments: SellerRowFragment[]): string | null {
   return best;
 }
 
+/** Melhor nome conhecido por `externalSellerId` (prefere o mais completo). */
+export function buildSellerNameByExternalIdMap(
+  rows: { external_seller_id: number | null; responsible: string | null }[]
+): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const row of rows) {
+    const id = row.external_seller_id;
+    const name = (row.responsible ?? "").trim().replace(/\s+/g, " ");
+    if (id == null || !Number.isFinite(id) || !name) continue;
+    const prev = map.get(id);
+    if (!prev || name.length > prev.length) map.set(id, name);
+  }
+  return map;
+}
+
+/**
+ * Preenche `responsible` vazio com nome já conhecido para o mesmo ID Nomus.
+ * Evita opções "Vendedor ID 464" quando o mesmo ID já aparece com nome em outra linha.
+ */
+export function applySellerNamesToRows<
+  T extends {
+    external_seller_id: number | null;
+    responsible: string | null;
+    orders_count: number;
+  },
+>(rows: T[], nameById: Map<number, string>): T[] {
+  if (nameById.size === 0) return rows;
+  return rows.map((row) => {
+    if ((row.responsible ?? "").trim()) return row;
+    if (row.external_seller_id == null) return row;
+    const resolved = nameById.get(row.external_seller_id)?.trim();
+    if (!resolved) return row;
+    return { ...row, responsible: resolved };
+  });
+}
+
 function groupingKeyForFragment(fragment: SellerRowFragment): string {
   const responsible = (fragment.responsible ?? "").trim();
   if (responsible) {
@@ -127,11 +163,16 @@ function buildConsolidatedFromGroup(
 /**
  * Consolida fragmentos do SQL (um por seller_key) em identidades comerciais únicas.
  * Regra: mesmo sellerIdentityKey exato → uma opção; nomes diferentes → separados.
+ * Linhas só com ID herdam o nome de outra linha do mesmo externalSellerId quando existir.
  */
 export function consolidateSellerRowFragments(
   rows: { external_seller_id: number | null; responsible: string | null; orders_count: number }[]
 ): ConsolidatedSellerOption[] {
-  const fragments: SellerRowFragment[] = rows.map((row) => ({
+  const enrichedRows = applySellerNamesToRows(
+    rows,
+    buildSellerNameByExternalIdMap(rows)
+  );
+  const fragments: SellerRowFragment[] = enrichedRows.map((row) => ({
     externalSellerId: row.external_seller_id,
     responsible: row.responsible ?? null,
     ordersCount: row.orders_count ?? 0,

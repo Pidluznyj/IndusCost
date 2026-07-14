@@ -27,6 +27,25 @@ describe("crmSellerIdentityConsolidation", () => {
     assert.equal(options[0]!.mergedFragmentCount, 2);
   });
 
+  it("linha só com ID herda nome do mesmo externalSellerId e não fica 'Vendedor ID'", () => {
+    const options = consolidateSellerRowFragments([
+      { external_seller_id: 464, responsible: "GISLENE LIMA", orders_count: 5 },
+      { external_seller_id: 464, responsible: null, orders_count: 3 },
+      { external_seller_id: 1399, responsible: "Rodrigo Da Silva Ramos", orders_count: 10 },
+      { external_seller_id: 1399, responsible: null, orders_count: 2 },
+    ]);
+    const labels = options.map((o) => o.displayName);
+    assert.deepEqual(labels.sort(), ["GISLENE LIMA", "Rodrigo Da Silva Ramos"].sort());
+    assert.equal(
+      labels.some((n) => /^Vendedor ID\s+\d+$/i.test(n)),
+      false,
+      `não deve exibir ID puro: ${labels.join(", ")}`
+    );
+    const gislene = options.find((o) => o.displayName === "GISLENE LIMA")!;
+    assert.equal(gislene.ordersCount, 8);
+    assert.deepEqual(gislene.externalSellerIds, [464]);
+  });
+
   it("mesmo nome com três IDs Nomus (GISLENE) vira uma opção única", () => {
     const options = consolidateSellerRowFragments([
       { external_seller_id: 464, responsible: "GISLENE LIMA", orders_count: 100 },
