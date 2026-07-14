@@ -335,6 +335,7 @@ import { registerSalesOrderMarginIndicatorsRoutes } from "./src/lib/salesOrderMa
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
+import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
 import {
   buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
@@ -13669,6 +13670,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         auth != null &&
         (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"))
       );
+    },
+  });
+
+  registerSalesOrderReportRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    resolveEmitterName: async (req) => {
+      const user = await getCurrentAppUser(req);
+      return user?.name?.trim() || null;
     },
   });
 

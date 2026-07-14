@@ -1,4 +1,8 @@
+import "@/src/components/print/print-document.css";
+import "@/src/components/sales/sales-order-report-print.css";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -13,6 +17,7 @@ import {
   type SalesOrderListRowSnapshot,
 } from "@/src/components/sales/SalesOrderQuickSummaryDrawer";
 import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
+import { SalesOrderReportPrintDocument } from "@/src/components/sales/SalesOrderReportPrintDocument";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
@@ -27,13 +32,17 @@ import {
   getSalesOrderListInternalMarginExportUrl,
 } from "@/src/lib/salesOrderInternalMarginExportUi";
 import {
-  downloadSalesOrderListReportExport,
-  getSalesOrderListReportExportPdfUrl,
-  getSalesOrderListReportExportXlsxUrl,
   getSalesOrderSellerFilterOptionsUrl,
 } from "@/src/lib/salesOrderListReportExportUi";
+import {
+  downloadSalesOrderReportXlsx,
+  getSalesOrderReportPayloadUrl,
+  getSalesOrderReportXlsxUrl,
+} from "@/src/lib/sales/salesOrderReportExportUi";
+import type { SalesOrderReportPayload } from "@/src/lib/sales/salesOrderReport";
 import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 type SalesOrderRow = SalesOrderListRowSnapshot;
 
@@ -139,6 +148,11 @@ function SalesOrderList() {
   const [exportingInternal, setExportingInternal] = useState(false);
   const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
   const [exportingReportPdf, setExportingReportPdf] = useState(false);
+  const [reportPrintPayload, setReportPrintPayload] = useState<SalesOrderReportPayload | null>(
+    null
+  );
+  const [reportPrintRequestId, setReportPrintRequestId] = useState(0);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [summaryRow, setSummaryRow] = useState<SalesOrderRow | null>(null);
 
@@ -173,33 +187,68 @@ function SalesOrderList() {
 
   const internalExportQuery = listExportQuery;
 
+  const customerLabelForFilename = customerSelection?.name ?? null;
+
   const handleExportReportXlsx = useCallback(async () => {
     setExportingReportXlsx(true);
     try {
-      await downloadSalesOrderListReportExport(
-        getSalesOrderListReportExportXlsxUrl(listExportQuery),
-        "pedidos-venda-relatorio.xlsx"
+      await downloadSalesOrderReportXlsx(
+        getSalesOrderReportXlsxUrl(listExportQuery),
+        customerLabelForFilename
       );
-    } catch {
-      alert("Não foi possível exportar o relatório XLSX de pedidos.");
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível exportar o Excel de pedidos de venda.");
     } finally {
       setExportingReportXlsx(false);
     }
-  }, [listExportQuery]);
+  }, [customerLabelForFilename, listExportQuery]);
 
   const handleExportReportPdf = useCallback(async () => {
+    if (exportingReportPdf) return;
     setExportingReportPdf(true);
     try {
-      await downloadSalesOrderListReportExport(
-        getSalesOrderListReportExportPdfUrl(listExportQuery),
-        "pedidos-venda-relatorio.pdf"
+      const payload = await fetchJsonOk<SalesOrderReportPayload>(
+        getSalesOrderReportPayloadUrl(listExportQuery)
       );
-    } catch {
-      alert("Não foi possível gerar o relatório PDF de pedidos.");
-    } finally {
+      setReportPrintPayload(payload);
+      setReportPrintRequestId((id) => id + 1);
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível gerar o PDF de pedidos de venda.");
       setExportingReportPdf(false);
     }
-  }, [listExportQuery]);
+  }, [exportingReportPdf, listExportQuery]);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
+
+  useEffect(() => {
+    if (reportPrintRequestId === 0 || !reportPrintPayload) return;
+
+    document.body.classList.add("sales-orders-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      setReportPrintPayload(null);
+      setReportPrintRequestId(0);
+      setExportingReportPdf(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [reportPrintRequestId, reportPrintPayload]);
 
   const handleExportInternal = useCallback(async () => {
     setExportingInternal(true);
@@ -445,13 +494,14 @@ function SalesOrderList() {
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sales-orders-no-print">
         <button
           type="button"
           data-testid="sales-orders-export-report-xlsx"
           disabled={exportingReportXlsx}
           onClick={() => void handleExportReportXlsx()}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          title="Exportar Excel branded (padrão Contas a Receber > Títulos)"
         >
           {exportingReportXlsx ? (
             <>
@@ -461,7 +511,7 @@ function SalesOrderList() {
           ) : (
             <>
               <Download className="inline h-4 w-4 mr-1" />
-              Exportar XLSX
+              Exportar Excel
             </>
           )}
         </button>
@@ -471,6 +521,7 @@ function SalesOrderList() {
           disabled={exportingReportPdf}
           onClick={() => void handleExportReportPdf()}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          title="Exportar PDF branded (padrão Contas a Receber > Títulos)"
         >
           {exportingReportPdf ? (
             <>
@@ -479,8 +530,8 @@ function SalesOrderList() {
             </>
           ) : (
             <>
-              <FileText className="inline h-4 w-4 mr-1" />
-              Gerar PDF
+              <Printer className="inline h-4 w-4 mr-1" />
+              Exportar PDF
             </>
           )}
         </button>
@@ -604,6 +655,16 @@ function SalesOrderList() {
           </button>
         </div>
       </div>
+
+      {reportPrintPayload
+        ? createPortal(
+            <SalesOrderReportPrintDocument
+              payload={reportPrintPayload}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
     </div>
   );
 }
