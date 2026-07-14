@@ -16,6 +16,8 @@ import {
   consolidateSellerRowFragments,
   consolidatedIdentityMatchesUser,
   consolidatedOptionToSellerOption,
+  expandSellerFilterWithConsolidatedIds,
+  mergeCommissionSellerNamesIntoMap,
   normalizeSellerIdentityName,
 } from "@/src/lib/crmSellerIdentityConsolidation";
 import {
@@ -54,12 +56,15 @@ type OrderSellerOptionRow = {
 /**
  * Para linhas só com ID Nomus, resolve o nome via:
  * 1) outras linhas do próprio resultado;
- * 2) qualquer SalesOrder (global) com o mesmo ID e nome preenchido.
+ * 2) qualquer SalesOrder (global) com o mesmo ID e nome preenchido;
+ * 3) catálogo de comissionamento (CommissionPerson / Alias) — mesma fonte
+ *    usada em `resolveCommissionSellerIdentity`.
+ * Depois `consolidateSellerRowFragments` junta IDs com o mesmo nome normalizado.
  */
 export async function enrichOrderSellerOptionRowsWithNames(
   rows: OrderSellerOptionRow[]
 ): Promise<OrderSellerOptionRow[]> {
-  const nameById = buildSellerNameByExternalIdMap(rows);
+  let nameById = buildSellerNameByExternalIdMap(rows);
   const missingIds = [
     ...new Set(
       rows
@@ -98,6 +103,55 @@ export async function enrichOrderSellerOptionRowsWithNames(
     );
   }
 
+  const stillMissing = missingIds.filter((id) => !nameById.has(id));
+  if (stillMissing.length > 0) {
+    try {
+      const [persons, aliases] = await Promise.all([
+        prisma.commissionPerson.findMany({
+          where: {
+            type: "SELLER",
+            active: true,
+            nomusPersonId: { in: stillMissing },
+          },
+          select: { nomusPersonId: true, name: true, active: true },
+        }),
+        prisma.commissionPersonAlias.findMany({
+          where: {
+            status: "ACTIVE",
+            rawSellerId: { in: stillMissing },
+          },
+          select: {
+            rawSellerId: true,
+            status: true,
+            rawSellerName: true,
+            commissionedPerson: { select: { name: true, active: true, type: true } },
+          },
+        }),
+      ]);
+      nameById = mergeCommissionSellerNamesIntoMap(
+        nameById,
+        persons,
+        aliases
+          .filter(
+            (a) =>
+              a.commissionedPerson.type === "SELLER" && a.commissionedPerson.active
+          )
+          .map((a) => ({
+            rawSellerId: a.rawSellerId,
+            status: a.status,
+            personName: a.commissionedPerson.name,
+            rawSellerName: a.rawSellerName,
+            personActive: a.commissionedPerson.active,
+          }))
+      );
+    } catch (error) {
+      console.warn(
+        "[crmSellerDashboard] falha ao resolver nomes de vendedor via Comissionamento.",
+        error
+      );
+    }
+  }
+
   return applySellerNamesToRows(rows, nameById);
 }
 
@@ -109,6 +163,8 @@ export type SellerDashboardRequest = {
   sellerIdentityKey: string | null;
   /** Vendedor do pedido (Nomus) — opcional, AND sobre o escopo de carteira */
   orderSellerExternalId?: number | null;
+  /** IDs consolidados da identidade (ex.: 646 + 1399). */
+  orderSellerExternalIds?: number[] | null;
   orderSellerResponsible?: string | null;
   orderSellerIdentityKey?: string | null;
   dateFrom: string | null;
@@ -130,16 +186,27 @@ function salesOrderMatchesOrderSellerFilter(
   if (!hasCrmSellerMatchFilter(filter)) return true;
   const name = (order.nomusSellerName?.trim() || order.responsible?.trim() || "") || null;
   const norm = name ? normalizeSellerIdentityName(name) : "";
+  const ids = [
+    ...new Set(
+      [...(filter.externalSellerIds ?? []), filter.externalSellerId].filter(
+        (id): id is number => id != null && Number.isFinite(id) && id > 0
+      )
+    ),
+  ];
+  const idMatch =
+    order.externalSellerId != null && ids.includes(order.externalSellerId);
   const key = filter.sellerIdentityKey?.trim();
   if (key) {
     if (key.startsWith("__ID_ONLY__:")) {
       const id = Number.parseInt(key.slice("__ID_ONLY__:".length), 10);
-      return Number.isFinite(id) && order.externalSellerId === id;
+      return (
+        (Number.isFinite(id) && order.externalSellerId === id) || idMatch
+      );
     }
-    return norm === normalizeSellerIdentityName(key);
+    return norm === normalizeSellerIdentityName(key) || idMatch;
   }
-  if (filter.externalSellerId != null) {
-    return order.externalSellerId === filter.externalSellerId;
+  if (ids.length > 0) {
+    return idMatch;
   }
   if (filter.responsible?.trim()) {
     return norm === normalizeSellerIdentityName(filter.responsible);
@@ -322,8 +389,9 @@ export async function buildCrmSellerDashboardResponse(
     responsible: filterResponsible,
     sellerIdentityKey: filterSellerIdentityKey,
   };
-  const orderSellerFilter: CrmSellerMatchFilter = {
+  const orderSellerFilterBase: CrmSellerMatchFilter = {
     externalSellerId: input.orderSellerExternalId ?? null,
+    externalSellerIds: input.orderSellerExternalIds ?? null,
     responsible: input.orderSellerResponsible?.trim() || null,
     sellerIdentityKey:
       input.orderSellerIdentityKey?.trim() ||
@@ -332,18 +400,12 @@ export async function buildCrmSellerDashboardResponse(
         : null),
   };
   const hasOwnerFilter = hasCrmSellerMatchFilter(sellerFilter);
-  const hasOrderSellerFilter = hasCrmSellerMatchFilter(orderSellerFilter);
   const commercialOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
   const soOwnerScope = buildCrmCommercialOwnerOnlyOrderScopeSql(
     "so",
     sellerFilter,
     commercialOwnerCustomerIds
   );
-  const soOrderSellerScope = hasOrderSellerFilter
-    ? buildCrmSellerFilterSql("so", orderSellerFilter)
-    : Prisma.sql`TRUE`;
-  /** Carteira (owner) AND vendedor do pedido (opcional). */
-  const soOrdersAxisScope = Prisma.sql`(${soOwnerScope}) AND (${soOrderSellerScope})`;
 
   const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
   const customerNameSql = Prisma.sql`
@@ -505,6 +567,18 @@ export async function buildCrmSellerDashboardResponse(
       }))
     )
   ).map(consolidatedOptionToSellerOption);
+
+  /** Amplia IDs consolidados (ex.: 646 + 1399) como no comissionamento. */
+  const orderSellerFilter: CrmSellerMatchFilter = expandSellerFilterWithConsolidatedIds(
+    orderSellerFilterBase,
+    orderSellerOptions
+  );
+  const hasOrderSellerFilter = hasCrmSellerMatchFilter(orderSellerFilter);
+  const soOrderSellerScope = hasOrderSellerFilter
+    ? buildCrmSellerFilterSql("so", orderSellerFilter)
+    : Prisma.sql`TRUE`;
+  /** Carteira (owner) AND vendedor do pedido (opcional). */
+  const soOrdersAxisScope = Prisma.sql`(${soOwnerScope}) AND (${soOrderSellerScope})`;
 
   // Escopo `own` nunca pode cair em where aberto: sem filtro / IDs vazios
   // → dashboard vazio (vendedor sem carteira ou sem vínculo). Evita 500 e vazamento.
@@ -943,11 +1017,13 @@ export async function buildCrmSellerDashboardResponse(
   `);
 
   const consolidatedBySeller = consolidateSellerRowFragments(
-    byNomusSellerRows.map((row) => ({
-      external_seller_id: row.external_seller_id,
-      responsible: row.responsible,
-      orders_count: row.orders_count,
-    }))
+    await enrichOrderSellerOptionRowsWithNames(
+      byNomusSellerRows.map((row) => ({
+        external_seller_id: row.external_seller_id,
+        responsible: row.responsible,
+        orders_count: row.orders_count,
+      }))
+    )
   );
 
   const sourceInfo = buildSellerDashboardSourceInfo({

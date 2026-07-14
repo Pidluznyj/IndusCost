@@ -1,16 +1,14 @@
 /**
  * Vendedor do pedido na Auditoria 360º — resolução canônica Nomus.
- *
- * Usa `externalSellerId` + aliases/CommissionPerson (vários cadastros → um nome).
- * Não usa Responsável Comercial do CRM como vendedor do pedido.
+ * Delega para `resolveOrderSellerIdentity` (mesma regra de Comissões).
  */
 import type { CommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.js";
 import {
-  buildSalesOrderNomusSellerDto,
-  formatSalesOrderNomusSellerListLabel,
-  type SalesOrderNomusSellerApiStatus,
-} from "@/src/lib/salesOrderNomusSellerDisplay.js";
-import { extractNomusSellerFromPedido } from "@/src/lib/salesOrderNomusSeller.shared.js";
+  ORDER_SELLER_NOT_INFORMED_LABEL,
+  resolveOrderSellerIdentity,
+  type CommissionSnapshotSellerRef,
+} from "@/src/lib/commercial/orderSellerIdentityResolver.js";
+import type { SalesOrderNomusSellerApiStatus } from "@/src/lib/salesOrderNomusSellerDisplay.js";
 
 export type OrderFullAuditSellerDisplay = {
   orderSellerName: string | null;
@@ -20,14 +18,17 @@ export type OrderFullAuditSellerDisplay = {
   rawNomusSellerName: string | null;
 };
 
-function asPedidoRecord(raw: unknown): Record<string, unknown> | null {
-  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  // Payload às vezes vem envelopado.
-  const obj = raw as Record<string, unknown>;
-  if (obj.pedido && typeof obj.pedido === "object" && !Array.isArray(obj.pedido)) {
-    return obj.pedido as Record<string, unknown>;
+function mapStatus(
+  matchType: string,
+  isInformed: boolean,
+  isMapped: boolean
+): SalesOrderNomusSellerApiStatus {
+  if (!isInformed) return "NO_SELLER";
+  if (!isMapped) return "SELLER_UNRESOLVED";
+  if (matchType === "RESOLVED_BY_ALIAS" || matchType.includes("ALIAS")) {
+    return "RESOLVED_BY_ALIAS";
   }
-  return obj;
+  return "RESOLVED";
 }
 
 /**
@@ -40,59 +41,36 @@ export function resolveOrderFullAuditSellerDisplay(
     issueDate?: Date | string | null;
     nomusRawResponse?: unknown;
   },
-  ctx: CommissionSellerIdentityContext
+  ctx: CommissionSellerIdentityContext,
+  commissionSnapshot?: CommissionSnapshotSellerRef | null
 ): OrderFullAuditSellerDisplay {
-  let externalSellerId =
-    order.externalSellerId != null && order.externalSellerId > 0
-      ? order.externalSellerId
-      : null;
-  let rawNomusSellerName = order.nomusSellerName?.trim() || null;
-
-  if (externalSellerId == null || !rawNomusSellerName) {
-    const pedido = asPedidoRecord(order.nomusRawResponse);
-    if (pedido) {
-      const extracted = extractNomusSellerFromPedido(pedido);
-      if (externalSellerId == null && extracted.externalSellerId != null) {
-        externalSellerId = extracted.externalSellerId;
-      }
-      if (!rawNomusSellerName && extracted.nomusSellerName) {
-        rawNomusSellerName = extracted.nomusSellerName;
-      }
-    }
-  }
-
-  const dto = buildSalesOrderNomusSellerDto(
-    { externalSellerId, issueDate: order.issueDate },
+  const resolved = resolveOrderSellerIdentity(
+    { salesOrder: order, commissionSnapshot },
     ctx
   );
+  const resolutionStatus = mapStatus(
+    resolved.matchType,
+    resolved.isInformed,
+    resolved.isMapped
+  );
 
-  if (dto.resolutionStatus === "NO_SELLER") {
+  if (resolutionStatus === "NO_SELLER") {
     return {
-      orderSellerName: rawNomusSellerName,
+      orderSellerName: null,
       orderSellerExternalId: null,
-      resolutionStatus: "NO_SELLER",
-      rawNomusSellerName,
+      resolutionStatus,
+      rawNomusSellerName: resolved.rawName,
     };
   }
 
-  if (
-    dto.resolutionStatus === "RESOLVED" ||
-    dto.resolutionStatus === "RESOLVED_BY_ALIAS"
-  ) {
-    return {
-      orderSellerName: dto.name?.trim() || rawNomusSellerName,
-      orderSellerExternalId: dto.externalSellerId,
-      resolutionStatus: dto.resolutionStatus,
-      rawNomusSellerName,
-    };
-  }
-
-  // SELLER_UNRESOLVED: preferir nome bruto Nomus; senão rótulo com ID.
   return {
+    // UI executiva: nunca devolve null se informado (mostra "não mapeado").
     orderSellerName:
-      rawNomusSellerName || formatSalesOrderNomusSellerListLabel(dto),
-    orderSellerExternalId: dto.externalSellerId,
-    resolutionStatus: "SELLER_UNRESOLVED",
-    rawNomusSellerName,
+      resolved.displayName === ORDER_SELLER_NOT_INFORMED_LABEL
+        ? null
+        : resolved.displayName,
+    orderSellerExternalId: resolved.rawExternalId,
+    resolutionStatus,
+    rawNomusSellerName: resolved.rawName,
   };
 }

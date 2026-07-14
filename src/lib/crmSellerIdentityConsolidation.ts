@@ -97,6 +97,123 @@ export function applySellerNamesToRows<
   });
 }
 
+/**
+ * Mesma ideia do comissionamento (`resolveCommissionSellerIdentity`):
+ * resolve nome canônico a partir de CommissionPerson.nomusPersonId e aliases ACTIVE.
+ * Não sobrescreve nome já presente no mapa (só troca se o canônico for mais completo).
+ */
+export function mergeCommissionSellerNamesIntoMap(
+  nameById: Map<number, string>,
+  persons: Array<{ nomusPersonId: number | null; name: string; active?: boolean }>,
+  aliases: Array<{
+    rawSellerId: number | null;
+    status?: string | null;
+    personName?: string | null;
+    rawSellerName?: string | null;
+    personActive?: boolean;
+  }>
+): Map<number, string> {
+  const map = new Map(nameById);
+
+  const putName = (id: number | null | undefined, rawName: string | null | undefined) => {
+    const name = (rawName ?? "").trim().replace(/\s+/g, " ");
+    if (id == null || !Number.isFinite(id) || id <= 0 || !name) return;
+    const prev = map.get(id);
+    if (!prev || name.length > prev.length) map.set(id, name);
+  };
+
+  for (const person of persons) {
+    if (person.active === false) continue;
+    putName(person.nomusPersonId, person.name);
+  }
+
+  for (const alias of aliases) {
+    if (alias.status && alias.status !== "ACTIVE") continue;
+    if (alias.personActive === false) continue;
+    putName(alias.rawSellerId, alias.personName ?? alias.rawSellerName);
+  }
+
+  return map;
+}
+
+/**
+ * Quando o filtro do CRM aponta uma identidade consolidada, amplia com todos os
+ * IDs Nomus do grupo (cobre pedidos com ID sem nome no SalesOrder).
+ */
+export function expandSellerFilterWithConsolidatedIds<
+  T extends {
+    sellerIdentityKey: string;
+    externalSellerId: number | null;
+    externalSellerIds: number[];
+  },
+>(
+  filter: {
+    externalSellerId: number | null;
+    responsible: string | null;
+    sellerIdentityKey: string | null;
+    externalSellerIds?: number[] | null;
+  },
+  options: readonly T[]
+): {
+  externalSellerId: number | null;
+  responsible: string | null;
+  sellerIdentityKey: string | null;
+  externalSellerIds: number[] | null;
+} {
+  const key = filter.sellerIdentityKey?.trim() || null;
+  const seedId = filter.externalSellerId;
+  let matched =
+    (key
+      ? options.find((o) => o.sellerIdentityKey === key)
+      : undefined) ??
+    (seedId != null
+      ? options.find(
+          (o) => o.externalSellerId === seedId || o.externalSellerIds.includes(seedId)
+        )
+      : undefined);
+
+  if (!matched && key?.startsWith(ID_ONLY_PREFIX)) {
+    const id = Number.parseInt(key.slice(ID_ONLY_PREFIX.length), 10);
+    if (Number.isFinite(id)) {
+      matched = options.find(
+        (o) => o.externalSellerId === id || o.externalSellerIds.includes(id)
+      );
+    }
+  }
+
+  if (!matched) {
+    return {
+      ...filter,
+      externalSellerIds: filter.externalSellerIds?.length
+        ? [...filter.externalSellerIds]
+        : null,
+    };
+  }
+
+  const ids = [
+    ...new Set(
+      [
+        ...(filter.externalSellerIds ?? []),
+        ...matched.externalSellerIds,
+        matched.externalSellerId,
+        seedId,
+      ].filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ].sort((a, b) => a - b);
+
+  const nextKey =
+    matched.sellerIdentityKey.startsWith(ID_ONLY_PREFIX) && key
+      ? key
+      : matched.sellerIdentityKey;
+
+  return {
+    externalSellerId: matched.externalSellerId ?? seedId,
+    responsible: filter.responsible,
+    sellerIdentityKey: nextKey,
+    externalSellerIds: ids.length > 0 ? ids : null,
+  };
+}
+
 function groupingKeyForFragment(fragment: SellerRowFragment): string {
   const responsible = (fragment.responsible ?? "").trim();
   if (responsible) {

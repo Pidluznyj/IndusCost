@@ -121,5 +121,28 @@ describe("crmSellerMatchSql — vendedor do pedido vs carteira", () => {
       }),
       true
     );
+    assert.equal(
+      hasCrmSellerMatchFilter({
+        externalSellerId: null,
+        responsible: null,
+        sellerIdentityKey: null,
+        externalSellerIds: [646, 1399],
+      }),
+      true
+    );
+  });
+
+  it("filtro por nome + IDs consolidados usa OR (cobre pedido sem nome)", () => {
+    const text = sqlText(
+      buildCrmSellerFilterSql("so", {
+        externalSellerId: null,
+        responsible: null,
+        sellerIdentityKey: "rodrigo da silva ramos",
+        externalSellerIds: [646, 1399],
+      })
+    );
+    assert.match(text, / OR /i);
+    assert.match(text, /externalSellerId/);
+    assert.match(text, /nomusSellerName/);
   });
 });

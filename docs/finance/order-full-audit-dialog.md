@@ -23,6 +23,28 @@ IndusCost: origem comercial (proposta), cabeçalho do pedido, itens, documentos
 de saída, NF-e, títulos de Contas a Receber, baixas, entrega, produção e
 frete, margem/preço/custo, comissão, divergências e evidência técnica.
 
+### 1.0 Vendedor do Pedido resolvido
+
+Três eixos distintos (nunca misturar labels):
+
+| Conceito | Fonte | Uso |
+|----------|--------|-----|
+| Vendedor raw Nomus | `SalesOrder.externalSellerId` / `nomusSellerName` (+ snapshot se incompleto) | Auditoria técnica / ID externo |
+| **Vendedor do Pedido resolvido** | `resolveOrderSellerIdentity` → CommissionPerson / Alias (igual Comissões) | Label executivo em todas as abas |
+| Responsável Comercial CRM | `CrmCustomerCommercialOwner` | Carteira — **não** é vendedor comissionável |
+
+Regras de exibição:
+
+- Nome principal = canônico; **nunca** `Vendedor ID 1399`.
+- ID só em “ID externo vendedor” / técnico.
+- `Sem vendedor informado` só se não houver raw em SalesOrder **nem** snapshot.
+- Raw sem alias → `Vendedor não mapeado` + `SELLER_ALIAS_NOT_MAPPED`.
+- Vendedor comissionável (aba Comissões) = mesmo canônico do Pedido.
+
+DTO: `summary.orderSeller` / `salesOrder.orderSeller` e `commercialResponsible`.
+
+QA: `scripts/qaOrderFullAuditSellerResolution.ts` · diagnóstico: `tmp-audits/inspect-order-full-audit-seller-resolution-pd02523.ts`.
+
 ### 1.1 Princípio: orquestradora, não motor paralelo
 
 A Auditoria 360º é **central de leitura e cruzamento**. Ela **não é dona da

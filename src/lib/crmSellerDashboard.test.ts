@@ -111,7 +111,7 @@ describe("crmSellerDashboard", () => {
     assert.ok(traceCard?.description?.includes("rastreabilidade"));
   });
 
-  it("serviço por vendedor usa responsável comercial + SalesOrder (não Proposal/comissão)", () => {
+  it("serviço por vendedor usa responsável comercial + SalesOrder (não Proposal/cálculo de comissão)", () => {
     const service = readFileSync(
       join(process.cwd(), "src/lib/crmSellerDashboardService.ts"),
       "utf8"
@@ -122,7 +122,9 @@ describe("crmSellerDashboard", () => {
     assert.match(service, /sourceInfo/);
     assert.match(service, /RESPONSAVEL_COMERCIAL_CLIENTE|buildSellerDashboardSourceInfo/);
     assert.equal(service.includes('"Proposal"'), false);
-    assert.equal(/commission/i.test(service), false);
+    // CommissionPerson/Alias só para resolver nome do Vendedor do Pedido (não calcular comissão).
+    assert.match(service, /mergeCommissionSellerNamesIntoMap|commissionPerson/);
+    assert.doesNotMatch(service, /commissionExpectedAmount|CommissionOrderSnapshot/);
     assert.equal(service.includes("buildCrmSellerPortfolioOrderScopeSql"), false);
   });
 

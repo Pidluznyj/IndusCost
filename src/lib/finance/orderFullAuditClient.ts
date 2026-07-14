@@ -298,7 +298,25 @@ export type OrderFullAuditSummary = {
   paymentMethod: string | null;
   freightCondition: string | null;
   commercialResponsibleName: string | null;
+  commercialResponsible?: {
+    id: string | null;
+    name: string | null;
+    displayName: string;
+    source: "CRM" | "AUTO_ASSIGNED" | "NONE";
+  };
   orderSellerName: string | null;
+  orderSellerExternalId?: number | null;
+  orderSeller?: {
+    rawExternalId: string | null;
+    rawName: string | null;
+    canonicalId: string | null;
+    canonicalName: string | null;
+    displayName: string;
+    isInformed: boolean;
+    isMapped: boolean;
+    matchType: string;
+    source: "SALES_ORDER" | "COMMISSION_SNAPSHOT" | "ALIAS" | "FALLBACK" | "NONE";
+  };
   operationalResponsibleArea: string | null;
   originalOrderValue: number;
   canceledOrderValue: number;
@@ -491,8 +509,25 @@ export type OrderFullAuditSalesOrderBlock = {
   operationalSector: string | null;
   operationalResponsibleName: string | null;
   commercialResponsibleName: string | null;
+  commercialResponsible?: {
+    id: string | null;
+    name: string | null;
+    displayName: string;
+    source: "CRM" | "AUTO_ASSIGNED" | "NONE";
+  };
   orderSellerName: string | null;
   orderSellerExternalId: number | null;
+  orderSeller?: {
+    rawExternalId: string | null;
+    rawName: string | null;
+    canonicalId: string | null;
+    canonicalName: string | null;
+    displayName: string;
+    isInformed: boolean;
+    isMapped: boolean;
+    matchType: string;
+    source: "SALES_ORDER" | "COMMISSION_SNAPSHOT" | "ALIAS" | "FALLBACK" | "NONE";
+  };
   paymentTerms: string | null;
   paymentTermsText: string | null;
   paymentMethod: string | null;

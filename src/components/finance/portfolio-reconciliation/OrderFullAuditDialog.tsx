@@ -406,13 +406,18 @@ function SummaryTab({
           <Kpi
             label="Responsável comercial"
             value={
+              summary.commercialResponsible?.displayName?.trim() ||
               summary.commercialResponsibleName?.trim() ||
               "Sem responsável comercial"
             }
           />
           <Kpi
             label="Vendedor do pedido"
-            value={summary.orderSellerName?.trim() || "Sem vendedor informado"}
+            value={
+              summary.orderSeller?.displayName?.trim() ||
+              summary.orderSellerName?.trim() ||
+              "Sem vendedor informado"
+            }
           />
           <Kpi
             label="Status operacional"
@@ -4614,6 +4619,10 @@ function formatSignedInteger(value: number): string {
 
 const SALES_ORDER_ALERT_CODES = new Set([
   "SELLER_NOT_INFORMED",
+  "SELLER_ALIAS_NOT_MAPPED",
+  "SELLER_MISSING_IN_SALES_ORDER_BUT_PRESENT_IN_SNAPSHOT",
+  "SELLER_SOURCE_MISMATCH",
+  "SELLER_SOURCE_FROM_COMMISSION_SNAPSHOT",
   "COMMERCIAL_RESPONSIBLE_MISSING",
   "PAYMENT_TERM_MISSING",
   "DELIVERY_DATE_OVERDUE",
@@ -4632,8 +4641,19 @@ function SalesOrderTab({
   summary: OrderFullAuditSummary;
   alerts: OrderFullAuditAlert[];
 }): JSX.Element {
-  const commercialName = salesOrder.commercialResponsibleName?.trim() ?? "";
-  const sellerName = salesOrder.orderSellerName?.trim() ?? "";
+  const commercialName =
+    salesOrder.commercialResponsible?.displayName?.trim() ||
+    salesOrder.commercialResponsibleName?.trim() ||
+    "";
+  const sellerName =
+    salesOrder.orderSeller?.displayName?.trim() ||
+    salesOrder.orderSellerName?.trim() ||
+    "";
+  const sellerExternalId =
+    salesOrder.orderSellerExternalId ??
+    (salesOrder.orderSeller?.rawExternalId != null
+      ? Number(salesOrder.orderSeller.rawExternalId)
+      : null);
   const operationalName = salesOrder.operationalResponsibleName?.trim() ?? "";
   const sectorName = salesOrder.operationalSector?.trim() ?? "";
   const tabAlerts = alerts.filter((a) => SALES_ORDER_ALERT_CODES.has(a.code));
@@ -4804,20 +4824,20 @@ function SalesOrderTab({
           <Kpi
             label="Vendedor Pedido (Nomus)"
             value={sellerName || "Sem vendedor informado"}
-            tone={sellerName ? "neutral" : "warning"}
+            tone={
+              sellerName && sellerName !== "Vendedor não mapeado"
+                ? "neutral"
+                : "warning"
+            }
             help={
-              salesOrder.orderSellerExternalId != null
-                ? `Nomus externalSellerId=${salesOrder.orderSellerExternalId}`
+              sellerExternalId != null
+                ? `Nomus externalSellerId=${sellerExternalId}`
                 : "Deve vir do Pedido de Venda no Nomus."
             }
           />
           <Kpi
             label="ID externo vendedor"
-            value={
-              salesOrder.orderSellerExternalId != null
-                ? String(salesOrder.orderSellerExternalId)
-                : "—"
-            }
+            value={sellerExternalId != null ? String(sellerExternalId) : "—"}
           />
           <Kpi label="Setor / Responsável operacional" value={sectorName || "—"} />
         </div>

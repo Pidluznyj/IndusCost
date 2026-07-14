@@ -5,7 +5,11 @@
 | Conceito | Fonte | Uso |
 |----------|--------|-----|
 | **Responsável da carteira** (`CrmCustomerCommercialOwner`) | CRM / cadastro do cliente | Carteira, relacionamento, follow-up, filtro de clientes |
-| **Vendedor do pedido** | `SalesOrder.nomusSellerName` + `externalSellerId` (Nomus) | Análise de vendas, filtro de pedidos, comissão |
+| **Vendedor do pedido** | Raw Nomus → **canônico** via `orderSellerIdentityResolver` / CommissionPerson | Análise de vendas, filtro de pedidos, comissão, Auditoria 360º |
+
+Ver também: [crm-order-seller-canonical-grouping.md](./crm-order-seller-canonical-grouping.md).
+
+Autoatribuição de carteira **não** persiste label `Vendedor ID N` — exige nome real.
 
 ## Autoatribuição
 

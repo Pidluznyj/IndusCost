@@ -8,6 +8,7 @@ import { writeCommercialAuditLog } from "@/src/lib/commercialAuditLog.js";
 import { isForbiddenCommercialResponsibleName } from "@/src/lib/commercial/crmCommercialResponsibleResolver.js";
 import { CRM_CUSTOMER_COMMERCIAL_OWNER_ENTITY } from "@/src/lib/crmCustomerCommercialOwner.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { isSellerIdOnlyLabel } from "@/src/lib/commercial/orderSellerIdentityResolver.js";
 
 export const AUTO_ASSIGN_SOURCE = "AUTO_FROM_SALES_ORDER_SELLER" as const;
 
@@ -39,11 +40,10 @@ function resolveSellerLabel(row: {
   responsible: string | null;
   externalSellerId: number | null;
 }): string | null {
-  const name =
-    row.nomusSellerName?.trim() ||
-    row.responsible?.trim() ||
-    (row.externalSellerId != null ? `Vendedor ID ${row.externalSellerId}` : null);
-  return name?.trim() || null;
+  // Nunca persistir "Vendedor ID N" como Responsável Comercial.
+  const name = row.nomusSellerName?.trim() || row.responsible?.trim() || null;
+  if (!name || isSellerIdOnlyLabel(name)) return null;
+  return name;
 }
 
 export function isMappableOrderSeller(row: {
@@ -151,13 +151,7 @@ export async function previewCommercialOwnerAutoAssignFromOrders(
       lso.order_code,
       lso.external_sales_order_id,
       lso.external_seller_id,
-      COALESCE(
-        lso.seller_name,
-        CASE WHEN lso.external_seller_id IS NOT NULL
-          THEN CONCAT('Vendedor ID ', lso.external_seller_id::text)
-          ELSE NULL
-        END
-      ) AS seller_name,
+      lso.seller_name AS seller_name,
       COALESCE(sc.distinct_seller_count, 0)::int AS distinct_seller_count
     FROM eligible_customers ec
     INNER JOIN latest_seller_order lso ON lso.customer_id = ec.id

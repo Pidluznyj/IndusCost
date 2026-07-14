@@ -22,8 +22,9 @@ export function formatSellerDisplayName(responsible: string | null, externalSell
   if (responsible?.trim()) {
     return responsible.trim().replace(/\s+/g, " ");
   }
+  // ID cru nunca é label executivo — o ID vai em campo técnico / sublabel.
   if (externalSellerId != null) {
-    return `Vendedor ID ${externalSellerId}`;
+    return "Vendedor não mapeado";
   }
   return "";
 }

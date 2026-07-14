@@ -20,6 +20,7 @@ import type { PrismaClient } from "@prisma/client";
 import { loadManualCommercialOwnersForCustomers } from "@/src/lib/crmCustomerCommercialOwner.js";
 import type { ResolvedCustomerCommercialOwner } from "@/src/lib/crmCustomerCommercialOwnerTypes.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { isSellerIdOnlyLabel } from "@/src/lib/commercial/orderSellerIdentityResolver.js";
 
 /**
  * Rótulos administrativos/setores que NUNCA podem aparecer como Responsável
@@ -44,6 +45,7 @@ export function isForbiddenCommercialResponsibleName(
   name: string | null | undefined
 ): boolean {
   if (!name) return false;
+  if (isSellerIdOnlyLabel(name)) return true;
   const canonical = normalizeSellerIdentityName(name);
   if (!canonical) return false;
   return FORBIDDEN_COMMERCIAL_RESPONSIBLE_NAME_HINTS.some((hint) =>

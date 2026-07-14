@@ -33,4 +33,9 @@ Não alterar automaticamente. Ajustes em valores já pagos = apenas sinalizaçã
 
 Usar vendedor canônico (`CommissionPerson` + alias), alinhado entre telas.
 
-Ver também: [commission-main-vs-order-audit-source-map.md](./commission-main-vs-order-audit-source-map.md).
+**Auditoria 360º / CRM:** o mesmo canônico alimentar `resolveOrderSellerIdentity`
+(`src/lib/commercial/orderSellerIdentityResolver.ts`). Vendedor comissionável =
+Vendedor do Pedido resolvido. ID Nomus só em campo técnico — nunca como label.
+
+Ver também: [commission-main-vs-order-audit-source-map.md](./commission-main-vs-order-audit-source-map.md)
+e [crm-order-seller-canonical-grouping.md](../commercial/crm-order-seller-canonical-grouping.md).

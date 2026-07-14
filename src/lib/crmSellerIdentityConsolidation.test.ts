@@ -7,10 +7,13 @@ import {
   formatSellerOptionLabel,
 } from "@/src/components/crmSellerDashboardUi.js";
 import {
+  applySellerNamesToRows,
   consolidateSellerRowFragments,
   consolidatedIdentityMatchesUser,
   consolidatedOptionToSellerOption,
+  expandSellerFilterWithConsolidatedIds,
   formatConsolidatedSellerAuditLabel,
+  mergeCommissionSellerNamesIntoMap,
 } from "@/src/lib/crmSellerIdentityConsolidation.js";
 
 describe("crmSellerIdentityConsolidation", () => {
@@ -104,6 +107,49 @@ describe("crmSellerIdentityConsolidation", () => {
     assert.match(formatConsolidatedSellerAuditLabel(options[0]!), /pedidos: 15/);
   });
 
+  it("ID sem nome no pedido vira nome via CommissionPerson e junta com o mesmo nome", () => {
+    const nameById = mergeCommissionSellerNamesIntoMap(
+      new Map(),
+      [{ nomusPersonId: 1399, name: "Rodrigo Da Silva Ramos", active: true }],
+      [
+        {
+          rawSellerId: 1399,
+          status: "ACTIVE",
+          personName: "Rodrigo Da Silva Ramos",
+          rawSellerName: "Vendedor 1399",
+          personActive: true,
+        },
+      ]
+    );
+    assert.equal(nameById.get(1399), "Rodrigo Da Silva Ramos");
+
+    const enriched = applySellerNamesToRows(
+      [
+        { external_seller_id: 1399, responsible: null, orders_count: 3 },
+        {
+          external_seller_id: 646,
+          responsible: "Rodrigo Da Silva Ramos",
+          orders_count: 4,
+        },
+      ],
+      nameById
+    );
+    const options = consolidateSellerRowFragments(enriched);
+    assert.equal(options.length, 1);
+    assert.equal(options[0]!.displayName, "Rodrigo Da Silva Ramos");
+    assert.deepEqual(options[0]!.externalSellerIds, [646, 1399]);
+
+    const expanded = expandSellerFilterWithConsolidatedIds(
+      {
+        externalSellerId: null,
+        responsible: null,
+        sellerIdentityKey: options[0]!.sellerIdentityKey,
+      },
+      options.map(consolidatedOptionToSellerOption)
+    );
+    assert.deepEqual(expanded.externalSellerIds, [646, 1399]);
+  });
+
   it("nomes diferentes não são consolidados", () => {
     const options = consolidateSellerRowFragments([
       { external_seller_id: 100, responsible: "Ana Souza", orders_count: 3 },
@@ -165,6 +211,9 @@ describe("crmSellerIdentityConsolidation", () => {
     assert.match(service, /consolidateSellerRowFragments/);
     assert.match(service, /consolidatedOptionToSellerOption/);
     assert.match(service, /sellerIdentityKey/);
+    assert.match(service, /mergeCommissionSellerNamesIntoMap/);
+    assert.match(service, /expandSellerFilterWithConsolidatedIds/);
+    assert.match(service, /commissionPerson/);
     assert.doesNotMatch(service, /sellerOptionsRows\.filter\(sellerRowInScope\)/);
   });
 

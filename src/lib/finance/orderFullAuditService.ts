@@ -24,6 +24,14 @@ import {
   isInactiveSalesOrderItemNomusFlags,
 } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
 import { loadManualCommercialOwnersForCustomers } from "@/src/lib/crmCustomerCommercialOwner.js";
+import {
+  resolveCommercialResponsibleDisplay,
+  resolveOrderSellerIdentity,
+  toOrderSellerDto,
+  type ResolvedCommercialResponsibleDisplay,
+  type ResolvedOrderSellerIdentity,
+} from "@/src/lib/commercial/orderSellerIdentityResolver.js";
+import { loadCommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.server.js";
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
 import type { SalesOrderListReceivableInput } from "@/src/lib/salesOrderListPaymentSchedule.js";
 import { buildSalesOrderPlannedReceivables } from "./salesOrderPlannedReceivables.js";
@@ -619,9 +627,11 @@ export type OrderFullAuditSalesOrderBlock = {
   operationalResponsibleName: string | null;
   /** Vem do CRM/carteira do cliente (CrmCustomerCommercialOwner). Único responsável comercial oficial. */
   commercialResponsibleName: string | null;
-  /** Vendedor do Pedido de Venda no Nomus (`nomusSellerName`). */
+  commercialResponsible: ResolvedCommercialResponsibleDisplay;
+  /** Vendedor do Pedido resolvido (canônico) — nunca ID cru como label. */
   orderSellerName: string | null;
   orderSellerExternalId: number | null;
+  orderSeller: ReturnType<typeof toOrderSellerDto>;
   paymentTerms: string | null;
   /** Texto humano da condição de pagamento (quando o Nomus expõe além do código). */
   paymentTermsText: string | null;
@@ -1172,7 +1182,10 @@ export type OrderFullAuditPayload = {
     paymentMethod: string | null;
     freightCondition: string | null;
     commercialResponsibleName: string | null;
+    commercialResponsible: ResolvedCommercialResponsibleDisplay;
     orderSellerName: string | null;
+    orderSellerExternalId: number | null;
+    orderSeller: ReturnType<typeof toOrderSellerDto>;
     operationalResponsibleArea: string | null;
     originalOrderValue: number;
     canceledOrderValue: number;
@@ -2592,15 +2605,23 @@ export async function loadOrderFullAudit(
   }
 
   // Responsável comercial do CRM (mesmo helper do grid Status Pedidos).
+  // Nunca promove "Vendedor ID N" a label de carteira.
+  let commercialResponsible = resolveCommercialResponsibleDisplay({});
   let commercialResponsibleName: string | null = null;
   if (order.customerId) {
     try {
       const ownerMap = await loadManualCommercialOwnersForCustomers([order.customerId]);
       const owner = ownerMap.get(order.customerId);
+      commercialResponsible = resolveCommercialResponsibleDisplay({
+        ownerId: null,
+        canonicalName: owner?.sellerCanonicalName,
+        responsibleName: owner?.sellerResponsibleName,
+        source: owner?.source ?? null,
+      });
       commercialResponsibleName =
-        owner?.sellerCanonicalName?.trim() ||
-        owner?.sellerResponsibleName?.trim() ||
-        null;
+        commercialResponsible.source === "NONE"
+          ? null
+          : commercialResponsible.name;
     } catch (error) {
       console.warn(
         "[orderFullAuditService] falha ao carregar CrmCustomerCommercialOwner.",
@@ -2608,6 +2629,19 @@ export async function loadOrderFullAudit(
       );
     }
   }
+
+  const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
+  let orderSellerResolved: ResolvedOrderSellerIdentity = resolveOrderSellerIdentity(
+    {
+      salesOrder: {
+        externalSellerId: order.externalSellerId,
+        nomusSellerName: order.nomusSellerName,
+        issueDate: order.issueDate,
+        nomusRawResponse: order.nomusRawResponse,
+      },
+    },
+    sellerIdentityCtx
+  );
 
   // Metadados da run (finishedAt) para header do modal / auditoria.
   let orderToCashFinishedAt: string | null = null;
@@ -2722,6 +2756,8 @@ export async function loadOrderFullAudit(
     stockDocuments: [...stockMap.values()],
     nfes: [...nfeMap.values()],
     commercialResponsibleName,
+    commercialResponsible,
+    orderSeller: orderSellerResolved,
     alertCount: 0,
   });
 
@@ -2795,11 +2831,40 @@ export async function loadOrderFullAudit(
     commercialResponsibleName,
   });
 
+  // Re-resolve com snapshot ACTIVE — mesma língua da aba Comissões (PD 02523).
+  orderSellerResolved = resolveOrderSellerIdentity(
+    {
+      salesOrder: {
+        externalSellerId: order.externalSellerId,
+        nomusSellerName: order.nomusSellerName,
+        issueDate: order.issueDate,
+        nomusRawResponse: order.nomusRawResponse,
+      },
+      commissionSnapshot: commissionsBlock.present
+        ? {
+            rawSellerId: commissionsBlock.rawSellerId,
+            rawSellerName: commissionsBlock.rawSellerName,
+            canonicalSellerId: commissionsBlock.canonicalSellerId,
+            canonicalSellerName: commissionsBlock.canonicalSellerName,
+          }
+        : null,
+    },
+    sellerIdentityCtx
+  );
+  summary.orderSellerName = orderSellerResolved.isMapped
+    ? orderSellerResolved.canonicalName
+    : orderSellerResolved.isInformed
+      ? orderSellerResolved.displayName
+      : null;
+  summary.orderSellerExternalId = orderSellerResolved.rawExternalId;
+  summary.orderSeller = toOrderSellerDto(orderSellerResolved);
+
   const alerts = buildAlerts({
     order,
     items,
     facts,
     summary,
+    orderSeller: orderSellerResolved,
     receivables: dedupReceivables,
     plannedReceivables,
     stockDocuments: [...stockMap.values()],
@@ -2821,6 +2886,8 @@ export async function loadOrderFullAudit(
     customer: order.Customer,
     items,
     commercialResponsibleName,
+    commercialResponsible,
+    orderSeller: orderSellerResolved,
   });
 
   // Bloco 8 — recebimentos derivados diretamente dos CRs baixados.
@@ -3394,6 +3461,8 @@ function buildSalesOrderBlock(input: {
   customer: { id: string; companyName: string; tradeName: string | null; taxId: string | null } | null;
   items: OrderFullAuditItem[];
   commercialResponsibleName: string | null;
+  commercialResponsible: ResolvedCommercialResponsibleDisplay;
+  orderSeller: ResolvedOrderSellerIdentity;
 }): OrderFullAuditSalesOrderBlock {
   const order = input.order;
   const raw = order.nomusRawResponse;
@@ -3534,8 +3603,14 @@ function buildSalesOrderBlock(input: {
     operationalSector: order.responsible ?? null,
     operationalResponsibleName: order.responsible ?? null,
     commercialResponsibleName: input.commercialResponsibleName,
-    orderSellerName: order.nomusSellerName ?? null,
-    orderSellerExternalId: order.externalSellerId ?? null,
+    commercialResponsible: input.commercialResponsible,
+    orderSellerName: input.orderSeller.isMapped
+      ? input.orderSeller.canonicalName
+      : input.orderSeller.isInformed
+        ? input.orderSeller.displayName
+        : null,
+    orderSellerExternalId: input.orderSeller.rawExternalId,
+    orderSeller: toOrderSellerDto(input.orderSeller),
     paymentTerms: order.paymentTerms ?? null,
     paymentTermsText,
     paymentMethod: order.paymentMethod ?? null,
@@ -4891,6 +4966,8 @@ function buildSummary(input: {
   stockDocuments: OrderFullAuditStockDocument[];
   nfes: OrderFullAuditNfe[];
   commercialResponsibleName: string | null;
+  commercialResponsible: ResolvedCommercialResponsibleDisplay;
+  orderSeller: ResolvedOrderSellerIdentity;
   alertCount: number;
 }): OrderFullAuditPayload["summary"] {
   const order = input.order;
@@ -5025,7 +5102,14 @@ function buildSummary(input: {
     paymentMethod: order?.paymentMethod ?? null,
     freightCondition: order?.freightCondition ?? null,
     commercialResponsibleName: input.commercialResponsibleName,
-    orderSellerName: order?.nomusSellerName ?? null,
+    commercialResponsible: input.commercialResponsible,
+    orderSellerName: input.orderSeller.isMapped
+      ? input.orderSeller.canonicalName
+      : input.orderSeller.isInformed
+        ? input.orderSeller.displayName
+        : null,
+    orderSellerExternalId: input.orderSeller.rawExternalId,
+    orderSeller: toOrderSellerDto(input.orderSeller),
     operationalResponsibleArea: order?.responsible ?? null,
     originalOrderValue: round2(orderNetValue),
     canceledOrderValue: canceledValue,
@@ -5254,6 +5338,7 @@ function buildAlerts(input: {
   items: OrderFullAuditItem[];
   facts: OrderToCashAuditFactRecord[];
   summary: OrderFullAuditPayload["summary"];
+  orderSeller: ResolvedOrderSellerIdentity;
   receivables: OrderFullAuditReceivable[];
   plannedReceivables: OrderFullAuditPlannedReceivable[];
   stockDocuments: OrderFullAuditStockDocument[];
@@ -5960,16 +6045,56 @@ function buildAlerts(input: {
   // Divergências oficiais da aba Pedido de Venda
   // -------------------------------------------------------------------
   const order = input.order;
+  const orderSeller = input.orderSeller;
 
-  if (input.summary.orderSellerName == null || !input.summary.orderSellerName.trim()) {
+  if (orderSeller.alertCodes.includes("SELLER_NOT_INFORMED") && !orderSeller.isInformed) {
     push({
       code: "SELLER_NOT_INFORMED",
       severity: "warning",
       title: "Vendedor Pedido ausente",
       description:
-        "SalesOrder sem `externalSellerId` / `nomusSellerName` do Nomus — comissão não pode ser calculada automaticamente.",
+        "Pedido sem vendedor raw no SalesOrder nem no snapshot de comissão.",
       origin: "SalesOrder",
       action: "Corrigir cadastro do vendedor no Pedido de Venda no Nomus.",
+      financialImpact: null,
+    });
+  }
+  if (orderSeller.alertCodes.includes("SELLER_ALIAS_NOT_MAPPED")) {
+    push({
+      code: "SELLER_ALIAS_NOT_MAPPED",
+      severity: "warning",
+      title: "Vendedor Pedido não mapeado",
+      description: `Há vendedor raw (ID ${orderSeller.rawExternalId ?? "—"}) sem CommissionPerson/Alias canônico.`,
+      origin: "SalesOrder × CommissionPersonAlias",
+      action: "Cadastrar alias do vendedor Nomus no comissionamento.",
+      financialImpact: null,
+    });
+  }
+  if (
+    orderSeller.alertCodes.includes(
+      "SELLER_MISSING_IN_SALES_ORDER_BUT_PRESENT_IN_SNAPSHOT"
+    )
+  ) {
+    push({
+      code: "SELLER_MISSING_IN_SALES_ORDER_BUT_PRESENT_IN_SNAPSHOT",
+      severity: "info",
+      title: "Vendedor resolvido pelo snapshot de comissão",
+      description:
+        "SalesOrder estava incompleto; vendedor veio do CommissionOrderSnapshot ACTIVE.",
+      origin: "CommissionOrderSnapshot × SalesOrder",
+      action: "Completar externalSellerId/nomusSellerName no Pedido Nomus na próxima sync.",
+      financialImpact: null,
+    });
+  }
+  if (orderSeller.alertCodes.includes("SELLER_SOURCE_MISMATCH")) {
+    push({
+      code: "SELLER_SOURCE_MISMATCH",
+      severity: "warning",
+      title: "Vendedor diverge entre Pedido e snapshot",
+      description:
+        "SalesOrder.externalSellerId difere do rawSellerId do CommissionOrderSnapshot.",
+      origin: "CommissionOrderSnapshot × SalesOrder",
+      action: "Revisar rematerialização de comissão e sync do pedido.",
       financialImpact: null,
     });
   }
@@ -6435,16 +6560,18 @@ function buildAlerts(input: {
   const orderTotalCommission =
     commissions.totals.totalFinalCommissionAmount ?? 0;
 
+  // Só alerta se não houver raw seller em pedido/snapshot e comissão existir.
   if (
     orderTotalCommission > MONEY_TOLERANCE &&
-    (input.summary.orderSellerName == null ||
-      !input.summary.orderSellerName.trim())
+    !orderSeller.isInformed &&
+    commissions.rawSellerId == null &&
+    !(commissions.canonicalSellerName ?? "").trim()
   ) {
     push({
       code: "COMMISSION_WITHOUT_SELLER",
       severity: "critical",
       title: "Comissão calculada sem vendedor Nomus",
-      description: `Snapshot de comissão tem ${formatMoneyShort(orderTotalCommission)} mas o pedido não tem vendedor Nomus informado.`,
+      description: `Snapshot de comissão tem ${formatMoneyShort(orderTotalCommission)} mas não há vendedor raw/canônico em nenhuma fonte.`,
       origin: "CommissionOrderSnapshot × SalesOrder",
       action: "Corrigir cadastro do vendedor no Pedido de Venda no Nomus.",
       financialImpact: orderTotalCommission,
@@ -6754,6 +6881,26 @@ function getAlertMetadata(code: string): AlertMetadata | null {
     SELLER_NOT_INFORMED: {
       category: "ORDER",
       severity: "medium",
+      linkedTab: "salesOrder",
+    },
+    SELLER_ALIAS_NOT_MAPPED: {
+      category: "ORDER",
+      severity: "medium",
+      linkedTab: "salesOrder",
+    },
+    SELLER_MISSING_IN_SALES_ORDER_BUT_PRESENT_IN_SNAPSHOT: {
+      category: "ORDER",
+      severity: "info",
+      linkedTab: "salesOrder",
+    },
+    SELLER_SOURCE_MISMATCH: {
+      category: "ORDER",
+      severity: "medium",
+      linkedTab: "salesOrder",
+    },
+    SELLER_SOURCE_FROM_COMMISSION_SNAPSHOT: {
+      category: "ORDER",
+      severity: "info",
       linkedTab: "salesOrder",
     },
     COMMERCIAL_RESPONSIBLE_MISSING: {

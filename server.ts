@@ -12455,6 +12455,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const orderSellerExternalId = parseExternalSellerIdQuery(
         req.query.orderSellerExternalId
       );
+      const parseExternalSellerIdsQuery = (raw: unknown): number[] | null => {
+        const parts = Array.isArray(raw)
+          ? raw.flatMap((v) => String(v).split(","))
+          : typeof raw === "string"
+            ? raw.split(",")
+            : [];
+        const ids = [
+          ...new Set(
+            parts
+              .map((p) => Number.parseInt(p.trim(), 10))
+              .filter((n) => Number.isFinite(n) && n > 0)
+          ),
+        ];
+        return ids.length > 0 ? ids : null;
+      };
+      const orderSellerExternalIds = parseExternalSellerIdsQuery(
+        req.query.orderSellerExternalIds
+      );
 
       const payload = await buildCrmSellerDashboardResponse({
         scopeMode: sellerScope.scopeMode,
@@ -12462,6 +12480,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         responsible: sellerScope.responsible,
         sellerIdentityKey: sellerScope.sellerIdentityKey,
         orderSellerExternalId,
+        orderSellerExternalIds,
         orderSellerResponsible,
         orderSellerIdentityKey,
         dateFrom: typeof req.query.dateFrom === "string" ? req.query.dateFrom : null,

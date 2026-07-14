@@ -122,6 +122,7 @@ type SellerDashboardLoadParams = {
   responsible?: string;
   sellerIdentityKey?: string;
   orderSellerExternalId?: number;
+  orderSellerExternalIds?: number[];
   orderSellerResponsible?: string;
   orderSellerIdentityKey?: string;
   dateFrom?: string;
@@ -1578,6 +1579,12 @@ export const CrmModule = () => {
       } else if (params?.orderSellerResponsible?.trim()) {
         searchParams.set("orderSellerResponsible", params.orderSellerResponsible.trim());
       }
+      if ((params?.orderSellerExternalIds?.length ?? 0) > 0) {
+        searchParams.set(
+          "orderSellerExternalIds",
+          params!.orderSellerExternalIds!.join(",")
+        );
+      }
       if (params?.dateFrom?.trim()) {
         searchParams.set("dateFrom", params.dateFrom.trim());
       }
@@ -1650,6 +1657,10 @@ export const CrmModule = () => {
           params.orderSellerExternalId = opt.externalSellerId;
         } else if (opt?.responsible?.trim()) {
           params.orderSellerResponsible = opt.responsible.trim();
+        }
+        // IDs consolidados (mesmo padrão do comissionamento) — cobrem pedidos sem nome.
+        if ((opt?.externalSellerIds?.length ?? 0) > 0) {
+          params.orderSellerExternalIds = opt!.externalSellerIds;
         }
       }
 
@@ -2203,7 +2214,7 @@ export const CrmModule = () => {
       sellerDashboard?.filters?.externalSellerId !== null &&
       sellerDashboard?.filters?.externalSellerId !== undefined
     ) {
-      return `Vendedor ID ${sellerDashboard.filters.externalSellerId}`;
+      return "Vendedor não mapeado";
     }
     return null;
   }, [isOwnSellerOnly, selectedSellerKey, sellerOptions, sellerDashboard?.filters]);

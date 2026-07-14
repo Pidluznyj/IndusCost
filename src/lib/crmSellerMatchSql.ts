@@ -12,6 +12,11 @@ export type CrmSellerMatchFilter = {
   externalSellerId: number | null;
   responsible: string | null;
   sellerIdentityKey: string | null;
+  /**
+   * IDs Nomus da identidade consolidada.
+   * OR com match por nome — cobre pedidos com ID sem `nomusSellerName` preenchido.
+   */
+  externalSellerIds?: number[] | null;
 };
 
 /** Nome de vendedor do pedido: oficial Nomus, com fallback legado. */
@@ -47,7 +52,8 @@ export function hasCrmSellerMatchFilter(filter: CrmSellerMatchFilter): boolean {
   return Boolean(
     filter.sellerIdentityKey?.trim() ||
       filter.externalSellerId != null ||
-      filter.responsible?.trim()
+      filter.responsible?.trim() ||
+      (filter.externalSellerIds?.length ?? 0) > 0
   );
 }
 
@@ -55,11 +61,28 @@ export function hasCrmSellerMatchFilter(filter: CrmSellerMatchFilter): boolean {
  * Match no vendedor do pedido (Nomus) — NÃO é o responsável comercial do cliente.
  * Preferência: sellerIdentityKey → externalSellerId → responsible legado.
  */
+function uniquePositiveIds(ids: readonly (number | null | undefined)[] | null | undefined): number[] {
+  return [
+    ...new Set(
+      (ids ?? []).filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ].sort((a, b) => a - b);
+}
+
+function buildExternalSellerIdsInSql(alias: string, ids: number[]): Prisma.Sql {
+  return Prisma.sql`${Prisma.raw(`${alias}."externalSellerId"`)} IN (${Prisma.join(ids)})`;
+}
+
 export function buildCrmSellerFilterSql(
   alias: string,
   filter: CrmSellerMatchFilter
 ): Prisma.Sql {
   const key = filter.sellerIdentityKey?.trim();
+  const ids = uniquePositiveIds([
+    ...(filter.externalSellerIds ?? []),
+    filter.externalSellerId,
+  ]);
+
   if (key) {
     if (key.startsWith("__ID_ONLY__:")) {
       const idRaw = key.slice("__ID_ONLY__:".length);
@@ -68,7 +91,11 @@ export function buildCrmSellerFilterSql(
         return Prisma.sql`${Prisma.raw(`${alias}."externalSellerId"`)} = ${id}`;
       }
     }
-    return buildSellerMatchByIdentityKeySql(alias, key);
+    const nameMatch = buildSellerMatchByIdentityKeySql(alias, key);
+    if (ids.length > 0) {
+      return Prisma.sql`(${nameMatch} OR ${buildExternalSellerIdsInSql(alias, ids)})`;
+    }
+    return nameMatch;
   }
   if (filter.externalSellerId !== null && filter.responsible !== null) {
     return Prisma.sql`(
@@ -78,6 +105,9 @@ export function buildCrmSellerFilterSql(
         AND ${buildSellerMatchByIdentityKeySql(alias, filter.responsible)}
       )
     )`;
+  }
+  if (ids.length > 1) {
+    return buildExternalSellerIdsInSql(alias, ids);
   }
   if (filter.externalSellerId !== null) {
     return Prisma.sql`${Prisma.raw(`${alias}."externalSellerId"`)} = ${filter.externalSellerId}`;
