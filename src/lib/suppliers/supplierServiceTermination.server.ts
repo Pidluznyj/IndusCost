@@ -5,20 +5,35 @@ import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/src/lib/prisma.js";
 import { buildMinimalPdfDocument } from "@/src/lib/minimalPdfWriter.js";
-import { normalizeSearchString } from "@/src/lib/utils.js";
 import {
   calculateServiceTermination,
   formatProportionalRestDaysLabel,
   type ServiceTerminationCalculationMode,
 } from "./supplierServiceTerminationCalc.js";
+import type { CommissionAccessScope } from "@/src/lib/commissions/commissionAccessScope.js";
+import { getCommissionReportsPage } from "@/src/lib/commissions/commissionReports.server.js";
+import type {
+  CommissionReportsMonthsFilter,
+  CommissionReportsQuery,
+} from "@/src/lib/commissions/commissionReports.shared.js";
 import {
   SERVICE_TERMINATION_AUDIT_ACTIONS,
   SERVICE_TERMINATION_AUDIT_ENTITY,
   type ServiceTerminationCommissionLinkDto,
-  type ServiceTerminationCommissionSearchHit,
+  type ServiceTerminationCommissionSearchResult,
   type ServiceTerminationDto,
   type ServiceTerminationPreviewInput,
 } from "./supplierServiceTerminationTypes.js";
+
+/** Escopo global somente-leitura para o vínculo no encerramento (não altera comissão). */
+const TERMINATION_COMMISSION_READ_SCOPE: CommissionAccessScope = {
+  dataScope: "global",
+  sellerLocked: false,
+  nomusSellerId: null,
+  sellerResponsibleName: null,
+  blockedReason: null,
+  blockedMessage: null,
+};
 
 export class SupplierServiceTerminationError extends Error {
   constructor(
@@ -81,13 +96,33 @@ async function writeTerminationAudit(input: {
   });
 }
 
-function commissionsHrefForSearch(name: string, year: number): string {
-  const q = new URLSearchParams({
-    year: String(year),
-    months: "all",
-    search: name,
-  });
+function commissionsHrefForReport(input: {
+  year: number;
+  months: CommissionReportsMonthsFilter;
+  sellerId: string | "all";
+  search?: string | null;
+}): string {
+  const q = new URLSearchParams();
+  q.set("year", String(input.year));
+  q.set(
+    "months",
+    input.months === "all" || (Array.isArray(input.months) && input.months.length === 0)
+      ? "all"
+      : input.months.join(",")
+  );
+  q.set("sellerId", input.sellerId || "all");
+  if (input.search?.trim()) q.set("search", input.search.trim());
   return `/commissions/reports?${q.toString()}`;
+}
+
+function parseMonthsFilter(raw: string | null | undefined): CommissionReportsMonthsFilter {
+  if (!raw || raw === "all" || raw.trim() === "") return "all";
+  const parts = raw
+    .split(",")
+    .map((p) => Number(p.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12);
+  if (parts.length === 0) return "all";
+  return [...new Set(parts)].sort((a, b) => a - b);
 }
 
 function mapRowToDto(
@@ -180,10 +215,12 @@ function mapRowToDto(
       commissionAmount: dec(l.commissionAmount),
       source: l.source,
       statusLabel: l.statusLabel,
-      commissionsHref: commissionsHrefForSearch(
-        l.commissionPersonName ?? row.personName,
-        year
-      ),
+      commissionsHref: commissionsHrefForReport({
+        year,
+        months: "all",
+        sellerId: "all",
+        search: l.commissionPersonName ?? row.personName,
+      }),
     })),
   };
 }
@@ -489,153 +526,98 @@ export async function cancelSupplierServiceTermination(input: {
 }
 
 /**
- * Busca relatório oficial de comissão por nome (read-only).
- * Não recalcula comissão — agrega linhas do ledger / pessoas canônicas.
+ * Consulta o relatório oficial de Comissões (mesma fonte da tela Relatórios).
+ * Read-only: não recalcula, não altera fechamento / pagamento.
  */
 export async function searchCommissionReportsForSupplierTermination(input: {
-  searchName: string;
-  supplierId?: string | null;
-  periodFrom?: string | null;
-  periodTo?: string | null;
-}): Promise<ServiceTerminationCommissionSearchHit[]> {
-  const term = input.searchName.trim();
-  if (term.length < 2) {
+  year: number;
+  months?: CommissionReportsMonthsFilter | string | null;
+  sellerId?: string | null;
+  search?: string | null;
+  /** Alias legado — aplicado como busca livre se `search` estiver vazio. */
+  searchName?: string | null;
+  page?: number;
+  pageSize?: number;
+}): Promise<ServiceTerminationCommissionSearchResult> {
+  const year = Number(input.year);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     throw new SupplierServiceTerminationError(
-      "Informe ao menos 2 caracteres para buscar.",
-      "SEARCH_TOO_SHORT"
+      "Informe um ano válido (2000–2100).",
+      "INVALID_YEAR"
     );
   }
-  const normalized = normalizeSearchString(term);
+  const months: CommissionReportsMonthsFilter =
+    typeof input.months === "string" || input.months == null
+      ? parseMonthsFilter(input.months ?? "all")
+      : input.months === "all"
+        ? "all"
+        : input.months;
+  const sellerId =
+    input.sellerId && input.sellerId.trim() && input.sellerId !== "all"
+      ? input.sellerId.trim()
+      : "all";
+  const search =
+    (input.search?.trim() || input.searchName?.trim() || null) as string | null;
+  const page = Math.max(1, Number(input.page) || 1);
+  const pageSize = Math.min(200, Math.max(1, Number(input.pageSize) || 100));
 
-  const persons = await prisma.commissionPerson.findMany({
-    where: {
-      type: "SELLER",
-      OR: [
-        { name: { contains: term, mode: "insensitive" } },
-        {
-          aliases: {
-            some: {
-              status: "ACTIVE",
-              OR: [
-                { rawSellerName: { contains: term, mode: "insensitive" } },
-                { normalizedSellerName: { contains: normalized } },
-              ],
-            },
-          },
-        },
-      ],
-    },
-    select: { id: true, name: true },
-    take: 20,
+  const query: CommissionReportsQuery = {
+    year,
+    months,
+    sellerId,
+    status: "all",
+    search,
+    page,
+    pageSize,
+  };
+
+  const payload = await getCommissionReportsPage(query, TERMINATION_COMMISSION_READ_SCOPE);
+  const hrefBase = commissionsHrefForReport({
+    year,
+    months,
+    sellerId,
+    search,
   });
 
-  const personIds = persons.map((p) => p.id);
-  const year = new Date().getFullYear();
-  const yearFrom = input.periodFrom ? Number(input.periodFrom.slice(0, 4)) : year - 1;
-  const yearTo = input.periodTo ? Number(input.periodTo.slice(0, 4)) : year;
-
-  const lines =
-    personIds.length > 0
-      ? await prisma.commissionReceiptLedgerLine.findMany({
-          where: {
-            canonicalSellerId: { in: personIds },
-            year: { gte: Math.min(yearFrom, yearTo), lte: Math.max(yearFrom, yearTo) },
-          },
-          select: {
-            id: true,
-            year: true,
-            month: true,
-            canonicalSellerId: true,
-            canonicalSellerName: true,
-            expectedCommissionAmount: true,
-            releasedCommissionAmount: true,
-            status: true,
-            source: true,
-          },
-          take: 400,
-          orderBy: [{ year: "desc" }, { month: "desc" }],
-        })
-      : [];
-
-  // Fallback: buscar por nome nas linhas quando pessoa não está no catálogo.
-  const linesByName =
-    lines.length === 0
-      ? await prisma.commissionReceiptLedgerLine.findMany({
-          where: {
-            OR: [
-              { canonicalSellerName: { contains: term, mode: "insensitive" } },
-              { rawSellerName: { contains: term, mode: "insensitive" } },
-            ],
-            year: { gte: Math.min(yearFrom, yearTo), lte: Math.max(yearFrom, yearTo) },
-          },
-          select: {
-            id: true,
-            year: true,
-            month: true,
-            canonicalSellerId: true,
-            canonicalSellerName: true,
-            expectedCommissionAmount: true,
-            releasedCommissionAmount: true,
-            status: true,
-            source: true,
-          },
-          take: 200,
-          orderBy: [{ year: "desc" }, { month: "desc" }],
-        })
-      : [];
-
-  const allLines = lines.length > 0 ? lines : linesByName;
-  type Agg = {
-    key: string;
-    personId: string | null;
-    personName: string;
-    year: number;
-    month: number;
-    amount: number;
-    status: string;
-    source: string;
+  return {
+    sellerOptions: payload.sellerOptions ?? [],
+    summary: {
+      totalCommission: payload.summary.totalCommission,
+      commissionableBase: payload.summary.commissionableBase,
+      receivedAmount: payload.summary.receivedAmount,
+      recordCount: payload.summary.recordCount,
+    },
+    records: (payload.records ?? []).map((row) => ({
+      lineKey: row.lineKey,
+      year: row.year,
+      month: row.month,
+      settlementDate: row.settlementDate,
+      sellerId: row.sellerId,
+      sellerName: row.sellerName,
+      customerName: row.customerName,
+      orderCode: row.orderCode,
+      nfeNumber: row.nfeNumber,
+      receivableNumber:
+        row.receivableNumber ??
+        (row.nomusReceivableId != null ? String(row.nomusReceivableId) : null),
+      receivedAmount: row.receivedAmount,
+      commissionableBaseAmount: row.commissionableBaseAmount,
+      ratePercent: row.ratePercent,
+      finalCommissionAmount: row.finalCommissionAmount,
+      lineStatus: row.lineStatus,
+      statusReason: row.statusReason,
+      periodStatus: row.periodStatus,
+      source: row.source,
+      commissionsHref: hrefBase,
+    })),
+    pagination: payload.pagination,
+    filtersApplied: {
+      year: payload.filtersApplied.year,
+      months: payload.filtersApplied.months,
+      sellerId: payload.filtersApplied.sellerId,
+      search: payload.filtersApplied.search,
+    },
   };
-  const map = new Map<string, Agg>();
-  for (const line of allLines) {
-    const personName =
-      line.canonicalSellerName?.trim() ||
-      persons.find((p) => p.id === line.canonicalSellerId)?.name ||
-      term;
-    const key = `${line.canonicalSellerId ?? personName}:${line.year}-${line.month}`;
-    const amount = Math.max(
-      dec(line.releasedCommissionAmount),
-      dec(line.expectedCommissionAmount)
-    );
-    const prev = map.get(key);
-    if (!prev) {
-      map.set(key, {
-        key,
-        personId: line.canonicalSellerId,
-        personName,
-        year: line.year,
-        month: line.month,
-        amount,
-        status: String(line.status),
-        source: String(line.source ?? "COMMISSION_LEDGER"),
-      });
-    } else {
-      prev.amount += amount;
-    }
-  }
-
-  return [...map.values()]
-    .sort((a, b) => b.year - a.year || b.month - a.month || b.amount - a.amount)
-    .slice(0, 40)
-    .map((g) => ({
-      reportKey: g.key,
-      commissionPersonId: g.personId,
-      commissionPersonName: g.personName,
-      periodLabel: `${String(g.month).padStart(2, "0")}/${g.year}`,
-      commissionAmount: Math.round(g.amount * 100) / 100,
-      statusLabel: g.status,
-      source: g.source,
-      commissionsHref: commissionsHrefForSearch(g.personName, g.year),
-    }));
 }
 
 export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): string[] {

@@ -12,6 +12,14 @@ import {
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  buildCommissionsYearOptions,
+  COMMISSIONS_FILTER_FIELD_CLASS,
+  COMMISSIONS_FILTER_LABEL_CLASS,
+} from "@/src/lib/commissionsPeriodFilter";
+import type { CommissionReportsMonthsFilter } from "@/src/lib/commissions/commissionReports.shared";
+import { CommissionsMonthsMultiSelect } from "@/src/components/commissions/CommissionsMonthsMultiSelect";
+import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
 import { cn } from "@/src/lib/utils";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 import {
@@ -21,7 +29,9 @@ import {
 import type {
   ServiceTerminationCalcModeDto,
   ServiceTerminationCommissionLinkDto,
-  ServiceTerminationCommissionSearchHit,
+  ServiceTerminationCommissionOrderRow,
+  ServiceTerminationCommissionSearchResult,
+  ServiceTerminationCommissionSellerOption,
   ServiceTerminationDto,
 } from "@/src/lib/suppliers/supplierServiceTerminationTypes";
 
@@ -66,11 +76,28 @@ export function SupplierServiceTerminationDialog({
   const [adjustmentNotes, setAdjustmentNotes] = useState("");
   const [notes, setNotes] = useState("");
   const [links, setLinks] = useState<ServiceTerminationCommissionLinkDto[]>([]);
+  const now = useMemo(() => new Date(), []);
+  const [commissionYear, setCommissionYear] = useState(String(now.getFullYear()));
+  const [commissionMonths, setCommissionMonths] =
+    useState<CommissionReportsMonthsFilter>([now.getMonth() + 1]);
+  const [commissionSellerId, setCommissionSellerId] = useState("all");
   const [commissionSearch, setCommissionSearch] = useState("");
-  const [commissionHits, setCommissionHits] = useState<
-    ServiceTerminationCommissionSearchHit[]
+  const [sellerOptions, setSellerOptions] = useState<
+    ServiceTerminationCommissionSellerOption[]
+  >([{ value: "all", label: "Todos os vendedores" }]);
+  const [commissionRecords, setCommissionRecords] = useState<
+    ServiceTerminationCommissionOrderRow[]
   >([]);
+  const [commissionSummary, setCommissionSummary] = useState<{
+    totalCommission: number;
+    recordCount: number;
+  } | null>(null);
+  const [selectedLineKeys, setSelectedLineKeys] = useState<Set<string>>(new Set());
   const [searchingCommission, setSearchingCommission] = useState(false);
+  const yearOptions = useMemo(
+    () => buildCommissionsYearOptions(Number.parseInt(commissionYear, 10) || now.getFullYear()),
+    [commissionYear, now]
+  );
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("DRAFT");
@@ -144,29 +171,140 @@ export function SupplierServiceTerminationDialog({
     commissionLinks: links,
   });
 
+  const buildCommissionQuery = useCallback(
+    (opts?: { sellerId?: string; pageSize?: number }) => {
+      const q = new URLSearchParams();
+      q.set("year", commissionYear || String(now.getFullYear()));
+      if (
+        commissionMonths === "all" ||
+        (Array.isArray(commissionMonths) && commissionMonths.length === 0)
+      ) {
+        q.set("months", "all");
+      } else {
+        q.set("months", commissionMonths.join(","));
+      }
+      q.set("sellerId", opts?.sellerId ?? commissionSellerId ?? "all");
+      const search = commissionSearch.trim() || personName.trim();
+      if (search) q.set("search", search);
+      q.set("page", "1");
+      q.set("pageSize", String(opts?.pageSize ?? 100));
+      return q;
+    },
+    [
+      commissionYear,
+      commissionMonths,
+      commissionSellerId,
+      commissionSearch,
+      personName,
+      now,
+    ]
+  );
+
+  const loadSellerOptions = useCallback(async () => {
+    try {
+      const q = buildCommissionQuery({ sellerId: "all", pageSize: 1 });
+      const data = await fetchJsonOk<ServiceTerminationCommissionSearchResult & { ok: boolean }>(
+        `/api/suppliers/service-terminations/commission-reports/search?${q}`
+      );
+      const opts = data.sellerOptions?.length
+        ? data.sellerOptions
+        : [{ value: "all", label: "Todos os vendedores" }];
+      setSellerOptions(opts);
+      setCommissionSellerId((current) => {
+        if (current !== "all") return current;
+        const needle = (personName || supplierName).trim().toLowerCase();
+        if (!needle) return current;
+        const match = opts.find(
+          (o) =>
+            o.value !== "all" &&
+            (o.label.toLowerCase().includes(needle) ||
+              needle.includes(o.label.toLowerCase().slice(0, 12)))
+        );
+        return match?.value ?? current;
+      });
+    } catch {
+      /* opções opcionais */
+    }
+  }, [buildCommissionQuery, personName, supplierName]);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadSellerOptions();
+  }, [open, commissionYear, commissionMonths, loadSellerOptions]);
+
   const searchCommissions = async () => {
+    if (commissionSellerId === "all") {
+      setError("Selecione um vendedor na lista (igual a Comissões → Relatórios).");
+      return;
+    }
     setSearchingCommission(true);
     setError(null);
+    setMessage(null);
     try {
-      const q = new URLSearchParams({
-        searchName: commissionSearch.trim() || personName.trim(),
-        supplierId,
+      const q = buildCommissionQuery();
+      const data = await fetchJsonOk<ServiceTerminationCommissionSearchResult & { ok: boolean }>(
+        `/api/suppliers/service-terminations/commission-reports/search?${q}`
+      );
+      if (data.sellerOptions?.length) setSellerOptions(data.sellerOptions);
+      setCommissionRecords(data.records ?? []);
+      setCommissionSummary({
+        totalCommission: data.summary?.totalCommission ?? 0,
+        recordCount: data.summary?.recordCount ?? 0,
       });
-      const data = await fetchJsonOk<{
-        ok: boolean;
-        items: ServiceTerminationCommissionSearchHit[];
-      }>(`/api/suppliers/service-terminations/commission-reports/search?${q}`);
-      setCommissionHits(data.items ?? []);
-      if (!(data.items ?? []).length) {
-        setMessage("Nenhum relatório de comissão encontrado para este nome.");
-      } else {
-        setMessage(null);
+      setSelectedLineKeys(new Set());
+      if (!(data.records ?? []).length) {
+        setMessage(
+          "Nenhum relatório de comissão encontrado para este vendedor/período."
+        );
       }
     } catch (e) {
       setError(e instanceof HttpError ? e.message : "Falha ao buscar comissões.");
+      setCommissionRecords([]);
+      setCommissionSummary(null);
     } finally {
       setSearchingCommission(false);
     }
+  };
+
+  const toLinkDto = (
+    row: ServiceTerminationCommissionOrderRow
+  ): ServiceTerminationCommissionLinkDto => ({
+    commissionReportKey: row.lineKey,
+    commissionPersonId: row.sellerId,
+    commissionPersonName: row.sellerName,
+    periodLabel: `${row.orderCode ? formatSalesOrderDisplayCode(row.orderCode) : "Sem pedido"} · ${String(row.month).padStart(2, "0")}/${row.year}`,
+    commissionAmount: row.finalCommissionAmount,
+    source: row.source || "COMMISSION_REPORTS",
+    statusLabel: row.lineStatus,
+    commissionsHref: row.commissionsHref,
+  });
+
+  const linkFromRecord = (row: ServiceTerminationCommissionOrderRow) => {
+    setLinks((prev) => {
+      if (prev.some((l) => l.commissionReportKey === row.lineKey)) return prev;
+      return [...prev, toLinkDto(row)];
+    });
+  };
+
+  const linkSelectedRecords = () => {
+    const rows = commissionRecords.filter((r) => selectedLineKeys.has(r.lineKey));
+    setLinks((prev) => {
+      const existing = new Set(prev.map((l) => l.commissionReportKey));
+      const add = rows.filter((r) => !existing.has(r.lineKey)).map(toLinkDto);
+      return add.length ? [...prev, ...add] : prev;
+    });
+    setSelectedLineKeys(new Set());
+  };
+
+  const linkAllListed = () => {
+    setLinks((prev) => {
+      const existing = new Set(prev.map((l) => l.commissionReportKey));
+      const add = commissionRecords
+        .filter((r) => !existing.has(r.lineKey))
+        .map(toLinkDto);
+      return add.length ? [...prev, ...add] : prev;
+    });
+    setSelectedLineKeys(new Set());
   };
 
   const saveDraft = async () => {
@@ -285,7 +423,7 @@ export function SupplierServiceTerminationDialog({
       <div
         className={cn(
           financeBiCardClass,
-          "flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden shadow-2xl"
+          "flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden shadow-2xl"
         )}
       >
         <header className="flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -495,26 +633,71 @@ export function SupplierServiceTerminationDialog({
             </div>
           </section>
 
-          <section className="space-y-3">
+          <section className="space-y-3" data-testid="service-termination-commissions">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               4. Comissões vinculadas (somente leitura)
             </h3>
             <p className="text-xs text-muted-foreground">
-              Consulta o relatório oficial de Comissões. Não recalcula comissão neste módulo.
+              Mesma fonte de Comissões → Relatórios. Selecione vendedor e período, busque os
+              pedidos/comissões devidas e vincule. Não recalcula comissão neste módulo.
             </p>
-            <div className="flex flex-wrap gap-2">
-              <input
-                className="min-w-[220px] flex-1 rounded-lg border px-3 py-2 text-sm"
-                placeholder="Buscar relatório de comissão por nome..."
-                value={commissionSearch}
-                onChange={(e) => setCommissionSearch(e.target.value)}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="space-y-1">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Ano</span>
+                <select
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  value={commissionYear}
+                  disabled={status === "FINALIZED"}
+                  onChange={(e) => setCommissionYear(e.target.value)}
+                  aria-label="Ano das comissões"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={String(y)}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <CommissionsMonthsMultiSelect
+                value={commissionMonths}
                 disabled={status === "FINALIZED"}
+                onChange={setCommissionMonths}
               />
+              <label className="space-y-1 sm:col-span-2 lg:col-span-1">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Vendedor</span>
+                <select
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  value={commissionSellerId}
+                  disabled={status === "FINALIZED"}
+                  onChange={(e) => setCommissionSellerId(e.target.value)}
+                  aria-label="Vendedor"
+                  data-testid="service-termination-commission-seller"
+                >
+                  {sellerOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 sm:col-span-2 lg:col-span-1">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Busca (opcional)</span>
+                <input
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  placeholder="Cliente, pedido, NF-e…"
+                  value={commissionSearch}
+                  onChange={(e) => setCommissionSearch(e.target.value)}
+                  disabled={status === "FINALIZED"}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold"
                 onClick={() => void searchCommissions()}
                 disabled={searchingCommission || status === "FINALIZED"}
+                data-testid="service-termination-commission-search"
               >
                 {searchingCommission ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -523,60 +706,119 @@ export function SupplierServiceTerminationDialog({
                 )}
                 Buscar relatório
               </button>
-            </div>
-            {commissionHits.length > 0 ? (
-              <ul className="space-y-2 rounded-lg border p-2 text-sm">
-                {commissionHits.map((hit) => (
-                  <li
-                    key={hit.reportKey}
-                    className="flex flex-wrap items-center justify-between gap-2 border-b last:border-0 py-2"
+              {commissionRecords.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold text-primary"
+                    onClick={linkSelectedRecords}
+                    disabled={status === "FINALIZED" || selectedLineKeys.size === 0}
                   >
-                    <div>
-                      <p className="font-semibold">{hit.commissionPersonName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {hit.periodLabel} · {hit.statusLabel} · {hit.source}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="tabular-nums font-semibold">
-                        {money(hit.commissionAmount)}
-                      </span>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary"
-                        onClick={() => {
-                          if (links.some((l) => l.commissionReportKey === hit.reportKey)) return;
-                          setLinks((prev) => [
-                            ...prev,
-                            {
-                              commissionReportKey: hit.reportKey,
-                              commissionPersonId: hit.commissionPersonId,
-                              commissionPersonName: hit.commissionPersonName,
-                              periodLabel: hit.periodLabel,
-                              commissionAmount: hit.commissionAmount,
-                              source: hit.source,
-                              statusLabel: hit.statusLabel,
-                              commissionsHref: hit.commissionsHref,
-                            },
-                          ]);
-                        }}
-                        disabled={status === "FINALIZED"}
-                      >
-                        <Link2 className="h-3 w-3" />
-                        Vincular
-                      </button>
-                      <a
-                        className="text-xs text-muted-foreground underline"
-                        href={hit.commissionsHref}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Abrir
-                      </a>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    <Link2 className="h-3.5 w-3.5" />
+                    Vincular selecionadas ({selectedLineKeys.size})
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"
+                    onClick={linkAllListed}
+                    disabled={status === "FINALIZED"}
+                  >
+                    Vincular todas listadas
+                  </button>
+                </>
+              ) : null}
+              {commissionSummary ? (
+                <span className="text-xs text-muted-foreground">
+                  {commissionSummary.recordCount} registro(s) · comissão devida{" "}
+                  <strong className="text-foreground tabular-nums">
+                    {money(commissionSummary.totalCommission)}
+                  </strong>
+                </span>
+              ) : null}
+            </div>
+            {commissionRecords.length > 0 ? (
+              <div className="max-h-72 overflow-auto rounded-lg border">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-muted/80 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-2 w-8" />
+                      <th className="px-2 py-2">Mês</th>
+                      <th className="px-2 py-2">Pedido</th>
+                      <th className="px-2 py-2">Cliente</th>
+                      <th className="px-2 py-2">NF-e</th>
+                      <th className="px-2 py-2">Recebido</th>
+                      <th className="px-2 py-2">Base</th>
+                      <th className="px-2 py-2">Comissão devida</th>
+                      <th className="px-2 py-2">Status</th>
+                      <th className="px-2 py-2">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {commissionRecords.map((row) => {
+                      const linked = links.some(
+                        (l) => l.commissionReportKey === row.lineKey
+                      );
+                      return (
+                        <tr key={row.lineKey} className="hover:bg-muted/30">
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="checkbox"
+                              checked={selectedLineKeys.has(row.lineKey)}
+                              disabled={status === "FINALIZED" || linked}
+                              onChange={(e) => {
+                                setSelectedLineKeys((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(row.lineKey);
+                                  else next.delete(row.lineKey);
+                                  return next;
+                                });
+                              }}
+                              aria-label={`Solicitar ${row.orderCode ?? row.lineKey}`}
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1.5">
+                            {String(row.month).padStart(2, "0")}/{row.year}
+                          </td>
+                          <td className="px-2 py-1.5 font-medium">
+                            {row.orderCode
+                              ? formatSalesOrderDisplayCode(row.orderCode)
+                              : "—"}
+                          </td>
+                          <td className="max-w-[10rem] truncate px-2 py-1.5" title={row.customerName ?? undefined}>
+                            {row.customerName ?? "—"}
+                          </td>
+                          <td className="px-2 py-1.5">{row.nfeNumber ?? "—"}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
+                            {money(row.receivedAmount)}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
+                            {money(row.commissionableBaseAmount)}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1.5 font-semibold tabular-nums text-primary">
+                            {money(row.finalCommissionAmount)}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <span className="block truncate" title={row.statusReason ?? undefined}>
+                              {row.lineStatus}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-primary disabled:opacity-40"
+                              onClick={() => linkFromRecord(row)}
+                              disabled={status === "FINALIZED" || linked}
+                            >
+                              <Link2 className="h-3 w-3" />
+                              {linked ? "Vinculada" : "Vincular"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ) : null}
             {links.length > 0 ? (
               <ul className="space-y-1 text-sm">

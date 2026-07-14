@@ -145,21 +145,27 @@ export function registerSupplierServiceTerminationRoutes(
     ...viewGuard,
     async (req, res) => {
       try {
-        const searchName =
-          typeof req.query.searchName === "string"
-            ? req.query.searchName
-            : typeof req.query.q === "string"
-              ? req.query.q
-              : "";
-        const hits = await searchCommissionReportsForSupplierTermination({
-          searchName,
-          supplierId:
-            typeof req.query.supplierId === "string" ? req.query.supplierId : null,
-          periodFrom:
-            typeof req.query.periodFrom === "string" ? req.query.periodFrom : null,
-          periodTo: typeof req.query.periodTo === "string" ? req.query.periodTo : null,
+        const yearRaw =
+          typeof req.query.year === "string"
+            ? Number(req.query.year)
+            : new Date().getFullYear();
+        const result = await searchCommissionReportsForSupplierTermination({
+          year: yearRaw,
+          months: typeof req.query.months === "string" ? req.query.months : "all",
+          sellerId: typeof req.query.sellerId === "string" ? req.query.sellerId : "all",
+          search:
+            typeof req.query.search === "string"
+              ? req.query.search
+              : typeof req.query.q === "string"
+                ? req.query.q
+                : null,
+          searchName:
+            typeof req.query.searchName === "string" ? req.query.searchName : null,
+          page: typeof req.query.page === "string" ? Number(req.query.page) : 1,
+          pageSize:
+            typeof req.query.pageSize === "string" ? Number(req.query.pageSize) : 100,
         });
-        res.json({ ok: true, items: hits });
+        res.json({ ok: true, ...result });
       } catch (error) {
         handleError(res, error);
       }

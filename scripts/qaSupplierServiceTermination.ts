@@ -78,9 +78,14 @@ section("4. Comissão soma no total sem recalcular");
   assert.equal(r.totalTerminationAmount, 1833.33);
   const serverSrc = read("src/lib/suppliers/supplierServiceTermination.server.ts");
   assert.match(serverSrc, /searchCommissionReportsForSupplierTermination/);
+  assert.match(serverSrc, /getCommissionReportsPage/);
   assert.match(serverSrc, /Não recalcula|não recalcula|read-only/i);
   assert.doesNotMatch(serverSrc, /recalculateCommission|recalcCommission/);
-  ok("comissão vinculada entra como total informado; sem recalc no service");
+  const dialog = read("src/components/finance/cost-centers/SupplierServiceTerminationDialog.tsx");
+  assert.match(dialog, /CommissionsMonthsMultiSelect/);
+  assert.match(dialog, /service-termination-commission-seller/);
+  assert.match(dialog, /Comissão devida/);
+  ok("comissão via relatório oficial (vendedor/período/grid); sem recalc");
 }
 
 section("5. Finalização trava (código)");

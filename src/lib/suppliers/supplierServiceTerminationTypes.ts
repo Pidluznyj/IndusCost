@@ -72,6 +72,7 @@ export type ServiceTerminationPreviewInput = {
   commissionLinks?: ServiceTerminationCommissionLinkDto[];
 };
 
+/** Agregado legado (período/vendedor) — ainda aceito na UI se vier do histórico. */
 export type ServiceTerminationCommissionSearchHit = {
   reportKey: string;
   commissionPersonId: string | null;
@@ -81,6 +82,57 @@ export type ServiceTerminationCommissionSearchHit = {
   statusLabel: string;
   source: string;
   commissionsHref: string;
+};
+
+/** Linha do relatório oficial (pedido / CR) — mesma fonte de Comissões > Relatórios. */
+export type ServiceTerminationCommissionOrderRow = {
+  lineKey: string;
+  year: number;
+  month: number;
+  settlementDate: string | null;
+  sellerId: string | null;
+  sellerName: string;
+  customerName: string | null;
+  orderCode: string | null;
+  nfeNumber: string | null;
+  receivableNumber: string | null;
+  receivedAmount: number;
+  commissionableBaseAmount: number;
+  ratePercent: number;
+  finalCommissionAmount: number;
+  lineStatus: string;
+  statusReason: string | null;
+  periodStatus: string;
+  source: string;
+  commissionsHref: string;
+};
+
+export type ServiceTerminationCommissionSellerOption = {
+  value: string;
+  label: string;
+};
+
+export type ServiceTerminationCommissionSearchResult = {
+  sellerOptions: ServiceTerminationCommissionSellerOption[];
+  summary: {
+    totalCommission: number;
+    commissionableBase: number;
+    receivedAmount: number;
+    recordCount: number;
+  };
+  records: ServiceTerminationCommissionOrderRow[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  filtersApplied: {
+    year: number;
+    months: number[] | "all";
+    sellerId: string | "all";
+    search: string | null;
+  };
 };
 
 export const SERVICE_TERMINATION_AUDIT_ENTITY = "SupplierServiceTermination";

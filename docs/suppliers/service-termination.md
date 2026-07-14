@@ -62,9 +62,11 @@ Comissão e descanso remunerado são blocos separados. A comissão **nunca** é 
 
 ## Vínculo com relatório de comissão
 
-O encerramento apenas **consulta e vincula** relatórios oficiais do módulo de Comissões (ledger / pessoa canônica / aliases), via:
+O encerramento apenas **consulta e vincula** o relatório oficial de **Comissões → Relatórios** (mesma fonte materializada), via:
 
-`GET /api/suppliers/service-terminations/commission-reports/search?searchName=...`
+`GET /api/suppliers/service-terminations/commission-reports/search?year=&months=&sellerId=`
+
+Na UI: selecionar **vendedor** (lista igual à de Relatórios), **ano/meses**, buscar o **grid de pedidos e comissões devidas**, e vincular linhas ou o conjunto listado.
 
 Não altera cálculo de comissão, comissão paga, fechamento, base comissionável nem liberação por recebimento.
 
