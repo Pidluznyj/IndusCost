@@ -1,7 +1,11 @@
 import React from "react";
-import { X } from "lucide-react";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
 import { MaterialIntelligenceMarketQuoteForm } from "@/src/components/materials/MaterialIntelligenceMarketQuoteForm";
+import {
+  Overlay,
+  OverlayBody,
+  OverlayHeader,
+} from "@/src/components/ui/overlay";
 
 type Props = {
   open: boolean;
@@ -20,9 +24,8 @@ export function MaterialIntelligenceMarketQuoteModal({
   onClose,
   onSaved,
 }: Props) {
-  if (!open) return null;
-
   const isEditMode = quote != null;
+  const titleId = "material-intelligence-market-quote-modal-title";
 
   const handleSaved = () => {
     onSaved();
@@ -30,51 +33,34 @@ export function MaterialIntelligenceMarketQuoteModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/80 p-4 pt-10 backdrop-blur-sm sm:items-center sm:pt-4"
-      data-testid="material-intelligence-market-quote-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="material-intelligence-market-quote-modal-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Overlay
+      open={open}
+      onClose={onClose}
+      size="lg"
+      ariaLabelledBy={titleId}
+      testId="material-intelligence-market-quote-modal"
     >
-      <div className="w-full max-w-3xl rounded-xl border border-border bg-card shadow-lg">
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <h3
-              id="material-intelligence-market-quote-modal-title"
-              className="text-base font-semibold"
-            >
-              {isEditMode ? "Editar cotação manual" : "Registrar cotação manual"}
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {isEditMode
-                ? "Alterações recalculam o preço líquido no servidor e não alteram custos oficiais."
-                : "Cada registro cria um novo histórico — nunca sobrescreve cotações anteriores."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-muted/50"
-            data-testid="material-intelligence-market-quote-modal-close"
-          >
-            <X className="h-3.5 w-3.5" />
-            Fechar
-          </button>
-        </div>
-        <div className="px-5 py-4">
-          <MaterialIntelligenceMarketQuoteForm
-            materialId={materialId}
-            defaultUnit={defaultUnit}
-            quote={quote}
-            onCreated={handleSaved}
-            onCancel={onClose}
-          />
-        </div>
-      </div>
-    </div>
+      <OverlayHeader
+        titleId={titleId}
+        eyebrow="Materiais · Inteligência de mercado"
+        title={isEditMode ? "Editar cotação manual" : "Registrar cotação manual"}
+        subtitle={
+          isEditMode
+            ? "Alterações recalculam o preço líquido no servidor e não alteram custos oficiais."
+            : "Cada registro cria um novo histórico — nunca sobrescreve cotações anteriores."
+        }
+        onClose={onClose}
+        testId="material-intelligence-market-quote-modal-header"
+      />
+      <OverlayBody>
+        <MaterialIntelligenceMarketQuoteForm
+          materialId={materialId}
+          defaultUnit={defaultUnit}
+          quote={quote}
+          onCreated={handleSaved}
+          onCancel={onClose}
+        />
+      </OverlayBody>
+    </Overlay>
   );
 }

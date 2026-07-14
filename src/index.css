@@ -23,6 +23,23 @@
   --radius-lg: 0.5rem;
   --radius-md: calc(0.5rem - 2px);
   --radius-sm: calc(0.5rem - 4px);
+
+  /* ---------------------------------------------------------------- */
+  /*  Overlay Design System (popups, dialogs, drawers, detail sheets)  */
+  /*  Ver docs/design-system/overlay.md                                */
+  /* ---------------------------------------------------------------- */
+  --color-overlay-scrim: hsl(222 47% 11% / 0.55);
+  --color-overlay-surface: hsl(0 0% 100%);
+  --color-overlay-surface-muted: hsl(210 40% 98%);
+  --color-overlay-border: hsl(214 32% 91%);
+  --color-overlay-border-strong: hsl(214 20% 82%);
+  --color-overlay-text-strong: hsl(222 47% 11%);
+  --color-overlay-text-muted: hsl(220 9% 46%);
+  --color-overlay-header-solid: hsl(221 83% 45%);
+  --color-overlay-header-solid-foreground: hsl(0 0% 100%);
+  --radius-overlay: 1rem;
+  --radius-overlay-inner: 0.75rem;
+  --shadow-overlay: 0 25px 50px -12px rgb(0 0 0 / 0.25);
 }
 
 @layer base {
