@@ -29,6 +29,18 @@ A Auditoria 360º é **central de leitura e cruzamento**. Ela **não é dona da
 regra**. Cada aba consome o **motor oficial** correspondente (mapeamento
 completo em `docs/finance/order-full-audit-official-engines-map.md`).
 
+### 1.2 NF-e cancelada
+
+Status oficial vem de `NomusNfe.status` (cancelada = **7**), normalizado por
+`src/lib/finance/nfeStatus.ts` — ver `docs/finance/nfe-status-rules.md`.
+
+- NF cancelada **aparece** nas abas NF-e, Divergências e Auditoria Técnica,
+  com badge **Cancelada**.
+- **Não** entra em `summary.nfeValidValue` / `summary.nfeAllocatedValue`.
+- Gera alerta `NFE_CANCELED_LINKED_TO_ORDER`.
+- CR real ligado à NF cancelada permanece visível e gera
+  `CANCELED_NFE_WITH_RECEIVABLE`.
+
 Regras derivadas:
 
 - **Aba Financeiro** equivale a "Contas a Receber oficial filtrado por este

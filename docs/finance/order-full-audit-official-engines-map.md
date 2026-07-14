@@ -8,6 +8,14 @@ Adapter necessário | Lógica duplicada — extrair) e as ações de correção.
 > cruzamento**. Ela **não é dona de regra financeira, fiscal, comissão ou
 > pedido**. Ela **consome e compõe** dados dos módulos oficiais.
 
+### Status de NF-e
+
+- Motor de classificação: `src/lib/finance/nfeStatus.ts` (status estrutural
+  `NomusNfe.status`; cancelada = 7).
+- Documentação: `docs/finance/nfe-status-rules.md`.
+- NF cancelada é **auditável** (aparece na aba NF-e / divergências / técnica)
+  e **não** entra no faturamento válido (`nfeValidValue`, `nfeAllocatedValue`).
+
 ## Localização das peças
 
 - **Orquestrador**: `src/lib/finance/orderFullAuditService.ts` →

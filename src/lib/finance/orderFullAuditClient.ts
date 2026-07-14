@@ -93,6 +93,18 @@ export type OrderFullAuditNfe = {
   dataProcessamento: string | null;
   dataEmissao: string | null;
   status: number | null;
+  statusRaw: string | null;
+  statusNormalized:
+    | "AUTHORIZED"
+    | "CANCELED"
+    | "DENIED"
+    | "VOIDED"
+    | "UNKNOWN";
+  isCanceled: boolean;
+  isValidForBilling: boolean;
+  statusLabel: string;
+  cancellationDate: string | null;
+  cancellationReason: string | null;
   tipoOperacao: number | null;
   valorLiquido: number | null;
   valorTotal: number | null;
@@ -293,7 +305,13 @@ export type OrderFullAuditSummary = {
   stockDocumentsTotalValue: number;
   stockDocumentsAllocatedValue: number;
   nfeTotalValue: number;
+  nfeTotalValueAll: number;
+  nfeValidValue: number;
+  nfeCanceledValue: number;
+  validNfeCount: number;
+  canceledNfeCount: number;
   nfeAllocatedValue: number;
+  nfeAllocatedValueAll: number;
   diffs: {
     orderVsStockDocument: number;
     orderVsNfe: number;

@@ -169,6 +169,12 @@ export type PortfolioOrderStatusRow = {
   productTokens: string[];
   nfeNumbers: string[];
   nfeHeaderMaxValue: number;
+  validInvoiceCount: number;
+  canceledInvoiceCount: number;
+  hasValidInvoice: boolean;
+  hasCanceledInvoice: boolean;
+  /** Status fiscal consolidado (ex.: NFE_AUTHORIZED, NFE_CANCELLED). */
+  billingStatus: string;
 };
 
 export type PortfolioOrderStatusPrimaryCard = {
@@ -960,6 +966,16 @@ export function aggregateOrderFactsToRow(
   if (classified.hasCanceledItems && !alerts.includes("PEDIDO_COM_ITENS_CANCELADOS")) {
     alerts.push("PEDIDO_COM_ITENS_CANCELADOS");
   }
+  const hasCanceledInvoice =
+    alerts.includes("NFE_CANCELED_LINKED_TO_ORDER") ||
+    classified.fiscalStatus === "NFE_CANCELLED";
+  const hasValidInvoice =
+    nfeNumbers.size > 0 && classified.fiscalStatus !== "NFE_CANCELLED";
+  const canceledInvoiceCount = hasCanceledInvoice ? 1 : 0;
+  const validInvoiceCount = hasValidInvoice ? Math.max(1, nfeNumbers.size - canceledInvoiceCount) : 0;
+  if (hasCanceledInvoice && !alerts.includes("NFE_CANCELED_LINKED_TO_ORDER")) {
+    alerts.push("NFE_CANCELED_LINKED_TO_ORDER");
+  }
   alerts.sort();
 
   return {
@@ -1017,6 +1033,11 @@ export function aggregateOrderFactsToRow(
     productTokens: [...productTokens].sort(),
     nfeNumbers: [...nfeNumbers].sort(),
     nfeHeaderMaxValue: round6(nfeHeaderMax),
+    validInvoiceCount,
+    canceledInvoiceCount,
+    hasValidInvoice,
+    hasCanceledInvoice,
+    billingStatus: classified.fiscalStatus,
   };
 }
 

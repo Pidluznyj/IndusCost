@@ -246,6 +246,15 @@ export function OrderStatusPedidosTable({
                         Divergência
                       </span>
                     ) : null}
+                    {row.hasCanceledInvoice ? (
+                      <span
+                        className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-900"
+                        title="Há NF-e cancelada vinculada ao pedido (não compõe faturamento válido)"
+                        data-testid={`order-status-canceled-nfe-chip-${row.orderKey}`}
+                      >
+                        NF cancelada
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">

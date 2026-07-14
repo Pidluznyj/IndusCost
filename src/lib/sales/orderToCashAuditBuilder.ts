@@ -10,6 +10,7 @@ import {
   PORTFOLIO_PRICE_TOLERANCE,
   pricesMismatch,
 } from "../finance/portfolioReconciliationAllocationEngine.js";
+import { isNomusNfeCancelled } from "../finance/nfeStatus.js";
 import { extractSalesOrderForecastInstallments } from "../salesOrderListPaymentSchedule.js";
 import {
   isFulfilledWithCutSalesOrderItem,
@@ -1340,6 +1341,8 @@ export function detectOrderToCashAlerts(input: {
   hasRecentPaymentNotReflected: boolean;
   commercialStage: string;
   diasBloqueio: number;
+  hasCanceledNfe?: boolean;
+  hasCanceledNfeWithReceivable?: boolean;
 }): { alerts: string[]; flags: ReturnType<typeof emptyAlertFlags>; blocking: string[] } {
   const alerts: string[] = [];
   const flags = emptyAlertFlags();
@@ -1372,6 +1375,12 @@ export function detectOrderToCashAlerts(input: {
   if (input.hasNfeHeaderGreater) {
     alerts.push("NF_CABECALHO_MAIOR_PEDIDO");
     flags.hasNfeHeaderGreaterThanOrder = true;
+  }
+  if (input.hasCanceledNfe) {
+    alerts.push("NFE_CANCELED_LINKED_TO_ORDER");
+  }
+  if (input.hasCanceledNfeWithReceivable) {
+    alerts.push("CANCELED_NFE_WITH_RECEIVABLE");
   }
   if (input.hasPriceMismatch) {
     alerts.push("DIVERGENCIA_PRECO");
@@ -1715,7 +1724,20 @@ export function buildOrderToCashAuditRows(
     totalReceivedValue += recvAgg.received;
     totalOpenValue += recvAgg.open;
 
-    const headerSum = linkedNfes.reduce((s, x) => s + toFinite(x.nfe?.valorLiquido), 0);
+    const resolveNfeStatus = (x: (typeof linkedNfes)[number]) =>
+      x.nfe?.status ?? x.link.nfeStatus ?? null;
+    const canceledNfes = linkedNfes.filter((x) =>
+      isNomusNfeCancelled(resolveNfeStatus(x))
+    );
+    // Válida para faturamento = não cancelada (status 7). Status ausente não
+    // remove a NF do faturamento (comportamento histórico / motor fiscal).
+    const validBillingNfes = linkedNfes.filter(
+      (x) => !isNomusNfeCancelled(resolveNfeStatus(x))
+    );
+    const headerSum = validBillingNfes.reduce(
+      (s, x) => s + toFinite(x.nfe?.valorLiquido),
+      0
+    );
     const orderValue = toFinite(order.totalNetValue);
     const attributedAllocated = allocation.allocations.reduce(
       (s, a) => s + money(a.quantityUsed, a.item.unitPrice),
@@ -1740,8 +1762,11 @@ export function buildOrderToCashAuditRows(
     const hasExcessQty = allocation.allocations.some((a) => a.excessQuantity > 0);
     const hasOutside = allocation.extraItems.length > 0;
     const hasDocument = orderDocs.length > 0;
-    const hasNfe = linkedNfes.length > 0;
-    const hasEvidence = hasDocument || hasNfe || recvAgg.total > 0;
+    const hasCanceledNfe = canceledNfes.length > 0;
+    const hasValidBillingNfe = validBillingNfes.length > 0;
+    // Faturamento / estágio fiscal: só NF válida. Vínculo cancelado permanece em alerta.
+    const hasNfe = hasValidBillingNfe || hasCanceledNfe;
+    const hasEvidence = hasDocument || hasValidBillingNfe || recvAgg.total > 0;
 
     const commercialStage = classifyCommercialStage({
       status: order.status,
@@ -1757,18 +1782,22 @@ export function buildOrderToCashAuditRows(
       hasExcess: hasExcessQty,
       hasOutsideProduct: hasOutside,
     });
-    const anyNfeCancelled = linkedNfes.some((x) => {
-      const st = String(x.nfe?.status ?? x.link.nfeStatus ?? "");
-      return st === "3" || st.toUpperCase().includes("CANCEL");
-    });
-    const headerOnly = hasNfe && !hasDocument;
+    const headerOnly = hasValidBillingNfe && !hasDocument;
     const fiscalStage = classifyFiscalStage({
       hasNfe,
-      nfeCancelled: anyNfeCancelled,
-      nfeAuthorized: hasNfe && !anyNfeCancelled,
+      // Só "NFE_CANCELLED" quando não há NF válida de faturamento.
+      nfeCancelled: hasCanceledNfe && !hasValidBillingNfe,
+      nfeAuthorized: hasValidBillingNfe,
       headerOnly,
     });
-    const hasDocOrNfe = hasDocument || hasNfe;
+    const hasDocOrNfe = hasDocument || hasValidBillingNfe;
+    const canceledNfeIds = new Set(
+      canceledNfes.map((x) => x.link.nfeExternalId)
+    );
+    const hasCanceledNfeWithReceivable = allOrderReceivables.some(
+      (r) =>
+        r.sourceInvoiceId != null && canceledNfeIds.has(r.sourceInvoiceId)
+    );
     const paymentStatus = classifyPaymentStatus({
       hasPaymentCondition: !plan.hasPaymentConditionMissing,
       hasDocOrNfe,
@@ -1837,6 +1866,8 @@ export function buildOrderToCashAuditRows(
       hasRecentPaymentNotReflected: false,
       commercialStage,
       diasBloqueio: opts.diasBloqueio,
+      hasCanceledNfe,
+      hasCanceledNfeWithReceivable,
     });
     const action = buildRecommendedAction({
       orderToCashStage,

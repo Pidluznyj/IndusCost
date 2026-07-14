@@ -512,9 +512,9 @@ function SummaryTab({
             help={`Alocado ao pedido: ${formatFinanceCurrency(summary.stockDocumentsAllocatedValue)}`}
           />
           <Kpi
-            label="NF-e vinculada"
-            value={formatFinanceCurrency(summary.nfeTotalValue)}
-            help={`Alocado ao pedido: ${formatFinanceCurrency(summary.nfeAllocatedValue)}`}
+            label="NF-e válida (faturamento)"
+            value={formatFinanceCurrency(summary.nfeValidValue ?? summary.nfeAllocatedValue)}
+            help={`Histórico (todas): ${formatFinanceCurrency(summary.nfeTotalValueAll ?? summary.nfeTotalValue)} · Alocado válido: ${formatFinanceCurrency(summary.nfeAllocatedValue)}${(summary.canceledNfeCount ?? 0) > 0 ? ` · ${summary.canceledNfeCount} cancelada(s)` : ""}`}
           />
           <Kpi
             label="CR total"
@@ -2843,7 +2843,46 @@ const NFE_ALERT_CODES = new Set([
   "NFE_PRICE_MISMATCH",
   "NFE_ALLOCATED_BY_HEADER_ONLY",
   "NFE_VALUE_GREATER_THAN_ACTIVE_ORDER",
+  "NFE_CANCELED_LINKED_TO_ORDER",
+  "CANCELED_NFE_INCLUDED_IN_BILLING_VALUE",
+  "CANCELED_NFE_WITH_RECEIVABLE",
+  "DOCUMENT_LINKED_TO_CANCELED_NFE",
+  "NFE_STATUS_UNKNOWN",
 ]);
+
+function NfeStatusBadge({ nfe }: { nfe: OrderFullAuditNfe }): JSX.Element {
+  if (nfe.isCanceled || nfe.statusNormalized === "CANCELED") {
+    return (
+      <span
+        className="inline-flex rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-800"
+        data-testid={`order-full-audit-nfe-badge-canceled-${nfe.nfeExternalId}`}
+        title={`Status bruto: ${nfe.statusRaw ?? nfe.status ?? "—"}`}
+      >
+        Cancelada
+      </span>
+    );
+  }
+  if (nfe.statusNormalized === "AUTHORIZED" || nfe.isValidForBilling) {
+    return (
+      <span
+        className="inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800"
+        data-testid={`order-full-audit-nfe-badge-valid-${nfe.nfeExternalId}`}
+        title={`Status bruto: ${nfe.statusRaw ?? nfe.status ?? "—"}`}
+      >
+        {nfe.statusNormalized === "AUTHORIZED" ? "Autorizada" : nfe.statusLabel || "Válida"}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-900"
+      data-testid={`order-full-audit-nfe-badge-unknown-${nfe.nfeExternalId}`}
+      title={`Status bruto: ${nfe.statusRaw ?? nfe.status ?? "—"}`}
+    >
+      Status desconhecido
+    </span>
+  );
+}
 
 function NfesTab({
   nfes,
@@ -2859,19 +2898,15 @@ function NfesTab({
   const [nfeFilter, setNfeFilter] = useState<number | "all">("all");
 
   const totalNfes = nfes.length;
-  const totalValue = nfes.reduce((s, n) => s + (n.valorTotal ?? 0), 0);
-  const totalAllocated = nfes.reduce((s, n) => s + n.allocatedValueToOrder, 0);
-  const outsideValue = nfes.reduce((s, n) => s + n.outsideOrderItemsValue, 0);
-  const headerExcess = nfes.reduce((s, n) => {
-    if (n.valorTotal == null) return s;
-    const diff = n.valorTotal - activeOrderValue;
-    return diff > 0.009 ? s + diff : s;
-  }, 0);
-  const withoutCr = nfes.filter((n) => !n.hasReceivable).length;
-  const greaterThanOrder = nfes.filter(
+  const validNfes = nfes.filter((n) => n.isValidForBilling && !n.isCanceled);
+  const canceledNfes = nfes.filter((n) => n.isCanceled);
+  const totalValueAll = nfes.reduce((s, n) => s + (n.valorTotal ?? 0), 0);
+  const totalValidValue = validNfes.reduce((s, n) => s + (n.valorTotal ?? 0), 0);
+  const totalAllocatedValid = validNfes.reduce((s, n) => s + n.allocatedValueToOrder, 0);
+  const withoutCr = validNfes.filter((n) => !n.hasReceivable).length;
+  const greaterThanOrder = validNfes.filter(
     (n) => n.headerGreaterThanOrder || (n.valorTotal ?? 0) - activeOrderValue > 0.009
   ).length;
-  const withExtra = nfes.filter((n) => n.hasExtraItems).length;
 
   const filteredItems =
     nfeFilter === "all"
@@ -2889,26 +2924,40 @@ function NfesTab({
       >
         <SectionHeader
           title="Resumo das NF-e vinculadas"
-          subtitle="Cabeçalhos deduplicados por externalId. Valor total ≠ valor atribuído ao pedido."
+          subtitle="Canceladas aparecem para auditoria, mas não compõem faturamento válido."
         />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        {canceledNfes.length > 0 ? (
+          <p className="mb-2 rounded-[10px] border border-rose-200 bg-rose-50/70 px-3 py-2 text-[11px] text-rose-900">
+            NF cancelada exibida apenas para auditoria. Não compõe faturamento válido.
+          </p>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           <Kpi label="Total NF-e" value={String(totalNfes)} />
           <Kpi
-            label="Valor total NF-e"
-            value={formatFinanceCurrency(totalValue)}
+            label="Válidas"
+            value={String(validNfes.length)}
+            tone="success"
+          />
+          <Kpi
+            label="Canceladas"
+            value={String(canceledNfes.length)}
+            tone={canceledNfes.length > 0 ? "danger" : "muted"}
+          />
+          <Kpi
+            label="Valor histórico"
+            value={formatFinanceCurrency(totalValueAll)}
+            help="Soma de todas as NFs vinculadas, inclusive canceladas."
+          />
+          <Kpi
+            label="Faturamento válido"
+            value={formatFinanceCurrency(totalValidValue)}
             tone="highlight"
-            help="Cabeçalho oficial das NFs — não infla a carteira do pedido."
+            help="Somente NFs com isValidForBilling (não canceladas)."
           />
           <Kpi
-            label="Atribuído ao pedido"
-            value={formatFinanceCurrency(totalAllocated)}
-            help="Valor efetivamente alocado ao pedido (via evidência linha a linha)."
-          />
-          <Kpi
-            label="Cabeçalho excedente"
-            value={formatFinanceCurrency(headerExcess)}
-            tone={headerExcess > 0.009 ? "warning" : "muted"}
-            help="Σ (valor NF − valor ativo pedido) quando NF > pedido."
+            label="Atribuído válido"
+            value={formatFinanceCurrency(totalAllocatedValid)}
+            help="Alocação ao pedido apenas de NFs válidas."
           />
           <Kpi
             label="NF sem CR"
@@ -2919,11 +2968,6 @@ function NfesTab({
             label="NF maior que pedido"
             value={String(greaterThanOrder)}
             tone={greaterThanOrder > 0 ? "warning" : "muted"}
-          />
-          <Kpi
-            label="NF com item fora"
-            value={String(withExtra)}
-            tone={withExtra > 0 ? "danger" : "muted"}
           />
         </div>
       </section>
@@ -2958,6 +3002,9 @@ function NfesTab({
                   <th className="py-1.5 pr-2 font-semibold">Cliente</th>
                   <th className="py-1.5 pr-2 font-semibold">Empresa</th>
                   <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold">Cancelada?</th>
+                  <th className="py-1.5 pr-2 font-semibold">Data canc.</th>
+                  <th className="py-1.5 pr-2 font-semibold">Motivo canc.</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Valor total</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Atrib. pedido</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Itens dentro</th>
@@ -2970,6 +3017,7 @@ function NfesTab({
               <tbody>
                 {nfes.map((n) => {
                   const isSelected = nfeFilter === n.nfeExternalId;
+                  const canceled = Boolean(n.isCanceled);
                   return (
                     <tr
                       key={n.nfeExternalId}
@@ -2977,11 +3025,13 @@ function NfesTab({
                         "border-b border-[#F3F4F6] cursor-pointer transition-colors",
                         isSelected
                           ? "bg-sky-50/80 ring-1 ring-inset ring-sky-200"
-                          : n.hasExtraItems
-                            ? "bg-red-50/40 hover:bg-red-50/70"
-                            : n.headerGreaterThanOrder
-                              ? "bg-amber-50/40 hover:bg-amber-50/70"
-                              : "hover:bg-[#F9FAFB]"
+                          : canceled
+                            ? "bg-rose-50/30 text-[#6B7280] hover:bg-rose-50/50"
+                            : n.hasExtraItems
+                              ? "bg-red-50/40 hover:bg-red-50/70"
+                              : n.headerGreaterThanOrder
+                                ? "bg-amber-50/40 hover:bg-amber-50/70"
+                                : "hover:bg-[#F9FAFB]"
                       )}
                       onClick={() =>
                         setNfeFilter(isSelected ? "all" : n.nfeExternalId)
@@ -3022,13 +3072,37 @@ function NfesTab({
                       >
                         {n.companyName ?? "—"}
                       </td>
-                      <td className="py-1.5 pr-2 tabular-nums text-[#6B7280]">
-                        {n.status ?? "—"}
+                      <td className="py-1.5 pr-2">
+                        <NfeStatusBadge nfe={n} />
                       </td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">
+                      <td className="py-1.5 pr-2 text-[11px]">
+                        {canceled ? "Sim" : "Não"}
+                      </td>
+                      <td className="py-1.5 pr-2 whitespace-nowrap text-[11px]">
+                        {n.cancellationDate
+                          ? formatFinanceDate(n.cancellationDate)
+                          : "—"}
+                      </td>
+                      <td
+                        className="py-1.5 pr-2 max-w-[160px] truncate text-[11px]"
+                        title={n.cancellationReason ?? undefined}
+                      >
+                        {n.cancellationReason ?? "—"}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1.5 pr-2 text-right tabular-nums font-semibold",
+                          canceled && "line-through opacity-70"
+                        )}
+                      >
                         {formatFinanceCurrency(n.valorTotal ?? 0)}
                       </td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                      <td
+                        className={cn(
+                          "py-1.5 pr-2 text-right tabular-nums",
+                          canceled && "line-through opacity-70"
+                        )}
+                      >
                         {formatFinanceCurrency(n.allocatedValueToOrder)}
                       </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">

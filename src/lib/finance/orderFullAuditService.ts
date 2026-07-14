@@ -27,6 +27,11 @@ import { loadManualCommercialOwnersForCustomers } from "@/src/lib/crmCustomerCom
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
 import type { SalesOrderListReceivableInput } from "@/src/lib/salesOrderListPaymentSchedule.js";
 import { buildSalesOrderPlannedReceivables } from "./salesOrderPlannedReceivables.js";
+import {
+  extractNfeCancellationMeta,
+  normalizeNfeStatus,
+  type NormalizedNfeStatus,
+} from "./nfeStatus.js";
 
 const MONEY_TOLERANCE = 0.01;
 
@@ -174,6 +179,15 @@ export type OrderFullAuditNfe = {
   dataProcessamento: string | null;
   dataEmissao: string | null;
   status: number | null;
+  /** Status bruto (código Nomus ou texto) para auditoria. */
+  statusRaw: string | null;
+  statusNormalized: NormalizedNfeStatus;
+  isCanceled: boolean;
+  /** NF autorizada/não cancelada — única que compõe faturamento válido. */
+  isValidForBilling: boolean;
+  statusLabel: string;
+  cancellationDate: string | null;
+  cancellationReason: string | null;
   tipoOperacao: number | null;
   valorLiquido: number | null;
   valorTotal: number | null;
@@ -198,6 +212,55 @@ export type OrderFullAuditNfe = {
     | "UNKNOWN";
   alerts: string[];
 };
+
+function emptyNfeStatusFields(): Pick<
+  OrderFullAuditNfe,
+  | "statusRaw"
+  | "statusNormalized"
+  | "isCanceled"
+  | "isValidForBilling"
+  | "statusLabel"
+  | "cancellationDate"
+  | "cancellationReason"
+> {
+  return {
+    statusRaw: null,
+    statusNormalized: "UNKNOWN",
+    isCanceled: false,
+    isValidForBilling: false,
+    statusLabel: "Status desconhecido",
+    cancellationDate: null,
+    cancellationReason: null,
+  };
+}
+
+function applyNormalizedNfeStatus(
+  entry: OrderFullAuditNfe,
+  extras?: {
+    xmlCancelamento?: string | null;
+    justificativaCancelamento?: string | null;
+    rawPayload?: unknown;
+  }
+): void {
+  const normalized = normalizeNfeStatus({
+    status: entry.status,
+    rawPayload: extras?.rawPayload,
+    xmlCancelamento: extras?.xmlCancelamento,
+    justificativaCancelamento: extras?.justificativaCancelamento,
+  });
+  const cancelMeta = extractNfeCancellationMeta({
+    justificativaCancelamento: extras?.justificativaCancelamento,
+    xmlCancelamento: extras?.xmlCancelamento,
+    rawPayload: extras?.rawPayload,
+  });
+  entry.statusRaw = normalized.statusRaw;
+  entry.statusNormalized = normalized.statusNormalized;
+  entry.isCanceled = normalized.isCanceled;
+  entry.isValidForBilling = normalized.isValidForBilling;
+  entry.statusLabel = normalized.label;
+  entry.cancellationDate = cancelMeta.cancellationDate;
+  entry.cancellationReason = cancelMeta.cancellationReason;
+}
 
 export type OrderFullAuditNfeItem = {
   nfeExternalId: number;
@@ -1099,10 +1162,26 @@ export type OrderFullAuditPayload = {
     stockDocumentsTotalValue: number;
     /** Parcela dos documentos efetivamente alocada ao pedido (dedup). */
     stockDocumentsAllocatedValue: number;
-    /** Valor total do cabeçalho das NFs vinculadas (dedup por `nfeExternalId`). */
+    /**
+     * Valor total histórico do cabeçalho das NFs vinculadas (inclui canceladas).
+     * Dedup por `nfeExternalId`.
+     */
     nfeTotalValue: number;
-    /** Parcela das NFs efetivamente alocada ao pedido (dedup). */
+    /** Alias explícito do total histórico (todas as NFs, inclusive canceladas). */
+    nfeTotalValueAll: number;
+    /** Soma dos cabeçalhos com `isValidForBilling` (faturamento válido). */
+    nfeValidValue: number;
+    /** Soma dos cabeçalhos cancelados. */
+    nfeCanceledValue: number;
+    validNfeCount: number;
+    canceledNfeCount: number;
+    /**
+     * Parcela das NFs alocada ao pedido — apenas NF válida para faturamento.
+     * Canceladas não entram neste total.
+     */
     nfeAllocatedValue: number;
+    /** Alocação histórica (inclui canceladas) — só auditoria. */
+    nfeAllocatedValueAll: number;
     /**
      * Comparativos oficiais — sempre `activo - <fonte>`. Positivo = pedido maior;
      * negativo = fonte externa maior. Zero = alinhado dentro da tolerância.
@@ -1367,6 +1446,7 @@ export async function loadOrderFullAudit(
         dataProcessamento: toIso(link.dataProcessamento),
         dataEmissao: null,
         status: link.nfeStatus ?? null,
+        ...emptyNfeStatusFields(),
         tipoOperacao: link.tipoOperacao ?? null,
         valorLiquido: null,
         valorTotal: null,
@@ -1454,6 +1534,7 @@ export async function loadOrderFullAudit(
         dataProcessamento: null,
         dataEmissao: toIso(fact.nfeIssueDate),
         status: null,
+        ...emptyNfeStatusFields(),
         tipoOperacao: null,
         valorLiquido: fact.nfeHeaderValue ?? null,
         valorTotal: fact.nfeHeaderValue ?? null,
@@ -1510,6 +1591,8 @@ export async function loadOrderFullAudit(
             xmlDhEmi: true,
             valorLiquido: true,
             xmlVNF: true,
+            xmlCancelamento: true,
+            justificativaCancelamento: true,
             rawPayload: true,
           },
         })
@@ -1546,7 +1629,8 @@ export async function loadOrderFullAudit(
     entry.numero = entry.numero ?? n.numero ?? null;
     entry.serie = entry.serie ?? n.serie ?? null;
     entry.chave = entry.chave ?? n.chave ?? null;
-    entry.status = entry.status ?? n.status ?? null;
+    // Status oficial do NomusNfe prevalece sobre o espelho do link.
+    entry.status = n.status ?? entry.status ?? null;
     entry.tipoOperacao = entry.tipoOperacao ?? n.tipoOperacao ?? null;
     entry.dataProcessamento = entry.dataProcessamento ?? toIso(n.dataProcessamento);
     entry.dataEmissao = entry.dataEmissao ?? toIso(n.xmlDhEmi);
@@ -1575,6 +1659,19 @@ export async function loadOrderFullAudit(
         "emitente",
       ]);
     nfeRawByExternalId.set(n.externalId, n.rawPayload);
+    applyNormalizedNfeStatus(entry, {
+      xmlCancelamento: n.xmlCancelamento,
+      justificativaCancelamento: n.justificativaCancelamento,
+      rawPayload: n.rawPayload,
+    });
+  }
+  // Links sem linha NomusNfe ainda precisam de status normalizado (link.nfeStatus).
+  for (const entry of nfeMap.values()) {
+    if (entry.statusNormalized === "UNKNOWN" && entry.statusRaw == null) {
+      applyNormalizedNfeStatus(entry, {
+        rawPayload: nfeRawByExternalId.get(entry.nfeExternalId),
+      });
+    }
   }
   for (const doc of stockRows) {
     const entry = stockMap.get(doc.externalId);
@@ -2386,19 +2483,52 @@ export async function loadOrderFullAudit(
       }
     }
 
-    if (nfe.linkedStockDocumentExternalIds.length === 0) {
-      if (!nfe.alerts.includes("NFE_WITHOUT_DOCUMENT")) {
-        nfe.alerts.push("NFE_WITHOUT_DOCUMENT");
+    if (nfe.isCanceled) {
+      if (!nfe.alerts.includes("NFE_CANCELED_LINKED_TO_ORDER")) {
+        nfe.alerts.push("NFE_CANCELED_LINKED_TO_ORDER");
+      }
+      if (nfe.hasReceivable && !nfe.alerts.includes("CANCELED_NFE_WITH_RECEIVABLE")) {
+        nfe.alerts.push("CANCELED_NFE_WITH_RECEIVABLE");
+      }
+      if (
+        nfe.linkedStockDocumentExternalIds.length > 0 &&
+        !nfe.alerts.includes("DOCUMENT_LINKED_TO_CANCELED_NFE")
+      ) {
+        nfe.alerts.push("DOCUMENT_LINKED_TO_CANCELED_NFE");
+      }
+      // Cancelada: não gera ruído de "sem doc/CR" — permanece só como evidência.
+    } else {
+      if (nfe.statusNormalized === "UNKNOWN") {
+        if (!nfe.alerts.includes("NFE_STATUS_UNKNOWN")) {
+          nfe.alerts.push("NFE_STATUS_UNKNOWN");
+        }
+      }
+      if (nfe.linkedStockDocumentExternalIds.length === 0) {
+        if (!nfe.alerts.includes("NFE_WITHOUT_DOCUMENT")) {
+          nfe.alerts.push("NFE_WITHOUT_DOCUMENT");
+        }
+      }
+      if (!nfe.hasReceivable) {
+        if (!nfe.alerts.includes("NFE_WITHOUT_CR")) {
+          nfe.alerts.push("NFE_WITHOUT_CR");
+        }
+      }
+      if (nfe.headerGreaterThanOrder) {
+        if (!nfe.alerts.includes("NFE_HEADER_GREATER_THAN_ORDER")) {
+          nfe.alerts.push("NFE_HEADER_GREATER_THAN_ORDER");
+        }
       }
     }
-    if (!nfe.hasReceivable) {
-      if (!nfe.alerts.includes("NFE_WITHOUT_CR")) {
-        nfe.alerts.push("NFE_WITHOUT_CR");
-      }
-    }
-    if (nfe.headerGreaterThanOrder) {
-      if (!nfe.alerts.includes("NFE_HEADER_GREATER_THAN_ORDER")) {
-        nfe.alerts.push("NFE_HEADER_GREATER_THAN_ORDER");
+  }
+
+  // Documento de saída apontando para NF cancelada.
+  const canceledNfeExternalIds = new Set(
+    [...nfeMap.values()].filter((n) => n.isCanceled).map((n) => n.nfeExternalId)
+  );
+  for (const doc of stockMap.values()) {
+    if (doc.idNfe != null && canceledNfeExternalIds.has(doc.idNfe)) {
+      if (!doc.alerts.includes("DOCUMENT_LINKED_TO_CANCELED_NFE")) {
+        doc.alerts.push("DOCUMENT_LINKED_TO_CANCELED_NFE");
       }
     }
   }
@@ -3741,6 +3871,13 @@ function buildTechnicalAuditBlock(input: {
       category: "NFE",
     },
     {
+      code: "NFE_CANCELED_NOT_VALID_BILLING",
+      label: "NF cancelada não compõe faturamento válido",
+      description:
+        "`NomusNfe.status === 7` (cancelada) aparece na auditoria com badge Cancelada, gera alerta NFE_CANCELED_LINKED_TO_ORDER e é excluída de `nfeValidValue` / `nfeAllocatedValue`.",
+      category: "NFE",
+    },
+    {
       code: "OFFICIAL_RECEIVABLE_PREVAILS",
       label: "CR real prevalece sobre forecast",
       description:
@@ -4738,12 +4875,31 @@ function buildSummary(input: {
     }
   }
   const nfesDedup = [...uniqueNfes.values()];
-  const nfeTotalValue = round2(
+  const nfeTotalValueAll = round2(
     nfesDedup.reduce((s, n) => s + (n.valorTotal ?? 0), 0)
   );
-  const nfeAllocatedValue = round2(
+  const nfeValidValue = round2(
+    nfesDedup
+      .filter((n) => n.isValidForBilling)
+      .reduce((s, n) => s + (n.valorTotal ?? 0), 0)
+  );
+  const nfeCanceledValue = round2(
+    nfesDedup
+      .filter((n) => n.isCanceled)
+      .reduce((s, n) => s + (n.valorTotal ?? 0), 0)
+  );
+  const validNfeCount = nfesDedup.filter((n) => n.isValidForBilling).length;
+  const canceledNfeCount = nfesDedup.filter((n) => n.isCanceled).length;
+  const nfeAllocatedValueAll = round2(
     nfesDedup.reduce((s, n) => s + n.allocatedValueToOrder, 0)
   );
+  const nfeAllocatedValue = round2(
+    nfesDedup
+      .filter((n) => n.isValidForBilling)
+      .reduce((s, n) => s + n.allocatedValueToOrder, 0)
+  );
+  // Card principal "Valor NF-e" permanece histórico; diffs usam alocação válida.
+  const nfeTotalValue = nfeTotalValueAll;
 
   const dominant = input.facts.reduce<Record<string, number>>((acc, f) => {
     if (f.orderToCashStage) acc[f.orderToCashStage] = (acc[f.orderToCashStage] ?? 0) + 1;
@@ -4791,7 +4947,13 @@ function buildSummary(input: {
     stockDocumentsTotalValue,
     stockDocumentsAllocatedValue,
     nfeTotalValue,
+    nfeTotalValueAll,
+    nfeValidValue,
+    nfeCanceledValue,
+    validNfeCount,
+    canceledNfeCount,
     nfeAllocatedValue,
+    nfeAllocatedValueAll,
     diffs: {
       orderVsStockDocument: round2(activeValue - stockDocumentsAllocatedValue),
       orderVsNfe: round2(activeValue - nfeAllocatedValue),
@@ -5144,6 +5306,53 @@ function buildAlerts(input: {
   // (renomeadas dos códigos legados NF_MAIOR_QUE_PEDIDO/NF_SEM_CR)
   // -------------------------------------------------------------------
   for (const nfe of input.nfes) {
+    if (nfe.isCanceled) {
+      push({
+        code: "NFE_CANCELED_LINKED_TO_ORDER",
+        severity: "warning",
+        title: "NF-e cancelada vinculada ao pedido",
+        description: `NF ${nfe.numero ?? nfe.nfeExternalId} está cancelada (status ${nfe.statusRaw ?? "—"}). Exibida apenas para auditoria e não considerada como faturamento válido.`,
+        origin: "NomusNfe.status",
+        action: "Manter vínculo para rastreio; usar apenas NF válida no faturamento.",
+        financialImpact: nfe.valorTotal,
+      });
+      if (nfe.hasReceivable || nfe.linkedReceivableExternalIds.length > 0) {
+        push({
+          code: "CANCELED_NFE_WITH_RECEIVABLE",
+          severity: "critical",
+          title: "CR vinculado a NF-e cancelada",
+          description: `Existe título de Contas a Receber vinculado à NF cancelada ${nfe.numero ?? nfe.nfeExternalId}. Revisar financeiro.`,
+          origin: "NomusAccountsReceivable × NomusNfe",
+          action: "Não apagar o CR oficial; reconciliar cancelamento fiscal × financeira.",
+          financialImpact: nfe.valorTotal,
+        });
+      }
+      if (nfe.linkedStockDocumentExternalIds.length > 0) {
+        push({
+          code: "DOCUMENT_LINKED_TO_CANCELED_NFE",
+          severity: "warning",
+          title: "Documento de saída vinculado a NF cancelada",
+          description: `Documento(s) ${nfe.linkedStockDocumentExternalIds.slice(0, 3).join(", ")} vinculados à NF cancelada ${nfe.numero ?? nfe.nfeExternalId}.`,
+          origin: "NomusStockDocument × NomusNfe",
+          action: "Manter evidência; não usar essa NF como faturamento válido.",
+          financialImpact: null,
+        });
+      }
+      continue;
+    }
+
+    if (nfe.statusNormalized === "UNKNOWN") {
+      push({
+        code: "NFE_STATUS_UNKNOWN",
+        severity: "warning",
+        title: "Status da NF-e desconhecido",
+        description: `Status da NF ${nfe.numero ?? nfe.nfeExternalId} não pôde ser normalizado (bruto: ${nfe.statusRaw ?? "null"}).`,
+        origin: "NomusNfe.status",
+        action: "Conferir sync NomusNfe.status e payload da NF.",
+        financialImpact: null,
+      });
+    }
+
     if (nfe.headerGreaterThanOrder) {
       push({
         code: "NFE_HEADER_GREATER_THAN_ORDER",
@@ -5224,6 +5433,20 @@ function buildAlerts(input: {
         description: `NF ${nfe.numero ?? nfe.nfeExternalId} não possui evidência linha a linha (linkOrigin=${nfe.linkOrigin}).`,
         origin: "NF-e",
         action: "Melhorar mapper para produzir evidência item × NF.",
+        financialImpact: null,
+      });
+    }
+  }
+
+  for (const doc of input.stockDocuments) {
+    if (doc.alerts.includes("DOCUMENT_LINKED_TO_CANCELED_NFE")) {
+      push({
+        code: "DOCUMENT_LINKED_TO_CANCELED_NFE",
+        severity: "warning",
+        title: "Documento de saída vinculado a NF cancelada",
+        description: `Documento ${doc.stockDocumentExternalId} aponta para NF-e cancelada (idNfe=${doc.idNfe ?? "—"}).`,
+        origin: "NomusStockDocument.idNfe",
+        action: "Exibir vínculo na auditoria; não usar a NF cancelada no faturamento válido.",
         financialImpact: null,
       });
     }
@@ -6511,6 +6734,31 @@ function getAlertMetadata(code: string): AlertMetadata | null {
     NFE_ALLOCATED_BY_HEADER_ONLY: {
       category: "NFE",
       severity: "info",
+      linkedTab: "nfes",
+    },
+    NFE_CANCELED_LINKED_TO_ORDER: {
+      category: "NFE",
+      severity: "high",
+      linkedTab: "nfes",
+    },
+    CANCELED_NFE_INCLUDED_IN_BILLING_VALUE: {
+      category: "NFE",
+      severity: "high",
+      linkedTab: "nfes",
+    },
+    CANCELED_NFE_WITH_RECEIVABLE: {
+      category: "NFE",
+      severity: "critical",
+      linkedTab: "financial",
+    },
+    DOCUMENT_LINKED_TO_CANCELED_NFE: {
+      category: "STOCK_DOCUMENT",
+      severity: "high",
+      linkedTab: "documents",
+    },
+    NFE_STATUS_UNKNOWN: {
+      category: "NFE",
+      severity: "medium",
       linkedTab: "nfes",
     },
     // Financeiro

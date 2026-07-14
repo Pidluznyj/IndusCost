@@ -79,6 +79,16 @@ Checklist de QA em [`order-full-audit-dialog-qa.md`](./order-full-audit-dialog-q
 - CR total título: coluna com label claro; **não** é valor do item.
 - Caso **PD 02534 / 309.86AA**: cinco linhas do mesmo SKU, cada uma com status próprio (por linha, não por SKU).
 
+### NF-e cancelada (Status Pedidos)
+
+- Fonte: `NomusNfe.status = 7` via Order-to-Cash (`nfeStatus.ts`).
+- Pedido só com NF cancelada → estágio fiscal `NFE_CANCELLED` (sem faturamento válido).
+- Pedido com NF válida + cancelada → status pela válida; chip discreto **NF cancelada**.
+- Campos: `hasCanceledInvoice`, `canceledInvoiceCount`, `hasValidInvoice`, `validInvoiceCount`, `billingStatus`.
+- Alerta propagado: `NFE_CANCELED_LINKED_TO_ORDER`.
+- NF cancelada **não** infla cards/resumo de faturamento (`salesOrderLinkedNfe` exclui status 7 do `nfeTotalValue`).
+- Detalhes: `docs/finance/nfe-status-rules.md`.
+
 Componente compartilhado: `OrderToCashAuditItemsGrid.tsx` (Auditoria + aba Itens do modal).
 
 ## Tratamento de itens cancelados

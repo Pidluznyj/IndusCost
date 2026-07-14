@@ -466,6 +466,123 @@ async function checkRuntimeFixture() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 10) NF-e cancelada — status oficial + UI + alertas (PD 02586)
+// ---------------------------------------------------------------------------
+function checkCanceledNfeRules() {
+  for (const rel of [
+    "src/lib/finance/nfeStatus.ts",
+    "docs/finance/nfe-status-rules.md",
+    "tmp-audits/inspect-nfe-status-pd02586.ts",
+    "tmp-audits/inspect-order-full-audit-pd02586.ts",
+  ]) {
+    if (exists(rel)) ok(`nfe-cancel:file:${rel}`, "presente");
+    else fail(`nfe-cancel:file:${rel}`, "ausente");
+  }
+
+  const nfeStatus = read("src/lib/finance/nfeStatus.ts");
+  for (const marker of [
+    "normalizeNfeStatus",
+    "isNomusNfeCancelled",
+    "isValidForBilling",
+    "CANCELED",
+    "AUTHORIZED",
+  ]) {
+    if (nfeStatus.includes(marker)) ok(`nfe-cancel:helper:${marker}`, "presente");
+    else fail(`nfe-cancel:helper:${marker}`, `marker ${marker} ausente`);
+  }
+
+  const svc = read("src/lib/finance/orderFullAuditService.ts");
+  for (const marker of [
+    "nfeValidValue",
+    "nfeCanceledValue",
+    "isCanceled",
+    "isValidForBilling",
+    "NFE_CANCELED_LINKED_TO_ORDER",
+    "CANCELED_NFE_WITH_RECEIVABLE",
+    "DOCUMENT_LINKED_TO_CANCELED_NFE",
+    "NFE_STATUS_UNKNOWN",
+    "nfeStatus.js",
+  ]) {
+    if (svc.includes(marker)) ok(`nfe-cancel:svc:${marker}`, "presente");
+    else fail(`nfe-cancel:svc:${marker}`, `marker ${marker} ausente no service`);
+  }
+
+  const dlg = read("src/components/finance/portfolio-reconciliation/OrderFullAuditDialog.tsx");
+  for (const marker of [
+    "Cancelada",
+    "NfeStatusBadge",
+    "NFE_CANCELED_LINKED_TO_ORDER",
+    "Não compõe faturamento válido",
+  ]) {
+    if (dlg.includes(marker)) ok(`nfe-cancel:ui:${marker}`, "presente");
+    else fail(`nfe-cancel:ui:${marker}`, `marker ${marker} ausente na UI`);
+  }
+
+  const o2c = read("src/lib/sales/orderToCashAuditBuilder.ts");
+  if (o2c.includes("isNomusNfeCancelled") && o2c.includes("NFE_CANCELED_LINKED_TO_ORDER")) {
+    ok("nfe-cancel:o2c", "Order-to-Cash detecta cancelamento via status oficial");
+  } else {
+    fail("nfe-cancel:o2c", "Order-to-Cash sem detecção oficial de NF cancelada");
+  }
+
+  const statusTab = read("src/lib/finance/portfolioOrderStatusService.ts");
+  const statusUi = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusPedidosTable.tsx"
+  );
+  if (
+    statusTab.includes("hasCanceledInvoice") &&
+    statusUi.includes("NF cancelada")
+  ) {
+    ok("nfe-cancel:status-pedidos", "Status Pedidos expõe chip NF cancelada");
+  } else {
+    fail("nfe-cancel:status-pedidos", "Status Pedidos sem chip/campo de NF cancelada");
+  }
+
+  // Frontend não importa Prisma (já coberto; reforço do dialog + client).
+  const client = read("src/lib/finance/orderFullAuditClient.ts");
+  if (/@prisma\/client/.test(client) || /from ["'].*prisma/.test(dlg)) {
+    fail("nfe-cancel:frontend-no-prisma", "frontend/client importa Prisma");
+  } else {
+    ok("nfe-cancel:frontend-no-prisma", "frontend não importa Prisma");
+  }
+}
+
+async function checkCanceledNfeNormalizeRuntime() {
+  const {
+    normalizeNfeStatus,
+    isNomusNfeCancelled,
+  } = await import("../src/lib/finance/nfeStatus.js");
+
+  const canceled = normalizeNfeStatus({ status: 7 });
+  if (
+    canceled.isCanceled &&
+    !canceled.isValidForBilling &&
+    canceled.statusNormalized === "CANCELED"
+  ) {
+    ok("nfe-cancel:runtime:7135-like", "status 7 → CANCELED / não faturável");
+  } else {
+    fail("nfe-cancel:runtime:7135-like", JSON.stringify(canceled));
+  }
+
+  const authorized = normalizeNfeStatus({ status: 4 });
+  if (
+    !authorized.isCanceled &&
+    authorized.isValidForBilling &&
+    authorized.statusNormalized === "AUTHORIZED"
+  ) {
+    ok("nfe-cancel:runtime:7142-like", "status 4 → AUTHORIZED / faturável");
+  } else {
+    fail("nfe-cancel:runtime:7142-like", JSON.stringify(authorized));
+  }
+
+  if (isNomusNfeCancelled(7) && !isNomusNfeCancelled(4)) {
+    ok("nfe-cancel:runtime:isCancelled", "isNomusNfeCancelled distingue 7 vs 4");
+  } else {
+    fail("nfe-cancel:runtime:isCancelled", "falha na distinção 7 vs 4");
+  }
+}
+
 async function main() {
   console.log("=== qaOrderFullAuditOfficialEngines (static + fixture) ===\n");
   checkFilesPresent();
@@ -476,7 +593,9 @@ async function main() {
   checkPlannedAlertCodes();
   checkCommercialResponsibleGuard();
   checkFrontendNoPrisma();
+  checkCanceledNfeRules();
   await checkRuntimeFixture();
+  await checkCanceledNfeNormalizeRuntime();
 
   console.log("");
   if (failed === 0) {

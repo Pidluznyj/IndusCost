@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
+import { isNomusNfeCancelled } from "./finance/nfeStatus.js";
 import { prisma } from "./prisma.js";
 import {
   diffCalendarDays,
@@ -43,6 +44,10 @@ export type SalesOrderLinkedNfeContext = {
   source: "linked" | "raw_fallback";
   hasNfe: boolean;
   nfeCount: number;
+  validInvoiceCount: number;
+  canceledInvoiceCount: number;
+  hasValidInvoice: boolean;
+  hasCanceledInvoice: boolean;
   nfeNumbers: string[];
   nfeKeys: string[];
   nfeStatuses: number[];
@@ -58,7 +63,10 @@ export type SalesOrderLinkedNfeContext = {
   lastNfeProcessingDate: Date | null;
   firstNfeIssueDate: Date | null;
   lastNfeIssueDate: Date | null;
+  /** Soma só de NF válidas para faturamento (exclui canceladas). */
   nfeTotalValue: number;
+  /** Soma histórica incluindo canceladas. */
+  nfeTotalValueAll: number;
   invoiceCoveragePercent: number | null;
   isFullyInvoiced: boolean;
   isPartiallyInvoiced: boolean;
@@ -154,6 +162,8 @@ function buildContextFromExtractedRows(input: {
     issueDate: Date | null;
     value: number;
     nomusNfeId: string | null;
+    /** Status oficial preferencial (NomusNfe.status). */
+    officialStatus?: number | null;
   }>;
   source: SalesOrderLinkedNfeContext["source"];
   totalNetValue: number | null | undefined;
@@ -174,20 +184,34 @@ function buildContextFromExtractedRows(input: {
     reviewReasons.push("Sem previsão/data de entrega planejada.");
   }
 
+  const rowStatus = (row: (typeof input.rows)[number]) =>
+    row.officialStatus ?? row.extracted.nfeStatus ?? null;
+  // Faturamento: exclui apenas canceladas (status 7). Status ausente mantém o
+  // comportamento histórico (conta), alinhado ao motor fiscal notCancelled.
+  const canceledRows = input.rows.filter((row) => isNomusNfeCancelled(rowStatus(row)));
+  const billingRows = input.rows.filter((row) => !isNomusNfeCancelled(rowStatus(row)));
+
   const processingDates = sortDates(
-    input.rows.map((row) => row.processingDate).filter((d): d is Date => d != null)
+    billingRows.map((row) => row.processingDate).filter((d): d is Date => d != null)
   );
   const issueDates = sortDates(
-    input.rows.map((row) => row.issueDate).filter((d): d is Date => d != null)
+    billingRows.map((row) => row.issueDate).filter((d): d is Date => d != null)
   );
 
-  const nfeTotalValue = input.rows.reduce((sum, row) => sum + row.value, 0);
+  const nfeTotalValueAll = input.rows.reduce((sum, row) => sum + row.value, 0);
+  const nfeTotalValue = billingRows.reduce((sum, row) => sum + row.value, 0);
   const totalNet = input.totalNetValue != null ? Number(input.totalNetValue) : null;
   const invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
   const isFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
-  const hasNfe = input.rows.length > 0 && processingDates.length > 0;
+  const hasValidInvoice = billingRows.length > 0 && processingDates.length > 0;
+  const hasCanceledInvoice = canceledRows.length > 0;
+  // hasNfe para faturamento = possui NF válida; cancelada sozinha não fatura.
+  const hasNfe = hasValidInvoice;
   const isPartiallyInvoiced = hasNfe && !isFullyInvoiced && nfeTotalValue > 0;
   const isNotInvoiced = !hasNfe;
+  if (hasCanceledInvoice) {
+    reviewReasons.push("NF cancelada vinculada ao pedido (não compõe faturamento válido).");
+  }
   const hasValueDivergence =
     totalNet != null &&
     totalNet > 0 &&
@@ -250,6 +274,10 @@ function buildContextFromExtractedRows(input: {
     source: input.source,
     hasNfe,
     nfeCount: input.rows.length,
+    validInvoiceCount: billingRows.length,
+    canceledInvoiceCount: canceledRows.length,
+    hasValidInvoice,
+    hasCanceledInvoice,
     nfeNumbers: input.rows
       .map((row) => row.extracted.nfeNumber)
       .filter((value): value is string => !!value?.trim()),
@@ -257,7 +285,7 @@ function buildContextFromExtractedRows(input: {
       .map((row) => row.extracted.nfeKey)
       .filter((value): value is string => !!value?.trim()),
     nfeStatuses: input.rows
-      .map((row) => row.extracted.nfeStatus)
+      .map((row) => rowStatus(row))
       .filter((value): value is number => value != null),
     nfeTipoOperacao: input.rows
       .map((row) => row.extracted.tipoOperacao)
@@ -274,6 +302,7 @@ function buildContextFromExtractedRows(input: {
     firstNfeIssueDate: issueDates[0] ?? null,
     lastNfeIssueDate: issueDates[issueDates.length - 1] ?? null,
     nfeTotalValue,
+    nfeTotalValueAll,
     invoiceCoveragePercent,
     isFullyInvoiced,
     isPartiallyInvoiced,
@@ -333,6 +362,7 @@ export function buildSalesOrderLinkedNfeContext(input: {
         issueDate: resolveLinkedNfeIssueDate(nomusNfe),
         value: resolveLinkedNfeValue(link, nomusNfe),
         nomusNfeId: nomusNfe?.id ?? link.nomusNfeId,
+        officialStatus: nomusNfe?.status ?? link.nfeStatus ?? null,
       };
     });
 
@@ -364,6 +394,7 @@ export function buildSalesOrderLinkedNfeContext(input: {
       issueDate,
       value: raw?.valor ?? readRawValue(row.rawPayload, ["valor", "valorTotal", "xmlVNF", "vNF"]) ?? 0,
       nomusNfeId: null,
+      officialStatus: row.nfeStatus ?? null,
     };
   });
 
