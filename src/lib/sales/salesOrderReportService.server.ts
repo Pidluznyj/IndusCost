@@ -32,6 +32,10 @@ import {
 import { extractNomusRawItems } from "../salesOrderNomusRaw.js";
 import { parseNomusSalesOrderItemStatusFromRawItem } from "./nomusSalesOrderItemStatus.js";
 import {
+  resolveSalesOrderBillingStatus,
+  salesOrderBillingStatusLabel,
+} from "./salesOrderListBillingStatus.js";
+import {
   buildSalesOrderReportFilterLabels,
   computeSalesOrderReportSummaryFromRows,
   formatSalesOrderReportStatusLabel,
@@ -263,6 +267,15 @@ export async function loadSalesOrderReportPayload(
       activeValue,
     });
 
+    // Faturamento oficial (2026-07) — regra única compartilhada com a
+    // listagem operacional e com a Auditoria 360º. Nunca deriva de CR/Proposta.
+    const billingStatus = resolveSalesOrderBillingStatus({
+      status: order.status,
+      hasNfe: hasInvoice,
+      isFullyInvoiced: linked?.isFullyInvoiced,
+      isPartiallyInvoiced: linked?.isPartiallyInvoiced,
+    });
+
     return {
       orderId: order.id,
       orderCode: order.orderCode,
@@ -291,6 +304,8 @@ export async function loadSalesOrderReportPayload(
       invoicedValue: roundMoney(invoicedValue),
       pendingBalance: roundMoney(pendingBalance),
       hasInvoice,
+      billingStatus,
+      billingStatusLabel: salesOrderBillingStatusLabel(billingStatus),
       nfeCount: linked?.nfeCount ?? 0,
       nfeNumbers,
       nfeDocument: nfeNumbers.filter(Boolean).join(", "),

@@ -11,14 +11,47 @@ import {
   formatSalesOrderListItemsCount,
   formatSalesOrderListNetValue,
   resolveSalesOrderListCustomerName,
-  SALES_ORDER_LIST_STATUS_LABELS,
 } from "@/src/lib/salesOrderListUi";
 import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
-  formatSalesOrderListInvoicedLabel,
-  salesOrderListInvoicedBadgeClass,
-} from "@/src/lib/salesOrderListInvoicing";
+  resolveSalesOrderBillingStatus,
+  SALES_ORDER_BILLING_STATUS_TOOLTIP,
+  salesOrderBillingStatusBadgeClass,
+  salesOrderBillingStatusLabel,
+} from "@/src/lib/sales/salesOrderListBillingStatus";
 import "./sales-order-list-table.css";
+
+/**
+ * Coluna "NF" — mostra o número da última NF vinculada (fallback "—") e um
+ * contador `(+N)` quando o pedido tem múltiplas NF-e além da última exibida.
+ */
+function formatSalesOrderListInvoiceCell(row: SalesOrderListRowSnapshot): {
+  primary: string;
+  extraCount: number;
+  title: string;
+} {
+  const number = row.lastInvoiceNumber?.trim() ?? "";
+  const count = row.invoiceCount ?? 0;
+  if (!number) {
+    return {
+      primary: count > 0 ? `${count} NF-e` : "—",
+      extraCount: 0,
+      title:
+        count > 0
+          ? `${count} NF-e vinculada(s) sem número disponível`
+          : "Nenhuma NF-e vinculada",
+    };
+  }
+  const extra = Math.max(0, count - 1);
+  return {
+    primary: number,
+    extraCount: extra,
+    title:
+      extra > 0
+        ? `Última NF: ${number} · +${extra} outra(s) vinculada(s)`
+        : `Última NF: ${number}`,
+  };
+}
 
 export function SalesOrderListTable({
   rows,
@@ -49,8 +82,8 @@ export function SalesOrderListTable({
               <th>Cliente</th>
               <th>Vendedor</th>
               <th>Emissão</th>
-              <th>Situação</th>
-              <th>Faturado</th>
+              <th title={SALES_ORDER_BILLING_STATUS_TOOLTIP}>Faturamento</th>
+              <th>NF</th>
               <th className="so-value-cell">Valor líquido</th>
               {showMarginEconomics ? <th className="so-value-cell">Margem</th> : null}
               <th className="so-value-cell">Itens</th>
@@ -138,20 +171,50 @@ export function SalesOrderListTable({
                       {formatSalesOrderListIssueDate(row.issueDate)}
                     </td>
                     <td>
-                      <span
-                        className="so-status-badge"
-                        title={SALES_ORDER_LIST_STATUS_LABELS[row.status] ?? row.status}
-                      >
-                        {SALES_ORDER_LIST_STATUS_LABELS[row.status] ?? row.status ?? "—"}
-                      </span>
+                      {(() => {
+                        // Backend já resolve `billingStatus` via motor oficial
+                        // (`loadSalesOrderLinkedNfeContextMap` + `resolveSalesOrderBillingStatus`).
+                        // Aqui fazemos apenas o fallback defensivo se o payload for
+                        // antigo (sem `billingStatus`): reaplica a regra com `hasInvoice`
+                        // + `status`. `SENT_TO_NOMUS` nunca vira "Faturado" só por si.
+                        const billingStatus =
+                          row.billingStatus ??
+                          resolveSalesOrderBillingStatus({
+                            status: row.status,
+                            hasNfe: Boolean(row.hasInvoice),
+                          });
+                        return (
+                          <span
+                            className={salesOrderBillingStatusBadgeClass(billingStatus)}
+                            data-testid="sales-order-list-billing-status"
+                            data-billing-status={billingStatus}
+                            title={SALES_ORDER_BILLING_STATUS_TOOLTIP}
+                          >
+                            {salesOrderBillingStatusLabel(billingStatus)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td>
-                      <span
-                        className={salesOrderListInvoicedBadgeClass(Boolean(row.hasInvoice))}
-                        data-testid="sales-order-list-invoiced"
-                      >
-                        {formatSalesOrderListInvoicedLabel(Boolean(row.hasInvoice))}
-                      </span>
+                      {(() => {
+                        const invoice = formatSalesOrderListInvoiceCell(row);
+                        return (
+                          <span
+                            className="so-cell-invoice-number"
+                            data-testid="sales-order-list-nf"
+                            title={invoice.title}
+                          >
+                            <span className="font-mono text-xs tabular-nums">
+                              {invoice.primary}
+                            </span>
+                            {invoice.extraCount > 0 ? (
+                              <span className="so-cell-invoice-extra">
+                                +{invoice.extraCount}
+                              </span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="so-value-cell font-medium" title={netValue.title}>
                       {netValue.display}

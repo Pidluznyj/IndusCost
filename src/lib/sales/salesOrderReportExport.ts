@@ -45,6 +45,7 @@ function mapReportRowToDetail(row: SalesOrderReportRow): Record<string, string |
     "ID Nomus vendedor": row.sellerExternalId ?? "",
     "Responsável comercial": row.commercialResponsibleName ?? "—",
     "Responsável operacional": row.operationalResponsibleName ?? "—",
+    Faturamento: row.billingStatusLabel,
     "Status pedido": row.statusLabel,
     "Condição de pagamento": row.paymentConditionLabel,
     "Forma de pagamento": row.paymentMethodLabel,
@@ -79,6 +80,7 @@ function applyReportSheetFormatting(ws: XLSX.WorkSheet, rowCount: number, colCou
     14, // ID Nomus vendedor
     22, // Responsável comercial
     22, // Responsável operacional
+    20, // Faturamento
     18, // Status pedido
     24, // Condição de pagamento
     18, // Forma de pagamento

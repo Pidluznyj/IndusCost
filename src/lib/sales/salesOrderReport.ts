@@ -8,6 +8,9 @@
  * comercial e não deve ser fonte oficial deste relatório.
  */
 
+import type { SalesOrderBillingStatus } from "./salesOrderListBillingStatus.js";
+export { salesOrderBillingStatusLabel } from "./salesOrderListBillingStatus.js";
+
 export const SALES_ORDER_REPORT_ROWS_LIMIT = 5000;
 
 export type SalesOrderReportFilterLabel = {
@@ -60,6 +63,14 @@ export type SalesOrderReportRow = {
   invoicedValue: number;
   pendingBalance: number;
   hasInvoice: boolean;
+  /**
+   * Status oficial de faturamento (2026-07). Fonte única: motor
+   * `loadSalesOrderLinkedNfeContextMap` + `resolveSalesOrderBillingStatus`.
+   * CR planejado sem NF não conta como faturado.
+   */
+  billingStatus: SalesOrderBillingStatus;
+  /** Rótulo pt-BR do `billingStatus` (Faturado / Parcialmente faturado / …). */
+  billingStatusLabel: string;
   nfeCount: number;
   nfeNumbers: string[];
   nfeDocument: string;

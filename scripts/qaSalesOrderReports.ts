@@ -160,6 +160,9 @@ function checkPrintComponents() {
     if (doc.includes(kpi)) ok(`doc:kpi:${kpi}`, "KPI presente");
     else fail(`doc:kpi:${kpi}`, `KPI ${kpi} ausente`);
   }
+  // 2026-07: coluna "Status" foi substituída por "Faturamento" (regra oficial
+  // baseada em NF vinculada). "Status pedido" (Enviado ao Nomus etc.) segue
+  // apenas no XLSX como coluna de auditoria interna.
   for (const col of [
     "Cliente",
     "Empresa",
@@ -167,7 +170,7 @@ function checkPrintComponents() {
     "Emissão",
     "Entrega",
     "Vendedor",
-    "Status",
+    "Faturamento",
     "Itens",
     "Valor pedido",
     "Valor ativo",

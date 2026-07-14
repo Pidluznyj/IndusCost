@@ -16,6 +16,7 @@ import type {
   SalesOrderReportPayload,
   SalesOrderReportRow,
 } from "@/src/lib/sales/salesOrderReport";
+import type { SalesOrderBillingStatus } from "@/src/lib/sales/salesOrderListBillingStatus";
 
 type SummaryCardTone =
   | "neutral"
@@ -42,17 +43,20 @@ function SummaryKpiCard({
   );
 }
 
-function statusToneClass(status: string): string {
+/**
+ * Classe de tom para a coluna "Faturamento" no PDF. Reaproveita a paleta de
+ * `sales-orders-print-status--*` para consistência tipográfica; a lógica de
+ * mapear tom por status de faturamento vive só aqui.
+ */
+function billingStatusToneClass(status: SalesOrderBillingStatus): string {
   switch (status) {
-    case "SENT_TO_NOMUS":
+    case "INVOICED":
       return "sales-orders-print-status sales-orders-print-status--success";
-    case "READY_TO_SEND":
+    case "PARTIALLY_INVOICED":
       return "sales-orders-print-status sales-orders-print-status--info";
-    case "DRAFT":
+    case "NOT_INVOICED":
       return "sales-orders-print-status sales-orders-print-status--muted";
-    case "CANCELLED":
-      return "sales-orders-print-status sales-orders-print-status--danger";
-    case "ERROR":
+    case "CANCELED":
       return "sales-orders-print-status sales-orders-print-status--danger";
     default:
       return "sales-orders-print-status sales-orders-print-status--unknown";
@@ -169,7 +173,7 @@ export function SalesOrderReportPrintDocument({
                   <th className="col-date">Emissão</th>
                   <th className="col-date">Entrega</th>
                   <th className="col-seller">Vendedor</th>
-                  <th className="col-status">Status</th>
+                  <th className="col-status">Faturamento</th>
                   <th className="col-num">Itens</th>
                   <th className="col-money">Valor pedido</th>
                   <th className="col-money">Valor ativo</th>
@@ -195,7 +199,12 @@ export function SalesOrderReportPrintDocument({
                     <td className="col-date">{formatFinanceDate(row.expectedDeliveryDate)}</td>
                     <td className="col-seller">{displayFinanceText(row.sellerName)}</td>
                     <td className="col-status">
-                      <span className={statusToneClass(row.status)}>{row.statusLabel}</span>
+                      <span
+                        className={billingStatusToneClass(row.billingStatus)}
+                        title={row.statusLabel}
+                      >
+                        {row.billingStatusLabel}
+                      </span>
                     </td>
                     <td className="col-num">
                       {formatFinanceInteger(row.itemsCount)}

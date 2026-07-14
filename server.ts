@@ -359,6 +359,7 @@ import { SALES_ORDER_RULES_ENGINE_VERSION } from "./src/lib/salesOrderRulesEngin
 import { buildSalesOrderListTotalsFromPrismaOrders } from "./src/lib/salesOrdersListSummary.js";
 import { loadOfficialCommercial360MarginBundle, buildOfficialSalesOrderListMarginSummary } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
+import { resolveSalesOrderBillingStatus } from "./src/lib/sales/salesOrderListBillingStatus.js";
 import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
@@ -13599,10 +13600,28 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           sellerIdentityCtx
         );
         const linked = linkedNfeContextMap.get(order.id);
+        // Status de faturamento oficial (2026-07): substitui "Situação" (status
+        // operacional bruto) na tabela do Comercial. Fonte única: motor da NF
+        // vinculada. CR planejado sem NF não conta como faturado.
+        const billingStatus = resolveSalesOrderBillingStatus({
+          status: order.status,
+          hasNfe: linked?.hasNfe ?? false,
+          isFullyInvoiced: linked?.isFullyInvoiced,
+          isPartiallyInvoiced: linked?.isPartiallyInvoiced,
+        });
+        const lastInvoiceNumber = linked?.nfeNumbers?.[linked.nfeNumbers.length - 1] ?? null;
+        const lastInvoiceDate =
+          linked?.lastNfeProcessingDate?.toISOString() ??
+          linked?.lastNfeIssueDate?.toISOString() ??
+          null;
         return {
           ...order,
           seller,
           hasInvoice: linked?.hasNfe ?? false,
+          billingStatus,
+          invoiceCount: linked?.nfeCount ?? 0,
+          lastInvoiceNumber,
+          lastInvoiceDate,
           // Compat: clientes antigos liam `responsible` na coluna — agora = rótulo do vendedor Nomus.
           responsible:
             seller.resolutionStatus === "NO_SELLER"

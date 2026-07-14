@@ -32,6 +32,7 @@ import {
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
+import type { SalesOrderBillingStatus } from "@/src/lib/sales/salesOrderListBillingStatus";
 
 export type SalesOrderListRowSnapshot = {
   id: string;
@@ -50,7 +51,23 @@ export type SalesOrderListRowSnapshot = {
   totalMarginPerc?: unknown;
   totalMarginValue?: unknown;
   marginSummary?: SalesOrderMarginSummaryPayload;
+  /**
+   * `true` se há pelo menos uma NF vinculada. Mantido por compat com clientes
+   * antigos; nova UI usa `billingStatus`.
+   */
   hasInvoice?: boolean;
+  /**
+   * Status de faturamento oficial (2026-07). Vem do backend calculado por
+   * `resolveSalesOrderBillingStatus` a partir do motor oficial da NF vinculada
+   * (`loadSalesOrderLinkedNfeContextMap`).
+   */
+  billingStatus?: SalesOrderBillingStatus;
+  /** Quantidade de NF-e vinculadas (0 quando não faturado). */
+  invoiceCount?: number;
+  /** Número da última NF processada, quando disponível. */
+  lastInvoiceNumber?: string | null;
+  /** Data ISO da última NF processada. */
+  lastInvoiceDate?: string | null;
   Customer?: { companyName?: string; tradeName?: string };
   Proposal?: { number: number; externalProposalCode?: string | null; title?: string | null };
 };
