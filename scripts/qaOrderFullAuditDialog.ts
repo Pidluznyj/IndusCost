@@ -1901,19 +1901,17 @@ function main(): boolean {
   );
 
   const requiredCommissionCols = [
-    "Pedido",
     "Item",
     "Produto / SKU",
-    "Vendedor Nomus",
+    "Qtd",
+    "Vlr. unit.",
+    "Vendedor do pedido",
     "Pessoa comissionada",
     "Regra",
     "Base",
-    "Percentual",
-    "Valor previsto",
-    "Valor bruto",
+    "Previsto",
     "Status",
-    "Motivo",
-    "Alertas",
+    "Motivo / Alertas",
   ];
   for (const c of requiredCommissionCols) {
     if (!dlg.includes(c)) {
@@ -1923,9 +1921,25 @@ function main(): boolean {
       );
     }
   }
+  if (dlg.includes("Vendedor Nomus")) {
+    return fail(
+      "commissions:item-cols-legacy",
+      'coluna legada "Vendedor Nomus" ainda presente — usar "Vendedor do pedido"'
+    );
+  }
+  if (
+    !dlg.includes("i.quantity") ||
+    !dlg.includes("i.unitPrice") ||
+    !dlg.includes("orderSellerName")
+  ) {
+    return fail(
+      "commissions:item-qty-price",
+      "grid deve ler quantity, unitPrice e orderSellerName"
+    );
+  }
   ok(
     "commissions:item-cols",
-    `tabela de comissão por item com ${requiredCommissionCols.length} colunas oficiais`
+    `tabela de comissão por item compacta com ${requiredCommissionCols.length} colunas (qtd + vlr. unit. + vendedor do pedido)`
   );
 
   const requiredCommissionAlerts = [

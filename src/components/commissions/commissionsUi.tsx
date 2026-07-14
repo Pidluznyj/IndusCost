@@ -1,6 +1,7 @@
 import React from "react";
 import { Loader2 } from "lucide-react";
 import { HttpError } from "@/src/lib/http";
+import { cn } from "@/src/lib/utils";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
@@ -115,16 +116,26 @@ export function CommissionsSectionIntro({
 export function CommissionsTableScroll({
   children,
   testId,
+  tableClassName,
 }: {
   children: React.ReactNode;
   testId?: string;
+  /** Classes extras na `<table>` (ex.: `table-fixed` em grids densos). */
+  tableClassName?: string;
 }) {
   return (
     <div
       className="overflow-x-auto rounded-xl border border-border"
       data-testid={testId}
     >
-      <table className="min-w-full divide-y divide-border text-sm">{children}</table>
+      <table
+        className={cn(
+          "min-w-full divide-y divide-border text-sm",
+          tableClassName
+        )}
+      >
+        {children}
+      </table>
     </div>
   );
 }

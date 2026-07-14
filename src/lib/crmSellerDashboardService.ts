@@ -384,7 +384,7 @@ export async function buildCrmSellerDashboardResponse(
   const periodDateFromStart = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`) : null;
   const periodDateToEnd = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`) : null;
 
-  const sellerFilter = {
+  const sellerFilterBase = {
     externalSellerId: filterExternalSellerId,
     responsible: filterResponsible,
     sellerIdentityKey: filterSellerIdentityKey,
@@ -399,13 +399,6 @@ export async function buildCrmSellerDashboardResponse(
         ? normalizeSellerIdentityName(input.orderSellerResponsible)
         : null),
   };
-  const hasOwnerFilter = hasCrmSellerMatchFilter(sellerFilter);
-  const commercialOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
-  const soOwnerScope = buildCrmCommercialOwnerOnlyOrderScopeSql(
-    "so",
-    sellerFilter,
-    commercialOwnerCustomerIds
-  );
 
   const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
   const customerNameSql = Prisma.sql`
@@ -479,6 +472,7 @@ export async function buildCrmSellerDashboardResponse(
   const orderNoFollowUpSql = crmOrderWithoutFollowUpNotExistsSql("so");
 
   // Opções do seletor = responsáveis comerciais (não vendedores Nomus do pedido).
+  // Mesma resolução de nome do filtro "Vendedor do pedido" (SalesOrder + catálogo).
   const commercialOwnerOptionRows = await prisma.$queryRaw<
     {
       external_seller_id: number | null;
@@ -505,11 +499,13 @@ export async function buildCrmSellerDashboardResponse(
   `);
 
   const consolidatedOptions = consolidateSellerRowFragments(
-    commercialOwnerOptionRows.map((row) => ({
-      external_seller_id: row.external_seller_id,
-      responsible: row.responsible,
-      orders_count: row.orders_count,
-    }))
+    await enrichOrderSellerOptionRowsWithNames(
+      commercialOwnerOptionRows.map((row) => ({
+        external_seller_id: row.external_seller_id,
+        responsible: row.responsible,
+        orders_count: row.orders_count,
+      }))
+    )
   );
   const scopedConsolidated =
     sellerScopeMode === "own" && input.linkedUser
@@ -518,6 +514,22 @@ export async function buildCrmSellerDashboardResponse(
         )
       : consolidatedOptions;
   const sellerOptions = scopedConsolidated.map(consolidatedOptionToSellerOption);
+
+  // Amplia IDs consolidados (ex.: GISLENE = 464+645+646) antes de buscar a carteira.
+  const sellerFilter = expandSellerFilterWithConsolidatedIds(
+    sellerFilterBase,
+    sellerOptions
+  );
+  const hasOwnerFilter = hasCrmSellerMatchFilter(sellerFilter);
+  const commercialOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(
+    prisma,
+    sellerFilter
+  );
+  const soOwnerScope = buildCrmCommercialOwnerOnlyOrderScopeSql(
+    "so",
+    sellerFilter,
+    commercialOwnerCustomerIds
+  );
 
   // Opções do filtro Vendedor do pedido = vendedores Nomus em SalesOrder (não owners).
   // Agrega por ID com o melhor nome disponível; pedidos sem ID entram pelo nome.

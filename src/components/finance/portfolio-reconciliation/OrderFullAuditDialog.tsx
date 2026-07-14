@@ -339,6 +339,7 @@ export function OrderFullAuditDialog({
                   commissions={payload.commissions}
                   alerts={payload.alerts}
                   orderCode={payload.orderCode}
+                  orderSellerName={payload.summary.orderSellerName}
                 />
               )}
               {activeTab === "divergences" && (
@@ -5543,19 +5544,33 @@ const COMMISSION_ALERT_CODES = new Set([
   "CANCELED_NFE_WITH_RECEIVABLE",
 ]);
 
+function formatQtyOrDash(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("pt-BR", {
+    maximumFractionDigits: 3,
+  });
+}
+
 function CommissionsTab({
   commissions,
   alerts,
   orderCode,
+  orderSellerName,
 }: {
   commissions: OrderFullAuditCommissionBlock;
   alerts: OrderFullAuditAlert[];
   orderCode: string | null;
+  orderSellerName?: string | null;
 }): JSX.Element {
   const tabAlerts = alerts.filter((a) => COMMISSION_ALERT_CODES.has(a.code));
+  const orderSellerLabel =
+    orderSellerName?.trim() ||
+    commissions.rawSellerName?.trim() ||
+    null;
   const sellerAvailable = Boolean(
     commissions.canonicalSellerName?.trim() ||
-      commissions.rawSellerName?.trim()
+      commissions.rawSellerName?.trim() ||
+      orderSellerLabel
   );
   const hasCanceledNfeCrRisk = alerts.some(
     (a) =>
@@ -5720,136 +5735,184 @@ function CommissionsTab({
         ) : (
           <div className="overflow-x-auto">
             <table
-              className="min-w-[2400px] w-full text-left text-[11px]"
+              className="min-w-[980px] w-full table-fixed text-left text-[11px]"
               data-testid="order-full-audit-commissions-items-table"
             >
+              <colgroup>
+                <col className="w-[52px]" />
+                <col className="w-[18%]" />
+                <col className="w-[56px]" />
+                <col className="w-[88px]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[88px]" />
+                <col className="w-[56px]" />
+                <col className="w-[88px]" />
+                <col className="w-[72px]" />
+                <col />
+              </colgroup>
               <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
                 <tr>
-                  <th className="py-1.5 pr-2 font-semibold">Pedido</th>
-                  <th className="py-1.5 pr-2 font-semibold">Item</th>
-                  <th className="py-1.5 pr-2 font-semibold">Produto / SKU</th>
-                  <th className="py-1.5 pr-2 font-semibold">Vendedor Nomus</th>
-                  <th className="py-1.5 pr-2 font-semibold">Pessoa comissionada</th>
-                  <th className="py-1.5 pr-2 font-semibold">Regra</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Base</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Percentual</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Valor previsto</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Valor bruto</th>
-                  <th className="py-1.5 pr-2 font-semibold">Status</th>
-                  <th className="py-1.5 pr-2 font-semibold">Motivo</th>
-                  <th className="py-1.5 pr-2 font-semibold">Alertas</th>
+                  <th className="py-1.5 pr-1.5 font-semibold">Item</th>
+                  <th className="py-1.5 pr-1.5 font-semibold">Produto / SKU</th>
+                  <th className="py-1.5 pr-1.5 font-semibold text-right">Qtd</th>
+                  <th className="py-1.5 pr-1.5 font-semibold text-right">
+                    Vlr. unit.
+                  </th>
+                  <th
+                    className="py-1.5 pr-1.5 font-semibold"
+                    title="Vendedor do pedido (SalesOrder / Nomus)"
+                  >
+                    Vendedor do pedido
+                  </th>
+                  <th className="py-1.5 pr-1.5 font-semibold">
+                    Pessoa comissionada
+                  </th>
+                  <th className="py-1.5 pr-1.5 font-semibold">Regra</th>
+                  <th className="py-1.5 pr-1.5 font-semibold text-right">Base</th>
+                  <th className="py-1.5 pr-1.5 font-semibold text-right">%</th>
+                  <th
+                    className="py-1.5 pr-1.5 font-semibold text-right"
+                    title="Valor previsto (bruto no tooltip)"
+                  >
+                    Previsto
+                  </th>
+                  <th className="py-1.5 pr-1.5 font-semibold">Status</th>
+                  <th className="py-1.5 pr-1.5 font-semibold">Motivo / Alertas</th>
                 </tr>
               </thead>
               <tbody>
-                {commissions.items.map((i) => (
-                  <tr
-                    key={i.salesOrderItemId}
-                    className={cn(
-                      "border-b border-[#F3F4F6]",
-                      i.isCanceled && "bg-red-50/25",
-                      i.isStale && !i.isCanceled && "bg-[#F3F4F6]/50",
-                      i.alerts.includes("CANCELED_ITEM_GENERATING_COMMISSION") &&
-                        "bg-red-100/60"
-                    )}
-                    data-testid={`order-full-audit-commissions-row-${i.salesOrderItemId}`}
-                  >
-                    <td className="py-1.5 pr-2 font-semibold text-[#111827]">
-                      {orderCode ?? "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 tabular-nums text-[#6B7280]">
-                      {i.itemSequence ?? "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 font-semibold text-[#111827]">
-                      <div className="flex flex-col">
-                        <span>{i.productCode ?? "—"}</span>
-                        <span
-                          className="text-[10px] text-[#6B7280] max-w-[220px] truncate"
-                          title={i.productName ?? undefined}
-                        >
-                          {i.productName ?? ""}
-                        </span>
-                      </div>
-                    </td>
-                    <td
-                      className="py-1.5 pr-2 max-w-[140px] truncate"
-                      title={commissions.rawSellerName ?? undefined}
-                    >
-                      {commissions.rawSellerName ?? "—"}
-                    </td>
-                    <td
-                      className="py-1.5 pr-2 max-w-[140px] truncate"
-                      title={commissions.canonicalSellerName ?? undefined}
-                    >
-                      {commissions.canonicalSellerName ?? "—"}
-                    </td>
-                    <td
-                      className="py-1.5 pr-2 max-w-[140px] truncate"
-                      title={i.ruleName ?? undefined}
-                    >
-                      {i.ruleName ? (
-                        <span className="flex flex-col">
-                          <span>{i.ruleName}</span>
-                          <span className="text-[9px] text-[#6B7280]">
-                            {i.ruleBaseType} · {i.ruleReleaseRule}
-                          </span>
-                        </span>
-                      ) : (
-                        "—"
+                {commissions.items.map((i) => {
+                  const ruleTip = [
+                    i.ruleName,
+                    i.ruleBaseType,
+                    i.ruleReleaseRule,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  const alertTip =
+                    i.alerts.length > 0 ? i.alerts.join(", ") : undefined;
+                  const motivoAlertasTip = [
+                    i.exclusionReason,
+                    alertTip,
+                  ]
+                    .filter(Boolean)
+                    .join(" | ");
+                  return (
+                    <tr
+                      key={i.salesOrderItemId}
+                      className={cn(
+                        "border-b border-[#F3F4F6]",
+                        i.isCanceled && "bg-red-50/25",
+                        i.isStale && !i.isCanceled && "bg-[#F3F4F6]/50",
+                        i.alerts.includes(
+                          "CANCELED_ITEM_GENERATING_COMMISSION"
+                        ) && "bg-red-100/60"
                       )}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {formatMoneyOrDash(i.commissionBase)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {i.commissionRatePercent != null
-                        ? formatFinancePercent(i.commissionRatePercent)
-                        : "—"}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">
-                      {formatMoneyOrDash(i.finalCommissionAmount)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums text-[#6B7280]">
-                      {formatMoneyOrDash(i.grossCommissionAmount)}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
-                          i.status === "ACTIVE"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : i.status === "EXCLUDED"
-                              ? "border-red-200 bg-red-50 text-red-800"
-                              : "border-[#D0D5DD] bg-white text-[#4B5563]"
-                        )}
-                      >
-                        {i.status ?? "—"}
-                      </span>
-                    </td>
-                    <td
-                      className="py-1.5 pr-2 max-w-[180px] truncate text-[10px]"
-                      title={i.exclusionReason ?? undefined}
+                      data-testid={`order-full-audit-commissions-row-${i.salesOrderItemId}`}
                     >
-                      {i.exclusionReason ?? "—"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      <div className="flex flex-wrap gap-1">
-                        {i.alerts.length === 0 ? (
-                          <span className="text-[10px] text-[#6B7280]">—</span>
-                        ) : (
-                          i.alerts.map((code) => (
-                            <span
-                              key={code}
-                              className="rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-red-800"
-                              title={code}
-                            >
-                              {code.replace(/^COMMISSION_|^CANCELED_ITEM_/, "").replace(/_/g, " ")}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td
+                        className="py-1.5 pr-1.5 tabular-nums text-[#6B7280]"
+                        title={orderCode ? `Pedido ${orderCode}` : undefined}
+                      >
+                        {i.itemSequence ?? "—"}
+                      </td>
+                      <td className="py-1.5 pr-1.5 font-semibold text-[#111827]">
+                        <div className="min-w-0">
+                          <div className="truncate">{i.productCode ?? "—"}</div>
+                          <div
+                            className="truncate text-[10px] font-normal text-[#6B7280]"
+                            title={i.productName ?? undefined}
+                          >
+                            {i.productName ?? ""}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-1.5 text-right tabular-nums whitespace-nowrap">
+                        {formatQtyOrDash(i.quantity)}
+                      </td>
+                      <td className="py-1.5 pr-1.5 text-right tabular-nums whitespace-nowrap">
+                        {formatMoneyOrDash(i.unitPrice)}
+                      </td>
+                      <td
+                        className="py-1.5 pr-1.5 truncate"
+                        title={orderSellerLabel ?? undefined}
+                      >
+                        {orderSellerLabel ?? "—"}
+                      </td>
+                      <td
+                        className="py-1.5 pr-1.5 truncate"
+                        title={commissions.canonicalSellerName ?? undefined}
+                      >
+                        {commissions.canonicalSellerName ?? "—"}
+                      </td>
+                      <td
+                        className="py-1.5 pr-1.5 truncate"
+                        title={ruleTip || undefined}
+                      >
+                        {i.ruleName ?? "—"}
+                      </td>
+                      <td className="py-1.5 pr-1.5 text-right tabular-nums whitespace-nowrap">
+                        {formatMoneyOrDash(i.commissionBase)}
+                      </td>
+                      <td className="py-1.5 pr-1.5 text-right tabular-nums whitespace-nowrap">
+                        {i.commissionRatePercent != null
+                          ? formatFinancePercent(i.commissionRatePercent)
+                          : "—"}
+                      </td>
+                      <td
+                        className="py-1.5 pr-1.5 text-right tabular-nums font-semibold whitespace-nowrap"
+                        title={
+                          i.grossCommissionAmount != null
+                            ? `Bruto: ${formatMoneyOrDash(i.grossCommissionAmount)}`
+                            : undefined
+                        }
+                      >
+                        {formatMoneyOrDash(i.finalCommissionAmount)}
+                      </td>
+                      <td className="py-1.5 pr-1.5">
+                        <span
+                          className={cn(
+                            "inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+                            i.status === "ACTIVE"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : i.status === "EXCLUDED"
+                                ? "border-red-200 bg-red-50 text-red-800"
+                                : "border-[#D0D5DD] bg-white text-[#4B5563]"
+                          )}
+                        >
+                          {i.status ?? "—"}
+                        </span>
+                      </td>
+                      <td
+                        className="py-1.5 pr-1.5"
+                        title={motivoAlertasTip || undefined}
+                      >
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <span className="truncate text-[10px] text-[#6B7280]">
+                            {i.exclusionReason ?? "—"}
+                          </span>
+                          {i.alerts.length > 0 ? (
+                            <div className="flex flex-wrap gap-0.5">
+                              {i.alerts.map((code) => (
+                                <span
+                                  key={code}
+                                  className="rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-red-800"
+                                  title={code}
+                                >
+                                  {code
+                                    .replace(/^COMMISSION_|^CANCELED_ITEM_/, "")
+                                    .replace(/_/g, " ")}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

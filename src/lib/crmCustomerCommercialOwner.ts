@@ -185,34 +185,51 @@ export function manualCommercialOwnerMatchesSellerScope(
 }
 
 export function buildManualCommercialOwnerPortfolioWhere(
-  scope: Pick<CrmCommercialAccessScope, "externalSellerId" | "responsible" | "sellerIdentityKey">
+  scope: Pick<CrmCommercialAccessScope, "externalSellerId" | "responsible" | "sellerIdentityKey"> & {
+    externalSellerIds?: number[] | null;
+  }
 ): Prisma.CrmCustomerCommercialOwnerWhereInput | undefined {
-  if (scope.sellerIdentityKey?.trim()) {
-    return {
-      isActive: true,
-      sellerIdentityKey: scope.sellerIdentityKey.trim(),
-    };
+  const ids = [
+    ...new Set(
+      [
+        ...(scope.externalSellerIds ?? []),
+        ...(scope.externalSellerId != null ? [scope.externalSellerId] : []),
+      ].filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ].sort((a, b) => a - b);
+  const identityKey =
+    scope.sellerIdentityKey?.trim() ||
+    (scope.responsible?.trim()
+      ? normalizeSellerIdentityName(scope.responsible)
+      : null);
+  const idOnlyKeys = ids.map((id) => `__ID_ONLY__:${id}`);
+
+  const or: Prisma.CrmCustomerCommercialOwnerWhereInput[] = [];
+  if (identityKey) {
+    or.push({ sellerIdentityKey: identityKey });
   }
-  if (scope.externalSellerId != null) {
-    return {
-      isActive: true,
-      OR: [
-        { sellerExternalId: scope.externalSellerId },
-        {
-          sellerAliasExternalIds: {
-            array_contains: scope.externalSellerId,
-          },
-        },
-      ],
-    };
+  for (const idKey of idOnlyKeys) {
+    or.push({ sellerIdentityKey: idKey });
   }
-  if (scope.responsible?.trim()) {
-    return {
-      isActive: true,
-      sellerIdentityKey: normalizeSellerIdentityName(scope.responsible),
-    };
+  if (ids.length === 1) {
+    or.push({ sellerExternalId: ids[0]! });
+    or.push({
+      sellerAliasExternalIds: { array_contains: ids[0]! },
+    });
+  } else if (ids.length > 1) {
+    or.push({ sellerExternalId: { in: ids } });
+    for (const id of ids) {
+      or.push({
+        sellerAliasExternalIds: { array_contains: id },
+      });
+    }
   }
-  return undefined;
+
+  if (or.length === 0) return undefined;
+  if (or.length === 1) {
+    return { isActive: true, ...or[0]! };
+  }
+  return { isActive: true, OR: or };
 }
 
 export function adminSellerOptionToActiveCommercialSeller(

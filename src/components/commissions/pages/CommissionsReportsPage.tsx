@@ -151,50 +151,58 @@ function CommissionAmountCell({ row }: { row: CommissionReportRecord }): JSX.Ele
 
   return (
     <td
-      className="px-3 py-2 font-medium"
+      className="min-w-[7.5rem] max-w-[9.5rem] overflow-hidden px-3 py-2 align-top font-medium"
       data-testid="commissions-reports-commission-cell"
     >
-      <span className="inline-flex max-w-[16rem] items-center gap-1.5">
+      <div className="flex min-w-0 flex-col gap-0.5">
         <span
-          className={cn(showHint && "text-amber-900/90")}
+          className={cn(
+            "whitespace-nowrap tabular-nums",
+            showHint && "text-amber-900/90"
+          )}
           title={showHint ? blockReason ?? undefined : undefined}
         >
           {formatFinanceCurrency(row.finalCommissionAmount)}
         </span>
-        {showHint ? (
-          <span
-            className="inline-flex max-w-[11rem] cursor-help items-center gap-0.5 rounded border border-amber-200/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold leading-tight text-amber-900"
-            title={blockReason ?? undefined}
-            aria-label={`Motivo sem comissão: ${blockReason}`}
-            data-testid="commissions-reports-commission-reason-hint"
-          >
-            <AlertCircle className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
-            <span className="truncate">{blockReason}</span>
-          </span>
-        ) : null}
-        {row.isZeroCommission && !showHint ? (
-          <span className="text-[10px] text-muted-foreground">zerada</span>
-        ) : null}
-        {row.isPayable ? (
-          <span className="text-[10px] text-emerald-700">a pagar</span>
-        ) : null}
-        {row.divergesFromOrderSnapshot ? (
-          <span
-            className="rounded border border-amber-300/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-950"
-            title="Comissão divergente do snapshot oficial do pedido"
-            data-testid="commissions-reports-snapshot-mismatch-badge"
-          >
-            Divergente do snapshot
-          </span>
-        ) : row.source === "ORDER_SNAPSHOT" || row.source === "MATERIALIZED_SCHEDULE" ? (
-          <span
-            className="text-[10px] text-muted-foreground"
-            title="Valor alinhado à materialização oficial"
-          >
-            Snapshot oficial
-          </span>
-        ) : null}
-      </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {showHint ? (
+            <span
+              className="inline-flex shrink-0 cursor-help items-center gap-0.5 rounded border border-amber-200/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold leading-none text-amber-900"
+              title={blockReason ?? undefined}
+              aria-label={`Motivo sem comissão: ${blockReason}`}
+              data-testid="commissions-reports-commission-reason-hint"
+            >
+              <AlertCircle className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+              <span>Motivo</span>
+            </span>
+          ) : null}
+          {row.isZeroCommission && !showHint ? (
+            <span className="text-[10px] text-muted-foreground">zerada</span>
+          ) : null}
+          {row.isPayable ? (
+            <span className="whitespace-nowrap text-[10px] text-emerald-700">
+              a pagar
+            </span>
+          ) : null}
+          {row.divergesFromOrderSnapshot ? (
+            <span
+              className="whitespace-nowrap rounded border border-amber-300/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-950"
+              title="Comissão divergente do snapshot oficial do pedido"
+              data-testid="commissions-reports-snapshot-mismatch-badge"
+            >
+              ≠ snap
+            </span>
+          ) : row.source === "ORDER_SNAPSHOT" ||
+            row.source === "MATERIALIZED_SCHEDULE" ? (
+            <span
+              className="whitespace-nowrap text-[10px] text-muted-foreground"
+              title="Valor alinhado à materialização oficial"
+            >
+              oficial
+            </span>
+          ) : null}
+        </div>
+      </div>
     </td>
   );
 }
@@ -632,7 +640,26 @@ export function CommissionsReportsPage() {
             description="Tente outro período ou limpe a busca."
           />
         ) : (
-          <CommissionsTableScroll testId="commissions-reports-records-table">
+          <CommissionsTableScroll
+            testId="commissions-reports-records-table"
+            tableClassName="min-w-[1280px] table-fixed [&_td]:align-top"
+          >
+            <colgroup>
+              <col className="w-[70px]" />
+              <col className="w-[88px]" />
+              <col className="w-[140px]" />
+              <col className="w-[150px]" />
+              <col className="w-[90px]" />
+              <col className="w-[64px]" />
+              <col className="w-[64px]" />
+              <col className="w-[100px]" />
+              <col className="w-[100px]" />
+              <col className="w-[56px]" />
+              <col className="w-[112px]" />
+              <col className="w-[100px]" />
+              <col />
+              <col className="w-[72px]" />
+            </colgroup>
             <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Mês</th>
@@ -646,7 +673,7 @@ export function CommissionsReportsPage() {
                 <th className="px-3 py-2">Base</th>
                 <th className="px-3 py-2">%</th>
                 <th className="px-3 py-2">Comissão</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="whitespace-nowrap px-3 py-2">Status</th>
                 <th className="px-3 py-2">Motivo</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -661,23 +688,30 @@ export function CommissionsReportsPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDateBr(row.settlementDate)}</td>
-                  <td className="px-3 py-2">
-                    {row.sellerName}
+                  <td className="max-w-[10rem] overflow-hidden px-3 py-2">
+                    <div className="truncate font-medium" title={row.sellerName}>
+                      {row.sellerName}
+                    </div>
                     {row.isNoSeller || row.isSellerUnresolved ? (
-                      <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-900">
+                      <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-900">
                         Sem vendedor
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2">
-                    {row.customerName ?? "—"}
+                  <td className="max-w-[12rem] overflow-hidden px-3 py-2">
+                    <div
+                      className="truncate"
+                      title={row.customerName ?? undefined}
+                    >
+                      {row.customerName ?? "—"}
+                    </div>
                     {row.isCustomerExcluded ? (
-                      <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
+                      <span className="mt-0.5 mr-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
                         Excluído
                       </span>
                     ) : null}
                     {row.isGroupCompany ? (
-                      <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
+                      <span className="mt-0.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
                         Grupo
                       </span>
                     ) : null}
@@ -721,15 +755,23 @@ export function CommissionsReportsPage() {
                     {row.receivableNumber ??
                       (row.nomusReceivableId != null ? String(row.nomusReceivableId) : "—")}
                   </td>
-                  <td className="px-3 py-2">{formatFinanceCurrency(row.receivedAmount)}</td>
-                  <td className="px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                    {formatFinanceCurrency(row.receivedAmount)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">
                     {formatFinanceCurrency(row.commissionableBaseAmount)}
                   </td>
-                  <td className="px-3 py-2">{row.ratePercent.toFixed(2)}%</td>
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                    {row.ratePercent.toFixed(2)}%
+                  </td>
                   <CommissionAmountCell row={row} />
-                  <td className="px-3 py-2">{formatLineStatus(row.lineStatus)}</td>
+                  <td className="max-w-[8rem] overflow-hidden px-3 py-2">
+                    <span className="block truncate whitespace-nowrap">
+                      {formatLineStatus(row.lineStatus)}
+                    </span>
+                  </td>
                   <td
-                    className="max-w-[220px] truncate px-3 py-2 text-xs text-muted-foreground"
+                    className="max-w-[12rem] overflow-hidden px-3 py-2 text-xs text-muted-foreground"
                     title={
                       resolveCommissionBlockReason(row) ??
                       row.statusReason ??
@@ -737,12 +779,14 @@ export function CommissionsReportsPage() {
                       undefined
                     }
                   >
-                    {resolveCommissionBlockReason(row) ||
-                      row.statusReason ||
-                      row.exclusionReason ||
-                      "—"}
+                    <span className="block truncate">
+                      {resolveCommissionBlockReason(row) ||
+                        row.statusReason ||
+                        row.exclusionReason ||
+                        "—"}
+                    </span>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2">
                     <button
                       type="button"
                       className="text-xs font-medium text-primary underline"

@@ -1745,7 +1745,13 @@ export const CrmModule = () => {
           const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === sellerKey);
           if (opt?.sellerIdentityKey?.trim()) {
             params.set("sellerIdentityKey", opt.sellerIdentityKey.trim());
-          } else if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
+          }
+          if ((opt?.externalSellerIds?.length ?? 0) > 0) {
+            params.set("externalSellerIds", opt!.externalSellerIds.join(","));
+          } else if (
+            opt?.externalSellerId !== null &&
+            opt?.externalSellerId !== undefined
+          ) {
             params.set("externalSellerId", String(opt.externalSellerId));
           }
         }

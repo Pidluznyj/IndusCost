@@ -220,7 +220,14 @@ describe("crmCustomerCommercialOwner", () => {
     assert.equal(Array.isArray(where!.OR), true);
     const manualWhere = buildManualCommercialOwnerPortfolioWhere(scope);
     assert.ok(manualWhere);
-    assert.equal(manualWhere!.sellerIdentityKey, "gislene lima");
+    assert.equal(manualWhere!.isActive, true);
+    // Identidade + IDs consolidados (inclui __ID_ONLY__ e alias).
+    assert.ok(Array.isArray(manualWhere!.OR));
+    const keys = (manualWhere!.OR as Array<{ sellerIdentityKey?: string }>)
+      .map((c) => c.sellerIdentityKey)
+      .filter(Boolean);
+    assert.ok(keys.includes("gislene lima"));
+    assert.ok(keys.includes("__ID_ONLY__:464"));
   });
 
   it("gestor filtrando por responsável comercial usa só CrmCustomerCommercialOwner", () => {

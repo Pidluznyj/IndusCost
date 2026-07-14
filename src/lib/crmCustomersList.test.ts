@@ -118,6 +118,7 @@ describe("crmCustomersList scope", () => {
   it("vendedor (own) aplica filtro só por responsável comercial", () => {
     const where = buildCrmCustomerListScopeWhere(ownScope(), {
       externalSellerId: null,
+      externalSellerIds: [],
       sellerIdentityKey: null,
     });
     assert.ok(where);
@@ -128,6 +129,7 @@ describe("crmCustomersList scope", () => {
   it("gestor sem filtro de vendedor não restringe por vendedor", () => {
     const where = buildCrmCustomerListScopeWhere(globalScope(), {
       externalSellerId: null,
+      externalSellerIds: [],
       sellerIdentityKey: null,
     });
     assert.equal(where, undefined);
@@ -136,6 +138,7 @@ describe("crmCustomersList scope", () => {
   it("gestor com filtro de responsável restringe só por CrmCustomerCommercialOwner", () => {
     const where = buildCrmCustomerListScopeWhere(globalScope(), {
       externalSellerId: 99,
+      externalSellerIds: [],
       sellerIdentityKey: null,
     });
     assert.ok(where);
@@ -144,10 +147,11 @@ describe("crmCustomersList scope", () => {
     assert.equal(where!.salesOrders, undefined);
   });
 
-  it("parseCrmCustomerListSellerQuery normaliza sellerIdentityKey", () => {
-    const q = parseCrmCustomerListSellerQuery("12", "  GISLENE LIMA  ");
+  it("parseCrmCustomerListSellerQuery normaliza sellerIdentityKey e IDs", () => {
+    const q = parseCrmCustomerListSellerQuery("12", "  GISLENE LIMA  ", "464,645");
     assert.equal(q.externalSellerId, 12);
     assert.equal(q.sellerIdentityKey, "gislene lima");
+    assert.deepEqual(q.externalSellerIds, [464, 645]);
   });
 });
 
@@ -194,6 +198,7 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
       externalSellerId: 464,
       responsible: "GISLENE LIMA",
       sellerIdentityKey: "gislene lima",
+      externalSellerIds: null,
     });
   });
 
@@ -210,7 +215,12 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
         externalSellerId: null,
         sellerIdentityKey: "gislene lima",
       }),
-      { externalSellerId: null, responsible: null, sellerIdentityKey: "gislene lima" }
+      {
+        externalSellerId: null,
+        responsible: null,
+        sellerIdentityKey: "gislene lima",
+        externalSellerIds: null,
+      }
     );
   });
 
@@ -220,7 +230,12 @@ describe("crmCustomersList — escopo normalizado por vendedor (SQL)", () => {
         externalSellerId: 464,
         sellerIdentityKey: null,
       }),
-      { externalSellerId: 464, responsible: null, sellerIdentityKey: null }
+      {
+        externalSellerId: 464,
+        responsible: null,
+        sellerIdentityKey: null,
+        externalSellerIds: null,
+      }
     );
   });
 
@@ -509,21 +524,22 @@ describe("crmCustomersList UI integration", () => {
 
   it("endpoint lista clientes delega fetchCrmCustomersList com escopo", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    const block = server.slice(
-      server.indexOf('app.get("/api/crm/customers"'),
-      server.indexOf('app.get("/api/crm/customers/:customerId/profile"')
-    );
+    const start = server.indexOf('"/api/crm/customers"');
+    const end = server.indexOf('"/api/crm/customers/:customerId/profile"');
+    assert.ok(start >= 0 && end > start, "rota GET /api/crm/customers presente");
+    const block = server.slice(start, end);
     assert.match(block, /fetchCrmCustomersList/);
     assert.match(block, /requireCrmCommercialDataScope/);
     assert.match(block, /parseCrmCustomerListSellerQuery/);
+    assert.match(block, /externalSellerIds/);
   });
 
   it("endpoint aceita sellerName como alias de sellerIdentityKey", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    const block = server.slice(
-      server.indexOf('app.get("/api/crm/customers"'),
-      server.indexOf('app.get("/api/crm/customers/:customerId/profile"')
-    );
+    const start = server.indexOf('"/api/crm/customers"');
+    const end = server.indexOf('"/api/crm/customers/:customerId/profile"');
+    assert.ok(start >= 0 && end > start, "rota GET /api/crm/customers presente");
+    const block = server.slice(start, end);
     assert.match(block, /sellerName/);
   });
 });
@@ -550,6 +566,7 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
       externalSellerId: null,
       responsible: null,
       sellerIdentityKey: "rodrigo",
+      externalSellerIds: null,
     });
   });
 
@@ -562,6 +579,7 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
       externalSellerId: 464,
       responsible: "GISLENE LIMA",
       sellerIdentityKey: "gislene lima",
+      externalSellerIds: null,
     });
   });
 
@@ -679,7 +697,7 @@ describe("crmCustomersList — filtro de vendedor + busca + permissão (casos ob
     );
     assert.match(portfolio, /Limpar filtros/);
     assert.match(portfolio, /buildActivePortfolioFilterChips/);
-    assert.match(portfolio, /Responsável comercial da carteira/);
+    assert.match(portfolio, /Responsável da carteira/);
     assert.match(portfolio, /crmPortfolioListEmptyCopy/);
     assert.match(
       concepts,

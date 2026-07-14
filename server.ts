@@ -12543,8 +12543,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           : req.query.sellerName) ?? null;
       const sellerQuery =
         commercialScope.dataScope === "global"
-          ? parseCrmCustomerListSellerQuery(req.query.externalSellerId, sellerIdentityRaw)
-          : { externalSellerId: null, sellerIdentityKey: null };
+          ? parseCrmCustomerListSellerQuery(
+              req.query.externalSellerId,
+              sellerIdentityRaw,
+              req.query.externalSellerIds
+            )
+          : {
+              externalSellerId: null,
+              externalSellerIds: [] as number[],
+              sellerIdentityKey: null,
+            };
 
       const payload = await fetchCrmCustomersList(prisma, commercialScope, {
         search: searchRaw,

@@ -52,23 +52,44 @@ export function parseCrmCustomerListFilter(raw: unknown): CrmCustomerListFilter 
 
 export type CrmCustomerListSellerQuery = {
   externalSellerId: number | null;
+  /** IDs consolidados da identidade (inclui `__ID_ONLY__` / alias). */
+  externalSellerIds: number[];
   sellerIdentityKey: string | null;
 };
 
+function parseExternalSellerIdsList(raw: unknown): number[] {
+  if (raw == null || raw === "") return [];
+  const parts = Array.isArray(raw)
+    ? raw.map(String)
+    : String(raw)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+  return [
+    ...new Set(
+      parts
+        .map((p) => Number.parseInt(p, 10))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ].sort((a, b) => a - b);
+}
+
 export function parseCrmCustomerListSellerQuery(
   queryExternalSellerId: unknown,
-  querySellerIdentityKey: unknown
+  querySellerIdentityKey: unknown,
+  queryExternalSellerIds?: unknown
 ): CrmCustomerListSellerQuery {
   let externalSellerId: number | null = null;
   if (queryExternalSellerId !== undefined && queryExternalSellerId !== null && queryExternalSellerId !== "") {
     const n = Number.parseInt(String(queryExternalSellerId).trim(), 10);
     if (Number.isFinite(n)) externalSellerId = n;
   }
+  const externalSellerIds = parseExternalSellerIdsList(queryExternalSellerIds);
   const sellerIdentityKey =
     typeof querySellerIdentityKey === "string" && querySellerIdentityKey.trim()
       ? normalizeSellerIdentityName(querySellerIdentityKey)
       : null;
-  return { externalSellerId, sellerIdentityKey };
+  return { externalSellerId, externalSellerIds, sellerIdentityKey };
 }
 
 /**
@@ -86,8 +107,11 @@ export function buildCrmCustomerListScopeWhere(
   }
   if (commercialScope.dataScope !== "global") return undefined;
 
+  const sellerIds = sellerQuery.externalSellerIds ?? [];
   const hasSellerFilter =
-    sellerQuery.sellerIdentityKey !== null || sellerQuery.externalSellerId !== null;
+    sellerQuery.sellerIdentityKey !== null ||
+    sellerQuery.externalSellerId !== null ||
+    sellerIds.length > 0;
   if (!hasSellerFilter) return undefined;
 
   const match = crmCommercialSellerMatchFilters(
@@ -100,6 +124,7 @@ export function buildCrmCustomerListScopeWhere(
     externalSellerId: match.externalSellerId,
     responsible: match.responsible,
     sellerIdentityKey: match.sellerIdentityKey,
+    externalSellerIds: sellerIds,
   });
   if (manualWhere) return { CrmCustomerCommercialOwner: { is: manualWhere } };
   return { id: { in: [] } };
@@ -110,6 +135,7 @@ export type CrmSellerScopeFilter = {
   externalSellerId: number | null;
   responsible: string | null;
   sellerIdentityKey: string | null;
+  externalSellerIds?: number[] | null;
 };
 
 /**
@@ -128,19 +154,26 @@ export function resolveCrmCustomerListSellerScopeFilter(
       externalSellerId: commercialScope.externalSellerId,
       responsible: commercialScope.responsible,
       sellerIdentityKey: commercialScope.sellerIdentityKey,
+      externalSellerIds: null,
     };
   }
   if (commercialScope.dataScope !== "global") return "none";
 
+  const sellerIds = sellerQuery.externalSellerIds ?? [];
   const hasSellerFilter =
-    sellerQuery.sellerIdentityKey !== null || sellerQuery.externalSellerId !== null;
+    sellerQuery.sellerIdentityKey !== null ||
+    sellerQuery.externalSellerId !== null ||
+    sellerIds.length > 0;
   if (!hasSellerFilter) return "all";
 
-  return crmCommercialSellerMatchFilters(
-    sellerQuery.externalSellerId,
-    null,
-    sellerQuery.sellerIdentityKey
-  );
+  return {
+    ...crmCommercialSellerMatchFilters(
+      sellerQuery.externalSellerId,
+      null,
+      sellerQuery.sellerIdentityKey
+    ),
+    externalSellerIds: sellerIds.length > 0 ? sellerIds : null,
+  };
 }
 
 /**
@@ -677,7 +710,12 @@ export function buildSellerFilterSqlForOrders(
       sellerIdentityKey: commercialScope.sellerIdentityKey,
     });
   }
-  if (sellerQuery.sellerIdentityKey || sellerQuery.externalSellerId !== null) {
+  const sellerIds = sellerQuery.externalSellerIds ?? [];
+  if (
+    sellerQuery.sellerIdentityKey ||
+    sellerQuery.externalSellerId !== null ||
+    sellerIds.length > 0
+  ) {
     const match = crmCommercialSellerMatchFilters(
       sellerQuery.externalSellerId,
       null,
@@ -687,6 +725,7 @@ export function buildSellerFilterSqlForOrders(
       externalSellerId: match.externalSellerId,
       responsible: match.responsible,
       sellerIdentityKey: match.sellerIdentityKey,
+      externalSellerIds: sellerIds.length > 0 ? sellerIds : null,
     });
   }
   return Prisma.sql`TRUE`;
